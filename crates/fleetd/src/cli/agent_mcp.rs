@@ -23,7 +23,7 @@ use fleetd_contracts::lead_calls::{
     RequestWithdrawCall, ReviewReadCall, TaskCancelCall, TaskListCall, TaskMessageCall,
     TaskSpawnCall, UsageResumeCall,
 };
-use fleetd_contracts::memory::{MemoryReadCall, RememberCall};
+use fleetd_contracts::memory::{ForgetCall, MemoryReadCall, RememberCall};
 use fleetd_contracts::navi::{FactoryStatusCall, ProjectMessageCall};
 use fleetd_contracts::preview::{PreviewConfigProposeCall, PreviewStartCall, PreviewSuggestCall};
 use fleetd_contracts::schema::inline_schema;
@@ -201,6 +201,14 @@ static TOOLS: &[Tool] = &[
         inline_schema::<RememberCall>,
     ),
     lead(
+        "forget",
+        "forget",
+        "Remove one entry from memory: entry quotes words of exactly one entry, as it reads now; scope and topic as \
+         for remember. For an entry that no longer holds (done, superseded, contradicted); say why in reason. To \
+         change an entry, remember with replaces instead. The chat shows the human what you forgot, with Undo.",
+        inline_schema::<ForgetCall>,
+    ),
+    lead(
         "memory_read",
         "memory_read",
         "Read one of this project's memory topic files (MEMORY.md lists them).",
@@ -301,7 +309,9 @@ static TOOLS: &[Tool] = &[
     lead(
         "change_enqueue",
         "change_enqueue",
-        "Put a PR no task's result put there on its repo's merge train; only the train merges.",
+        "Put a PR no task's result put there on its repo's merge train; only the train merges. `after` names PRs, in \
+         this repo or any other, that must merge first: the train holds this one until they have, and tells you \
+         when one of them fails.",
         inline_schema::<ChangeEnqueueCall>,
     ),
     Tool {
@@ -941,6 +951,7 @@ mod tests {
             "close",
             "gated_run",
             "remember",
+            "forget",
             "memory_read",
             "checklist",
             "skill_install",

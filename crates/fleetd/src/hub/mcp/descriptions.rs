@@ -54,11 +54,11 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "project_settings_get",
-        "One project's settings: its title and checkout, keepWorktrees, its environment variables (a plain one's value, a secret's fingerprint only), its setup commands, its merge train's checks (train), and from its node, while online, where its worktrees live, the branch new ones start from and the worktrees there now, each marked when it has uncommitted changes.",
+        "One project's settings: its title and checkout, keepWorktrees, memoryRefresh, its environment variables (a plain one's value, a secret's fingerprint only), its setup commands, its merge train's checks (train), and from its node, while online, where its worktrees live, the branch new ones start from and the worktrees there now, each marked when it has uncommitted changes.",
     ),
     (
         "project_settings_set",
-        "Rename a project (title; its folder keeps its name), turn keepWorktrees on or off, replace its setup commands, or set which of its repo's checks the merge train waits for (train). keepWorktrees off (the default): a reader's worktree goes when its task finishes and a writer's once its PR merges; on: finished tasks' worktrees stay on the machine. setup: commands run in order with sh -c in each new worktree, with the project's variables, before its agent starts (install dependencies, generate code), each within timeoutSec; a failure fails the start unless runAnyway; a worktree set up before is not set up again while the commands and the inputs files are unchanged. No commands turns setup off. train: the train waits only for the checks the base branch requires plus fastChecks, never for any other; a check outside them that has already failed stops the merge unless it is in afterMerge. Each list is replaced whole; none empties it.",
+        "Rename a project (title; its folder keeps its name), turn keepWorktrees or memoryRefresh on or off, replace its setup commands, or set which of its repo's checks the merge train waits for (train). keepWorktrees off (the default): a reader's worktree goes when its task finishes and a writer's once its PR merges; on: finished tasks' worktrees stay on the machine. memoryRefresh on (the default): each night with chat or order activity, the lead tidies the project's memory in a session of its own and posts one line of its changes with Undo; off: it doesn't. setup: commands run in order with sh -c in each new worktree, with the project's variables, before its agent starts (install dependencies, generate code), each within timeoutSec; a failure fails the start unless runAnyway; a worktree set up before is not set up again while the commands and the inputs files are unchanged. No commands turns setup off. train: the train waits only for the checks the base branch requires plus fastChecks, never for any other; a check outside them that has already failed stops the merge unless it is in afterMerge. Each list is replaced whole; none empties it.",
     ),
     (
         "project_env_set",
@@ -359,5 +359,9 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     (
         "machine_roles_set",
         "Set what a machine is for: roles [agents, sessions] (one or both), and the most sessions it hosts at once (maxSessions 1 to 64, or autoSessions: true for what it fits). A session an agent starts runs on its own machine when it can host it, else on another that can, driven through the hub's relay. Turning agents off stops nothing: running agents finish, new ones wait. Admin on the machine.",
+    ),
+    (
+        "navi_asks",
+        "What a Navi asked other projects for with project_message, newest first: each ask's handle (N<n>), the project it went to, its words and when, and the orders that project's lead opened for it, each with its state and headline. Read on the Navi's machine. A hub that names the navi_asks feature in its ready frame has it.",
     ),
 ];

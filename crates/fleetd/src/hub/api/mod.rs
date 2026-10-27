@@ -173,6 +173,7 @@ pub fn registry() -> Registry {
     crate::hub::memory::tools::register(&mut tools);
     crate::hub::automations::tools::register(&mut tools);
     crate::hub::checklist::tools::register(&mut tools);
+    crate::hub::navi::tools::register(&mut tools);
     crate::hub::browser::tools::register(&mut tools);
     crate::hub::machine_roles::tools::register(&mut tools);
     crate::hub::preview::tools::register(&mut tools);

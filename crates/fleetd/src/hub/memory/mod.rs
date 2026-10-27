@@ -1,11 +1,14 @@
 //! What the leads remember: plain markdown under `<hub home>/memory`, in no repo. `user.md` is shared by every
 //! project; `<machine>/<project>/MEMORY.md` (the always-on part, then one `- [topic](topic.md)` line per topic) and
 //! its topic files belong to one project and are never read for another. The hub is the only writer: a lead's
-//! `remember` (`calls`) or a person's edit in the app (`tools`), one write at a time. A write past a cap is refused,
-//! never truncated, so the lead merges entries in that turn.
+//! `remember` or `forget` (`calls`; the nightly `refresh` makes them too) or a person's edit in the app (`tools`), one
+//! write at a time. A write past a cap is refused, never truncated, so the lead merges entries in that turn.
 pub mod calls;
+pub mod refresh;
 pub mod tools;
 
+#[cfg(test)]
+mod refresh_tests;
 #[cfg(test)]
 mod tests;
 
@@ -15,8 +18,8 @@ use std::sync::Mutex;
 use fleetd_contracts::ids::{ProjectRef, Timestamp};
 use fleetd_contracts::mcp::ErrorCode;
 use fleetd_contracts::memory::{
-    FileCap, MemoryCaps, MemoryEntry, MemoryFile, MemoryNote, MemoryScope, MemoryTopic, ProjectCap,
-    RememberCall, RememberedItem,
+    FileCap, ForgetCall, MemoryCaps, MemoryEntry, MemoryFile, MemoryNote, MemoryScope, MemoryTopic,
+    ProjectCap, RememberCall, RememberedItem,
 };
 use fleetd_contracts::prim::{Count, List, Text};
 use sha2::{Digest, Sha256};
@@ -379,6 +382,14 @@ impl Memory<'_> {
         call: &'c RememberCall,
     ) -> Result<(Target<'c>, Option<RememberedItem>, usize), MemoryError> {
         let _write = WRITE.lock().unwrap_or_else(|p| p.into_inner());
+        self.remember_locked(r, call)
+    }
+
+    fn remember_locked<'c>(
+        &self,
+        r: &'c ProjectRef,
+        call: &'c RememberCall,
+    ) -> Result<(Target<'c>, Option<RememberedItem>, usize), MemoryError> {
         self.root()?;
         let t = Target {
             project: (call.scope == MemoryScope::Project).then_some(r),
@@ -393,28 +404,7 @@ impl Memory<'_> {
         let mut replaced = None;
         match &call.replaces {
             Some(old) => {
-                let hits: Vec<usize> = (0..lines.len())
-                    .filter(|&i| !is_index_line(&lines[i]) && lines[i].contains(old.as_str()))
-                    .collect();
-                let [i] = hits[..] else {
-                    let message = if hits.is_empty() {
-                        format!("No entry of {} contains \"{}\".", t.name(), old.as_str())
-                    } else {
-                        format!(
-                            "{} entries of {} contain \"{}\".",
-                            hits.len(),
-                            t.name(),
-                            old.as_str()
-                        )
-                    };
-                    return Err(MemoryError::new(
-                        ErrorCode::Invalid,
-                        message,
-                        Some(
-                            "Quote words of exactly one entry as it reads now, or leave replaces out to add a new one.",
-                        ),
-                    ));
-                };
+                let i = one_entry(&t, &lines, old.as_str())?;
                 let old_line = lines[i].trim_start_matches("- ").to_owned();
                 replaced = MemoryEntry::new(old_line).ok();
                 lines[i] = line;
@@ -464,15 +454,86 @@ impl Memory<'_> {
             topic: call.topic.clone(),
             text: call.text.clone(),
             replaced,
+            forgotten: None,
+            reason: None,
             undone: None,
         };
         Ok((t, Some(item), chars(&text)))
     }
 
-    /// Takes back what `item` wrote in project `r`: its entry goes, and the one it replaced comes back. A topic left
-    /// empty goes with its index line.
+    /// A lead's `forget` in project `r`: the one entry that contains `call.entry` goes. A topic left empty goes with
+    /// its index line.
+    pub fn forget<'c>(
+        &self,
+        r: &'c ProjectRef,
+        call: &'c ForgetCall,
+    ) -> Result<(Target<'c>, RememberedItem, usize), MemoryError> {
+        let _write = WRITE.lock().unwrap_or_else(|p| p.into_inner());
+        self.root()?;
+        let t = Target {
+            project: (call.scope == MemoryScope::Project).then_some(r),
+            topic: call.topic.as_ref(),
+        };
+        let mut lines = lines_of(&self.read(&t));
+        let i = one_entry(&t, &lines, call.entry.as_str())?;
+        let whole = lines[i].trim_start_matches("- ").trim_end().to_owned();
+        let Ok(text) = MemoryEntry::new(whole) else {
+            return Err(MemoryError::new(
+                ErrorCode::Invalid,
+                format!(
+                    "That line of {} is not one entry of at most 1,000 characters.",
+                    t.name()
+                ),
+                Some("Leave it, or merge it into a shorter entry with remember and replaces."),
+            ));
+        };
+        lines.remove(i);
+        let text_now = join(&lines);
+        self.put_dropping_empty_topic(&t, &text_now)?;
+        let item = RememberedItem {
+            scope: call.scope,
+            topic: call.topic.clone(),
+            text,
+            replaced: None,
+            forgotten: Some(true),
+            reason: call.reason.clone(),
+            undone: None,
+        };
+        Ok((t, item, chars(&text_now)))
+    }
+
+    /// Writes `text` to `t`; a topic left empty goes with its index line.
+    fn put_dropping_empty_topic(&self, t: &Target<'_>, text: &str) -> Result<(), MemoryError> {
+        self.put(t, text)?;
+        if let (Some(r), Some(topic)) = (t.project, t.topic)
+            && text.trim().is_empty()
+            && let Some(index) = self.index_with(r, topic, false)
+        {
+            self.put(
+                &Target {
+                    project: Some(r),
+                    topic: None,
+                },
+                &index,
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Takes back what `item` wrote in project `r`: its entry goes, and the one it replaced comes back; a forgotten
+    /// entry comes back. A topic left empty goes with its index line.
     pub fn undo(&self, r: &ProjectRef, item: &RememberedItem) -> Result<(), MemoryError> {
         let _write = WRITE.lock().unwrap_or_else(|p| p.into_inner());
+        if item.forgotten == Some(true) {
+            let call = RememberCall {
+                scope: item.scope,
+                topic: item.topic.clone(),
+                text: item.text.clone(),
+                replaces: None,
+            };
+            self.remember_locked(r, &call)?;
+            return Ok(());
+        }
         let t = Target {
             project: (item.scope == MemoryScope::Project).then_some(r),
             topic: item.topic.as_ref(),
@@ -495,21 +556,7 @@ impl Memory<'_> {
                 lines.remove(i);
             }
         }
-        let text = join(&lines);
-        self.put(&t, &text)?;
-        if let (Some(r), Some(topic)) = (t.project, t.topic)
-            && text.trim().is_empty()
-            && let Some(index) = self.index_with(r, topic, false)
-        {
-            self.put(
-                &Target {
-                    project: Some(r),
-                    topic: None,
-                },
-                &index,
-            )?;
-        }
-        Ok(())
+        self.put_dropping_empty_topic(&t, &join(&lines))
     }
 
     /// A person's edit in the app: the whole file. Empty deletes it, and a topic's index line with it.
@@ -583,12 +630,38 @@ impl Memory<'_> {
     }
 }
 
-/// The remembered lines of the chats a file belongs to, newest first: every project's for `user.md`, the project's
-/// own for its files.
+/// The one entry of `lines` (file `t`) that contains `words`: quoted words are an optimistic lock, so an entry
+/// changed since it was read is refused rather than guessed at.
+fn one_entry(t: &Target<'_>, lines: &[String], words: &str) -> Result<usize, MemoryError> {
+    let hits: Vec<usize> = (0..lines.len())
+        .filter(|&i| !is_index_line(&lines[i]) && lines[i].contains(words))
+        .collect();
+    let [i] = hits[..] else {
+        let message = if hits.is_empty() {
+            format!("No entry of {} contains \"{words}\".", t.name())
+        } else {
+            format!(
+                "{} entries of {} contain \"{words}\".",
+                hits.len(),
+                t.name()
+            )
+        };
+        return Err(MemoryError::new(
+            ErrorCode::Invalid,
+            message,
+            Some("Quote words of exactly one entry as it reads now (memory_read for a topic)."),
+        ));
+    };
+    Ok(i)
+}
+
+/// The remembered lines of the chats a file belongs to, and the nightly refresh's lines, newest first: every
+/// project's for `user.md`, the project's own for its files.
 fn notes(db: &HubDb, t: &Target<'_>) -> Result<Vec<MemoryNote>, MemoryError> {
     let rows: Vec<String> = db.with(|c| {
         let mut stmt = c.prepare_cached(
-            "SELECT data FROM chat_messages WHERE json_type(data, '$.remembered') IS NOT NULL \
+            "SELECT data FROM chat_messages \
+             WHERE (json_type(data, '$.remembered') IS NOT NULL OR json_type(data, '$.memoryRefreshed') IS NOT NULL) \
              AND (?1 IS NULL OR (machine_id = ?1 AND project_id = ?2)) ORDER BY n DESC LIMIT 400",
         )?;
         let rows = stmt
@@ -607,19 +680,26 @@ fn notes(db: &HubDb, t: &Target<'_>) -> Result<Vec<MemoryNote>, MemoryError> {
         let Ok(m) = serde_json::from_str::<fleetd_contracts::chat::ChatMessage>(&data) else {
             continue;
         };
-        let Some(item) = &m.remembered else {
-            continue;
-        };
-        if item.undone == Some(true) || item.scope != t.scope() || item.topic.as_ref() != t.topic {
-            continue;
-        }
-        if out.len() < 200 {
-            out.push(MemoryNote {
-                text: item.text.clone(),
-                at: m.created_at.clone(),
-                project_ref: m.project_ref.clone(),
-                message_id: m.message_id.clone(),
-            });
+        let items = m
+            .remembered
+            .iter()
+            .chain(m.memory_refreshed.iter().flat_map(|r| r.items.iter()));
+        for item in items {
+            if item.undone == Some(true)
+                || item.forgotten == Some(true)
+                || item.scope != t.scope()
+                || item.topic.as_ref() != t.topic
+            {
+                continue;
+            }
+            if out.len() < 200 {
+                out.push(MemoryNote {
+                    text: item.text.clone(),
+                    at: m.created_at.clone(),
+                    project_ref: m.project_ref.clone(),
+                    message_id: m.message_id.clone(),
+                });
+            }
         }
     }
     Ok(out)

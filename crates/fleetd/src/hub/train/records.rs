@@ -238,6 +238,22 @@ impl ChangeRecords {
         })
     }
 
+    /// The repos of the Changes not merged, refused or abandoned that wait on `pr_url` (their `after`).
+    pub fn after_repos(&self, pr_url: &str) -> Vec<String> {
+        sql(&self.db, |conn| {
+            let mut stmt = conn
+                .prepare_cached(
+                    "SELECT DISTINCT repo FROM changes, json_each(changes.data, '$.after') AS a
+                     WHERE a.value = ?1 AND state NOT IN ('merged', 'refused', 'abandoned') ORDER BY repo",
+                )
+                .expect("prepare");
+            stmt.query_map([pr_url], |r| r.get::<_, String>(0))
+                .expect("query")
+                .map(|r| r.expect("row"))
+                .collect()
+        })
+    }
+
     /// The repo's Changes in these states, in train order.
     pub fn in_train(&self, repo: &str, states: &[ChangeState]) -> Vec<Change> {
         sql(&self.db, |conn| {

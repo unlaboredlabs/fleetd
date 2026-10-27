@@ -21,6 +21,7 @@ use super::github::{
 };
 use super::host::{BoxFut, TrainHost};
 use super::main_ci::{GithubSync, MainCi, ci_state};
+use super::next::upstreams;
 use super::records::{ChangeRecords, DRAFT, Db, HEAD_STATES, ListFilter, QUEUED_STATES, is_draft};
 use super::rules::Refusal;
 use crate::clock::Clock;
@@ -450,6 +451,13 @@ pub struct Train {
     /// line, until that review is done, so CI isn't run again for it. Kept in memory: after a restart such a Change may
     /// go through the train once more.
     overdue: Mutex<HashSet<(ChangeId, String)>>,
+    /// The upstream failures the lead was told of, each Change's with its hold: once each, in memory, so a restart
+    /// may tell one again.
+    pub(super) after_told: Mutex<HashSet<(ChangeId, String)>>,
+    /// Held by an enqueue with `after` from its loop check until its Change records them.
+    after_lock: tokio::sync::Mutex<()>,
+    /// GitHub's answer for an upstream PR with no open Change, by URL, and when it was read (`next::UPSTREAM_TTL_MS`).
+    pub(super) upstream_reads: Mutex<HashMap<String, (i64, super::next::UpstreamPull)>>,
     /// The train's last push per change: the head it pushed and when, for `ci.queue` spans.
     pub(super) pushed: Mutex<HashMap<ChangeId, (String, i64)>>,
     /// Each repo and base branch's CI config and when it was read.
@@ -500,6 +508,9 @@ impl Train {
             merge_refusals: Mutex::default(),
             verdicts: Notify::new(),
             overdue: Mutex::default(),
+            after_told: Mutex::default(),
+            after_lock: tokio::sync::Mutex::new(()),
+            upstream_reads: Mutex::default(),
             pushed: Mutex::default(),
             ci_configs: Mutex::default(),
             next_labels: Default::default(),
@@ -571,7 +582,7 @@ impl Train {
             .append_event(project_ref, event_type, summary, data);
     }
 
-    async fn wake_lead(&self, project_ref: &ProjectRef, line: String) {
+    pub(super) async fn wake_lead(&self, project_ref: &ProjectRef, line: String) {
         self.host.wake_lead(project_ref, line).await;
     }
 
@@ -715,7 +726,18 @@ impl Train {
         }
     }
 
-    fn kick(&self, repo: &str) {
+    /// Where the repo's train reads its branch prefix and its rules: that repo's checkout in the project that owns
+    /// the train (`train_project`), the project's own directory when the repo is its own.
+    pub(super) fn train_checkout(&self, repo: &str, fallback: &ProjectRef) -> ProjectRef {
+        let owner = self.train_project(repo, fallback);
+        self.host
+            .github_repos(&owner)
+            .into_iter()
+            .find(|(r, _)| r == repo)
+            .map_or(owner, |(_, checkout)| checkout)
+    }
+
+    pub(super) fn kick(&self, repo: &str) {
         if let Some(waiting) = lock(&self.kicks).get(repo) {
             waiting.notify_one();
         }
@@ -934,6 +956,10 @@ impl Train {
         }
         .render();
         self.wake_lead(&merged.project_ref, line).await;
+        // The PRs held for this one may go now, in whichever repo they are.
+        for repo in self.records.after_repos(merged.pr_url.as_str()) {
+            self.kick(&repo);
+        }
     }
 
     /// `why` completes "it ...".
@@ -1369,8 +1395,8 @@ impl Train {
     pub(super) async fn fast(&self, repo: &str, base: &str) -> Option<Fast> {
         let required = self.ci_config(repo, base).await.ok()?.required_checks;
         let train = self.records.train(repo)?;
-        let owner = self.train_project(repo, &train.project_ref);
-        Some(Fast::new(&required, self.host.train_settings(&owner)?))
+        let checkout = self.train_checkout(repo, &train.project_ref);
+        Some(Fast::new(&required, self.host.train_settings(&checkout)?))
     }
 
     /// `base`'s CI config, read at most every `CI_CONFIG_TTL_MS`.
@@ -2292,6 +2318,7 @@ impl Train {
             .await;
         self.reconcile_batches(&repo).await;
         self.sweep_scratch(&repo).await;
+        self.after_pass(&repo).await;
         self.next(&repo).await
     }
 
@@ -2522,6 +2549,39 @@ impl Train {
         };
         let (repo, pr_number) = (parsed.repo.to_lowercase(), parsed.pr_number);
         let pr_url = format!("https://github.com/{repo}/pull/{pr_number}");
+        let repos = self.host.github_repos(project_ref);
+        // Only a project with several repos (stage 2) is held to them: a one-repo project's lead has always enqueued PRs
+        // of other repos too, such as a fork's upstream.
+        if repos.len() >= 2 && !repos.iter().any(|(r, _)| *r == repo) {
+            let names: Vec<&str> = repos.iter().map(|(r, _)| r.as_str()).collect();
+            let refusal = Refusal::new(
+                format!(
+                    "{repo} is not one of this project's repos ({}).",
+                    names.join(", ")
+                ),
+                "enqueue a PR of one of its repos, or have a person add the repo to the project",
+            );
+            return Err(self.refuse(project_ref, &pr_url, refusal, None).await);
+        }
+        let after = upstreams(input.after.as_deref().map_or(&[][..], Vec::as_slice));
+        if after.iter().any(|u| u.as_str() == pr_url) {
+            let refusal = Refusal::new("It names itself in `after`.", "drop it from `after`");
+            return Err(self.refuse(project_ref, &pr_url, refusal, None).await);
+        }
+        // One enqueue with `after` at a time, from the loop check until its Change records them, so two at once can't
+        // each wait on the other.
+        let _order = if after.is_empty() {
+            None
+        } else {
+            Some(self.after_lock.lock().await)
+        };
+        if let Some(upstream) = self.loops_back(&pr_url, &after) {
+            let refusal = Refusal::new(
+                format!("{upstream} already waits on it, so neither could merge."),
+                format!("drop {upstream} from `after`"),
+            );
+            return Err(self.refuse(project_ref, &pr_url, refusal, None).await);
+        }
         let task = input.task_id.as_ref().and_then(|id| self.host.task(id));
         if let Some(task_id) = &input.task_id
             && !task.as_ref().is_some_and(|t| t.project_ref == *project_ref)
@@ -2535,6 +2595,17 @@ impl Train {
         let enqueue_lock = repo_lock(&self.enqueue_locks, &format!("{repo}#{pr_number}"));
         let held = enqueue_lock.lock().await;
         if let Some(existing) = self.records.open_for(&repo, pr_number) {
+            if HEAD_STATES.contains(&existing.state)
+                && after.iter().any(|u| !existing.after.contains(u))
+            {
+                drop(held);
+                let refusal = Refusal::new(
+                    "It is already being merged (rebasing, in CI or merging), so it can't wait on another PR now.",
+                    "to keep it from landing first, add the `hold` label to it, and remove the label once the other PR merges",
+                );
+                return Err(self.refuse(project_ref, &pr_url, refusal, None).await);
+            }
+            let existing = self.add_after(existing, &after);
             self.kick(&repo);
             return Ok(self.one(existing));
         }
@@ -2594,6 +2665,7 @@ impl Train {
             position: None,
             last_error: None,
             merged_sha: None,
+            after,
             created_at: now.clone(),
             updated_at: now.clone(),
         };
@@ -2769,6 +2841,7 @@ impl Train {
             task_id: Some(task.task_id.clone()),
             pr_url: GitHubPrUrl::unchecked(pr_url.clone()),
             workstream_id: None,
+            after: None,
         };
         if let Err(e) = self.enqueue(&task.project_ref, input).await {
             let line = Event::PrRefused {

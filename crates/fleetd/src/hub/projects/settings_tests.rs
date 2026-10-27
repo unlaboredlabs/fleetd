@@ -648,3 +648,50 @@ async fn a_repos_setup_and_preview_are_its_own_and_fall_back_to_the_projects() {
         "{refused:?}"
     );
 }
+
+/// The train's rules are the repo's: naming a repo whose files are in another checkout reads and writes that
+/// checkout's, which its train reads; the project's own stay as they were.
+#[tokio::test]
+async fn a_repos_train_rules_are_its_checkouts() {
+    let (hub, _home) = hub();
+    let _calls = node(&hub, true).await;
+    hub.db
+        .with(|c| {
+            c.execute(
+                "INSERT INTO repos (machine_id, project_id, name, checkout_machine_id, checkout_project_id, repo_key, base)
+                 VALUES ('lab', 'p1', 'web', 'lab', 'p2', 'github.com/acme/web', 'main')",
+                [],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    let human = person();
+    let train = json!({ "fastChecks": ["e2e"], "afterMerge": [] });
+    let s = call(
+        &hub,
+        &human,
+        "project_settings_set",
+        json!({ "machineId": "lab", "projectId": "p1", "repo": "web", "train": train }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(s["settings"]["train"], train);
+    let web = ProjectRef {
+        machine_id: MachineId::unchecked("lab"),
+        project_id: ProjectId::unchecked("p2"),
+    };
+    let saved = hub.db.project_settings().train(&web).unwrap();
+    assert_eq!(serde_json::to_value(saved).unwrap(), train);
+    let own = call(
+        &hub,
+        &human,
+        "project_settings_get",
+        json!({ "machineId": "lab", "projectId": "p1" }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        own["settings"]["train"],
+        json!({ "fastChecks": [], "afterMerge": [] })
+    );
+}

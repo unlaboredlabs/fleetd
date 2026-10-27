@@ -142,6 +142,9 @@ pub struct Change {
     pub last_error: Option<Text<0, 2000>>,
     /// The squash commit on the base; set on merge.
     pub merged_sha: Option<CommitSha>,
+    /// The PRs that merge before it (`change_enqueue`'s `after`): it waits in line until each has merged.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub after: Vec<GitHubPrUrl>,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
 }

@@ -93,7 +93,7 @@ pub async fn route(
     call: SessionRouteCall,
 ) -> Result<LeadCallResult, McpToolError> {
     let task_id = match &caller.agent {
-        CallerAgent::Person => {
+        CallerAgent::Person | CallerAgent::MemoryRefresh => {
             return Err(McpToolError::new(
                 ErrorCode::Forbidden,
                 "A session belongs to an agent's session, and this call comes from none.",
