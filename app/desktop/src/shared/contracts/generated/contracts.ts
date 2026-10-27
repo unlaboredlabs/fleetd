@@ -2853,8 +2853,8 @@ export type McpArg = string;
 export type McpIntegration = {
   kind: IntegrationKind;
   /**
-   * A custom server's tools that only read, as the person marked them when connecting it. Ignored for Google and
-   * Notion, whose tools the hub's table knows. A tool the policy blocks stays blocked even when listed here.
+   * A custom server's tools that only read, as the person marked them when connecting it. Ignored for Notion and
+   * fleetd's own Google server, whose tools the hub's table knows. A tool the policy blocks stays blocked even when listed here.
    */
   readTools?: McpToolName[];
 };

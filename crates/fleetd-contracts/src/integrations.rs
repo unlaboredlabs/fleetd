@@ -42,8 +42,8 @@ brand!(
 #[serde(rename_all = "camelCase")]
 pub struct McpIntegration {
     pub kind: IntegrationKind,
-    /// A custom server's tools that only read, as the person marked them when connecting it. Ignored for Google and
-    /// Notion, whose tools the hub's table knows. A tool the policy blocks stays blocked even when listed here.
+    /// A custom server's tools that only read, as the person marked them when connecting it. Ignored for Notion and
+    /// fleetd's own Google server, whose tools the hub's table knows. A tool the policy blocks stays blocked even when listed here.
     #[serde(default, skip_serializing_if = "<[McpToolName]>::is_empty")]
     pub read_tools: List<McpToolName, 0, READ_TOOLS_MAX, true>,
 }

@@ -7568,7 +7568,7 @@
           "$ref": "#/$defs/IntegrationKind"
         },
         "readTools": {
-          "description": "A custom server's tools that only read, as the person marked them when connecting it. Ignored for Google and\nNotion, whose tools the hub's table knows. A tool the policy blocks stays blocked even when listed here.",
+          "description": "A custom server's tools that only read, as the person marked them when connecting it. Ignored for Notion and\nfleetd's own Google server, whose tools the hub's table knows. A tool the policy blocks stays blocked even when listed here.",
           "items": {
             "$ref": "#/$defs/McpToolName"
           },

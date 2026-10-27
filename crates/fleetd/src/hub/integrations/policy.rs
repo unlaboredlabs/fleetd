@@ -1,6 +1,6 @@
 //! The per-tool policy the hub enforces on a session's MCP tools. Every tool resolves to a [`Rule`]: first the blocked
-//! list, by the words of the tool's name, for every server; then the integration's own table ([`super::google`],
-//! [`super::notion`], or a custom server's tools the person marked as reading); anything else asks, with an action
+//! list, by the words of the tool's name, for every server; then the integration's own table ([`super::google`] for
+//! the hub's own native server only, [`super::notion`], or a custom server's tools the person marked as reading); anything else asks, with an action
 //! guessed from its name. An asking tool whose input looks like it holds a credential is blocked too.
 use fleetd_contracts::integrations::{
     IntegrationKind, McpToolName, PREVIEW_INPUT_MAX, PreviewAttachment, ToolAction, ToolPolicy,
@@ -308,9 +308,15 @@ pub fn guess(tool: &str) -> ToolAction {
     }
 }
 
+/// A server's integration as the policy reads it: Google's table only for the hub's own native server
+/// ([`crate::hub::google::is_native`]); any other server marked Google is a custom one, every write asking with its
+/// whole input.
 fn kind_of(server: Option<&McpServer>) -> (IntegrationKind, &[McpToolName]) {
-    match server.and_then(|s| s.integration.as_ref()) {
-        Some(i) => (i.kind, i.read_tools.as_slice()),
+    match server.and_then(|s| Some((s, s.integration.as_ref()?))) {
+        Some((s, i)) if i.kind == IntegrationKind::Google && !crate::hub::google::is_native(s) => {
+            (IntegrationKind::Custom, i.read_tools.as_slice())
+        }
+        Some((_, i)) => (i.kind, i.read_tools.as_slice()),
         None => (IntegrationKind::Custom, &[]),
     }
 }

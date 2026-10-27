@@ -28,6 +28,16 @@ The Navi's lead gets these tools as `mcp__google__<tool>`.
 | `drive_upload` | Makes a new file from text. | Asks you |
 | `drive_share` | Shares a file with people as reader, commenter or writer. | Asks you |
 
+A draft runs unasked on purpose (decision `navi.google-drafts-unasked`, D201): it sends nothing, and only you send it,
+from Drafts. Asking for each one would protect nothing and make drafting useless.
+
+An event's guests are plain addresses, like `ana@example.com`. The tool refuses anything else, such as
+`Ana <ana@example.com>` or an object, so the card never shows a guest the event wouldn't get.
+
+Only fleetd's own `google` server gets this table. Any other server, such as an older xaq connection marked as Google,
+is a [custom server](/docs/mcp-servers/): each of its tools asks, showing its whole input, unless you marked it as one
+that only reads.
+
 A tool that asks shows the [approval card](/docs/approvals-and-secrets/) in the Navi's chat. The card has every
 recipient, the subject and the whole body, read from the exact input the tool runs with. The tool sends exactly what
 you approved. fleetd doesn't rewrite it or block links or attachments. The one thing refused even with approval is

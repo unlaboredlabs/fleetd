@@ -30,9 +30,19 @@ fn server(name: &str, kind: IntegrationKind, reads: &[&str]) -> McpServer {
     s
 }
 
+/// The native server as the hub gives it to a Navi with a Google account: `fleetd google-mcp`.
+fn native_google() -> McpServer {
+    let mut s = server("google", IntegrationKind::Google, &[]);
+    s.transport = serde_json::from_value(
+        json!({ "type": "stdio", "command": "fleetd", "args": ["google-mcp"] }),
+    )
+    .unwrap();
+    s
+}
+
 fn navi() -> Vec<McpServer> {
     vec![
-        server("google", IntegrationKind::Google, &[]),
+        native_google(),
         server("notion", IntegrationKind::Notion, &[]),
         server(
             "bank",
@@ -278,6 +288,47 @@ fn a_custom_tool_asks_unless_marked_as_reading() {
     );
     // The person's own servers from their claude setup aren't configured here: custom, every tool asks.
     assert_eq!(ask("mcp__mine__lookup", json!({})).server.as_str(), "mine");
+}
+
+#[test]
+fn only_the_native_server_gets_google_s_table() {
+    // An xaq-style server marked Google, or one that takes the native server's name: plain custom servers, each write
+    // asking with its whole input.
+    let xaq = server("google", IntegrationKind::Google, &["search_threads"]);
+    let mut stdio = native_google();
+    stdio.name = fleetd_contracts::mcp_servers::McpServerName::new("gmail").unwrap();
+    for s in [xaq, stdio] {
+        let name = s.name.as_str().to_owned();
+        let servers = [s];
+        let tool = format!("mcp__{name}__create_draft");
+        let input = json!({ "to": ["ana@example.com"], "body": "Hi" });
+        let Some(Verdict::Ask(p)) = verdict(&tool, &input, &servers) else {
+            panic!("{tool}: expected an ask");
+        };
+        assert_eq!(p.integration, IntegrationKind::Custom);
+        assert_eq!(
+            p.title.as_str(),
+            format!("Change with create_draft on {name}")
+        );
+        assert!(p.input.contains("ana@example.com") && p.input.contains("\"body\""));
+        assert!(p.to.is_empty());
+        assert!(
+            !launch_rules(&servers)
+                .allowed
+                .iter()
+                .any(|r| r.ends_with("__create_draft"))
+        );
+    }
+    // What the person marked as reading still reads.
+    let xaq = [server(
+        "google",
+        IntegrationKind::Google,
+        &["search_threads"],
+    )];
+    assert_eq!(
+        verdict("mcp__google__search_threads", &json!({}), &xaq),
+        Some(Verdict::Allow)
+    );
 }
 
 #[test]

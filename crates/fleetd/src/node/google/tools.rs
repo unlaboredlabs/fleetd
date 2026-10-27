@@ -515,18 +515,41 @@ fn addresses(input: &Value, key: &str) -> Result<Vec<String>, String> {
             .filter(|a| !a.is_empty())
             .map(str::to_owned)
             .collect(),
-        Value::Array(items) => items
-            .iter()
-            .filter_map(Value::as_str)
-            .map(str::trim)
-            .filter(|a| !a.is_empty())
-            .map(str::to_owned)
-            .collect(),
+        Value::Array(items) => {
+            let mut list = Vec::new();
+            for item in items {
+                // What the approval card showed is what goes: an item it can't read as an address is refused, not
+                // dropped.
+                let Some(a) = item.as_str() else {
+                    return Err(format!(
+                        "{key} is a list of email addresses, each a string like \"ana@example.com\": {item} isn't one"
+                    ));
+                };
+                if !a.trim().is_empty() {
+                    list.push(a.trim().to_owned());
+                }
+            }
+            list
+        }
         Value::Null => Vec::new(),
         _ => return Err(format!("{key} is a list of email addresses")),
     };
     for a in &list {
         one_line(key, a)?;
+    }
+    Ok(list)
+}
+
+/// An event's guests: plain addresses only (`ana@example.com`, not `Ana <ana@example.com>`), as Google takes them.
+fn guests(input: &Value, key: &str) -> Result<Vec<String>, String> {
+    let list = addresses(input, key)?;
+    if let Some(a) = list
+        .iter()
+        .find(|a| !a.contains('@') || a.contains(|c: char| c.is_whitespace() || "<>\"".contains(c)))
+    {
+        return Err(format!(
+            "{key} takes plain email addresses, like \"ana@example.com\": \"{a}\" isn't one"
+        ));
     }
     Ok(list)
 }
@@ -719,9 +742,9 @@ async fn removed_named(s: &Session, input: &Value) -> Result<(), String> {
         .filter_map(|a| a["email"].as_str())
         .map(str::to_ascii_lowercase)
         .collect();
-    let kept = lower(addresses(input, "attendees")?);
+    let kept = lower(guests(input, "attendees")?);
     let dropped: BTreeSet<String> = now.difference(&kept).cloned().collect();
-    let named = lower(addresses(input, "removed_attendees")?);
+    let named = lower(guests(input, "removed_attendees")?);
     if dropped != named {
         let list = |set: &BTreeSet<String>| {
             if set.is_empty() {
@@ -753,7 +776,7 @@ async fn write_event(s: &Session, tool: &str, input: &Value) -> Result<Value, St
         }
     }
     if !input["attendees"].is_null() {
-        let guests: Vec<Value> = addresses(input, "attendees")?
+        let guests: Vec<Value> = guests(input, "attendees")?
             .into_iter()
             .map(|a| json!({ "email": a }))
             .collect();

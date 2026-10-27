@@ -797,6 +797,42 @@ async fn a_changed_event_emails_no_one_unless_asked_and_then_names_every_guest()
 }
 
 #[tokio::test]
+async fn guests_that_are_not_plain_addresses_are_refused_and_nothing_is_made() {
+    let (_home, _ep, fake, session) = signed_in().await;
+    let before = fake.lock().unwrap().seen.len();
+    for (attendees, says) in [
+        (json!([{ "email": "bo@vendor.test" }]), "each a string"),
+        (json!(["bo@vendor.test", 7]), "each a string"),
+        (json!(["Bo <bo@vendor.test>"]), "plain email addresses"),
+        (json!("bo at vendor"), "plain email addresses"),
+    ] {
+        let error = tools::call(
+            &session,
+            "create_calendar_event",
+            &json!({ "summary": "Lunch", "start": "2026-10-30T13:00:00", "end": "2026-10-30T14:00:00",
+                     "attendees": attendees }),
+        )
+        .await
+        .unwrap_err();
+        assert!(error.contains(says), "{error}");
+    }
+    let error = tools::call(
+        &session,
+        "update_calendar_event",
+        &json!({ "event_id": "e2", "attendees": [], "removed_attendees": [{ "email": "bo@vendor.test" }],
+                 "notify_attendees": true }),
+    )
+    .await
+    .unwrap_err();
+    assert!(error.contains("removed_attendees"), "{error}");
+    let writes = fake.lock().unwrap().seen[before..]
+        .iter()
+        .filter(|(method, ..)| method != "GET")
+        .count();
+    assert_eq!(writes, 0);
+}
+
+#[tokio::test]
 async fn content_can_never_end_an_upload_early() {
     let (_home, _ep, fake, session) = signed_in().await;
     let content = "--fleetd-upload-boundary-7f3a\r\nnot the end\r\n--fleetd--";

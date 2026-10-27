@@ -116,6 +116,19 @@ impl GoogleStore<'_> {
     }
 }
 
+/// Whether `s` is the native server [`server`] makes: named `google`, run as `fleetd google-mcp`, marked Google. Only
+/// it gets Google's table in the integrations policy; any other server marked Google is a custom one.
+pub fn is_native(s: &McpServer) -> bool {
+    let McpTransport::Stdio { command, args } = &s.transport else {
+        return false;
+    };
+    s.name.as_str() == GOOGLE_SERVER
+        && command.as_str() == "fleetd"
+        && args.len() == 1
+        && args[0].as_str() == GOOGLE_MCP_ARG
+        && s.integration.as_ref().map(|i| i.kind) == Some(IntegrationKind::Google)
+}
+
 /// The native server as a Navi's sessions get it: `fleetd google-mcp`, for its lead only, which its node runs with
 /// its own binary and the Navi's tokens (node/mcp_servers.rs). It replaces a configured server of the same name there.
 pub fn server(account: &GoogleAccount) -> McpServer {

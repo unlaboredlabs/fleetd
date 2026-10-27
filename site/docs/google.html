@@ -144,6 +144,13 @@ refuses Google on any other project.</p>
 </tr>
 </tbody>
 </table>
+<p>A draft runs unasked on purpose (decision <code dir="auto">navi.google-drafts-unasked</code>, D201): it sends nothing, and only you send it,
+from Drafts. Asking for each one would protect nothing and make drafting useless.</p>
+<p>An event’s guests are plain addresses, like <code dir="auto">ana@example.com</code>. The tool refuses anything else, such as
+<code dir="auto">Ana &lt;ana@example.com&gt;</code> or an object, so the card never shows a guest the event wouldn’t get.</p>
+<p>Only fleetd’s own <code dir="auto">google</code> server gets this table. Any other server, such as an older xaq connection marked as Google,
+is a <a href="/docs/mcp-servers/">custom server</a>: each of its tools asks, showing its whole input, unless you marked it as one
+that only reads.</p>
 <p>A tool that asks shows the <a href="/docs/approvals-and-secrets/">approval card</a> in the Navi’s chat. The card has every
 recipient, the subject and the whole body, read from the exact input the tool runs with. The tool sends exactly what
 you approved. fleetd doesn’t rewrite it or block links or attachments. The one thing refused even with approval is
