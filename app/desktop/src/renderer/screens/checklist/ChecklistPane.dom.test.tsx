@@ -223,3 +223,41 @@ it("keeps a removal until the hub has it, so one the app quit within its Undo go
   expect(stored()).toEqual([]);
   expect(rows()).toEqual(["2", "1", "4"]);
 });
+
+it("a session's window never sends a removal the app's window is still waiting out the Undo of", async () => {
+  const { hub } = await mount(LIST);
+  await click("Delete “Release notes”");
+  // A session's window opens meanwhile: the same storage, its own layer and connection.
+  const calls: string[] = [];
+  const other: HubApi = {
+    call: (tool) => {
+      calls.push(tool);
+      return Promise.resolve({ ok: true, output: { projectRef: project, items: [], updatedAt: AT } });
+    },
+    subscribe: (l) => {
+      l(live());
+      l(snapshot(1));
+      return () => undefined;
+    },
+    resync: () => Promise.resolve(),
+    focus: () => Promise.resolve(),
+    chat: () => Promise.resolve(),
+  };
+  const layer = createDataLayer(other);
+  const stop = layer.start();
+  expect(layer.store.getState().fresh).toBe(true);
+  sendKept(layer, "#/session/devbox/storefront/B1");
+  await settle();
+  expect(calls).toEqual([]);
+  // The app's window sends it, as at the next launch.
+  sendKept(layer, "#/project/devbox/storefront");
+  await settle();
+  expect(calls).toEqual(["checklist_remove"]);
+  stop();
+
+  // Undo in the app's window: back on its list, and its own hub never heard.
+  await click("Undo");
+  expect(rows()).toEqual(["2", "3", "1", "4"]);
+  await undoGone();
+  expect(hub.removes).toEqual([]);
+});
