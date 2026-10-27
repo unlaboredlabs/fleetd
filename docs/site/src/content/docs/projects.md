@@ -131,7 +131,8 @@ Each agent's brief lists the variables it gets by name.
 
 From an MCP client: `project_settings_get` reads a project's settings, `project_settings_set` renames it or sets
 `keepWorktrees` and `setup`, and `project_env_set` sets and removes variables, a secret sealed to the machine's
-`boxPubKey`. `project_env_set` takes only a human key.
+`boxPubKey`. `project_env_set` takes only a human key. Give either settings call a `repo` (a repo's name, such as
+`api`) to read or set that repo's own `setup` and `preview`; a repo with none of its own uses the project's.
 
 ### Setup commands {#setup}
 
