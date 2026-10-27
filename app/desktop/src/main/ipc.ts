@@ -1,11 +1,11 @@
 import { app, BrowserWindow, clipboard, ipcMain, Menu, nativeTheme, shell, type IpcMainInvokeEvent } from "electron";
 import { IPC, type InvokeChannel } from "../shared/channels";
 import type { AppLog } from "./applog";
-import { parseRequest, type RequestArgs } from "../shared/ipc";
+import { parseRequest, type CallRequest, type RequestArgs } from "../shared/ipc";
 import type { BrowserInput } from "../shared/contracts";
 import type { OpenOutcome } from "../shared/hub";
 import { externalUrl } from "./external";
-import type { HubService } from "./hub/service";
+import type { Hubs } from "./hub/hubs";
 import { claimLinkHandler, linkHandlerStatus } from "./linkHandlerMain";
 import type { PairingService } from "./pairing/service";
 import type { PresenceSetting } from "./presence";
@@ -41,42 +41,59 @@ const handle = <C extends InvokeChannel>(
 };
 
 export const registerIpc = (
-  hub: HubService,
+  hubs: Hubs,
   frame: { opener: Opener; notifier: Notifier; log: AppLog; updates: Updates; presence: PresenceSetting; sessionWindows: SessionWindows },
   pairing: PairingService,
 ): void => {
-  handle(IPC.hubSubscribe, (event) => hub.subscribe(event.sender));
-  handle(IPC.hubUnsubscribe, (event) => hub.unsubscribe(event.sender));
-  handle(IPC.hubCall, (_event, request) => hub.call(request));
-  handle(IPC.hubChat, (_event, project) => hub.chat(project));
-  handle(IPC.hubFocus, (_event, workstreamId) => hub.focus(workstreamId));
-  handle(IPC.hubWatch, (event, session) => hub.watch(event.sender, session));
-  // Checked against the contract's shape above; an absent field may arrive as undefined, which JSON leaves out.
-  handle(IPC.hubInput, (_event, session, input) => hub.input(session, input as BrowserInput));
-  handle(IPC.hubResync, () => hub.resync());
-  handle(IPC.hubRetryNow, () => hub.retryNow());
-  handle(IPC.hubCacheRead, () => hub.cacheRead());
-  handle(IPC.hubCacheWrite, (_event, text) => hub.cacheWrite(text));
-  handle(IPC.hubConnect, (_event, request) => hub.connect(request));
-  handle(IPC.hubForget, () => hub.forget());
-  handle(IPC.secretSubmit, (_event, request) => submitSecret(request, (tool, input) => hub.call({ tool, input })));
-  handle(IPC.projectEnvSubmit, (_event, request) => submitProjectEnv(request, (tool, input) => hub.call({ tool, input })));
-  handle(IPC.mcpServerSubmit, (_event, request) => submitMcpServer(request, (tool, input) => hub.call({ tool, input })));
-  handle(IPC.systemHostName, () => hostName());
-  // One join at a time: the page asking again while one runs gets that one, and follows it on the push channel.
-  let joining: Promise<JoinHere> | undefined;
-  let lastJoin: JoinHere | null = null;
-  const sendJoin = (state: JoinHere) => {
-    lastJoin = state;
-    for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.webContents.send(IPC.machinesJoinHereChanged, state);
-  };
-  handle(IPC.machinesJoinHere, (_event, machineId) => {
-    joining ??= joinHere(realPorts((tool, input) => hub.call({ tool, input })), machineId, sendJoin).finally(() => {
-      joining = undefined;
-    });
-    return joining;
+  // A hub removed while a call was on its way answers as an unpaired one would.
+  const gone = { ok: false, error: { code: "offline", message: "That hub was removed from this app." } } as const;
+  const call = (id: string) => (tool: string, input: unknown) => hubs.get(id)?.call({ tool, input: input as CallRequest["input"] }) ?? Promise.resolve(gone);
+  handle(IPC.hubsList, () => hubs.list());
+  handle(IPC.hubsUpdate, (_event, id, change) => hubs.update(id, change));
+  hubs.onChange((list) => {
+    for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.webContents.send(IPC.hubsChanged, list);
   });
-  handle(IPC.machinesJoinHereState, () => lastJoin);
+  handle(IPC.hubSubscribe, (event, id) => hubs.get(id)?.subscribe(event.sender));
+  handle(IPC.hubUnsubscribe, (event, id) => hubs.get(id)?.unsubscribe(event.sender));
+  handle(IPC.hubCall, (_event, id, request) => hubs.get(id)?.call(request) ?? gone);
+  handle(IPC.hubChat, (_event, id, project) => hubs.get(id)?.chat(project));
+  handle(IPC.hubFocus, (_event, id, workstreamId) => hubs.get(id)?.focus(workstreamId));
+  handle(IPC.hubWatch, (event, id, session) => hubs.get(id)?.watch(event.sender, session));
+  // Checked against the contract's shape above; an absent field may arrive as undefined, which JSON leaves out.
+  handle(IPC.hubInput, (_event, id, session, input) => hubs.get(id)?.input(session, input as BrowserInput));
+  handle(IPC.hubResync, (_event, id) => hubs.get(id)?.resync());
+  handle(IPC.hubRetryNow, (_event, id) => hubs.get(id)?.retryNow());
+  handle(IPC.hubCacheRead, (_event, id) => hubs.get(id)?.cacheRead() ?? null);
+  handle(IPC.hubCacheWrite, (_event, id, text) => hubs.get(id)?.cacheWrite(text));
+  handle(IPC.hubConnect, (_event, { target, ...request }) => hubs.connect(request, target));
+  handle(IPC.hubForget, (_event, id) => hubs.remove(id));
+  handle(IPC.secretSubmit, (_event, id, request) => submitSecret(request, call(id)));
+  handle(IPC.projectEnvSubmit, (_event, id, request) => submitProjectEnv(request, call(id)));
+  handle(IPC.mcpServerSubmit, (_event, id, request) => submitMcpServer(request, call(id)));
+  handle(IPC.systemHostName, () => hostName());
+  // This computer joins the hub the page's Add machine is on, and each hub keeps its own join's state. One join at a
+  // time, as there is one fleetd dir here: asked again for the same hub while it runs, the page gets that one and
+  // follows it on the push channel; asked for another hub, it is told to wait.
+  let joining: { readonly hub: string; readonly run: Promise<JoinHere> } | undefined;
+  const lastJoin = new Map<string, JoinHere>();
+  const sendJoin = (id: string) => (state: JoinHere) => {
+    lastJoin.set(id, state);
+    for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.webContents.send(IPC.machinesJoinHereChanged, id, state);
+  };
+  handle(IPC.machinesJoinHere, (_event, id, machineId): Promise<JoinHere> => {
+    if (joining !== undefined && joining.hub !== id) {
+      const other = hubs.list().find((h) => h.id === joining?.hub)?.label ?? "another hub";
+      return Promise.resolve({ machineId, state: "failed", steps: [], message: `This computer is joining ${other} now; try again once that is done.` });
+    }
+    if (joining === undefined) {
+      const run = joinHere(realPorts(call(id)), machineId, sendJoin(id)).finally(() => {
+        joining = undefined;
+      });
+      joining = { hub: id, run };
+    }
+    return joining.run;
+  });
+  handle(IPC.machinesJoinHereState, (_event, id) => lastJoin.get(id) ?? null);
   // Under a fixture, a computer that is neither, whatever this one holds.
   handle(IPC.machinesThisComputer, () => (fixtureRequest(process.env, RELEASE_BUILD).kind === "fixture" ? { kind: "none" } : machineFingerprint().then((fp) => thisComputer(fleetdDir(), fp))));
   handle(IPC.projectsPickFolder, (event) => pickFolder(event.sender));

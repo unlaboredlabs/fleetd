@@ -64,11 +64,12 @@ const mount = (projects: SidebarProject[], jumpHints = false) => {
       <UiProvider>
         <DataProvider layer={createDataLayer(hub)}>
           <Sidebar
-            projects={projects}
+            projects={projects.map((p) => ({ ...p, hub: "hub" }))}
             machinesDown={0}
-            screen={{ id: "status" }}
-            hub={{ phase: "live", hub: "http://devbox:4790", protocol: 1 }}
+            screen={{ id: "status", at: "hub" }}
             jumpHints={jumpHints}
+            collapsed={new Set()}
+            onToggleHub={() => undefined}
             factory={false}
             admin={false}
             go={(s) => went.push(s)}

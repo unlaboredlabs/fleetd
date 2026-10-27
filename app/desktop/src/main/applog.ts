@@ -102,13 +102,14 @@ export const diagnostics = (d: {
   readonly version: string;
   readonly versions: { readonly electron: string; readonly chrome: string };
   readonly os: string;
-  readonly hub: HubState;
+  /** Each hub's connection, in sidebar order; numbered when there are several (labels are the person's own words). */
+  readonly hubs: ReadonlyArray<HubState>;
   readonly log: AppLog;
 }): string =>
   [
     `fleetd ${d.version} (Electron ${d.versions.electron}, Chromium ${d.versions.chrome})`,
     `OS: ${d.os}`,
-    `Hub: ${connection(d.hub)}`,
+    ...(d.hubs.length === 1 ? [`Hub: ${connection(d.hubs[0] ?? { phase: "unpaired" })}`] : d.hubs.map((h, i) => `Hub ${String(i + 1)}: ${connection(h)}`)),
     `Log: ${d.log.where}`,
     "",
     `The log's last ${String(DIAGNOSTIC_LINES)} lines:`,

@@ -67,12 +67,12 @@ describe("sidebar projects", () => {
   });
 
   it("jumps to the next project that wants you, wrapping, and never to the open one alone", () => {
-    const ref = (projectId: string) => ({ machineId: "devbox", projectId });
+    const ref = (projectId: string) => `devbox/${projectId}`;
     const projects = toSidebar([row("api", { needsYou: true }), row("billing"), row("cart", { needsYou: true }), row("docs")]) ?? [];
-    expect(nextWanting(projects, null)).toEqual(ref("api"));
-    expect(nextWanting(projects, ref("api"))).toEqual(ref("cart"));
-    expect(nextWanting(projects, ref("cart"))).toEqual(ref("api"));
-    expect(nextWanting(projects, ref("billing"))).toEqual(ref("cart"));
+    expect(nextWanting(projects, null)?.key).toEqual(ref("api"));
+    expect(nextWanting(projects, ref("api"))?.key).toEqual(ref("cart"));
+    expect(nextWanting(projects, ref("cart"))?.key).toEqual(ref("api"));
+    expect(nextWanting(projects, ref("billing"))?.key).toEqual(ref("cart"));
     const one = toSidebar([row("api", { needsYou: true }), row("billing")]) ?? [];
     expect(nextWanting(one, ref("api"))).toBeNull();
     expect(nextWanting(sidebar(["api"]), null)).toBeNull();
@@ -80,20 +80,20 @@ describe("sidebar projects", () => {
 
   it("steps forward and back, wrapping, from the open project or the ends", () => {
     const projects = sidebar(["api", "billing", "storefront"]);
-    const key = (projectId: string) => ({ machineId: "devbox", projectId });
-    expect(stepProject(projects, key("api"), 1)).toEqual(key("billing"));
-    expect(stepProject(projects, key("storefront"), 1)).toEqual(key("api"));
-    expect(stepProject(projects, key("api"), -1)).toEqual(key("storefront"));
-    expect(stepProject(projects, null, 1)).toEqual(key("api"));
-    expect(stepProject(projects, null, -1)).toEqual(key("storefront"));
+    const key = (projectId: string) => `devbox/${projectId}`;
+    expect(stepProject(projects, key("api"), 1)?.key).toEqual(key("billing"));
+    expect(stepProject(projects, key("storefront"), 1)?.key).toEqual(key("api"));
+    expect(stepProject(projects, key("api"), -1)?.key).toEqual(key("storefront"));
+    expect(stepProject(projects, null, 1)?.key).toEqual(key("api"));
+    expect(stepProject(projects, null, -1)?.key).toEqual(key("storefront"));
     expect(stepProject([], null, 1)).toBeNull();
   });
 
   it("opens to the last project while it exists, else the first, else nothing", () => {
     const projects = sidebar(["api", "storefront"]);
-    expect(homeProject(projects, "devbox/api")).toEqual({ machineId: "devbox", projectId: "api" });
-    expect(homeProject(projects, "devbox/gone")).toEqual({ machineId: "devbox", projectId: "api" });
-    expect(homeProject(projects, null)).toEqual({ machineId: "devbox", projectId: "api" });
+    expect(homeProject(projects, "devbox/storefront")?.key).toEqual("devbox/storefront");
+    expect(homeProject(projects, "devbox/gone")?.key).toEqual("devbox/api");
+    expect(homeProject(projects, null)?.key).toEqual("devbox/api");
     expect(homeProject([], "devbox/api")).toBeNull();
   });
 });

@@ -1,6 +1,7 @@
 import { hostname } from "node:os";
 import { join } from "node:path";
 import type { ConnectOutcome } from "../../shared/hub";
+import type { PairTarget } from "../../shared/hubs";
 import {
   hubOrigin,
   LOCAL_HUB,
@@ -25,8 +26,8 @@ const PROBE_TIMEOUT_MS = 2_000;
 
 export interface PairingDeps {
   readonly fetch: Fetch;
-  /** The hub service's connect: validates, saves the key with safeStorage, connects. */
-  readonly connect: (url: string, key: string) => ConnectOutcome;
+  /** The hubs' connect: validates, saves the key with safeStorage into the hub `target` names, connects. */
+  readonly connect: (url: string, key: string, target?: PairTarget) => ConnectOutcome;
   /** app-pair.json pairs by itself only on first run: no key saved, none refused. */
   readonly firstRun: () => boolean;
   readonly appPairFile: string;
@@ -108,7 +109,7 @@ export class PairingService {
   async redeem(request: PairRequest): Promise<PairOutcome> {
     const origin = hubOrigin(request.hub);
     if (!origin.ok) return origin;
-    return this.#pair(origin.origin, request.code, false);
+    return this.#pair(origin.origin, request.code, false, request.target);
   }
 
   /** Pairs from app-pair.json, read again here: the page only asks, it never supplies the code or the hub. */
@@ -128,7 +129,7 @@ export class PairingService {
     return this.#pair(loaded.pair.origin, loaded.pair.code, true);
   }
 
-  async #pair(origin: string, typed: string, fromFile: boolean): Promise<PairOutcome> {
+  async #pair(origin: string, typed: string, fromFile: boolean, target?: PairTarget): Promise<PairOutcome> {
     const code = normalizeCode(typed);
     if (code === null) {
       return {
@@ -144,7 +145,7 @@ export class PairingService {
     // The hub has used up or refused the code: the file is spent either way.
     if (fromFile && (result.ok || result.failure.code.startsWith("pair_code_"))) await this.#spend();
     if (!result.ok) return result;
-    const connected = this.#deps.connect(origin, result.paired.key);
+    const connected = this.#deps.connect(origin, result.paired.key, target);
     return connected.ok
       ? { ok: true, hubName: result.paired.hubName }
       : {

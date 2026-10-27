@@ -3,6 +3,7 @@
 import { z } from "zod";
 import { LinkHandlerClaim, NotifyRequest } from "./app";
 import { HUB_CACHE_MAX_BYTES } from "./cache";
+import { HUB_COLORS, HUB_ID, LABEL_MAX } from "./hubs";
 import { ENV_VALUE_MAX_BYTES, SECRET_MAX_BYTES } from "./contracts";
 import { MENU_COMMANDS } from "./menu";
 import { IPC, type InvokeChannel } from "./channels";
@@ -88,9 +89,16 @@ export type ChatScope = z.infer<typeof ChatScope>;
 export const OrderFocus = z.string().min(1).max(64);
 export type OrderFocus = z.infer<typeof OrderFocus>;
 
+export const HubId = z.string().regex(HUB_ID);
+const HubColor = z.enum(HUB_COLORS);
+const HubLabel = z.string().min(1).max(LABEL_MAX * 4);
+/** Where a pairing goes (shared/hubs.ts PairTarget): a hub already listed, or a new one under a label. */
+const PairTarget = z.union([z.strictObject({ hub: HubId }), z.strictObject({ label: HubLabel, color: HubColor.optional() })]);
+
 export const ConnectRequest = z.strictObject({
   url: z.string().trim().min(1).max(2048),
   key: z.string().trim().min(1).max(4096),
+  target: PairTarget.optional(),
 });
 export type ConnectRequest = z.infer<typeof ConnectRequest>;
 
@@ -180,7 +188,10 @@ export const DropPath = z.string().min(2).max(4096).refine((p) => p.startsWith("
 const PairRequest = z.strictObject({
   hub: z.string().trim().min(1).max(2048),
   code: z.string().trim().min(1).max(64),
+  target: PairTarget.optional(),
 });
+/** A hub's new label and colour (null: none). Main trims the label and checks its length. */
+const HubChange = z.strictObject({ label: HubLabel, color: HubColor.nullable() });
 const ProbeRequest = z.string().trim().min(1).max(2048);
 /** The enabled commands; any menu command left out is disabled. */
 const MenuState = z.array(z.enum(MENU_COMMANDS)).max(MENU_COMMANDS.length);
@@ -216,40 +227,43 @@ export const BrowserInput = z.discriminatedUnion("kind", [
 
 /** A session to open in a window of its own; main builds the route from these, never from a URL the page sends. */
 const Segment = z.string().min(1).max(200).regex(/^[A-Za-z0-9._:-]+$/u);
-export const SessionWindowRequest = z.strictObject({ machineId: Segment, projectId: Segment, session: Segment });
+/** `hub`: the session's hub, when it isn't the app's first (the route's `?hub=`). */
+export const SessionWindowRequest = z.strictObject({ machineId: Segment, projectId: Segment, session: Segment, hub: z.string().regex(HUB_ID).optional() });
 export type SessionWindowRequest = z.infer<typeof SessionWindowRequest>;
 
 const none = z.tuple([]);
 
 /** The argument list each invoke channel accepts. */
 export const REQUESTS = {
-  [IPC.hubSubscribe]: none,
-  [IPC.hubUnsubscribe]: none,
-  [IPC.hubCall]: z.tuple([CallRequest]),
-  [IPC.hubChat]: z.tuple([ChatScope.nullable()]),
-  [IPC.hubFocus]: z.tuple([OrderFocus.nullable()]),
-  [IPC.hubWatch]: z.tuple([BrowserSessionId.nullable()]),
-  [IPC.hubInput]: z.tuple([BrowserSessionId, BrowserInput]),
-  [IPC.hubResync]: none,
-  [IPC.hubRetryNow]: none,
-  [IPC.hubCacheRead]: none,
+  [IPC.hubsList]: none,
+  [IPC.hubsUpdate]: z.tuple([HubId, HubChange]),
+  [IPC.hubSubscribe]: z.tuple([HubId]),
+  [IPC.hubUnsubscribe]: z.tuple([HubId]),
+  [IPC.hubCall]: z.tuple([HubId, CallRequest]),
+  [IPC.hubChat]: z.tuple([HubId, ChatScope.nullable()]),
+  [IPC.hubFocus]: z.tuple([HubId, OrderFocus.nullable()]),
+  [IPC.hubWatch]: z.tuple([HubId, BrowserSessionId.nullable()]),
+  [IPC.hubInput]: z.tuple([HubId, BrowserSessionId, BrowserInput]),
+  [IPC.hubResync]: z.tuple([HubId]),
+  [IPC.hubRetryNow]: z.tuple([HubId]),
+  [IPC.hubCacheRead]: z.tuple([HubId]),
   // A string's UTF-16 length never exceeds its UTF-8 size, so this is a loose bound; main checks the bytes and the
   // envelope (main/hub/cache.ts).
-  [IPC.hubCacheWrite]: z.tuple([z.string().max(HUB_CACHE_MAX_BYTES)]),
+  [IPC.hubCacheWrite]: z.tuple([HubId, z.string().max(HUB_CACHE_MAX_BYTES)]),
   [IPC.hubConnect]: z.tuple([ConnectRequest]),
-  [IPC.hubForget]: none,
+  [IPC.hubForget]: z.tuple([HubId]),
   [IPC.pairStart]: none,
   [IPC.pairProbe]: z.tuple([ProbeRequest]),
   [IPC.pairRedeem]: z.tuple([PairRequest]),
   [IPC.pairAuto]: none,
   [IPC.pairStore]: none,
   [IPC.pairSetup]: none,
-  [IPC.secretSubmit]: z.tuple([SecretRequest]),
-  [IPC.projectEnvSubmit]: z.tuple([ProjectEnvRequest]),
-  [IPC.mcpServerSubmit]: z.tuple([McpServerRequest]),
+  [IPC.secretSubmit]: z.tuple([HubId, SecretRequest]),
+  [IPC.projectEnvSubmit]: z.tuple([HubId, ProjectEnvRequest]),
+  [IPC.mcpServerSubmit]: z.tuple([HubId, McpServerRequest]),
   [IPC.systemHostName]: none,
-  [IPC.machinesJoinHere]: z.tuple([z.string().regex(/^[a-z0-9-]{1,32}$/u)]),
-  [IPC.machinesJoinHereState]: none,
+  [IPC.machinesJoinHere]: z.tuple([HubId, z.string().regex(/^[a-z0-9-]{1,32}$/u)]),
+  [IPC.machinesJoinHereState]: z.tuple([HubId]),
   [IPC.machinesThisComputer]: none,
   [IPC.projectsPickFolder]: none,
   [IPC.projectsReadDrop]: z.tuple([DropPath]),

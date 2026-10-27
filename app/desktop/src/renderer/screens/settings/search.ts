@@ -17,6 +17,7 @@ export interface SettingsOption {
 
 export const PAGE_LABEL: Readonly<Record<Tab, string>> = {
   general: "General",
+  hubs: "Hubs",
   notifications: "Notifications",
   agents: "Agents",
   projects: "Projects",
@@ -37,7 +38,9 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   page("general", ["preferences"]),
   { key: "general.appearance", label: "Appearance", tab: "general", keywords: ["theme", "dark", "light", "mode", "match system"] },
   { key: "general.presence", label: "Time in the app", tab: "general", keywords: ["presence", "focus", "activity", "privacy", "minutes", "tracking"] },
-  { key: "general.hub", label: "Hub", tab: "general", keywords: ["pair", "connection", "disconnect", "key", "server"] },
+  page("hubs", ["hub", "pair", "connection", "server", "personal", "work", "team", "company"]),
+  { key: "hubs.hub", label: "Hub", tab: "hubs", keywords: ["pair", "connection", "disconnect", "key", "server", "rename", "name", "label", "colour", "color", "remove"] },
+  { key: "hubs.add", label: "Add a hub", tab: "hubs", keywords: ["pair", "another hub", "second hub", "connect", "personal", "work"] },
   page("notifications", ["alerts", "mute"]),
   { key: "notifications.kinds", label: "Notify me when", tab: "notifications", keywords: ["notifications", "alerts", "mute", "finished", "done"] },
   { key: "notifications.sound", label: "Sound", tab: "notifications", keywords: ["notifications", "mute", "silent"] },

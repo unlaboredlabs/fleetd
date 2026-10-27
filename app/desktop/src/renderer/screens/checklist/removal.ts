@@ -7,6 +7,7 @@
 // the app's removal may still be waiting out its Undo.
 import { useSyncExternalStore } from "react";
 import type { ChecklistGetOutput, ProjectRef, TodoItem } from "../../../shared/contracts";
+import { FIRST_HUB } from "../../../shared/hubs";
 import { callKey, type DataLayer } from "../../src/data/queries";
 import { projectKey } from "../../src/data/store";
 import { toast } from "../../ui";
@@ -25,10 +26,11 @@ interface Waiting {
   since: number;
 }
 
-/** A removal the hub hasn't answered yet. */
+/** A removal the hub hasn't answered yet; `hub` is which of the app's hubs, absent for the first. */
 interface Kept {
   readonly projectRef: ProjectRef;
   readonly ids: readonly number[];
+  readonly hub?: string;
 }
 
 const KEY = "fleetd.checklistRemovals";
@@ -131,7 +133,11 @@ export const removeItems = (layer: DataLayer, project: ProjectKey, items: readon
     window.addEventListener("pagehide", flush);
   }
   const key = projectKey(project);
-  const kept: Kept = { projectRef: { machineId: project.machineId, projectId: project.projectId }, ids: items.map((i) => i.id) };
+  const kept: Kept = {
+    projectRef: { machineId: project.machineId, projectId: project.projectId },
+    ids: items.map((i) => i.id),
+    ...(layer.hub === FIRST_HUB ? {} : { hub: layer.hub }),
+  };
   const show = (on: boolean) => {
     const now = new Set(hidden.get(key) ?? NONE);
     for (const id of kept.ids) {
@@ -176,20 +182,23 @@ const sendOne = async (layer: DataLayer, kept: Kept) => {
  * At launch: the removals an earlier run kept but never sent (the app quit within their Undo), once connected. In the
  * app's window only (`hash`, the one it opened on), never a session's.
  */
-export const sendKept = (layer: DataLayer, hash: string = window.location.hash) => {
+export const sendKept = (layerOf: (hub: string) => DataLayer | undefined, hash: string = window.location.hash) => {
   if (parseHash(hash).id === "session") return;
-  const kept = readKept();
-  if (kept.length === 0) return;
-  const go = () => {
-    for (const k of kept) void sendOne(layer, k);
-  };
-  if (layer.store.getState().fresh) {
-    go();
-    return;
+  for (const k of readKept()) {
+    const layer = layerOf(k.hub ?? FIRST_HUB);
+    // Its hub was removed from the app: there is nowhere to send it.
+    if (layer === undefined) {
+      forget(k);
+      continue;
+    }
+    if (layer.store.getState().fresh) {
+      void sendOne(layer, k);
+      continue;
+    }
+    const stop = layer.store.subscribe((s) => {
+      if (!s.fresh) return;
+      stop();
+      void sendOne(layer, k);
+    });
   }
-  const stop = layer.store.subscribe((s) => {
-    if (!s.fresh) return;
-    stop();
-    go();
-  });
 };

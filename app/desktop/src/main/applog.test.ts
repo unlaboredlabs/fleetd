@@ -64,7 +64,7 @@ describe("Copy Diagnostics", () => {
       version: "0.4.1",
       versions: { electron: "44.9.0", chrome: "146.0.0.0" },
       os: "darwin 25.1.0 arm64",
-      hub: { phase: "retrying", hub: "http://devbox:4790", reason: "refused", retryAt: 0 },
+      hubs: [{ phase: "retrying", hub: "http://devbox:4790", reason: "refused", retryAt: 0 }],
       log,
     });
     expect(text).toBe(

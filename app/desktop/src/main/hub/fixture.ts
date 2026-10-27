@@ -56,7 +56,14 @@ const Then = z.object({
   show: z.array(Rows).optional(),
 });
 
-const FixtureFile = z.object({
+/**
+ * shared/hubs.ts's colours and label length, written out: `pnpm fixtures` runs this file in plain Node, which loads
+ * no extensionless import (fixture.test.ts keeps them equal).
+ */
+export const FIXTURE_HUB_COLORS = ["blue", "green", "amber", "rose", "violet", "slate"] as const;
+const LABEL_MAX = 40;
+
+const OneHub = z.object({
   version: z.literal(1),
   name: z.string(),
   note: z.string(),
@@ -77,6 +84,14 @@ const FixtureFile = z.object({
   cache: z.json().optional(),
   /** Rows hidden from the first answer on, until a rows frame shows them. */
   hidden: z.array(Rows).optional(),
+  /** The hub's label and colour in the app (shared/hubs.ts); shown once there are several. */
+  label: z.string().min(1).max(LABEL_MAX).optional(),
+  color: z.enum(FIXTURE_HUB_COLORS).optional(),
+});
+
+/** One hub, and any more the app is paired with beside it (docs/design/hubs.md), each a fixture of its own. */
+const FixtureFile = OneHub.extend({
+  hubs: z.array(z.object({ label: z.string().min(1).max(LABEL_MAX), color: z.enum(FIXTURE_HUB_COLORS).optional(), fixture: OneHub })).optional(),
 });
 export type FixtureFile = z.infer<typeof FixtureFile>;
 

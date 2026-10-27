@@ -48,6 +48,51 @@
   padding-right: var(--space-1);
 }
 
+/* With several hubs, a row per hub. */
+.footers {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+}
+.footers > .footer + .footer {
+  margin-top: calc(-1 * var(--space-2));
+}
+
+/* A hub's group heading: its name, quiet, in the section's own type; a click collapses it. A colour, when the hub has
+   one, is a short bar before the name: it says which group, never a state. */
+.groupHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--quiet);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.groupHead:hover {
+  color: var(--text);
+}
+.groupHead > svg {
+  flex: none;
+  width: 12px;
+  height: 12px;
+}
+.groupMark {
+  flex: none;
+  width: 3px;
+  height: 10px;
+  border-radius: 1px;
+}
+.groupAside {
+  flex: none;
+  color: var(--faint);
+}
+
 .conn {
   display: flex;
   align-items: center;
@@ -172,4 +217,38 @@
 :global(html[data-panel-resizing]) * {
   cursor: col-resize !important;
   user-select: none !important;
+}
+
+/* A hub's colour: small swatches on one line, the chosen one ringed by a hairline. */
+.swatches {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.swatch {
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: currentColor;
+  cursor: pointer;
+  outline-offset: 2px;
+}
+.swatch[data-none] {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+.swatch[aria-checked="true"] {
+  outline: 1px solid var(--text);
+}
+.swatch:focus-visible {
+  outline: 2px solid var(--accent);
+}
+
+/* With several hubs, a Navi's hub beside it: quiet, before its mark. */
+.naviHub {
+  color: var(--faint);
+  font-size: var(--text-xs);
 }

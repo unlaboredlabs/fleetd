@@ -6,8 +6,8 @@ import type { BrowserWindow } from "electron";
 import type { SessionWindowRequest } from "../shared/ipc";
 
 /** The route a session's window opens on. */
-export const sessionHash = ({ machineId, projectId, session }: SessionWindowRequest): string =>
-  `#/session/${[machineId, projectId, session].map(encodeURIComponent).join("/")}`;
+export const sessionHash = ({ machineId, projectId, session, hub }: SessionWindowRequest): string =>
+  `#/session/${[machineId, projectId, session].map(encodeURIComponent).join("/")}${hub === undefined ? "" : `?at=${hub}`}`;
 
 export class SessionWindows {
   readonly #open = new Map<string, BrowserWindow>();

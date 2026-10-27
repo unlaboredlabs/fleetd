@@ -5,15 +5,16 @@
 import { useEffect, useRef, type ClipboardEvent, type KeyboardEvent, type PointerEvent, type WheelEvent } from "react";
 import type { BrowserFrame, BrowserInput, BrowserSessionsOutput } from "../../../shared/contracts";
 import type { DataLayer } from "../../src/data/queries";
-import { useData } from "../../src/data/react";
+import { useData, useDataLayer } from "../../src/data/react";
 
 /** The session's newest frame while this view shows it: the window watches it from mount to unmount. */
 export function useLiveFrame(sessionId: string, on: boolean): BrowserFrame | undefined {
+  const { hub } = useDataLayer();
   useEffect(() => {
     if (!on) return undefined;
-    void window.fleetd.hub.watch(sessionId);
-    return () => void window.fleetd.hub.watch(null);
-  }, [sessionId, on]);
+    void window.fleetd.hub.watch(hub, sessionId);
+    return () => void window.fleetd.hub.watch(hub, null);
+  }, [hub, sessionId, on]);
   return useData((st) => (on && st.browserFrame?.sessionId === sessionId ? st.browserFrame : undefined));
 }
 
@@ -70,8 +71,9 @@ export function useFrameInput(sessionId: string, frame: { width: number; height:
   useEffect(() => () => {
     if (raf.current !== undefined) cancelAnimationFrame(raf.current);
   }, []);
+  const { hub } = useDataLayer();
   if (!enabled || frame === undefined) return undefined;
-  const send = (input: BrowserInput) => void window.fleetd.hub.input(sessionId, input);
+  const send = (input: BrowserInput) => void window.fleetd.hub.input(hub, sessionId, input);
   const at = (e: PointerEvent<HTMLElement> | WheelEvent<HTMLElement>) => framePoint(e.clientX, e.clientY, e.currentTarget.getBoundingClientRect(), frame);
   const button = (n: number) => BUTTONS[n] ?? "none";
   return {

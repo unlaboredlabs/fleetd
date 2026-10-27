@@ -1,6 +1,7 @@
 // Pairing with a hub: the pure rules shared by main (which talks to the hub) and the renderer (which shows it).
 // The contract is `POST <hub>/pair {code, deviceName}` → `{key, hubUrl, hubName}` or the hub's `{code, message, fix}`.
 import { PROTOCOL_VERSION } from "./contracts";
+import type { PairTarget } from "./hubs";
 
 
 /** Where `fleetd init` puts the hub unless told otherwise. */
@@ -70,6 +71,8 @@ export const keyStoreLine = (store: KeyStore): string =>
 export interface PairRequest {
   readonly hub: string;
   readonly code: string;
+  /** Which of the app's hubs takes the key; absent: the first, as with one hub. */
+  readonly target?: PairTarget | undefined;
 }
 
 /** Crockford base32 without I L O U, as `fleetd pair` mints them. */

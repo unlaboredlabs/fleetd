@@ -5,11 +5,12 @@
 // says so under it, with Resume; a red main is a warning beside its title, not a block. Nothing is scored or estimated.
 // It cannot be stale: the rows come from the data layer (status_get, refetched on events), which drops every
 // answer on a reconnect, so the view is a skeleton until this connection has answered; a row whose source went
-// quiet says so.
+// quiet says so. With several hubs (docs/design/hubs.md) each hub is a section under its name, with its own rows and
+// its own connection, and each row opens on its hub.
 
 import { useMemo } from "react";
 import type { ProjectStatusRow } from "../../../shared/contracts";
-import { useData, useToolQuery } from "../../src/data/react";
+import { HubScope, useData, useHub, useHubs, useToolQuery } from "../../src/data/react";
 import { useNow } from "../live/clock";
 import { selectSkew } from "../live/strip";
 import { selectProjectList } from "../../src/data/selectors";
@@ -38,7 +39,34 @@ export const factoryHref = (ref: ProjectStatusRow["projectRef"]): string =>
 /** One phrase wherever no group has work. */
 const NO_WORK = "no work yet";
 
+/** `href` on the hub of the section it is in, when there are several. */
+const useOnHub = (): ((href: string) => string) => {
+  const several = useHubs().length > 1;
+  const { id } = useHub();
+  return (href) => (several ? `${href}${href.includes("?") ? "&" : "?"}at=${id}` : href);
+};
+
 export function StatusScreen() {
+  const hubs = useHubs();
+  if (hubs.length <= 1) return <HubStatusView title="Status" />;
+  return (
+    <div className={cx(s.screen)} data-screen="status.fleet" data-hubs={hubs.length}>
+      <FrameTitle title="Status" />
+      <div className={cx(s.body)}>
+        {hubs.map((hub) => (
+          <HubScope key={hub.id} hub={hub}>
+            <section className={cx(s.hub)} aria-label={hub.label} data-hub={hub.id}>
+              <HubStatusView title={hub.label} section />
+            </section>
+          </HubScope>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** One hub's Status: the page itself with one hub, a section under the hub's name with several. */
+function HubStatusView({ title, section = false }: { title: string; section?: boolean }) {
   const fresh = useData((st) => st.fresh);
   const query = useToolQuery("status_get", ALL);
   const projects = useData(selectProjectList);
@@ -47,9 +75,36 @@ export function StatusScreen() {
   // so nothing refetches them, and a day word or an age read from them would stop. Minutes are the finest unit shown.
   const now = useNow(true, MINUTE) + useData(selectSkew);
 
+  const liveness = !fresh ? (
+          <span className={cx(s.liveness)} role="status">
+            <Dot color="var(--warning)" />
+            <Text size="xs">Reconnecting…</Text>
+          </span>
+        ) : query.isError ? (
+          <span className={cx(s.liveness)} role="alert">
+            <Dot color="var(--warning)" />
+            <Text size="xs">Couldn't refresh Status</Text>
+            <Button variant="quiet" onClick={() => void query.refetch()}>
+              Retry
+            </Button>
+          </span>
+        ) : null;
+  if (section) {
+    return (
+      <div data-phase={rows === undefined ? "skeleton" : "live"}>
+        <div className={cx(s.hubHead)}>
+          <Text as="h2" size="sm" strong>
+            {title}
+          </Text>
+          {liveness}
+        </div>
+        <StatusRows rows={rows} now={now} />
+      </div>
+    );
+  }
   return (
     <div className={cx(s.screen)} data-screen="status.fleet" data-phase={rows === undefined ? "skeleton" : "live"}>
-      <FrameTitle title="Status">
+      <FrameTitle title={title}>
         {!fresh ? (
           <span className={cx(s.liveness)} role="status">
             <Dot color="var(--warning)" />
@@ -66,7 +121,14 @@ export function StatusScreen() {
         ) : null}
       </FrameTitle>
       <div className={cx(s.body)}>
-        {rows === undefined ? (
+        <StatusRows rows={rows} now={now} />
+      </div>
+    </div>
+  );
+}
+
+function StatusRows({ rows, now }: { rows: ReturnType<typeof orderRows> | undefined; now: number }) {
+  return rows === undefined ? (
           <Skeleton />
         ) : rows.length === 0 ? (
           <Text tone="quiet">No projects yet.</Text>
@@ -84,15 +146,13 @@ export function StatusScreen() {
               <Row key={`${row.projectRef.machineId}/${row.projectRef.projectId}`} row={row} state={word} now={now} />
             ))}
           </ul>
-        )}
-      </div>
-    </div>
-  );
+        );
 }
 
 const TONE = { waiting_on_you: "warning", blocked: "danger", working: "default", idle: "quiet" } as const;
 
 function Row({ row, state, now }: { row: ProjectStatusRow; state: StateWord; now: number }) {
+  const on = useOnHub();
   const counts = countsLine(row);
   const groups = groupsOf(row).filter((g) => g.items.length > 0);
   const merged = row.lastMerged;
@@ -115,7 +175,7 @@ function Row({ row, state, now }: { row: ProjectStatusRow; state: StateWord; now
   );
   return (
     <li className={cx(s.item)}>
-      <a className={cx(s.row)} href={projectHref(row.projectRef)} aria-label={label}>
+      <a className={cx(s.row)} href={on(projectHref(row.projectRef))} aria-label={label}>
         <span className={cx(s.title)}>
           <Truncate expand="none" strong>
             {row.title}
@@ -174,14 +234,14 @@ function Row({ row, state, now }: { row: ProjectStatusRow; state: StateWord; now
         <span aria-hidden />
       ) : (
         <Tooltip content={week}>
-          <a className={cx(s.week)} href={factoryHref(row.projectRef)} aria-label={`${row.title}: ${week}, in Factory`}>
+          <a className={cx(s.week)} href={on(factoryHref(row.projectRef))} aria-label={`${row.title}: ${week}, in Factory`}>
             <Text size="xs" tone="quiet" tabular>
               {`${row.merged7d ?? 0} in 7 days`}
             </Text>
           </a>
         </Tooltip>
       )}
-      <a className={cx(s.prs)} href={prsHref(row.projectRef)} aria-label={`${row.title}: pull requests`}>
+      <a className={cx(s.prs)} href={on(prsHref(row.projectRef))} aria-label={`${row.title}: pull requests`}>
         <Text size="xs" tone="quiet">
           PRs
         </Text>
@@ -209,7 +269,7 @@ function Row({ row, state, now }: { row: ProjectStatusRow; state: StateWord; now
                   const refs = itemRefs(item);
                   return (
                     <li key={`${item.taskId ?? item.pr?.url ?? item.title}-${String(i)}`}>
-                      <a className={cx(s.workItem)} href={itemHref(row.projectRef, item)} aria-label={`${item.title}, ${GROUP_WORDS[g.group]}${refs === "" ? "" : `, ${refs}`}`}>
+                      <a className={cx(s.workItem)} href={on(itemHref(row.projectRef, item))} aria-label={`${item.title}, ${GROUP_WORDS[g.group]}${refs === "" ? "" : `, ${refs}`}`}>
                         <Truncate expand="none" size="sm">
                           {item.title}
                         </Truncate>

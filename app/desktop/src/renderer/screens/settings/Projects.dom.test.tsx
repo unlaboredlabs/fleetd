@@ -90,7 +90,7 @@ beforeEach(() => {
   vi.stubGlobal("fleetd", {
     platform: "linux",
     secret: {
-      projectEnv: (request: ProjectEnvRequest): Promise<CallOutcome> => {
+      projectEnv: (_hub: string, request: ProjectEnvRequest): Promise<CallOutcome> => {
         envRequests.push(request);
         return Promise.resolve({ ok: true, output: { env: [] } });
       },

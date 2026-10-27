@@ -221,6 +221,7 @@ function Shell({
 }
 
 function SecretItem({ item, read }: { item: SecretRequestItem; read: number | undefined }) {
+  const layer = useDataLayer();
   const machines = useMachines();
   const live = useLive();
   const target = secretTarget(machines, item, live);
@@ -239,7 +240,7 @@ function SecretItem({ item, read }: { item: SecretRequestItem; read: number | un
   const save = (): void => {
     if (!target.ok || !live || busy || draft === "") return;
     run("save", async () => {
-      const out = await window.fleetd.secret.submit({ requestId: item.requestId, boxPubKey: target.boxPubKey, value: draft });
+      const out = await window.fleetd.secret.submit(layer.hub, { requestId: item.requestId, boxPubKey: target.boxPubKey, value: draft });
       if (!out.ok) return out;
       patchLocal(key, { draft: "" });
       return { ok: true, sent: { state: "stored", fingerprint: out.fingerprint } };
