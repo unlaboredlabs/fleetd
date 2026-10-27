@@ -220,12 +220,17 @@ describe("what enters with motion", () => {
     expect(arrivalsOf(sent, [...sent.items], true, NOW + 30).entering).toEqual(sent.entering);
   });
 
-  it("keeps your send's arrival as the hub echoes it under its own id, so it doesn't enter again", () => {
+  it("keeps your send's row as the hub echoes it under its own id, so it doesn't enter again", () => {
     const opened = arrivalsOf(undefined, [hub("a", 1)], true, NOW);
     const send = item("r1", "human", at(19, 9), { state: "pending", clientRequestId: "r1" });
     const sent = arrivalsOf(opened, [hub("a", 1), send], true, NOW + 10);
-    const echoed = arrivalsOf(sent, [hub("a", 1), hub("m1", 2, "human", { clientRequestId: "r1" })], true, NOW + 50);
-    expect(echoed.entering.get("m1")).toBe(sent.entering.get("r1"));
+    const copy = hub("m1", 2, "human", { clientRequestId: "r1" });
+    const echoed = arrivalsOf(sent, [hub("a", 1), copy], true, NOW + 50);
+    expect(entering(echoed)).toEqual({ r1: 0 });
+    expect(echoed.entering.get("r1")).toBe(sent.entering.get("r1"));
+    // One row, under one key, from the send to the hub's copy: the list keeps its element and its measured height.
+    const keys = (items: ChatItem[]) => chatRows({ items, hasOlder: false, loadingOlder: false, nowMs: NOW }).filter((r) => r.kind === "message").map((r) => r.key);
+    expect(keys([hub("a", 1), copy])).toEqual(keys([hub("a", 1), send]));
   });
 
   it("enters a streamed reply as the lead starts writing, and its text again once written", () => {

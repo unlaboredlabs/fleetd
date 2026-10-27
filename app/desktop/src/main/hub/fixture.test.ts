@@ -63,3 +63,23 @@ describe("FixtureSource rows", () => {
     }
   });
 });
+
+describe("FixtureSource chat_send", () => {
+  it("answers with the message under the sender's clientRequestId, after its key, as a hub keeps it", async () => {
+    const message = { messageId: "m10", text: "hi", clientRequestId: "qa-10" };
+    const source = new FixtureSource(
+      {
+        version: 1,
+        name: "send",
+        note: "",
+        now: "2026-10-19T10:30:00.000Z",
+        state: { phase: "live", hub: "http://devbox:4790", protocol: 1 },
+        frames: [],
+        calls: [{ tool: "chat_send", outcome: { ok: true, output: { message } } }],
+      },
+      () => undefined,
+    );
+    const out = await source.call({ tool: "chat_send", input: { text: "hi", clientRequestId: "c-1" } });
+    expect(out).toEqual({ ok: true, output: { message: { ...message, clientRequestId: "key_fx7qa2m4:c-1" } } });
+  });
+});

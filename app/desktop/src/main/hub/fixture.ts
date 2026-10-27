@@ -126,6 +126,20 @@ export const matches = (part: unknown, whole: unknown): boolean => {
   return Object.entries(part).every(([key, value]) => key in record && matches(value, record[key]));
 };
 
+/** The key the fixture's hub knows this app by. */
+const FIXTURE_KEY = "key_fx7qa2m4";
+
+/**
+ * chat_send's message under the sender's clientRequestId as a hub keeps it, after the key that sent it
+ * ("key_…:<id>"): the app's row becomes that message.
+ */
+const echoRequestId = (request: CallRequest, outcome: CallOutcome): CallOutcome => {
+  const id = (request.input as { clientRequestId?: unknown } | null | undefined)?.clientRequestId;
+  const message = outcome.ok ? (outcome.output as { message?: unknown } | null)?.message : undefined;
+  if (!outcome.ok || request.tool !== "chat_send" || typeof id !== "string" || message === null || typeof message !== "object") return outcome;
+  return { ok: true, output: { ...(outcome.output as object), message: { ...message, clientRequestId: `${FIXTURE_KEY}:${id}` } } };
+};
+
 export class FixtureSource implements HubSource {
   readonly #file: FixtureFile;
   readonly #emit: (frame: HubFrame) => void;
@@ -194,7 +208,7 @@ export class FixtureSource implements HubSource {
       console.warn(message);
       return Promise.resolve({ ok: false, error: { code: "not_found", message } });
     }
-    const outcome = this.#withoutHidden(request.tool, answer.outcome);
+    const outcome = echoRequestId(request, this.#withoutHidden(request.tool, answer.outcome));
     if (answer.then !== undefined) this.#apply(answer.then);
     if (answer.delayMs === undefined || answer.delayMs === 0) return Promise.resolve(outcome);
     return new Promise((resolve) => setTimeout(() => resolve(outcome), answer.delayMs));

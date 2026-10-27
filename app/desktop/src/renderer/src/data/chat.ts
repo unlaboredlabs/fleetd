@@ -231,9 +231,15 @@ export const toResend = (rows: readonly ChatSend[]): readonly ChatSend[] =>
 /** Rows that go as soon as there is a connection, whether or not one was lost first. */
 export const queued = (rows: readonly ChatSend[]): readonly ChatSend[] => rows.filter((r) => r.state.t === "queued");
 
+/**
+ * The clientRequestId a message's chat_send carried. The hub keeps it under the key that sent it, "key_…:<id>" (one
+ * message per key and id), and gives it back that way.
+ */
+export const sentAs = (m: ChatMessage): string | undefined => m.clientRequestId?.slice(m.clientRequestId.indexOf(":") + 1);
+
 /** A message the hub now has settles its row (echo or answer, whichever comes first); a failed row stays. */
 export const settleSends = (rows: readonly ChatSend[], messages: readonly ChatMessage[]): readonly ChatSend[] => {
-  const echoed = new Set(messages.flatMap((m) => (m.clientRequestId === undefined ? [] : [m.clientRequestId])));
+  const echoed = new Set(messages.flatMap((m) => sentAs(m) ?? []));
   if (echoed.size === 0) return rows;
   const next = rows.filter((r) => r.state.t === "failed" || !echoed.has(r.clientRequestId));
   return next.length === rows.length ? rows : next;
@@ -287,7 +293,7 @@ const messageItem = (m: ChatMessage, chat: Chat): ChatItem => ({
   at: m.createdAt,
   attachments: m.attachments ?? noAttachments,
   state: streaming(m) ? "streaming" : "sent",
-  clientRequestId: m.clientRequestId,
+  clientRequestId: sentAs(m),
   delivery: m.delivery,
   leadWaiting: chat.leadWaiting[m.messageId],
   message: m,
@@ -316,5 +322,7 @@ export const chatItems = (chat: Chat, sends: readonly ChatSend[]): readonly Chat
     if (known.has(id)) continue;
     items.push({ id, author: "lead", kind: "message", text: s.text, at: s.at, attachments: noAttachments, state: "streaming" });
   }
-  return [...items, ...sends.map(sendItem)];
+  // A send the hub has (a failed row stays) is its message: one row, as the list keys rows by it.
+  const sent = new Set(items.flatMap((i) => i.clientRequestId ?? []));
+  return [...items, ...sends.filter((r) => !sent.has(r.clientRequestId)).map(sendItem)];
 };
