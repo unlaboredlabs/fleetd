@@ -1213,11 +1213,16 @@ fn bridge(rig: &Rig) {
         .link
         .test_link(&devbox, &[fleetd_contracts::node_link::CAP_BROWSER]);
     let frames = Arc::new(super::FrameSlot::default());
-    let broker = rig.broker.clone();
+    // As the node's link hands them on: through the router, which knows the session is a browser's.
+    let router = Arc::new(crate::node::device::Router {
+        browser: Some(rig.broker.clone()),
+        devices: None,
+        live: Default::default(),
+    });
     let slot = frames.clone();
     tokio::spawn(async move {
         while let Some(frame) = to_node.recv().await {
-            broker.from_hub(frame, &slot);
+            router.from_hub(frame, &slot);
         }
     });
     tokio::spawn(async move {

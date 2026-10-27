@@ -93,8 +93,9 @@ hosts sessions and has a free session slot, else another that can, driven throug
 <div class="sl-heading-wrapper level-h2"><h2 id="takeover">Watch and take over</h2><a class="sl-anchor-link" href="#takeover"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Watch and take over”</span></a></div>
 <p>A live session streams its page, with its address, to the app as you watch it: the node sends its frames only while
 someone watches, and a slow connection skips frames rather than falling behind.
-<strong>Take over</strong> gives you the mouse and keyboard on the page once the session’s machine confirms it. While you have control, the agent’s <code dir="auto">agent-browser</code>
-commands answer that a person has control, and the agent carries on with other work. <strong>Hand back</strong> returns control: the
+<strong>Take over</strong> gives you the mouse and keyboard on the page once the session’s machine confirms it. While you have
+control, the agent’s <code dir="auto">agent-browser</code> commands answer that a person has control, and the agent carries on with other
+work. <strong>Hand back</strong> returns control: the
 agent’s next command sees the page as you left it, what you typed included. The recording’s action log says who took
 over and when, but not what you typed.</p>
 <p>A session whose agent asked for you shows under <strong>waiting on you</strong> with its reason, until you take it over or it ends.</p>
@@ -265,8 +266,13 @@ can’t start one. A machine without an ffmpeg records sessions without their vi
 Callstack’s <a href="https://github.com/callstack/agent-device">agent-device</a> CLI (<code dir="auto">agent-device open settings</code>, <code dir="auto">snapshot -i</code>,
 <code dir="auto">press @e3 --settle</code>), and ends it with <strong><code dir="auto">session_end</code></strong>. agent-device is on its <code dir="auto">PATH</code> with its skill, already
 pointed at the session’s emulator. Only agent-device gets the node’s SDK and adb (on adb server port 15037, never a
-person’s 5037): an agent’s own <code dir="auto">ANDROID_HOME</code>, <code dir="auto">PATH</code> and adb stay as they were. The session tools, the one-session-at-a-time rule, the action log, the hub’s
-storage and its limits are the same as a browser session’s.</p>
+person’s 5037): an agent’s own <code dir="auto">ANDROID_HOME</code>, <code dir="auto">PATH</code> and adb stay as they were. <code dir="auto">session_start</code> and <code dir="auto">session_end</code>
+work as for a browser; <code dir="auto">fill_credential</code> and <code dir="auto">request_takeover</code> are refused in an Android session for now. The
+one-session-at-a-time rule, the action log, the hub’s storage and its limits are the same as a browser session’s.</p>
+<p>You can <a href="#takeover">watch an Android session and take it over</a> as you do a browser session. Your mouse is one
+finger: a press touches the screen, a drag while pressed swipes, and the release lifts it. The wheel scrolls, a key
+that types goes to the device as text, and other keys go as keys (Enter, Backspace, the arrows). While you have
+control, the agent’s <code dir="auto">agent-device</code> commands answer that a person has control.</p>
 <ul>
 <li><strong>A fresh emulator per session.</strong> The node boots its virtual device once, cold, and saves its Quick Boot snapshot.
 Each session gets its own copy, started from that snapshot with <code dir="auto">-read-only</code>: nothing done in it is kept, and the

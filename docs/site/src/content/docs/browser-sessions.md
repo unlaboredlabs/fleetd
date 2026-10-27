@@ -28,8 +28,9 @@ hosts sessions and has a free session slot, else another that can, driven throug
 
 A live session streams its page, with its address, to the app as you watch it: the node sends its frames only while
 someone watches, and a slow connection skips frames rather than falling behind.
-**Take over** gives you the mouse and keyboard on the page once the session's machine confirms it. While you have control, the agent's `agent-browser`
-commands answer that a person has control, and the agent carries on with other work. **Hand back** returns control: the
+**Take over** gives you the mouse and keyboard on the page once the session's machine confirms it. While you have
+control, the agent's `agent-browser` commands answer that a person has control, and the agent carries on with other
+work. **Hand back** returns control: the
 agent's next command sees the page as you left it, what you typed included. The recording's action log says who took
 over and when, but not what you typed.
 
@@ -174,8 +175,14 @@ An agent that needs Android (to check an Android build, or how a site looks on A
 Callstack's [agent-device](https://github.com/callstack/agent-device) CLI (`agent-device open settings`, `snapshot -i`,
 `press @e3 --settle`), and ends it with **`session_end`**. agent-device is on its `PATH` with its skill, already
 pointed at the session's emulator. Only agent-device gets the node's SDK and adb (on adb server port 15037, never a
-person's 5037): an agent's own `ANDROID_HOME`, `PATH` and adb stay as they were. The session tools, the one-session-at-a-time rule, the action log, the hub's
-storage and its limits are the same as a browser session's.
+person's 5037): an agent's own `ANDROID_HOME`, `PATH` and adb stay as they were. `session_start` and `session_end`
+work as for a browser; `fill_credential` and `request_takeover` are refused in an Android session for now. The
+one-session-at-a-time rule, the action log, the hub's storage and its limits are the same as a browser session's.
+
+You can [watch an Android session and take it over](#takeover) as you do a browser session. Your mouse is one
+finger: a press touches the screen, a drag while pressed swipes, and the release lifts it. The wheel scrolls, a key
+that types goes to the device as text, and other keys go as keys (Enter, Backspace, the arrows). While you have
+control, the agent's `agent-device` commands answer that a person has control.
 
 - **A fresh emulator per session.** The node boots its virtual device once, cold, and saves its Quick Boot snapshot.
   Each session gets its own copy, started from that snapshot with `-read-only`: nothing done in it is kept, and the
