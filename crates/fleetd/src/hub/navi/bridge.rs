@@ -99,25 +99,7 @@ async fn answer(
 /// Only a Navi works with other projects: a project the hub keeps in `assistants` (Navi core), not archived. A coding
 /// project's lead keeps to its own. A hub without that table yet has no Navi.
 pub fn may_use(db: &HubDb, r: &ProjectRef) -> Result<(), McpToolError> {
-    let navi = db
-        .with(|c| {
-            let table: bool = c.query_row(
-                "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'assistants')",
-                [],
-                |row| row.get(0),
-            )?;
-            if !table {
-                return Ok(false);
-            }
-            Ok(c.query_row(
-                "SELECT 1 FROM assistants WHERE machine_id = ? AND project_id = ? AND archived_ms IS NULL",
-                params![r.machine_id.as_str(), r.project_id.as_str()],
-                |_| Ok(()),
-            )
-            .optional()?
-            .is_some())
-        })
-        .map_err(failed)?;
+    let navi = is_navi(db, r, false).map_err(failed)?;
     if navi {
         return Ok(());
     }
@@ -126,6 +108,28 @@ pub fn may_use(db: &HubDb, r: &ProjectRef) -> Result<(), McpToolError> {
         "Only a Navi works with other projects: this project's lead keeps to its own.",
     )
     .with_fix("Ask the person to give it to their Navi, or to the other project's chat."))
+}
+
+/// Whether the hub keeps `r` as a Navi in `assistants` (Navi core); an archived one only with `archived`. A hub without
+/// that table yet has none.
+pub fn is_navi(db: &HubDb, r: &ProjectRef, archived: bool) -> Result<bool, StoreError> {
+    db.with(|c| {
+        let table: bool = c.query_row(
+            "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'assistants')",
+            [],
+            |row| row.get(0),
+        )?;
+        if !table {
+            return Ok(false);
+        }
+        Ok(c.query_row(
+            "SELECT 1 FROM assistants WHERE machine_id = ? AND project_id = ? AND (? OR archived_ms IS NULL)",
+            params![r.machine_id.as_str(), r.project_id.as_str(), archived],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some())
+    })
 }
 
 /// The project `name` names, by project id or title, other than the caller's own. One person owns every project on a

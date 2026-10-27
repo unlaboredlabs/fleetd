@@ -42,7 +42,8 @@ project's chat.
 **In the app.** The hub tool `navi_asks {navi: {machineId, projectId}}` gives the app a Navi's asks, newest first,
 each with the project it went to, Navi's words, when, and the orders opened for it with their state and headline. It
 takes read on the Navi's machine, and a hub has it when its `ready` frame names the `navi_asks` feature
-(`APP_FEATURES`). The app checks for it before calling.
+(`APP_FEATURES`), so an app can check for it before calling. The app doesn't call it yet. The answer lists the newest
+100 asks. A project on a machine the caller can't read shows only its id, without its orders, as `order_get` filters.
 
 **Storage.** `navi_asks` holds one row per message (from, to, text, when); `navi_ask_orders` maps each order opened
 for an ask to it. An ask may become several orders.

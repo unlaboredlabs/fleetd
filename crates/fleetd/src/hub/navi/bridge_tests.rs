@@ -484,4 +484,62 @@ async fn the_app_reads_a_navis_asks_with_their_orders_and_states() {
         panic!("an unknown project has asks");
     };
     assert_eq!(e.code, ErrorCode::NotFound);
+    let Err(CallError::Tool(e)) = read(&person, "checkout").await else {
+        panic!("a coding project has asks");
+    };
+    assert_eq!(e.code, ErrorCode::NotFound);
+    assert!(e.message.contains("not a Navi"), "{}", e.message);
+}
+
+#[tokio::test]
+async fn the_app_reads_another_machines_orders_only_with_read_there() {
+    let (hub, _home) = hub();
+    let navi = project("navi");
+    let laptop = ProjectRef {
+        machine_id: MachineId::unchecked("laptop"),
+        project_id: ProjectId::unchecked("payroll"),
+    };
+    hub.store
+        .projects_upsert_many(
+            &laptop.machine_id,
+            &[serde_json::from_value(json!({
+                "machineId": "laptop", "projectId": "payroll", "title": "Payroll", "workspaceRoot": "/work/payroll",
+                "threads": { "running": 0, "waiting": 0, "idle": 0, "failed": 0 }, "lastActivityAt": AT,
+            }))
+            .unwrap()],
+        )
+        .unwrap();
+    call(&hub, &navi, json!({ "op": "project_message", "project": "Payroll", "text": "Run the October payslips." }))
+        .await
+        .unwrap();
+    call(
+        &hub,
+        &laptop,
+        json!({ "op": "brief_create", "text": "October payslips", "brief": brief(), "asked": "N1" }),
+    )
+    .await
+    .unwrap();
+    follow(&hub, 0);
+    let tools = crate::hub::api::registry();
+    let (everywhere, devbox) = (key(json!("*")), key(json!(["devbox"])));
+    let read = |caller| {
+        tools.call(
+            &hub,
+            caller,
+            "navi_asks",
+            json!({ "navi": { "machineId": "devbox", "projectId": "navi" } }),
+        )
+    };
+    let all = read(&everywhere).await.unwrap();
+    assert_eq!(all["asks"][0]["toTitle"], "Payroll");
+    assert_eq!(all["asks"][0]["orders"][0]["title"], "October payslips");
+    // A key that reads only devbox sees the Navi's own words, but not laptop's project title or orders.
+    let mine = read(&devbox).await.unwrap();
+    let ask = &mine["asks"][0];
+    assert_eq!(ask["handle"], "N1");
+    assert_eq!(ask["text"], "Run the October payslips.");
+    assert_eq!(ask["toTitle"], "payroll");
+    assert_eq!(ask["orders"], json!([]));
+    assert!(!mine.to_string().contains("Payroll"), "{mine}");
+    assert!(!mine.to_string().contains("\"title\""), "{mine}");
 }
