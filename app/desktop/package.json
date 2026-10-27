@@ -18,6 +18,7 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "start": "electron-vite preview",
+    "web:preview": "vite --config web/vite.config.ts",
     "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit && tsc -p tsconfig.tools.json --noEmit",
     "lint": "eslint --max-warnings 0 .",
     "test": "vitest run",
