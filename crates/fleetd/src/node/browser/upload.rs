@@ -166,6 +166,10 @@ pub async fn give_up(hub: &dyn HubCalls, dir: &Path, why: &str) {
     let _ = std::fs::remove_dir_all(dir);
 }
 
+/// A recording folder this new with no ended session file may be a session still opening: a browser's folder is made
+/// before its Chrome answers and its session file is written, and before it counts as live.
+pub const OPENING: Duration = Duration::from_secs(5 * 60);
+
 /// The recordings waiting to go, but `live` ones. One a node stopped during is ended now, with a note.
 pub fn waiting(home: &Path, live: &[String]) -> Vec<PathBuf> {
     waiting_in(&recordings_dir(home), live)
@@ -185,7 +189,11 @@ pub fn waiting_in(root: &Path, live: &[String]) -> Vec<PathBuf> {
         if live.contains(&name) {
             continue;
         }
-        match read_meta(&dir) {
+        let meta = read_meta(&dir);
+        if meta.as_ref().is_none_or(|m| m.ended_at.is_none()) && changed_within(&dir, OPENING) {
+            continue;
+        }
+        match meta {
             Some(meta) if meta.ended_at.is_none() => {
                 let meta = Meta {
                     ended_at: Some(crate::node::util::now_iso()),
@@ -208,6 +216,15 @@ pub fn waiting_in(root: &Path, live: &[String]) -> Vec<PathBuf> {
     out
 }
 
+/// Whether the folder or its session file changed this recently.
+fn changed_within(dir: &Path, within: Duration) -> bool {
+    [dir.to_owned(), dir.join(super::record::META)]
+        .iter()
+        .filter_map(|p| std::fs::metadata(p).and_then(|m| m.modified()).ok())
+        .filter_map(|t| t.elapsed().ok())
+        .any(|age| age < within)
+}
+
 /// How old a waiting recording is, by its session file.
 pub fn age(dir: &Path) -> Duration {
     std::fs::metadata(dir.join(super::record::META))
@@ -215,4 +232,71 @@ pub fn age(dir: &Path) -> Duration {
         .ok()
         .and_then(|t| t.elapsed().ok())
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::SystemTime;
+
+    use super::*;
+
+    fn meta(id: &str, ended: bool) -> Meta {
+        Meta {
+            session_id: id.to_owned(),
+            kind: Default::default(),
+            thread_id: "th-1".into(),
+            cwd: "/work".into(),
+            purpose: "Look".into(),
+            started_at: "2026-10-26T10:00:00.000Z".into(),
+            ended_at: ended.then(|| "2026-10-26T10:05:00.000Z".into()),
+            credentials_filled: 0,
+            note: None,
+        }
+    }
+
+    fn age(path: &Path, by: Duration) {
+        let file = std::fs::File::open(path).unwrap();
+        file.set_modified(SystemTime::now() - by).unwrap();
+    }
+
+    #[test]
+    fn a_session_still_opening_keeps_its_folder_and_an_old_empty_one_goes() {
+        let root = tempfile::tempdir().unwrap();
+        // Opening: its folder is made, its session file not written yet, and it isn't live yet.
+        let opening = root.path().join("Bopening");
+        std::fs::create_dir_all(&opening).unwrap();
+        // Opened, its session file written, not in the live list for a moment.
+        let starting = root.path().join("Bstarting");
+        write_meta(&starting, &meta("Bstarting", false)).unwrap();
+        // A start that never got going, long ago.
+        let stale = root.path().join("Bstale");
+        std::fs::create_dir_all(&stale).unwrap();
+        age(&stale, OPENING * 2);
+        // Ended, waiting for the hub.
+        let ended = root.path().join("Bended");
+        write_meta(&ended, &meta("Bended", true)).unwrap();
+        // A node stopped during it, long ago.
+        let cut = root.path().join("Bcut");
+        write_meta(&cut, &meta("Bcut", false)).unwrap();
+        age(&cut.join(super::super::record::META), OPENING * 2);
+        age(&cut, OPENING * 2);
+
+        let mut waiting = waiting_in(root.path(), &[]);
+        waiting.sort();
+        assert_eq!(waiting, vec![cut.clone(), ended]);
+        assert!(opening.is_dir() && starting.is_dir());
+        assert!(!stale.exists());
+        let cut = read_meta(&cut).unwrap();
+        assert!(cut.ended_at.is_some() && cut.note.unwrap().contains("node stopped"));
+    }
+
+    #[test]
+    fn the_session_file_makes_its_folder_again_when_it_went() {
+        let root = tempfile::tempdir().unwrap();
+        let dir = root.path().join("Bgone");
+        write_meta(&dir, &meta("Bgone", false)).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+        write_meta(&dir, &meta("Bgone", true)).unwrap();
+        assert!(read_meta(&dir).unwrap().ended_at.is_some());
+    }
 }

@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use fleetd_contracts::browser::BrowserSessionState;
 use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef};
 use fleetd_contracts::lead_calls::{LeadCall, LeadCallResult};
 use fleetd_contracts::machine_roles::{HostCheck, SessionHost, SessionRouteResult};
@@ -942,4 +943,103 @@ async fn a_sealed_start_goes_only_to_the_runner_it_was_sealed_for_while_it_can_t
     .unwrap_err();
     assert_eq!(late.message, "mac1 can't take this session any more.");
     assert_eq!(late.fix.as_deref(), Some("call session_start again"));
+}
+
+/// Task T7's row in `state`, as the tasks area keeps it.
+fn task_state(hub: &Hub, state: &str) {
+    hub.db
+        .with(|c| {
+            c.execute(
+                "INSERT INTO tasks (n, machine_id, project_id, workstream_id, state, data)
+                 VALUES (7, 'devbox', 'app', 'W1', ?1, '{}')
+                 ON CONFLICT (n) DO UPDATE SET state = excluded.state",
+                [state],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+}
+
+/// The devbox's update waited hours on a session its task left behind: once the task ended, its session counts on no
+/// machine, its own or the one hosting it, whatever its row says. Between turns it still counts.
+#[tokio::test]
+async fn a_session_whose_task_ended_fills_no_slot() {
+    let (hub, _home) = hub();
+    live_on_devbox(&hub, "th-1", "Bfedcba9876543210fedcba9876543210").await;
+    let place = super::Place {
+        key: super::new_key(),
+        runner: mid("mac1"),
+        origin: app(),
+        origin_thread: fleetd_contracts::ids::ThreadId::unchecked("th-2"),
+        task_id: Some(fleetd_contracts::tasks::TaskId::unchecked("T7")),
+        hosted: true,
+        session_id: None,
+    };
+    hub.db
+        .transaction(|c| super::insert_place(c, &place, NOW_MS as i64))
+        .unwrap();
+    let live = |m: &str| {
+        hub.db
+            .with(|c| super::live_on(c, &mid(m), NOW_MS as i64))
+            .unwrap()
+    };
+    assert_eq!((live("devbox"), live("mac1")), (1, 1), "no task row yet");
+    for state in ["running", "idle", "queued"] {
+        task_state(&hub, state);
+        assert_eq!((live("devbox"), live("mac1")), (1, 1), "{state}");
+    }
+    for state in ["done", "failed", "cancelled"] {
+        task_state(&hub, state);
+        assert_eq!((live("devbox"), live("mac1")), (0, 0), "{state}");
+    }
+}
+
+/// Once T7's run ends, the hub ends its live session and tells its node to close it and kill its processes; while
+/// it waits between turns, the session stays as it is.
+#[tokio::test]
+async fn the_hub_ends_a_session_whose_task_ended_and_tells_its_node() {
+    let (hub, _home) = hub();
+    let mut devbox = hub.link.test_link(
+        &mid("devbox"),
+        &[fleetd_contracts::node_link::CAP_SESSION_END],
+    );
+    let id = "Bfedcba9876543210fedcba9876543210";
+    live_on_devbox(&hub, "th-1", id).await;
+    let state = |hub: &Hub| {
+        let s = crate::hub::browser::list(&hub.db, &app(), 10).unwrap();
+        (
+            s[0].state,
+            s[0].note.as_ref().map(|n| n.as_str().to_owned()),
+        )
+    };
+    for task in ["running", "idle"] {
+        task_state(&hub, task);
+        assert_eq!(
+            crate::hub::browser::end_outlived(&hub).unwrap(),
+            0,
+            "{task}"
+        );
+        assert_eq!(state(&hub).0, BrowserSessionState::Live);
+    }
+    task_state(&hub, "done");
+    assert_eq!(crate::hub::browser::end_outlived(&hub).unwrap(), 1);
+    assert_eq!(
+        state(&hub),
+        (
+            BrowserSessionState::Lost,
+            Some(crate::hub::browser::OUTLIVED_NOTE.to_owned())
+        )
+    );
+    let frame = tokio::time::timeout(std::time::Duration::from_secs(5), devbox.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        frame,
+        HubToNode::SessionEnd(fleetd_contracts::node_link::SessionEndFrame {
+            thread_id: fleetd_contracts::ids::ThreadId::unchecked("th-1"),
+            session_id: fleetd_contracts::browser::BrowserSessionId::unchecked(id),
+        })
+    );
+    assert_eq!(crate::hub::browser::end_outlived(&hub).unwrap(), 0, "once");
 }

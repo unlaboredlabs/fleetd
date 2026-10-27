@@ -23,8 +23,8 @@ it in and restarts, in order:
 2. **Every connected machine's node** does the same, all at once, as soon as the hub runs the new build. Nothing is
    installed on a machine before the hub runs the new build. A machine running something that can't carry on through a
    restart (a live browser, device or desktop session, or a preview) waits until it's idle, says so on its line, and
-   updates then. The other machines don't wait for it. A machine still busy after 4 hours is skipped, with
-   **Retry** on its line.
+   updates then. A screen whose task has ended doesn't count. The other machines don't wait for it. A machine still
+   busy after 4 hours is skipped, with **Retry** on its line.
 3. **Each machine's Claude Code** goes to the version the new fleetd was tested with (`claude install <version>`).
    Sessions already running finish on the version they started with; new ones start on the new one. If the install
    fails, the machine keeps the version it had and the rest of the update goes on. See

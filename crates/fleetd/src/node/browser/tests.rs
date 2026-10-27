@@ -1558,6 +1558,101 @@ async fn a_browser_session_ends_with_its_agents_session() {
     assert!(actions.contains("agent_session_ended"), "{actions}");
 }
 
+/// The devbox's case: the session's recording folder went while it was live (the upload's sweep took a session still
+/// opening for a start that never got going), so every write failed. Its end reaches the hub all the same.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_session_whose_recording_folder_went_still_ends_on_the_hub() {
+    let Some(rig) = rig().await else { return };
+    let started = call(
+        &rig.broker,
+        json!({ "op": "session_start", "purpose": "Look" }),
+    )
+    .await;
+    let id = started["result"]["sessionId"].as_str().unwrap().to_owned();
+    let dir = super::upload::recordings_dir(rig.node_home.path()).join(&id);
+    std::fs::remove_dir_all(&dir).unwrap();
+    call(&rig.broker, json!({ "op": "session_end" })).await;
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        let listed = sessions(&rig.hub).await;
+        let state = listed["sessions"][0]["state"].as_str().unwrap().to_owned();
+        if state == "recorded" {
+            assert!(listed["sessions"][0]["endedAt"].is_string(), "{listed}");
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the hub kept it {state}: {listed}"
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(!dir.exists(), "the upload cleared what it remade");
+}
+
+/// Its session file can't be written at all (its folder's name taken by a file): the upload has nothing to go on,
+/// and the hub still hears the session ended, so it counts as live nowhere.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_session_with_no_session_file_still_ends_on_the_hub() {
+    let Some(rig) = rig().await else { return };
+    let started = call(
+        &rig.broker,
+        json!({ "op": "session_start", "purpose": "Look" }),
+    )
+    .await;
+    let id = started["result"]["sessionId"].as_str().unwrap().to_owned();
+    let dir = super::upload::recordings_dir(rig.node_home.path()).join(&id);
+    std::fs::remove_dir_all(&dir).unwrap();
+    std::fs::write(&dir, b"not a folder").unwrap();
+    call(&rig.broker, json!({ "op": "session_end" })).await;
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        let listed = sessions(&rig.hub).await;
+        let session = &listed["sessions"][0];
+        if session["state"] != "live" {
+            assert!(session["endedAt"].is_string(), "{listed}");
+            break;
+        }
+        assert!(Instant::now() < deadline, "the hub kept it live: {listed}");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
+/// T1 ended with its browser still open: the hub ends the session and tells the node, which closes the browser as
+/// when the agent's claude exits, and its recording still reaches the hub.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_hub_ends_a_browser_whose_task_ended() {
+    let Some(rig) = rig().await else { return };
+    call(
+        &rig.broker,
+        json!({ "op": "session_start", "purpose": "Look" }),
+    )
+    .await;
+    let hub = rig.hub.hub.clone();
+    let mut to_node = hub.link.test_link(
+        &MachineId::unchecked("devbox"),
+        &[fleetd_contracts::node_link::CAP_SESSION_END],
+    );
+    hub.db
+        .with(|c| {
+            c.execute(
+                "INSERT INTO tasks (n, machine_id, project_id, workstream_id, state, data)
+                 VALUES (1, 'devbox', 'storefront', 'W1', 'done', '{}')",
+                [],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(crate::hub::browser::end_outlived(&hub).unwrap(), 1);
+    let Some(fleetd_contracts::node_link::HubToNode::SessionEnd(end)) = to_node.recv().await else {
+        panic!("no session_end for the node");
+    };
+    // As the node's link hands it on (SessionService::end_screens).
+    SessionHooks::ended(rig.broker.as_ref(), end.thread_id.as_str());
+    assert!(rig.broker.live(THREAD).is_none());
+    let id = recorded(&rig.hub).await;
+    assert_eq!(id, end.session_id.as_str());
+}
+
 /// The hub's link to this node, for a test: what the hub sends goes to the broker as the node's link hands it on, and
 /// what the node sends goes to the hub as its link server does.
 fn bridge(rig: &Rig) {

@@ -22,7 +22,10 @@ their names, `session_start` and `session_end`.
 3. **`session_end`**. The node kills that Chrome, deletes its profile, and uploads the recording.
 
 An agent has one screen open at a time. Its screen also ends when the agent's claude exits (its work is done, it was
-stopped or it went idle), or after 30 minutes without an `agent-browser` command. When the agent needs a person (a
+stopped or it went idle), or after 30 minutes without an `agent-browser` command. A screen never outlives its task:
+once the task is done, failed or cancelled (its order closed, say), the hub ends any screen it left open and the node
+kills it, wherever it runs. A task waiting between turns keeps its screen. When a node starts, it kills any Chrome
+or other process an earlier session left running in its scratch folder. When the agent needs a person (a
 captcha, a confirmation only you can give), it calls **`request_takeover`** with what you should do. The tools are on
 the [Agent tools](/docs/reference/agent-tools#session_start) page.
 The hub decides which machine a screen runs on, by the machines' [roles](/docs/machines#roles): the agent's own when it

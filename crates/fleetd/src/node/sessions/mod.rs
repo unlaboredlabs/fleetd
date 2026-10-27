@@ -694,6 +694,14 @@ impl SessionService {
         let _ = self.inner.browser.set(hooks);
     }
 
+    /// The hub says the session's task ended: its screens (a browser, a device, a desktop, here or hosted elsewhere)
+    /// end now, as when its claude exits, not when it is reaped or idles out.
+    pub fn end_screens(&self, thread: &str) {
+        if let Some(browser) = self.inner.browser.get() {
+            browser.ended(thread);
+        }
+    }
+
     pub fn set_previews(&self, previews: Arc<crate::node::preview::Previews>) {
         let _ = self.inner.previews.set(previews);
     }
@@ -763,6 +771,14 @@ impl SessionService {
                     tracing::warn!(session_id = %id, error = %e.message, "cannot settle a session on start");
                 }
             }
+        }
+        let node_home = service.inner.config.home.clone();
+        let killed = blocking(move || proc::kill_orphans(&node_home)).await;
+        if killed > 0 {
+            tracing::warn!(
+                killed,
+                "killed processes sessions of a previous node left running"
+            );
         }
         let node_home = service.inner.config.home.clone();
         let swept = blocking(move || share::sweep_scratch(&node_home, &keep)).await;

@@ -42,7 +42,10 @@ pub struct Meta {
 
 pub const META: &str = "session.json";
 
+/// Writes the session file, making its folder again if it went: without the file, the upload that reports the
+/// session's end and sends its recording has nothing to go on.
 pub fn write_meta(dir: &Path, meta: &Meta) -> std::io::Result<()> {
+    std::fs::create_dir_all(dir)?;
     let bytes = serde_json::to_vec(meta).map_err(std::io::Error::other)?;
     crate::node::secrets::write_atomic(&dir.join(META), &bytes)
 }

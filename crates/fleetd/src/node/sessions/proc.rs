@@ -1,5 +1,6 @@
 //! A recorded claude process from before a node restart: identified by pid plus start time, so a pid the kernel
 //! has since reused is never signalled, and stopped together with every process its session started.
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use nix::sys::signal::{Signal, killpg};
@@ -91,6 +92,65 @@ fn spawned_for(_table: &[Proc], _session: &str) -> Vec<Proc> {
 fn marker_session(marker: &str) -> Option<&str> {
     let mut fields = marker.rsplitn(4, '.');
     fields.nth(3)
+}
+
+/// Where a process of a screen or a session lives under the node's home: the sessions' scratch dirs (an agent's own
+/// headless Chrome keeps its profile there) and the browser pool's profiles.
+fn orphan_roots(home: &Path) -> [PathBuf; 2] {
+    [home.join("tmp"), home.join("browser").join("profiles")]
+}
+
+/// Whether a process (its NUL-separated command line and environment) belongs to a session or screen under `roots`:
+/// its TMPDIR is a session's scratch dir, or an argument names a path there (`--user-data-dir=<root>/...`).
+fn orphaned(cmdline: &[u8], environ: &[u8], roots: &[PathBuf]) -> bool {
+    let under = |text: &str| {
+        roots.iter().any(|root| {
+            let root = root.to_string_lossy();
+            text.find(root.as_ref())
+                .is_some_and(|at| text[at + root.len()..].starts_with('/'))
+        })
+    };
+    let tmpdir = environ
+        .split(|b| *b == 0)
+        .find_map(|var| var.strip_prefix(b"TMPDIR="))
+        .map(String::from_utf8_lossy);
+    tmpdir.is_some_and(|dir| under(&format!("{dir}/")))
+        || cmdline
+            .split(|b| *b == 0)
+            .any(|arg| under(&String::from_utf8_lossy(arg)))
+}
+
+/// Kills what sessions and screens of a node that went away left running, with everything they started: as the node
+/// starts, before any session of its own runs, no live session owns them (the Oct 26 headless Chrome, its profile
+/// under a session's scratch dir, ran on for days). Linux only. Returns how many it found.
+#[cfg(target_os = "linux")]
+pub fn kill_orphans(home: &Path) -> usize {
+    let own = nix::unistd::getpid().as_raw();
+    let roots = orphan_roots(home);
+    let table = process::table();
+    let mut found: Vec<Proc> = table
+        .iter()
+        .filter(|p| p.pid != own && !p.zombie)
+        .filter(|p| {
+            let read =
+                |what: &str| std::fs::read(format!("/proc/{}/{what}", p.pid)).unwrap_or_default();
+            orphaned(&read("cmdline"), &read("environ"), &roots)
+        })
+        .copied()
+        .collect();
+    let count = found.len();
+    for p in found.clone() {
+        found.extend(process::descendants(&table, p.pid));
+    }
+    process::dedupe(&mut found);
+    found.retain(|p| p.pid != own);
+    process::signal(&found, Signal::SIGKILL);
+    count
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn kill_orphans(_home: &Path) -> usize {
+    0
 }
 
 /// Stops what session `session` left running when the node went away: SIGTERM to claude's process group (claude
@@ -214,6 +274,121 @@ mod tests {
 
         kill_recorded(pid, &started, &session, Duration::from_secs(5)).await;
         assert_eq!(start_time(tool), None);
+    }
+
+    #[test]
+    fn an_orphan_is_a_process_of_a_scratch_dir_or_a_browser_profile() {
+        let roots = orphan_roots(Path::new("/n"));
+        let nul = |parts: &[&str]| parts.join("\0").into_bytes();
+        let path = nul(&["PATH=/usr/bin"]);
+        let chrome = |profile: &str| {
+            nul(&[
+                "chrome",
+                "--headless",
+                &format!("--user-data-dir={profile}"),
+            ])
+        };
+        assert!(orphaned(&chrome("/n/tmp/0a1b/ab/prof"), &path, &roots));
+        assert!(orphaned(
+            &chrome("/n/browser/profiles/profile-x"),
+            &path,
+            &roots
+        ));
+        assert!(orphaned(
+            &nul(&["node", "server.js"]),
+            &nul(&["TMPDIR=/n/tmp/0a1b"]),
+            &roots
+        ));
+        assert!(!orphaned(
+            &chrome("/home/me/prof"),
+            &nul(&["TMPDIR=/tmp"]),
+            &roots
+        ));
+        assert!(!orphaned(
+            &chrome("/n/tmpx/prof"),
+            &nul(&["TMPDIR=/n/tmpx"]),
+            &roots
+        ));
+        assert!(!orphaned(
+            &chrome("/n/browser/ms-playwright/x"),
+            &path,
+            &roots
+        ));
+    }
+
+    /// A process standing in for a leftover: `sh` with `args` and TMPDIR at `tmpdir`, waiting on a `sleep` it started.
+    /// Returns once the `sleep` runs.
+    async fn leftover(tmpdir: &Path, args: &[&str]) -> (tokio::process::Child, u32) {
+        let mut child = tokio::process::Command::new("sh")
+            .args(["-c", "sleep 30 & echo $!; wait", "leftover"])
+            .args(args)
+            .env("TMPDIR", tmpdir)
+            .stdout(std::process::Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        let mut lines = tokio::io::BufReader::new(child.stdout.take().unwrap()).lines();
+        let sleep: u32 = lines.next_line().await.unwrap().unwrap().parse().unwrap();
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+        while std::fs::read_to_string(format!("/proc/{sleep}/comm"))
+            .unwrap_or_default()
+            .trim()
+            != "sleep"
+        {
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "the sleep never started"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        (child, sleep)
+    }
+
+    /// The devbox's headless Chrome, its profile under a session's scratch dir, ran on for a day after its session:
+    /// a starting node kills such processes and what they started, and nothing outside its home.
+    #[tokio::test]
+    async fn a_starting_node_kills_what_sessions_left_running_under_its_home() {
+        let home = tempfile::tempdir().unwrap();
+        let other = home.path().join("tmpx");
+        let profile = format!(
+            "--user-data-dir={}",
+            home.path().join("tmp/0a1b/ab/prof").display()
+        );
+        let (mut by_env, by_env_sleep) = leftover(&home.path().join("tmp/0a1b"), &[]).await;
+        let (mut by_arg, by_arg_sleep) = leftover(&other, &[&profile]).await;
+        let (mut kept, kept_sleep) = leftover(&other, &[]).await;
+
+        let found = {
+            let home = home.path().to_owned();
+            tokio::task::spawn_blocking(move || kill_orphans(&home))
+                .await
+                .unwrap()
+        };
+        assert_eq!(
+            found, 3,
+            "both, and the sleep that inherited the scratch TMPDIR"
+        );
+        for child in [&mut by_env, &mut by_arg] {
+            let status = child.wait().await.unwrap();
+            assert_eq!(
+                std::os::unix::process::ExitStatusExt::signal(&status),
+                Some(9)
+            );
+        }
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        while [by_env_sleep, by_arg_sleep]
+            .iter()
+            .any(|p| start_time(*p).is_some())
+        {
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "a leftover's child lived on"
+            );
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert!(start_time(kept.id().unwrap()).is_some() && start_time(kept_sleep).is_some());
+        kept.kill().await.unwrap();
+        let _ = nix::sys::signal::kill(Pid::from_raw(kept_sleep as i32), Signal::SIGKILL);
     }
 
     #[test]

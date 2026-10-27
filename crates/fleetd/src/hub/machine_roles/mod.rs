@@ -159,26 +159,44 @@ pub fn auto_sessions(load: Option<&NodeLoad>, agents: i64) -> (i64, String) {
     (fits, why)
 }
 
+/// Whether the task `column` names (`T<n>`, or NULL for a lead's) has ended: done, failed or cancelled.
+pub fn task_ended(column: &str) -> String {
+    format!(
+        "EXISTS (SELECT 1 FROM tasks t WHERE t.n = CAST(substr({column}, 2) AS INTEGER)
+           AND t.state IN ('done', 'failed', 'cancelled'))"
+    )
+}
+
 /// The sessions live on `runner` now: its own agents' that run there, those it hosts for agents on other machines, and
-/// the starts placed on it that have not reported yet.
+/// the starts placed on it that have not reported yet. A session whose task ended counts for nothing, whatever its
+/// row says: the hub ends it (`browser::end_outlived`), and one its node never reported ended can't fill a machine's
+/// slots or hold up an update.
 pub fn live_on(c: &Connection, runner: &MachineId, now: i64) -> Result<i64, StoreError> {
     let since = now - START_MS;
     // A hosted session reports itself under its agent's machine, before the hub knows its id from the runner's answer
     // too: it counts on the runner alone.
     let own: i64 = c.query_row(
-        "SELECT COUNT(*) FROM browser_sessions b WHERE b.machine_id = ?1 AND b.state = 'live'
+        &format!(
+            "SELECT COUNT(*) FROM browser_sessions b WHERE b.machine_id = ?1 AND b.state = 'live'
+           AND NOT {}
            AND NOT EXISTS (SELECT 1 FROM session_places p WHERE p.hosted = 1
              AND (p.session_id = b.session_id
                OR (p.session_id IS NULL AND p.ended_ms IS NULL AND p.origin_machine = b.machine_id
                  AND p.origin_thread = json_extract(b.data, '$.threadId'))))",
+            task_ended("json_extract(b.data, '$.taskId')")
+        ),
         [runner.as_str()],
         |r| r.get(0),
     )?;
     let hosted: i64 = c.query_row(
-        "SELECT COUNT(*) FROM session_places p WHERE p.runner_id = ?1 AND p.hosted = 1 AND p.ended_ms IS NULL
+        &format!(
+            "SELECT COUNT(*) FROM session_places p WHERE p.runner_id = ?1 AND p.hosted = 1 AND p.ended_ms IS NULL
+           AND NOT {}
            AND ((p.session_id IS NULL AND p.started_ms > ?2)
              OR (p.session_id IS NOT NULL AND NOT EXISTS (
                SELECT 1 FROM browser_sessions b WHERE b.session_id = p.session_id AND b.state != 'live')))",
+            task_ended("p.task_id")
+        ),
         params![runner.as_str(), since],
         |r| r.get(0),
     )?;

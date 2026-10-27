@@ -20,7 +20,8 @@ use fleetd_contracts::browser::{
 };
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::ProjectRef;
-use fleetd_contracts::prim::{Count, Int, List};
+use fleetd_contracts::node_link::{CAP_SESSION_END, HubToNode, SessionEndFrame};
+use fleetd_contracts::prim::{Count, Int, List, Text};
 use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::hub::api::Hub;
@@ -134,6 +135,65 @@ pub fn waiting(db: &HubDb, r: &ProjectRef) -> Result<Vec<BrowserSession>, StoreE
         }
         Ok(out)
     })
+}
+
+/// Live sessions whose task ended: their agent never called `session_end`, or their node's word of the end never came.
+fn outlived(c: &Connection) -> Result<Vec<BrowserSession>, StoreError> {
+    let mut stmt = c.prepare(&format!(
+        "SELECT data FROM browser_sessions b WHERE b.state = 'live' AND {}",
+        crate::hub::machine_roles::task_ended("json_extract(b.data, '$.taskId')")
+    ))?;
+    let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+    let mut out = Vec::new();
+    for data in rows {
+        out.push(serde_json::from_str(&data?)?);
+    }
+    Ok(out)
+}
+
+/// What a session the hub ended with its task says.
+pub const OUTLIVED_NOTE: &str = "its task ended with it still open, so the hub ended it";
+
+/// Ends every live session whose task ended (done, failed or cancelled; never one between turns): lost on the hub, and
+/// its agent's node told to close it and kill its processes ([`CAP_SESSION_END`]), here or on the machine hosting it.
+/// A recording its node still uploads records it after all. Returns how many it ended.
+pub fn end_outlived(hub: &Hub) -> Result<usize, StoreError> {
+    let sessions = hub.db.with(outlived)?;
+    let now = now_ms(hub.clock.as_ref());
+    for mut s in sessions.iter().cloned() {
+        s.state = BrowserSessionState::Lost;
+        s.ended_at = Some(fleetd_contracts::ids::Timestamp(iso_ms(now)));
+        s.takeover_reason = None;
+        s.note = Some(Text::unchecked(OUTLIVED_NOTE));
+        save(hub, &s)?;
+        let machine = &s.project_ref.machine_id;
+        if hub.link.node_can(machine, CAP_SESSION_END) {
+            hub.link.send_to(
+                machine,
+                HubToNode::SessionEnd(SessionEndFrame {
+                    thread_id: s.thread_id.clone(),
+                    session_id: s.session_id.clone(),
+                }),
+            );
+        }
+        tracing::info!(session = %s.session_id, task = ?s.task_id, "screen outlived its task; ended");
+    }
+    Ok(sessions.len())
+}
+
+/// [`end_outlived`] as the hub starts and after each event (a task's end is one), until the hub stops.
+pub async fn run_end_outlived(hub: Arc<Hub>) {
+    let mut head = hub.events.subscribe();
+    loop {
+        head.borrow_and_update();
+        if let Err(e) = end_outlived(&hub) {
+            tracing::warn!(error = %e, "screens of ended tasks not ended");
+        }
+        tokio::select! {
+            () = hub.shutdown.wait() => return,
+            changed = head.changed() => if changed.is_err() { return },
+        }
+    }
 }
 
 /// A project's sessions, newest first.

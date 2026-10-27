@@ -636,6 +636,8 @@ impl Desktops {
                 .collect(),
             note: session.note(),
         };
+        // The end reaches the hub now, not only with the upload, which a missing or unreadable recording stops.
+        self.report(&session, BrowserSessionState::Uploading);
         let desktops = self.clone();
         let dir = session.dir.clone();
         tokio::spawn(async move { desktops.upload(&dir).await });
@@ -663,7 +665,9 @@ impl Desktops {
 
     /// Tells the hub where a session is now, in the background.
     fn report(&self, session: &Session, state: BrowserSessionState) {
-        let call = upload::report(&session.meta(None), state, session.control(), &[]);
+        // Past live, it ended now: the hub has its end from this report, whatever becomes of its upload.
+        let ended_at = (state != BrowserSessionState::Live).then(crate::node::util::now_iso);
+        let call = upload::report(&session.meta(ended_at), state, session.control(), &[]);
         let (hub, thread, cwd) = (
             self.hub.clone(),
             session.thread.clone(),
