@@ -532,9 +532,11 @@ impl Train {
             }
         };
         let fast = self.fast(repo, base).await;
-        let Some(batch) = self.workflows(repo, base).await.map(|w| w.batch) else {
+        let Some(workflows) = self.workflows(repo, base).await else {
             return Some("its workflows could not be read for the checks a batch skips".into());
         };
+        let runs = self.proven_runs(repo, runs, &workflows.batch).await;
+        let batch = workflows.batch_names();
         let unrun = fast
             .as_ref()
             .map(|f| f.set.as_slice())

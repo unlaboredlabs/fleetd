@@ -661,6 +661,23 @@ impl TrainGitHub {
         Ok(runs.check_runs)
     }
 
+    /// The messages of the annotations on check run `id`: what its job said with `::notice::` and the like.
+    pub async fn annotations(&self, repo: &str, id: u64) -> Result<Vec<String>, GhError> {
+        #[derive(Deserialize)]
+        struct Annotation {
+            #[serde(default)]
+            message: String,
+        }
+        let notes: Vec<Annotation> = self
+            .json(
+                "GET",
+                &format!("repos/{repo}/check-runs/{id}/annotations?per_page=100"),
+                &[],
+            )
+            .await?;
+        Ok(notes.into_iter().map(|a| a.message).collect())
+    }
+
     /// The newest commit status of each context on `sha`.
     pub async fn statuses(&self, repo: &str, sha: &str) -> Result<Vec<CommitStatus>, GhError> {
         let combined: CombinedStatus = self

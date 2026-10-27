@@ -84,7 +84,7 @@ impl Train {
             let batch = self
                 .workflows(repo, &w.base)
                 .await
-                .map(|wf| wf.batch)
+                .map(|wf| wf.batch_names())
                 .unwrap_or_default();
             let runs = match self.github.check_runs(repo, &w.sha).await {
                 Ok(runs) => runs,

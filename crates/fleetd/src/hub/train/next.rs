@@ -81,8 +81,28 @@ pub(super) fn upstreams(after: &[GitHubPrUrl]) -> Vec<GitHubPrUrl> {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(super) struct Workflows {
     pub label: Vec<String>,
-    pub batch: Vec<String>,
+    pub batch: Vec<BatchSkip>,
 }
+
+impl Workflows {
+    /// The names of the checks the batch PR skips.
+    pub fn batch_names(&self) -> Vec<String> {
+        self.batch.iter().map(|b| b.name.clone()).collect()
+    }
+}
+
+/// A check the batch PR skips (`batch_skipped`).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(super) struct BatchSkip {
+    pub name: String,
+    /// The checks of the jobs it `needs`: skipped on a PR's own head, it passes only once they all passed there and
+    /// one said it had no work (`NO_WORK`).
+    pub needs: Vec<String>,
+}
+
+/// How a job that another job needs says, in a notice (`::notice::no work for rust (macos)`), that it skips that one
+/// for want of work.
+pub const NO_WORK: &str = "no work for ";
 
 /// A repo's `Workflows` on one base, and when they were read.
 type GatedRead = (i64, Workflows);
@@ -97,6 +117,8 @@ pub(super) struct NextLabels {
     warned: Mutex<HashSet<String>>,
     /// Per repo and base, what its workflows say (`Workflows`), and when they were read.
     gated: Mutex<HashMap<(String, String), GatedRead>>,
+    /// The annotation messages of finished check runs, by run id: they never change.
+    notes: Mutex<HashMap<u64, Vec<String>>>,
 }
 
 /// What putting the label on a PR came to.
@@ -249,11 +271,11 @@ fn on(doc: &serde_yaml_ng::Value) -> Option<serde_yaml_ng::Value> {
 /// How a job's `if:` skips it on the train's batch PR (`<prefix>train/batch`), spaces left out.
 const SKIPPED_ON_BATCH: &str = "!endsWith(github.head_ref,'train/batch')";
 
-/// The names of the checks the train's batch PR skips, from the repo's workflow files (path, text): in a workflow that
-/// runs on each push to a PR (`pull_request` with its default types, or with `opened` and `synchronize`), each job
-/// whose `if:` says `!endsWith(github.head_ref, 'train/batch')`. The batch never waits for them; each PR's own head
-/// must pass them, or skip them by its paths, before it joins a batch (`own_checks`).
-pub(super) fn batch_skipped(files: &[(String, String)]) -> Vec<String> {
+/// The checks the train's batch PR skips, from the repo's workflow files (path, text): in a workflow that runs on each
+/// push to a PR (`pull_request` with its default types, or with `opened` and `synchronize`), each job whose `if:` says
+/// `!endsWith(github.head_ref, 'train/batch')`, with the checks of the jobs it `needs`. The batch never waits for them;
+/// each PR's own head must pass them, or skip them for want of work, before it joins a batch (`own_checks`).
+pub(super) fn batch_skipped(files: &[(String, String)]) -> Vec<BatchSkip> {
     use serde_yaml_ng::Value;
     let runs_on_pushes = |doc: &Value| match on(doc) {
         Some(Value::String(event)) => event == "pull_request",
@@ -269,7 +291,7 @@ pub(super) fn batch_skipped(files: &[(String, String)]) -> Vec<String> {
         }),
         None => false,
     };
-    let mut names = Vec::new();
+    let mut skips: Vec<BatchSkip> = Vec::new();
     for (_, text) in files {
         let Ok(doc) = serde_yaml_ng::from_str::<Value>(text) else {
             continue;
@@ -288,18 +310,71 @@ pub(super) fn batch_skipped(files: &[(String, String)]) -> Vec<String> {
                     .replace('"', "'");
                 cond.contains(SKIPPED_ON_BATCH)
             });
-            let name = job
-                .get("name")
-                .and_then(Value::as_str)
-                .or_else(|| id.as_str());
-            if let Some(name) = name.filter(|_| skipped)
-                && !names.iter().any(|n| n == name)
+            let check = |id: &Value, job: &Value| {
+                job.get("name")
+                    .and_then(Value::as_str)
+                    .or_else(|| id.as_str())
+                    .map(str::to_string)
+            };
+            let needs: Vec<String> = match job.get("needs") {
+                Some(Value::String(one)) => vec![one.clone()],
+                Some(Value::Sequence(many)) => many
+                    .iter()
+                    .filter_map(|n| n.as_str().map(str::to_string))
+                    .collect(),
+                _ => Vec::new(),
+            };
+            let needs = needs
+                .iter()
+                .filter_map(|n| {
+                    let key = Value::String(n.clone());
+                    check(&key, jobs.get(&key)?)
+                })
+                .collect();
+            if let Some(name) = check(id, job).filter(|_| skipped)
+                && !skips.iter().any(|s| s.name == name)
             {
-                names.push(name.to_string());
+                skips.push(BatchSkip { name, needs });
             }
         }
     }
-    names
+    skips
+}
+
+/// The skipped runs among `runs` (a head's newest of each check) of the checks the batch skips whose skip nothing
+/// proves: one whose job `needs` others counts as skipped for want of work only once those all passed on the head and
+/// one of them said so (`NO_WORK`, read by `notes`). Skipped any other way, as when its run was cancelled before it
+/// started, it never ran: not reported.
+pub(super) fn unproven_batch_skips<'a>(
+    runs: &'a [CheckRun],
+    batch: &[BatchSkip],
+    notes: &dyn Fn(&CheckRun) -> Option<Vec<String>>,
+) -> Vec<&'a CheckRun> {
+    runs.iter()
+        .filter(|r| r.conclusion.as_deref() == Some("skipped"))
+        .filter(|r| {
+            let Some(skip) = batch.iter().find(|b| gated_name(&b.name, &r.name)) else {
+                return false;
+            };
+            if skip.needs.is_empty() {
+                return false;
+            }
+            let needed: Vec<&CheckRun> = skip
+                .needs
+                .iter()
+                .filter_map(|n| runs.iter().find(|x| gated_name(n, &x.name)))
+                .collect();
+            let passed = needed.len() == skip.needs.len()
+                && needed
+                    .iter()
+                    .all(|x| x.conclusion.as_deref() == Some("success"));
+            let said = format!("{NO_WORK}{}", r.name);
+            !(passed
+                && needed
+                    .iter()
+                    .any(|x| notes(x).is_some_and(|n| n.contains(&said))))
+        })
+        .collect()
 }
 
 fn skipped_by(run: &CheckRun, at: i64) -> bool {
@@ -413,6 +488,51 @@ impl Train {
             .and_then(|prs| prs.get(&n).copied())
             .flatten();
         at.map_or(Labelled::Before, Labelled::At)
+    }
+
+    /// `runs` without the checks the batch skips whose skip on this head nothing proves (`unproven_batch_skips`): to
+    /// `own_checks` they have not reported. The notes of the passed runs they need are read once per run; one that
+    /// can't be read proves nothing.
+    pub(super) async fn proven_runs(
+        &self,
+        repo: &str,
+        runs: Vec<CheckRun>,
+        batch: &[BatchSkip],
+    ) -> Vec<CheckRun> {
+        let needed: Vec<&CheckRun> = runs
+            .iter()
+            .filter(|r| r.conclusion.as_deref() == Some("success"))
+            .filter(|r| {
+                batch
+                    .iter()
+                    .flat_map(|b| &b.needs)
+                    .any(|n| gated_name(n, &r.name))
+            })
+            .collect();
+        for r in needed {
+            let id = r.id as u64;
+            if lock(&self.next_labels.notes).contains_key(&id) {
+                continue;
+            }
+            match self.github.annotations(repo, id).await {
+                Ok(notes) => {
+                    lock(&self.next_labels.notes).insert(id, notes);
+                }
+                Err(e) => {
+                    tracing::warn!(repo, run = id, error = %e.message, "train: a check run's notes not read")
+                }
+            }
+        }
+        let notes = lock(&self.next_labels.notes);
+        let read = |r: &CheckRun| notes.get(&(r.id as u64)).cloned();
+        let unproven: Vec<String> = unproven_batch_skips(&runs, batch, &read)
+            .iter()
+            .map(|r| r.name.clone())
+            .collect();
+        drop(notes);
+        runs.into_iter()
+            .filter(|r| !unproven.contains(&r.name))
+            .collect()
     }
 
     /// Puts the label on PR `n` unless it `has` it.
@@ -747,8 +867,14 @@ mod tests {
         files.sort();
         assert!(label_gated(&files).is_empty());
         let mut skipped = batch_skipped(&files);
-        skipped.sort();
-        assert_eq!(skipped, ["desktop-macos", "ios sessions", "rust (macos)"]);
+        skipped.sort_by(|a, b| a.name.cmp(&b.name));
+        let names: Vec<&str> = skipped.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(names, ["desktop-macos", "ios sessions", "rust (macos)"]);
+        // Each waits on the Linux job that decides whether it has work.
+        assert!(
+            skipped.iter().all(|s| s.needs == ["macos scope"]),
+            "{skipped:?}"
+        );
     }
 
     /// Only a job that skips the batch's branch, in a workflow that runs on each push to a PR: not one a label or a
@@ -799,7 +925,70 @@ mod tests {
                 workflow("  push:", &job("main", skips)),
             ),
         ];
-        assert_eq!(batch_skipped(&files), ["mac", "typed", "listed"]);
+        let names: Vec<String> = batch_skipped(&files).into_iter().map(|s| s.name).collect();
+        assert_eq!(names, ["mac", "typed", "listed"]);
+    }
+
+    /// The jobs a skipped job needs, by their checks' names: one with a name, one without, and none that isn't there.
+    #[test]
+    fn a_skip_knows_the_checks_of_the_jobs_it_needs() {
+        let ci = "name: CI\non: pull_request\njobs:\n  scope:\n    name: mac scope\n    runs-on: ubuntu-latest\n  \
+                  lint:\n    runs-on: ubuntu-latest\n  mac:\n    needs: [scope, lint, gone]\n    \
+                  if: ${{ !endsWith(github.head_ref, 'train/batch') }}\n    runs-on: macos-latest\n  one:\n    \
+                  needs: scope\n    if: ${{ !endsWith(github.head_ref, 'train/batch') }}\n    runs-on: macos-latest\n";
+        let skips = batch_skipped(&[("ci.yml".to_string(), ci.to_string())]);
+        assert_eq!(
+            skips,
+            [
+                BatchSkip {
+                    name: "mac".into(),
+                    needs: vec!["mac scope".into(), "lint".into()]
+                },
+                BatchSkip {
+                    name: "one".into(),
+                    needs: vec!["mac scope".into()]
+                },
+            ]
+        );
+    }
+
+    /// D204: a skip of a check the batch skips proves no work only when every job it needs passed on the head and one
+    /// said so. A scope cancelled, missing, or silent about it leaves the skip unproven: a run cancelled before the
+    /// check started. A check that needs nothing is skipped by its own `if:`, which counts.
+    #[test]
+    fn a_skip_the_batch_skips_counts_only_when_the_scope_passed_and_said_no_work() {
+        let batch = [
+            BatchSkip {
+                name: "mac".into(),
+                needs: vec!["scope".into()],
+            },
+            BatchSkip {
+                name: "plain".into(),
+                needs: Vec::new(),
+            },
+        ];
+        let skipped = |name| run(name, "completed", Some("skipped"), None);
+        let unproven = |scope: Option<CheckRun>, notes: Vec<&str>| -> Vec<String> {
+            let mut runs = vec![skipped("mac"), skipped("plain"), skipped("other")];
+            runs.extend(scope);
+            let notes: Vec<String> = notes.into_iter().map(String::from).collect();
+            let read = |r: &CheckRun| (r.name == "scope").then(|| notes.clone());
+            unproven_batch_skips(&runs, &batch, &read)
+                .iter()
+                .map(|r| r.name.clone())
+                .collect()
+        };
+        let scope = |conclusion| Some(run("scope", "completed", Some(conclusion), None));
+        assert!(unproven(scope("success"), vec!["no work for mac"]).is_empty());
+        assert_eq!(
+            unproven(scope("success"), vec!["no work for plain"]),
+            ["mac"]
+        );
+        assert_eq!(
+            unproven(scope("cancelled"), vec!["no work for mac"]),
+            ["mac"]
+        );
+        assert_eq!(unproven(None, Vec::new()), ["mac"]);
     }
 
     #[test]

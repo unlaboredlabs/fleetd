@@ -182,6 +182,8 @@ struct FakeGh {
     required: Mutex<Option<Vec<String>>>,
     /// Workflow files (name, text) on main besides `ci`'s, where `ci` has none.
     workflow_files: Mutex<Vec<(&'static str, &'static str)>>,
+    /// The annotation messages of check runs by id; none for any other.
+    annotations: Mutex<HashMap<String, Vec<&'static str>>>,
 }
 
 fn ok(body: Value) -> GhOut {
@@ -636,6 +638,16 @@ impl FakeGh {
                 ),
                 stderr: String::new(),
             },
+            (["check-runs", id, "annotations"], "GET") => {
+                let notes = self.annotations.lock().unwrap().get(*id).cloned();
+                ok(json!(
+                    notes
+                        .unwrap_or_default()
+                        .iter()
+                        .map(|m| json!({ "message": m }))
+                        .collect::<Vec<_>>()
+                ))
+            }
             (["commits", sha, "check-runs"], _) => {
                 if let Some(look) = &*self.on_checks.lock().unwrap() {
                     look();
@@ -1437,6 +1449,7 @@ impl Kit {
             reruns: Arc::default(),
             head_runs: Mutex::default(),
             workflow_files: Mutex::default(),
+            annotations: Mutex::default(),
             required: Mutex::default(),
         });
         let host = Arc::new(FakeHost {
@@ -5596,9 +5609,11 @@ async fn a_pr_left_out_of_a_batch_says_why() {
 }
 
 /// D204: CI that skips its macOS jobs on the batch PR (`!endsWith(github.head_ref, 'train/batch')`). A PR joins a batch
-/// only once its own head passed them, or skipped them by its paths (a green Scope); one still running, failed or not
-/// reported stays out and says which. The batch never waits for them: they read skipped on its head, `rust (macos)`
-/// too, which main requires, and it merges on its first read.
+/// only once its own head passed them, or skipped them for want of work: `desktop-macos` needs `macos scope`, whose run
+/// passed on that head and said "no work for desktop-macos". One still running, failed or not reported stays out and
+/// says which, and so does a skip whose scope was cancelled (the run cancelled before the check started). The batch
+/// never waits for them: they read skipped on its head, `rust (macos)` too, which main requires, and it merges on its
+/// first read.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_pr_joins_a_batch_only_once_its_own_head_passed_the_checks_the_batch_skips() {
     let kit = kit_on(&RepoCi {
@@ -5616,38 +5631,69 @@ async fn a_pr_joins_a_batch_only_once_its_own_head_passed_the_checks_the_batch_s
         "ci.yml",
         "name: CI\non:\n  pull_request:\n  push:\n    branches: [main]\njobs:\n  build:\n    runs-on: ubuntu-latest\n  \
          rust-macos:\n    name: rust (macos)\n    if: ${{ !endsWith(github.head_ref, 'train/batch') }}\n    \
-         runs-on: macos-latest\n  desktop-macos:\n    if: ${{ !endsWith(github.head_ref, \"train/batch\") }}\n    \
+         runs-on: macos-latest\n  macos-scope:\n    name: macos scope\n    runs-on: ubuntu-latest\n  desktop-macos:\n    \
+         needs: macos-scope\n    if: ${{ !cancelled() && !endsWith(github.head_ref, \"train/batch\") }}\n    \
          runs-on: macos-latest\n",
     ));
-    let own = |desktop: Option<Value>| {
+    kit.gh
+        .annotations
+        .lock()
+        .unwrap()
+        .insert("40".into(), vec!["no work for desktop-macos"]);
+    let own = |desktop: Option<Value>, scope: Option<Value>| {
         let mut runs = vec![
             run(1, "build", Some("success")),
             run(2, "rust (macos)", Some("success")),
         ];
         runs.extend(desktop);
+        runs.extend(scope);
         json!(runs)
     };
+    let scope = |id, conclusion| Some(run(id, "macos scope", Some(conclusion)));
     let mut prs = Vec::new();
-    for (n, branch, file, desktop) in [
+    for (n, branch, file, desktop, scope) in [
         (
             7,
             "a",
             "a.txt",
             Some(run(3, "desktop-macos", Some("success"))),
+            scope(39, "success"),
         ),
-        (8, "slow", "slow.txt", Some(run(3, "desktop-macos", None))),
+        (
+            8,
+            "slow",
+            "slow.txt",
+            Some(run(3, "desktop-macos", None)),
+            scope(39, "success"),
+        ),
         (
             9,
             "red",
             "red.txt",
             Some(run(3, "desktop-macos", Some("failure"))),
+            scope(39, "success"),
         ),
-        (10, "unrun", "unrun.txt", None),
+        (10, "unrun", "unrun.txt", None, scope(39, "success")),
         (
             11,
             "e",
             "e.txt",
-            Some(run(3, "desktop-macos", Some("success"))),
+            Some(run(3, "desktop-macos", Some("skipped"))),
+            scope(40, "success"),
+        ),
+        (
+            12,
+            "cut",
+            "cut.txt",
+            Some(run(3, "desktop-macos", Some("skipped"))),
+            scope(41, "cancelled"),
+        ),
+        (
+            13,
+            "said",
+            "said.txt",
+            Some(run(3, "desktop-macos", Some("skipped"))),
+            scope(39, "success"),
         ),
     ] {
         let change = kit
@@ -5657,7 +5703,7 @@ async fn a_pr_joins_a_batch_only_once_its_own_head_passed_the_checks_the_batch_s
             .head_runs
             .lock()
             .unwrap()
-            .insert(kit.head_of(branch), own(desktop));
+            .insert(kit.head_of(branch), own(desktop, scope));
         prs.push(change);
     }
 
@@ -5675,10 +5721,13 @@ async fn a_pr_joins_a_batch_only_once_its_own_head_passed_the_checks_the_batch_s
         why(&prs[2]).as_deref(),
         Some("not in this batch: its own head's `desktop-macos` failed")
     );
-    assert_eq!(
-        why(&prs[3]).as_deref(),
-        Some("not in this batch: its own head hasn't reported `desktop-macos` yet")
-    );
+    // Never ran, cancelled before it started, or skipped by a scope that never said it had no work.
+    for pr in [&prs[3], &prs[5], &prs[6]] {
+        assert_eq!(
+            why(pr).as_deref(),
+            Some("not in this batch: its own head hasn't reported `desktop-macos` yet")
+        );
+    }
 }
 
 /// D204: a check the batch skips never ran on the merged tree before the merge, so main's run of it is watched, even one
