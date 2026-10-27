@@ -81,9 +81,9 @@ reachable, revokes it there too. Either way, the Navi's next call is refused wit
 \<label\>", with the reason (refused, no route, TLS) and the fix. The Navi's calls fail with the same sentence, never
 silently.
 
-**Where it's managed in the app.** Not built yet: the app has no screen for links. Until it does, links are made and
-removed through the hub tools (`hub_link_mint`, `hub_link_add`, `hub_links_get`, `hub_link_revoke`,
-`hub_link_remove`), from a device's MCP client or by asking the Navi. The screen, when it comes, reads both lists from
+**Where it's managed in the app.** Not built yet: the app has no screen for links. Until it does, the hub tools are
+the only way to make, list and remove them (`hub_link_mint`, `hub_link_add`, `hub_links_get`, `hub_link_revoke`,
+`hub_link_remove`). The screen, when it comes, reads both lists from
 `hub_links_get` on each hub. Links stored on a hub show in the Navi's own settings ("Linked hubs"). Keys minted on a
 hub show in the person's own settings for their own keys, and on Administration for an admin. They never appear as
 admin controls in Settings (D186):
