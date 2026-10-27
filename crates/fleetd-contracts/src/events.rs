@@ -263,6 +263,10 @@ pub enum HubEventType {
     /// out; `data` is `people::PeopleChangedData`. people_list reads the rest.
     #[serde(rename = "people.changed")]
     PeopleChanged,
+    /// A machine_add started, moved a step or ended; `data` is `machine_setup::MachineAddStepData`.
+    /// machine_add_status reads the rest.
+    #[serde(rename = "machine_add.step")]
+    MachineAddStep,
 }
 
 impl HubEventType {
@@ -349,6 +353,7 @@ impl HubEventType {
             Self::BrowserSession => "browser.session",
             Self::PreviewState => "preview.state",
             Self::PeopleChanged => "people.changed",
+            Self::MachineAddStep => "machine_add.step",
         }
     }
 }

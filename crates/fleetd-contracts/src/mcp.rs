@@ -1561,6 +1561,102 @@ output!(MachineRolesSetOutput {
     machine: crate::machine_roles::MachineRolesEntry,
 });
 
+// machine_add_plan, machine_add, machine_add_status, machine_hosts, machine_remove: Administration > Machines, an
+// owner's or admin's device only (the handlers check). machine_add is `fleetd machine add`, run by the hub.
+input!(
+    #[serde(remote = "Self")]
+    MachineAddPlanInput {
+        /// The machine to add, over SSH from the hub.
+        host: Option<crate::machine_setup::SshHost>,
+        /// The hub's own machine, without SSH.
+        local: Option<bool>,
+        /// Defaults to the host's first label (the hub's host name for local).
+        machine_id: Option<MachineId>,
+    }
+);
+checked!(MachineAddPlanInput, |input| one_target(
+    input.host.is_some(),
+    input.local
+));
+output!(MachineAddPlanOutput {
+    machine_id: MachineId,
+    host: Option<crate::machine_setup::SshHost>,
+    /// The machine's OS and CPU as its read found them: "linux-x64", "darwin-arm64".
+    platform: String,
+    /// What machine_add would run there now, each planned; a machine already set up runs fewer.
+    steps: Vec<crate::machine_setup::SetupStep>,
+    notes: Vec<String>,
+    /// Already a machine of this hub: adding it again repairs it.
+    joined: bool,
+});
+
+input!(
+    #[serde(remote = "Self")]
+    MachineAddInput {
+        host: Option<crate::machine_setup::SshHost>,
+        local: Option<bool>,
+        machine_id: Option<MachineId>,
+    }
+);
+checked!(MachineAddInput, |input| one_target(
+    input.host.is_some(),
+    input.local
+));
+output!(MachineAddOutput {
+    run: crate::machine_setup::MachineAddRun,
+});
+
+input!(MachineAddStatusInput {
+    /// One run; absent: the recent runs, newest first.
+    run_id: Option<crate::machine_setup::MachineAddRunId>,
+});
+output!(MachineAddStatusOutput {
+    runs: Vec<crate::machine_setup::MachineAddRun>,
+});
+
+input!(MachineHostsInput {});
+output!(MachineHostsOutput {
+    hosts: Vec<crate::machine_setup::MachineHost>,
+});
+
+input!(MachineRemoveInput {
+    machine_id: MachineId,
+    /// Also delete the node's files and fleetd's claude.env on the machine.
+    purge: Option<bool>,
+});
+output!(MachineRemoveOutput {
+    machine_id: MachineId,
+    /// What ran on the machine; none for one the hub didn't set up (joined by itself).
+    steps: Vec<crate::machine_setup::SetupStep>,
+    /// The hub held its node key and revoked it.
+    revoked: bool,
+});
+
+// machine_join: a one-time code (15 min) for a machine to join by itself, as `fleetd pair --worker` prints it: the
+// app's "This computer" joins with it, and any other machine with the line.
+input!(MachineJoinInput {
+    machine_id: MachineId,
+});
+output!(MachineJoinOutput {
+    machine_id: MachineId,
+    /// Where the machine reaches the hub.
+    hub_url: String,
+    /// Single use; it enrolls only this machine id.
+    code: String,
+    expires_at: Timestamp,
+    /// `Name <email>`, the hub's commit identity for its nodes.
+    git_identity: Option<String>,
+    /// The one line to run on the machine: it installs fleetd and joins.
+    line: String,
+});
+
+fn one_target(host: bool, local: Option<bool>) -> Result<(), String> {
+    match (host, local == Some(true)) {
+        (true, false) | (false, true) => Ok(()),
+        _ => Err("expected host, or local: true for the hub's own machine".into()),
+    }
+}
+
 // preview_start, preview_end, previews_list, preview_feedback: Try it (preview.rs, docs/design/try-it.md). Nothing
 // runs unless a person asks: preview_start takes a person's key (admin or operate; a read key only opens a running
 // one), and a lead starts one only with its own lead call, in a turn answering the person.
@@ -2430,6 +2526,13 @@ tools! {
     browser_retention_set => BrowserRetentionSet, Admin, BrowserRetentionSetInput, BrowserRetentionSetOutput;
     machine_roles => MachineRoles, Read, MachineRolesInput, MachineRolesOutput;
     machine_roles_set => MachineRolesSet, Admin, MachineRolesSetInput, MachineRolesSetOutput;
+    // An owner's or admin's device only (the handlers check).
+    machine_add_plan => MachineAddPlan, Admin, MachineAddPlanInput, MachineAddPlanOutput;
+    machine_add => MachineAdd, Admin, MachineAddInput, MachineAddOutput;
+    machine_add_status => MachineAddStatus, Admin, MachineAddStatusInput, MachineAddStatusOutput;
+    machine_hosts => MachineHosts, Admin, MachineHostsInput, MachineHostsOutput;
+    machine_remove => MachineRemove, Admin, MachineRemoveInput, MachineRemoveOutput;
+    machine_join => MachineJoin, Admin, MachineJoinInput, MachineJoinOutput;
     // Human keys only (the handlers check), except previews_list.
     preview_start => PreviewStart, Operate, PreviewStartInput, PreviewStartOutput;
     preview_end => PreviewEnd, Operate, PreviewEndInput, PreviewEndOutput;

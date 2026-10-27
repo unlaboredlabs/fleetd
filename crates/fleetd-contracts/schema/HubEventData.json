@@ -1590,6 +1590,9 @@
         "machine.slept": {
           "$ref": "#/$defs/MachineSleptData"
         },
+        "machine_add.step": {
+          "$ref": "#/$defs/MachineAddStepData"
+        },
         "people.changed": {
           "$ref": "#/$defs/PeopleChangedData"
         },
@@ -1731,6 +1734,7 @@
         "machine.guard",
         "machine.recovery_paused",
         "machine.slept",
+        "machine_add.step",
         "people.changed",
         "pr.merged",
         "pr.merged_outside",
@@ -1798,6 +1802,38 @@
           "type": "string"
         }
       ]
+    },
+    "MachineAddRunId": {
+      "pattern": "^M[0-9a-f]{32}$",
+      "type": "string"
+    },
+    "MachineAddState": {
+      "enum": [
+        "running",
+        "done",
+        "failed"
+      ],
+      "type": "string"
+    },
+    "MachineAddStepData": {
+      "description": "`machine_add.step`'s data: a run started, moved a step or ended. machine_add_status reads the rest.",
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "runId": {
+          "$ref": "#/$defs/MachineAddRunId"
+        },
+        "state": {
+          "$ref": "#/$defs/MachineAddState"
+        }
+      },
+      "required": [
+        "runId",
+        "machineId",
+        "state"
+      ],
+      "type": "object"
     },
     "MachineGuardData": {
       "description": "`machine.guard`.",

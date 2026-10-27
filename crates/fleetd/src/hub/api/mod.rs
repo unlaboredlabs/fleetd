@@ -149,6 +149,8 @@ pub struct Hub {
     pub relays: Arc<crate::hub::machine_roles::relay::Relays>,
     /// Which node link last spoke of each running preview (hub/preview).
     pub previews: Arc<crate::hub::preview::Previews>,
+    /// Machines added and removed from the app (hub/machine_setup).
+    pub machine_setup: Arc<crate::hub::machine_setup::MachineSetup>,
 }
 
 /// Every MCP tool the hub serves, from every area that registers. The one place that lists them.
@@ -176,6 +178,7 @@ pub fn registry() -> Registry {
     crate::hub::navi::tools::register(&mut tools);
     crate::hub::browser::tools::register(&mut tools);
     crate::hub::machine_roles::tools::register(&mut tools);
+    crate::hub::machine_setup::tools::register(&mut tools);
     crate::hub::preview::tools::register(&mut tools);
     crate::hub::skills::tools::register(&mut tools);
     crate::hub::time::tools::register(&mut tools);

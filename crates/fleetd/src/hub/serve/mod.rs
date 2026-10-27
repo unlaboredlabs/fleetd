@@ -418,6 +418,7 @@ pub fn build_on_with(
         updates,
         relays: Arc::default(),
         previews: Arc::default(),
+        machine_setup: Arc::default(),
     });
     hub.updates
         .set_ports(Arc::new(crate::hub::update::ports::HubPorts(

@@ -948,48 +948,35 @@ async fn workers(
 ) -> Result<(Option<String>, Vec<String>, Vec<String>), Stopped> {
     let state = read_setup(&opts.home).ok().flatten();
     let recorded = state.map(|s| s.machines).unwrap_or_default();
-    let local_id = recorded.iter().find(|(_, r)| r.local).map_or_else(
-        || machine_id_from_host(&local_host_name()),
-        |(id, _)| id.clone(),
+    let hosts = std::fs::read_to_string(home_dir().join(".ssh/config"))
+        .map(|text| detect::parse_ssh_hosts(&text))
+        .unwrap_or_default();
+    let found = machine::candidates(
+        &recorded,
+        &hosts,
+        net.map(|n| n.peers.as_slice()).unwrap_or_default(),
     );
-    // (id, host (None: this machine), ssh config, hint)
-    let mut candidates: Vec<(String, Option<String>, Option<String>, String)> =
-        vec![(local_id.clone(), None, None, "this machine".into())];
+    let local_id = found[0].machine_id.clone();
     let mut defaults = Vec::new();
     if recorded.is_empty() || recorded.contains_key(&local_id) {
         defaults.push(local_id.clone());
     }
-    for (id, record) in recorded.iter().filter(|(_, r)| !r.local) {
-        candidates.push((
-            id.clone(),
-            Some(record.ssh_host.clone()),
-            record.ssh_config.clone(),
-            format!("set up · {}", record.ssh_host),
-        ));
-        defaults.push(id.clone());
-    }
-    let hosts = std::fs::read_to_string(home_dir().join(".ssh/config"))
-        .map(|text| detect::parse_ssh_hosts(&text))
-        .unwrap_or_default();
-    let mut offer = |id: String, host: String, hint: String| {
-        if MachineId::new(id.clone()).is_ok() && !candidates.iter().any(|c| c.0 == id) {
-            candidates.push((id, Some(host), None, hint));
-        }
-    };
-    for host in hosts {
-        offer(
-            machine_id_from_host(&host),
-            host.clone(),
-            format!("~/.ssh/config · {host}"),
-        );
-    }
-    for peer in net.map(|n| n.peers.as_slice()).unwrap_or_default() {
-        offer(
-            machine_id_from_host(&peer.name),
-            peer.dns_name.clone(),
-            "tailnet".into(),
-        );
-    }
+    // (id, host (None: this machine), ssh config, hint)
+    let candidates: Vec<(String, Option<String>, Option<String>, String)> = found
+        .into_iter()
+        .map(|c| {
+            let hint = match (c.found, &c.host) {
+                (machine::Found::Here, _) => "this machine".to_owned(),
+                (machine::Found::SetUp, Some(host)) => format!("set up · {host}"),
+                (machine::Found::SshConfig, Some(host)) => format!("~/.ssh/config · {host}"),
+                _ => "tailnet".to_owned(),
+            };
+            if c.found == machine::Found::SetUp {
+                defaults.push(c.machine_id.clone());
+            }
+            (c.machine_id, c.host, c.ssh_config, hint)
+        })
+        .collect();
     let items: Vec<(String, String, String)> = candidates
         .iter()
         .map(|(id, _, _, hint)| (id.clone(), id.clone(), hint.clone()))

@@ -2053,7 +2053,8 @@ export type KnownHubEventType =
   | "skills.changed"
   | "browser.session"
   | "preview.state"
-  | "people.changed";
+  | "people.changed"
+  | "machine_add.step";
 /** KnownHubEventType, or a value from a newer hub. */
 export type HubEventType = KnownHubEventType | (string & {});
 
@@ -2435,14 +2436,135 @@ export type Machine = {
   tags: string[];
 };
 
+export type MachineAddInput = {
+  host?: SshHost;
+  local?: boolean;
+  machineId?: MachineId;
+};
+
+export type MachineAddOutput = {
+  next?: string;
+  run: MachineAddRun;
+  truncated?: boolean;
+};
+
+export type MachineAddPlanInput = {
+  /** The machine to add, over SSH from the hub. */
+  host?: SshHost;
+  /** The hub's own machine, without SSH. */
+  local?: boolean;
+  /** Defaults to the host's first label (the hub's host name for local). */
+  machineId?: MachineId;
+};
+
+export type MachineAddPlanOutput = {
+  host?: SshHost;
+  /** Already a machine of this hub: adding it again repairs it. */
+  joined: boolean;
+  machineId: MachineId;
+  next?: string;
+  notes: string[];
+  /** The machine's OS and CPU as its read found them: "linux-x64", "darwin-arm64". */
+  platform: string;
+  /** What machine_add would run there now, each planned; a machine already set up runs fewer. */
+  steps: SetupStep[];
+  truncated?: boolean;
+};
+
+/** A machine_add, as far as it got. */
+export type MachineAddRun = {
+  finishedAt?: Timestamp;
+  /** Failed: what to do, then Retry. */
+  fix?: string;
+  /** The SSH host; absent for the hub's own machine. */
+  host?: string;
+  /** Done: claude on the machine is logged in. */
+  loggedIn?: boolean;
+  machineId: MachineId;
+  /** Failed: what went wrong. */
+  message?: string;
+  /** What to know or do by hand: linger, an untested claude, claude not logged in. */
+  notes: string[];
+  runId: MachineAddRunId;
+  startedAt: Timestamp;
+  state: MachineAddState;
+  /** Every step: first reading the machine, then the plan's (planned until they start), then the wait for the node. */
+  steps: SetupStep[];
+};
+
+export type MachineAddRunId = string;
+
+export type MachineAddState = "running" | "done" | "failed";
+
+export type MachineAddStatusInput = {
+  /** One run; absent: the recent runs, newest first. */
+  runId?: MachineAddRunId;
+};
+
+export type MachineAddStatusOutput = {
+  next?: string;
+  runs: MachineAddRun[];
+  truncated?: boolean;
+};
+
+/** `machine_add.step`'s data: a run started, moved a step or ended. machine_add_status reads the rest. */
+export type MachineAddStepData = {
+  machineId: MachineId;
+  runId: MachineAddRunId;
+  state: MachineAddState;
+};
+
 /** `machine.guard`. */
 export type MachineGuardData = {
   /** true: new agents wait; false: they start again. */
   paused: boolean;
 };
 
+/** A host the hub can reach to add as a machine. */
+export type MachineHost = {
+  /** The SSH host; absent for the hub's own machine. */
+  host?: SshHost;
+  /** Already a machine of this hub (it may be offline). */
+  joined: boolean;
+  /** The machine id it gets. */
+  machineId: MachineId;
+  /** Where the hub found it. */
+  source: MachineHostSource;
+};
+
+export type KnownMachineHostSource = "hub" | "set_up" | "ssh_config" | "tailnet";
+/** KnownMachineHostSource, or a value from a newer hub. */
+export type MachineHostSource = KnownMachineHostSource | (string & {});
+
+export type MachineHostsInput = { [key: string]: unknown };
+
+export type MachineHostsOutput = {
+  hosts: MachineHost[];
+  next?: string;
+  truncated?: boolean;
+};
+
 /** Machine slug, [a-z0-9-]{1,32} */
 export type MachineId = string;
+
+export type MachineJoinInput = {
+  machineId: MachineId;
+};
+
+export type MachineJoinOutput = {
+  /** Single use; it enrolls only this machine id. */
+  code: string;
+  expiresAt: Timestamp;
+  /** `Name <email>`, the hub's commit identity for its nodes. */
+  gitIdentity?: string;
+  /** Where the machine reaches the hub. */
+  hubUrl: string;
+  /** The one line to run on the machine: it installs fleetd and joins. */
+  line: string;
+  machineId: MachineId;
+  next?: string;
+  truncated?: boolean;
+};
 
 /** A machine's load and running agents, from its heartbeat (every 15 s) and the hub's executors. */
 export type MachineLive = {
@@ -2456,6 +2578,22 @@ export type MachineLive = {
   /** Its latest sleep; show it while recent ([`crate::model::SleptSpan::recent_text`]). */
   slept?: SleptSpan;
   status: MachineStatus;
+};
+
+export type MachineRemoveInput = {
+  machineId: MachineId;
+  /** Also delete the node's files and fleetd's claude.env on the machine. */
+  purge?: boolean;
+};
+
+export type MachineRemoveOutput = {
+  machineId: MachineId;
+  next?: string;
+  /** The hub held its node key and revoked it. */
+  revoked: boolean;
+  /** What ran on the machine; none for one the hub didn't set up (joined by itself). */
+  steps: SetupStep[];
+  truncated?: boolean;
 };
 
 /** One machine's part of `project_discover`. */
@@ -4809,6 +4947,21 @@ export type SessionPromptRef = {
 
 export type SetupInput = string;
 
+/** One step of adding or removing a machine. */
+export type SetupStep = {
+  /** The command as you would run it yourself (over ssh for another machine); absent for the hub's own wait. */
+  command?: string;
+  /** The last lines it printed: a short answer when done, its output and the fix when failed. */
+  output?: string;
+  state: SetupStepState;
+  /** What goes to the command's stdin, described: "the fleetd binary (31 MB)", never the one-time token. */
+  stdin?: string;
+  /** "install fleetd 0.4.0", "wait until builder-1 is online". */
+  title: string;
+};
+
+export type SetupStepState = "running" | "done" | "failed" | "planned";
+
 export type SkillDeleteInput = {
   name: SkillName;
   /** Required with scope project. */
@@ -5155,6 +5308,8 @@ export type SparkPoint = {
   /** In the tile's unit. Absent when the slice has nothing to measure (no merges for a median). */
   value?: number;
 };
+
+export type SshHost = string;
 
 /** Why a part is not live: its source went quiet past its cadence. */
 export type StaleMark = {
@@ -6494,6 +6649,12 @@ export interface ToolMap {
   invite_create: { input: InviteCreateInput; output: InviteCreateOutput };
   invite_revoke: { input: InviteRevokeInput; output: InviteRevokeOutput };
   lead_start: { input: LeadStartInput; output: LeadStartOutput };
+  machine_add: { input: MachineAddInput; output: MachineAddOutput };
+  machine_add_plan: { input: MachineAddPlanInput; output: MachineAddPlanOutput };
+  machine_add_status: { input: MachineAddStatusInput; output: MachineAddStatusOutput };
+  machine_hosts: { input: MachineHostsInput; output: MachineHostsOutput };
+  machine_join: { input: MachineJoinInput; output: MachineJoinOutput };
+  machine_remove: { input: MachineRemoveInput; output: MachineRemoveOutput };
   machine_roles: { input: MachineRolesInput; output: MachineRolesOutput };
   machine_roles_set: { input: MachineRolesSetInput; output: MachineRolesSetOutput };
   mcp_server_remove: { input: McpServerRemoveInput; output: McpServerRemoveOutput };
@@ -6587,6 +6748,7 @@ export interface HubEventDataMap {
   "machine.guard": MachineGuardData;
   "machine.recovery_paused": RecoveryPausedData;
   "machine.slept": MachineSleptData;
+  "machine_add.step": MachineAddStepData;
   "people.changed": PeopleChangedData;
   "pr.merged": TrainEventData;
   "pr.merged_outside": TrainEventData;
