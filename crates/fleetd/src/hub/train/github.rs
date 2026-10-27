@@ -123,6 +123,12 @@ pub struct Pull {
     /// Who merged it: only a PR's detail says.
     #[serde(default)]
     pub merged_by: Option<PullMerger>,
+    /// Whether it merges cleanly into its base: only a PR's detail says, and None while GitHub still works it out.
+    #[serde(default)]
+    pub mergeable: Option<bool>,
+    /// GitHub's word for it: `dirty` when it conflicts, `unknown` while GitHub still works it out.
+    #[serde(default)]
+    pub mergeable_state: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -149,6 +155,12 @@ impl Pull {
         self.labels
             .iter()
             .any(|l| l.name.eq_ignore_ascii_case(name))
+    }
+
+    /// GitHub found it conflicts with its base, and so runs no `pull_request` CI on it. Never while GitHub still works
+    /// it out.
+    pub fn conflicts(&self) -> bool {
+        self.mergeable == Some(false) || self.mergeable_state.as_deref() == Some("dirty")
     }
 }
 
@@ -228,15 +240,22 @@ pub fn latest(runs: Vec<CheckRun>) -> Vec<CheckRun> {
 }
 
 /// Whether `new` replaces `seen`, a run of the same check: the newer one does, except that a cancelled twin never
-/// stands in for a run that is still going (a superseded workflow run is cancelled while its replacement runs).
+/// stands in for a run that is still going (a superseded workflow run is cancelled while its replacement runs), and a
+/// skipped twin never stands in for a run that ran. GitHub writes a skipped job's check run only when its workflow run
+/// gets to it: on #638 the PR's own run wrote its skips of the label's checks after the label's run had started them,
+/// so the skips had the newer ids.
 fn supersedes(new: &CheckRun, seen: &CheckRun) -> bool {
     let cancelled = |r: &CheckRun| r.conclusion.as_deref() == Some("cancelled");
+    let skipped = |r: &CheckRun| r.conclusion.as_deref() == Some("skipped");
     let running = |r: &CheckRun| r.status != "completed";
     if cancelled(new) && running(seen) {
         return false;
     }
     if cancelled(seen) && running(new) {
         return true;
+    }
+    if skipped(new) != skipped(seen) {
+        return skipped(seen);
     }
     new.id > seen.id
 }
