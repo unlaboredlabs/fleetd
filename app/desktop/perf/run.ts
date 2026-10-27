@@ -24,6 +24,11 @@ const { values: flags } = parseArgs({ options: { json: { type: "string" }, basel
 const RUNS = 5;
 const IDLE_MS = 10_000;
 const SCROLL_MS = 4_000;
+/**
+ * Rounds of SCROLL_MS timed after an untimed first one, each on a reloaded window so it pages older messages in as
+ * the first did; the median round's rate counts. A single round on a shared runner read 51-57 fps for the same code.
+ */
+const SCROLL_ROUNDS = 5;
 // About 160 keys a round: a p95 over fewer swings with two or three slow ones on a shared CI runner.
 const KEYS = "the writer ran the tests again and asked for a review. ".repeat(3).trim();
 /**
@@ -79,7 +84,8 @@ const frames = async (page: Page, during: () => Promise<unknown>): Promise<Array
   });
 };
 
-const scroll = async (page: Page, list: Locator) => {
+/** One read back through the chat from its newest message: the rAF rate while wheel-scrolling up for SCROLL_MS. */
+const scrollOnce = async (page: Page, list: Locator) => {
   await sleep(1000);
   // The display's refresh interval, from an idle second of frames.
   const idle = await frames(page, () => sleep(1000));
@@ -107,6 +113,20 @@ const scroll = async (page: Page, list: Locator) => {
   const moved = await list.evaluate((el) => (el as unknown as { __perfTravel: { up: number } }).__perfTravel.up);
   if (moved < 5_000) throw new Error(`the chat scrolled only ${moved}px; the measurement would not mean anything`);
   return { ...frameStats(stamps, refreshMs), refreshHz: 1000 / refreshMs, moved };
+};
+
+/**
+ * An untimed first read back, then SCROLL_ROUNDS timed ones, each after reloading the window: a loaded page of older
+ * messages stays loaded, and a round over them would time scrolling alone, not the paging in of a first read back.
+ */
+const scroll = async (page: Page, list: Locator) => {
+  await scrollOnce(page, list);
+  const rounds: Array<Awaited<ReturnType<typeof scrollOnce>>> = [];
+  for (let i = 0; i < SCROLL_ROUNDS; i++) {
+    await page.reload();
+    rounds.push(await scrollOnce(page, (await openChat(page)).log));
+  }
+  return { fps: median(rounds.map((r) => r.fps)), rounds };
 };
 
 /** Per key: Chromium's EventLatency for the key press, input timestamp to presentation (perf/trace.ts), by round. */
@@ -150,7 +170,7 @@ const main = async () => {
       if (page === undefined) throw new Error("no app window over CDP");
       const chat = await openChat(page);
       const scrolled = await scroll(page, chat.log);
-      const typed = await keys(browser, page, chat.composer);
+      const typed = await keys(browser, page, (await openChat(page)).composer);
       const firstPaintMs = median(paints.app);
       const firstPaintRefMs = median(paints.bare);
       results = {
@@ -168,7 +188,7 @@ const main = async () => {
         firstPaintOverMs: "what the app adds to Electron's own start; CI gates this, not the runner-bound first paint",
         idleRssMb: "summed RSS of the same processes; counts the shared Electron pages once per process, never gated",
         idleMemoryMb: `${process.platform === "linux" ? "PSS" : "physical footprint"} summed over all ${samples[0]?.processes ?? 0} processes read (${[...new Set(samples[0]?.kinds ?? [])].join(", ")}) after ${IDLE_MS / 1000} s idle`,
-        scrollFps: `the chat-long fixture's chat; ${(scrolled.dropped * 100).toFixed(1)}% long frames, ${(scrolled.moved / 1000).toFixed(0)}k px, display ${scrolled.refreshHz.toFixed(0)} Hz`,
+        scrollFps: `the chat-long fixture's chat; median of ${scrolled.rounds.length} rounds of ${SCROLL_MS / 1000} s from a reload, fps (long frames, px): ${scrolled.rounds.map((r) => `${r.fps.toFixed(1)} (${(r.dropped * 100).toFixed(1)}%, ${(r.moved / 1000).toFixed(0)}k)`).join(", ")}; display ${scrolled.rounds[0]?.refreshHz.toFixed(0) ?? "?"} Hz`,
         keyP95Ms: `the chat's composer; EventLatency, key press to presentation; median of ${typed.rounds.length} rounds of ${KEYS.length} keys, p95/p50 (keys at 16 ms or more): ${typed.rounds.map((r) => `${r.p95.toFixed(1)}/${r.p50.toFixed(1)} (${r.slow})`).join(", ")} ms`,
       };
     } finally {
