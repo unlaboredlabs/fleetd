@@ -15,7 +15,7 @@ import { latestLabel, newestKey, type Arrival, type Row, type TopState } from ".
 import { MessageView, useEnter } from "./Bubble";
 import { useBubbleActions } from "./actions";
 import { markOf, useShown } from "./shown";
-import { RememberedUndo } from "./Remembered";
+import { RefreshedChanges, RememberedUndo } from "./Remembered";
 import { ChatSuggestion } from "../tryit/Suggestion";
 import { useNow, useOnScreen } from "../live";
 import type { ChatItem as InlineItem } from "../../../shared/contracts";
@@ -204,6 +204,22 @@ const RowView = memo(function RowView(props: {
         return (
           <div className={s.quietRow} data-entry="event">
             <ChatSuggestion project={project} suggestion={r.item.message.previewSuggestion} at={shortClock(r.item.at)} />
+          </div>
+        );
+      }
+      // The night's memory refresh: its counts, then each change with Undo.
+      if (r.item.message?.memoryRefreshed !== undefined) {
+        return (
+          <div className={s.quietRow} data-entry="event">
+            <div className={s.event}>
+              <Text size="xs" tone="quiet">
+                {r.item.text}
+              </Text>
+              <span className={s.eventTime}>{shortClock(r.item.at)}</span>
+            </div>
+            <div className={s.event}>
+              <RefreshedChanges project={project} message={r.item.message} refreshed={r.item.message.memoryRefreshed} />
+            </div>
           </div>
         );
       }

@@ -41,6 +41,8 @@ pub struct NewMessage {
     pub item: Option<ChatItem>,
     pub history: Option<ChatHistorySource>,
     pub remembered: Option<fleetd_contracts::memory::RememberedItem>,
+    /// A nightly memory refresh's changes (hub/memory/refresh).
+    pub memory_refreshed: Option<fleetd_contracts::memory::MemoryRefreshed>,
     /// A human message's `$name` skills.
     pub skills: Vec<fleetd_contracts::skills::SkillName>,
     pub by: Option<String>,
@@ -304,6 +306,7 @@ impl Chat {
                 item: new.item,
                 history: new.history,
                 remembered: new.remembered,
+                memory_refreshed: new.memory_refreshed,
                 skills: (!new.skills.is_empty()).then(|| List::unchecked(new.skills)),
                 preview_suggestion: new.preview_suggestion,
                 parts: (author == ChatAuthor::Lead && !new.streaming)
@@ -385,6 +388,19 @@ impl Chat {
         remembered: fleetd_contracts::memory::RememberedItem,
     ) -> Result<ChatMessage, StoreError> {
         message.remembered = Some(remembered);
+        message.updated_at = Some(self.now_ts());
+        self.put(&message)?;
+        self.announce(&message)?;
+        Ok(message)
+    }
+
+    /// A "Memory refreshed" line's changes, in place, as Undo marks them.
+    pub fn set_memory_refreshed(
+        &self,
+        mut message: ChatMessage,
+        refreshed: fleetd_contracts::memory::MemoryRefreshed,
+    ) -> Result<ChatMessage, StoreError> {
+        message.memory_refreshed = Some(refreshed);
         message.updated_at = Some(self.now_ts());
         self.put(&message)?;
         self.announce(&message)?;

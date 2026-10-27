@@ -171,7 +171,8 @@ warnings and asks `Save? [Y/n]` on the terminal. In a script, `</dev/null` takes
 ## Memory {#memory}
 
 Leads remember how you work and what each project decided, so you don't say "concise" or "no npm" twice. When you
-correct the lead or state a rule, it calls `remember` in that turn, and the chat shows "Remembered: …" with Undo.
+correct the lead or state a rule, it calls `remember` in that turn, and the chat shows "Remembered: …" with Undo. When
+an entry no longer holds, the lead removes it with `forget`, and the chat shows "Forgot: …" with the reason and Undo.
 
 - **You** (`user.md`): how you work everywhere. Every project's lead and writers get it.
 - **Each project** (`MEMORY.md`, plus topic files for detail): only that project's sessions get it. Another project
@@ -186,6 +187,31 @@ repo. Each file has a cap, by default 16,000 characters for `user.md` and each `
 128,000 per project: a write past one is refused, and the lead merges entries instead. Change the caps under Caps in
 Settings → Memory (an app paired with admin, or `memory_caps_set` with an admin key for every machine): 1,000 to 100,000
 per file, up to 400,000 per project. Memory never holds a secret.
+
+### The nightly refresh {#memory-refresh}
+
+Each night the lead tidies each project's memory, so what was said in chat but never remembered isn't lost, and what
+no longer holds stops misleading the agents:
+
+- **When:** around 04:00 in your time zone: the global decision `policy.tz` (the one quiet hours use), else the hub
+  machine's zone. The global decision `policy.memory_refresh_at` moves it, as `HH:MM`. A project whose refresh can't
+  start within 3 hours of that (the hub was down, the lead was busy all that time, the login was out of usage) waits
+  for the next night. Projects start a minute apart.
+- **Which projects:** each one with the refresh on (the default; turn it off in its
+  [settings](/docs/projects#settings)) and with chat from you or the lead, or a changed order, since its last refresh.
+  A quiet project costs nothing.
+- **What it reads:** the chat since the last refresh (your messages and the lead's, newest kept, up to about 40,000
+  characters), the active decisions and every memory file of the project, plus `user.md`.
+- **What it may do:** it is a lead session of its own, the `lead.memory` prompt, that opens no order and never
+  writes in the chat. It starts with none of Claude's own tools (no shell, files or web) and none of your MCP
+  servers, and fleetd takes only `memory_read`, `remember` and `forget` from it. It adds what the chat taught,
+  merges entries that overlap and removes what no longer holds, held to the caps like any write. It only adds to
+  `user.md`: it never replaces or removes an entry there. A session still running after an hour, or one that
+  failed, is stopped; what it changed until then is still listed, and the next night reads the same chat again.
+- **What you see:** one line in the chat when it's done, such as "Memory refreshed: +2 ~1 −3" (added, changed,
+  removed), with each change below it, each with Undo, and Undo all. A line lists at most 200 changes and says how
+  many more there were; Undo all takes those back too. A night that changed nothing shows nothing. In Settings →
+  Memory, an entry the refresh wrote links to its line.
 
 ## The checklist {#checklist}
 
@@ -328,6 +354,7 @@ Generated from the registry in the binary this site was built with. `fleetd prom
 | `lead.start` | lead start and every fresh lead start, followed by the state block | the lead never writes code (prompt only); asks the human only for product, money or irreversible calls (prompt only); asks as numbered items, each with a recommendation (prompt only); writes only for results, problems and the human's decisions; silent on steps along the way (prompt only); one short message per real change, outcome first (prompt only); never posts a status-only or "nothing needs you" message; a turn with nothing to say replies \`(quiet)\`, which fleetd never posts (prompt only); no fleetd ids, tool names, paths or process words unless asked (prompt only); never estimates time (prompt only); secrets only through \`request\_secret\`; prod writes, spends and deletes only through \`gated\_run\`; starts a preview only in a turn answering the human's ask; agents only suggest one (D161); splits approved work into parts whose files don't overlap and runs them in parallel while slots are free (prompt only); only the merge train merges (prompt only); takes an agent's chat message as input, never as the human's answer or approval |
 | `lead.voice` | after the lead prompt, at every lead start | the casual voice stays out of commits, PR bodies, docs and briefs (prompt only) |
 | `lead.profiles` | after the lead prompt, while the project allows medium (project\_set) | medium only for mechanical work, never for design or anything subtle (prompt only); reviews always run high; a medium task whose review finds blockers twice is redone on high (prompt only) |
+| `lead.memory` | once a night, to a refresh session of its own, followed by the memory, the decisions and the chat since the last refresh | only reads and writes memory: \`memory\_read\`, \`remember\` and \`forget\`; adds to user.md, never replaces or removes an entry there |
 | `lead.wake` | each time fleetd brings the lead up to date: the project's state, then one line per event since the last time |  |
 | `chat.human` | with each chat message the human sends the lead |  |
 | `chat.agent` | with each chat message an agent or integration with its own key sends the lead | takes it as input, never as the human's answer or approval |

@@ -210,6 +210,16 @@ describe("Settings → Projects", () => {
     expect(calls.find((c) => c.tool === "project_settings_set")?.input).toEqual({ machineId: "devbox", projectId: "p1", keepWorktrees: true });
   });
 
+  it("turns the nightly memory refresh off, on by default", async () => {
+    await render();
+    const toggle = [...document.querySelectorAll<HTMLElement>('[role="switch"]')].find((x) => x.closest("label, div")?.textContent.includes("Refresh memory every night"));
+    if (toggle === undefined) throw new Error("no memory switch");
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
+    await click(toggle);
+    await settle();
+    expect(calls.find((c) => c.tool === "project_settings_set")?.input).toEqual({ machineId: "devbox", projectId: "p1", memoryRefresh: false });
+  });
+
   it("saves setup commands in order, with their limit, inputs and run anyway", async () => {
     await render();
     const section = document.querySelector<HTMLElement>('section[aria-label="Setup commands"]');

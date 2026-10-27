@@ -23,7 +23,7 @@ use fleetd_contracts::lead_calls::{
     RequestWithdrawCall, ReviewReadCall, TaskCancelCall, TaskListCall, TaskMessageCall,
     TaskSpawnCall, UsageResumeCall,
 };
-use fleetd_contracts::memory::{MemoryReadCall, RememberCall};
+use fleetd_contracts::memory::{ForgetCall, MemoryReadCall, RememberCall};
 use fleetd_contracts::navi::{FactoryStatusCall, ProjectMessageCall};
 use fleetd_contracts::preview::{PreviewConfigProposeCall, PreviewStartCall, PreviewSuggestCall};
 use fleetd_contracts::schema::inline_schema;
@@ -199,6 +199,14 @@ static TOOLS: &[Tool] = &[
          write past a file's cap is refused: merge or replace entries, then call again. The chat shows the human what \
          you remembered, with Undo. Never a secret.",
         inline_schema::<RememberCall>,
+    ),
+    lead(
+        "forget",
+        "forget",
+        "Remove one entry from memory: entry quotes words of exactly one entry, as it reads now; scope and topic as \
+         for remember. For an entry that no longer holds (done, superseded, contradicted); say why in reason. To \
+         change an entry, remember with replaces instead. The chat shows the human what you forgot, with Undo.",
+        inline_schema::<ForgetCall>,
     ),
     lead(
         "memory_read",
@@ -941,6 +949,7 @@ mod tests {
             "close",
             "gated_run",
             "remember",
+            "forget",
             "memory_read",
             "checklist",
             "skill_install",
