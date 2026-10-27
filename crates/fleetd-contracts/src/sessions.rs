@@ -497,6 +497,10 @@ pub struct RunnerInfo {
     pub proxy_source: Option<String>,
     /// The runner's config dir sessions use, when it has one: the user's own unless the machine was given another.
     pub config_dir: Option<String>,
+    /// The runner updates itself in the background (claude's settings in `config_dir` don't set
+    /// `DISABLE_AUTOUPDATER`), so its version can change under the machine. Absent for a runner without one, or from
+    /// a node before it.
+    pub self_update: Option<bool>,
 }
 
 /// Why a worktree's base may be behind its remote's default branch.
