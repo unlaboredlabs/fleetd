@@ -431,6 +431,7 @@ pub fn build_on_with(
     wire::wire(&hub);
     crate::hub::approvals::tools::register_lead_calls(&hub);
     crate::hub::memory::calls::register_lead_calls(&hub);
+    crate::hub::chat::nudges::register_lead_calls(&hub);
     crate::hub::automations::calls::register_lead_calls(&hub);
     crate::hub::checklist::calls::register_lead_calls(&hub);
     crate::hub::browser::calls::register_lead_calls(&hub);

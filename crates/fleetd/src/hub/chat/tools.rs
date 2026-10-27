@@ -1,4 +1,4 @@
-//! MCP tools of the lead chat (chat_send, chat_history, chat_stop, project_stop) and the chat state in `fleetd_status`.
+//! MCP tools of the lead chat (chat_send, chat_history, chat_stop, project_stop, chat_nudge_clear) and the chat state in `fleetd_status`.
 use std::sync::Arc;
 
 use fleetd_contracts::auth::Role;
@@ -17,6 +17,7 @@ pub fn register(tools: &mut Registry) {
     tools.add("chat_history", chat_history);
     tools.add("project_stop", project_stop);
     tools.add_raw("chat_stop", chat_stop);
+    tools.add("chat_nudge_clear", super::nudges::chat_nudge_clear);
 }
 
 async fn chat_send(

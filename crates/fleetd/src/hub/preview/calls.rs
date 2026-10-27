@@ -1,5 +1,5 @@
 //! `preview_suggest`, `preview_config_propose` and the lead's `preview_start`: agents and Try it (D161). A writer or
-//! lead suggests trying a PR (once per PR, one chat line with Try it; nothing runs) or proposes how the project's
+//! lead suggests trying a PR (once per PR, one chat line with Try it, flagged for the person's look; nothing runs) or proposes how the project's
 //! preview runs (an approval card; nothing is saved until a person approves it). Only a lead starts one, and only in
 //! a turn answering the person's message.
 use std::sync::{Arc, Weak};
@@ -187,9 +187,11 @@ fn suggest(
                 by: Some(by),
                 source: Some(format!("preview_suggest:{}#{n}", repo.to_lowercase())),
                 preview_suggestion: Some(suggestion),
+                nudge: crate::hub::chat::nudges::reason_of(&format!("Try #{n}: {}", call.why)),
                 ..Default::default()
             },
         )?;
+        crate::hub::chat::flow::state(hub, r)?;
     }
     Ok(PreviewSuggestResult { shown })
 }

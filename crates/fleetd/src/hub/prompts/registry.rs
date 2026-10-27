@@ -155,6 +155,12 @@ pub const ENTRIES: &[Entry] = &[
                 Prompt
             ),
             (
+                "nudge-sparingly",
+                "flags a message for the human's look (`nudge`) only for a showcase, something to try or a risk, never routine news",
+                r"then call `nudge`",
+                Prompt
+            ),
+            (
                 "plain-words",
                 "no fleetd ids, tool names, paths or process words unless asked",
                 r"No tool names, file paths",

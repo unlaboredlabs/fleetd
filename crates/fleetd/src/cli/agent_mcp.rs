@@ -16,6 +16,7 @@ use fleetd_contracts::browser::{
     BrowserCall, DesktopCall, FillCredentialCall, RequestTakeoverCall, SessionEndCall,
     SessionStartCall,
 };
+use fleetd_contracts::chat::NudgeCall;
 use fleetd_contracts::checklist::ChecklistCall;
 use fleetd_contracts::lead_calls::{
     AskLeadCall, BriefCreateCall, BriefReadCall, ChangeEnqueueCall, CloseCall, DecideCall,
@@ -207,6 +208,15 @@ static TOOLS: &[Tool] = &[
         inline_schema::<MemoryReadCall>,
     ),
     lead(
+        "nudge",
+        "nudge",
+        "Flag the chat message you just wrote for the human's look, with reason in a few words (\"the Machines page \
+         redesign\"): the app shows it as something to look at, below your questions, until they have seen it, for \
+         a day at most. Only for a showcase, something to try or a risk, never routine news; a project keeps only a \
+         few, a newer one clearing the oldest. Write the message first, then call it. No notification goes out.",
+        inline_schema::<NudgeCall>,
+    ),
+    lead(
         "automation_create",
         "automation_create",
         "Make an automation for this project: a name, the prompt each run gives you as a new order, and optionally a \
@@ -355,8 +365,9 @@ static TOOLS: &[Tool] = &[
             "preview_suggest",
             "preview_suggest",
             "Suggest the person try a PR themselves, where a human test clearly matters (a UI change, copy in \
-             several languages, a mobile build): one line with a Try it button in the chat and the PR, once per PR. \
-             why says what to look at, in plain words. Nothing starts from it: only the person starts a preview.",
+             several languages, a mobile build): one line with a Try it button in the chat and the PR, once per PR, \
+             which the app also shows as something to look at until the person has seen it. why says what to look \
+             at, in plain words. Nothing starts from it: only the person starts a preview.",
             inline_schema::<PreviewSuggestCall>,
         )
     },
@@ -942,6 +953,7 @@ mod tests {
             "gated_run",
             "remember",
             "memory_read",
+            "nudge",
             "checklist",
             "skill_install",
             "project_message",
