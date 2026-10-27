@@ -858,14 +858,45 @@ async fn only_the_node_reports_a_browser_session_and_a_browser_call_is_its_calle
     assert_eq!(refused["error"]["code"], "forbidden", "{refused}");
 }
 
+/// The longest a test waits for a screencast frame.
+const FRAME_WAIT: Duration = Duration::from_secs(30);
+
+/// Makes the followed page repaint, over the node's own connection (the driver's commands wait while a person has
+/// control): its background flips between two whites nobody sees apart.
+async fn repaint(rig: &Rig) {
+    let Some(session) = rig.broker.live(THREAD) else {
+        return;
+    };
+    let Some((_, page)) = session.page() else {
+        return;
+    };
+    let flip = "(() => { const s = document.documentElement.style; \
+                s.backgroundColor = s.backgroundColor === 'rgb(255, 255, 254)' ? 'rgb(255, 255, 255)' : 'rgb(255, 255, 254)'; })()";
+    let _ = session
+        .cdp
+        .call(
+            Some(&page),
+            "Runtime.evaluate",
+            json!({ "expression": flip }),
+        )
+        .await;
+}
+
 /// The newest `browser_frame` waiting for the hub's link.
-async fn next_frame(frames: &Arc<super::FrameSlot>) -> Value {
+/// Waits up to [`FRAME_WAIT`], repainting the page every half second meanwhile: Chrome sends a screencast frame only
+/// when something repaints, which a page at rest on a loaded machine may not do for a long while.
+async fn next_frame(rig: &Rig, frames: &Arc<super::FrameSlot>) -> Value {
+    let deadline = Instant::now() + FRAME_WAIT;
     let line = loop {
-        tokio::time::timeout(Duration::from_secs(10), frames.notify.notified())
-            .await
-            .expect("a frame in 10 s");
         if let Some(line) = frames.take().pop() {
             break line;
+        }
+        assert!(Instant::now() < deadline, "no frame in {FRAME_WAIT:?}");
+        if tokio::time::timeout(Duration::from_millis(500), frames.notify.notified())
+            .await
+            .is_err()
+        {
+            repaint(rig).await;
         }
     };
     let frame: Value = serde_json::from_str(&line).unwrap();
@@ -932,7 +963,7 @@ async fn a_person_watches_takes_over_and_types_and_the_agent_sees_it_after_the_h
     // Watching: the newest frame at once, then each new one.
     let frames = Arc::new(super::FrameSlot::default());
     rig.broker.watch(&id, Some(frames.clone()));
-    let frame = next_frame(&frames).await;
+    let frame = next_frame(&rig, &frames).await;
     assert_eq!(frame["sessionId"], id.as_str());
     assert_eq!(frame["control"], "agent");
     // The frame says which page it shows: the site, once the node has heard where the page went.
@@ -944,7 +975,7 @@ async fn a_person_watches_takes_over_and_types_and_the_agent_sees_it_after_the_h
             "the page the frame shows: {shown}"
         );
         rig.broker.watch(&id, Some(frames.clone()));
-        shown = next_frame(&frames).await["url"].clone();
+        shown = next_frame(&rig, &frames).await["url"].clone();
     }
     let (width, height) = (
         frame["width"].as_f64().unwrap(),
@@ -1002,7 +1033,7 @@ async fn a_person_watches_takes_over_and_types_and_the_agent_sees_it_after_the_h
     rig.broker.input(&id, typed);
     // The frames say who drives now.
     let deadline = Instant::now() + Duration::from_secs(10);
-    while next_frame(&frames).await["control"] != "human" {
+    while next_frame(&rig, &frames).await["control"] != "human" {
         assert!(Instant::now() < deadline, "no frame said human");
     }
 
@@ -1290,10 +1321,16 @@ async fn the_app_watches_takes_over_types_and_hands_back_through_the_hub() {
 
     // The app watches: frames arrive through the hub.
     let mut watch = crate::hub::browser::live::start_watch(&hub, &person("read"), &id).unwrap();
-    let frame = tokio::time::timeout(Duration::from_secs(10), watch.frames.recv())
-        .await
-        .unwrap()
-        .unwrap();
+    let deadline = Instant::now() + FRAME_WAIT;
+    let frame = loop {
+        match tokio::time::timeout(Duration::from_millis(500), watch.frames.recv()).await {
+            Ok(frame) => break frame.unwrap(),
+            Err(_) => {
+                assert!(Instant::now() < deadline, "no frame in {FRAME_WAIT:?}");
+                repaint(&rig).await;
+            }
+        }
+    };
     assert_eq!(frame.session_id, id);
     let width = frame.width.get() as f64;
 
@@ -1686,7 +1723,7 @@ async fn a_frames_address_never_carries_a_value_a_get_form_submitted() {
     let deadline = Instant::now() + Duration::from_secs(10);
     let shown = loop {
         rig.broker.watch(&id, Some(frames.clone()));
-        let url = next_frame(&frames).await["url"]
+        let url = next_frame(&rig, &frames).await["url"]
             .as_str()
             .unwrap_or_default()
             .to_owned();
@@ -1711,7 +1748,7 @@ async fn a_frames_address_never_carries_a_value_a_get_form_submitted() {
         .credentials_filled
         .store(1, std::sync::atomic::Ordering::Relaxed);
     rig.broker.watch(&id, Some(frames.clone()));
-    let sealed = next_frame(&frames).await["url"]
+    let sealed = next_frame(&rig, &frames).await["url"]
         .as_str()
         .unwrap_or_default()
         .to_owned();
@@ -1789,7 +1826,7 @@ async fn a_secret_a_get_form_encoded_is_masked_everywhere_it_goes() {
     let deadline = Instant::now() + Duration::from_secs(10);
     let shown = loop {
         rig.broker.watch(&id, Some(frames.clone()));
-        let url = next_frame(&frames).await["url"]
+        let url = next_frame(&rig, &frames).await["url"]
             .as_str()
             .unwrap_or_default()
             .to_owned();
