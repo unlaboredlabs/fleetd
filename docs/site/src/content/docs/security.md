@@ -85,8 +85,14 @@ Code's config dir (or `$CLAUDE_CONFIG_DIR`).
 - Its own folder and scratch dir, and its session's files from fleetd's directory (below).
 - Read-only: Claude Code's install (`~/.local/bin`, and `~/.local/share/claude/versions` that `claude` links to),
   every directory on the session's `PATH` that is in the home (a `…/bin` as its whole install, so
-  `~/.nvm/versions/node/v22` for node and npm), what a program there links to elsewhere in the home, `~/.claude` (but
-  other sessions' records, below), `~/.gitconfig` and `~/.config/git`.
+  `~/.nvm/versions/node/v22` for node and npm), the install a program there links to elsewhere in the home (uv's
+  Python with its library), `~/.claude` (but other sessions' records, below), `~/.gitconfig`, git's
+  `~/.config/git/config`, `ignore` and `attributes` (never its `credentials`), and `~/.rustup` for the toolchains
+  cargo's proxies run.
+- Never through the `PATH` or a link: fleetd's directory and another project's checkout. A `bin` whose install
+  would be one of them, or hold one, comes back alone (fleetd's own `~/.fleetd/bin`) or not at all, and a link
+  into one brings nothing back. Only what is on the `PATH`, or linked from it, comes back: a tool whose data sits
+  outside its install (most version managers but rustup) finds no data.
 - Its own copy of `~/.claude.json` (below), and `~/.claude/.credentials.json`, read and written.
 - `~/.cache`: its own, empty at first, kept with its session.
 

@@ -76,6 +76,8 @@ const HIDDEN_IN_HOME: &[&str] = &[
     ".azure",
     ".terraform.d",
     ".local/share/fish/fish_history",
+    // git's credential store under XDG: tokens in plain text.
+    ".config/git/credentials",
 ];
 
 /// In the user's home on macOS: `~/Library` whole, where browsers keep cookies, apps their tokens, and the keychains
@@ -154,29 +156,56 @@ pub struct NaviPaths<'a> {
 
 /// In the user's home on Linux, read again inside its empty tmpfs: git's own settings. Nothing else of the home is
 /// there but the programs a Navi runs ([`home_programs`]) and the paths its fence names.
-const HOME_READ: &[&str] = &[".gitconfig", ".config/git"];
+const HOME_READ: &[&str] = &[
+    ".gitconfig",
+    ".config/git/config",
+    ".config/git/ignore",
+    ".config/git/attributes",
+    // rustup's toolchains, which the proxies in `~/.cargo/bin` run.
+    ".rustup",
+];
 
 /// The programs a Navi runs from the user's home, read-only: claude's binary; every PATH dir in the home, as its
 /// install when it is a `bin` (`~/.nvm/versions/node/v22` for its `bin`, so npm finds its modules), but `~/.local/bin`
-/// alone; and the dir each program there links to elsewhere in the home (`~/.local/bin/claude` →
-/// `~/.local/share/claude/versions/…`).
-fn home_programs(home: &Path, claude: &Path, path: &[PathBuf]) -> Vec<PathBuf> {
+/// alone; and, for each program there that links elsewhere in the home, the install it lands in by the same rule
+/// (`~/.local/bin/claude` → `~/.local/share/claude/versions`). `fenced` (fleetd's dir and the node's home) and
+/// `others` (other projects' roots) never come back through it: no install that is, holds or sits in one, and no link
+/// into one. A PATH dir inside fleetd's dir (`~/.fleetd/bin`) comes back alone.
+fn home_programs(
+    home: &Path,
+    claude: &Path,
+    path: &[PathBuf],
+    fenced: &[PathBuf],
+    others: &[PathBuf],
+) -> Vec<PathBuf> {
     let inside = |p: &Path| p.starts_with(home) && p != home;
+    let holds_or_is = |d: &Path| fenced.iter().chain(others).any(|f| f.starts_with(d));
+    let in_other = |d: &Path| others.iter().any(|o| d.starts_with(o));
+    let in_fenced = |d: &Path| fenced.iter().any(|f| d.starts_with(f));
+    // A dir that may come back on its own: in the home, and neither holding nor in anything fenced.
+    let may = |d: &Path| inside(d) && !holds_or_is(d) && !in_other(d) && !in_fenced(d);
+    // A dir of programs as it comes back: its install when it's a `bin` whose parent may (not `~/.local`), else itself.
+    let install = |dir: &Path| match (dir.file_name(), dir.parent()) {
+        (Some(name), Some(parent))
+            if name == "bin" && parent != home.join(".local") && may(parent) =>
+        {
+            Some(parent.to_owned())
+        }
+        _ => may(dir).then(|| dir.to_owned()),
+    };
     let mut dirs = Vec::new();
     let mut programs = vec![claude.to_owned()];
-    if inside(claude) {
+    if may(claude) {
         dirs.push(claude.to_owned());
     }
     for dir in path.iter().map(|d| real(d)).filter(|d| inside(d)) {
-        let install = match (dir.file_name(), dir.parent()) {
-            (Some(name), Some(parent))
-                if name == "bin" && inside(parent) && parent != home.join(".local") =>
-            {
-                parent.to_owned()
-            }
-            _ => dir.clone(),
+        let back = match install(&dir) {
+            Some(back) => back,
+            // fleetd's own `bin` on the PATH: its programs, alone.
+            None if in_fenced(&dir) && !holds_or_is(&dir) && !in_other(&dir) => dir.clone(),
+            None => continue,
         };
-        dirs.push(install);
+        dirs.push(back);
         programs.extend(
             std::fs::read_dir(&dir)
                 .into_iter()
@@ -188,10 +217,9 @@ fn home_programs(home: &Path, claude: &Path, path: &[PathBuf]) -> Vec<PathBuf> {
     for program in programs {
         let target = real(&program);
         if target != program
-            && inside(&target)
-            && let Some(dir) = target.parent().filter(|d| inside(d))
+            && let Some(back) = target.parent().and_then(install)
         {
-            dirs.push(dir.to_owned());
+            dirs.push(back);
         }
     }
     dirs.sort();
@@ -279,7 +307,21 @@ pub fn navi_fence(p: &NaviPaths) -> Fence {
     let home_listed = cfg!(target_os = "linux");
     if home_listed {
         hide.push(user_home.clone());
-        show.extend(home_programs(&user_home, &real(p.claude_bin), &p.path));
+        let fenced = [real(p.fleetd_dir), real(p.node_home)];
+        // As hidden below: a root that holds the Navi's folder or the whole home isn't another project's here.
+        let others: Vec<PathBuf> = p
+            .other_roots
+            .iter()
+            .map(|r| real(r))
+            .filter(|r| !folder.starts_with(r) && !user_home.starts_with(r))
+            .collect();
+        show.extend(home_programs(
+            &user_home,
+            &real(p.claude_bin),
+            &p.path,
+            &fenced,
+            &others,
+        ));
         show.extend(HOME_READ.iter().map(|f| user_home.join(f)));
         // Caches (claude's logs, a tool's downloads) written where every program looks, but its own.
         private.push((
@@ -327,10 +369,10 @@ pub fn navi_fence(p: &NaviPaths) -> Fence {
             .chain(private.iter().map(|(_, to)| to))
             .collect();
         hide.retain(|h| {
-            !h.starts_with(&user_home)
-                || *h == user_home
-                || back.iter().any(|b| h.starts_with(b) && h != *b)
+            !h.starts_with(&user_home) || *h == user_home || back.iter().any(|b| h.starts_with(b))
         });
+        // A hidden path stays hidden: one shown as well isn't shown.
+        show.retain(|s| !hide.contains(s));
     }
     Fence {
         write,

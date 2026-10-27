@@ -450,10 +450,14 @@ is one). Every other session's spec has none.
     (`.claude.json.backup.*`, any `.claude.json.<suffix>`) are hidden on both.
   - *home* (Linux): the user's home itself is hidden (an empty tmpfs, read-only), so the home is an allow-list:
     what comes back is the fence's other paths in it, `home_programs` (claude's binary; each `PATH` dir in the home,
-    a `bin` as its parent install but `~/.local/bin` alone; the dir each program there links to elsewhere in the
-    home), `HOME_READ` (`~/.gitconfig`, `~/.config/git`), the `.claude.json` copy (bound even where there is no real
-    one) and a private `~/.cache` (`<session dir>/home-cache`). Hidden paths in the home are kept only inside what
-    comes back (`~/.claude/projects`, `~/.cargo/credentials.toml`); the rest are out of sight and not mounted over,
+    a `bin` as its parent install but `~/.local/bin` alone; for each program there that links elsewhere in the home,
+    the install it lands in by the same rule; never an install that is, holds or sits in fleetd's dir, the node's
+    home or another project's root, so `~/.fleetd/bin` comes back alone and a link into a project brings nothing),
+    `HOME_READ` (`~/.gitconfig`, git's `~/.config/git/config`, `ignore` and `attributes` but never its
+    `credentials`, which `HIDDEN_IN_HOME` names too, and `~/.rustup`), the `.claude.json` copy (bound even where there
+    is no real one) and a private `~/.cache` (`<session dir>/home-cache`). Hidden paths in the home are kept only inside what
+    comes back, or equal to it (`~/.claude/projects`, `~/.cargo/credentials.toml`), and a shown path that is also hidden
+    isn't shown; the rest are out of sight and not mounted over,
     so a file that vanishes before bwrap starts (another session's `.claude.json.tmp…`) can't fail a start. macOS keeps
     the deny-list for now: its profile could deny reads under the home and allow the same paths back, but no
     private `~/.cache` or `.claude.json` copy can stand in there, and it can't be tried on a Mac from here.

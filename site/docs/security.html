@@ -183,8 +183,14 @@ Code’s config dir (or <code dir="auto">$CLAUDE_CONFIG_DIR</code>).</p>
 <li>Its own folder and scratch dir, and its session’s files from fleetd’s directory (below).</li>
 <li>Read-only: Claude Code’s install (<code dir="auto">~/.local/bin</code>, and <code dir="auto">~/.local/share/claude/versions</code> that <code dir="auto">claude</code> links to),
 every directory on the session’s <code dir="auto">PATH</code> that is in the home (a <code dir="auto">…/bin</code> as its whole install, so
-<code dir="auto">~/.nvm/versions/node/v22</code> for node and npm), what a program there links to elsewhere in the home, <code dir="auto">~/.claude</code> (but
-other sessions’ records, below), <code dir="auto">~/.gitconfig</code> and <code dir="auto">~/.config/git</code>.</li>
+<code dir="auto">~/.nvm/versions/node/v22</code> for node and npm), the install a program there links to elsewhere in the home (uv’s
+Python with its library), <code dir="auto">~/.claude</code> (but other sessions’ records, below), <code dir="auto">~/.gitconfig</code>, git’s
+<code dir="auto">~/.config/git/config</code>, <code dir="auto">ignore</code> and <code dir="auto">attributes</code> (never its <code dir="auto">credentials</code>), and <code dir="auto">~/.rustup</code> for the toolchains
+cargo’s proxies run.</li>
+<li>Never through the <code dir="auto">PATH</code> or a link: fleetd’s directory and another project’s checkout. A <code dir="auto">bin</code> whose install
+would be one of them, or hold one, comes back alone (fleetd’s own <code dir="auto">~/.fleetd/bin</code>) or not at all, and a link
+into one brings nothing back. Only what is on the <code dir="auto">PATH</code>, or linked from it, comes back: a tool whose data sits
+outside its install (most version managers but rustup) finds no data.</li>
 <li>Its own copy of <code dir="auto">~/.claude.json</code> (below), and <code dir="auto">~/.claude/.credentials.json</code>, read and written.</li>
 <li><code dir="auto">~/.cache</code>: its own, empty at first, kept with its session.</li>
 </ul>

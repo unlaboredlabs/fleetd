@@ -70,6 +70,41 @@ impl Machine {
                 "token = \"cargo-secret\"",
             ),
             (m.home.join(".gitconfig"), "[user]\n\tname = Ada\n"),
+            (
+                m.home.join(".config/git/config"),
+                "[core]\n\tautocrlf = false\n",
+            ),
+            (
+                m.home.join(".config/git/credentials"),
+                "https://ada:ghp_git@github.com",
+            ),
+            (
+                m.home.join(".rustup/toolchains/stable/bin/rustc"),
+                "#!/bin/sh\n",
+            ),
+            // fleetd's own bin on the PATH, beside the fleetd dir's secrets.
+            (m.fleetd.join("bin/fleetd"), "#!/bin/sh\n"),
+            (
+                m.fleetd.join("claude.env"),
+                "ANTHROPIC_AUTH_TOKEN=fleetd-secret",
+            ),
+            // A tool uv installed, linked from ~/.local/bin, with its library beside its bin.
+            (
+                m.home
+                    .join(".local/share/uv/python/cpython-3.12/bin/python3.12"),
+                "#!/bin/sh\n",
+            ),
+            (
+                m.home
+                    .join(".local/share/uv/python/cpython-3.12/lib/python3.12/os.py"),
+                "# stdlib",
+            ),
+            // Another project checked out in the home, with a tool someone linked onto the PATH.
+            (m.home.join("src/mine/bin/tool"), "#!/bin/sh\n"),
+            (
+                m.home.join("src/mine/README.md"),
+                "another project in the home",
+            ),
             (m.home.join(".bashrc"), "export GITHUB_TOKEN=ghp_rc"),
             (m.home.join("notes/diary.md"), "private"),
             (
@@ -121,17 +156,24 @@ impl Machine {
             std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
         }
         std::fs::create_dir_all(m.home.join(".local/bin")).unwrap();
-        std::os::unix::fs::symlink(
-            m.home.join(".local/share/claude/versions/2.1.302"),
-            m.home.join(".local/bin/claude"),
-        )
-        .unwrap();
+        for (target, link) in [
+            (".local/share/claude/versions/2.1.302", ".local/bin/claude"),
+            (
+                ".local/share/uv/python/cpython-3.12/bin/python3.12",
+                ".local/bin/python3.12",
+            ),
+            ("src/mine/bin/tool", ".local/bin/tool"),
+            (".fleetd/hub/hub.sqlite", ".local/bin/sneaky"),
+        ] {
+            std::os::unix::fs::symlink(m.home.join(target), m.home.join(link)).unwrap();
+        }
         m
     }
 
     /// The session's PATH: the home's program dirs first, as a node's often is.
     fn path(&self) -> Vec<PathBuf> {
         vec![
+            self.fleetd.join("bin"),
             self.home.join(".local/bin"),
             self.home.join(".nvm/versions/node/v22/bin"),
             self.home.join(".cargo/bin"),
@@ -156,7 +198,11 @@ impl Machine {
             exe: &self.node.join("bin/fleetd-agent-1"),
             socket: &self.node.join("node.sock"),
             runtime_dir: None,
-            other_roots: vec![self.other.clone(), self.home.clone()],
+            other_roots: vec![
+                self.other.clone(),
+                self.home.clone(),
+                self.home.join("src/mine"),
+            ],
         })
     }
 
@@ -275,6 +321,32 @@ fn a_navis_fence_writes_its_folder_and_hides_fleetd_logins_and_other_projects() 
         // A secret inside what comes back stays hidden; one elsewhere in the home is out of sight already.
         assert!(fence.hide.contains(&m.home.join(".cargo/credentials.toml")));
         assert!(!fence.hide.contains(&m.home.join(".ssh")));
+        // fleetd's own bin on the PATH comes back alone: never fleetd's dir, which stays hidden.
+        assert!(fence.show.contains(&m.fleetd.join("bin")));
+        assert!(!fence.show.contains(&m.fleetd));
+        assert!(
+            !fence.show.iter().any(|s| s.starts_with(&m.fleetd)
+                && *s != m.fleetd.join("bin")
+                && !s.starts_with(&m.node)),
+            "{:?}",
+            fence.show
+        );
+        // A linked tool's install comes back; a link into another project or into fleetd's dir brings back nothing.
+        assert!(
+            fence
+                .show
+                .contains(&m.home.join(".local/share/uv/python/cpython-3.12"))
+        );
+        assert!(
+            !fence
+                .show
+                .iter()
+                .any(|s| s.starts_with(m.home.join("src/mine")))
+        );
+        // git's own settings, never its credential store.
+        assert!(fence.show.contains(&m.home.join(".config/git/config")));
+        assert!(!fence.show.contains(&m.home.join(".config/git")));
+        assert!(fence.show.contains(&m.home.join(".rustup")));
     } else {
         for hidden in [
             &m.fleetd,
@@ -738,13 +810,29 @@ fn a_navis_home_holds_only_what_it_runs_and_works_in() {
          node
          cat ~/.nvm/versions/node/v22/lib/node_modules/npm/package.json
          git config --global --get user.name
+         git config --file ~/.config/git/config --get core.autocrlf
+         ls -A ~/.config/git
+         cat ~/.local/share/uv/python/cpython-3.12/lib/python3.12/os.py
+         test -d ~/.rustup/toolchains/stable
+         test -f ~/.fleetd/bin/fleetd
          mkdir -p ~/.cache/claude && echo log > ~/.cache/claude/log"
     );
     let (ok, out) = m.run(&tool, &script);
     assert!(ok, "{out}");
-    for ran in ["claude-ran", "node-ran", "\"npm\"", "Ada"] {
+    for ran in [
+        "claude-ran",
+        "node-ran",
+        "\"npm\"",
+        "Ada",
+        "false",
+        "# stdlib",
+    ] {
         assert!(out.contains(ran), "{ran}: {out}");
     }
+    assert!(
+        !out.contains("credentials"),
+        "git's credential store is in sight: {out}"
+    );
     // Its cache is its own.
     assert!(m.session.join("home-cache/claude/log").is_file());
     assert!(!m.home.join(".cache/claude/log").exists());
@@ -768,6 +856,15 @@ fn a_navis_home_holds_only_what_it_runs_and_works_in() {
         m.home.join("notes/diary.md"),
         m.home.join(".cargo/credentials.toml"),
         m.home.join("made-later.txt"),
+        // fleetd's dir, whatever of it is on the PATH.
+        m.fleetd.join("claude.env"),
+        m.fleetd.join("hub/hub.sqlite"),
+        m.home.join(".local/bin/sneaky"),
+        // git's credential store, beside the settings that come back.
+        m.home.join(".config/git/credentials"),
+        // Another project, through the tool linked from it.
+        m.home.join("src/mine/README.md"),
+        m.home.join(".local/bin/tool"),
     ] {
         let (ok, out) = m.run(&tool, &format!("cat '{}'", unreadable.display()));
         assert!(!ok, "{} was read: {out}", unreadable.display());
