@@ -4,7 +4,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { Machine, MachineAddRun, MachineHost } from "../../../shared/contracts";
+import type { Machine, MachineAddRun, MachineHost, MachineLive } from "../../../shared/contracts";
 import type { HubFrame } from "../../../shared/hub";
 import type { JoinHere, ThisComputer } from "../../../shared/joinHere";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
@@ -408,14 +408,24 @@ it("decides nothing about this computer before the hub says which computer it ru
   expect(joinHere).not.toHaveBeenCalled();
 });
 
-it("waits on a repair of a machine still online until its node restarts, then says it joined", async () => {
+const live = (machines: MachineLive[]) =>
+  act(async () => {
+    send({ t: "live", frame: { at: AT, full: false, lanes: [], machines } });
+    await new Promise((r) => setTimeout(r, 0));
+  });
+const devboxLive = (linkedSince: string): MachineLive => ({ machineId: "devbox", name: "devbox", status: "online", running: 0, asOf: AT, linkedSince });
+
+it("waits on a repair of a machine still online until its node links again, then says it joined", async () => {
   await render({ view: { kind: "line", machineId: "devbox", rejoin: true }, at: 1 });
+  await live([devboxLive("2026-10-26T09:00:00.000Z")]);
   expect(waitLine()?.getAttribute("data-line")).toBe("online");
   expect(waitLine()?.textContent).toContain("devbox is online on its old enrollment.");
   expect(button("Open devbox")).toBeUndefined();
-  await snapshot([{ ...DEVBOX, status: "offline" }]);
-  expect(waitLine()?.getAttribute("data-line")).toBe("waiting");
-  await snapshot([DEVBOX]);
+  // The hub's link to its node is the same: nothing ran yet.
+  await live([{ ...devboxLive("2026-10-26T09:00:00.000Z"), asOf: "2026-10-26T10:00:15.000Z" }]);
+  expect(waitLine()?.getAttribute("data-line")).toBe("online");
+  // A quick restart: the hub never shows it offline, but its link is new.
+  await live([devboxLive("2026-10-26T10:00:20.000Z")]);
   expect(waitLine()?.getAttribute("data-line")).toBe("joined");
   expect(button("Open devbox")).toBeDefined();
 });

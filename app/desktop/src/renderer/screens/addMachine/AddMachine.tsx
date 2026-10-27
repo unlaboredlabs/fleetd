@@ -479,6 +479,7 @@ const useNow = (): number => {
  */
 function Line(props: { machineId: string | undefined; rejoin: boolean; onDone: () => void }) {
   const call = useHubCall();
+  const layer = useDataLayer();
   const machines = useData((d) => d.machines);
   const [name, setName] = useState(props.machineId ?? "");
   const [tried, setTried] = useState(false);
@@ -486,19 +487,26 @@ function Line(props: { machineId: string | undefined; rejoin: boolean; onDone: (
   const [busy, setBusy] = useState(props.rejoin);
   const [error, setError] = useState<string>();
   const [made, setMade] = useState<{ readonly join: MachineJoinOutput; readonly onlineAtStart: boolean }>();
+  /** The link to its node the hub had when the line was made, or the first it reported since. */
+  const [baseline, setBaseline] = useState<string>();
   const [copied, setCopied] = useState<boolean>();
   const [wentOffline, setWentOffline] = useState(false);
   const now = useNow();
   const problem = machineIdProblem(name);
   const machineId = made?.join.machineId ?? name.trim();
   const online = useOnline(made === undefined ? undefined : machineId);
+  // When the hub's link to its node last came up: a rejoin restarts the node, which moves it.
+  const linked = useData((d) => d.live.machines[machineId]?.linkedSince);
   // Once its line is made, the machine coming online is the point, not a clash.
   const taken = !props.rejoin && made === undefined && machines[name.trim()] !== undefined;
 
   const request = (id: string) =>
     call("machine_join", props.rejoin ? { machineId: id, rejoin: true } : { machineId: id })
       .then(
-        (join) => setMade({ join, onlineAtStart: (machines[id]?.status ?? "offline") !== "offline" }),
+        (join) => {
+          setMade({ join, onlineAtStart: (machines[id]?.status ?? "offline") !== "offline" });
+          setBaseline(layer.store.getState().live.machines[id]?.linkedSince);
+        },
         (e: unknown) => setError(errorText(e)),
       )
       .finally(() => setBusy(false));
@@ -518,9 +526,12 @@ function Line(props: { machineId: string | undefined; rejoin: boolean; onDone: (
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // A repair of a machine still online joins once its node has restarted: offline a moment, then online again.
+  // A repair of a machine still online joins once its node has restarted: a new link to it, which a quick restart
+  // shows by the link's time alone (the hub keeps it online through one), or a longer one offline for a while.
   if (made !== undefined && !online && !wentOffline) setWentOffline(true);
-  const state = made === undefined ? undefined : lineState({ expiresAt: made.join.expiresAt, onlineAtStart: made.onlineAtStart }, online, now, wentOffline);
+  if (made !== undefined && baseline === undefined && linked !== undefined) setBaseline(linked);
+  const relinked = baseline !== undefined && linked !== undefined && linked !== baseline;
+  const state = made === undefined ? undefined : lineState({ expiresAt: made.join.expiresAt, onlineAtStart: made.onlineAtStart }, online, now, wentOffline || relinked);
   return (
     <>
       <Head
