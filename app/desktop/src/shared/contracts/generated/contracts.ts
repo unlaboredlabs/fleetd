@@ -3737,7 +3737,7 @@ export type ProjectSettings = {
   /** How to run a preview someone asks for (Try it); absent when none is set, and from older hubs. */
   preview?: PreviewConfig;
   projectId: ProjectId;
-  /** The repo `setup`, `train` and `preview` are for; absent for the project's own directory, and from older hubs. */
+  /** The repo `setup` and `preview` are for; absent when they are the project's, and from older hubs. */
   repo?: RepoName;
   /** What runs in each new worktree before its agent starts; no commands when none are set. */
   setup: WorktreeSetup;
@@ -3754,7 +3754,7 @@ export type ProjectSettings = {
 export type ProjectSettingsGetInput = {
   machineId: MachineId;
   projectId: ProjectId;
-  /** The repo whose setup, train and preview to read; absent: the project's own directory. */
+  /** The repo whose setup and preview to read (its own, else the project's); absent: the project's. */
   repo?: RepoName;
 };
 
@@ -3771,8 +3771,8 @@ export type ProjectSettingsSetInput = {
   preview?: PreviewConfig;
   projectId: ProjectId;
   /**
-   * The repo whose setup, train and preview to set; absent: the project's own directory. Title and
-   * keepWorktrees are the project's either way.
+   * The repo whose own setup and preview to set, an empty one giving it the project's; absent: the
+   * project's. Title, keepWorktrees and train are the project's either way.
    */
   repo?: RepoName;
   /** Replaces the project's setup commands and their settings; no commands turns setup off. */

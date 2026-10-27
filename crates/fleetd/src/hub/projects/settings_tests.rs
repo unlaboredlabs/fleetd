@@ -522,10 +522,9 @@ async fn the_train_settings_save_and_read_back_and_none_clears_them() {
     );
 }
 
-/// No project holds a repo yet, so naming one is refused and changes nothing, rather than acting on the project's own
-/// settings.
+/// A repo the project doesn't have is refused and changes nothing, rather than acting on the project's own settings.
 #[tokio::test]
-async fn a_named_repo_is_refused_until_projects_hold_repos() {
+async fn an_unknown_repo_is_refused_and_changes_nothing() {
     let (hub, _home) = hub();
     let _calls = node(&hub, true).await;
     for (tool, input) in [
@@ -559,4 +558,93 @@ async fn a_named_repo_is_refused_until_projects_hold_repos() {
     .await
     .unwrap();
     assert!(s["settings"].get("repo").is_none());
+}
+
+/// Naming a repo reads and writes its own setup and preview, the project's when it has none; leaving it out keeps the
+/// project's, and the rest are the project's either way. A launch and a preview read the project's own repo's.
+#[tokio::test]
+async fn a_repos_setup_and_preview_are_its_own_and_fall_back_to_the_projects() {
+    let (hub, _home) = hub();
+    let _calls = node(&hub, true).await;
+    let r = json!({ "machineId": "lab", "projectId": "p1" });
+    let with = |extra: Value| {
+        let mut input = r.clone();
+        input
+            .as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        input
+    };
+    let human = person();
+    let set = |input| call(&hub, &human, "project_settings_set", input);
+    set(with(json!({
+        "setup": { "commands": ["make deps"] },
+        "preview": { "web": { "start": "make serve" } },
+    })))
+    .await
+    .unwrap();
+    hub.repos.ensure_own(&project(), Some("/work/app")).unwrap();
+    let app = with(json!({ "repo": "app" }));
+
+    let s = call(&hub, &human, "project_settings_get", app.clone())
+        .await
+        .unwrap();
+    assert_eq!(s["settings"]["repo"], "app");
+    assert_eq!(s["settings"]["setup"]["commands"], json!(["make deps"]));
+    assert_eq!(s["settings"]["preview"]["web"]["start"], "make serve");
+
+    let s = set(with(json!({
+        "repo": "app",
+        "setup": { "commands": ["pnpm install"] },
+        "preview": { "web": { "start": "pnpm dev" } },
+        "keepWorktrees": true,
+    })))
+    .await
+    .unwrap();
+    assert_eq!(s["settings"]["repo"], "app");
+    assert_eq!(s["settings"]["setup"]["commands"], json!(["pnpm install"]));
+    assert_eq!(s["settings"]["preview"]["web"]["start"], "pnpm dev");
+    assert_eq!(s["settings"]["keepWorktrees"], true);
+    let own = call(&hub, &human, "project_settings_get", r.clone())
+        .await
+        .unwrap();
+    assert!(own["settings"].get("repo").is_none());
+    assert_eq!(own["settings"]["setup"]["commands"], json!(["make deps"]));
+    assert_eq!(own["settings"]["preview"]["web"]["start"], "make serve");
+    assert_eq!(own["settings"]["keepWorktrees"], true);
+    let task_setup = crate::hub::projects::settings::task_setup(&hub, &project()).unwrap();
+    assert_eq!(
+        serde_json::to_value(task_setup).unwrap()["commands"],
+        json!(["pnpm install"])
+    );
+    let preview = crate::hub::projects::settings::preview_config(&hub, &project()).unwrap();
+    assert_eq!(
+        serde_json::to_value(preview).unwrap()["web"]["start"],
+        "pnpm dev"
+    );
+
+    // Emptied, the repo's are the project's again.
+    set(with(
+        json!({ "repo": "app", "setup": { "commands": [] }, "preview": {} }),
+    ))
+    .await
+    .unwrap();
+    let s = call(&hub, &human, "project_settings_get", app)
+        .await
+        .unwrap();
+    assert_eq!(s["settings"]["setup"]["commands"], json!(["make deps"]));
+    assert_eq!(s["settings"]["preview"]["web"]["start"], "make serve");
+
+    let refused = call(
+        &hub,
+        &human,
+        "project_settings_get",
+        with(json!({ "repo": "api" })),
+    )
+    .await;
+    assert!(
+        matches!(&refused, Err(CallError::Tool(e)) if e.code == fleetd_contracts::mcp::ErrorCode::NotFound
+            && e.fix.as_deref().is_some_and(|f| f.contains("(app)"))),
+        "{refused:?}"
+    );
 }
