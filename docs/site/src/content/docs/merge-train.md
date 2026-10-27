@@ -199,14 +199,19 @@ migration that sorts at or before the base's newest, the train:
    nothing, and no run may change a file outside `generated`.
 6. Pushes the result to the PR's branch, only if the branch is still where it was.
 
-The commands run with no git credentials; the fetch and the push are separate steps. They get
-`FLEETD_REGENERATE_CACHE`, a directory kept between runs in the checkout's git directory, for build caches such as
-`CARGO_TARGET_DIR`. Meanwhile the PR keeps its place in line, its queue entry says the train is regenerating it, and the
-train goes on with the others.
+The commands run as the node's user, as agent work does there, but reach for no credential: their HOME is a scratch
+directory, git under them has no credential helper and no hooks, and they get no SSH agent. The fetch and the push are
+separate steps. Programs are found on the node's PATH, the one its agent sessions get; a missing one is named in the
+reason. The commands get `FLEETD_REGENERATE_CACHE`, a directory under the node's home
+(`~/.fleetd/node/cache/regenerate/<owner>-<name>`) kept between runs, for build caches such as `CARGO_TARGET_DIR`.
+Meanwhile the PR keeps its place in line, its queue entry says the train is regenerating it, and the train goes on with
+the others. Once the train pushes, the agent that wrote the PR is told, so it builds on the train's commit instead of
+overwriting it.
 
-The pushed commit is a new patch, so it is reviewed and tested like any push. When any step fails or the timeout
-passes, the PR goes back to its agent as `needs_rebase`, with the reason: for example "conflicts with main, and the
-train could not regenerate its generated files: it conflicts with main in src/app.rs, which is not a generated file".
+The pushed commit is a new patch, so it is reviewed and tested like any push. When any step fails, the timeout passes,
+or there is nothing to regenerate (the PR conflicts only with the PRs ahead of it in a batch), the PR goes back to its
+agent as `needs_rebase`, with the reason: for example "conflicts with main, and the train could not regenerate its
+generated files: it conflicts with main in src/app.rs, which is not a generated file".
 
 ## CI runners are scarce {#scarce-runners}
 

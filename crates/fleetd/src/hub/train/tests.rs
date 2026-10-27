@@ -1232,6 +1232,7 @@ impl TrainHost for FakeHost {
                 .env_clear()
                 .env("PATH", std::env::var("PATH").unwrap_or_default())
                 .env("TMPDIR", dir.parent().unwrap())
+                .env("FLEETD_HOME", dir.parent().unwrap().join("node-home"))
                 .envs(GIT_ENV)
                 .kill_on_drop(true)
                 .output();
