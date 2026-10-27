@@ -451,23 +451,37 @@ const NODE_WRITES: &[&str] = &[
 
 /// Why a session that filled a credential refuses the driver's `command`, if it writes to a field it filled: whatever
 /// the attribute, a write there could change how the field validates or shows. The node asks the browser, in the
-/// driver's own session, which node the command names.
+/// driver's own session, which node the command names; when it can't tell (the browser errs, or the command names no
+/// node), the write is refused too, and the agent may try again.
 pub async fn filled_field_refusal(session: &Session, command: &Value) -> Option<String> {
     let method = command["method"].as_str().unwrap_or_default();
     if !sealed(session) || !NODE_WRITES.contains(&method) {
         return None;
     }
+    let unknown = || {
+        Some(format!(
+            "{method} was refused: this browser session filled a login from 1Password, and the node couldn't tell \
+             which element this write is for, so it didn't make it. Try again; if it keeps failing, look the element \
+             up again (agent-browser snapshot -i)."
+        ))
+    };
     let params = &command["params"];
-    let node = ["nodeId", "backendNodeId", "objectId"]
+    let Some(node) = ["nodeId", "backendNodeId", "objectId"]
         .iter()
         .find(|key| !params[**key].is_null())
-        .map(|key| json!({ *key: params[*key] }))?;
-    let described = session
+        .map(|key| json!({ *key: params[*key] }))
+    else {
+        return unknown();
+    };
+    let Some(backend) = session
         .cdp
         .call(command["sessionId"].as_str(), "DOM.describeNode", node)
         .await
-        .ok()?;
-    let backend = described.pointer("/node/backendNodeId")?.as_i64()?;
+        .ok()
+        .and_then(|d| d.pointer("/node/backendNodeId").and_then(Value::as_i64))
+    else {
+        return unknown();
+    };
     session.is_filled_field(backend).then(|| {
         format!(
             "{method} is off on this field: this browser session filled it from 1Password, and nothing may change \
