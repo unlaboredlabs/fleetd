@@ -1,5 +1,5 @@
-// Settings → Machines' words, pure so they are tested on their own: a machine's roles as one choice, its session slots
-// as a line, and what it can host, each kind by its name.
+// The words of Administration's machine roles, pure so they are tested on their own: a machine's roles as one
+// choice, its session slots as a line, and what it can host, each kind by its name.
 import type { HostCheck, MachineRole, MachineRolesEntry, SessionHost } from "../../../shared/contracts";
 
 export type RolesChoice = "agents" | "sessions" | "both";

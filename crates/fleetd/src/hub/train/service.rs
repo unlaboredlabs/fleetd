@@ -102,6 +102,9 @@ pub struct TrainOptions {
     /// How long the train holds a Change whose CI passed for its re-review to finish (`REVIEW_WAIT`); after that it
     /// waits in review, out of the train's way.
     pub review_wait: Duration,
+    /// How long a waiting Change's head may go without any check before its author and the lead hear of it
+    /// (`CHECKS_START_WAIT`).
+    pub checks_start_wait: Duration,
     /// Run each repo's loop in the background; tests drive `step` themselves.
     pub auto_run: bool,
     /// The status view's freshness registry: every GitHub answer and every pass keeps a repo's sources live.
@@ -118,6 +121,7 @@ impl Default for TrainOptions {
             ready_every: Duration::from_secs(60),
             merge_attempts: 3,
             review_wait: REVIEW_WAIT,
+            checks_start_wait: CHECKS_START_WAIT,
             auto_run: true,
             fresh: Arc::default(),
         }
@@ -126,6 +130,9 @@ impl Default for TrainOptions {
 
 /// How long a Change whose CI passed is held for its re-review: a review takes about as long as CI, and started with it.
 pub const REVIEW_WAIT: Duration = Duration::from_secs(15 * 60);
+
+/// How long a waiting Change's head may go without any check: GitHub skipped its CI, or no workflow took the push (D191).
+pub const CHECKS_START_WAIT: Duration = Duration::from_secs(15 * 60);
 
 /// How long a head's CI may run once a runner took its first check (D128).
 pub const CI_RUNNING_TIMEOUT: Duration = Duration::from_secs(45 * 60);
@@ -136,6 +143,12 @@ pub const CI_QUEUE_CEILING: Duration = Duration::from_secs(2 * 60 * 60);
 pub(super) const CI_TIMED_OUT: &str = "CI timed out";
 /// What becomes of a Change whose CI timed out; it needs nothing from its author.
 pub(super) const CI_WATCHED: &str = "the train keeps watching its checks: once they finish green it goes back in the queue, with no push needed";
+/// Why a Change whose CI was cancelled by a push to its PR is back in line: the train takes the new head next.
+pub(super) const CI_SUPERSEDED: &str =
+    "a push to the PR cancelled its CI; the train takes the new head";
+/// Why a timed-out Change whose checks read cancelled, however often re-run, goes back to its author.
+pub(super) const CI_CANCELLED: &str =
+    "its CI timed out, then was cancelled, and re-running it didn't finish it";
 /// The lead's line when a timed-out Change's CI finished green after all.
 pub(super) const CI_FINISHED_LATE: &str = "CI finished after the timeout; back in the queue";
 
@@ -326,6 +339,9 @@ pub(super) fn required_checks(
     }
 }
 
+/// Per workflow run the train re-ran: how many times, and the newest cancelled check it saw then.
+type Reruns = HashMap<u64, (u32, f64)>;
+
 /// How many times the train re-runs one workflow run whose required checks read cancelled before it counts them red.
 const CANCELLED_RERUNS: u32 = 2;
 
@@ -377,6 +393,14 @@ pub(super) enum CiOutcome {
     Green,
     Red(Vec<CheckRun>),
     Timeout(Stall),
+    /// Its checks were cancelled and the PR's head has moved on: a push superseded the run (D191).
+    Moved,
+}
+
+/// Every check in `red` was cancelled: no failure, but a run superseded or stopped (D191).
+pub(super) fn all_cancelled(red: &[CheckRun]) -> bool {
+    red.iter()
+        .all(|r| r.conclusion.as_deref() == Some("cancelled"))
 }
 
 /// How CI on a head ran out of time.
@@ -460,6 +484,11 @@ pub struct Train {
     pub(super) upstream_reads: Mutex<HashMap<String, (i64, super::next::UpstreamPull)>>,
     /// The train's last push per change: the head it pushed and when, for `ci.queue` spans.
     pub(super) pushed: Mutex<HashMap<ChangeId, (String, i64)>>,
+    /// Per waiting Change, the head the train first saw, when, and whether its checks started or it was flagged
+    /// (`unstarted_checks`). Kept in memory: after a restart the wait starts again.
+    unstarted: Mutex<HashMap<ChangeId, (String, i64, bool)>>,
+    /// Per timed-out Change, the cancelled runs the train re-ran after the timeout (`late_cancelled`).
+    late_reruns: Mutex<HashMap<ChangeId, Reruns>>,
     /// Each repo and base branch's CI config and when it was read.
     ci_configs: Mutex<HashMap<(String, String), CiConfig>>,
     /// The PRs that carry `fleetd:next`.
@@ -512,6 +541,8 @@ impl Train {
             after_lock: tokio::sync::Mutex::new(()),
             upstream_reads: Mutex::default(),
             pushed: Mutex::default(),
+            unstarted: Mutex::default(),
+            late_reruns: Mutex::default(),
             ci_configs: Mutex::default(),
             next_labels: Default::default(),
             sync: GithubSync::default(),
@@ -962,17 +993,23 @@ impl Train {
         }
     }
 
-    /// `why` completes "it ...".
+    /// `why` completes "it ...". From the train's own rebase, or from the queue when GitHub finds it conflicts.
     pub(super) async fn needs_rebase(&self, change: &Change, why: &str) {
-        let Some(parked) = self.update(
-            &change.change_id,
-            Some(&[ChangeState::Rebasing]),
-            |mut c| {
-                c.state = ChangeState::NeedsRebase;
-                c.last_error = Some(error_text(why));
-                c
-            },
-        ) else {
+        let from = [
+            ChangeState::Rebasing,
+            ChangeState::Queued,
+            ChangeState::Reviewing,
+            ChangeState::Ready,
+        ];
+        let Some(parked) = self.update(&change.change_id, Some(&from), |mut c| {
+            if c.state == ChangeState::Reviewing {
+                // Not reviewed yet: its next head goes to review even if its patch stays the same.
+                c.patch_id = None;
+            }
+            c.state = ChangeState::NeedsRebase;
+            c.last_error = Some(error_text(why));
+            c
+        }) else {
             return;
         };
         self.emit(
@@ -1122,8 +1159,9 @@ impl Train {
         let mut start = self.now_ms();
         let mut last: Vec<CheckRun> = Vec::new();
         let mut queued_since: Option<i64> = None;
-        // Per workflow run the train re-ran: how many times, and the newest cancelled check it saw then.
-        let mut reruns: HashMap<u64, (u32, f64)> = HashMap::new();
+        let mut reruns: Reruns = HashMap::new();
+        // The newest cancelled check the PR's head was read for (`superseded`).
+        let mut cancel_read = 0.0;
         let (mut tried_label, mut told) = (start, false);
         loop {
             let mut all = Vec::new();
@@ -1164,6 +1202,20 @@ impl Train {
                 judged => judged,
             };
             match judged {
+                // A cancelled check is never a failure: the new head goes through instead, or the run is re-run, or
+                // the train waits for it until the timeout (D191).
+                Checks::Red(red) if all_cancelled(&red) => {
+                    if self
+                        .superseded(change, repo, sha, &red, &mut cancel_read)
+                        .await
+                    {
+                        return CiOutcome::Moved;
+                    }
+                    if let Some(true) = self.rerun_cancelled(change, repo, &red, &mut reruns).await
+                    {
+                        start = self.now_ms();
+                    }
+                }
                 Checks::Red(red) => {
                     self.check_spans(change, sha, &runs);
                     return CiOutcome::Red(red);
@@ -1231,17 +1283,19 @@ impl Train {
                                 self.check_spans(change, sha, &runs);
                                 return CiOutcome::Green;
                             }
-                            match self
+                            if self
+                                .superseded(change, repo, sha, &cancelled, &mut cancel_read)
+                                .await
+                            {
+                                return CiOutcome::Moved;
+                            }
+                            // Re-runs spent, it waits for the timeout: cancelled is no failure (D191).
+                            if let Some(true) = self
                                 .rerun_cancelled(change, repo, &cancelled, &mut reruns)
                                 .await
                             {
-                                None => {
-                                    self.check_spans(change, sha, &runs);
-                                    return CiOutcome::Red(cancelled);
-                                }
                                 // The re-run's time is its own.
-                                Some(true) => start = self.now_ms(),
-                                Some(false) => {}
+                                start = self.now_ms();
                             }
                         }
                         Checks::None | Checks::Pending => {}
@@ -1307,6 +1361,30 @@ impl Train {
         }
     }
 
+    /// Whether the PR of a Change in CI alone at `sha` has moved to another head. Never for a batch's head. Read once
+    /// per newer cancelled check (`read`, the newest seen), not on every poll while a spent re-run waits.
+    async fn superseded(
+        &self,
+        change: &Change,
+        repo: &str,
+        sha: &str,
+        cancelled: &[CheckRun],
+        read: &mut f64,
+    ) -> bool {
+        let newest = cancelled.iter().map(|r| r.id).fold(0.0, f64::max);
+        if change.head_sha.as_str() != sha || newest <= *read {
+            return false;
+        }
+        *read = newest;
+        match self.github.pull(repo, change.pr_number.get()).await {
+            Ok(pull) => pull.head.sha.to_lowercase() != sha,
+            Err(e) => {
+                tracing::warn!(change_id = %change.change_id, error = %e.message, "train: PR not read");
+                false
+            }
+        }
+    }
+
     /// Re-runs the jobs of each workflow run in which a required check reads cancelled, unless the train already
     /// re-ran it and GitHub doesn't show the re-run yet: whether it re-ran any. None when one can't be re-run: it isn't
     /// a workflow run's, it was re-run `CANCELLED_RERUNS` times and is cancelled again, or GitHub refused.
@@ -1315,7 +1393,7 @@ impl Train {
         change: &Change,
         repo: &str,
         cancelled: &[CheckRun],
-        reruns: &mut HashMap<u64, (u32, f64)>,
+        reruns: &mut Reruns,
     ) -> Option<bool> {
         let mut runs: Vec<(u64, f64)> = Vec::new();
         for r in cancelled {
@@ -1794,6 +1872,10 @@ impl Train {
                 self.ci_failed(in_ci, &[], Some(stall)).await;
                 return Ok(());
             }
+            CiOutcome::Moved => {
+                self.put_back(in_ci, CI_SUPERSEDED);
+                return Ok(());
+            }
         };
         // CI passed: the merge also waits for a re-review still at work.
         let current = self.records.get(&change.change_id);
@@ -1891,6 +1973,10 @@ impl Train {
                     self.ci_failed(&in_ci, &[], Some(stall)).await;
                     return Ok(());
                 }
+                CiOutcome::Moved => {
+                    self.put_back(&in_ci, CI_SUPERSEDED);
+                    return Ok(());
+                }
             }
             if self
                 .update(&change.change_id, Some(&[ChangeState::Ci]), |mut c| {
@@ -1938,15 +2024,20 @@ impl Train {
         Ok(())
     }
 
-    /// Changes waiting on something outside the train: a patch id to read, reviews, or the author's next push.
+    /// Changes waiting on something outside the train: a patch id to read, reviews, or the author's next push. A
+    /// waiting Change GitHub finds conflicting goes back to its author at once: GitHub runs no CI on it (D191).
     async fn refresh(&self, repo: &str) {
         let waiting = [
             ChangeState::Queued,
             ChangeState::Reviewing,
+            ChangeState::Ready,
             ChangeState::NeedsRebase,
             ChangeState::CiFailed,
         ];
-        for change in self.records.in_train(repo, &waiting) {
+        let changes = self.records.in_train(repo, &waiting);
+        lock(&self.unstarted).retain(|id, _| changes.iter().any(|c| &c.change_id == id));
+        lock(&self.late_reruns).retain(|id, _| changes.iter().any(|c| &c.change_id == id));
+        for change in changes {
             let pull = match self.github.pull(repo, change.pr_number.get()).await {
                 Ok(pull) => pull,
                 Err(e) => {
@@ -1955,15 +2046,33 @@ impl Train {
                 }
             };
             self.guard_base(repo, &pull.base.ref_);
+            let moved = pull.head.sha.to_lowercase() != change.head_sha.as_str();
+            let in_line = !moved
+                && !pull.draft
+                && [
+                    ChangeState::Queued,
+                    ChangeState::Reviewing,
+                    ChangeState::Ready,
+                ]
+                .contains(&change.state);
             if pull.merged {
                 self.abandon(&change, "was merged outside the train").await;
             } else if pull.state != "open" {
                 self.abandon(&change, "was closed").await;
             } else if change.state == ChangeState::Queued && pull.draft {
                 self.hold_draft(&change);
-            } else if change.state == ChangeState::Queued
-                || pull.head.sha.to_lowercase() != change.head_sha.as_str()
-            {
+            } else if in_line && pull.conflicts() {
+                let why = format!(
+                    "conflicts with {}, so GitHub runs no CI on it",
+                    pull.base.ref_
+                );
+                self.needs_rebase(&change, &why).await;
+            } else if change.state == ChangeState::Ready {
+                // The train takes it from here, and reads a moved head then (`take`).
+                if in_line {
+                    self.unstarted_checks(&change, &pull.base.ref_).await;
+                }
+            } else if change.state == ChangeState::Queued || moved {
                 if let Err(e) = self.admit(&change, &pull).await {
                     let why = error_text(&format!("GitHub: {}", e.message));
                     self.update(&change.change_id, Some(&[change.state]), |mut c| {
@@ -1977,8 +2086,85 @@ impl Train {
                 self.set_ready(&change, reviews);
             } else if timed_out(&change) {
                 self.after_timeout(&change).await;
+            } else if in_line {
+                self.unstarted_checks(&change, &pull.base.ref_).await;
             }
         }
+    }
+
+    /// A Change in line whose head has no check `checks_start_wait` after the train first saw it: GitHub skipped its
+    /// CI, or no workflow took the push. Only the base's required checks count when it has any; else any check does.
+    /// Its author and the lead hear once per head, and it keeps its place (D191).
+    async fn unstarted_checks(&self, change: &Change, base: &str) {
+        let head = change.head_sha.as_str();
+        let now = self.now_ms();
+        {
+            let mut seen = lock(&self.unstarted);
+            let entry = seen
+                .entry(change.change_id.clone())
+                .or_insert_with(|| (head.to_string(), now, false));
+            if entry.0 != head {
+                *entry = (head.to_string(), now, false);
+            }
+            if entry.2 || now - entry.1 < self.options.checks_start_wait.as_millis() as i64 {
+                return;
+            }
+        }
+        let Ok(ci) = self.ci_config(&change.repo, base).await else {
+            return;
+        };
+        let required: Vec<&String> = ci
+            .required_checks
+            .iter()
+            .filter(|c| *c != TRAIN_CONTEXT)
+            .collect();
+        if ci.workflows.is_empty() && required.is_empty() {
+            return;
+        }
+        let counts = |name: &str| {
+            name != TRAIN_CONTEXT && (required.is_empty() || required.iter().any(|r| *r == name))
+        };
+        let started = match self.github.check_runs(&change.repo, head).await {
+            Ok(runs) if runs.iter().any(|r| counts(&r.name)) => true,
+            Ok(_) => match self.github.statuses(&change.repo, head).await {
+                Ok(statuses) => statuses.iter().any(|s| counts(&s.context)),
+                Err(e) => {
+                    return tracing::warn!(change_id = %change.change_id, error = %e.message, "train: statuses not read");
+                }
+            },
+            Err(e) => {
+                return tracing::warn!(change_id = %change.change_id, error = %e.message, "train: check runs not read");
+            }
+        };
+        if let Some(entry) = lock(&self.unstarted).get_mut(&change.change_id) {
+            entry.2 = true;
+        }
+        if started {
+            return;
+        }
+        let min = self.options.checks_start_wait.as_secs() / 60;
+        let text = format!(
+            "no check started on its head {} in {min} min: GitHub skipped its CI, or no workflow took the push. It \
+             keeps its place in the train; push to it again (an empty commit will do) to start its CI",
+            short(head)
+        );
+        if let Some(task_id) = &change.task_id {
+            let message = format!("Your PR {} ({}): {text}.", change.pr_url, change.change_id);
+            if let Err(e) = self
+                .host
+                .message_task(&change.project_ref, TRAIN_BY, task_id, message)
+                .await
+            {
+                tracing::warn!(change_id = %change.change_id, task_id = %task_id, error = %e, "train: author not messaged");
+            }
+        }
+        let line = Event::PrNote {
+            change: change.change_id.as_str(),
+            pr_url: change.pr_url.as_str(),
+            text: &text,
+        }
+        .render();
+        self.wake_lead(&change.project_ref, line).await;
     }
 
     /// A queued Change whose PR is a draft waits there, saying so, until the PR is marked ready.
@@ -2042,8 +2228,39 @@ impl Train {
                     self.wake_lead(&change.project_ref, line).await;
                 }
             }
+            Checks::Red(red) if all_cancelled(&red) => self.late_cancelled(change, &red).await,
             Checks::Red(red) => self.ci_failed(change, &red, None).await,
             Checks::None | Checks::Pending => {}
+        }
+    }
+
+    /// A timed-out Change whose checks then read cancelled: their run is re-run, `CANCELLED_RERUNS` times at most, and
+    /// then it goes back to its author, so it never just sits (D191).
+    async fn late_cancelled(&self, change: &Change, cancelled: &[CheckRun]) {
+        let mut reruns = lock(&self.late_reruns)
+            .remove(&change.change_id)
+            .unwrap_or_default();
+        let rerun = self
+            .rerun_cancelled(change, &change.repo, cancelled, &mut reruns)
+            .await;
+        lock(&self.late_reruns).insert(change.change_id.clone(), reruns);
+        if rerun.is_some() {
+            return;
+        }
+        let back = self.update(
+            &change.change_id,
+            Some(&[ChangeState::CiFailed]),
+            |mut c| {
+                c.last_error = Some(error_text(CI_CANCELLED));
+                c
+            },
+        );
+        if back.is_some() {
+            let problem = format!(
+                "the merge train did not merge it: {CI_CANCELLED}; push to it again (an empty commit will do) to \
+                 start its CI"
+            );
+            self.tell_author(change, &problem).await;
         }
     }
 
@@ -2310,13 +2527,14 @@ impl Train {
         if !lock(&self.recovered).contains(&repo) {
             self.recover(&repo).await;
         }
+        // Before refresh: a member of a batch that landed is merged, never read as a waiting PR that conflicts.
+        self.reconcile_batches(&repo).await;
         self.refresh(&repo).await;
         self.ready_pass(&repo, &train.project_ref).await;
         self.main_ci_pass(&repo, &train.project_ref).await;
         self.watch_pass(&repo).await;
         self.check_merged_outside(&repo, train.watch_since_ms, &train.project_ref)
             .await;
-        self.reconcile_batches(&repo).await;
         self.sweep_scratch(&repo).await;
         self.after_pass(&repo).await;
         self.next(&repo).await

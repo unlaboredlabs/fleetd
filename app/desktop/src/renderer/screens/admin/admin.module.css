@@ -1,0 +1,85 @@
+/*
+ * Administration. Calm, like Settings: rows sit between hairlines, with no boxes, no tinted edges and nothing that
+ * pulses. Every row sizes to its content.
+ */
+
+.list {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  max-width: 720px;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-1) var(--space-4);
+  align-items: center;
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--hairline);
+}
+.row:last-child {
+  border-bottom: 1px solid var(--hairline);
+}
+
+.who {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.name {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.role {
+  min-width: 7.5rem;
+}
+
+/* The one-time link: its text, selectable, and Copy beside it. */
+.created {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-width: 720px;
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--hairline);
+}
+
+.link {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.link > :first-child {
+  flex: 1;
+  min-width: 0;
+  user-select: text;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-width: 420px;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}

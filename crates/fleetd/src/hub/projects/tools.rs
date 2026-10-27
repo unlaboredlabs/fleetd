@@ -1,5 +1,5 @@
 //! project_discover, project_add and project_remove: thin over the projects service. A project's settings are in
-//! settings.rs.
+//! settings.rs, its repos in repos.rs.
 use std::sync::Arc;
 
 use fleetd_contracts::auth::Role;
@@ -19,6 +19,7 @@ pub fn register(tools: &mut Registry) {
     tools.add("project_remove", remove);
     super::settings::register(tools);
     super::profiles::register(tools);
+    super::repos::register(tools);
 }
 
 async fn discover(

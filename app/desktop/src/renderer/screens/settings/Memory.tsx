@@ -10,7 +10,6 @@ import type { MemoryFile, MemoryNote, MemorySetInput, ProjectRef } from "../../.
 import { Button, ContextMenu, ContextMenuItem, Field, Input, Separator, Text, Textarea, toast, Tooltip } from "../../ui";
 import { useToolQuery } from "../../src/data/react";
 import { parseScope, projectRefOf, scopeKey, type Draft, type Scope } from "./editor";
-import { MemoryCaps } from "./MemoryCaps";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import {
   capState,
@@ -140,8 +139,6 @@ export function Memory({ route }: { route: SettingsRoute }) {
               )
             : null}
         </div>
-        <Separator />
-        <MemoryCaps caps={d?.caps} />
       </div>
     </div>
   );

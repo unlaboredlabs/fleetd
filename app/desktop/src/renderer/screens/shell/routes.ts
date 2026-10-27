@@ -43,9 +43,13 @@ export const listView = (tab: PanelTab): PanelView => {
 export const hasItem = (view: PanelView): boolean =>
   view.tab === "agents" ? view.agent !== null : view.tab === "prs" ? view.pr !== null : view.tab === "sessions" ? view.session !== null : false;
 
-export const SETTINGS_TABS = ["general", "notifications", "agents", "machines", "projects", "mcp", "prompts", "instructions", "memory", "automations", "skills"] as const;
+export const SETTINGS_TABS = ["general", "notifications", "agents", "projects", "mcp", "prompts", "instructions", "memory", "automations", "skills"] as const;
 export type SettingsTab = (typeof SETTINGS_TABS)[number];
 export type SettingsView = "edit" | "compare" | "update";
+
+/** The Administration page's sections: for the hub's owners and admins only, never mixed into Settings. */
+export const ADMIN_SECTIONS = ["people", "invites", "hub", "setup"] as const;
+export type AdminSection = (typeof ADMIN_SECTIONS)[number];
 
 export type Screen =
   /** `#/`: the last project opened, else the first; the frame resolves it once the projects have loaded. */
@@ -64,6 +68,8 @@ export type Screen =
   | { readonly id: "projects.add" }
   /** A tab; `prompt`, `for` ("<machine>/<project>") and `view` link one prompt, a project's texts or a prompt's update. */
   | { readonly id: "settings"; readonly tab: SettingsTab; readonly prompt?: string; readonly for?: string; readonly view?: SettingsView }
+  /** Administration: people, invites, hub-wide settings and setup. */
+  | { readonly id: "admin"; readonly section: AdminSection }
   /** A fleetd://pair link prefills the hub and code; the screen still asks before it pairs. */
   | { readonly id: "onboarding"; readonly hub: string | null; readonly code: string | null }
   /** One session in a window of its own (the pop-out, for taking over); the main window shows it in the panel. */
@@ -72,6 +78,7 @@ export type Screen =
 export const HOME: Screen = { id: "home" };
 
 const isSettingsTab = (tab: string | undefined): tab is SettingsTab => SETTINGS_TABS.some((t) => t === tab);
+const isAdminSection = (section: string | undefined): section is AdminSection => ADMIN_SECTIONS.some((x) => x === section);
 
 const decode = (segment: string): string | null => {
   try {
@@ -135,6 +142,8 @@ const screenOf = (parts: ReadonlyArray<string>, query: URLSearchParams): Screen 
     case "projects":
       return a === "add" ? { id: "projects.add" } : HOME;
     case "settings": {
+      // Machine roles moved to Administration's hub settings; an older link still lands on them.
+      if (a === "machines") return { id: "admin", section: "hub" };
       const [prompt, project, view] = [query.get("prompt"), query.get("for"), query.get("view")];
       return {
         id: "settings",
@@ -144,6 +153,8 @@ const screenOf = (parts: ReadonlyArray<string>, query: URLSearchParams): Screen 
         ...(view === "compare" || view === "update" ? { view } : {}),
       };
     }
+    case "admin":
+      return { id: "admin", section: isAdminSection(a) ? a : "people" };
     case "onboarding":
       return { id: "onboarding", hub: query.get("hub") || null, code: query.get("code") || null };
     default:
@@ -188,6 +199,8 @@ const path = (screen: Screen): Array<string> => {
       return ["projects", "add"];
     case "settings":
       return ["settings", screen.tab];
+    case "admin":
+      return ["admin", screen.section];
     case "session":
       return ["session", screen.project.machineId, screen.project.projectId, screen.session];
     case "status":

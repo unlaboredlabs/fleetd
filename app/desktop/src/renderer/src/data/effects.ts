@@ -96,20 +96,24 @@ export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unk
   // Only the open panel's project has its checklist mounted.
   if (type === "checklist.changed") out.push({ tool: "checklist_get" });
   if (type === "skills.changed") out.push({ tool: "skills_list" });
+  // Someone invited, joined, renamed, given a role or removed: Administration's lists, and whether this person still
+  // administers (the sidebar's entry).
+  if (type === "people.changed") out.push({ tool: "people_list" }, { tool: "hub_info" });
   // A session started, changed hands, ended or its recording landed: the Sessions view's list reads it again. A
   // recording, once read, never changes.
   if (type === "browser.session") out.push({ tool: "browser_sessions" });
   // A preview started, moved a step, became ready, ended or failed: Try it reads the project's previews again.
   if (type === "preview.state") out.push({ tool: "previews_list" });
   if (type === "doctor.changed") out.push({ tool: "doctor_list" });
-  // Settings → Machines: a machine coming and going, and a session starting or ending, move its rows.
+  // Administration's machine roles: a machine coming and going, and a session starting or ending, move its rows.
   if (type.startsWith("machine.") || type === "browser.session") out.push({ tool: "machine_roles" });
   // The hub's attention policy is a global decision. Only the open Decisions tab has its list mounted, so this
   // refetches one read.
   if (type === "decision.recorded" || type === "decision.retired") out.push({ tool: "fleetd_status" }, { tool: "decisions_list" });
 
   const newMachine = type.startsWith("machine.") && (event.machineId === undefined || !(event.machineId in machines));
-  const resync = newMachine || type === "project.added" || type === "project.removed";
+  // A repo removed from a project (project.settings) can bring its checkout back as a project of its own.
+  const resync = newMachine || type === "project.added" || type === "project.removed" || type === "project.settings";
   // Add project's list marks which repos are already projects.
   if (type === "project.added" || type === "project.removed") out.push({ tool: "project_discover" });
   return { invalidate: out, resync };

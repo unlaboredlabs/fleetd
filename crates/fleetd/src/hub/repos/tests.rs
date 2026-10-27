@@ -69,6 +69,15 @@ fn repo(n: u32, name: &str, of: &str, scope: Option<(&str, &str)>) -> ProjectRep
         checkout: project(of),
         repo_key: scope.map(|(k, _)| RepoKey::new(k).unwrap()),
         base: scope.map(|(_, b)| Line::new(b).unwrap()),
+        path: None,
+    }
+}
+
+/// The repo as the hub serves it once its checkout's node reported the checkout at `path`.
+fn at(repo: ProjectRepo, path: &str) -> ProjectRepo {
+    ProjectRepo {
+        path: Some(path.to_owned()),
+        ..repo
     }
 }
 
@@ -113,7 +122,10 @@ fn an_older_hubs_projects_get_their_own_repo_at_start() {
     }
 
     let hub = hub_on(HubDb::open(home.path()).unwrap(), home.path());
-    let shop = repo(1, "shop", "shop", Some(("github.com/acme/shop", "main")));
+    let shop = at(
+        repo(1, "shop", "shop", Some(("github.com/acme/shop", "main"))),
+        "/home/me/src/Shop_App",
+    );
     assert_eq!(served(&hub, "shop"), std::slice::from_ref(&shop));
     assert_eq!(served(&hub, "local"), []);
     assert_eq!(served(&hub, "notes"), []);
@@ -181,11 +193,14 @@ fn a_project_added_later_gets_its_own_repo_once_bound() {
     hub.work
         .bind_project(&api, &scope("github.com/acme/api-server", "main"))
         .unwrap();
-    let own = repo(
-        1,
-        "api-server",
-        "api",
-        Some(("github.com/acme/api-server", "main")),
+    let own = at(
+        repo(
+            1,
+            "api-server",
+            "api",
+            Some(("github.com/acme/api-server", "main")),
+        ),
+        "/srv/api",
     );
     assert_eq!(served(&hub, "api"), std::slice::from_ref(&own));
     assert_eq!(hub.repos.own(&api).unwrap(), Some(own.clone()));
@@ -211,15 +226,21 @@ fn a_project_added_later_gets_its_own_repo_once_bound() {
         .unwrap();
     assert_eq!(
         served(&hub, "api"),
-        [repo(
-            1,
-            "api-server",
-            "api",
-            Some(("github.com/acme/api-server", "trunk"))
+        [at(
+            repo(
+                1,
+                "api-server",
+                "api",
+                Some(("github.com/acme/api-server", "trunk"))
+            ),
+            "/srv/api"
         )]
     );
     hub.work.unbind_project(&api).unwrap();
-    assert_eq!(served(&hub, "api"), [repo(1, "api-server", "api", None)]);
+    assert_eq!(
+        served(&hub, "api"),
+        [at(repo(1, "api-server", "api", None), "/srv/api")]
+    );
 }
 
 /// A scope bound by a writer that doesn't know about repos (an older hub's code path, or a rollback) is picked up the
@@ -240,7 +261,10 @@ fn a_read_gives_a_bound_project_its_own_repo() {
         })
         .unwrap();
     assert_eq!(served(&hub, "web"), []);
-    let own = repo(1, "web", "web", Some(("github.com/acme/web", "main")));
+    let own = at(
+        repo(1, "web", "web", Some(("github.com/acme/web", "main"))),
+        "/srv/web",
+    );
     assert_eq!(
         hub.repos.repos_of(&web).unwrap(),
         std::slice::from_ref(&own)
@@ -272,7 +296,10 @@ fn repos_survive_a_node_refresh() {
     hub.work
         .bind_project(&shop, &scope("github.com/acme/shop", "main"))
         .unwrap();
-    let own = repo(1, "shop", "shop", Some(("github.com/acme/shop", "main")));
+    let own = at(
+        repo(1, "shop", "shop", Some(("github.com/acme/shop", "main"))),
+        "/srv/shop",
+    );
 
     node_reports(&hub, &[summary("shop", "/srv/shop")]);
     assert_eq!(served(&hub, "shop"), std::slice::from_ref(&own));
@@ -324,8 +351,11 @@ fn removal_cascades_and_repo_numbers_are_never_reused() {
     assert_eq!(
         hub.repos.repos_of(&shop).unwrap(),
         [
-            repo(1, "shop", "shop", Some(("github.com/acme/shop", "main"))),
-            repo(2, "api", "api", None)
+            at(
+                repo(1, "shop", "shop", Some(("github.com/acme/shop", "main"))),
+                "/srv/shop"
+            ),
+            at(repo(2, "api", "api", None), "/srv/api")
         ]
     );
     assert_eq!(
@@ -345,11 +375,9 @@ fn removal_cascades_and_repo_numbers_are_never_reused() {
     node_reports(&hub, &[summary("shop", "/srv/shop")]);
     assert_eq!(
         served(&hub, "shop"),
-        [repo(
-            3,
-            "shop",
-            "shop",
-            Some(("github.com/acme/shop", "main"))
+        [at(
+            repo(3, "shop", "shop", Some(("github.com/acme/shop", "main"))),
+            "/srv/shop"
         )]
     );
 }

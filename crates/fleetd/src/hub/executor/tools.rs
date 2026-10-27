@@ -165,7 +165,7 @@ async fn fleetd_status(
         .collect();
     let mut projects: Vec<_> = hub
         .store
-        .projects_list(None, None)?
+        .projects_shown(None, None)?
         .into_iter()
         .filter(|p| readable(&caller, &p.machine_id))
         .collect();
@@ -200,7 +200,7 @@ fn projects_list(
     }
     let projects: Vec<_> = hub
         .store
-        .projects_list(machine_id, query)?
+        .projects_shown(machine_id, query)?
         .into_iter()
         .filter(|p| readable(caller, &p.machine_id))
         .collect();

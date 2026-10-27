@@ -59,6 +59,32 @@ fleetd project remove devbox/storefront
 `list` prints each project as `<machineId>/<projectId>`, its title and its folder. `remove` stops the project's agents and forgets it. Its files, branches and worktrees stay.
 To also remove the worktrees its agents worked in, delete it from the app instead: see [Delete a project](#delete).
 
+### Repos {#repos}
+
+A project is a lead and its own folder, holding zero or more git repos. A project added from a checkout holds that
+checkout; add more to keep one lead across several repos.
+
+```sh
+fleetd project repo add devbox/storefront ~/src/api
+fleetd project repo add devbox/storefront https://github.com/acme/web --name web
+fleetd project repo list devbox/storefront
+fleetd project repo remove devbox/storefront api
+```
+
+- **Add** takes a checkout on the project's machine, or a GitHub repo to clone there (with `--dest` and
+  `--use-existing`, as for `project add`). The name comes from the remote or folder unless you pass `--name`.
+- **The checkout stops showing as a project** while a project holds it. A checkout that was a project of its own is
+  archived: its chat and history stay, and its lead no longer runs. fleetd refuses while its agents run.
+- **One repo can be in several projects.**
+- **The project's environment variables, MCP servers and skills** go to every one of its checkouts.
+- **The lead's first message** lists the project's repos.
+- **Remove** cancels that repo's running agents. The project's other work goes on. Nothing is deleted: the checkout stays
+  on its machine and, once no project holds it, shows as a project of its own again. A project's own folder can't be
+  removed this way; remove the project instead.
+
+The same actions are in Settings → Projects → Repos, and agents have `project_repo_add`, `project_repo_list` and
+`project_repo_remove`.
+
 ## Project settings {#settings}
 
 Open a project's settings in the desktop app: Settings → Projects, then pick the project. Machines → a project's
@@ -67,7 +93,7 @@ Open a project's settings in the desktop app: Settings → Projects, then pick t
 | Setting | Does |
 |---|---|
 | Name | How fleetd shows the project. Its folder keeps its own name. |
-| Repos | The git repos the project holds, each with its remote, base branch and checkout (machine and path), and the setup and preview it runs with: its own, or the project's. A plain folder holds none. Read-only for now. |
+| Repos | The git repos the project holds, each with its remote, base branch and checkout (machine and path), and the setup and preview it runs with: its own, or the project's. A plain folder holds none. **Add repo** and **Remove…**: see [Repos](#repos). |
 | Keep finished worktrees | Off (the default): a reader's worktree goes when its task finishes, and a writer's once its pull request merges; any left behind go in the [nightly cleanup](#cleanup). On: they stay on the machine. |
 | Refresh memory every night | On (the default): around 04:00, on a day with chat or orders, the lead tidies the project's memory and the chat shows one line of its changes, with Undo. Off: memory changes only as the lead and you write it. See [The nightly refresh](/docs/what-agents-are-told#memory-refresh). |
 | Environment variables | Variables every new agent of the project gets. See [Environment variables](#env). |
@@ -220,9 +246,9 @@ whole fleet. The hub enforces all of them; the lead plans to them.
 
 | Cap | Counts | Default | Set it |
 |---|---|---|---|
-| Per machine | Every project's agents on the machine. Not the leads. | Auto, what it fits: one per CPU less one in eight, and 2 GB of memory each after a quarter of it (4 to 16 GB) is left for the system, at most 64. An 8 GB laptop fits 2, a 32 GB one 12, a 60 GB one 22. | Settings → Agents → Machines, up to the fleet cap; "Use auto" goes back. Needs an admin key. node.json's `memPerAgentGb` changes the 2 GB of auto. |
-| Per project: Max agents | The project's agents: writers, readers, reviewers. Not the lead. | Its machine's cap, within the fleet cap: it follows a change to either at once | Click "max 12" beside the working count in the panel's Agents tab, or use Settings → Agents, up to the fleet cap. Once set it is the project's own, which no fleet or machine change moves; "Use the default" goes back. Past its machine's cap, the slider says the machine holds it there and offers to raise the machine. |
-| Fleet-wide | Every project's agents together. Not the leads. | None: the machines' caps added up | Settings → Agents → Whole fleet. Needs an admin key. A fleet cap saved before stays until you change it. |
+| Per machine | Every project's agents on the machine. Not the leads. | Auto, what it fits: one per CPU less one in eight, and 2 GB of memory each after a quarter of it (4 to 16 GB) is left for the system, at most 64. An 8 GB laptop fits 2, a 32 GB one 12, a 60 GB one 22. | Administration › Hub settings → Machines, up to the fleet cap; "Use auto" goes back. Owners and admins only. node.json's `memPerAgentGb` changes the 2 GB of auto. |
+| Per project: Max agents | The project's agents: writers, readers, reviewers. Not the lead. | Its machine's cap, within the fleet cap: it follows a change to either at once | Click "max 12" beside the working count in the panel's Agents tab, or use Settings → Agents, up to the fleet cap. Once set it is the project's own, which no fleet or machine change moves; "Use the default" goes back. Past its machine's cap, the slider says the machine holds it there until an admin raises the machine. |
+| Fleet-wide | Every project's agents together. Not the leads. | None: the machines' caps added up | Administration › Hub settings → Whole fleet. Owners and admins only. A fleet cap saved before stays until you change it. |
 
 New agents on a machine also wait for disk: 5 GB each (`diskPerAgentGb`) above the free-space floor, with agents started
 in the last 10 minutes still counted, since their worktrees haven't grown yet. The lead's state line names what sets
@@ -294,7 +320,7 @@ view splits agent time and output tokens by profile, so you can see what medium 
 
 | To change | Do |
 |---|---|
-| The model and effort behind a profile, for every project | Settings → Agents → Task profiles (an admin key), or `fleetd project set --high-model claude-sonnet-5-5 --high-effort max`. |
+| The model and effort behind a profile, for every project | Administration › Hub settings → Task profiles (owners and admins), or `fleetd project set --high-model claude-sonnet-5-5 --high-effort max`. |
 | The same for one project | Settings → Projects → the project → Task profiles, or `fleetd project set <machine>/<project> --medium-model claude-sonnet-5-5`. |
 | Whether the lead may use medium | Settings → Agents → the project's Medium allowed switch, or `fleetd project set <machine>/<project> --medium off`: every new task runs on high. `--medium on` allows medium again (the default). |
 | When the lead picks medium | Edit the **Task profiles** prompt (`lead.profiles`) like any [prompt](/docs/what-agents-are-told). It takes effect at the lead's next start. |

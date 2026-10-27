@@ -6,8 +6,11 @@ use fleetd_contracts::repos::{ProjectRepo, RepoId, RepoName};
 use fleetd_contracts::work::RepoKey;
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
+/// The checkout's directory comes from the node's row of it in `projects`.
 const COLUMNS: &str =
-    "n, name, checkout_machine_id, checkout_project_id, repo_key, base, machine_id, project_id";
+    "n, name, checkout_machine_id, checkout_project_id, repo_key, base, machine_id, project_id,
+     (SELECT json_extract(p.data, '$.workspaceRoot') FROM projects p
+      WHERE p.machine_id = repos.checkout_machine_id AND p.project_id = repos.checkout_project_id)";
 
 fn repo_of(row: &Row<'_>) -> rusqlite::Result<ProjectRepo> {
     Ok(ProjectRepo {
@@ -19,6 +22,7 @@ fn repo_of(row: &Row<'_>) -> rusqlite::Result<ProjectRepo> {
         },
         repo_key: row.get::<_, Option<String>>(4)?.map(RepoKey::unchecked),
         base: row.get::<_, Option<String>>(5)?.map(Line::unchecked),
+        path: row.get::<_, Option<String>>(8)?,
     })
 }
 
@@ -106,11 +110,11 @@ pub fn holding(
     .collect()
 }
 
-/// Makes sure the project has its own repo when its directory is a git repo, and that the repo's key and base are the
-/// ones its work is bound to (`work_projects`). The directory is known to be a git repo when `git_root`, where the
-/// caller saw it, is given, or when the hub has the project cached and its work is bound (it has an origin). Otherwise
-/// the project stays as it is: a plain directory has no repo, and a removed project gets none back. Returns the own
-/// repo.
+/// Makes sure the project has its own repo when its directory is a git repo, and that the repo's key and base (and
+/// those of every project's repo in this checkout) are the ones its work is bound to (`work_projects`). The directory
+/// is known to be a git repo when `git_root`, where the caller saw it, is given, or when the hub has the project cached
+/// and its work is bound (it has an origin). Otherwise the project stays as it is: a plain directory has no repo, and a
+/// removed project gets none back. Returns the own repo.
 pub fn ensure_own(
     db: &Connection,
     project: &ProjectRef,
@@ -121,8 +125,8 @@ pub fn ensure_own(
     let base = scope.as_ref().map(|s| s.base.as_str());
     if own(db, project)?.is_some() {
         db.prepare_cached(
-            "UPDATE repos SET repo_key = ?3, base = ?4 WHERE machine_id = ?1 AND project_id = ?2
-             AND checkout_machine_id = ?1 AND checkout_project_id = ?2 AND (repo_key IS NOT ?3 OR base IS NOT ?4)",
+            "UPDATE repos SET repo_key = ?3, base = ?4 WHERE checkout_machine_id = ?1 AND checkout_project_id = ?2
+             AND (repo_key IS NOT ?3 OR base IS NOT ?4)",
         )?
         .execute(params![project.machine_id.as_str(), project.project_id.as_str(), repo_key, base])?;
         return own(db, project);
@@ -181,7 +185,11 @@ pub fn name_for(path: Option<&str>) -> RepoName {
 }
 
 /// `name`, or `name-2`, `name-3`… when the project already has a repo by that name.
-fn free_name(db: &Connection, project: &ProjectRef, name: &RepoName) -> rusqlite::Result<RepoName> {
+pub fn free_name(
+    db: &Connection,
+    project: &ProjectRef,
+    name: &RepoName,
+) -> rusqlite::Result<RepoName> {
     let mut candidate = name.clone();
     let mut k = 2;
     while by_name(db, project, &candidate)?.is_some() {
@@ -192,6 +200,59 @@ fn free_name(db: &Connection, project: &ProjectRef, name: &RepoName) -> rusqlite
         k += 1;
     }
     Ok(candidate)
+}
+
+/// Adds a repo to the project, its files in `checkout`, its key and base those the checkout's work is bound to.
+pub fn attach(
+    db: &Connection,
+    project: &ProjectRef,
+    name: &RepoName,
+    checkout: &ProjectRef,
+) -> rusqlite::Result<ProjectRepo> {
+    let scope = crate::hub::work::store::scope_of(db, checkout)?;
+    db.prepare_cached(
+        "INSERT INTO repos (machine_id, project_id, name, checkout_machine_id, checkout_project_id, repo_key, base)
+         VALUES (?, ?, ?, ?, ?, ?, ?)",
+    )?
+    .execute(params![
+        project.machine_id.as_str(),
+        project.project_id.as_str(),
+        name.as_str(),
+        checkout.machine_id.as_str(),
+        checkout.project_id.as_str(),
+        scope.as_ref().map(|s| s.repo_key.as_str()),
+        scope.as_ref().map(|s| s.base.as_str()),
+    ])?;
+    Ok(by_name(db, project, name)?.expect("just added"))
+}
+
+/// Takes the repo out of the project; its checkout stays as it is.
+pub fn detach(db: &Connection, project: &ProjectRef, name: &RepoName) -> rusqlite::Result<bool> {
+    let n = db
+        .prepare_cached("DELETE FROM repos WHERE machine_id = ? AND project_id = ? AND name = ?")?
+        .execute(params![
+            project.machine_id.as_str(),
+            project.project_id.as_str(),
+            name.as_str()
+        ])?;
+    Ok(n > 0)
+}
+
+/// The other projects holding the checkout as one of their repos, each with that repo: while there is one, the
+/// checkout is attached and doesn't show as a project of its own.
+pub fn holders(
+    db: &Connection,
+    checkout: &ProjectRef,
+) -> rusqlite::Result<Vec<(ProjectRef, ProjectRepo)>> {
+    db.prepare_cached(&format!(
+        "SELECT {COLUMNS} FROM repos WHERE checkout_machine_id = ?1 AND checkout_project_id = ?2
+         AND NOT (machine_id = ?1 AND project_id = ?2) ORDER BY n"
+    ))?
+    .query_map(
+        params![checkout.machine_id.as_str(), checkout.project_id.as_str()],
+        |row| Ok((project_of(row)?, repo_of(row)?)),
+    )?
+    .collect()
 }
 
 /// Forgets the project's repos and every repo whose files were in it: its node no longer has it.

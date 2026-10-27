@@ -81,6 +81,11 @@
 <li>Posts the <code dir="auto">fleetd/train</code> status and squash-merges it, pinned to that commit.</li>
 </ol>
 <p>A conflict or red CI goes back to the agent that wrote the PR; for red CI, with the failing checks.</p>
+<p>GitHub runs no CI on a PR that conflicts with its base. So on every pass the train reads each waiting PR’s mergeable
+state, and once GitHub says it conflicts, the PR goes back to its agent as <code dir="auto">needs_rebase</code> (“conflicts with main, so
+GitHub runs no CI on it”) without waiting for its turn. A waiting PR whose commit has none of its base’s required
+checks (any check, when the base requires none) 15 minutes after the train first saw it is flagged to its agent and the
+lead, once per commit, and keeps its place.</p>
 <p>fleetd merges only on green CI. A ready PR on a repo with no CI (no GitHub Actions workflow, and no required check but
 <code dir="auto">fleetd/train</code>) waits, and its queue entry and <code dir="auto">fleetd doctor</code> say to add one. It goes on by itself once a workflow
 exists.</p>
@@ -116,11 +121,13 @@ whether its fix order is open (<a href="/docs/status#red-main">a check red on ma
 <p>The train gives a commit’s CI 45 minutes of running time, counted from when its first check starts. Time the checks
 spend queued for runners doesn’t count. While every check is still queued, there is a ceiling of 2 hours. If the CI
 provider gives no start times, the 45 minutes count from when the train starts waiting.</p>
-<p>A red check fails the PR at once, however long the other checks have left. CI that runs out of time is different: the
+<p>A red check fails the PR at once, however long the other checks have left. A cancelled check is never a failure: if
+a push to the PR cancelled its run, the train takes the new commit instead; otherwise it re-runs the run, or waits. CI that runs out of time is different: the
 PR shows <code dir="auto">ci_failed</code> with “CI timed out”, the lead is told, and the agent that wrote it isn’t asked to push. The train
 keeps reading that commit’s checks. If they finish green, the PR goes back in the queue (“CI finished after the
 timeout; back in the queue”) and merges on that run, after the usual rebase if its base moved. If one goes red, the
-PR goes back to its agent as for any red CI. A new push starts over as usual.</p>
+PR goes back to its agent as for any red CI. If they read cancelled, the train re-runs them twice, then sends the PR
+back to its agent to push again. A new push starts over as usual.</p>
 <p>When the hub restarts while a PR’s CI runs, alone or in a batch, the new hub keeps watching the same run on the same
 commit, and merges once it is green. It doesn’t rebase the PR or run its CI again.</p>
 <p>The train takes a PR whose base is a branch it merges into, such as <code dir="auto">main</code>. A PR based on another open PR’s branch is

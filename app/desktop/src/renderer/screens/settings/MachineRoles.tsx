@@ -1,59 +1,47 @@
-// Settings → Machines: what each machine is for (agents, sessions or both), how many browser and device sessions it
-// hosts at once, and what it can host, each in plain words as its node reported it. Reads machine_roles; a change is a
-// machine_roles_set call (an admin's), and the hub's answer replaces the row.
+// Administration's machine roles: what each machine is for (agents, sessions or both), how many browser and device
+// sessions it hosts at once, and what it can host, each in plain words as its node reported it. Hub-wide, so it lives on
+// Administration, not in Settings. Reads machine_roles; a change is a machine_roles_set call (an admin's), and the hub's
+// answer replaces the row.
 import { useState } from "react";
 import type { MachineRolesEntry } from "../../../shared/contracts";
 import { useToolQuery } from "../../src/data/react";
 import { Segmented, Select, Text } from "../../ui";
-import { useAdmin, NOT_ADMIN } from "./Agents";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import { capChoices, choiceOf, hostName, hostsInOrder, hostsNote, ROLE_CHOICES, ROLE_HELP, rolesOf, sessionsLine, type RolesChoice } from "./machinesModel";
-import { PageHead } from "./parts";
-import { useReveal } from "./search";
 import s from "./settings.module.css";
 
 const noInput = {};
 
-export function MachinesSettings() {
+export function MachineRoles() {
   const live = useLive();
-  const admin = useAdmin();
-  const ref = useReveal<HTMLElement>("machines.roles");
   const read = useToolQuery("machine_roles", noInput);
   const machines = read.data?.machines;
   return (
-    <div className={s.scroll} data-screen="settings.machines">
-      <div className={s.column}>
-        <PageHead title="Machines">
+    <section className={s.machineList} aria-labelledby="machine-roles">
+      <div className={s.settingLabel}>
+        <Text strong id="machine-roles">
+          Machine roles
+        </Text>
+        <Text size="xs" tone="quiet">
           What each machine is for. A browser or device session an agent starts runs on its own machine when it can host it, else on another that can, through the hub.
-        </PageHead>
-        <section ref={ref} className={s.machineList} aria-label="Machines" tabIndex={-1}>
-          {!live ? (
-            <Text tone="quiet">Connect to a hub to see and change this.</Text>
-          ) : read.error ? (
-            <Text tone="danger">{`Couldn't read the machines: ${errorText(read.error)}`}</Text>
-          ) : machines === undefined ? (
-            <Text tone="quiet">Loading…</Text>
-          ) : machines.length === 0 ? (
-            <Text tone="quiet">No machine has joined yet.</Text>
-          ) : (
-            <>
-              {admin ? null : (
-                <Text size="xs" tone="quiet">
-                  {NOT_ADMIN}
-                </Text>
-              )}
-              {machines.map((m) => (
-                <MachineRow key={m.machineId} machine={m} admin={admin} />
-              ))}
-            </>
-          )}
-        </section>
+        </Text>
       </div>
-    </div>
+      {!live ? (
+        <Text tone="quiet">Connect to a hub to see and change this.</Text>
+      ) : read.error ? (
+        <Text tone="danger">{`Couldn't read the machines: ${errorText(read.error)}`}</Text>
+      ) : machines === undefined ? (
+        <Text tone="quiet">Loading…</Text>
+      ) : machines.length === 0 ? (
+        <Text tone="quiet">No machine has joined yet.</Text>
+      ) : (
+        machines.map((m) => <MachineRow key={m.machineId} machine={m} />)
+      )}
+    </section>
   );
 }
 
-function MachineRow({ machine: m, admin }: { machine: MachineRolesEntry; admin: boolean }) {
+function MachineRow({ machine: m }: { machine: MachineRolesEntry }) {
   const live = useLive();
   const call = useHubCall();
   const refetch = useRefetch();
@@ -77,7 +65,7 @@ function MachineRow({ machine: m, admin }: { machine: MachineRolesEntry; admin: 
       });
   };
 
-  const disabled = !live || !admin || busy;
+  const disabled = !live || busy;
   const note = hostsNote(m);
   return (
     <section className={s.machineRow} aria-labelledby={`${id}-name`}>
