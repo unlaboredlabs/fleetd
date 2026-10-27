@@ -415,6 +415,7 @@ pub fn build_on_with(
         metrics: crate::hub::metrics::Metrics::new(hosts),
         updates,
         relays: Arc::default(),
+        previews: Arc::default(),
     });
     hub.updates
         .set_ports(Arc::new(crate::hub::update::ports::HubPorts(
@@ -432,6 +433,7 @@ pub fn build_on_with(
     crate::hub::checklist::calls::register_lead_calls(&hub);
     crate::hub::browser::calls::register_lead_calls(&hub);
     crate::hub::machine_roles::wire(&hub);
+    crate::hub::preview::wire(&hub);
     crate::hub::skills::calls::register_lead_calls(&hub);
     crate::hub::usage::calls::register_lead_calls(&hub);
     crate::hub::steer::wire(&hub);
@@ -456,6 +458,7 @@ pub fn start_loops(hub: &Arc<Hub>, tools: &Arc<Registry>) -> Vec<JoinHandle<()>>
     loops.push(tokio::spawn(crate::hub::machine_roles::run_prune(
         hub.clone(),
     )));
+    loops.push(tokio::spawn(crate::hub::preview::run_sweep(hub.clone())));
     loops.push(hub.sweep.start(crate::hub::sweep::SWEEP_EVERY_MS));
     loops.push(crate::hub::queue::start_loops(hub));
     loops.extend(crate::hub::usage::wire::start(hub));
