@@ -1,0 +1,453 @@
+/* The docs in the landing page's language (site/home.html): IBM Plex Sans for prose and Lilex for machine text, the
+   app's own faces; its paper, ink and greys; separation by spacing, type and hairlines, with no coloured edges and no
+   boxes where a rule will do. The fonts are the landing page's files at fleetd.sh/fonts, outside the docs' base, so
+   `npm run dev` falls back to system faces. */
+@font-face{font-family:"Plex";src:url(/fonts/plex-sans-Regular.woff2) format("woff2");font-weight:400;font-display:swap}
+@font-face{font-family:"Plex";src:url(/fonts/plex-sans-Medium.woff2) format("woff2");font-weight:500;font-display:swap}
+@font-face{font-family:"Plex";src:url(/fonts/plex-sans-SemiBold.woff2) format("woff2");font-weight:600 700;font-display:swap}
+@font-face{font-family:"Lilex";src:url(/fonts/lilex-Regular.woff2) format("woff2");font-weight:400;font-display:swap}
+@font-face{font-family:"Lilex";src:url(/fonts/lilex-Medium.woff2) format("woff2");font-weight:500 700;font-display:swap}
+
+/* Dark: the landing page's dark greys. Starlight's scale runs from --sl-color-white (headings) to --sl-color-black
+   (the page). */
+:root {
+  --sl-color-white: #ececea;
+  --sl-color-gray-1: #dededb;
+  --sl-color-gray-2: #c9c9c6;
+  --sl-color-gray-3: #a4a5a7;
+  --sl-color-gray-4: #7c7e81;
+  --sl-color-gray-5: #313133;
+  --sl-color-gray-6: #1d1d1d;
+  --sl-color-black: #121212;
+  --sl-color-accent-low: #3a2216;
+  --sl-color-accent: #f0884e;
+  --sl-color-accent-high: #f6b48c;
+
+  --sl-color-bg-nav: var(--sl-color-black);
+  --sl-color-bg-sidebar: var(--sl-color-black);
+  --sl-color-hairline: var(--sl-color-gray-5);
+  --sl-color-hairline-light: var(--sl-color-gray-5);
+  --sl-color-hairline-shade: var(--sl-color-gray-5);
+  --sl-color-backdrop-overlay: rgba(0, 0, 0, 0.55);
+
+  /* What the scale lacks: a fill a step off the page for code and the current page, and the landing page's mark. */
+  --fd-fill: #1b1b1b;
+  --fd-pick: #232325;
+  --fd-mark: #f0884e;
+
+  --sl-font: "Plex";
+  --sl-font-mono: "Lilex";
+  --sl-text-h1: 2.125rem;
+  --sl-text-h2: 1.5rem;
+  --sl-text-h3: 1.1875rem;
+  --sl-text-h4: 1.0625rem;
+  --sl-text-h5: 1rem;
+  --sl-text-code: 0.84375rem;
+  --sl-line-height: 1.7;
+  --sl-line-height-headings: 1.25;
+  --sl-content-width: 44rem;
+  --sl-sidebar-width: 17rem;
+  --sl-nav-height: 3.5rem;
+}
+
+:root[data-theme="light"] {
+  --sl-color-white: #18191b;
+  --sl-color-gray-1: #222326;
+  --sl-color-gray-2: #2c2d30;
+  --sl-color-gray-3: #5d5f63;
+  --sl-color-gray-4: #86888b;
+  --sl-color-gray-5: #cfcfca;
+  --sl-color-gray-6: #e9e9e5;
+  --sl-color-gray-7: #eeeeea;
+  --sl-color-black: #f2f2ef;
+  --sl-color-accent-low: #f6dccd;
+  --sl-color-accent: #c2410c;
+  --sl-color-accent-high: #9a3412;
+
+  --fd-fill: #f7f7f5;
+  --fd-pick: #e6e6e1;
+  --fd-mark: #c2410c;
+}
+
+::selection {
+  background-color: color-mix(in srgb, var(--fd-mark) 24%, transparent);
+}
+:focus-visible {
+  outline: 2px solid var(--fd-mark);
+  outline-offset: 2px;
+}
+body {
+  font-kerning: normal;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Header: the page's own paper under one hairline. */
+.header {
+  border-bottom-color: var(--sl-color-hairline);
+}
+.site-title {
+  gap: 0.625rem;
+  color: var(--sl-color-white);
+  font-size: 1.0625rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.site-title img {
+  height: 1.5rem;
+}
+button[data-open-modal] {
+  font-family: var(--__sl-font);
+}
+@media (min-width: 50rem) {
+  button[data-open-modal] {
+    height: 2.125rem;
+    max-width: 20rem;
+    border-color: var(--sl-color-hairline);
+    border-radius: 6px;
+    background-color: var(--fd-fill);
+    color: var(--sl-color-gray-3);
+  }
+  button[data-open-modal]:hover {
+    border-color: var(--sl-color-gray-4);
+    color: var(--sl-color-white);
+  }
+}
+button[data-open-modal] > kbd {
+  background-color: transparent;
+  color: var(--sl-color-gray-3);
+  font-size: 0.75rem;
+}
+.social-icons a {
+  color: var(--sl-color-gray-3);
+}
+.social-icons a:hover {
+  color: var(--sl-color-white);
+}
+.social-icons::after {
+  height: 1.25rem;
+  border-color: var(--sl-color-hairline);
+}
+starlight-theme-select select {
+  color: var(--sl-color-gray-3);
+  font-size: var(--sl-text-sm);
+}
+
+/* Sidebar: grey items, the current page in ink on a quiet fill, groups named in small grey type. */
+.sidebar-pane {
+  border-inline-end-color: var(--sl-color-hairline);
+}
+.sidebar-content {
+  padding-top: 1.25rem;
+}
+.sidebar-content .top-level > li + li {
+  margin-top: 1.25rem;
+}
+.sidebar-content summary {
+  padding-block: 0 0.25rem;
+}
+.sidebar-content .large {
+  color: var(--sl-color-gray-3);
+  font-size: var(--sl-text-xs);
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+.sidebar-content .caret {
+  color: var(--sl-color-gray-4);
+  font-size: 1rem;
+}
+.sidebar-content ul ul li {
+  margin-inline-start: 0;
+  border-inline-start: 0;
+  padding-inline-start: 0;
+}
+.sidebar-content a {
+  border-radius: 6px;
+  padding-block: 0.3125rem;
+  color: var(--sl-color-gray-3);
+  font-size: 0.90625rem;
+}
+.sidebar-content a:hover {
+  color: var(--sl-color-white);
+}
+.sidebar-content a[aria-current="page"],
+.sidebar-content a[aria-current="page"]:hover,
+.sidebar-content a[aria-current="page"]:focus {
+  background-color: var(--fd-pick);
+  color: var(--sl-color-white);
+  font-weight: 500;
+}
+
+/* On this page: a short grey list; the section in view is ink. */
+.right-sidebar {
+  border-inline-start-color: transparent;
+}
+.right-sidebar-panel {
+  padding-top: 2.5rem;
+}
+.right-sidebar-panel h2 {
+  color: var(--sl-color-gray-3);
+  font-size: var(--sl-text-xs);
+  font-weight: 500;
+  margin-bottom: 0.625rem;
+}
+.right-sidebar-panel nav a {
+  padding-block: 0.3125rem;
+  color: var(--sl-color-gray-3);
+  font-size: 0.84375rem;
+  line-height: 1.35;
+}
+.right-sidebar-panel nav a:hover {
+  color: var(--sl-color-white);
+}
+.right-sidebar-panel nav a[aria-current="true"] {
+  color: var(--sl-color-white);
+  font-weight: 500;
+}
+mobile-starlight-toc nav {
+  border-bottom-color: var(--sl-color-hairline);
+}
+
+/* The page header: the title and the page share one plane, with no rule between them. */
+.content-panel {
+  padding-block: 1.25rem;
+}
+.content-panel:first-of-type {
+  padding-top: 2.75rem;
+}
+.content-panel + .content-panel {
+  border-top: 0;
+}
+.content-panel h1 {
+  margin-top: 0;
+  font-size: var(--sl-text-h1);
+  font-weight: 500;
+  letter-spacing: -0.022em;
+  text-wrap: balance;
+}
+
+/* Prose */
+.sl-markdown-content {
+  color: var(--sl-color-gray-2);
+}
+.sl-markdown-content :is(h1, h2, h3, h4, h5, h6):not(:where(.not-content *)) {
+  font-weight: 500;
+  text-wrap: balance;
+}
+.sl-markdown-content h2:not(:where(.not-content *)) {
+  letter-spacing: -0.012em;
+}
+.sl-markdown-content :is(h4, h5, h6):not(:where(.not-content *)) {
+  font-weight: 600;
+}
+.sl-markdown-content :not(h1, h2, h3, h4, h5, h6, .sl-heading-wrapper) + .sl-heading-wrapper.level-h2 {
+  margin-top: 3rem;
+}
+.sl-markdown-content :not(h1, h2, h3, h4, h5, h6, .sl-heading-wrapper) + .sl-heading-wrapper:is(.level-h3, .level-h4) {
+  margin-top: 2.25rem;
+}
+.sl-markdown-content .sl-heading-wrapper + :not(.sl-heading-wrapper) {
+  margin-top: 0.75rem;
+}
+.sl-markdown-content .sl-heading-wrapper.level-h2 + .sl-heading-wrapper.level-h3 {
+  margin-top: 1.25rem;
+}
+.sl-markdown-content .sl-anchor-link {
+  color: var(--sl-color-gray-4);
+}
+.sl-markdown-content :is(strong, b):not(:where(.not-content *)) {
+  color: var(--sl-color-white);
+  font-weight: 600;
+}
+
+/* Links are ink with a light underline that darkens on hover, as on the landing page. */
+.sl-markdown-content a:not(:where(.not-content *)) {
+  color: var(--sl-color-white);
+  text-decoration-line: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.2em;
+  text-decoration-color: var(--sl-color-gray-4);
+}
+.sl-markdown-content a:not(:where(.not-content *)):hover {
+  text-decoration-color: currentColor;
+}
+.sl-markdown-content a code {
+  color: inherit;
+}
+
+/* Machine text inline: Lilex on a quiet fill, no outline. */
+.sl-markdown-content :not(pre) > code {
+  border: 0;
+  border-radius: 4px;
+  padding: 0.125em 0.375em;
+  background-color: var(--fd-pick);
+  color: var(--sl-color-white);
+  font-size: 0.875em;
+  font-variant-ligatures: none;
+}
+
+/* Tables: small grey heads over an ink rule, hairlines between rows. */
+.sl-markdown-content table:not(:where(.not-content *)) {
+  font-size: 0.9375rem;
+  line-height: 1.6;
+}
+/* A table spans the column, so its rules line up with the code and callouts around it; narrow screens keep
+   Starlight's scrolling block. */
+@media (min-width: 50rem) {
+  .sl-markdown-content table:not(:where(.not-content *)) {
+    display: table;
+    width: 100%;
+  }
+  .sl-markdown-content td:not(:where(.not-content *)) {
+    overflow-wrap: anywhere;
+  }
+}
+.sl-markdown-content th:not(:where(.not-content *)) {
+  border-bottom: 1px solid var(--sl-color-white);
+  padding-block: 0 0.5rem;
+  color: var(--sl-color-gray-3);
+  font-size: var(--sl-text-xs);
+  font-weight: 500;
+  text-align: start;
+}
+.sl-markdown-content td:not(:where(.not-content *)) {
+  border-bottom-color: var(--sl-color-hairline);
+  padding-block: 0.625rem;
+}
+.sl-markdown-content :is(th, td):not(:where(.not-content *)) {
+  padding-inline-end: 1.5rem;
+}
+
+.sl-markdown-content hr:not(:where(.not-content *)) {
+  border-bottom-color: var(--sl-color-hairline);
+}
+.sl-markdown-content blockquote:not(:where(.not-content *)) {
+  border-inline-start: 0;
+  padding-inline-start: 0;
+  color: var(--sl-color-gray-3);
+}
+
+/* Callouts: the landing page's command row, an ink rule over a hairline, with the kind named in small type. Only a
+   caution or danger takes colour, and only in its name. */
+.starlight-aside {
+  border: 0;
+  border-top: 1px solid var(--sl-color-white);
+  border-bottom: 1px solid var(--sl-color-hairline);
+  padding: 0.875rem 0 1rem;
+  background: none;
+  color: var(--sl-color-gray-2);
+  --sl-color-asides-text-accent: var(--sl-color-white);
+}
+.starlight-aside--caution,
+.starlight-aside--danger {
+  --sl-color-asides-text-accent: var(--fd-mark);
+}
+.starlight-aside__title {
+  gap: 0.375rem;
+  font-size: var(--sl-text-sm);
+  font-weight: 600;
+}
+.starlight-aside__icon {
+  font-size: 1.125em;
+}
+.starlight-aside__title + .starlight-aside__content {
+  margin-top: 0.375rem;
+}
+.starlight-aside__content a {
+  color: var(--sl-color-white);
+}
+
+/* Tabs: grey names over a hairline; the open one is ink, underlined in ink. */
+starlight-tabs [role="tablist"] {
+  border-bottom: 1px solid var(--sl-color-hairline);
+}
+starlight-tabs .tab > [role="tab"] {
+  --sl-tab-color-border: transparent;
+  box-shadow: 0 1px 0 var(--sl-tab-color-border);
+  padding: 0.375rem 0;
+  margin-inline-end: 1.5rem;
+  font-size: var(--sl-text-sm);
+  font-weight: 500;
+}
+starlight-tabs .tab [role="tab"][aria-selected="true"] {
+  --sl-tab-color-border: var(--sl-color-white);
+  font-weight: 500;
+}
+
+/* Previous and next: a hairline and two names, no boxes. */
+.pagination-links {
+  margin-top: 1rem;
+  border-top: 1px solid var(--sl-color-hairline);
+  padding-top: 1.25rem;
+}
+.pagination-links a {
+  border: 0;
+  padding: 0;
+  box-shadow: none;
+  color: var(--sl-color-gray-3);
+  font-size: var(--sl-text-sm);
+}
+.pagination-links a svg {
+  display: none;
+}
+.pagination-links .link-title {
+  margin-top: 0.125rem;
+  display: inline-block;
+  color: var(--sl-color-white);
+  font-size: 1.0625rem;
+  font-weight: 500;
+}
+.pagination-links a:hover .link-title {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.2em;
+}
+footer .meta {
+  font-size: var(--sl-text-xs);
+}
+
+/* Search: the landing page's paper and hairlines; a result is ink on a quiet fill when picked. */
+#starlight__search {
+  --pagefind-ui-primary: var(--sl-color-white);
+  --pagefind-ui-text: var(--sl-color-gray-2);
+  --pagefind-ui-background: var(--sl-color-black);
+  --pagefind-ui-border: var(--sl-color-hairline);
+  --pagefind-ui-tag: var(--fd-pick);
+  --pagefind-ui-border-radius: 6px;
+  --pagefind-ui-scale: 0.85;
+}
+site-search dialog {
+  border-color: var(--sl-color-hairline);
+  border-radius: 10px;
+  background-color: var(--sl-color-black);
+}
+#starlight__search input:focus {
+  --pagefind-ui-border: var(--sl-color-white);
+  outline: 0;
+}
+#starlight__search .pagefind-ui__search-clear::before,
+site-search button[data-close-modal] {
+  color: var(--sl-color-gray-3);
+}
+#starlight__search .pagefind-ui__search-clear::before {
+  background-color: var(--sl-color-gray-3);
+}
+#starlight__search .pagefind-ui__result-title:not(:where(.pagefind-ui__result-nested *)),
+#starlight__search .pagefind-ui__result-nested {
+  background-color: var(--fd-fill);
+}
+#starlight__search .pagefind-ui__result-title:not(:where(.pagefind-ui__result-nested *)):is(:hover, :focus-within),
+#starlight__search .pagefind-ui__result-nested:is(:hover, :focus-within) {
+  outline: 1px solid var(--sl-color-gray-4);
+}
+#starlight__search .pagefind-ui__result-title:not(:where(.pagefind-ui__result-nested *)):focus-within,
+#starlight__search .pagefind-ui__result-nested:focus-within {
+  background-color: var(--fd-pick);
+}
+#starlight__search .pagefind-ui__result-link {
+  color: var(--sl-color-white);
+}
+#starlight__search mark {
+  background-color: transparent;
+  color: var(--sl-color-white);
+  font-weight: 600;
+}
