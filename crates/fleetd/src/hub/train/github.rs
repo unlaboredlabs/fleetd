@@ -123,6 +123,12 @@ pub struct Pull {
     /// Who merged it: only a PR's detail says.
     #[serde(default)]
     pub merged_by: Option<PullMerger>,
+    /// Whether it merges cleanly into its base: only a PR's detail says, and None while GitHub still works it out.
+    #[serde(default)]
+    pub mergeable: Option<bool>,
+    /// GitHub's word for it: `dirty` when it conflicts, `unknown` while GitHub still works it out.
+    #[serde(default)]
+    pub mergeable_state: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -149,6 +155,12 @@ impl Pull {
         self.labels
             .iter()
             .any(|l| l.name.eq_ignore_ascii_case(name))
+    }
+
+    /// GitHub found it conflicts with its base, and so runs no `pull_request` CI on it. Never while GitHub still works
+    /// it out.
+    pub fn conflicts(&self) -> bool {
+        self.mergeable == Some(false) || self.mergeable_state.as_deref() == Some("dirty")
     }
 }
 
