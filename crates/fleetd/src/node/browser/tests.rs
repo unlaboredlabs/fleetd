@@ -727,6 +727,327 @@ async fn one_session_per_agent_session_and_none_to_end_twice() {
     assert_eq!(twice["error"]["code"], "not_found");
 }
 
+/// A broker on devbox whose browser is still installing: no pool yet.
+async fn installing(home: &Path, hub: Arc<TestHub>) -> Arc<Broker> {
+    let config = BrowserConfig {
+        ffmpeg: ffmpeg().map(|p| p.to_string_lossy().into_owned()),
+        ..BrowserConfig::default()
+    };
+    Broker::open(
+        home,
+        config,
+        hub,
+        Arc::new(|_| Ok(crate::node::mask::Secrets(Vec::new()))),
+    )
+    .await
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_first_session_start_waits_for_the_browser_install_and_opens_its_session() {
+    let Some(chrome) = chrome_or_skip() else {
+        return;
+    };
+    let node_home = tempfile::tempdir().unwrap();
+    let hub_home = tempfile::tempdir().unwrap();
+    let broker = installing(node_home.path(), hub(hub_home.path())).await;
+    let start = tokio::spawn({
+        let broker = broker.clone();
+        async move {
+            call(
+                &broker,
+                json!({ "op": "session_start", "purpose": "First" }),
+            )
+            .await
+        }
+    });
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(!start.is_finished(), "{}", start.await.unwrap());
+    broker.ready(chrome);
+    let started = start.await.unwrap();
+    assert!(started["result"]["sessionId"].is_string(), "{started}");
+    call(&broker, json!({ "op": "session_end" })).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_session_start_waiting_for_an_install_that_fails_gets_its_real_error() {
+    let node_home = tempfile::tempdir().unwrap();
+    let hub_home = tempfile::tempdir().unwrap();
+    let broker = installing(node_home.path(), hub(hub_home.path())).await;
+    let start = tokio::spawn({
+        let broker = broker.clone();
+        async move {
+            call(
+                &broker,
+                json!({ "op": "session_start", "purpose": "First" }),
+            )
+            .await
+        }
+    });
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(!start.is_finished(), "{}", start.await.unwrap());
+    broker.set_install(super::Install::Missing {
+        why: "installing agent-browser failed: npm ERR! network".to_owned(),
+        owed: true,
+    });
+    let refused = start.await.unwrap();
+    let why = refused["error"]["message"].as_str().unwrap();
+    assert!(why.contains("npm ERR! network"), "{why}");
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_session_start_waits_for_an_install_only_so_long_and_says_how_far_it_is() {
+    let node_home = tempfile::tempdir().unwrap();
+    let hub_home = tempfile::tempdir().unwrap();
+    let broker = installing(node_home.path(), hub(hub_home.path())).await;
+    broker.set_install(super::Install::Installing(super::Progress {
+        step: "step 2 of 2, Chrome's headless shell and ffmpeg".to_owned(),
+        since: Instant::now() - Duration::from_secs(95),
+    }));
+    let asked = tokio::time::Instant::now();
+    let refused = call(
+        &broker,
+        json!({ "op": "session_start", "purpose": "First" }),
+    )
+    .await;
+    assert_eq!(asked.elapsed(), super::INSTALL_WAIT);
+    let why = refused["error"]["message"].as_str().unwrap();
+    assert!(
+        why.contains(
+            "still installing its browser (step 2 of 2, Chrome's headless shell and ffmpeg, 1 min 3"
+        ),
+        "{why}"
+    );
+    let fix = refused["error"]["fix"].as_str().unwrap();
+    assert!(
+        fix.contains("again") && fix.contains("opens the session"),
+        "{fix}"
+    );
+}
+
+/// Installs of agent-browser so far by [`agent_browser_slow_then_failing`], and whether the slow one may end.
+static SLOW_TRIES: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+static SLOW_ENDS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// An install of agent-browser on devbox that runs past a start's wait, then fails, as does every one after it.
+fn agent_browser_slow_then_failing(_home: &Path) -> Result<PathBuf, String> {
+    use std::sync::atomic::Ordering::SeqCst;
+    let n = SLOW_TRIES.fetch_add(1, SeqCst) + 1;
+    while !SLOW_ENDS.load(SeqCst) {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    Err(format!(
+        "installing agent-browser failed: npm ERR! ECONNRESET (try {n})"
+    ))
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_install_that_fails_after_the_wait_gives_its_error_to_the_next_start_before_another_download()
+ {
+    use std::sync::atomic::Ordering::SeqCst;
+    let node_home = tempfile::tempdir().unwrap();
+    let hub_home = tempfile::tempdir().unwrap();
+    let config = BrowserConfig {
+        chrome: Some("/opt/devbox/chrome".to_owned()),
+        ..BrowserConfig::default()
+    };
+    let broker = Broker::open_with(
+        node_home.path(),
+        config,
+        hub(hub_home.path()),
+        Arc::new(|_| Ok(crate::node::mask::Secrets(Vec::new()))),
+        super::Installer {
+            agent_browser: agent_browser_slow_then_failing,
+            chrome: |_| Err("Chrome is set in node.json".to_owned()),
+        },
+    )
+    .await;
+    // devbox's install as the node started failed: the first start installs again.
+    broker.set_install(super::Install::Missing {
+        why: "installing agent-browser failed: npm ERR! network ENOTFOUND".to_owned(),
+        owed: false,
+    });
+    let start = || {
+        call(
+            &broker,
+            json!({ "op": "session_start", "purpose": "First" }),
+        )
+    };
+    let first = tokio::spawn({
+        let broker = broker.clone();
+        async move {
+            call(
+                &broker,
+                json!({ "op": "session_start", "purpose": "First" }),
+            )
+            .await
+        }
+    });
+    while SLOW_TRIES.load(SeqCst) == 0 {
+        std::thread::sleep(Duration::from_millis(1));
+        tokio::task::yield_now().await;
+    }
+    // The clock doesn't move by itself while the install runs on a blocking thread.
+    tokio::time::advance(super::INSTALL_WAIT).await;
+    let waited = first.await.unwrap();
+    assert!(
+        waited["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("still installing its browser"),
+        "{waited}"
+    );
+    assert_eq!(SLOW_TRIES.load(SeqCst), 1);
+    // The install fails after that start stopped waiting.
+    SLOW_ENDS.store(true, SeqCst);
+    for _ in 0..5000 {
+        if matches!(
+            *super::lock(&broker.install),
+            super::Install::Missing { .. }
+        ) {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(1));
+        tokio::task::yield_now().await;
+    }
+    let told = start().await;
+    let why = told["error"]["message"].as_str().unwrap();
+    assert!(why.contains("npm ERR! ECONNRESET (try 1)"), "{why}");
+    assert_eq!(
+        SLOW_TRIES.load(SeqCst),
+        1,
+        "its error, not another download"
+    );
+    let again = start().await;
+    let why = again["error"]["message"].as_str().unwrap();
+    assert!(why.contains("npm ERR! ECONNRESET (try 2)"), "{why}");
+    assert_eq!(
+        SLOW_TRIES.load(SeqCst),
+        2,
+        "the start after it installs again"
+    );
+}
+
+/// agent-browser as the install leaves it, without npm: a stand-in binary, linked and versioned.
+fn installed_agent_browser(home: &Path) -> Result<PathBuf, String> {
+    use std::os::unix::fs::PermissionsExt;
+    let bin = super::agent_browser::bin_dir(home);
+    std::fs::create_dir_all(&bin).map_err(|e| e.to_string())?;
+    let link = bin.join("agent-browser");
+    std::fs::write(&link, "#!/bin/sh\n").map_err(|e| e.to_string())?;
+    std::fs::set_permissions(&link, std::fs::Permissions::from_mode(0o755))
+        .map_err(|e| e.to_string())?;
+    std::fs::write(
+        super::agent_browser::install_dir(home).join("VERSION"),
+        super::agent_browser::VERSION,
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(link)
+}
+
+/// agent-browser's install on devbox as it boots, before the network is up: it fails the first time only.
+fn agent_browser_offline_at_boot(home: &Path) -> Result<PathBuf, String> {
+    static TRIES: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    match TRIES.fetch_add(1, std::sync::atomic::Ordering::SeqCst) {
+        0 => Err("installing agent-browser failed: npm ERR! network ENOTFOUND".to_owned()),
+        _ => installed_agent_browser(home),
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_install_that_failed_as_the_node_started_is_tried_again_by_the_first_session() {
+    let Some(chrome) = chrome_or_skip() else {
+        return;
+    };
+    let node_home = tempfile::tempdir().unwrap();
+    let hub_home = tempfile::tempdir().unwrap();
+    let config = BrowserConfig {
+        chrome: Some(chrome.to_string_lossy().into_owned()),
+        ffmpeg: ffmpeg().map(|p| p.to_string_lossy().into_owned()),
+        ..BrowserConfig::default()
+    };
+    let broker = Broker::start_with(
+        node_home.path(),
+        config,
+        hub(hub_home.path()),
+        Arc::new(|_| Ok(crate::node::mask::Secrets(Vec::new()))),
+        super::Installer {
+            agent_browser: agent_browser_offline_at_boot,
+            chrome: |_| Err("Chrome is set in node.json".to_owned()),
+        },
+    )
+    .await;
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !matches!(
+        *super::lock(&broker.install),
+        super::Install::Missing { .. }
+    ) && Instant::now() < deadline
+    {
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert!(
+        matches!(
+            *super::lock(&broker.install),
+            super::Install::Missing { .. }
+        ),
+        "the install as the node started failed"
+    );
+    let started = call(
+        &broker,
+        json!({ "op": "session_start", "purpose": "First" }),
+    )
+    .await;
+    assert!(started["result"]["sessionId"].is_string(), "{started}");
+    call(&broker, json!({ "op": "session_end" })).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_node_installs_the_browser_as_it_starts_so_the_first_session_finds_it_ready() {
+    let Some(chrome) = chrome_or_skip() else {
+        return;
+    };
+    let node_home = tempfile::tempdir().unwrap();
+    let hub_home = tempfile::tempdir().unwrap();
+    // devbox starts with Chrome but without agent-browser, and no agent has asked for a session.
+    let config = BrowserConfig {
+        chrome: Some(chrome.to_string_lossy().into_owned()),
+        ffmpeg: ffmpeg().map(|p| p.to_string_lossy().into_owned()),
+        ..BrowserConfig::default()
+    };
+    let broker = Broker::start_with(
+        node_home.path(),
+        config,
+        hub(hub_home.path()),
+        Arc::new(|_| Ok(crate::node::mask::Secrets(Vec::new()))),
+        super::Installer {
+            agent_browser: installed_agent_browser,
+            chrome: |_| Err("Chrome is set in node.json".to_owned()),
+        },
+    )
+    .await;
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while broker.warm() == 0 && Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert_eq!(
+        broker.warm(),
+        1,
+        "installed and launched with no session asked for"
+    );
+    assert!(super::agent_browser::find(node_home.path()).is_some());
+    let asked = Instant::now();
+    let started = call(
+        &broker,
+        json!({ "op": "session_start", "purpose": "First" }),
+    )
+    .await;
+    assert!(started["result"]["sessionId"].is_string(), "{started}");
+    assert!(
+        asked.elapsed() < Duration::from_secs(10),
+        "from the warm pool"
+    );
+    call(&broker, json!({ "op": "session_end" })).await;
+}
+
 /// agent-browser itself, attached through the proxy: it drives the session, and its policy file's internal action
 /// names block reading a value back.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

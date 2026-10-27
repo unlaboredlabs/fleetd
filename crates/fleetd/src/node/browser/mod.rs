@@ -51,8 +51,8 @@ use crate::node::mask::Secrets;
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BrowserConfig {
-    /// False turns browser sessions off on this machine; true also installs the browser as the node starts. Absent:
-    /// on, installed when an agent first asks for a session.
+    /// False turns browser sessions off on this machine. Absent or true: on, and the browser is installed as the node
+    /// starts, where it isn't already.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
     /// A Chrome or headless shell to use instead of the node's pinned install.
@@ -82,11 +82,68 @@ impl BrowserConfig {
 /// Where the broker's browser comes from.
 enum Install {
     Ready(Arc<Pool>),
-    /// Not installed, and nobody asked for a session yet: the first `session_start` installs it.
+    /// Not installed, and the install not started yet.
     Wanted,
-    Installing,
-    Missing(String),
+    Installing(Progress),
+    /// The install failed, for this reason. `owed`: a session's start began it, and no start has answered with this
+    /// error yet (it failed after the start stopped waiting), so the next one does. Otherwise the next start installs
+    /// again.
+    Missing {
+        why: String,
+        owed: bool,
+    },
 }
+
+fn no_browser(why: &str) -> McpToolError {
+    refuse(
+        ErrorCode::Failed,
+        format!("This machine has no browser for sessions: {why}."),
+        "session_start again tries the install again; if that fails too, say so in your result: a person must set up \
+         the browser on this machine (fleetd docs: Browser sessions)",
+    )
+}
+
+/// How far an install in progress is.
+struct Progress {
+    /// The step it is on, in words.
+    step: String,
+    since: Instant,
+}
+
+impl Progress {
+    fn new(step: &str) -> Self {
+        Self {
+            step: step.to_owned(),
+            since: Instant::now(),
+        }
+    }
+}
+
+/// `d` in words, to the second.
+fn duration_words(d: Duration) -> String {
+    match d.as_secs() {
+        s @ 0..60 => format!("{s} s"),
+        s => format!("{} min {} s", s / 60, s % 60),
+    }
+}
+
+/// What installs the browser's parts (blocking): the pinned installs, or a test's stand-ins.
+#[derive(Clone, Copy)]
+pub(crate) struct Installer {
+    pub agent_browser: fn(&Path) -> Result<PathBuf, String>,
+    pub chrome: fn(&Path) -> Result<(), String>,
+}
+
+impl Installer {
+    const PINNED: Self = Self {
+        agent_browser: agent_browser::install,
+        chrome: chrome::install,
+    };
+}
+
+/// How long a session's start waits for the browser's install in progress: with the browser's launch after it
+/// (chrome.rs), inside the agent's wait for the node's answer (cli/agent_mcp.rs, 60 s).
+pub(crate) const INSTALL_WAIT: Duration = Duration::from_secs(30);
 
 /// The secrets of an agent session, by its id (blocking: it reads them); `Err` is why they can't be read.
 pub type SecretsFor = Arc<dyn Fn(&str) -> Result<Secrets, String> + Send + Sync>;
@@ -117,6 +174,9 @@ pub struct Broker {
     home: PathBuf,
     config: BrowserConfig,
     install: Mutex<Install>,
+    installer: Installer,
+    /// Told when the install is done, ready or failed: for the starts waiting on it.
+    install_done: tokio::sync::watch::Sender<()>,
     ffmpeg: Mutex<Option<PathBuf>>,
     proxy: Mutex<Option<Arc<Proxy>>>,
     /// Live sessions by the agent session they belong to: one each.
@@ -201,13 +261,23 @@ pub fn drives_browser(command: &str) -> bool {
 }
 
 impl Broker {
-    /// The broker for a node: its browser from node.json, else the pinned installs. Missing ones are installed when
-    /// an agent first asks for a session, or at once when node.json turns browser sessions on explicitly.
+    /// The broker for a node: its browser from node.json, else the pinned installs. Missing ones are installed in the
+    /// background from now, so the first session finds them done, or nearly.
     pub async fn start(
         home: &Path,
         config: BrowserConfig,
         hub: Arc<dyn HubCalls>,
         secrets_for: SecretsFor,
+    ) -> Arc<Self> {
+        Self::start_with(home, config, hub, secrets_for, Installer::PINNED).await
+    }
+
+    pub(crate) async fn start_with(
+        home: &Path,
+        config: BrowserConfig,
+        hub: Arc<dyn HubCalls>,
+        secrets_for: SecretsFor,
+        installer: Installer,
     ) -> Arc<Self> {
         let root = chrome::install_dir(home);
         let chrome = config
@@ -215,33 +285,32 @@ impl Broker {
             .clone()
             .map(PathBuf::from)
             .or_else(|| chrome::find_chrome(&root));
-        let broker = Self::open(home, config, hub, secrets_for).await;
+        let broker = Self::open_with(home, config, hub, secrets_for, installer).await;
         match chrome {
             Some(chrome) if agent_browser::find(home).is_some() => broker.ready(chrome),
             _ => {
                 *lock(&broker.install) = Install::Wanted;
-                if broker.config.enabled == Some(true) {
-                    broker.begin_install();
-                }
+                broker.begin_install(false);
             }
         }
         broker
     }
 
-    /// Starts installing what is missing, once.
-    fn begin_install(self: &Arc<Self>) {
+    /// Starts installing what is missing, for a session's start or not, unless an install is running or done. One that
+    /// failed (an install as the node starts at boot, before the network is up) is tried again.
+    fn begin_install(self: &Arc<Self>, for_session: bool) {
         {
             let mut install = lock(&self.install);
-            if !matches!(*install, Install::Wanted) {
+            if !matches!(*install, Install::Wanted | Install::Missing { .. }) {
                 return;
             }
-            *install = Install::Installing;
+            *install = Install::Installing(Progress::new("starting"));
         }
         let root = chrome::install_dir(&self.home);
         let chrome = self.config.chrome.is_none() && chrome::find_chrome(&root).is_none();
         let agent_browser = agent_browser::find(&self.home).is_none();
         let installing = self.clone();
-        tokio::spawn(async move { installing.install(chrome, agent_browser).await });
+        tokio::spawn(async move { installing.install(chrome, agent_browser, for_session).await });
     }
 
     /// The broker with its proxy and housekeeping running, but no browser yet ([`Broker::ready`] gives it one).
@@ -251,6 +320,16 @@ impl Broker {
         hub: Arc<dyn HubCalls>,
         secrets_for: SecretsFor,
     ) -> Arc<Self> {
+        Self::open_with(home, config, hub, secrets_for, Installer::PINNED).await
+    }
+
+    async fn open_with(
+        home: &Path,
+        config: BrowserConfig,
+        hub: Arc<dyn HubCalls>,
+        secrets_for: SecretsFor,
+        installer: Installer,
+    ) -> Arc<Self> {
         let ffmpeg = config
             .ffmpeg
             .clone()
@@ -259,7 +338,9 @@ impl Broker {
         let broker = Arc::new_cyclic(|me| Self {
             me: me.clone(),
             home: home.to_owned(),
-            install: Mutex::new(Install::Installing),
+            install: Mutex::new(Install::Installing(Progress::new("starting"))),
+            installer,
+            install_done: tokio::sync::watch::Sender::new(()),
             ffmpeg: Mutex::new(ffmpeg),
             proxy: Mutex::default(),
             sessions: Mutex::default(),
@@ -302,21 +383,38 @@ impl Broker {
         broker
     }
 
-    /// Installs what is missing (blocking work, off the async threads), then makes the pool.
-    async fn install(&self, chrome: bool, agent_browser: bool) {
-        let home = self.home.clone();
+    /// Installs what is missing (blocking work, off the async threads), step by step, then makes the pool.
+    async fn install(&self, chrome: bool, agent_browser: bool, for_session: bool) {
+        type Step = Box<dyn FnOnce() -> Result<(), String> + Send>;
         let _one = self.driver_install.lock().await;
-        let installed = tokio::task::spawn_blocking(move || {
-            if agent_browser && agent_browser::find(&home).is_none() {
-                agent_browser::install(&home)?;
+        let mut steps: Vec<(String, Step)> = Vec::new();
+        if agent_browser && agent_browser::find(&self.home).is_none() {
+            let (home, install) = (self.home.clone(), self.installer.agent_browser);
+            steps.push((
+                format!("agent-browser {}", agent_browser::VERSION),
+                Box::new(move || install(&home).map(|_| ())),
+            ));
+        }
+        if chrome {
+            let (home, install) = (self.home.clone(), self.installer.chrome);
+            steps.push((
+                "Chrome's headless shell and ffmpeg".to_owned(),
+                Box::new(move || install(&home)),
+            ));
+        }
+        let count = steps.len();
+        let mut installed = Ok(());
+        for (n, (what, step)) in steps.into_iter().enumerate() {
+            if let Install::Installing(progress) = &mut *lock(&self.install) {
+                progress.step = format!("step {} of {count}, {what}", n + 1);
             }
-            if chrome {
-                chrome::install(&home)?;
+            installed = tokio::task::spawn_blocking(step)
+                .await
+                .unwrap_or_else(|e| Err(e.to_string()));
+            if installed.is_err() {
+                break;
             }
-            Ok::<(), String>(())
-        })
-        .await
-        .unwrap_or_else(|e| Err(e.to_string()));
+        }
         let root = chrome::install_dir(&self.home);
         let found = self
             .config
@@ -336,7 +434,10 @@ impl Broker {
             }
             Err(why) => {
                 tracing::warn!(error = %why, "browser not installed");
-                *lock(&self.install) = Install::Missing(why);
+                self.set_install(Install::Missing {
+                    why,
+                    owed: for_session,
+                });
             }
         }
     }
@@ -354,24 +455,54 @@ impl Broker {
         // Profiles a node left behind when it stopped.
         let _ = std::fs::remove_dir_all(&pool.launch_settings().profiles);
         pool.refill();
-        *lock(&self.install) = Install::Ready(pool);
+        self.set_install(Install::Ready(pool));
     }
 
-    fn pool(self: &Arc<Self>) -> Result<Arc<Pool>, McpToolError> {
-        self.begin_install();
-        match &*lock(&self.install) {
-            Install::Ready(pool) => Ok(pool.clone()),
-            Install::Wanted | Install::Installing => Err(refuse(
-                ErrorCode::Failed,
-                "This machine is still installing its browser.",
-                "try session_start again in a few minutes",
-            )),
-            Install::Missing(why) => Err(refuse(
-                ErrorCode::Failed,
-                format!("This machine has no browser for sessions: {why}."),
-                "say so in your result: a person must set up the browser on this machine (fleetd docs: Browser \
-                 sessions)",
-            )),
+    fn set_install(&self, install: Install) {
+        *lock(&self.install) = install;
+        self.install_done.send_replace(());
+    }
+
+    /// The pool, once the browser is installed: a start during the install waits for it, up to [`INSTALL_WAIT`]. A
+    /// failed install's error goes to one start, the next after it failed, and the start after that installs again.
+    async fn pool(self: &Arc<Self>) -> Result<Arc<Pool>, McpToolError> {
+        if let Install::Missing { why, owed } = &mut *lock(&self.install)
+            && *owed
+        {
+            *owed = false;
+            return Err(no_browser(why));
+        }
+        self.begin_install(true);
+        let mut done = self.install_done.subscribe();
+        let deadline = tokio::time::Instant::now() + INSTALL_WAIT;
+        loop {
+            match &mut *lock(&self.install) {
+                Install::Ready(pool) => return Ok(pool.clone()),
+                Install::Wanted | Install::Installing(_) => {}
+                Install::Missing { why, owed } => {
+                    *owed = false;
+                    return Err(no_browser(why));
+                }
+            }
+            if !matches!(
+                tokio::time::timeout_at(deadline, done.changed()).await,
+                Ok(Ok(()))
+            ) {
+                let doing = match &*lock(&self.install) {
+                    Install::Installing(progress) => format!(
+                        " ({}, {} so far)",
+                        progress.step,
+                        duration_words(progress.since.elapsed())
+                    ),
+                    _ => String::new(),
+                };
+                return Err(refuse(
+                    ErrorCode::Failed,
+                    format!("This machine is still installing its browser{doing}."),
+                    "try session_start again in a minute: the install carries on meanwhile, and a start after it \
+                     opens the session",
+                ));
+            }
         }
     }
 
@@ -412,8 +543,8 @@ impl Broker {
         if agent_browser::find(&self.home).is_some() {
             return Ok(());
         }
-        let home = self.home.clone();
-        tokio::task::spawn_blocking(move || agent_browser::install(&home).map(|_| ()))
+        let (home, install) = (self.home.clone(), self.installer.agent_browser);
+        tokio::task::spawn_blocking(move || install(&home).map(|_| ()))
             .await
             .unwrap_or_else(|e| Err(e.to_string()))
     }
@@ -496,7 +627,7 @@ impl Broker {
                 "say so in your result; the node's log says why",
             ));
         };
-        let pool = self.pool()?;
+        let pool = self.pool().await?;
         let secrets_for = self.secrets_for.clone();
         let secrets_thread = thread.clone();
         let secrets = tokio::task::spawn_blocking(move || secrets_for(&secrets_thread));
@@ -788,7 +919,7 @@ impl Broker {
             return Err(format!("{holder} has a browser session already"));
         }
         let _starting = Starting(self, holder.to_owned());
-        let browser = self.pool().map_err(|e| e.message)?.take().await?;
+        let browser = self.pool().await.map_err(|e| e.message)?.take().await?;
         let id = new_id();
         let ffmpeg = lock(&self.ffmpeg).clone();
         let dir = upload::recordings_dir(&self.home).join(id.as_str());

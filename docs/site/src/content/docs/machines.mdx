@@ -212,7 +212,7 @@ Each node reports what it can host, in plain words, and Settings > Machines show
 
 | Kind | Needs |
 |---|---|
-| Browser | Chrome: the node's own, which it installs with the first screen, or the one `browser.chrome` names in node.json. |
+| Browser | Chrome: the node's own, which it installs as it starts, or the one `browser.chrome` names in node.json. |
 | Android emulator | fleetd's own pinned emulator: Linux on x86_64, opted in with `"device": {"enabled": true}` in node.json (the first screen installs it) or installed already, and a `/dev/kvm` this user can open read-write. See [Android screens](/docs/browser-sessions#android-setup). |
 | iOS simulator | fleetd's own golden simulator and its clones: macOS with Xcode, an iOS simulator runtime and Node.js, and opted in with `"ios": {"enabled": true}` in node.json (or the golden made already). While the node makes its golden (minutes), or after making it failed, the hub still sends it iOS screens: the node says it is still making it, and the next screen tries a failed one again. The doctor's `ios` check says where it stands. See [iOS screens](/docs/browser-sessions#ios-setup). |
 | Desktop | Linux with docker or Xvfb. |
