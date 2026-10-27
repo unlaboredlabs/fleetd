@@ -101,6 +101,10 @@ impl Leads {
     /// every draft, so the orders reach it with the start. `first`, the chat message that starts it, ends that
     /// message.
     pub async fn auto_start(&self, r: &ProjectRef, first: Option<&str>) -> AutoStart {
+        // An archived project's lead, record and all, takes nothing: held chat messages and automation runs included.
+        if let Err(e) = refuse_archived(&self.ctx.db, r) {
+            return AutoStart::Held(e);
+        }
         match self.get(r) {
             Ok(Some(lead)) => return AutoStart::Running(lead),
             Ok(None) => {}

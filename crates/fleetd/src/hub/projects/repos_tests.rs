@@ -442,6 +442,71 @@ async fn attaching_a_project_of_its_own_archives_it_read_only() {
     );
 }
 
+/// An automation run on an archived project opens its order but reaches no lead: the old lead record stays, and nothing
+/// starts or resumes it.
+#[tokio::test]
+async fn an_automation_run_on_an_archived_project_reaches_no_lead() {
+    let (hub, _home) = hub();
+    let mut calls = node(&hub).await;
+    hub.leads
+        .records
+        .lead_put(&crate::hub::leads::records::StoredLead {
+            project_ref: project("shop"),
+            thread_id: fleetd_contracts::ids::ThreadId::unchecked("shop-lead"),
+            started_at: AT.to_owned().into(),
+            last_wake_at: None,
+            session_generation: 0,
+        })
+        .unwrap();
+    call(
+        &hub,
+        "project_repo_add",
+        json!({ "machineId": "devbox", "projectId": "app", "path": "/work/shop" }),
+    )
+    .await
+    .unwrap();
+    let made = call(
+        &hub,
+        "automation_create",
+        json!({ "projectRef": { "machineId": "devbox", "projectId": "shop" }, "name": "Nightly",
+            "prompt": "Check the shop.", "clientRequestId": "a1" }),
+    )
+    .await
+    .unwrap();
+    drain(&mut calls);
+    call(
+        &hub,
+        "automation_run",
+        json!({ "automationId": made["automation"]["automationId"] }),
+    )
+    .await
+    .unwrap();
+    let ran = hub
+        .events
+        .page(0, Some(&[HubEventType::AutomationRun]), None)
+        .unwrap()
+        .events;
+    let summary = &ran.last().unwrap().summary;
+    assert!(
+        summary.contains("it waits for the lead: This project is archived"),
+        "{summary}"
+    );
+    // No turn went to the old lead's session, and no new one started.
+    assert!(
+        !drain(&mut calls)
+            .iter()
+            .any(|c| matches!(c, SessionCall::Send { .. } | SessionCall::Launch(_))),
+    );
+    let held = hub
+        .leads
+        .leads
+        .auto_start(&project("shop"), Some("hello"))
+        .await;
+    assert!(
+        matches!(held, crate::hub::leads::lead::AutoStart::Held(e) if e.message.contains("archived"))
+    );
+}
+
 /// Removing a repo ends that repo's live tasks only, deletes nothing, and the checkout no project holds shows as its
 /// own project again. The project's own repo can't be removed.
 #[tokio::test]
