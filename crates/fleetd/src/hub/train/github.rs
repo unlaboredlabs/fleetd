@@ -1184,6 +1184,90 @@ impl TrainGitHub {
         Ok(files)
     }
 
+    /// The text of the file `path` on `branch`; None when it has none.
+    pub async fn file(
+        &self,
+        repo: &str,
+        path: &str,
+        branch: &str,
+    ) -> Result<Option<String>, GhError> {
+        let at = encode_url(branch, false);
+        let url = format!("repos/{repo}/contents/{}?ref={at}", encode_url(path, true));
+        match self
+            .exchange("GET", &url, "Accept: application/vnd.github.raw", &[])
+            .await?
+        {
+            Ok(text) => Ok(Some(text)),
+            Err((404, _)) => Ok(None),
+            Err((_, message)) => Err(GhError::failed(format!("{path} on {branch}: {message}"))),
+        }
+    }
+
+    /// The names of the files in the directory `dir` on `branch` (one listing, up to 1,000); none when it has no such
+    /// directory.
+    pub async fn file_names(
+        &self,
+        repo: &str,
+        dir: &str,
+        branch: &str,
+    ) -> Result<Vec<String>, GhError> {
+        #[derive(Deserialize)]
+        struct Entry {
+            name: String,
+            #[serde(rename = "type")]
+            kind: String,
+        }
+        let at = encode_url(branch, false);
+        let dir = dir.trim_end_matches('/');
+        let url = format!("repos/{repo}/contents/{}?ref={at}", encode_url(dir, true));
+        match self.call("GET", &url, &[]).await? {
+            Reply::Ok(v) => {
+                let entries: Vec<Entry> = serde_json::from_value(v).map_err(|_| {
+                    GhError::failed(format!("{dir} on {branch} is not a directory"))
+                })?;
+                Ok(entries
+                    .into_iter()
+                    .filter(|e| e.kind == "file")
+                    .map(|e| e.name)
+                    .collect())
+            }
+            Reply::Err { status: 404, .. } => Ok(Vec::new()),
+            Reply::Err { message, .. } => {
+                Err(GhError::failed(format!("{dir} on {branch}: {message}")))
+            }
+        }
+    }
+
+    /// The paths a PR adds, by GitHub's list of its files (up to 3,000, a page of 100 at a time).
+    pub async fn added_files(&self, repo: &str, n: i64) -> Result<Vec<String>, GhError> {
+        #[derive(Deserialize)]
+        struct File {
+            filename: String,
+            status: String,
+        }
+        let mut added = Vec::new();
+        for page in 1..=30 {
+            let files: Vec<File> = self
+                .json(
+                    "GET",
+                    &format!("repos/{repo}/pulls/{n}/files?per_page=100&page={page}"),
+                    &[],
+                )
+                .await?;
+            let last = files.len() < 100;
+            added.extend(
+                files
+                    .into_iter()
+                    .filter(|f| f.status == "added")
+                    .map(|f| f.filename),
+            );
+            if last {
+                break;
+            }
+        }
+        Ok(added)
+    }
+
     /// The repo's open PRs that carry the label `name` (one page).
     pub async fn labelled_pulls(&self, repo: &str, name: &str) -> Result<Vec<i64>, GhError> {
         #[derive(Deserialize)]
