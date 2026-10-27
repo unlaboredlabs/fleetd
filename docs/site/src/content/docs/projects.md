@@ -67,6 +67,7 @@ Open a project's settings in the desktop app: Settings → Projects, then pick t
 | Setting | Does |
 |---|---|
 | Name | How fleetd shows the project. Its folder keeps its own name. |
+| Repos | The git repos the project holds, each with its remote, base branch and checkout (machine and path), and the setup and preview it runs with: its own, or the project's. A plain folder holds none. Read-only for now. |
 | Keep finished worktrees | Off (the default): a reader's worktree goes when its task finishes, and a writer's once its pull request merges; any left behind go in the [nightly cleanup](#cleanup). On: they stay on the machine. |
 | Environment variables | Variables every new agent of the project gets. See [Environment variables](#env). |
 | MCP servers | The project's own MCP servers for its agents, and the global ones it gets. See [MCP servers](/docs/mcp-servers). |

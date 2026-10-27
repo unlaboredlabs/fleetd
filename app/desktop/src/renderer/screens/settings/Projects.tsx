@@ -1,4 +1,4 @@
-// Settings → Projects (#/settings/projects?for=<machine>/<project>): one project's name, its worktrees, its agents'
+// Settings → Projects (#/settings/projects?for=<machine>/<project>): one project's name, its repos (RepoSetting.tsx), its worktrees, its agents'
 // environment variables, its setup commands (SetupSetting.tsx), the merge train's checks (TrainSetting.tsx), and deleting it. Reads project_settings_get; writes project_settings_set, project_env_set
 // (through main, which seals each secret to the project machine's key) and project_remove. A secret's value is
 // write-only: typed here once, sealed in main, and only its fingerprint ever comes back.
@@ -26,6 +26,7 @@ import {
   type EnvKind,
   type PastedVar,
 } from "./projectModel";
+import { RepoSetting } from "./RepoSetting";
 import { replaceRoute, type SettingsRoute } from "./route";
 import { SetupSetting } from "./SetupSetting";
 import { TrainSetting } from "./TrainSetting";
@@ -78,7 +79,7 @@ export function ProjectSettings({ route }: { route: SettingsRoute }) {
           title="Projects"
           aside={<ScopeSelect id="projects-scope" className={s.scopeSelect} value={scope} projects={projects} onChange={(next) => setPicked(next)} />}
         >
-          One project's name, worktrees, its agents' environment and setup, and its merge train.
+          One project's name, repos, worktrees, its agents' environment and setup, and its merge train.
         </PageHead>
         {projects?.length === 0 ? <Text tone="quiet">No projects yet. Add one from Machines.</Text> : null}
         {read.isLoadingError ? (
@@ -126,6 +127,8 @@ function ProjectPage({ settings, refresh, onDeleted }: { settings: Settings; ref
   return (
     <>
       <NameSetting settings={settings} />
+      <Separator />
+      <RepoSetting settings={settings} />
       <Separator />
       <WorktreeSetting settings={settings} />
       <Separator />
