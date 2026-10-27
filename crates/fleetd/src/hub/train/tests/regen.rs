@@ -60,9 +60,17 @@ async fn until_merged(kit: &Kit, change: &ChangeId) {
     panic!("not merged: {:?}", kit.get(change));
 }
 
+/// `MAKE`, refused unless it runs with a scratch HOME, no git credential helper, and its cache under the node's home.
+const MAKE_CONFINED: &str = "test \"$HOME\" != /tmp && test -z \"$(git config --get credential.helper)\" \
+    && case \"$FLEETD_REGENERATE_CACHE\" in */node-home/node/cache/regenerate/acme-storefront) true ;; *) false ;; esac \
+    && mkdir -p gen && cat src/*.txt > gen/all.txt";
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_conflict_only_in_generated_files_is_regenerated_on_the_node_and_merges() {
-    let kit = regen_kit(MAKE);
+    let kit = regen_kit(MAKE_CONFINED);
+    // A credential helper in the checkout's own config never reaches the PR's code.
+    let checkout = kit.host.checkout.lock().unwrap().clone().unwrap();
+    git(&checkout, &["config", "credential.helper", "store"]);
     let change = generated_conflict(&kit, &[]).await;
     let head = kit.head_of("add-b");
 
@@ -100,7 +108,18 @@ async fn a_conflict_only_in_generated_files_is_regenerated_on_the_node_and_merge
     until_merged(&kit, &change).await;
     assert_eq!(kit.main_file("gen/all.txt").as_deref(), Some("a\nb\nc"));
     assert!(kit.host.events_of("change.needs_rebase").is_empty());
-    assert!(kit.host.sends.lock().unwrap().is_empty());
+    // Its author heard only that the train pushed to its branch, and how to build on that.
+    let sends = kit.host.sends.lock().unwrap().clone();
+    assert_eq!(sends.len(), 1, "{sends:?}");
+    assert_eq!(sends[0].0, "T1");
+    assert!(
+        sends[0].1.starts_with("The merge train pushed")
+            && sends[0].1.contains("git rebase origin/add-b"),
+        "{}",
+        sends[0].1
+    );
+    // The build cache is the node's, never in the checkout's git directory.
+    assert!(!checkout.join(".git/fleetd-regenerate").exists());
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -226,4 +245,94 @@ async fn a_pr_github_finds_conflicting_in_generated_files_is_regenerated_where_i
     );
     set_mergeable(&kit, 7, None);
     until_merged(&kit, &change).await;
+}
+
+/// A PR that conflicts only with the PR ahead of it in a batch is already on main with its generated files current:
+/// regenerating changes nothing, so it goes back to its author as before, never held as "regenerating".
+#[tokio::test(flavor = "multi_thread")]
+async fn a_regeneration_that_changes_nothing_sends_the_pr_back() {
+    let kit = regen_kit(MAKE);
+    let first = kit
+        .enqueue(kit.open_pr(
+            7,
+            "first",
+            &[("a.txt", Some(&a_with(&[(5, "first's line 5")])))],
+        ))
+        .await;
+    let second = kit
+        .enqueue(kit.open_pr(
+            8,
+            "second",
+            &[("a.txt", Some(&a_with(&[(5, "second's line 5")])))],
+        ))
+        .await;
+    let head = kit.head_of("second");
+
+    assert!(kit.train.step(REPO).await);
+    kit.train.regenerations_done().await;
+
+    assert_eq!(kit.get(&first.change_id).state, ChangeState::Merged);
+    let parked = kit.get(&second.change_id);
+    assert_eq!(parked.state, ChangeState::NeedsRebase);
+    let why = parked.last_error.clone().unwrap_or_default();
+    assert!(why.contains("nothing to regenerate"), "{why}");
+    assert_eq!(kit.head_of("second"), head);
+    assert_eq!(
+        kit.train.regen(&parked),
+        Some(super::super::regen::Regen::Failed)
+    );
+}
+
+/// One train serves every repo: another repo's pass forgets none of this repo's regenerations.
+#[tokio::test(flavor = "multi_thread")]
+async fn another_repos_pass_keeps_this_repos_regenerations() {
+    let kit = regen_kit(MAKE);
+    let pr = kit.open_pr(
+        7,
+        "migrate",
+        &[("migrations/202605010000_mine.sql", Some("-- mine\n"))],
+    );
+    let (_, change) = kit.author_task(Some(&pr)).await;
+    kit.commit(
+        "main",
+        &[("migrations/202610270000_theirs.sql", Some("-- theirs\n"))],
+        None,
+    );
+    *kit.host.node_refusal.lock().unwrap() = Some("devbox is offline".into());
+
+    kit.train.step(REPO).await;
+    kit.train.regenerations_done().await;
+    let failed = kit.get(&change);
+    assert_eq!(
+        kit.train.regen(&failed),
+        Some(super::super::regen::Regen::Failed)
+    );
+
+    kit.train.forget_regens("acme/api", &[]);
+    assert_eq!(
+        kit.train.regen(&failed),
+        Some(super::super::regen::Regen::Failed)
+    );
+    // Its failed rename isn't tried again on the next pass: the PR goes on as it was.
+    let runs = kit.host.node_runs.lock().unwrap().len();
+    kit.train.step(REPO).await;
+    kit.train.regenerations_done().await;
+    assert_eq!(kit.host.node_runs.lock().unwrap().len(), runs);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_program_missing_from_the_nodes_path_is_named_plainly() {
+    let kit = regen_kit("no-such-tool-fleetd --build");
+    let change = generated_conflict(&kit, &[]).await;
+
+    assert!(kit.train.step(REPO).await);
+    kit.train.regenerations_done().await;
+
+    let parked = kit.get(&change);
+    assert_eq!(parked.state, ChangeState::NeedsRebase);
+    let why = parked.last_error.unwrap_or_default();
+    assert!(
+        why.contains("needs a program that is not on this node's PATH"),
+        "{why}"
+    );
 }

@@ -501,9 +501,9 @@ pub struct Train {
     /// Each repo and base's `.fleetd/regenerate.json` and when it was read (`regen`).
     pub(super) regen_configs: Mutex<HashMap<(String, String), super::regen::Cached>>,
     /// Per Change and head, where its regeneration stands. Kept in memory: after a restart a conflict is tried again.
-    pub(super) regens: Mutex<HashMap<(ChangeId, String), super::regen::Regen>>,
+    pub(super) regens: Mutex<HashMap<super::regen::RegenKey, super::regen::Regen>>,
     /// The Changes and heads whose added migrations were read.
-    pub(super) migrations_read: Mutex<HashSet<(ChangeId, String)>>,
+    pub(super) migrations_read: Mutex<HashSet<super::regen::RegenKey>>,
     /// The regenerations running in the background.
     pub(super) regen_tasks: Mutex<Vec<tokio::task::JoinHandle<()>>>,
 }
@@ -2078,7 +2078,7 @@ impl Train {
             .chain(changes.iter().cloned())
             .map(|c| c.change_id)
             .collect();
-        self.forget_regens(&live);
+        self.forget_regens(repo, &live);
         for change in changes {
             let pull = match self.github.pull(repo, change.pr_number.get()).await {
                 Ok(pull) => pull,

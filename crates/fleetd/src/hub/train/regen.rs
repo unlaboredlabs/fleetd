@@ -25,7 +25,7 @@ const DEFAULT_MINUTES: u32 = 30;
 /// A fetch or a push of the PR's branch.
 const GIT_TIMEOUT_SEC: u32 = 300;
 /// The most paths and commands together, so the script's argv stays within a node command's 64 entries.
-const ENTRIES_MAX: usize = 48;
+const ENTRIES_MAX: usize = 47;
 /// How the script's lines start; its last one is its outcome.
 const SAID: &str = "fleetd-regenerate: ";
 /// The script's exit code when it refuses with a reason.
@@ -125,11 +125,16 @@ impl Regenerate {
 /// Rebases the PR's head onto `origin/<base>` in a scratch worktree of the checkout it runs in, resolves conflicts in
 /// generated files to the base's side, renames migrations that sort too early, runs every command, and commits what
 /// changed: its last line is `done <sha>`, or exit 3 with why. `$@`: base, head, migrations dir (or empty), the number
-/// of generated paths, those paths, then the commands. PR code runs here, so the script has no git credentials: the
-/// fetch before it and the push after it are git commands of their own.
+/// of generated paths, those paths, then the commands; the repo (`owner/name`) before them all. PR code runs here, so
+/// the script reaches for no credential on purpose: it runs as a node command, which gets no SSH agent; its HOME is a
+/// scratch directory with no git config (cargo and rustup keep theirs), and every git under it has no credential
+/// helper, no terminal prompt and no hooks. The fetch before it and the push after it are git commands of their own.
+/// The PR's build still runs as the node's user, as an agent's does there, so this keeps credentials from being used
+/// by accident, not from code that reads the user's files. Its build caches live under the node's home, never in the
+/// checkout. Programs are found on the node's PATH, the one its agent sessions get too.
 const SCRIPT: &str = r#"set -u
-base=$1 head=$2 migrations=$3 n=$4
-shift 4
+repo=$1 base=$2 head=$3 migrations=$4 n=$5
+shift 5
 paths=
 i=0
 while [ "$i" -lt "$n" ]; do
@@ -157,19 +162,30 @@ g() {
 }
 run_all() {
   for c in "$@"; do
-    sh -c "$c" >"$tmp/run" 2>&1 || refuse "\`$c\` failed: $(tail -n 3 "$tmp/run" | tr '\n' ' ')"
+    sh -c "$c" >"$tmp/run" 2>&1
+    case $? in
+      0) ;;
+      127) refuse "\`$c\` needs a program that is not on this node's PATH ($PATH), which its agent sessions get too: $(tail -n 1 "$tmp/run")" ;;
+      *) refuse "\`$c\` failed: $(tail -n 3 "$tmp/run" | tr '\n' ' ')" ;;
+    esac
   done
 }
 onto=refs/remotes/origin/$base
 git cat-file -e "$head^{commit}" 2>/dev/null || refuse "the PR's head ${head} is not in the checkout"
 git rev-parse -q --verify "$onto" >/dev/null || refuse "origin/$base is not in the checkout"
 root=$(pwd)
-common=$(git rev-parse --git-common-dir) && FLEETD_REGENERATE_CACHE=$(cd "$common" && pwd)/fleetd-regenerate \
-  || refuse "the checkout's git directory is not readable"
+FLEETD_REGENERATE_CACHE=${FLEETD_HOME:-$HOME/.fleetd}/node/cache/regenerate/$(printf '%s' "$repo" | tr '/' '-')
 export FLEETD_REGENERATE_CACHE
-mkdir -p "$FLEETD_REGENERATE_CACHE"
+mkdir -p "$FLEETD_REGENERATE_CACHE" || refuse "no cache directory at $FLEETD_REGENERATE_CACHE"
 tmp=$(mktemp -d) || refuse "no scratch directory"
 work=$tmp/tree
+export CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}" RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}"
+export npm_config_cache="$FLEETD_REGENERATE_CACHE/npm"
+mkdir -p "$tmp/home" && export HOME="$tmp/home"
+export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=false SSH_ASKPASS=false
+export GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=credential.helper GIT_CONFIG_VALUE_0= \
+  GIT_CONFIG_KEY_1=core.hooksPath GIT_CONFIG_VALUE_1=/dev/null
+unset SSH_AUTH_SOCK GIT_SSH_COMMAND GIT_SSH
 trap 'cd "$root"; git worktree remove --force "$work" >/dev/null 2>&1; git worktree prune; rm -rf "$tmp"' EXIT
 git worktree add -q --detach "$work" "$head" >"$tmp/log" 2>&1 || refuse "no scratch worktree: $(tail -n 1 "$tmp/log")"
 cd "$work" || refuse "no scratch worktree"
@@ -244,6 +260,17 @@ pub(super) enum Regen {
     Failed,
 }
 
+/// A Change at one head, in its repo: one train serves every repo.
+pub(super) type RegenKey = (String, ChangeId, String);
+
+fn regen_key(change: &Change) -> RegenKey {
+    (
+        change.repo.to_string(),
+        change.change_id.clone(),
+        change.head_sha.to_string(),
+    )
+}
+
 /// What the train does with a Change that conflicts with its base.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Conflict {
@@ -302,15 +329,14 @@ impl Train {
 
     /// Where the regeneration of the Change at its current head stands, if one began.
     pub(super) fn regen(&self, change: &Change) -> Option<Regen> {
-        lock(&self.regens)
-            .get(&(change.change_id.clone(), change.head_sha.to_string()))
-            .copied()
+        lock(&self.regens).get(&regen_key(change)).copied()
     }
 
-    /// Drops what the train remembers of regenerations of Changes no longer in `live`.
-    pub(super) fn forget_regens(&self, live: &[ChangeId]) {
-        lock(&self.regens).retain(|(id, _), _| live.contains(id));
-        lock(&self.migrations_read).retain(|(id, _)| live.contains(id));
+    /// Drops what the train remembers of regenerations of `repo`'s Changes no longer in `live`; other repos' stay.
+    pub(super) fn forget_regens(&self, repo: &str, live: &[ChangeId]) {
+        let gone = |r: &str, id: &ChangeId| r == repo && !live.contains(id);
+        lock(&self.regens).retain(|(r, id, _), _| !gone(r, id));
+        lock(&self.migrations_read).retain(|(r, id, _)| !gone(r, id));
     }
 
     /// The Change conflicts with its base (`why` completes "it ..."): regenerated in the background when its repo
@@ -337,7 +363,7 @@ impl Train {
             Some(Regen::Failed) => return false,
             None => {}
         }
-        let key = (change.change_id.clone(), change.head_sha.to_string());
+        let key = regen_key(change);
         if lock(&self.migrations_read).contains(&key) {
             return false;
         }
@@ -401,7 +427,7 @@ impl Train {
         let Some(me) = self.me.upgrade() else {
             return false;
         };
-        let key = (change.change_id.clone(), change.head_sha.to_string());
+        let key = regen_key(change);
         {
             let mut regens = lock(&self.regens);
             if regens.contains_key(&key) {
@@ -463,6 +489,7 @@ impl Train {
             .map(String::from)
             .into();
         argv.extend([
+            change.repo.to_string(),
             base.clone(),
             head.to_string(),
             config.migrations.clone().unwrap_or_default(),
@@ -491,6 +518,13 @@ impl Train {
                 ));
             }
         };
+        // Nothing to push: on its base already, with its generated files current. Its conflict is with something
+        // else (the PRs ahead of it in a batch), which regenerating doesn't settle.
+        if sha == head {
+            return Err(format!(
+                "it is already on origin/{base} with its generated files current, so there is nothing to regenerate"
+            ));
+        }
         let lease = format!("--force-with-lease=refs/heads/{branch}:{head}");
         let push = git(&[
             "push",
@@ -519,7 +553,7 @@ impl Train {
         bounce: bool,
         outcome: Result<String, String>,
     ) {
-        let key = (change.change_id.clone(), change.head_sha.to_string());
+        let key = regen_key(change);
         let ours = |c: &Change| {
             c.head_sha == change.head_sha
                 && [
@@ -547,6 +581,7 @@ impl Train {
                     }
                     c
                 });
+                self.tell_pushed(change, pull, &sha).await;
             }
             Err(reason) => {
                 lock(&self.regens).insert(key, Regen::Failed);
@@ -574,6 +609,30 @@ impl Train {
             }
         }
         self.kick(&change.repo);
+    }
+
+    /// The author task hears that the train pushed to its PR's branch, so its next push builds on that commit rather
+    /// than overwriting it.
+    async fn tell_pushed(&self, change: &Change, pull: &Pull, sha: &str) {
+        let Some(task_id) = &change.task_id else {
+            return;
+        };
+        let (base, branch) = (&pull.base.ref_, &pull.head.ref_);
+        let text = format!(
+            "The merge train pushed {} to your PR {} (branch {branch}): it rebased the PR onto origin/{base} and \
+             regenerated its generated files, so you don't need to. If you push to this PR again, first run \
+             `git fetch origin` and put your new work on top of origin/{branch} (`git rebase origin/{branch}`); never \
+             force-push over the train's commit.",
+            short(sha),
+            change.pr_url
+        );
+        if let Err(e) = self
+            .host
+            .message_task(&change.project_ref, super::service::TRAIN_BY, task_id, text)
+            .await
+        {
+            tracing::warn!(change_id = %change.change_id, task_id = %task_id, error = %e, "train: author not told of the push");
+        }
     }
 
     /// Waits for every regeneration started so far: tests.
