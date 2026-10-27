@@ -13,8 +13,19 @@ pub fn bin_dir(home: &Path) -> PathBuf {
     super::ios_dir(home).join("bin")
 }
 
-/// Where agent-device's XCTest runner is built, once, for every session.
+/// Where agent-device's XCTest runner is built, once, for every session: in the package's own `.tmp`. A cached runner
+/// that doesn't connect in time (its start gets 45 s, which a slow Mac's first start can take) is cleaned and built
+/// again, and agent-device cleans a runner only there: anywhere else, it refuses and the command fails. It checks the
+/// path against the package's real path, so this is named by it.
 pub fn runner_dir(home: &Path) -> PathBuf {
+    let package = agent_device::package_dir(home);
+    std::fs::canonicalize(&package)
+        .unwrap_or(package)
+        .join(".tmp/fleetd-runner")
+}
+
+/// Where the runner was built before it moved into the package.
+fn old_runner_dir(home: &Path) -> PathBuf {
     super::ios_dir(home).join("runner")
 }
 
@@ -38,6 +49,7 @@ pub fn install(home: &Path) -> Result<PathBuf, String> {
         std::os::unix::fs::PermissionsExt::from_mode(0o755),
     )
     .map_err(|e| e.to_string())?;
+    let _ = std::fs::remove_dir_all(old_runner_dir(home));
     Ok(wrapper)
 }
 
@@ -176,9 +188,25 @@ mod tests {
             assert!(ran.status.success(), "{ran:?}");
             assert_eq!(
                 String::from_utf8_lossy(&ran.stdout).trim(),
-                "ran open settings /n/device/ios/set /n/device/ios/runner"
+                "ran open settings /n/device/ios/set \
+                 /n/device/agent-device/node_modules/agent-device/.tmp/fleetd-runner"
             );
         }
+    }
+
+    #[test]
+    fn the_runner_is_in_the_packages_real_tmp_where_agent_device_may_clean_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let real = dir.path().join("real");
+        let package = agent_device::package_dir(&real);
+        std::fs::create_dir_all(&package).unwrap();
+        let home = dir.path().join("home");
+        std::os::unix::fs::symlink(&real, &home).unwrap();
+        let tmp = std::fs::canonicalize(&package).unwrap().join(".tmp");
+        assert_eq!(runner_dir(&home), tmp.join("fleetd-runner"));
+        std::fs::create_dir_all(old_runner_dir(&home)).unwrap();
+        install(&home).unwrap();
+        assert!(!old_runner_dir(&home).exists(), "the old runner goes");
     }
 
     #[test]

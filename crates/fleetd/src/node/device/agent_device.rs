@@ -38,9 +38,14 @@ pub fn bin_dir(home: &Path) -> PathBuf {
     install_dir(home).join("bin")
 }
 
+/// The unpacked package.
+pub fn package_dir(home: &Path) -> PathBuf {
+    install_dir(home).join("node_modules/agent-device")
+}
+
 /// The pinned package's CLI, which the wrappers run.
 pub fn entry(home: &Path) -> PathBuf {
-    install_dir(home).join("node_modules/agent-device/bin/agent-device.mjs")
+    package_dir(home).join("bin/agent-device.mjs")
 }
 
 /// The wrapper, when it wraps the pinned version.
@@ -55,7 +60,7 @@ pub fn find(home: &Path) -> Option<PathBuf> {
 /// as a plugin, and the wrapper. Running it needs Node.js 22.12 or later, as agent-device does.
 pub async fn install(home: &Path) -> Result<PathBuf, String> {
     let dir = install_dir(home);
-    let package = dir.join("node_modules/agent-device");
+    let package = package_dir(home);
     let _ = std::fs::remove_dir_all(&package);
     std::fs::create_dir_all(&package)
         .map_err(|e| format!("cannot make {}: {e}", package.display()))?;
