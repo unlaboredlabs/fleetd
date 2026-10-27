@@ -3,8 +3,8 @@
 //! chat or order activity since its last run gets a fresh lead session of its own. It reads the chat since the last
 //! run, the decisions and the memory. It may use `memory_read`, `remember` and `forget` and nothing else
 //! ([`allowed_tools`]): it starts with none of the runtime's own tools and none of the person's MCP servers, its node
-//! refuses any other tool, and the hub takes only those calls from it (`tasks::policy`): project memory freely,
-//! `user.md` add only. It opens no order, and its replies
+//! refuses any other tool (so it starts only on a node that lists `CAP_ALLOWED_ONLY`), and the hub takes only those
+//! calls from it (`tasks::policy`): project memory freely, `user.md` add only. It opens no order, and its replies
 //! reach no chat: only the lead's own thread is mirrored there. Its changes are kept here as it makes them and posted
 //! at its end as one "Memory refreshed: +a ~b −c" line with Undo; a night that changed nothing posts nothing. A
 //! session that fails, or still runs after [`RUN_LIMIT_MS`], is stopped.
@@ -21,6 +21,7 @@ use fleetd_contracts::ledger::{Decision, LeadState};
 use fleetd_contracts::mcp_servers::{McpAgentRole, McpSessionConfig};
 use fleetd_contracts::memory::{MemoryRefreshed, REFRESHED_LISTED, RememberedItem};
 use fleetd_contracts::model::RuntimeMode;
+use fleetd_contracts::node_link::CAP_ALLOWED_ONLY;
 use fleetd_contracts::prim::{Count, List};
 use fleetd_contracts::sessions::SessionRole;
 use rusqlite::{OptionalExtension, params};
@@ -382,9 +383,13 @@ pub async fn tick(hub: &Arc<Hub>, launcher: &dyn Launcher) -> Result<(), StoreEr
             put(&hub.db, &r, &run)?;
             continue;
         }
-        // A lead mid-turn or a login out of usage: tried again on the next pass, within the night's window.
+        // A lead mid-turn, a login out of usage, or a node that can't hold the session to its memory tools (one
+        // from before `allowed_only`, or none linked): tried again on the next pass, within the night's window.
         let busy = matches!(hub.leads.leads.get(&r), Ok(Some(l)) if l.state == LeadState::Working);
-        if busy || hub.usage.gate(r.machine_id.as_str()).is_some() {
+        if busy
+            || hub.usage.gate(r.machine_id.as_str()).is_some()
+            || !hub.link.node_can(&r.machine_id, CAP_ALLOWED_ONLY)
+        {
             continue;
         }
         start(hub, launcher, &r, &project.title, run, night).await?;
@@ -443,7 +448,7 @@ async fn start(
         project_id: r.project_id.clone(),
         prompt,
         profile: TaskProfile::High,
-        // Its node asks for any tool not allowed and refuses it; a node from before `allowed_only` asks a person.
+        // Its node asks for any tool not allowed, and refuses it.
         runtime_mode: RuntimeMode::ApprovalRequired,
         title: Some(
             format!("fleetd memory refresh: {title}")

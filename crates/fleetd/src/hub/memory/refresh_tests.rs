@@ -89,6 +89,10 @@ fn hub() -> (Arc<Hub>, Arc<ManualClock>, tempfile::TempDir) {
         )
         .unwrap();
     global(&hub, "policy.tz", "UTC");
+    hub.link.set_capabilities(
+        &MachineId::unchecked("devbox"),
+        &[fleetd_contracts::node_link::CAP_ALLOWED_ONLY],
+    );
     (hub, clock, home)
 }
 
@@ -233,6 +237,25 @@ fn the_night_is_due_from_its_hour_for_three_hours_in_the_persons_zone() {
         night_due(ms("2026-03-29T03:59:00Z"), Tz::Europe__Berlin, gap),
         Some(after)
     );
+}
+
+#[tokio::test]
+async fn a_node_that_cant_hold_the_session_to_its_memory_tools_gets_no_refresh_until_it_can() {
+    let (hub, _clock, _home) = hub();
+    let r = project("shop");
+    say(&hub, &r, ChatAuthor::Human, "Keep answers short.");
+    // A node from before `allowed_only` would let claude read the project's files unasked.
+    hub.link.set_capabilities(&r.machine_id, &[]);
+    let node = Node::default();
+    refresh::tick(&hub, &node).await.unwrap();
+    assert!(node.launches.lock().unwrap().is_empty());
+    // Updated within the night's window: it starts then.
+    hub.link.set_capabilities(
+        &r.machine_id,
+        &[fleetd_contracts::node_link::CAP_ALLOWED_ONLY],
+    );
+    refresh::tick(&hub, &node).await.unwrap();
+    assert_eq!(node.launches.lock().unwrap().len(), 1);
 }
 
 #[tokio::test]
