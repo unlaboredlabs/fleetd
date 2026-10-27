@@ -174,7 +174,7 @@ fn a_reflowed_default_is_not_a_changed_default() {
     let e = entry("lead.start").unwrap();
     let wrapped = e
         .default
-        .replacen(" and keep them posted", "\nand keep them posted", 1);
+        .replacen(" and tell them only", "\nand tell them only", 1);
     assert_ne!(wrapped, e.default);
     let older = e.default.replacen(
         "Trust it over your memory",
@@ -400,11 +400,7 @@ fn the_leads_examples_never_nag() {
 fn the_lead_speaks_only_when_it_matters_in_plain_words() {
     let lead = super::registry::entry("lead.start");
     let rules = lead.safety_rules();
-    for id in [
-        "speak-when-it-matters",
-        "one-message-per-change",
-        "plain-words",
-    ] {
+    for id in ["speak-when-it-matters", "batch-landings", "plain-words"] {
         let rule = rules
             .iter()
             .find(|r| r.id == id)
@@ -419,13 +415,21 @@ fn the_lead_speaks_only_when_it_matters_in_plain_words() {
         rest.split("\n## ").next().unwrap_or_default().to_owned()
     };
     let when = section("## When to speak");
-    for silent in ["a review passing", "CI running", "a PR queued"] {
+    for silent in [
+        "a rebase",
+        "a review passing",
+        "CI running",
+        "a PR queued",
+        "resuming",
+    ] {
         assert!(when.contains(silent), "silent on {silent}? {when}");
     }
     for news in [
-        "a result they can use",
-        "a problem",
-        "a decision only they can make",
+        "must act or decide",
+        "lands, fails or is blocked",
+        "goes red and stays red",
+        "to answer them",
+        "never one message per PR",
     ] {
         assert!(when.contains(news), "speaks for {news}? {when}");
     }
@@ -531,6 +535,14 @@ fn the_lead_never_posts_a_status_only_message() {
             .unwrap();
     assert!(!empty.is_match(lead.default), "{}", lead.default);
     assert!(lead.default.contains("Never end a turn with no text"));
+    // The token is the hub's own, and any other words post.
+    let quiet = lead
+        .default
+        .lines()
+        .find(|l| l.contains("is the only way to post nothing"))
+        .unwrap();
+    assert!(quiet.contains(&format!("exactly `{}`", crate::hub::chat::history::QUIET)));
+    assert!(quiet.contains("become a bubble"), "{quiet}");
     let examples = lead.default.split("## Examples").nth(1).unwrap();
     for said in examples.lines().filter(|l| l.starts_with("You:")) {
         assert!(
