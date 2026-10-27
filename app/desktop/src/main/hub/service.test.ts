@@ -1,10 +1,13 @@
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { EventEmitter } from "node:events";
+import type { WebContents } from "electron";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { HubCacheFile } from "./cache";
 import { HubService } from "./service";
 import type { CredentialEnv } from "./credentials";
+import type { FixtureFile } from "./fixture";
 import type { ConnectionEvents, Transport } from "./transport";
 
 const dirs: string[] = [];
@@ -57,5 +60,38 @@ describe("hub service", () => {
     hub?.onText(JSON.stringify({ t: "ready", protocol: 1 }));
     expect(sent.filter((m) => m["t"] === "live")).toEqual([{ t: "live", board: true, focus: "ws-1" }]);
     service.stop();
+  });
+
+  it("sends a reloaded window nothing from its page before until the new page subscribes", () => {
+    vi.useFakeTimers();
+    const fixture: FixtureFile = {
+      version: 1,
+      name: "back",
+      note: "",
+      now: "2026-10-19T10:30:00.000Z",
+      state: { phase: "live", hub: "http://devbox:4790", protocol: 1 },
+      frames: [{ t: "snapshot", snapshot: { cursor: 1 }, afterMs: 1200 }],
+      calls: [],
+    };
+    const service = new HubService({ kind: "fixture", fixture });
+    const sent: string[] = [];
+    const contents = Object.assign(new EventEmitter(), { isDestroyed: () => false, send: (_channel: string, frame: { t: string }) => sent.push(frame.t) });
+    const window = contents as unknown as WebContents;
+    service.subscribe(window);
+    expect(sent).toEqual(["state"]);
+    // Reloaded, and the new page still reading its cache when the first page's snapshot is due.
+    vi.advanceTimersByTime(1000);
+    contents.emit("did-navigate");
+    vi.advanceTimersByTime(500);
+    expect(sent).toEqual(["state"]);
+    // Its own subscribe plays the fixture from the start.
+    service.subscribe(window);
+    vi.advanceTimersByTime(1199);
+    expect(sent).toEqual(["state", "state"]);
+    vi.advanceTimersByTime(1);
+    expect(sent).toEqual(["state", "state", "snapshot"]);
+    expect(contents.listenerCount("destroyed") + contents.listenerCount("did-navigate")).toBe(2);
+    service.stop();
+    vi.useRealTimers();
   });
 });
