@@ -26,6 +26,7 @@ import {
 import { RemoveProjectDialog, type RemoveTarget } from "../projects/RemoveProjectDialog";
 import { UpdatesLine } from "../updates";
 import { HubStatus } from "./HubStatus";
+import { HubText } from "../projects/HubText";
 import { routeOf, type SidebarProject } from "./model";
 import { useOfflineAsOf } from "./offline";
 import { sameProject, type Screen } from "./routes";
@@ -50,7 +51,7 @@ export interface SidebarProps {
 
 const UNREAD = "New message from the lead";
 
-/** The row's one mark: why it wants you, else a new message, else how many agents work. */
+/** The row's one mark: why it wants you, else a new message, else a red main, else how many agents work. */
 const mark = (p: SidebarProject): { readonly node: ReactNode; readonly tip: string } | null => {
   const want = p.want;
   if (want !== undefined) {
@@ -71,6 +72,8 @@ const mark = (p: SidebarProject): { readonly node: ReactNode; readonly tip: stri
     };
   }
   if (p.unread) return { node: <Dot color="var(--accent)" label={UNREAD} />, tip: UNREAD };
+  // It stops nothing, so the word without the weight that asks for you.
+  if (p.warning !== undefined) return { node: <Text size="xs" tone="warning">CI red</Text>, tip: p.warning };
   if (p.running > 0) {
     return {
       node: (
@@ -93,7 +96,7 @@ const trailing = (p: SidebarProject, jump: number | null, asOf: string | undefin
   return (
     <>
       {m === null ? null : (
-        <Tooltip content={tip}>
+        <Tooltip content={tip === undefined ? undefined : <HubText>{tip}</HubText>}>
           <span className={s.mark} aria-label={tip}>
             {m.node}
           </span>

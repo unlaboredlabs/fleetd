@@ -15,7 +15,7 @@ import { projectKey } from "../../src/data/store";
 import { selectStrip } from "../live/strip";
 import type { ProjectRef } from "./slots";
 
-// Status's own query (same input, so one cached read), only for what the hub alone knows (blocked, and why); needs-you
+// Status's own query (same input, so one cached read), only for what the hub alone knows (blocked and why, a warning); needs-you
 // and working come from the project row the sidebar dot reads, so the dot, the header and Status agree.
 const ALL = {} as const;
 
@@ -26,6 +26,8 @@ export interface ChatData {
   readonly leadWorking: boolean | undefined;
   /** Blocked (the state word says so): the hub's reason, "" when it gave none. */
   readonly blocked: string | undefined;
+  /** What stops nothing but is worth knowing, in any state: a check red on main, and whether a fix is under way. */
+  readonly warning: string | undefined;
   /** Blocked by this machine's usage pause, which Resume lifts. */
   readonly usagePausedOn: string | undefined;
   /** The newest page couldn't be read (before any page landed): the chat shows why, with retry. */
@@ -54,8 +56,9 @@ export function useChatData(project: ProjectRef): ChatData {
   const state = projectRow === undefined ? undefined : projectStateWord(projectRow.needsYou, projectRow.working, row?.state);
   const blocked = state === "blocked" ? (row?.blockedReason ?? "") : undefined;
   const usagePausedOn = state === "blocked" ? row?.usagePausedOn : undefined;
+  const warning = row?.warning;
   const loadOlder = useCallback(() => layer.chat.loadOlder(key), [layer, key]);
   // open() reads the newest page again while none has landed.
   const retry = useCallback(() => layer.chat.open(key), [layer, key]);
-  return { view, state, blocked, usagePausedOn, leadWorking, loadError, retry, strip, title, missing, loadOlder };
+  return { view, state, blocked, warning, usagePausedOn, leadWorking, loadError, retry, strip, title, missing, loadOlder };
 }

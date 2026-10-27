@@ -34,7 +34,7 @@ describe("sidebar projects", () => {
         { projectRef: ref("billing"), kind: "approval", state: "open" },
       ],
       blocked: new Map([
-        ["devbox/docs", "main CI is red"],
+        ["devbox/docs", "devbox is offline"],
         ["devbox/cart", undefined],
       ]),
     };
@@ -44,9 +44,19 @@ describe("sidebar projects", () => {
       ["api", "approve", 2, "2 commands to approve"],
       ["billing", "secret", 1, "The lead needs 1 secret from you"],
       ["cart", "reply", 1, "The lead is waiting for your reply"],
-      ["docs", "blocked", 1, "Blocked: main CI is red"],
+      ["docs", "blocked", 1, "Blocked: devbox is offline"],
       ["search", undefined, undefined, undefined],
     ]);
+  });
+
+  it("carries a red main as a warning, which wants nothing of you", () => {
+    const warnings = new Map([["devbox/docs", "`ios sessions` is red on main, fix in progress"]]);
+    const projects = toSidebar([row("api"), row("docs")], { warnings }) ?? [];
+    expect(projects.map((p) => [p.project.title, p.want, p.warning])).toEqual([
+      ["api", undefined, undefined],
+      ["docs", undefined, "`ios sessions` is red on main, fix in progress"],
+    ]);
+    expect(nextWanting(projects, null)).toBeNull();
   });
 
   it("marks a chat with a message newer than the one last seen, never the open one or one never seen", () => {

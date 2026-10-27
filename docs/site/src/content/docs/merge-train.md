@@ -53,6 +53,9 @@ order is open, is that order's; once it is closed, a new failure opens a new one
 watch ends once every check on the commit has finished, and after 6 hours at most. With an empty fast set the train
 waited for every check, so there is nothing to watch.
 
+A check red on the base holds no merge: each pull request merges on its own checks. Status shows it as a warning, with
+whether its fix order is open ([a check red on main](/docs/status#red-main)).
+
 ## How long CI may take {#ci-time}
 
 The train gives a commit's CI 45 minutes of running time, counted from when its first check starts. Time the checks
