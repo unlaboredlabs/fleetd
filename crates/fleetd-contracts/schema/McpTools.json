@@ -3634,6 +3634,490 @@
         }
       ]
     },
+    "ClaudeAccount": {
+      "description": "The account a session runs on, as a launch names it. The node resolves it from the secrets it holds: `hub` is\nthe hub's API key (`ANTHROPIC_API_KEY`, and `ANTHROPIC_BASE_URL` with an endpoint), `person` that person's\nsubscription (`CLAUDE_CODE_OAUTH_TOKEN`).",
+      "oneOf": [
+        {
+          "properties": {
+            "kind": {
+              "const": "hub",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "person",
+              "type": "string"
+            },
+            "personId": {
+              "$ref": "#/$defs/PersonId"
+            }
+          },
+          "required": [
+            "kind",
+            "personId"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ClaudeAccountTestInput": {
+      "properties": {
+        "account": {
+          "$ref": "#/$defs/ClaudeTestTarget"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId",
+          "description": "Where to try it; default: the first machine online that holds it."
+        }
+      },
+      "required": [
+        "account"
+      ],
+      "type": "object"
+    },
+    "ClaudeAccountTestOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "test": {
+          "$ref": "#/$defs/ClaudeTest"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "test"
+      ],
+      "type": "object"
+    },
+    "ClaudeAccountsGetInput": {
+      "type": "object"
+    },
+    "ClaudeAccountsGetOutput": {
+      "properties": {
+        "hubApi": {
+          "$ref": "#/$defs/ClaudeHubApi",
+          "description": "The hub's API configuration, once an admin set one up."
+        },
+        "leadsRunOn": {
+          "$ref": "#/$defs/ClaudeRunsOn",
+          "description": "What projects' leads and work nobody started (automations, train fixes) run on."
+        },
+        "me": {
+          "$ref": "#/$defs/PersonClaude",
+          "description": "The caller's own setup; absent for a key with no person."
+        },
+        "next": {
+          "type": "string"
+        },
+        "people": {
+          "default": [],
+          "description": "Everyone's, for an owner's or admin's device; empty otherwise.",
+          "items": {
+            "$ref": "#/$defs/PersonClaude"
+          },
+          "type": "array"
+        },
+        "settings": {
+          "$ref": "#/$defs/ClaudeSettings"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "settings",
+        "leadsRunOn"
+      ],
+      "type": "object"
+    },
+    "ClaudeChoice": {
+      "description": "What a person picked in their own settings. Unset: their subscription once they connect one, else the hub's API.",
+      "enum": [
+        "subscription",
+        "hub_api"
+      ],
+      "type": "string"
+    },
+    "ClaudeChoiceSetInput": {
+      "properties": {
+        "choice": {
+          "$ref": "#/$defs/ClaudeChoice",
+          "description": "Absent: their subscription once connected, else the hub's API."
+        }
+      },
+      "type": "object"
+    },
+    "ClaudeChoiceSetOutput": {
+      "properties": {
+        "me": {
+          "$ref": "#/$defs/PersonClaude"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "me"
+      ],
+      "type": "object"
+    },
+    "ClaudeEndpoint": {
+      "description": "an http:// or https:// URL of at most 500 characters, no spaces",
+      "pattern": "^https?://[^\\s]{1,500}$",
+      "type": "string"
+    },
+    "ClaudeHubApi": {
+      "description": "The hub's API configuration as the hub keeps it: never the key, only where it is.",
+      "properties": {
+        "endpoint": {
+          "$ref": "#/$defs/ClaudeEndpoint"
+        },
+        "lastTest": {
+          "$ref": "#/$defs/ClaudeTest"
+        },
+        "sealedOn": {
+          "description": "Each machine whose node holds the key. A machine missing here runs nothing on it.",
+          "items": {
+            "$ref": "#/$defs/ClaudeSealedOn"
+          },
+          "type": "array"
+        },
+        "updatedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "updatedBy": {
+          "$ref": "#/$defs/PersonRef"
+        }
+      },
+      "required": [
+        "sealedOn",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "ClaudeHubApiRemoveInput": {
+      "type": "object"
+    },
+    "ClaudeHubApiRemoveOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "ok": {
+          "enum": [
+            true
+          ],
+          "type": "boolean"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "type": "object"
+    },
+    "ClaudeHubApiSetInput": {
+      "properties": {
+        "endpoint": {
+          "$ref": "#/$defs/ClaudeEndpoint",
+          "description": "A custom endpoint (ANTHROPIC_BASE_URL); absent: Anthropic's own."
+        },
+        "sealed": {
+          "default": [],
+          "description": "The API key sealed to each machine agents run on; empty keeps the saved key, for an endpoint change alone.",
+          "items": {
+            "$ref": "#/$defs/ClaudeSeal"
+          },
+          "maxItems": 500,
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "ClaudeHubApiSetOutput": {
+      "properties": {
+        "hubApi": {
+          "$ref": "#/$defs/ClaudeHubApi"
+        },
+        "missingOn": {
+          "description": "Machines whose node doesn't hold the key (offline when it was saved): save it again while they are online.",
+          "items": {
+            "$ref": "#/$defs/MachineId"
+          },
+          "type": "array"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "hubApi"
+      ],
+      "type": "object"
+    },
+    "ClaudeRunsOn": {
+      "description": "What some work runs on now: an account, the machines' own login, or a refusal.",
+      "oneOf": [
+        {
+          "description": "Nothing is set up for it: each machine's own `claude login`, as before teams step 8.",
+          "properties": {
+            "kind": {
+              "const": "machine_login",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "This account.",
+          "properties": {
+            "account": {
+              "$ref": "#/$defs/ClaudeAccount"
+            },
+            "kind": {
+              "const": "account",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "account"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Nothing it may use: what to do.",
+          "properties": {
+            "fix": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "refused",
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "message",
+            "fix"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ClaudeSeal": {
+      "description": "One machine's box of an account's secret.",
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "sealed": {
+          "$ref": "#/$defs/SealedSecret",
+          "description": "`crypto_box_seal` of the key or token to that machine's `boxPubKey`."
+        }
+      },
+      "required": [
+        "machineId",
+        "sealed"
+      ],
+      "type": "object"
+    },
+    "ClaudeSealedOn": {
+      "description": "A machine whose node holds an account's secret, with the fingerprint it computed.",
+      "properties": {
+        "fingerprint": {
+          "$ref": "#/$defs/SecretFingerprint"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        }
+      },
+      "required": [
+        "machineId",
+        "fingerprint"
+      ],
+      "type": "object"
+    },
+    "ClaudeSettings": {
+      "description": "Hub-wide Claude settings (Administration).",
+      "properties": {
+        "membersUseHubApi": {
+          "description": "Members may run their work on the hub's API configuration (on by default). Off, each member connects their\nown subscription; it never affects owners and admins, projects' leads or work nobody started.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "membersUseHubApi"
+      ],
+      "type": "object"
+    },
+    "ClaudeSettingsSetInput": {
+      "properties": {
+        "membersUseHubApi": {
+          "description": "Members may run their work on the hub's API configuration.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "membersUseHubApi"
+      ],
+      "type": "object"
+    },
+    "ClaudeSettingsSetOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "settings": {
+          "$ref": "#/$defs/ClaudeSettings"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "settings"
+      ],
+      "type": "object"
+    },
+    "ClaudeSubscription": {
+      "description": "A person's connected subscription: never the token, only where it is.",
+      "properties": {
+        "connectedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "lastTest": {
+          "$ref": "#/$defs/ClaudeTest"
+        },
+        "sealedOn": {
+          "items": {
+            "$ref": "#/$defs/ClaudeSealedOn"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "sealedOn",
+        "connectedAt"
+      ],
+      "type": "object"
+    },
+    "ClaudeSubscriptionRemoveInput": {
+      "type": "object"
+    },
+    "ClaudeSubscriptionRemoveOutput": {
+      "properties": {
+        "me": {
+          "$ref": "#/$defs/PersonClaude"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "me"
+      ],
+      "type": "object"
+    },
+    "ClaudeSubscriptionSetInput": {
+      "properties": {
+        "sealed": {
+          "description": "The caller's long-lived token (`claude setup-token`) sealed to each machine agents run on.",
+          "items": {
+            "$ref": "#/$defs/ClaudeSeal"
+          },
+          "maxItems": 500,
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "sealed"
+      ],
+      "type": "object"
+    },
+    "ClaudeSubscriptionSetOutput": {
+      "properties": {
+        "me": {
+          "$ref": "#/$defs/PersonClaude"
+        },
+        "missingOn": {
+          "items": {
+            "$ref": "#/$defs/MachineId"
+          },
+          "type": "array"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "me"
+      ],
+      "type": "object"
+    },
+    "ClaudeTest": {
+      "description": "The last Test of an account: one tiny `claude -p` call made with it on one machine.",
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "error": {
+          "description": "What went wrong, in claude's words with the secret masked; absent when it worked.",
+          "type": "string"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "ok": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "at",
+        "machineId",
+        "ok"
+      ],
+      "type": "object"
+    },
+    "ClaudeTestTarget": {
+      "description": "Which account `claude_account_test` tries: the hub's API key (admins), or the caller's own subscription.",
+      "enum": [
+        "hub_api",
+        "mine"
+      ],
+      "type": "string"
+    },
     "CloneTarget": {
       "description": "Where a clone would go on a machine, and what is there now.",
       "properties": {
@@ -8666,6 +9150,54 @@
         "checklist_remove.output": {
           "$ref": "#/$defs/ChecklistRemoveOutput"
         },
+        "claude_account_test.input": {
+          "$ref": "#/$defs/ClaudeAccountTestInput"
+        },
+        "claude_account_test.output": {
+          "$ref": "#/$defs/ClaudeAccountTestOutput"
+        },
+        "claude_accounts_get.input": {
+          "$ref": "#/$defs/ClaudeAccountsGetInput"
+        },
+        "claude_accounts_get.output": {
+          "$ref": "#/$defs/ClaudeAccountsGetOutput"
+        },
+        "claude_choice_set.input": {
+          "$ref": "#/$defs/ClaudeChoiceSetInput"
+        },
+        "claude_choice_set.output": {
+          "$ref": "#/$defs/ClaudeChoiceSetOutput"
+        },
+        "claude_hub_api_remove.input": {
+          "$ref": "#/$defs/ClaudeHubApiRemoveInput"
+        },
+        "claude_hub_api_remove.output": {
+          "$ref": "#/$defs/ClaudeHubApiRemoveOutput"
+        },
+        "claude_hub_api_set.input": {
+          "$ref": "#/$defs/ClaudeHubApiSetInput"
+        },
+        "claude_hub_api_set.output": {
+          "$ref": "#/$defs/ClaudeHubApiSetOutput"
+        },
+        "claude_settings_set.input": {
+          "$ref": "#/$defs/ClaudeSettingsSetInput"
+        },
+        "claude_settings_set.output": {
+          "$ref": "#/$defs/ClaudeSettingsSetOutput"
+        },
+        "claude_subscription_remove.input": {
+          "$ref": "#/$defs/ClaudeSubscriptionRemoveInput"
+        },
+        "claude_subscription_remove.output": {
+          "$ref": "#/$defs/ClaudeSubscriptionRemoveOutput"
+        },
+        "claude_subscription_set.input": {
+          "$ref": "#/$defs/ClaudeSubscriptionSetInput"
+        },
+        "claude_subscription_set.output": {
+          "$ref": "#/$defs/ClaudeSubscriptionSetOutput"
+        },
         "decisions_list.input": {
           "$ref": "#/$defs/DecisionsListInput"
         },
@@ -9408,6 +9940,22 @@
         "checklist_get.output",
         "checklist_remove.input",
         "checklist_remove.output",
+        "claude_account_test.input",
+        "claude_account_test.output",
+        "claude_accounts_get.input",
+        "claude_accounts_get.output",
+        "claude_choice_set.input",
+        "claude_choice_set.output",
+        "claude_hub_api_remove.input",
+        "claude_hub_api_remove.output",
+        "claude_hub_api_set.input",
+        "claude_hub_api_set.output",
+        "claude_settings_set.input",
+        "claude_settings_set.output",
+        "claude_subscription_remove.input",
+        "claude_subscription_remove.output",
+        "claude_subscription_set.input",
+        "claude_subscription_set.output",
         "decisions_list.input",
         "decisions_list.output",
         "decisions_overturn.input",
@@ -11551,6 +12099,35 @@
         "name",
         "role",
         "createdAt"
+      ],
+      "type": "object"
+    },
+    "PersonClaude": {
+      "description": "One person's Claude setup.",
+      "properties": {
+        "choice": {
+          "$ref": "#/$defs/ClaudeChoice",
+          "description": "Absent: their subscription once connected, else the hub's API."
+        },
+        "mayUseHubApi": {
+          "description": "Whether the hub's API is theirs to use: it is set up, and they administer the hub or members may use it.",
+          "type": "boolean"
+        },
+        "person": {
+          "$ref": "#/$defs/PersonRef"
+        },
+        "runsOn": {
+          "$ref": "#/$defs/ClaudeRunsOn",
+          "description": "What the orders they start, and their Navi, run on now."
+        },
+        "subscription": {
+          "$ref": "#/$defs/ClaudeSubscription"
+        }
+      },
+      "required": [
+        "person",
+        "mayUseHubApi",
+        "runsOn"
       ],
       "type": "object"
     },
@@ -19193,8 +19770,28 @@
       "pattern": "^U[0-9a-f]{32}$",
       "type": "string"
     },
+    "UsageAccount": {
+      "description": "One Claude account's usage on a machine (teams step 8): a limit on it pauses only the work on it, never the\nmachine's own login or another account's.",
+      "properties": {
+        "account": {
+          "$ref": "#/$defs/ClaudeAccount"
+        },
+        "breaker": {
+          "$ref": "#/$defs/UsageBreaker"
+        },
+        "parked": {
+          "$ref": "#/$defs/ParkedCounts"
+        }
+      },
+      "required": [
+        "account",
+        "breaker",
+        "parked"
+      ],
+      "type": "object"
+    },
     "UsageBreaker": {
-      "description": "Open: no new turns start on the machine's login until `until`, or (no reset named) a check or another turn on the\nlogin succeeds, or usage_resume.",
+      "description": "Open: no new turns start on the login (the machine's own, or one account's there) until `until`, or (no reset named) a check or another turn on the\nlogin succeeds, or usage_resume.",
       "properties": {
         "checkAt": {
           "$ref": "#/$defs/Timestamp",
@@ -19301,6 +19898,13 @@
     },
     "UsageStatus": {
       "properties": {
+        "accounts": {
+          "description": "Each Claude account fleetd has seen work on here, with its own breaker and parked work.",
+          "items": {
+            "$ref": "#/$defs/UsageAccount"
+          },
+          "type": "array"
+        },
         "breaker": {
           "$ref": "#/$defs/UsageBreaker"
         },
@@ -19313,7 +19917,8 @@
           "type": "array"
         },
         "login": {
-          "$ref": "#/$defs/LoginKind"
+          "$ref": "#/$defs/LoginKind",
+          "description": "The machine's own login; `breaker` and `parked` are its. Work on a Claude account is in `accounts`."
         },
         "machineId": {
           "$ref": "#/$defs/MachineId"

@@ -295,9 +295,10 @@ pub fn read(hub: &Hub, fresh: &Fresh, now: i64) -> anyhow::Result<Vec<ProjectSta
             .map(|(repo, _)| repo)
             .collect();
         // The usage layer's pause (its breaker holds new turns on the login), else a window claude rejected.
+        let lead_account = crate::hub::claude_accounts::lead_account_key(&hub.db, &r);
         let usage_paused = hub
             .usage
-            .gate(r.machine_id.as_str())
+            .gate_for(r.machine_id.as_str(), lead_account.as_deref())
             .map(|why| why.strip_prefix("usage: ").unwrap_or(&why).to_owned());
         let usage_hit = hub
             .link

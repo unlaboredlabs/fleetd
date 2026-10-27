@@ -1402,6 +1402,180 @@ export type ClaimOwnerKind = "human_session" | "agent_key" | "lead";
 
 export type ClaimState = "active" | "landed" | "released" | "expired";
 
+/**
+ * The account a session runs on, as a launch names it. The node resolves it from the secrets it holds: `hub` is
+ * the hub's API key (`ANTHROPIC_API_KEY`, and `ANTHROPIC_BASE_URL` with an endpoint), `person` that person's
+ * subscription (`CLAUDE_CODE_OAUTH_TOKEN`).
+ */
+export type ClaudeAccount = {
+  kind: "hub";
+} | {
+  kind: "person";
+  personId: PersonId;
+};
+
+export type ClaudeAccountTestInput = {
+  account: ClaudeTestTarget;
+  /** Where to try it; default: the first machine online that holds it. */
+  machineId?: MachineId;
+};
+
+export type ClaudeAccountTestOutput = {
+  next?: string;
+  test: ClaudeTest;
+  truncated?: boolean;
+};
+
+export type ClaudeAccountsGetInput = { [key: string]: unknown };
+
+export type ClaudeAccountsGetOutput = {
+  /** The hub's API configuration, once an admin set one up. */
+  hubApi?: ClaudeHubApi;
+  /** What projects' leads and work nobody started (automations, train fixes) run on. */
+  leadsRunOn: ClaudeRunsOn;
+  /** The caller's own setup; absent for a key with no person. */
+  me?: PersonClaude;
+  next?: string;
+  /** Everyone's, for an owner's or admin's device; empty otherwise. */
+  people?: PersonClaude[];
+  settings: ClaudeSettings;
+  truncated?: boolean;
+};
+
+/** What a person picked in their own settings. Unset: their subscription once they connect one, else the hub's API. */
+export type ClaudeChoice = "subscription" | "hub_api";
+
+export type ClaudeChoiceSetInput = {
+  /** Absent: their subscription once connected, else the hub's API. */
+  choice?: ClaudeChoice;
+};
+
+export type ClaudeChoiceSetOutput = {
+  me: PersonClaude;
+  next?: string;
+  truncated?: boolean;
+};
+
+/** an http:// or https:// URL of at most 500 characters, no spaces */
+export type ClaudeEndpoint = string;
+
+/** The hub's API configuration as the hub keeps it: never the key, only where it is. */
+export type ClaudeHubApi = {
+  endpoint?: ClaudeEndpoint;
+  lastTest?: ClaudeTest;
+  /** Each machine whose node holds the key. A machine missing here runs nothing on it. */
+  sealedOn: ClaudeSealedOn[];
+  updatedAt: Timestamp;
+  updatedBy?: PersonRef;
+};
+
+export type ClaudeHubApiRemoveInput = { [key: string]: unknown };
+
+export type ClaudeHubApiRemoveOutput = {
+  next?: string;
+  ok: true;
+  truncated?: boolean;
+};
+
+export type ClaudeHubApiSetInput = {
+  /** A custom endpoint (ANTHROPIC_BASE_URL); absent: Anthropic's own. */
+  endpoint?: ClaudeEndpoint;
+  /** The API key sealed to each machine agents run on; empty keeps the saved key, for an endpoint change alone. */
+  sealed?: ClaudeSeal[];
+};
+
+export type ClaudeHubApiSetOutput = {
+  hubApi: ClaudeHubApi;
+  /** Machines whose node doesn't hold the key (offline when it was saved): save it again while they are online. */
+  missingOn?: MachineId[];
+  next?: string;
+  truncated?: boolean;
+};
+
+/** What some work runs on now: an account, the machines' own login, or a refusal. */
+export type ClaudeRunsOn = {
+  kind: "machine_login";
+} | {
+  account: ClaudeAccount;
+  kind: "account";
+} | {
+  fix: string;
+  kind: "refused";
+  message: string;
+};
+
+/** One machine's box of an account's secret. */
+export type ClaudeSeal = {
+  machineId: MachineId;
+  /** `crypto_box_seal` of the key or token to that machine's `boxPubKey`. */
+  sealed: SealedSecret;
+};
+
+/** A machine whose node holds an account's secret, with the fingerprint it computed. */
+export type ClaudeSealedOn = {
+  fingerprint: SecretFingerprint;
+  machineId: MachineId;
+};
+
+/** Hub-wide Claude settings (Administration). */
+export type ClaudeSettings = {
+  /**
+   * Members may run their work on the hub's API configuration (on by default). Off, each member connects their
+   * own subscription; it never affects owners and admins, projects' leads or work nobody started.
+   */
+  membersUseHubApi: boolean;
+};
+
+export type ClaudeSettingsSetInput = {
+  /** Members may run their work on the hub's API configuration. */
+  membersUseHubApi: boolean;
+};
+
+export type ClaudeSettingsSetOutput = {
+  next?: string;
+  settings: ClaudeSettings;
+  truncated?: boolean;
+};
+
+/** A person's connected subscription: never the token, only where it is. */
+export type ClaudeSubscription = {
+  connectedAt: Timestamp;
+  lastTest?: ClaudeTest;
+  sealedOn: ClaudeSealedOn[];
+};
+
+export type ClaudeSubscriptionRemoveInput = { [key: string]: unknown };
+
+export type ClaudeSubscriptionRemoveOutput = {
+  me: PersonClaude;
+  next?: string;
+  truncated?: boolean;
+};
+
+export type ClaudeSubscriptionSetInput = {
+  /** The caller's long-lived token (`claude setup-token`) sealed to each machine agents run on. */
+  sealed: ClaudeSeal[];
+};
+
+export type ClaudeSubscriptionSetOutput = {
+  me: PersonClaude;
+  missingOn?: MachineId[];
+  next?: string;
+  truncated?: boolean;
+};
+
+/** The last Test of an account: one tiny `claude -p` call made with it on one machine. */
+export type ClaudeTest = {
+  at: Timestamp;
+  /** What went wrong, in claude's words with the secret masked; absent when it worked. */
+  error?: string;
+  machineId: MachineId;
+  ok: boolean;
+};
+
+/** Which account `claude_account_test` tries: the hub's API key (admins), or the caller's own subscription. */
+export type ClaudeTestTarget = "hub_api" | "mine";
+
 export type ClonePhase = "starting" | "receiving" | "resolving" | "checking_out" | "inspecting";
 
 /**
@@ -3901,6 +4075,18 @@ export type Person = {
   /** Removed people keep their id and name, so what they did still names them; their devices are revoked. */
   removedAt?: Timestamp;
   role: HubRole;
+};
+
+/** One person's Claude setup. */
+export type PersonClaude = {
+  /** Absent: their subscription once connected, else the hub's API. */
+  choice?: ClaudeChoice;
+  /** Whether the hub's API is theirs to use: it is set up, and they administer the hub or members may use it. */
+  mayUseHubApi: boolean;
+  person: PersonRef;
+  /** What the orders they start, and their Navi, run on now. */
+  runsOn: ClaudeRunsOn;
+  subscription?: ClaudeSubscription;
 };
 
 export type PersonId = string;
@@ -6694,7 +6880,17 @@ export type UpdateState = KnownUpdateState | (string & {});
 export type UploadId = string;
 
 /**
- * Open: no new turns start on the machine's login until `until`, or (no reset named) a check or another turn on the
+ * One Claude account's usage on a machine (teams step 8): a limit on it pauses only the work on it, never the
+ * machine's own login or another account's.
+ */
+export type UsageAccount = {
+  account: ClaudeAccount;
+  breaker: UsageBreaker;
+  parked: ParkedCounts;
+};
+
+/**
+ * Open: no new turns start on the login (the machine's own, or one account's there) until `until`, or (no reset named) a check or another turn on the
  * login succeeds, or usage_resume.
  */
 export type UsageBreaker = {
@@ -6720,6 +6916,8 @@ export type UsageClass = "usage_limit" | "rate_limit" | "pool_exhausted";
 
 /** Fields `HubEvent.data` carries on usage.breaker and usage.resumed. */
 export type UsageEventData = {
+  /** The Claude account the pause or resume is about; absent: the machine's own login. */
+  account?: ClaudeAccount;
   /** usage.resumed: the breaker was open and is now closed. */
   breakerCleared?: boolean;
   /**
@@ -6782,9 +6980,12 @@ export type UsageResumeOutput = {
 };
 
 export type UsageStatus = {
+  /** Each Claude account fleetd has seen work on here, with its own breaker and parked work. */
+  accounts?: UsageAccount[];
   breaker: UsageBreaker;
   /** The latest thread.usage_limited, usage.breaker and usage.resumed events for the machine, oldest first. */
   lastEvents: HubEvent[];
+  /** The machine's own login; `breaker` and `parked` are its. Work on a Claude account is in `accounts`. */
   login: LoginKind;
   machineId: MachineId;
   parked: ParkedCounts;
@@ -7227,6 +7428,14 @@ export interface ToolMap {
   checklist_edit: { input: ChecklistEditInput; output: ChecklistEditOutput };
   checklist_get: { input: ChecklistGetInput; output: ChecklistGetOutput };
   checklist_remove: { input: ChecklistRemoveInput; output: ChecklistRemoveOutput };
+  claude_account_test: { input: ClaudeAccountTestInput; output: ClaudeAccountTestOutput };
+  claude_accounts_get: { input: ClaudeAccountsGetInput; output: ClaudeAccountsGetOutput };
+  claude_choice_set: { input: ClaudeChoiceSetInput; output: ClaudeChoiceSetOutput };
+  claude_hub_api_remove: { input: ClaudeHubApiRemoveInput; output: ClaudeHubApiRemoveOutput };
+  claude_hub_api_set: { input: ClaudeHubApiSetInput; output: ClaudeHubApiSetOutput };
+  claude_settings_set: { input: ClaudeSettingsSetInput; output: ClaudeSettingsSetOutput };
+  claude_subscription_remove: { input: ClaudeSubscriptionRemoveInput; output: ClaudeSubscriptionRemoveOutput };
+  claude_subscription_set: { input: ClaudeSubscriptionSetInput; output: ClaudeSubscriptionSetOutput };
   decisions_list: { input: DecisionsListInput; output: DecisionsListOutput };
   decisions_overturn: { input: DecisionsOverturnInput; output: DecisionsOverturnOutput };
   decisions_record: { input: DecisionsRecordInput; output: DecisionsRecordOutput };

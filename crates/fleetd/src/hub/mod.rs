@@ -10,6 +10,7 @@ pub mod browser;
 pub mod chat;
 pub mod checklist;
 pub mod checks;
+pub mod claude_accounts;
 pub mod doctor;
 pub mod executor;
 pub mod google;

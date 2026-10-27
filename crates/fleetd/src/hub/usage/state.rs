@@ -57,6 +57,8 @@ pub struct Owner {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ParkedThread {
     pub thread: ThreadRef,
+    /// The login it hit the limit on ([`login_key`]).
+    pub login: String,
     pub kind: ParkedKind,
     pub task_id: Option<String>,
     pub parked: UsageParked,
@@ -162,6 +164,59 @@ fn key_of(r: &ThreadRef) -> String {
     format!("{}/{}", r.machine_id, r.thread_id)
 }
 
+/// The login a thread's limits count against: its machine's own (`devbox`), or one Claude account there
+/// (`devbox@hub`, `devbox@p_abcdefgh`; teams step 8), so one account's limit pauses only the work on it. Every
+/// `machine_id` of this state's maps and of the texts below is such a login.
+pub fn login_key(machine_id: &str, account: Option<&str>) -> String {
+    match account {
+        Some(account) => format!("{machine_id}@{account}"),
+        None => machine_id.to_owned(),
+    }
+}
+
+/// A login's machine and account.
+pub fn split_login(login: &str) -> (&str, Option<&str>) {
+    match login.split_once('@') {
+        Some((machine, account)) => (machine, Some(account)),
+        None => (login, None),
+    }
+}
+
+/// Where a login's limit was hit, as the texts name it: "devbox", "the hub's API key on devbox".
+fn place(login: &str) -> String {
+    match split_login(login) {
+        (machine, None) => machine.to_owned(),
+        (machine, Some("hub")) => format!("the hub's API key on {machine}"),
+        (machine, Some(person)) => format!("{person}'s subscription on {machine}"),
+    }
+}
+
+/// The login itself: "devbox's login", or an account's [`place`].
+fn login_text(login: &str) -> String {
+    match split_login(login) {
+        (machine, None) => format!("{machine}'s login"),
+        _ => place(login),
+    }
+}
+
+/// The account an event's data names, by its key.
+fn account_of(data: &Value) -> Option<String> {
+    let account: fleetd_contracts::claude_accounts::ClaudeAccount =
+        serde_json::from_value(data.get("account")?.clone()).ok()?;
+    Some(account.key().to_owned())
+}
+
+/// `data` with the login's account, when it is one.
+fn with_account(mut data: Value, login: &str) -> Value {
+    if let Some(account) = split_login(login)
+        .1
+        .and_then(fleetd_contracts::claude_accounts::ClaudeAccount::from_key)
+    {
+        data["account"] = json!(account);
+    }
+    data
+}
+
 /// "Tue 09:00 UTC".
 pub fn reset_text(iso: &str) -> String {
     match chrono::DateTime::parse_from_rfc3339(iso) {
@@ -205,14 +260,16 @@ pub fn breaker_message(
 ) -> String {
     if cls == UsageClass::PoolExhausted {
         return format!(
-            "your proxy has no account available for {}; fleetd paused work on {machine_id} — check your proxy, then run usage_resume",
-            model.unwrap_or("the model")
+            "your proxy has no account available for {}; fleetd paused work on {} — check your proxy, then run usage_resume",
+            model.unwrap_or("the model"),
+            place(machine_id)
         );
     }
     match until {
         Some(u) => format!(
-            "The {} was reached on {machine_id}'s login; resets {}; {}",
+            "The {} was reached on {}; resets {}; {}",
             limit_word(cls),
+            login_text(machine_id),
             reset_text(u),
             parked_text(counts)
         ),
@@ -228,30 +285,32 @@ pub fn breaker_message(
 /// login".
 fn unknown_reset_text(machine_id: &str, cls: UsageClass, proxy: bool) -> String {
     if proxy {
-        format!("Rate-limited by your proxy on {machine_id}")
+        format!("Rate-limited by your proxy on {}", place(machine_id))
     } else {
         format!(
-            "The {} was reached on {machine_id}'s login",
-            limit_word(cls)
+            "The {} was reached on {}",
+            limit_word(cls),
+            login_text(machine_id)
         )
     }
 }
 
 fn gate_text(machine_id: &str, b: &Breaker) -> String {
+    let (place, login) = (place(machine_id), login_text(machine_id));
     match (&b.until, b.class) {
         (Some(until), cls) if cls != UsageClass::PoolExhausted => {
             format!(
-                "usage: paused until {} ({} on {machine_id}'s login)",
+                "usage: paused until {} ({} on {login})",
                 reset_text(until),
                 limit_word(cls)
             )
         }
         (None, cls) if cls != UsageClass::PoolExhausted => {
             if b.proxy {
-                format!("usage: rate-limited by your proxy on {machine_id}, checking again shortly")
+                format!("usage: rate-limited by your proxy on {place}, checking again shortly")
             } else {
                 format!(
-                    "usage: {} on {machine_id}'s login, checking again shortly",
+                    "usage: {} on {login}, checking again shortly",
                     limit_word(cls)
                 )
             }
@@ -264,7 +323,7 @@ fn gate_text(machine_id: &str, b: &Breaker) -> String {
                     b.model.as_deref().unwrap_or("the model")
                 )
             } else {
-                format!("usage limit on {machine_id}'s login")
+                format!("usage limit on {login}")
             }
         ),
     }
@@ -278,6 +337,7 @@ fn str_field(data: &Value, key: &str) -> Option<String> {
 pub struct UsageState {
     /// In first-parked order (a JS Map's insertion order), which breaks priority ties.
     parked: Vec<(String, ParkedThread)>,
+    /// Per login ([`login_key`]): a machine's own, or one Claude account on it.
     pub machines: BTreeMap<String, MachineUsage>,
 }
 
@@ -296,11 +356,21 @@ impl UsageState {
         self.parked.retain(|(k, _)| k != key);
     }
 
+    /// The threads parked on a login.
     pub fn parked_on(&self, machine_id: &str) -> Vec<ParkedThread> {
         self.parked
             .iter()
-            .filter(|(_, p)| p.thread.machine_id == machine_id)
+            .filter(|(_, p)| p.login == machine_id)
             .map(|(_, p)| p.clone())
+            .collect()
+    }
+
+    /// The logins of `machine_id` the state knows: its own and each account's there.
+    pub fn logins_of(&self, machine_id: &str) -> Vec<String> {
+        self.machines
+            .keys()
+            .filter(|login| split_login(login).0 == machine_id)
+            .cloned()
             .collect()
     }
 
@@ -326,12 +396,19 @@ impl UsageState {
     }
 
     /// Folds one event into the state, for the replay at start and for live events alike. `owner` is whose thread a
-    /// thread.usage_limited event is about; other threads count for the breaker but are not parked.
-    pub fn apply(&mut self, event: &HubEvent, owner: Option<Owner>) {
+    /// thread.usage_limited event is about; other threads count for the breaker but are not parked. `account` is the
+    /// Claude account the event's thread runs on (by key); a usage event names its own.
+    pub fn apply(&mut self, event: &HubEvent, owner: Option<Owner>, account: Option<&str>) {
         let Some(machine_id) = event.machine_id.as_ref().map(ToString::to_string) else {
             return;
         };
         let data = event.data.clone().unwrap_or(Value::Null);
+        let login = match event.r#type {
+            HubEventType::UsageBreaker | HubEventType::UsageResumed => {
+                login_key(&machine_id, account_of(&data).as_deref())
+            }
+            _ => login_key(&machine_id, account),
+        };
         let at_ms = parse_ms(event.at.as_str()).unwrap_or(0);
         match event.r#type {
             HubEventType::ThreadUsageLimited => {
@@ -345,7 +422,7 @@ impl UsageState {
                     machine_id: machine_id.clone(),
                     thread_id: thread_id.clone(),
                 };
-                let m = self.machine(&machine_id);
+                let m = self.machine(&login);
                 Self::remember(m, event);
                 m.started.remove(&thread_id);
                 if let Some(b) = m.breaker.as_mut()
@@ -390,6 +467,7 @@ impl UsageState {
                     let key = key_of(&thread);
                     let p = ParkedThread {
                         thread,
+                        login: login.clone(),
                         kind: owner.kind,
                         task_id: owner.task_id,
                         parked: UsageParked { check_at, ..parked },
@@ -404,17 +482,17 @@ impl UsageState {
                 if let Some(t) = &event.thread_id {
                     let t = t.to_string();
                     self.unpark(&format!("{machine_id}/{t}"));
-                    self.machine(&machine_id).started.insert(t, at_ms);
+                    self.machine(&login).started.insert(t, at_ms);
                 }
             }
             // A turn that failed or was stopped proves nothing; it only leaves `started`.
             HubEventType::ThreadFailed | HubEventType::ThreadInterrupted => {
-                if let (Some(m), Some(t)) = (self.machines.get_mut(&machine_id), &event.thread_id) {
+                if let (Some(m), Some(t)) = (self.machines.get_mut(&login), &event.thread_id) {
                     m.started.remove(t.as_str());
                 }
             }
             HubEventType::ThreadCompleted => {
-                let m = self.machine(&machine_id);
+                let m = self.machine(&login);
                 let Some(t) = &event.thread_id else {
                     return;
                 };
@@ -432,7 +510,7 @@ impl UsageState {
                 }
             }
             HubEventType::UsageBreaker => {
-                let m = self.machine(&machine_id);
+                let m = self.machine(&login);
                 Self::remember(m, event);
                 m.breaker = Some(Breaker {
                     class: data
@@ -450,7 +528,7 @@ impl UsageState {
                 });
             }
             HubEventType::UsageResumed => {
-                let m = self.machine(&machine_id);
+                let m = self.machine(&login);
                 Self::remember(m, event);
                 if let (Some(by), Some(at)) = (
                     data.get("by").and_then(Value::as_str),
@@ -495,11 +573,11 @@ impl UsageState {
     /// resumes what is parked with no reset there, or, with no breaker, those parks it proves over. A known reset
     /// (claude named it) waits for itself, and pool_exhausted for usage_resume: a turn on another model proves nothing
     /// about either, and a lead taking turns would otherwise lift them over and over.
-    pub fn lifted_by(&self, event: &HubEvent) -> Option<Lifted> {
+    pub fn lifted_by(&self, event: &HubEvent, account: Option<&str>) -> Option<Lifted> {
         if event.r#type != HubEventType::ThreadCompleted {
             return None;
         }
-        let machine_id = event.machine_id.as_ref()?.to_string();
+        let machine_id = login_key(event.machine_id.as_ref()?.as_str(), account);
         let m = self.machines.get(&machine_id)?;
         let started = *m.started.get(event.thread_id.as_ref()?.as_str())?;
         // Any model: ids differ by alias, date suffix or a proxy's renaming, and a login that answers one turn is
@@ -569,7 +647,7 @@ impl UsageState {
         let event = NewEvent {
             at: at.to_string(),
             kind: "usage.breaker".into(),
-            machine_id: Some(machine_id.to_string()),
+            machine_id: Some(split_login(machine_id).0.to_string()),
             attention: Some("loud".into()),
             summary: breaker_message(
                 machine_id,
@@ -579,7 +657,7 @@ impl UsageState {
                 last.proxy,
                 counts,
             ),
-            data: Some(data),
+            data: Some(with_account(data, machine_id)),
             ..Default::default()
         };
         Some((event, until.or(check_at)))
@@ -678,9 +756,9 @@ impl UsageState {
         Some(gate_text(machine_id, b).chars().take(200).collect())
     }
 
-    /// `gate`, or why this thread is parked.
-    pub fn hold(&self, thread: &ThreadRef, now_ms: i64) -> Option<String> {
-        if let Some(paused) = self.gate(&thread.machine_id, now_ms) {
+    /// `gate` of the thread's login (its machine's own, or its `account`'s there), or why this thread is parked.
+    pub fn hold(&self, thread: &ThreadRef, account: Option<&str>, now_ms: i64) -> Option<String> {
+        if let Some(paused) = self.gate(&login_key(&thread.machine_id, account), now_ms) {
             return Some(paused);
         }
         let p = self.parked(thread)?;
@@ -735,19 +813,20 @@ pub fn resumed_event(
         "sent \"continue\" to {}",
         plural(sent.len(), "parked thread")
     );
+    let (place, login) = (place(machine_id), login_text(machine_id));
     let summary = if breaker_cleared && sent.is_empty() {
-        format!("Usage pause on {machine_id} lifted ({})", resumed_why(by))
+        format!("Usage pause on {place} lifted ({})", resumed_why(by))
     } else if breaker_cleared {
         format!(
-            "Usage pause on {machine_id} lifted ({}); {what}",
+            "Usage pause on {place} lifted ({}); {what}",
             resumed_why(by)
         )
     } else if by == "turn" {
-        format!("A turn succeeded on {machine_id}'s login; {what}")
+        format!("A turn succeeded on {login}; {what}")
     } else if by == "check" {
-        format!("Trying {machine_id}'s login again; {what}")
+        format!("Trying {login} again; {what}")
     } else {
-        format!("Usage limit reset on {machine_id}; {what}")
+        format!("Usage limit reset on {place}; {what}")
     };
     let mut data = json!({ "breakerCleared": breaker_cleared, "by": by, "threads": &sent[..sent.len().min(RESUMED_LISTED)] });
     if by == "check" && !breaker_cleared {
@@ -756,9 +835,9 @@ pub fn resumed_event(
     Some(NewEvent {
         at: at.to_string(),
         kind: "usage.resumed".into(),
-        machine_id: Some(machine_id.to_string()),
+        machine_id: Some(split_login(machine_id).0.to_string()),
         summary,
-        data: Some(data),
+        data: Some(with_account(data, machine_id)),
         ..Default::default()
     })
 }
@@ -928,12 +1007,14 @@ mod tests {
         s.apply(
             &limited(1, 0, "t2", USAGE, Some(reset)),
             owner(ParkedKind::Write, Some("T1")),
+            None,
         );
         assert!(s.trip("lab-a", &iso_ms(0)).is_none());
         assert!(s.gate("lab-a", 0).is_none());
         s.apply(
             &limited(2, 60_000, "t1", USAGE, Some(reset)),
             owner(ParkedKind::Lead, None),
+            None,
         );
         let (event, until) = s.trip("lab-a", &iso_ms(60_000)).expect("trips");
         assert_eq!(
@@ -945,11 +1026,12 @@ mod tests {
             event.data.as_ref().unwrap()["parked"],
             json!({ "leads": 1, "tasks": 1 })
         );
-        s.apply(&appended(3, event), None);
+        s.apply(&appended(3, event), None, None);
         assert!(s.trip("lab-a", &iso_ms(60_000)).is_none(), "one breaker");
         s.apply(
             &limited(4, 120_000, "t3", USAGE, Some(reset)),
             owner(ParkedKind::Review, Some("T2")),
+            None,
         );
         assert_eq!(s.counts_on("lab-a"), ParkedCounts { leads: 1, tasks: 2 });
         assert_eq!(
@@ -962,6 +1044,7 @@ mod tests {
                     machine_id: "lab-a".into(),
                     thread_id: "t9".into()
                 },
+                None,
                 120_000
             )
             .is_some()
@@ -980,16 +1063,93 @@ mod tests {
         assert!(s.gate("lab-a", reset).is_none());
     }
 
+    /// Teams step 8: Alice's subscription and the hub's API key on one machine are two logins. Her limit pauses her
+    /// work alone, the breaker event names her account, and a replay puts it back on her login only.
+    #[test]
+    fn a_limit_on_one_account_pauses_only_the_work_on_it() {
+        let alice = Some("p_aaaaaaaa");
+        let mut s = UsageState::default();
+        let reset = 2 * HOUR;
+        s.apply(
+            &limited(1, 0, "t1", USAGE, Some(reset)),
+            owner(ParkedKind::Write, Some("T1")),
+            alice,
+        );
+        s.apply(
+            &limited(2, 60_000, "t2", USAGE, Some(reset)),
+            owner(ParkedKind::Write, Some("T2")),
+            alice,
+        );
+        // The machine's own login saw nothing.
+        assert!(s.trip("lab-a", &iso_ms(60_000)).is_none());
+        let (event, until) = s.trip("lab-a@p_aaaaaaaa", &iso_ms(60_000)).unwrap();
+        assert_eq!(until, Some(iso_ms(reset)));
+        assert_eq!(event.machine_id.as_deref(), Some("lab-a"));
+        assert_eq!(
+            event.data.as_ref().unwrap()["account"],
+            json!({ "kind": "person", "personId": "p_aaaaaaaa" })
+        );
+        assert!(
+            event.summary.contains("p_aaaaaaaa's subscription on lab-a"),
+            "{}",
+            event.summary
+        );
+        let breaker = appended(3, event);
+        // A replay of the log: the breaker lands on Alice's login, whatever account the caller passes.
+        let mut replayed = UsageState::default();
+        for e in [
+            limited(1, 0, "t1", USAGE, Some(reset)),
+            limited(2, 60_000, "t2", USAGE, Some(reset)),
+        ] {
+            replayed.apply(&e, owner(ParkedKind::Write, None), alice);
+        }
+        for state in [&mut s, &mut replayed] {
+            state.apply(&breaker, None, None);
+            assert!(state.gate("lab-a@p_aaaaaaaa", 60_000).is_some());
+            assert!(
+                state.gate("lab-a", 60_000).is_none(),
+                "the machine's own login runs on"
+            );
+            assert!(
+                state.gate("lab-a@hub", 60_000).is_none(),
+                "the hub's API key runs on"
+            );
+        }
+        let bob = ThreadRef {
+            machine_id: "lab-a".into(),
+            thread_id: "t9".into(),
+        };
+        assert_eq!(s.hold(&bob, Some("hub"), 60_000), None);
+        assert!(s.hold(&bob, alice, 60_000).is_some());
+        assert_eq!(s.counts_on("lab-a@p_aaaaaaaa").tasks, 2);
+        assert_eq!(s.counts_on("lab-a").tasks, 0);
+        // At the reset, only Alice's login resumes, in one usage.resumed naming her account.
+        let due = s.due(reset);
+        assert_eq!(due.len(), 1);
+        assert_eq!(due[0].machine_id, "lab-a@p_aaaaaaaa");
+        let resumed =
+            resumed_event(&due[0].machine_id, &iso_ms(reset), &[], true, "reset").unwrap();
+        assert_eq!(resumed.machine_id.as_deref(), Some("lab-a"));
+        assert_eq!(
+            resumed.data.as_ref().unwrap()["account"]["personId"],
+            "p_aaaaaaaa"
+        );
+        s.apply(&appended(4, resumed), None, None);
+        assert!(s.gate("lab-a@p_aaaaaaaa", reset).is_none());
+    }
+
     #[test]
     fn does_not_trip_on_two_limits_more_than_10_minutes_apart() {
         let mut s = UsageState::default();
         s.apply(
             &limited(1, 0, "t2", USAGE, Some(3 * HOUR)),
             owner(ParkedKind::Write, Some("T1")),
+            None,
         );
         s.apply(
             &limited(2, 11 * 60_000, "t1", USAGE, Some(3 * HOUR)),
             owner(ParkedKind::Lead, None),
+            None,
         );
         assert!(s.trip("lab-a", &iso_ms(11 * 60_000)).is_none());
     }
@@ -1000,10 +1160,12 @@ mod tests {
         s.apply(
             &limited(1, 0, "t2", USAGE, Some(HOUR)),
             owner(ParkedKind::Write, Some("T1")),
+            None,
         );
         s.apply(
             &limited(2, 60_000, "t2", USAGE, Some(HOUR)),
             owner(ParkedKind::Write, Some("T1")),
+            None,
         );
         assert!(s.trip("lab-a", &iso_ms(60_000)).is_none());
         assert_eq!(s.counts_on("lab-a"), ParkedCounts { leads: 0, tasks: 1 });
@@ -1015,6 +1177,7 @@ mod tests {
         s.apply(
             &limited(1, 0, "t2", PROXY_400, None),
             owner(ParkedKind::Write, Some("T1")),
+            None,
         );
         let (event, until) = s.trip("lab-a", &iso_ms(0)).expect("trips on one");
         assert_eq!(
@@ -1022,7 +1185,7 @@ mod tests {
             "your proxy has no account available for claude-opus-5-5; fleetd paused work on lab-a — check your proxy, then run usage_resume"
         );
         assert_eq!(until, None);
-        s.apply(&appended(2, event), None);
+        s.apply(&appended(2, event), None, None);
         assert_eq!(
             s.gate("lab-a", 24 * HOUR).as_deref(),
             Some(
@@ -1045,7 +1208,7 @@ mod tests {
             resumed.summary,
             "Usage pause on lab-a lifted (usage_resume by ada); sent \"continue\" to 1 parked thread"
         );
-        s.apply(&appended(3, resumed), None);
+        s.apply(&appended(3, resumed), None, None);
         assert!(s.gate("lab-a", 24 * HOUR).is_none());
     }
 
@@ -1055,6 +1218,7 @@ mod tests {
         s.apply(
             &limited(1, 0, "t2", USAGE, Some(HOUR)),
             owner(ParkedKind::Write, Some("T1")),
+            None,
         );
         assert!(s.due(HOUR - 1).is_empty());
         let due = s.due(HOUR);

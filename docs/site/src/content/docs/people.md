@@ -59,6 +59,41 @@ fleetd invite --person p_abcd2345
 A person can sign out their own devices from the app. Owners and admins can sign out anyone's. What a removed
 person did keeps their name.
 
+## Claude accounts {#claude}
+
+Each person picks the Claude account their work runs on: **their own subscription** or **the hub's API
+configuration**. They can switch at any time.
+
+| Work | Runs on |
+|---|---|
+| An order's agents (writers, readers, reviewers) | The choice of the person who started the order |
+| A Navi, its lead included | Its owner's choice |
+| A project's lead | The hub's API configuration, else the hub owner's subscription. The same on every turn, whoever writes |
+| Work nobody started (automations, train fixes, the nightly memory refresh) | The same as the lead |
+
+- **The hub's API configuration** is a Claude API key and an optional custom endpoint (`ANTHROPIC_BASE_URL`). An
+  owner or admin sets it up on the Administration page. Agents get it as `ANTHROPIC_API_KEY`.
+- **A subscription** is connected with the long-lived token that `claude setup-token` prints. Run it on any computer
+  signed in to your Claude account and connect it with `claude_subscription_set` (your settings in the app, once its
+  screen ships). Agents get it as `CLAUDE_CODE_OAUTH_TOKEN`.
+- **Test** makes one tiny `claude -p` call with the key or token, on a machine that holds it.
+- With no choice made, your subscription is used once you connect one, on each machine that holds it; on a machine
+  that doesn't, your work there runs on the hub's API. Choose your subscription to have it refused there instead.
+- **Members may use the hub's API** is on by default. An owner or admin can turn it off on the Administration page;
+  then each member connects their own subscription. It never affects owners, admins, leads or work nobody started.
+- Someone with nothing to run on gets "Connect your Claude to start this order", and no agent starts for them.
+  **One person's subscription is never used for anyone else's work.**
+- **Usage limits are tracked per account.** When one subscription hits its limit, only the work running on it waits
+  for the reset. Everyone else's carries on. `usage_status` lists each account's pause under its machine.
+- A hub with none of this set up runs every agent on each machine's own `claude login`, as before.
+- An agent keeps the account it started on for its whole life. A change applies to agents started after it.
+- Removing a person forgets their subscription on every machine.
+
+The app's screens for this (your settings, and Claude on the Administration page) come in a later release. The
+hub's tools are `claude_accounts_get`, `claude_hub_api_set`, `claude_hub_api_remove`, `claude_settings_set`,
+`claude_subscription_set`, `claude_subscription_remove`, `claude_choice_set` and `claude_account_test`. See
+[Security](/docs/security#claude) for how keys and tokens are kept.
+
 ## Who did what {#attribution}
 
 | Record | Names |

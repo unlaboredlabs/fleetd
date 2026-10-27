@@ -768,8 +768,18 @@ impl Tasks {
             self.retry_when_live(machine);
             return self.queue(stored, "offline", &offline);
         }
-        // M4 usage: a paused login takes no new turns; usage.resumed runs the queue again.
-        if let Some(paused) = self.hooks.usage.get().and_then(|u| u.gate(machine)) {
+        // M4 usage: a paused login takes no new turns; usage.resumed runs the queue again. The login is the account
+        // the task runs on: another account's pause on the machine never holds it.
+        let account = self
+            .d
+            .ports
+            .claude_account_key(r, &task.workstream_id, machine);
+        if let Some(paused) = self
+            .hooks
+            .usage
+            .get()
+            .and_then(|u| u.gate(machine, account.as_deref()))
+        {
             return self.queue(stored, "usage", &paused);
         }
         // A recovery due now goes on as its mode says: in its thread, `/compact` first, or in a fresh thread.
@@ -2316,6 +2326,10 @@ impl Tasks {
                 ),
                 None,
             ));
+        }
+        // Its starter has no Claude to run it on (teams step 8): refused now, in plain words, before any agent waits.
+        if let Some((message, fix)) = self.d.ports.claude_refusal(r, &input.workstream_id) {
+            return Err(lead_error(ErrorCode::Invalid, message, Some(&fix)));
         }
         let counts = self
             .db(|c| TaskRecords::counts(c, r))

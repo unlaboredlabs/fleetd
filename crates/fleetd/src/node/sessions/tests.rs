@@ -97,6 +97,7 @@ fn launch(id: &str, mode: RuntimeMode, workspace: SessionWorkspace) -> SessionCa
         skills: Vec::new(),
         order_id: None,
         setup: None,
+        claude_account: None,
     })
 }
 

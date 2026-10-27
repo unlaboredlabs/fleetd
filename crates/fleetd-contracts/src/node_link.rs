@@ -163,6 +163,10 @@ pub const CAP_SESSION_END: &str = "session_end";
 /// is sealed to it: the hub places sessions across machines only between nodes that list it.
 pub const CAP_SESSION_SEAL: &str = "session_seal";
 
+/// The node keeps Claude accounts' secrets (`claude_account_secret`, `claude_account_test`) and runs a launch's
+/// `claudeAccount` on them (teams step 8).
+pub const CAP_CLAUDE_ACCOUNTS: &str = "claude_accounts";
+
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]

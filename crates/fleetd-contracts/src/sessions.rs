@@ -112,6 +112,11 @@ pub struct SessionLaunch {
     /// The project's setup commands, run in the new worktree before the agent starts. Only nodes listing
     /// [`crate::node_link::CAP_WORKTREE_SETUP`] get it.
     pub setup: Option<Box<crate::project_settings::WorktreeSetup>>,
+    /// The Claude account it runs on for its whole life, resolved by the node from the secrets it holds (teams step
+    /// 8, `claude_accounts.rs`). Absent: the machine's own login. Only nodes listing
+    /// [`crate::node_link::CAP_CLAUDE_ACCOUNTS`] get it; the hub refuses the launch on any other, so an older node
+    /// never runs one person's work on another's login.
+    pub claude_account: Option<crate::claude_accounts::ClaudeAccount>,
 }
 
 /// A session's place among fleetd's agents, which decides the MCP tools it gets. The hub enforces the same split on
@@ -238,6 +243,21 @@ pub enum SessionCall {
         name: Option<crate::project_settings::EnvVarName>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         fingerprint: Option<crate::secrets::SecretFingerprint>,
+    },
+    /// Save (`set`) or forget (none) the secret of one Claude account: the hub's API key and endpoint, or a person's
+    /// subscription token. The value is opened with the node's box key and kept only on the node; the reply has its
+    /// fingerprint. Sessions on the account read it at each start of their claude. Only nodes listing
+    /// [`crate::node_link::CAP_CLAUDE_ACCOUNTS`] get it.
+    #[serde(rename_all = "camelCase")]
+    ClaudeAccountSecret {
+        account: crate::claude_accounts::ClaudeAccount,
+        set: Option<crate::claude_accounts::ClaudeSecretSet>,
+    },
+    /// One tiny `claude -p` call made on the account, to prove its key or token works. Only nodes listing
+    /// [`crate::node_link::CAP_CLAUDE_ACCOUNTS`] get it.
+    #[serde(rename_all = "camelCase")]
+    ClaudeAccountTest {
+        account: crate::claude_accounts::ClaudeAccount,
     },
     /// Where the project's worktrees live, the branch new ones start from, and the worktrees there now. Only nodes
     /// listing [`crate::node_link::CAP_PROJECT_SETTINGS`] get it.
@@ -698,6 +718,15 @@ pub enum SessionOutput {
     /// Answer to `google`.
     Google {
         answer: crate::google::GoogleAnswer,
+    },
+    /// Answer to `claude_account_secret`: the fingerprint of the secret it holds now, none once forgotten.
+    ClaudeAccountSaved {
+        fingerprint: Option<crate::secrets::SecretFingerprint>,
+    },
+    /// Answer to `claude_account_test`: whether the call worked, else claude's words with the secret masked.
+    ClaudeAccountTested {
+        ok: bool,
+        error: Option<String>,
     },
     /// Answer to `skills_list`.
     Skills {

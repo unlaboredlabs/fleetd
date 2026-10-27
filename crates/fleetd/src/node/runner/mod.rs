@@ -258,6 +258,12 @@ pub trait Runner: Send + Sync + 'static {
         let _ = spec;
         Box::pin(async { Ok(()) })
     }
+    /// One tiny model call with exactly `env` (a Claude account's variables on the machine's setup), to prove the
+    /// account works: the runner's own words when it doesn't. The only model call fleetd makes outside a session,
+    /// and only when a person presses Test.
+    fn try_account<'a>(&'a self, _env: &'a [(String, String)]) -> BoxFut<'a, Result<(), String>> {
+        Box::pin(async { Err("this runner can't try an account".to_owned()) })
+    }
     /// Starts the process for `spec` and returns once it is running; the first run starts with a `Send`.
     fn spawn(&self, spec: SessionSpec) -> Result<SessionHandle, RunnerError>;
     /// The model and effort a session of `profile` runs on when no setting chose them, and where one whose model

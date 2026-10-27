@@ -409,7 +409,13 @@ pub async fn tick(hub: &Arc<Hub>, launcher: &dyn Launcher) -> Result<(), StoreEr
         // window.
         let busy = matches!(hub.leads.leads.get(&r), Ok(Some(l)) if l.state == LeadState::Working);
         if busy
-            || hub.usage.gate(r.machine_id.as_str()).is_some()
+            || hub
+                .usage
+                .gate_for(
+                    r.machine_id.as_str(),
+                    crate::hub::claude_accounts::lead_account_key(&hub.db, &r).as_deref(),
+                )
+                .is_some()
             || !hub.link.node_can(&r.machine_id, CAP_ALLOWED_ONLY)
         {
             continue;
@@ -480,10 +486,19 @@ async fn start(
         ),
         client_request_id: format!("fleetd-memory:{}/{}:{night}", r.machine_id, r.project_id),
     };
-    match launcher
-        .launch(&r.machine_id, input, launch_options())
-        .await
-    {
+    // Nobody asked for it: it runs on the account the project's lead does (a Navi's, its owner's).
+    let claude_account = match crate::hub::claude_accounts::for_lead(&hub.db, &hub.link, r) {
+        Ok(account) => account,
+        Err(refused) => {
+            tracing::warn!(project = %title, "memory refresh: not started: {}", refused.message);
+            return Ok(());
+        }
+    };
+    let options = LaunchOptions {
+        claude_account,
+        ..launch_options()
+    };
+    match launcher.launch(&r.machine_id, input, options).await {
         Ok(thread_id) => {
             run.thread_id = Some(thread_id);
             run.started_ms = Some(now_ms(hub.clock.as_ref()));

@@ -260,10 +260,9 @@ pub fn ensure_owner_on(c: &Connection, name: &str, now: i64) -> Result<Person, S
     Ok(owner)
 }
 
-/// The hub's people when there is more than one, oldest first; empty on a one-person hub, whose prompts read
-/// exactly as before people.
-pub fn roster(db: &HubDb) -> Vec<Person> {
-    let people = db.with(|c| {
+/// Everyone on the hub (not removed), oldest first.
+pub fn active(db: &HubDb) -> Result<Vec<Person>, StoreError> {
+    db.with(|c| {
         let mut stmt = c.prepare_cached(&format!(
             "SELECT {COLUMNS} FROM people WHERE removed_ms IS NULL ORDER BY created_ms, rowid"
         ))?;
@@ -271,8 +270,13 @@ pub fn roster(db: &HubDb) -> Vec<Person> {
             .query_map([], read_row)?
             .collect::<Result<Vec<_>, _>>()?;
         Ok(people)
-    });
-    match people {
+    })
+}
+
+/// The hub's people when there is more than one, oldest first; empty on a one-person hub, whose prompts read
+/// exactly as before people.
+pub fn roster(db: &HubDb) -> Vec<Person> {
+    match active(db) {
         Ok(people) if people.len() > 1 => people,
         Ok(_) => Vec::new(),
         Err(error) => {

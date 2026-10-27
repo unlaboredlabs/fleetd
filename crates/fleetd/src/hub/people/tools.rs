@@ -33,7 +33,7 @@ fn people(hub: &Hub) -> People {
 
 /// The caller's person, when it is an owner's or admin's device that may administer the hub: a human key of theirs
 /// with Admin on every machine.
-fn administrator(hub: &Hub, caller: &Caller) -> Result<Option<Person>, ToolError> {
+pub(crate) fn administrator(hub: &Hub, caller: &Caller) -> Result<Option<Person>, ToolError> {
     let Some(me) = caller.person.as_ref().filter(|_| is_human(caller)) else {
         return Ok(None);
     };
@@ -370,6 +370,8 @@ async fn person_remove(
     let (person, revoked) = store
         .remove(&input.person_id)?
         .ok_or_else(|| unknown_person(id))?;
+    // Their Claude subscription goes with them: nobody's work runs on it again.
+    crate::hub::claude_accounts::tools::forget_person(&hub, &person.person_id).await;
     announce(
         &hub.events,
         hub.clock.as_ref(),

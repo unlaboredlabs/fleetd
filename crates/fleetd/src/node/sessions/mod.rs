@@ -957,6 +957,37 @@ impl SessionService {
                 .map_err(invalid)?;
                 Ok(SessionOutput::McpSecrets { secrets })
             }
+            SessionCall::ClaudeAccountSecret { account, set } => {
+                let home = self.inner.config.home.clone();
+                let fingerprint = blocking(move || {
+                    let box_key = super::identity::load_or_create_box_key(&home).ok();
+                    super::claude_accounts::apply(&home, &account, set.as_ref(), box_key.as_ref())
+                })
+                .await
+                .map_err(invalid)?;
+                Ok(SessionOutput::ClaudeAccountSaved { fingerprint })
+            }
+            SessionCall::ClaudeAccountTest { account } => {
+                let mut env = self.inner.config.runner_env();
+                let (ok, error) =
+                    match super::claude_accounts::env_for(&self.inner.config.home, &account) {
+                        Err(missing) => (false, Some(missing)),
+                        Ok((vars, secrets)) => {
+                            super::claude_accounts::put_on(&mut env, vars);
+                            match self.inner.runner.try_account(&env).await {
+                                Ok(()) => (true, None),
+                                // claude may echo what it was given: the value never leaves the machine.
+                                Err(said) => (
+                                    false,
+                                    Some(
+                                        super::mask::Masker::new(&secrets).text(&said).into_owned(),
+                                    ),
+                                ),
+                            }
+                        }
+                    };
+                Ok(SessionOutput::ClaudeAccountTested { ok, error })
+            }
             SessionCall::McpTest { project_id, server } => {
                 let config = &self.inner.config;
                 let mut env = config.runner_env();
@@ -1719,6 +1750,7 @@ impl SessionService {
                 setup: setup.clone(),
                 profile: Some(profile),
                 helper_model: launch.helper_model.as_ref().map(|m| m.to_string()),
+                claude_account: launch.claude_account.clone(),
             },
         };
         self.store().commit(&row, &[], false)?;
@@ -2206,11 +2238,23 @@ impl SessionService {
         let transcript = transcripts.join(format!("{id}.jsonl"));
 
         let mut env = config.runner_env();
+        // The session's Claude account in place of the machine's own login and gateway, read at each start. One the
+        // node no longer holds fails the start: it never runs on the machine's login instead.
+        let account_secrets = match &row.local.claude_account {
+            Some(account) => {
+                let (vars, secrets) = super::claude_accounts::env_for(&config.home, account)
+                    .map_err(std::io::Error::other)?;
+                super::claude_accounts::put_on(&mut env, vars);
+                secrets
+            }
+            None => Vec::new(),
+        };
         // The project's own variables, re-read per spawn. What the node already gives claude (its login, gateway,
         // claude.env) keeps the node's value, and fleetd's values below still win.
         let (mut project_env, mut secrets) =
             super::project_env::for_spawn(&config.home, row.summary.project_id.as_str());
         secrets.extend(session_mcp.secrets.iter().cloned());
+        secrets.extend(account_secrets);
         // A task's order's own variables on top, each in place of the project's of the same name.
         let (order_env, order_digest) = self.order_vars(row);
         project_env.retain(|(p, _)| !order_env.iter().any(|(o, _)| o == p));

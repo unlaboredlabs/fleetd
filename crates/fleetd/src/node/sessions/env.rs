@@ -15,6 +15,17 @@ use super::{
     EXIT_WAIT, REAP_GRACE, SessionCommand, SessionRow, SessionService, blocking, now, share,
 };
 
+/// The secret of the Claude account the session runs on, as the node holds it now; none for the machine's own login
+/// or an account it no longer holds (the session can't start on that).
+fn account_secrets(home: &std::path::Path, row: &SessionRow) -> super::super::project_env::Vars {
+    row.local
+        .claude_account
+        .as_ref()
+        .and_then(|account| super::super::claude_accounts::env_for(home, account).ok())
+        .map(|(_, secrets)| secrets)
+        .unwrap_or_default()
+}
+
 /// A plain value shown in a brief: one line of at most this many characters.
 const SHOWN_MAX: usize = 100;
 
@@ -40,6 +51,7 @@ impl SessionService {
             home,
             &home.join("sessions").join(row.summary.session_id.as_str()),
         ));
+        secrets.extend(account_secrets(home, row));
         Secrets(secrets)
     }
 
@@ -74,6 +86,9 @@ impl SessionService {
             home,
             &home.join("sessions").join(id),
         ));
+        if let Some(account) = &row.local.claude_account {
+            secrets.extend(super::super::claude_accounts::env_for(home, account)?.1);
+        }
         let now = Secrets(secrets);
         let all = Secrets(
             spawned

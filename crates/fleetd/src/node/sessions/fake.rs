@@ -124,6 +124,21 @@ impl Runner for FakeRunner {
         })
     }
 
+    /// Works with a key or token in `env`, unless it starts with `bad`, which claude refuses and echoes back.
+    fn try_account<'a>(&'a self, env: &'a [(String, String)]) -> BoxFut<'a, Result<(), String>> {
+        Box::pin(async move {
+            let secret = env.iter().rev().find(|(k, _)| {
+                k == fleetd_contracts::claude_accounts::OAUTH_TOKEN_ENV
+                    || k == fleetd_contracts::claude_accounts::API_KEY_ENV
+            });
+            match secret {
+                None => Err("Not logged in · Please run /login".to_owned()),
+                Some((_, v)) if v.starts_with("bad") => Err(format!("Invalid API key: {v}")),
+                Some(_) => Ok(()),
+            }
+        })
+    }
+
     fn spawn(&self, spec: SessionSpec) -> Result<SessionHandle, RunnerError> {
         let refusal = self.refuse_next.lock().unwrap().take();
         let mapper = StreamMapper::new(spec.session_id.clone(), Arc::new(failure::classify));
