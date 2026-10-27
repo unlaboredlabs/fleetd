@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Call, UpdatePart, UpdateRun } from "../../../shared/contracts";
 import type { HubError } from "../../../shared/hub";
 import type { AppUpdate, UpdatesState } from "../../../shared/updates";
-import { BEFORE_UPDATE, currentFlow, loadRun, resetFlow, startUpdate, type FlowDeps } from "./flow";
+import { BEFORE_UPDATE, currentFlow, currentReady, loadRun, resetFlow, retryMachine, startUpdate, type FlowDeps } from "./flow";
 
 const NEXT = "0.0.0-nightly.202610261056+1b563d7";
 
@@ -15,14 +15,17 @@ const runOf = (hub: UpdatePart["state"], finished: boolean): UpdateRun => ({
   parts: [{ part: "hub", name: "the hub", from: "0.0.0", state: hub }],
 });
 
-type Answer = { ok: true; run?: UpdateRun } | { ok: false; error: HubError };
+type Answer = { ok: true; run?: UpdateRun; ready?: string } | { ok: false; error: HubError };
 
 /** A hub that answers hub_update, then each hub_update_status in turn; and this app's updater. */
 const deps = (start: Answer, statuses: Answer[], app: AppUpdate | AppUpdate[]) => {
   const calls: string[] = [];
-  const answer = (a: Answer) => (a.ok ? { ok: true as const, output: a.run === undefined ? {} : { run: a.run } } : a);
-  const call = ((tool: string) => {
+  const inputs: unknown[] = [];
+  const answer = (a: Answer) =>
+    a.ok ? { ok: true as const, output: { ...(a.run === undefined ? {} : { run: a.run }), ...(a.ready === undefined ? {} : { ready: a.ready }) } } : a;
+  const call = ((tool: string, input: unknown) => {
     calls.push(tool);
+    inputs.push(input);
     const next = tool === "hub_update" ? start : (statuses.shift() ?? statuses[0] ?? start);
     return Promise.resolve(answer(next));
   }) as unknown as Call;
@@ -38,7 +41,7 @@ const deps = (start: Answer, statuses: Answer[], app: AppUpdate | AppUpdate[]) =
     }),
     app: { state, check: vi.fn(), install: vi.fn() },
   } satisfies FlowDeps;
-  return { d, calls };
+  return { d, calls, inputs };
 };
 
 const offline: Answer = { ok: false, error: { code: "offline", message: "Not connected to the hub." } };
@@ -67,7 +70,7 @@ describe("the Update button's run", () => {
       const { d } = deps({ ok: true, run: runOf("downloading", false) }, [{ ok: true, run: runOf(hub, true) }], { kind: "ready", version: NEXT });
       await startUpdate(d);
       expect(d.app.install).not.toHaveBeenCalled();
-      expect(currentFlow()).toEqual({ phase: "finished" });
+      expect(currentFlow()).toEqual({ phase: "finished", updated: false });
     }
   });
 
@@ -77,7 +80,7 @@ describe("the Update button's run", () => {
     const { d } = deps({ ok: true, run: mixed }, [], { kind: "ready", version: NEXT });
     await startUpdate(d);
     expect(d.app.install).not.toHaveBeenCalled();
-    expect(currentFlow()).toEqual({ phase: "finished" });
+    expect(currentFlow()).toEqual({ phase: "finished", updated: false });
   });
 
   it("ends without a restart when this app is current, and checks it first", async () => {
@@ -85,7 +88,7 @@ describe("the Update button's run", () => {
     await startUpdate(d);
     expect(d.app.check).toHaveBeenCalledOnce();
     expect(d.app.install).not.toHaveBeenCalled();
-    expect(currentFlow()).toEqual({ phase: "finished" });
+    expect(currentFlow()).toEqual({ phase: "finished", updated: true });
   });
 
   it("doesn't miss this app's update when the run ends before this app's check does", async () => {
@@ -120,12 +123,57 @@ describe("the Update button's run", () => {
     const going = deps({ ok: true }, [{ ok: true, run: runOf("restarting", false) }, { ok: true, run: runOf("done", true) }], { kind: "current" });
     await loadRun(going.d);
     expect(going.calls).toEqual(["hub_update_status", "hub_update_status"]);
-    expect(currentFlow()).toEqual({ phase: "finished" });
+    expect(currentFlow()).toEqual({ phase: "finished", updated: true });
 
     resetFlow();
     const done = deps({ ok: true }, [{ ok: true, run: runOf("done", true) }], { kind: "current" });
     await loadRun(done.d);
     expect(done.calls).toEqual(["hub_update_status"]);
     expect(currentFlow()).toEqual({ phase: "idle" });
+  });
+
+  it("ends updated, so the sheet closes itself, only when every machine came through", async () => {
+    const run = runOf("done", true);
+    const skipped = { ...run, parts: [...run.parts, { part: "node", machineId: "mac", name: "mac", from: "0.0.0", state: "skipped", message: "offline" }] };
+    const calm = { ...run, parts: [...run.parts, { part: "claude", machineId: "mac", name: "mac", from: "2.1.310", state: "skipped", message: "Claude Code is managed by Homebrew" }] };
+    for (const [r, updated] of [[run, true], [skipped, false], [calm, true]] as const) {
+      resetFlow();
+      const { d } = deps({ ok: true, run: r }, [], { kind: "current" });
+      await startUpdate(d);
+      expect(currentFlow()).toEqual({ phase: "finished", updated });
+    }
+  });
+
+  it("reads the build the hub has ready, and forgets it once an update starts", async () => {
+    const { d } = deps({ ok: true, run: runOf("downloading", false) }, [{ ok: true, ready: NEXT }, { ok: true, run: runOf("done", true) }], { kind: "current" });
+    await loadRun(d);
+    expect(currentReady()).toBe(NEXT);
+    await startUpdate(d);
+    expect(currentReady()).toBeNull();
+  });
+
+  it("retries one machine: the hub updates it again, and this app isn't restarted", async () => {
+    const run = runOf("done", true);
+    const again = { ...run, parts: [...run.parts, { part: "node", machineId: "mac", name: "mac", from: "0.0.0", state: "done" }] };
+    const { d, calls, inputs } = deps(
+      { ok: true, run: { ...again, finishedAt: undefined } as unknown as UpdateRun },
+      [{ ok: true, run: again }],
+      { kind: "ready", version: NEXT },
+    );
+    await retryMachine(d, "mac");
+    expect(calls).toEqual(["hub_update", "hub_update_status"]);
+    expect(inputs[0]).toEqual({ machine: "mac" });
+    expect(d.app.install).not.toHaveBeenCalled();
+    expect(currentFlow()).toEqual({ phase: "finished", updated: true });
+  });
+
+  it("says why the hub wouldn't retry", async () => {
+    const { d } = deps(
+      { ok: false, error: { code: "failed", message: "There is nothing to retry.", fix: "Press Update to update everything." } },
+      [],
+      { kind: "current" },
+    );
+    await retryMachine(d, "mac");
+    expect(currentFlow()).toEqual({ phase: "refused", message: "There is nothing to retry. Press Update to update everything." });
   });
 });

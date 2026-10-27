@@ -9,31 +9,46 @@ Keep fleetd up to date, or remove it.
 
 ### From the app {#everything}
 
-When the hub, one of its machines or the app has a newer build on its channel, the sidebar says **Update available**.
-Click it, then **Update**. One click updates everything, in order:
+The hub looks for a newer build on its channel every 10 minutes. When it finds one, it downloads it ahead, checks it
+against the release's `SHA256SUMS` and keeps it, and its machines fetch it too. Nothing is installed yet. The app then
+shows one quiet notice, **fleetd *version* is ready**, with a few lines on what's new and an **Update** button. It shows
+once per version and never again for it; the sidebar keeps a small **Update** until you do.
 
-1. **The hub** downloads the channel's newest build, checks it against the release's `SHA256SUMS`, keeps the binary it
-   runs, and restarts on the new one. If the new build doesn't come up healthy within 90 seconds, the previous one is
-   put back and restarted.
-2. **Every connected machine's node** does the same, all at once, as soon as the hub runs the new build. Each one
-   already downloaded it while the hub downloaded its own, so it only checks it against `SHA256SUMS` again, puts it in
-   place and restarts. Nothing is installed on a machine before the hub runs the new build.
-3. **Each machine's Claude Code** goes to the version the new fleetd was tested with (`claude install <version>`), in
-   a line of its own: "Claude Code 2.1.310 → 2.1.302". Sessions already running finish on the version they started
-   with; new ones start on the new one. If the install fails, the machine keeps the version it had, the line says
-   why, and the rest of the update goes on. See [Claude Code's version](/docs/machines#claude-version).
-4. **The app** installs its own update and restarts. It downloads that update in the background, from when you
-   press **Update** at the latest, so it is usually ready by then. A message you were typing is still there after the
-   restart.
+Click **Update**, in the notice or the sidebar. Since the build is already downloaded and checked, an update only swaps it
+in and restarts, in order:
+
+1. **The hub** checks the kept build against `SHA256SUMS` again, keeps the binary it runs, and restarts on the new one.
+   If the new build doesn't come up healthy within 90 seconds, the previous one is put back and restarted. If the
+   hub had nothing ready yet, it downloads the build first.
+2. **Every connected machine's node** does the same, all at once, as soon as the hub runs the new build. Nothing is
+   installed on a machine before the hub runs the new build. A machine running something that can't carry on through a
+   restart (a live browser, device or desktop session, or a preview) waits until it's idle, says so on its line, and
+   updates then; the others don't wait for it.
+3. **Each machine's Claude Code** goes to the version the new fleetd was tested with (`claude install <version>`).
+   Sessions already running finish on the version they started with; new ones start on the new one. If the install
+   fails, the machine keeps the version it had and the rest of the update goes on. See
+   [Claude Code's version](/docs/machines#claude-version).
+4. **The app** installs its own update and restarts. It downloads that update in the background, so it is usually
+   ready by then. A message you were typing is still there after the restart.
 
 Nothing waits on a timer: each restart starts as soon as the build is in place, and each part shows as updated as soon
-as its machine is back on the new build, so an update takes little more than one download.
+as its machine is back on the new build.
 
-The sheet shows each part as it goes: downloading, restarting, updated, up to date, and if something went wrong, which
-part and why. A failed download or a checksum mismatch changes nothing. A build that didn't come up is put back, and
-the hub's machines aren't asked if the hub itself didn't update. A machine that is offline, or that runs a fleetd too old
-to update from the hub, is skipped and says how to update it. When a part fails, the app doesn't restart, so the
-result stays on screen.
+The update sheet has one overall state at the top and one line per part: the hub, each machine, Claude Code and the app.
+Each line says **Waiting**, **Updating…**, **Done** or **Failed**, with the reason in one line. Each step, with the
+hub's own words and each part's version, is behind **Details**. When everything is done, the sheet closes itself and
+the sidebar says **Updated**; hover it for the version.
+
+When a part fails, the others still finish:
+
+- A failed download or a checksum mismatch changes nothing on that machine.
+- A build that doesn't come up healthy is put back on its own, and the machine runs its previous build again.
+- A machine that is offline, or runs a fleetd too old to update from the hub, is skipped and says how to update it.
+- If the hub itself didn't update, its machines aren't asked, and **Update** tries the whole update again.
+
+A failed or skipped machine has **Retry** on its line, which updates just that machine (its fleetd, then its Claude
+Code). After a part failed, the app doesn't restart by itself, so the result stays on screen: its line has **Update**
+instead.
 
 Updating needs a key with Admin on every machine, as `fleetd pair` gives the app. The first time, a hub from before
 the Update button can't do this yet: the app says so, and `fleetd update` on the hub's machine once (see below) brings it
@@ -66,8 +81,8 @@ also copies the hub's binary to a worker.
 ### The desktop app {#app}
 
 The app checks for updates when it opens, every 10 minutes and when you come back to its window, and downloads them
-in the background; a newer build than one already downloaded replaces it. Its own update is also in the sheet, with
-**Update and restart** and what's new. An update you don't install now installs the next time you quit.
+in the background; a newer build than one already downloaded replaces it. It has its own line in the update sheet, and
+its own **Update and restart** under **Details**. An update you don't install now installs the next time you quit.
 
 - **Check for Updates…** is in the fleetd menu on macOS, in Help on Linux, and in the command palette.
 - The `.deb` install can't update itself: the app offers the download and the `sudo apt install` command.

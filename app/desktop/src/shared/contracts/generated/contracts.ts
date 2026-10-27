@@ -1969,10 +1969,17 @@ export type HubInfoOutput = {
 export type HubUpdateInput = {
   /** Absent: the channel the hub's build came from. */
   channel?: HubChannel;
+  /** Retry this machine of the last run, whose hub updated: its node, then its Claude Code. */
+  machine?: MachineId;
 };
 
 export type HubUpdateOutput = {
   next?: string;
+  /**
+   * The channel's newest build, already downloaded and checked on the hub (and fetched by its nodes), so an update
+   * only swaps and restarts: what "fleetd <version> is ready" names. Absent when there is none newer.
+   */
+  ready?: string;
   /** The update going now or the last one; absent when the hub never updated itself. */
   run?: UpdateRun;
   truncated?: boolean;
