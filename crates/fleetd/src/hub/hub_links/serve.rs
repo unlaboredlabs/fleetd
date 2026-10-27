@@ -7,8 +7,8 @@
 //! - `GET feed?after=&wait=`: what happened to its asks after `after`, waiting up to `wait` seconds for some.
 //! - `POST revoke`: the link revokes itself, when the hub with the Navi removes it.
 //!
-//! A refusal is an `McpToolError` as JSON: 401 when the link is dead (unknown, revoked, or its device revoked), else
-//! 403, 404, 400 or 500 by its code.
+//! A refusal is an `McpToolError` as JSON: 401 with `dead: true` (`LinkRefusal`) when the link is dead for good
+//! (unknown, revoked, expired, or its device revoked), else 403, 404, 400 or 500 by its code.
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -18,6 +18,7 @@ use axum::http::{HeaderMap, Method, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use fleetd_contracts::hub_links::{
     FEED_WAIT_MAX_SEC, HubLabel, LinkAskCall, LinkAskResult, LinkFeed, LinkHello, LinkProject,
+    LinkRefusal,
 };
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
 use fleetd_contracts::navi::{FactoryStatusCall, ProjectMessageCall};
@@ -41,6 +42,19 @@ fn refused(status: StatusCode, e: &McpToolError) -> Response {
     (status, axum::Json(e)).into_response()
 }
 
+/// A refusal of the key itself: 401 with `dead` for a link dead for good, else (a store failure) its own status, so
+/// the other hub never takes a passing failure for a revoke.
+fn key_refused(e: McpToolError) -> Response {
+    if e.code != ErrorCode::Forbidden {
+        return refused(status_of(e.code), &e);
+    }
+    let body = LinkRefusal {
+        error: e,
+        dead: Some(true),
+    };
+    (StatusCode::UNAUTHORIZED, axum::Json(body)).into_response()
+}
+
 fn ok<T: Serialize>(out: &T) -> Response {
     axum::Json(out).into_response()
 }
@@ -59,7 +73,7 @@ pub async fn handle(
         .unwrap_or("");
     let link = match verify(&hub, bearer) {
         Ok(link) => link,
-        Err(e) => return refused(StatusCode::UNAUTHORIZED, &e),
+        Err(e) => return key_refused(e),
     };
     let out = match (&method, op) {
         (&Method::GET, "hello") => hello(&hub, &link).map(|o| ok(&o)),
@@ -176,7 +190,7 @@ async fn feed(
             _ = head.changed() => {}
         }
         if let Err(e) = verify(hub, bearer) {
-            return Ok(refused(StatusCode::UNAUTHORIZED, &e));
+            return Ok(key_refused(e));
         }
         if hub.shutdown.is_triggered() {
             return Ok(ok(&LinkFeed {
