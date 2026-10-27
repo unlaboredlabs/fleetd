@@ -243,7 +243,8 @@ fn a_navi_cant_write_outside_its_folder() {
             target.display()
         );
     }
-    // claude's shared state reads as its own private copy: another session's shell snapshot isn't even there.
+    // claude's shared state is never written. On Linux it reads as its own private copy, where another session's
+    // shell snapshot isn't even there; on macOS, which can't mount a copy, it is read-only.
     let shared = m.claude.join("shell-snapshots/snapshot-other.sh");
     let (_, out) = m.run(
         &tool,
@@ -253,7 +254,11 @@ fn a_navi_cant_write_outside_its_folder() {
             shared.display()
         ),
     );
-    assert!(!out.contains("another session's"), "{out}");
+    if cfg!(target_os = "linux") {
+        assert!(!out.contains("another session's"), "{out}");
+    } else {
+        assert!(out.contains("Operation not permitted"), "{out}");
+    }
     assert_eq!(
         std::fs::read_to_string(&shared).unwrap(),
         "# another session's"
