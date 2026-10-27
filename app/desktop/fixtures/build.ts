@@ -37,17 +37,20 @@ const get = (name: SharedName): Fixture => {
   if (f === undefined) throw new Error(`kit/shared.ts built no "${name}"`);
   return f;
 };
-const all: Array<Fixture> = SHARED.map(get);
+for (const name of SHARED) get(name);
 const base = (name: SharedName) => Fixture.from(get(name), name, get(name).note);
-for (const [group, { fixtures }] of groups) {
-  for (const f of fixtures?.(base) ?? []) {
-    if (!f.name.startsWith(`${group}-`)) throw new Error(`fixtures/${group}: "${f.name}" must be named "${group}-<what>"`);
-    all.push(f);
-  }
-}
 
-// Last, after every group: one count of agents per project, whatever shows it (kit/agents.ts).
-for (const f of all) {
+// Each fixture is finished, checked and written to STAGING as soon as it's built and then let go, so memory holds one
+// group's fixtures at a time however many there are. The shared ones go last: every group's base() copies them as the
+// kit and the groups' extend left them, before finish() syncs them. Only if all pass do the files move into place.
+const STAGING = path.join(DIR, ".staging");
+fs.rmSync(STAGING, { recursive: true, force: true });
+fs.mkdirSync(STAGING);
+const names = new Set<string>();
+const problems: Array<string> = [];
+const written: Array<string> = [];
+const finish = (f: Fixture) => {
+  // Last, after the group made it: one count of agents per project, whatever shows it (kit/agents.ts).
   syncAgents(f);
   syncProfiles(f);
   syncAgentsList(f);
@@ -64,25 +67,38 @@ for (const f of all) {
       if (f.output("prompt_get", input) === undefined) f.answer("prompt_get", input, one.output);
     }
   }
-}
 
-const names = new Set<string>();
-const problems: Array<string> = [];
-const files = new Map<string, string>();
-for (const f of all) {
   if (names.has(f.name)) problems.push(`two fixtures are named ${f.name}`);
   names.add(f.name);
-  problems.push(...validateFixture(f));
+  const found = validateFixture(f);
   const json = JSON.stringify(f.toFile());
-  problems.push(...findLeaks(json).map((leak) => `${f.name} leaks ${leak}`));
-  files.set(f.name, json);
+  found.push(...findLeaks(json).map((leak) => `${f.name} leaks ${leak}`));
+  problems.push(...found);
+  if (found.length > 0) return;
+  fs.writeFileSync(path.join(STAGING, `${f.name}.json`), json);
+  // Main's own loader, so a file that builds is a file the app accepts.
+  loadFixture(f.name, STAGING);
+  const pending = [...f.pendingContracts].map(([tool, why]) => ` (${tool} unchecked: ${why})`).join("");
+  written.push(`${f.name}${pending}`);
+};
+for (const [group, { fixtures }] of groups) {
+  for (const f of fixtures?.(base) ?? []) {
+    if (!f.name.startsWith(`${group}-`)) throw new Error(`fixtures/${group}: "${f.name}" must be named "${group}-<what>"`);
+    finish(f);
+  }
 }
+for (const name of SHARED) {
+  finish(get(name));
+  shared.delete(name);
+}
+
 // The committed recordings too: a hand edit must not bring back what the sanitizer took out.
 const RECORDED = path.join(DIR, "recorded");
 for (const file of fs.readdirSync(RECORDED).filter((x) => x.endsWith(".json"))) {
   problems.push(...findLeaks(fs.readFileSync(path.join(RECORDED, file), "utf8")).map((leak) => `recorded/${file} leaks ${leak}`));
 }
 if (problems.length > 0) {
+  fs.rmSync(STAGING, { recursive: true, force: true });
   for (const p of problems.slice(0, 40)) console.error(p);
   console.error(`${problems.length} problems; no fixture written.`);
   process.exit(1);
@@ -90,10 +106,6 @@ if (problems.length > 0) {
 
 // Only build output lives at the top level, so anything not rebuilt is stale.
 for (const file of fs.readdirSync(DIR)) if (file.endsWith(".json") && !names.has(file.slice(0, -5))) fs.rmSync(path.join(DIR, file));
-for (const f of all) {
-  const pending = [...f.pendingContracts].map(([tool, why]) => ` (${tool} unchecked: ${why})`).join("");
-  fs.writeFileSync(path.join(DIR, `${f.name}.json`), files.get(f.name) ?? "");
-  // Main's own loader, so a file that builds is a file the app accepts.
-  loadFixture(f.name, DIR);
-  console.log(`${f.name}${pending}`);
-}
+for (const name of names) fs.renameSync(path.join(STAGING, `${name}.json`), path.join(DIR, `${name}.json`));
+fs.rmSync(STAGING, { recursive: true, force: true });
+for (const line of written) console.log(line);
