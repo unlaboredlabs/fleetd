@@ -402,11 +402,13 @@ impl ProjectSettingsStore<'_> {
     }
 }
 
-/// The setup commands a new task's worktree runs: its repo's, else the project's. A task's repo is, for now, the
-/// project's own (none for a plain directory).
-pub fn task_setup(hub: &Hub, r: &ProjectRef) -> Result<Option<WorktreeSetup>, StoreError> {
-    let repo = hub.repos.own(r)?.map(|repo| repo.repo_id);
-    hub.db.project_settings().setup_in(r, repo.as_ref())
+/// The setup commands a new worktree of the project's task in `repo` runs: the repo's, else the project's.
+pub fn task_setup(
+    hub: &Hub,
+    r: &ProjectRef,
+    repo: Option<&RepoId>,
+) -> Result<Option<WorktreeSetup>, StoreError> {
+    hub.db.project_settings().setup_in(r, repo)
 }
 
 /// How a preview of the project runs: its repo's setting, else the project's. A preview's repo is, for now, the
