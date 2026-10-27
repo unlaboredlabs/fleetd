@@ -157,8 +157,8 @@ pub struct DecisionsSearchCall {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct BriefReadCall {}
 
-/// `review_read`: every finding of the latest reviews of the caller's PRs, in full. A task reads its own PRs', a lead
-/// its project's; `pr` (a URL or a number) picks one.
+/// `review_read`: every finding of the latest reviews of the caller's PRs, in full. A task reads its own PRs', a review
+/// task the PR it reviews, a lead its project's; `pr` (a URL or a number) picks one.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ReviewReadCall {
