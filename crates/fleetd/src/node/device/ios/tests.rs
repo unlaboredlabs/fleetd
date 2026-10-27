@@ -12,7 +12,7 @@ use fleetd_contracts::node_link::IosState;
 use serde_json::{Value, json};
 
 use super::pool::{self, Golden};
-use super::simctl::Simctl;
+use super::simctl::{self, Simctl};
 use super::{IosConfig, PrepState, Simulators, health_from, xcode_from};
 use crate::node::browser::SessionHooks;
 use crate::node::device::Router;
@@ -618,16 +618,32 @@ async fn an_agent_opens_settings_on_an_ios_session_and_its_recording_is_on_the_h
     );
 
     // The pool refills behind the session. On a small CI machine that has to finish first anyway: it can't boot the
-    // next clone and start agent-device's runner at once (agent-device's own xcrun calls time out at 15 s).
+    // next clone and start agent-device's runner at once (agent-device's own xcrun calls time out at 15 s). Beside the
+    // session's simulator and its recording, GitHub's 3-vCPU runner took 114 to 343 s and at times longer, so the test
+    // waits as long as the pool gives a refill (a clone, a boot, then BOOT_TIMEOUT for it to finish) and only measures
+    // it: a boot that ran out of time is logged, and the pool tries again later (pool.rs's tests cover that).
     let t = Instant::now();
-    while simulators.warm() == 0 {
+    let refill = 2 * simctl::CALL + pool::BOOT_TIMEOUT;
+    loop {
+        if simulators.warm() > 0 {
+            eprintln!("the pool refilled behind it: {} ms", ms(t.elapsed()));
+            break;
+        }
+        if let Some(why) = simulators.refill_failing() {
+            eprintln!(
+                "the pool's refill failed after {} ms; not asserted, this machine can't boot a second simulator \
+                 beside a session in time: {why}",
+                ms(t.elapsed())
+            );
+            break;
+        }
         assert!(
-            t.elapsed() < Duration::from_secs(360),
-            "the pool didn't refill in 6 minutes"
+            t.elapsed() < refill + Duration::from_secs(30),
+            "the pool's refill neither finished nor failed in {} s",
+            t.elapsed().as_secs()
         );
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
-    eprintln!("the pool refilled behind it: {} ms", ms(t.elapsed()));
 
     // The agent opens Settings and taps a row, with agent-device pointed at the session's clone.
     let t = Instant::now();

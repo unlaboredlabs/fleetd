@@ -8,7 +8,7 @@ use std::time::Duration;
 use serde::Deserialize;
 
 /// A simctl call that hangs (a wedged CoreSimulator) is given up after this; a boot waits longer.
-const CALL: Duration = Duration::from_secs(60);
+pub const CALL: Duration = Duration::from_secs(60);
 
 /// An iOS runtime Xcode has installed, with the device types it runs.
 #[derive(Clone, Debug, PartialEq, Deserialize)]
