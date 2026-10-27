@@ -422,6 +422,10 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "machine_join",
-        "A one-time code (15 minutes) for machineId to join the hub by itself, as fleetd pair --worker prints it: the hub's address, the code, its commit identity, and line, the one command that installs fleetd on that machine and joins. For a machine the hub can't reach over SSH. A person's device with Admin on every machine.",
+        "A one-time code (15 minutes) for machineId to join the hub by itself, as fleetd pair --worker prints it: the hub's address, the code, its commit identity, and line, the one command that installs fleetd on that machine and joins. For a machine the hub can't reach over SSH. rejoin: true for a machine that joined before, whose line enrolls it again and so repairs it. A person's device with Admin on every machine.",
+    ),
+    (
+        "machine_claude_login",
+        "Log claude in on machineId from the app: without code, its node starts claude auth login and this answers loginUrl, where the person signs in on their own device; then call again with code, the code that page shows, and it answers loggedIn once the login ended. Claude Code keeps its token on the machine: it never comes back. The node must be online and recent enough to list claude_login. A person's device with Admin on every machine.",
     ),
 ];

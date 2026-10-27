@@ -2663,6 +2663,24 @@ export type MachineAddStepData = {
   state: MachineAddState;
 };
 
+export type MachineClaudeLoginInput = {
+  /** Absent: start the login, which answers its sign-in URL. The code the sign-in page showed: finish it. */
+  code?: string;
+  machineId: MachineId;
+};
+
+export type MachineClaudeLoginOutput = {
+  /** A login that finished: claude on the machine is logged in now. */
+  loggedIn?: boolean;
+  /** A login that started: where to sign in. */
+  loginUrl?: string;
+  machineId: MachineId;
+  /** The node's words: what happened, or why not. */
+  message: string;
+  next?: string;
+  truncated?: boolean;
+};
+
 /** `machine.guard`. */
 export type MachineGuardData = {
   /** true: new agents wait; false: they start again. */
@@ -7007,6 +7025,7 @@ export interface ToolMap {
   machine_add: { input: MachineAddInput; output: MachineAddOutput };
   machine_add_plan: { input: MachineAddPlanInput; output: MachineAddPlanOutput };
   machine_add_status: { input: MachineAddStatusInput; output: MachineAddStatusOutput };
+  machine_claude_login: { input: MachineClaudeLoginInput; output: MachineClaudeLoginOutput };
   machine_hosts: { input: MachineHostsInput; output: MachineHostsOutput };
   machine_join: { input: MachineJoinInput; output: MachineJoinOutput };
   machine_remove: { input: MachineRemoveInput; output: MachineRemoveOutput };
