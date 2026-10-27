@@ -41,8 +41,12 @@ const useHostName = (): string | undefined => {
   return name;
 };
 
-/** What this computer's fleetd dir holds, as main read it: a hub, an enrolled node, or neither. */
-const useThisComputer = (): ThisComputer | undefined => {
+/**
+ * What this computer's fleetd dir holds, as main read it: a hub, an enrolled node, or neither. Read again whenever
+ * `again` changes (a join or an add ended, the hub's id arrived), so a computer that has just joined never shows a
+ * stale Repair.
+ */
+const useThisComputer = (again: string): ThisComputer | undefined => {
   const [here, setHere] = useState<ThisComputer>();
   useEffect(() => {
     let live = true;
@@ -50,7 +54,7 @@ const useThisComputer = (): ThisComputer | undefined => {
     return () => {
       live = false;
     };
-  }, []);
+  }, [again]);
   return here;
 };
 
@@ -79,8 +83,9 @@ export function AddMachine() {
   const status = useToolQuery("machine_add_status", noInput);
   const hosts = useToolQuery("machine_hosts", noInput);
   const hostName = useHostName();
-  const computer = useThisComputer();
   const join = useJoinHere();
+  const ended = status.data?.runs.find((r) => r.state !== "running")?.runId ?? "";
+  const computer = useThisComputer(`${hosts.data?.hubId ?? ""}|${join?.state ?? ""}|${ended}`);
   const machines = useData((d) => d.machines);
   const [view, setView] = useState<View>();
   const [busy, setBusy] = useState(false);
@@ -98,7 +103,7 @@ export function AddMachine() {
         })());
 
   const here =
-    hosts.data && hostName !== undefined && computer !== undefined ? hereOf(hosts.data.hosts, hostName, computer, new Set(Object.keys(machines))) : undefined;
+    hosts.data && hostName !== undefined && computer !== undefined ? hereOf(hosts.data.hosts, hosts.data.hubId, hostName, computer, new Set(Object.keys(machines))) : undefined;
 
   const add = (target: { host: string } | { local: true }) => {
     setBusy(true);
@@ -123,7 +128,7 @@ export function AddMachine() {
   const addHere = (h: Here) => {
     setProblem(undefined);
     if (h.kind === "hub") return add({ local: true });
-    if (h.kind === "node") return;
+    if (h.kind === "node" || h.kind === "other-hub") return;
     setView({ kind: "here" });
     void window.fleetd.machines.joinHere(h.machineId);
   };
@@ -180,7 +185,7 @@ function Choose(props: { here: Here | undefined; busy: boolean; onHere: (h: Here
               {hereLine(here)}
             </Text>
           </div>
-          {here?.kind === "node" ? null : (
+          {here?.kind === "node" || here?.kind === "other-hub" ? null : (
             <Button className={s.rowAction} disabled={here === undefined || props.busy} onClick={() => here && props.onHere(here)}>
               {here?.joined ? "Repair" : "Add this computer"}
             </Button>

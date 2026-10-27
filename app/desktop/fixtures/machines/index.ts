@@ -17,6 +17,7 @@ const HOSTS: JsonObject = {
     { machineId: "lab-gpu", host: "lab-gpu.example.com", source: "ssh_config", joined: false },
     { machineId: "mac-mini", host: "mac-mini", source: "tailnet", joined: true },
   ],
+  hubId: "5f1d3c9a7e2b4d6f8a0c1e3b5d7f9a2c4e6b8d0f1a3c5e7b9d2f4a6c8e0b1d3f",
 };
 
 const step = (title: string, state: string, extra: JsonObject = {}): JsonObject => ({ title, state, ...extra });

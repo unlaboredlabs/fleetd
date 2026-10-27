@@ -2550,6 +2550,11 @@ export type MachineHostsInput = { [key: string]: unknown };
 
 export type MachineHostsOutput = {
   hosts: MachineHost[];
+  /**
+   * This hub's id (64 hex digits, in `<hub home>/hub-id`): a computer whose fleetd dir holds the same id runs
+   * this hub.
+   */
+  hubId: string;
   next?: string;
   truncated?: boolean;
 };
