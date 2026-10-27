@@ -44,6 +44,9 @@ fleetd project set lab-a/storefront --fast-check "test (ubuntu-latest)" --after-
 
 Each option may repeat, and replaces its list; `none` empties it. The train uses new settings from its next pass.
 
+The checks are the repo's, not the project's: in a project with [several repos](#repos), name the repo
+(`project_settings_set` with `repo`) to set its own.
+
 ## After the merge {#after-merge}
 
 The train watches the checks it didn't wait for on the commit it merged onto the base. When one fails there, fleetd
@@ -190,6 +193,36 @@ it had for the repo; with none, any skipped check holds the PR for 3 minutes, th
 When the checks of the batch, or of a PR merging alone, have been queued for more than 5 minutes, its queue entry and
 the lead's digest say "waiting for CI runners (N queued)". Once a runner takes them, the entry's earlier note comes
 back.
+
+## Several repos {#repos}
+
+A project can hold several repos. Each repo has its own train, so its PRs line up and merge on their own, apart from
+the other repos' PRs. The train for a repo reads its rules and its branch prefix from that repo's checkout. If two
+projects share a repo, they share its train and its rules.
+
+The train takes only PRs from the project's repos. A PR from any other repo is refused, and the refusal lists the
+project's repos. A project whose repos have no GitHub remote yet takes PRs from any repo, as it did before projects
+had repos.
+
+## Merge order {#order}
+
+When one PR needs another merged first, such as a client that needs a new API, the lead enqueues it with `after`:
+
+```json
+{ "prUrl": "https://github.com/acme/web/pull/12", "after": ["https://github.com/acme/api/pull/40"] }
+```
+
+The PRs can be in the same repo or in different repos of the project. Enqueuing a PR that is already on the train adds
+the new `after` PRs to the ones it has. The train refuses an order that loops back, where the upstream PR already
+waits on this one.
+
+The downstream PR is reviewed and checked as usual. Once it is ready, it stays in line, held with
+"waiting on acme/api#40" and the reason. When the upstream PR merges, the downstream PR's train takes it on its next
+pass.
+
+If the upstream PR fails CI or review, is refused, or leaves the train without merging, the downstream PR stays
+held. The lead is told once, with the reason. Once the upstream PR is fixed and merges, the downstream PR goes on its
+own. A PR merged outside the train also counts as merged.
 
 ## Hold a PR {#hold}
 

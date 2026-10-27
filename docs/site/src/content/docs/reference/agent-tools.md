@@ -680,10 +680,11 @@ Lift the usage pause on your project's machine now and send every agent parked t
 
 ### change_enqueue
 
-Put a PR no task's result put there on its repo's merge train; only the train merges.
+Put a PR no task's result put there on its repo's merge train; only the train merges. `after` names PRs, in any of the project's repos, that must merge first: the train holds this one until they have, and tells you when one of them fails.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
+| `after` | string[] | no | PRs, in this repo or another of the project's, that must merge first: the train holds this one until each has merged. Enqueuing a PR already on the train adds these to it. At most 20 items. |
 | `prUrl` | string | yes | Like `https://github.com/<owner>/<name>/pull/<n>`. |
 | `taskId` | string | no | `T<n>`, e.g. `T1`. |
 | `workstreamId` | string | no | `W<n>`, e.g. `W1`. |

@@ -92,6 +92,7 @@ pub async fn slice_ready(
         task_id: Some(task_id.clone()),
         pr_url,
         workstream_id: None,
+        after: None,
     };
     train.enqueue(project_ref, input).await
 }

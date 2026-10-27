@@ -301,7 +301,9 @@ static TOOLS: &[Tool] = &[
     lead(
         "change_enqueue",
         "change_enqueue",
-        "Put a PR no task's result put there on its repo's merge train; only the train merges.",
+        "Put a PR no task's result put there on its repo's merge train; only the train merges. `after` names PRs, in \
+         any of the project's repos, that must merge first: the train holds this one until they have, and tells you \
+         when one of them fails.",
         inline_schema::<ChangeEnqueueCall>,
     ),
     Tool {

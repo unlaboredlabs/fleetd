@@ -1,6 +1,6 @@
 # W79 design: projects that hold zero or more repos
 
-Status: design, partly built (stages 1a, 1b, 1c and 1d). This records intent when written; the code is the source of
+Status: design, partly built (stages 1, 4 and 5). This records intent when written; the code is the source of
 truth.
 Check `git log` for what has landed.
 
@@ -57,7 +57,9 @@ A repo can have its own `setup` and `preview`; an empty one is the project's (`p
 so a hub rolled back still has its data). `project_settings_get`/`set` take a `repo` by name: they read the repo's
 (else the project's) and write the repo's row, and the response names the repo in `settings.repo`. Without `repo`
 they read and write the project's, as before. An unknown repo is `not_found`, with the project's repos in the fix.
-`keepWorktrees`, the title, env, the medium profile and `train` stay the project's either way.
+`keepWorktrees`, the title, env and the medium profile stay the project's either way. `train` is the repo's (stage 4):
+with `repo` it reads and writes `project_settings.train` of the repo's checkout, which is the project itself for its
+own repo.
 
 A task's launch (`tasks/wire.rs`) and a preview (`preview/mod.rs`) read their repo's setting, for now always the
 project's own repo (none for a plain directory, which reads the project's): `projects::settings::task_setup` and
@@ -96,3 +98,27 @@ A **Repos** section under the project's name (`app/desktop/.../settings/RepoSett
 preview it runs with, read with `project_settings_get` and `repo`. One the same as the project's, or one a hub before
 1c refuses to read, shows as "uses the project's". A plain folder says "No repo, a plain folder". Read-only: adding and
 removing repos is stage 2.
+
+## The train per repo (4)
+
+Each GitHub repo already had its own train lane (`trains.repo`), bound to the project that first enqueued one of its
+PRs. The train now reads that repo's branch prefix (policy) and its rules (`project_settings.train`) from the repo's
+checkout in that project (`Train::train_checkout`, through `TrainHost::github_repos`), not from the project's own
+directory. For a one-repo project, that checkout is the project itself, so nothing changes.
+
+`change_enqueue` refuses a PR whose GitHub repo isn't one of the project's repos (`repos.repo_key`). A project whose
+repos have no GitHub remote yet (a plain directory, or a remote not read yet) takes any repo, as before. The order
+board and the Train tab already group by repo (`hub/orders` `trains()`, `TrainPane`), one train per repo. A task's PR
+lookup still reads the project's own remote. Stage 3 moves it to the task's repo checkout, along with the launch, in
+`hub/tasks`.
+
+## Merge order across repos (5)
+
+`change_enqueue` takes `after: [prUrl]`, and the Change records it (`Change.after`, absent when empty). Enqueuing a PR
+already on the train adds the new `after` PRs to it. The train refuses a PR listed in its own `after`, or an order that
+loops back. `train/next.rs` decides where each upstream PR stands. Its newest Change decides: merged lets the
+downstream PR go; failed CI, blocking review findings, or refused (unless GitHub shows the PR merged) hold the
+downstream PR as a failure. Anything else holds it as waiting. With no Change, GitHub decides. A ready downstream
+Change waits in line with `lastError` "held: waiting on owner/name#n: why", which the app shows as held. Each pass
+tells the lead once about each failure that holds a Change. That note is kept in memory, so after a restart the lead
+may be told again. An upstream merge kicks the trains of the PRs waiting on it.

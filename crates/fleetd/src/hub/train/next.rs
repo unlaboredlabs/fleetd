@@ -4,12 +4,19 @@
 //! docs' merge train page shows how); the train knows such a repo by its workflows naming the label. There, a PR it
 //! merges alone never merges on a skipped check the label should have run: it waits, and the lead hears once when that
 //! run doesn't come. A labelling failure is logged once; elsewhere it changes nothing.
+//!
+//! Merge order across PRs (`after`): a Change whose `after` PRs haven't all merged waits in line, held "waiting on" the
+//! first of them, in this repo or another. When one fails CI or review, or leaves the train unmerged, the Change stays
+//! held and the lead is told once. Once they have all merged it goes, kicked by their merge.
 use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 
-use super::contract::{ChangeId, ChangeState};
+use super::contract::{Change, ChangeId, ChangeState, GitHubPrUrl, parse_pr_url};
 use super::github::{CheckRun, NEXT_LABEL};
-use super::service::{Train, lock};
+use super::records::QUEUED_STATES;
+use super::service::{Train, lock, timed_out};
+use crate::hub::leads::events::Event;
+use crate::hub::reviews::service::BLOCKED;
 use crate::hub::store::parse_ms;
 
 const LABEL_COLOR: &str = "1d76db";
@@ -24,6 +31,37 @@ const USES_TTL_MS: i64 = 10 * 60_000;
 pub(super) const RUNNER_WAIT_MS: i64 = 5 * 60_000;
 /// The start of the note on a Change in CI whose checks have waited `RUNNER_WAIT_MS` for runners.
 pub const WAITING_FOR_RUNNERS: &str = "waiting for CI runners";
+
+/// The start of the hold on a ready Change whose `after` PRs haven't all merged: the first one (`owner/name#n`) and why
+/// it hasn't.
+pub const WAITING_ON: &str = "held: waiting on ";
+
+/// The first of a Change's `after` PRs that hasn't merged.
+pub(super) struct Waiting {
+    /// The Change's hold: `WAITING_ON`, the PR and why it hasn't merged.
+    pub note: String,
+    /// It failed CI or review, or left the train unmerged: the lead hears of it.
+    pub failed: bool,
+}
+
+/// `after` as the train keys it: each PR's URL with its repo lowercased, once.
+pub(super) fn upstreams(after: &[GitHubPrUrl]) -> Vec<GitHubPrUrl> {
+    let mut out: Vec<GitHubPrUrl> = Vec::new();
+    for url in after {
+        let Some(p) = parse_pr_url(url.as_str()) else {
+            continue;
+        };
+        let url = GitHubPrUrl::unchecked(format!(
+            "https://github.com/{}/pull/{}",
+            p.repo.to_lowercase(),
+            p.pr_number
+        ));
+        if !out.contains(&url) {
+            out.push(url);
+        }
+    }
+    out
+}
 
 /// The checks the label runs in a repo's CI on one base, and when they were read.
 type GatedRead = (i64, Vec<String>);
@@ -373,6 +411,133 @@ impl Train {
                 c
             });
         }
+    }
+}
+
+impl Train {
+    /// The first of the Change's `after` PRs that hasn't merged; None once they all have.
+    pub(super) async fn waiting_on(&self, change: &Change) -> Option<Waiting> {
+        for url in &change.after {
+            if let Some(waiting) = self.upstream(url).await {
+                return Some(waiting);
+            }
+        }
+        None
+    }
+
+    /// Where the upstream PR stands: None once it merged. Its Change on the train says, else GitHub.
+    async fn upstream(&self, url: &GitHubPrUrl) -> Option<Waiting> {
+        let parsed = parse_pr_url(url.as_str())?;
+        let (repo, n) = (parsed.repo.to_lowercase(), parsed.pr_number);
+        let latest = self.records.latest_for(&repo, n);
+        let (why, failed) = match latest.as_ref().map(|c| (c, c.state)) {
+            Some((_, ChangeState::Merged)) => return None,
+            Some((c, ChangeState::CiFailed)) if timed_out(c) => {
+                ("its CI ran past the timeout".to_string(), false)
+            }
+            Some((_, ChangeState::CiFailed)) => ("its CI failed".to_string(), true),
+            Some((_, ChangeState::NeedsRebase)) => (
+                "it conflicts with its base and is back with its writer".to_string(),
+                false,
+            ),
+            Some((c, ChangeState::Reviewing))
+                if c.last_error
+                    .as_deref()
+                    .is_some_and(|e| e.starts_with(BLOCKED)) =>
+            {
+                ("its review found blocking issues".to_string(), true)
+            }
+            Some((_, ChangeState::Refused | ChangeState::Abandoned)) | None => {
+                match self.github.pull(&repo, n).await {
+                    Ok(pull) if pull.merged => return None,
+                    Ok(pull) if pull.state != "open" => {
+                        ("it was closed without merging".to_string(), true)
+                    }
+                    Ok(_) => match latest.map(|c| c.state) {
+                        Some(ChangeState::Refused) => ("the train refused it".to_string(), true),
+                        Some(_) => ("it left the train unmerged".to_string(), true),
+                        None => ("it is not on the train yet".to_string(), false),
+                    },
+                    Err(e) => (
+                        format!("it could not be read: GitHub: {}", e.message),
+                        false,
+                    ),
+                }
+            }
+            Some(_) => ("it hasn't merged yet".to_string(), false),
+        };
+        Some(Waiting {
+            note: format!("{WAITING_ON}{repo}#{n}: {why}"),
+            failed,
+        })
+    }
+
+    /// Each pass: the lead hears once of each upstream failure that holds one of the repo's Changes in line.
+    pub(super) async fn after_pass(&self, repo: &str) {
+        for change in self.records.in_train(repo, QUEUED_STATES) {
+            if change.after.is_empty() {
+                continue;
+            }
+            let Some(waiting) = self.waiting_on(&change).await.filter(|w| w.failed) else {
+                continue;
+            };
+            let key = (change.change_id.clone(), waiting.note.clone());
+            if !lock(&self.after_told).insert(key) {
+                continue;
+            }
+            let why = waiting.note.strip_prefix("held: ").unwrap_or(&waiting.note);
+            let text = format!(
+                "held, {why}. It merges only after that PR does: get it fixed and back on the train, or close this one."
+            );
+            let line = Event::PrNote {
+                change: change.change_id.as_str(),
+                pr_url: change.pr_url.as_str(),
+                text: &text,
+            }
+            .render();
+            self.wake_lead(&change.project_ref, line).await;
+        }
+    }
+
+    /// The PRs it waits on, now also `after`'s.
+    pub(super) fn add_after(&self, change: Change, after: &[GitHubPrUrl]) -> Change {
+        if after.iter().all(|u| change.after.contains(u)) {
+            return change;
+        }
+        let id = change.change_id.clone();
+        self.update(&id, None, |mut c| {
+            for u in after {
+                if !c.after.contains(u) {
+                    c.after.push(u.clone());
+                }
+            }
+            c
+        })
+        .unwrap_or(change)
+    }
+
+    /// The upstream PR in `after` that already waits, through its own `after`, on `pr_url`: merging in that order could
+    /// never happen.
+    pub(super) fn loops_back(&self, pr_url: &str, after: &[GitHubPrUrl]) -> Option<String> {
+        for start in after {
+            let mut seen: HashSet<String> = HashSet::new();
+            let mut todo = vec![start.to_string()];
+            while let Some(url) = todo.pop() {
+                if url == pr_url {
+                    return Some(start.to_string());
+                }
+                if !seen.insert(url.clone()) {
+                    continue;
+                }
+                let Some(p) = parse_pr_url(&url) else {
+                    continue;
+                };
+                if let Some(c) = self.records.open_for(&p.repo, p.pr_number) {
+                    todo.extend(c.after.iter().map(ToString::to_string));
+                }
+            }
+        }
+        None
     }
 }
 

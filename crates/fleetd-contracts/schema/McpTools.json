@@ -2070,6 +2070,13 @@
     },
     "Change": {
       "properties": {
+        "after": {
+          "description": "The PRs that merge before it (`change_enqueue`'s `after`): it waits in line until each has merged.",
+          "items": {
+            "$ref": "#/$defs/GitHubPrUrl"
+          },
+          "type": "array"
+        },
         "branch": {
           "description": "The PR's head branch.",
           "minLength": 1,

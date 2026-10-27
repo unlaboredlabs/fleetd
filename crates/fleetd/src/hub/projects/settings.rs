@@ -6,7 +6,9 @@
 //!
 //! A repo of the project (W79) can have its own `setup` and `preview` (`repos.setup`, `repos.preview`): a call that
 //! names the repo reads and writes those, and an empty one is the project's. A task's launch and a preview read their
-//! repo's, for now always the project's own repo (none for a plain directory). Everything else is the project's.
+//! repo's, for now always the project's own repo (none for a plain directory). The merge train's rules are the
+//! repo's: a call that names the repo reads and writes `project_settings.train` of its checkout, which the repo's train
+//! reads. Everything else is the project's.
 //!
 //! A variable is set on the project's node first, which keeps the value and adds it to every claude it starts for
 //! the project; only then does the hub record it. The hub's row holds a plain variable's value and a secret's
@@ -488,7 +490,7 @@ async fn settings_of(
         keep_worktrees: store.keep_worktrees(r)?,
         env: store.env(r)?,
         setup: store.setup_in(r, repo_id)?.unwrap_or_default(),
-        train: store.train(r)?,
+        train: store.train(repo.map_or(r, |repo| &repo.checkout))?,
         preview: store.preview_in(r, repo_id)?,
         worktrees,
         worktrees_unknown,
@@ -545,7 +547,9 @@ async fn set(
         hub.db.project_settings().set_setup_in(&r, repo_id, setup)?;
     }
     if let Some(train) = &input.train {
-        hub.db.project_settings().set_train(&r, train)?;
+        // The train's rules are the repo's: its checkout's, read by the repo's train whichever project enqueues.
+        let checkout = repo.as_ref().map_or(&r, |repo| &repo.checkout);
+        hub.db.project_settings().set_train(checkout, train)?;
     }
     if let Some(preview) = &input.preview {
         hub.db
