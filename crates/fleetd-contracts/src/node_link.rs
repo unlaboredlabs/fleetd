@@ -98,6 +98,11 @@ pub const CAP_ORDER_ENV: &str = "order_env";
 /// `SessionLaunch::setup`: a project's setup commands, run in each new worktree before its agent starts.
 pub const CAP_WORKTREE_SETUP: &str = "worktree_setup";
 
+/// `SessionLaunch::allowed_only`: the node holds a session to its allowed tools. A node without it would start the
+/// session with every runtime tool claude lets run unasked (reading its folder among them), so the hub starts such a
+/// session only on a node that lists it.
+pub const CAP_ALLOWED_ONLY: &str = "allowed_only";
+
 /// Browser sessions' live view and takeover: `browser_watch`, `browser_input` and `browser_control`, and the node's
 /// `browser_frame`s.
 pub const CAP_BROWSER: &str = "browser";

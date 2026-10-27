@@ -65,13 +65,15 @@ function useUndo(project: ProjectRef, message: ChatMessage) {
 
 /**
  * Under a "Memory refreshed" line: each change it lists, what it was, and its Undo, then how many more it made; Undo
- * all while two or more can be undone.
+ * all while two or more can be undone, or any the line doesn't list.
  */
 export function RefreshedChanges({ project, message, refreshed }: { project: ProjectRef; message: ChatMessage; refreshed: MemoryRefreshed }) {
   const { busy, failed, undo } = useUndo(project, message);
-  const unlisted = (refreshed.total ?? refreshed.items.length) - refreshed.items.length;
-  // The changes past what the line lists can still be undone, all together.
-  const open = refreshed.items.filter((i) => !i.undone).length + (refreshed.items.every((i) => i.undone) ? 0 : unlisted);
+  const total = refreshed.total ?? refreshed.items.length;
+  const unlisted = total - refreshed.items.length;
+  const listedOpen = refreshed.items.filter((i) => !i.undone).length;
+  // The changes past what the line lists can still be undone, all together, until the hub counts them undone.
+  const open = total - (refreshed.undone ?? refreshed.items.length - listedOpen);
   return (
     <div role="list" aria-label="Memory changes" data-entry="memory-refreshed">
       {refreshed.items.map((item, n) => (
@@ -99,7 +101,7 @@ export function RefreshedChanges({ project, message, refreshed }: { project: Pro
           </Text>
         </div>
       ) : null}
-      {open > 1 ? (
+      {open > 1 || open > listedOpen ? (
         <Button size="sm" variant="link" disabled={busy} onClick={() => undo()}>
           Undo all
         </Button>

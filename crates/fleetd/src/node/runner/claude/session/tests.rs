@@ -92,6 +92,7 @@ impl Fake {
             helper_model: "fake".into(),
             runtime_mode: RuntimeMode::FullAccess,
             allowed_tools: Vec::new(),
+            allowed_only: false,
             disallowed_tools: Vec::new(),
             mcp_config: None,
             strict_mcp: false,

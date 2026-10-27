@@ -81,6 +81,9 @@ pub struct SessionLocal {
     pub allowed_tools: Vec<String>,
     #[serde(default)]
     pub disallowed_tools: Vec<String>,
+    /// The session may use `allowed_tools` and nothing else (`SessionLaunch::allowed_only`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub allowed_only: bool,
     /// Decides the fleetd MCP tools the session gets; sessions stored before roles existed get none.
     #[serde(default)]
     pub role: fleetd_contracts::sessions::SessionRole,
