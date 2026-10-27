@@ -11,9 +11,12 @@
 #
 # Edge was called nightly until D203, and builds from before then (CLI, hub, nodes, app) read the `nightly` release.
 # So every edge publish uploads the same files there too, and they update to the edge build, which reads edge from
-# then on. Only the app feeds differ: their version says `-nightly.` where the build's says `-edge.`, because an app
-# from before compares them as semver, where "edge" sorts before "nightly" and the newest build would look older. The
-# feed's version is only that comparison's; the app it installs reports its own.
+# then on. Only the app's version differs, in the feeds and release.json's appVersion: it says `-nightly.` where the
+# build's says `-edge.`, because an app from before compares them as semver, where "edge" sorts before "nightly" and
+# the newest build would look older. That version is only those comparisons'; the app it installs reports its own.
+# The CLI's version stays as it is: hubs and nodes match it with what the new binary reports. The copy's SHA256SUMS
+# lists the assets this run built and the copy's own lines for the rest, so a checksum never names a file it doesn't
+# hold; macos-staple.sh staples edge's app and then copies it, its feed and its checksums there, as they are on edge.
 #
 # The GPUI app's macOS zip, retired, leaves the release and its checksums: a `fleetd update` from before the Electron
 # app then updates the CLI and stops, leaving the app alone (on macOS 11, where the Electron app can't run, it stays
@@ -61,9 +64,13 @@ touch "$prev/SHA256SUMS"
 
 sha256sum "${assets[@]}" > "$prev/built"
 retired=(fleetd-app-macos-universal.zip)
-awk -v retired="${retired[*]}" 'BEGIN { split(retired, r, " "); for (i in r) gone[r[i]] = 1 }
-  NR == FNR { built[$2] = 1; next } !($2 in built) && !($2 in gone)' "$prev/built" "$prev/SHA256SUMS" |
-  cat "$prev/built" - | sort -k2 > SHA256SUMS
+# sums <previous SHA256SUMS>: this run's lines, then the previous ones for the assets it didn't build.
+sums() {
+  awk -v retired="${retired[*]}" 'BEGIN { split(retired, r, " "); for (i in r) gone[r[i]] = 1 }
+    NR == FNR { built[$2] = 1; next } !($2 in built) && !($2 in gone)' "$prev/built" "$1" |
+    cat "$prev/built" - | sort -k2
+}
+sums "$prev/SHA256SUMS" > SHA256SUMS
 
 jq -n --arg channel "$CHANNEL" --arg version "$VERSION" --arg commit "$GITHUB_SHA" --arg date "$(date -u +%FT%TZ)" \
   --arg cli "$cli_built" --arg app "$APP_BUILT" --slurpfile prev "$prev/release.json" '
@@ -86,13 +93,14 @@ rolling() {
   fi
 }
 
-# upload <tag> <feed>...: the assets, then the feeds, then the files that list them.
+# upload <tag> <dir of its SHA256SUMS and release.json> <feed>...: the assets, then the feeds, then the files that
+# list them.
 upload() {
-  local to="$1"
-  shift
+  local to="$1" lists="$2"
+  shift 2
   gh release upload "$to" "${assets[@]}" --clobber
   if [ $# -gt 0 ]; then gh release upload "$to" "$@" --clobber; fi
-  gh release upload "$to" SHA256SUMS release.json changes.json --clobber
+  gh release upload "$to" "$lists/SHA256SUMS" "$lists/release.json" changes.json --clobber
   for name in "${retired[@]}"; do gh release delete-asset "$to" "$name" -y 2>/dev/null || true; done
   echo "published https://github.com/${GITHUB_REPOSITORY:-unlaboredlabs/fleetd}/releases/tag/$to"
 }
@@ -106,19 +114,25 @@ if [ "$CHANNEL" = edge ]; then
 else
   gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --verify-tag --title "fleetd $VERSION" --notes "$upgrade" --generate-notes
 fi
-upload "$tag" "${feeds[@]}"
+upload "$tag" . "${feeds[@]}"
 
 if [ "$CHANNEL" = edge ]; then
-  # The copy for builds from before the rename (see the top): the same files, with nightly-named feed versions.
-  mkdir -p "$prev/nightly"
+  # The copy for builds from before the rename (see the top): the same files, with a nightly-named app version.
+  mkdir -p "$prev/nightly" "$prev/nightly-was"
   nightly_feeds=()
   for feed in "${feeds[@]}"; do
     sed 's/^\(version: .*\)-edge\./\1-nightly./' "$feed" > "$prev/nightly/$feed"
     nightly_feeds+=("$prev/nightly/$feed")
   done
+  jq '.appVersion |= (if type == "string" then sub("-edge\\."; "-nightly.") else . end)' release.json > "$prev/nightly/release.json"
+  if gh release download nightly -p SHA256SUMS -D "$prev/nightly-was" 2>/dev/null; then
+    sums "$prev/nightly-was/SHA256SUMS" > "$prev/nightly/SHA256SUMS"
+  else
+    cp SHA256SUMS "$prev/nightly/SHA256SUMS"
+  fi
   notes="A copy of the edge release (${VERSION}) for fleetd builds from before Nightly was renamed Edge: they update"
   notes+=" from here to Edge, and follow https://github.com/${GITHUB_REPOSITORY:-unlaboredlabs/fleetd}/releases/tag/edge"
   notes+=" from then on."
   rolling nightly "Nightly (now Edge)" "$notes"
-  upload nightly "${nightly_feeds[@]}"
+  upload nightly "$prev/nightly" "${nightly_feeds[@]}"
 fi

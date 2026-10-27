@@ -1,7 +1,7 @@
 # Staples a published app once Apple accepts its notarization, when the release job shipped it signed but unstapled
 # because Apple's queue outlasted its wait. No rebuild: see .github/release/macos-staple.sh. Every 30 minutes it
-# checks edge (and the `nightly` copy of it); that's a no-op once the app is stapled, while nothing accepted covers it
-# yet, and on forks.
+# checks edge, and copies edge's app to its `nightly` copy when they differ; that's a no-op once the app is stapled and
+# copied, while nothing accepted covers it yet, and on forks.
 name: Staple release
 
 on:
