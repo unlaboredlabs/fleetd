@@ -186,8 +186,9 @@ as stopping a project, answering an approval or entering a secret, need one.
 instead of a second one. `events_wait` waits for changes, so a client doesn't need to poll: a new message is a
 `chat.message` event.
 
-Tools for projects: `project_discover`, `project_add {path | url}` (with `dryRun` to see its CI and merge rules, and
-where a clone would go, without adding it) and `project_remove`. A clone answers with an `addId`, then sends
+Tools for projects: `project_discover`, `project_add {path | url}` (a path is a git checkout or a plain folder; with
+`dryRun` to see its CI and merge rules, and where a clone would go, without adding it) and `project_remove`. Tools
+for [Navis](/docs/navi): `navi_create`, `navi_list`, `navi_rename` and `navi_archive`. A clone answers with an `addId`, then sends
 `project.clone_progress` events, then `project.added` or `project.add_failed`.
 
 Every tool, generated from the code: [Agent tools](/docs/reference/agent-tools).

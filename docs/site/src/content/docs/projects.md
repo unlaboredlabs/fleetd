@@ -38,6 +38,7 @@ You'll add a repo as a [project](/docs/glossary#project), send it work, and foll
 |---|---|
 | A GitHub URL or `owner/repo` | Clones it onto the least busy online worker, into `~/src` (or `~/code`, `~/projects`). |
 | A path, such as `~/src/storefront` | Adds that existing checkout on this machine. |
+| A folder with no git, such as `~/notes` | Adds it as a plain folder: its lead chats, remembers and uses screens there. Agents that change code need a repo. A [Navi](/docs/navi) is one of these. |
 | Nothing, in a terminal | Lists checkouts on every worker and your repos from `gh repo list`, to pick from. |
 
 | Option | Does |

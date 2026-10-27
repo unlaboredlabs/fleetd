@@ -6,9 +6,12 @@
 //!   runs those bytes and the exit code and output tail go to the lead.
 //! - approval of a preview setting (`preview_config_propose`, W58): once a person approves it, it becomes the
 //!   project's `preview` and the lead hears so.
+//! - approval of a tool prompt: a session's permission prompt (a Navi's lead runs in `manual` mode), answered on its
+//!   node with exactly the input shown (permissions.rs).
 //!
 //! Every change is announced as `request.opened` / `request.updated`; the chat shows each request as its item
 //! ([`chat_item`]).
+pub mod permissions;
 pub mod store;
 pub mod tools;
 
@@ -172,6 +175,21 @@ pub trait ApprovalNodes: Send + Sync {
     ) -> BoxFut<'_, Result<GatedOutcome, NodeCommandError>>;
     /// The machine's node is linked and its session stream subscribed.
     fn is_linked(&self, machine_id: &str) -> BoxFut<'_, bool>;
+    /// `session_call answer`: the decision for the prompt `request_id` the thread's run waits on.
+    fn answer_permission(
+        &self,
+        machine_id: &str,
+        thread_id: &str,
+        request_id: &str,
+        decision: fleetd_contracts::sessions::PermissionDecision,
+        by: Option<fleetd_contracts::time::DecidedBy>,
+    ) -> BoxFut<'_, Result<(), NodeCommandError>>;
+    /// The prompt the thread's run waits on now, from the machine stream, with its input.
+    fn pending_permission(
+        &self,
+        machine_id: &str,
+        thread_id: &str,
+    ) -> BoxFut<'_, Option<fleetd_contracts::sessions::PendingPermission>>;
 }
 
 /// The rest of the hub approvals reads or wakes.
@@ -188,6 +206,18 @@ pub trait ApprovalHub: Send + Sync {
     /// Records a variable the node saved for an order: its name, fingerprint and size. `Err`: it could not, and the
     /// node was told to forget the value again.
     fn order_env_saved(&self, saved: OrderEnvSaved) -> BoxFut<'_, Result<(), String>>;
+    /// The MCP servers the project's sessions are configured from, for the integrations policy; none when unread.
+    fn mcp_servers(
+        &self,
+        project: &ProjectRef,
+    ) -> BoxFut<'_, Vec<fleetd_contracts::mcp_servers::McpServer>>;
+    /// Whether the thread is the lead of a Navi: the one session the tool prompt relay answers.
+    fn navi_lead(&self, project: &ProjectRef, thread_id: &str) -> BoxFut<'_, bool>;
+    /// For a Navi, whether it may fetch and open `site` without asking (false with no site); `None` for any other
+    /// project.
+    fn navi_site(&self, project: &ProjectRef, site: Option<&str>) -> BoxFut<'_, Option<bool>>;
+    /// A person approved a Navi's first visit to `site`: from now on it fetches and opens it without asking.
+    fn navi_site_allow(&self, project: &ProjectRef, site: &str, by: &str) -> BoxFut<'_, ()>;
     /// Saves an approved preview setting as the project's `preview`. `Err`: why it could not.
     fn preview_config_save(
         &self,
@@ -311,7 +341,7 @@ pub fn chat_item(r: &HumanRequest) -> ChatItem {
             request_id: r.request_id.clone(),
             machine_id: r.project_ref.machine_id.clone(),
             gated: r.gated.clone(),
-            permission: r.permission.clone(),
+            permission: r.permission.clone().map(Box::new),
             preview_config: r.preview_config.clone().map(Box::new),
             state: match r.state {
                 RequestState::Approved => CommandApprovalState::Approved,
@@ -340,10 +370,10 @@ impl Approvals {
     }
 
     /// Runs until the hub stops: first the approved commands a stopped hub never finished go back to the person, then
-    /// the removed-projects follower.
+    /// the threads' follower (tool prompts) and the removed-projects follower.
     pub async fn serve(self: Arc<Self>) {
         self.reopen_unfinished().await;
-        self.follow_removals().await;
+        tokio::join!(self.clone().follow_threads(), self.follow_removals());
     }
 
     /// Approved commands the hub never saw finish go back to the person: never run late, never silently lost.
@@ -923,6 +953,10 @@ impl Approvals {
                 r.answered_by = Some(by);
             })
             .await?;
+        if answered.permission.is_some() {
+            self.answer_prompt(&answered, reason.as_deref()).await;
+            return Ok(self.get(request_id).unwrap_or(answered));
+        }
         if approve && let Some(proposed) = &answered.preview_config {
             return self.save_preview(&answered, &proposed.config).await;
         }
@@ -973,6 +1007,8 @@ impl Approvals {
                 r.answered_by = Some(by);
             })
             .await?;
+        // A waiting tool prompt hears it was refused.
+        self.answer_prompt(&done, None).await;
         Ok(done)
     }
 
@@ -991,7 +1027,7 @@ impl Approvals {
             }
             let at = self.now();
             let why = why.to_string();
-            let _ = self
+            let closed = self
                 .change_from(&r.request_id, RequestState::Open, |r| {
                     r.state = match r.kind {
                         RequestKind::Secret => RequestState::Withdrawn,
@@ -1002,6 +1038,10 @@ impl Approvals {
                     r.answered_by = Some("hub".into());
                 })
                 .await;
+            // A waiting tool prompt hears it was refused.
+            if let Ok(closed) = closed {
+                self.answer_prompt(&closed, None).await;
+            }
         }
     }
 

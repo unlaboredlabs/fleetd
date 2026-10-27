@@ -1028,6 +1028,77 @@ output!(ProjectRepoRemoveOutput {
     cancelled: Vec<TaskId>,
 });
 
+// navi_create, navi_list, navi_rename, navi_archive: Navis, personal assistants. Each is a project in a plain folder of
+// its own under its node's home (`navi/<name>`), with a lead in the assistant role, and a chat, memory, nightly
+// refresh, automations, screens, checklist and approvals as any project has. A person makes as many as they like.
+input!(NaviCreateInput {
+    /// What the person calls it ("Ada", "Home", "Taxes"). Its folder is named after it and keeps that name.
+    name: Line<1, 80>,
+    /// Where it lives; absent: the best worker (see `project_discover.best`).
+    machine_id: Option<MachineId>,
+});
+output!(NaviCreateOutput {
+    /// The new Navi: `kind` is `assistant`.
+    navi: ProjectSummary,
+});
+input!(NaviListInput {
+    /// Only those on this machine; absent: every machine.
+    machine_id: Option<MachineId>,
+    /// Include archived ones (default false).
+    archived: Option<bool>,
+});
+output!(NaviListOutput {
+    /// Oldest first.
+    navis: Vec<ProjectSummary>,
+});
+input!(NaviRenameInput {
+    machine_id: MachineId,
+    project_id: ProjectId,
+    /// Its new name; its folder keeps the old one.
+    name: Line<1, 80>,
+});
+output!(NaviRenameOutput {
+    navi: ProjectSummary
+});
+input!(NaviArchiveInput {
+    machine_id: MachineId,
+    project_id: ProjectId,
+    /// False brings an archived Navi back. Default true.
+    archived: Option<bool>,
+});
+output!(NaviArchiveOutput {
+    navi: ProjectSummary
+});
+
+/// A site a Navi fetches and opens without asking: a person approved its first visit.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct NaviSite {
+    /// Its host, without a leading `www.`: `example.com`. Its subdomains are sites of their own.
+    pub site: String,
+    pub allowed_at: Timestamp,
+    /// Who approved it: `human:<their device's name>`.
+    pub allowed_by: String,
+}
+// navi_sites, navi_site_revoke: the sites a Navi may fetch and open without asking. A revoked site asks again.
+input!(NaviSitesInput {
+    machine_id: MachineId,
+    project_id: ProjectId,
+});
+output!(NaviSitesOutput {
+    /// By site.
+    sites: Vec<NaviSite>,
+});
+input!(NaviSiteRevokeInput {
+    machine_id: MachineId,
+    project_id: ProjectId,
+    site: Line<1, 253>,
+});
+output!(NaviSiteRevokeOutput {
+    /// What it may still fetch and open unasked.
+    sites: Vec<NaviSite>,
+});
+
 // project_settings_get, project_settings_set, project_env_set: a project's own settings (Settings › Projects).
 input!(ProjectSettingsGetInput {
     machine_id: MachineId,
@@ -2358,6 +2429,12 @@ tools! {
     project_repo_add => ProjectRepoAdd, Operate, ProjectRepoAddInput, ProjectRepoAddOutput;
     project_repo_list => ProjectRepoList, Read, ProjectRepoListInput, ProjectRepoListOutput;
     project_repo_remove => ProjectRepoRemove, Operate, ProjectRepoRemoveInput, ProjectRepoRemoveOutput;
+    navi_create => NaviCreate, Operate, NaviCreateInput, NaviCreateOutput;
+    navi_list => NaviList, Read, NaviListInput, NaviListOutput;
+    navi_rename => NaviRename, Operate, NaviRenameInput, NaviRenameOutput;
+    navi_archive => NaviArchive, Operate, NaviArchiveInput, NaviArchiveOutput;
+    navi_sites => NaviSites, Read, NaviSitesInput, NaviSitesOutput;
+    navi_site_revoke => NaviSiteRevoke, Operate, NaviSiteRevokeInput, NaviSiteRevokeOutput;
     project_settings_get => ProjectSettingsGet, Read, ProjectSettingsGetInput, ProjectSettingsGetOutput;
     project_settings_set => ProjectSettingsSet, Operate, ProjectSettingsSetInput, ProjectSettingsSetOutput;
     // Human keys only (the handler checks): a person sets a project's environment.

@@ -19,3 +19,5 @@ wins.
   Navis, and the steps that get there.
 - [hubs.md](hubs.md): the app connected to several hubs at once under labels the person picks, and hub links that let
   a Navi on one hub reach projects on another.
+- [navi.md](navi.md): Navi, personal assistants inside fleetd: as many as a person likes, each a plain-folder project
+  whose lead runs as an assistant, with approvals for its tools, integrations and a bridge to the factory.

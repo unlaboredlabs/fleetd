@@ -1,6 +1,7 @@
-//! The lead's first message: the `lead.start` prompt, `lead.voice`, `lead.profiles` while the project allows medium,
-//! the digest, the human's custom instructions, then the memory (`user.md` and the project's `MEMORY.md`). A project
-//! with repos besides its own directory has them listed after that (`repos_block`).
+//! The lead's first message: the `lead.start` prompt (a Navi's: `navi.start`), `lead.voice`, `lead.profiles` while the
+//! project allows medium (never for a Navi, which runs no code tasks), the digest, the human's custom instructions, then
+//! the memory (`user.md` and the project's `MEMORY.md`). A project with repos besides its own directory has them listed
+//! after that (`repos_block`).
 use fleetd_contracts::ids::ProjectRef;
 use fleetd_contracts::repos::ProjectRepo;
 
@@ -12,6 +13,12 @@ automations: start its work without asking the human first; reviews, the train a
 recurring or triggered work the human asks for, use `automation_create`, `automation_list`, `automation_update`, \
 `automation_pause`, `automation_delete`, `automation_run` and `automation_runs`.";
 
+/// The prompt a lead starts from: `navi.start` for a Navi, else `lead.start`.
+pub fn start_prompt(navi: bool) -> &'static str {
+    if navi { "navi.start" } else { "lead.start" }
+}
+
+/// `navi_folder`: a Navi's folder, for `navi.start`; none for any other project.
 pub fn render_lead_start(
     set: &PromptSet,
     project_ref: &ProjectRef,
@@ -19,19 +26,21 @@ pub fn render_lead_start(
     medium_allowed: bool,
     digest: &str,
     memory: &str,
+    navi_folder: Option<&str>,
 ) -> String {
     let start = set.render(
-        "lead.start",
+        start_prompt(navi_folder.is_some()),
         &[
             ("project", &title),
             (
                 "projectRef",
                 &format!("{}/{}", project_ref.machine_id, project_ref.project_id),
             ),
+            ("folder", &navi_folder.unwrap_or_default()),
         ],
     );
     // Without medium every task runs high, so the lead isn't told how to pick.
-    let profiles = if medium_allowed {
+    let profiles = if medium_allowed && navi_folder.is_none() {
         format!("\n\n{}", set.render("lead.profiles", &[]).trim_end())
     } else {
         String::new()
@@ -92,13 +101,13 @@ mod tests {
             project_id: ProjectId::unchecked("p1"),
         };
         let set = PromptSet::defaults();
-        let text = render_lead_start(set, &r, "storefront", true, "DIGEST", "");
+        let text = render_lead_start(set, &r, "storefront", true, "DIGEST", "", None);
         let guide = text.find("## Task profiles").unwrap();
         assert!(
             text.find("spawn_agent").unwrap() < guide && guide < text.find("DIGEST").unwrap(),
             "{text}"
         );
-        let off = render_lead_start(set, &r, "storefront", false, "D", "");
+        let off = render_lead_start(set, &r, "storefront", false, "D", "", None);
         assert!(!off.contains("## Task profiles") && off.contains("spawn_agent"));
         // The lead keeps the human's checklist as it runs the work.
         assert!(off.contains("Keep the checklist current with `checklist`"));
@@ -136,5 +145,27 @@ mod tests {
              - `app`: /work/app, github.com/acme/app on main (the project's own directory)\n\
              - `notes`: /work/notes, no remote"
         );
+    }
+
+    #[test]
+    fn a_navi_starts_from_its_own_prompt_with_its_folder_and_no_task_profiles() {
+        let r = ProjectRef {
+            machine_id: MachineId::unchecked("devbox"),
+            project_id: ProjectId::unchecked("p1"),
+        };
+        let set = PromptSet::defaults();
+        let folder = "/home/me/.fleetd/node/navi/ada";
+        let text = render_lead_start(set, &r, "Ada", true, "DIGEST", "MEMORY", Some(folder));
+        assert!(
+            text.starts_with("You are Ada, a personal assistant"),
+            "{text}"
+        );
+        assert!(text.contains(folder) && text.contains("devbox/p1"));
+        assert!(!text.contains("spawn_agent") && !text.contains("## Task profiles"));
+        // The approvals it asks for, and what it never does even if approved.
+        assert!(text.contains("Ask first, every time") && text.contains("even if they approve"));
+        assert!(text.contains("## Your voice") && text.contains("## Automations"));
+        let digest = text.find("DIGEST").unwrap();
+        assert!(digest < text.find("MEMORY").unwrap());
     }
 }

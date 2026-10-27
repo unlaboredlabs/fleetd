@@ -1452,7 +1452,10 @@ export type CommandApprovalItem = {
   note?: string;
   /** The end of the output, once it ran. */
   outputTail?: string;
-  /** A session's permission prompt: the tool and what it would do. */
+  /**
+   * A session's permission prompt: the tool and what it would do. Boxed, as `previewConfig` is: with its input it
+   * is large beside the item's other fields.
+   */
   permission?: ToolPermission;
   /**
    * An agent's proposed preview setting (preview_config_propose): approved, it becomes the project's `preview`.
@@ -3035,6 +3038,19 @@ export type MouseAction = "pressed" | "released" | "moved" | "wheel";
 /** A mouse button, as CDP names it. */
 export type MouseButton = "none" | "left" | "middle" | "right";
 
+export type NaviArchiveInput = {
+  /** False brings an archived Navi back. Default true. */
+  archived?: boolean;
+  machineId: MachineId;
+  projectId: ProjectId;
+};
+
+export type NaviArchiveOutput = {
+  navi: ProjectSummary;
+  next?: string;
+  truncated?: boolean;
+};
+
 /**
  * One ask in `navi_asks` (the app's read of a Navi's asked work): where it went, its words, and the orders opened
  * for it.
@@ -3066,6 +3082,81 @@ export type NaviAsksOutput = {
   asks: NaviAsk[];
   navi: ProjectRef;
   next?: string;
+  truncated?: boolean;
+};
+
+export type NaviCreateInput = {
+  /** Where it lives; absent: the best worker (see `project_discover.best`). */
+  machineId?: MachineId;
+  /** What the person calls it ("Ada", "Home", "Taxes"). Its folder is named after it and keeps that name. */
+  name: string;
+};
+
+export type NaviCreateOutput = {
+  /** The new Navi: `kind` is `assistant`. */
+  navi: ProjectSummary;
+  next?: string;
+  truncated?: boolean;
+};
+
+export type NaviListInput = {
+  /** Include archived ones (default false). */
+  archived?: boolean;
+  /** Only those on this machine; absent: every machine. */
+  machineId?: MachineId;
+};
+
+export type NaviListOutput = {
+  /** Oldest first. */
+  navis: ProjectSummary[];
+  next?: string;
+  truncated?: boolean;
+};
+
+export type NaviRenameInput = {
+  machineId: MachineId;
+  /** Its new name; its folder keeps the old one. */
+  name: string;
+  projectId: ProjectId;
+};
+
+export type NaviRenameOutput = {
+  navi: ProjectSummary;
+  next?: string;
+  truncated?: boolean;
+};
+
+/** A site a Navi fetches and opens without asking: a person approved its first visit. */
+export type NaviSite = {
+  allowedAt: Timestamp;
+  /** Who approved it: `human:<their device's name>`. */
+  allowedBy: string;
+  /** Its host, without a leading `www.`: `example.com`. Its subdomains are sites of their own. */
+  site: string;
+};
+
+export type NaviSiteRevokeInput = {
+  machineId: MachineId;
+  projectId: ProjectId;
+  site: string;
+};
+
+export type NaviSiteRevokeOutput = {
+  next?: string;
+  /** What it may still fetch and open unasked. */
+  sites: NaviSite[];
+  truncated?: boolean;
+};
+
+export type NaviSitesInput = {
+  machineId: MachineId;
+  projectId: ProjectId;
+};
+
+export type NaviSitesOutput = {
+  next?: string;
+  /** By site. */
+  sites: NaviSite[];
   truncated?: boolean;
 };
 
@@ -3935,6 +4026,12 @@ export type ProjectChatState = {
   projectRef: ProjectRef;
 };
 
+/** The key a project was created with: its id, and the person's or device's name the key carries. */
+export type ProjectCreator = {
+  keyId: string;
+  name: string;
+};
+
 export type ProjectDiscoverInput = {
   /** Include `gh repo list` (default true). */
   github?: boolean;
@@ -4040,6 +4137,11 @@ export type ProjectInspect = {
   /** Absent for a checkout without a GitHub remote. */
   repo?: GitHubRepo;
 };
+
+/** What a project is. Absent on a project: one of code, a lead with its repos and folders. */
+export type KnownProjectKind = "assistant";
+/** KnownProjectKind, or a value from a newer hub. */
+export type ProjectKind = KnownProjectKind | (string & {});
 
 /** The one-call project outcome, returned as-is by project_get. */
 export type ProjectOutcome = {
@@ -4327,6 +4429,21 @@ export type ProjectStopOutput = {
 };
 
 export type ProjectSummary = {
+  /**
+   * A Navi's: when it was archived. An archived Navi keeps its chat, memory and folder, and its lead doesn't
+   * start until it is brought back (`navi_archive` with `archived: false`).
+   */
+  archivedAt?: Timestamp;
+  /**
+   * A Navi's: the key that created it, from the hub. Recorded for per-person Navis later; nothing filters on it
+   * yet. Absent for other projects, and for a Navi made before it was recorded.
+   */
+  createdBy?: ProjectCreator;
+  /**
+   * What the project is, from the hub: `assistant` for a Navi. Absent for a project of code, from a node, and
+   * from an older hub.
+   */
+  kind?: ProjectKind;
   lastActivityAt: Timestamp;
   machineId: MachineId;
   projectId: ProjectId;
@@ -5855,11 +5972,21 @@ export type ToolAction = "send" | "write" | "delete" | "share" | "spend";
  */
 export type ToolPermission = {
   /**
+   * The tool's input exactly as the session asked (at most 64 KiB of JSON): approved, the tool runs with exactly
+   * this. Absent when the node didn't send it; the tool then runs with what the session asked.
+   */
+  input?: unknown;
+  /**
    * An integration's asking tool (`hub/integrations`): exactly who it reaches and what it says, or what it changes,
    * read from the input it runs with once approved. Boxed: it is large beside the prompt's other fields.
    */
   preview?: ToolPreview;
   requestId: string;
+  /**
+   * A Navi's first fetch or browser visit to this site (its host, such as `example.com`): approved, the Navi may
+   * fetch and open it without asking from then on, until a person revokes it (`navi_site_revoke`).
+   */
+  site?: string;
   /** The command, the path, or the tool's own description. */
   summary: string;
   threadId: ThreadId;
@@ -6583,7 +6710,13 @@ export interface ToolMap {
   memory_undo: { input: MemoryUndoInput; output: MemoryUndoOutput };
   metrics_get: { input: MetricsGetInput; output: MetricsGetOutput };
   metrics_retention_set: { input: MetricsRetentionSetInput; output: MetricsRetentionSetOutput };
+  navi_archive: { input: NaviArchiveInput; output: NaviArchiveOutput };
   navi_asks: { input: NaviAsksInput; output: NaviAsksOutput };
+  navi_create: { input: NaviCreateInput; output: NaviCreateOutput };
+  navi_list: { input: NaviListInput; output: NaviListOutput };
+  navi_rename: { input: NaviRenameInput; output: NaviRenameOutput };
+  navi_site_revoke: { input: NaviSiteRevokeInput; output: NaviSiteRevokeOutput };
+  navi_sites: { input: NaviSitesInput; output: NaviSitesOutput };
   order_get: { input: OrderGetInput; output: OrderGetOutput };
   orders_board: { input: OrdersBoardInput; output: OrdersBoardOutput };
   people_list: { input: PeopleListInput; output: PeopleListOutput };

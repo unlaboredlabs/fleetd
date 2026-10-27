@@ -678,3 +678,51 @@ async fn an_integration_connects_with_its_key_sealed_and_revoking_forgets_the_ke
     .unwrap();
     assert_eq!(after["project"], json!([]));
 }
+
+/// A Navi's lead launches with its integrations' reads allowed, so it never asks for them; its sends still ask. Other
+/// sessions get no such rules.
+#[tokio::test]
+async fn a_navis_lead_launches_with_its_integrations_reads_allowed() {
+    let (hub, _home) = hub();
+    let mut calls = node(&hub).await;
+    let plain = json!({ "kind": "plain", "name": "Authorization", "value": "public" });
+    call(&hub, &person(), "mcp_server_set", google_via_xaq(plain))
+        .await
+        .unwrap();
+    for (n, role) in [
+        (1, fleetd_contracts::sessions::SessionRole::Assistant),
+        (2, fleetd_contracts::sessions::SessionRole::Lead),
+    ] {
+        hub.executors
+            .launch(
+                &lab(),
+                &crate::hub::executor::LaunchInput {
+                    project_id: ProjectId::unchecked("p1"),
+                    prompt: "hi".into(),
+                    profile: Default::default(),
+                    runtime_mode: fleetd_contracts::model::RuntimeMode::ApprovalRequired,
+                    title: None,
+                    client_request_id: format!("navi-{n}"),
+                },
+                crate::hub::executor::LaunchOptions {
+                    role,
+                    mcp_role: Some(McpAgentRole::Lead),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        let launch = launched(&mut calls).await;
+        let reads = launch
+            .allowed_tools
+            .iter()
+            .any(|t| t == "mcp__google__search_threads");
+        assert_eq!(reads, n == 1, "{role:?}: {:?}", launch.allowed_tools);
+        assert!(
+            !launch
+                .allowed_tools
+                .iter()
+                .any(|t| t.contains("send_message"))
+        );
+    }
+}

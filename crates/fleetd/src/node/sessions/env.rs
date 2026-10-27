@@ -88,7 +88,7 @@ impl SessionService {
 
     /// The prompt with the names of the variables the session gets: a plain one's short value too, a secret's never.
     pub(super) fn with_env_note(&self, row: &SessionRow, prompt: String) -> String {
-        if !matches!(row.local.role, SessionRole::Worker | SessionRole::Lead) {
+        if row.local.role == SessionRole::Plain {
             return prompt;
         }
         let home = &self.inner.config.home;

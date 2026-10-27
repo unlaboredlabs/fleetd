@@ -215,8 +215,35 @@
       ],
       "type": "object"
     },
+    "ProjectCreator": {
+      "description": "The key a project was created with: its id, and the person's or device's name the key carries.",
+      "properties": {
+        "keyId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "keyId",
+        "name"
+      ],
+      "type": "object"
+    },
     "ProjectId": {
       "type": "string"
+    },
+    "ProjectKind": {
+      "description": "What a project is. Absent on a project: one of code, a lead with its repos and folders.",
+      "oneOf": [
+        {
+          "const": "assistant",
+          "description": "A Navi: a personal assistant in a plain folder of its own, whose lead runs the `navi.start` prompt in the\nassistant role (`SessionRole::Assistant`).",
+          "type": "string"
+        }
+      ],
+      "x-open": true
     },
     "ProjectOutcome": {
       "description": "The one-call project outcome, returned as-is by project_get.",
@@ -344,6 +371,18 @@
     },
     "ProjectSummary": {
       "properties": {
+        "archivedAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "A Navi's: when it was archived. An archived Navi keeps its chat, memory and folder, and its lead doesn't\nstart until it is brought back (`navi_archive` with `archived: false`)."
+        },
+        "createdBy": {
+          "$ref": "#/$defs/ProjectCreator",
+          "description": "A Navi's: the key that created it, from the hub. Recorded for per-person Navis later; nothing filters on it\nyet. Absent for other projects, and for a Navi made before it was recorded."
+        },
+        "kind": {
+          "$ref": "#/$defs/ProjectKind",
+          "description": "What the project is, from the hub: `assistant` for a Navi. Absent for a project of code, from a node, and\nfrom an older hub."
+        },
         "lastActivityAt": {
           "$ref": "#/$defs/Timestamp"
         },
