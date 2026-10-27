@@ -1075,10 +1075,11 @@ async fn a_run_names_the_order_whose_variables_it_gets() {
 }
 
 /// A preview's in-app view is a browser session the person holds, with no agent behind it: its node reports it and
-/// uploads its recording under the preview's id, which the hub takes while the preview runs and refuses otherwise.
+/// uploads its recording under the preview's id (#578), which the hub takes while the preview runs and for a week after
+/// it ends, as the recording uploads once the session closes; an unknown preview's id is refused.
 #[tokio::test]
-async fn a_held_sessions_report_and_upload_go_under_its_live_preview() {
-    let (hub, _clock, _home) = hub();
+async fn a_held_sessions_report_and_upload_go_under_its_preview_until_a_week_after_it_ends() {
+    let (hub, clock, _home) = hub();
     let _devbox = node(&hub, "devbox", None);
     let id = started(start(&hub, &person(), 14).await.unwrap());
     let session = format!("B{}", "c".repeat(32));
@@ -1090,9 +1091,22 @@ async fn a_held_sessions_report_and_upload_go_under_its_live_preview() {
                 machine_id: mid("devbox"),
                 thread_id: fleetd_contracts::ids::ThreadId::unchecked(thread),
             };
+            // As the link answers a node's call: the project from its cwd (the node's preview slot, outside every
+            // workspace) or else its session, then who the session is.
+            let projects = hub.store.projects_list(Some(&mid("devbox")), None).unwrap();
+            let project = hub
+                .lead_calls
+                .call_project(
+                    &mid("devbox"),
+                    &projects,
+                    "/home/u/.fleetd/node/previews/1",
+                    Some(&thread),
+                )
+                .map_err(|e| e.message)?;
+            assert_eq!(project, shop());
             let agent = hub
                 .lead_calls
-                .agent_of(Some(&thread), &shop())
+                .agent_of(Some(&thread), &project)
                 .map_err(|e| e.message)?;
             crate::hub::tasks::policy::check(&agent, &op).map_err(|e| e.message)?;
             let mut call = call;
@@ -1143,13 +1157,22 @@ async fn a_held_sessions_report_and_upload_go_under_its_live_preview() {
         .await
         .unwrap_err();
     assert!(why.contains("holds no preview"), "{why}");
+    // Ended, the session closes and its recording uploads: still taken, as its final report is.
     tool(&hub, &person(), "preview_end", json!({ "previewId": id }))
         .await
         .unwrap();
+    let rest = json!({ "sessionId": session, "file": "video", "offset": 3, "dataB64": "AAAA" });
+    as_node(&id, "browser_recording_part", rest).await.unwrap();
+    let mut recorded = live.clone();
+    recorded["state"] = "recorded".into();
+    recorded["files"] = json!([{ "file": "video", "bytes": 6 }]);
+    as_node(&id, "browser_session", recorded).await.unwrap();
+    // A week on, nothing more.
+    clock.advance(Duration::from_millis(super::HELD_UPLOAD_MS as u64));
     let why = as_node(&id, "browser_recording_part", part)
         .await
         .unwrap_err();
-    assert!(why.contains("has ended"), "{why}");
+    assert!(why.contains("ended over a week ago"), "{why}");
 }
 
 /// A preview runs the PR's code on our machine, so only a head that is a branch of the repo itself is checked out: a
