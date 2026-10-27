@@ -212,6 +212,25 @@ async fn an_invite_redeemed_binds_the_device_to_its_person_and_the_people_list_s
     assert_eq!(listed["invites"], json!([]), "both invites were used");
     assert_eq!(listed["me"], json!(owner_person.person_id));
 
+    // Each device lists what it may do: Alice's operate, though their invite let them hold admin.
+    let grants = |name: &str| {
+        listed["devices"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|d| d["name"] == name)
+            .map(|d| d["grants"].clone())
+            .unwrap()
+    };
+    assert_eq!(
+        grants("Alice's laptop"),
+        json!([{ "role": "operate", "machines": "*" }])
+    );
+    assert_eq!(
+        grants("desk"),
+        json!([{ "role": "admin", "machines": "*" }])
+    );
+
     // Alice sees everyone, but only her own devices and no invites.
     let hers = ok(&hub, &laptop, "people_list", json!({})).await;
     assert_eq!(hers["people"].as_array().unwrap().len(), 2);
