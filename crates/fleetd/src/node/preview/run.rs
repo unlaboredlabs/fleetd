@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use fleetd_contracts::browser::BrowserSessionId;
 use fleetd_contracts::ids::Timestamp;
 use fleetd_contracts::preview::{
     PREVIEW_CAP_MIN, PreviewEndReason, PreviewReport, PreviewRunFrame, PreviewState, PreviewStep,
@@ -15,8 +16,9 @@ use fleetd_contracts::project_settings::WorktreeSetup;
 use tokio::sync::watch;
 
 use super::super::cmd::{ConfinedRun, run_confined};
+use super::super::mask::Secrets;
 use super::super::util::scrubbed_env;
-use super::super::{project_env, worktree_setup};
+use super::super::{order_env, project_env, worktree_setup};
 use super::serve::{Server, free_port};
 use super::{Previews, proxy, slots};
 
@@ -60,6 +62,8 @@ struct Progress {
     steps: Vec<PreviewStep>,
     head: Option<String>,
     url: Option<String>,
+    /// The browser session the app shows it in.
+    session: Option<BrowserSessionId>,
     idle_until: Option<Timestamp>,
     started: Vec<Option<Instant>>,
 }
@@ -84,7 +88,7 @@ impl Reporter<'_> {
             head: p.head.as_deref().map(Line::unchecked),
             steps: List::unchecked(p.steps.clone()),
             url: p.url.as_deref().map(line),
-            session_id: None,
+            session_id: p.session.clone(),
             idle_until: p.idle_until.clone(),
             end_reason,
             note: note.as_deref().map(note_line),
@@ -224,6 +228,7 @@ pub async fn run(
             steps,
             head: None,
             url: None,
+            session: None,
             idle_until: None,
             started,
         }),
@@ -284,10 +289,16 @@ pub async fn run(
     }
     // The project's variables for every command, its secrets masked in all they print.
     let project = run.frame.project_id.as_str().to_owned();
-    let (vars, secrets) = project_env::for_spawn(&me.home, &project);
+    let (vars, mut secrets) = project_env::for_spawn(&me.home, &project);
     let mut env = scrubbed_env();
     env.extend(vars);
-    let scrub: Vec<String> = secrets.into_iter().map(|(_, v)| v).collect();
+    // An order's own variables on top, every one a secret: the order previewed, or the order its PR is part of.
+    if let Some(order) = &run.frame.order_id {
+        let (order_vars, _) = order_env::for_spawn(&me.home, &project, order.as_str());
+        env.extend(order_vars.iter().cloned());
+        secrets.extend(order_vars);
+    }
+    let scrub: Vec<String> = secrets.iter().map(|(_, v)| v.clone()).collect();
 
     // Set up.
     if !plan.setup.is_empty() {
@@ -499,6 +510,29 @@ pub async fn run(
         }
     };
 
+    // Shown in the app: a browser session on it that the person holds from the start, recorded like any other.
+    let holder = run.frame.preview_id.as_str().to_owned();
+    let mut note = note;
+    if let Some(held) = &me.held {
+        let url = format!("http://127.0.0.1:{}/", server.port);
+        let cwd = slot.to_string_lossy().into_owned();
+        let purpose = purpose_of(&run.frame);
+        match held
+            .open(&holder, &cwd, &purpose, &url, Secrets(secrets.clone()))
+            .await
+        {
+            Ok(id) => r.p.lock().unwrap().session = Some(id),
+            Err(why) => {
+                tracing::warn!(preview = %holder, error = %why, "preview not shown in a browser session");
+                let more = format!("The app can't show it here: {why}.");
+                note = Some(match note {
+                    Some(n) => format!("{n} {more}"),
+                    None => more,
+                });
+            }
+        }
+    }
+
     // Ready: watch it until it ends.
     let idle = me.timing.minute * run.frame.idle_minutes.get() as u32;
     let cap = me.timing.minute * PREVIEW_CAP_MIN as u32;
@@ -517,12 +551,20 @@ pub async fn run(
         if ready_at.elapsed() >= cap {
             break Some(PreviewEndReason::Cap);
         }
-        // In use while a connection is open; otherwise idle since the last one closed (or since it was ready).
-        let last = match proxy.as_ref().map(proxy::Proxy::idle_since) {
+        // In use while a connection is open or the person drives it in the app; otherwise idle since the last of
+        // those (or since it was ready).
+        let through_port = match proxy.as_ref().map(proxy::Proxy::idle_since) {
             Some(None) => Instant::now(),
-            Some(Some(since)) => since.max(ready_at),
+            Some(Some(since)) => since,
             None => ready_at,
         };
+        let in_app = me
+            .held
+            .as_ref()
+            .and_then(|h| h.idle_for(&holder))
+            .and_then(|d| Instant::now().checked_sub(d))
+            .unwrap_or(ready_at);
+        let last = through_port.max(in_app).max(ready_at);
         if last.elapsed() >= idle {
             break Some(PreviewEndReason::Idle);
         }
@@ -534,7 +576,11 @@ pub async fn run(
         }
     };
 
-    // Throw it away: the port, then the app. The worktree stays as the next preview's cache.
+    // Throw it away: the app's view, the port, then the app. The worktree stays as the next preview's cache. The
+    // session's id stays in the report: its recording is on its way to the hub.
+    if let Some(held) = &me.held {
+        held.end(&holder).await;
+    }
     if let Some(proxy) = proxy {
         proxy.stop().await;
     }
@@ -557,6 +603,15 @@ pub async fn run(
             };
             r.send(PreviewState::Failed, None, Some(note));
         }
+    }
+}
+
+/// What the app's Sessions list calls the preview's session.
+fn purpose_of(frame: &PreviewRunFrame) -> String {
+    match (&frame.base, frame.heads.as_slice()) {
+        (None, [one]) => format!("Try {}", one.branch.as_str()),
+        (Some(base), heads) => format!("Try {} PRs merged onto {}", heads.len(), base.as_str()),
+        (None, _) => "Try a preview".to_owned(),
     }
 }
 

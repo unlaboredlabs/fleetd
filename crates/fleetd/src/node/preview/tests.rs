@@ -141,8 +141,59 @@ fn frame(
     serde_json::from_value(v).unwrap()
 }
 
+/// The broker's held sessions, as the runner sees them: what it was asked to open and end, and how long since the
+/// person last used one (`idle`, None: unknown).
+/// One open: holder, url, purpose and the names of the secrets it was given to mask.
+type Opened = (String, String, String, Vec<String>);
+
+#[derive(Default)]
+struct FakeHeld {
+    opened: std::sync::Mutex<Vec<Opened>>,
+    ended: std::sync::Mutex<Vec<String>>,
+    idle: std::sync::Mutex<Option<Duration>>,
+}
+
+const HELD_SESSION: &str = "Bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+
+impl HeldSessions for FakeHeld {
+    fn open<'a>(
+        &'a self,
+        holder: &'a str,
+        _cwd: &'a str,
+        purpose: &'a str,
+        url: &'a str,
+        secrets: crate::node::mask::Secrets,
+    ) -> proxy::BoxFuture<'a, Result<fleetd_contracts::browser::BrowserSessionId, String>> {
+        let names = secrets.0.iter().map(|(n, _)| n.clone()).collect();
+        self.opened.lock().unwrap().push((
+            holder.to_owned(),
+            url.to_owned(),
+            purpose.to_owned(),
+            names,
+        ));
+        Box::pin(async {
+            Ok(fleetd_contracts::browser::BrowserSessionId::unchecked(
+                HELD_SESSION,
+            ))
+        })
+    }
+
+    fn idle_for(&self, holder: &str) -> Option<Duration> {
+        if self.ended.lock().unwrap().iter().any(|h| h == holder) {
+            return None;
+        }
+        *self.idle.lock().unwrap()
+    }
+
+    fn end<'a>(&'a self, holder: &'a str) -> proxy::BoxFuture<'a, ()> {
+        self.ended.lock().unwrap().push(holder.to_owned());
+        Box::pin(async {})
+    }
+}
+
 struct Harness {
     previews: Arc<Previews>,
+    held: Arc<FakeHeld>,
     reports: mpsc::UnboundedReceiver<String>,
     /// The owner each detect was asked for.
     owners: Arc<std::sync::Mutex<Vec<Option<String>>>>,
@@ -180,17 +231,20 @@ fn harness_with(project: &Project, slots: Option<usize>) -> Harness {
         enabled: None,
         slots,
     };
+    let held = Arc::new(FakeHeld::default());
     let previews = Previews::new(
         home.path(),
         &config,
         Arc::new(move |_| Some(root.clone())),
         detect,
+        Some(held.clone() as Arc<dyn HeldSessions>),
         timing,
     );
     let (tx, reports) = mpsc::unbounded_channel();
     previews.attach(tx);
     Harness {
         previews,
+        held,
         reports,
         owners,
         home,
@@ -487,6 +541,7 @@ fn a_node_that_starts_ends_what_its_last_run_left_running() {
         &PreviewNodeConfig::default(),
         Arc::new(|_| None),
         no_tailnet(),
+        None,
         Timing::default(),
     );
     // Our own child: its exit is ours to collect.
@@ -535,6 +590,7 @@ fn what_the_app_started_is_ended_too_after_its_shell_exited() {
         &PreviewNodeConfig::default(),
         Arc::new(|_| None),
         no_tailnet(),
+        None,
         Timing::default(),
     );
     assert!(
@@ -689,4 +745,115 @@ async fn a_stop_right_behind_its_run_ends_it_before_anything_runs() {
     tokio::time::sleep(Duration::from_millis(100)).await;
     assert_eq!(h.previews.running(), 0, "an orphan preview runs");
     assert_eq!((project.ran("setup"), project.ran("builds")), (0, 0));
+}
+
+#[tokio::test]
+async fn the_app_shows_it_in_a_session_the_person_holds_which_ends_with_it() {
+    let project = Project::new();
+    let sha = project.branch("feat", "page.html", "<p>held</p>\n");
+    let mut h = harness(&project);
+    h.previews
+        .run(frame(1, &[("feat", &sha)], None, project.web("true"), 30))
+        .await;
+    let ready = h.ready(1).await;
+    assert_eq!(
+        ready.session_id.as_ref().map(|s| s.as_str()),
+        Some(HELD_SESSION)
+    );
+    let opened = h.held.opened.lock().unwrap().clone();
+    let [(holder, url, purpose, _)] = opened.as_slice() else {
+        panic!("{opened:?}");
+    };
+    assert_eq!(holder, &preview_id(1));
+    assert!(
+        url.starts_with("http://127.0.0.1:"),
+        "on the app's own port: {url}"
+    );
+    assert_eq!(purpose, "Try feat");
+    h.stop(1, PreviewEndReason::Ended);
+    let ended = h.until(1, |r| r.state.is_over()).await;
+    assert_eq!(
+        ended.session_id.as_ref().map(|s| s.as_str()),
+        Some(HELD_SESSION),
+        "its recording is on its way"
+    );
+    assert_eq!(h.held.ended.lock().unwrap().as_slice(), [preview_id(1)]);
+}
+
+#[tokio::test]
+async fn a_person_driving_it_in_the_app_keeps_it_from_idling_out() {
+    let project = Project::new();
+    let sha = project.branch("feat", "page.html", "<p>a</p>\n");
+    let mut h = harness(&project);
+    // Used in the app a moment ago, all along.
+    *h.held.idle.lock().unwrap() = Some(Duration::ZERO);
+    // 5 of the test's minutes: half a second.
+    h.previews
+        .run(frame(1, &[("feat", &sha)], None, project.web("true"), 5))
+        .await;
+    h.ready(1).await;
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    assert_eq!(
+        h.previews.running(),
+        1,
+        "it idled out while the person used it"
+    );
+    // Left alone in the app since: it ends.
+    *h.held.idle.lock().unwrap() = Some(Duration::from_secs(3600));
+    let ended = h.until(1, |r| r.state.is_over()).await;
+    assert_eq!(ended.end_reason, Some(PreviewEndReason::Idle));
+}
+
+#[tokio::test]
+async fn an_orders_preview_gets_that_orders_variables_masked_and_no_other_does() {
+    let project = Project::new();
+    let sha = project.branch("feat", "page.html", "<p>a</p>\n");
+    let mut h = harness(&project);
+    crate::node::order_env::deliver(h.home.path(), "p1", "W12", "SHOP_KEY", b"s3cret-order")
+        .unwrap();
+    let web = |build: &str| {
+        let mut web = project.web(build);
+        web["setup"] = json!(["test \"$SHOP_KEY\" = s3cret-order"]);
+        web
+    };
+    let with_order = |id: u32, build: &str| {
+        let mut f =
+            serde_json::to_value(frame(id, &[("feat", &sha)], None, web(build), 30)).unwrap();
+        f["orderId"] = json!("W12");
+        serde_json::from_value::<PreviewRunFrame>(f).unwrap()
+    };
+
+    // The order's preview has it: setup finds it, and the app's view is given it to mask.
+    h.previews.run(with_order(1, "true")).await;
+    h.ready(1).await;
+    let names = h.held.opened.lock().unwrap()[0].3.clone();
+    assert!(names.contains(&"SHOP_KEY".to_owned()), "{names:?}");
+    h.stop(1, PreviewEndReason::Ended);
+    h.until(1, |r| r.state.is_over()).await;
+
+    // What a command prints of it is masked.
+    h.previews
+        .run(with_order(2, "echo \"key=$SHOP_KEY\"; exit 4"))
+        .await;
+    let failed = h.until(2, |r| r.state.is_over()).await;
+    let out = failed.steps[2]
+        .output_tail
+        .as_ref()
+        .map(|t| t.to_string())
+        .unwrap_or_default();
+    assert!(
+        out.contains("key=") && !out.contains("s3cret-order"),
+        "{out}"
+    );
+
+    // A preview outside the order doesn't have it: its setup fails. (Setup of its own: the same commands with the same
+    // inputs would be reused from the order's preview in this worktree, without running.)
+    let mut outside = web("true");
+    outside["setup"] = json!(["test \"$SHOP_KEY\" = s3cret-order # outside the order"]);
+    h.previews
+        .run(frame(3, &[("feat", &sha)], None, outside, 30))
+        .await;
+    let other = h.until(3, |r| r.state.is_over()).await;
+    assert_eq!(other.state, PreviewState::Failed, "{other:#?}");
+    assert_eq!(other.steps[1].state, PreviewStepState::Failed);
 }

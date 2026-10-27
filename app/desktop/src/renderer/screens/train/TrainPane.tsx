@@ -1,7 +1,7 @@
 // The panel's Train: the project's merge train at a glance. What merges now and at which stage (with the checks it
 // waits on), the queue in train order with what holds each one, and the merges and refusals of late, a batch shown as
-// one group. Each PR opens in the PRs tab, and Try it beside it opens its preview (starting one only when none runs;
-// screens/tryit). Read through the data layer and refetched on the hub's change and PR events; nothing polls, and
+// one group. Each PR opens in the PRs tab, and Try it beside one whose preview is starting or ready reopens it
+// (screens/tryit; phase 1 starts none from here). Read through the data layer and refetched on the hub's change and PR events; nothing polls, and
 // nothing here moves the train.
 import { useMemo, type ReactNode } from "react";
 import type { ChangesListInput, ProjectRef } from "../../../shared/contracts";
@@ -247,7 +247,7 @@ function Head({ moving, project, nowMs }: { moving: Moving; project: ProjectRef;
           <div key={pr.changeId} className={s.tryRow}>
             <PrLink pr={pr} project={project} />
             <span className={s.rowTry}>
-              <TryItButton project={project} repo={pr.repo} number={pr.number} variant="quiet" />
+              <TryItButton project={project} repo={pr.repo} number={pr.number} variant="quiet" reopenOnly />
             </span>
           </div>
         ))}
@@ -312,7 +312,7 @@ function QueueItem({ row, project }: { row: QueueRow; project: ProjectRef }) {
         ) : null}
       </PrLink>
       <span className={s.rowTry}>
-        <TryItButton project={project} repo={row.pr.repo} number={row.pr.number} variant="quiet" />
+        <TryItButton project={project} repo={row.pr.repo} number={row.pr.number} variant="quiet" reopenOnly />
       </span>
     </div>
   );

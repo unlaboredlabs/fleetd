@@ -262,6 +262,7 @@ async fn run_node(
             home,
             &preview_config,
             Arc::new(move |id| sessions.project_workspace(id)),
+            broker.clone(),
         )
     });
     if let Some(previews) = &previews {

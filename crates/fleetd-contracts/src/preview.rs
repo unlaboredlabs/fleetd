@@ -334,6 +334,8 @@ pub struct PreviewRunFrame {
     pub idle_minutes: Int<5, PREVIEW_CAP_MIN>,
     /// The tailnet login whose devices may open it (the hub owner's); absent: the node's own tailnet user's.
     pub owner_login: Option<Line<1, 300>>,
+    /// The order whose variables it gets on top of the project's: the order previewed, or the order a PR is part of.
+    pub order_id: Option<WorkstreamId>,
 }
 checked!(PreviewRunFrame, |frame| {
     match frame.target {

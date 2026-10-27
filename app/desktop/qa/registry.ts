@@ -162,6 +162,7 @@ export const fixtures = [
   "tryit-failed",
   "tryit-ended",
   "tryit-read",
+  "tryit-read-ready",
   "stream-reply",
   // UX [7]: no hub, and the last launch's disk cache on screen with a message queued; back online with that chat not
   // read again yet, and with that read failed (fixtures/offline).
@@ -1150,7 +1151,29 @@ export const screens: readonly Screen[] = [
       await expect(page.getByText("Sent to #14’s writer, at its next step.", { exact: true })).toBeVisible();
     },
   },
-  { id: "train", route: `${CHAT}/train`, fixtures: ["tryit-ready"], variant: "try" },
+  // The merge line only reopens (phase 1 starts none there): #9's preview is ready, the others have none.
+  {
+    id: "train",
+    route: `${CHAT}/train`,
+    fixtures: ["tryit-ready"],
+    variant: "try",
+    open: async (page) => {
+      await expect(page.getByRole("button", { name: "Open #9’s preview, ready" })).toBeVisible();
+      await expect(page.getByRole("button", { name: /^Try #/u })).toHaveCount(0);
+    },
+  },
+  // ...and a read key with #14's preview running: it uses the page, with no Mark up, Send or End.
+  {
+    id: "tryit",
+    route: PR(14),
+    fixtures: ["tryit-read-ready"],
+    open: async (page) => {
+      await page.getByRole("tab", { name: "Try it" }).click();
+      await expect(page.getByRole("application", { name: "The preview: your clicks and keys go to it" })).toBeVisible();
+      // The chat's composer has a Send of its own: only the preview's are counted.
+      await expect(page.getByRole("button", { name: /^(Mark up|End|Send to #14)/u })).toHaveCount(0);
+    },
+  },
   {
     id: "prs.detail",
     route: PR(14),
