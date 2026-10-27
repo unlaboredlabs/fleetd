@@ -1399,14 +1399,20 @@ export const screens: readonly Screen[] = [
       await expect(page.getByRole("application", { name: "The page: your clicks and keys go to it" })).toBeFocused();
       // ⌘V (Ctrl+V) pastes this computer's clipboard into the page: the paste reaches the frame, which sends its text.
       await app.evaluate(({ clipboard }) => clipboard.writeText("482913"));
-      const pasted = page.evaluate(
-        () =>
-          new Promise<{ text: string; taken: boolean }>((done) =>
-            window.addEventListener("paste", (e) => done({ text: e.clipboardData?.getData("text/plain") ?? "", taken: e.defaultPrevented }), { once: true }),
-          ),
-      );
+      // The listener is in place before the key is pressed: the evaluate and the key reach the page by different
+      // paths, and a key that came first went unheard, its paste waited for until the test timed out.
+      type Pasted = Window & { pasted?: { text: string; taken: boolean } };
+      await page.evaluate(() => {
+        window.addEventListener(
+          "paste",
+          (e) => {
+            (window as Pasted).pasted = { text: e.clipboardData?.getData("text/plain") ?? "", taken: e.defaultPrevented };
+          },
+          { once: true },
+        );
+      });
       await page.keyboard.press("ControlOrMeta+V");
-      expect(await pasted).toEqual({ text: "482913", taken: true });
+      await expect.poll(() => page.evaluate(() => (window as Pasted).pasted ?? null)).toEqual({ text: "482913", taken: true });
     },
   },
   // ...taken over, ⌘⇧↩ (Ctrl+Shift+Enter) hands it back: the keymap takes the keys before the page does.
