@@ -3,7 +3,7 @@
 //! [`super::notion`], or a custom server's tools the person marked as reading); anything else asks, with an action
 //! guessed from its name. An asking tool whose input looks like it holds a credential is blocked too.
 use fleetd_contracts::integrations::{
-    IntegrationKind, McpToolName, PREVIEW_BODY_MAX, PREVIEW_INPUT_MAX, ToolAction, ToolPolicy,
+    IntegrationKind, McpToolName, PREVIEW_INPUT_MAX, PreviewAttachment, ToolAction, ToolPolicy,
     ToolPreview,
 };
 use fleetd_contracts::mcp_servers::{FLEETD_SERVER, McpServer, McpServerName};
@@ -62,6 +62,10 @@ impl From<Rule> for ToolPolicy {
     }
 }
 
+/// An asking call whose whole input doesn't fit on its card: approving it would run what the person couldn't see.
+pub const TOO_LARGE: &str = "Blocked by fleetd: this call is too large to show on an approval card in full, and \
+     fleetd never asks you to approve what you can't see. Split it into smaller calls.";
+
 /// The hub's answer to a session's permission prompt for an MCP tool.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Verdict {
@@ -86,6 +90,112 @@ pub struct Draft {
     pub body: Option<String>,
     pub target: Option<String>,
     pub when: Option<String>,
+    pub attachments: Vec<Attachment>,
+}
+
+/// A file a tool attaches: its name, its size when its bytes are in the input, where it comes from otherwise.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Attachment {
+    pub name: String,
+    pub bytes: Option<u64>,
+    pub from: Option<String>,
+}
+
+/// `text` without the line breaks and spaces a wrapped base64 holds.
+fn compact(text: &str) -> String {
+    text.chars().filter(|c| !c.is_ascii_whitespace()).collect()
+}
+
+/// A file's bytes: `text` decoded as base64 in any of its four spellings (standard or url-safe, padded or not), wrapped
+/// in lines or not. A value that decodes is a file, whatever its length.
+pub(super) fn file_bytes(text: &str) -> Option<Vec<u8>> {
+    use base64::Engine;
+    use base64::engine::general_purpose::{STANDARD, STANDARD_NO_PAD, URL_SAFE, URL_SAFE_NO_PAD};
+    let text = compact(text);
+    if text.is_empty() {
+        return None;
+    }
+    [STANDARD, STANDARD_NO_PAD, URL_SAFE, URL_SAFE_NO_PAD]
+        .iter()
+        .find_map(|e| e.decode(&text).ok())
+}
+
+/// The size an attachment's `content_base64` gives, the same on its card's row and in its JSON: the decoded bytes when
+/// it decodes, its own length otherwise.
+pub fn attachment_size(text: &str) -> u64 {
+    file_bytes(text).map_or(text.len(), |b| b.len()) as u64
+}
+
+/// Below this many characters an attachment's value is too short to be a real file: its text is also searched for a
+/// key's shape as it is, so a key can't go out as a tiny binary file.
+const SHORT_VALUE: usize = 256;
+
+/// Whether a file's bytes read as text: valid UTF-8 with almost no control characters. Only such a file is searched for
+/// a key; a binary one is shown by its name and size, and the person's approval decides.
+fn is_text(bytes: &[u8]) -> bool {
+    let Ok(text) = std::str::from_utf8(bytes) else {
+        return false;
+    };
+    let control = text
+        .chars()
+        .filter(|c| c.is_control() && !matches!(c, '\n' | '\r' | '\t'))
+        .count();
+    control * 100 <= text.chars().count()
+}
+
+/// `input` with the `content_base64` of each file a Google tool attaches (an `attachments` item with a `filename`) replaced by
+/// what `swap` returns for it; nothing else is changed, on any server.
+fn with_files(
+    kind: IntegrationKind,
+    input: &Value,
+    mut swap: impl FnMut(&str) -> Option<Value>,
+) -> Value {
+    let mut out = input.clone();
+    if kind != IntegrationKind::Google {
+        return out;
+    }
+    let Some(items) = out.get_mut("attachments").and_then(Value::as_array_mut) else {
+        return out;
+    };
+    for item in items.iter_mut().filter_map(Value::as_object_mut) {
+        let swapped = match item.get("content_base64") {
+            Some(Value::String(b)) if item.contains_key("filename") => swap(b),
+            _ => None,
+        };
+        if let Some(v) = swapped {
+            item.insert("content_base64".into(), v);
+        }
+    }
+    out
+}
+
+/// `input` as the card shows it: the bytes of each file a Google tool attaches said by their size, which no one reads.
+pub fn shown_input(kind: IntegrationKind, input: &Value) -> Value {
+    with_files(kind, input, |b| {
+        let bytes = file_bytes(b)?;
+        Some(Value::String(format!("[the file's {} bytes]", bytes.len())))
+    })
+}
+
+/// Whether a call would send or store what looks like a credential: in its text, and inside the files a Google tool
+/// attaches that read as text. A real file's base64 is never searched as it is: its random letters spell key shapes by
+/// chance, and refusing real mail for that would be worse than the key it might hide. A value under [`SHORT_VALUE`]
+/// characters is searched as it is too, and a value that doesn't decode isn't a file, and is searched as text.
+fn sends_credential(kind: IntegrationKind, input: &Value) -> bool {
+    let mut files: Vec<Vec<u8>> = Vec::new();
+    let mut short_key = false;
+    let text = with_files(kind, input, |b| {
+        let bytes = file_bytes(b)?;
+        short_key |= compact(b).len() < SHORT_VALUE && crate::hub::redact::redact(b) != b;
+        files.push(bytes);
+        Some(Value::String("[file]".into()))
+    });
+    short_key
+        || holds_credential(&text)
+        || files.iter().filter(|f| is_text(f)).any(|f| {
+            let t = String::from_utf8_lossy(f);
+            crate::hub::redact::redact(&t) != t
+        })
 }
 
 /// A tool name's words, lower case: `create_account`, `createAccount` and `API-create-account` are all
@@ -254,9 +364,13 @@ pub fn verdict(tool_name: &str, input: &Value, servers: &[McpServer]) -> Option<
         Rule::Read => Verdict::Allow,
         Rule::Blocked(n) => Verdict::Block(n.why()),
         Rule::Ask(action) => {
-            let text = input.to_string();
-            if crate::hub::redact::redact(&text) != text {
+            if sends_credential(kind, input) {
                 return Some(Verdict::Block(Never::Credential.why()));
+            }
+            let shown = shown_input(kind, input);
+            if js_len(&serde_json::to_string_pretty(&shown).unwrap_or_default()) > PREVIEW_INPUT_MAX
+            {
+                return Some(Verdict::Block(TOO_LARGE));
             }
             match preview(kind, server_name, tool, action, input) {
                 Some(p) => Verdict::Ask(Box::new(p)),
@@ -267,6 +381,23 @@ pub fn verdict(tool_name: &str, input: &Value, servers: &[McpServer]) -> Option<
             }
         }
     })
+}
+
+/// Whether any part of `input` looks like a credential: the whole of it, and each string in it on its own, so one
+/// inside a JSON-encoded string (which Notion's server takes at times) is read unescaped.
+fn holds_credential(input: &Value) -> bool {
+    let shows = |text: &str| crate::hub::redact::redact(text) != text;
+    fn strings<'a>(v: &'a Value, out: &mut Vec<&'a str>) {
+        match v {
+            Value::String(s) => out.push(s),
+            Value::Array(items) => items.iter().for_each(|i| strings(i, out)),
+            Value::Object(o) => o.values().for_each(|i| strings(i, out)),
+            _ => {}
+        }
+    }
+    let mut all = Vec::new();
+    strings(input, &mut all);
+    shows(&input.to_string()) || all.into_iter().any(shows)
 }
 
 /// What a session's claude gets at launch: the read tools in `--allowedTools`, so it never asks for them, and a tool
@@ -326,16 +457,6 @@ fn lines<const MAX: usize>(list: &[String]) -> Vec<Line<1, MAX>> {
     list.iter().filter_map(|a| line(a)).collect()
 }
 
-fn verb(action: ToolAction) -> &'static str {
-    match action {
-        ToolAction::Send => "Send with",
-        ToolAction::Write => "Change with",
-        ToolAction::Delete => "Delete with",
-        ToolAction::Share => "Share with",
-        ToolAction::Spend => "Spend money with",
-    }
-}
-
 /// The card for an asking call, every field read from `input`.
 pub fn preview(
     kind: IntegrationKind,
@@ -352,15 +473,8 @@ pub fn preview(
     let title = d
         .title
         .clone()
-        .unwrap_or_else(|| format!("{} {tool} on {server}", verb(action)));
-    let (body, body_cut) = match &d.body {
-        Some(b) => {
-            let (b, cut) = clip_utf16(b, PREVIEW_BODY_MAX);
-            (Some(Text::unchecked(b)), cut)
-        }
-        None => (None, false),
-    };
-    let pretty = serde_json::to_string_pretty(input).unwrap_or_default();
+        .unwrap_or_else(|| format!("Use {tool} on {server}"));
+    let pretty = serde_json::to_string_pretty(&shown_input(kind, input)).unwrap_or_default();
     Some(ToolPreview {
         integration: kind,
         server: McpServerName::new(server).ok()?,
@@ -376,14 +490,26 @@ pub fn preview(
             .subject
             .as_deref()
             .map(|s| Text::unchecked(clip_utf16(s, 1000).0)),
-        body,
-        body_cut,
+        // Whole, as the input is.
+        body: d.body.and_then(|b| Text::new(b).ok()),
+        attachments: d
+            .attachments
+            .iter()
+            .filter_map(|a| {
+                Some(PreviewAttachment {
+                    name: line(&a.name)?,
+                    bytes: a.bytes,
+                    from: a.from.as_deref().and_then(line),
+                })
+            })
+            .collect(),
         target: d
             .target
             .as_deref()
             .map(|t| Text::unchecked(clip_utf16(t, 2000).0)),
         when: d.when.as_deref().and_then(line),
-        input: Text::unchecked(clip_utf16(&pretty, PREVIEW_INPUT_MAX).0),
+        // Whole: `verdict` refuses an input past the bound before it asks.
+        input: Text::new(pretty).ok()?,
     })
 }
 

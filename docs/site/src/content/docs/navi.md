@@ -96,12 +96,17 @@ input. **Deny** tells the Navi you said no, with your reason if you give one. A 
 run ended) closes its approval. Moving money, trading and creating accounts through an integration are blocked even
 if approved.
 
-**What screens can still do.** The site gate covers opening a site; it doesn't follow a page after that. Inside a
-page it already opened, a Navi clicks, types and fills unasked, which is how screens work, so a click or a form that
-leads to another site isn't asked. Its Android, iOS and desktop screens (`agent-device`) don't ask per site at all.
-Nor is the final Send or Pay button on a site you allowed. The Navi is told to hand that last click to you with a
-takeover, but that's its prompt, not fleetd's rules. Only allow sites where that's fine, such as your bank's when you
-mean to watch.
+**What screens can still do.** The site gate covers opening a site; it doesn't follow a page after that. Plain
+browser commands inside an open page run unasked: clicks, and fills and typing whose text is plain words or one
+single-quoted string (`fill @e2 'Ana Ruiz'`). So screens aren't held to the approval rule for sends, and a click or a
+form that leads to another site isn't asked. Its Android, iOS and desktop screens (`agent-device`) don't ask per site
+at all. Nor is the final Send or Pay button on a site you allowed: that final click is left to you by instruction
+only. The Navi is told to hand it to you with a takeover, but that's its prompt, not fleetd's rules. Only allow sites
+where that's fine, such as your bank's when you mean to watch.
+
+Anything else in a browser command asks: other quoting (double quotes, a quote joined to more text), a selector with
+brackets, `*`, `~` or braces, shell syntax, a script in the page (`wait --fn`, `eval`), or a flag that changes which
+browser runs or how (`--session`, `--cdp`, `--headers`).
 
 ## Memory
 

@@ -153,4 +153,29 @@ describe("sealing a secret ask's value", () => {
     expect((await submitMcpServer({ ...request, boxes: [] }, call)).ok).toBe(false);
     expect(sent).toEqual([]);
   });
+  it("sends a Navi's integration with its server, the token sealed and nowhere in the clear", async () => {
+    await sodium.ready;
+    const sent: unknown[] = [];
+    const call = (tool: string, input: unknown) => {
+      sent.push(tool, input);
+      return Promise.resolve({ ok: true as const, output: {} });
+    };
+    const request = {
+      scope: { kind: "project" as const, machineId: "devbox", projectId: "navi" },
+      name: "notion",
+      enabled: true,
+      roles: { lead: true, writers: false, reviewers: false },
+      transport: { type: "stdio" as const, command: "npx", args: ["-y", "@notionhq/notion-mcp-server"] },
+      env: [{ kind: "secret" as const, name: "NOTION_TOKEN", value: "ntn_hunter2hunter2" }],
+      headers: [],
+      boxes: [{ machineId: "devbox", boxPubKey: rust.publicKey }],
+      integration: { kind: "notion" as const },
+    };
+    expect(parseRequest(IPC.mcpServerSubmit, [request]).ok).toBe(true);
+    expect(parseRequest(IPC.mcpServerSubmit, [{ ...request, integration: { kind: "gmail" } }]).ok).toBe(false);
+    expect((await submitMcpServer(request, call)).ok).toBe(true);
+    const input = sent[1] as { integration?: unknown };
+    expect(input.integration).toEqual({ kind: "notion" });
+    expect(JSON.stringify(sent)).not.toContain("ntn_hunter2hunter2");
+  });
 });
