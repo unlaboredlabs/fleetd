@@ -50,6 +50,19 @@ impl Machine {
             (m.other.join("README.md"), "another checkout"),
             (m.session.join("mcp.json"), "{\"mcpServers\":{}}"),
             (m.claude.join("settings.json"), "{}"),
+            (m.claude.join(".credentials.json"), "{\"claudeAiOauth\":{}}"),
+            (
+                m.claude.join("projects/-src-other/t1.jsonl"),
+                "another task's conversation",
+            ),
+            (m.claude.join("history.jsonl"), "another session's prompt"),
+            (
+                m.claude.join("file-history/t1/backup"),
+                "another session's file",
+            ),
+            (m.claude.join("session-env/t1/env"), "export TOKEN=x"),
+            (m.home.join(".Xauthority"), "cookie"),
+            (m.home.join(".npmrc"), "//registry.npmjs.org/:_authToken=x"),
             (
                 m.claude.join("shell-snapshots/snapshot-other.sh"),
                 "# another session's",
@@ -100,6 +113,7 @@ impl Machine {
             .env("PATH", "/usr/bin:/bin")
             .env("HOME", &self.home)
             .env("TMPDIR", &self.scratch)
+            .env("DISPLAY", ":0")
             .output()
             .unwrap();
         let text = format!(
@@ -152,6 +166,11 @@ fn a_navis_fence_writes_its_folder_and_hides_fleetd_logins_and_other_projects() 
             .any(|w| w.starts_with(m.claude.join("projects")))
     );
     assert!(fence.write.contains(&m.claude.join("session-env/s1")));
+    assert!(fence.write.contains(&m.claude.join(".credentials.json")));
+    for other in ["projects", "history.jsonl", "file-history", "session-env"] {
+        assert!(fence.hide.contains(&m.claude.join(other)), "{other}");
+    }
+    assert!(fence.hide.contains(&m.home.join(".Xauthority")));
     assert!(!fence.write.contains(&m.claude));
     assert!(fence.private.contains(&(
         m.session.join("claude/shell-snapshots"),
@@ -240,9 +259,23 @@ fn a_navi_cant_read_the_token_store_logins_or_other_projects() {
         m.fleetd.join("hub/hub.sqlite"),
         m.worktree.join("README.md"),
         m.other.join("README.md"),
+        // claude's record of every other session: conversations, prompts, file backups, environments.
+        m.claude.join("projects/-src-other/t1.jsonl"),
+        m.claude.join("history.jsonl"),
+        m.claude.join("file-history/t1/backup"),
+        m.claude.join("session-env/t1/env"),
+        m.home.join(".Xauthority"),
+        m.home.join(".npmrc"),
     ] {
         let (ok, out) = m.run(&tool, &format!("cat '{}'", secret.display()));
         assert!(!ok, "{} was read: {out}", secret.display());
+    }
+    if cfg!(target_os = "linux") {
+        let (ok, out) = m.run(
+            &tool,
+            "test -z \"$DISPLAY\" && test -z \"$(ls -A /tmp/.X11-unix 2>/dev/null)\"",
+        );
+        assert!(ok, "the X server is in reach: {out}");
     }
     let (_, out) = m.run(
         &tool,
@@ -272,6 +305,8 @@ fn a_navi_works_in_its_folder_as_usual() {
          echo s > \"$TMPDIR/scratch.txt\"
          cat '{mcp}'
          echo turn >> '{transcripts}/s1.jsonl'
+         echo 'export A=1' > '{session_env}/hook-0.sh'
+         echo '{{\"claudeAiOauth\":{{\"refreshToken\":\"rotated\"}}}}' > '{credentials}'
          test -x '{exe}'",
         mcp = m.session.join("mcp.json").display(),
         transcripts = super::super::claude::session_file(&m.claude, &m.folder, "s1")
@@ -280,6 +315,8 @@ fn a_navi_works_in_its_folder_as_usual() {
             .unwrap()
             .display(),
         exe = m.node.join("bin/fleetd-agent-1").display(),
+        session_env = m.claude.join("session-env/s1").display(),
+        credentials = m.claude.join(".credentials.json").display(),
     );
     // On Linux, a /tmp and claude's shared state of its own.
     let tmp = format!("/tmp/fleetd-sandbox-{}.txt", std::process::id());
@@ -301,6 +338,12 @@ fn a_navi_works_in_its_folder_as_usual() {
     assert!(m.folder.join(".git").is_dir());
     assert!(m.folder.join("drafts/plan.md").is_file());
     assert!(m.scratch.join("scratch.txt").is_file());
+    // A token claude refreshed inside is saved for every session.
+    assert!(
+        std::fs::read_to_string(m.claude.join(".credentials.json"))
+            .unwrap()
+            .contains("rotated")
+    );
     if cfg!(target_os = "linux") {
         assert!(!Path::new(&tmp).exists(), "/tmp was its own");
         // A shell snapshot it writes is its own, never one another session sources.
@@ -366,9 +409,19 @@ fn a_blocked_user_namespace_points_at_apparmor() {
 #[test]
 fn macoss_profile_writes_only_the_fence_and_reads_no_hidden_path() {
     let fence = Fence {
-        write: vec!["/Users/ada/.fleetd/node/navi/ada".into()],
-        hide: vec!["/Users/ada/.fleetd".into(), "/Users/ada/.ssh".into()],
-        show: vec!["/Users/ada/.fleetd/node/sessions/s1".into()],
+        write: vec![
+            "/Users/ada/.fleetd/node/navi/ada".into(),
+            "/Users/ada/.claude/projects/-navi-ada".into(),
+        ],
+        hide: vec![
+            "/Users/ada/.fleetd".into(),
+            "/Users/ada/.ssh".into(),
+            "/Users/ada/.claude/projects".into(),
+        ],
+        show: vec![
+            "/Users/ada/.fleetd/node/sessions/s1".into(),
+            "/Users/ada/.claude".into(),
+        ],
         keep: vec!["/Users/ada/.fleetd/node/navi/ada/.claude".into()],
         private: vec![],
     };
@@ -387,17 +440,19 @@ fn macoss_profile_writes_only_the_fence_and_reads_no_hidden_path() {
         line("(allow file-write*")
             < line("(deny file-write* (subpath \"/Users/ada/.fleetd/node/navi/ada/.claude\")")
     );
-    let hidden = line("(deny file-read-data file-read-xattr");
-    let shown = line("(allow file-read-data file-read-xattr");
-    assert!(hidden < shown);
+    // Each read rule after those of the paths around it: the folder is read inside the hidden fleetd dir, and claude's
+    // other sessions aren't inside its shown config dir.
+    let read = |rule: &str, path: &str| {
+        line(&format!(
+            "({rule} file-read-data file-read-xattr (subpath \"{path}\"))"
+        ))
+    };
+    assert!(read("deny", "/Users/ada/.fleetd") < read("allow", "/Users/ada/.fleetd/node/navi/ada"));
+    assert!(read("allow", "/Users/ada/.claude") < read("deny", "/Users/ada/.claude/projects"));
     assert!(
-        profile
-            .lines()
-            .nth(hidden)
-            .unwrap()
-            .contains("\"/Users/ada/.ssh\"")
+        read("deny", "/Users/ada/.claude/projects")
+            < read("allow", "/Users/ada/.claude/projects/-navi-ada")
     );
-    // The folder is under the hidden fleetd dir, and is read again.
-    assert!(profile.lines().nth(shown).unwrap().contains("navi/ada"));
+    read("deny", "/Users/ada/.ssh");
     assert_eq!(quoted(Path::new("/a \"b\"\\c")), "\"/a \\\"b\\\"\\\\c\"");
 }

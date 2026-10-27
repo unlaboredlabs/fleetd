@@ -423,16 +423,21 @@ is one). Every other session's spec has none.
 
 - **The fence** (`navi_fence`), all paths with symlinks resolved:
   - *write*: the folder; the session's scratch dir (`TMPDIR`); `<session dir>/agent-device`; in claude's config dir,
-    the folder's `projects/<slug>` (its conversation, which a resume needs) and `session-env/<id>` and
-    `file-history/<id>`.
+    the folder's `projects/<slug>` (its conversation, which a resume needs), `session-env/<id>`, `file-history/<id>`,
+    and `.credentials.json` when it exists: a refresh rotates the token, and one claude couldn't save would log out
+    every session on the machine.
   - *private* (Linux): `<session dir>/claude/<name>` mounted over claude's shared `shell-snapshots`, `todos`, `tasks`,
     `plans`, `paste-cache`, `statsig`, `debug` and `telemetry`. Every session reads these back (a snapshot is sourced
-    by every command), so a Navi gets its own. On macOS they are read-only.
-  - *hide*: fleetd's dir and the node's home (worktrees, the hub, the node's secrets and tokens), `~/.config`,
-    `~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.netrc`, `~/.git-credentials`, `~/.docker`, `~/.kube`, `~/.password-store`,
-    `~/.local/share/keyrings`, `~/.agent-browser` (other sessions' daemons), `$XDG_RUNTIME_DIR`, the docker socket,
-    and every other project's root the node knows, unless it holds the folder or the whole home.
-  - *show* again, read-only: the session dir (its MCP config, settings overlay, skills, browser config), the
+    by every command), so a Navi gets its own. On macOS they are read-only: `sandbox-exec` can't mount a private copy,
+    so a Mac Navi's todos, plans and shell snapshot may not save.
+  - *hide*: fleetd's dir and the node's home (worktrees, the hub, the node's secrets and tokens);
+    `HIDDEN_IN_HOME` (`~/.config`, `~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.netrc`, `~/.git-credentials`, `~/.docker`,
+    `~/.kube`, `~/.password-store`, `~/.local/share/keyrings`, `~/.npmrc`, `~/.pypirc`, cargo's credentials,
+    `~/.android/adbkey`, `~/.mozilla`, shell and REPL histories, `~/.Xauthority`, `~/.agent-browser`); `~/Library` on
+    macOS; `$XDG_RUNTIME_DIR`; `/tmp/.X11-unix`; the docker socket; claude's record of other sessions
+    (`CLAUDE_HIDDEN`: `projects`, `history.jsonl`, `file-history`, `session-env`, `sessions`, with its own bound
+    back); and every other project's root the node knows, unless it holds the folder or the whole home.
+  - *show* again, read-only, shallower than what it hides inside: the session dir (its MCP config, settings overlay, skills, browser config), the
     `fleetd` binary its MCP server runs, the node's socket, claude's config dir, and the node's tools
     (`browser/agent-browser`, `device`). Chrome's profiles stay hidden.
   - *keep* read-only inside the folder: `ASSISTANT_KEPT` (`.claude` and `.fleetd` are made empty first, so they can't be
@@ -441,20 +446,25 @@ is one). Every other session's spec has none.
 - **Linux: bubblewrap only** (decision `navi.sandbox-linux-requires-bwrap`). `--ro-bind / /`, then `--dev`, `--proc`
   with `--unshare-pid` (no other process, so no `/proc/<pid>/root` back to the real disk), `--unshare-ipc`, a tmpfs
   `/tmp`, then the fence's paths shallowest first: a hidden dir gets an empty tmpfs (remounted read-only at the end), a
-  hidden file `/dev/null`. `XDG_RUNTIME_DIR`, `DBUS_SESSION_BUS_ADDRESS` and `SSH_AUTH_SOCK` are unset: a D-Bus or
-  systemd socket would start a command outside. Landlock alone was not enough: it can't stop a connect to those
-  sockets by path. The network is shared, for the site gate.
+  hidden file `/dev/null`. `--new-session`, so no controlling terminal of the node's takes keystrokes (TIOCSTI).
+  `NO_ENV` (`XDG_RUNTIME_DIR`, `DBUS_SESSION_BUS_ADDRESS`, `SSH_AUTH_SOCK`, `DISPLAY`, `XAUTHORITY`) is left out of a
+  Navi's environment, and unset again inside: a D-Bus or systemd socket would start a command outside, and an X server
+  takes keystrokes for a terminal outside. Landlock alone was not enough: it can't stop a connect to those
+  sockets by path. The network is shared, for the site gate, so abstract sockets stay reachable: an X server that
+  accepts local connections without a cookie is the known gap (fleetd's own Xvfb uses `-nolisten local`).
 - **macOS:** `sandbox-exec -p` with a generated profile: `(allow default)`, `(deny file-write*)` then allow the
-  written paths and the usual devices, deny writes to the kept ones, and deny `file-read-data` under the hidden paths
-  but for the shown and written ones (metadata stays readable, so paths still resolve).
+  written paths and the usual devices, deny writes to the kept ones, then one `file-read-data` rule per hidden
+  (deny) and shown or written (allow) path, shallowest first, so the deeper one wins as a bwrap mount does (metadata
+  stays readable, so paths still resolve).
 - **No fallback.** `wrap` starts the sandbox once with `true` before the session. When the program is missing or that
   run fails, the spawn fails with `RunnerError::Sandbox {message, fix}`, which reaches the app as the session's error
   with its fix: how to install bubblewrap, and, when the user namespace was refused, the AppArmor profile
   (`/etc/apparmor.d/bwrap-userns-restrict`) or `kernel.apparmor_restrict_unprivileged_userns=0`.
 - Its agent-browser daemon listens in its scratch dir (`AGENT_BROWSER_SOCKET_DIR`).
 - Tests (`sandbox_tests.rs`) run real bwrap or sandbox-exec: writes to fleetd's dir, another worktree, the home,
-  claude's settings and the folder's `.claude` fail; the token store, `~/.ssh`, `~/.config` and other projects can't be
-  read; files, git, scratch, `/tmp` and the session's own files work. Without a sandbox they skip and say why; CI's
+  claude's settings and the folder's `.claude` fail; the token store, `~/.ssh`, `~/.config`, other projects, other
+  sessions' conversations and history, `~/.Xauthority` and `~/.npmrc` can't be read, and no X server is in reach;
+  files, git, scratch, `/tmp`, the session's own files and a refreshed login work. Without a sandbox they skip and say why; CI's
   `rust (linux)` installs bubblewrap and `rust (macos)` uses sandbox-exec, both with `FLEETD_REQUIRE_SANDBOX`.
 - Readable to it, as claude needs them: the session's MCP config (with the resolved tokens of its own servers), the
   login, and the folder.

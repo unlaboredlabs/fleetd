@@ -3826,6 +3826,13 @@ async fn a_navi_gets_its_folder_under_the_node_home_and_its_lead_the_assistant_r
         .map(|(_, v)| PathBuf::from(v))
         .expect("AGENT_BROWSER_SOCKET_DIR");
     assert!(fence.write.iter().any(|w| sockets.starts_with(w)));
+    // Nor any variable naming a socket outside it: D-Bus, systemd, an SSH agent, the person's X server.
+    assert!(
+        !spec
+            .env
+            .iter()
+            .any(|(k, _)| crate::node::runner::sandbox::NO_ENV.contains(&k.as_str()))
+    );
 }
 
 #[test]

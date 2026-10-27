@@ -38,7 +38,7 @@ pub struct Refusal {
     pub fix: String,
 }
 
-/// In the user's home: where people keep their logins and keys. Hidden, with fleetd's own dir.
+/// In the user's home: where people keep their logins, keys and history. Hidden, with fleetd's own dir.
 const HIDDEN_IN_HOME: &[&str] = &[
     ".config",
     ".ssh",
@@ -50,9 +50,28 @@ const HIDDEN_IN_HOME: &[&str] = &[
     ".kube",
     ".password-store",
     ".local/share/keyrings",
+    ".npmrc",
+    ".pypirc",
+    ".cargo/credentials",
+    ".cargo/credentials.toml",
+    ".android/adbkey",
+    ".mozilla",
+    ".bash_history",
+    ".zsh_history",
+    ".python_history",
+    ".node_repl_history",
+    // The cookie for the person's X server; its socket is hidden below, and DISPLAY unset.
+    ".Xauthority",
     // Other sessions' agent-browser daemons listen here; a Navi's own listens in its scratch dir.
     ".agent-browser",
 ];
+
+/// In the user's home on macOS: `~/Library` whole, where browsers keep cookies, apps their tokens, and the keychains
+/// are. claude reads its login through the keychain's daemon, never the files.
+const HIDDEN_IN_HOME_MACOS: &[&str] = &["Library"];
+
+/// The X server's sockets: a command that reached the person's screen could type into a terminal outside.
+const HIDDEN_X: &str = "/tmp/.X11-unix";
 
 /// Sockets outside the home that run commands as someone else.
 const HIDDEN_SOCKETS: &[&str] = &["/run/docker.sock", "/var/run/docker.sock"];
@@ -76,6 +95,16 @@ const CLAUDE_SHARED: &[&str] = &[
 
 /// claude's state of one session, in a dir named by its id.
 const CLAUDE_OWN: &[&str] = &["session-env", "file-history"];
+
+/// claude's record of every other session in its config dir, hidden: each project's and task's conversations (file
+/// contents, tool output), the prompt history, and their file backups and environments. The Navi's own are bound back.
+const CLAUDE_HIDDEN: &[&str] = &[
+    "projects",
+    "history.jsonl",
+    "file-history",
+    "session-env",
+    "sessions",
+];
 
 /// Where a Navi's session runs, and what it needs.
 pub struct NaviPaths<'a> {
@@ -136,6 +165,12 @@ pub fn navi_fence(p: &NaviPaths) -> Fence {
         write.push(dir);
     }
     write.extend(CLAUDE_OWN.iter().map(|d| claude.join(d).join(p.session_id)));
+    // claude's login file, where it has one: a refresh rotates the token, and one it couldn't save would log out every
+    // session on the machine. It reads the file anyway.
+    let credentials = claude.join(".credentials.json");
+    if credentials.is_file() {
+        write.push(credentials);
+    }
     // Its agent-device's daemon and logs.
     write.push(real(&p.session_dir.join("agent-device")));
     let private = CLAUDE_SHARED
@@ -152,6 +187,11 @@ pub fn navi_fence(p: &NaviPaths) -> Fence {
     hide.extend(HIDDEN_IN_HOME.iter().map(|h| user_home.join(h)));
     hide.extend(HIDDEN_SOCKETS.iter().map(|s| real(Path::new(s))));
     hide.extend(p.runtime_dir.map(real));
+    hide.extend(CLAUDE_HIDDEN.iter().map(|h| claude.join(h)));
+    hide.push(real(Path::new(HIDDEN_X)));
+    if cfg!(target_os = "macos") {
+        hide.extend(HIDDEN_IN_HOME_MACOS.iter().map(|h| user_home.join(h)));
+    }
     // Another project's root, unless the Navi's own folder or the whole home is in it.
     hide.extend(
         p.other_roots
@@ -162,6 +202,7 @@ pub fn navi_fence(p: &NaviPaths) -> Fence {
     hide.sort();
     hide.dedup();
 
+    // claude's config dir is read again where it is hidden (under `~/.config`), but for [`CLAUDE_HIDDEN`].
     let mut show = vec![real(p.session_dir), real(p.exe), real(p.socket), claude];
     show.extend(NODE_TOOLS.iter().map(|t| real(&p.node_home.join(t))));
     Fence {
@@ -182,7 +223,10 @@ impl Fence {
             .iter()
             .chain(self.private.iter().flat_map(|(a, b)| [a, b]))
         {
-            std::fs::create_dir_all(dir)?;
+            // A written file (claude's login) is there already.
+            if !dir.is_file() {
+                std::fs::create_dir_all(dir)?;
+            }
         }
         for kept in &self.keep {
             if kept.extension().is_none() && !kept.exists() {
@@ -320,6 +364,16 @@ fn s(p: &Path) -> String {
     p.to_string_lossy().into_owned()
 }
 
+/// Variables a fenced session never gets: they name sockets that reach outside it (D-Bus and systemd, which start
+/// commands; an SSH agent; the person's X server).
+pub const NO_ENV: &[&str] = &[
+    "XDG_RUNTIME_DIR",
+    "DBUS_SESSION_BUS_ADDRESS",
+    "SSH_AUTH_SOCK",
+    "DISPLAY",
+    "XAUTHORITY",
+];
+
 /// bubblewrap's arguments: the machine read-only, its own `/dev`, `/proc`, `/tmp` and pid namespace, then each of the
 /// fence's paths, shallowest first so a deeper one lands on top (the folder inside the hidden node home).
 fn bwrap_args(fence: &Fence, cwd: &Path) -> Vec<String> {
@@ -345,6 +399,8 @@ fn bwrap_args(fence: &Fence, cwd: &Path) -> Vec<String> {
 
     let mut args: Vec<String> = [
         "--die-with-parent",
+        // Its own session: no controlling terminal of the node's to push keystrokes into (TIOCSTI).
+        "--new-session",
         "--unshare-pid",
         "--unshare-ipc",
         "--ro-bind",
@@ -378,12 +434,9 @@ fn bwrap_args(fence: &Fence, cwd: &Path) -> Vec<String> {
     for p in tmpfs {
         args.extend(["--remount-ro".into(), p]);
     }
-    for var in [
-        "XDG_RUNTIME_DIR",
-        "DBUS_SESSION_BUS_ADDRESS",
-        "SSH_AUTH_SOCK",
-    ] {
-        args.extend(["--unsetenv".into(), var.into()]);
+    // The node leaves them out of a Navi's environment; systemd-run's scope, outside, adds the bus's back.
+    for var in NO_ENV {
+        args.extend(["--unsetenv".into(), (*var).into()]);
     }
     args.extend(["--chdir".into(), s(cwd), "--".into()]);
     args
@@ -396,7 +449,9 @@ fn quoted(p: &Path) -> String {
 }
 
 /// macOS's profile: everything as usual, but writes only to the fence's written paths (and the devices every program
-/// writes), and no reading the hidden ones' contents. Later rules win, so the kept and shown paths come after. A
+/// writes), and no reading the hidden ones' contents. Later rules win, so the kept paths come after the written ones,
+/// and each read rule comes after those of the paths around it (shallowest first, as bubblewrap mounts them): the
+/// folder is read inside the hidden fleetd dir, and claude's other sessions aren't inside its shown config dir. A
 /// path's metadata stays readable, so resolving a path through a hidden dir still works.
 fn seatbelt(fence: &Fence) -> String {
     let subpaths = |paths: &mut dyn Iterator<Item = &PathBuf>| {
@@ -405,8 +460,6 @@ fn seatbelt(fence: &Fence) -> String {
             .collect::<String>()
     };
     let write = subpaths(&mut fence.write.iter());
-    let hide = subpaths(&mut fence.hide.iter());
-    let show = subpaths(&mut fence.show.iter().chain(&fence.write));
     let keep = subpaths(&mut fence.keep.iter());
     let mut profile = String::from("(version 1)\n(allow default)\n(deny file-write*)\n");
     profile.push_str(&format!(
@@ -416,9 +469,14 @@ fn seatbelt(fence: &Fence) -> String {
     if !keep.is_empty() {
         profile.push_str(&format!("(deny file-write*{keep})\n"));
     }
-    if !hide.is_empty() {
-        profile.push_str(&format!("(deny file-read-data file-read-xattr{hide})\n"));
-        profile.push_str(&format!("(allow file-read-data file-read-xattr{show})\n"));
+    let mut reads: Vec<(&PathBuf, &str)> = fence.hide.iter().map(|p| (p, "deny")).collect();
+    reads.extend(fence.show.iter().chain(&fence.write).map(|p| (p, "allow")));
+    reads.sort_by_key(|(p, _)| p.components().count());
+    for (path, rule) in reads {
+        profile.push_str(&format!(
+            "({rule} file-read-data file-read-xattr (subpath {}))\n",
+            quoted(path)
+        ));
     }
     profile
 }

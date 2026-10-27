@@ -2257,6 +2257,7 @@ impl SessionService {
                     sockets.to_string_lossy().into_owned(),
                 ),
             ]);
+            env.retain(|(k, _)| !sandbox::NO_ENV.contains(&k.as_str()));
             sandbox = Some(self.navi_fence(row, &dir, &env));
         }
         let spec = SessionSpec {
