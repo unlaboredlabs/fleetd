@@ -8,7 +8,7 @@ import { callKey } from "../../src/data/queries";
 import { useDataLayer, useToolQuery } from "../../src/data/react";
 import { Button, Field, Input, Text, copyText, cx, toast } from "../../ui";
 import { useHubState } from "../onboarding/hooks";
-import { needWords, requiredLeft, setupSteps, type SetupStep, type StepId, type StepStatus } from "./steps";
+import { needWords, requiredLeft, setupSteps, type PasteValue, type SetupStep, type StepId, type StepStatus } from "./steps";
 import s from "./setup.module.css";
 
 export type SetupView = "welcome" | "done" | StepId | null;
@@ -127,9 +127,6 @@ function StepPane({ step, steps, hub }: { step: SetupStep; steps: ReadonlyArray<
     const now = setupSteps(hub, out.output.checks).find((st) => st.id === step.id);
     setTested({ ok: now?.status === "done", text: now?.said ?? "No check answered for this step yet." });
   };
-  // The parts shown are numbered in order, so a step without a link starts at 1.
-  const counter = { n: 0 };
-  const number = () => ++counter.n;
   return (
     <article className={s.pane} aria-labelledby="setup-step-title">
       <Text as="p" size="xs" tone="quiet">
@@ -147,58 +144,28 @@ function StepPane({ step, steps, hub }: { step: SetupStep; steps: ReadonlyArray<
         </Text>
       ) : null}
 
-      {step.link === undefined ? null : (
-        <Part n={number()} title={`Open ${step.link.site}`}>
-          <Button icon={<ExternalLink size={14} />} onClick={() => void window.fleetd.openExternal(step.link?.url ?? "")}>
-            {step.link.label}
-          </Button>
+      {step.parts.map((part, i) => (
+        <Part key={part.title} n={i + 1} title={part.title}>
+          {part.note === undefined ? null : (
+            <Text as="p" size="sm" tone="quiet">
+              {part.note}
+            </Text>
+          )}
+          {part.links === undefined ? null : (
+            <div className={s.links}>
+              {part.links.map((link) => (
+                <Button key={link.url} icon={<ExternalLink size={14} />} onClick={() => void window.fleetd.openExternal(link.url)}>
+                  {link.label}
+                </Button>
+              ))}
+            </div>
+          )}
+          {part.values === undefined ? null : <Values values={part.values} />}
         </Part>
-      )}
-
-      {step.values.length === 0 ? null : (
-        <Part n={number()} title="Fill it in with these">
-          <dl className={s.values}>
-            {step.values.map((v) => (
-              <div key={v.label} className={s.valueRow}>
-                <dt>
-                  <Text size="sm" tone="quiet">
-                    {v.label}
-                  </Text>
-                </dt>
-                <dd>
-                  {v.plain === true ? (
-                    <Text size="sm">{v.value}</Text>
-                  ) : (
-                    <span className={s.copyable}>
-                      <Text size="sm" mono className={s.value}>
-                        {v.value}
-                      </Text>
-                      <Button
-                        variant="ghost"
-                        iconOnly
-                        aria-label={`Copy ${v.label}`}
-                        icon={<Copy size={14} />}
-                        onClick={() => {
-                          void copyText(v.value);
-                          toast({ title: `${v.label} copied` });
-                        }}
-                      />
-                    </span>
-                  )}
-                  {v.note === undefined ? null : (
-                    <Text as="p" size="xs" tone="quiet">
-                      {v.note}
-                    </Text>
-                  )}
-                </dd>
-              </div>
-            ))}
-          </dl>
-        </Part>
-      )}
+      ))}
 
       {step.fields.length === 0 ? null : (
-        <Part n={number()} title="Paste what you get back">
+        <Part n={step.parts.length + 1} title="Paste what you get back">
           <div className={s.fields}>
             {step.fields.map((f) => (
               <Field
@@ -210,6 +177,11 @@ function StepPane({ step, steps, hub }: { step: SetupStep; steps: ReadonlyArray<
               </Field>
             ))}
           </div>
+          {step.fieldsNote === undefined ? null : (
+            <Text as="p" size="sm" tone="quiet">
+              {step.fieldsNote}
+            </Text>
+          )}
         </Part>
       )}
 
@@ -242,6 +214,53 @@ function StepPane({ step, steps, hub }: { step: SetupStep; steps: ReadonlyArray<
         </Button>
       </footer>
     </article>
+  );
+}
+
+/** A provider form's values: each to copy, or words to follow, or (filled) what fleetd fills in itself. */
+function Values({ values }: { values: ReadonlyArray<PasteValue> }) {
+  return (
+    <dl className={s.values}>
+      {values.map((v) => (
+        <div key={v.label} className={s.valueRow}>
+          <dt>
+            <Text size="sm" tone="quiet">
+              {v.label}
+            </Text>
+          </dt>
+          <dd>
+            {v.plain === true ? (
+              <Text size="sm">{v.value}</Text>
+            ) : v.filled === true ? (
+              <Text size="sm" mono className={s.value}>
+                {v.value}
+              </Text>
+            ) : (
+              <span className={s.copyable}>
+                <Text size="sm" mono className={s.value}>
+                  {v.value}
+                </Text>
+                <Button
+                  variant="ghost"
+                  iconOnly
+                  aria-label={`Copy ${v.label}`}
+                  icon={<Copy size={14} />}
+                  onClick={() => {
+                    void copyText(v.value);
+                    toast({ title: `${v.label} copied` });
+                  }}
+                />
+              </span>
+            )}
+            {v.note === undefined ? null : (
+              <Text as="p" size="xs" tone="quiet">
+                {v.note}
+              </Text>
+            )}
+          </dd>
+        </div>
+      ))}
+    </dl>
   );
 }
 
@@ -278,7 +297,7 @@ function Welcome({ steps }: { steps: ReadonlyArray<SetupStep> }) {
             Start setup
           </Button>
           <Text size="sm" tone="quiet">
-            About 15 minutes, mostly in GitHub and the Claude Console.
+            A few minutes for what is required. Google takes longest, and can wait.
           </Text>
         </div>
       </div>
