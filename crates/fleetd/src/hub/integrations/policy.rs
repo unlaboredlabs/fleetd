@@ -62,6 +62,10 @@ impl From<Rule> for ToolPolicy {
     }
 }
 
+/// An asking call whose whole input doesn't fit on its card: approving it would run what the person couldn't see.
+pub const TOO_LARGE: &str = "Blocked by fleetd: this call is too large to show on an approval card in full, and \
+     fleetd never asks you to approve what you can't see. Split it into smaller calls.";
+
 /// The hub's answer to a session's permission prompt for an MCP tool.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Verdict {
@@ -257,6 +261,10 @@ pub fn verdict(tool_name: &str, input: &Value, servers: &[McpServer]) -> Option<
             if holds_credential(input) {
                 return Some(Verdict::Block(Never::Credential.why()));
             }
+            if js_len(&serde_json::to_string_pretty(input).unwrap_or_default()) > PREVIEW_INPUT_MAX
+            {
+                return Some(Verdict::Block(TOO_LARGE));
+            }
             match preview(kind, server_name, tool, action, input) {
                 Some(p) => Verdict::Ask(Box::new(p)),
                 // A name the contracts can't carry is no tool fleetd shows a person: refused rather than asked blind.
@@ -399,7 +407,8 @@ pub fn preview(
             .as_deref()
             .map(|t| Text::unchecked(clip_utf16(t, 2000).0)),
         when: d.when.as_deref().and_then(line),
-        input: Text::unchecked(clip_utf16(&pretty, PREVIEW_INPUT_MAX).0),
+        // Whole: `verdict` refuses an input past the bound before it asks.
+        input: Text::new(pretty).ok()?,
     })
 }
 

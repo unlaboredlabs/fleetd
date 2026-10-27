@@ -173,7 +173,9 @@ describe("a Navi's integrations", () => {
     const steps = dialog().textContent;
     expect(steps).toContain("npx xaq-cli");
     expect(steps).toContain("http://localhost:8425/oauth/callback");
-    expect(steps).toContain("send mode to Direct");
+    // xaq's own approval stays on as a second layer.
+    expect(steps).toContain("send mode on Approval");
+    expect(steps).not.toContain("Direct");
     // The redirect URI follows the address typed.
     await type(field("xaq's address"), "https://mail.example.com/");
     expect(dialog().textContent).toContain("https://mail.example.com/oauth/callback");

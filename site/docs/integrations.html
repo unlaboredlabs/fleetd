@@ -104,8 +104,8 @@ refuses an integration on any other project.</p>
 </tr>
 <tr>
 <td><strong>Never</strong></td>
-<td>Moving money between accounts, trading, creating accounts in your name; sending or storing anything that looks like a password, key or token</td>
-<td>Refused, even if you would approve it. The Navi is told to leave it to you.</td>
+<td>Moving money between accounts (<code dir="auto">transfer</code>, <code dir="auto">send_money</code>, <code dir="auto">send_transaction</code>), trading (<code dir="auto">buy_stock</code>, <code dir="auto">sell</code>, and any <code dir="auto">place_order</code> or <code dir="auto">submit_order</code>, a shop’s or a restaurant’s too), creating accounts in your name; sending or storing anything that looks like a password, key or token; a call too large to show on the card in full</td>
+<td>Refused, even if you would approve it. The Navi is told to leave it to you. Place orders yourself, or through a screen you take over.</td>
 </tr>
 </tbody>
 </table>
@@ -169,8 +169,8 @@ and gives the Navi one MCP endpoint and one key. fleetd uses xaq rather than its
 <li>Gmail’s read scopes are restricted, so each person needs their own Google Cloud app. xaq’s setup walks you through
 making it.</li>
 <li>It keeps the refresh token encrypted on its own machine and refreshes it.</li>
-<li>It hands the Navi mail cleaned of hidden text and marked untrusted, with send caps and recipient allowlists of its
-own behind fleetd’s approvals.</li>
+<li>It hands the Navi mail cleaned of hidden text and marked untrusted, and keeps its own guardrails (approval on send,
+send caps, recipient allowlists) as a second layer behind fleetd’s approvals.</li>
 </ul>
 <div class="sl-heading-wrapper level-h3"><h3 id="xaq">1. Run xaq</h3><a class="sl-anchor-link" href="#xaq"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “1. Run xaq”</span></a></div>
 <p>On the Navi’s machine (or any machine it can reach), with Node.js 22.13 or newer:</p>
@@ -233,7 +233,11 @@ Workspace</strong> (Connections → Add connection) and sign in again.</p>
 </tr>
 <tr>
 <td>Send mode</td>
-<td><strong>Direct</strong>. fleetd asks you before every send, so xaq doesn’t need to ask too. Keep <strong>Approval</strong> if you want to approve twice.</td>
+<td><strong>Approval</strong>. Keep xaq’s own guardrails on as a second layer: after you approve a send on fleetd’s card, xaq asks once more on its own approve page before anything leaves. Never Direct.</td>
+</tr>
+<tr>
+<td>Allowed recipients, send caps</td>
+<td>Optional, and worth it: xaq refuses a send outside them, whatever was approved.</td>
 </tr>
 <tr>
 <td>Tool list</td>

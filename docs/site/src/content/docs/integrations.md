@@ -19,7 +19,7 @@ The hub decides from a table of every tool, not the Navi. The model can't talk i
 | **Reads** | Search and read mail, list events, check free/busy, search Drive, read a doc, search Notion, read a page | Runs without asking. |
 | **Writes, sends, deletes, shares** | Send, reply or forward an email; save a draft; label, archive or trash mail; create, change or delete an event; answer an invitation; change a doc, sheet or Notion page; trash a file | Asks you in the chat, **every time**, with exactly what it would do. There is no "always allow". |
 | **Spending** | A custom server's `pay`, `purchase` or `checkout` tool | Asks you, marked **Costs money**, and asks once more before it runs. |
-| **Never** | Moving money between accounts, trading, creating accounts in your name; sending or storing anything that looks like a password, key or token | Refused, even if you would approve it. The Navi is told to leave it to you. |
+| **Never** | Moving money between accounts (`transfer`, `send_money`, `send_transaction`), trading (`buy_stock`, `sell`, and any `place_order` or `submit_order`, a shop's or a restaurant's too), creating accounts in your name; sending or storing anything that looks like a password, key or token; a call too large to show on the card in full | Refused, even if you would approve it. The Navi is told to leave it to you. Place orders yourself, or through a screen you take over. |
 
 A tool the table doesn't know asks. That covers one xaq adds later, a custom server's tools and the MCP servers in your
 own claude setup.
@@ -52,8 +52,8 @@ and gives the Navi one MCP endpoint and one key. fleetd uses xaq rather than its
 - Gmail's read scopes are restricted, so each person needs their own Google Cloud app. xaq's setup walks you through
   making it.
 - It keeps the refresh token encrypted on its own machine and refreshes it.
-- It hands the Navi mail cleaned of hidden text and marked untrusted, with send caps and recipient allowlists of its
-  own behind fleetd's approvals.
+- It hands the Navi mail cleaned of hidden text and marked untrusted, and keeps its own guardrails (approval on send,
+  send caps, recipient allowlists) as a second layer behind fleetd's approvals.
 
 ### 1. Run xaq {#xaq}
 
@@ -105,7 +105,8 @@ In xaq, **Agents → New agent**, named Navi:
 |---|---|
 | Grants on your account | `read`, `draft`, `send`, `organize`, `trash`; `calendar.read` and `calendar.write` |
 | Connections | Google Workspace, for Drive |
-| Send mode | **Direct**. fleetd asks you before every send, so xaq doesn't need to ask too. Keep **Approval** if you want to approve twice. |
+| Send mode | **Approval**. Keep xaq's own guardrails on as a second layer: after you approve a send on fleetd's card, xaq asks once more on its own approve page before anything leaves. Never Direct. |
+| Allowed recipients, send caps | Optional, and worth it: xaq refuses a send outside them, whatever was approved. |
 | Tool list | **All tools**. In search mode the hub can't tell xaq's tools apart, and each one asks. |
 
 Copy the agent's key. It starts with `aib_`.

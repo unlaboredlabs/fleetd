@@ -18204,7 +18204,7 @@
         },
         "input": {
           "description": "Everything the tool gets, as JSON, so nothing is hidden behind the fields above.",
-          "maxLength": 20000,
+          "maxLength": 100000,
           "type": "string"
         },
         "integration": {
