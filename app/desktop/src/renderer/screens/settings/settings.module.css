@@ -282,17 +282,6 @@
 }
 
 /* ---- Max agents ---- */
-/*
- * The header's "agents 6 / 12": a block on its own 16 px line, as the state word beside it is, so the button's larger
- * line doesn't set its baseline a pixel lower.
- */
-.agentsLabel {
-  display: block;
-}
-.agentsPopover {
-  width: 320px;
-  max-width: calc(100vw - 32px);
-}
 .agentsPanel {
   display: flex;
   flex-direction: column;
@@ -312,8 +301,7 @@
   margin: 0;
   padding-left: var(--space-4);
 }
-.agentsHead,
-.agentsScale {
+.agentsHead {
   display: flex;
   align-items: baseline;
   justify-content: space-between;

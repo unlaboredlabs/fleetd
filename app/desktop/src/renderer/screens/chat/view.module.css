@@ -19,7 +19,7 @@
   gap: var(--space-2);
   padding: var(--space-4) var(--pad);
 }
-/* The header's state word, in a box as tall as the agents control beside it, so the two share a height and a line. */
+/* A held chat's "Last known" chip in the top bar, in a box as tall as the bar's controls, so it sits on their line. */
 .state {
   display: inline-flex;
   align-items: center;
@@ -606,17 +606,24 @@
   margin-top: var(--space-1);
 }
 
-/* The line above the box while the lead waits on you. */
+/* What needs you, in the top bar after the title: one row, its words giving way before Show or Resume. */
 .attention {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: var(--space-2);
+  flex: 0 1000 auto;
   min-width: 0;
-  padding: 0 var(--space-1) var(--space-1-5);
+  margin-inline-start: var(--space-2);
 }
-.attention > :first-child {
+.attention > * {
   flex: none;
-  align-self: center;
+}
+.attention > .attentionWords {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 /* An empty chat: what to ask, just above the box. */

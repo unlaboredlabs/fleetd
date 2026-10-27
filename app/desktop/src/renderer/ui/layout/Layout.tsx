@@ -14,13 +14,16 @@ const SetTitleSlot = createContext<(el: HTMLElement | null) => void>(() => undef
  * The window: a sidebar down the left, from the very top (the macOS traffic lights sit in it), and beside it the
  * top row over the main area (which owns its own scrolling). `sidebarTop` is the sidebar's first row, beside the
  * traffic lights; without a sidebar the top row runs the full width and starts after them. `aside` is a panel on
- * the right, under the top row, as wide as its content says.
+ * the right, from the very top too, as wide as its content says: its own first row sits beside the top row.
+ * `corner` stays at the window's top right whether the aside shows or not (the panel's toggle, so a second click in
+ * the same place undoes the first); the top row, or the aside's first row, leaves it room.
  */
 export function AppFrame(props: {
   topBar: ReactNode;
   sidebar?: ReactNode;
   sidebarTop?: ReactNode;
   aside?: ReactNode;
+  corner?: ReactNode;
   /** The window's own frame: its sidebar shows the window's translucent material where there is one (macOS). */
   translucent?: boolean;
   children: ReactNode;
@@ -30,7 +33,7 @@ export function AppFrame(props: {
   return (
     <SetTitleSlot.Provider value={setSlot}>
       <TitleSlot.Provider value={slot}>
-        <div className={cx(s.frame, !props.sidebar && s.noSidebar, Boolean(props.aside) && s.withAside, props.translucent && s.translucent, props.className)}>
+        <div className={cx(s.frame, !props.sidebar && s.noSidebar, Boolean(props.aside) && s.withAside, Boolean(props.corner) && s.withCorner, props.translucent && s.translucent, props.className)}>
           {props.sidebar ? (
             <div className={s.side}>
               <div className={s.sideTop}>{props.sidebarTop}</div>
@@ -38,6 +41,7 @@ export function AppFrame(props: {
             </div>
           ) : null}
           {props.topBar}
+          {props.corner ? <div className={s.corner}>{props.corner}</div> : null}
           <main className={s.main}>{props.children}</main>
           {props.aside ? <div className={s.aside}>{props.aside}</div> : null}
         </div>
@@ -63,10 +67,10 @@ export function TopBar(props: { leading?: ReactNode; trailing?: ReactNode; class
 
 /**
  * A screen's header, in the frame's top row rather than a header bar of the screen's own: every page's one header
- * style. `title` is the page's name (its heading), `detail` a quiet line beside it, `lead` what comes before it (a
- * way back), and `children` the page's controls and state, at the end.
+ * style. `title` is the page's name (its heading), `detail` a quiet line beside it (text, or a line of its own),
+ * `lead` what comes before it (a way back), and `children` the page's controls and state, at the end.
  */
-export function FrameTitle(props: { title?: string | undefined; detail?: string | undefined; lead?: ReactNode; children?: ReactNode }) {
+export function FrameTitle(props: { title?: string | undefined; detail?: ReactNode; lead?: ReactNode; children?: ReactNode }) {
   const slot = useContext(TitleSlot);
   if (slot === null) return null;
   return createPortal(
@@ -78,10 +82,12 @@ export function FrameTitle(props: { title?: string | undefined; detail?: string 
             {props.title}
           </Truncate>
         )}
-        {props.detail === undefined ? null : (
+        {props.detail == null ? null : typeof props.detail === "string" ? (
           <Truncate size="xs" tone="quiet" className={s.frameDetail}>
             {props.detail}
           </Truncate>
+        ) : (
+          props.detail
         )}
       </span>
       {props.children}

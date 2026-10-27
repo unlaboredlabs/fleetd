@@ -195,7 +195,7 @@ const build = (base: Fixture): Fixture => {
   const said = (n: number, text: string, state: "final" | "streaming", ms: number) =>
     event("chat.message", "The lead in the chat", { projectRef, messageId: `m${String(n)}`, seq: n, author: "lead", state, message: message(n, "lead", text, state, ms) });
   const waiting = (lastSeq: number, leadWorking: boolean) => event("chat.waiting", "The lead's turn", { projectRef, needsYou: false, leadWorking, lastSeq, lastMessageAt: f.now });
-  // Every project's slots, storefront's running `running`: the chat header's "agents n / 6".
+  // Every project's slots, storefront's running `running`: Max agents' "max 6" in the panel.
   const projects = (Array.isArray(f.snapshot?.["projects"]) ? f.snapshot["projects"] : []) as JsonObject[];
   const slots = (running: number): JsonObject => ({
     cap: 12,

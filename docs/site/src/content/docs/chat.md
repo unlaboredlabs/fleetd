@@ -90,10 +90,11 @@ lead, with one exception: 👍 on the message the lead waits on, or on an Approv
 
 The lead logs each answer as a [decision](/docs/glossary#decision), so it never asks the same thing twice. In the
 sidebar, a project says "reply" while the lead's last message waits for your answer, "secret" or "approve" while an
-item is open, and "blocked" when something outside the work holds it up. ⌥⌘A jumps to the next one. In the chat, a
-line above the box says what it waits on, such as "2 questions, asked at 09:02" or "1 command to approve". Click Show
-to scroll to it. When nothing waits on you but the project is blocked, the line says why. A check red on main blocks nothing, so the
-line warns instead, naming the check and whether a fix is under way: "`rust (macos)` is red on main, fix in progress".
+item is open, and "blocked" when something outside the work holds it up. ⌥⌘A jumps to the next one. In the chat, the
+top bar says what it waits on after the project's name, such as "2 questions, asked at 09:02" or "1 command to approve".
+Click Show to scroll to it. When nothing waits on you but the project is blocked, the bar says why. A check red on main
+blocks nothing, so the bar warns instead, naming the check and whether a fix is under way: "`rust (macos)` is red on
+main, fix in progress". When nothing needs you, the bar is just the project's name.
 
 ## How the lead writes {#voice}
 
