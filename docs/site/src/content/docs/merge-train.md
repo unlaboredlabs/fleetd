@@ -15,6 +15,11 @@ How fleetd merges pull requests. Only fleetd merges: each writer's PR goes on it
 
 A conflict or red CI goes back to the agent that wrote the PR; for red CI, with the failing checks.
 
+GitHub runs no CI on a PR that conflicts with its base. So on every pass the train reads each waiting PR's mergeable
+state, and once GitHub says it conflicts, the PR goes back to its agent as `needs_rebase` ("conflicts with main, so
+GitHub runs no CI on it") without waiting for its turn. A waiting PR whose commit has no check 15 minutes after the
+train first saw it is flagged to its agent and the lead, once per commit, and keeps its place.
+
 fleetd merges only on green CI. A ready PR on a repo with no CI (no GitHub Actions workflow, and no required check but
 `fleetd/train`) waits, and its queue entry and `fleetd doctor` say to add one. It goes on by itself once a workflow
 exists.
