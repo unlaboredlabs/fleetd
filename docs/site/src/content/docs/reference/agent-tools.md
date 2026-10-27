@@ -55,6 +55,7 @@ Every lead gets these.
 | [`gated_run`](#gated_run) | A prod write, spend, delete or credential use: the chat shows the human exactly this argv with Approve / Deny, and the node runs it only once approved; secrets come from the node's own sinks. | A human approves the exact command in chat before the node runs it. |
 | [`decisions_search`](#decisions_search) | Search this project's decisions (and the global ones) by words, or read one by its id (D12), whole. | No |
 | [`remember`](#remember) | Keep one entry in memory, in plain words, for every later session: scope user for how the human works everywhere (tone, taste, standing rules), project for this project (MEMORY.md, or a topic file for detail). | No |
+| [`forget`](#forget) | Remove one entry from memory: entry quotes words of exactly one entry, as it reads now; scope and topic as for remember. | No |
 | [`memory_read`](#memory_read) | Read one of this project's memory topic files (MEMORY.md lists them). | No |
 | [`automation_create`](#automation_create) | Make an automation for this project: a name, the prompt each run gives you as a new order, and optionally a schedule (5-field cron and an IANA tz, such as 0 9 \* \* 1-5 in Europe/Berlin). | No |
 | [`automation_list`](#automation_list) | This project's automations with their schedule, next run, paused state and last run. | No |
@@ -379,6 +380,30 @@ Keep one entry in memory, in plain words, for every later session: scope user fo
     "replaces": "Use npm",
     "scope": "project",
     "text": "No npm here: use pnpm."
+  }
+}
+```
+
+### forget
+
+Remove one entry from memory: entry quotes words of exactly one entry, as it reads now; scope and topic as for remember. For an entry that no longer holds (done, superseded, contradicted); say why in reason. To change an entry, remember with replaces instead. The chat shows the human what you forgot, with Undo.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `entry` | string | yes | Words of the entry to remove, quoted exactly; they must match one entry of the file. At most 1000 characters. |
+| `reason` | string | no | One line. At most 300 characters. |
+| `scope` | string | yes | One of `user` (`user.md`: how the human works across every project), `project` (This project's `MEMORY.md`, or one of its topic files). |
+| `topic` | string | no | Project scope only: the topic file; absent, `MEMORY.md`. |
+
+**Who may call:** a lead, checked by the hub. **Needs a human:** no.
+
+```json
+{
+  "name": "forget",
+  "arguments": {
+    "entry": "Deploys freeze on Fridays",
+    "reason": "The freeze ended with the launch.",
+    "scope": "project"
   }
 }
 ```

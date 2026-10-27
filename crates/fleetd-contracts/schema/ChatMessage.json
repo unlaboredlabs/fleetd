@@ -485,6 +485,10 @@
         "item": {
           "$ref": "#/$defs/ChatItem"
         },
+        "memoryRefreshed": {
+          "$ref": "#/$defs/MemoryRefreshed",
+          "description": "A system line \"Memory refreshed: +a ~b −c\": what the nightly memory refresh changed, each change undone on its\nown or all together with `memory_undo`."
+        },
         "messageId": {
           "$ref": "#/$defs/ChatMessageId"
         },
@@ -510,7 +514,7 @@
         },
         "remembered": {
           "$ref": "#/$defs/RememberedItem",
-          "description": "A system line \"Remembered: …\": what the lead's `remember` wrote, which `memory_undo` takes back."
+          "description": "A system line \"Remembered: …\" or \"Forgot: …\": what the lead's `remember` or `forget` wrote, which `memory_undo` takes back."
         },
         "replyTo": {
           "$ref": "#/$defs/ChatReplyTo",
@@ -866,6 +870,24 @@
       "pattern": "^[a-z0-9-]{1,32}$",
       "type": "string"
     },
+    "MemoryRefreshed": {
+      "description": "What a nightly memory refresh changed, as one line in the project's chat: each change with its own Undo, and Undo\nall. Posted only when something changed.",
+      "properties": {
+        "items": {
+          "description": "In the order the refresh made them.",
+          "items": {
+            "$ref": "#/$defs/RememberedItem"
+          },
+          "maxItems": 200,
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "type": "object"
+    },
     "MemoryScope": {
       "oneOf": [
         {
@@ -1070,8 +1092,19 @@
       "type": "string"
     },
     "RememberedItem": {
-      "description": "What a `remember` call wrote, as a line in the project's chat. Undone with `memory_undo`.",
+      "description": "What a `remember` or `forget` call wrote, as a line in the project's chat. Undone with `memory_undo`.",
       "properties": {
+        "forgotten": {
+          "description": "`forget` removed `text`; Undo puts it back.",
+          "type": "boolean"
+        },
+        "reason": {
+          "description": "Why it was forgotten.",
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
         "replaced": {
           "description": "The whole entry it replaced, which Undo puts back.",
           "maxLength": 1000,
@@ -1083,6 +1116,7 @@
           "$ref": "#/$defs/MemoryScope"
         },
         "text": {
+          "description": "The entry written; with `forgotten`, the whole entry removed.",
           "maxLength": 1000,
           "minLength": 1,
           "pattern": "^[^\\r\\n]*$",

@@ -145,10 +145,10 @@ fn suggest(
         CallerAgent::Task(task) => format!("{task}"),
         CallerAgent::Lead => "the lead".to_owned(),
         CallerAgent::Person => "you".to_owned(),
-        CallerAgent::Preview(_) | CallerAgent::EndedPreview(_) => {
+        CallerAgent::Preview(_) | CallerAgent::EndedPreview(_) | CallerAgent::MemoryRefresh => {
             return Err(ToolError::new(
                 ErrorCode::Forbidden,
-                "A preview's session suggests nothing.",
+                "A preview's session suggests nothing, nor does a memory refresh.",
             ));
         }
     };
@@ -287,10 +287,10 @@ async fn lead_start(
             )
             .with_fix("Suggest it with preview_suggest."));
         }
-        CallerAgent::Preview(_) | CallerAgent::EndedPreview(_) => {
+        CallerAgent::Preview(_) | CallerAgent::EndedPreview(_) | CallerAgent::MemoryRefresh => {
             return Err(ToolError::new(
                 ErrorCode::Forbidden,
-                "A preview's session starts no preview.",
+                "A preview's session starts no preview, nor does a memory refresh.",
             ));
         }
     };

@@ -981,6 +981,10 @@ pub struct ProjectSettings {
     /// True: a finished task's worktree stays on the machine. False (the default): a reader's goes when it finishes
     /// and a writer's once its PR merges.
     pub keep_worktrees: bool,
+    /// True (the default): each night the lead tidies the project's memory, with a line in the chat to undo it.
+    /// Absent from older hubs.
+    #[serde(default = "default_true")]
+    pub memory_refresh: bool,
     /// Its agents' variables, by name. A secret's value is never here.
     pub env: Vec<crate::project_settings::ProjectEnvVar>,
     /// What runs in each new worktree before its agent starts; no commands when none are set.
@@ -1009,6 +1013,8 @@ input!(
         /// The project's name in fleetd; its folder keeps its own.
         title: Option<Line<1, 200>>,
         keep_worktrees: Option<bool>,
+        /// Turns the nightly memory refresh on or off for the project.
+        memory_refresh: Option<bool>,
         /// Replaces the project's setup commands and their settings; no commands turns setup off.
         setup: Option<crate::project_settings::WorktreeSetup>,
         /// Replaces how the merge train treats the repo's checks: the checks it also waits for, and those left for
@@ -1021,11 +1027,14 @@ input!(
 checked!(ProjectSettingsSetInput, |input| {
     if input.title.is_none()
         && input.keep_worktrees.is_none()
+        && input.memory_refresh.is_none()
         && input.setup.is_none()
         && input.train.is_none()
         && input.preview.is_none()
     {
-        return Err("expected title, keepWorktrees, setup, train, preview or more".into());
+        return Err(
+            "expected title, keepWorktrees, memoryRefresh, setup, train, preview or more".into(),
+        );
     }
     Ok(())
 });
@@ -1258,8 +1267,10 @@ checked!(MemorySetInput, |input| {
 output!(MemorySetOutput { file: MemoryFile });
 input!(MemoryUndoInput {
     project_ref: ProjectRef,
-    /// The chat line that said "Remembered: …".
+    /// The chat line that said "Remembered: …", "Forgot: …" or "Memory refreshed: …".
     message_id: ChatMessageId,
+    /// A "Memory refreshed" line's change, by its place in the line (0 first); absent, every change not yet undone.
+    item: Option<Int<0, 199>>,
 });
 output!(MemoryUndoOutput { ok: True });
 

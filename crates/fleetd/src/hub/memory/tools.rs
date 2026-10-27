@@ -1,15 +1,17 @@
 //! memory_get, memory_set, memory_undo and memory_caps_set: Settings > Memory and the chat's Undo. Writes are a
-//! person's (human keys): an agent changes memory only through its lead's `remember`. The caps are an admin's.
+//! person's (human keys): an agent changes memory only through its lead's `remember` and `forget`. The caps are an
+//! admin's.
 use std::sync::Arc;
 
 use fleetd_contracts::auth::Role;
+use fleetd_contracts::chat::ChatMessage;
 use fleetd_contracts::ids::ProjectRef;
 use fleetd_contracts::mcp::{
     ErrorCode, MemoryCapsSetInput, MemoryCapsSetOutput, MemoryGetInput, MemoryGetOutput,
     MemorySetInput, MemorySetOutput, MemoryUndoInput, MemoryUndoOutput,
 };
-use fleetd_contracts::memory::{MemoryScope, RememberedItem};
-use fleetd_contracts::prim::{Count, True};
+use fleetd_contracts::memory::{MemoryRefreshed, MemoryScope, RememberedItem};
+use fleetd_contracts::prim::{Count, List, True};
 
 use super::Target;
 use super::calls::changed;
@@ -134,6 +136,15 @@ async fn memory_undo(
         .by_id(input.message_id.as_str())?
         .filter(|m| &m.project_ref == r)
         .ok_or_else(not_found)?;
+    if let Some(refreshed) = message.memory_refreshed.clone() {
+        return undo_refreshed(
+            &hub,
+            &caller,
+            message,
+            refreshed,
+            input.item.map(|i| i.get()),
+        );
+    }
     let Some(item) = message.remembered.clone() else {
         return Err(not_found());
     };
@@ -157,6 +168,62 @@ async fn memory_undo(
     Ok(MemoryUndoOutput {
         ok: True,
         next: None,
+        truncated: None,
+    })
+}
+
+/// Undo on a "Memory refreshed" line: the change at `index`, or every change not yet undone, newest first, so a
+/// change made on top of an earlier one is taken back before it. Each one undone is marked, even when a later one
+/// can't be: that one says why.
+fn undo_refreshed(
+    hub: &Hub,
+    caller: &Caller,
+    message: ChatMessage,
+    refreshed: MemoryRefreshed,
+    index: Option<i64>,
+) -> Result<MemoryUndoOutput, ToolError> {
+    let r = message.project_ref.clone();
+    let mut items = refreshed.items.into_inner();
+    let picked: Vec<usize> = match index {
+        Some(i) if (i as usize) < items.len() => vec![i as usize],
+        Some(i) => {
+            return Err(ToolError::new(
+                ErrorCode::NotFound,
+                format!("That line has {} changes, not a change {i}.", items.len()),
+            ));
+        }
+        None => (0..items.len()).rev().collect(),
+    };
+    let mut failed = None;
+    let mut done = 0;
+    for i in picked {
+        let item = &items[i];
+        if item.undone == Some(true) {
+            continue;
+        }
+        if let Err(e) = hub.db.memory().undo(&r, item) {
+            failed = Some(e);
+            break;
+        }
+        let project = (item.scope == MemoryScope::Project).then_some(&r);
+        changed(hub, project, item.topic.as_ref(), caller.name.as_str())?;
+        items[i].undone = Some(true);
+        done += 1;
+    }
+    if done > 0 {
+        hub.chat.set_memory_refreshed(
+            message,
+            MemoryRefreshed {
+                items: List::unchecked(items),
+            },
+        )?;
+    }
+    if let Some(e) = failed {
+        return Err(e.into());
+    }
+    Ok(MemoryUndoOutput {
+        ok: True,
+        next: (done == 0).then(|| "Already undone.".into()),
         truncated: None,
     })
 }

@@ -133,6 +133,8 @@ function ProjectPage({ settings, refresh, onDeleted }: { settings: Settings; ref
       <Separator />
       <WorktreeSetting settings={settings} />
       <Separator />
+      <MemoryRefreshSetting settings={settings} />
+      <Separator />
       <EnvSetting env={settings.env} projectRef={ref} />
       <Separator />
       <McpSection projectRef={ref} />
@@ -274,6 +276,27 @@ function WorktreeSetting({ settings }: { settings: Settings }) {
           save(
             { machineId: settings.machineId, projectId: settings.projectId, keepWorktrees: keep },
             keep ? "Finished worktrees stay." : "Finished worktrees go again.",
+          )
+        }
+      />
+      <EchoLine echo={echo} />
+    </Setting>
+  );
+}
+
+function MemoryRefreshSetting({ settings }: { settings: Settings }) {
+  const { busy, echo, save } = useSave();
+  return (
+    <Setting reveal="projects.memory" label="Memory" help="What the lead remembers about this project, in Settings → Memory.">
+      <Switch
+        label="Refresh memory every night"
+        description="Around 4:00, on a day with chat or orders, the lead tidies the project's memory: it adds what it missed, merges overlaps and removes what no longer holds. One line in the chat lists the changes, each with Undo."
+        checked={settings.memoryRefresh ?? true}
+        disabled={busy}
+        onCheckedChange={(on) =>
+          save(
+            { machineId: settings.machineId, projectId: settings.projectId, memoryRefresh: on },
+            on ? "Memory is refreshed every night." : "The nightly memory refresh is off.",
           )
         }
       />

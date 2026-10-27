@@ -542,6 +542,12 @@ impl AgentDirectory for Directory {
                 )),
             };
         }
+        // A nightly memory refresh, whose calls the policy holds to memory.
+        if let Some(project_ref) = crate::hub::memory::refresh::project_of_thread(&hub.db, thread)
+            .map_err(|e| failed(e.to_string()))?
+        {
+            return Ok((CallerAgent::MemoryRefresh, project_ref));
+        }
         let leads = hub
             .leads
             .records
