@@ -139,7 +139,9 @@ add|list|remove`, and Add repo / Remove in Settings › Projects › Repos.
   project, for the hub's own bookkeeping: pruning, binding, finding a session's project.
 - **Archiving** is derived, not stored. A checkout that was a project of its own is archived while another project holds
   it. Attaching stops its lead's session. From then on its lead is refused at every start, resume and wake
-  (`leads::lead::refuse_archived`), its spawns are refused, and `chat_send`, `project_repo_add` and
+  (`leads::lead::refuse_archived`), a steer at its orders is refused, and any send to its lead thread is refused where
+  every turn goes out to the node (`Executors::send_with`, `repos::archived_lead`), whatever path it came by. Its spawns
+  are refused, and `chat_send`, `project_repo_add` and
   `project_repo_remove` refuse it. Its records stay. Attaching refuses while its agents run. A project that holds repos
   of its own can't be attached.
 - **Remove** deletes the row. `leads::removals` then cancels every live task whose `repoId` no row has. It runs again

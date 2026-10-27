@@ -371,6 +371,8 @@ pub struct Executors {
     mcp_fixed: Mutex<std::collections::HashSet<String>>,
     /// Where the skills a launch carries come from (`hub::skills`); none until `hub/serve` sets it.
     skills: std::sync::OnceLock<Arc<crate::hub::store::HubDb>>,
+    /// Where the hub reads which lead threads are archived (W79); none until `hub/serve` sets it.
+    archive: std::sync::OnceLock<Arc<crate::hub::store::HubDb>>,
     /// Per thread (`machine/thread`): its project, and a digest of the hub skills it last got, so a send carries them
     /// only when they changed. Empty after a hub restart: each thread's next send carries them once.
     skills_sent: Mutex<HashMap<String, (ProjectId, [u8; 32])>>,
@@ -523,6 +525,7 @@ impl Executors {
             mcp_sent: Mutex::default(),
             mcp_fixed: Mutex::default(),
             skills: std::sync::OnceLock::new(),
+            archive: std::sync::OnceLock::new(),
             skills_sent: Mutex::default(),
             clones: Mutex::default(),
             hooks: tools::ToolHooks::default(),
@@ -610,6 +613,11 @@ impl Executors {
     /// every send a thread's changed ones.
     pub fn set_skills(&self, db: Arc<crate::hub::store::HubDb>) {
         let _ = self.skills.set(db);
+    }
+
+    /// `hub/serve` sets this once: from then on no send reaches the lead of an archived project.
+    pub fn set_archive(&self, db: Arc<crate::hub::store::HubDb>) {
+        let _ = self.archive.set(db);
     }
 
     /// The hub skills a launch in the node project carries.
@@ -1638,6 +1646,23 @@ impl Executors {
         opts: &crate::hub::queue::ports::SendOpts,
     ) -> Result<SendOutcome, ExecutorError> {
         let op = NodeOperation::Send;
+        // Every turn of every lead goes through here: an archived project's lead takes none (W79), whichever path
+        // (a chat message, a wake, a steer, the write queue) it came by.
+        if let Some(db) = self.archive.get() {
+            match crate::hub::repos::archived_lead(db, r) {
+                Ok(None) => {}
+                Ok(Some((holder, repo))) => {
+                    let (message, fix) = crate::hub::repos::archived_note(&holder, &repo);
+                    return Err(ExecutorError::NodeRequestFailed {
+                        machine_id: r.machine_id.clone(),
+                        operation: op,
+                        message,
+                        fix: Some(fix),
+                    });
+                }
+                Err(e) => tracing::warn!(error = %e, "executor: the lead's archive not read"),
+            }
+        }
         let run_id = Self::send_run_id(r, client_request_id);
         let (mcp, mcp_sent) = self.changed_mcp(r);
         let (skills, skills_now) = self.changed_skills(r);

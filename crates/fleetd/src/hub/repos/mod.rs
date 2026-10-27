@@ -11,6 +11,8 @@ use std::sync::Arc;
 use fleetd_contracts::ids::ProjectRef;
 use fleetd_contracts::repos::{ProjectRepo, RepoId, RepoName};
 
+use rusqlite::OptionalExtension;
+
 use crate::hub::api::Hub;
 use crate::hub::store::{HubDb, StoreError};
 
@@ -129,6 +131,30 @@ pub fn holder(
     checkout: &ProjectRef,
 ) -> Result<Option<(ProjectRef, ProjectRepo)>, StoreError> {
     db.with(|c| Ok(store::holders(c, checkout)?.into_iter().next()))
+}
+
+/// When `thread` is the lead of an archived project: the project holding its checkout, with that repo.
+pub fn archived_lead(
+    db: &HubDb,
+    thread: &fleetd_contracts::ids::ThreadRef,
+) -> Result<Option<(ProjectRef, ProjectRepo)>, StoreError> {
+    db.with(|c| {
+        let project: Option<String> = c
+            .prepare_cached("SELECT project_id FROM leads WHERE machine_id = ? AND thread_id = ?")?
+            .query_row(
+                rusqlite::params![thread.machine_id.as_str(), thread.thread_id.as_str()],
+                |row| row.get(0),
+            )
+            .optional()?;
+        let Some(project_id) = project else {
+            return Ok(None);
+        };
+        let checkout = ProjectRef {
+            machine_id: thread.machine_id.clone(),
+            project_id: fleetd_contracts::ids::ProjectId::unchecked(project_id),
+        };
+        Ok(store::holders(c, &checkout)?.into_iter().next())
+    })
 }
 
 /// Why an archived project refuses, and the fix.
