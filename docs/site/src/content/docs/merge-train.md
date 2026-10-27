@@ -159,7 +159,8 @@ A member counts as merged only while its head is still the one the batch was bui
 
 | If | The train |
 |---|---|
-| A PR conflicts with the base or the PRs ahead of it | Leaves it out and [regenerates](#regenerate) it, or sends it back to the agent that wrote it. |
+| A PR conflicts with the PRs ahead of it | Leaves it out; it goes again once they land, and a conflict with the base then is [regenerated](#regenerate) or sent back. |
+| A PR conflicts with the base | Leaves it out and [regenerates](#regenerate) it, or sends it back to the agent that wrote it. |
 | The batch is red, or GitHub refuses to merge its PR | Takes each member alone, so each CI result blames only that PR. |
 | A member gets a new push, the `hold` label, or is closed during CI | Drops the batch before the merge, so untested code never lands, and builds a new one without it. |
 
@@ -202,14 +203,15 @@ migration that sorts at or before the base's newest, the train:
 The commands run as the node's user, as agent work does there, but reach for no credential: their HOME is a scratch
 directory, git under them has no credential helper and no hooks, and they get no SSH agent. The fetch and the push are
 separate steps. Programs are found on the node's PATH, the one its agent sessions get; a missing one is named in the
-reason. The commands get `FLEETD_REGENERATE_CACHE`, a directory in the node's own home
-(`~/.fleetd/node/cache/regenerate/<owner>-<name>`, or under the node's `--home`) kept between runs, for build caches such as `CARGO_TARGET_DIR`.
-Meanwhile the PR keeps its place in line, its queue entry says the train is regenerating it, and the train goes on with
+reason. The commands get `FLEETD_REGENERATE_CACHE`, a directory in the node's own home kept between runs
+(`~/.fleetd/node/cache/regenerate/<owner>-<name>`, or under the node's `--home`), for build caches such as
+`CARGO_TARGET_DIR`. One regeneration runs at a time in a checkout; the others wait their turn. Meanwhile the PR keeps
+its place in line, its queue entry says the train is regenerating it, and the train goes on with
 the others. Once the train pushes, the agent that wrote the PR is told, so it builds on the train's commit instead of
 overwriting it.
 
 The pushed commit is a new patch, so it is reviewed and tested like any push. When any step fails, the timeout passes,
-or there is nothing to regenerate (the PR conflicts only with the PRs ahead of it in a batch), the PR goes back to its
+or there is nothing to regenerate, the PR goes back to its
 agent as `needs_rebase`, with the reason: for example "conflicts with main, and the train could not regenerate its
 generated files: it conflicts with main in src/app.rs, which is not a generated file".
 

@@ -3177,7 +3177,8 @@ async fn waits_for_github_to_show_the_rebased_head_and_merges_that_head() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_member_that_conflicts_in_the_batch_goes_back_to_its_writer_and_the_rest_merge() {
+async fn a_member_that_conflicts_in_the_batch_waits_for_the_rest_to_land_then_goes_back_to_its_writer()
+ {
     let kit = Kit::new();
     let a = kit
         .enqueue(kit.open_pr(7, "a", &[("a.txt", Some(&a_with(&[(2, "a")])))]))
@@ -3193,13 +3194,25 @@ async fn a_member_that_conflicts_in_the_batch_goes_back_to_its_writer_and_the_re
     assert_eq!(members_of_batch(&kit), [7, 9]);
     assert_eq!(state_of(&kit, &a), ChangeState::Merged);
     assert_eq!(state_of(&kit, &c), ChangeState::Merged);
+    // It conflicts only with a PR ahead of it in the batch: it waits in line for that one to land, not on its writer.
+    let waiting = kit.get(&b.change_id);
+    assert_eq!(
+        (waiting.state, waiting.last_error.as_deref()),
+        (
+            ChangeState::Ready,
+            Some(
+                "conflicts with the PRs ahead of it in this batch; it goes again once they land on main"
+            )
+        )
+    );
+    assert!(kit.host.events_of("change.needs_rebase").is_empty());
+
+    // Taken again on main, which now has what it conflicts with: with nothing to regenerate, back to its writer.
+    assert!(kit.train.step(REPO).await);
     let parked = kit.get(&b.change_id);
     assert_eq!(
         (parked.state, parked.last_error.as_deref()),
-        (
-            ChangeState::NeedsRebase,
-            Some("conflicts with main and the PRs ahead of it in the train")
-        )
+        (ChangeState::NeedsRebase, Some("conflicts with main"))
     );
     assert_eq!(kit.host.events_of("change.needs_rebase").len(), 1);
 }

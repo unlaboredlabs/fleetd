@@ -247,32 +247,25 @@ async fn a_pr_github_finds_conflicting_in_generated_files_is_regenerated_where_i
     until_merged(&kit, &change).await;
 }
 
-/// A PR that conflicts only with the PR ahead of it in a batch is already on main with its generated files current:
-/// regenerating changes nothing, so it goes back to its author as before, never held as "regenerating".
+/// GitHub says a PR conflicts, but it is already on main with its generated files current: regenerating changes
+/// nothing, so it goes back to its author as before, never held as "regenerating".
 #[tokio::test(flavor = "multi_thread")]
 async fn a_regeneration_that_changes_nothing_sends_the_pr_back() {
     let kit = regen_kit(MAKE);
-    let first = kit
-        .enqueue(kit.open_pr(
-            7,
-            "first",
-            &[("a.txt", Some(&a_with(&[(5, "first's line 5")])))],
-        ))
-        .await;
-    let second = kit
-        .enqueue(kit.open_pr(
+    let change = kit
+        .enqueue_held(kit.open_pr(
             8,
             "second",
             &[("a.txt", Some(&a_with(&[(5, "second's line 5")])))],
         ))
         .await;
+    set_mergeable(&kit, 8, Some(false));
     let head = kit.head_of("second");
 
-    assert!(kit.train.step(REPO).await);
+    kit.train.step(REPO).await;
     kit.train.regenerations_done().await;
 
-    assert_eq!(kit.get(&first.change_id).state, ChangeState::Merged);
-    let parked = kit.get(&second.change_id);
+    let parked = kit.get(&change.change_id);
     assert_eq!(parked.state, ChangeState::NeedsRebase);
     let why = parked.last_error.clone().unwrap_or_default();
     assert!(why.contains("nothing to regenerate"), "{why}");
@@ -374,4 +367,39 @@ async fn regenerations_in_one_checkout_take_turns() {
         Some("a\nc\nx")
     );
     assert_eq!(changes.len(), 2);
+}
+
+/// Two PRs in one batch conflict with each other only in generated files: the second waits for the first to land, then
+/// is regenerated on main and lands, and its writer never hears of a rebase.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_generated_conflict_with_a_pr_ahead_in_the_batch_waits_for_it_then_is_regenerated() {
+    let kit = regen_kit(MAKE);
+    let first = kit
+        .enqueue(kit.open_pr(
+            7,
+            "add-b",
+            &[("src/b.txt", Some("b\n")), ("gen/all.txt", Some("a\nb\n"))],
+        ))
+        .await;
+    let second = kit
+        .enqueue(kit.open_pr(
+            8,
+            "add-d",
+            &[("src/d.txt", Some("d\n")), ("gen/all.txt", Some("a\nd\n"))],
+        ))
+        .await;
+
+    assert!(kit.train.step(REPO).await);
+    kit.train.regenerations_done().await;
+    assert_eq!(kit.get(&first.change_id).state, ChangeState::Merged);
+    let waiting = kit.get(&second.change_id);
+    assert_eq!(waiting.state, ChangeState::Ready);
+    assert!(
+        kit.host.node_runs.lock().unwrap().is_empty(),
+        "nothing regenerated yet"
+    );
+
+    until_merged(&kit, &second.change_id).await;
+    assert_eq!(kit.main_file("gen/all.txt").as_deref(), Some("a\nb\nd"));
+    assert!(kit.host.events_of("change.needs_rebase").is_empty());
 }

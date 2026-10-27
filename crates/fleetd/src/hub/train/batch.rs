@@ -577,8 +577,16 @@ impl Train {
                     head = sha;
                     kept.push(m.clone());
                 }
+                // Only with the PRs ahead of it in this batch: it goes again once they land, and a conflict with the
+                // base then is regenerated, or goes back to its author.
+                BranchMerge::Conflict if !kept.is_empty() && m.pull.mergeable != Some(false) => {
+                    let why = format!(
+                        "conflicts with the PRs ahead of it in this batch; it goes again once they land on {base}"
+                    );
+                    self.release(std::slice::from_ref(m), &why);
+                }
                 BranchMerge::Conflict => {
-                    let why = format!("conflicts with {base} and the PRs ahead of it in the train");
+                    let why = format!("conflicts with {base}");
                     if self.conflicted(&m.change, &m.pull, &why).await == Conflict::Regenerating {
                         self.release(
                             std::slice::from_ref(m),
