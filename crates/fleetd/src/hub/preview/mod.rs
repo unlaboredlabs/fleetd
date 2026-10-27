@@ -349,7 +349,7 @@ pub async fn start(hub: &Hub, r: &ProjectRef, ask: Ask) -> Result<Preview, ToolE
     if hub.store.project_get(r)?.is_none() {
         return Err(unknown_project(r));
     }
-    let config = hub.db.project_settings().preview(r)?;
+    let config = crate::hub::projects::settings::preview_config(hub, r)?;
     let Some(config) = config.filter(|c| c.targets().contains(&ask.target)) else {
         return Err(ToolError::new(
             ErrorCode::Invalid,
@@ -788,10 +788,7 @@ pub fn apply(
 
 /// The project's idle time, in ms.
 fn idle_ms(hub: &Hub, r: &ProjectRef) -> i64 {
-    let minutes = hub
-        .db
-        .project_settings()
-        .preview(r)
+    let minutes = crate::hub::projects::settings::preview_config(hub, r)
         .ok()
         .flatten()
         .map_or(fleetd_contracts::preview::PREVIEW_IDLE_DEFAULT_MIN, |c| {
