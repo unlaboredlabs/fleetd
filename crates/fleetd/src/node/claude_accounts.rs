@@ -152,16 +152,30 @@ pub fn env_for(home: &Path, account: &ClaudeAccount) -> Result<(Vars, Vars), Str
             shown(account)
         ));
     };
-    let name = match account {
-        ClaudeAccount::Hub => API_KEY_ENV,
-        ClaudeAccount::Person { .. } => OAUTH_TOKEN_ENV,
-    };
+    let name = account_var(account);
     let mut vars = vec![(name.to_owned(), file.value.clone())];
     if let (ClaudeAccount::Hub, Some(endpoint)) = (account, &file.endpoint) {
         vars.push((BASE_URL_ENV.to_owned(), endpoint.clone()));
     }
     let secrets = vec![(name.to_owned(), file.value.clone())];
     Ok((vars, secrets))
+}
+
+/// The account's secret by its variable's name, for masking a session's fleetd calls: none once the node no longer
+/// holds it (disconnected, removed, or re-sealed without this machine). Fails only when its file can't be read. A
+/// session whose claude still runs keeps the value it started with masked: the caller adds what it spawned with.
+pub fn secrets_checked(home: &Path, account: &ClaudeAccount) -> Result<Vars, String> {
+    Ok(match read(home, account)? {
+        Some(file) => vec![(account_var(account).to_owned(), file.value.clone())],
+        None => Vec::new(),
+    })
+}
+
+fn account_var(account: &ClaudeAccount) -> &'static str {
+    match account {
+        ClaudeAccount::Hub => API_KEY_ENV,
+        ClaudeAccount::Person { .. } => OAUTH_TOKEN_ENV,
+    }
 }
 
 /// `env` with the account's variables in place of every credential and gateway the machine's own setup set.
