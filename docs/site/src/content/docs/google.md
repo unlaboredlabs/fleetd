@@ -177,19 +177,19 @@ A person chooses, per Navi, when new mail wakes it, with `google_mail_set`:
 | Rule | Wakes the Navi on |
 |---|---|
 | `off` (the default) | Nothing. It reads mail when you ask. |
-| `all` | Each new message in the inbox. |
-| `query` | Only new inbox mail matching a Gmail search, such as `from:boss@example.com OR is:important`. |
+| `all` | Each new message received. |
+| `query` | Only new mail matching a Gmail search, such as `from:boss@example.com OR is:important`. |
 
 How the hub hears of it:
 
-- **Push**, with [real-time mail](#pubsub) set up. The Navi's machine asks Gmail to watch the inbox (`users.watch`) and
-  tell the topic. A watch lasts 7 days, and the hub renews it a day before it ends. The machine holding the service
+- **Push**, with [real-time mail](#pubsub) set up. The Navi's machine asks Gmail to watch for new mail (`users.watch`)
+  and tell the topic. A watch lasts 7 days, and the hub renews it a day before it ends. The machine holding the service
   account key reads the subscription and acknowledges each notice. A notice names an address, and the hub has the
-  machine of each Navi connected to it check that Navi's inbox.
+  machine of each Navi connected to it check that Navi's mail.
 - **Polling**, without Pub/Sub, or while reading it fails or no read has worked for 2 minutes. The hub checks each such
-  Navi's inbox about every minute. It goes back to push with the next good read.
+  Navi's mail about every minute. It goes back to push with the next good read.
 
-A check reads the inbox's history since the last one, so nothing is missed or told twice when the hub moves between
+A check reads the mailbox's history since the last one, so nothing is missed or told twice when the hub moves between
 push and polling. The first check only marks where to start. Sent mail and drafts don't wake anyone.
 
 The wake reaches the Navi's lead as one event: for each message (up to 10, then a count), its sender, subject, start
