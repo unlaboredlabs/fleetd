@@ -66,7 +66,7 @@ const FAILED = run({
     step("read the machine's state (read-only)", "done"),
     step("create fleetd's directories", "done"),
     step("install fleetd 0.9.0", "done"),
-    step("write the node service", "failed", { output: "step 3 failed (exit 1):\nmkdir: cannot create directory: Permission denied" }),
+    step("write the node service", "failed", { output: "mkdir: cannot create directory: Permission denied" }),
     ...PLAN.slice(3),
   ],
   message: "step 3 failed (exit 1):\nmkdir: cannot create directory: Permission denied",

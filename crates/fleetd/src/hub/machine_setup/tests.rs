@@ -378,11 +378,9 @@ async fn a_failed_step_shows_its_output_and_retry_skips_what_is_done() {
         .collect();
     assert_eq!(failed.len(), 1);
     assert_eq!(failed[0]["title"], "write the node service");
-    assert!(
-        failed[0]["output"]
-            .as_str()
-            .unwrap()
-            .contains("Permission denied")
+    assert_eq!(
+        failed[0]["output"],
+        "mkdir: cannot create directory: Permission denied"
     );
     assert!(
         run["message"]

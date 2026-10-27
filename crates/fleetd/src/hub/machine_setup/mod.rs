@@ -359,7 +359,13 @@ fn spawn_add(hub: Arc<Hub>, run: MachineAddRun, resolved: crate::cli::setup::mac
                     }
                 }
                 Err(Stop { message, .. }) => {
-                    steps.failed(&split_fix(message).0);
+                    // "step 3 failed (exit 1):" heads the run's message; the step itself shows what it printed.
+                    let what = split_fix(message).0;
+                    let output = match what.split_once('\n') {
+                        Some((head, rest)) if head.starts_with("step ") => rest.to_owned(),
+                        _ => what,
+                    };
+                    steps.failed(&output);
                 }
             }
             steps.steps.clone()
