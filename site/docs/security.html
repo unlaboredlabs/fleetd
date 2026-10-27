@@ -187,7 +187,8 @@ can’t add hooks or MCP servers for other agents.</p>
 <p><strong><code dir="auto">~/.claude.json</code></strong> holds every MCP server’s settings, with their tokens, and every project’s history. On Linux a
 Navi gets its own copy in its place, made fresh at each start: without <code dir="auto">mcpServers</code>, without <code dir="auto">projects</code>, and without
 any key named like a secret but Claude Code’s own login. What it writes there stays in its copy. On macOS, where
-nothing can stand in for a path, the real file is hidden.</p>
+nothing can stand in for a path, the real file is hidden. Its backups and other copies beside it
+(<code dir="auto">~/.claude.json.backup.*</code>) are hidden on both.</p>
 <p><strong>Can’t read</strong>, on both:</p>
 <ul>
 <li>fleetd’s directory: the hub, the node, worktrees, secrets and integration tokens, Chrome’s profiles. Only its own

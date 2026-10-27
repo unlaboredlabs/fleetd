@@ -1953,6 +1953,7 @@ impl SessionService {
             )
         })?;
         let secrets = Arc::new(secrets);
+        self.inner.runner.fence(&spec).await.map_err(runner_error)?;
         let handle = self.inner.runner.spawn(spec).map_err(runner_error)?;
         row.local.started = true;
         row.local.pid = Some(handle.pid);

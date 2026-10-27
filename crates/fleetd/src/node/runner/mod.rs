@@ -252,6 +252,12 @@ pub trait Runner: Send + Sync + 'static {
     /// `env` is the environment a session would get now (the user's own setup, plus `claude.env`): the login it reports
     /// depends on exactly that, and the node re-reads it per spawn.
     fn probe<'a>(&'a self, env: &'a [(String, String)]) -> BoxFut<'a, RunnerInfo>;
+    /// Makes `spec`'s sandbox ready and checks that it starts, off the async runtime, before [`Runner::spawn`]: a
+    /// session whose sandbox can't start is refused here. Nothing to do for a session without one.
+    fn fence<'a>(&'a self, spec: &'a SessionSpec) -> BoxFut<'a, Result<(), RunnerError>> {
+        let _ = spec;
+        Box::pin(async { Ok(()) })
+    }
     /// Starts the process for `spec` and returns once it is running; the first run starts with a `Send`.
     fn spawn(&self, spec: SessionSpec) -> Result<SessionHandle, RunnerError>;
     /// The model and effort a session of `profile` runs on when no setting chose them, and where one whose model

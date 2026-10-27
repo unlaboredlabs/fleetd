@@ -90,7 +90,8 @@ can't add hooks or MCP servers for other agents.
 **`~/.claude.json`** holds every MCP server's settings, with their tokens, and every project's history. On Linux a
 Navi gets its own copy in its place, made fresh at each start: without `mcpServers`, without `projects`, and without
 any key named like a secret but Claude Code's own login. What it writes there stays in its copy. On macOS, where
-nothing can stand in for a path, the real file is hidden.
+nothing can stand in for a path, the real file is hidden. Its backups and other copies beside it
+(`~/.claude.json.backup.*`) are hidden on both.
 
 **Can't read**, on both:
 

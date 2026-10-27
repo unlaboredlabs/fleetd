@@ -785,6 +785,26 @@ impl Runner for ClaudeRunner {
         Box::pin(conformance::probe(&self.binary, env))
     }
 
+    /// Starts the sandbox once on a blocking thread: it waits on bwrap, and the runtime's threads don't wait.
+    fn fence<'a>(&'a self, spec: &'a SessionSpec) -> BoxFut<'a, Result<(), RunnerError>> {
+        Box::pin(async move {
+            let Some(fence) = spec.sandbox.clone() else {
+                return Ok(());
+            };
+            let cwd = spec.cwd.clone();
+            tokio::task::spawn_blocking(move || super::sandbox::check(&fence, &cwd))
+                .await
+                .map_err(|e| RunnerError::Sandbox {
+                    message: format!("A Navi's sandbox check stopped: {e}"),
+                    fix: "Send again.".into(),
+                })?
+                .map_err(|r| RunnerError::Sandbox {
+                    message: r.message,
+                    fix: r.fix,
+                })
+        })
+    }
+
     fn spawn(&self, mut spec: SessionSpec) -> Result<SessionHandle, RunnerError> {
         let binary = self.binary.display().to_string();
         let refuse = |message: String| RunnerError::Spawn {
@@ -850,7 +870,7 @@ impl Runner for ClaudeRunner {
             }
             cmd
         };
-        // A Navi's claude starts inside its sandbox, or not at all.
+        // A Navi's claude starts inside its sandbox (checked by `fence`), or not at all.
         let (program, args) = match &spec.sandbox {
             Some(fence) => super::sandbox::wrap(fence, &spec.cwd, &self.binary, self.args(&spec))
                 .map_err(|r| RunnerError::Sandbox {

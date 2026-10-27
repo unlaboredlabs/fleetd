@@ -446,7 +446,8 @@ is one). Every other session's spec has none.
   - *config_copy*: claude's global config (`~/.claude.json`, or `.claude.json` in `$CLAUDE_CONFIG_DIR`) is bound
     over with `<session dir>/claude/.claude.json`, written fresh by `prepare` at each start through `sanitized_config`:
     no `mcpServers`, no `projects`, no key named like a secret (`token`, `secret`, `password`, `credential`, `apikey`)
-    but `primaryApiKey`, claude's own login. On macOS the real file is hidden instead.
+    but `primaryApiKey`, claude's own login. On macOS the real file is hidden instead. Its copies beside it
+    (`.claude.json.backup.*`, any `.claude.json.<suffix>`) are hidden on both.
   - Everything else reads as it is and takes no writes, `~/.claude/settings.json` included.
 - **Linux: bubblewrap only** (decision `navi.sandbox-linux-requires-bwrap`). `--ro-bind / /`, then `--dev`, `--proc`
   with `--unshare-pid` (no other process, so no `/proc/<pid>/root` back to the real disk), `--unshare-ipc`, a tmpfs
@@ -467,8 +468,11 @@ is one). Every other session's spec has none.
   written paths and the usual devices, deny writes to the kept ones, then one `file-read-data` rule per hidden
   (deny) and shown or written (allow) path, shallowest first, so the deeper one wins as a bwrap mount does (metadata
   stays readable, so paths still resolve).
-- **No fallback.** `wrap` starts the sandbox once with `true` before the session. When the program is missing or that
-  run fails, the spawn fails with `RunnerError::Sandbox {message, fix}`, which reaches the app as the session's error
+- **No fallback.** `Runner::fence`, awaited before `Runner::spawn`, runs `sandbox::check` on a blocking thread: it
+  prepares the paths and starts the sandbox once with `true`. `wrap` then only builds the command. The probe's
+  `describe` runs on a blocking thread too. A setuid-root bwrap gets its own fix (`chmod u-s`): the scope hook's
+  `no_new_privs` keeps it from elevating. When the program is missing or that
+  run fails, the session fails with `RunnerError::Sandbox {message, fix}`, which reaches the app as the session's error
   with its fix: how to install bubblewrap, and, when the user namespace was refused, the AppArmor profile
   (`/etc/apparmor.d/bwrap-userns-restrict`) or `kernel.apparmor_restrict_unprivileged_userns=0`.
 - Its agent-browser daemon listens in its scratch dir (`AGENT_BROWSER_SOCKET_DIR`).

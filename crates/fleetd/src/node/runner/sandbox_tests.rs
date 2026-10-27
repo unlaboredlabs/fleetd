@@ -64,6 +64,10 @@ impl Machine {
             (m.home.join(".Xauthority"), "cookie"),
             (m.home.join(".npmrc"), "//registry.npmjs.org/:_authToken=x"),
             (m.home.join(".pgpass"), "db:5432:*:ada:hunter2"),
+            (
+                m.home.join(".claude.json.backup.1792349295"),
+                "{\"mcpServers\":{\"gh\":{\"env\":{\"GITHUB_TOKEN\":\"ghp_backup\"}}}}",
+            ),
             (m.claude.join("ide/1234.lock"), "{\"authToken\":\"x\"}"),
             (
                 m.home.join(".claude.json"),
@@ -288,6 +292,8 @@ fn a_navi_cant_read_the_token_store_logins_or_other_projects() {
         m.home.join(".npmrc"),
         m.home.join(".pgpass"),
         m.claude.join("ide/1234.lock"),
+        // A backup of claude's config, with the MCP servers its copy leaves out.
+        m.home.join(".claude.json.backup.1792349295"),
     ] {
         let (ok, out) = m.run(&tool, &format!("cat '{}'", secret.display()));
         assert!(!ok, "{} was read: {out}", secret.display());
@@ -409,6 +415,25 @@ fn a_navi_without_a_sandbox_is_refused_with_how_to_fix_it() {
         "{refused:?}"
     );
     assert!(!refused.fix.is_empty());
+}
+
+#[test]
+fn a_setuid_bubblewrap_says_to_drop_the_bit() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let bwrap = dir.path().join("bwrap");
+    std::fs::write(&bwrap, "").unwrap();
+    std::fs::set_permissions(&bwrap, std::fs::Permissions::from_mode(0o4755)).unwrap();
+    let refused = failed(
+        &bwrap,
+        "bwrap: Creating new namespace failed: Operation not permitted\n",
+    );
+    if cfg!(target_os = "linux") {
+        assert!(
+            refused.fix.contains("setuid") && refused.fix.contains("chmod u-s"),
+            "{refused:?}"
+        );
+    }
 }
 
 #[test]

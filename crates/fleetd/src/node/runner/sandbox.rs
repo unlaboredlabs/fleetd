@@ -226,7 +226,7 @@ pub fn navi_fence(p: &NaviPaths) -> Fence {
     let claude_json = real(p.claude_json);
     let config_copy = claude_json.is_file().then(|| {
         (
-            claude_json,
+            claude_json.clone(),
             real(&p.session_dir.join("claude").join(".claude.json")),
         )
     });
@@ -234,6 +234,18 @@ pub fn navi_fence(p: &NaviPaths) -> Fence {
         && let Some((config, _)) = &config_copy
     {
         hide.push(config.clone());
+    }
+    // claude's backups and other copies of it beside it (`.claude.json.backup.<time>`), with the same MCP servers.
+    if let (Some(dir), Some(name)) = (claude_json.parent(), claude_json.file_name()) {
+        let prefix = format!("{}.", name.to_string_lossy());
+        hide.extend(
+            std::fs::read_dir(dir)
+                .into_iter()
+                .flatten()
+                .flatten()
+                .filter(|e| e.file_name().to_string_lossy().starts_with(&prefix))
+                .map(|e| e.path()),
+        );
     }
     Fence {
         write,
@@ -314,7 +326,14 @@ pub fn wrap(
     program: &Path,
     args: Vec<String>,
 ) -> Result<(PathBuf, Vec<String>), Refusal> {
-    wrap_with(tool(), fence, cwd, program, args)
+    let tool = tool().ok_or_else(missing)?;
+    Ok(command(tool, fence, cwd, program, args))
+}
+
+/// Makes the fence's paths ready and starts the sandbox once with nothing to run, so one that can't start says why
+/// before a session, not as a session that ends at once. It waits on a process: run it off the async runtime.
+pub fn check(fence: &Fence, cwd: &Path) -> Result<(), Refusal> {
+    check_with(tool(), fence, cwd).map(drop)
 }
 
 /// The sandbox's program on this machine: bubblewrap on Linux, `sandbox-exec` on macOS.
@@ -331,7 +350,7 @@ pub fn tool() -> Option<PathBuf> {
         .find(|p| p.is_file())
 }
 
-/// [`wrap`] with `tool` as the sandbox's program, or none.
+/// [`check`], then [`wrap`], with `tool` as the sandbox's program, or none.
 pub fn wrap_with(
     tool: Option<PathBuf>,
     fence: &Fence,
@@ -339,6 +358,12 @@ pub fn wrap_with(
     program: &Path,
     args: Vec<String>,
 ) -> Result<(PathBuf, Vec<String>), Refusal> {
+    let tool = check_with(tool, fence, cwd)?;
+    Ok(command(tool, fence, cwd, program, args))
+}
+
+/// [`check`] with `tool` as the sandbox's program, or none: the program, once it started.
+fn check_with(tool: Option<PathBuf>, fence: &Fence, cwd: &Path) -> Result<PathBuf, Refusal> {
     let Some(tool) = tool else {
         return Err(missing());
     };
@@ -349,11 +374,9 @@ pub fn wrap_with(
                 .into(),
         });
     }
-    let own = own_args(fence, cwd);
-    // Started once with nothing to run, so a sandbox that fails says why here, not as a session that ends at once.
     let mut probe = std::process::Command::new(&tool);
     probe
-        .args(&own)
+        .args(own_args(fence, cwd))
         .arg(if cfg!(target_os = "macos") {
             "/usr/bin/true"
         } else {
@@ -362,16 +385,25 @@ pub fn wrap_with(
         .env_clear()
         .stdin(std::process::Stdio::null());
     with_scope(&mut probe);
-    let probe = probe.output();
-    match probe {
-        Ok(out) if out.status.success() => {}
-        Ok(out) => return Err(failed(&tool, &String::from_utf8_lossy(&out.stderr))),
-        Err(e) => return Err(failed(&tool, &e.to_string())),
+    match probe.output() {
+        Ok(out) if out.status.success() => Ok(tool),
+        Ok(out) => Err(failed(&tool, &String::from_utf8_lossy(&out.stderr))),
+        Err(e) => Err(failed(&tool, &e.to_string())),
     }
-    let mut all = own;
+}
+
+/// `program args` inside the sandbox `tool`.
+fn command(
+    tool: PathBuf,
+    fence: &Fence,
+    cwd: &Path,
+    program: &Path,
+    args: Vec<String>,
+) -> (PathBuf, Vec<String>) {
+    let mut all = own_args(fence, cwd);
     all.push(program.to_string_lossy().into_owned());
     all.extend(args);
-    Ok((tool, all))
+    (tool, all)
 }
 
 /// Landlock's ABI that scopes abstract Unix sockets (Linux 6.12).
@@ -558,7 +590,20 @@ fn failed(tool: &Path, stderr: &str) -> Refusal {
     let userns = ["uid map", "new namespace", "user namespace"]
         .iter()
         .any(|w| why.contains(w));
-    let fix = if cfg!(target_os = "linux") && userns {
+    let setuid = {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::metadata(tool).is_ok_and(|m| m.permissions().mode() & 0o4000 != 0)
+    };
+    let fix = if cfg!(target_os = "linux") && setuid {
+        format!(
+            "{} is setuid root, which a Navi's sandbox can't use: fleetd starts it with no_new_privs, to scope \
+             abstract sockets. Let bubblewrap use unprivileged user namespaces instead: sudo chmod u-s {}, and on \
+             Debian before 11 also sudo sysctl kernel.unprivileged_userns_clone=1. Check with: bwrap --ro-bind / / \
+             --unshare-all true",
+            tool.display(),
+            tool.display()
+        )
+    } else if cfg!(target_os = "linux") && userns {
         "bubblewrap needs unprivileged user namespaces, which AppArmor blocks here (Ubuntu 23.10 and later do by \
          default). Allow them for bwrap: Ubuntu's apparmor package ships /etc/apparmor.d/bwrap-userns-restrict (sudo \
          apt install apparmor, then sudo systemctl reload apparmor), or turn the restriction off with sudo sysctl \
