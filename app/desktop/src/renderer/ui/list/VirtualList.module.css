@@ -4,14 +4,22 @@
   overflow-y: auto;
   overflow-x: hidden;
   contain: strict;
+  /* TanStack keeps the place as rows above it are measured; the browser's own anchoring would move it a second time. */
+  overflow-anchor: none;
 }
 .inner {
   position: relative;
   width: 100%;
 }
-.row {
+.rows {
   position: absolute;
   top: 0;
   left: 0;
   width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+/* A flex item: its children's margins stay inside it, so the height measured is the room it takes. */
+.row {
+  flex: none;
 }

@@ -43,7 +43,7 @@ export interface VirtualListProps<T> {
 export function VirtualList<T>(props: VirtualListProps<T>) {
   const { items, getKey, followOutput, startAtEnd, gap = 0 } = props;
   const scrollRef = useRef<HTMLDivElement>(null);
-  const innerRef = useRef<HTMLDivElement>(null);
+  const rowsRef = useRef<HTMLDivElement>(null);
 
   // TanStack Virtual returns a mutable instance the React Compiler can't memoize; this component opts out of it.
   // eslint-disable-next-line react-hooks/incompatible-library
@@ -70,14 +70,14 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
   }, [virtualizer, virtualizerRef]);
 
   // TanStack skips measuring rows that mount while the list is scrolling (and for 150 ms after) and leaves them to
-  // its ResizeObserver, whose re-render lands a frame or more later; until then those rows sit at their estimated
-  // positions and overlap. Measuring every rendered row after each commit makes any frame that paints consistent:
-  // a size change re-renders synchronously, before paint, and stops once nothing moves.
+  // its ResizeObserver, whose re-render lands a frame or more later; until then the list's height and the first
+  // row's start count those rows at their estimates. Measuring every rendered row after each commit makes any frame
+  // that paints consistent: a size change re-renders synchronously, before paint, and stops once nothing moves.
   useLayoutEffect(() => {
-    const inner = innerRef.current;
-    if (!inner) return;
+    const list = rowsRef.current;
+    if (!list) return;
     const sizes = new Map(virtualizer.getVirtualItems().map((v) => [v.index, v.size]));
-    for (const child of inner.children) {
+    for (const child of list.children) {
       if (!(child instanceof HTMLElement)) continue;
       const index = Number(child.dataset["index"]);
       const measured = Math.round(child.getBoundingClientRect().height);
@@ -91,6 +91,7 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const rows = virtualizer.getVirtualItems();
   return (
     <div
       ref={scrollRef}
@@ -98,23 +99,27 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
       role={props.role ?? "list"}
       aria-label={props["aria-label"]}
     >
-      <div ref={innerRef} className={s.inner} style={{ height: virtualizer.getTotalSize() }}>
-        {virtualizer.getVirtualItems().map((row) => {
-          const item = items[row.index];
-          if (item === undefined) return null;
-          return (
-            <div
-              key={row.key}
-              ref={virtualizer.measureElement}
-              data-index={row.index}
-              className={s.row}
-              role={props.role === "presentation" ? "presentation" : "listitem"}
-              style={{ transform: `translateY(${row.start}px)` }}
-            >
-              {props.renderItem(item, row.index)}
-            </div>
-          );
-        })}
+      <div className={s.inner} style={{ height: virtualizer.getTotalSize() }}>
+        {/* The rows on screen stack in flow under the first one's start, rather than each at its own measured start:
+            a row that grows before it is measured again (rewrapped by a resize, a font or an image landing) pushes the
+            rows under it down in the same layout, where rows placed by their old sizes would overlap it until then. */}
+        <div ref={rowsRef} className={s.rows} style={{ transform: `translateY(${String(rows[0]?.start ?? 0)}px)`, gap }}>
+          {rows.map((row) => {
+            const item = items[row.index];
+            if (item === undefined) return null;
+            return (
+              <div
+                key={row.key}
+                ref={virtualizer.measureElement}
+                data-index={row.index}
+                className={s.row}
+                role={props.role === "presentation" ? "presentation" : "listitem"}
+              >
+                {props.renderItem(item, row.index)}
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
