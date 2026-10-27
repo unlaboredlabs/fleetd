@@ -440,23 +440,28 @@ describe("a request the hub reopens", () => {
 });
 
 describe("an integration's approval", () => {
-  it("shows every recipient, the subject and the whole body, and everything it sends", async () => {
+  it("shows every recipient the xaq way, the subject, the whole body, the files and everything it sends", async () => {
     const hub = await render("Q12");
     const text = host.textContent;
     expect(text).toContain("Sends · Google");
-    expect(text).toContain("Reaches other people");
-    expect(text).toContain("Send an email");
-    expect(text).toContain("me@example.com");
-    expect(text).toContain("Ana Ruiz <ana@example.com>, bo@example.com");
-    expect(text).toContain("cy@example.com");
+    // One kicker: a send's recipient rows speak for it.
+    expect(text).not.toContain("Reaches other people");
+    expect(text).toContain("Navi wants to send an email");
+    expect(text).toContain("bo@example.com.auoutside example.com");
+    expect(text).toContain("hidden from the others");
+    expect(text).toContain("menu.pdfa file on xaq's machine");
     expect(text).toContain("Lunch on Tuesday");
     expect(one("[data-tool=send_message]").textContent).toContain("Tuesday at 12:30 at the usual place? I'll book a table.");
     // Labelled rows, in the order a person checks them.
-    expect([...host.querySelectorAll("dt")].map((d) => d.textContent)).toEqual(["From", "To", "Cc", "Subject"]);
-    expect(one("details summary").textContent).toBe("Everything it sends");
-    // No standing permission: the person answers this send, and only this one.
+    expect([...host.querySelectorAll("dt")].map((d) => d.textContent)).toEqual(["From", "To", "Cc", "Bcc", "Subject", "Attached"]);
+    const everything = one("details");
+    expect(everything.hasAttribute("open")).toBe(false);
+    expect(everything.querySelector("summary")?.textContent).toBe("Everything it sends");
+    // No standing permission: the person answers this send, and only this one, in the act's words.
     expect(text).not.toMatch(/always/iu);
-    await click(button("Approve"));
+    expect(has("Approve")).toBe(false);
+    expect(has("Don't send")).toBe(true);
+    await click(button("Send it"));
     await settle();
     expect(hub.answers).toEqual([{ requestId: "Q12", decision: "approve" }]);
   });
@@ -465,11 +470,16 @@ describe("an integration's approval", () => {
     expect(host.textContent).toContain("Deletes · Notion");
     expect(host.textContent).toContain("Can't be undone");
     expect([...host.querySelectorAll("dt")].map((d) => d.textContent)).toEqual(["On"]);
-    await click(button("Approve"));
+    await click(button("Delete it"));
     expect(hub.answers).toEqual([]);
     expect(host.textContent).toContain("Delete it? It can't be undone.");
     await click(button("Yes, delete it"));
     await settle();
     expect(hub.answers).toEqual([{ requestId: "Q13", decision: "approve" }]);
+  });
+  it("folds, once answered, to what happened and who said so when", async () => {
+    await render("Q14");
+    const fold = one("button[aria-expanded]") as HTMLButtonElement;
+    expect(fold.textContent).toMatch(/^Sent to ana@example\.com· you approved at \d\d:\d\d$/u);
   });
 });

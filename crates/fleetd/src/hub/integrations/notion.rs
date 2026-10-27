@@ -151,7 +151,7 @@ pub fn draft(tool: &str, input: &Value) -> Draft {
     let heading = if op == "patch-page" && trashes(input) {
         "Move a Notion page to the trash".to_owned()
     } else {
-        format!("Notion: {}", op.replace('-', " "))
+        format!("Use Notion's {}", op.replace('-', " "))
     };
     Draft {
         title: Some(heading),

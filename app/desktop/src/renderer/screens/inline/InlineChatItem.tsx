@@ -4,7 +4,7 @@
 // re-emits its chat.message; the only state here is what the person just did, until the hub's next read of it.
 // Once answered, an item folds to one line that opens back up to the whole card.
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { useEffect, useLayoutEffect, useMemo, useRef, type KeyboardEvent, type ReactNode, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 import type { ChatItem, CommandApprovalItem, Machine, SecretRequestItem, ToolPreview } from "../../../shared/contracts";
 import type { HubError } from "../../../shared/hub";
 import { Button, Code, cx, InlineCode, Input, Text, Truncate } from "../../ui";
@@ -12,7 +12,7 @@ import { useData, useDataLayer, useReadOf, useToolQuery } from "../../src/data/r
 import { configLines, configWords } from "../tryit/model";
 import { patchLocal, useLocal, type Failed } from "./local";
 import { prose } from "./prose";
-import { actionWarning, actionWords, confirmWords, integrationName, previewRows } from "./toolPreview";
+import { actionWarning, actionWords, answerWords, askTitle, confirmWords, foldedBody, integrationName, previewRows } from "./toolPreview";
 import {
   approvalOffline,
   approvalOutcome,
@@ -116,13 +116,14 @@ const useSent = <T extends { readonly state: string }>(key: string, item: T, rea
 /** Every request the hub holds, newest first; one read shared by all the items, refetched on request.* events. */
 const REQUESTS = { limit: 100 } as const;
 
-export function InlineChatItem({ item: posted }: { item: ChatItem }) {
+/** `asker`: the Navi's name, for an integration's card ("Ada wants to send an email"). */
+export function InlineChatItem({ item: posted, asker }: { item: ChatItem; asker?: string | undefined }) {
   const requests = useToolQuery("requests_list", REQUESTS);
   const listed = requests.data?.requests.find((r) => r.requestId === posted.requestId);
   const item = withRequest(posted, listed);
   // A read says something about this request only if it lists it (it holds the hub's newest 100).
   const read = useReadOf("requests_list", REQUESTS);
-  return item.kind === "secret_request" ? <SecretItem item={item} read={listed === undefined ? undefined : read} /> : <ApprovalItem item={item} read={listed === undefined ? undefined : read} />;
+  return item.kind === "secret_request" ? <SecretItem item={item} read={listed === undefined ? undefined : read} /> : <ApprovalItem item={item} read={listed === undefined ? undefined : read} asker={asker} />;
 }
 
 /** An open item while there is no fresh connection: what is shown may be stale, and nothing can be answered. */
@@ -329,24 +330,31 @@ function PreviewDetail({ preview }: { preview: ToolPreview }) {
                 </Text>
               </dt>
               <dd>
-                <Text size="sm">{row.values.join(", ")}</Text>
+                {row.values.map((v, i) => {
+                  // The comma closes the value, after its note when it has one.
+                  const comma = i < row.values.length - 1 ? "," : "";
+                  return (
+                    <span key={`${String(i)}-${v.text}`} className={s.value}>
+                      <Text size="sm">{v.note === undefined ? `${v.text}${comma}` : v.text}</Text>
+                      {v.note === undefined ? null : (
+                        <Text size="xs" tone="quiet">
+                          {`${v.note}${comma}`}
+                        </Text>
+                      )}
+                    </span>
+                  );
+                })}
+                {row.note === undefined ? null : (
+                  <Text size="xs" tone="quiet">
+                    {row.note}
+                  </Text>
+                )}
               </dd>
             </div>
           ))}
         </dl>
       )}
-      {preview.body === undefined || preview.body === "" ? null : (
-        <div className={s.body}>
-          <Text as="p" size="sm" className={cx(s.line)}>
-            {preview.body}
-          </Text>
-          {preview.bodyCut === true ? (
-            <Text size="xs" tone="quiet">
-              Cut here for the card; all of it is under Everything it sends.
-            </Text>
-          ) : null}
-        </div>
-      )}
+      {preview.body === undefined || preview.body === "" ? null : <Body body={preview.body} />}
       <details className={s.everything}>
         <summary>
           <Text size="xs" tone="quiet">
@@ -359,7 +367,25 @@ function PreviewDetail({ preview }: { preview: ToolPreview }) {
   );
 }
 
-function ApprovalItem({ item, read }: { item: CommandApprovalItem; read: number | undefined }) {
+/** The body, whole, or folded with Show all in place when it is long. */
+function Body({ body }: { body: string }) {
+  const [all, setAll] = useState(false);
+  const folded = foldedBody(body);
+  return (
+    <div className={s.body}>
+      <Text as="p" size="sm" className={cx(s.line)}>
+        {all || folded === undefined ? body : folded}
+      </Text>
+      {folded === undefined ? null : (
+        <Button size="sm" variant="ghost" className={s.showAll} onClick={() => setAll(!all)}>
+          {all ? "Show less" : "Show all"}
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: number | undefined; asker: string | undefined }) {
   const live = useLive();
   const machines = useMachines();
   const { call } = useDataLayer();
@@ -454,7 +480,7 @@ function ApprovalItem({ item, read }: { item: CommandApprovalItem; read: number 
           : gated !== undefined
             ? prose(gated.reason)
             : preview !== undefined
-              ? preview.title
+              ? askTitle(preview, asker ?? "Navi")
               : permission !== undefined
                 ? `An agent wants to use ${permission.toolName}`
               : "An agent needs your OK"}
@@ -520,13 +546,13 @@ function ApprovalItem({ item, read }: { item: CommandApprovalItem; read: number 
       ) : (
         <div className={s.actions}>
           <Button ref={approveButton} variant={destructive ? "danger" : "primary"} disabled={!canAnswer} onClick={approve}>
-            {item.note === undefined ? "Approve" : "Approve again"}
+            {preview !== undefined ? answerWords(preview.action).yes : item.note === undefined ? "Approve" : "Approve again"}
           </Button>
           <Button variant="secondary" disabled={!canAnswer} onClick={() => answer("deny")}>
-            Deny
+            {preview !== undefined ? answerWords(preview.action).no : "Deny"}
           </Button>
           <Text size="xs" tone="quiet" className={cx(s.whenFocused)}>
-            Enter approves · Esc denies
+            {preview === undefined ? "Enter approves · Esc denies" : `Enter: ${answerWords(preview.action).yes} · Esc: ${answerWords(preview.action).no}`}
           </Text>
         </div>
       )}

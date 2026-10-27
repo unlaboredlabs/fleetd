@@ -3987,6 +3987,16 @@ export type PreviewAsker = {
   words: string;
 };
 
+/** A file an asking tool attaches, as its input names it. */
+export type PreviewAttachment = {
+  /** Its size, when its bytes are in the input. */
+  bytes?: number;
+  /** Where it comes from, when not from the input: "from Drive", "from message 18c2", "a file on xaq's machine". */
+  from?: string;
+  /** The name the recipient sees: "tenant-form.pdf", or what the file is when the tool names it by id. */
+  name: string;
+};
+
 /**
  * A project's preview setting (Settings › Projects › Try it, or `project_settings_set {preview}`). Nothing runs
  * because of it: it says how to run a preview someone asks for.
@@ -6304,6 +6314,8 @@ export type ToolPreview = {
   /** The account it acts as, when the tool names one (an xaq account's address). */
   account?: string;
   action: ToolAction;
+  /** Every file it attaches. */
+  attachments?: PreviewAttachment[];
   /**
    * Who it reaches when the tool decides that itself, such as a reply to a message's sender: said in words, since
    * the card can't list them.
@@ -6312,8 +6324,6 @@ export type ToolPreview = {
   bcc?: string[];
   /** The text that goes out or goes in: the email's body, the event's notes, the page's new content. */
   body?: string;
-  /** The body was longer and is cut here. */
-  bodyCut?: boolean;
   cc?: string[];
   /** Everything the tool gets, as JSON, so nothing is hidden behind the fields above. */
   input: string;
@@ -6323,7 +6333,7 @@ export type ToolPreview = {
   subject?: string;
   /** What it acts on: a message, an event, a page or a file, by name or id. */
   target?: string;
-  /** One line: "Send an email", "Reply to a message", "Delete a Notion block". */
+  /** What it does, as a verb phrase the app puts after "<the Navi> wants to": "Send an email", "Reply to an email". */
   title: string;
   /** Every recipient, as the tool gets them. */
   to?: string[];
