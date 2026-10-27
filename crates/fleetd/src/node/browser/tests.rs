@@ -794,10 +794,14 @@ async fn a_session_start_waiting_for_an_install_that_fails_gets_its_real_error()
 }
 
 #[tokio::test(start_paused = true)]
-async fn a_session_start_waits_for_an_install_only_so_long() {
+async fn a_session_start_waits_for_an_install_only_so_long_and_says_how_far_it_is() {
     let node_home = tempfile::tempdir().unwrap();
     let hub_home = tempfile::tempdir().unwrap();
     let broker = installing(node_home.path(), hub(hub_home.path())).await;
+    broker.set_install(super::Install::Installing(super::Progress {
+        step: "step 2 of 2, Chrome's headless shell and ffmpeg".to_owned(),
+        since: Instant::now() - Duration::from_secs(95),
+    }));
     let asked = tokio::time::Instant::now();
     let refused = call(
         &broker,
@@ -806,7 +810,82 @@ async fn a_session_start_waits_for_an_install_only_so_long() {
     .await;
     assert_eq!(asked.elapsed(), super::INSTALL_WAIT);
     let why = refused["error"]["message"].as_str().unwrap();
-    assert!(why.contains("still installing its browser"), "{why}");
+    assert!(
+        why.contains(
+            "still installing its browser (step 2 of 2, Chrome's headless shell and ffmpeg, 1 min 3"
+        ),
+        "{why}"
+    );
+    let fix = refused["error"]["fix"].as_str().unwrap();
+    assert!(
+        fix.contains("again") && fix.contains("opens the session"),
+        "{fix}"
+    );
+}
+
+/// agent-browser as the install leaves it, without npm: a stand-in binary, linked and versioned.
+fn installed_agent_browser(home: &Path) -> Result<PathBuf, String> {
+    use std::os::unix::fs::PermissionsExt;
+    let bin = super::agent_browser::bin_dir(home);
+    std::fs::create_dir_all(&bin).map_err(|e| e.to_string())?;
+    let link = bin.join("agent-browser");
+    std::fs::write(&link, "#!/bin/sh\n").map_err(|e| e.to_string())?;
+    std::fs::set_permissions(&link, std::fs::Permissions::from_mode(0o755))
+        .map_err(|e| e.to_string())?;
+    std::fs::write(
+        super::agent_browser::install_dir(home).join("VERSION"),
+        super::agent_browser::VERSION,
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(link)
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_node_installs_the_browser_as_it_starts_so_the_first_session_finds_it_ready() {
+    let Some(chrome) = chrome_or_skip() else {
+        return;
+    };
+    let node_home = tempfile::tempdir().unwrap();
+    let hub_home = tempfile::tempdir().unwrap();
+    // devbox starts with Chrome but without agent-browser, and no agent has asked for a session.
+    let config = BrowserConfig {
+        chrome: Some(chrome.to_string_lossy().into_owned()),
+        ffmpeg: ffmpeg().map(|p| p.to_string_lossy().into_owned()),
+        ..BrowserConfig::default()
+    };
+    let broker = Broker::start_with(
+        node_home.path(),
+        config,
+        hub(hub_home.path()),
+        Arc::new(|_| Ok(crate::node::mask::Secrets(Vec::new()))),
+        super::Installer {
+            agent_browser: installed_agent_browser,
+            chrome: |_| Err("Chrome is set in node.json".to_owned()),
+        },
+    )
+    .await;
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while broker.warm() == 0 && Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert_eq!(
+        broker.warm(),
+        1,
+        "installed and launched with no session asked for"
+    );
+    assert!(super::agent_browser::find(node_home.path()).is_some());
+    let asked = Instant::now();
+    let started = call(
+        &broker,
+        json!({ "op": "session_start", "purpose": "First" }),
+    )
+    .await;
+    assert!(started["result"]["sessionId"].is_string(), "{started}");
+    assert!(
+        asked.elapsed() < Duration::from_secs(10),
+        "from the warm pool"
+    );
+    call(&broker, json!({ "op": "session_end" })).await;
 }
 
 /// agent-browser itself, attached through the proxy: it drives the session, and its policy file's internal action

@@ -51,8 +51,8 @@ use crate::node::mask::Secrets;
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BrowserConfig {
-    /// False turns browser sessions off on this machine; true also installs the browser as the node starts. Absent:
-    /// on, installed when an agent first asks for a session.
+    /// False turns browser sessions off on this machine. Absent or true: on, and the browser is installed as the node
+    /// starts, where it isn't already.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
     /// A Chrome or headless shell to use instead of the node's pinned install.
@@ -82,10 +82,48 @@ impl BrowserConfig {
 /// Where the broker's browser comes from.
 enum Install {
     Ready(Arc<Pool>),
-    /// Not installed, and nobody asked for a session yet: the first `session_start` installs it.
+    /// Not installed, and the install not started yet.
     Wanted,
-    Installing,
+    Installing(Progress),
     Missing(String),
+}
+
+/// How far an install in progress is.
+struct Progress {
+    /// The step it is on, in words.
+    step: String,
+    since: Instant,
+}
+
+impl Progress {
+    fn new(step: &str) -> Self {
+        Self {
+            step: step.to_owned(),
+            since: Instant::now(),
+        }
+    }
+}
+
+/// `d` in words, to the second.
+fn duration_words(d: Duration) -> String {
+    match d.as_secs() {
+        s @ 0..60 => format!("{s} s"),
+        s => format!("{} min {} s", s / 60, s % 60),
+    }
+}
+
+/// What installs the browser's parts (blocking): the pinned installs, or a test's stand-ins.
+#[derive(Clone, Copy)]
+pub(crate) struct Installer {
+    pub agent_browser: fn(&Path) -> Result<PathBuf, String>,
+    pub chrome: fn(&Path) -> Result<(), String>,
+}
+
+impl Installer {
+    const PINNED: Self = Self {
+        agent_browser: agent_browser::install,
+        chrome: chrome::install,
+    };
 }
 
 /// How long a session's start waits for the browser's install in progress: with the browser's launch after it
@@ -121,6 +159,7 @@ pub struct Broker {
     home: PathBuf,
     config: BrowserConfig,
     install: Mutex<Install>,
+    installer: Installer,
     /// Told when the install is done, ready or failed: for the starts waiting on it.
     install_done: tokio::sync::watch::Sender<()>,
     ffmpeg: Mutex<Option<PathBuf>>,
@@ -207,13 +246,23 @@ pub fn drives_browser(command: &str) -> bool {
 }
 
 impl Broker {
-    /// The broker for a node: its browser from node.json, else the pinned installs. Missing ones are installed when
-    /// an agent first asks for a session, or at once when node.json turns browser sessions on explicitly.
+    /// The broker for a node: its browser from node.json, else the pinned installs. Missing ones are installed in the
+    /// background from now, so the first session finds them done, or nearly.
     pub async fn start(
         home: &Path,
         config: BrowserConfig,
         hub: Arc<dyn HubCalls>,
         secrets_for: SecretsFor,
+    ) -> Arc<Self> {
+        Self::start_with(home, config, hub, secrets_for, Installer::PINNED).await
+    }
+
+    pub(crate) async fn start_with(
+        home: &Path,
+        config: BrowserConfig,
+        hub: Arc<dyn HubCalls>,
+        secrets_for: SecretsFor,
+        installer: Installer,
     ) -> Arc<Self> {
         let root = chrome::install_dir(home);
         let chrome = config
@@ -221,14 +270,12 @@ impl Broker {
             .clone()
             .map(PathBuf::from)
             .or_else(|| chrome::find_chrome(&root));
-        let broker = Self::open(home, config, hub, secrets_for).await;
+        let broker = Self::open_with(home, config, hub, secrets_for, installer).await;
         match chrome {
             Some(chrome) if agent_browser::find(home).is_some() => broker.ready(chrome),
             _ => {
                 *lock(&broker.install) = Install::Wanted;
-                if broker.config.enabled == Some(true) {
-                    broker.begin_install();
-                }
+                broker.begin_install();
             }
         }
         broker
@@ -241,7 +288,7 @@ impl Broker {
             if !matches!(*install, Install::Wanted) {
                 return;
             }
-            *install = Install::Installing;
+            *install = Install::Installing(Progress::new("starting"));
         }
         let root = chrome::install_dir(&self.home);
         let chrome = self.config.chrome.is_none() && chrome::find_chrome(&root).is_none();
@@ -257,6 +304,16 @@ impl Broker {
         hub: Arc<dyn HubCalls>,
         secrets_for: SecretsFor,
     ) -> Arc<Self> {
+        Self::open_with(home, config, hub, secrets_for, Installer::PINNED).await
+    }
+
+    async fn open_with(
+        home: &Path,
+        config: BrowserConfig,
+        hub: Arc<dyn HubCalls>,
+        secrets_for: SecretsFor,
+        installer: Installer,
+    ) -> Arc<Self> {
         let ffmpeg = config
             .ffmpeg
             .clone()
@@ -265,7 +322,8 @@ impl Broker {
         let broker = Arc::new_cyclic(|me| Self {
             me: me.clone(),
             home: home.to_owned(),
-            install: Mutex::new(Install::Installing),
+            install: Mutex::new(Install::Installing(Progress::new("starting"))),
+            installer,
             install_done: tokio::sync::watch::Sender::new(()),
             ffmpeg: Mutex::new(ffmpeg),
             proxy: Mutex::default(),
@@ -309,21 +367,38 @@ impl Broker {
         broker
     }
 
-    /// Installs what is missing (blocking work, off the async threads), then makes the pool.
+    /// Installs what is missing (blocking work, off the async threads), step by step, then makes the pool.
     async fn install(&self, chrome: bool, agent_browser: bool) {
-        let home = self.home.clone();
+        type Step = Box<dyn FnOnce() -> Result<(), String> + Send>;
         let _one = self.driver_install.lock().await;
-        let installed = tokio::task::spawn_blocking(move || {
-            if agent_browser && agent_browser::find(&home).is_none() {
-                agent_browser::install(&home)?;
+        let mut steps: Vec<(String, Step)> = Vec::new();
+        if agent_browser && agent_browser::find(&self.home).is_none() {
+            let (home, install) = (self.home.clone(), self.installer.agent_browser);
+            steps.push((
+                format!("agent-browser {}", agent_browser::VERSION),
+                Box::new(move || install(&home).map(|_| ())),
+            ));
+        }
+        if chrome {
+            let (home, install) = (self.home.clone(), self.installer.chrome);
+            steps.push((
+                "Chrome's headless shell and ffmpeg".to_owned(),
+                Box::new(move || install(&home)),
+            ));
+        }
+        let count = steps.len();
+        let mut installed = Ok(());
+        for (n, (what, step)) in steps.into_iter().enumerate() {
+            if let Install::Installing(progress) = &mut *lock(&self.install) {
+                progress.step = format!("step {} of {count}, {what}", n + 1);
             }
-            if chrome {
-                chrome::install(&home)?;
+            installed = tokio::task::spawn_blocking(step)
+                .await
+                .unwrap_or_else(|e| Err(e.to_string()));
+            if installed.is_err() {
+                break;
             }
-            Ok::<(), String>(())
-        })
-        .await
-        .unwrap_or_else(|e| Err(e.to_string()));
+        }
         let root = chrome::install_dir(&self.home);
         let found = self
             .config
@@ -377,7 +452,7 @@ impl Broker {
         loop {
             match &*lock(&self.install) {
                 Install::Ready(pool) => return Ok(pool.clone()),
-                Install::Wanted | Install::Installing => {}
+                Install::Wanted | Install::Installing(_) => {}
                 Install::Missing(why) => {
                     return Err(refuse(
                         ErrorCode::Failed,
@@ -391,10 +466,19 @@ impl Broker {
                 tokio::time::timeout_at(deadline, done.changed()).await,
                 Ok(Ok(()))
             ) {
+                let doing = match &*lock(&self.install) {
+                    Install::Installing(progress) => format!(
+                        " ({}, {} so far)",
+                        progress.step,
+                        duration_words(progress.since.elapsed())
+                    ),
+                    _ => String::new(),
+                };
                 return Err(refuse(
                     ErrorCode::Failed,
-                    "This machine is still installing its browser.",
-                    "try session_start again in a few minutes",
+                    format!("This machine is still installing its browser{doing}."),
+                    "try session_start again in a minute: the install carries on meanwhile, and a start after it \
+                     opens the session",
                 ));
             }
         }
@@ -437,8 +521,8 @@ impl Broker {
         if agent_browser::find(&self.home).is_some() {
             return Ok(());
         }
-        let home = self.home.clone();
-        tokio::task::spawn_blocking(move || agent_browser::install(&home).map(|_| ()))
+        let (home, install) = (self.home.clone(), self.installer.agent_browser);
+        tokio::task::spawn_blocking(move || install(&home).map(|_| ()))
             .await
             .unwrap_or_else(|e| Err(e.to_string()))
     }

@@ -156,22 +156,24 @@ purpose, state (`live`, `uploading`, `recorded`, `lost` or `expired`) and files.
 
 ## On each machine {#setup}
 
-The node sets the browser up itself, in the background, with Node.js, the first time an agent asks for a screen (or
-as soon as it starts, with `"enabled": true`):
+The node sets the browser up itself, in the background, with Node.js, as soon as it starts, so it is ready, or nearly,
+by the time an agent asks for a screen:
 
 - Chrome's headless shell and an ffmpeg, the builds of Playwright 1.64.1, with Playwright's own installer, under
   `~/.fleetd/node/browser/ms-playwright`;
 - agent-browser 0.39.4, the package's native binary for the machine, under `~/.fleetd/node/browser/agent-browser`.
 
 The versions are pinned: a node updates them only when a fleetd release changes the pin. A `session_start` during the
-install waits up to 30 seconds for it, then opens the session; if the install takes longer, it says the browser is still
-being installed. On a machine without Node.js, `session_start` explains why it can't start one. A machine without an ffmpeg records screens without their video, and each screen's note says so.
+install waits up to 30 seconds for it, then opens the screen; if the install takes longer, it says which step the
+install is on and how long it has run, and a retry once it is done opens the screen. On a machine without Node.js,
+`session_start` explains why it can't start one. A machine without an ffmpeg records screens without their video, and
+each screen's note says so.
 
 Settings go under `browser` in [node.json](/docs/config-and-files#node-json):
 
 | Key | Means |
 |---|---|
-| `enabled` | `false` turns browser screens off on this machine. `true` installs the browser when the node starts rather than at the first screen. Absent: on, installed at the first screen. |
+| `enabled` | `false` turns browser screens off on this machine. Absent or `true`: on, and the node installs the browser as it starts. |
 | `chrome` | A Chrome or headless shell to use instead of the pinned one. |
 | `ffmpeg` | An ffmpeg to use instead of the pinned one. It needs MJPEG in and `libvpx-vp9` out. |
 | `pool` | Chromes kept launched for the next screens. Absent: 1. Each waiting Chrome takes about 0.5 GB of memory. |
