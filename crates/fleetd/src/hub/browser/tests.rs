@@ -417,7 +417,8 @@ async fn a_lost_session_keeps_no_partial_recording() {
     let mut lost = report(S1, "lost", json!([]));
     lost["note"] = "its upload kept failing".into();
     node_call(&hub, &r, lost, "browser_session").await.unwrap();
-    assert!(!home.path().join("browser").join(S1).exists());
+    // Gone by the time the node has its answer, nothing of it set aside.
+    assert_eq!(recordings(home.path()), Vec::<String>::new());
     let listed = tool(
         &hub,
         &reader(),
@@ -865,4 +866,108 @@ async fn racing_reports_never_undo_a_recorded_session() {
             "round {round}: set aside and kept {left:?}"
         );
     }
+}
+
+/// The names in the hub's recordings folder.
+fn recordings(home: &std::path::Path) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(home.join("browser"))
+        .map(|d| {
+            d.filter_map(Result::ok)
+                .map(|e| e.file_name().to_string_lossy().into_owned())
+                .collect()
+        })
+        .unwrap_or_default();
+    names.sort();
+    names
+}
+
+/// What lost recordings leave goes: a folder set aside that a stopped hub never deleted, and a lost session's folder
+/// that a late upload piece (one that read the session before its loss) made again. Recordings of sessions still
+/// going, recorded, or brought back by their node after a loss stay.
+#[tokio::test]
+async fn the_sweep_removes_what_lost_recordings_left_and_nothing_else() {
+    let (hub, _clock, home) = hub();
+    let r = project("storefront");
+    let id = |n: u8| format!("B{n:032x}");
+    let (lost, recorded, going, back) = (id(1), id(2), id(3), id(4));
+    for s in [&lost, &recorded, &going, &back] {
+        node_call(&hub, &r, report(s, "live", json!([])), "browser_session")
+            .await
+            .unwrap();
+        part(&hub, &r, s, "actions", 0, b"{}\n").await.unwrap();
+    }
+    node_call(
+        &hub,
+        &r,
+        report(&lost, "lost", json!([])),
+        "browser_session",
+    )
+    .await
+    .unwrap();
+    assert!(
+        !recordings(home.path()).contains(&lost),
+        "lost, its folder went"
+    );
+    // The late piece, written after the loss.
+    std::fs::create_dir_all(home.path().join("browser").join(&lost)).unwrap();
+    std::fs::write(
+        home.path()
+            .join("browser")
+            .join(&lost)
+            .join("actions.jsonl"),
+        b"{}\n",
+    )
+    .unwrap();
+    // Set aside by a hub that stopped before deleting it.
+    let aside = format!(".{}.lost-1792000000000", id(5));
+    std::fs::create_dir_all(home.path().join("browser").join(&aside).join("x")).unwrap();
+    let recorded_report = report(
+        &recorded,
+        "recorded",
+        json!([{ "file": "actions", "bytes": 3 }]),
+    );
+    node_call(&hub, &r, recorded_report, "browser_session")
+        .await
+        .unwrap();
+    // Lost, then its node went on with the upload: no longer lost.
+    hub.db
+        .transaction(|c| {
+            c.execute(
+                "UPDATE browser_sessions SET state = 'lost', data = json_set(data, '$.state', 'lost')
+                 WHERE session_id = ?1",
+                [back.as_str()],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    node_call(
+        &hub,
+        &r,
+        report(&back, "uploading", json!([])),
+        "browser_session",
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(super::sweep_lost(&hub).unwrap(), 2);
+    assert_eq!(recordings(home.path()), vec![id(2), id(3), id(4)]);
+    assert_eq!(super::sweep_lost(&hub).unwrap(), 0, "once");
+}
+
+/// The sweep runs as the hub starts, before the first hourly prune's wait.
+#[tokio::test]
+async fn a_starting_hub_sweeps_lost_recordings_a_stopped_one_left() {
+    let (hub, _clock, home) = hub();
+    let aside = home.path().join("browser").join(format!(".{S1}.lost-1"));
+    std::fs::create_dir_all(&aside).unwrap();
+    let prune = tokio::spawn(super::run_prune(hub.clone()));
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    while aside.exists() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the start left {aside:?}"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    prune.abort();
 }

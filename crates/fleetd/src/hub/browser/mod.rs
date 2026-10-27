@@ -37,6 +37,63 @@ pub fn dir(hub: &Hub, session_id: &BrowserSessionId) -> PathBuf {
     hub.config.home.join("browser").join(session_id.as_str())
 }
 
+/// What a lost recording's folder is renamed to on its way out: `.{id}.lost-<ms>`, beside the recordings.
+const ASIDE: &str = ".lost-";
+
+/// Moves a session's recording out of its place (a rename, however large it is), to delete once the hub's database
+/// connection is free again ([`delete_aside`]). None when it has none.
+pub fn set_aside(hub: &Hub, id: &BrowserSessionId) -> Option<PathBuf> {
+    let from = dir(hub, id);
+    let to = from.with_file_name(format!(".{id}{ASIDE}{}", now_ms(hub.clock.as_ref())));
+    match std::fs::rename(&from, &to) {
+        Ok(()) => Some(to),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => {
+            tracing::warn!(session = %id, error = %e, "lost recording not moved aside; deleting it in place");
+            let _ = std::fs::remove_dir_all(&from);
+            None
+        }
+    }
+}
+
+/// Deletes a recording [`set_aside`] moved, off the async threads: a large one takes a while.
+pub async fn delete_aside(aside: PathBuf) {
+    let _ = tokio::task::spawn_blocking(move || std::fs::remove_dir_all(aside)).await;
+}
+
+/// Removes the recording folders no session keeps: those set aside that a stopped hub never deleted, and the folder
+/// of a session that ended lost, which a late upload piece (one that read the session before its loss) can make again.
+/// Each lost one is checked and moved aside in a transaction, so a session its node brought back meanwhile keeps its
+/// folder. Returns how many it removed.
+pub fn sweep_lost(hub: &Hub) -> Result<usize, StoreError> {
+    let Ok(entries) = std::fs::read_dir(hub.config.home.join("browser")) else {
+        return Ok(0);
+    };
+    let mut gone = Vec::new();
+    for entry in entries.filter_map(Result::ok) {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name.starts_with('.') && name.contains(ASIDE) {
+            gone.push(entry.path());
+            continue;
+        }
+        let id = BrowserSessionId::unchecked(&name);
+        let aside = hub.db.transaction(|c| {
+            Ok(get_on(c, &id)?
+                .filter(|s| s.state == BrowserSessionState::Lost)
+                .and_then(|_| set_aside(hub, &id)))
+        })?;
+        gone.extend(aside);
+    }
+    for path in &gone {
+        if let Err(e) = std::fs::remove_dir_all(path)
+            && e.kind() != std::io::ErrorKind::NotFound
+        {
+            tracing::warn!(path = %path.display(), error = %e, "lost recording not deleted");
+        }
+    }
+    Ok(gone.len())
+}
+
 pub fn file_path(hub: &Hub, session_id: &BrowserSessionId, file: RecordingFile) -> PathBuf {
     dir(hub, session_id).join(file.file_name())
 }
@@ -381,6 +438,16 @@ pub fn prune(hub: &Hub) -> Result<usize, StoreError> {
 /// The hourly prune, until the hub stops.
 pub async fn run_prune(hub: Arc<Hub>) {
     loop {
+        // As the hub starts and with each pass: what a stopped hub or a late upload piece left of lost recordings.
+        let sweep = {
+            let hub = hub.clone();
+            tokio::task::spawn_blocking(move || sweep_lost(&hub)).await
+        };
+        match sweep {
+            Ok(Ok(0)) | Err(_) => {}
+            Ok(Ok(n)) => tracing::info!(n, "lost browser recordings removed"),
+            Ok(Err(e)) => tracing::warn!(error = %e, "lost browser recordings not removed"),
+        }
         match prune(&hub) {
             Ok(0) => {}
             Ok(n) => tracing::info!(n, "browser recordings expired"),
