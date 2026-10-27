@@ -5,6 +5,7 @@
 // its machine's usage pause is the reason. Otherwise the hub's warning, which stops nothing (a check red on main).
 import { Button, Dot, Text } from "../../ui";
 import { useCommands } from "../palette";
+import { HubText } from "../projects/HubText";
 import { ResumeButton } from "../status/Resume";
 import type { Waiting } from "./attentionModel";
 import s from "./view.module.css";
@@ -37,7 +38,7 @@ export function AttentionLine({
       <div className={s.attention} data-attention="warning">
         <Dot color="var(--warning)" />
         <Text size="xs" tone="quiet">
-          {warning}
+          <HubText>{warning}</HubText>
         </Text>
       </div>
     );

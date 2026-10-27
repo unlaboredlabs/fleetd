@@ -17,6 +17,7 @@ import { Button, cx, Dot, FrameTitle, Text, Tooltip, Truncate } from "../../ui";
 import { toHash } from "../shell/routes";
 import { countsLine, GROUP_WORDS, groupsOf, itemHref, itemRefs, orderRows, STATE_WORDS, type StateWord } from "./rows";
 import { fullWhen, staleWords, weekLine, when } from "./view";
+import { HubText } from "../projects/HubText";
 import { ResumeButton } from "./Resume";
 import s from "./status.module.css";
 
@@ -129,7 +130,7 @@ function Row({ row, state, now }: { row: ProjectStatusRow; state: StateWord; now
             </Tooltip>
           ) : null}
           {row.warning === undefined ? null : (
-            <Tooltip content={row.warning}>
+            <Tooltip content={<HubText>{row.warning}</HubText>}>
               <span className={cx(s.mark)} tabIndex={0} data-warning>
                 <Text size="xs" tone="warning">
                   CI red

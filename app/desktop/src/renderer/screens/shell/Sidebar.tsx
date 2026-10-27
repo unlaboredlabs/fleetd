@@ -26,6 +26,7 @@ import {
 import { RemoveProjectDialog, type RemoveTarget } from "../projects/RemoveProjectDialog";
 import { UpdatesLine } from "../updates";
 import { HubStatus } from "./HubStatus";
+import { HubText } from "../projects/HubText";
 import { routeOf, type SidebarProject } from "./model";
 import { useOfflineAsOf } from "./offline";
 import { sameProject, type Screen } from "./routes";
@@ -95,7 +96,7 @@ const trailing = (p: SidebarProject, jump: number | null, asOf: string | undefin
   return (
     <>
       {m === null ? null : (
-        <Tooltip content={tip}>
+        <Tooltip content={tip === undefined ? undefined : <HubText>{tip}</HubText>}>
           <span className={s.mark} aria-label={tip}>
             {m.node}
           </span>

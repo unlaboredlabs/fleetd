@@ -457,7 +457,7 @@ export const screens: readonly Screen[] = [
     variant: "red-main",
     open: async (page) => {
       await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
-      await expect(page.locator('[data-attention="warning"]')).toHaveText("`ios sessions` is red on main, fix in progress");
+      await expect(page.locator('[data-attention="warning"]')).toHaveText("ios sessions is red on main, fix in progress");
     },
   },
   // An empty chat's starter fills the box (never sends) and gives it the cursor.
