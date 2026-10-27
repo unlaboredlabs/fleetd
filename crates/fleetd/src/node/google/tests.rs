@@ -828,6 +828,31 @@ async fn a_list_entry_holding_several_addresses_splits_as_the_card_shows_them() 
 }
 
 #[tokio::test]
+async fn mail_with_attachments_is_refused_and_nothing_is_saved_or_sent() {
+    let (_home, _ep, fake, session) = signed_in().await;
+    let before = fake.lock().unwrap().seen.len();
+    for tool in ["create_draft", "send_message", "reply"] {
+        let error = tools::call(
+            &session,
+            tool,
+            &json!({ "message_id": "m1", "to": ["bo@vendor.test"], "subject": "Lease", "body": "Attached.",
+                     "attachments": [{ "filename": "lease.pdf", "content_base64": "QUJD" }] }),
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            error.contains("attachments aren't supported yet"),
+            "{tool}: {error}"
+        );
+    }
+    let writes = fake.lock().unwrap().seen[before..]
+        .iter()
+        .filter(|(method, ..)| method != "GET")
+        .count();
+    assert_eq!(writes, 0);
+}
+
+#[tokio::test]
 async fn guests_that_are_not_plain_addresses_are_refused_and_nothing_is_made() {
     let (_home, _ep, fake, session) = signed_in().await;
     let before = fake.lock().unwrap().seen.len();

@@ -1,10 +1,10 @@
 //! fleetd's own Google server (`fleetd google-mcp`, node/google/tools.rs; the hub gives it to a Navi with an account,
 //! hub/google): its tool names, which of them read, and how each asking one reads on a card. A read, and a draft,
 //! which sends nothing, run unasked; a send, a reply, an event change, an upload and a share ask, showing everyone it
-//! reaches and everything that goes out.
+//! reaches and everything that goes out. Mail with attachments is refused: the tools can't attach files yet.
 use serde_json::Value;
 
-use super::policy::{Draft, Rule, addresses, text_of};
+use super::policy::{Draft, Never, Rule, addresses, text_of};
 use fleetd_contracts::integrations::ToolAction::{Send, Share, Write};
 
 /// The tools that run unasked: node/google/tools.rs marks the same ones `readOnlyHint`.
@@ -31,6 +31,12 @@ fn emails_guests(tool: &str, input: &Value) -> bool {
 }
 
 pub fn rule(tool: &str, input: &Value) -> Option<Rule> {
+    // Refused before any card: the tools can't attach files yet, and node/google/tools.rs refuses them too, for a draft
+    // that runs unasked.
+    if matches!(tool, "send_message" | "reply" | "create_draft") && !input["attachments"].is_null()
+    {
+        return Some(Rule::Blocked(Never::Attachments));
+    }
     if READS.contains(&tool) {
         return Some(Rule::Read);
     }

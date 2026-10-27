@@ -1784,7 +1784,7 @@
       "oneOf": [
         {
           "const": "google",
-          "description": "Gmail, Google Calendar and Google Drive: fleetd's own Google tools, read by the names and fields in\n`hub/integrations/google.rs`.",
+          "description": "Gmail, Google Calendar and Google Drive through fleetd's own `google` server, with the person's own account\n(`crate::google`).",
           "type": "string"
         },
         {

@@ -25,6 +25,9 @@ pub enum Never {
     Trading,
     Accounts,
     Credential,
+    /// A Gmail send, reply or draft with files: fleetd's own Google tools can't attach them yet, so the person is never
+    /// asked to approve a call that would fail or go without them.
+    Attachments,
 }
 
 impl Never {
@@ -47,6 +50,10 @@ impl Never {
                 "Blocked by fleetd: this would send or store what looks like a password, key or token, which never \
                  leaves through an assistant, even with approval. Leave the value out; a secret goes through \
                  request_secret."
+            }
+            Never::Attachments => {
+                "Blocked by fleetd: Gmail attachments aren't supported yet. Send it without the files, or share them \
+                 from Drive with drive_share and say so in the message."
             }
         }
     }
@@ -181,7 +188,7 @@ pub fn shown_input(kind: IntegrationKind, input: &Value) -> Value {
 /// attaches that read as text. A real file's base64 is never searched as it is: its random letters spell key shapes by
 /// chance, and refusing real mail for that would be worse than the key it might hide. A value under [`SHORT_VALUE`]
 /// characters is searched as it is too, and a value that doesn't decode isn't a file, and is searched as text.
-fn sends_credential(kind: IntegrationKind, input: &Value) -> bool {
+pub(super) fn sends_credential(kind: IntegrationKind, input: &Value) -> bool {
     let mut files: Vec<Vec<u8>> = Vec::new();
     let mut short_key = false;
     let text = with_files(kind, input, |b| {

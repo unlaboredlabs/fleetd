@@ -5,7 +5,10 @@ use fleetd_contracts::mcp_servers::McpServer;
 use fleetd_contracts::prim::List;
 use serde_json::{Value, json};
 
-use super::policy::{Never, Verdict, launch_rules, tool_policy, verdict, words};
+use super::policy::{
+    Never, Verdict, attachment_size, launch_rules, sends_credential, shown_input, tool_policy,
+    verdict, words,
+};
 
 fn server(name: &str, kind: IntegrationKind, reads: &[&str]) -> McpServer {
     let mut s: McpServer = serde_json::from_value(json!({
@@ -306,10 +309,7 @@ fn only_the_native_server_gets_google_s_table() {
             panic!("{tool}: expected an ask");
         };
         assert_eq!(p.integration, IntegrationKind::Custom);
-        assert_eq!(
-            p.title.as_str(),
-            format!("Change with create_draft on {name}")
-        );
+        assert_eq!(p.title.as_str(), format!("Use create_draft on {name}"));
         assert!(p.input.contains("ana@example.com") && p.input.contains("\"body\""));
         assert!(p.to.is_empty());
         assert!(
@@ -436,40 +436,33 @@ fn a_long_body_comes_whole_and_too_large_a_call_is_refused() {
 }
 
 #[test]
-fn attachments_are_listed_and_their_bytes_said_by_size() {
-    // 300 KB of bytes: past the card's bound as base64, within it once said by size.
-    let bytes = "QUJD".repeat(100_000);
-    let p = ask(
-        "mcp__google__send_message",
-        json!({
-            "to": "a@example.com", "subject": "Lease", "body": "Attached.",
-            "attachments": [
-                { "content_base64": bytes, "filename": "tenant-form.pdf", "mime_type": "application/pdf" },
-                { "path": "/home/dev/Documents/report.pdf" },
-                { "message_id": "18c2", "attachment_id": "a7" },
-                { "drive_file_id": "1AbC" }
-            ]
-        }),
-    );
-    let names: Vec<(&str, Option<u64>, Option<&str>)> = p
-        .attachments
-        .iter()
-        .map(|a| (a.name.as_str(), a.bytes, a.from.as_deref()))
-        .collect();
+fn mail_with_attachments_is_refused_before_any_card() {
+    // fleetd's own Google tools can't attach files yet: the person is never asked to approve a call that would fail.
+    for tool in ["send_message", "reply", "create_draft"] {
+        let input = json!({ "to": "a@example.com", "subject": "Lease", "body": "Attached.",
+            "attachments": [{ "content_base64": "QUJD", "filename": "tenant-form.pdf" }] });
+        assert_eq!(
+            blocked(&format!("mcp__google__{tool}"), input),
+            Never::Attachments.why(),
+            "{tool}"
+        );
+    }
+    // Without files, a draft still runs unasked.
     assert_eq!(
-        names,
-        [
-            ("tenant-form.pdf", Some(300_000), None),
-            (
-                "report.pdf",
-                None,
-                Some("from /home/dev/Documents/report.pdf")
-            ),
-            ("Attachment a7", None, Some("from message 18c2")),
-            ("Drive file 1AbC", None, Some("from Drive")),
-        ]
+        verdict(
+            "mcp__google__create_draft",
+            &json!({ "to": "a@example.com", "body": "Hi" }),
+            &navi()
+        ),
+        Some(Verdict::Allow)
     );
-    assert!(p.input.contains("[the file's 300000 bytes]") && !p.input.contains("QUJD"));
+    // A file's bytes are said by their size, which no one reads: 300 KB, past the card's bound as base64.
+    let shown = shown_input(
+        IntegrationKind::Google,
+        &json!({ "attachments": [{ "content_base64": "QUJD".repeat(100_000), "filename": "tenant-form.pdf" }] }),
+    );
+    let shown = shown.to_string();
+    assert!(shown.contains("[the file's 300000 bytes]") && !shown.contains("QUJD"));
 }
 
 #[test]
@@ -515,25 +508,17 @@ fn names_split_into_words() {
 fn review_follow_ups_a_share_reads_as_a_share_a_changed_event_reaches_its_guests_and_an_encoded_key_is_found()
  {
     assert_eq!(
-        ask(
-            "mcp__google__workspace__drive_share",
-            json!({ "fileId": "f1" })
-        )
-        .action,
+        ask("mcp__google__drive_share", json!({ "file_id": "f1" })).action,
         ToolAction::Share
     );
+    // A change emails its guests only when told to, naming them all.
     let changed = ask(
         "mcp__google__update_calendar_event",
-        json!({ "event_id": "e1", "start": "2026-11-03T10:00:00Z", "end": "2026-11-03T11:00:00Z" }),
+        json!({ "event_id": "e1", "start": "2026-11-03T10:00:00Z", "end": "2026-11-03T11:00:00Z",
+                "attendees": ["bo@vendor.test"], "notify_attendees": true }),
     );
     assert_eq!(changed.action, ToolAction::Send);
-    assert!(
-        changed
-            .audience
-            .as_deref()
-            .unwrap()
-            .contains("Google emails them")
-    );
+    assert_eq!(changed.to[0].as_str(), "bo@vendor.test");
     let quiet = ask(
         "mcp__google__update_calendar_event",
         json!({ "event_id": "e1", "summary": "Focus", "notify_attendees": false }),
@@ -550,19 +535,17 @@ fn review_follow_ups_a_share_reads_as_a_share_a_changed_event_reaches_its_guests
 fn only_a_google_tool_s_file_bytes_are_said_by_size_and_a_credential_anywhere_is_still_refused() {
     // A key in a field called content_base64 that doesn't decode as base64 isn't a file: read as text and refused, on
     // any server.
-    for (tool, input) in [
-        (
-            "mcp__google__send_message",
-            json!({ "to": "a@example.com", "subject": "s", "body": "b",
-                "attachments": [{ "content_base64": "sk-ant-abcdefghijklmnop0123", "filename": "k.txt" }] }),
-        ),
-        (
+    assert!(sends_credential(
+        IntegrationKind::Google,
+        &json!({ "attachments": [{ "content_base64": "sk-ant-abcdefghijklmnop0123", "filename": "k.txt" }] })
+    ));
+    assert_eq!(
+        blocked(
             "mcp__bank__update_payee",
-            json!({ "content_base64": "sk-ant-abcdefghijklmnop0123" }),
+            json!({ "content_base64": "sk-ant-abcdefghijklmnop0123" })
         ),
-    ] {
-        assert_eq!(blocked(tool, input), Never::Credential.why(), "{tool}");
-    }
+        Never::Credential.why()
+    );
     // A custom server's content_base64 is shown as it is: the card hides nothing of it.
     let p = ask(
         "mcp__bank__upload_statement",
@@ -570,12 +553,11 @@ fn only_a_google_tool_s_file_bytes_are_said_by_size_and_a_credential_anywhere_is
     );
     assert!(p.input.contains("\"QUJD\""));
     // An attachment without a filename isn't the shape file bytes come in: shown as it is too.
-    let q = ask(
-        "mcp__google__create_draft",
-        json!({ "to": "a@example.com", "subject": "s", "body": "b",
-            "attachments": [{ "content_base64": "QUJD" }] }),
+    let q = shown_input(
+        IntegrationKind::Google,
+        &json!({ "attachments": [{ "content_base64": "QUJD" }] }),
     );
-    assert!(q.input.contains("\"QUJD\""));
+    assert!(q.to_string().contains("\"QUJD\""));
 }
 
 #[test]
@@ -591,16 +573,10 @@ fn wrapped_and_large_attachments_are_files_and_a_key_inside_one_is_still_found()
         b64(&[9u8; 600])
     );
     assert_ne!(crate::hub::redact::redact(&lookalike), lookalike);
-    assert_eq!(
-        ask(
-            "mcp__google__send_message",
-            json!({ "to": "a@example.com", "subject": "s", "body": "b",
-                "attachments": [{ "content_base64": lookalike, "filename": "photo.jpg" }] }),
-        )
-        .attachments
-        .len(),
-        1
-    );
+    assert!(!sends_credential(
+        IntegrationKind::Google,
+        &json!({ "attachments": [{ "content_base64": lookalike, "filename": "photo.jpg" }] })
+    ));
     // Wrapped at 76 characters, as mail tools write it: still a file, said by its size.
     let wrapped = b64(&[2u8; 1200])
         .as_bytes()
@@ -608,26 +584,22 @@ fn wrapped_and_large_attachments_are_files_and_a_key_inside_one_is_still_found()
         .map(|c| std::str::from_utf8(c).unwrap())
         .collect::<Vec<_>>()
         .join("\r\n");
-    let p = ask(
-        "mcp__google__send_message",
-        json!({ "to": "a@example.com", "subject": "s", "body": "b",
-            "attachments": [{ "content_base64": wrapped, "filename": "scan.pdf" }] }),
-    );
-    assert!(p.input.contains("[the file's 1200 bytes]"), "{}", p.input);
+    let p = shown_input(
+        IntegrationKind::Google,
+        &json!({ "attachments": [{ "content_base64": wrapped, "filename": "scan.pdf" }] }),
+    )
+    .to_string();
+    assert!(p.contains("[the file's 1200 bytes]"), "{p}");
     // A text file that holds a key: found in its decoded contents, and refused.
     let key_file = b64(format!(
         "notes\n{}\ntoken = ghp_abcdefghijklmnopqrstuvwxyz0123\n",
         "x".repeat(400)
     )
     .as_bytes());
-    assert_eq!(
-        blocked(
-            "mcp__google__send_message",
-            json!({ "to": "a@example.com", "subject": "s", "body": "b",
-                "attachments": [{ "content_base64": key_file, "filename": "notes.txt" }] })
-        ),
-        Never::Credential.why()
-    );
+    assert!(sends_credential(
+        IntegrationKind::Google,
+        &json!({ "attachments": [{ "content_base64": key_file, "filename": "notes.txt" }] })
+    ));
 }
 
 /// `len` bytes that look random: no file of real mail could be refused for what they spell.
@@ -646,12 +618,11 @@ fn noise(len: usize, mut seed: u64) -> Vec<u8> {
 fn a_binary_file_is_never_refused_but_a_text_file_or_plain_text_holding_a_key_is() {
     use base64::Engine;
     use base64::engine::general_purpose::{STANDARD, URL_SAFE};
+    // Whether a file attached as `content` would be refused as a credential.
     let send = |content: String| {
-        verdict(
-            "mcp__google__send_message",
-            &json!({ "to": "a@example.com", "subject": "s", "body": "b",
-                "attachments": [{ "content_base64": content, "filename": "photo.jpg" }] }),
-            &navi(),
+        sends_credential(
+            IntegrationKind::Google,
+            &json!({ "attachments": [{ "content_base64": content, "filename": "photo.jpg" }] }),
         )
     };
     // Random 1 MB files, in both alphabets, wrapped or not: never refused, whatever their letters spell.
@@ -668,10 +639,7 @@ fn a_binary_file_is_never_refused_but_a_text_file_or_plain_text_holding_a_key_is
                 .collect::<Vec<_>>()
                 .join("\r\n"),
         ] {
-            assert!(
-                matches!(send(content), Some(Verdict::Ask(_))),
-                "random file {seed} was refused"
-            );
+            assert!(!send(content), "random file {seed} was refused");
         }
     }
     // A text file holding a key, in either alphabet: refused.
@@ -680,7 +648,7 @@ fn a_binary_file_is_never_refused_but_a_text_file_or_plain_text_holding_a_key_is
         "x".repeat(40)
     );
     for content in [STANDARD.encode(&notes), URL_SAFE.encode(&notes)] {
-        assert_eq!(send(content), Some(Verdict::Block(Never::Credential.why())));
+        assert!(send(content));
     }
     // A key in plain text, in the body: refused.
     assert_eq!(
@@ -695,22 +663,15 @@ fn a_binary_file_is_never_refused_but_a_text_file_or_plain_text_holding_a_key_is
 #[test]
 fn a_short_key_can_t_go_out_as_a_tiny_file_and_both_sizes_agree() {
     use super::policy::file_bytes;
-    let attach = |content: &str| {
-        json!({ "to": "a@example.com", "subject": "s", "body": "b",
-            "attachments": [{ "content_base64": content, "filename": "a.bin" }] })
-    };
+    let attach = |content: &str| json!({ "attachments": [{ "content_base64": content, "filename": "a.bin" }] });
     // An AWS key id is valid base64 for 15 bytes of binary: a tiny file, so its own text is searched too, and refused.
     let key = "AKIAQQQQQQQQQQQQQQQQ";
     assert!(file_bytes(key).is_some());
-    assert_eq!(
-        blocked("mcp__google__send_message", attach(key)),
-        Never::Credential.why()
-    );
-    // The row and the JSON say the same size: decoded bytes when the value decodes, its own length when it doesn't.
-    let p = ask("mcp__google__send_message", attach("QUJDREVG"));
-    assert_eq!(p.attachments[0].bytes, Some(6));
-    assert!(p.input.contains("[the file's 6 bytes]"));
-    let q = ask("mcp__google__send_message", attach("not base64!"));
-    assert_eq!(q.attachments[0].bytes, Some(11));
-    assert!(q.input.contains("\"not base64!\""));
+    assert!(sends_credential(IntegrationKind::Google, &attach(key)));
+    // The size and the JSON agree: decoded bytes when the value decodes, its own length when it doesn't.
+    assert_eq!(attachment_size("QUJDREVG"), 6);
+    let shown = |content: &str| shown_input(IntegrationKind::Google, &attach(content)).to_string();
+    assert!(shown("QUJDREVG").contains("[the file's 6 bytes]"));
+    assert_eq!(attachment_size("not base64!"), 11);
+    assert!(shown("not base64!").contains("\"not base64!\""));
 }

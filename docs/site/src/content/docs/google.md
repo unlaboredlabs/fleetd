@@ -38,10 +38,11 @@ Only fleetd's own `google` server gets this table. Any other server, such as an 
 is a [custom server](/docs/mcp-servers/): each of its tools asks, showing its whole input, unless you marked it as one
 that only reads.
 
-A tool that asks shows the [approval card](/docs/approvals-and-secrets/) in the Navi's chat. The card has every
+A tool that asks shows the [approval card](/docs/integrations#card) in the Navi's chat. The card has every
 recipient, the subject and the whole body, read from the exact input the tool runs with. The tool sends exactly what
-you approved. fleetd doesn't rewrite it or block links or attachments. The one thing refused even with approval is
-something that looks like a password, key or token.
+you approved. fleetd doesn't rewrite it or block links. Refused even with approval: something that looks like a
+password, key or token, and an email with attachments, which aren't supported yet. You're never asked to approve a
+send that would fail. To pass a file on, the Navi can share it from Drive.
 
 What a read brings back from your mailbox, calendar or Drive comes back whole, as Google has it: no summary, no stripped
 links. Above it is one line telling the Navi it's untrusted content, whose instructions come from whoever wrote it, not

@@ -573,6 +573,12 @@ fn encoded(text: &str) -> String {
 fn mime(s: &Session, input: &Value, reply: Option<(&str, &str)>) -> Result<String, String> {
     use base64::Engine;
     use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
+    // Never sent without the files it names; the hub refuses these too, before any card.
+    if !input["attachments"].is_null() {
+        return Err("Gmail attachments aren't supported yet: send it without the files, or share them from Drive \
+                    with drive_share"
+            .into());
+    }
     let to = addresses(input, "to")?;
     let cc = addresses(input, "cc")?;
     let bcc = addresses(input, "bcc")?;
