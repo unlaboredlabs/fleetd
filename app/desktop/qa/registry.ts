@@ -1362,8 +1362,9 @@ export const screens: readonly Screen[] = [
     fixtures: ["typical", "many-agents", "long-text", "hub-unreachable", "live-20", "agents-work"],
   },
   // W46: the Agents section's Sessions from a hub that serves them (fixtures/sessions): needs you, live and recent; one
-  // live, one asking you to take over, one taken over (the page yours), handed back with ⌘⇧↩; recorded ones replayed,
-  // with a video and without, a step's page snapshot open; one being saved, one lost and one expired.
+  // live (the page the full width, no Steps beside it), one asking you to take over, one taken over (the page yours),
+  // handed back with ⌘⇧↩; recorded ones replayed the full width, their steps closed, then opened with Steps, with a
+  // video and without, a step's page snapshot open; one being saved, one lost and one expired.
   { id: "sessions", route: `${CHAT}/sessions`, fixtures: ["sessions-preview"] },
   // ...and a hub that doesn't serve them (every other fixture's): the link opens Agents, with no Sessions beside it.
   {
@@ -1373,7 +1374,7 @@ export const screens: readonly Screen[] = [
     variant: "no-sessions",
     open: async (page) => {
       await expect(page.locator('[data-screen="agents"]')).toBeVisible();
-      await expect(page.getByRole("tab", { name: /^Sessions/u })).toHaveCount(0);
+      await expect(page.getByRole("tab", { name: /^Screens/u })).toHaveCount(0);
     },
   },
   {
@@ -1381,7 +1382,10 @@ export const screens: readonly Screen[] = [
     route: SESSION_ROUTE(SESSION.checkout),
     fixtures: ["sessions-preview"],
     variant: "live",
-    open: (page) => expect(page.getByRole("img", { name: /^The page: https:\/\/staging\.shop/u })).toBeVisible(),
+    open: async (page) => {
+      await expect(page.getByRole("img", { name: /^The page: https:\/\/staging\.shop/u })).toBeVisible();
+      await expect(page.getByText("Steps", { exact: true })).toHaveCount(0);
+    },
   },
   { id: "sessions", route: SESSION_ROUTE(SESSION.payouts), fixtures: ["sessions-preview"], variant: "asking" },
   {
@@ -1429,7 +1433,28 @@ export const screens: readonly Screen[] = [
       await expect(page.getByRole("button", { name: /^Hand back/u })).toBeVisible();
     },
   },
-  { id: "sessions", route: SESSION_ROUTE(SESSION.share), fixtures: ["sessions-preview"], variant: "replay", open: (page) => expect(page.locator("video")).toHaveCount(1) },
+  {
+    id: "sessions",
+    route: SESSION_ROUTE(SESSION.share),
+    fixtures: ["sessions-preview"],
+    variant: "replay",
+    open: async (page) => {
+      await expect(page.locator("video")).toHaveCount(1);
+      await expect(page.getByRole("button", { name: "Steps", exact: true })).toHaveAttribute("aria-pressed", "false");
+      await expect(page.getByRole("list", { name: /^Its steps/u })).toHaveCount(0);
+    },
+  },
+  // ...its steps opened with Steps, beside the recording.
+  {
+    id: "sessions",
+    route: SESSION_ROUTE(SESSION.share),
+    fixtures: ["sessions-preview"],
+    variant: "steps",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Steps", exact: true }).click();
+      await expect(page.getByRole("list", { name: /^Its steps/u })).toBeVisible();
+    },
+  },
   // ...with a step's page snapshot open: the structure as the step found it, what it clicked highlighted.
   {
     id: "sessions",
@@ -1438,6 +1463,7 @@ export const screens: readonly Screen[] = [
     variant: "snapshot",
     open: async (page) => {
       // A click by the agent's ref: the node's target finds it in the page and on the video.
+      await page.getByRole("button", { name: "Steps", exact: true }).click();
       await page.getByRole("button", { name: "The page at 0:06" }).click();
       await expect(page.getByRole("list", { name: "The page’s structure" })).toBeVisible();
       await expect(page.locator("[data-target]")).toHaveText(/button.*Share.*clicked/u);
@@ -1452,6 +1478,7 @@ export const screens: readonly Screen[] = [
     fixtures: ["sessions-preview"],
     variant: "no-video",
     open: async (page) => {
+      await page.getByRole("button", { name: "Steps", exact: true }).click();
       await expect(page.getByText("Filled login for staging.shop.example.com from 1Password")).toBeVisible();
       await page.getByRole("button", { name: "The page at 0:04" }).click();
       await expect(page.getByText("filled from 1Password, hidden")).toBeVisible();

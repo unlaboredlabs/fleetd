@@ -191,42 +191,43 @@ it.
 
 ## Machine roles {#roles}
 
-Each machine runs **agents**, hosts **sessions** (an agent's [browser](/docs/browser-sessions) and, later, its devices),
-or **both**, the default. Set it in **Settings > Machines** in the app, or with an admin key:
+Each machine runs **agents**, hosts **screens** (an agent's [browser, emulator, simulator or desktop](/docs/browser-sessions)),
+or **both**, the default. Set it in **Settings > Machines** in the app, or with an admin key, where the screens role
+is named `sessions`:
 
 ```sh
 fleetd machine set mac1 --roles sessions --max-sessions 2
 fleetd machine set devbox --roles agents,sessions --max-sessions auto
 ```
 
-- **Agents only.** The machine hosts no sessions. Its agents' sessions run on a machine that does.
-- **Sessions only.** The machine runs no agents: those running finish their work, and its projects' agents wait until
-  it runs agents again. It hosts sessions for agents on every machine.
+- **Agents only.** The machine hosts no screens. Its agents' screens run on a machine that does.
+- **Screens only.** The machine runs no agents: those running finish their work, and its projects' agents wait until
+  it runs agents again. It hosts screens for agents on every machine.
 
-Session slots are counted apart from agent slots. A machine hosts at most its session cap at once: what it fits (one
-session per two CPUs and about 2 GB of memory each, at most 16, and never fewer than its agent slots and leads), or
+Screen slots are counted apart from agent slots. A machine hosts at most its screen cap at once: what it fits (one
+screen per two CPUs and about 2 GB of memory each, at most 16, and never fewer than its agent slots and leads), or
 the number you set, 1 to 64.
 
 Each node reports what it can host, in plain words, and Settings > Machines shows it:
 
 | Kind | Needs |
 |---|---|
-| Browser | Chrome: the node's own, which it installs with the first session, or the one `browser.chrome` names in node.json. |
-| Android emulator | fleetd's own pinned emulator: Linux on x86_64, opted in with `"device": {"enabled": true}` in node.json (the first session installs it) or installed already, and a `/dev/kvm` this user can open read-write. See [Android sessions](/docs/browser-sessions#android-setup). |
-| iOS simulator | fleetd's own golden simulator and its clones: macOS with Xcode, an iOS simulator runtime and Node.js, and opted in with `"ios": {"enabled": true}` in node.json (or the golden made already). While the node makes its golden (minutes), or after making it failed, the hub still sends it iOS sessions: the node says it is still making it, and the next session tries a failed one again. The doctor's `ios` check says where it stands. See [iOS sessions](/docs/browser-sessions#ios-setup). |
+| Browser | Chrome: the node's own, which it installs with the first screen, or the one `browser.chrome` names in node.json. |
+| Android emulator | fleetd's own pinned emulator: Linux on x86_64, opted in with `"device": {"enabled": true}` in node.json (the first screen installs it) or installed already, and a `/dev/kvm` this user can open read-write. See [Android screens](/docs/browser-sessions#android-setup). |
+| iOS simulator | fleetd's own golden simulator and its clones: macOS with Xcode, an iOS simulator runtime and Node.js, and opted in with `"ios": {"enabled": true}` in node.json (or the golden made already). While the node makes its golden (minutes), or after making it failed, the hub still sends it iOS screens: the node says it is still making it, and the next screen tries a failed one again. The doctor's `ios` check says where it stands. See [iOS screens](/docs/browser-sessions#ios-setup). |
 | Desktop | Linux with docker or Xvfb. |
 
-When an agent starts a session, the hub places it: on the agent's own machine when it hosts sessions, can run that kind
-and has a free session slot; else on the online machine that can with the most free slots. When none can, the agent is
+When an agent starts a screen, the hub places it: on the agent's own machine when it hosts screens, can run that kind
+and has a free screen slot; else on the online machine that can with the most free slots. When none can, the agent is
 told why in one line: none can host that kind, the ones that can are offline, or every one is full. The default cap is
-never lower than the machine's agent slots and leads together, one session each, as before session caps.
+never lower than the machine's agent slots and leads together, one screen each, as before screen caps.
 
-A session on another machine works as one on the agent's own:
+A screen on another machine works as one on the agent's own:
 
-- **Its secrets go sealed.** Before it starts, the agent's node seals the session's secrets (its project's, its
+- **Its secrets go sealed.** Before it starts, the agent's node seals the screen's secrets (its project's, its
   order's and its MCP servers') to the hosting machine's key, as the app seals a secret to a machine. The hub passes
-  the box on and can't open it. The hosting machine scrubs the session's action log and page snapshots with them,
-  as for a session of its own, and forgets them once the session has started.
+  the box on and can't open it. The hosting machine scrubs the screen's action log and page snapshots with them,
+  as for a screen of its own, and forgets them once the screen has started.
 - **Its 1Password token stays home.** A `fill_credential` is read from 1Password on the agent's machine, with its
   token, and only the value goes to the hosting machine, sealed to it. That machine fills it into the item's own sites
   only, refuses reads of it as for a fill of its own, and wipes it. The agent's machine masks it in its agent's
@@ -238,7 +239,7 @@ A session on another machine works as one on the agent's own:
 - **Its steps are recorded there.** Each `agent-browser` command that drove it goes into the hosting machine's
   recording, with the page after it, masked on the agent's machine first.
 
-Only machines whose fleetd seals and opens these boxes take part. An agent on a machine with browser sessions turned
+Only machines whose fleetd seals and opens these boxes take part. An agent on a machine with browser screens turned
 off can't start one anywhere: it has no proxy to drive it through.
 
 ## Check health {#health}

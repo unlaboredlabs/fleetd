@@ -29,11 +29,11 @@ export const SECTIONS: readonly Section[] = [
     id: "agents",
     label: "Agents",
     icon: Bot,
-    line: "The AI workers on this project, what each is doing right now, and the browsers they use.",
+    line: "The AI workers on this project, what each is doing right now, and the screens they use.",
     lineAlone: "The AI workers on this project, and what each is doing right now.",
     views: [
       ["agents", "Agents"],
-      ["sessions", "Sessions"],
+      ["sessions", "Screens"],
     ],
   },
   {

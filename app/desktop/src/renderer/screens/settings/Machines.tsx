@@ -102,7 +102,7 @@ function MachineRow({ machine: m, admin }: { machine: MachineRolesEntry; admin: 
               {sessionsLine(m)}
             </Text>
             <Select
-              aria-label={`Most sessions ${m.name} hosts at once`}
+              aria-label={`Most screens ${m.name} hosts at once`}
               className={s.machineCap}
               value={m.maxSessionsSet === undefined ? "auto" : String(m.maxSessionsSet)}
               options={capChoices(m)}

@@ -11,8 +11,8 @@ describe("a section the hub serves in part", () => {
     expect(alone.line).toBe("The AI workers on this project, and what each is doing right now.");
     expect(alone.line).not.toMatch(/browser/u);
     const both = servedSection(agents, ["browser_sessions"]);
-    expect(both.views.map(([tab, words]) => `${tab}:${words}`)).toEqual(["agents:Agents", "sessions:Sessions"]);
-    expect(both.line).toMatch(/browsers they use/u);
+    expect(both.views.map(([tab, words]) => `${tab}:${words}`)).toEqual(["agents:Agents", "sessions:Screens"]);
+    expect(both.line).toMatch(/screens they use/u);
   });
 
   it("leaves a section of views that need nothing as it is", () => {

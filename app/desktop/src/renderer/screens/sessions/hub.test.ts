@@ -120,7 +120,7 @@ describe("fleetd's own steps", () => {
     expect(actionLine(stepOf(act(4, "request_takeover", { reason: "a code" }))).words).toBe("Asked you to take over: a code");
     expect(actionLine(stepOf(act(5, "takeover", {}))).words).toBe("You took over");
     expect(actionLine(stepOf(act(6, "hand_back", {}))).words).toBe("You handed back");
-    expect(actionLine(stepOf(act(7, "session_end", {}))).words).toBe("Ended the session");
+    expect(actionLine(stepOf(act(7, "session_end", {}))).words).toBe("Ended the screen");
   });
 });
 

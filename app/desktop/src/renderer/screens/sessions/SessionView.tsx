@@ -1,12 +1,12 @@
-// One browser session, in the panel's wide width. While it runs: the page as the agent sees it, what the agent is doing
-// now, Take over, and its steps as they come. Taken over, the page is yours: the frame's bar turns to say so, your
-// clicks and keys go to the page, and Hand back gives it to the agent, which looks at the page again and goes on;
-// meanwhile it waits, and its line says so. An agent that asks you to take over says why above the page. Once it has
-// ended: its replay, the recording with its steps beside it, each step a jump to its moment and a way into the page's
-// snapshot at that step. A login filled from 1Password is a step in words; its value is never on the hub to show, nor
-// in a snapshot.
-import { AppWindow, ChevronLeft, CornerUpLeft, Hand, KeyRound, ListTree, Pause, Play } from "lucide-react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
+// One screen (a browser session, or a device's), in the panel's wide width. While it runs: the page as the agent sees
+// it, the full width, what the agent is doing now, and Take over. Taken over, the page is yours: the frame's bar turns
+// to say so, your clicks and keys go to the page, and Hand back gives it to the agent, which looks at the page again
+// and goes on; meanwhile it waits, and its line says so. An agent that asks you to take over says why above the page.
+// Once it has ended: its replay, the recording the full width; Steps opens its steps beside it, each step a jump to its
+// moment and a way into the page's snapshot at that step. A login filled from 1Password is a step in words; its value
+// is never on the hub to show, nor in a snapshot.
+import { AppWindow, ChevronLeft, CornerUpLeft, Hand, KeyRound, ListOrdered, ListTree, Pause, Play } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 import { Button, EmptyState, StateGlyph, Text, Tooltip, Truncate, cx, toast } from "../../ui";
 import { useDataLayer } from "../../src/data/react";
 import { display } from "../../../shared/shortcuts";
@@ -52,7 +52,7 @@ export function SessionView({ project, id, windowed = false }: { project: Projec
   if (session === undefined) {
     return (
       <div className={s.view} data-screen="sessions.missing">
-        <EmptyState title="This session isn’t here">It may be from before the hub kept sessions, or from another project.</EmptyState>
+        <EmptyState title="This screen isn’t here">It may be from before the hub kept screens, or from another project.</EmptyState>
       </div>
     );
   }
@@ -114,10 +114,10 @@ function Head({ session: x, windowed }: { session: BrowserSession; windowed: boo
 }
 
 /**
- * The page now, what the agent does, the one control (Take over or Hand back) and, once it ends, its steps. Beside Take
- * over, the pop-out takes the page over in a window of its own; while the session is in its window, this one shows that
- * and offers to bring that window forward. Taken over, ⌘⇧↩ (Ctrl+Shift+Enter) hands back: the app's keymap catches it
- * in the capture phase, so the page never sees those keys.
+ * The page now, the full width, what the agent does and the one control (Take over or Hand back); its steps come with
+ * its recording, once it ends. Beside Take over, the pop-out takes the page over in a window of its own; while the
+ * screen is in its window, this one shows that and offers to bring that window forward. Taken over, ⌘⇧↩
+ * (Ctrl+Shift+Enter) hands back: the app's keymap catches it in the capture phase, so the page never sees those keys.
  */
 function Live({ session: x, windowed }: { session: BrowserSession; windowed: boolean }) {
   const layer = useDataLayer();
@@ -183,48 +183,45 @@ function Live({ session: x, windowed }: { session: BrowserSession; windowed: boo
           {takeOver("primary")}
         </div>
       ) : null}
-      <div className={s.stage}>
-        <div className={s.player}>
-          <Frame
-            {...(frame === undefined ? {} : { image: { src: `data:image/jpeg;base64,${frame.jpegB64}`, url: frame.url, width: frame.width, height: frame.height } })}
-            yours={yours}
-            away={away}
-            pageRef={page}
-            input={input}
-            caption={away ? "It shows in its own window." : "Waiting for the page…"}
-          />
-          <div className={s.control}>
-            <span className={s.nowLine}>
-              <Text size="xs" tone="faint">
-                {yours ? "The agent" : "Now"}
+      <div className={s.player}>
+        <Frame
+          {...(frame === undefined ? {} : { image: { src: `data:image/jpeg;base64,${frame.jpegB64}`, url: frame.url, width: frame.width, height: frame.height } })}
+          yours={yours}
+          away={away}
+          pageRef={page}
+          input={input}
+          caption={away ? "It shows in its own window." : "Waiting for the page…"}
+        />
+        <div className={s.control}>
+          <span className={s.nowLine}>
+            <Text size="xs" tone="faint">
+              {yours ? "The agent" : "Now"}
+            </Text>
+            <span className={s.nowWords}>
+              <Text size="xs" tone={x.state === "asking" ? "warning" : yours ? "quiet" : "default"}>
+                {nowLine(x)}
               </Text>
-              <span className={s.nowWords}>
-                <Text size="xs" tone={x.state === "asking" ? "warning" : yours ? "quiet" : "default"}>
-                  {nowLine(x)}
-                </Text>
-              </span>
             </span>
-            {away ? (
-              <Button variant="secondary" size="sm" icon={<AppWindow aria-hidden />} onClick={() => showWindow(x.projectRef, x.id)}>
-                Show its window
-              </Button>
-            ) : yours ? (
-              <Button
-                variant="primary"
-                size="sm"
-                icon={<CornerUpLeft aria-hidden />}
-                shortcut={display("session.handBack", window.fleetd.platform)}
-                disabled={asking !== null}
-                onClick={() => control("agent")}
-              >
-                Hand back
-              </Button>
-            ) : x.state === "running" ? (
-              takeOver("secondary")
-            ) : null}
-          </div>
+          </span>
+          {away ? (
+            <Button variant="secondary" size="sm" icon={<AppWindow aria-hidden />} onClick={() => showWindow(x.projectRef, x.id)}>
+              Show its window
+            </Button>
+          ) : yours ? (
+            <Button
+              variant="primary"
+              size="sm"
+              icon={<CornerUpLeft aria-hidden />}
+              shortcut={display("session.handBack", window.fleetd.platform)}
+              disabled={asking !== null}
+              onClick={() => control("agent")}
+            >
+              Hand back
+            </Button>
+          ) : x.state === "running" ? (
+            takeOver("secondary")
+          ) : null}
         </div>
-        <Steps actions={x.actions} />
       </div>
     </div>
   );
@@ -327,52 +324,13 @@ function StepWords({ action }: { action: SessionAction }) {
   );
 }
 
-/** The live log: newest last, kept in view; a step that comes while you watch rises in, once. */
-function Steps({ actions }: { actions: readonly SessionAction[] }) {
-  const list = useRef<HTMLOListElement>(null);
-  const [first] = useState(actions.length);
-  useLayoutEffect(() => {
-    const el = list.current;
-    if (el !== null) el.scrollTop = el.scrollHeight;
-  }, [actions.length]);
-  return (
-    <div className={s.steps}>
-      <span className={s.stepsHead}>
-        <Text size="xs" tone="quiet" strong>
-          Steps
-        </Text>
-        {actions.length === 0 ? null : (
-          <Text size="xs" tone="faint" tabular>
-            {String(actions.length)}
-          </Text>
-        )}
-      </span>
-      {actions.length === 0 ? (
-        // The node logs them as it goes and uploads them with its recording.
-        <p className={s.stepsNote}>
-          <Text size="xs" tone="quiet">
-            Its steps show here once it ends, with its recording.
-          </Text>
-        </p>
-      ) : null}
-      <ol ref={list} className={s.log} aria-label="Its steps">
-        {actions.map((a, i) => (
-          <li key={`${String(a.at)}:${String(i)}`} className={cx(s.step, i >= first && s.arrive)}>
-            <StepWords action={a} />
-          </li>
-        ))}
-      </ol>
-    </div>
-  );
-}
-
 const SPEEDS = [1, 2, 4] as const;
 
 /**
- * The recording and its steps beside it. Play runs it; the scrubber's ticks are the steps, a dithered stretch the time
- * a person had the page; a step jumps to its moment, and the step on screen is marked. A step's snapshot, opened from
- * its line, takes the steps' place: the page's structure as that step found it, what it acted on highlighted there and
- * outlined on the page. Play, the scrubber, Back or Escape close it.
+ * The recording, the full width, and its steps behind Steps, closed until you open them. Play runs it; the scrubber's
+ * ticks are the steps, a dithered stretch the time a person had the page; a step jumps to its moment, and the step on
+ * screen is marked. A step's snapshot, opened from its line, takes the steps' place: the page's structure as that step
+ * found it, what it acted on highlighted there and outlined on the page. Play, the scrubber, Back or Escape close it.
  */
 function Replay({ session: x }: { session: BrowserSession }) {
   if (x.state === "saving" || x.state === "lost" || x.state === "expired") return <NoRecording session={x} />;
@@ -415,8 +373,8 @@ function Recorded({ session: x }: { session: BrowserSession }) {
 }
 
 /**
- * Plays a recording: its video when it has one (the video's clock leads), else a clock of its own over its steps, its
- * steps beside it either way.
+ * Plays a recording: its video when it has one (the video's clock leads), else a clock of its own over its steps.
+ * Steps, at the end of its controls, opens them beside it (under it in a narrow panel) and closes them again.
  */
 function Player({ session: x, actions, video }: { session: BrowserSession; actions: readonly SessionAction[]; video?: Blob }) {
   const duration = x.recording?.durationMs ?? actions.at(-1)?.at ?? 0;
@@ -436,6 +394,7 @@ function Player({ session: x, actions, video }: { session: BrowserSession; actio
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState<(typeof SPEEDS)[number]>(1);
   const [open, setOpen] = useState<number | null>(null);
+  const [steps, setSteps] = useState(false);
   useEffect(() => {
     if (media.current !== null) media.current.playbackRate = speed;
   }, [speed, video]);
@@ -454,7 +413,7 @@ function Player({ session: x, actions, video }: { session: BrowserSession; actio
   const timeline = useRef<HTMLOListElement>(null);
   useEffect(() => {
     timeline.current?.querySelector('[aria-current="step"]')?.scrollIntoView({ block: "nearest" });
-  }, [step, open]);
+  }, [step, open, steps]);
   const yours = spans(actions, duration);
   // Where `t` is along the scrubber, in percent; a recording with no length puts everything at its start.
   const place = (t: number): string => `${String(duration === 0 ? 0 : (t / duration) * 100)}%`;
@@ -489,10 +448,10 @@ function Player({ session: x, actions, video }: { session: BrowserSession; actio
 
   return (
     <div className={s.body}>
-      <div className={cx(s.stage, s.replay)}>
+      <div className={cx(s.stage, steps && s.withSteps)}>
         <div className={s.player}>
           <Frame
-            caption={video === undefined ? (x.note ?? "This recording has no video. Its steps and pages are beside it.") : undefined}
+            caption={video === undefined ? (x.note ?? "This recording has no video. Its steps and pages are under Steps.") : undefined}
             url={actions.slice(0, step + 1).findLast((a) => a.page !== undefined)?.page?.url}
             mark={shown?.box}
             media={
@@ -543,9 +502,21 @@ function Player({ session: x, actions, video }: { session: BrowserSession; actio
                 </button>
               ))}
             </div>
+            <Button
+              variant={steps ? "secondary" : "quiet"}
+              size="sm"
+              icon={<ListOrdered aria-hidden />}
+              aria-pressed={steps}
+              onClick={() => {
+                setOpen(null);
+                setSteps((o) => !o);
+              }}
+            >
+              Steps
+            </Button>
           </div>
         </div>
-        {shown !== undefined && page !== undefined ? (
+        {!steps ? null : shown !== undefined && page !== undefined ? (
           <Snapshot key={open} action={shown} snapshot={page} onClose={() => setOpen(null)} />
         ) : (
           <div className={s.steps}>

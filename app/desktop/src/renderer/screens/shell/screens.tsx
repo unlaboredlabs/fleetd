@@ -38,7 +38,7 @@ export const screenPart = (screen: Screen): { key: string; words: string } => {
     case "home":
       return { key: "home", words: "the home screen" };
     case "session":
-      return { key: `session:${screen.session}`, words: "the session" };
+      return { key: `session:${screen.session}`, words: "the screen" };
   }
 };
 

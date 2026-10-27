@@ -106,6 +106,11 @@ See [Steering](/docs/steering#receipts).
 
 A Claude session that reviews a pull request. Reviewers don't read the PR description; they judge the change.
 
+## Screen {#screen}
+
+A browser, Android emulator, iOS simulator or Linux desktop an agent opens with `session_start`. You can watch it live,
+take it over and replay its recording. See [Screens](/docs/browser-sessions).
+
 ## Secret {#secret}
 
 An item in the chat with a masked field. The value is sealed to one machine and never enters the transcript. See

@@ -110,12 +110,12 @@ it("shows each machine's roles, sessions and what it can host in plain words", a
   await render();
   const box = row("devbox");
   expect(pressed(box)).toBe("Both");
-  expect(box?.textContent).toContain("1 of 4 sessions now (auto: 8 CPUs, 16 GB)");
+  expect(box?.textContent).toContain("1 of 4 screens now (auto: 8 CPUs, 16 GB)");
   expect(box?.textContent).toContain("Chrome at /usr/bin/google-chrome");
   expect(box?.textContent).toContain("but no /dev/kvm: the emulator needs KVM");
   const hosts = [...(box?.querySelectorAll("ul li") ?? [])].map((li) => li.firstElementChild?.textContent);
   expect(hosts).toEqual(["Browser", "Desktop", "Android emulator", "iOS simulator"]);
-  expect(pressed(row("mac1"))).toBe("Sessions");
+  expect(pressed(row("mac1"))).toBe("Screens");
   expect(row("mac1")?.textContent).toContain("Xcode with 6 iOS simulators");
   expect(host.textContent).not.toContain("needs an admin key");
 });

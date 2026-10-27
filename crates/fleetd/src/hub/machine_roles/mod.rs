@@ -376,14 +376,14 @@ pub fn runners(hub: &Hub) -> Result<Vec<(Runner, Roles, String)>, StoreError> {
             let agents = if roles.agents { agents } else { 0 };
             let (auto, auto_why) = auto_sessions(load.as_ref(), agents);
             let others_note = if m.box_pub_key.is_none() {
-                Some("It gave the hub no key to seal a session's secrets to: it hosts only its own agents' sessions until its node links again.".to_owned())
+                Some("It gave the hub no key to seal a screen's secrets to: it hosts only its own agents' screens until its node links again.".to_owned())
             } else if !(hub.link.node_can(&m.machine_id, CAP_SESSION_HOST)
                 && hub.link.node_can(&m.machine_id, CAP_SESSION_SEAL))
             {
                 Some(if m.status == MachineStatus::Offline {
-                    "Offline: it hosts other machines' agents' sessions once it is back.".to_owned()
+                    "Offline: it hosts other machines' agents' screens once it is back.".to_owned()
                 } else {
-                    "Its fleetd is older: it hosts only its own agents' sessions until it is updated.".to_owned()
+                    "Its fleetd is older: it hosts only its own agents' screens until it is updated.".to_owned()
                 })
             } else {
                 None

@@ -80,7 +80,7 @@ const answerFile = (f: Fixture, sessionId: string, file: string, bytes: Buffer) 
 };
 
 const preview = (base: Fixture): Fixture => {
-  const f = Fixture.from(base, "sessions-preview", "Sessions: storefront's agents, one in a browser, one asking you to take over its browser.");
+  const f = Fixture.from(base, "sessions-preview", "Screens: storefront's agents, one in a browser, one asking you to take over its browser.");
   const iso = (agoMs: number) => new Date(Date.parse(f.now) - agoMs).toISOString();
   // The hub says it serves browser sessions: the Agents section shows them (no other fixture's hub says so).
   if (f.state.phase !== "live") throw new Error("many-agents' hub isn't live");

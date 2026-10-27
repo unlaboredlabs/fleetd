@@ -251,7 +251,7 @@ void app.whenReady().then(() => {
       minWidth: 720,
       minHeight: 520,
       show: false,
-      title: "Session · fleetd",
+      title: "Screen · fleetd",
       backgroundColor: nativeTheme.shouldUseDarkColors ? "#111214" : "#ffffff",
       ...(process.platform === "darwin" ? { titleBarStyle: "hiddenInset" as const, trafficLightPosition: { x: 16, y: (TOP_BAR - TRAFFIC_LIGHT) / 2 } } : {}),
       webPreferences: pagePreferences(mode),

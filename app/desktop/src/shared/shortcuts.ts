@@ -5,7 +5,7 @@
 
 export type Platform = "darwin" | "linux" | "win32" | "other";
 
-export type ShortcutSection = "General" | "Projects" | "Go to" | "Composer" | "Sessions";
+export type ShortcutSection = "General" | "Projects" | "Go to" | "Composer" | "Screens";
 
 export interface Shortcut {
   readonly keys: string;
@@ -33,7 +33,7 @@ export const SHORTCUTS = {
   "settings.open": { keys: "Mod+,", title: "Settings…", section: "Go to" },
   "composer.attach": { keys: "Mod+Shift+A", title: "Attach a File", section: "Composer" },
   // Caught in the capture phase, so a page you have taken over never sees it (screens/sessions).
-  "session.handBack": { keys: "Mod+Shift+Enter", title: "Hand Back the Page", section: "Sessions" },
+  "session.handBack": { keys: "Mod+Shift+Enter", title: "Hand Back the Page", section: "Screens" },
 } as const satisfies Record<string, Shortcut>;
 
 export type ShortcutId = keyof typeof SHORTCUTS;

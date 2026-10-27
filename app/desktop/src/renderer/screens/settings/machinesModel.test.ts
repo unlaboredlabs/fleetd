@@ -28,8 +28,8 @@ describe("machine roles", () => {
   });
 
   it("says a machine's session slots and where its cap comes from", () => {
-    expect(sessionsLine(devbox)).toBe("2 of 4 sessions now (auto: 8 CPUs, 16 GB)");
-    expect(sessionsLine({ ...devbox, maxSessions: 1, maxSessionsSet: 1, maxSessionsWhy: "set", sessionsLive: 0 })).toBe("0 of 1 session now (you set it)");
+    expect(sessionsLine(devbox)).toBe("2 of 4 screens now (auto: 8 CPUs, 16 GB)");
+    expect(sessionsLine({ ...devbox, maxSessions: 1, maxSessionsSet: 1, maxSessionsWhy: "set", sessionsLive: 0 })).toBe("0 of 1 screen now (you set it)");
   });
 
   it("offers auto with what it fits, then 1 to 16, keeping a larger setting", () => {
@@ -51,9 +51,9 @@ describe("machine roles", () => {
     expect(hostsNote({ ...devbox, roles: ["agents"], hosts: [] })).toBeNull();
     expect(hostsNote({ ...devbox, hosts: [] })).toBe("Hasn't said what it can host yet.");
     expect(hostsNote({ ...devbox, hosts: [], online: false })).toBe("Offline: what it can host shows once it is back.");
-    expect(hostsNote({ ...devbox, hostsOthers: false, hostsOthersNote: "Its fleetd is older: it hosts only its own agents' sessions until it is updated." })).toContain("older");
+    expect(hostsNote({ ...devbox, hostsOthers: false, hostsOthersNote: "Its fleetd is older: it hosts only its own agents' screens until it is updated." })).toContain("older");
     // No key to seal to says so, not "older".
-    const noKey = "It gave the hub no key to seal a session's secrets to: it hosts only its own agents' sessions until its node links again.";
+    const noKey = "It gave the hub no key to seal a screen's secrets to: it hosts only its own agents' screens until its node links again.";
     expect(hostsNote({ ...devbox, hostsOthers: false, hostsOthersNote: noKey })).toBe(noKey);
   });
 });

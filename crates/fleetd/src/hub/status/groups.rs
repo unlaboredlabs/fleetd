@@ -247,10 +247,10 @@ pub fn read(
         let reason = s.takeover_reason.as_ref().map_or("", |r| r.as_str());
         items.push(StatusItem {
             group: StatusGroup::WaitingOnYou,
-            title: line(&format!("Take over the browser: {reason}")),
+            title: line(&format!("Take over the screen: {reason}")),
             task_id: s.task_id.clone(),
             pr: None,
-            why: Some(line("browser")),
+            why: Some(line("screen")),
             at: Timestamp(iso_ms(now)),
         });
     }

@@ -201,7 +201,7 @@ pub fn supported() -> bool {
 pub fn kvm() -> Result<(), (String, Option<String>)> {
     if !supported() {
         return Err((
-            "Android sessions run only on Linux x86_64 machines with KVM.".to_owned(),
+            "Android screens run only on Linux x86_64 machines with KVM.".to_owned(),
             None,
         ));
     }
@@ -254,7 +254,7 @@ fn kvm_at(dev: &Path, group_file: &Path) -> Result<(), (String, Option<String>)>
 /// down, and the device boots cold once.
 pub async fn install(home: &Path) -> Result<Sdk, String> {
     if !supported() {
-        return Err("Android sessions run only on Linux x86_64".to_owned());
+        return Err("Android screens run only on Linux x86_64".to_owned());
     }
     let dir = device_dir(home);
     let installed = std::fs::read_to_string(marker(home)).is_ok_and(|p| p.trim() == PINS);

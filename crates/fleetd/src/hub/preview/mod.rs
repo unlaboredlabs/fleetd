@@ -683,9 +683,9 @@ pub fn place(hub: &Hub, r: &ProjectRef) -> Result<MachineId, ToolError> {
     if !roles.sessions {
         return refuse(
             format!(
-                "{name} hosts no sessions: its role is agents only, and a preview opens in one."
+                "{name} hosts no screens: its role is agents only, and a preview opens in one."
             ),
-            "Turn sessions on for it in Settings › Machines.",
+            "Turn Screens on for it in Settings › Machines.",
         );
     }
     Ok(m.clone())

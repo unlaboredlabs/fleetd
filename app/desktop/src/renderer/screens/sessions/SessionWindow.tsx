@@ -16,16 +16,16 @@ export function SessionWindow({ project, id }: { project: ProjectKey; id: string
   useEffect(() => installKeymap(window.fleetd.platform, () => false), []);
   const title = useData((st) => st.projects[projectKey(project)]?.title);
   useEffect(() => {
-    document.title = title === undefined ? "Session · fleetd" : `${title} · Session`;
+    document.title = title === undefined ? "Screen · fleetd" : `${title} · Screen`;
   }, [title]);
   return (
     <div className={s.window} data-screen="session-window">
       <header className={s.windowBar}>
         <Text size="sm" strong>
-          {title ?? "Session"}
+          {title ?? "Screen"}
         </Text>
         <Text size="xs" tone="quiet">
-          Session
+          Screen
         </Text>
       </header>
       <SessionView project={project} id={id} windowed />

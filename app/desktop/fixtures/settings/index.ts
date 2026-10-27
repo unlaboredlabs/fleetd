@@ -158,10 +158,10 @@ function machineRoles(f: Fixture) {
     { host: "desktop", ready: true, detail: "Xvfb at /usr/bin/Xvfb, docker at /usr/bin/docker" },
   ];
   const mac: JsonObject[] = [
-    { host: "browser", ready: true, detail: "Chrome not installed yet: the node installs it with the first session" },
+    { host: "browser", ready: true, detail: "Chrome not installed yet: the node installs it with the first screen" },
     { host: "android", ready: true, detail: "Android SDK at /Users/dev/Library/Android/sdk" },
     { host: "ios", ready: true, detail: "Xcode with 6 iOS simulators" },
-    { host: "desktop", ready: false, detail: "desktop sessions run on Linux (docker or Xvfb)" },
+    { host: "desktop", ready: false, detail: "desktop screens run on Linux (docker or Xvfb)" },
   ];
   const entries: JsonObject[] = machines.map((m, i) => {
     const machineId = asText(m["machineId"]);
