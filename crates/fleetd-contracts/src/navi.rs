@@ -7,7 +7,7 @@ use serde_with::skip_serializing_none;
 use crate::brand;
 use crate::checklist::TodoItem;
 use crate::ids::{ProjectRef, Timestamp};
-use crate::ledger::{IntakeText, WorkstreamId};
+use crate::ledger::{IntakeText, WorkstreamId, WorkstreamState};
 use crate::prim::{Count, Line};
 use crate::status::{LastMerged, ProjectRowState};
 
@@ -97,6 +97,36 @@ pub struct FactoryAsk {
     pub text: String,
     pub at: Timestamp,
     pub orders: Vec<WorkstreamId>,
+}
+
+/// The most asks `navi_asks` returns, newest first.
+pub const NAVI_ASKS_MAX: usize = 100;
+
+/// One ask in `navi_asks` (the app's read of a Navi's asked work): where it went, its words, and the orders opened
+/// for it.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct NaviAsk {
+    pub handle: AskHandle,
+    pub to: ProjectRef,
+    pub to_title: String,
+    /// The Navi's words, without the line telling the lead about the handle.
+    pub text: String,
+    pub at: Timestamp,
+    pub orders: Vec<NaviAskOrder>,
+}
+
+/// An order opened for an ask, as it stands now.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct NaviAskOrder {
+    pub workstream_id: WorkstreamId,
+    pub title: String,
+    pub state: WorkstreamState,
+    /// The lead's latest one-line headline for it.
+    pub headline: Option<String>,
 }
 
 /// Sent to an agent message's project lead under the text: the handle it passes to `brief` as `asked`.

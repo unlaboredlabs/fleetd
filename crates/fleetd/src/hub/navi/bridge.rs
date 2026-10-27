@@ -99,25 +99,7 @@ async fn answer(
 /// Only a Navi works with other projects: a project the hub keeps in `assistants` (Navi core), not archived. A coding
 /// project's lead keeps to its own. A hub without that table yet has no Navi.
 pub fn may_use(db: &HubDb, r: &ProjectRef) -> Result<(), McpToolError> {
-    let navi = db
-        .with(|c| {
-            let table: bool = c.query_row(
-                "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'assistants')",
-                [],
-                |row| row.get(0),
-            )?;
-            if !table {
-                return Ok(false);
-            }
-            Ok(c.query_row(
-                "SELECT 1 FROM assistants WHERE machine_id = ? AND project_id = ? AND archived_ms IS NULL",
-                params![r.machine_id.as_str(), r.project_id.as_str()],
-                |_| Ok(()),
-            )
-            .optional()?
-            .is_some())
-        })
-        .map_err(failed)?;
+    let navi = is_navi(db, r, false).map_err(failed)?;
     if navi {
         return Ok(());
     }
@@ -126,6 +108,28 @@ pub fn may_use(db: &HubDb, r: &ProjectRef) -> Result<(), McpToolError> {
         "Only a Navi works with other projects: this project's lead keeps to its own.",
     )
     .with_fix("Ask the person to give it to their Navi, or to the other project's chat."))
+}
+
+/// Whether the hub keeps `r` as a Navi in `assistants` (Navi core); an archived one only with `archived`. A hub without
+/// that table yet has none.
+pub fn is_navi(db: &HubDb, r: &ProjectRef, archived: bool) -> Result<bool, StoreError> {
+    db.with(|c| {
+        let table: bool = c.query_row(
+            "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'assistants')",
+            [],
+            |row| row.get(0),
+        )?;
+        if !table {
+            return Ok(false);
+        }
+        Ok(c.query_row(
+            "SELECT 1 FROM assistants WHERE machine_id = ? AND project_id = ? AND (? OR archived_ms IS NULL)",
+            params![r.machine_id.as_str(), r.project_id.as_str(), archived],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some())
+    })
 }
 
 /// The project `name` names, by project id or title, other than the caller's own. One person owns every project on a
@@ -336,13 +340,13 @@ fn factory_status(
 }
 
 /// One ask, as the bridge keeps it.
-struct Ask {
-    handle: AskHandle,
-    from: ProjectRef,
-    to: ProjectRef,
-    text: String,
-    at_ms: i64,
-    orders: Vec<WorkstreamId>,
+pub(super) struct Ask {
+    pub handle: AskHandle,
+    pub from: ProjectRef,
+    pub to: ProjectRef,
+    pub text: String,
+    pub at_ms: i64,
+    pub orders: Vec<WorkstreamId>,
 }
 
 fn pref(machine: String, project: String) -> ProjectRef {
@@ -376,7 +380,7 @@ fn ask_row(c: &rusqlite::Connection, row: &rusqlite::Row<'_>) -> rusqlite::Resul
 }
 
 /// A Navi's asks, newest first.
-fn asks_from(db: &HubDb, from: &ProjectRef) -> Result<Vec<Ask>, StoreError> {
+pub(super) fn asks_from(db: &HubDb, from: &ProjectRef) -> Result<Vec<Ask>, StoreError> {
     db.with(|c| {
         let mut stmt = c.prepare_cached(&format!(
             "SELECT {ASK_COLUMNS} FROM navi_asks WHERE from_machine_id = ? AND from_project_id = ?
@@ -563,7 +567,7 @@ fn wake_line(hub: &Hub, e: &HubEvent) -> Result<Option<(ProjectRef, String)>, St
     Ok(Some((asked.from, line)))
 }
 
-fn project_title(hub: &Hub, r: &ProjectRef) -> String {
+pub(super) fn project_title(hub: &Hub, r: &ProjectRef) -> String {
     hub.store
         .project_get(r)
         .ok()
