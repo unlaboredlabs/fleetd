@@ -2735,6 +2735,11 @@ export type MachineJoinOutput = {
 /** A machine's load and running agents, from its heartbeat (every 15 s) and the hub's executors. */
 export type MachineLive = {
   asOf: Timestamp;
+  /**
+   * When the hub's link to its node last came up: each new link (a restart, a rejoin) moves it, though a quick
+   * restart never shows the machine offline. Absent while it has none, and from older hubs.
+   */
+  linkedSince?: Timestamp;
   /** Absent: the node does not report load (older node, or the read failed). Show no load then. */
   load?: NodeLoad;
   machineId: MachineId;
