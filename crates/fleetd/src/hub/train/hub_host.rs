@@ -219,6 +219,7 @@ impl TrainHost for HubHost {
                 "kind": "review",
                 "prompt": spawn.prompt,
                 "pr": spawn.pr,
+                "profile": if spawn.medium { "medium" } else { "high" },
             });
             let input = serde_json::from_value(call).map_err(|e| e.to_string())?;
             let caller = TaskCaller {

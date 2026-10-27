@@ -7,8 +7,15 @@
 //! A reviewer that ends without a recorded verdict never counts as approval, whatever its final text says: the train
 //! and the lead see "verdict not recorded" with that text, and a new reviewer starts, `RETRIES` times per patch, then
 //! no more until a new head. A reviewer still on an older patch when the Change moves on is stopped, and what it
-//! reports later is ignored. A new patch that only drops commits already on the base from an approved head keeps that
-//! approval (`carry`).
+//! reports later is ignored.
+//!
+//! A new patch after an approved head is re-reviewed by what changed (`classify`): when its own changed lines are the
+//! approved ones (a rebase, perhaps past commits already on the base), the approval carries over and no reviewer
+//! runs; when they differ only where the base changed them too (a conflict resolution), a short review of those files
+//! runs on the medium profile (`review.conflicts`); anything else gets a full review. Each outcome is recorded in
+//! `review_rebases`, a carry with the head and reviewer it came from. A head with blocking findings open never carries:
+//! only the last reviewed head counts, and only when it is clean, and a later blocking verdict of the reviewer whose
+//! approval carried blocks the heads it carried to.
 //!
 //! A reviewer that ended without a verdict because fleetd's tools failed it (`tools_failed`) is not counted against
 //! `RETRIES`: the Change says so in plain words, the lead hears once, and a new reviewer starts by itself after
@@ -23,9 +30,10 @@ use std::sync::{Arc, Mutex, Weak};
 use rusqlite::{OptionalExtension, params};
 use serde_json::Value;
 
+use super::rebase::{Rebase, compare};
 use super::rules::{
-    BoundReview, FindingsVerdict, Gate, TOOLS_FAILED, findings_message, gate, one_line,
-    review_prompt, review_title, tools_failed,
+    BoundReview, Conflicts, FindingsVerdict, Gate, TOOLS_FAILED, conflicts_prompt,
+    findings_message, gate, one_line, review_prompt, review_title, tools_failed,
 };
 use crate::hub::leads::events::Event;
 use crate::hub::train::contract::{
@@ -65,14 +73,21 @@ pub struct Reviews {
     db: Db,
     train: Weak<Train>,
     lock: tokio::sync::Mutex<()>,
-    /// The patches whose approval carry was checked: GitHub is read for it once per patch.
-    carry_checked: Mutex<HashSet<(ChangeId, String)>>,
     /// When each reviewer whose tools failed ended, as this hub saw it: one ended before a restart counts as long ago.
     broken_at: Mutex<HashMap<String, i64>>,
     /// When a verdict was last bound, on any Change.
     verdict_at: Mutex<i64>,
     /// The patches whose lead heard that their reviewer's tools failed.
     told_broken: Mutex<HashSet<(ChangeId, String)>>,
+}
+
+/// How a patch after an approved head is re-reviewed, as `review_rebases` records it.
+struct Rebased {
+    from_task: String,
+    from_head: String,
+    from_base: String,
+    base: String,
+    outcome: Rebase,
 }
 
 /// A review task the gate spawned: the Change, the patch its round was for, and whether a newer patch superseded it.
@@ -93,7 +108,6 @@ impl Reviews {
             db,
             train,
             lock: tokio::sync::Mutex::new(()),
-            carry_checked: Mutex::default(),
             broken_at: Mutex::default(),
             verdict_at: Mutex::default(),
             told_broken: Mutex::default(),
@@ -305,17 +319,34 @@ impl Reviews {
                 .map(|pull| pull.title),
             None => None,
         };
+        let set = self.db.prompts().current(Some(&change.project_ref));
+        // A conflict resolution gets the short review of just its files, on the medium profile.
+        let (prompt, medium) = match self.rebased(&change.change_id, patch_id) {
+            Some(Rebased {
+                outcome: Rebase::Conflicts(files),
+                from_head,
+                from_base,
+                base,
+                ..
+            }) => {
+                let conflicts = Conflicts {
+                    reviewed_sha: &from_head,
+                    reviewed_base: &from_base,
+                    base: &base,
+                    files: &files,
+                };
+                (conflicts_prompt(&set, change, &conflicts), true)
+            }
+            _ => (review_prompt(&set, change, reviewed.as_deref()), false),
+        };
         let spawn = ReviewSpawn {
             project_ref: change.project_ref.clone(),
             by: REVIEWS_BY,
             workstream_id: change.workstream_id.clone(),
             title: review_title(pr_title.as_deref(), change.pr_number.get()),
-            prompt: review_prompt(
-                &self.db.prompts().current(Some(&change.project_ref)),
-                change,
-                reviewed.as_deref(),
-            ),
+            prompt,
             pr: change.pr_url.to_string(),
+            medium,
         };
         let task = match self.host.spawn_review(spawn).await {
             Ok(task) => task,
@@ -402,29 +433,30 @@ impl Reviews {
         }
     }
 
-    /// Whether the Change's new patch keeps the approval of its last reviewed head, binding it to the new patch when
-    /// it does. It does when the new head only drops commits already on the base from that head: the approved head's
-    /// last commits, as many as the new head has, make the same patch on the commit below them as the new head makes
-    /// on its base, so `git range-diff` shows the PR's own commits unchanged, and the commits below them are on the
-    /// base (`on_base`). Any change to the PR's own commits, a conflict resolution included, or a dropped commit the
-    /// base lacks, gets a review.
-    async fn carry(&self, change: &Change, patch_id: &str) -> Result<bool, String> {
-        let approved: Option<(String, String, String, i64)> = sql(&self.db, |conn| {
+    /// How the Change's new patch is re-reviewed against its last reviewed head, when that head is clean: by what its
+    /// own changes did to the approved ones (`rebase::compare`). The approved head's last commits, as many as the new
+    /// head has, are its own, and the commits below them must be on the base (`on_base`), else it is `Changed`. The
+    /// approved patch is read from the commit below its own and the base's change from the approved head's base to
+    /// the new head's. More commits than the approved head had, a resolution included, are `Changed` unless the patch
+    /// is the same. None when there is no clean head to compare with: a full review.
+    async fn classify(&self, change: &Change, patch_id: &str) -> Result<Option<Rebased>, String> {
+        let approved: Option<(String, String, String)> = sql(&self.db, |conn| {
             conn.query_row(
-                "SELECT b.task_id, b.pr_head_sha, b.patch_id, b.non_blocking FROM review_bindings b
+                "SELECT b.task_id, b.pr_head_sha, b.patch_id FROM review_bindings b
                  JOIN review_tasks t ON t.task_id = b.task_id
                  WHERE t.change_id = ?1 AND b.patch_id != ?2 ORDER BY b.rowid DESC LIMIT 1",
                 params![change.change_id.as_str(), patch_id],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )
             .optional()
             .expect("approved head")
         });
-        let Some((task_id, approved_head, approved_patch, non_blocking)) = approved else {
-            return Ok(false);
+        let Some((from_task, from_head, approved_patch)) = approved else {
+            return Ok(None);
         };
+        // Blocking findings open on the last reviewed head: only a full review clears them.
         if !self.gate_for(change, &approved_patch).0.ready {
-            return Ok(false);
+            return Ok(None);
         }
         let train = self.train().ok_or("the train is gone")?;
         let (github, repo) = (train.github(), change.repo.as_str());
@@ -437,42 +469,122 @@ impl Reviews {
             .await
             .map_err(|e| e.message)?;
         let own = github.range(repo, &base, &change.head_sha).await;
-        let reviewed = github.range(repo, &base, &approved_head).await;
-        let (Some((_, own)), Some((reviewed_base, reviewed))) = (
+        let reviewed = github.range(repo, &base, &from_head).await;
+        let (Some((own_base, own)), Some((from_base, reviewed))) = (
             own.map_err(|e| e.message)?,
             reviewed.map_err(|e| e.message)?,
         ) else {
-            return Ok(false);
+            return Ok(None);
         };
-        if own.is_empty() || own.len() > reviewed.len() {
-            return Ok(false);
+        if own.is_empty() {
+            return Ok(None);
         }
-        let dropped = &reviewed[..reviewed.len() - own.len()];
+        let rebased = |outcome| Rebased {
+            from_task: from_task.clone(),
+            from_head: from_head.clone(),
+            from_base: from_base.clone(),
+            base: own_base.clone(),
+            outcome,
+        };
+        let dropped = &reviewed[..reviewed.len().saturating_sub(own.len())];
         if !dropped.is_empty()
-            && !on_base(github, repo, &base, &reviewed_base, dropped)
+            && !on_base(github, repo, &base, &from_base, dropped)
                 .await
                 .map_err(|e| e.message)?
         {
-            return Ok(false);
+            return Ok(Some(rebased(Rebase::Changed)));
         }
-        let below = dropped.last().cloned().unwrap_or(reviewed_base);
-        let same = github
-            .patch_id_from(repo, &below, &approved_head)
-            .await
-            .map_err(|e| e.message)?
-            == patch_id;
-        if same {
+        let below = dropped.last().unwrap_or(&from_base);
+        let approved = github.diff(repo, below, &from_head).await;
+        let now = github.diff(repo, &own_base, &change.head_sha).await;
+        let moved = github.diff(repo, &from_base, &own_base).await;
+        let (approved, now, moved) = (
+            approved.map_err(|e| e.message)?,
+            now.map_err(|e| e.message)?,
+            moved.map_err(|e| e.message)?,
+        );
+        let outcome = match compare(&approved, &now, &moved) {
+            Rebase::Conflicts(_) if own.len() > reviewed.len() => Rebase::Changed,
+            outcome => outcome,
+        };
+        Ok(Some(rebased(outcome)))
+    }
+
+    /// How `patch_id` is re-reviewed, as recorded.
+    fn rebased(&self, change_id: &ChangeId, patch_id: &str) -> Option<Rebased> {
+        let row: Option<(String, String, String, String, String, String)> =
             sql(&self.db, |conn| {
-                conn
-                .execute(
-                    "INSERT OR REPLACE INTO review_bindings (task_id, pr_head_sha, patch_id, blocking, non_blocking) VALUES (?1, ?2, ?3, 0, ?4)",
-                    params![task_id, change.head_sha.as_str(), patch_id, non_blocking],
-                )
-                .expect("carry the approval")
+                conn.query_row(
+                "SELECT from_task, from_head, from_base, base, outcome, files FROM review_rebases
+                 WHERE change_id = ?1 AND patch_id = ?2",
+                params![change_id.as_str(), patch_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)),
+            )
+            .optional()
+            .expect("review rebase")
             });
-            tracing::info!(change_id = %change.change_id, task_id, approved_head, head = %change.head_sha, "reviews: a rebase kept the approval");
+        let (from_task, from_head, from_base, base, outcome, files) = row?;
+        let outcome = match outcome.as_str() {
+            "unchanged" => Rebase::Unchanged,
+            "conflicts" => Rebase::Conflicts(files.lines().map(String::from).collect()),
+            _ => Rebase::Changed,
+        };
+        Some(Rebased {
+            from_task,
+            from_head,
+            from_base,
+            base,
+            outcome,
+        })
+    }
+
+    /// `classify`, read from GitHub once per patch unless the read failed, and recorded: an unchanged patch is bound
+    /// the approval it carries, with the reviewer's non-blocking count. Whether it carried.
+    async fn carried(&self, change: &Change, patch_id: &str) -> bool {
+        if self.rebased(&change.change_id, patch_id).is_some() {
+            return false;
         }
-        Ok(same)
+        let r = match self.classify(change, patch_id).await {
+            Ok(Some(r)) => r,
+            Ok(None) => return false,
+            Err(e) => {
+                tracing::warn!(change_id = %change.change_id, error = %e, "reviews: approval not carried; reviewing");
+                return false;
+            }
+        };
+        let files = match &r.outcome {
+            Rebase::Conflicts(files) => files.join("\n"),
+            _ => String::new(),
+        };
+        let carried = r.outcome == Rebase::Unchanged;
+        sql(&self.db, |conn| {
+            conn.execute(
+                "INSERT OR REPLACE INTO review_rebases (change_id, patch_id, head_sha, from_task, from_head, from_base,
+                   base, outcome, files) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                params![
+                    change.change_id.as_str(),
+                    patch_id,
+                    change.head_sha.as_str(),
+                    r.from_task,
+                    r.from_head,
+                    r.from_base,
+                    r.base,
+                    r.outcome.name(),
+                    files
+                ],
+            )
+            .expect("put review rebase");
+            if carried {
+                conn.execute(
+                    "INSERT OR REPLACE INTO review_bindings (task_id, pr_head_sha, patch_id, blocking, non_blocking)
+                     SELECT task_id, ?2, ?3, 0, non_blocking FROM review_bindings WHERE task_id = ?1 AND pr_head_sha = ?4",
+                    params![r.from_task, change.head_sha.as_str(), patch_id, r.from_head],
+                )
+                .expect("carry the approval");
+            }
+        });
+        tracing::info!(change_id = %change.change_id, from_task = r.from_task, from_head = r.from_head, head = %change.head_sha, outcome = r.outcome.name(), "reviews: a new patch after an approved head");
+        carried
     }
 
     async fn review_inner(&self, change: Change) -> Verdict {
@@ -615,24 +727,6 @@ impl Reviews {
             .unwrap_or_default()
     }
 
-    /// `carry`, read from GitHub once per patch unless the read failed.
-    async fn carried(&self, change: &Change, patch_id: &str) -> bool {
-        let key = (change.change_id.clone(), patch_id.to_string());
-        if lock(&self.carry_checked).contains(&key) {
-            return false;
-        }
-        match self.carry(change, patch_id).await {
-            Ok(carried) => {
-                lock(&self.carry_checked).insert(key);
-                carried
-            }
-            Err(e) => {
-                tracing::warn!(change_id = %change.change_id, error = %e, "reviews: approval not carried; reviewing");
-                false
-            }
-        }
-    }
-
     /// The lead hears once, across restarts, that the patch's reviewers keep ending without a verdict, with the last
     /// one's final lines; no more start until a new head.
     async fn stalled(&self, change: &Change, patch_id: &str, last: &str, tries: usize) {
@@ -721,19 +815,35 @@ impl Reviews {
         let blocking = data.get("blocking").and_then(Value::as_i64).unwrap_or(0);
         let non_blocking = data.get("nonBlocking").and_then(Value::as_i64).unwrap_or(0);
         let patch_id = self.patch_for(&change, &sha).await?;
-        sql(&self.db, |conn| {
+        // The heads its approval carried to hold its findings too: a carry never clears a blocking finding.
+        let carried_to: Option<String> = sql(&self.db, |conn| {
             conn
             .execute(
                 "INSERT OR REPLACE INTO review_bindings (task_id, pr_head_sha, patch_id, blocking, non_blocking) VALUES (?1, ?2, ?3, ?4, ?5)",
                 params![task_id, sha, patch_id, blocking, non_blocking],
             )
-            .expect("bind verdict")
+            .expect("bind verdict");
+            conn.execute(
+                "UPDATE review_bindings SET blocking = ?2, non_blocking = ?3 WHERE task_id = ?1 AND pr_head_sha IN
+                   (SELECT head_sha FROM review_rebases WHERE from_task = ?1 AND outcome = 'unchanged')",
+                params![task_id, blocking, non_blocking],
+            )
+            .expect("bind verdict to its carries");
+            conn.query_row(
+                "SELECT patch_id FROM review_rebases WHERE change_id = ?1 AND from_task = ?2 AND outcome = 'unchanged'
+                   AND patch_id = ?3",
+                params![change_id.as_str(), task_id, change.patch_id.as_deref().unwrap_or_default()],
+                |r| r.get(0),
+            )
+            .optional()
+            .expect("carried to")
         });
         *lock(&self.verdict_at) = self.now_ms();
         if let Some(train) = self.train() {
             train.review_recorded();
         }
-        // Findings on an older patch were already overtaken by a new head.
+        // Findings on an older patch were already overtaken by a new head, unless its approval carried to this one.
+        let patch_id = carried_to.unwrap_or(patch_id);
         if blocking > 0 && change.patch_id.as_deref() == Some(patch_id.as_str()) {
             let summary = self.findings_on(&change, &patch_id, &task_id, &sha);
             let waiting = format!(

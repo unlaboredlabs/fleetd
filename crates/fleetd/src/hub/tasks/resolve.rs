@@ -3,13 +3,15 @@ use fleetd_contracts::effort::{Effort, ModelName, ProfileSetting, TaskProfile};
 use fleetd_contracts::tasks::TaskKind;
 
 /// The spawn's profile, high when it names none. A review task (the train's reviewers, QA and judges
-/// included) always runs high, and so does every task of a project with medium off.
+/// included) runs high but for the review gate's (`by_gate`) short review of a conflict resolution, which asks
+/// medium; every task of a project with medium off runs high.
 pub fn resolve_profile(
     spawn: Option<TaskProfile>,
     kind: TaskKind,
+    by_gate: bool,
     medium_allowed: bool,
 ) -> TaskProfile {
-    if kind == TaskKind::Review || !medium_allowed {
+    if (kind == TaskKind::Review && !by_gate) || !medium_allowed {
         return TaskProfile::High;
     }
     spawn.unwrap_or_default()
@@ -85,22 +87,35 @@ mod tests {
     #[test]
     fn the_spawn_then_the_project_switch_then_high() {
         for kind in [TaskKind::Write, TaskKind::Read] {
-            assert_eq!(resolve_profile(None, kind, true), High);
-            assert_eq!(resolve_profile(Some(Medium), kind, true), Medium);
-            assert_eq!(resolve_profile(Some(High), kind, true), High);
+            assert_eq!(resolve_profile(None, kind, false, true), High);
+            assert_eq!(resolve_profile(Some(Medium), kind, false, true), Medium);
+            assert_eq!(resolve_profile(Some(High), kind, false, true), High);
             // Medium off: the spawn's medium runs high.
-            assert_eq!(resolve_profile(Some(Medium), kind, false), High);
+            assert_eq!(resolve_profile(Some(Medium), kind, false, false), High);
         }
     }
 
     #[test]
-    fn reviewers_always_run_high() {
+    fn reviewers_run_high_but_the_gates_conflict_review_on_medium() {
         for allowed in [true, false] {
             assert_eq!(
-                resolve_profile(Some(Medium), TaskKind::Review, allowed),
+                resolve_profile(Some(Medium), TaskKind::Review, false, allowed),
                 High
             );
-            assert_eq!(resolve_profile(None, TaskKind::Review, allowed), High);
+            assert_eq!(
+                resolve_profile(None, TaskKind::Review, false, allowed),
+                High
+            );
+            assert_eq!(resolve_profile(None, TaskKind::Review, true, allowed), High);
         }
+        // The review gate's conflict review asks medium, unless the project turned medium off.
+        assert_eq!(
+            resolve_profile(Some(Medium), TaskKind::Review, true, true),
+            Medium
+        );
+        assert_eq!(
+            resolve_profile(Some(Medium), TaskKind::Review, true, false),
+            High
+        );
     }
 }

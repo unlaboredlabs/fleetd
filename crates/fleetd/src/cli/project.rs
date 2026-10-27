@@ -52,9 +52,9 @@ pub const PROJECT_USAGE: &str =
              the model and effort behind a task profile, fleet-wide (admin key) or as
              the project's override. default unsets it: a project's follows the
              fleet's, the fleet's the profile's own (claude-opus-5-5 at high or
-             medium). The lead, every review and helper calls run high. New agents
-             follow it; if claude refuses the model they run on the profile's own
-             and `project profiles` says so
+             medium). The lead, every review but a rebase's conflict review and
+             helper calls run high. New agents follow it; if claude refuses the
+             model they run on the profile's own and `project profiles` says so
   project profiles [<machine>/<project>] [--home <dir>] [--hub <url>]
              what each profile's agents run on, and the settings behind it
   project set <machine>/<project> [--fast-check <check>]... [--after-merge <check>]...

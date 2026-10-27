@@ -498,12 +498,12 @@ speed. At a cap of 1 it works one piece at a time and says so once.</p>
 <tr>
 <td><code dir="auto">high</code></td>
 <td><code dir="auto">claude-opus-5-5</code> at effort high</td>
-<td>The default. The lead, every review, claude’s helper calls (session titles and the like), and every task the lead doesn’t mark medium.</td>
+<td>The default. The lead, every review but a rebase’s conflict review, claude’s helper calls (session titles and the like), and every task the lead doesn’t mark medium.</td>
 </tr>
 <tr>
 <td><code dir="auto">medium</code></td>
 <td><code dir="auto">claude-opus-5-5</code> at effort medium</td>
-<td>Mechanical tasks the lead picks: dead-code deletions, renames, test removals, doc fixes, moving files, plain wiring, screenshot recaptures. Never design, concurrency, auth or secrets, approvals or the merge train.</td>
+<td>Mechanical tasks the lead picks: dead-code deletions, renames, test removals, doc fixes, moving files, plain wiring, screenshot recaptures. Never design, concurrency, auth or secrets, approvals or the merge train. Also the train’s short review of a rebase’s conflict resolution (<a href="/docs/merge-train#re-reviews">Re-reviews</a>).</td>
 </tr>
 </tbody>
 </table>

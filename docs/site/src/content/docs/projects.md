@@ -327,8 +327,8 @@ Every agent runs on one of two profiles. Unless you set otherwise, both run on `
 
 | Profile | Unless set | Runs |
 |---|---|---|
-| `high` | `claude-opus-5-5` at effort high | The default. The lead, every review, claude's helper calls (session titles and the like), and every task the lead doesn't mark medium. |
-| `medium` | `claude-opus-5-5` at effort medium | Mechanical tasks the lead picks: dead-code deletions, renames, test removals, doc fixes, moving files, plain wiring, screenshot recaptures. Never design, concurrency, auth or secrets, approvals or the merge train. |
+| `high` | `claude-opus-5-5` at effort high | The default. The lead, every review but a rebase's conflict review, claude's helper calls (session titles and the like), and every task the lead doesn't mark medium. |
+| `medium` | `claude-opus-5-5` at effort medium | Mechanical tasks the lead picks: dead-code deletions, renames, test removals, doc fixes, moving files, plain wiring, screenshot recaptures. Never design, concurrency, auth or secrets, approvals or the merge train. Also the train's short review of a rebase's conflict resolution ([Re-reviews](/docs/merge-train#re-reviews)). |
 
 The lead picks the profile for each task it starts. A medium task whose review finds blockers twice is redone on high.
 Each agent's profile shows on its lane (`T12 medium`), and the time

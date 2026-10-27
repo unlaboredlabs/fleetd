@@ -895,15 +895,20 @@ impl TrainGitHub {
         from: &str,
         sha: &str,
     ) -> Result<String, GhError> {
-        let path = format!("repos/{repo}/compare/{from}...{sha}");
-        let at = format!("{repo}@{}", &sha[..12]);
-        let diff = self
-            .exchange("GET", &path, "Accept: application/vnd.github.diff", &[])
-            .await?
-            .map_err(|(_, message)| GhError::failed(format!("the diff of {at}: {message}")))?;
+        let at = format!("{repo}@{}", &sha[..sha.len().min(12)]);
+        let diff = self.diff(repo, from, sha).await?;
         stable_patch_id(diff)
             .await
             .map_err(|why| GhError::failed(format!("the patch id of {at}: {why}")))
+    }
+
+    /// The diff of `sha` against its merge base with the commit `from`, as GitHub shows it.
+    pub async fn diff(&self, repo: &str, from: &str, sha: &str) -> Result<String, GhError> {
+        let path = format!("repos/{repo}/compare/{from}...{sha}");
+        let at = format!("{repo}@{}", &sha[..sha.len().min(12)]);
+        self.exchange("GET", &path, "Accept: application/vnd.github.diff", &[])
+            .await?
+            .map_err(|(_, message)| GhError::failed(format!("the diff of {at}: {message}")))
     }
 
     /// The patch id of the commit `sha` alone: its diff against its first parent.

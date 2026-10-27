@@ -42,7 +42,8 @@ pub struct EventView {
     pub data: Value,
 }
 
-/// A review task as Tasks.spawn takes it (kind "review", so the high profile), from the caller `by` in `project_ref`.
+/// A review task as Tasks.spawn takes it (kind "review", so the high profile but for a conflict review's `medium`), from
+/// the caller `by` in `project_ref`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ReviewSpawn {
     pub project_ref: ProjectRef,
@@ -51,6 +52,8 @@ pub struct ReviewSpawn {
     pub title: String,
     pub prompt: String,
     pub pr: String,
+    /// On the medium profile: the short review of a rebase's conflict resolution.
+    pub medium: bool,
 }
 
 pub trait TrainHost: Send + Sync + 'static {
