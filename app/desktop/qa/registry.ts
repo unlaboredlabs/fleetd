@@ -1355,9 +1355,9 @@ export const screens: readonly Screen[] = [
   // W100: the hub admin's setup (a design prototype, docs/design/setup.md): the welcome, a step open beside the list
   // (Claude to do, the GitHub App, the Google client), and the end.
   { id: "setup.welcome", route: "#/setup/welcome", fixtures: ["setup-fresh"] },
-  { id: "setup", route: "#/setup/claude", fixtures: ["setup-fresh", "setup-claude-logins", "setup-github"] },
-  { id: "setup", route: "#/setup/github", fixtures: ["setup-github"] },
-  { id: "setup", route: "#/setup/google", fixtures: ["setup-google"] },
+  { id: "setup", route: "#/setup/claude", fixtures: ["setup-fresh", "setup-claude-logins", "setup-github"], variant: "claude" },
+  { id: "setup", route: "#/setup/github", fixtures: ["setup-github"], variant: "github" },
+  { id: "setup", route: "#/setup/google", fixtures: ["setup-google"], variant: "google" },
   { id: "setup.done", route: "#/setup/done", fixtures: ["setup-done"] },
   // F8: Add project (the pick list, its empty and loading states, gh and machine problems) and Machines.
   { id: "projects.add", route: "#/projects/add", fixtures: ["typical", "empty", "long-text", "node-too-old", "hub-unreachable"] },

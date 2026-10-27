@@ -320,8 +320,8 @@ is; the prototype's route isn't gated.
 (teams step 1). The sidebar's Administration entry shows a count only while a required step is left.
 
 The look follows the app's rules (`ui/DESIGN.md`): hairlines between parts, no card per step, status said in words
-(Done, Needs a look, Later), no dots or pulses. The bar is xaq's setup wizard (wynn-dev/xaq): numbered parts, a value
-table with copy buttons, live checks after the paste, "progress is saved".
+(Done, Needs a look, Later), no dots or pulses. The bar is xaq's setup wizard: numbered parts, a value table with
+copy buttons, live checks after the paste, "progress is saved".
 
 ## 5. What each in-flight writer exposes
 
