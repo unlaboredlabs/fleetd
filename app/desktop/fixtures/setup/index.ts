@@ -1,13 +1,13 @@
 // The hub admin's setup (screens/setup, a design prototype): a hub `fleetd init` just made on devbox, before and
-// after its GitHub App, the Google client next, and the end. The hub answers at an HTTPS address (Tailscale Serve
-// in life; a tailnet name counts as a leak here). The checks named hub/claude_key, hub/github_app, hub/people,
+// after its GitHub App, the Google client next, and the end. The hub is plain HTTP on its tailnet, the common case:
+// GitHub is polled and Google's Desktop app client needs no HTTPS. The checks named hub/claude_key, hub/github_app, hub/people,
 // hub/google, hub/notion and hub/onepassword are the ones docs/design/setup.md proposes; "unknown" is "not set up".
 import { Fixture, PROTOCOL } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
 import type { JsonObject } from "../kit/json.ts";
 
 const CHECKED = "2026-10-19T09:01:35.585Z";
-const HUB_URL = "https://devbox.example.com";
+const HUB_URL = "http://devbox:4790";
 
 type Status = "ok" | "warn" | "fail" | "unknown";
 

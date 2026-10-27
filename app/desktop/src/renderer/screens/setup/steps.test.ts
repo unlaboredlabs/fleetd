@@ -8,16 +8,21 @@ const check = (id: string, status: DoctorCheck["status"], message = id): DoctorC
 const byId = (steps: ReturnType<typeof setupSteps>) => Object.fromEntries(steps.map((s) => [s.id, s]));
 
 describe("setup steps", () => {
-  it("computes the values for this hub: the GitHub App's manifest, Google's redirect only over HTTPS", () => {
+  it("computes the values for this hub: the GitHub App's manifest, and Google with or without HTTPS", () => {
     const values = (hub: string, step: string) => guides(hub).find((g) => g.id === step)?.parts.flatMap((p) => p.values ?? []) ?? [];
-    expect(values("https://devbox.example.net/", "github").slice(0, 3).map((v) => v.value)).toEqual([
+    const value = (hub: string, step: string, label: string) => values(hub, step).find((v) => v.label === label);
+    expect(values("http://devbox:4790/", "github").slice(0, 3).map((v) => v.value)).toEqual([
       "fleetd on devbox",
-      "https://devbox.example.net",
-      "https://devbox.example.net/oauth/github/callback",
+      "http://devbox:4790",
+      "http://devbox:4790/oauth/github/callback",
     ]);
-    const redirect = (hub: string) => values(hub, "google").find((v) => v.label === "Authorized redirect URI");
-    expect(redirect("https://devbox.example.net")).toMatchObject({ value: "https://devbox.example.net/oauth/google/callback" });
-    expect(redirect("http://devbox:4790")).toMatchObject({ plain: true });
+    // Webhooks only where GitHub can reach the hub; a plain-HTTP tailnet hub polls.
+    expect(value("http://devbox:4790", "github", "Webhooks")).toMatchObject({ plain: true });
+    expect(value("https://devbox.example.net", "github", "Webhooks")).toMatchObject({ value: "https://devbox.example.net/webhooks/github" });
+    // A Desktop app client works on any hub; the web redirect is offered only over HTTPS.
+    expect(value("http://devbox:4790", "google", "Application type")?.value).toBe("Desktop app");
+    expect(value("http://devbox:4790", "google", "Or, on this HTTPS hub")).toBeUndefined();
+    expect(value("https://devbox.example.net", "google", "Or, on this HTTPS hub")?.value).toBe("https://devbox.example.net/oauth/google/callback");
   });
 
   it("reads each status from its checks: none or unknown is to do, the worst failing one wants a look", () => {
