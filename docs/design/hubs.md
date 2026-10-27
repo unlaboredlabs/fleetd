@@ -132,7 +132,7 @@ else takes a link key: `/mcp` and `/app` refuse it (it is no `fld_` key), so the
 approval, no secret and no admin through a link.
 
 **2. A message through a link is never the person's answer.** It goes into B's project chat as an agent message
-(`ChatAuthor::Agent`) written by "\<person\> via \<A's label\> Navi", for example "Wynn via home Navi". B's lead reads it
+(`ChatAuthor::Agent`) written by "\<person\> via \<A's label\> Navi", for example "Alex via home Navi". B's lead reads it
 through `chat.agent`, as input. It answers no question (needs-you stays as it was), approves no gated command, enters no
 secret and approves no merge: those take a person's own device on B. B stores the ask in `navi_asks` with `via_link`
 and sees nothing of the Navi: no title, no chat, no transcript.
