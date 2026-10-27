@@ -61,7 +61,7 @@ pub fn folder_make(dir: &Path, git_init: bool, dry_run: bool) -> Result<(), Stri
             .arg(dir)
             .args(["init", "--quiet"])
             .output()
-            .map_err(|e| format!("git init did not run: {e}"))?;
+            .map_err(|e| format!("git init did not run in {shown}: {e}"))?;
         if !out.status.success() {
             return Err(format!(
                 "git init failed in {shown}: {}",

@@ -183,6 +183,9 @@ describe("a new project", () => {
     const listed = { "devbox/p3": { ...project(`${folder}/`), projectId: "p3" } };
     expect(offerOpen(s, newReq(), listed).phase).toMatchObject({ kind: "failed", failure: { action: { kind: "open", project: { machineId: "devbox", projectId: "p3" } } } });
     expect(offerOpen(s, newReq(), {})).toBe(s);
+    // Typed as ~/…: the same folder under the machine's home.
+    const typed: Request = { kind: "new", machineId: "devbox", name: "Field notes", path: "~/fleetd/projects/field-notes", gitInit: false };
+    expect(offerOpen(s, typed, listed).phase).toMatchObject({ failure: { action: { kind: "open" } } });
     expect(offerOpen(s, cloneReq, listed)).toBe(s);
   });
 

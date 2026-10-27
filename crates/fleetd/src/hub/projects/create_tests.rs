@@ -220,7 +220,11 @@ async fn a_new_project_gets_a_folder_under_the_projects_root_and_no_repo() {
     );
     assert!(added["next"].as_str().unwrap().contains("project_repo_add"));
     let (folders, upserts) = drain(&mut calls);
-    assert_eq!(folders, [(path.clone(), false, false)]);
+    // Checked first, then made.
+    assert_eq!(
+        folders,
+        [(path.clone(), false, true), (path.clone(), false, false)]
+    );
     assert_eq!(upserts, [("Field Notes".to_owned(), path.clone())]);
     // A plain folder: no repo of its own, and the project shows with none.
     let r = project(&added);
@@ -270,7 +274,8 @@ async fn a_folder_given_is_made_there_and_git_init_runs_only_when_asked() {
     .await;
     assert_eq!(added["path"], "/home/me/work/site");
     let (folders, upserts) = drain(&mut calls);
-    assert_eq!(folders, [("/home/me/work/site".to_owned(), true, false)]);
+    let site = "/home/me/work/site".to_owned();
+    assert_eq!(folders, [(site.clone(), false, true), (site, true, false)]);
     // No title: the folder's name.
     assert_eq!(
         upserts,
@@ -367,12 +372,12 @@ async fn an_empty_folder_that_is_already_a_project_is_refused_not_renamed() {
     )
     .await;
     drain(&mut calls);
-    // The same folder again, still empty, under another name, and in a dry run.
-    for dry in [false, true] {
+    // The same folder again, still empty, under another name, with git init asked for, and in a dry run.
+    for (dry, git) in [(false, false), (false, true), (true, true)] {
         let Err(CallError::Tool(e)) = call(
             &hub,
             "project_add",
-            json!({ "machineId": "devbox", "create": true, "title": "Diary", "path": format!("{ROOT}/notes"), "dryRun": dry }),
+            json!({ "machineId": "devbox", "create": true, "title": "Diary", "path": format!("{ROOT}/notes"), "dryRun": dry, "gitInit": git }),
         )
         .await
         else {
@@ -384,8 +389,13 @@ async fn an_empty_folder_that_is_already_a_project_is_refused_not_renamed() {
         );
         assert!(e.fix.unwrap().starts_with("Open that project"));
     }
-    let (_, upserts) = drain(&mut calls);
+    let (folders, upserts) = drain(&mut calls);
     assert!(upserts.is_empty(), "renamed: {upserts:?}");
+    // Only checked: nothing made, and no git init in the project's folder.
+    assert!(
+        folders.iter().all(|(_, git, dry)| *dry && !git),
+        "{folders:?}"
+    );
     assert_eq!(
         hub.store
             .project_get(&project(&first))
@@ -423,4 +433,13 @@ fn a_dropped_link_gets_the_machines_fix_not_another_folder() {
     };
     let refused = super::folder_refused(&devbox(), &format!("{ROOT}/notes"), e);
     assert!(refused.fix.unwrap_or_default().contains("another folder"));
+    // A folder given as ~/x is named expanded; a dropped link names none.
+    assert!(super::names_folder(
+        "/home/me/notes is a file, not a folder",
+        "~/notes"
+    ));
+    assert!(!super::names_folder(
+        "the node link dropped before the node answered",
+        "~/notes"
+    ));
 }

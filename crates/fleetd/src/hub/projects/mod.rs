@@ -702,13 +702,21 @@ fn folder_refused(m: &MachineId, path: &str, e: ExecutorError) -> ToolError {
                 "Pick another folder for the new project, or add that one as it is by typing its path",
             ))
         }
-        ExecutorError::NodeRequestFailed { message, .. } if message.contains(path) => error(
+        ExecutorError::NodeRequestFailed { message, .. } if names_folder(message, path) => error(
             ErrorCode::Invalid,
             message.clone(),
             "Pick another folder for the new project",
         ),
         _ => problem_error(&node_problem(m, &e)),
     }
+}
+
+/// Whether the node's message names the folder at `path`: as given, or `~/x` as the node expands it (`/home/me/x`).
+fn names_folder(message: &str, path: &str) -> bool {
+    message.contains(path)
+        || path
+            .strip_prefix('~')
+            .is_some_and(|tail| tail.starts_with('/') && message.contains(tail))
 }
 
 /// `project_add` with `create`: the node makes the folder (`path`, else `<projectsRoot>/<name>`), empty or new, and
@@ -745,12 +753,14 @@ async fn create(
         }
     };
     let git_init = input.git_init == Some(true);
+    // Checked first, making nothing: the folder as the node names it, and whether it could be made.
     let path = hub
         .executors
-        .folder_make(m, &path, git_init, dry_run)
+        .folder_make(m, &path, false, true)
         .await
         .map_err(|e| folder_refused(m, &path, e))?;
-    // An empty folder that is already a project is that project, never a new one under another name.
+    // An empty folder that is already a project is that project, never a new one under another name, and it is left
+    // as it is: no git init.
     if let Some(id) = hub.executors.project_at(m, &path) {
         let title = hub
             .store
@@ -773,6 +783,11 @@ async fn create(
             ..dry(m.clone(), path, inspect::folder(), None)
         });
     }
+    let path = hub
+        .executors
+        .folder_make(m, &path, git_init, false)
+        .await
+        .map_err(|e| folder_refused(m, &path, e))?;
     let facts = checkout(hub, m, &path).await?;
     let inspect = inspect_checkout(&facts).await?;
     let (project_id, created, inspect) =

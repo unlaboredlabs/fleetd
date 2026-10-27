@@ -17,7 +17,7 @@ import {
   type ProjectSummary,
 } from "./contracts";
 import { progress, ready, existingFolderAction, type Failure, type ProjectKey, type Ready, type Request, type Step } from "./discovery";
-import { baseName, omit } from "./source";
+import { baseName, omit, tilde } from "./source";
 
 export interface Job {
   /** "acme/storefront", or a folder's name. */
@@ -279,7 +279,10 @@ const answer = (s: AddState, c: Call, outcome: Outcome, names: Names): Step_ => 
  */
 export const offerOpen = (s: AddState, r: Request | undefined, projects: Readonly<Record<string, ProjectSummary>>): AddState => {
   if (r?.kind !== "new" || s.phase.kind !== "failed" || s.phase.failure.action !== undefined) return s;
-  const p = Object.values(projects).find((x) => x.machineId === r.machineId && x.workspaceRoot.replace(/(.)\/+$/u, "$1") === r.path);
+  const root = (path: string) => path.replace(/(.)\/+$/u, "$1");
+  // A folder typed as ~/x is the project's /home/<user>/x.
+  const same = (path: string) => root(path) === root(r.path) || (r.path.startsWith("~/") && tilde(root(path)) === root(r.path));
+  const p = Object.values(projects).find((x) => x.machineId === r.machineId && same(x.workspaceRoot));
   if (p === undefined) return s;
   const action = { kind: "open", project: { machineId: p.machineId, projectId: p.projectId } } as const;
   return { ...s, phase: { ...s.phase, failure: { ...s.phase.failure, action } } };
