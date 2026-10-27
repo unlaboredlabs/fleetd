@@ -7194,6 +7194,10 @@
       "properties": {
         "machineId": {
           "$ref": "#/$defs/MachineId"
+        },
+        "rejoin": {
+          "description": "A machine that joined before: the line enrolls it again (`--rejoin`), which repairs it.",
+          "type": "boolean"
         }
       },
       "required": [

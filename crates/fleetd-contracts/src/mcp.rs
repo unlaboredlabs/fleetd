@@ -1762,6 +1762,8 @@ output!(MachineRemoveOutput {
 // app's "This computer" joins with it, and any other machine with the line.
 input!(MachineJoinInput {
     machine_id: MachineId,
+    /// A machine that joined before: the line enrolls it again (`--rejoin`), which repairs it.
+    rejoin: Option<bool>,
 });
 output!(MachineJoinOutput {
     machine_id: MachineId,

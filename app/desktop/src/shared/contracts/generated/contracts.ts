@@ -2698,6 +2698,8 @@ export type MachineId = string;
 
 export type MachineJoinInput = {
   machineId: MachineId;
+  /** A machine that joined before: the line enrolls it again (`--rejoin`), which repairs it. */
+  rejoin?: boolean;
 };
 
 export type MachineJoinOutput = {
