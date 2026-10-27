@@ -1,12 +1,14 @@
 // Settings › Hubs: the hubs this app is paired with (docs/design/hubs.md), each under a name the person picks and an
 // optional colour. Each can be renamed, recoloured, paired again or removed; Add a hub pairs one more beside them.
-// A hub's name shows in the sidebar, notifications, Status and Commands once there are two.
+// A hub's name shows in the sidebar, notifications, Status and Commands once there are two. Under each, the hub links
+// made as you on it (hubLinks/LinksToThisHub.tsx).
 import { useState } from "react";
 import type { HubState } from "../../../shared/hub";
 import { LABEL_MAX, type HubColor } from "../../../shared/hubs";
 import { keyStoreLine } from "../../../shared/pairing";
 import { Button, Dialog, Dot, Field, Input, Truncate } from "../../ui";
 import { HubScope, useData, useHub, useHubs } from "../../src/data/react";
+import { LinksToThisHub } from "../hubLinks/LinksToThisHub";
 import { useKeyStore } from "../onboarding";
 import { sentence } from "../onboarding/form";
 import { Prose } from "../onboarding/Prose";
@@ -43,6 +45,7 @@ export function HubsSettings() {
         {hubs.map((hub) => (
           <HubScope key={hub.id} hub={hub}>
             <HubSetting only={hubs.length === 1} />
+            <LinksToThisHub />
           </HubScope>
         ))}
       </div>

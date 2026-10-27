@@ -3,7 +3,7 @@
 // only relays ciphertext and the renderer never gets the plaintext back. It is never logged.
 import { SECRET_MAX_BYTES, type EnvVarSet, type McpValueSet, type ToolInput } from "../shared/contracts";
 import type { CallOutcome, HubError, SecretOutcome } from "../shared/hub";
-import type { McpServerRequest, ProjectEnvRequest, SecretRequest } from "../shared/ipc";
+import type { HubLinkRequest, McpServerRequest, ProjectEnvRequest, SecretRequest } from "../shared/ipc";
 
 
 const refused = (message: string, fix?: string): { ok: false; error: HubError } => ({
@@ -44,6 +44,22 @@ export const submitSecret = async (
   if (!out.ok) return out;
   const fingerprint = (out.output as { fingerprint?: unknown } | null)?.fingerprint;
   return { ok: true, fingerprint: typeof fingerprint === "string" ? fingerprint : "" };
+};
+
+/**
+ * A link key pasted into a Navi's Linked hubs: sealed to the hub's own key (hub_links_get's boxPubKey), then
+ * hub_link_add. A link key is "flk_" and 52 base32 characters; anything else is refused here, before it goes anywhere.
+ */
+export const submitHubLink = async (
+  request: HubLinkRequest,
+  call: (tool: "hub_link_add", input: ToolInput<"hub_link_add">) => Promise<CallOutcome>,
+): Promise<CallOutcome> => {
+  if (!/^flk_[a-z2-7]{52}$/u.test(request.key)) {
+    return refused("That isn't a link key.", "Paste the key from the other hub's Settings › Hubs, Links to this hub: it starts with flk_.");
+  }
+  const sealed = await seal(request.boxPubKey, request.key);
+  if (!sealed.ok) return sealed;
+  return call("hub_link_add", { navi: request.navi, label: request.label, url: request.url, sealed: sealed.sealed });
 };
 
 /**

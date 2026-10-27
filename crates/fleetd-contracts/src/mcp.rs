@@ -2133,6 +2133,9 @@ output!(HubInfoOutput {
     /// A hash of the OS's id for the hub's computer, as nodes give theirs: the app on that computer knows it runs the
     /// hub. Absent where the OS gives none, and from older hubs.
     machine_fingerprint: Option<String>,
+    /// The address another hub reaches this one at, for a hub link: its URL when that is https, or http over a
+    /// tailnet, and not this machine's loopback. Absent when it has no such address, and from older hubs.
+    url: Option<String>,
 });
 
 // people_list: the hub's people, oldest first, with the devices and invites the caller may see: an owner's or admin's

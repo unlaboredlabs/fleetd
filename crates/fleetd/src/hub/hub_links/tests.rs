@@ -11,7 +11,7 @@ use fleetd_contracts::lead_calls::{LeadCall, LeadCallResult};
 use fleetd_contracts::mcp::ErrorCode;
 use serde_json::{Value, json};
 
-use super::client::{Followed, follow_once};
+use super::client::{Followed, follow_once, refresh};
 use crate::hub::api::{CallError, Caller, Hub, HubConfig, Listen, registry};
 use crate::hub::link::LeadCaller;
 use crate::hub::link::lead_calls::{CallerAgent, lead_by};
@@ -1302,4 +1302,67 @@ async fn only_the_other_hubs_word_that_the_key_is_dead_revokes_the_link() {
         state(&l),
         fleetd_contracts::hub_links::HubLinkState::Revoked
     );
+}
+
+#[tokio::test]
+async fn the_navis_hub_shows_who_a_link_acts_as_and_its_projects_as_the_other_hub_says() {
+    let links = |l: &Linked| {
+        let (hub, you) = (l.home.clone(), l.you_home.clone());
+        async move {
+            tool(
+                &hub,
+                &you,
+                "hub_links_get",
+                json!({ "navi": project("navi") }),
+            )
+            .await
+            .unwrap()["links"][0]
+                .clone()
+        }
+    };
+    let l = linked(Some(json!([project("storefront")]))).await;
+    let link = links(&l).await;
+    assert_eq!(link["who"], "Alex");
+    assert_eq!(
+        link["projects"],
+        json!([{ "projectRef": project("storefront"), "title": "Storefront" }])
+    );
+    // Read again when its follower starts: a rename there shows here.
+    l.acme
+        .db
+        .with(|c| {
+            c.execute("UPDATE people SET name = 'Alex Kim'", [])?;
+            Ok(())
+        })
+        .unwrap();
+    refresh(&l.home, &l.link_here).await;
+    assert_eq!(links(&l).await["who"], "Alex Kim");
+    // A link to every project of theirs names none.
+    let all = linked(None).await;
+    let link = links(&all).await;
+    assert_eq!(link["who"], "Alex");
+    assert!(link.get("projects").is_none(), "{link}");
+}
+
+#[test]
+fn a_link_key_is_copied_with_an_address_another_hub_reaches_never_a_local_one() {
+    use super::reachable_url;
+    assert_eq!(
+        reachable_url("https://hub.acme.example/").as_deref(),
+        Some("https://hub.acme.example")
+    );
+    assert_eq!(
+        reachable_url("http://100.101.102.103:4790").as_deref(),
+        Some("http://100.101.102.103:4790")
+    );
+    for local in [
+        "http://127.0.0.1:4790",
+        "http://localhost:4790",
+        "https://localhost:4790",
+        "http://0.0.0.0:4790",
+        "http://192.168.1.20:4790",
+        "http://[::1]:4790",
+    ] {
+        assert_eq!(reachable_url(local), None, "{local}");
+    }
 }

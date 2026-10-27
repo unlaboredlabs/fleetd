@@ -5932,6 +5932,10 @@
         "truncated": {
           "type": "boolean"
         },
+        "url": {
+          "description": "The address another hub reaches this one at, for a hub link: its URL when that is https, or http over a\ntailnet, and not this machine's loopback. Absent when it has no such address, and from older hubs.",
+          "type": "string"
+        },
         "version": {
           "description": "The hub's fleetd version, as `fleetd --version` prints it. \"0.0.0\" for a local build.",
           "type": "string"
@@ -5969,11 +5973,22 @@
         "navi": {
           "$ref": "#/$defs/ProjectRef"
         },
+        "projects": {
+          "description": "The projects it is limited to there, as the other hub last said; absent: every project its person reaches.",
+          "items": {
+            "$ref": "#/$defs/LinkProject"
+          },
+          "type": "array"
+        },
         "state": {
           "$ref": "#/$defs/HubLinkState"
         },
         "url": {
           "description": "The other hub's URL: https, or http over a tailnet or this machine.",
+          "type": "string"
+        },
+        "who": {
+          "description": "The person it acts as there, as the other hub last said; absent until a hub that says has answered.",
           "type": "string"
         }
       },

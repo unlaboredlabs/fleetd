@@ -120,6 +120,41 @@ Anything else in a browser command asks: other quoting (double quotes, a quote j
 brackets, `*`, `~` or braces, shell syntax, a script in the page (`wait --fn`, `eval`), or a flag that changes which
 browser runs or how (`--session`, `--cdp`, `--headers`).
 
+## Hub links {#hub-links}
+
+A Navi can open and follow work in projects on another hub, such as a team hub when the Navi lives on your personal
+one. You make a link key on the hub it reaches and add it to the Navi. It acts as you there, and either side can
+revoke it. [Security](/docs/security#hub-links) has the rules.
+
+**On the hub it reaches.** Open **Settings › Hubs**, **Links to this hub** under that hub, and click **Make a link key**:
+
+1. Name the other hub as you think of it, such as *home*. Requests through the link read "*you* via home Navi"
+   there.
+2. Leave **Every project you can reach**, or pick **Only some projects** and tick them.
+3. **Make link key** shows the key (`flk_…`) once. **Copy** takes it with the address other hubs reach this hub
+   at: its HTTPS or tailnet URL. When the hub has no such address set, type it in the box that appears.
+
+The list below shows the links made as you: what each is for, its projects, when it was last used, and **Revoke**.
+An admin sees everyone's on **Administration › People**, under **Hub links**, each with the person it acts as.
+
+**On the Navi's hub.** Open the Navi's settings (the gear beside its name), **Linked hubs**, and click **Link a
+hub**. Paste what you copied into **Link key**: the address fills itself. Name the hub as the Navi should call it
+(*acme*), then click **Link hub**. The app seals the key to this hub, which checks it with the other hub and never
+shows it again. Then tell the Navi what you want ("ask the Shop lead on acme for saved carts"). It follows the
+order and tells you when it lands.
+
+Each linked hub shows its address, the person it acts as there and its projects (*only Shop, Website*, or *every
+project of theirs*), and one word for its state:
+
+| State | Means |
+|---|---|
+| Working | Its last call went through. |
+| Can't reach | This hub can't reach the other one. The row gives the address and the reason, such as *connection refused*. A link needs the other hub reachable from this one over a tailnet or HTTPS. |
+| Revoked | The other hub refused the key: it was revoked there, or you left that hub. Remove it, or make a new key there and add it. |
+
+**Remove** deletes the key at once and asks the other hub to revoke it too. When that hub doesn't answer, the
+notice says so: its link stays listed there until someone revokes it, but nothing can use it.
+
 ## Memory
 
 A Navi keeps your private life (family, health, money, accounts) in its own memory, never in `user.md`. Every
@@ -134,4 +169,6 @@ Navis are MCP tools on the hub: `navi_create {name, machineId?}`, `navi_list {ar
 Navi as a project summary with `kind: "assistant"`, `createdBy` (the id and name of the key that made it) and, once
 archived, `archivedAt`. Every other project has no `kind`. Talk to a Navi with `chat_send`, as to any project.
 `navi_asks {navi}` lists what a Navi asked other projects for, with the orders opened for each, on a hub whose ready
-frame names the `navi_asks` feature.
+frame names the `navi_asks` feature. Hub links are `hub_links_get {navi?}`, `hub_link_mint {label, projects?}`,
+`hub_link_revoke {linkId}`, `hub_link_add {navi, label, url, sealed}` (the key sealed to `boxPubKey` from
+`hub_links_get`) and `hub_link_remove {linkId}`.
