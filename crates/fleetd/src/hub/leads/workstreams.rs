@@ -6,6 +6,7 @@ use fleetd_contracts::ids::ProjectRef;
 use fleetd_contracts::lead_calls::{BriefCreateResult, CloseResult};
 use fleetd_contracts::ledger::{Brief, IntakeChannel, Workstream, WorkstreamId, WorkstreamState};
 use fleetd_contracts::mcp::ErrorCode;
+use fleetd_contracts::navi::AskHandle;
 
 use super::digest::{clip, state_text};
 use super::error::LeadError;
@@ -103,15 +104,25 @@ impl Workstreams {
 
     /// Creates a draft workstream for the intent and wakes the lead. Idempotent per client_request_id.
     pub fn intake(&self, input: IntakeInput) -> Result<IntakeOutcome, LeadError> {
-        self.create(input, true)
+        self.create(input, true, None)
     }
 
     /// A `brief` without a workstream opens one: the same draft, with no intent wake, since the lead that opens it knows.
-    pub fn open(&self, input: IntakeInput) -> Result<IntakeOutcome, LeadError> {
-        self.create(input, false)
+    /// `asked` is the Navi message it is opened for, said in its `workstream.created` for Navi's bridge (hub/navi).
+    pub fn open(
+        &self,
+        input: IntakeInput,
+        asked: Option<&AskHandle>,
+    ) -> Result<IntakeOutcome, LeadError> {
+        self.create(input, false, asked)
     }
 
-    fn create(&self, input: IntakeInput, wake: bool) -> Result<IntakeOutcome, LeadError> {
+    fn create(
+        &self,
+        input: IntakeInput,
+        wake: bool,
+        asked: Option<&AskHandle>,
+    ) -> Result<IntakeOutcome, LeadError> {
         if self.ctx.store.project_get(&input.project_ref)?.is_none() {
             return Err(LeadError::no_project(&input.project_ref));
         }
@@ -133,7 +144,10 @@ impl Workstreams {
                 &workstream,
                 HubEventType::WorkstreamCreated,
                 format!("New intent {id}: {}", workstream.title),
-                Some(serde_json::json!({ "workstreamId": id })),
+                Some(match asked {
+                    Some(asked) => serde_json::json!({ "workstreamId": id, "asked": asked }),
+                    None => serde_json::json!({ "workstreamId": id }),
+                }),
             )?;
         }
         if created && wake {

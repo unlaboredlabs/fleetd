@@ -26,6 +26,7 @@ pub mod mcp_servers;
 pub mod memory;
 pub mod metrics;
 pub mod model;
+pub mod navi;
 pub mod node_link;
 pub mod pair;
 pub mod preview;

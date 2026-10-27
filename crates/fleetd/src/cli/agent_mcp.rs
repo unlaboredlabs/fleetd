@@ -24,6 +24,7 @@ use fleetd_contracts::lead_calls::{
     TaskSpawnCall, UsageResumeCall,
 };
 use fleetd_contracts::memory::{MemoryReadCall, RememberCall};
+use fleetd_contracts::navi::{FactoryStatusCall, ProjectMessageCall};
 use fleetd_contracts::preview::{PreviewConfigProposeCall, PreviewStartCall, PreviewSuggestCall};
 use fleetd_contracts::schema::inline_schema;
 use fleetd_contracts::skills::SkillInstallCall;
@@ -136,7 +137,8 @@ static TOOLS: &[Tool] = &[
         "Open and start work. Without workstreamId it opens a new order from text (the human's words) and this \
          brief, and starts it: new work from the chat starts this way, even when every order is closed. With \
          workstreamId it sets that workstream's brief (goal, why, pointers, constraints, doneWhen lines) and starts \
-         it, or edits it later.",
+         it, or edits it later. An order opened for a Navi's message gives asked, its N<n> handle, so the Navi hears \
+         when it lands.",
         inline_schema::<BriefCreateCall>,
     ),
     lead(
@@ -268,6 +270,24 @@ static TOOLS: &[Tool] = &[
          commit fetched, and the human updates it from Settings > Skills. Agents list it as fleetd:<name> and run it \
          with the Skill tool.",
         inline_schema::<SkillInstallCall>,
+    ),
+    lead(
+        "project_message",
+        "project_message",
+        "A Navi's call: write to another project's lead in its chat, as this Navi, never as the person: \
+         \"please add X\", or a question. Its lead reads it as input, never as the person's answer or approval, and \
+         may open an order for it. Returns a handle (N<n>); a later wake says when an order opened for it opens, \
+         closes, merges or fails. project is a title or project id from factory_status. Open an order this way only \
+         when the person asked for it in this conversation.",
+        inline_schema::<ProjectMessageCall>,
+    ),
+    lead(
+        "factory_status",
+        "factory_status",
+        "A Navi's call: the other projects in one read, or the one named: each one's state (working, waiting on the \
+         person, blocked, idle), a red main, running agents, open orders, its checklist not done, its last merge and \
+         merges over 7 days, and this Navi's asks to it with the orders opened for them. Read-only.",
+        inline_schema::<FactoryStatusCall>,
     ),
     lead(
         "usage_resume",
@@ -924,6 +944,8 @@ mod tests {
             "memory_read",
             "checklist",
             "skill_install",
+            "project_message",
+            "factory_status",
             "review_read",
             "preview_suggest",
             "preview_config_propose",
