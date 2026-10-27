@@ -380,7 +380,11 @@ async fn a_global_servers_secret_missing_on_an_offline_machine_leaves_it_out_the
     )
     .await
     .unwrap();
-    assert_eq!(tested["result"]["tools"], json!([{ "name": "search" }]));
+    // Each tool comes back with what the hub's tool policy does with it: a custom server's tool asks.
+    assert_eq!(
+        tested["result"]["tools"],
+        json!([{ "name": "search", "policy": "ask" }])
+    );
     let offline = call(
         &hub,
         &person(),
@@ -589,4 +593,88 @@ async fn a_refresh_launch_denies_the_runtime_tools_and_keeps_its_own_servers() {
         .unwrap();
     hub.executors.send(&r, "go on", "s1").await.unwrap();
     assert_eq!(sent_mcp(&mut calls).await, None);
+}
+
+/// A Navi's Google connection (xaq's address and an agent key) as the app's connect screen saves it.
+fn google_via_xaq(key: Value) -> Value {
+    json!({ "scope": project_scope(), "name": "google", "enabled": true,
+        "roles": { "lead": true, "writers": false, "reviewers": false },
+        "transport": { "type": "http", "url": "http://127.0.0.1:8787/mcp" },
+        "headers": [key],
+        "integration": { "kind": "google" } })
+}
+
+#[tokio::test]
+async fn an_integration_connects_with_its_key_sealed_and_revoking_forgets_the_key() {
+    let (hub, _home) = hub();
+    let mut calls = node(&hub).await;
+    const KEY: &str = "Bearer aib_never_on_the_hub_0123456789";
+    let saved = call(
+        &hub,
+        &person(),
+        "mcp_server_set",
+        google_via_xaq(json!({ "kind": "secret", "name": "Authorization",
+            "sealed": [{ "machineId": "lab", "sealed": sealed(KEY) }] })),
+    )
+    .await
+    .unwrap();
+    assert_eq!(saved["server"]["integration"], json!({ "kind": "google" }));
+    assert!(matches!(
+        calls.recv().await.unwrap(),
+        SessionCall::McpSecrets { ref set, .. } if set.len() == 1
+    ));
+
+    // Connected: the app reads it back as Google, with the key only as a fingerprint on Navi's machine.
+    let got = call(
+        &hub,
+        &person(),
+        "mcp_servers_get",
+        json!({ "project": { "machineId": "lab", "projectId": "p1" } }),
+    )
+    .await
+    .unwrap();
+    let server = &got["project"][0];
+    assert_eq!(server["integration"]["kind"], "google");
+    assert_eq!(server["headers"][0]["sealedOn"][0]["machineId"], "lab");
+    assert!(server["headers"][0].get("value").is_none());
+    for text in [got.to_string(), saved.to_string(), every_row(&hub)] {
+        assert!(!text.contains("aib_never_on_the_hub"), "{text}");
+    }
+    // The test lists each tool with what the policy does with it.
+    let tested = call(
+        &hub,
+        &person(),
+        "mcp_server_test",
+        json!({ "scope": project_scope(), "name": "google" }),
+    )
+    .await
+    .unwrap();
+    assert!(
+        tested["result"]["tools"][0]["policy"].is_string(),
+        "{tested}"
+    );
+    let _ = calls.recv().await;
+
+    // Revoked: gone from the hub, and the node is told to forget the key.
+    call(
+        &hub,
+        &person(),
+        "mcp_server_remove",
+        json!({ "scope": project_scope(), "name": "google" }),
+    )
+    .await
+    .unwrap();
+    assert!(matches!(
+        calls.recv().await.unwrap(),
+        SessionCall::McpSecrets { ref set, ref keep, .. } if set.is_empty() && keep.is_empty()
+    ));
+    let after = call(
+        &hub,
+        &person(),
+        "mcp_servers_get",
+        json!({ "project": { "machineId": "lab", "projectId": "p1" } }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(after["project"], json!([]));
 }

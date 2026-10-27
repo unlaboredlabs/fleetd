@@ -64,6 +64,10 @@ fn tool_info(tool: &Value) -> Option<McpToolInfo> {
                 .take(300)
                 .collect()
         }),
+        read_only: tool
+            .pointer("/annotations/readOnlyHint")
+            .and_then(Value::as_bool),
+        policy: None,
     })
 }
 
@@ -461,7 +465,8 @@ mod tests {
                 "protocolVersion": PROTOCOL_VERSION, "capabilities": { "tools": {} },
                 "serverInfo": { "name": "fake-mcp", "version": "1.2.0" } } }),
             _ => json!({ "jsonrpc": "2.0", "id": id, "result": { "tools": [
-                { "name": "search", "description": "Searches the docs.\nMore lines.", "inputSchema": {} },
+                { "name": "search", "description": "Searches the docs.\nMore lines.", "inputSchema": {},
+                  "annotations": { "readOnlyHint": true } },
                 { "name": "fetch", "inputSchema": {} } ] } }),
         }
     }
@@ -474,11 +479,15 @@ mod tests {
             [
                 McpToolInfo {
                     name: "search".into(),
-                    description: Some("Searches the docs.".into())
+                    description: Some("Searches the docs.".into()),
+                    read_only: Some(true),
+                    policy: None,
                 },
                 McpToolInfo {
                     name: "fetch".into(),
-                    description: None
+                    description: None,
+                    read_only: None,
+                    policy: None,
                 },
             ]
         );

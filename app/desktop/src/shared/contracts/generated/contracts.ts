@@ -2220,6 +2220,9 @@ export type IntakeRef = {
   url: GitHubPrUrl;
 };
 
+/** What a configured MCP server is to the hub's tool policy. */
+export type IntegrationKind = "google" | "notion" | "custom";
+
 /** A single-use pairing code bound to a person, valid for 7 days. The code itself is shown once, at creation. */
 export type Invite = {
   createdAt: Timestamp;
@@ -2534,6 +2537,19 @@ export type MatchStrength = "weak" | "strong" | "exact";
 
 export type McpArg = string;
 
+/**
+ * The integration a server is, on its row (`McpServer.integration`). A server without one is a custom one with no
+ * tool marked as reading.
+ */
+export type McpIntegration = {
+  kind: IntegrationKind;
+  /**
+   * A custom server's tools that only read, as the person marked them when connecting it. Ignored for Google and
+   * Notion, whose tools the hub's table knows. A tool the policy blocks stays blocked even when listed here.
+   */
+  readTools?: McpToolName[];
+};
+
 /** Which of fleetd's agents get a server. A plain thread a person starts gets none. */
 export type McpRoles = {
   /** The project's lead. */
@@ -2573,6 +2589,11 @@ export type McpServer = {
   env?: McpValue[];
   /** An HTTP or SSE server's headers. */
   headers?: McpValue[];
+  /**
+   * What it is to a Navi (Google, Notion or custom), for the hub's tool policy; none for a server added before
+   * integrations, which counts as custom.
+   */
+  integration?: McpIntegration;
   name: McpServerName;
   roles: McpRoles;
   scope: McpScope;
@@ -2599,6 +2620,8 @@ export type McpServerSetInput = {
   env?: McpValueSet[];
   /** An HTTP or SSE server's headers, the whole list. */
   headers?: McpValueSet[];
+  /** What it is to a Navi: Google, Notion or custom, for the hub's tool policy. */
+  integration?: McpIntegration;
   name: McpServerName;
   roles: McpRoles;
   scope: McpScope;
@@ -2670,7 +2693,13 @@ export type McpTestResult = {
 export type McpToolInfo = {
   description?: string;
   name: string;
+  /** What the hub's tool policy does with it (`hub/integrations`), filled in by the hub. */
+  policy?: ToolPolicy;
+  /** The server says the tool only reads (MCP's `readOnlyHint`): the connect screen offers it as one to run unasked. */
+  readOnly?: boolean;
 };
+
+export type McpToolName = string;
 
 /** How claude reaches a server. */
 export type McpTransport = {
@@ -5817,16 +5846,63 @@ export type Tokens = {
   output: number;
 };
 
+/** What an asking tool would do, for the card's heading and its urgency. */
+export type ToolAction = "send" | "write" | "delete" | "share" | "spend";
+
 /**
  * An approval raised by a session's tool permission prompt instead of a gated command: answering it answers the prompt
  * on the project's node. Its machine is the request's project's.
  */
 export type ToolPermission = {
+  /**
+   * An integration's asking tool (`hub/integrations`): exactly who it reaches and what it says, or what it changes,
+   * read from the input it runs with once approved. Boxed: it is large beside the prompt's other fields.
+   */
+  preview?: ToolPreview;
   requestId: string;
   /** The command, the path, or the tool's own description. */
   summary: string;
   threadId: ThreadId;
   toolName: string;
+};
+
+/** The hub's policy for one tool. */
+export type ToolPolicy = "read" | "ask" | "blocked";
+
+/**
+ * What an approval card shows for an asking tool: who it reaches and what it says, or what it changes. Every field is
+ * read from the exact input the tool runs with once approved; nothing is a summary the agent wrote.
+ */
+export type ToolPreview = {
+  /** The account it acts as, when the tool names one (an xaq account's address). */
+  account?: string;
+  action: ToolAction;
+  /**
+   * Who it reaches when the tool decides that itself, such as a reply to a message's sender: said in words, since
+   * the card can't list them.
+   */
+  audience?: string;
+  bcc?: string[];
+  /** The text that goes out or goes in: the email's body, the event's notes, the page's new content. */
+  body?: string;
+  /** The body was longer and is cut here. */
+  bodyCut?: boolean;
+  cc?: string[];
+  /** Everything the tool gets, as JSON, so nothing is hidden behind the fields above. */
+  input: string;
+  integration: IntegrationKind;
+  /** The configured server's name, as claude prefixes its tools (`mcp__<server>__<tool>`). */
+  server: McpServerName;
+  subject?: string;
+  /** What it acts on: a message, an event, a page or a file, by name or id. */
+  target?: string;
+  /** One line: "Send an email", "Reply to a message", "Delete a Notion block". */
+  title: string;
+  /** Every recipient, as the tool gets them. */
+  to?: string[];
+  tool: McpToolName;
+  /** When, for an event: "2026-11-03 10:00 → 11:00". */
+  when?: string;
 };
 
 /**

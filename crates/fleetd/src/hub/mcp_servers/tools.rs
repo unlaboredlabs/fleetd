@@ -301,6 +301,7 @@ async fn set(
         transport: input.transport.clone(),
         env: values(McpField::Env),
         headers: values(McpField::Header),
+        integration: input.integration.clone(),
         updated_at: now(&hub),
     };
     store.put(&server)?;
@@ -444,11 +445,16 @@ async fn test(
             truncated: None,
         });
     };
-    let result = hub
+    let mut result = hub
         .executors
         .mcp_test(&machine_id, project.map(|r| r.project_id), session)
         .await
         .map_err(from_executor)?;
+    for tool in &mut result.tools {
+        tool.policy = Some(crate::hub::integrations::policy::tool_policy(
+            &server, &tool.name,
+        ));
+    }
     Ok(McpServerTestOutput {
         machine_id,
         result,

@@ -1178,6 +1178,8 @@ input!(
         /// An HTTP or SSE server's headers, the whole list.
         #[serde(default)]
         headers: List<crate::mcp_servers::McpValueSet, 0, 50>,
+        /// What it is to a Navi: Google, Notion or custom, for the hub's tool policy.
+        integration: Option<crate::integrations::McpIntegration>,
     }
 );
 checked!(McpServerSetInput, |input| {
