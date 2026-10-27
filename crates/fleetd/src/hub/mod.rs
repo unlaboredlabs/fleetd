@@ -13,6 +13,7 @@ pub mod checks;
 pub mod doctor;
 pub mod executor;
 pub mod http;
+pub mod hub_links;
 pub mod info;
 pub mod intake;
 pub mod integrations;
