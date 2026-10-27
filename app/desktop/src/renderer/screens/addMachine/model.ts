@@ -46,6 +46,16 @@ export const glyphOf = (state: SetupStep["state"]): GlyphState =>
 /** A step's title with its first letter up: the hub's titles are lower-case, as the CLI prints them. */
 export const stepTitle = (title: string): string => title.charAt(0).toUpperCase() + title.slice(1);
 
+/** The hub's line as a sentence: a capital first, and a full stop where it ends in a colon or nothing. */
+export const sentence = (text: string): string => {
+  const t = stepTitle(text.trim()).replace(/:$/u, "");
+  return /[.!?]$/u.test(t) ? t : `${t}.`;
+};
+
+/** A run's title: its machine, with its host when that says more. */
+export const runTitle = (run: { readonly machineId: string; readonly host?: string | undefined }): string =>
+  run.host === undefined ? `${run.machineId}, the hub's own machine` : run.host === run.machineId ? run.machineId : `${run.machineId} · ${run.host}`;
+
 /** What a done step printed, when it is one short line worth showing ("enrolled"); never a file's content. */
 export const shortOutput = (step: { state: string; output?: string | undefined }): string | undefined => {
   const out = step.output?.trim();

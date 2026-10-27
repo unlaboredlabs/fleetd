@@ -85,7 +85,7 @@ export default defineGroup({
           read("done"),
           ...STEPS(["done", "done", "failed"]).map((s) =>
             s["state"] === "failed"
-              ? { ...s, output: "step 3 failed (exit 1):\nmkdir: cannot create directory '/home/dev/.config/systemd': Permission denied" }
+              ? { ...s, output: "mkdir: cannot create directory '/home/dev/.config/systemd': Permission denied" }
               : s,
           ),
         ],

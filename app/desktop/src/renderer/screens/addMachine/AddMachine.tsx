@@ -9,13 +9,13 @@
 //
 // One component with no page around it, so Administration › Machines and the hub's first-run setup (docs/design,
 // its Machines step) show the same flow. Mount it only where the person is an owner or admin.
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { MachineAddRun, MachineHost, SetupStep } from "../../../shared/contracts";
 import type { JoinHere } from "../../../shared/joinHere";
 import { useData, useToolQuery } from "../../src/data/react";
-import { Button, StateGlyph, Text } from "../../ui";
+import { Button, InlineCode, StateGlyph, Text } from "../../ui";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
-import { glyphOf, hereOf, hostLine, joinSteps, pickable, resumable, runLine, shortOutput, stepTitle, type Here } from "./model";
+import { glyphOf, hereOf, hostLine, joinSteps, pickable, resumable, runLine, runTitle, sentence, shortOutput, stepTitle, type Here } from "./model";
 import s from "./addMachine.module.css";
 
 type View =
@@ -137,7 +137,7 @@ export function AddMachine() {
   );
 }
 
-function Head(props: { title: string; line?: string | undefined }) {
+function Head(props: { title: string; line?: ReactNode }) {
   return (
     <div className={s.head}>
       <Text strong>{props.title}</Text>
@@ -206,7 +206,14 @@ function Hosts(props: { read: ReturnType<typeof useToolQuery<"machine_hosts">>; 
   const hosts = props.read.data?.hosts;
   return (
     <>
-      <Head title="A machine the hub can reach" line="The hub connects with its own SSH keys, so `ssh <host> true` must work from the hub without a password." />
+      <Head
+        title="A machine the hub can reach"
+        line={
+          <>
+            The hub connects with its own SSH keys, so <InlineCode>ssh &lt;host&gt; true</InlineCode> must work from the hub without a password.
+          </>
+        }
+      />
       {props.read.error ? (
         <Text tone="danger">{`Couldn't list them: ${errorText(props.read.error)}`}</Text>
       ) : hosts === undefined ? (
@@ -237,20 +244,39 @@ function Hosts(props: { read: ReturnType<typeof useToolQuery<"machine_hosts">>; 
   );
 }
 
+/** The steps, each a word and a glyph; their commands on request, and always for the step that failed. */
 function Steps(props: { steps: ReadonlyArray<SetupStep> }) {
+  const [commands, setCommands] = useState(false);
+  const any = props.steps.some((x) => x.command !== undefined);
   return (
-    <ol className={s.steps} aria-label="Steps">
-      {props.steps.map((step, i) => {
+    <div className={s.head}>
+      <ol className={s.steps} aria-label="Steps">
+        {props.steps.map((step, i) => (
+          <StepRow key={`${i}-${step.title}`} step={step} command={commands || step.state === "failed"} />
+        ))}
+      </ol>
+      {any ? (
+        <span>
+          <Button variant="link" size="sm" onClick={() => setCommands(!commands)}>
+            {commands ? "Hide commands" : "Show commands"}
+          </Button>
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+function StepRow({ step, command }: { step: SetupStep; command: boolean }) {
         const short = shortOutput(step);
         return (
-          <li key={`${i}-${step.title}`} className={s.step} data-step={step.state}>
+          <li className={s.step} data-step={step.state}>
             <StateGlyph state={glyphOf(step.state)} size="sm" />
             <div className={s.stepBody}>
               <Text size="sm" tone={step.state === "planned" ? "quiet" : step.state === "failed" ? "danger" : "default"}>
                 {stepTitle(step.title)}
               </Text>
-              {step.command === undefined ? null : (
-                <Text size="xs" tone="faint" mono className={s.command}>
+              {step.command === undefined || !command ? null : (
+                <Text as="code" size="xs" tone="faint" mono className={s.command}>
                   {step.command.length > 240 ? `${step.command.slice(0, 240)}…` : step.command}
                 </Text>
               )}
@@ -263,9 +289,6 @@ function Steps(props: { steps: ReadonlyArray<SetupStep> }) {
             </div>
           </li>
         );
-      })}
-    </ol>
-  );
 }
 
 function Notes(props: { notes: ReadonlyArray<string> }) {
@@ -332,14 +355,14 @@ function Run(props: { run: MachineAddRun | undefined; pending: boolean; busy: bo
   }
   return (
     <>
-      <Head title={run.host === undefined ? `${run.machineId}, the hub's own machine` : `${run.machineId} · ${run.host}`} line={runLine(run, online)} />
+      <Head title={runTitle(run)} line={runLine(run, online)} />
       <Steps steps={run.steps} />
       {run.state === "failed" ? (
         <div className={s.head}>
-          {run.message === undefined ? null : <Text tone="danger">{run.message.split("\n")[0]}</Text>}
+          {run.message === undefined ? null : <Text tone="danger">{sentence(run.message.split("\n")[0] ?? "")}</Text>}
           {run.fix === undefined ? null : (
             <Text size="xs" tone="quiet">
-              {run.fix}
+              {sentence(run.fix)}
             </Text>
           )}
         </div>
