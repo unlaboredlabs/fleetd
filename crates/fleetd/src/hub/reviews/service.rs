@@ -10,8 +10,9 @@
 //! reports later is ignored.
 //!
 //! A new patch after an approved head is re-reviewed by what changed (`classify`): when its own changed lines are the
-//! approved ones (a rebase, perhaps past commits already on the base), the approval carries over and no reviewer
-//! runs; when they differ only where the base changed them too (a conflict resolution), a short review of those files
+//! approved ones, where the base's shifts put them and with no change of the base's next to them (a clean rebase), the
+//! approval carries over and no reviewer runs; when they differ only next to the base's changes (a conflict
+//! resolution), a short review of those files
 //! runs on the medium profile (`review.conflicts`); anything else gets a full review. Each outcome is recorded in
 //! `review_rebases`, a carry with the head and reviewer it came from. A head with blocking findings open never carries:
 //! only the last reviewed head counts, and only when it is clean, and a later blocking verdict of the reviewer whose
@@ -438,7 +439,8 @@ impl Reviews {
     /// head has, are its own, and the commits below them must be on the base (`on_base`), else it is `Changed`. The
     /// approved patch is read from the commit below its own and the base's change from the approved head's base to
     /// the new head's. More commits than the approved head had, a resolution included, are `Changed` unless the patch
-    /// is the same. None when there is no clean head to compare with: a full review.
+    /// is the same, and so is an unchanged patch that dropped commits unless its patch id is the approved one's. None
+    /// when there is no clean head to compare with: a full review.
     async fn classify(&self, change: &Change, patch_id: &str) -> Result<Option<Rebased>, String> {
         let approved: Option<(String, String, String)> = sql(&self.db, |conn| {
             conn.query_row(
@@ -505,6 +507,18 @@ impl Reviews {
         );
         let outcome = match compare(&approved, &now, &moved) {
             Rebase::Conflicts(_) if own.len() > reviewed.len() => Rebase::Changed,
+            // With commits dropped, the approved patch's lines are on `below`'s tree, not on the base diff's, so where
+            // its blocks sit can't be checked: only the same patch id, context and all, is unchanged.
+            Rebase::Unchanged
+                if !dropped.is_empty()
+                    && github
+                        .patch_id_from(repo, below, &from_head)
+                        .await
+                        .map_err(|e| e.message)?
+                        != patch_id =>
+            {
+                Rebase::Changed
+            }
             outcome => outcome,
         };
         Ok(Some(rebased(outcome)))

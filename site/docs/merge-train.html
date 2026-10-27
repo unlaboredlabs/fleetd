@@ -154,9 +154,10 @@ straight to the branch.</p>
 <p>Every PR gets one fresh reviewer, which reports blocking findings only. Its verdict is bound to the PR’s current
 patch. Blocking findings go to the agent that wrote the PR, and the PR waits for its next commit.</p>
 <div class="sl-heading-wrapper level-h3"><h3 id="re-reviews">Re-reviews</h3><a class="sl-anchor-link" href="#re-reviews"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Re-reviews”</span></a></div>
-<p>When an approved PR gets a new head, the train compares the PR’s own changes with the approved head’s, hunk by
-hunk, by their removed and added lines. Context lines don’t count, so main editing lines next to the PR’s changes is
-no change.</p>
+<p>When an approved PR gets a new head, the train compares the PR’s own changes with the approved head’s: each run of
+removed and added lines, and where it sits. A run is unchanged when it has the same lines in the place main’s added
+and removed lines move it to, and main changed nothing right next to it. Context lines don’t count, so main editing a
+line near the PR’s changes, with an unchanged line between, is no change. The same lines moved elsewhere are.</p>
 <table>
 <thead>
 <tr>
@@ -166,11 +167,11 @@ no change.</p>
 </thead>
 <tbody>
 <tr>
-<td>Nothing: the same patch id, or the same changed lines after a rebase, perhaps past commits that are on main already</td>
+<td>Nothing: the same patch id, or the same changed lines in the same places after a clean rebase</td>
 <td>None. The approval carries over, recorded with the head and reviewer it came from.</td>
 </tr>
 <tr>
-<td>Only lines main also changed: the author resolved conflicts in a rebase</td>
+<td>Only lines next to main’s changes: the author resolved conflicts in a rebase</td>
 <td>A short review on the medium profile, of just those files: the PR’s side, main’s side and the resolution.</td>
 </tr>
 <tr>
@@ -181,7 +182,8 @@ no change.</p>
 </table>
 <p>An approval carries over only from the last reviewed head, and only when that head has no blocking findings open.
 If the reviewer whose approval carried over later records blocking findings on its head, every head it carried to is
-blocked too. When the train can’t read the commits it compares, the PR gets a full review.</p>
+blocked too. A rebase past commits that landed on main as a squash keeps the approval only with the same patch id.
+When the train can’t read the commits it compares, the PR gets a full review.</p>
 <p>A PR already approved at an earlier patch isn’t sent back to wait for its new review. The new review runs while its
 CI runs, alone or in a batch, and the merge waits for both. If the review finds a blocker, the PR leaves the train for
 its author, and a batch it was in forms again without it, so its code never lands. If CI is green and the review is

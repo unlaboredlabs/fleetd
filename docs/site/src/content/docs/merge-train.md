@@ -114,19 +114,21 @@ patch. Blocking findings go to the agent that wrote the PR, and the PR waits for
 
 ### Re-reviews {#re-reviews}
 
-When an approved PR gets a new head, the train compares the PR's own changes with the approved head's, hunk by
-hunk, by their removed and added lines. Context lines don't count, so main editing lines next to the PR's changes is
-no change.
+When an approved PR gets a new head, the train compares the PR's own changes with the approved head's: each run of
+removed and added lines, and where it sits. A run is unchanged when it has the same lines in the place main's added
+and removed lines move it to, and main changed nothing right next to it. Context lines don't count, so main editing a
+line near the PR's changes, with an unchanged line between, is no change. The same lines moved elsewhere are.
 
 | What changed | Review |
 | --- | --- |
-| Nothing: the same patch id, or the same changed lines after a rebase, perhaps past commits that are on main already | None. The approval carries over, recorded with the head and reviewer it came from. |
-| Only lines main also changed: the author resolved conflicts in a rebase | A short review on the medium profile, of just those files: the PR's side, main's side and the resolution. |
+| Nothing: the same patch id, or the same changed lines in the same places after a clean rebase | None. The approval carries over, recorded with the head and reviewer it came from. |
+| Only lines next to main's changes: the author resolved conflicts in a rebase | A short review on the medium profile, of just those files: the PR's side, main's side and the resolution. |
 | Anything else: new commits, or a changed hunk main never touched | A full review, which starts from what changed. |
 
 An approval carries over only from the last reviewed head, and only when that head has no blocking findings open.
 If the reviewer whose approval carried over later records blocking findings on its head, every head it carried to is
-blocked too. When the train can't read the commits it compares, the PR gets a full review.
+blocked too. A rebase past commits that landed on main as a squash keeps the approval only with the same patch id.
+When the train can't read the commits it compares, the PR gets a full review.
 
 A PR already approved at an earlier patch isn't sent back to wait for its new review. The new review runs while its
 CI runs, alone or in a batch, and the merge waits for both. If the review finds a blocker, the PR leaves the train for

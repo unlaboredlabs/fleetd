@@ -1,22 +1,19 @@
 //! What a new head changed against the approved head it rebases, read from three diffs: the approved head's own
-//! patch, the new head's, and what the base gained in between. The PR's own changes are compared hunk by hunk by their
-//! changed lines alone, so context that moved or that main edited around them is no change. Pure; the gate feeds it
-//! GitHub's diffs.
+//! patch, the new head's, and what the base gained in between. The PR's own changes are compared block by block (each
+//! run of removed and added lines) by their lines and their place: an approved block is unchanged where it sits where
+//! the base's line shifts move it and the base changed nothing next to it, whatever the context lines around it say.
+//! Pure; the gate feeds it GitHub's diffs.
 use std::collections::BTreeMap;
-
-/// Lines around a change of main's within which the PR's hunk counts as resolving a conflict with it: git conflicts on
-/// changes that touch or abut, and context this close is what a resolution edits.
-const NEAR: u32 = 3;
 
 /// How a new head's patch stands against the approved head's.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Rebase {
-    /// The same changed lines in the same files: the approval carries over.
+    /// The same changed lines in the same places of the same files: the approval carries over.
     Unchanged,
-    /// The changed lines differ only where the base changed since the approved head: a conflict resolution, in these
-    /// files.
+    /// The changed lines differ only next to lines the base changed since the approved head: a conflict resolution, in
+    /// these files.
     Conflicts(Vec<String>),
-    /// Anything else: a new or changed hunk the base never touched.
+    /// Anything else: a new, changed or moved block the base never touched.
     Changed,
 }
 
@@ -30,21 +27,23 @@ impl Rebase {
     }
 }
 
+/// One run of removed and added lines.
 #[derive(Debug)]
-struct Hunk {
-    /// Where it sits on each side, as `(start, length)` in its `@@` line.
+struct Block {
+    /// Where it sits on each side, as (first line, lines): the lines it removes from the old side, and adds on the
+    /// new. A block that only adds sits before its old side's first line, with none.
     old: (u32, u32),
     new: (u32, u32),
-    /// Its removed and added lines (and no-newline markers), context left out.
+    /// Its removed and added lines (and no-newline markers).
     body: Vec<String>,
 }
 
 #[derive(Debug, Default)]
 struct File {
-    /// Its header but the blob ids, which change with every edit to the file on either side; kept when it has no hunks
-    /// (a binary file), whose content they are.
+    /// Its header but the blob ids, which change with every edit to the file on either side; kept when it has no
+    /// changed lines (a binary file), whose content they are.
     header: Vec<String>,
-    hunks: Vec<Hunk>,
+    blocks: Vec<Block>,
 }
 
 /// A diff's files by their `diff --git` line.
@@ -52,10 +51,13 @@ fn files(diff: &str) -> BTreeMap<String, File> {
     let mut files = BTreeMap::<String, File>::new();
     let mut at: Option<String> = None;
     let mut index = Vec::new();
+    // In a hunk: the next line on each side, and whether the last line was a change.
+    let mut pos: Option<(u32, u32, bool)> = None;
     for line in diff.lines() {
         if let Some(name) = line.strip_prefix("diff --git ") {
             at = Some(name.to_owned());
             files.entry(name.to_owned()).or_default();
+            pos = None;
             continue;
         }
         let Some(file) = at.as_ref().and_then(|name| files.get_mut(name)) else {
@@ -63,47 +65,70 @@ fn files(diff: &str) -> BTreeMap<String, File> {
         };
         if let Some(range) = line.strip_prefix("@@ ") {
             let mut sides = range.split(' ');
-            let old = span(sides.next().and_then(|s| s.strip_prefix('-')));
-            let new = span(sides.next().and_then(|s| s.strip_prefix('+')));
-            file.hunks.push(Hunk {
-                old,
-                new,
+            let old = first(sides.next().and_then(|s| s.strip_prefix('-')));
+            let new = first(sides.next().and_then(|s| s.strip_prefix('+')));
+            pos = Some((old, new, false));
+            continue;
+        }
+        let Some((old, new, changing)) = pos.as_mut() else {
+            if line.starts_with("index ") {
+                index.push((at.clone().unwrap_or_default(), line.to_owned()));
+            } else {
+                file.header.push(line.to_owned());
+            }
+            continue;
+        };
+        let change = line.starts_with(['-', '+']);
+        if change && !*changing {
+            file.blocks.push(Block {
+                old: (*old, 0),
+                new: (*new, 0),
                 body: Vec::new(),
             });
-        } else if let Some(hunk) = file.hunks.last_mut() {
-            if line.starts_with(['-', '+', '\\']) {
-                hunk.body.push(line.to_owned());
+        }
+        if change || (line.starts_with('\\') && *changing) {
+            let block = file.blocks.last_mut().expect("a block");
+            block.body.push(line.to_owned());
+            if line.starts_with('-') {
+                block.old.1 += 1;
+                *old += 1;
+            } else if line.starts_with('+') {
+                block.new.1 += 1;
+                *new += 1;
             }
-        } else if line.starts_with("index ") {
-            index.push((at.clone().unwrap_or_default(), line.to_owned()));
-        } else {
-            file.header.push(line.to_owned());
+            *changing = true;
+        } else if !line.starts_with('\\') {
+            *old += 1;
+            *new += 1;
+            *changing = false;
         }
     }
     for (name, line) in index {
-        if let Some(file) = files.get_mut(&name).filter(|f| f.hunks.is_empty()) {
+        if let Some(file) = files.get_mut(&name).filter(|f| f.blocks.is_empty()) {
             file.header.push(line);
         }
     }
     files
 }
 
-/// `start,length` of a hunk side; a bare `start` is one line.
-fn span(side: Option<&str>) -> (u32, u32) {
+/// The first line of a hunk side, `start,length`: an empty side's start is the line before it.
+fn first(side: Option<&str>) -> u32 {
     let side = side.unwrap_or_default();
     let (start, len) = side.split_once(',').unwrap_or((side, "1"));
-    (start.parse().unwrap_or(0), len.parse().unwrap_or(1))
+    let start: u32 = start.parse().unwrap_or(0);
+    if len == "0" { start + 1 } else { start }
 }
 
-fn near(a: (u32, u32), b: (u32, u32)) -> bool {
-    let end = |(start, len): (u32, u32)| start + len;
-    a.0 <= end(b) + NEAR && b.0 <= end(a) + NEAR
+/// Whether two blocks' lines overlap or abut, as git's merge conflicts on.
+fn touch(a: (u32, u32), b: (u32, u32)) -> bool {
+    a.0 <= b.0 + b.1 && b.0 <= a.0 + a.1
 }
 
 /// How `own`, the new head's patch, stands against `reviewed`, the approved head's, given `base`, the diff from the
-/// approved head's base to the new head's. A hunk of the new patch that the approved one lacks must sit by a change of
-/// the base (on the new base's lines), and so must a hunk of the approved patch the new one dropped (on the old base's
-/// lines), else it is `Changed`.
+/// approved head's base to the new head's. An approved block is matched by a new block of the same lines where the
+/// base's blocks above it move it to, unless a base block touches it. A new block left unmatched must touch a base
+/// block (on the new base's lines), and so must an approved block left unmatched (on the old base's), else it is
+/// `Changed`.
 pub fn compare(reviewed: &str, own: &str, base: &str) -> Rebase {
     let (reviewed, own, base) = (files(reviewed), files(own), files(base));
     let none = File::default();
@@ -112,21 +137,46 @@ pub fn compare(reviewed: &str, own: &str, base: &str) -> Rebase {
         .keys()
         .chain(own.keys().filter(|n| !reviewed.contains_key(*n)))
     {
-        let (r, o) = (
-            reviewed.get(name).unwrap_or(&none),
-            own.get(name).unwrap_or(&none),
-        );
-        let bodies = |f: &File| f.hunks.iter().map(|h| h.body.clone()).collect::<Vec<_>>();
-        if r.header == o.header && bodies(r) == bodies(o) {
+        let r = reviewed.get(name).unwrap_or(&none);
+        let o = own.get(name).unwrap_or(&none);
+        let main = base.get(name).unwrap_or(&none);
+        let touched = |b: &Block| main.blocks.iter().any(|m| touch(b.old, m.old));
+        // Where each approved block the base left alone sits now: moved by the base's blocks above it.
+        let spots: Vec<Option<u32>> = r
+            .blocks
+            .iter()
+            .map(|b| {
+                let shift: i64 = main
+                    .blocks
+                    .iter()
+                    .filter(|m| m.old.0 + m.old.1 < b.old.0)
+                    .map(|m| i64::from(m.new.1) - i64::from(m.old.1))
+                    .sum();
+                let at = u32::try_from(i64::from(b.old.0) + shift).unwrap_or(0);
+                (!touched(b)).then_some(at)
+            })
+            .collect();
+        let mut kept = vec![false; r.blocks.len()];
+        let mut added = Vec::new();
+        for b in &o.blocks {
+            let same = (0..r.blocks.len())
+                .find(|&i| !kept[i] && spots[i] == Some(b.old.0) && r.blocks[i].body == b.body);
+            match same {
+                Some(i) => kept[i] = true,
+                None => added.push(b),
+            }
+        }
+        // An approved block the base left alone that is gone, changed or moved.
+        let stray = (0..r.blocks.len()).any(|i| spots[i].is_some() && !kept[i]);
+        let touched_any = spots.iter().any(Option::is_none);
+        if r.header == o.header && added.is_empty() && !stray && !touched_any {
             continue;
         }
-        let Some(main) = base.get(name) else {
-            return Rebase::Changed;
-        };
-        let resolved = unmatched(o, r)
-            .map(|h| main.hunks.iter().any(|m| near(h.old, m.new)))
-            .chain(unmatched(r, o).map(|h| main.hunks.iter().any(|m| near(h.old, m.old))))
-            .all(|by_main| by_main);
+        let resolved = !stray
+            && (r.header == o.header || base.contains_key(name))
+            && added
+                .iter()
+                .all(|b| main.blocks.iter().any(|m| touch(b.old, m.new)));
         if !resolved {
             return Rebase::Changed;
         }
@@ -137,20 +187,6 @@ pub fn compare(reviewed: &str, own: &str, base: &str) -> Rebase {
     } else {
         Rebase::Conflicts(conflicts)
     }
-}
-
-/// The hunks of `a` with no hunk of the same lines in `b`, each of `b`'s matching one at most.
-fn unmatched<'a>(a: &'a File, b: &File) -> impl Iterator<Item = &'a Hunk> {
-    let mut left: Vec<&Vec<String>> = b.hunks.iter().map(|h| &h.body).collect();
-    a.hunks.iter().filter(
-        move |h| match left.iter().position(|body| **body == h.body) {
-            Some(i) => {
-                left.swap_remove(i);
-                false
-            }
-            None => true,
-        },
-    )
 }
 
 /// The path a `diff --git a/<path> b/<path>` line names, its new side.
@@ -180,24 +216,70 @@ mod tests {
     }
 
     #[test]
-    fn the_same_changed_lines_with_other_context_and_lines_are_unchanged() {
+    fn the_same_blocks_where_mains_shifts_move_them_are_unchanged() {
         let reviewed = diff(
             "a.rs",
-            &[("-10,4 +10,5", &[" one", "-two", "+2", "+2b", " three"])],
+            &[("-10,3 +10,4", &[" one", "-two", "+2", "+2b", " three"])],
         );
-        // Main added lines above and edited the context: the PR's own lines are as approved, and blob ids differ.
+        // Main added 20 lines above: the block sits 20 lines down, as approved; blob ids differ.
+        let added = vec!["+new"; 20];
+        let base = diff("a.rs", &[("-0,0 +1,20", &added)]);
         let own = diff(
             "a.rs",
-            &[("-30,4 +30,5", &[" ONE", "-two", "+2", "+2b", " three"])],
+            &[("-30,3 +30,4", &[" one", "-two", "+2", "+2b", " three"])],
         )
         .replace("1111111..2222222", "3333333..4444444");
-        let base = diff("a.rs", &[("-1,0 +1,20", &["+new"])]);
         assert_eq!(compare(&reviewed, &own, &base), Rebase::Unchanged);
         assert_eq!(compare(&reviewed, &reviewed, ""), Rebase::Unchanged);
+        // Main edited a context line, with a line between it and the block: git merges it cleanly.
+        let base = diff("a.rs", &[("-9,1 +9,1", &["-nine", "+NINE"])]);
+        let own = diff(
+            "a.rs",
+            &[("-10,3 +10,4", &[" one", "-two", "+2", "+2b", " three"])],
+        );
+        assert_eq!(compare(&reviewed, &own, &base), Rebase::Unchanged);
+        // The same block, but not where main's shifts put it.
+        let off = diff(
+            "a.rs",
+            &[("-12,3 +12,4", &[" one", "-two", "+2", "+2b", " three"])],
+        );
+        assert_eq!(compare(&reviewed, &off, ""), Rebase::Changed);
     }
 
     #[test]
-    fn a_hunk_that_changed_where_main_changed_is_a_conflict_resolution() {
+    fn the_same_lines_moved_elsewhere_are_changed() {
+        let reviewed = diff(
+            "a.rs",
+            &[("-20,2 +20,3", &[" fn a() {", "+    check_auth()?;", " }"])],
+        );
+        let own = diff(
+            "a.rs",
+            &[("-40,2 +40,3", &[" fn b() {", "+    check_auth()?;", " }"])],
+        );
+        assert_eq!(compare(&reviewed, &own, ""), Rebase::Changed);
+        let base = diff("a.rs", &[("-80,1 +80,1", &["-x", "+y"])]);
+        assert_eq!(compare(&reviewed, &own, &base), Rebase::Changed);
+    }
+
+    #[test]
+    fn both_sides_adding_at_one_spot_is_a_conflict_resolution() {
+        let reviewed = diff("a.rs", &[("-5,2 +5,3", &[" a", "+mine", " b"])]);
+        let base = diff("a.rs", &[("-5,2 +5,3", &[" a", "+theirs", " b"])]);
+        // The added line is the same, after main's now: still a resolution, which is looked at.
+        let after = diff("a.rs", &[("-5,3 +5,4", &[" a", " theirs", "+mine", " b"])]);
+        assert_eq!(
+            compare(&reviewed, &after, &base),
+            Rebase::Conflicts(vec!["a.rs".into()])
+        );
+        let before = diff("a.rs", &[("-5,3 +5,4", &[" a", "+mine", " theirs", " b"])]);
+        assert_eq!(
+            compare(&reviewed, &before, &base),
+            Rebase::Conflicts(vec!["a.rs".into()])
+        );
+    }
+
+    #[test]
+    fn a_block_that_changed_where_main_changed_is_a_conflict_resolution() {
         let reviewed = format!(
             "{}{}",
             diff("a.rs", &[("-10,3 +10,3", &[" x", "-old", "+mine", " y"])]),
@@ -220,7 +302,7 @@ mod tests {
     }
 
     #[test]
-    fn a_hunk_away_from_mains_changes_or_in_a_file_main_left_is_changed() {
+    fn a_block_away_from_mains_changes_or_in_a_file_main_left_is_changed() {
         let reviewed = diff("a.rs", &[("-10,1 +10,1", &["-old", "+mine"])]);
         let base = diff("a.rs", &[("-11,1 +11,1", &["-x", "+y"])]);
         // A new hunk far from main's change.
