@@ -166,9 +166,13 @@ add|list|remove`, and Add repo / Remove in Settings › Projects › Repos.
 `repo_key` the PR's URL is on (so the train's reviewers run in the PR's repo), and any other in the project's own repo,
 or the plain directory; an unknown name is `not_found` with the project's repo names. The task records the repo
 (`Task.repoId`), and everything that touches files goes through `Tasks::checkout_of`: the repo's checkout for another
-of the project's repos, else the project's own directory (also for a repo the project no longer has). The launch runs
+of the project's repos, else the project's own directory. A task whose repo the project no longer has fails to start
+("its repo R2 was removed from the project") and its lead is told; it never falls back to the own directory. The launch runs
 on that checkout's machine and node project, reads its default branch and `.fleetd/policy.yaml` there, and sends the
-project and repo so `task_setup` reads the repo's setup; the PR lookup reads that checkout's `origin`.
+project and repo so `task_setup` reads the repo's setup; the PR lookup reads that checkout's `origin`. A task in
+another repo needs a worktree: run in the checkout itself, its session would be the checkout's and its calls refused.
+So a reader on a node without detached worktrees ("update <machine> to run agents in other repos"), or any task in a
+repo with no commit yet ("repo <name> has no commits yet"), fails to start with that reason.
 
 Duplicate checks use the repo's scope (`scope_of_repo` for another repo, the project's as before for its own).
 `work::store::projects_in` also returns projects holding the scope through another repo, and the ledger counts a

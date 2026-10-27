@@ -492,7 +492,8 @@ impl Tasks {
     async fn launch(&self, task: &Task, handoff: Option<&str>) -> Result<Launched, StartError> {
         let r = &task.project_ref;
         // Its worktree, branch and setup are its repo's: the work runs in the repo's checkout (W79).
-        let checkout = &self.checkout_of(task);
+        let repo = self.repo_of(task)?;
+        let checkout = repo.as_ref().map_or(r, |repo| &repo.checkout);
         let gone = |p: &ProjectRef| {
             StartError::Other(format!(
                 "No project {} on machine {}.",
@@ -526,6 +527,22 @@ impl Tasks {
         } else {
             None
         };
+        // In another repo it needs a worktree of its own: run in the checkout itself, its session would be the
+        // checkout's, not the project's, and every call it made would be refused.
+        if let Some(repo) = &repo
+            && base_branch.is_none()
+        {
+            return Err(StartError::Other(
+                if write || self.d.ports.detached_worktrees(&checkout.machine_id) {
+                    format!("repo {} has no commits yet", repo.name.as_str())
+                } else {
+                    format!(
+                        "update {} to run agents in other repos",
+                        checkout.machine_id.as_str()
+                    )
+                },
+            ));
+        }
         if write && base_branch.is_none() {
             return Err(StartError::Other(format!(
                 "no branch with a commit at {workspace_root}"
@@ -741,8 +758,10 @@ impl Tasks {
     ) -> Result<Task, StoreError> {
         let task = &stored.task;
         let r = &task.project_ref;
-        // The machine it runs on: its repo checkout's.
-        let machine = &self.checkout_of(task).machine_id;
+        // The machine it runs on: its repo checkout's. One whose repo is gone fails at its launch.
+        let machine = &self
+            .checkout_of(task)
+            .map_or_else(|_| r.machine_id.clone(), |checkout| checkout.machine_id);
         // Checked before the slot: taking and releasing one would run the queue again at once.
         let offline = format!("machine {} is offline", machine.as_str());
         if !self.d.ports.is_connected(machine) {
@@ -1839,10 +1858,14 @@ impl Tasks {
             texts.push(result.tail.as_str().to_owned());
         }
         let texts = || texts.iter().map(String::as_str);
-        let remote = tokio::time::timeout(PR_LOOKUP_TIMEOUT, self.origin(&self.checkout_of(task)))
-            .await
-            .ok()
-            .flatten()?;
+        // A repo removed since has no remote to read: no PR is looked up.
+        let remote = match self.checkout_of(task) {
+            Ok(checkout) => tokio::time::timeout(PR_LOOKUP_TIMEOUT, self.origin(&checkout))
+                .await
+                .ok()
+                .flatten()?,
+            Err(_) => None,
+        };
         let Some(remote) = remote else {
             return Some(Lookup::default());
         };
@@ -2491,10 +2514,31 @@ impl Tasks {
         }
     }
 
+    /// The repo a task works in when it is one of the project's other repos; none for its own directory (its own repo,
+    /// or a plain directory). A repo the project no longer has fails it: its work never moves to another directory.
+    fn repo_of(&self, task: &Task) -> Result<Option<ProjectRepo>, StartError> {
+        let r = &task.project_ref;
+        let Some(repo_id) = &task.repo_id else {
+            return Ok(None);
+        };
+        match self
+            .d
+            .db
+            .with(|c| Ok(crate::hub::repos::store::get(c, repo_id)?))?
+        {
+            Some((project, repo)) if project == *r => Ok((repo.checkout != *r).then_some(repo)),
+            _ => Err(StartError::Other(format!(
+                "its repo {} was removed from the project",
+                repo_id.as_str()
+            ))),
+        }
+    }
+
     /// The node checkout a task works in: its repo's, else the project's own directory.
-    fn checkout_of(&self, task: &Task) -> ProjectRef {
-        self.other_repo(&task.project_ref, task.repo_id.as_ref())
-            .map_or_else(|| task.project_ref.clone(), |repo| repo.checkout)
+    fn checkout_of(&self, task: &Task) -> Result<ProjectRef, StartError> {
+        Ok(self
+            .repo_of(task)?
+            .map_or_else(|| task.project_ref.clone(), |repo| repo.checkout))
     }
 
     /// The repo and base work lands on: `other`'s as recorded, else the project's.
@@ -3146,6 +3190,9 @@ mod tests {
         /// Each launch's machine, node checkout and repo, and the directory its base branch was read in.
         checkouts: Mutex<Vec<(String, String, Option<String>)>>,
         branch_dirs: Mutex<Vec<String>>,
+        /// A node too old for detached worktrees; directories with no commit yet.
+        old_node: std::sync::atomic::AtomicBool,
+        no_commits: Mutex<Vec<String>>,
         offline: std::sync::atomic::AtomicBool,
         policy: Mutex<Option<String>>,
         /// The checkouts whose policy file was read.
@@ -3230,7 +3277,7 @@ mod tests {
             None
         }
         fn detached_worktrees(&self, _: &MachineId) -> bool {
-            true
+            !self.old_node.load(std::sync::atomic::Ordering::SeqCst)
         }
         fn action_texts<'a>(
             &'a self,
@@ -3246,7 +3293,8 @@ mod tests {
             cwd: &'a str,
         ) -> BoxFut<'a, Result<Option<String>, PortError>> {
             self.branch_dirs.lock().unwrap().push(cwd.to_owned());
-            Box::pin(async { Ok(Some("main".to_owned())) })
+            let empty = self.no_commits.lock().unwrap().iter().any(|d| d == cwd);
+            Box::pin(async move { Ok((!empty).then(|| "main".to_owned())) })
         }
         fn changes<'a>(&'a self, thread: &'a ThreadRef) -> BoxFut<'a, Option<ThreadChanges>> {
             let paths = vec![format!("docs/{}.md", thread.thread_id.as_str())];
@@ -3637,6 +3685,119 @@ mod tests {
         assert_eq!(
             refused.fix.as_deref(),
             Some("Use one of its repos: p1, web.")
+        );
+    }
+
+    /// A task whose repo was removed before it launched fails, and its lead hears why: its work never moves to the
+    /// project's own directory.
+    #[tokio::test]
+    async fn a_task_whose_repo_was_removed_fails_to_start() {
+        let (tasks, node) = tasks();
+        let web = with_second_repo(&tasks);
+        node.offline
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        let mut call = writer("restyle the cart");
+        call.repo = Some(web.name);
+        let queued = tasks.spawn(&lead(), call).await.unwrap();
+        assert_eq!(queued.state, TaskState::Queued);
+
+        tasks
+            .d
+            .db
+            .with(|c| Ok(c.execute("DELETE FROM repos WHERE name = 'web'", [])?))
+            .unwrap();
+        node.offline
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+        {
+            let _guard = tasks.lock.lock().await;
+            tasks.retry_queue().await;
+        }
+        let failed = tasks.get(&queued.task_id).unwrap().unwrap();
+        assert_eq!(failed.state, TaskState::Failed);
+        let tail = failed.result.unwrap().tail;
+        assert!(
+            tail.as_str()
+                .contains("its repo R2 was removed from the project"),
+            "{tail:?}"
+        );
+        assert!(
+            node.checkouts.lock().unwrap().is_empty(),
+            "nothing launched"
+        );
+        let wakes = node.wakes.lock().unwrap().clone();
+        assert!(
+            wakes
+                .iter()
+                .any(|(kind, text)| *kind == WakeKind::TaskResult
+                    && text.contains("its repo R2 was removed from the project")),
+            "{wakes:?}"
+        );
+    }
+
+    /// In another repo a task needs a worktree of its own. A reader on a node too old for detached worktrees, or any
+    /// task in a repo with no commit yet, is refused a start with the reason instead of running in the checkout.
+    #[tokio::test]
+    async fn a_task_in_another_repo_without_a_worktree_is_refused() {
+        let (tasks, node) = tasks();
+        let web = with_second_repo(&tasks);
+        let reader = |title: &str| -> TaskSpawnCall {
+            serde_json::from_value(json!({
+                "workstreamId": "W1", "title": title, "kind": "read", "prompt": "read it", "repo": "web",
+            }))
+            .unwrap()
+        };
+        node.old_node
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        let old = tasks.spawn(&lead(), reader("read the cart")).await.unwrap();
+        assert_eq!(old.state, TaskState::Failed);
+        assert!(
+            old.result
+                .unwrap()
+                .tail
+                .as_str()
+                .contains("update lab-a to run agents in other repos")
+        );
+        // The project's own directory runs a reader in its checkout, as before.
+        let own: TaskSpawnCall = serde_json::from_value(json!({
+            "workstreamId": "W1", "title": "read the api", "kind": "read", "prompt": "read it",
+        }))
+        .unwrap();
+        assert_eq!(
+            tasks.spawn(&lead(), own).await.unwrap().state,
+            TaskState::Running
+        );
+
+        node.old_node
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+        node.no_commits.lock().unwrap().push("/work/web".into());
+        let empty = tasks
+            .spawn(&lead(), reader("read the new repo"))
+            .await
+            .unwrap();
+        assert!(
+            empty
+                .result
+                .unwrap()
+                .tail
+                .as_str()
+                .contains("repo web has no commits yet")
+        );
+        let mut call = writer("start the site");
+        call.repo = Some(web.name);
+        let writer = tasks.spawn(&lead(), call).await.unwrap();
+        assert_eq!(writer.state, TaskState::Failed);
+        assert!(
+            writer
+                .result
+                .unwrap()
+                .tail
+                .as_str()
+                .contains("repo web has no commits yet")
+        );
+        assert_eq!(
+            node.checkouts.lock().unwrap().len(),
+            1,
+            "only the own directory's reader launched"
         );
     }
 

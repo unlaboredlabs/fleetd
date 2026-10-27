@@ -247,7 +247,9 @@ works in (`spawn_agent`'s `repo`). The agent's worktree and branch come from tha
 runs the repo's setup commands (or the project's, when the repo has none), and its policy file and the repo's own
 skills are read from that checkout. Its pull request is on that repo. Without a `repo`, an agent given a PR, such as a
 review, works in that PR's repo, and any other in the project's own repo, or its folder for a project with none. A
-repo the project doesn't have is refused, with the project's repos.
+repo the project doesn't have is refused, with the project's repos. An agent whose repo is removed before it starts
+fails, and its lead hears why. An agent in another repo always gets a worktree of its own, so it doesn't start in a
+repo with no commits yet, nor run a reader on a machine whose fleetd is too old (update that machine).
 
 A writer is checked for duplicates against the work in flight on its own repo only. The lead's `agents` list names
 the project's repos (`Repos: R1 api, R2 web.`), and each agent's `repoId` says which one it works in.
