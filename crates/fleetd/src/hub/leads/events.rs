@@ -188,6 +188,9 @@ pub enum Event<'a> {
         replaced_by: Option<(&'a str, &'a str)>,
         why: &'a str,
     },
+    /// A person took items off the project's checklist in the app (deleted one, or cleared the done ones), by id and
+    /// text. Quiet.
+    ChecklistRemoved { items: &'a [(i64, &'a str)] },
 }
 
 fn quote(text: &str) -> String {
@@ -453,6 +456,23 @@ impl Event<'_> {
                 ),
                 vec![],
             ),
+            Event::ChecklistRemoved { items } => (
+                format!(
+                    "- the human took {} off the checklist: {}; leave {} off unless they ask again",
+                    if items.len() == 1 {
+                        "1 item".to_owned()
+                    } else {
+                        format!("{} items", items.len())
+                    },
+                    items
+                        .iter()
+                        .map(|(id, text)| format!("{id} {}", quote(text)))
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                    if items.len() == 1 { "it" } else { "them" }
+                ),
+                vec![],
+            ),
         };
         std::iter::once(head)
             .chain(rest)
@@ -538,6 +558,22 @@ mod tests {
         assert_eq!(
             replaced,
             "- the human replaced D12 api.health.path \"/healthz\" with D15 \"/livez\": \"the probe\"; follow D15 from now on"
+        );
+    }
+
+    #[test]
+    fn a_checklist_removal_names_each_item_so_the_lead_leaves_it_off() {
+        assert_eq!(
+            r(Event::ChecklistRemoved {
+                items: &[(3, "Dark mode")]
+            }),
+            "- the human took 1 item off the checklist: 3 \"Dark mode\"; leave it off unless they ask again"
+        );
+        assert_eq!(
+            r(Event::ChecklistRemoved {
+                items: &[(1, "Receipts"), (4, "Ship it")]
+            }),
+            "- the human took 2 items off the checklist: 1 \"Receipts\", 4 \"Ship it\"; leave them off unless they ask again"
         );
     }
 

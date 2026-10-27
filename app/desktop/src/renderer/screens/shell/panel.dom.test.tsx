@@ -560,7 +560,7 @@ it("shows the lead's checklist with its progress, doing and to do open and done 
   expect(panel()?.querySelector("[role='tab'][data-section='plan']")?.textContent).toBe("Plan1");
 });
 
-it("a checklist item's right-click menu opens its link; an item without one has no menu", async () => {
+it("a checklist item's right-click menu opens its link, then Delete", async () => {
   await mount();
   await go(`${CHAT}/checklist`);
   const rightClick = (id: number) => {
@@ -571,9 +571,12 @@ it("a checklist item's right-click menu opens its link; an item without one has 
   };
   const items = () => [...document.querySelectorAll<HTMLElement>("[role='menuitem']")];
   rightClick(3);
-  expect(items()).toEqual([]);
+  expect(items().map((i) => i.textContent)).toEqual(["Delete"]);
+  act(() => {
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  });
   rightClick(2);
-  expect(items().map((i) => i.textContent)).toEqual(["Open agent"]);
+  expect(items().map((i) => i.textContent)).toEqual(["Open agent", "Delete"]);
   act(() => items()[0]?.click());
   await settle();
   expect(window.location.hash).toBe(`${CHAT}/agents/T1`);

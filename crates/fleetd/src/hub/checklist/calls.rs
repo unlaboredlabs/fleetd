@@ -63,7 +63,7 @@ fn answer(hub: &Hub, caller: &LeadCaller, call: LeadCall) -> Result<LeadCallResu
 }
 
 /// `checklist.changed`, which tells the app to read the list again.
-fn changed(
+pub(super) fn changed(
     hub: &Hub,
     r: &ProjectRef,
     list: &Checklist,
