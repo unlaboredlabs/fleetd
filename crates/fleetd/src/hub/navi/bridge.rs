@@ -336,13 +336,13 @@ fn factory_status(
 }
 
 /// One ask, as the bridge keeps it.
-struct Ask {
-    handle: AskHandle,
-    from: ProjectRef,
-    to: ProjectRef,
-    text: String,
-    at_ms: i64,
-    orders: Vec<WorkstreamId>,
+pub(super) struct Ask {
+    pub handle: AskHandle,
+    pub from: ProjectRef,
+    pub to: ProjectRef,
+    pub text: String,
+    pub at_ms: i64,
+    pub orders: Vec<WorkstreamId>,
 }
 
 fn pref(machine: String, project: String) -> ProjectRef {
@@ -376,7 +376,7 @@ fn ask_row(c: &rusqlite::Connection, row: &rusqlite::Row<'_>) -> rusqlite::Resul
 }
 
 /// A Navi's asks, newest first.
-fn asks_from(db: &HubDb, from: &ProjectRef) -> Result<Vec<Ask>, StoreError> {
+pub(super) fn asks_from(db: &HubDb, from: &ProjectRef) -> Result<Vec<Ask>, StoreError> {
     db.with(|c| {
         let mut stmt = c.prepare_cached(&format!(
             "SELECT {ASK_COLUMNS} FROM navi_asks WHERE from_machine_id = ? AND from_project_id = ?
@@ -563,7 +563,7 @@ fn wake_line(hub: &Hub, e: &HubEvent) -> Result<Option<(ProjectRef, String)>, St
     Ok(Some((asked.from, line)))
 }
 
-fn project_title(hub: &Hub, r: &ProjectRef) -> String {
+pub(super) fn project_title(hub: &Hub, r: &ProjectRef) -> String {
     hub.store
         .project_get(r)
         .ok()

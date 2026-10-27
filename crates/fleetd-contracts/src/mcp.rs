@@ -1322,6 +1322,14 @@ output!(ChecklistRemoveOutput {
     updated_at: Option<Timestamp>,
 });
 
+// navi_asks: what a Navi asked other projects for (`project_message`), newest first, with each order opened for it and
+// its state. The app shows it to a hub that names the `navi_asks` feature.
+input!(NaviAsksInput { navi: ProjectRef });
+output!(NaviAsksOutput {
+    navi: ProjectRef,
+    asks: List<crate::navi::NaviAsk, 0, { crate::navi::NAVI_ASKS_MAX }>,
+});
+
 // browser_sessions: a project's browser sessions, newest first, or one by sessionId (the Sessions view).
 input!(BrowserSessionsInput {
     project_ref: ProjectRef,
@@ -2184,6 +2192,7 @@ tools! {
     automation_run => AutomationRun, Operate, AutomationRunInput, AutomationRunOutput;
     automation_runs => AutomationRuns, Read, AutomationRunsInput, AutomationRunsOutput;
     checklist_get => ChecklistGet, Read, ChecklistGetInput, ChecklistGetOutput;
+    navi_asks => NaviAsks, Read, NaviAsksInput, NaviAsksOutput;
     // Human keys only (the handler checks).
     checklist_remove => ChecklistRemove, Operate, ChecklistRemoveInput, ChecklistRemoveOutput;
     browser_sessions => BrowserSessions, Read, BrowserSessionsInput, BrowserSessionsOutput;

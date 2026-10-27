@@ -662,6 +662,10 @@
       ],
       "type": "object"
     },
+    "AskHandle": {
+      "pattern": "^N[1-9][0-9]*$",
+      "type": "string"
+    },
     "AttachmentBlock": {
       "description": "An image or clip already uploaded to the hub: its bytes come from `attachment_get`.",
       "properties": {
@@ -7000,6 +7004,12 @@
         "metrics_retention_set.output": {
           "$ref": "#/$defs/MetricsRetentionSetOutput"
         },
+        "navi_asks.input": {
+          "$ref": "#/$defs/NaviAsksInput"
+        },
+        "navi_asks.output": {
+          "$ref": "#/$defs/NaviAsksOutput"
+        },
         "order_get.input": {
           "$ref": "#/$defs/OrderGetInput"
         },
@@ -7412,6 +7422,8 @@
         "metrics_get.output",
         "metrics_retention_set.input",
         "metrics_retention_set.output",
+        "navi_asks.input",
+        "navi_asks.output",
         "order_get.input",
         "order_get.output",
         "orders_board.input",
@@ -8516,6 +8528,102 @@
         "orderToMerged",
         "human",
         "throughFleetd"
+      ],
+      "type": "object"
+    },
+    "NaviAsk": {
+      "description": "One ask in `navi_asks` (the app's read of a Navi's asked work): where it went, its words, and the orders opened\nfor it.",
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "handle": {
+          "$ref": "#/$defs/AskHandle"
+        },
+        "orders": {
+          "items": {
+            "$ref": "#/$defs/NaviAskOrder"
+          },
+          "type": "array"
+        },
+        "text": {
+          "description": "The Navi's words, without the line telling the lead about the handle.",
+          "type": "string"
+        },
+        "to": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "toTitle": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "handle",
+        "to",
+        "toTitle",
+        "text",
+        "at",
+        "orders"
+      ],
+      "type": "object"
+    },
+    "NaviAskOrder": {
+      "description": "An order opened for an ask, as it stands now.",
+      "properties": {
+        "headline": {
+          "description": "The lead's latest one-line headline for it.",
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/WorkstreamState"
+        },
+        "title": {
+          "type": "string"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        }
+      },
+      "required": [
+        "workstreamId",
+        "title",
+        "state"
+      ],
+      "type": "object"
+    },
+    "NaviAsksInput": {
+      "properties": {
+        "navi": {
+          "$ref": "#/$defs/ProjectRef"
+        }
+      },
+      "required": [
+        "navi"
+      ],
+      "type": "object"
+    },
+    "NaviAsksOutput": {
+      "properties": {
+        "asks": {
+          "items": {
+            "$ref": "#/$defs/NaviAsk"
+          },
+          "maxItems": 100,
+          "type": "array"
+        },
+        "navi": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "navi",
+        "asks"
       ],
       "type": "object"
     },
