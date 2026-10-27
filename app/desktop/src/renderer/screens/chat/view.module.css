@@ -19,7 +19,7 @@
   gap: var(--space-2);
   padding: var(--space-4) var(--pad);
 }
-/* The header's state word, in a box as tall as the agents control beside it, so the two share a height and a line. */
+/* A held chat's "Last known" chip in the top bar, in a box as tall as the bar's controls, so it sits on their line. */
 .state {
   display: inline-flex;
   align-items: center;

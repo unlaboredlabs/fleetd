@@ -1,5 +1,5 @@
-// The chat's data, from E1's layer (one source of hub data): the chat view, the project's state word, whether the
-// live strip has agents to show, and the actions that page through its history. The shell opens the chat on screen.
+// The chat's data, from E1's layer (one source of hub data): the chat view, what the top bar says needs you (blocked
+// and why, a warning, a usage pause to resume), whether the live strip has agents to show, and the actions that page through its history. The shell opens the chat on screen.
 import { useCallback } from "react";
 import type { HubError } from "../../../shared/hub";
 import { useData, useDataLayer, useToolQuery } from "../../src/data/react";

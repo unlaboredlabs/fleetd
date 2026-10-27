@@ -1000,7 +1000,8 @@ export const screens: readonly Screen[] = [
     },
   },
   // W89: one header row. The panel runs from the window's top, its tabs beside the chat's title: the two rows share a
-  // top and a height, and the bar carries no state word and no agents counter.
+  // top, a height and the hairline under them, and the bar carries no state word and no agents counter. The panel's
+  // toggle stays at the window's top right, so the click that closed the panel opens it again in the same place.
   {
     id: "chat",
     route: `${CHAT}/agents`,
@@ -1013,12 +1014,22 @@ export const screens: readonly Screen[] = [
         const bar = document.querySelector("header");
         const head = list.parentElement;
         if (bar === null || head === null) return null;
-        const box = (el: Element) => ({ top: el.getBoundingClientRect().top, height: el.getBoundingClientRect().height });
+        // The hairline is each row's bottom border, so one bottom edge is one line.
+        const box = (el: Element) => ({ top: el.getBoundingClientRect().top, height: el.getBoundingClientRect().height, line: getComputedStyle(el).borderBottomWidth });
         return { bar: box(bar), panel: box(head) };
       });
       expect(rows).not.toBeNull();
       expect(rows?.panel).toEqual(rows?.bar);
       await expect(page.getByRole("button", { name: /^Max agents/u })).toHaveCount(0);
+      const toggle = page.locator('[data-opens="panel"]');
+      const open = await toggle.boundingBox();
+      await toggle.click();
+      await expect(toggle).toHaveAttribute("aria-pressed", "false");
+      expect(await toggle.boundingBox()).toEqual(open);
+      await toggle.click();
+      await expect(toggle).toHaveAttribute("aria-pressed", "true");
+      expect(await toggle.boundingBox()).toEqual(open);
+      await page.locator("#project-panel").getByRole("tablist").first().waitFor();
     },
   },
   // C1 and W38: updates. The sidebar's line above the connection for each state that has one, and the sheet the
