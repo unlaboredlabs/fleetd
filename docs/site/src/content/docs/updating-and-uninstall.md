@@ -15,8 +15,15 @@ Click it, then **Update**. One click updates everything, in order:
 1. **The hub** downloads the channel's newest build, checks it against the release's `SHA256SUMS`, keeps the binary it
    runs, and restarts on the new one. If the new build doesn't come up healthy within 90 seconds, the previous one is
    put back and restarted.
-2. **Every connected machine's node** does the same, once the hub runs the new build.
-3. **The app** installs its own update and restarts. A message you were typing is still there after the restart.
+2. **Every connected machine's node** does the same, all at once, as soon as the hub runs the new build. Each one
+   already downloaded it while the hub downloaded its own, so it only checks it against `SHA256SUMS` again, puts it in
+   place and restarts. Nothing is installed on a machine before the hub runs the new build.
+3. **The app** installs its own update and restarts. It downloads that update in the background, from when you
+   press **Update** at the latest, so it is usually ready by then. A message you were typing is still there after the
+   restart.
+
+Nothing waits on a timer: each restart starts as soon as the build is in place, and each part shows as updated as soon
+as its machine is back on the new build, so an update takes little more than one download.
 
 The sheet shows each part as it goes: downloading, restarting, updated, up to date, and if something went wrong, which
 part and why. A failed download or a checksum mismatch changes nothing. A build that didn't come up is put back, and

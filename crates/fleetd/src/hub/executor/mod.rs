@@ -765,6 +765,16 @@ impl Executors {
         let _ = rx.wait_for(|live| *live).await;
     }
 
+    /// Changes each time the machine's link goes live or drops.
+    pub fn live_watch(&self, machine_id: &MachineId) -> watch::Receiver<bool> {
+        self.live
+            .lock()
+            .unwrap()
+            .entry(machine_id.clone())
+            .or_insert_with(|| watch::channel(false).0)
+            .subscribe()
+    }
+
     fn ready_slot(&self, machine_id: &MachineId) -> watch::Sender<bool> {
         self.ready
             .lock()
