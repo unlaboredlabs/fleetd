@@ -1,7 +1,7 @@
 // Max agents in the app: the slider per project in Settings → Agents (the panel's Agents tab links to it, "4 working
-// · max 20"), each machine's, and the fleet-wide cap above them. Reads the hub's slot state from the data
-// layer's store; a slider applies when you let go (a cap_set call through the layer), with Undo, and the hub's next
-// slot state confirms it.
+// · max 20"), and each machine's and the fleet-wide cap, which are hub-wide and live on Administration's hub settings
+// (HubCaps). Reads the hub's slot state from the data layer's store; a slider applies when you let go (a cap_set call
+// through the layer), with Undo, and the hub's next slot state confirms it.
 import { Slider } from "radix-ui";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { ProjectRef, SlotState } from "../../../shared/contracts";
@@ -29,19 +29,10 @@ import { useFocusProjectSlider } from "./focusProject";
 import { PageHead, scopeName, useProjects } from "./parts";
 import { ProfilesSetting } from "./ProfilesSetting";
 import { promptHref } from "./route";
+import { useAdministers } from "../admin/role";
+import { toHash } from "../shell/routes";
 import { useReveal } from "./search";
 import s from "./settings.module.css";
-
-const noInput = {};
-
-/**
- * Whether this key may change the fleet and machine caps (Admin on every machine), as hub_info says. True until it
- * answers, and with a hub from before it said: the hub refuses the change, and the line under the slider says why.
- */
-export const useAdmin = (): boolean => useToolQuery("hub_info", noInput).data?.admin !== false;
-
-/** Under a control a key without Admin can't use. */
-export const NOT_ADMIN = "This key can't change it: that needs an admin key.";
 
 /** The hub's slot state for this connection; undefined until it is fresh (never the last connection's numbers). */
 const useSlots = (): SlotState | undefined => useData((st) => (st.fresh ? (st.live.slots ?? st.slots) : undefined));
@@ -242,7 +233,7 @@ export function AgentsPanel(props: { projectRef: ProjectRef; slots: SlotState; t
         ) : null}
       </div>
       <CapSlider id={id} max={a.top} disabled={!live || a.top <= 1} state={state} />
-      <MachineHolds machineId={props.projectRef.machineId} note={machineHolds(a, value, props.projectRef.machineId)} to={value} busy={state.busy} />
+      <MachineHolds note={machineHolds(a, value, props.projectRef.machineId)} />
       <ResultLine
         id={id}
         state={state}
@@ -268,56 +259,38 @@ export function AgentsPanel(props: { projectRef: ProjectRef; slots: SlotState; t
   );
 }
 
-/** Under a project's slider past its machine's cap: the machine holds it there, and one click raises the machine. */
-function MachineHolds(props: { machineId: string; note: string | null; to: number; busy: boolean }) {
-  const live = useLive();
-  const admin = useAdmin();
-  const call = useHubCall();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | undefined>(undefined);
+/**
+ * Under a project's slider past its machine's cap: the machine holds it there. Machine caps are hub-wide, so an owner or
+ * admin gets the way to them on Administration; everyone else, only the line.
+ */
+function MachineHolds(props: { note: string | null }) {
+  const administers = useAdministers();
   if (props.note === null) return null;
-  const raise = () => {
-    setBusy(true);
-    setError(undefined);
-    call("cap_set", { machine: { machineId: props.machineId, maxAgents: props.to } })
-      .catch((e: unknown) => setError(errorText(e)))
-      .finally(() => setBusy(false));
-  };
   return (
     <div className={s.result}>
       <Text size="xs" tone="warning">
         {props.note}
       </Text>
-      <Button size="sm" disabled={!live || !admin || busy || props.busy} onClick={raise}>
-        {`Raise ${props.machineId} to ${props.to}`}
-      </Button>
-      {admin ? null : (
-        <Text size="xs" tone="quiet">
-          {NOT_ADMIN}
-        </Text>
-      )}
-      {error === undefined ? null : (
-        <p role="alert" className={s.alertLine}>
-          <Text size="xs" tone="danger">{`Not changed: ${error}`}</Text>
-        </p>
-      )}
+      {administers ? (
+        <Button size="sm" variant="quiet" onClick={() => (window.location.hash = toHash({ id: "admin", section: "hub" }))}>
+          Machine caps in Administration
+        </Button>
+      ) : null}
     </div>
   );
 }
 
 /** Each machine's max agents: what it runs at once, where that comes from, and the slider that changes it. */
 function MachineCaps({ slots }: { slots: SlotState }) {
-  const admin = useAdmin();
-  const ref = useReveal<HTMLElement>("agents.machines");
   const machines = machineAgents(slots);
   return (
-    <section ref={ref} className={s.agentsList} aria-labelledby="agents-machines" tabIndex={-1}>
+    <section className={s.agentsList} aria-labelledby="agents-machines">
       <div className={s.agentsPanel}>
         <Text strong id="agents-machines">
           Machines
         </Text>
         <Text size="xs" tone="quiet">
-          {`Every project's agents on a machine together, up to the whole fleet's cap. ${admin ? "Changing one needs an admin key." : NOT_ADMIN}`}
+          Every project's agents on a machine together, up to the whole fleet's cap.
         </Text>
       </div>
       {machines.length === 0 ? (
@@ -325,7 +298,7 @@ function MachineCaps({ slots }: { slots: SlotState }) {
       ) : (
         machines.map((m) => (
           <section key={m.machineId} className={s.agentsRow} aria-label={m.machineId}>
-            <MachinePanel machine={m} top={Math.max(1, sliderTop(slots), m.cap)} admin={admin} />
+            <MachinePanel machine={m} top={Math.max(1, sliderTop(slots), m.cap)} />
           </section>
         ))
       )}
@@ -333,7 +306,7 @@ function MachineCaps({ slots }: { slots: SlotState }) {
   );
 }
 
-function MachinePanel({ machine: m, top, admin }: { machine: MachineAgents; top: number; admin: boolean }) {
+function MachinePanel({ machine: m, top }: { machine: MachineAgents; top: number }) {
   const live = useLive();
   const call = useHubCall();
   const state = useApplySlider(m.cap, !m.set, (maxAgents, _pause, auto) =>
@@ -353,12 +326,12 @@ function MachinePanel({ machine: m, top, admin }: { machine: MachineAgents; top:
           {m.source}
         </Text>
         {m.set ? (
-          <Button size="sm" variant="quiet" disabled={!live || !admin || state.busy} onClick={() => state.toDefault(m.auto)}>
+          <Button size="sm" variant="quiet" disabled={!live || state.busy} onClick={() => state.toDefault(m.auto)}>
             Use auto
           </Button>
         ) : null}
       </div>
-      <CapSlider id={id} max={top} disabled={!live || !admin || top <= 1} state={state} />
+      <CapSlider id={id} max={top} disabled={!live || top <= 1} state={state} />
       <ResultLine
         id={id}
         state={state}
@@ -369,7 +342,24 @@ function MachinePanel({ machine: m, top, admin }: { machine: MachineAgents; top:
   );
 }
 
-/** Settings → Agents: the fleet-wide cap, each machine's, then each project's max. */
+/**
+ * Administration's caps: the whole fleet's, then each machine's. Both are hub-wide, so they live there and not in
+ * Settings.
+ */
+export function HubCaps() {
+  const slots = useSlots();
+  const live = useLive();
+  if (!live || !slots) return <Text tone="quiet">{live ? "Loading…" : "Connect to a hub to see and change this."}</Text>;
+  return (
+    <>
+      <FleetCap slots={slots} />
+      <Separator />
+      <MachineCaps slots={slots} />
+    </>
+  );
+}
+
+/** Settings → Agents: each project's max, and whether its tasks may run on medium. */
 export function AgentsSettings() {
   const slots = useSlots();
   const projects = useProjects();
@@ -386,12 +376,6 @@ export function AgentsSettings() {
           <Text tone="quiet">{live ? "Loading…" : "Connect to a hub to see and change this."}</Text>
         ) : (
           <>
-            <FleetCap slots={slots} />
-            <Separator />
-            <MachineCaps slots={slots} />
-            <Separator />
-            <TaskProfiles />
-            <Separator />
             <section ref={perProject} className={s.agentsList} aria-labelledby="agents-per-project" tabIndex={-1}>
               <Text strong id="agents-per-project">
                 Max agents per project
@@ -419,20 +403,21 @@ export function AgentsSettings() {
   );
 }
 
-/** The two task profiles every agent runs on, and the model and effort behind each for the whole fleet. */
-function TaskProfiles() {
-  const ref = useReveal<HTMLElement>("agents.profiles");
-  const admin = useAdmin();
+/**
+ * The two task profiles every agent runs on, and the model and effort behind each for the whole fleet: hub-wide, so on
+ * Administration's hub settings. A project's override stays in its own settings.
+ */
+export function TaskProfiles() {
   return (
-    <section ref={ref} className={s.agentsPanel} aria-labelledby="agents-profiles" tabIndex={-1}>
+    <section className={s.agentsPanel} aria-labelledby="agents-profiles">
       <Text strong id="agents-profiles">
         Task profiles
       </Text>
       <Text size="xs" tone="quiet">
         The lead picks one for each task. The lead itself and every review run high. Set the model and effort behind
-        each for every project here; a project can override it in its settings. Changing it needs an admin key.
+        each for every project here; a project can override it in its settings.
       </Text>
-      <ProfilesSetting {...(admin ? {} : { blocked: NOT_ADMIN })} />
+      <ProfilesSetting />
       <span>
         <Button variant="quiet" size="sm" onClick={() => (window.location.hash = promptHref("lead.profiles"))}>
           Edit the Task profiles prompt
@@ -481,16 +466,14 @@ function MediumSwitch({ projectRef }: { projectRef: ProjectRef }) {
 
 /** The fleet-wide cap: every project's agents together, across every machine. */
 function FleetCap({ slots }: { slots: SlotState }) {
-  const admin = useAdmin();
   const call = useHubCall();
   const projects = useProjects();
   const live = useLive();
   const state = useApplySlider(slots.cap, false, (cap) => call("cap_set", { cap }).then(() => 0));
-  const ref = useReveal<HTMLElement>("agents.fleet");
   const warning = fleetWarning(slots, state.value, (r) => scopeName({ kind: "project", ref: r }, projects));
   const id = "agents-fleet";
   return (
-    <section ref={ref} className={s.agentsRow} aria-labelledby={`${id}-label`} tabIndex={-1}>
+    <section className={s.agentsRow} aria-labelledby={`${id}-label`}>
       <div className={s.agentsPanel}>
         <div className={s.agentsHead}>
           <span id={`${id}-label`} className={textClass({ strong: true })}>
@@ -499,9 +482,9 @@ function FleetCap({ slots }: { slots: SlotState }) {
           <Text tabular strong>{`${state.value}`}</Text>
         </div>
         <Text size="xs" tone="quiet">
-          {`All projects together, leads included. ${admin ? "Changing it needs an admin key." : NOT_ADMIN}`}
+          All projects together, leads included.
         </Text>
-        <CapSlider id={id} max={fleetTop(slots.cap)} disabled={!live || !admin} state={state} />
+        <CapSlider id={id} max={fleetTop(slots.cap)} disabled={!live} state={state} />
         {warning ? (
           <Text size="xs" tone="warning">
             {warning}

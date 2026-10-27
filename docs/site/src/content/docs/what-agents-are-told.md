@@ -183,8 +183,9 @@ next session.
 
 Read, edit or delete any of it in Settings → Memory. The files are plain markdown in the hub's home (`memory/`), in no
 repo. Each file has a cap, by default 16,000 characters for `user.md` and each `MEMORY.md`, 32,000 per topic and
-128,000 per project: a write past one is refused, and the lead merges entries instead. Change the caps under Caps in
-Settings → Memory (an app paired with admin, or `memory_caps_set` with an admin key for every machine): 1,000 to 100,000
+128,000 per project: a write past one is refused, and the lead merges entries instead. An owner or admin changes the caps
+under Memory caps in [Administration › Hub settings](/docs/desktop-app#administration) (or `memory_caps_set` with an
+admin key for every machine): 1,000 to 100,000
 per file, up to 400,000 per project. Memory never holds a secret.
 
 ## The checklist {#checklist}

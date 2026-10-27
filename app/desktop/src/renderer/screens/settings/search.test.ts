@@ -7,7 +7,9 @@ const labels = (q: string) => searchSettings(q).map((o) => o.label);
 describe("settings search", () => {
   it("finds an option by its own name, name matches first", () => {
     expect(labels("max agents")[0]).toBe("Max agents per project");
-    expect(labels("max agents")).toContain("Whole fleet");
+    // The fleet and machine caps are Administration's, never Settings'.
+    expect(labels("max agents")).not.toContain("Whole fleet");
+    expect(labels("fleet cap")).toEqual([]);
     expect(labels("APPEARANCE")).toEqual(["Appearance"]);
   });
 
