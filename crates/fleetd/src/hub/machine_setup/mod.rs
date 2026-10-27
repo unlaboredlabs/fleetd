@@ -3,7 +3,7 @@
 //! beside it. `machine_add` answers at once with its run and goes on in the background: each step it starts or ends
 //! updates the run and sends a `machine_add.step` event, and `machine_add_status` reads the run. Runs live in memory:
 //! a hub that restarts forgets them, and adding the machine again picks up where it stopped (finished steps are
-//! skipped).
+//! skipped). A machine of another OS or CPU than the hub's gets the hub's own version built for it, from its release.
 pub mod tools;
 
 #[cfg(test)]
@@ -20,7 +20,7 @@ use fleetd_contracts::machine_setup::{
 };
 
 use crate::cli::setup::detect::Peer;
-use crate::cli::setup::machine::{Begin, Progress, Runner, Ssh, Stop, tail};
+use crate::cli::setup::machine::{Begin, Builds, Progress, Releases, Runner, Ssh, Stop, tail};
 use crate::hub::api::Hub;
 use crate::hub::store::{NewEvent, iso_ms, now_ms};
 use crate::update::BoxFuture;
@@ -36,6 +36,8 @@ pub trait SetupPorts: Send + Sync {
     fn runner(&self) -> Arc<dyn Runner>;
     /// The fleetd a machine gets: the hub's own.
     fn exe(&self) -> Result<PathBuf, String>;
+    /// This hub's version built for a machine of another OS or CPU.
+    fn builds(&self) -> Arc<dyn Builds>;
     /// The `Host`s in the hub user's ~/.ssh/config, and the tailnet's peers.
     fn hosts(&self) -> BoxFuture<'_, (Vec<String>, Vec<Peer>)>;
 }
@@ -50,6 +52,10 @@ impl SetupPorts for RealPorts {
 
     fn exe(&self) -> Result<PathBuf, String> {
         crate::cli::setup::current_exe()
+    }
+
+    fn builds(&self) -> Arc<dyn Builds> {
+        Arc::new(Releases)
     }
 
     fn hosts(&self) -> BoxFuture<'_, (Vec<String>, Vec<Peer>)> {
@@ -330,6 +336,7 @@ fn emit(hub: &Hub, run: &MachineAddRun) {
 fn spawn_add(hub: Arc<Hub>, run: MachineAddRun, resolved: crate::cli::setup::machine::Resolved) {
     use crate::cli::setup::machine::{HubSide, execute, prepare};
     let runner = hub.machine_setup.ports().runner();
+    let builds = hub.machine_setup.ports().builds();
     tokio::spawn(async move {
         let recorder = Recorder {
             hub: hub.clone(),
@@ -340,7 +347,16 @@ fn spawn_add(hub: Arc<Hub>, run: MachineAddRun, resolved: crate::cli::setup::mac
             auth: &hub.auth,
             store: &hub.store,
         };
-        let result = match prepare(&resolved, Some(side), runner.as_ref(), &recorder).await {
+        let result = match prepare(
+            &resolved,
+            Some(side),
+            runner.as_ref(),
+            builds.as_ref(),
+            true,
+            &recorder,
+        )
+        .await
+        {
             Ok(prepared) => {
                 execute(resolved, prepared, Some(side), runner.as_ref(), &recorder).await
             }

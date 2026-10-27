@@ -13,7 +13,7 @@ use sha2::{Digest, Sha256};
 
 use super::SetupPorts;
 use crate::cli::setup::detect::Peer;
-use crate::cli::setup::machine::Runner;
+use crate::cli::setup::machine::{Builds, Runner};
 use crate::cli::setup::machine_plan::local_target;
 use crate::cli::setup::ssh::{RunResult, SshTarget};
 use crate::hub::api::{CallError, Caller, Hub, HubConfig, Listen};
@@ -38,6 +38,12 @@ struct FakeMachine {
     fail: Mutex<Option<String>>,
     installed: Mutex<bool>,
     logged_in: bool,
+    /// The machine runs another OS than the hub's (other_target).
+    other_os: Mutex<bool>,
+    /// The release builds the hub fetches for it.
+    builds: Arc<FakeBuilds>,
+    /// The machine is Linux on ARM, which fleetd has no build for.
+    linux_arm: Mutex<bool>,
 }
 
 impl FakeMachine {
@@ -49,6 +55,9 @@ impl FakeMachine {
             fail: Mutex::default(),
             installed: Mutex::new(false),
             logged_in: true,
+            other_os: Mutex::new(false),
+            builds: Arc::default(),
+            linux_arm: Mutex::new(false),
         })
     }
 
@@ -62,18 +71,36 @@ impl FakeMachine {
     }
 
     fn probe(&self) -> String {
-        let (os, arch) = local_target();
-        let os = if os == "darwin" { "Darwin" } else { "Linux" };
-        let arch = if arch == "arm64" { "arm64" } else { "x86_64" };
+        let (os, arch) = if *self.other_os.lock().unwrap() {
+            other_target()
+        } else {
+            local_target()
+        };
+        let linux_arm = *self.linux_arm.lock().unwrap();
+        let os = if os == "darwin" && !linux_arm {
+            "Darwin"
+        } else {
+            "Linux"
+        };
+        let arch = if arch == "arm64" || linux_arm {
+            "arm64"
+        } else {
+            "x86_64"
+        };
         let mut out = format!(
             "home /home/ada\nconfig /home/ada/.config\nuser ada\nuid 1000\nos {os}\narch {arch}\npath /usr/bin:/bin\n\
              claude /home/ada/.local/bin/claude\nclaude_version {} (Claude Code)\nlinger yes\n",
             crate::node::runner::claude::version::TESTED
         );
         if *self.installed.lock().unwrap() {
+            let bytes = if *self.other_os.lock().unwrap() {
+                other_asset().into_bytes()
+            } else {
+                FLEETD.to_vec()
+            };
             out += &format!(
                 "digest /home/ada/.fleetd/bin/fleetd {:x}\n",
-                Sha256::digest(FLEETD)
+                Sha256::digest(bytes)
             );
         }
         out
@@ -139,7 +166,10 @@ impl Runner for FakeMachine {
             if command.contains("fleetd.fleetd-tmp") && stdin.is_some_and(|b| b == FLEETD) {
                 *self.installed.lock().unwrap() = true;
             }
-            if command.contains(" restart ") || command.contains("kickstart") {
+            if command.contains(" restart ")
+                || command.contains("kickstart")
+                || command.contains("bootstrap")
+            {
                 self.link_soon(machine_of(&target.host));
             }
             if command.contains("'join'") || command.contains(" join ") {
@@ -154,8 +184,69 @@ fn machine_of(host: &str) -> String {
     crate::cli::setup::machine::machine_id_from_host(host)
 }
 
+/// The release builds: each asked-for one is the asset's name as its bytes, unless `missing`.
+#[derive(Default)]
+struct FakeBuilds {
+    asked: Mutex<Vec<(String, String)>>,
+    missing: Mutex<bool>,
+}
+
+impl Builds for FakeBuilds {
+    fn digest<'a>(
+        &'a self,
+        version: &'a str,
+        asset: &'a str,
+    ) -> BoxFuture<'a, Result<String, String>> {
+        Box::pin(async move {
+            if *self.missing.lock().unwrap() {
+                Err(format!(
+                    "no {asset} of fleetd {version} to copy to the machine: the release has none. Fix: run a released fleetd on the hub"
+                ))
+            } else {
+                Ok(format!("{:x}", Sha256::digest(asset.as_bytes())))
+            }
+        })
+    }
+
+    fn build<'a>(
+        &'a self,
+        version: &'a str,
+        asset: &'a str,
+    ) -> BoxFuture<'a, Result<Vec<u8>, String>> {
+        Box::pin(async move {
+            self.asked
+                .lock()
+                .unwrap()
+                .push((version.to_owned(), asset.to_owned()));
+            if *self.missing.lock().unwrap() {
+                Err(format!(
+                    "no {asset} of fleetd {version} to copy to the machine: the release has none. Fix: run a released fleetd on the hub"
+                ))
+            } else {
+                Ok(asset.as_bytes().to_vec())
+            }
+        })
+    }
+}
+
+/// Another OS than the hub's, of a CPU fleetd has a build for: macOS from a Linux hub, Linux x64 from a Mac.
+fn other_target() -> (String, String) {
+    let (os, arch) = local_target();
+    if os == "darwin" {
+        ("linux".into(), "x64".into())
+    } else {
+        ("darwin".into(), arch)
+    }
+}
+
+fn other_asset() -> String {
+    let (os, arch) = other_target();
+    format!("fleetd-{os}-{arch}")
+}
+
 struct Ports {
     machine: Arc<FakeMachine>,
+    builds: Arc<FakeBuilds>,
     exe: PathBuf,
 }
 
@@ -165,6 +256,9 @@ impl SetupPorts for Ports {
     }
     fn exe(&self) -> Result<PathBuf, String> {
         Ok(self.exe.clone())
+    }
+    fn builds(&self) -> Arc<dyn Builds> {
+        self.builds.clone()
     }
     fn hosts(&self) -> BoxFuture<'_, (Vec<String>, Vec<Peer>)> {
         Box::pin(async {
@@ -216,6 +310,7 @@ fn hub() -> (Arc<Hub>, Arc<FakeMachine>, tempfile::TempDir) {
     *machine.hub.lock().unwrap() = Arc::downgrade(&hub);
     hub.machine_setup.set_ports(Arc::new(Ports {
         machine: machine.clone(),
+        builds: machine.builds.clone(),
         exe,
     }));
     (hub, machine, home)
@@ -610,4 +705,145 @@ async fn a_repair_connects_with_the_ssh_config_it_was_set_up_with() {
     let other = call(&hub, "machine_add_plan", json!({ "host": "builder-1" })).await;
     assert_eq!(other["machineId"], "builder-1");
     assert_eq!(machine.configs.lock().unwrap().last().unwrap(), &None);
+}
+
+/// A machine of another CPU than the hub's gets the hub's own version built for it: the plan says it downloads it,
+/// the run copies that build, and its record holds the machine as it is.
+#[tokio::test]
+async fn a_machine_of_another_os_gets_this_version_built_for_it() {
+    let (hub, machine, _home) = hub();
+    *machine.other_os.lock().unwrap() = true;
+    let plan = call(&hub, "machine_add_plan", json!({ "host": "builder-1" })).await;
+    let first = plan["steps"][0]["title"].as_str().unwrap();
+    assert!(
+        first.starts_with(&format!("download fleetd {} for ", crate::version())),
+        "{first}"
+    );
+    assert!(
+        machine.builds.asked.lock().unwrap().is_empty(),
+        "a plan fetches nothing"
+    );
+    assert!(
+        titles(&plan["steps"])
+            .iter()
+            .any(|(t, _)| t.starts_with("install fleetd"))
+    );
+
+    let out = call(&hub, "machine_add", json!({ "host": "builder-1" })).await;
+    let run = finished(&hub, out["run"]["runId"].as_str().unwrap()).await;
+    assert_eq!(run["state"], "done", "{run:#}");
+    assert_eq!(
+        machine.builds.asked.lock().unwrap().clone(),
+        [(crate::version().to_owned(), other_asset())]
+    );
+    let installed = machine
+        .ran
+        .lock()
+        .unwrap()
+        .iter()
+        .find(|r| r.1.contains("fleetd.fleetd-tmp"))
+        .and_then(|r| r.2.clone())
+        .unwrap();
+    assert_eq!(
+        installed,
+        other_asset().as_bytes(),
+        "the build for its OS, not the hub's"
+    );
+    let install = run["steps"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["title"].as_str().unwrap().starts_with("install fleetd"))
+        .unwrap();
+    assert!(
+        install["stdin"].as_str().unwrap().contains(&other_asset()),
+        "{install}"
+    );
+}
+
+#[tokio::test]
+async fn a_machine_whose_build_is_missing_says_why_and_installs_nothing() {
+    let (hub, machine, _home) = hub();
+    *machine.other_os.lock().unwrap() = true;
+    *machine.builds.missing.lock().unwrap() = true;
+    let out = call(&hub, "machine_add", json!({ "host": "builder-1" })).await;
+    let run = finished(&hub, out["run"]["runId"].as_str().unwrap()).await;
+    assert_eq!(run["state"], "failed");
+    assert!(
+        run["message"].as_str().unwrap().starts_with("no fleetd-"),
+        "{run:#}"
+    );
+    assert!(
+        run["fix"]
+            .as_str()
+            .unwrap()
+            .contains("then run fleetd machine add builder-1")
+    );
+    // Stopped at the release's SHA256SUMS, before any download or plan step began.
+    assert_eq!(
+        titles(&run["steps"]),
+        [(
+            "read the machine's state (read-only)".to_owned(),
+            "done".to_owned()
+        )]
+    );
+    assert_eq!(
+        machine.commands().len(),
+        1,
+        "only the read of the machine ran"
+    );
+}
+
+/// A machine of another OS that has this version's build already: no download, no copy, in the plan as in the run.
+#[tokio::test]
+async fn a_machine_that_has_its_build_already_downloads_nothing() {
+    let (hub, machine, _home) = hub();
+    *machine.other_os.lock().unwrap() = true;
+    *machine.installed.lock().unwrap() = true;
+    let plan = call(&hub, "machine_add_plan", json!({ "host": "builder-1" })).await;
+    let titles_of = |steps: &Value| {
+        titles(steps)
+            .into_iter()
+            .map(|(t, _)| t)
+            .collect::<Vec<_>>()
+    };
+    assert!(
+        titles_of(&plan["steps"])
+            .iter()
+            .all(|t| !t.starts_with("download fleetd") && !t.starts_with("install fleetd")),
+        "{:?}",
+        titles_of(&plan["steps"])
+    );
+    let out = call(&hub, "machine_add", json!({ "host": "builder-1" })).await;
+    let run = finished(&hub, out["run"]["runId"].as_str().unwrap()).await;
+    assert_eq!(run["state"], "done", "{run:#}");
+    assert!(machine.builds.asked.lock().unwrap().is_empty());
+    assert_eq!(titles_of(&plan["steps"]), titles_of(&run["steps"])[1..]);
+}
+
+/// A Linux ARM machine is refused at the plan: there is no build to fetch for it yet.
+#[tokio::test]
+async fn a_linux_arm_machine_is_refused_up_front() {
+    let (hub, machine, _home) = hub();
+    if local_target() == ("linux".to_owned(), "arm64".to_owned()) {
+        return;
+    }
+    *machine.linux_arm.lock().unwrap() = true;
+    let Err(CallError::Tool(e)) = call_as(
+        &hub,
+        &person("admin"),
+        "machine_add_plan",
+        json!({ "host": "builder-1" }),
+    )
+    .await
+    else {
+        panic!("planned a Linux ARM machine");
+    };
+    assert!(
+        e.message
+            .starts_with("the machine is linux-arm64, and fleetd has no Linux ARM build yet"),
+        "{}",
+        e.message
+    );
+    assert!(machine.builds.asked.lock().unwrap().is_empty());
 }
