@@ -251,13 +251,14 @@ pub struct Pool {
     simctl: Simctl,
     pub golden: Golden,
     size: usize,
-    warm: Mutex<VecDeque<String>>,
+    warm: Mutex<VecDeque<Lent>>,
     filling: tokio::sync::Mutex<()>,
     /// Drained (the node stops): a boot still under way deletes its clone instead of keeping it.
     closed: AtomicBool,
 }
 
-/// A clone a session holds: shut down and deleted when dropped.
+/// A clone, from the moment simctl made it: shut down and deleted when dropped, so one whose boot failed, whose
+/// session_start went away mid-boot, or that waited in a drained pool goes too.
 pub struct Lent {
     pub udid: String,
     simctl: Simctl,
@@ -295,28 +296,25 @@ impl Pool {
     }
 
     /// Clones the golden and boots the clone now.
-    async fn boot(&self) -> Result<String, String> {
+    async fn boot(&self) -> Result<Lent, String> {
         let name = format!("fleetd-{}", super::short_id());
-        let udid = self.simctl.clone_device(&self.golden.udid, &name).await?;
-        if let Err(why) = self.simctl.boot(&udid, BOOT_TIMEOUT).await {
-            discard(&self.simctl, &udid);
-            return Err(why);
-        }
-        Ok(udid)
+        let lent = Lent {
+            udid: self.simctl.clone_device(&self.golden.udid, &name).await?,
+            simctl: self.simctl.clone(),
+        };
+        self.simctl.boot(&lent.udid, BOOT_TIMEOUT).await?;
+        Ok(lent)
     }
 
     /// A booted clone, or one cloned and booted now when none waits; the pool refills behind it.
     pub async fn take(self: &Arc<Self>) -> Result<Lent, String> {
         let warm = lock(&self.warm).pop_front();
-        let udid = match warm {
-            Some(udid) => udid,
+        let lent = match warm {
+            Some(lent) => lent,
             None => self.boot().await?,
         };
         self.refill();
-        Ok(Lent {
-            udid,
-            simctl: self.simctl.clone(),
-        })
+        Ok(lent)
     }
 
     /// Clones and boots in the background until the pool holds its size.
@@ -331,8 +329,9 @@ impl Pool {
                     return;
                 }
                 match pool.boot().await {
-                    Ok(udid) if pool.closed.load(Ordering::Relaxed) => discard(&pool.simctl, &udid),
-                    Ok(udid) => lock(&pool.warm).push_back(udid),
+                    // Dropped: deleted.
+                    Ok(_) if pool.closed.load(Ordering::Relaxed) => {}
+                    Ok(lent) => lock(&pool.warm).push_back(lent),
                     Err(e) => {
                         tracing::warn!(error = %e, "iOS simulator pool not refilled");
                         return;
@@ -349,9 +348,7 @@ impl Pool {
     /// Deletes every waiting clone.
     pub fn drain(&self) {
         self.closed.store(true, Ordering::Relaxed);
-        for udid in lock(&self.warm).drain(..) {
-            discard(&self.simctl, &udid);
-        }
+        lock(&self.warm).clear();
     }
 }
 

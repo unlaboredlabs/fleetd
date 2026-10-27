@@ -106,6 +106,8 @@ enum Prep {
     /// Not made: on a Mac opted in, the node makes it.
     Wanted,
     Preparing,
+    /// The golden is made; the clones a stopped node left are being deleted before the pool fills.
+    Starting,
     Missing(String),
 }
 
@@ -228,6 +230,15 @@ fn node_runs() -> bool {
 /// Whether iOS sessions can run here, for the doctor (each heartbeat; blocking): None off macOS, where they are off,
 /// and on a Mac without Xcode that didn't opt in.
 pub fn health(home: &Path, config: &IosConfig) -> Option<IosHealth> {
+    host(home, config).map(|(health, _)| health)
+}
+
+/// [`health`], and whether the hub may send this Mac an ios `session_start` (machine roles' host check,
+/// node/hosts.rs): where the golden is made, and on a Mac opted in while it is being made or after it failed, as
+/// Android's check does for its install. There the node answers itself ("still making it"), and the next
+/// session_start tries a failed golden again. Not where Xcode, a runtime or Node.js is missing, nor on a Mac that
+/// didn't opt in.
+pub fn host(home: &Path, config: &IosConfig) -> Option<(IosHealth, bool)> {
     if !config.enabled() {
         return None;
     }
@@ -246,13 +257,16 @@ fn health_from(
     state: &PrepState,
     xcode: impl FnOnce() -> Xcode,
     node: impl FnOnce() -> bool,
-) -> Option<IosHealth> {
-    let health = |state, message: String, fix: Option<String>| {
-        Some(IosHealth {
-            state,
-            message: Text::unchecked(message.chars().take(500).collect::<String>()),
-            fix: fix.map(|f| Text::unchecked(f.chars().take(500).collect::<String>())),
-        })
+) -> Option<(IosHealth, bool)> {
+    let health = |state, message: String, fix: Option<String>, placeable: bool| {
+        Some((
+            IosHealth {
+                state,
+                message: Text::unchecked(message.chars().take(500).collect::<String>()),
+                fix: fix.map(|f| Text::unchecked(f.chars().take(500).collect::<String>())),
+            },
+            placeable,
+        ))
     };
     if let Some(golden) = golden {
         return health(
@@ -264,6 +278,7 @@ fn health_from(
                 agent_device::VERSION
             ),
             None,
+            true,
         );
     }
     if state.preparing {
@@ -273,6 +288,7 @@ fn health_from(
              xcodebuild."
                 .to_owned(),
             None,
+            config.opted_in(),
         );
     }
     let runtime = match xcode() {
@@ -282,6 +298,7 @@ fn health_from(
                 IosState::Unavailable,
                 format!("No iOS sessions: {why}."),
                 fix,
+                false,
             );
         }
         Err(_) => return None,
@@ -294,6 +311,7 @@ fn health_from(
                  true}} in its node.json."
             ),
             None,
+            false,
         );
     }
     if !node() {
@@ -302,21 +320,25 @@ fn health_from(
             "No iOS sessions: agent-device needs Node.js 22.12 or later on the node's PATH."
                 .to_owned(),
             Some("brew install node".to_owned()),
+            false,
         );
     }
     if let Some(why) = &state.failed {
+        // Only the golden failed: the next session_start makes it again, so the hub must send one.
         return health(
             IosState::Unavailable,
             format!(
                 "Making the golden iOS simulator failed: {why}. The next ios session_start tries again."
             ),
             None,
+            true,
         );
     }
     health(
         IosState::Preparing,
         format!("Xcode with {runtime}; the node makes its golden iOS simulator next."),
         None,
+        true,
     )
 }
 
@@ -374,7 +396,7 @@ impl Simulators {
         }
         match pool::find(home) {
             Some(golden) => {
-                *lock(&simulators.prep) = Prep::Preparing;
+                *lock(&simulators.prep) = Prep::Starting;
                 let this = simulators.clone();
                 tokio::spawn(async move {
                     let simctl = Simctl::new(set_dir(&this.home));
@@ -460,6 +482,13 @@ impl Simulators {
     }
 
     fn pool(self: &Arc<Self>) -> Result<Arc<Pool>, McpToolError> {
+        if matches!(*lock(&self.prep), Prep::Starting) {
+            return Err(refuse(
+                ErrorCode::Failed,
+                "This Mac's iOS sessions are starting up.",
+                "try session_start again in a moment",
+            ));
+        }
         if !matches!(*lock(&self.prep), Prep::Ready(_)) && !self.config.opted_in() {
             return Err(refuse(
                 ErrorCode::Failed,
@@ -475,7 +504,7 @@ impl Simulators {
         self.begin_prepare();
         match &*lock(&self.prep) {
             Prep::Ready(pool) => Ok(pool.clone()),
-            Prep::Wanted | Prep::Preparing => Err(refuse(
+            Prep::Wanted | Prep::Preparing | Prep::Starting => Err(refuse(
                 ErrorCode::Failed,
                 "This Mac is still making its golden iOS simulator (a boot to settle, then agent-device's runner \
                  built with xcodebuild).",

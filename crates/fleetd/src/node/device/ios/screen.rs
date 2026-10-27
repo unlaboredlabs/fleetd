@@ -195,9 +195,19 @@ impl Gestures {
                 "BrowserBack" => args(&["back"]),
                 _ => None,
             },
-            Input::Text(text) => args(&["type", text]),
+            // After `--`, so text that starts with `-` is typed, not read as a flag.
+            Input::Text(text) => args(&["type", "--", text]),
         }
     }
+}
+
+/// A command's arguments with the simulator named: its flags right after the verb, so they come before any `--`.
+pub fn command_args(args: &[String], udid: &str) -> Vec<String> {
+    let mut out = Vec::with_capacity(args.len() + 4);
+    out.extend(args.first().cloned());
+    out.extend(["--platform", "ios", "--udid", udid].map(str::to_owned));
+    out.extend(args.iter().skip(1).cloned());
+    out
 }
 
 /// Folds inputs that piled up into fewer: scrolls one after another into one, text into one.
@@ -261,8 +271,7 @@ async fn work(runner: Runner, mut gestures: Gestures, mut rx: mpsc::UnboundedRec
                 continue;
             };
             let run = tokio::process::Command::new(&runner.wrapper)
-                .args(&args)
-                .args(["--platform", "ios", "--udid", &runner.udid])
+                .args(command_args(&args, &runner.udid))
                 .envs(runner.env.iter().map(|(k, v)| (k, v)))
                 .env_remove("FLEETD_DEVICE_CONTROL")
                 .stdin(std::process::Stdio::null())
@@ -370,7 +379,33 @@ mod tests {
         assert_eq!(g.feed(&key("F13", true), now), None);
         assert_eq!(
             g.feed(&Input::Text("héllo".into()), now),
-            Some(vec!["type".into(), "héllo".into()])
+            Some(vec!["type".into(), "--".into(), "héllo".into()])
+        );
+    }
+
+    #[test]
+    fn typed_text_that_starts_with_a_dash_is_never_a_flag() {
+        let mut g = Gestures::new(3.0);
+        let typed = g
+            .feed(&Input::Text("-rf --help".into()), Instant::now())
+            .unwrap();
+        // agent-device 0.21.31 reads `type -x` as an unknown flag, and everything after `--` as text; so the
+        // device's own flags go before it.
+        assert_eq!(
+            command_args(&typed, "U1"),
+            [
+                "type",
+                "--platform",
+                "ios",
+                "--udid",
+                "U1",
+                "--",
+                "-rf --help"
+            ]
+        );
+        assert_eq!(
+            command_args(&["keyboard".into(), "return".into()], "U1"),
+            ["keyboard", "--platform", "ios", "--udid", "U1", "return"]
         );
     }
 

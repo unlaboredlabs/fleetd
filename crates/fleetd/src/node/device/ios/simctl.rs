@@ -246,7 +246,8 @@ impl Simctl {
     pub fn record(&self, udid: &str, to: &Path) -> tokio::process::Command {
         let to = to.to_string_lossy();
         let mut cmd = self.command(&["io", udid, "recordVideo", "--codec=h264", "--force", &to]);
-        cmd.stdout(Stdio::null()).stderr(Stdio::piped());
+        // Nothing reads what it says while it records: a pipe left full would stall it.
+        cmd.stdout(Stdio::null()).stderr(Stdio::null());
         cmd
     }
 }

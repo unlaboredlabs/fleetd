@@ -67,32 +67,42 @@ fn the_doctor_hears_of_macs_with_xcode_and_of_macs_opted_in() {
     let idle = PrepState::default();
     let off = IosConfig::default();
 
-    let wanted = health_from(&off, None, &idle, fine, || true).unwrap();
+    let wanted = health_from(&off, None, &idle, fine, || true)
+        .map(|(h, _)| h)
+        .unwrap();
     assert_eq!(wanted.state, IosState::Wanted);
     assert!(wanted.message.as_str().contains("iOS 27.0"), "{wanted:?}");
     assert_eq!(
-        health_from(&off, None, &idle, broken, || true),
+        health_from(&off, None, &idle, broken, || true).map(|(h, _)| h),
         None,
         "a Mac without Xcode that didn't opt in: nothing to say"
     );
 
-    let unavailable = health_from(&opted_in(), None, &idle, broken, || true).unwrap();
+    let unavailable = health_from(&opted_in(), None, &idle, broken, || true)
+        .map(|(h, _)| h)
+        .unwrap();
     assert_eq!(unavailable.state, IosState::Unavailable);
-    let no_node = health_from(&opted_in(), None, &idle, fine, || false).unwrap();
+    let no_node = health_from(&opted_in(), None, &idle, fine, || false)
+        .map(|(h, _)| h)
+        .unwrap();
     assert_eq!(no_node.state, IosState::Unavailable);
     assert_eq!(no_node.fix.unwrap().as_str(), "brew install node");
     let failed = PrepState {
         preparing: false,
         failed: Some("xcodebuild failed".into()),
     };
-    let failed = health_from(&opted_in(), None, &failed, fine, || true).unwrap();
+    let failed = health_from(&opted_in(), None, &failed, fine, || true)
+        .map(|(h, _)| h)
+        .unwrap();
     assert_eq!(failed.state, IosState::Unavailable);
     assert!(failed.message.as_str().contains("xcodebuild failed"));
     let preparing = PrepState {
         preparing: true,
         failed: None,
     };
-    let preparing = health_from(&opted_in(), None, &preparing, broken, || false).unwrap();
+    let preparing = health_from(&opted_in(), None, &preparing, broken, || false)
+        .map(|(h, _)| h)
+        .unwrap();
     assert_eq!(preparing.state, IosState::Preparing);
 
     let golden = Golden {
@@ -104,11 +114,68 @@ fn the_doctor_hears_of_macs_with_xcode_and_of_macs_opted_in() {
         scale: 3.0,
         agent_device: crate::node::device::agent_device::VERSION.into(),
     };
-    let ready = health_from(&off, Some(&golden), &idle, broken, || false).unwrap();
+    let ready = health_from(&off, Some(&golden), &idle, broken, || false)
+        .map(|(h, _)| h)
+        .unwrap();
     assert_eq!(ready.state, IosState::Ready);
     assert!(
         ready.message.as_str().contains("iOS 27.0 on iPhone 17"),
         "{ready:?}"
+    );
+}
+
+/// The hub sends an ios session_start only where the host check is ready (machine roles). A Mac opted in whose golden
+/// is being made, or failed, must get it: the node answers "still making it", and a failed golden is made again only
+/// by the next session_start. A Mac missing Xcode or Node.js, or not opted in, must not.
+#[test]
+fn the_hub_sends_a_mac_opted_in_its_session_while_the_golden_is_made_or_after_it_failed() {
+    let fine = || Ok::<_, (String, Option<String>)>("iOS 27.0".to_owned());
+    let broken = || Err(("no Xcode: install it from the App Store".to_owned(), None));
+    let placed = |config: &IosConfig, state: &PrepState, xcode: bool, node: bool| {
+        let (health, placeable) = match xcode {
+            true => health_from(config, None, state, fine, || node),
+            false => health_from(config, None, state, broken, || node),
+        }
+        .unwrap();
+        (health.state, placeable)
+    };
+    let idle = PrepState::default();
+    let preparing = PrepState {
+        preparing: true,
+        failed: None,
+    };
+    let failed = PrepState {
+        preparing: false,
+        failed: Some("xcodebuild failed".into()),
+    };
+    let off = IosConfig::default();
+    assert_eq!(
+        placed(&opted_in(), &idle, true, true),
+        (IosState::Preparing, true)
+    );
+    assert_eq!(
+        placed(&opted_in(), &preparing, true, true),
+        (IosState::Preparing, true)
+    );
+    assert_eq!(
+        placed(&opted_in(), &failed, true, true),
+        (IosState::Unavailable, true),
+        "tried again"
+    );
+    assert_eq!(
+        placed(&opted_in(), &failed, false, true),
+        (IosState::Unavailable, false),
+        "no Xcode"
+    );
+    assert_eq!(
+        placed(&opted_in(), &idle, true, false),
+        (IosState::Unavailable, false),
+        "no Node.js"
+    );
+    assert_eq!(
+        placed(&off, &idle, true, true),
+        (IosState::Wanted, false),
+        "not opted in"
     );
 }
 

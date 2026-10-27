@@ -1,7 +1,8 @@
 //! What this machine can host for sessions (machine roles, W46), sent with each heartbeat's load: a browser (the
 //! broker's Chrome, or its install on the first session), an Android emulator (fleetd's own pinned one, node/device,
-//! with KVM), iOS simulators (fleetd's own golden and its clones, node/device/ios, with Xcode on macOS) and a Linux desktop (docker or Xvfb). Each says why in plain words. Read
-//! at most every few minutes: `xcrun simctl` takes a second.
+//! with KVM), iOS simulators (fleetd's own golden and its clones, node/device/ios, with Xcode on macOS) and a Linux
+//! desktop (docker or Xvfb). Each says why in plain words. Read at most every few minutes: `xcrun simctl` takes a
+//! second.
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -9,7 +10,7 @@ use std::time::{Duration, Instant};
 use fleetd_contracts::machine_roles::{HostCheck, HostChecks, SessionHost};
 use fleetd_contracts::prim::{Line, List};
 
-use fleetd_contracts::node_link::{AndroidState, IosState};
+use fleetd_contracts::node_link::AndroidState;
 
 use super::browser::BrowserConfig;
 use super::browser::chrome;
@@ -110,12 +111,10 @@ pub fn ios(home: &Path, config: &IosConfig) -> HostCheck {
         };
         return check(host, false, why);
     }
-    match device::ios::health(home, config) {
-        Some(health) => check(
-            host,
-            health.state == IosState::Ready,
-            health.message.as_str(),
-        ),
+    // Ready where the golden is made, and also on a Mac opted in while it is made or after it failed, so the hub sends
+    // the session there: the node says it is still making it, and the next session_start tries a failed one again.
+    match device::ios::host(home, config) {
+        Some((health, placeable)) => check(host, placeable, health.message.as_str()),
         None => check(
             host,
             false,
@@ -222,7 +221,7 @@ mod tests {
     }
 
     #[test]
-    fn ios_is_fleetds_own_simulator_and_only_once_its_golden_is_made() {
+    fn ios_is_fleetds_own_simulator_and_only_where_set_up() {
         let home = tempfile::tempdir().unwrap();
         let off = IosConfig {
             enabled: Some(false),
@@ -233,9 +232,10 @@ mod tests {
             enabled: Some(true),
             ..IosConfig::default()
         };
-        let asked = ios(home.path(), &opted_in);
-        assert!(!asked.ready, "no golden made: {asked:?}");
+        // Which states a Mac opted in is placed in: node/device/ios's tests, where they can be set up anywhere.
         if !device::ios::supported() {
+            let asked = ios(home.path(), &opted_in);
+            assert!(!asked.ready);
             assert_eq!(asked.detail.as_str(), "iOS simulators need macOS");
         }
     }
