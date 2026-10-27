@@ -487,6 +487,7 @@ function Line(props: { machineId: string | undefined; rejoin: boolean; onDone: (
   const [error, setError] = useState<string>();
   const [made, setMade] = useState<{ readonly join: MachineJoinOutput; readonly onlineAtStart: boolean }>();
   const [copied, setCopied] = useState<boolean>();
+  const [wentOffline, setWentOffline] = useState(false);
   const now = useNow();
   const problem = machineIdProblem(name);
   const machineId = made?.join.machineId ?? name.trim();
@@ -507,6 +508,7 @@ function Line(props: { machineId: string | undefined; rejoin: boolean; onDone: (
     setBusy(true);
     setError(undefined);
     setCopied(undefined);
+    setWentOffline(false);
     void request(name.trim());
   };
   // A repair knows its machine: its line comes at once.
@@ -516,7 +518,9 @@ function Line(props: { machineId: string | undefined; rejoin: boolean; onDone: (
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const state = made === undefined ? undefined : lineState({ expiresAt: made.join.expiresAt, onlineAtStart: made.onlineAtStart }, online, now);
+  // A repair of a machine still online joins once its node has restarted: offline a moment, then online again.
+  if (made !== undefined && !online && !wentOffline) setWentOffline(true);
+  const state = made === undefined ? undefined : lineState({ expiresAt: made.join.expiresAt, onlineAtStart: made.onlineAtStart }, online, now, wentOffline);
   return (
     <>
       <Head
@@ -571,7 +575,7 @@ function Line(props: { machineId: string | undefined; rejoin: boolean; onDone: (
       )}
       {state === undefined ? null : (
         <div className={s.wait} data-line={state}>
-          <StateGlyph state={state === "joined" || state === "online" ? "done" : state === "expired" ? "failed" : "queued"} size="sm" />
+          <StateGlyph state={state === "joined" ? "done" : state === "expired" ? "failed" : "queued"} size="sm" />
           <Text size="sm" tone={state === "expired" ? "danger" : "default"}>
             {lineWords(state, made?.join.machineId ?? machineId)}
           </Text>

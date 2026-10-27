@@ -47,7 +47,7 @@ const LOGIN_URL = "https://claude.ai/oauth/authorize?code=true&client_id=9d1c&st
 
 let host: HTMLDivElement;
 let root: Root;
-let calls: Array<{ tool: string; input: unknown }>;
+let calls: Array<{ tool: string; input: unknown; timeoutMs?: number | undefined }>;
 let checks: DoctorCheck[];
 let opened: string[];
 
@@ -77,8 +77,8 @@ const settle = () => act(async () => new Promise((r) => setTimeout(r, 0)));
 const render = async (ui: React.ReactNode) => {
   let listener: (frame: HubFrame) => void = () => undefined;
   const hub: HubApi = {
-    call: (tool, input) => {
-      calls.push({ tool, input });
+    call: (tool, input, options) => {
+      calls.push({ tool, input, timeoutMs: options?.timeoutMs });
       const code = (input as { code?: string }).code;
       if (tool === "machine_claude_login" && code === "wrong") {
         return Promise.resolve({ ok: false, error: { code: "failed", message: "claude auth login failed: Invalid code", fix: "Start the login again: each sign-in page's code works once." } });
@@ -172,6 +172,8 @@ it("asks before it removes a machine, then takes it off the list", async () => {
   expect(calls.some((c) => c.tool === "machine_remove")).toBe(false);
   await click(button("Remove laptop"));
   expect(calls.filter((c) => c.tool === "machine_remove").map((c) => c.input)).toEqual([{ machineId: "laptop" }]);
+  // Removing waits on SSH: longer than the app's usual 30 s.
+  expect(calls.find((c) => c.tool === "machine_remove")?.timeoutMs).toBe(100_000);
   expect(row("laptop")).toBeNull();
   expect(row("builder-1")).not.toBeNull();
 });
@@ -223,6 +225,8 @@ it("logs claude in from the app: the URL to sign in at, then the code, once", as
     { machineId: "laptop" },
     { machineId: "laptop", code: "abc#s1" },
   ]);
+  // Each waits as long as the hub waits on the node (90 s), not the app's usual 30 s.
+  expect(calls.filter((c) => c.tool === "machine_claude_login").every((c) => c.timeoutMs === 100_000)).toBe(true);
   // The checks run again, and claude's item is done.
   expect(calls.some((c) => c.tool === "doctor_list" && (c.input as { rerun?: boolean }).rerun === true)).toBe(true);
   expect(items()[0]).toBe("claude:done");

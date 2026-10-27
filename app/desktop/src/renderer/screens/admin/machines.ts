@@ -2,6 +2,12 @@
 // checklist a machine's page shows once it has joined, read from the hub's own checks (doctor_list).
 import type { DoctorCheck, DoctorFix, MachineHost } from "../../../shared/contracts";
 
+/**
+ * How long the app waits on a call that waits on a machine: the hub gives a node 90 s for its login, and Remove runs
+ * its steps over SSH. Past the app's usual 30 s, so a slow answer isn't taken for a failure while it still goes on.
+ */
+export const MACHINE_WAIT_MS = 100_000;
+
 /** Repair: again over SSH when the hub can reach it (it set it up, or found it), else a line that enrolls it again. */
 export type Repair =
   | { readonly kind: "plan"; readonly host: MachineHost }
