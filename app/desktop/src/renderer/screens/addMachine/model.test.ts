@@ -81,11 +81,15 @@ describe("Add machine's model", () => {
     expect(machineIdProblem(" laptop-2 ")).toBeUndefined();
     const at = Date.parse("2026-10-27T10:00:00.000Z");
     const line = { expiresAt: "2026-10-27T10:15:00.000Z", onlineAtStart: false };
-    expect(lineState(line, false, at)).toBe("waiting");
-    expect(lineState(line, true, at)).toBe("joined");
-    expect(lineState(line, false, at + 15 * 60_000)).toBe("expired");
-    // Online already when the repair's line was made: nothing to wait for.
-    expect(lineState({ ...line, onlineAtStart: true }, true, at)).toBe("online");
+    expect(lineState(line, false, at, true)).toBe("waiting");
+    expect(lineState(line, true, at, true)).toBe("joined");
+    expect(lineState(line, false, at + 15 * 60_000, true)).toBe("expired");
+    // A repair of a machine still online: it waits until its node has restarted, never done before anything ran.
+    const repair = { ...line, onlineAtStart: true };
+    expect(lineState(repair, true, at, false)).toBe("online");
+    expect(lineState(repair, false, at, true)).toBe("waiting");
+    expect(lineState(repair, true, at, true)).toBe("joined");
+    expect(lineState(repair, true, at + 15 * 60_000, false)).toBe("expired");
     expect(lineWords("waiting", "laptop")).toBe("Waiting for laptop…");
     expect(lineWords("joined", "laptop")).toBe("laptop joined.");
   });

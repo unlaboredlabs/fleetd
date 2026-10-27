@@ -407,3 +407,15 @@ it("decides nothing about this computer before the hub says which computer it ru
   expect(calls.find((c) => c.tool === "machine_add")?.input).toEqual({ local: true });
   expect(joinHere).not.toHaveBeenCalled();
 });
+
+it("waits on a repair of a machine still online until its node restarts, then says it joined", async () => {
+  await render({ view: { kind: "line", machineId: "devbox", rejoin: true }, at: 1 });
+  expect(waitLine()?.getAttribute("data-line")).toBe("online");
+  expect(waitLine()?.textContent).toContain("devbox is online on its old enrollment.");
+  expect(button("Open devbox")).toBeUndefined();
+  await snapshot([{ ...DEVBOX, status: "offline" }]);
+  expect(waitLine()?.getAttribute("data-line")).toBe("waiting");
+  await snapshot([DEVBOX]);
+  expect(waitLine()?.getAttribute("data-line")).toBe("joined");
+  expect(button("Open devbox")).toBeDefined();
+});

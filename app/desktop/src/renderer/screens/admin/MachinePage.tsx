@@ -13,7 +13,7 @@ import { HubText } from "../projects/HubText";
 import { errorText, useHubCall, useLive } from "../settings/hub";
 import { PageHead } from "../settings/parts";
 import { toHash } from "../shell/routes";
-import { checklistOf, type ChecklistItem, type ItemState } from "./machines";
+import { checklistOf, MACHINE_WAIT_MS, type ChecklistItem, type ItemState } from "./machines";
 import s from "../settings/settings.module.css";
 import a from "./admin.module.css";
 
@@ -144,7 +144,7 @@ export function ClaudeLogin({ machineId, onLoggedIn }: { machineId: string; onLo
     setError(undefined);
     setCode("");
     setLogin({ step: "starting" });
-    call("machine_claude_login", { machineId }).then(
+    call("machine_claude_login", { machineId }, { timeoutMs: MACHINE_WAIT_MS }).then(
       (out) => setLogin(out.loginUrl === undefined ? { step: "idle" } : { step: "url", url: out.loginUrl }),
       (e: unknown) => {
         setError(errorText(e));
@@ -156,7 +156,7 @@ export function ClaudeLogin({ machineId, onLoggedIn }: { machineId: string; onLo
     if (code.trim() === "") return;
     setError(undefined);
     setLogin({ step: "finishing", url });
-    call("machine_claude_login", { machineId, code: code.trim() }).then(
+    call("machine_claude_login", { machineId, code: code.trim() }, { timeoutMs: MACHINE_WAIT_MS }).then(
       (out) => {
         setCode("");
         setLogin({ step: "done", message: out.message });

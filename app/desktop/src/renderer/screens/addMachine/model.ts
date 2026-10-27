@@ -121,22 +121,30 @@ export const untilLine = (expiresAt: string): string =>
   `The code works once, until ${new Date(expiresAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.`;
 
 /**
- * Where the paste line stands: joined once its node is online and wasn't when the line was made (a repair of a machine
- * still online has nothing to wait for), expired once its code has, else waiting.
+ * Where the paste line stands. Joined once its node is online after being offline since the line was made: at once for
+ * a machine that was offline then, and for a repair of one still online, once the line has restarted its node.
+ * Expired once its code has, else waiting; `online` is a repair's wait while its machine is still up on its old
+ * enrollment.
  */
 export type LineState = "waiting" | "joined" | "expired" | "online";
 
-export const lineState = (line: { readonly expiresAt: string; readonly onlineAtStart: boolean }, online: boolean, now: number): LineState => {
-  if (online && !line.onlineAtStart) return "joined";
-  if (online) return "online";
-  return now >= Date.parse(line.expiresAt) ? "expired" : "waiting";
+export const lineState = (
+  line: { readonly expiresAt: string; readonly onlineAtStart: boolean },
+  online: boolean,
+  now: number,
+  /** Its node has been offline since the line was made. */
+  wentOffline: boolean,
+): LineState => {
+  if (online && (!line.onlineAtStart || wentOffline)) return "joined";
+  if (now >= Date.parse(line.expiresAt)) return "expired";
+  return online ? "online" : "waiting";
 };
 
 export const lineWords = (state: LineState, machineId: string): string =>
   state === "joined"
     ? `${machineId} joined.`
     : state === "online"
-      ? `${machineId} is online. Run the line on it to enroll it again.`
+      ? `${machineId} is online on its old enrollment. Run the line on it: it joins again once its node restarts.`
       : state === "expired"
         ? "The code expired before the line ran. Make a new one."
         : `Waiting for ${machineId}…`;
