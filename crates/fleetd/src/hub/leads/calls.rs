@@ -37,12 +37,11 @@ impl Area {
                 };
                 LeadCallResult::BriefCreate(self.workstreams.brief_create(r, &id, c.brief)?)
             }
-            LeadCall::Close(c) => LeadCallResult::Close(self.workstreams.close(
-                r,
-                &c.workstream_id,
-                c.why.as_str(),
-                by,
-            )?),
+            LeadCall::Close(c) => LeadCallResult::Close(
+                self.workstreams
+                    .close(r, &c.workstream_id, c.why.as_str(), by)
+                    .await?,
+            ),
             other => {
                 return Err(super::error::LeadError::bare(
                     fleetd_contracts::mcp::ErrorCode::Invalid,

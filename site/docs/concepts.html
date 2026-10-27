@@ -221,9 +221,11 @@ commit, and squash-merges it. Several ready PRs merge together in one CI run. Se
 <p>Every pull request merges on one clean review of its current commit plus green CI. A repo with no CI holds its PRs
 until it has some.</p>
 <div class="sl-heading-wrapper level-h3"><h3 id="done">Done</h3><a class="sl-anchor-link" href="#done"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Done”</span></a></div>
-<p>The lead closes work with <code dir="auto">close</code> and one line on why. The reason is recorded, and closing stops nothing: an agent
-still running keeps going until the lead stops it, and the status shows it. What counts as shipped is decided
-elsewhere: only the merge train merges, after green CI and review.</p>
+<p>The lead closes work with <code dir="auto">close</code> and one line on why. The reason is recorded, and the order’s agents still queued,
+running or waiting for an answer are stopped, so none goes on, or starts later, for work that is over. The merge
+train’s reviewers are left to the train. An agent whose machine is offline can’t be stopped yet: the lead hears which,
+and stops it later. What counts as shipped is decided elsewhere: only the merge train merges, after green CI and
+review.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="what-agents-can-call">What agents can call</h2><a class="sl-anchor-link" href="#what-agents-can-call"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “What agents can call”</span></a></div>
 <p>Leads and tasks act through fleetd’s MCP tools, never Claude’s own subagents. A lead starts agents with
 <code dir="auto">spawn_agent</code>; a task reports back with <code dir="auto">report</code> and <code dir="auto">ask_lead</code>.</p>

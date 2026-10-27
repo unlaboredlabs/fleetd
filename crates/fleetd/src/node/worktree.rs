@@ -494,6 +494,12 @@ pub fn pr_head(root: &Path, url: &str) -> Result<String, String> {
     ref_sha(root, &sha).ok_or_else(|| format!("{name} fetched without its commit {sha}"))
 }
 
+/// How [`remove`]'s refusals start: `kept <path>: <why>`. The hub's worktree sweep reads them as work kept, not as a
+/// removal that failed.
+pub const KEPT: &str = "kept ";
+pub const UNCOMMITTED: &str = "it has uncommitted changes";
+pub const UNPUSHED: &str = "not pushed";
+
 /// Removes the worktree, build output included, and deletes its branch only when `base_ref` already contains it, so
 /// unmerged work stays reachable. Refuses, keeping it, while it holds work that exists nowhere else: uncommitted
 /// changes (gitignored files don't count) or commits on neither a remote branch nor `base_ref`. Returns whether the
@@ -501,10 +507,7 @@ pub fn pr_head(root: &Path, url: &str) -> Result<String, String> {
 pub fn remove(root: &Path, path: &Path, branch: &str, base_ref: &str) -> Result<bool, GitError> {
     if worktree_branch(root, path)?.is_some() {
         if !git(path, &["status", "--porcelain"])?.trim().is_empty() {
-            return Err(GitError(format!(
-                "kept {}: it has uncommitted changes",
-                path.display()
-            )));
+            return Err(GitError(format!("{KEPT}{}: {UNCOMMITTED}", path.display())));
         }
         let unpushed = git(
             path,
@@ -519,7 +522,7 @@ pub fn remove(root: &Path, path: &Path, branch: &str, base_ref: &str) -> Result<
         )?;
         if unpushed.trim() != "0" {
             return Err(GitError(format!(
-                "kept {}: {} commit(s) not pushed",
+                "{KEPT}{}: {} commit(s) {UNPUSHED}",
                 path.display(),
                 unpushed.trim()
             )));

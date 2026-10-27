@@ -67,7 +67,7 @@ Open a project's settings in the desktop app: Settings → Projects, then pick t
 | Setting | Does |
 |---|---|
 | Name | How fleetd shows the project. Its folder keeps its own name. |
-| Keep finished worktrees | Off (the default): a reader's worktree goes when its task finishes, and a writer's once its pull request merges. On: they stay on the machine. |
+| Keep finished worktrees | Off (the default): a reader's worktree goes when its task finishes, and a writer's once its pull request merges; any left behind go in the [nightly cleanup](#cleanup). On: they stay on the machine. |
 | Environment variables | Variables every new agent of the project gets. See [Environment variables](#env). |
 | MCP servers | The project's own MCP servers for its agents, and the global ones it gets. See [MCP servers](/docs/mcp-servers). |
 | Setup commands | What runs in each new worktree before its agent starts. See [Setup commands](#setup). |
@@ -162,6 +162,23 @@ machine is offline or can't list them.
 
 What stays: the checkout itself, untouched, every branch (so every commit stays reachable), your own worktrees of the
 repo, and its pull requests on GitHub. Add the folder again any time; the toast after a delete has **Add it again**.
+
+### Nightly worktree cleanup {#cleanup}
+
+Some worktrees outlive their agent: a cancelled writer's, one whose pull request closed unmerged, a failed task's,
+and any whose removal failed. Every night around 04:00, and once about 10 minutes after the hub starts, the hub removes
+those of agents that finished more than 3 days ago. No model runs for it.
+
+- Only a worktree whose work is safe elsewhere goes: no uncommitted changes, and every commit on a remote branch or
+  already in the base. Its branch stays unless it merged, so every commit stays reachable.
+- A worktree holding work that exists only there is kept, and the project's chat says so once, with its path. Push or
+  delete that work, and the next night's cleanup removes it.
+- One its machine couldn't remove (offline, a git error) is tried again the next night. After a week of failed tries
+  the cleanup gives it up and says so once in the chat: delete it by hand if that machine is still in use.
+- A project with **Keep finished worktrees** on is left alone.
+
+The hour is 04:00 in the zone of the global decision `policy.tz`, else the hub machine's. To keep worktrees longer or
+shorter than 3 days, record a global decision `policy.worktree_days` with the number of days (`decisions_record`).
 
 ## Which branch fleetd works on {#branches}
 

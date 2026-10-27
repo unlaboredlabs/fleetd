@@ -948,7 +948,8 @@ impl Executors {
             | SessionCall::Answer { session_id, .. }
             | SessionCall::Follow { session_id }
             | SessionCall::ReadItem { session_id, .. }
-            | SessionCall::Changes { session_id } => Some(session_id.clone()),
+            | SessionCall::Changes { session_id }
+            | SessionCall::Stop { session_id, .. } => Some(session_id.clone()),
             _ => None,
         };
         let id = new_uuid();

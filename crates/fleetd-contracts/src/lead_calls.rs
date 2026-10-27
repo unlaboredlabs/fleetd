@@ -231,8 +231,8 @@ pub struct TaskCancelCall {
     pub reason: Option<Text<1, 200>>,
 }
 
-/// `close`: the lead says a workstream is done, and why. fleetd records it and stops nothing: what still runs keeps
-/// running until the lead stops it.
+/// `close`: the lead says a workstream is done, and why. fleetd records it and stops the workstream's agents still
+/// queued, running or waiting, except the merge train's reviewers.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CloseCall {

@@ -198,7 +198,12 @@ impl TaskPorts for HubTaskPorts {
     }
 
     fn remove_worktree<'a>(&'a self, thread: &'a ThreadRef) -> BoxFut<'a, Result<(), PortError>> {
-        Box::pin(async move { self.executors.stop(thread, true).await.map_err(port_error) })
+        Box::pin(async move {
+            match self.executors.stop(thread, true).await {
+                Err(ExecutorError::ThreadNotFound { .. }) => Ok(()),
+                other => other.map_err(port_error),
+            }
+        })
     }
 
     fn paused(&self, machine_id: &MachineId) -> Option<String> {
@@ -413,6 +418,17 @@ impl TaskPorts for HubTaskPorts {
         crate::hub::leads::digest::done_when_text(&brief.done_when, 2000)
     }
 
+    fn tell_person(&self, project_ref: &ProjectRef, text: &str) {
+        let Some(hub) = self.hub() else { return };
+        if let Err(error) = hub.chat.system_line(project_ref, text) {
+            tracing::warn!(%error, "a line for the person was not posted");
+        }
+    }
+
+    fn global_decision(&self, key: &str) -> Option<String> {
+        self.hub()?.decisions.global_value(key).ok().flatten()
+    }
+
     fn decisions_cited(&self, project_ref: &ProjectRef, text: &str) -> Vec<Decision> {
         let Some(hub) = self.hub() else {
             return Vec::new();
@@ -589,8 +605,9 @@ impl UsageGate for UsageFromArea {
     }
 }
 
-/// Digest lines, and listing and cancelling the tasks of removed projects.
-struct TasksForLeads(Arc<Tasks>);
+/// Digest lines, and listing and cancelling the tasks of removed projects and closed orders. The reviews area tells
+/// the train's reviewers apart.
+struct TasksForLeads(Arc<Tasks>, Arc<crate::hub::reviews::Reviews>);
 
 impl TasksHook for TasksForLeads {
     fn digest_lines(
@@ -616,6 +633,13 @@ impl TasksHook for TasksForLeads {
         );
         Box::pin(async move { tasks.cancel_for_removal(&r, &t, &reason).await })
     }
+    fn leftovers(&self, project_ref: &ProjectRef, workstream_id: &WorkstreamId) -> Vec<TaskId> {
+        self.0
+            .live_in(project_ref, workstream_id)
+            .into_iter()
+            .filter(|t| !self.1.is_reviewer(t.as_str()))
+            .collect()
+    }
 }
 
 /// Everything tasks and slots hook into once the `Hub` exists: the ports' leads half, the lead calls, the
@@ -628,9 +652,10 @@ pub fn wire(hub: &Arc<Hub>, ports: &HubTaskPorts) {
         .usage
         .set(Arc::new(UsageFromArea(Arc::clone(&hub.usage))));
     let lead_hooks = &hub.leads.ctx.hooks;
-    let _ = lead_hooks
-        .tasks
-        .set(Arc::new(TasksForLeads(Arc::clone(&hub.tasks))));
+    let _ = lead_hooks.tasks.set(Arc::new(TasksForLeads(
+        Arc::clone(&hub.tasks),
+        Arc::clone(&hub.reviews),
+    )));
     let tasks = Arc::clone(&hub.tasks);
     hub.sweep.register(crate::hub::sweep::SweepCheck {
         name: "unreachable-tasks".into(),

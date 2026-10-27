@@ -155,7 +155,8 @@ pub trait TaskPorts: Send + Sync {
     fn started_run(&self, thread: &ThreadRef) -> Option<String>;
     /// Executors.stop(ref): ends the thread's claude process; `Ok` only once the node saw it exit.
     fn stop<'a>(&'a self, thread: &'a ThreadRef) -> BoxFut<'a, Result<(), PortError>>;
-    /// Executors.stop(ref, removeWorktree): the node deletes the thread's worktree and the build output in it.
+    /// Executors.stop(ref, removeWorktree): the node deletes the thread's worktree and the build output in it. `Ok` too
+    /// when the node has no such session, so nothing of it to remove.
     fn remove_worktree<'a>(&'a self, thread: &'a ThreadRef) -> BoxFut<'a, Result<(), PortError>>;
     /// NodeLinkServer.paused: why the disk and load guard holds new agents on the machine.
     fn paused(&self, machine_id: &MachineId) -> Option<String>;
@@ -203,6 +204,12 @@ pub trait TaskPorts: Send + Sync {
     /// `leads::digest::done_when_text` of the brief's lines, at most 200 units each, for the task prompt's "Done
     /// when:".
     fn done_when_text(&self, brief: &Brief) -> String;
+    /// Chat.system_line: a line for the person in the project's chat. Plain ports drop it.
+    fn tell_person(&self, _project_ref: &ProjectRef, _text: &str) {}
+    /// Decisions.global_value: the active global decision on `key`. Plain ports know none.
+    fn global_decision(&self, _key: &str) -> Option<String> {
+        None
+    }
     /// Decisions.cited: the decisions `text` (a task's brief) names by id or key, for its first prompt. Plain ports
     /// know none.
     fn decisions_cited(&self, _project_ref: &ProjectRef, _text: &str) -> Vec<Decision> {

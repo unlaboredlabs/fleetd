@@ -23,7 +23,7 @@ pub trait UsageHook: Send + Sync {
     fn when_clear(&self, thread: &ThreadRef) -> BoxFuture<()>;
 }
 
-/// Tasks: digest lines, the agents line, and listing and cancelling the tasks of removed projects.
+/// Tasks: digest lines, the agents line, and listing and cancelling the tasks of removed projects and closed orders.
 pub trait TasksHook: Send + Sync {
     /// The digest's "Tasks" lines: `taskDigestLines(forDigest(ref, since, limit), since)`.
     fn digest_lines(
@@ -38,6 +38,9 @@ pub trait TasksHook: Send + Sync {
     fn live(&self, project_ref: Option<&ProjectRef>) -> Vec<(TaskId, ProjectRef)>;
     /// `Tasks.cancel({projectRef, by: "hub"}, taskId, reason)`, errors ignored.
     fn cancel(&self, project_ref: &ProjectRef, task_id: &TaskId, reason: &str) -> BoxFuture<()>;
+    /// The workstream's tasks still queued, running or idle, other than the reviewers the merge train spawned for its
+    /// PRs, which the train ends itself.
+    fn leftovers(&self, project_ref: &ProjectRef, workstream_id: &WorkstreamId) -> Vec<TaskId>;
 }
 
 /// The merge train.

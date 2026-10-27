@@ -194,6 +194,6 @@ Once answered, each folds to one line that opens back up on a click. See
 
 ## Done {#done}
 
-When the work is done, the lead closes it and tells you why in the chat. Closing stops nothing: an agent still
-working, or a pull request still on its way in, keeps going, and the status shows it. Ask the lead to stop what you
-don't want.
+When the work is done, the lead closes it and tells you why in the chat. Closing stops the order's agents still
+working or waiting. An order with a pull request still on its way in stays open until it merges. Ask the lead to stop
+what you don't want sooner.

@@ -813,10 +813,10 @@ async fn a_tasks_agent_is_a_worker_its_question_wakes_the_lead_and_it_cannot_spa
     );
 }
 
-/// `close` records the lead's why with `workstream.done` and stops nothing: the order's running task keeps running.
-/// Closing it again is refused, and a task's agent may not close.
+/// `close` records the lead's why with `workstream.done` and stops the order's agents; one whose machine is offline
+/// keeps running, and the answer names it. Closing it again is refused, and a task's agent may not close.
 #[tokio::test]
-async fn a_lead_closes_its_work_with_why_and_nothing_is_stopped() {
+async fn a_lead_closes_its_work_with_why_and_hears_which_agent_could_not_be_stopped() {
     use crate::hub::link::lead_calls::CallerAgent;
     use fleetd_contracts::lead_calls::{LeadCall, LeadCallResult};
     use fleetd_contracts::ledger::WorkstreamState;
@@ -866,8 +866,10 @@ async fn a_lead_closes_its_work_with_why_and_nothing_is_stopped() {
     assert_eq!(
         still.state,
         fleetd_contracts::tasks::TaskState::Running,
-        "close cancels nothing"
+        "its machine is offline"
     );
+    let next = closed.next.unwrap();
+    assert!(next.contains("T1 could not be stopped yet"), "{next}");
     assert_eq!(
         close().unwrap_err().code,
         fleetd_contracts::mcp::ErrorCode::Invalid,
