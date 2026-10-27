@@ -291,8 +291,8 @@ pub fn place(
             ),
         )
         .with_fix(
-            "end a session you no longer need, or try again later; a person can raise a machine's session cap in \
-             Settings > Machines",
+            "end a session you no longer need, or try again later; a hub admin can raise a machine's session cap in \
+             Administration › Hub settings",
         ));
     }
     if !able.is_empty() {
@@ -316,8 +316,8 @@ pub fn place(
         ),
     )
     .with_fix(
-        "do without it and say so in your result: a person can turn sessions on for a machine that can host it in \
-         Settings > Machines (fleetd machine set <id> --roles agents,sessions)",
+        "do without it and say so in your result: a hub admin can turn sessions on for a machine that can host it \
+         in Administration › Hub settings (fleetd machine set <id> --roles agents,sessions)",
     ))
 }
 
@@ -325,23 +325,24 @@ pub fn place(
 fn here_only(origin: &MachineId, host: SessionHost, own: Option<&Runner>) -> McpToolError {
     let noun = host.noun();
     let name = own.map_or(origin.as_str(), |r| r.name.as_str());
-    let settings =
-        format!("Settings > Machines (fleetd machine set {origin} --roles agents,sessions)");
+    let settings = format!(
+        "Administration › Hub settings (fleetd machine set {origin} --roles agents,sessions)"
+    );
     match own {
         Some(r) if !r.sessions => McpToolError::new(
             ErrorCode::Failed,
             format!("{name} hosts no sessions: its role is agents only, and a session runs on its agent's own machine."),
         )
         .with_fix(format!(
-            "do without it and say so in your result: a person can turn sessions on for {name} in {settings}"
+            "do without it and say so in your result: a hub admin can turn sessions on for {name} in {settings}"
         )),
         Some(r) if r.able(host, origin) => McpToolError::new(
             ErrorCode::Failed,
             format!("{name}'s session slots are full: {} of {}.", r.live, r.max),
         )
         .with_fix(format!(
-            "end a session you no longer need, or try again later; a person can raise {name}'s session cap in \
-             Settings > Machines"
+            "end a session you no longer need, or try again later; a hub admin can raise {name}'s session cap in \
+             Administration › Hub settings"
         )),
         _ => {
             let why = own
@@ -357,7 +358,7 @@ fn here_only(origin: &MachineId, host: SessionHost, own: Option<&Runner>) -> Mcp
     }
 }
 
-/// Every machine as placement and Settings > Machines see it.
+/// Every machine as placement and Administration's machine roles see it.
 pub fn runners(hub: &Hub) -> Result<Vec<(Runner, Roles, String)>, StoreError> {
     let machines = hub.store.machines_list()?;
     let now = now_ms(hub.clock.as_ref());

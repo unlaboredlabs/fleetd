@@ -1,5 +1,5 @@
-// The model and effort behind each task profile as Settings edits them (profiles_get, profiles_set): fleet-wide in
-// Settings → Agents, as a project's override in its settings. An unset field follows the next scope: a project's the
+// The model and effort behind each task profile as the app edits them (profiles_get, profiles_set): fleet-wide on
+// Administration's hub settings, as a project's override in its settings. An unset field follows the next scope: a project's the
 // fleet's, the fleet's the profile's own.
 import type { Effort, ProfileRun, ProfileSetting, ProfilesGetOutput, TaskProfile } from "../../../shared/contracts";
 

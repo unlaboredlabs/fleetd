@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// Settings → Machines: each machine's roles, session slots and what it can host, read from machine_roles; a role
+// Administration's machine roles: each machine's roles, session slots and what it can host, read from machine_roles; a role
 // change goes out as machine_roles_set and the hub's line about it shows under the row.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -9,7 +9,7 @@ import type { HubFrame } from "../../../shared/hub";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { UiProvider } from "../../ui";
-import { MachinesSettings } from "./Machines";
+import { MachineRoles } from "./MachineRoles";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 vi.hoisted(() => {
@@ -48,14 +48,12 @@ const machine = (id: string) => ({ machineId: id, name: id, nodeVersion: "1", st
 let host: HTMLDivElement;
 let root: Root;
 let calls: Array<{ tool: string; input: unknown }>;
-let admin: boolean;
 
 beforeEach(() => {
   host = document.createElement("div");
   document.body.appendChild(host);
   root = createRoot(host);
   calls = [];
-  admin = true;
 });
 afterEach(() => {
   act(() => root.unmount());
@@ -75,9 +73,7 @@ const render = async () => {
           ? { machines: [devbox, mac1] }
           : tool === "machine_roles_set"
             ? { machine: { ...devbox, roles: ["agents"] }, next: "devbox takes no new agents: those running finish their work, and its projects' agents wait." }
-            : tool === "hub_info"
-              ? { admin }
-              : {};
+            : {};
       return Promise.resolve({ ok: true, output });
     },
     subscribe: (l) => ((listener = l), () => undefined),
@@ -89,7 +85,7 @@ const render = async () => {
     root.render(
       <UiProvider>
         <DataProvider layer={createDataLayer(hub)}>
-          <MachinesSettings />
+          <MachineRoles />
         </DataProvider>
       </UiProvider>,
     );
@@ -117,7 +113,6 @@ it("shows each machine's roles, sessions and what it can host in plain words", a
   expect(hosts).toEqual(["Browser", "Desktop", "Android emulator", "iOS simulator"]);
   expect(pressed(row("mac1"))).toBe("Screens");
   expect(row("mac1")?.textContent).toContain("Xcode with 6 iOS simulators");
-  expect(host.textContent).not.toContain("needs an admin key");
 });
 
 it("sets a machine's roles with machine_roles_set and says what follows", async () => {
@@ -130,13 +125,4 @@ it("sets a machine's roles with machine_roles_set and says what follows", async 
   await settle();
   expect(calls.find((c) => c.tool === "machine_roles_set")?.input).toEqual({ machineId: "devbox", roles: ["agents"] });
   expect(row("devbox")?.textContent).toContain("devbox takes no new agents");
-});
-
-it("leaves the controls off for a key without admin", async () => {
-  admin = false;
-  await render();
-  expect(host.textContent).toContain("This key can't change it: that needs an admin key.");
-  const buttons = [...(row("devbox")?.querySelectorAll("button[aria-pressed]") ?? [])];
-  expect(buttons.length).toBe(3);
-  expect(buttons.every((b) => (b as HTMLButtonElement).disabled)).toBe(true);
 });

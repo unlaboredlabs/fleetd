@@ -211,6 +211,8 @@ const shared = (f: Fixture) => basics(f);
 function agents(from: Fixture): Fixture {
   const f = Fixture.from(from, "settings-agents", "A fleet cap of 16; one project under its max, one at it, one with no limit of its own");
   f.agentsFromSlots = true;
+  // An admin's key on a hub from before people: Administration shows, with the fleet and machine caps.
+  f.answer("hub_info", undefined, { version: "0.9.0", protocol: 1, busy: [], admin: true });
   const projects = isObject(f.snapshot) && Array.isArray(f.snapshot["projects"]) ? f.snapshot["projects"].filter(isObject) : [];
   const ref = (p: JsonObject): JsonObject => ({ machineId: asText(p["machineId"]), projectId: asText(p["projectId"]) });
   const rows: JsonObject[] = [];
@@ -257,6 +259,7 @@ function agents(from: Fixture): Fixture {
 function machines(from: Fixture): Fixture {
   const f = Fixture.from(from, "settings-machines", "devbox at its auto 22 under a fleet cap of 50, storefront set to 30 there; a second machine set to 40");
   f.agentsFromSlots = true;
+  f.answer("hub_info", undefined, { version: "0.9.0", protocol: 1, busy: [], admin: true });
   const projects = isObject(f.snapshot) && Array.isArray(f.snapshot["projects"]) ? f.snapshot["projects"].filter(isObject) : [];
   const [first] = projects;
   const home = first === undefined ? "devbox" : asText(first["machineId"]);

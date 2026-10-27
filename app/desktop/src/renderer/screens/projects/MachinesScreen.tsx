@@ -14,6 +14,7 @@ import { RemoveProjectDialog, type RemoveTarget } from "./RemoveProjectDialog";
 import { SetupChecks, useChecks, wantsLook } from "./SetupChecks";
 import { HubText } from "./HubText";
 import { toHash } from "../shell/routes";
+import { useAdministers } from "../admin/role";
 import { tilde } from "./source";
 import { openAddProject, openProject } from "./store";
 import s from "./projects.module.css";
@@ -40,6 +41,7 @@ export function MachinesScreen() {
   const [removing, setRemoving] = useState<RemoveTarget | null>(null);
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set());
   const checks = useChecks().data?.checks;
+  const admin = useAdministers();
   const toggle = (id: string) =>
     setOpen((was) => {
       const next = new Set(was);
@@ -80,6 +82,7 @@ export function MachinesScreen() {
               open={open.has(machine.machineId)}
               onToggle={() => toggle(machine.machineId)}
               onRemove={setRemoving}
+              admin={admin}
             />
           ))}
         </div>
@@ -103,6 +106,8 @@ function MachineRow(props: {
   open: boolean;
   onToggle: () => void;
   onRemove: (p: RemoveTarget) => void;
+  /** An owner or admin: the way to the machine's roles on Administration. */
+  admin: boolean;
 }) {
   const { machine: m, open } = props;
   const glance = machineGlance(m, props.live, props.now);
@@ -172,17 +177,20 @@ function MachineRow(props: {
               No projects here yet.
             </Text>
           )}
-          <button
-            type="button"
-            className={s.link}
-            onClick={() => {
-              window.location.hash = toHash({ id: "settings", tab: "machines" });
-            }}
-          >
-            <Text size="sm" tone="inherit">
-              Roles and screens…
-            </Text>
-          </button>
+          {/* Machine roles are hub-wide: the way to them is for owners and admins only. */}
+          {props.admin ? (
+            <button
+              type="button"
+              className={s.link}
+              onClick={() => {
+                window.location.hash = toHash({ id: "admin", section: "hub" });
+              }}
+            >
+              <Text size="sm" tone="inherit">
+                Roles and screens…
+              </Text>
+            </button>
+          ) : null}
         </div>
       ) : null}
     </section>

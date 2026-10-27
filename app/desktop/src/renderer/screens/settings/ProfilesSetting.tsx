@@ -1,6 +1,6 @@
-// The model and effort behind each task profile: fleet-wide in Settings → Agents (an admin's write), or a project's
-// override in its settings. Reads profiles_get, writes profiles_set one profile at a time. A model claude refused shows
-// as an alert under its profile: agents run on the profile's own until it is set again.
+// The model and effort behind each task profile: fleet-wide on Administration's hub settings (an admin's write), or
+// a project's override in its settings. Reads profiles_get, writes profiles_set one profile at a time. A model claude
+// refused shows as an alert under its profile: agents run on the profile's own until it is set again.
 import { useState } from "react";
 import type { ProfileSetting, ProfilesGetOutput, ProjectRef, TaskProfile } from "../../../shared/contracts";
 import { useToolQuery } from "../../src/data/react";
@@ -9,8 +9,8 @@ import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import { changed, draftOf, EFFORTS, follows, PROFILES, runLine, settingFrom, toSave, type ProfileDraft } from "./profilesModel";
 import s from "./settings.module.css";
 
-/** Both profiles at one scope: the fleet's without `projectRef`. `blocked` says why this key can't change it. */
-export function ProfilesSetting({ projectRef, blocked }: { projectRef?: ProjectRef; blocked?: string }) {
+/** Both profiles at one scope: the fleet's without `projectRef`. */
+export function ProfilesSetting({ projectRef }: { projectRef?: ProjectRef }) {
   const query = useToolQuery("profiles_get", projectRef === undefined ? {} : { projectRef });
   // A hub from before profile settings has no profiles_get: nothing to show but why.
   const got: Partial<ProfilesGetOutput> | undefined = query.data;
@@ -25,14 +25,14 @@ export function ProfilesSetting({ projectRef, blocked }: { projectRef?: ProjectR
   return (
     <div className={s.stack}>
       {PROFILES.map((p) => (
-        <ProfileRow key={p.profile} view={view} profile={p.profile} projectRef={projectRef} blocked={blocked} />
+        <ProfileRow key={p.profile} view={view} profile={p.profile} projectRef={projectRef} />
       ))}
     </div>
   );
 }
 
-function ProfileRow(props: { view: ProfilesGetOutput; profile: TaskProfile; projectRef: ProjectRef | undefined; blocked: string | undefined }) {
-  const { view, profile, projectRef, blocked } = props;
+function ProfileRow(props: { view: ProfilesGetOutput; profile: TaskProfile; projectRef: ProjectRef | undefined }) {
+  const { view, profile, projectRef } = props;
   const live = useLive();
   const hubCall = useHubCall();
   const refetch = useRefetch();
@@ -71,7 +71,7 @@ function ProfileRow(props: { view: ProfilesGetOutput; profile: TaskProfile; proj
       },
     );
   };
-  const off = !live || busy || blocked !== undefined;
+  const off = !live || busy;
   const followWord = project ? "the fleet's" : "the profile's own";
   return (
     <section className={s.stack} aria-label={`${label} profile`}>
@@ -102,11 +102,6 @@ function ProfileRow(props: { view: ProfilesGetOutput; profile: TaskProfile; proj
           {busy ? "Saving…" : `Save ${label.toLowerCase()}`}
         </Button>
       </div>
-      {blocked === undefined ? null : (
-        <Text size="xs" tone="quiet">
-          {blocked}
-        </Text>
-      )}
       {echo ? (
         <div role={echo.ok ? "status" : "alert"}>
           <Text size="xs" tone={echo.ok ? "quiet" : "danger"}>

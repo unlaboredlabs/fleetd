@@ -4,7 +4,7 @@
 // any update to make, and the hub (HubStatus). Holding ⌘ (Ctrl) shows jump numbers
 // on the first nine projects, which ⌘1..9 open. A project's right-click menu opens it or its settings, copies its
 // path, or removes it (RemoveProjectDialog asks first).
-import { Activity, Clock, Factory, Plus, Server, Settings } from "lucide-react";
+import { Activity, Clock, Factory, Plus, Server, Settings, ShieldCheck } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import type { HubState } from "../../../shared/hub";
 import { display, type ShortcutId } from "../../../shared/shortcuts";
@@ -46,6 +46,8 @@ export interface SidebarProps {
   readonly jumpHints: boolean;
   /** The hub reports metrics (or hasn't said yet): show the Factory. */
   readonly factory: boolean;
+  /** This app's person is an owner or admin: Administration's entry shows, and for nobody else. */
+  readonly admin: boolean;
   readonly go: (screen: Screen) => void;
 }
 
@@ -107,7 +109,7 @@ const trailing = (p: SidebarProject, jump: number | null, asOf: string | undefin
   );
 };
 
-export function Sidebar({ projects, machinesDown, screen, hub, jumpHints, factory, go }: SidebarProps) {
+export function Sidebar({ projects, machinesDown, screen, hub, jumpHints, factory, admin, go }: SidebarProps) {
   const asOf = useOfflineAsOf();
   const nav = (label: string, icon: ReactNode, target: Screen, current: boolean, trailing?: ReactNode) => (
     <SidebarItem label={label} icon={icon} current={current} trailing={trailing} onClick={() => go(target)} />
@@ -186,7 +188,16 @@ export function Sidebar({ projects, machinesDown, screen, hub, jumpHints, factor
           screen.id === "machines",
           machinesDown !== undefined && machinesDown > 0 ? <Text size="xs" tone="warning">{`${String(machinesDown)} down`}</Text> : undefined,
         )}
-        {/* Settings' Back returns focus here when this opened it. */}
+        {/* Administration's and Settings' Back return focus here when this opened them. */}
+        {admin ? (
+          <SidebarItem
+            label="Administration"
+            icon={<ShieldCheck />}
+            current={screen.id === "admin"}
+            data-opens="admin"
+            onClick={() => go({ id: "admin", section: "people" })}
+          />
+        ) : null}
         <SidebarItem
           label="Settings"
           icon={<Settings />}
