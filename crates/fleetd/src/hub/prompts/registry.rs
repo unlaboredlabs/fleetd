@@ -428,6 +428,25 @@ pub const ENTRIES: &[Entry] = &[
         &[]
     ),
     entry!(
+        "review.conflicts",
+        Start,
+        ReviewsAndChecks,
+        Task,
+        "Reviewer: a rebase's conflict resolution",
+        "instead of Reviewer when a rebase of an approved PR changed its own lines only where the base changed them too",
+        "prUrl!=the PR; headSha!=the head to review; reviewedSha!=the approved head; reviewedBase!=the approved head's base; base!=the new head's base; files!=the files whose hunks changed",
+        &[
+            (
+                "independent-review",
+                "does not read the PR description or comments",
+                r"do not read the PR description",
+                Prompt
+            ),
+            READ_ONLY,
+            VERDICT,
+        ]
+    ),
+    entry!(
         "pr.fix",
         Msg,
         Messages,

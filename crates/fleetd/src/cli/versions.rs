@@ -101,18 +101,18 @@ mod tests {
     #[test]
     fn a_mismatch_is_one_line_naming_who_runs_what() {
         let line = mismatch(
-            "0.0.0-nightly.202610221107+333368c",
+            "0.0.0-edge.202610221107+333368c",
             Some("0.0.0-nightly.202610211030+abc1234"),
             &nodes(&[
                 ("builder", "0.0.0-nightly.202610211030+abc1234"),
-                ("mac", "0.0.0-nightly.202610221107+333368c"),
+                ("mac", "0.0.0-edge.202610221107+333368c"),
             ]),
         )
         .unwrap();
         assert_eq!(
             line,
-            "Versions differ: Nightly · Oct 22, 11:07 UTC · 333368c (0.0.0-nightly.202610221107+333368c) \
-             on this CLI, node mac; Nightly · Oct 21, 10:30 UTC · abc1234 (0.0.0-nightly.202610211030+abc1234) \
+            "Versions differ: Edge · Oct 22, 11:07 UTC · 333368c (0.0.0-edge.202610221107+333368c) \
+             on this CLI, node mac; Edge · Oct 21, 10:30 UTC · abc1234 (0.0.0-nightly.202610211030+abc1234) \
              on the hub, node builder. Run `fleetd update` on each machine that's behind."
         );
         assert!(!line.contains('\n'));

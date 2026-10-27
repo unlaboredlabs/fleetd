@@ -22,12 +22,12 @@ afterEach(() => {
   host.remove();
 });
 
-const OLDER = "0.0.0-nightly.202610201030+0001111";
-const NEXT = "0.0.0-nightly.202610231030+def5678";
+const OLDER = "0.0.0-edge.202610201030+0001111";
+const NEXT = "0.0.0-edge.202610231030+def5678";
 const p = (over: Partial<UpdatePart>): UpdatePart => ({ part: "node", name: "builder", from: OLDER, state: "done", ...over });
 const run: UpdateRun = {
   id: "U1",
-  channel: "nightly",
+  channel: "edge",
   to: NEXT,
   startedAt: "2026-10-26T10:00:00.000Z",
   finishedAt: "2026-10-26T10:03:00.000Z",
@@ -83,7 +83,7 @@ describe("the updates sheet", () => {
 /** The devbox's story: the hub updated, mac too, and the devbox waits on a session that will never end. */
 const stuck: UpdateRun = {
   id: "U2",
-  channel: "nightly",
+  channel: "edge",
   to: NEXT,
   startedAt: "2026-10-26T11:00:00.000Z",
   parts: [

@@ -14,7 +14,7 @@ export function Line({ text }: { text: string }) {
   return <>{parts.map((part, i) => (i % 2 === 1 && i < parts.length - 1 ? <InlineCode key={i}>{part}</InlineCode> : <Labels key={i} text={part} />))}</>;
 }
 
-/** A nightly's label names its build commit: marked as version text, so only it is exempt from the hash rule. */
+/** An Edge build's label names its build commit: marked as version text, so only it is exempt from the hash rule. */
 function Labels({ text }: { text: string }) {
   return (
     <>

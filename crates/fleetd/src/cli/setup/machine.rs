@@ -143,14 +143,14 @@ pub trait Builds: Send + Sync {
     ) -> BoxFuture<'a, Result<Vec<u8>, String>>;
 }
 
-/// The real one: the release of `version` (`v<version>`, or for a nightly build the nightly release while it is still
-/// that build), or the directory FLEETD_BASE_URL names.
+/// The real one: the release of `version` (`v<version>`, or for an edge build the edge release while it is still that
+/// build), or the directory FLEETD_BASE_URL names.
 pub struct Releases;
 
 impl Releases {
     fn feed(version: &str) -> (crate::update::HttpFeed, bool) {
-        let (base, nightly) = release_of(version, std::env::var("FLEETD_BASE_URL").ok().as_deref());
-        (crate::update::HttpFeed::new(base), nightly)
+        let (base, edge) = release_of(version, std::env::var("FLEETD_BASE_URL").ok().as_deref());
+        (crate::update::HttpFeed::new(base), edge)
     }
 }
 
@@ -161,8 +161,8 @@ impl Builds for Releases {
         asset: &'a str,
     ) -> BoxFuture<'a, Result<String, String>> {
         Box::pin(async move {
-            let (feed, nightly) = Self::feed(version);
-            release_digest(&feed, nightly, version, asset).await
+            let (feed, edge) = Self::feed(version);
+            release_digest(&feed, edge, version, asset).await
         })
     }
 
@@ -172,20 +172,20 @@ impl Builds for Releases {
         asset: &'a str,
     ) -> BoxFuture<'a, Result<Vec<u8>, String>> {
         Box::pin(async move {
-            let (feed, nightly) = Self::feed(version);
-            release_build(&feed, nightly, version, asset).await
+            let (feed, edge) = Self::feed(version);
+            release_build(&feed, edge, version, asset).await
         })
     }
 }
 
-/// A nightly release holds `version` only until the next nightly: its release.json says which it is now.
+/// The edge release holds `version` only until the next edge build: its release.json says which it is now.
 async fn still_holds(
     feed: &dyn crate::update::Feed,
-    nightly: bool,
+    edge: bool,
     version: &str,
     asset: &str,
 ) -> Result<(), String> {
-    if !nightly {
+    if !edge {
         return Ok(());
     }
     let now = crate::update::release(feed)
@@ -196,7 +196,7 @@ async fn still_holds(
         return Ok(());
     }
     Err(format!(
-        "this hub runs fleetd {version}, and the nightly release is now {}, so it has no {asset} of this hub's build. Fix: update the hub (fleetd update)",
+        "this hub runs fleetd {version}, and the edge release is now {}, so it has no {asset} of this hub's build. Fix: update the hub (fleetd update)",
         now.as_deref().unwrap_or("another build")
     ))
 }
@@ -211,11 +211,11 @@ fn missing(asset: &str, version: &str, why: &str) -> String {
 /// What `feed`'s SHA256SUMS lists for `asset` of `version`.
 pub async fn release_digest(
     feed: &dyn crate::update::Feed,
-    nightly: bool,
+    edge: bool,
     version: &str,
     asset: &str,
 ) -> Result<String, String> {
-    still_holds(feed, nightly, version, asset).await?;
+    still_holds(feed, edge, version, asset).await?;
     let sums = crate::update::sums(feed)
         .await
         .map_err(|f| missing(asset, version, &f.message))?;
@@ -224,28 +224,28 @@ pub async fn release_digest(
         .ok_or_else(|| missing(asset, version, "its release has none"))
 }
 
-/// `asset` of `version` from `feed`, checked against its SHA256SUMS. A nightly release that moved on between this and
+/// `asset` of `version` from `feed`, checked against its SHA256SUMS. An edge release that moved on between this and
 /// [`release_digest`] hands over another build: `prepare` checks the bytes against the digest it planned with.
 pub async fn release_build(
     feed: &dyn crate::update::Feed,
-    nightly: bool,
+    edge: bool,
     version: &str,
     asset: &str,
 ) -> Result<Vec<u8>, String> {
-    still_holds(feed, nightly, version, asset).await?;
+    still_holds(feed, edge, version, asset).await?;
     crate::update::verified(feed, asset)
         .await
         .map_err(|f| missing(asset, version, &f.message))
 }
 
-/// Where fleetd `version`'s release assets are, and whether that is the rolling nightly release (which holds it only
+/// Where fleetd `version`'s release assets are, and whether that is the rolling edge release (which holds it only
 /// while its release.json still names it): `override_` (FLEETD_BASE_URL) when set, else its own `v<version>` release.
 pub fn release_of(version: &str, override_: Option<&str>) -> (String, bool) {
     let repo = crate::update::REPO;
     match override_.filter(|b| !b.is_empty()) {
         Some(base) => (base.to_owned(), false),
-        None if version.contains("-nightly.") => (
-            format!("https://github.com/{repo}/releases/download/nightly"),
+        None if crate::edge_stamp(version).is_some() => (
+            format!("https://github.com/{repo}/releases/download/edge"),
             true,
         ),
         None => (
@@ -1036,7 +1036,7 @@ pub async fn prepare(
                 .map_err(again)?;
             if format!("{:x}", Sha256::digest(&bytes)) != wanted {
                 return Err(again(format!(
-                    "the release's {asset} changed while it was being read (a new nightly?)"
+                    "the release's {asset} changed while it was being read (a new edge build?)"
                 )));
             }
             progress.done("");
@@ -1458,9 +1458,9 @@ mod tests {
             )
         );
         assert_eq!(
-            release_of("0.9.2-nightly.202610271107+333368c", Some("")),
+            release_of("0.9.2-edge.202610271107+333368c", Some("")),
             (
-                "https://github.com/unlaboredlabs/fleetd/releases/download/nightly".into(),
+                "https://github.com/unlaboredlabs/fleetd/releases/download/edge".into(),
                 true
             )
         );
@@ -1504,8 +1504,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_nightly_hub_takes_a_build_only_while_the_nightly_is_its_own() {
-        let mine = "0.9.2-nightly.202610271107+333368c";
+    async fn an_edge_hub_takes_a_build_only_while_the_edge_release_is_its_own() {
+        let mine = "0.9.2-edge.202610271107+333368c";
         let digest = release_digest(&feed(mine), true, mine, "fleetd-darwin-arm64")
             .await
             .unwrap();
@@ -1514,7 +1514,7 @@ mod tests {
             .unwrap();
         assert_eq!(crate::update::sha256_hex(&build), digest);
 
-        let moved = feed("0.9.2-nightly.202610281107+444444d");
+        let moved = feed("0.9.2-edge.202610281107+444444d");
         for why in [
             release_digest(&moved, true, mine, "fleetd-darwin-arm64")
                 .await
@@ -1524,7 +1524,7 @@ mod tests {
                 .unwrap_err(),
         ] {
             assert!(
-                why.contains("the nightly release is now 0.9.2-nightly.202610281107+444444d")
+                why.contains("the edge release is now 0.9.2-edge.202610281107+444444d")
                     && why.ends_with("Fix: update the hub (fleetd update)"),
                 "{why}"
             );

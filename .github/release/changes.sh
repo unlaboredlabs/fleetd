@@ -7,7 +7,7 @@
 #
 # The new entries run from the previous release's commit (its release.json) to <head>, in front of its changes.json,
 # de-duplicated. Without a previous commit, or one <head> doesn't descend from, it takes the last 50. Starting at the
-# last published commit means a cancelled nightly loses nothing. Needs the full history (fetch-depth: 0).
+# last published commit means a cancelled edge build loses nothing. Needs the full history (fetch-depth: 0).
 #
 #   changes.sh <dir with the previous release.json and changes.json, either may be missing> <head> > changes.json
 set -euo pipefail

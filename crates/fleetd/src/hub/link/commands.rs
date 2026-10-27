@@ -546,8 +546,8 @@ mod tests {
         let (tx, mut rx) = mpsc::unbounded_channel();
         let _link = commands.attach(&builder, tx);
         let update = NodeUpdate {
-            version: Text::unchecked("0.0.0-nightly.202610261056+1b563d7".to_owned()),
-            channel: fleetd_contracts::mcp::HubChannel::Nightly,
+            version: Text::unchecked("0.0.0-edge.202610261056+1b563d7".to_owned()),
+            channel: fleetd_contracts::mcp::HubChannel::Edge,
         };
         let asking = {
             let commands = commands.clone();

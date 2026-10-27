@@ -4,11 +4,11 @@ import type { HubError } from "../../../shared/hub";
 import type { AppUpdate, UpdatesState } from "../../../shared/updates";
 import { BEFORE_UPDATE, currentFlow, currentReady, loadRun, resetFlow, retryMachine, startOver, startUpdate, type FlowDeps } from "./flow";
 
-const NEXT = "0.0.0-nightly.202610261056+1b563d7";
+const NEXT = "0.0.0-edge.202610261056+1b563d7";
 
 const runOf = (hub: UpdatePart["state"], finished: boolean): UpdateRun => ({
   id: "U1",
-  channel: "nightly",
+  channel: "edge",
   to: NEXT,
   startedAt: "2026-10-26T10:00:00.000Z",
   ...(finished ? { finishedAt: "2026-10-26T10:03:00.000Z" } : {}),
@@ -31,7 +31,7 @@ const deps = (start: Answer, statuses: Answer[], app: AppUpdate | AppUpdate[]) =
   }) as unknown as Call;
   // `app`, or each in turn per sleep: this app's own check moving on while the run goes.
   const apps: AppUpdate[] = Array.isArray(app) ? [...app] : [app];
-  const state = (): UpdatesState => ({ current: "0.0.0-nightly.202610251000+aaaaaaa", app: apps[0] ?? { kind: "idle" }, release: null });
+  const state = (): UpdatesState => ({ current: "0.0.0-edge.202610251000+aaaaaaa", app: apps[0] ?? { kind: "idle" }, release: null });
   const d = {
     call,
     retry: vi.fn(),

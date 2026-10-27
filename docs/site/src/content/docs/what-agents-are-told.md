@@ -380,6 +380,7 @@ Generated from the registry in the binary this site was built with. `fleetd prom
 |---|---|---|
 | `review.reviewer` | once per PR patch, fresh, blocking findings only | does not read the PR description or comments (prompt only); changes no files (prompt only); ends with one review verdict (the \`report\` tool) |
 | `review.delta` | after Reviewer, when an earlier round reviewed another head of the PR |  |
+| `review.conflicts` | instead of Reviewer when a rebase of an approved PR changed its own lines only where the base changed them too | does not read the PR description or comments (prompt only); changes no files (prompt only); ends with one review verdict (the \`report\` tool) |
 
 ### Messages
 

@@ -92,7 +92,7 @@ yet.</p>
 <tr>
 <td>The computer the app runs on</td>
 <td><strong>This computer</strong></td>
-<td>One click. The app downloads the release of the fleetd version the hub runs, built for this computer, checks it against that release’s <code dir="auto">SHA256SUMS</code>, and joins the hub with a one-time code that never shows on screen. The node runs as a user service. A nightly hub asks to be updated first once the nightly release has moved past it. On the machine that runs the hub you’re connected to, the hub sets it up with its own fleetd instead. A computer that runs another hub, or whose node already belongs to a hub, is left as it is.</td>
+<td>One click. The app downloads the release of the fleetd version the hub runs, built for this computer, checks it against that release’s <code dir="auto">SHA256SUMS</code>, and joins the hub with a one-time code that never shows on screen. The node runs as a user service. An Edge hub asks to be updated first once the edge release has moved past it. On the machine that runs the hub you’re connected to, the hub sets it up with its own fleetd instead. A computer that runs another hub, or whose node already belongs to a hub, is left as it is.</td>
 </tr>
 <tr>
 <td>Reachable from the hub over SSH</td>
@@ -151,8 +151,8 @@ first. The app knows the hub’s own computer the same way, wherever the hub kee
 service, and waits until the machine is online. It prints each remote command before it runs it.</p>
 <p>A machine of another OS or CPU than the hub’s (a Mac added from a Linux hub, say) gets the same fleetd version
 built for it: the hub downloads that release’s build and checks it against the release’s <code dir="auto">SHA256SUMS</code> first. A
-machine that has that build already is left as it is. A hub on a nightly build can do this only while the nightly release is still its build; once it
-has moved on, the add stops and says to update the hub first.</p>
+machine that has that build already is left as it is. A hub on an Edge build can do this only while the edge release
+is still its build; once it has moved on, the add stops and says to update the hub first.</p>
 </li>
 </ol>
 <p>The host name can be anything in <code dir="auto">~/.ssh/config</code> or on your tailnet. You can also run <code dir="auto">fleetd init</code> again and pick the

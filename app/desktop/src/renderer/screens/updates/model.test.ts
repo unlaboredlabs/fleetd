@@ -4,9 +4,9 @@ import type { UpdatePart, UpdateRun } from "../../../shared/contracts";
 import type { Flow } from "./flow";
 import { updatesView, type HubInput, type MachineInput } from "./model";
 
-const MINE = "0.0.0-nightly.202610221030+abc1234";
-const NEXT = "0.0.0-nightly.202610231030+def5678";
-const OLDER = "0.0.0-nightly.202610201030+0001111";
+const MINE = "0.0.0-edge.202610221030+abc1234";
+const NEXT = "0.0.0-edge.202610231030+def5678";
+const OLDER = "0.0.0-edge.202610201030+0001111";
 
 const release: Release = {
   changes: [
@@ -33,7 +33,7 @@ describe("this app's update", () => {
     expect(v.line).toEqual({ tone: "accent", text: "Update available" });
     expect(v.app?.action).toEqual({ label: "Update and restart", run: "install", primary: true });
     expect(v.app?.notes).toEqual({ lines: ["Updates show in the app"], more: false });
-    expect(v.app?.title).toBe("fleetd Nightly · Oct 23, 10:30 UTC · def5678 is available");
+    expect(v.app?.title).toBe("fleetd Edge · Oct 23, 10:30 UTC · def5678 is available");
     // The label is for reading; the raw version is there to copy.
     expect(v.app?.raw).toBe(MINE);
   });
@@ -68,28 +68,40 @@ describe("the hub and its machines", () => {
 
   it("are up to date when they run this app's build and the channel's newest: no button, no line", () => {
     const v = updatesView({ app: { current: MINE, app: current, release }, hub: hubOf(), machines: [machine("builder", MINE)] });
-    expect(v.hub).toMatchObject({ name: "The hub", status: "Up to date: Nightly · Oct 22, 10:30 UTC · abc1234", tone: "quiet", raw: MINE });
-    expect(v.nodes).toEqual([{ key: "builder", name: "builder", status: "Up to date: Nightly · Oct 22, 10:30 UTC · abc1234", tone: "quiet", raw: MINE }]);
+    expect(v.hub).toMatchObject({ name: "The hub", status: "Up to date: Edge · Oct 22, 10:30 UTC · abc1234", tone: "quiet", raw: MINE });
+    expect(v.nodes).toEqual([{ key: "builder", name: "builder", status: "Up to date: Edge · Oct 22, 10:30 UTC · abc1234", tone: "quiet", raw: MINE }]);
     expect(v.update).toBeNull();
     expect(v.line).toBeNull();
   });
 
   it("offer the one Update button when the hub, a machine or this app has a newer build", () => {
     const hubBehind = view(current, { version: OLDER });
-    expect(hubBehind.hub).toMatchObject({ status: "Nightly · Oct 22, 10:30 UTC · abc1234 is available", tone: "accent" });
+    expect(hubBehind.hub).toMatchObject({ status: "Edge · Oct 22, 10:30 UTC · abc1234 is available", tone: "accent" });
     expect(hubBehind.hub?.notes.lines).toEqual(["Status loads faster", "The hub says its version"]);
     expect(hubBehind.update?.label).toBe("Update");
     expect(hubBehind.line).toEqual({ tone: "accent", text: "Update available" });
 
     const newer = updatesView({ app: { current: MINE, app: current, release: { ...release, cli: NEXT } }, hub: hubOf(), machines: [machine("builder", MINE), machine("mac", MINE, false)] });
-    expect(newer.hub?.status).toBe("Nightly · Oct 23, 10:30 UTC · def5678 is available");
-    expect(newer.nodes.map((n) => n.status)).toEqual(["Nightly · Oct 23, 10:30 UTC · def5678 is available", "Offline"]);
+    expect(newer.hub?.status).toBe("Edge · Oct 23, 10:30 UTC · def5678 is available");
+    expect(newer.nodes.map((n) => n.status)).toEqual(["Edge · Oct 23, 10:30 UTC · def5678 is available", "Offline"]);
     expect(newer.update?.note).toBe(
       "Updates the hub, then its 2 machines, then this app, which restarts. Nothing waits for work to finish: what's running carries on by itself.",
     );
 
     const appOnly = view({ kind: "available", version: NEXT, percent: null, restart: false });
     expect(appOnly.update?.label).toBe("Update");
+  });
+
+  it("offer a hub and machines on a nightly build, from before Edge had its name, the channel's newest Edge build", () => {
+    const LAST_NIGHTLY = "0.0.0-nightly.202610201030+0001111";
+    const v = updatesView({
+      app: { current: MINE, app: current, release: { ...release, cli: NEXT } },
+      hub: hubOf({ version: LAST_NIGHTLY }),
+      machines: [machine("builder", LAST_NIGHTLY)],
+    });
+    expect(v.hub).toMatchObject({ status: "Edge · Oct 23, 10:30 UTC · def5678 is available", tone: "accent" });
+    expect(v.nodes.map((n) => n.status)).toEqual(["Edge · Oct 23, 10:30 UTC · def5678 is available"]);
+    expect(v.update?.label).toBe("Update");
   });
 
   it("say their version is unknown, with no warning, when it is 0.0.0 or missing", () => {
@@ -123,7 +135,7 @@ describe("an update of everything", () => {
   const p = (over: Partial<UpdatePart>): UpdatePart => ({ part: "node", name: "builder", from: OLDER, state: "waiting", ...over });
   const runOf = (parts: UpdatePart[], finished = false): UpdateRun => ({
     id: "U1",
-    channel: "nightly",
+    channel: "edge",
     to: NEXT,
     startedAt: "2026-10-26T10:00:00.000Z",
     ...(finished ? { finishedAt: "2026-10-26T10:03:00.000Z" } : {}),
@@ -141,7 +153,7 @@ describe("an update of everything", () => {
     ]);
     const v = during(run, { phase: "following", reconnecting: true });
     expect(v.update).toBeNull();
-    expect(v.hub?.status).toBe("Restarting on Nightly · Oct 23, 10:30 UTC · def5678; the app reconnects by itself");
+    expect(v.hub?.status).toBe("Restarting on Edge · Oct 23, 10:30 UTC · def5678; the app reconnects by itself");
     expect(v.nodes.map((n) => n.status)).toEqual(["Waiting for the hub", "Waiting for the hub"]);
     expect(v.progress).toEqual({ tone: "quiet", text: "Updating the hub…" });
     expect(v.line).toEqual({ tone: "quiet", text: "Updating…" });
@@ -152,7 +164,7 @@ describe("an update of everything", () => {
       p({ machineId: "mac", name: "mac", state: "downloading" }),
     ]);
     const n = during(nodes, { phase: "following", reconnecting: false });
-    expect(n.hub?.status).toBe("Updated to Nightly · Oct 23, 10:30 UTC · def5678");
+    expect(n.hub?.status).toBe("Updated to Edge · Oct 23, 10:30 UTC · def5678");
     expect(n.progress?.text).toBe("Updating the machines: 1 of 2 done");
   });
 
@@ -178,9 +190,9 @@ describe("an update of everything", () => {
     );
     const v = during(run, { phase: "finished", updated: false });
     expect(v.nodes.map((n) => [n.name, n.status])).toEqual([
-      ["builder", "Updated to Nightly · Oct 23, 10:30 UTC · def5678"],
+      ["builder", "Updated to Edge · Oct 23, 10:30 UTC · def5678"],
       ["builder: Claude Code", "Claude Code 2.1.310 → 2.1.302: new sessions start on 2.1.302"],
-      ["mac", "Updated to Nightly · Oct 23, 10:30 UTC · def5678"],
+      ["mac", "Updated to Edge · Oct 23, 10:30 UTC · def5678"],
       ["mac: Claude Code", "Claude Code 2.1.310 → 2.1.302 failed: `claude install 2.1.302` failed (404), so 2.1.310 stays"],
     ]);
     expect(v.progress?.text).toBe("Update failed: mac's Claude Code. The rest updated; Retry tries it again.");
@@ -273,7 +285,7 @@ describe("an update of everything", () => {
       [p({ part: "hub", name: "the hub", state: "done" }), p({ machineId: "builder", name: "builder", state: "done" }), p({ machineId: "mac", name: "mac", state: "current" })],
       true,
     );
-    expect(during(all, { phase: "finished", updated: false }).progress).toEqual({ tone: "quiet", text: "Updated to Nightly · Oct 23, 10:30 UTC · def5678" });
+    expect(during(all, { phase: "finished", updated: false }).progress).toEqual({ tone: "quiet", text: "Updated to Edge · Oct 23, 10:30 UTC · def5678" });
     const left = runOf(
       [
         p({ part: "hub", name: "the hub", state: "done" }),
@@ -318,7 +330,7 @@ describe("the sheet's lines, the notice and the note", () => {
   const p = (over: Partial<UpdatePart>): UpdatePart => ({ part: "node", name: "builder", from: OLDER, state: "waiting", ...over });
   const runOf = (parts: UpdatePart[], finished = false): UpdateRun => ({
     id: "U1",
-    channel: "nightly",
+    channel: "edge",
     to: NEXT,
     startedAt: "2026-10-26T10:00:00.000Z",
     ...(finished ? { finishedAt: "2026-10-26T10:03:00.000Z" } : {}),
@@ -340,12 +352,12 @@ describe("the sheet's lines, the notice and the note", () => {
 
   it("names the build the hub has ready, with what's new in a few lines, and one notice for it", () => {
     const v = of({ ready: NEXT });
-    expect(v.update).toMatchObject({ title: "fleetd Nightly · Oct 23, 10:30 UTC · def5678 is ready", label: "Update" });
+    expect(v.update).toMatchObject({ title: "fleetd Edge · Oct 23, 10:30 UTC · def5678 is ready", label: "Update" });
     expect(v.update?.note).toMatch(/^Downloaded and checked already/u);
     // The hub's build is older than changes.json reaches, so there is more.
     expect(v.update?.notes).toEqual({ lines: ["Status loads faster", "The hub says its version"], more: true });
     // Without the build commit: the notice is also read aloud.
-    expect(v.notice).toEqual({ version: NEXT, title: "fleetd Nightly · Oct 23, 10:30 UTC is ready", notes: v.update?.notes });
+    expect(v.notice).toEqual({ version: NEXT, title: "fleetd Edge · Oct 23, 10:30 UTC is ready", notes: v.update?.notes });
     expect(says(v)).toEqual([
       ["The hub", "Update ready", "", ""],
       ["builder", "Update ready", "", ""],
@@ -356,7 +368,7 @@ describe("the sheet's lines, the notice and the note", () => {
 
   it("shows no notice for a build still to download, nor while an update runs", () => {
     expect(of({}).notice).toBeNull();
-    expect(of({}).update?.title).toBe("fleetd Nightly · Oct 23, 10:30 UTC · def5678 is available");
+    expect(of({}).update?.title).toBe("fleetd Edge · Oct 23, 10:30 UTC · def5678 is available");
     const going = runOf([p({ part: "hub", name: "the hub", state: "downloading" })]);
     expect(of({ ready: NEXT, run: going, flow: { phase: "following", reconnecting: false } }).notice).toBeNull();
     // This app's own download, once in, is ready too.
@@ -444,8 +456,8 @@ describe("the sheet's lines, the notice and the note", () => {
   it("leaves a small Updated to note in the sidebar once everything came through", () => {
     const run = runOf([p({ part: "hub", name: "the hub", state: "done" }), p({ machineId: "builder", name: "builder", state: "done" }), p({ machineId: "mac", name: "mac", state: "current" })], true);
     const v = updatesView({ app: { current: NEXT, app: { kind: "current" }, release }, hub: hubOf({ version: NEXT }), machines: [machine("builder", NEXT), machine("mac", NEXT)], run, now: at });
-    expect(v.progress).toEqual({ tone: "quiet", text: "Updated to Nightly · Oct 23, 10:30 UTC · def5678" });
-    expect(v.line).toEqual({ tone: "quiet", text: "Updated to Nightly · Oct 23, 10:30 UTC · def5678", done: true });
+    expect(v.progress).toEqual({ tone: "quiet", text: "Updated to Edge · Oct 23, 10:30 UTC · def5678" });
+    expect(v.line).toEqual({ tone: "quiet", text: "Updated to Edge · Oct 23, 10:30 UTC · def5678", done: true });
     expect(v.notice).toBeNull();
   });
 
@@ -458,7 +470,7 @@ describe("the sheet's lines, the notice and the note", () => {
   });
 
   it("offers Update and the notice for a newer build once ready, after a run that left a machine out", () => {
-    const NEWER = "0.0.0-nightly.202610241030+fff9999";
+    const NEWER = "0.0.0-edge.202610241030+fff9999";
     const run = runOf(
       [
         p({ part: "hub", name: "the hub", state: "done" }),
@@ -474,7 +486,7 @@ describe("the sheet's lines, the notice and the note", () => {
     expect(before.lines.find((l) => l.key === "mac")?.retry).toEqual({ kind: "machine", machineId: "mac" });
 
     const v = of({ run, flow, ready: NEWER });
-    expect(v.update?.title).toBe("fleetd Nightly · Oct 24, 10:30 UTC · fff9999 is ready");
+    expect(v.update?.title).toBe("fleetd Edge · Oct 24, 10:30 UTC · fff9999 is ready");
     expect(v.notice?.version).toBe(NEWER);
     expect(v.progress).toBeNull();
     expect(v.lines.some((l) => l.retry !== undefined)).toBe(false);
@@ -487,6 +499,6 @@ describe("the sheet's lines, the notice and the note", () => {
       flow,
       now: at,
     });
-    expect(channel.update?.title).toBe("fleetd Nightly · Oct 24, 10:30 UTC · fff9999 is available");
+    expect(channel.update?.title).toBe("fleetd Edge · Oct 24, 10:30 UTC · fff9999 is available");
   });
 });

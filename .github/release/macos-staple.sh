@@ -4,28 +4,35 @@
 # fleetd-desktop-macos-universal.zip, notarized as fleetd-desktop-notarize.zip; its latest-mac.yml is rewritten for
 # the new zip.
 #
-#   TAG=nightly [SUBMISSION=<id>] .github/release/macos-staple.sh
+#   TAG=edge [SUBMISSION=<id>] .github/release/macos-staple.sh
 #
 # It downloads the release's app zip and checks the submission's ticket covers that exact code (the cdhash of each
 # architecture), so it never staples a ticket onto a different build. Without SUBMISSION it takes the newest
 # accepted submission of the app whose ticket matches. Then it staples, requires Gatekeeper to say
 # "accepted, source=Notarized Developer ID", and replaces the zip and its SHA256SUMS line as publish.sh writes them.
-# Without SUBMISSION, "nothing to do yet" (no notary key, a nightly building, nothing accepted) exits 0. With it, the
-# submission must cover the app.
+# Without SUBMISSION, "nothing to do yet" (no notary key, an edge build running, nothing accepted) exits 0. With it,
+# the submission must cover the app.
+#
+# The `nightly` release is publish.sh's copy of edge for builds from before the rename (D203), and is never stapled on
+# its own: TAG=edge (TAG=nightly means it too) staples edge, then copies edge's app zip, its feed (with the copy's
+# nightly-named version) and edge's SHA256SUMS to nightly whenever nightly's line for the zip differs from edge's. So
+# both hold the same bytes under the same checksums, and a copy cut short is made on the next run.
 # Env: TAG, GH_TOKEN, NOTARY_KEY_ID, NOTARY_ISSUER, NOTARY_KEY_P8_BASE64, optional SUBMISSION.
 set -euo pipefail
 : "${TAG:?}"
+if [ "$TAG" = nightly ]; then TAG=edge; fi
 if [ -z "${NOTARY_KEY_ID:-}" ] || [ -z "${NOTARY_ISSUER:-}" ] || [ -z "${NOTARY_KEY_P8_BASE64:-}" ]; then
   echo "no notary key; nothing to staple"
   exit 0
 fi
 # A release build may be about to replace the asset: leave it to that build's own notarization.
 building() {
-  [ -n "$(gh run list --workflow nightly.yml --branch main --limit 5 --json status \
+  [ -n "$(gh run list --workflow edge.yml --branch main --limit 5 --json status \
     -q '[.[] | select(.status != "completed")] | .[0].status // empty')" ]
 }
-if [ "$TAG" = nightly ] && building; then
-  echo "a nightly is building; trying again later"
+rolling() { [ "$TAG" = edge ]; }
+if rolling && building; then
+  echo "an edge build is running; trying again later"
   exit 0
 fi
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -123,7 +130,7 @@ for s in sorted(json.load(sys.stdin)["history"], key=lambda s: s["createdDate"],
   local now
   gh release download "$TAG" -p SHA256SUMS -O "$work/now" --clobber
   now="$(awk -v n="$asset" '$2 == n { print $1 }' "$work/now")"
-  if [ "$now" != "$published" ] || { [ "$TAG" = nightly ] && building; }; then
+  if [ "$now" != "$published" ] || { rolling && building; }; then
     echo "the $TAG $asset changed while stapling; leaving the new one alone"
     return 0
   fi
@@ -133,7 +140,38 @@ for s in sorted(json.load(sys.stdin)["history"], key=lambda s: s["createdDate"],
   echo "stapled and replaced $asset on $TAG"
 }
 
+# mirror <asset> <feed>: nightly gets edge's <asset>, <feed> and SHA256SUMS when its line for <asset> differs.
+mirror() {
+  local asset="$1" feed="$2"
+  local work="$RUNNER_TEMP/mirror"
+  rm -rf "$work" && mkdir -p "$work/edge" "$work/nightly"
+  gh release download edge -p SHA256SUMS -D "$work/edge" 2>/dev/null || return 0
+  gh release download nightly -p SHA256SUMS -D "$work/nightly" 2>/dev/null || true
+  local want have
+  want="$(awk -v n="$asset" '$2 == n { print $1 }' "$work/edge/SHA256SUMS")"
+  have="$(awk -v n="$asset" '$2 == n { print $1 }' "$work/nightly/SHA256SUMS" 2>/dev/null || true)"
+  if [ -z "$want" ] || [ "$want" = "$have" ]; then
+    echo "nightly has edge's $asset"
+    return 0
+  fi
+  gh release download edge -p "$asset" -p "$feed" -D "$work/edge"
+  [ "$(shasum -a 256 "$work/edge/$asset" | cut -d' ' -f1)" = "$want" ] || {
+    echo "the edge $asset changed while copying; leaving it to the next run"
+    return 0
+  }
+  sed 's/^\(version: .*\)-edge\./\1-nightly./' "$work/edge/$feed" > "$work/nightly/$feed"
+  if building; then
+    echo "an edge build started while copying; leaving it to the next run"
+    return 0
+  fi
+  gh release upload nightly "$work/edge/$asset" --clobber
+  gh release upload nightly "$work/nightly/$feed" --clobber
+  gh release upload nightly "$work/edge/SHA256SUMS" --clobber
+  echo "copied edge's $asset to nightly"
+}
+
 staple fleetd-desktop-macos-universal.zip fleetd-desktop-notarize.zip latest-mac.yml
+if [ "$TAG" = edge ]; then mirror fleetd-desktop-macos-universal.zip latest-mac.yml; fi
 # An explicit id that doesn't fit the app is a mistake; the scheduled check just waits for Apple.
 if [ -n "${SUBMISSION:-}" ] && [ "$pending" = 1 ] && [ "$matched" = 0 ]; then
   die "submission $SUBMISSION doesn't cover the unstapled app on $TAG"

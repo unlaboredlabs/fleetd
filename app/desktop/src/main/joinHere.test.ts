@@ -50,16 +50,16 @@ function ports(over: { sums?: string; exit?: number; join?: CallOutcome; version
 }
 
 describe("joining this computer", () => {
-  it("downloads the hub's own nightly build, checks it, installs it and runs fleetd init --join", async () => {
+  it("downloads a nightly hub's own build from the edge release, checks it, installs it and runs fleetd init --join", async () => {
     const { p, dir, ran, fetched } = ports();
     const seen: JoinHere[] = [];
     const end = await joinHere(p, "laptop", (s) => seen.push(s));
     expect(end.state).toBe("done");
     expect(end.steps.every((s) => s.state === "done")).toBe(true);
     expect(fetched).toEqual([
-      "https://github.com/unlaboredlabs/fleetd/releases/download/nightly/release.json",
-      "https://github.com/unlaboredlabs/fleetd/releases/download/nightly/SHA256SUMS",
-      "https://github.com/unlaboredlabs/fleetd/releases/download/nightly/fleetd-linux-x64",
+      "https://github.com/unlaboredlabs/fleetd/releases/download/edge/release.json",
+      "https://github.com/unlaboredlabs/fleetd/releases/download/edge/SHA256SUMS",
+      "https://github.com/unlaboredlabs/fleetd/releases/download/edge/fleetd-linux-x64",
     ]);
     const bin = path.join(dir, "bin", "fleetd");
     expect(fs.readFileSync(bin)).toEqual(Buffer.from(BUILD));
@@ -94,12 +94,12 @@ describe("joining this computer", () => {
     ]);
   });
 
-  it("asks to update a nightly hub the nightly release has moved past, and installs nothing", async () => {
+  it("asks to update a nightly hub the edge release has moved past, and installs nothing", async () => {
     const { p, dir, fetched, ran } = ports({ nightlyIs: "0.9.0-nightly.20261027" });
     const end = await joinHere(p, "laptop", () => undefined);
     expect(end.state).toBe("failed");
-    expect(end.message).toContain("The hub runs 0.9.0-nightly.20261020, and the nightly release is now 0.9.0-nightly.20261027. Update the hub first");
-    expect(fetched).toEqual(["https://github.com/unlaboredlabs/fleetd/releases/download/nightly/release.json"]);
+    expect(end.message).toContain("The hub runs 0.9.0-nightly.20261020, and the edge release is now 0.9.0-nightly.20261027. Update the hub first");
+    expect(fetched).toEqual(["https://github.com/unlaboredlabs/fleetd/releases/download/edge/release.json"]);
     expect(fs.existsSync(path.join(dir, "bin", "fleetd"))).toBe(false);
     expect(ran).toEqual([]);
   });
