@@ -297,8 +297,9 @@ static TOOLS: &[Tool] = &[
         "A Navi's call: write to another project's lead in its chat, as this Navi, never as the person: \
          \"please add X\", or a question. Its lead reads it as input, never as the person's answer or approval, and \
          may open an order for it. Returns a handle (N<n>); a later wake says when an order opened for it opens, \
-         closes, merges or fails. project is a title or project id from factory_status. Open an order this way only \
-         when the person asked for it in this conversation.",
+         closes, merges or fails. project is a title or project id from factory_status. With hub (a linked hub's \
+         label, from factory_status's hubs), it goes to that project on the other hub, as the person via this Navi. \
+         Open an order this way only when the person asked for it in this conversation.",
         inline_schema::<ProjectMessageCall>,
     ),
     lead(
@@ -306,7 +307,8 @@ static TOOLS: &[Tool] = &[
         "factory_status",
         "A Navi's call: the other projects in one read, or the one named: each one's state (working, waiting on the \
          person, blocked, idle), a red main, running agents, open orders, its checklist not done, its last merge and \
-         merges over 7 days, and this Navi's asks to it with the orders opened for them. Read-only.",
+         merges over 7 days, and this Navi's asks to it with the orders opened for them, plus the hubs this Navi is \
+         linked to. With hub, the projects the link reaches on that hub instead. Read-only.",
         inline_schema::<FactoryStatusCall>,
     ),
     lead(

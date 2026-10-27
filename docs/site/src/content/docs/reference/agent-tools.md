@@ -68,7 +68,7 @@ Every lead gets these.
 | [`checklist`](#checklist) | Keep the project's checklist: the to-dos the human sees beside the chat, each todo, doing or done. | No |
 | [`skill_install`](#skill_install) | Install skills (SKILL.md workflows) from a skills.sh source (owner/repo, owner/repo@skill, a GitHub URL) for this project (scope project; global skills take an admin, so the human installs those); pinned to the commit fetched, and the human updates it from Settings > Skills. | No |
 | [`project_message`](#project_message) | A Navi's call: write to another project's lead in its chat, as this Navi, never as the person: "please add X", or a question. | No |
-| [`factory_status`](#factory_status) | A Navi's call: the other projects in one read, or the one named: each one's state (working, waiting on the person, blocked, idle), a red main, running agents, open orders, its checklist not done, its last merge and merges over 7 days, and this Navi's asks to it with the orders opened for them. | No |
+| [`factory_status`](#factory_status) | A Navi's call: the other projects in one read, or the one named: each one's state (working, waiting on the person, blocked, idle), a red main, running agents, open orders, its checklist not done, its last merge and merges over 7 days, and this Navi's asks to it with the orders opened for them, plus the hubs this Navi is linked to. | No |
 | [`usage_resume`](#usage_resume) | Lift the usage pause on your project's machine now and send every agent parked there "continue": only once you know its login has capacity again (the human says so, or a turn of yours just went through). | No |
 | [`change_enqueue`](#change_enqueue) | Put a PR no task's result put there on its repo's merge train; only the train merges. | No |
 | [`review_read`](#review_read) | Read every finding of the latest reviews of your PRs, blocking and non-blocking, in full, each with path:line. | No |
@@ -667,10 +667,11 @@ Install skills (SKILL.md workflows) from a skills.sh source (owner/repo, owner/r
 
 ### project_message
 
-A Navi's call: write to another project's lead in its chat, as this Navi, never as the person: "please add X", or a question. Its lead reads it as input, never as the person's answer or approval, and may open an order for it. Returns a handle (N&lt;n>); a later wake says when an order opened for it opens, closes, merges or fails. project is a title or project id from factory_status. Open an order this way only when the person asked for it in this conversation.
+A Navi's call: write to another project's lead in its chat, as this Navi, never as the person: "please add X", or a question. Its lead reads it as input, never as the person's answer or approval, and may open an order for it. Returns a handle (N&lt;n>); a later wake says when an order opened for it opens, closes, merges or fails. project is a title or project id from factory_status. With hub (a linked hub's label, from factory_status's hubs), it goes to that project on the other hub, as the person via this Navi. Open an order this way only when the person asked for it in this conversation.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
+| `hub` | string | no | A linked hub, by its label: the project is there. Absent: this hub. At most 40 characters. |
 | `project` | string | yes | The project: its title, as factory_status names it, or its project id. At most 200 characters. |
 | `text` | string | yes | At most 4000 characters. |
 
@@ -688,10 +689,11 @@ A Navi's call: write to another project's lead in its chat, as this Navi, never 
 
 ### factory_status
 
-A Navi's call: the other projects in one read, or the one named: each one's state (working, waiting on the person, blocked, idle), a red main, running agents, open orders, its checklist not done, its last merge and merges over 7 days, and this Navi's asks to it with the orders opened for them. Read-only.
+A Navi's call: the other projects in one read, or the one named: each one's state (working, waiting on the person, blocked, idle), a red main, running agents, open orders, its checklist not done, its last merge and merges over 7 days, and this Navi's asks to it with the orders opened for them, plus the hubs this Navi is linked to. With hub, the projects the link reaches on that hub instead. Read-only.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
+| `hub` | string | no | A linked hub, by its label: its projects this Navi reaches through the link. Absent: this hub. At most 40 characters. |
 | `project` | string | no | One project, by title or project id; absent, every project but this one. At most 200 characters. |
 
 **Who may call:** a Navi's lead, checked by the hub. **Needs a human:** no.
