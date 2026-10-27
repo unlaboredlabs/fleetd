@@ -555,3 +555,27 @@ fn the_lead_starts_a_preview_only_when_the_human_asks() {
         assert!(line.contains(words), "{words}");
     }
 }
+
+#[test]
+fn the_lead_nudges_only_for_a_showcase_something_to_try_or_a_risk() {
+    let lead = super::registry::entry("lead.start");
+    let rule = lead
+        .safety_rules()
+        .into_iter()
+        .find(|r| r.id == "nudge-sparingly")
+        .expect("lead.start has no nudge-sparingly rule");
+    assert!(super::render::rule_present(&rule.needle, lead.default));
+    let line = lead
+        .default
+        .lines()
+        .find(|l| l.contains("`nudge`"))
+        .expect("lead.start says when to nudge");
+    for words in [
+        "a showcase",
+        "something to try",
+        "a risk",
+        "Never for routine news",
+    ] {
+        assert!(line.contains(words), "{words}");
+    }
+}

@@ -1,7 +1,8 @@
 // What the lead is waiting on you for, in a few words, for the quiet line above the composer: an open approval or
 // secret first (the lead can't go on without it), loaded or not, else the questions of its newest message since you last wrote that
-// asks any; nothing when it asks nothing. Pure.
-import type { ChatOpenItem } from "../../../shared/contracts";
+// asks any; nothing when it asks nothing. Below all of that, what there is to look at: the messages the lead nudged
+// you about (a showcase, something to try, a risk) and agents' Try it suggestions, until seen. Pure.
+import type { ChatOpenItem, ChatOpenNudge } from "../../../shared/contracts";
 import type { ChatItem } from "../../src/data/chat";
 import { bubblesOf } from "./bubbles";
 import { plural, shortClock } from "./format";
@@ -76,4 +77,29 @@ export function waitingOn(items: readonly ChatItem[], { older, open: away = [] }
   }
   // A plain status line asks nothing; only a page not loaded can hold the wait, and only if you haven't written since.
   return older && since === 0 ? { what: "a reply", targets: [] } : undefined;
+}
+
+/** A message worth a look, still waiting: where Show goes, and what to look at there. */
+export interface LookAt extends WaitTarget {
+  readonly reason: string;
+}
+
+/** How long a nudge waits to be seen (contracts CHAT_NUDGE_MS); past it, it fades on its own. */
+export const NUDGE_MS = 24 * 60 * 60_000;
+
+/**
+ * What there is to look at, oldest first: the hub's waiting nudges, less those this app cleared since (seen or
+ * dismissed), those a loaded message says no longer wait, and those a day old. Show goes to a lead message's first
+ * bubble, and to a Try it line as it is.
+ */
+export function lookingAt(nudges: readonly ChatOpenNudge[] | undefined, items: readonly ChatItem[] | undefined, cleared: ReadonlySet<string>, nowMs: number): readonly LookAt[] {
+  if (nudges === undefined) return [];
+  const loaded = new Map((items ?? []).map((i) => [i.id, i]));
+  return nudges.flatMap((n) => {
+    const item = loaded.get(n.messageId);
+    const done = cleared.has(n.messageId) || item?.message?.nudge?.cleared !== undefined || nowMs - Date.parse(n.at) >= NUDGE_MS;
+    if (done) return [];
+    const part = item?.kind === "message" ? bubblesOf(item)[0]?.key : undefined;
+    return [{ id: n.messageId, part, reason: n.reason }];
+  });
 }

@@ -165,6 +165,8 @@ export const fixtures = [
   "tryit-ended",
   "tryit-read",
   "tryit-read-ready",
+  // W96: what there is to look at, a lead's nudge and a Try it suggestion, with nothing waiting (fixtures/look).
+  "look-two",
   "stream-reply",
   // UX [7]: no hub, and the last launch's disk cache on screen with a message queued; back online with that chat not
   // read again yet, and with that read failed (fixtures/offline).
@@ -491,6 +493,7 @@ export const screens: readonly Screen[] = [
   // UX [7]: offline, the chat and the project list from the disk cache, marked offline as of the cache's time, with
   // the banner's Retry now; then a message typed offline joins the one already queued, each with Edit and Dismiss.
   { id: "chat", route: CHAT, fixtures: ["offline-held"], variant: "offline" },
+  { id: "chat", route: CHAT, fixtures: ["look-two"], variant: "look" },
   {
     id: "chat.composer",
     route: CHAT,

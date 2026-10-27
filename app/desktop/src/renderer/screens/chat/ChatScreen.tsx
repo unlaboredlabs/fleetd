@@ -1,10 +1,10 @@
 // A project's lead chat, the app's main surface (lead-chat spec §1): the conversation with the project's lead,
 // fleet activity quietly inside it (PR and merge one-liners), the two inline items chat can't carry (a secret, a
 // gated command), and the composer, which has the cursor as soon as the chat opens, with the live strip docked to its
-// top. The top bar says what needs you after the title (what the lead waits on you for, a block, a red main), and is
-// just the title when nothing does; an empty chat asks what to do. It opens where you stopped reading, under a "New"
+// top. The top bar says what needs you after the title (what the lead waits on you for, a block, what there is to look
+// at, a red main), and is just the title when nothing does; an empty chat asks what to do. It opens where you stopped reading, under a "New"
 // divider.
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BubbleActionsContext, type BubbleActions, type ReplyTarget } from "./actions";
 import { Button, FrameTitle, IdChip, StatusChip, Text } from "../../ui";
 import { useData, useDataLayer } from "../../src/data/react";
@@ -12,9 +12,9 @@ import { selectNeedsYou } from "../../src/data/selectors";
 import { seenOf } from "../../src/data/seen";
 import { projectKey } from "../../src/data/store";
 import { Boundary } from "../../src/Boundary";
-import { LiveStrip } from "../live";
+import { LiveStrip, useNow } from "../live";
 import { AttentionLine } from "./Attention";
-import { waitingOn } from "./attentionModel";
+import { lookingAt, waitingOn } from "./attentionModel";
 import { leadTurnSince, leadTurnUntil } from "./activity";
 import { ChatList } from "./ChatList";
 import { useChatData } from "./data";
@@ -119,6 +119,46 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
     const at = Date.now();
     setShown((p) => ({ id: next.id, part: next.part, n: (p?.n ?? 0) + 1, at }));
   };
+  // What there is to look at: the hub's waiting nudges, less what this chat cleared since (until the hub says so too),
+  // and those a day old, read as the minute turns.
+  const nudges = useData((d) => d.chatStates[key]?.nudges);
+  const [cleared, setCleared] = useState<ReadonlySet<string>>(() => new Set());
+  // Asked of the hub once each: a message in view says it is seen on every observer step until it re-renders.
+  const asked = useRef(new Set<string>());
+  const minute = useNow(nudges !== undefined, 60_000);
+  const looks = useMemo(() => lookingAt(nudges, items, cleared, minute), [nudges, items, cleared, minute]);
+  const lookAt = useMemo(() => new Set(looks.map((l) => l.id)), [looks]);
+  const clear = useCallback(
+    (id: string, dismissed: boolean) => {
+      if (asked.current.has(id)) return;
+      asked.current.add(id);
+      setCleared((c) => new Set(c).add(id));
+      void layer.call("chat_nudge_clear", { projectRef: project, messageId: id, ...(dismissed ? { dismissed } : {}) }).then((out) => {
+        // Still waiting on the hub: it shows again.
+        if (out.ok) return;
+        asked.current.delete(id);
+        setCleared((c) => {
+          const left = new Set(c);
+          left.delete(id);
+          return left;
+        });
+      });
+    },
+    [layer, project],
+  );
+  const seen = useCallback((id: string) => clear(id, false), [clear]);
+  // Show goes to the oldest and marks it; going there is seeing it.
+  const showLook = () => {
+    const next = looks[0];
+    if (next === undefined) return;
+    const at = Date.now();
+    setShown((p) => ({ id: next.id, part: next.part, n: (p?.n ?? 0) + 1, at }));
+    clear(next.id, false);
+  };
+  const dismissLook = () => {
+    const next = looks[0];
+    if (next !== undefined) clear(next.id, true);
+  };
   const actions = useMemo(
     (): BubbleActions => ({
       project,
@@ -130,8 +170,10 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
       reply: setReplyTo,
       show: (id) => setShown((p) => ({ id, n: (p?.n ?? 0) + 1 })),
       shown: mark,
+      lookAt,
+      seen,
     }),
-    [project, waitedOn, onSent, layer, key, mark],
+    [project, waitedOn, onSent, layer, key, mark, lookAt, seen],
   );
 
   return (
@@ -153,6 +195,9 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
               which={showing >= 0 && targets !== undefined && targets.length > 1 ? `${String(showing + 1)} of ${String(targets.length)}` : undefined}
               resume={view?.held === true ? undefined : data.usagePausedOn}
               onShow={showNext}
+              looks={looks}
+              onLook={showLook}
+              onDismiss={dismissLook}
             />
           )
         }
