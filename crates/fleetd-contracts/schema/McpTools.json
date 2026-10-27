@@ -5588,6 +5588,11 @@
           "const": "people.changed",
           "description": "A person was invited, joined, renamed, given another role or removed, an invite was revoked, or a device signed\nout; `data` is `people::PeopleChangedData`. people_list reads the rest.",
           "type": "string"
+        },
+        {
+          "const": "machine_add.step",
+          "description": "A machine_add started, moved a step or ended; `data` is `machine_setup::MachineAddStepData`.\nmachine_add_status reads the rest.",
+          "type": "string"
         }
       ],
       "x-open": true
@@ -6558,10 +6563,374 @@
       ],
       "type": "object"
     },
+    "MachineAddInput": {
+      "properties": {
+        "host": {
+          "$ref": "#/$defs/SshHost"
+        },
+        "local": {
+          "type": "boolean"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        }
+      },
+      "type": "object"
+    },
+    "MachineAddOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "run": {
+          "$ref": "#/$defs/MachineAddRun"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "run"
+      ],
+      "type": "object"
+    },
+    "MachineAddPlanInput": {
+      "properties": {
+        "host": {
+          "$ref": "#/$defs/SshHost",
+          "description": "The machine to add, over SSH from the hub."
+        },
+        "local": {
+          "description": "The hub's own machine, without SSH.",
+          "type": "boolean"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId",
+          "description": "Defaults to the host's first label (the hub's host name for local)."
+        }
+      },
+      "type": "object"
+    },
+    "MachineAddPlanOutput": {
+      "properties": {
+        "host": {
+          "$ref": "#/$defs/SshHost"
+        },
+        "joined": {
+          "description": "Already a machine of this hub: adding it again repairs it.",
+          "type": "boolean"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "next": {
+          "type": "string"
+        },
+        "notes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "platform": {
+          "description": "The machine's OS and CPU as its read found them: \"linux-x64\", \"darwin-arm64\".",
+          "type": "string"
+        },
+        "steps": {
+          "description": "What machine_add would run there now, each planned; a machine already set up runs fewer.",
+          "items": {
+            "$ref": "#/$defs/SetupStep"
+          },
+          "type": "array"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "machineId",
+        "platform",
+        "steps",
+        "notes",
+        "joined"
+      ],
+      "type": "object"
+    },
+    "MachineAddRun": {
+      "description": "A machine_add, as far as it got.",
+      "properties": {
+        "finishedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "fix": {
+          "description": "Failed: what to do, then Retry.",
+          "type": "string"
+        },
+        "host": {
+          "description": "The SSH host; absent for the hub's own machine.",
+          "type": "string"
+        },
+        "loggedIn": {
+          "description": "Done: claude on the machine is logged in.",
+          "type": "boolean"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "message": {
+          "description": "Failed: what went wrong.",
+          "type": "string"
+        },
+        "notes": {
+          "description": "What to know or do by hand: linger, an untested claude, claude not logged in.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "runId": {
+          "$ref": "#/$defs/MachineAddRunId"
+        },
+        "startedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "state": {
+          "$ref": "#/$defs/MachineAddState"
+        },
+        "steps": {
+          "description": "Every step: first reading the machine, then the plan's (planned until they start), then the wait for the node.",
+          "items": {
+            "$ref": "#/$defs/SetupStep"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "runId",
+        "machineId",
+        "state",
+        "steps",
+        "notes",
+        "startedAt"
+      ],
+      "type": "object"
+    },
+    "MachineAddRunId": {
+      "pattern": "^M[0-9a-f]{32}$",
+      "type": "string"
+    },
+    "MachineAddState": {
+      "enum": [
+        "running",
+        "done",
+        "failed"
+      ],
+      "type": "string"
+    },
+    "MachineAddStatusInput": {
+      "properties": {
+        "runId": {
+          "$ref": "#/$defs/MachineAddRunId",
+          "description": "One run; absent: the recent runs, newest first."
+        }
+      },
+      "type": "object"
+    },
+    "MachineAddStatusOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "runs": {
+          "items": {
+            "$ref": "#/$defs/MachineAddRun"
+          },
+          "type": "array"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "runs"
+      ],
+      "type": "object"
+    },
+    "MachineHost": {
+      "description": "A host the hub can reach to add as a machine.",
+      "properties": {
+        "host": {
+          "$ref": "#/$defs/SshHost",
+          "description": "The SSH host; absent for the hub's own machine."
+        },
+        "joined": {
+          "description": "Already a machine of this hub (it may be offline).",
+          "type": "boolean"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId",
+          "description": "The machine id it gets."
+        },
+        "source": {
+          "$ref": "#/$defs/MachineHostSource",
+          "description": "Where the hub found it."
+        }
+      },
+      "required": [
+        "machineId",
+        "source",
+        "joined"
+      ],
+      "type": "object"
+    },
+    "MachineHostSource": {
+      "oneOf": [
+        {
+          "const": "hub",
+          "description": "The hub's own machine.",
+          "type": "string"
+        },
+        {
+          "const": "set_up",
+          "description": "Set up from this hub before (`machine add`).",
+          "type": "string"
+        },
+        {
+          "const": "ssh_config",
+          "description": "A `Host` in the hub user's ~/.ssh/config.",
+          "type": "string"
+        },
+        {
+          "const": "tailnet",
+          "description": "An online Linux or macOS peer on the hub's tailnet.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
+    "MachineHostsInput": {
+      "type": "object"
+    },
+    "MachineHostsOutput": {
+      "properties": {
+        "hosts": {
+          "items": {
+            "$ref": "#/$defs/MachineHost"
+          },
+          "type": "array"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "hosts"
+      ],
+      "type": "object"
+    },
     "MachineId": {
       "description": "Machine slug, [a-z0-9-]{1,32}",
       "pattern": "^[a-z0-9-]{1,32}$",
       "type": "string"
+    },
+    "MachineJoinInput": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        }
+      },
+      "required": [
+        "machineId"
+      ],
+      "type": "object"
+    },
+    "MachineJoinOutput": {
+      "properties": {
+        "code": {
+          "description": "Single use; it enrolls only this machine id.",
+          "type": "string"
+        },
+        "expiresAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "gitIdentity": {
+          "description": "`Name <email>`, the hub's commit identity for its nodes.",
+          "type": "string"
+        },
+        "hubUrl": {
+          "description": "Where the machine reaches the hub.",
+          "type": "string"
+        },
+        "line": {
+          "description": "The one line to run on the machine: it installs fleetd and joins.",
+          "type": "string"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "machineId",
+        "hubUrl",
+        "code",
+        "expiresAt",
+        "line"
+      ],
+      "type": "object"
+    },
+    "MachineRemoveInput": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "purge": {
+          "description": "Also delete the node's files and fleetd's claude.env on the machine.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "machineId"
+      ],
+      "type": "object"
+    },
+    "MachineRemoveOutput": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "next": {
+          "type": "string"
+        },
+        "revoked": {
+          "description": "The hub held its node key and revoked it.",
+          "type": "boolean"
+        },
+        "steps": {
+          "description": "What ran on the machine; none for one the hub didn't set up (joined by itself).",
+          "items": {
+            "$ref": "#/$defs/SetupStep"
+          },
+          "type": "array"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "machineId",
+        "steps",
+        "revoked"
+      ],
+      "type": "object"
     },
     "MachineRepos": {
       "description": "One machine's part of `project_discover`.",
@@ -7495,6 +7864,42 @@
         "lead_start.output": {
           "$ref": "#/$defs/LeadStartOutput"
         },
+        "machine_add.input": {
+          "$ref": "#/$defs/MachineAddInput"
+        },
+        "machine_add.output": {
+          "$ref": "#/$defs/MachineAddOutput"
+        },
+        "machine_add_plan.input": {
+          "$ref": "#/$defs/MachineAddPlanInput"
+        },
+        "machine_add_plan.output": {
+          "$ref": "#/$defs/MachineAddPlanOutput"
+        },
+        "machine_add_status.input": {
+          "$ref": "#/$defs/MachineAddStatusInput"
+        },
+        "machine_add_status.output": {
+          "$ref": "#/$defs/MachineAddStatusOutput"
+        },
+        "machine_hosts.input": {
+          "$ref": "#/$defs/MachineHostsInput"
+        },
+        "machine_hosts.output": {
+          "$ref": "#/$defs/MachineHostsOutput"
+        },
+        "machine_join.input": {
+          "$ref": "#/$defs/MachineJoinInput"
+        },
+        "machine_join.output": {
+          "$ref": "#/$defs/MachineJoinOutput"
+        },
+        "machine_remove.input": {
+          "$ref": "#/$defs/MachineRemoveInput"
+        },
+        "machine_remove.output": {
+          "$ref": "#/$defs/MachineRemoveOutput"
+        },
         "machine_roles.input": {
           "$ref": "#/$defs/MachineRolesInput"
         },
@@ -8023,6 +8428,18 @@
         "invite_revoke.output",
         "lead_start.input",
         "lead_start.output",
+        "machine_add.input",
+        "machine_add.output",
+        "machine_add_plan.input",
+        "machine_add_plan.output",
+        "machine_add_status.input",
+        "machine_add_status.output",
+        "machine_hosts.input",
+        "machine_hosts.output",
+        "machine_join.input",
+        "machine_join.output",
+        "machine_remove.input",
+        "machine_remove.output",
         "machine_roles.input",
         "machine_roles.output",
         "machine_roles_set.input",
@@ -13878,6 +14295,52 @@
     "SetupInput": {
       "type": "string"
     },
+    "SetupStep": {
+      "description": "One step of adding or removing a machine.",
+      "properties": {
+        "command": {
+          "description": "The command as you would run it yourself (over ssh for another machine); absent for the hub's own wait.",
+          "type": "string"
+        },
+        "output": {
+          "description": "The last lines it printed: a short answer when done, its output and the fix when failed.",
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/SetupStepState"
+        },
+        "stdin": {
+          "description": "What goes to the command's stdin, described: \"the fleetd binary (31 MB)\", never the one-time token.",
+          "type": "string"
+        },
+        "title": {
+          "description": "\"install fleetd 0.4.0\", \"wait until builder-1 is online\".",
+          "type": "string"
+        }
+      },
+      "required": [
+        "title",
+        "state"
+      ],
+      "type": "object"
+    },
+    "SetupStepState": {
+      "oneOf": [
+        {
+          "enum": [
+            "running",
+            "done",
+            "failed"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "planned",
+          "description": "Not started yet.",
+          "type": "string"
+        }
+      ]
+    },
     "SkillDeleteInput": {
       "properties": {
         "name": {
@@ -14886,6 +15349,9 @@
         "since"
       ],
       "type": "object"
+    },
+    "SshHost": {
+      "type": "string"
     },
     "StaleMark": {
       "description": "Why a part is not live: its source went quiet past its cadence.",
