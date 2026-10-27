@@ -142,6 +142,9 @@ pub const CI_QUEUE_CEILING: Duration = Duration::from_secs(2 * 60 * 60);
 pub(super) const CI_TIMED_OUT: &str = "CI timed out";
 /// What becomes of a Change whose CI timed out; it needs nothing from its author.
 pub(super) const CI_WATCHED: &str = "the train keeps watching its checks: once they finish green it goes back in the queue, with no push needed";
+/// Why a Change whose CI was cancelled by a push to its PR is back in line: the train takes the new head next.
+pub(super) const CI_SUPERSEDED: &str =
+    "a push to the PR cancelled its CI; the train takes the new head";
 /// The lead's line when a timed-out Change's CI finished green after all.
 pub(super) const CI_FINISHED_LATE: &str = "CI finished after the timeout; back in the queue";
 
@@ -383,6 +386,14 @@ pub(super) enum CiOutcome {
     Green,
     Red(Vec<CheckRun>),
     Timeout(Stall),
+    /// Its checks were cancelled and the PR's head has moved on: a push superseded the run (D191).
+    Moved,
+}
+
+/// Every check in `red` was cancelled: no failure, but a run superseded or stopped (D191).
+pub(super) fn all_cancelled(red: &[CheckRun]) -> bool {
+    red.iter()
+        .all(|r| r.conclusion.as_deref() == Some("cancelled"))
 }
 
 /// How CI on a head ran out of time.
@@ -1155,6 +1166,17 @@ impl Train {
                 judged => judged,
             };
             match judged {
+                // A cancelled check is never a failure: the new head goes through instead, or the run is re-run, or
+                // the train waits for it until the timeout (D191).
+                Checks::Red(red) if all_cancelled(&red) => {
+                    if self.superseded(change, repo, sha).await {
+                        return CiOutcome::Moved;
+                    }
+                    if let Some(true) = self.rerun_cancelled(change, repo, &red, &mut reruns).await
+                    {
+                        start = self.now_ms();
+                    }
+                }
                 Checks::Red(red) => {
                     self.check_spans(change, sha, &runs);
                     return CiOutcome::Red(red);
@@ -1222,17 +1244,16 @@ impl Train {
                                 self.check_spans(change, sha, &runs);
                                 return CiOutcome::Green;
                             }
-                            match self
+                            if self.superseded(change, repo, sha).await {
+                                return CiOutcome::Moved;
+                            }
+                            // Re-runs spent, it waits for the timeout: cancelled is no failure (D191).
+                            if let Some(true) = self
                                 .rerun_cancelled(change, repo, &cancelled, &mut reruns)
                                 .await
                             {
-                                None => {
-                                    self.check_spans(change, sha, &runs);
-                                    return CiOutcome::Red(cancelled);
-                                }
                                 // The re-run's time is its own.
-                                Some(true) => start = self.now_ms(),
-                                Some(false) => {}
+                                start = self.now_ms();
                             }
                         }
                         Checks::None | Checks::Pending => {}
@@ -1301,6 +1322,20 @@ impl Train {
     /// Re-runs the jobs of each workflow run in which a required check reads cancelled, unless the train already
     /// re-ran it and GitHub doesn't show the re-run yet: whether it re-ran any. None when one can't be re-run: it isn't
     /// a workflow run's, it was re-run `CANCELLED_RERUNS` times and is cancelled again, or GitHub refused.
+    /// Whether the PR of a Change in CI alone at `sha` has moved to another head. Never for a batch's head.
+    async fn superseded(&self, change: &Change, repo: &str, sha: &str) -> bool {
+        if change.head_sha.as_str() != sha {
+            return false;
+        }
+        match self.github.pull(repo, change.pr_number.get()).await {
+            Ok(pull) => pull.head.sha.to_lowercase() != sha,
+            Err(e) => {
+                tracing::warn!(change_id = %change.change_id, error = %e.message, "train: PR not read");
+                false
+            }
+        }
+    }
+
     async fn rerun_cancelled(
         &self,
         change: &Change,
@@ -1785,6 +1820,10 @@ impl Train {
                 self.ci_failed(in_ci, &[], Some(stall)).await;
                 return Ok(());
             }
+            CiOutcome::Moved => {
+                self.put_back(in_ci, CI_SUPERSEDED);
+                return Ok(());
+            }
         };
         // CI passed: the merge also waits for a re-review still at work.
         let current = self.records.get(&change.change_id);
@@ -1880,6 +1919,10 @@ impl Train {
                 }
                 CiOutcome::Timeout(stall) => {
                     self.ci_failed(&in_ci, &[], Some(stall)).await;
+                    return Ok(());
+                }
+                CiOutcome::Moved => {
+                    self.put_back(&in_ci, CI_SUPERSEDED);
                     return Ok(());
                 }
             }
@@ -2132,8 +2175,8 @@ impl Train {
                     self.wake_lead(&change.project_ref, line).await;
                 }
             }
-            Checks::Red(red) => self.ci_failed(change, &red, None).await,
-            Checks::None | Checks::Pending => {}
+            Checks::Red(red) if !all_cancelled(&red) => self.ci_failed(change, &red, None).await,
+            Checks::Red(_) | Checks::None | Checks::Pending => {}
         }
     }
 
