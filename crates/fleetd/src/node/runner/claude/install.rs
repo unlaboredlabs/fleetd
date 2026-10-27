@@ -20,6 +20,9 @@ pub const AUTOUPDATER_OFF: (&str, &str) = ("DISABLE_AUTOUPDATER", "1");
 
 /// How the node's answer begins when Claude Code already ran the version.
 pub const ALREADY: &str = "already runs Claude Code";
+/// How the node's answer begins when its Claude Code isn't fleetd's to move (installed another way, or not at all):
+/// the update leaves it as it is, and says how to update it.
+pub const LEFT: &str = "Claude Code is";
 
 /// The longest `claude install` gets: it downloads about 200 MB.
 const INSTALL_WAIT: Duration = Duration::from_secs(600);
@@ -28,10 +31,22 @@ const INSTALL_WAIT: Duration = Duration::from_secs(600);
 pub trait Claude: Sync {
     /// `claude --version`, None when it doesn't run.
     fn version(&self) -> BoxFuture<'_, Option<String>>;
-    /// The native installer's: the launcher points into its `versions` directory.
-    fn native(&self) -> bool;
+    /// Who installed it, from where the launcher resolves to.
+    fn installed_by(&self) -> InstalledBy;
     /// `claude install <version>`; the error is its own last words.
     fn install<'a>(&'a self, version: &'a str) -> BoxFuture<'a, Result<(), String>>;
+}
+
+/// Who installed Claude Code on the machine.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InstalledBy {
+    /// The native installer (`~/.local/bin/claude` into `~/.local/share/claude/versions/`): fleetd moves it.
+    Native,
+    Homebrew,
+    Npm,
+    /// apt, dnf, apk or another system package.
+    Package,
+    Other,
 }
 
 /// How it went.
@@ -41,6 +56,8 @@ pub enum Installed {
     Current(String),
     /// It ran `from`; new sessions start on `to`.
     Done { from: String, to: String },
+    /// Not fleetd's to move: installed another way, or not installed. Starts with [`LEFT`], and says how to update it.
+    Left(String),
 }
 
 /// The leading version number of `claude --version` output ("2.1.302 (Claude Code)" is "2.1.302").
@@ -52,8 +69,8 @@ pub fn number(output: &str) -> &str {
 pub async fn bring_to(claude: &dyn Claude, target: &str) -> Result<Installed, Failure> {
     let failed = |message: String| Failure::new(UpdateStage::Install, message);
     let Some(found) = claude.version().await else {
-        return Err(failed(format!(
-            "Claude Code doesn't run here: install {target} with `{}`",
+        return Ok(Installed::Left(format!(
+            "{LEFT} not installed here: install {target} with `{}`",
             install_command(target)
         )));
     };
@@ -61,11 +78,25 @@ pub async fn bring_to(claude: &dyn Claude, target: &str) -> Result<Installed, Fa
     if from == target {
         return Ok(Installed::Current(from));
     }
-    if !claude.native() {
-        return Err(failed(format!(
-            "Claude Code {from} here isn't the native install, so fleetd leaves it as it is: install {target} the way \
-             it was installed"
-        )));
+    let how = match claude.installed_by() {
+        InstalledBy::Native => None,
+        InstalledBy::Homebrew => {
+            Some("managed by Homebrew: run `brew upgrade claude-code` to update it".to_owned())
+        }
+        InstalledBy::Npm => Some(format!(
+            "installed with npm: run `npm install -g @anthropic-ai/claude-code@{target}` to update it"
+        )),
+        InstalledBy::Package => Some(
+            "installed by the system's package manager: upgrade `claude-code` with it to update it"
+                .to_owned(),
+        ),
+        InstalledBy::Other => Some(format!(
+            "installed another way: install {target} the same way, or with `{}`",
+            install_command(target)
+        )),
+    };
+    if let Some(how) = how {
+        return Ok(Installed::Left(format!("{LEFT} {how} (it runs {from})")));
     }
     if let Err(e) = claude.install(target).await {
         return Err(failed(format!(
@@ -121,8 +152,9 @@ impl Claude for Real {
         })
     }
 
-    fn native(&self) -> bool {
-        native_launcher(&self.binary)
+    fn installed_by(&self) -> InstalledBy {
+        std::fs::canonicalize(&self.binary)
+            .map_or(InstalledBy::Other, |target| installed_by(&target))
     }
 
     fn install<'a>(&'a self, version: &'a str) -> BoxFuture<'a, Result<(), String>> {
@@ -153,14 +185,29 @@ impl Claude for Real {
     }
 }
 
-/// The launcher resolves into the native installer's `…/claude/versions/<version>`.
-pub fn native_launcher(launcher: &Path) -> bool {
-    let Ok(target) = std::fs::canonicalize(launcher) else {
-        return false;
-    };
+/// Who installed the binary at `target`, the launcher's resolved path: the native installer keeps versions in
+/// `…/claude/versions/<version>`, Homebrew in its Cellar or Caskroom, npm in `node_modules/@anthropic-ai/`, and a system
+/// package under `/usr`.
+pub fn installed_by(target: &Path) -> InstalledBy {
     let mut up = target.ancestors().skip(1);
-    up.next().and_then(Path::file_name) == Some("versions".as_ref())
+    if up.next().and_then(Path::file_name) == Some("versions".as_ref())
         && up.next().and_then(Path::file_name) == Some("claude".as_ref())
+    {
+        return InstalledBy::Native;
+    }
+    let path = target.to_string_lossy();
+    if ["/Cellar/", "/Caskroom/", "/homebrew/", "/linuxbrew/"]
+        .iter()
+        .any(|d| path.contains(d))
+    {
+        InstalledBy::Homebrew
+    } else if path.contains("/node_modules/@anthropic-ai/") {
+        InstalledBy::Npm
+    } else if path.starts_with("/usr/") || path.starts_with("/opt/claude") {
+        InstalledBy::Package
+    } else {
+        InstalledBy::Other
+    }
 }
 
 /// Claude Code's own background update is off in its user settings (`settings.json` `env`).
@@ -179,6 +226,9 @@ pub fn turn_autoupdater_off(settings: &Path) -> Result<bool, String> {
     if autoupdater_off(settings) {
         return Ok(false);
     }
+    // A settings.json linked from dotfiles stays a link: the file it points at is the one rewritten.
+    let resolved = std::fs::canonicalize(settings).ok();
+    let settings = resolved.as_deref().unwrap_or(settings);
     let mut root = match std::fs::read_to_string(settings) {
         Ok(text) => serde_json::from_str::<Value>(&text)
             .map_err(|e| format!("{} isn't valid JSON ({e})", settings.display()))?,
@@ -234,19 +284,19 @@ mod tests {
     /// A claude that runs `versions[0]`, and after an install, what the install leaves.
     struct Fake {
         version: Mutex<Option<String>>,
-        native: bool,
+        by: InstalledBy,
         install: Result<Option<&'static str>, &'static str>,
         installs: Mutex<Vec<String>>,
     }
 
     fn fake(
         version: &str,
-        native: bool,
+        by: InstalledBy,
         install: Result<Option<&'static str>, &'static str>,
     ) -> Fake {
         Fake {
             version: Mutex::new(Some(format!("{version} (Claude Code)"))),
-            native,
+            by,
             install,
             installs: Mutex::default(),
         }
@@ -257,8 +307,8 @@ mod tests {
             let v = self.version.lock().unwrap().clone();
             Box::pin(async move { v })
         }
-        fn native(&self) -> bool {
-            self.native
+        fn installed_by(&self) -> InstalledBy {
+            self.by
         }
         fn install<'a>(&'a self, version: &'a str) -> BoxFuture<'a, Result<(), String>> {
             self.installs.lock().unwrap().push(version.to_owned());
@@ -276,7 +326,7 @@ mod tests {
 
     #[tokio::test]
     async fn brings_claude_to_the_tested_version() {
-        let claude = fake("2.1.310", true, Ok(Some("2.1.302")));
+        let claude = fake("2.1.310", InstalledBy::Native, Ok(Some("2.1.302")));
         assert_eq!(
             bring_to(&claude, "2.1.302").await,
             Ok(Installed::Done {
@@ -286,7 +336,7 @@ mod tests {
         );
         assert_eq!(*claude.installs.lock().unwrap(), ["2.1.302"]);
 
-        let current = fake("2.1.302", true, Err("never asked"));
+        let current = fake("2.1.302", InstalledBy::Native, Err("never asked"));
         assert_eq!(
             bring_to(&current, "2.1.302").await,
             Ok(Installed::Current("2.1.302".into()))
@@ -297,7 +347,11 @@ mod tests {
     /// A failed install keeps the version there was, and says why in a line.
     #[tokio::test]
     async fn a_failed_install_keeps_the_version_and_says_why() {
-        let claude = fake("2.1.310", true, Err("Could not download 2.1.302: 404"));
+        let claude = fake(
+            "2.1.310",
+            InstalledBy::Native,
+            Err("Could not download 2.1.302: 404"),
+        );
         let failed = bring_to(&claude, "2.1.302").await.unwrap_err();
         assert_eq!(failed.stage, UpdateStage::Install);
         assert_eq!(
@@ -306,7 +360,7 @@ mod tests {
         );
 
         // It said it worked, but the launcher still starts the old one.
-        let stuck = fake("2.1.310", true, Ok(None));
+        let stuck = fake("2.1.310", InstalledBy::Native, Ok(None));
         let failed = bring_to(&stuck, "2.1.302").await.unwrap_err();
         assert!(
             failed
@@ -314,14 +368,67 @@ mod tests {
                 .ends_with("says 2.1.310, so new sessions still start on it"),
             "{failed}"
         );
+    }
 
-        let brew = fake("2.1.310", false, Err("never asked"));
-        let failed = bring_to(&brew, "2.1.302").await.unwrap_err();
-        assert!(
-            failed.message.contains("isn't the native install"),
-            "{failed}"
+    /// A Claude Code fleetd doesn't manage (Homebrew, npm, a package) or that isn't there is left as it is, calmly:
+    /// no failure, one line with the command that updates it, and nothing run.
+    #[tokio::test]
+    async fn claude_installed_another_way_or_not_at_all_is_left_with_the_command() {
+        let left = |by| async move {
+            let claude = fake("2.1.310", by, Err("never asked"));
+            let Ok(Installed::Left(said)) = bring_to(&claude, "2.1.302").await else {
+                panic!("not left alone");
+            };
+            assert!(claude.installs.lock().unwrap().is_empty());
+            assert!(said.starts_with(LEFT), "{said}");
+            said
+        };
+        assert_eq!(
+            left(InstalledBy::Homebrew).await,
+            "Claude Code is managed by Homebrew: run `brew upgrade claude-code` to update it (it runs 2.1.310)"
         );
-        assert!(brew.installs.lock().unwrap().is_empty());
+        assert!(
+            left(InstalledBy::Npm)
+                .await
+                .contains("`npm install -g @anthropic-ai/claude-code@2.1.302`")
+        );
+        assert!(left(InstalledBy::Package).await.contains("package manager"));
+
+        let missing = Fake {
+            version: Mutex::new(None),
+            ..fake("2.1.310", InstalledBy::Native, Err("never asked"))
+        };
+        assert_eq!(
+            bring_to(&missing, "2.1.302").await,
+            Ok(Installed::Left(
+                "Claude Code is not installed here: install 2.1.302 with \
+                 `curl -fsSL https://claude.ai/install.sh | bash -s 2.1.302`"
+                    .into()
+            ))
+        );
+    }
+
+    #[test]
+    fn who_installed_claude_is_read_from_where_its_launcher_points() {
+        let by = |p: &str| installed_by(Path::new(p));
+        assert_eq!(
+            by("/home/u/.local/share/claude/versions/2.1.302"),
+            InstalledBy::Native
+        );
+        assert_eq!(
+            by("/opt/homebrew/Caskroom/claude-code/2.1.310/claude"),
+            InstalledBy::Homebrew
+        );
+        assert_eq!(
+            by("/home/linuxbrew/.linuxbrew/Cellar/claude-code/2.1.310/bin/claude"),
+            InstalledBy::Homebrew
+        );
+        assert_eq!(
+            by("/home/u/.npm-global/lib/node_modules/@anthropic-ai/claude-code/bin/claude"),
+            InstalledBy::Npm
+        );
+        assert_eq!(by("/usr/bin/claude"), InstalledBy::Package);
+        assert_eq!(by("/home/u/bin/claude"), InstalledBy::Other);
     }
 
     #[test]
@@ -333,9 +440,12 @@ mod tests {
         let bin = dir.path().join(".local/bin");
         std::fs::create_dir_all(&bin).unwrap();
         std::os::unix::fs::symlink(versions.join("2.1.302"), bin.join("claude")).unwrap();
-        assert!(native_launcher(&bin.join("claude")));
+        assert_eq!(
+            installed_by(&std::fs::canonicalize(bin.join("claude")).unwrap()),
+            InstalledBy::Native
+        );
         std::fs::write(dir.path().join("claude"), b"").unwrap();
-        assert!(!native_launcher(&dir.path().join("claude")));
+        assert_eq!(installed_by(&dir.path().join("claude")), InstalledBy::Other);
     }
 
     /// Turning it off keeps every other setting and the file's mode, and is done once.

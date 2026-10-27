@@ -153,6 +153,7 @@ pub fn run_claude() -> std::process::ExitCode {
         Ok(Installed::Current(v)) => {
             println!("Claude Code {v} is the version fleetd is tested with")
         }
+        Ok(Installed::Left(said)) => println!("{said}"),
         Ok(Installed::Done { from, to }) => println!(
             "Claude Code {from} -> {to}: new sessions start on {to}, running ones finish on {from}"
         ),

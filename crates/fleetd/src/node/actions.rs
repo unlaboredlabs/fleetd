@@ -103,6 +103,7 @@ pub async fn run_node_action(
                                     "Claude Code {from} -> {to}: new sessions start on {to}, running ones finish on {from}"
                                 )
                             }
+                            super::runner::claude::install::Installed::Left(said) => said,
                         }),
                         probe: None,
                     },
