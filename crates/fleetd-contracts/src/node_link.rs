@@ -148,6 +148,9 @@ pub const CAP_PREVIEWS: &str = "previews";
 /// `SessionRole::Assistant` (a Navi's lead) and a relative `project_upsert` root under the node's home (its folder).
 pub const CAP_ASSISTANT: &str = "assistant";
 
+/// `folder_make`: the node makes a new project's folder (and `git init`s it when asked).
+pub const CAP_FOLDER_MAKE: &str = "folder_make";
+
 /// `session_end`: the node takes [`SessionEndFrame`], and ends an agent session's screens when the hub says its task
 /// ended.
 pub const CAP_SESSION_END: &str = "session_end";

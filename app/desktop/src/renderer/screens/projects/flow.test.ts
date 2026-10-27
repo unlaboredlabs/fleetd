@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { HubEvent, ProjectSummary } from "./contracts";
 import type { Request } from "./discovery";
-import { hubMessages, initialAdd, step, type AddMsg, type AddState, type Call } from "./flow";
+import { hubMessages, initialAdd, offerOpen, step, type AddMsg, type AddState, type Call } from "./flow";
+import { keepsFolder } from "./store";
 
 const names = (id: string) => `${id}-name`;
 const AT = "2026-10-18T10:00:00.000Z";
@@ -157,5 +158,46 @@ describe("the add flow", () => {
       { t: "live", live: true },
       { t: "snapshot", projects: [project("/p")] },
     ]);
+  });
+});
+
+describe("a new project", () => {
+  const folder = "/home/me/fleetd/projects/field-notes";
+  const newReq = (gitInit = false): Request => ({ kind: "new", machineId: "devbox", name: "Field notes", path: folder, gitInit });
+  const plain = { ci: { workflows: [], requiredChecks: [] }, merge: { protected: false, rulesets: [] }, leadNeeds: "a plain folder with no git", notes: [] };
+
+  it("asks the hub to make its folder, git init only when ticked, and is ready under its own name", () => {
+    let [s, calls] = run(live(), { t: "start", request: newReq(), path: folder });
+    const add = only(calls, "add");
+    expect(add.input).toEqual({ machineId: "devbox", path: folder, title: "Field notes", create: true });
+    expect(s.phase).toMatchObject({ kind: "working", job: { what: "Field notes", path: folder, create: true, step: "register", detail: "Making the folder" } });
+    [s] = run(s, ok(add, { machineId: "devbox", path: folder, projectId: "p9", created: true, inspect: plain }));
+    expect(s.phase).toMatchObject({ kind: "ready", ready: { title: "Field notes", project: { machineId: "devbox", projectId: "p9" }, path: folder } });
+    [, calls] = run(live(), { t: "start", request: newReq(true), path: folder });
+    expect(only(calls, "add").input).toMatchObject({ create: true, gitInit: true });
+  });
+
+  it("offers to open the project its folder already is, and only that", () => {
+    const [started, calls] = run(live(), { t: "start", request: newReq(), path: folder });
+    const [s] = run(started, err(only(calls, "add"), "invalid", `${folder} on devbox is already the project Notes`));
+    const listed = { "devbox/p3": { ...project(`${folder}/`), projectId: "p3" } };
+    expect(offerOpen(s, newReq(), listed).phase).toMatchObject({ kind: "failed", failure: { action: { kind: "open", project: { machineId: "devbox", projectId: "p3" } } } });
+    expect(offerOpen(s, newReq(), {})).toBe(s);
+    expect(offerOpen(s, cloneReq, listed)).toBe(s);
+  });
+
+  it("keeps an edited folder across machines only outside any home folder", () => {
+    expect(keepsFolder("/srv/notes")).toBe(true);
+    expect(keepsFolder("/home/me/notes")).toBe(false);
+    expect(keepsFolder("/Users/me/notes")).toBe(false);
+    expect(keepsFolder("notes")).toBe(false);
+  });
+
+  it("says why a folder holding files was refused, and asks nothing more", () => {
+    let [s, calls] = run(live(), { t: "start", request: newReq(), path: folder });
+    [s, calls] = run(s, err(only(calls, "add"), "invalid", `${folder} on devbox already holds files`));
+    expect(calls).toEqual([]);
+    expect(s.phase).toMatchObject({ kind: "failed", what: "Field notes", failure: { message: `${folder} on devbox already holds files` } });
+    expect(s.phase.kind === "failed" ? s.phase.failure.action : "not failed").toBeUndefined();
   });
 });

@@ -42,6 +42,9 @@ pub struct MachineRepos {
     /// Where a clone onto this machine goes by default: the first of ~/src, ~/code, ~/projects that exists, else
     /// ~/src. Absolute.
     pub clone_root: Option<String>,
+    /// Where a new, empty project's folder goes by default (`project_add` with `create`), as `<this>/<name>`. Absolute;
+    /// absent when the machine's node can't make one.
+    pub projects_root: Option<String>,
     pub repos: Vec<FoundRepo>,
     /// Why this machine could not be scanned (offline, an older node), with its fix.
     pub problem: Option<ProjectProblem>,

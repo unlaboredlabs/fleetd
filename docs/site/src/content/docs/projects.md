@@ -1,9 +1,10 @@
 ---
 title: Projects
-description: "Add a project, choose its branch, task profiles and settings, and how its lead plans the work."
+description: "Add a project or start a new one, choose its branch, task profiles and settings, and how its lead plans the work."
 ---
 
 You'll add a repo as a [project](/docs/glossary#project), send it work, and follow that work to merged pull requests.
+A project doesn't need a repo to start: it can be a plain folder, and repos can be added later.
 
 ## Add a project {#add-a-project}
 
@@ -39,16 +40,34 @@ You'll add a repo as a [project](/docs/glossary#project), send it work, and foll
 | A GitHub URL or `owner/repo` | Clones it onto the least busy online worker, into `~/src` (or `~/code`, `~/projects`). |
 | A path, such as `~/src/storefront` | Adds that existing checkout on this machine. |
 | A folder with no git, such as `~/notes` | Adds it as a plain folder: its lead chats, remembers and uses screens there. Agents that change code need a repo. A [Navi](/docs/navi) is one of these. |
+| `--new <name>`, such as `--new "Field notes"` | Starts a new, empty project: the machine makes its folder. See [Start a new project](#start-a-new-project). |
 | Nothing, in a terminal | Lists checkouts on every worker and your repos from `gh repo list`, to pick from. |
 
 | Option | Does |
 |---|---|
 | `--machine <id>` | Clone to, or look for the path on, that worker. |
-| `--dest <dir>` | Clone into that folder. |
+| `--dest <dir>` | Clone into that folder, or make a new project's folder there. |
+| `--git-init` | With `--new`: run `git init` in the new folder. |
 | `--use-existing` | Add the folder's checkout when it already holds the same repo. Without a terminal, this is how you accept it. |
 
 fleetd reads GitHub through `gh` on the hub machine. A private repo clones on any worker where `gh auth login` was run.
 When something is in the way, such as an offline worker or a folder that exists, it prints the command that fixes it.
+
+### Start a new project {#start-a-new-project}
+
+A project can start as a plain folder, with no repo. In the app, open Add project, type the new project's name and
+pick **New project**. Pick the machine, check the folder it shows, and click **Create project**. From a terminal:
+
+```sh
+fleetd project add --new "Field notes" --machine devbox
+```
+
+- The folder is `~/fleetd/projects/<name>` on that machine unless you change it.
+- An empty folder that is already there is used as it is. A folder that holds files is refused, and nothing is added.
+- It has no git unless you tick **Start a git repo in it** (`--git-init`).
+
+The project opens at once. Its lead chats, remembers and uses screens in the folder; agents that change code need a
+repo. Add one when you need it in **Settings → Projects → Repos**, or with `fleetd project repo add`.
 
 ### List and remove projects
 

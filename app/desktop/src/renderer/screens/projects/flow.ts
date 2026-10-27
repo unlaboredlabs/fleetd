@@ -25,6 +25,8 @@ export interface Job {
   readonly machineId: string;
   readonly path: string;
   readonly clone: boolean;
+  /** A new project: the hub makes its folder, so there is nothing to clone or inspect. */
+  readonly create?: true;
   readonly step: Step;
   readonly detail: string;
   readonly fraction?: number;
@@ -112,13 +114,21 @@ const waiting = (s: AddState, why: string): AddState =>
     return { ...rest, detail: why };
   });
 
-export const requestWhat = (r: Request): string => (r.kind === "clone" ? r.repo : baseName(r.path));
+export const requestWhat = (r: Request): string => (r.kind === "clone" ? r.repo : r.kind === "new" ? r.name : baseName(r.path));
 
 const failure = (message: string, fix: string | undefined): Failure => (fix?.trim() ? { message, fix } : { message });
 
 
-const addInput = (r: Request): ProjectAddInput =>
-  r.kind === "clone" ? { machineId: r.machineId, url: r.repo, ...(r.useExisting ? { useExisting: true } : {}) } : { machineId: r.machineId, path: r.path };
+const addInput = (r: Request): ProjectAddInput => {
+  switch (r.kind) {
+    case "clone":
+      return { machineId: r.machineId, url: r.repo, ...(r.useExisting ? { useExisting: true } : {}) };
+    case "folder":
+      return { machineId: r.machineId, path: r.path };
+    case "new":
+      return { machineId: r.machineId, path: r.path, title: r.name, create: true, ...(r.gitInit ? { gitInit: true } : {}) };
+  }
+};
 
 /** A clone refused because its folder exists: ask a dry-run project_add whether that folder is this repo first. */
 const holdAndInspect = (s: AddState, f: Failure): Step_ => {
@@ -190,7 +200,9 @@ export const step = (s: AddState, msg: AddMsg, names: Names): Step_ => {
       const job: Job =
         r.kind === "clone"
           ? { what: r.repo, machineId: r.machineId, path: msg.path, clone: true, step: "clone", detail: "Asking the hub" }
-          : {
+          : r.kind === "new"
+            ? { what: r.name, machineId: r.machineId, path: r.path, clone: false, create: true, step: "register", detail: "Making the folder" }
+            : {
               what: baseName(r.path),
               machineId: r.machineId,
               path: r.path,
@@ -245,7 +257,8 @@ const answer = (s: AddState, c: Call, outcome: Outcome, names: Names): Step_ => 
         return [next, calls];
       }
       if (o.projectId !== undefined && o.inspect !== undefined) {
-        const r = ready({ machineId: o.machineId, projectId: o.projectId }, baseName(o.path), names(o.machineId), o.path, o.inspect);
+        const title = s.request.kind === "new" ? s.request.name : baseName(o.path);
+        const r = ready({ machineId: o.machineId, projectId: o.projectId }, title, names(o.machineId), o.path, o.inspect);
         return [{ ...finish(s), phase: { kind: "ready", ready: r } }, []];
       }
       return [fail(s, { message: "The hub added it but sent no details.", fix: "Find it in the sidebar; if it isn't there, try again." }), []];
@@ -258,6 +271,18 @@ const answer = (s: AddState, c: Call, outcome: Outcome, names: Names): Step_ => 
       return [fail(rest, action ? { ...held, action } : held), []];
     }
   }
+};
+
+/**
+ * A new project refused because its folder is already a project (the hub says so): the failure offers to open that
+ * project, found in the hub's list by its machine and folder.
+ */
+export const offerOpen = (s: AddState, r: Request | undefined, projects: Readonly<Record<string, ProjectSummary>>): AddState => {
+  if (r?.kind !== "new" || s.phase.kind !== "failed" || s.phase.failure.action !== undefined) return s;
+  const p = Object.values(projects).find((x) => x.machineId === r.machineId && x.workspaceRoot.replace(/(.)\/+$/u, "$1") === r.path);
+  if (p === undefined) return s;
+  const action = { kind: "open", project: { machineId: p.machineId, projectId: p.projectId } } as const;
+  return { ...s, phase: { ...s.phase, failure: { ...s.phase.failure, action } } };
 };
 
 export type { ProjectKey };
