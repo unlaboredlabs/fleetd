@@ -396,7 +396,7 @@
 <td><code dir="auto">profile</code></td>
 <td>string</td>
 <td>no</td>
-<td>What an agent runs on. There are exactly two: <code dir="auto">high</code> is the default and what the lead, every reviewer and every helper call run; <code dir="auto">medium</code> is for mechanical tasks the lead picks. The node’s runner picks the model and effort of each. One of <code dir="auto">high</code>, <code dir="auto">medium</code>.</td>
+<td>What an agent runs on. There are exactly two: <code dir="auto">high</code> is the default and what the lead, every reviewer and every helper call run; <code dir="auto">medium</code> is for mechanical tasks the lead picks. Each runs on its setting’s model and effort (<code dir="auto">ProfileSettings</code>), else on the runner’s own for it. One of <code dir="auto">high</code>, <code dir="auto">medium</code>.</td>
 </tr>
 <tr>
 <td><code dir="auto">prompt</code></td>
@@ -2167,10 +2167,10 @@
 </tr>
 <tr>
 <td><code dir="auto">ANTHROPIC_DEFAULT_HAIKU_MODEL</code></td>
-<td><code dir="auto">claude-opus-5-5</code></td>
+<td>The high profile’s model: <code dir="auto">claude-opus-5-5</code> unless a setting chose another</td>
 <td>Every claude fleetd starts</td>
 <td>yes</td>
-<td>claude’s background helper calls (session titles and the like) run on Opus 5.5 like everything else fleetd starts, not on the haiku model claude picks by default.</td>
+<td>claude’s background helper calls (session titles and the like) run on the high profile’s model like the lead and every review, not on the haiku model claude picks by default.</td>
 </tr>
 <tr>
 <td><code dir="auto">DISABLE_AUTOUPDATER</code></td>

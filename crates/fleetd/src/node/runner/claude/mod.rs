@@ -298,12 +298,12 @@ explained! {
 }
 
 /// claude sends its background helper calls (session titles and the like) to whatever the haiku alias names. Every
-/// claude fleetd starts points it at the one model fleetd runs, in its environment and its settings, so no call goes
-/// to another.
+/// claude fleetd starts points it at the high profile's model ([`SessionSpec::helper_model`]; this one unless a
+/// setting chose another), in its environment and its settings, so no call goes to another.
 pub const HELPER_MODEL_ENV: (&str, &str) = ("ANTHROPIC_DEFAULT_HAIKU_MODEL", MODEL);
-pub const HELPER_MODEL_WHY: &str = "claude's background helper calls (session titles and the like) run on Opus 5.5 \
-                                    like everything else fleetd starts, not on the haiku model claude picks by \
-                                    default.";
+pub const HELPER_MODEL_WHY: &str = "claude's background helper calls (session titles and the like) run on the high \
+                                    profile's model like the lead and every review, not on the haiku model claude \
+                                    picks by default.";
 
 explained! {
     /// Set in every session's environment or settings overlay, besides [`SUBAGENTS_OFF_ENV`] and auto memory.
@@ -453,7 +453,7 @@ impl Runner for ClaudeRunner {
                         .map(|(k, v)| (k, v)),
                 )
                 .envs(SUBAGENTS_OFF_ENV.iter().copied())
-                .envs([HELPER_MODEL_ENV])
+                .env(HELPER_MODEL_ENV.0, &spec.helper_model)
                 .envs(SESSION_ENV.iter().copied())
                 .envs(scope.iter().flat_map(|s| s.env.iter().map(|(k, v)| (k, v))))
                 .env(process::SESSION_MARKER, &marker)
@@ -574,6 +574,7 @@ mod tests {
             add_dirs: vec!["/work/root".into()],
             model: "claude-haiku-5-5".into(),
             effort: Effort::Max,
+            helper_model: "claude-opus-5-5".into(),
             runtime_mode: RuntimeMode::ApprovalRequired,
             allowed_tools: vec![
                 "Bash(npm test:*)".into(),

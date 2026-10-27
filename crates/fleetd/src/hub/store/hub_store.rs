@@ -82,6 +82,10 @@ impl HubStore {
         Self { db }
     }
 
+    pub fn db(&self) -> &HubDb {
+        &self.db
+    }
+
     /// `pub_key`, when given, replaces the machine's node key.
     pub fn machine_upsert(
         &self,

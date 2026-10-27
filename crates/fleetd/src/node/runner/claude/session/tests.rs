@@ -89,6 +89,7 @@ impl Fake {
             add_dirs: Vec::new(),
             model: "fake".into(),
             effort: Effort::Low,
+            helper_model: "fake".into(),
             runtime_mode: RuntimeMode::FullAccess,
             allowed_tools: Vec::new(),
             disallowed_tools: Vec::new(),

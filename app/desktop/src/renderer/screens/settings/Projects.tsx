@@ -30,6 +30,7 @@ import { RepoSetting } from "./RepoSetting";
 import { replaceRoute, type SettingsRoute } from "./route";
 import { SetupSetting } from "./SetupSetting";
 import { TrainSetting } from "./TrainSetting";
+import { ProfilesSetting } from "./ProfilesSetting";
 import s from "./settings.module.css";
 
 type Echo = { ok: boolean; text: string };
@@ -139,6 +140,14 @@ function ProjectPage({ settings, refresh, onDeleted }: { settings: Settings; ref
       <SetupSetting settings={settings} />
       <Separator />
       <TrainSetting settings={settings} />
+      <Separator />
+      <Setting
+        reveal="projects.profiles"
+        label="Task profiles"
+        help="The model and effort behind each profile for this project's agents. Each field left empty follows the fleet's, set in Settings → Agents."
+      >
+        <ProfilesSetting projectRef={ref} />
+      </Setting>
       <Separator />
       <Setting reveal="projects.delete" label="Delete project" help="Stops its agents and removes it from fleetd, with its fleetd worktrees.">
         <Text size="sm" tone="quiet">

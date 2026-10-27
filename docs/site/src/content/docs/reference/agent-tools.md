@@ -90,7 +90,7 @@ Start a fleetd agent (a task) with its own session, slot and lane. title is what
 | `notDuplicateWhy` | string | no | Why it is different work, in one line; kept in the hub's log. At most 200 characters. |
 | `paths` | string[] | no | The files a writer will change, repo-relative (`app/theme.ts`, `app/settings/**`): matched against the work in flight. At most 50 items. |
 | `pr` | string | no |  |
-| `profile` | string | no | What an agent runs on. There are exactly two: `high` is the default and what the lead, every reviewer and every helper call run; `medium` is for mechanical tasks the lead picks. The node's runner picks the model and effort of each. One of `high`, `medium`. |
+| `profile` | string | no | What an agent runs on. There are exactly two: `high` is the default and what the lead, every reviewer and every helper call run; `medium` is for mechanical tasks the lead picks. Each runs on its setting's model and effort (`ProfileSettings`), else on the runner's own for it. One of `high`, `medium`. |
 | `prompt` | string | yes | At most 8000 characters. |
 | `qa` | boolean | no |  |
 | `title` | string | yes | One line. At most 80 characters. |
@@ -1230,7 +1230,7 @@ Set in the claude process's environment. "In settings" marks the ones also in fl
 | `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` | removed | Every claude fleetd starts | yes | Agent teams: fleetd manages agents. |
 | `CLAUDE_CODE_COORDINATOR_MODE` | removed | Every claude fleetd starts | yes | Coordinator mode turns a session into one that only delegates (its tools become Task, ListAgents, SendMessage, TaskStop, Workflow). |
 | `CLAUDE_CODE_DISABLE_AUTO_MEMORY` | `1`, and `autoMemoryEnabled: false` | Every claude fleetd starts | yes | fleetd owns an agent's context (briefs, decisions, instructions). Notes claude keeps per folder would carry stale, unreviewed text from one agent's worktree to the next. |
-| `ANTHROPIC_DEFAULT_HAIKU_MODEL` | `claude-opus-5-5` | Every claude fleetd starts | yes | claude's background helper calls (session titles and the like) run on Opus 5.5 like everything else fleetd starts, not on the haiku model claude picks by default. |
+| `ANTHROPIC_DEFAULT_HAIKU_MODEL` | The high profile's model: `claude-opus-5-5` unless a setting chose another | Every claude fleetd starts | yes | claude's background helper calls (session titles and the like) run on the high profile's model like the lead and every review, not on the haiku model claude picks by default. |
 | `DISABLE_AUTOUPDATER` | `1` | Sessions | yes | Keeps the claude fleetd checked. An update mid-run would swap the binary under a live session. |
 | `CLAUDE_CODE_STARTUP_FAILURE_RESULTS` | `1` | Sessions | no | A refusal at startup arrives as a result fleetd can read, not only as stderr. |
 | `ENABLE_TOOL_SEARCH` | `true` unless your environment or `claude.env` sets it | Every claude fleetd starts | no | Tool schemas load when a tool is used, not on every request. fleetd's own tools always load at start. |

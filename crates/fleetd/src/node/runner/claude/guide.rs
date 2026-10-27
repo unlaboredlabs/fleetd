@@ -1,5 +1,5 @@
-//! What fleetd says about claude outside the adapter: the model each profile runs on, and the words and commands a
-//! person reads ([`RunnerGuide`]).
+//! What fleetd says about claude outside the adapter: the model each profile runs on when no setting chose one, and the
+//! words and commands a person reads ([`RunnerGuide`]).
 use fleetd_contracts::effort::{Effort, TaskProfile};
 use fleetd_contracts::sessions::RunnerInfo;
 
@@ -7,10 +7,10 @@ use super::setup::ClaudeSetup;
 use super::{ALWAYS_DISALLOWED, failure, version};
 use crate::node::runner::{ProfileModel, RunnerGuide};
 
-/// The one model every claude fleetd starts runs on, helper calls included.
+/// The model every claude fleetd starts runs on, helper calls included, unless a profile's setting chose another.
 pub const MODEL: &str = "claude-opus-5-5";
 
-/// Both profiles run on [`MODEL`]: `high` at effort high, `medium` at effort medium.
+/// A profile's own, with no setting: both on [`MODEL`], `high` at effort high, `medium` at effort medium.
 pub fn profile(profile: TaskProfile) -> ProfileModel {
     ProfileModel {
         model: MODEL,
@@ -74,6 +74,10 @@ impl RunnerGuide for Guide {
 
     fn denied_tools(&self) -> &'static [&'static str] {
         ALWAYS_DISALLOWED
+    }
+
+    fn profile(&self, p: TaskProfile) -> ProfileModel {
+        profile(p)
     }
 }
 

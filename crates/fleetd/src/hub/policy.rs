@@ -141,7 +141,8 @@ mod tests {
             serde_json::to_value(parse_policy(text).unwrap()).unwrap(),
             json!({ "tools": { "allow": [], "deny": ["Bash(git push:*)"] }, "branchPrefix": "team/" })
         );
-        // An older file's defaults are ignored whatever they say: a broken one doesn't break the file.
+        // An older file's defaults are ignored whatever they say (profiles_set picks a profile's model and effort): a
+        // broken one doesn't break the file.
         assert!(parse_policy("defaults:\n  effort: medum\n").is_ok());
         assert_eq!(parse_policy("\n").unwrap(), PolicyFile::default());
     }

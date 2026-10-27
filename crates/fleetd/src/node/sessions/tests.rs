@@ -83,6 +83,7 @@ fn launch(id: &str, mode: RuntimeMode, workspace: SessionWorkspace) -> SessionCa
         profile: None,
         model: Some(NonEmpty::unchecked("claude-haiku-5-5")),
         effort: Some(Effort::Low),
+        helper_model: None,
         runtime_mode: mode,
         workspace,
         prompt: NonEmpty::unchecked("Reply with the word OK and nothing else."),
@@ -3454,4 +3455,187 @@ async fn a_new_session_gets_the_repos_and_the_hubs_skills_the_first_source_winni
     let kept =
         std::fs::read_to_string(dir.path().join("node/sessions/s1/hub-skills.json")).unwrap();
     assert!(kept.contains("deploy-check") && !kept.contains("standup"));
+}
+
+/// A launch on `profile` with what its settings chose, as a hub with profile settings sends it.
+fn profile_launch(
+    id: &str,
+    profile: fleetd_contracts::effort::TaskProfile,
+    model: Option<&str>,
+    effort: Option<Effort>,
+) -> SessionCall {
+    let SessionCall::Launch(launch) = launch(id, RuntimeMode::FullAccess, SessionWorkspace::Root)
+    else {
+        unreachable!()
+    };
+    SessionCall::Launch(SessionLaunch {
+        profile: Some(profile),
+        model: model.map(NonEmpty::unchecked),
+        effort,
+        helper_model: model.map(NonEmpty::unchecked),
+        ..launch
+    })
+}
+
+/// The model in a spawn's settings overlay for claude's helper calls.
+fn helper_model(spec: &crate::node::runner::SessionSpec) -> String {
+    let overlay: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(spec.settings.as_ref().unwrap()).unwrap())
+            .unwrap();
+    overlay["env"]["ANTHROPIC_DEFAULT_HAIKU_MODEL"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
+#[tokio::test]
+async fn a_profile_runs_on_what_its_settings_chose_else_on_its_own() {
+    use fleetd_contracts::effort::TaskProfile::{High, Medium};
+    for (profile, model, effort, runs) in [
+        // Nothing set: exactly as before settings.
+        (High, None, None, ("claude-opus-5-5", Effort::High)),
+        (Medium, None, None, ("claude-opus-5-5", Effort::Medium)),
+        // A setting's model and effort, and one field alone over the profile's own.
+        (
+            High,
+            Some("claude-sonnet-5-5"),
+            Some(Effort::Max),
+            ("claude-sonnet-5-5", Effort::Max),
+        ),
+        (
+            Medium,
+            None,
+            Some(Effort::Low),
+            ("claude-opus-5-5", Effort::Low),
+        ),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let mut hub = hub(
+            dir.path(),
+            NodeStore::open_memory(10_000).unwrap(),
+            FakeRunner::fixture("init-partial-two-turns"),
+        )
+        .await;
+        hub.project(dir.path()).await;
+        hub.ok(profile_launch("s1", profile, model, effort)).await;
+        let done = hub.settled("r1").await;
+        assert_eq!((done.model.as_str(), done.effort), runs, "{profile:?}");
+        assert_eq!(done.model_refused, None);
+        let spec = &hub.runner.spawned()[0];
+        assert_eq!((spec.model.as_str(), spec.effort), runs);
+        // claude's helper calls follow the high profile's model.
+        let helper = model.unwrap_or("claude-opus-5-5");
+        assert_eq!(
+            (spec.helper_model.as_str(), helper_model(spec).as_str()),
+            (helper, helper)
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_model_claude_refuses_runs_the_profile_s_own_in_the_same_run_and_says_so() {
+    let dir = tempfile::tempdir().unwrap();
+    let fixture = |name: &str| {
+        std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
+            "src/node/runner/fixtures/claude-2.1.302-{name}.jsonl"
+        )))
+        .unwrap()
+    };
+    // claude refuses the model, then answers on the profile's own.
+    let lines = format!(
+        "{}\n{}",
+        fixture("invalid-model"),
+        fixture("init-partial-two-turns")
+    );
+    let mut hub = hub(
+        dir.path(),
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::from_lines(&lines),
+    )
+    .await;
+    hub.project(dir.path()).await;
+    hub.ok(profile_launch(
+        "s1",
+        fleetd_contracts::effort::TaskProfile::High,
+        Some("claude-does-not-exist-9"),
+        Some(Effort::Max),
+    ))
+    .await;
+    let done = hub.settled("r1").await;
+    assert_eq!(done.latest_run.unwrap().status, RunStatus::Completed);
+    // It runs on the profile's own model at its setting's effort, and names the model claude refused.
+    assert_eq!(
+        (
+            done.model.as_str(),
+            done.effort,
+            done.model_refused.as_deref()
+        ),
+        (
+            "claude-opus-5-5",
+            Effort::Max,
+            Some("claude-does-not-exist-9")
+        )
+    );
+    let spawned = hub.runner.spawned();
+    assert_eq!(spawned.len(), 2, "a new process for the new model");
+    assert_eq!(spawned[0].model, "claude-does-not-exist-9");
+    assert_eq!(spawned[1].model, "claude-opus-5-5");
+    assert!(
+        hub.service
+            .store()
+            .item("s1", "node-retry-r1-1")
+            .unwrap()
+            .is_some(),
+        "the thread shows why"
+    );
+}
+
+#[tokio::test]
+async fn a_session_on_the_profile_s_own_model_fails_as_before() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut hub = hub(
+        dir.path(),
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::fixture("invalid-model"),
+    )
+    .await;
+    hub.project(dir.path()).await;
+    // A hub from before profiles names the model itself: nothing to fall back from.
+    let SessionCall::Launch(old) = launch("s1", RuntimeMode::FullAccess, SessionWorkspace::Root)
+    else {
+        unreachable!()
+    };
+    hub.ok(SessionCall::Launch(SessionLaunch {
+        model: Some(NonEmpty::unchecked("claude-does-not-exist-9")),
+        ..old
+    }))
+    .await;
+    let done = hub.settled("r1").await;
+    assert_eq!(done.status, SessionStatus::Failed);
+    assert_eq!(done.model_refused, None);
+    assert_eq!(hub.runner.spawned().len(), 1);
+}
+
+#[tokio::test]
+async fn a_refusal_of_another_model_than_the_session_s_never_falls_back() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut hub = hub(
+        dir.path(),
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::fixture("invalid-model"),
+    )
+    .await;
+    hub.project(dir.path()).await;
+    // The failure names claude-does-not-exist-9; the session runs on a gateway's own name.
+    hub.ok(profile_launch(
+        "s1",
+        fleetd_contracts::effort::TaskProfile::High,
+        Some("gw-opus"),
+        None,
+    ))
+    .await;
+    let done = hub.settled("r1").await;
+    assert_eq!(done.status, SessionStatus::Failed);
+    assert_eq!((done.model.as_str(), done.model_refused), ("gw-opus", None));
+    assert_eq!(hub.runner.spawned().len(), 1);
 }

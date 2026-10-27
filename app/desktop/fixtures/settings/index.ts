@@ -27,9 +27,16 @@ const projectSummary = (p: (typeof PROJECTS)[number]): JsonObject => ({
   lastActivityAt: "2026-10-19T10:21:00.000Z",
 });
 
+/** The fleet runs medium on Sonnet at medium effort; high is left to the profile's own. */
+const PROFILES_VIEW: JsonObject = {
+  fleet: { high: {}, medium: { model: "claude-sonnet-5-5" } },
+  runs: { high: { model: "claude-opus-5-5", effort: "high" }, medium: { model: "claude-sonnet-5-5", effort: "medium" } },
+  defaults: { high: { model: "claude-opus-5-5", effort: "high" }, medium: { model: "claude-opus-5-5", effort: "medium" } },
+};
+
 /**
  * Each project's "medium allowed" switch as project_get reads it (on, unless named in `off`), and project_set's
- * answer either way.
+ * answer either way; the task profiles' settings, the fleet's and each project's (none).
  */
 function projectSettings(f: Fixture, off: ReadonlySet<string> = new Set()) {
   const projects = isObject(f.snapshot) && Array.isArray(f.snapshot["projects"]) ? f.snapshot["projects"].filter(isObject) : [];
@@ -37,8 +44,11 @@ function projectSettings(f: Fixture, off: ReadonlySet<string> = new Set()) {
     const ref = { machineId: asText(p["machineId"]), projectId: asText(p["projectId"]) };
     f.answer("project_get", ref, { asOf: f.now, project: clone(p), stale: false, threads: [], mediumAllowed: !off.has(ref.projectId) });
     for (const on of [true, false]) f.answer("project_set", { ...ref, mediumAllowed: on }, { mediumAllowed: on });
+    f.answer("profiles_get", { projectRef: ref }, { ...PROFILES_VIEW, project: { high: {}, medium: {} } });
   }
+  f.answer("profiles_get", {}, PROFILES_VIEW);
 }
+
 
 /**
  * Settings → Memory: user.md with entries the lead remembered (each linked to its chat line), and the first project's

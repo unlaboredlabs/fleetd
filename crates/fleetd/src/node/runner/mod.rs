@@ -57,6 +57,8 @@ pub struct SessionSpec {
     pub add_dirs: Vec<PathBuf>,
     pub model: String,
     pub effort: Effort,
+    /// The model claude's background helper calls run on.
+    pub helper_model: String,
     pub runtime_mode: RuntimeMode,
     /// `--allowedTools` rules from policy; anything else asks (ApprovalRequired) or runs (FullAccess).
     pub allowed_tools: Vec<String>,
@@ -242,7 +244,8 @@ pub trait Runner: Send + Sync + 'static {
     fn probe<'a>(&'a self, env: &'a [(String, String)]) -> BoxFut<'a, RunnerInfo>;
     /// Starts the process for `spec` and returns once it is running; the first run starts with a `Send`.
     fn spawn(&self, spec: SessionSpec) -> Result<SessionHandle, RunnerError>;
-    /// The model and effort a session of `profile` runs on: the runner's choice, so the hub never names a model.
+    /// The model and effort a session of `profile` runs on when no setting chose them, and where one whose model
+    /// claude refused falls back to.
     fn profile(&self, profile: TaskProfile) -> ProfileModel;
     /// The profile of a session stored with `model` and `effort`, or launched by a hub from before profiles.
     fn profile_of(&self, model: &str, effort: Effort) -> TaskProfile;
@@ -272,6 +275,8 @@ pub trait RunnerGuide: Sync {
     fn protocol(&self) -> &'static str;
     /// The tools no session of this runner ever gets.
     fn denied_tools(&self) -> &'static [&'static str];
+    /// The model and effort a profile runs on when no setting chose them ([`Runner::profile`]).
+    fn profile(&self, profile: TaskProfile) -> ProfileModel;
 }
 
 /// The guide for a runner `kind`: the one place the hub turns a runner kind into its words.

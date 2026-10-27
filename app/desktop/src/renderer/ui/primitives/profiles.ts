@@ -4,8 +4,8 @@ import type { TaskProfile } from "../../../shared/contracts";
 /** A profile's one word on an agent's row. */
 export const PROFILE_WORD: Record<TaskProfile, string> = { high: "high", medium: "medium" };
 
-/** Each profile in full, as Settings → Agents shows them. */
+/** Each profile in a few words, on an agent's page. Its model and effort are settings (Settings → Agents). */
 export const PROFILE_LINE: Record<TaskProfile, string> = {
-  high: "High: Opus 5.5, high effort, the default",
-  medium: "Medium: Opus 5.5, medium effort, for mechanical work",
+  high: "High profile, the default",
+  medium: "Medium profile, for mechanical work",
 };

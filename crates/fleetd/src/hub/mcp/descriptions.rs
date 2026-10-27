@@ -118,7 +118,15 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "project_set",
-        "Turn a project's medium profile on or off (mediumAllowed, on by default). On: its lead may run mechanical tasks on medium (the same model at medium effort). Off: every new task runs high. The lead, reviewers and helper calls always run high.",
+        "Turn a project's medium profile on or off (mediumAllowed, on by default). On: its lead may run mechanical tasks on medium. Off: every new task runs high. The lead, reviewers and helper calls always run high. profiles_set picks the model and effort behind each profile.",
+    ),
+    (
+        "profiles_get",
+        "The model and effort behind each task profile (high, medium): the fleet's settings, a project's override with projectRef, what new agents of each profile run on (runs) and the runner's own (defaults: claude-opus-5-5 at high and at medium). A setting whose model claude refused has refused, saying where and when; agents run as if it were unset.",
+    ),
+    (
+        "profiles_set",
+        "Set the model and effort behind a task profile: fleet-wide (an admin key on every machine), or a project's override with projectRef. high or medium replaces that profile's setting at that scope: model (a name or alias claude takes, e.g. claude-sonnet-5-5 or sonnet), effort (low, medium, high or max), either left out to follow the fleet's, then the runner's own; {} unsets it. New agents follow it from their next start; running ones keep theirs. The lead, every review and claude's helper calls run high. If claude refuses the model, agents run on the profile's own model and the setting is flagged until it is set again.",
     ),
     (
         "workstream_list",
