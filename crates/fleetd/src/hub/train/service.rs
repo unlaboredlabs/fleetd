@@ -102,6 +102,9 @@ pub struct TrainOptions {
     /// How long the train holds a Change whose CI passed for its re-review to finish (`REVIEW_WAIT`); after that it
     /// waits in review, out of the train's way.
     pub review_wait: Duration,
+    /// How long a waiting Change's head may go without any check before its author and the lead hear of it
+    /// (`CHECKS_START_WAIT`).
+    pub checks_start_wait: Duration,
     /// Run each repo's loop in the background; tests drive `step` themselves.
     pub auto_run: bool,
     /// The status view's freshness registry: every GitHub answer and every pass keeps a repo's sources live.
@@ -118,6 +121,7 @@ impl Default for TrainOptions {
             ready_every: Duration::from_secs(60),
             merge_attempts: 3,
             review_wait: REVIEW_WAIT,
+            checks_start_wait: CHECKS_START_WAIT,
             auto_run: true,
             fresh: Arc::default(),
         }
@@ -126,6 +130,9 @@ impl Default for TrainOptions {
 
 /// How long a Change whose CI passed is held for its re-review: a review takes about as long as CI, and started with it.
 pub const REVIEW_WAIT: Duration = Duration::from_secs(15 * 60);
+
+/// How long a waiting Change's head may go without any check: GitHub skipped its CI, or no workflow took the push (D191).
+pub const CHECKS_START_WAIT: Duration = Duration::from_secs(15 * 60);
 
 /// How long a head's CI may run once a runner took its first check (D128).
 pub const CI_RUNNING_TIMEOUT: Duration = Duration::from_secs(45 * 60);
@@ -460,6 +467,9 @@ pub struct Train {
     pub(super) upstream_reads: Mutex<HashMap<String, (i64, super::next::UpstreamPull)>>,
     /// The train's last push per change: the head it pushed and when, for `ci.queue` spans.
     pub(super) pushed: Mutex<HashMap<ChangeId, (String, i64)>>,
+    /// Per waiting Change, the head the train first saw, when, and whether its checks started or it was flagged
+    /// (`unstarted_checks`). Kept in memory: after a restart the wait starts again.
+    unstarted: Mutex<HashMap<ChangeId, (String, i64, bool)>>,
     /// Each repo and base branch's CI config and when it was read.
     ci_configs: Mutex<HashMap<(String, String), CiConfig>>,
     /// The PRs that carry `fleetd:next`.
@@ -512,6 +522,7 @@ impl Train {
             after_lock: tokio::sync::Mutex::new(()),
             upstream_reads: Mutex::default(),
             pushed: Mutex::default(),
+            unstarted: Mutex::default(),
             ci_configs: Mutex::default(),
             next_labels: Default::default(),
             sync: GithubSync::default(),
@@ -962,17 +973,23 @@ impl Train {
         }
     }
 
-    /// `why` completes "it ...".
+    /// `why` completes "it ...". From the train's own rebase, or from the queue when GitHub finds it conflicts.
     pub(super) async fn needs_rebase(&self, change: &Change, why: &str) {
-        let Some(parked) = self.update(
-            &change.change_id,
-            Some(&[ChangeState::Rebasing]),
-            |mut c| {
-                c.state = ChangeState::NeedsRebase;
-                c.last_error = Some(error_text(why));
-                c
-            },
-        ) else {
+        let from = [
+            ChangeState::Rebasing,
+            ChangeState::Queued,
+            ChangeState::Reviewing,
+            ChangeState::Ready,
+        ];
+        let Some(parked) = self.update(&change.change_id, Some(&from), |mut c| {
+            if c.state == ChangeState::Reviewing {
+                // Not reviewed yet: its next head goes to review even if its patch stays the same.
+                c.patch_id = None;
+            }
+            c.state = ChangeState::NeedsRebase;
+            c.last_error = Some(error_text(why));
+            c
+        }) else {
             return;
         };
         self.emit(
@@ -1938,15 +1955,19 @@ impl Train {
         Ok(())
     }
 
-    /// Changes waiting on something outside the train: a patch id to read, reviews, or the author's next push.
+    /// Changes waiting on something outside the train: a patch id to read, reviews, or the author's next push. A
+    /// waiting Change GitHub finds conflicting goes back to its author at once: GitHub runs no CI on it (D191).
     async fn refresh(&self, repo: &str) {
         let waiting = [
             ChangeState::Queued,
             ChangeState::Reviewing,
+            ChangeState::Ready,
             ChangeState::NeedsRebase,
             ChangeState::CiFailed,
         ];
-        for change in self.records.in_train(repo, &waiting) {
+        let changes = self.records.in_train(repo, &waiting);
+        lock(&self.unstarted).retain(|id, _| changes.iter().any(|c| &c.change_id == id));
+        for change in changes {
             let pull = match self.github.pull(repo, change.pr_number.get()).await {
                 Ok(pull) => pull,
                 Err(e) => {
@@ -1955,15 +1976,33 @@ impl Train {
                 }
             };
             self.guard_base(repo, &pull.base.ref_);
+            let moved = pull.head.sha.to_lowercase() != change.head_sha.as_str();
+            let in_line = !moved
+                && !pull.draft
+                && [
+                    ChangeState::Queued,
+                    ChangeState::Reviewing,
+                    ChangeState::Ready,
+                ]
+                .contains(&change.state);
             if pull.merged {
                 self.abandon(&change, "was merged outside the train").await;
             } else if pull.state != "open" {
                 self.abandon(&change, "was closed").await;
             } else if change.state == ChangeState::Queued && pull.draft {
                 self.hold_draft(&change);
-            } else if change.state == ChangeState::Queued
-                || pull.head.sha.to_lowercase() != change.head_sha.as_str()
-            {
+            } else if in_line && pull.conflicts() {
+                let why = format!(
+                    "conflicts with {}, so GitHub runs no CI on it",
+                    pull.base.ref_
+                );
+                self.needs_rebase(&change, &why).await;
+            } else if change.state == ChangeState::Ready {
+                // The train takes it from here, and reads a moved head then (`take`).
+                if in_line {
+                    self.unstarted_checks(&change, &pull.base.ref_).await;
+                }
+            } else if change.state == ChangeState::Queued || moved {
                 if let Err(e) = self.admit(&change, &pull).await {
                     let why = error_text(&format!("GitHub: {}", e.message));
                     self.update(&change.change_id, Some(&[change.state]), |mut c| {
@@ -1977,8 +2016,73 @@ impl Train {
                 self.set_ready(&change, reviews);
             } else if timed_out(&change) {
                 self.after_timeout(&change).await;
+            } else if in_line {
+                self.unstarted_checks(&change, &pull.base.ref_).await;
             }
         }
+    }
+
+    /// A Change in line whose head has no check `checks_start_wait` after the train first saw it: GitHub skipped its
+    /// CI, or no workflow took the push. Its author and the lead hear once per head, and it keeps its place (D191).
+    async fn unstarted_checks(&self, change: &Change, base: &str) {
+        let head = change.head_sha.as_str();
+        let now = self.now_ms();
+        {
+            let mut seen = lock(&self.unstarted);
+            let entry = seen
+                .entry(change.change_id.clone())
+                .or_insert_with(|| (head.to_string(), now, false));
+            if entry.0 != head {
+                *entry = (head.to_string(), now, false);
+            }
+            if entry.2 || now - entry.1 < self.options.checks_start_wait.as_millis() as i64 {
+                return;
+            }
+        }
+        if !self.has_ci(&change.repo, base).await.unwrap_or(false) {
+            return;
+        }
+        let started = match self.github.check_runs(&change.repo, head).await {
+            Ok(runs) if !runs.is_empty() => true,
+            Ok(_) => match self.github.statuses(&change.repo, head).await {
+                Ok(statuses) => statuses.iter().any(|s| s.context != TRAIN_CONTEXT),
+                Err(e) => {
+                    return tracing::warn!(change_id = %change.change_id, error = %e.message, "train: statuses not read");
+                }
+            },
+            Err(e) => {
+                return tracing::warn!(change_id = %change.change_id, error = %e.message, "train: check runs not read");
+            }
+        };
+        if let Some(entry) = lock(&self.unstarted).get_mut(&change.change_id) {
+            entry.2 = true;
+        }
+        if started {
+            return;
+        }
+        let min = self.options.checks_start_wait.as_secs() / 60;
+        let text = format!(
+            "no check started on its head {} in {min} min: GitHub skipped its CI, or no workflow took the push. It \
+             keeps its place in the train; push to it again (an empty commit will do) to start its CI",
+            short(head)
+        );
+        if let Some(task_id) = &change.task_id {
+            let message = format!("Your PR {} ({}): {text}.", change.pr_url, change.change_id);
+            if let Err(e) = self
+                .host
+                .message_task(&change.project_ref, TRAIN_BY, task_id, message)
+                .await
+            {
+                tracing::warn!(change_id = %change.change_id, task_id = %task_id, error = %e, "train: author not messaged");
+            }
+        }
+        let line = Event::PrNote {
+            change: change.change_id.as_str(),
+            pr_url: change.pr_url.as_str(),
+            text: &text,
+        }
+        .render();
+        self.wake_lead(&change.project_ref, line).await;
     }
 
     /// A queued Change whose PR is a draft waits there, saying so, until the PR is marked ready.
