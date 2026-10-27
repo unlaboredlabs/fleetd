@@ -498,6 +498,11 @@ impl Pool {
         lock(&self.warm).len()
     }
 
+    /// The last boot's error, while the pool's boots keep failing.
+    pub fn failing(&self) -> Option<String> {
+        lock(&self.refill).last_error.clone()
+    }
+
     /// Deletes every waiting clone.
     pub fn drain(&self) {
         self.closed.store(true, Ordering::Relaxed);

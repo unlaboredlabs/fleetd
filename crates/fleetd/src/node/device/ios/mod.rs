@@ -551,6 +551,14 @@ impl Simulators {
         }
     }
 
+    /// Why the pool isn't refilled, while its boots keep failing.
+    pub fn refill_failing(&self) -> Option<String> {
+        match &*lock(&self.prep) {
+            Prep::Ready(pool) => pool.failing(),
+            _ => None,
+        }
+    }
+
     /// The live session of an agent session.
     pub fn live(&self, thread: &str) -> Option<Arc<Session>> {
         lock(&self.sessions).get(thread).cloned()
