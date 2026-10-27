@@ -78,7 +78,7 @@ In order. **Need** says when it must be done; nothing blocks using fleetd before
 |---|---|---|---|---|---|---|---|
 | Where the hub listens | Required | Tailnet, this machine only, or LAN; HTTPS through Tailscale Serve is optional | Each option's URL; `tailscale serve` command | Tailscale admin | none | Reach `/healthz` from this device | init, `hub/reachable`, `hub/https` |
 | Machines | Required | The machines to add | `fleetd machine add <host>`, or a join command with a code | none | none | The checks: online, runner | init, `machine add`, `*/online` |
-| Claude | Required | A hub API key and an optional endpoint, **or** nothing: each person connects their own subscription | Key name `fleetd on devbox` | Claude Console › API keys | API key (sealed), endpoint | `GET /v1/models` at the endpoint | per-machine `claude login` only; key and subscriptions are D186 |
+| Claude | Required | A hub API key and an optional endpoint, **or** nothing: each person connects their own subscription | Key name `fleetd on devbox` | Claude Console › API keys | API key (sealed), endpoint | `GET /v1/models` at the endpoint. Done by either way: the key, or every machine's own login (§3.1) | per-machine `claude login` only; key and subscriptions are D186 |
 | GitHub App | Before the first PR | Nothing to paste: confirm the App GitHub shows, pick the repositories to install it on, connect your own account | The manifest: name, homepage, callback `<hub>/oauth/github/callback`, repository permissions, webhook | "Create on my account" or "in an organization", then GitHub's install page | none: GitHub hands the App's keys to the hub | Mint an installation token and list the repositories it reaches; the admin's own sign-in proves the callback | D190; today `gh auth` on the hub (`hub/gh_auth`) |
 | Invite people | Optional | A name, admin or not | The invite link | none | Name | The link opens | teams step 1, in flight |
 | Google | Optional | A Cloud project, the three APIs, the sign-in screen published In production, a Desktop app OAuth client; optionally Gmail in real time (a Pub/Sub topic, a pull subscription, and a service account to read it) | Project and app name, the Gmail, Calendar and Drive scopes; on an HTTPS hub, also a web redirect `<hub>/oauth/google/callback` | Cloud Console: new project, enable APIs, Auth Platform › Branding, › Clients | Client ID, client secret (sealed to the hub); optionally the Gmail subscription and the reader's JSON key (sealed to one machine) | Exchange a dummy code: `invalid_grant` means Google knows the client; with a key, pull once from the subscription; then each person connects from their Navi | D189; Navi integrations, in flight (#635) |
@@ -102,23 +102,36 @@ pub struct SetupStep {
     pub why: String,               // one line
     pub need: SetupNeed,           // Required | Before { what: "the first PR" } | Optional
     pub status: SetupStatus,       // Done | Todo | Look | Skipped
-    pub said: Option<String>,      // the worst check's message
+    pub said: Option<String>,      // the deciding check's message
+    pub way: Option<String>,       // the way in use, when a step has several: "the hub's API key"
     pub fix: Option<DoctorFix>,    // as today, for what a command fixes
-    pub link: Option<SetupLink>,   // { site, label, url }
-    pub values: Vec<PasteValue>,   // { label, value, note?, plain? }, computed for this hub
-    pub fields: Vec<SetupField>,   // { name, label, secret, optional, placeholder, sink }
+    pub parts: Vec<SetupPart>,     // numbered: { title, optional, note?, links, values: [PasteValue] }
+    pub fields: Vec<SetupField>,   // { name, label, secret, optional, multiline, placeholder, sink, note? }
+    pub fields_note: Option<String>, // what happens after the paste
     pub test: Option<String>,      // what Test does, in a few words
-    pub checks: Vec<String>,       // "hub/github_app", "*/claude_login"
+    pub ways: Vec<SetupWay>,       // { label?, checks: ["hub/claude_key"] }; one is enough
 }
+// PasteValue: { label, value, note?, plain? (words to follow), filled? (fleetd fills it in; shown, never copied) }
 ```
 
-- **Status comes from the checks**, never from wizard progress. No check yet, or the worst one `unknown`, is Todo.
-  The worst `fail` or `warn` is Look. All `ok` is Done.
+- **Status comes from the checks**, never from wizard progress. Each **way** to complete a step has its checks, and
+  a way's status is the worst of them: no check yet, or the worst `unknown`, is Todo; the worst `fail` or `warn` is
+  Look; all `ok` is Done. The **step takes its best way**: one way Done is enough, else one that wants a look, else
+  Todo.
+  - Most steps have one way.
+  - **Claude has two:**
+    - the hub's API key (`hub/claude_key`), with which machines need no login of their own;
+    - every machine's own login (`*/claude_login`, every machine's `claude_login` check). Each person's
+      subscription check joins this way when teams lands.
+
+    With a key set and tested, logged-out machines don't hold the step back. Without a key, it is Done only once
+    every machine is logged in, and a machine that isn't makes it Look with that machine's message. The step
+    shows which way is in use ("Done with the hub's API key").
 - The only state the hub stores is **Skipped**, per step, for the admin. So the flow resumes anywhere: in init, in
   the app, on another device or a week later.
 - The steps are defined in one place in the hub (`hub/setup/steps.rs`): each step's static text, its values computed
-  from the hub's URL, and its check ids. The prototype's `screens/setup/steps.ts` is this catalog in TypeScript. It
-  moves into the hub with the build.
+  from the hub's URL, and its ways. The prototype's `screens/setup/steps.ts` is this catalog in TypeScript, in
+  the same shape. It moves into the hub with the build.
 - Setup steps are **doctor checks too**. `fleetd doctor` prints the steps first, then the checks no step owns (disk,
   stale sessions, fork behind).
 
@@ -197,8 +210,9 @@ no `gh auth` on the hub.
    The admin checks the name and presses Create. GitHub redirects to the hub with a code. The hub converts it
    (`POST /app-manifests/{code}/conversions`, within the hour) into the App's id, slug, client ID, client secret,
    webhook secret and private key, straight into the hub sink. Nobody copies a key.
-2. **Install** on the repositories fleetd works on (`github.com/apps/<slug>/installations/new`). GitHub returns to
-   `setup_url` with the installation.
+2. **Install** on the repositories fleetd works on (`github.com/apps/<slug>/installations/new`). The slug is the
+   one the conversion returns, since the admin may have renamed the App on GitHub's form. The hub fills the link
+   in from it, never from the name it proposed. GitHub returns to `setup_url` with the installation.
 3. **Connect your own GitHub.** The admin signs in through the App (`/oauth/github/start` → GitHub →
    `/oauth/github/callback`). The hub keeps the user-to-server token and refreshes it.
    - In the terminal, `fleetd init` opens the same link in a browser and waits for the hub to say it's done.
@@ -262,8 +276,8 @@ person then connects their own Google account from their Navi.
      account, subscriber binding and key commands, ending in `cat … && rm …`. That prints the key once, to paste.
 
      The fields take the subscription's full name (`projects/fleetd-devbox/subscriptions/fleetd-gmail-hub`) and the
-     JSON key. The key is a sealed multi-line field, sealed to the one machine that reads (§3.4). Once pasted and sealed,
-     the field shows only the key's account and fingerprint, never the key.
+     JSON key. The key is a sealed multi-line field, sealed to the one machine that reads (§3.4). Once pasted and
+     sealed, the field shows only the key's account and fingerprint, never the key.
 
   T805 (native Google) owns the exact client type, scopes and credential; this step shows what its PR fixes.
 - **Test** exchanges a dummy code at Google's token endpoint. `invalid_grant` means Google knows the client and its
@@ -298,7 +312,9 @@ is, the three required steps with their why, the rest as one line each with when
 The step screen is a list of steps on the left, grouped and quiet, each with its need or status in words. The open
 step is on the right, in numbered parts (open the provider, fill it in with these, paste what you get back),
 separated by hairlines. Test sits below them; Skip for now and Continue sit at the foot. The end says what is ready
-and what waits for later. A member's app never shows any of it.
+and what waits for later. If a required step is still left (the admin pressed Continue past it), the end says so
+and leads back to it. A member's app never shows any of it: the build gates `#/setup` to admins, as Administration
+is; the prototype's route isn't gated.
 
 **Administration › Setup** is the same step screen, always there for admins, on the separate Administration page
 (teams step 1). The sidebar's Administration entry shows a count only while a required step is left.
@@ -328,7 +344,10 @@ table with copy buttons, live checks after the paste, "progress is saved".
   - A `hub/github_app` check: the App exists, it is installed, a token mints, and the asking admin is connected.
   - It takes over from `gh auth` on the hub, and `hub/gh_auth` goes.
 - **Claude accounts (hub key, endpoint, subscriptions)**
-  - A `hub/claude_key` check (`GET /v1/models` at the endpoint, saying which key by its last 4 characters).
+  - A `hub/claude_key` check (`GET /v1/models` at the endpoint, saying which key by its last 4 characters), as the
+    step's first way.
+  - The per-machine `claude_login` checks stay as they are, as its second way. Each person's subscription check
+    joins that way.
   - Where the key is sealed (machines).
   - What "each person's subscription" checks per person.
   - The agent profiles' model settings (#626) stay in Settings › Agents, not setup.
