@@ -656,6 +656,11 @@ fn example(role: Role, tool: &str) -> Option<Value> {
             "text": "No npm here: use pnpm.",
             "replaces": "Use npm",
         }),
+        (Role::Lead, "forget") => json!({
+            "scope": "project",
+            "entry": "Deploys freeze on Fridays",
+            "reason": "The freeze ended with the launch.",
+        }),
         (Role::Lead, "memory_read") => json!({ "topic": "deploys" }),
         (Role::Lead, "automation_create") => json!({
             "name": "Weekly dependency check",

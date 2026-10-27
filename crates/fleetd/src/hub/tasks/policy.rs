@@ -4,6 +4,7 @@
 use fleetd_contracts::browser::BrowserSessionState;
 use fleetd_contracts::lead_calls::LeadCall;
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
+use fleetd_contracts::memory::MemoryScope;
 use fleetd_contracts::preview::PreviewId;
 use fleetd_contracts::tasks::TaskId;
 
@@ -43,6 +44,8 @@ pub const NODE_OPS: &[&str] = &[
 pub const ENDED_PREVIEW_OPS: &[&str] = &["browser_session", "browser_recording_part"];
 /// The calls that start an agent.
 pub const SPAWN_OPS: &[&str] = &["task_spawn"];
+/// The only calls of a nightly memory refresh's session (hub/memory/refresh).
+pub const MEMORY_REFRESH_OPS: &[&str] = &["memory_read", "remember", "forget"];
 
 /// Which of fleetd's agents a lead-side call comes from, by the session it names.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -59,12 +62,14 @@ pub enum CallerAgent {
     /// That session once its preview ended, for as long as its node may still upload (hub/preview's
     /// `HELD_UPLOAD_MS`): it only uploads its recording and reports itself closing.
     EndedPreview(PreviewId),
+    /// A project's nightly memory refresh: a lead session of its own that only reads and writes memory.
+    MemoryRefresh,
 }
 
 impl CallerAgent {
     pub fn depth(&self) -> u32 {
         match self {
-            CallerAgent::Person | CallerAgent::Lead => 0,
+            CallerAgent::Person | CallerAgent::Lead | CallerAgent::MemoryRefresh => 0,
             CallerAgent::Task(_) | CallerAgent::Preview(_) | CallerAgent::EndedPreview(_) => 1,
         }
     }
@@ -118,6 +123,12 @@ pub fn check(agent: &CallerAgent, op: &str) -> Result<(), McpToolError> {
             ))
         }
         CallerAgent::EndedPreview(_) => Ok(()),
+        CallerAgent::MemoryRefresh if !MEMORY_REFRESH_OPS.contains(&op) => Err(McpToolError::new(
+            ErrorCode::Forbidden,
+            format!("{op} isn't a call of the nightly memory refresh, which only reads and writes memory."),
+        )
+        .with_fix("Use memory_read, remember and forget only, then end your turn.")),
+        CallerAgent::MemoryRefresh => Ok(()),
         CallerAgent::Person | CallerAgent::Lead if op == "ask_lead" => Err(McpToolError::new(
             ErrorCode::Invalid,
             "ask_lead is a task's question for its lead, and this call comes from no task.",
@@ -135,6 +146,19 @@ pub fn check(agent: &CallerAgent, op: &str) -> Result<(), McpToolError> {
 /// [`check`], and what only the call itself says: an ended preview's session reports itself closing, never live.
 pub fn check_call(agent: &CallerAgent, call: &LeadCall) -> Result<(), McpToolError> {
     check(agent, &fleetd_contracts::lead_calls::op_name(call))?;
+    // The refresh adds to user.md, every project's, but never changes or removes what is there.
+    let user_md_changed = match call {
+        LeadCall::Remember(c) => c.scope == MemoryScope::User && c.replaces.is_some(),
+        LeadCall::Forget(c) => c.scope == MemoryScope::User,
+        _ => false,
+    };
+    if *agent == CallerAgent::MemoryRefresh && user_md_changed {
+        return Err(McpToolError::new(
+            ErrorCode::Forbidden,
+            "The nightly refresh only adds to user.md: it never replaces or removes an entry there.",
+        )
+        .with_fix("Add the lesson as a new user.md entry, or leave user.md as it is."));
+    }
     if let (CallerAgent::EndedPreview(preview), LeadCall::BrowserSession(report)) = (agent, call)
         && matches!(
             report.state,

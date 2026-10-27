@@ -256,8 +256,11 @@ pub struct ChatMessage {
     /// A final lead message of more than one bubble, or with a block: its bubbles in order. Absent: `text` is one
     /// bubble (and while a message streams).
     pub parts: Option<List<ChatPart, 1, CHAT_PARTS_MAX>>,
-    /// A system line "Remembered: …": what the lead's `remember` wrote, which `memory_undo` takes back.
+    /// A system line "Remembered: …" or "Forgot: …": what the lead's `remember` or `forget` wrote, which `memory_undo` takes back.
     pub remembered: Option<crate::memory::RememberedItem>,
+    /// A system line "Memory refreshed: +a ~b −c": what the nightly memory refresh changed, each change undone on its
+    /// own or all together with `memory_undo`.
+    pub memory_refreshed: Option<crate::memory::MemoryRefreshed>,
     /// A human message: the skills it named with `$name`, which the lead's copy lists.
     pub skills: Option<List<crate::skills::SkillName, 1, 8, true>>,
     /// An agent's suggestion to try a PR (preview_suggest), posted once per PR with `text` in its words: the app

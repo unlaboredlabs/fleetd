@@ -55,6 +55,7 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   { key: "projects.name", label: "Project name", tab: "projects", keywords: ["rename", "title"] },
   { key: "projects.repos", label: "Repos", tab: "projects", keywords: ["repo", "repository", "remote", "base branch", "checkout", "preview", "folder"] },
   { key: "projects.worktrees", label: "Worktrees", tab: "projects", keywords: ["worktree", "cleanup", "keep", "base branch", "branch", "disk"] },
+  { key: "projects.memory", label: "Nightly memory refresh", tab: "projects", keywords: ["refresh", "nightly", "dreaming", "tidy"] },
   { key: "projects.env", label: "Environment variables", tab: "projects", keywords: ["env", ".env", "secrets", "api key", "token", "variables"] },
   { key: "projects.mcp", label: "Project MCP servers", tab: "projects", keywords: ["mcp", "tools", "servers", "connections"] },
   { key: "projects.setup", label: "Setup commands", tab: "projects", keywords: ["setup", "install", "dependencies", "codegen", "worktree", "lockfile", "pnpm"] },

@@ -1059,6 +1059,11 @@ export type ChatMessage = {
   /** From before the chat: where this history message came from. */
   history?: ChatHistorySource;
   item?: ChatItem;
+  /**
+   * A system line "Memory refreshed: +a ~b −c": what the nightly memory refresh changed, each change undone on its
+   * own or all together with `memory_undo`.
+   */
+  memoryRefreshed?: MemoryRefreshed;
   messageId: ChatMessageId;
   /**
    * A final lead message of more than one bubble, or with a block: its bubbles in order. Absent: `text` is one
@@ -1073,7 +1078,7 @@ export type ChatMessage = {
    */
   previewSuggestion?: PreviewSuggestion;
   projectRef: ProjectRef;
-  /** A system line "Remembered: …": what the lead's `remember` wrote, which `memory_undo` takes back. */
+  /** A system line "Remembered: …" or "Forgot: …": what the lead's `remember` or `forget` wrote, which `memory_undo` takes back. */
   remembered?: RememberedItem;
   /** A human message: the bubble it answers. */
   replyTo?: ChatReplyTo;
@@ -2750,6 +2755,17 @@ export type MemoryNote = {
   text: string;
 };
 
+/**
+ * What a nightly memory refresh changed, as one line in the project's chat: each change with its own Undo, and Undo
+ * all. Posted only when something changed.
+ */
+export type MemoryRefreshed = {
+  /** In the order the refresh made them; the first [`REFRESHED_LISTED`] when it made more. */
+  items: RememberedItem[];
+  /** Every change it made, when that is more than `items` lists. Undo all takes them all back. */
+  total?: number;
+};
+
 export type MemoryScope = "user" | "project";
 
 export type MemorySetInput = {
@@ -2772,7 +2788,12 @@ export type MemorySetOutput = {
 export type MemoryTopic = string;
 
 export type MemoryUndoInput = {
-  /** The chat line that said "Remembered: …". */
+  /**
+   * A "Memory refreshed" line's listed change, by its place in the line (0 first); absent, every change not yet
+   * undone, listed or not.
+   */
+  item?: number;
+  /** The chat line that said "Remembered: …", "Forgot: …" or "Memory refreshed: …". */
   messageId: ChatMessageId;
   projectRef: ProjectRef;
 };
@@ -4023,6 +4044,11 @@ export type ProjectSettings = {
    */
   keepWorktrees: boolean;
   machineId: MachineId;
+  /**
+   * True (the default): each night the lead tidies the project's memory, with a line in the chat to undo it.
+   * Absent from older hubs.
+   */
+  memoryRefresh?: boolean;
   /** How to run a preview someone asks for (Try it); absent when none is set, and from older hubs. */
   preview?: PreviewConfig;
   projectId: ProjectId;
@@ -4056,6 +4082,8 @@ export type ProjectSettingsGetOutput = {
 export type ProjectSettingsSetInput = {
   keepWorktrees?: boolean;
   machineId: MachineId;
+  /** Turns the nightly memory refresh on or off for the project. */
+  memoryRefresh?: boolean;
   /** Replaces how a preview runs; one with no target turns Try it off for the project. */
   preview?: PreviewConfig;
   projectId: ProjectId;
@@ -4338,11 +4366,16 @@ export type RecoveryPausedData = {
   until?: Timestamp;
 };
 
-/** What a `remember` call wrote, as a line in the project's chat. Undone with `memory_undo`. */
+/** What a `remember` or `forget` call wrote, as a line in the project's chat. Undone with `memory_undo`. */
 export type RememberedItem = {
+  /** `forget` removed `text`; Undo puts it back. */
+  forgotten?: boolean;
+  /** Why it was forgotten. */
+  reason?: string;
   /** The whole entry it replaced, which Undo puts back. */
   replaced?: string;
   scope: MemoryScope;
+  /** The entry written; with `forgotten`, the whole entry removed. */
   text: string;
   topic?: MemoryTopic;
   undone?: boolean;

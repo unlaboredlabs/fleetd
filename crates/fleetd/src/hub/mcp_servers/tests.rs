@@ -536,3 +536,57 @@ async fn a_launch_carries_them_and_a_send_only_a_change() {
     let launch = launched(&mut calls).await;
     assert_eq!((launch.mcp_role, launch.mcp), (None, None));
 }
+
+/// A memory refresh's launch: claude's own tools denied, fleetd's MCP server alone, and no send ever brings it the
+/// project's servers.
+#[tokio::test]
+async fn a_refresh_launch_denies_the_runtime_tools_and_keeps_its_own_servers() {
+    let (hub, _home) = hub();
+    let mut calls = node(&hub).await;
+    let plain = json!({ "kind": "plain", "name": "Authorization", "value": "public" });
+    call(
+        &hub,
+        &person(),
+        "mcp_server_set",
+        github(json!({ "kind": "global" }), plain.clone()),
+    )
+    .await
+    .unwrap();
+    let (thread, _) = hub
+        .executors
+        .launch(
+            &lab(),
+            &crate::hub::executor::LaunchInput {
+                project_id: ProjectId::unchecked("p1"),
+                prompt: "tidy".into(),
+                profile: Default::default(),
+                runtime_mode: fleetd_contracts::model::RuntimeMode::FullAccess,
+                title: None,
+                client_request_id: "req-memory".into(),
+            },
+            crate::hub::memory::refresh::launch_options(),
+        )
+        .await
+        .unwrap();
+    let launch = launched(&mut calls).await;
+    for tool in ["Bash", "Read", "Edit", "Write", "WebFetch"] {
+        assert!(
+            launch.disallowed_tools.iter().any(|t| t == tool),
+            "{tool}: {:?}",
+            launch.disallowed_tools
+        );
+    }
+    let mcp = launch.mcp.unwrap();
+    assert!(!mcp.user_servers && mcp.servers.is_empty(), "{mcp:?}");
+    let r = ThreadRef {
+        machine_id: lab(),
+        thread_id: thread,
+    };
+    let mut moved = github(json!({ "kind": "global" }), plain);
+    moved["transport"]["url"] = "https://api2.example.com/mcp".into();
+    call(&hub, &person(), "mcp_server_set", moved)
+        .await
+        .unwrap();
+    hub.executors.send(&r, "go on", "s1").await.unwrap();
+    assert_eq!(sent_mcp(&mut calls).await, None);
+}
