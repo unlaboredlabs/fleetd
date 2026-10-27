@@ -11,7 +11,7 @@ use serde_with::skip_serializing_none;
 
 use crate::checked;
 use crate::hello::ProtocolVersion;
-use crate::ids::{MachineId, ProjectId, Timestamp};
+use crate::ids::{MachineId, ProjectId, ThreadId, Timestamp};
 use crate::lead_calls::{LeadCallFrame, LeadResultFrame};
 use crate::ledger::{DecisionKey, EnvName, GatedArgv, GatedCwd, GatedTimeoutSec, SecretEnv};
 use crate::model::SleptSpan;
@@ -143,6 +143,10 @@ pub const CAP_PREVIEWS: &str = "previews";
 
 /// `SessionRole::Assistant` (a Navi's lead) and a relative `project_upsert` root under the node's home (its folder).
 pub const CAP_ASSISTANT: &str = "assistant";
+
+/// `session_end`: the node takes [`SessionEndFrame`], and ends an agent session's screens when the hub says its task
+/// ended.
+pub const CAP_SESSION_END: &str = "session_end";
 
 /// The node seals its agents' session secrets and relay key to the machine that will host a session, and opens what
 /// is sealed to it: the hub places sessions across machines only between nodes that list it.
@@ -557,6 +561,18 @@ pub enum HubToNode {
     RelayDial(crate::machine_roles::RelayDialFrame),
     /// Only to nodes that list [`CAP_SESSION_HOST`].
     SessionStep(crate::machine_roles::SessionStepFrame),
+    /// Only to nodes that list [`CAP_SESSION_END`].
+    SessionEnd(SessionEndFrame),
+}
+
+/// Hub -> node: the task of the agent session `threadId` ended, and its screen `sessionId` is still live on the hub:
+/// the node ends that agent session's screens (a browser, a device, a desktop; one hosted elsewhere too) and kills
+/// their processes. Nothing when it holds none.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionEndFrame {
+    pub thread_id: ThreadId,
+    pub session_id: crate::browser::BrowserSessionId,
 }
 
 #[cfg(test)]

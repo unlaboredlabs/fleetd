@@ -204,6 +204,7 @@ fn tag(frame: &HubToNode) -> &'static str {
         HubToNode::PreviewStop(_) => "preview_stop",
         HubToNode::RelayDial(_) => "relay_dial",
         HubToNode::SessionStep(_) => "session_step",
+        HubToNode::SessionEnd(_) => "session_end",
     }
 }
 
@@ -383,6 +384,7 @@ async fn run_link_once(
             fleetd_contracts::node_link::CAP_CLAUDE_INSTALL.to_owned(),
             fleetd_contracts::node_link::CAP_SESSION_SEAL.to_owned(),
             fleetd_contracts::node_link::CAP_ASSISTANT.to_owned(),
+            fleetd_contracts::node_link::CAP_SESSION_END.to_owned(),
         ]
         .into_iter()
         .chain(
@@ -604,6 +606,11 @@ async fn run_link_once(
                 if let Some(previews) = &shared.previews {
                     previews.stop(stop);
                 }
+            }
+            // Only to nodes listing CAP_SESSION_END: the session's task ended, and its screens go with it.
+            HubToNode::SessionEnd(end) => {
+                tracing::info!(session = %end.session_id, thread = %end.thread_id, "the hub ended a screen whose task ended");
+                shared.node_sessions.end_screens(end.thread_id.as_str());
             }
             HubToNode::Challenge(_) | HubToNode::Welcome(_) | HubToNode::Heartbeat(_) => {}
         }
