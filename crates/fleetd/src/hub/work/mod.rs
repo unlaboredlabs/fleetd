@@ -183,10 +183,15 @@ impl Work {
         now_ms(self.clock.as_ref())
     }
 
-    /// Records the repo and base the project's work lands on, so its tasks and Changes are in that scope's view.
+    /// Records the repo and base the project's work lands on, so its tasks and Changes are in that scope's view. A
+    /// directory with a remote is a git repo: the project gets its own repo, with this key and base.
     pub fn bind_project(&self, project: &ProjectRef, scope: &WorkScope) -> Result<(), StoreError> {
         let now = self.now();
-        self.db.with(|c| Ok(store::bind(c, project, scope, now)?))
+        self.db.transaction(|c| {
+            store::bind(c, project, scope, now)?;
+            crate::hub::repos::store::ensure_own(c, project, None)?;
+            Ok(())
+        })
     }
 
     /// How far the landing scanner has read the scope's base; `None` before its first scan.
@@ -295,9 +300,13 @@ impl Work {
             .map(|f| f.why.clone())
     }
 
-    /// Forgets the project's repo and base: its origin went away.
+    /// Forgets the project's repo and base: its origin went away. Its own repo stays, with no key or base.
     pub fn unbind_project(&self, project: &ProjectRef) -> Result<(), StoreError> {
-        self.db.with(|c| Ok(store::unbind(c, project)?))
+        self.db.transaction(|c| {
+            store::unbind(c, project)?;
+            crate::hub::repos::store::ensure_own(c, project, None)?;
+            Ok(())
+        })
     }
 
     pub fn scope_of(&self, project: &ProjectRef) -> Result<Option<WorkScope>, StoreError> {

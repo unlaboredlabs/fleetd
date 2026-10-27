@@ -32,6 +32,7 @@ pub mod prompts;
 pub mod prs;
 pub mod queue;
 pub mod redact;
+pub mod repos;
 pub mod reviews;
 pub mod serve;
 pub mod skills;

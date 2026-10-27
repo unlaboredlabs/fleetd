@@ -493,6 +493,14 @@ async fn register(
             .map_err(crate::hub::executor::tools::from_executor)?;
     }
     bind_scope(hub, m, &project_id, facts);
+    // `checkout` let only a git repo through: the project's directory is its own repo, with a remote or without.
+    let project = ProjectRef {
+        machine_id: m.clone(),
+        project_id: project_id.clone(),
+    };
+    if let Err(error) = hub.repos.ensure_own(&project, Some(path)) {
+        tracing::warn!(%error, "the project's own repo was not recorded");
+    }
     let summary = format!("{title} added on {m}: {}", inspect.lead_needs);
     // The event log keeps at most 2 KB of data; a dry-run project_add has the whole inspect.
     let data = inspect::fit_added(ProjectAddedData {
