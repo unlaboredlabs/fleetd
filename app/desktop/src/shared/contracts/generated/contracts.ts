@@ -1069,6 +1069,8 @@ export type ChatMessage = {
    */
   memoryRefreshed?: MemoryRefreshed;
   messageId: ChatMessageId;
+  /** The lead flagged it for the person's look (`nudge`), or it is an agent's Try it suggestion. */
+  nudge?: ChatNudge;
   /**
    * A final lead message of more than one bubble, or with a block: its bubbles in order. Absent: `text` is one
    * bubble (and while a message streams).
@@ -1116,6 +1118,36 @@ export type KnownChatMessageState = "final" | "streaming";
 /** KnownChatMessageState, or a value from a newer hub. */
 export type ChatMessageState = KnownChatMessageState | (string & {});
 
+/**
+ * A message worth the person's look: a showcase, something to try, a risk. It waits, below what the lead waits on
+ * you for, until the person has seen the message or dismissed it, and for a day at most. In the app only: it sends
+ * no notification.
+ */
+export type ChatNudge = {
+  at: Timestamp;
+  /** Why it no longer waits; absent while it does (or once a day has passed). */
+  cleared?: ChatNudgeCleared;
+  /** What to look at, in a few words: "the Machines page redesign". */
+  reason: string;
+};
+
+export type ChatNudgeClearInput = {
+  /** True: dismissed. Absent: seen. */
+  dismissed?: boolean;
+  messageId: ChatMessageId;
+  projectRef: ProjectRef;
+};
+
+export type ChatNudgeClearOutput = {
+  next?: string;
+  ok: true;
+  truncated?: boolean;
+};
+
+export type KnownChatNudgeCleared = "dismissed" | "seen" | "replaced";
+/** KnownChatNudgeCleared, or a value from a newer hub. */
+export type ChatNudgeCleared = KnownChatNudgeCleared | (string & {});
+
 /** An inline item that waits on the human: which message, and what it asks for. */
 export type ChatOpenItem = {
   kind: ChatOpenItemKind;
@@ -1126,6 +1158,13 @@ export type ChatOpenItem = {
 export type KnownChatOpenItemKind = "secret_request" | "command_approval";
 /** KnownChatOpenItemKind, or a value from a newer hub. */
 export type ChatOpenItemKind = KnownChatOpenItemKind | (string & {});
+
+/** A nudge still waiting, in a chat state: its message, and what to look at. */
+export type ChatOpenNudge = {
+  at: Timestamp;
+  messageId: ChatMessageId;
+  reason: string;
+};
 
 /**
  * One bubble of a lead message: `text.slice(start, end)` (UTF-16 offsets, like `ChatDelta.offset`), shown as
@@ -3857,6 +3896,8 @@ export type ProjectChatState = {
   leadWorking: boolean;
   /** The lead's last message waits for a human reply, or an inline item is open. */
   needsYou: boolean;
+  /** The nudges still waiting to be seen, oldest first: what the app shows as "N to look at". Absent when none is. */
+  nudges?: ChatOpenNudge[];
   /**
    * The inline items still open, oldest first, however far back: the chat may not have their page loaded. Absent
    * when none is (and from older hubs).
@@ -6375,6 +6416,7 @@ export interface ToolMap {
   cap_set: { input: CapSetInput; output: CapSetOutput };
   changes_list: { input: ChangesListInput; output: ChangesListOutput };
   chat_history: { input: ChatHistoryInput; output: ChatHistoryOutput };
+  chat_nudge_clear: { input: ChatNudgeClearInput; output: ChatNudgeClearOutput };
   chat_send: { input: ChatSendInput; output: ChatSendOutput };
   chat_stop: { input: ChatStopInput; output: ChatStopOutput };
   checklist_edit: { input: ChecklistEditInput; output: ChecklistEditOutput };

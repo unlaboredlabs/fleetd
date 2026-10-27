@@ -33,6 +33,7 @@ import { MessageReceipt, ReceiptMarkView } from "./Composer";
 import { shortClock } from "./format";
 import { authorLabel, ENTER_MS, type Arrival, type Row } from "./model";
 import { plainText } from "./plain";
+import { useLooked } from "./looked";
 import { markOf, useShown } from "./shown";
 import type { ProjectRef } from "./slots";
 import { bubbleKey, toggleTapback, useTapbacks } from "./tapbacks";
@@ -155,6 +156,8 @@ function BubbleLine(props: {
   enter: Arrival | undefined;
   /** Its place in the message, for the stagger as the message enters. */
   step: number;
+  /** The message's first bubble. */
+  opening: boolean;
   /** Your message's last bubble: its receipt mark goes beside it; true when it's your latest message. */
   receipt?: boolean | undefined;
 }) {
@@ -165,7 +168,8 @@ function BubbleLine(props: {
   const block = bubble.kind === "block";
   const wide = isWide(bubble);
   const jumbo = !block && EMOJI_ONLY.test(bubble.text.trim());
-  const mark = markOf(actions?.shown, item.id, bubble.key);
+  // A mark on the message as a whole (a nudge's Show) rings its first bubble.
+  const mark = markOf(actions?.shown, item.id, bubble.key) ?? (props.opening ? markOf(actions?.shown, item.id) : undefined);
   const box = useRef<HTMLDivElement>(null);
   const shown = useShown(box, mark);
   const pick = (t: Tapback) => {
@@ -274,8 +278,11 @@ export function MessageView({ row: r, mineLatest, enter }: { row: Extract<Row, {
   const target = r.reply?.target;
   const quote = useEnter(enter);
   const tail = useEnter(enter, bubbles.length);
+  const box = useRef<HTMLDivElement>(null);
+  useLooked(box, i.id);
   return (
     <div
+      ref={box}
       className={cx(s.message, r.run && s.messageHead, (r.history || i.author === "agent") && s.quietMessage, mine && s.mine)}
       data-entry="message"
       data-author={i.author}
@@ -309,6 +316,7 @@ export function MessageView({ row: r, mineLatest, enter }: { row: Extract<Row, {
             tapback={lead ? marks[bubbleKey(i.id, b.key)] : undefined}
             enter={enter}
             step={n}
+            opening={n === 0}
             receipt={mine && n === bubbles.length - 1 ? mineLatest : undefined}
           />
         ))

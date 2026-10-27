@@ -2711,6 +2711,10 @@
         "messageId": {
           "$ref": "#/$defs/ChatMessageId"
         },
+        "nudge": {
+          "$ref": "#/$defs/ChatNudge",
+          "description": "The lead flagged it for the person's look (`nudge`), or it is an agent's Try it suggestion."
+        },
         "parts": {
           "description": "A final lead message of more than one bubble, or with a block: its bubbles in order. Absent: `text` is one\nbubble (and while a message streams).",
           "items": {
@@ -2798,6 +2802,90 @@
       ],
       "x-open": true
     },
+    "ChatNudge": {
+      "description": "A message worth the person's look: a showcase, something to try, a risk. It waits, below what the lead waits on\nyou for, until the person has seen the message or dismissed it, and for a day at most. In the app only: it sends\nno notification.",
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "cleared": {
+          "$ref": "#/$defs/ChatNudgeCleared",
+          "description": "Why it no longer waits; absent while it does (or once a day has passed)."
+        },
+        "reason": {
+          "description": "What to look at, in a few words: \"the Machines page redesign\".",
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "reason",
+        "at"
+      ],
+      "type": "object"
+    },
+    "ChatNudgeClearInput": {
+      "properties": {
+        "dismissed": {
+          "description": "True: dismissed. Absent: seen.",
+          "type": "boolean"
+        },
+        "messageId": {
+          "$ref": "#/$defs/ChatMessageId"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        }
+      },
+      "required": [
+        "projectRef",
+        "messageId"
+      ],
+      "type": "object"
+    },
+    "ChatNudgeClearOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "ok": {
+          "enum": [
+            true
+          ],
+          "type": "boolean"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "type": "object"
+    },
+    "ChatNudgeCleared": {
+      "oneOf": [
+        {
+          "enum": [
+            "dismissed"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "seen",
+          "description": "The person has seen the message: scrolled into view, or opened with Show.",
+          "type": "string"
+        },
+        {
+          "const": "replaced",
+          "description": "A newer nudge took its place past [`CHAT_NUDGES_MAX`].",
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
     "ChatOpenItem": {
       "description": "An inline item that waits on the human: which message, and what it asks for.",
       "properties": {
@@ -2822,6 +2910,29 @@
       ],
       "type": "string",
       "x-open": true
+    },
+    "ChatOpenNudge": {
+      "description": "A nudge still waiting, in a chat state: its message, and what to look at.",
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "messageId": {
+          "$ref": "#/$defs/ChatMessageId"
+        },
+        "reason": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "messageId",
+        "reason",
+        "at"
+      ],
+      "type": "object"
     },
     "ChatPart": {
       "description": "One bubble of a lead message: `text.slice(start, end)` (UTF-16 offsets, like `ChatDelta.offset`), shown as\nmarkdown, or as `block` when it has one (the slice is then the block's fence, its readable fallback).",
@@ -7176,6 +7287,12 @@
         "chat_history.output": {
           "$ref": "#/$defs/ChatHistoryOutput"
         },
+        "chat_nudge_clear.input": {
+          "$ref": "#/$defs/ChatNudgeClearInput"
+        },
+        "chat_nudge_clear.output": {
+          "$ref": "#/$defs/ChatNudgeClearOutput"
+        },
         "chat_send.input": {
           "$ref": "#/$defs/ChatSendInput"
         },
@@ -7768,6 +7885,8 @@
         "changes_list.output",
         "chat_history.input",
         "chat_history.output",
+        "chat_nudge_clear.input",
+        "chat_nudge_clear.output",
         "chat_send.input",
         "chat_send.output",
         "chat_stop.input",
@@ -11305,6 +11424,15 @@
         "needsYou": {
           "description": "The lead's last message waits for a human reply, or an inline item is open.",
           "type": "boolean"
+        },
+        "nudges": {
+          "description": "The nudges still waiting to be seen, oldest first: what the app shows as \"N to look at\". Absent when none is.",
+          "items": {
+            "$ref": "#/$defs/ChatOpenNudge"
+          },
+          "maxItems": 3,
+          "minItems": 1,
+          "type": "array"
         },
         "openItems": {
           "description": "The inline items still open, oldest first, however far back: the chat may not have their page loaded. Absent\nwhen none is (and from older hubs).",

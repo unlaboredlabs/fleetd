@@ -707,6 +707,14 @@ async fn a_suggestion_shows_once_per_pr_and_starts_nothing() {
         lines[0].text.as_str(),
         "#14's writer suggests trying #14: the checkout's buttons read differently in German and Dutch"
     );
+    // It comes flagged for the person's look, as something to look at, not something the lead waits on.
+    assert_eq!(
+        lines[0].nudge.as_ref().map(|n| n.reason.as_str()),
+        Some("Try #14: the checkout's buttons read differently in German and Dutch")
+    );
+    let state = hub.chat.state(&shop(), false).unwrap();
+    assert_eq!(state.nudges.map(|n| n.len()), Some(1));
+    assert!(!state.needs_you);
     let list = tool(
         &hub,
         &person(),

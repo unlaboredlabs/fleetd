@@ -1715,6 +1715,16 @@ output!(ChatHistoryOutput {
     state: crate::chat::ProjectChatState,
 });
 
+// chat_nudge_clear: a nudge no longer waits: the person has seen its message (scrolled into view, or opened with
+// Show), or dismissed it. Human keys only. Clearing one already cleared, or gone, is fine.
+input!(ChatNudgeClearInput {
+    project_ref: ProjectRef,
+    message_id: ChatMessageId,
+    /// True: dismissed. Absent: seen.
+    dismissed: Option<bool>,
+});
+output!(ChatNudgeClearOutput { ok: True });
+
 // hub_info: the hub's own fleetd build and what is in flight, so an updater can ask before it restarts the hub or a
 // node.
 input!(HubInfoInput {
@@ -2375,6 +2385,7 @@ tools! {
     chat_send => ChatSend, Operate, ChatSendInput, ChatSendOutput;
     chat_history => ChatHistory, Read, ChatHistoryInput, ChatHistoryOutput;
     // Human keys only (the handlers check).
+    chat_nudge_clear => ChatNudgeClear, Operate, ChatNudgeClearInput, ChatNudgeClearOutput;
     project_stop => ProjectStop, Operate, ProjectStopInput, ProjectStopOutput;
     hub_info => HubInfo, Read, HubInfoInput, HubInfoOutput;
     // Human keys with Admin on every machine only (the handler checks).

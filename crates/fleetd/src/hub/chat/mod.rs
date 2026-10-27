@@ -4,6 +4,7 @@
 //! before the chat (orders, steers, the retired asks) into it once per project; `tools` serves the MCP tools.
 pub mod flow;
 pub mod history;
+pub mod nudges;
 pub mod parts;
 pub mod tools;
 
@@ -55,6 +56,8 @@ pub struct NewMessage {
     pub created_ms: Option<i64>,
     /// An agent's suggestion to try a PR (hub/preview).
     pub preview_suggestion: Option<fleetd_contracts::preview::PreviewSuggestion>,
+    /// Flagged for the person's look as it is added (`nudges`).
+    pub nudge: Option<Line<1, 200>>,
 }
 
 fn key(r: &ProjectRef) -> String {
@@ -127,8 +130,8 @@ pub fn needs_you(messages: &[ChatMessage]) -> bool {
     })
 }
 
-/// What `chat.waiting` said: needs-you, working, and the open items' message ids.
-type Said = (bool, bool, Vec<String>);
+/// What `chat.waiting` said: needs-you, working, and the open items' and waiting nudges' message ids.
+type Said = (bool, bool, Vec<String>, Vec<String>);
 
 pub struct Chat {
     db: Arc<HubDb>,
@@ -141,6 +144,8 @@ pub struct Chat {
     reading: tokio::sync::Mutex<()>,
     /// When each agent key wrote its messages of the last minute.
     agent_sends: Mutex<HashMap<String, Vec<i64>>>,
+    /// Nudges for lead replies not in the chat yet, by their source: the reason, and when (`nudges`).
+    pending_nudges: Mutex<HashMap<String, (Line<1, 200>, i64)>>,
 }
 
 impl Chat {
@@ -154,6 +159,7 @@ impl Chat {
             said: Mutex::default(),
             reading: tokio::sync::Mutex::new(()),
             agent_sends: Mutex::default(),
+            pending_nudges: Mutex::default(),
         })
     }
 
@@ -309,6 +315,7 @@ impl Chat {
                 memory_refreshed: new.memory_refreshed,
                 skills: (!new.skills.is_empty()).then(|| List::unchecked(new.skills)),
                 preview_suggestion: new.preview_suggestion,
+                nudge: None,
                 parts: (author == ChatAuthor::Lead && !new.streaming)
                     .then(|| parts::parts(&text))
                     .flatten(),
@@ -324,8 +331,10 @@ impl Chat {
 
     /// Adds a message and announces it. The same request or source returns the stored message, announced once.
     pub fn add(&self, r: &ProjectRef, new: NewMessage) -> Result<(ChatMessage, bool), StoreError> {
-        let (message, created) = self.insert_quiet(r, new)?;
+        let (source, nudge) = (new.source.clone(), new.nudge.clone());
+        let (mut message, created) = self.insert_quiet(r, new)?;
         if created {
+            self.landed(source.as_deref(), nudge, &mut message)?;
             self.announce(&message)?;
         }
         Ok((message, created))
@@ -784,6 +793,9 @@ impl Chat {
             last_seq: last.map_or_else(Count::default, |m| m.seq),
             last_message_at: last.map(|m| m.created_at.clone()),
             open_items: (!open_items.is_empty()).then(|| List::unchecked(open_items)),
+            nudges: Some(self.nudges_listed(r)?)
+                .filter(|n| !n.is_empty())
+                .map(List::unchecked),
         })
     }
 
@@ -832,17 +844,22 @@ impl Chat {
         })
     }
 
-    /// Announces `chat.waiting` when the project's needs-you or working state, or its open items, changed since it
-    /// last did.
+    /// Announces `chat.waiting` when the project's needs-you or working state, its open items or its waiting nudges
+    /// changed since it last did.
     pub fn tell_state(&self, state: &ProjectChatState) -> Result<(), StoreError> {
         let open = state
             .open_items
             .as_ref()
             .map(|l| l.iter().map(|i| i.message_id.to_string()).collect());
+        let nudges = state
+            .nudges
+            .as_ref()
+            .map(|l| l.iter().map(|n| n.message_id.to_string()).collect());
         let now = (
             state.needs_you,
             state.lead_working,
             open.unwrap_or_default(),
+            nudges.unwrap_or_default(),
         );
         let k = key(&state.project_ref);
         if self.said.lock().unwrap().insert(k, now.clone()) == Some(now) {

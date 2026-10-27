@@ -16,7 +16,7 @@ use crate::browser::{
     BrowserCallFrame, BrowserRecordingPartCall, BrowserRecordingPartResult, BrowserResultFrame,
     BrowserSessionCall, BrowserSessionResult, BrowserTakeoverCall,
 };
-use crate::chat::ChatRequestId;
+use crate::chat::{ChatRequestId, NudgeCall, NudgeResult};
 use crate::checked;
 use crate::checklist::{ChecklistCall, ChecklistResult};
 use crate::effort::TaskProfile;
@@ -303,6 +303,8 @@ pub enum LeadCall {
     Remember(RememberCall),
     Forget(ForgetCall),
     MemoryRead(MemoryReadCall),
+    /// The lead flags its message for the person's look.
+    Nudge(NudgeCall),
     AutomationCreate(AutomationCreateCall),
     AutomationList(AutomationListCall),
     AutomationUpdate(AutomationUpdateCall),
@@ -498,6 +500,7 @@ pub enum LeadCallResult {
     Remember(RememberResult),
     Forget(RememberResult),
     MemoryRead(MemoryReadResult),
+    Nudge(NudgeResult),
     AutomationCreate(AutomationResult),
     AutomationList(AutomationListResult),
     AutomationUpdate(AutomationResult),

@@ -266,6 +266,65 @@ pub struct ChatMessage {
     /// An agent's suggestion to try a PR (preview_suggest), posted once per PR with `text` in its words: the app
     /// shows it as one line with Try it. Nothing runs from it.
     pub preview_suggestion: Option<crate::preview::PreviewSuggestion>,
+    /// The lead flagged it for the person's look (`nudge`), or it is an agent's Try it suggestion.
+    pub nudge: Option<ChatNudge>,
+}
+
+/// The most nudges a project keeps open: a newer one past it clears the oldest.
+pub const CHAT_NUDGES_MAX: usize = 3;
+/// How long a nudge waits to be seen; past it, it fades on its own.
+pub const CHAT_NUDGE_MS: i64 = 24 * 60 * 60_000;
+
+/// A message worth the person's look: a showcase, something to try, a risk. It waits, below what the lead waits on
+/// you for, until the person has seen the message or dismissed it, and for a day at most. In the app only: it sends
+/// no notification.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatNudge {
+    /// What to look at, in a few words: "the Machines page redesign".
+    pub reason: Line<1, 200>,
+    pub at: Timestamp,
+    /// Why it no longer waits; absent while it does (or once a day has passed).
+    pub cleared: Option<ChatNudgeCleared>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(extend("x-open" = true))]
+pub enum ChatNudgeCleared {
+    /// The person has seen the message: scrolled into view, or opened with Show.
+    Seen,
+    Dismissed,
+    /// A newer nudge took its place past [`CHAT_NUDGES_MAX`].
+    Replaced,
+}
+
+/// A nudge still waiting, in a chat state: its message, and what to look at.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatOpenNudge {
+    pub message_id: ChatMessageId,
+    pub reason: Line<1, 200>,
+    pub at: Timestamp,
+}
+
+/// `nudge`: the lead flags the message it just wrote for the person's look, with what to look at. Only for a
+/// showcase, something to try or a risk, never routine news.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct NudgeCall {
+    /// What to look at, in a few words: "the Machines page redesign".
+    pub reason: Line<1, 200>,
+}
+
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct NudgeResult {
+    /// The message flagged; absent while it is still on its way into the chat, which flags it as it lands.
+    pub message_id: Option<ChatMessageId>,
+    pub next: Option<String>,
 }
 
 /// One chat's state, for the sidebar and the status row.
@@ -284,6 +343,8 @@ pub struct ProjectChatState {
     /// The inline items still open, oldest first, however far back: the chat may not have their page loaded. Absent
     /// when none is (and from older hubs).
     pub open_items: Option<List<ChatOpenItem, 1, CHAT_OPEN_ITEMS_MAX>>,
+    /// The nudges still waiting to be seen, oldest first: what the app shows as "N to look at". Absent when none is.
+    pub nudges: Option<List<ChatOpenNudge, 1, CHAT_NUDGES_MAX>>,
 }
 
 /// The most open items a chat state lists.
