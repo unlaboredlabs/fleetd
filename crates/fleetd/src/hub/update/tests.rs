@@ -780,6 +780,16 @@ async fn retry_updates_one_machine_again() {
     let run = until(&after, |r| r.finished_at.is_some()).await;
     assert_eq!(state(&run, Some("mac")).0, UpdateState::Done);
     assert_eq!(claude(&run, "mac").state, UpdateState::Done);
+
+    // The hub moved on since (`fleetd update` on its machine): Retry would put mac behind it, so it is refused and
+    // nothing changes.
+    *fake.running.lock().unwrap() = "0.9.0".into();
+    let before = after.status();
+    assert_eq!(
+        after.retry(&MachineId::unchecked("mac")),
+        Err(super::Refused::HubMovedOn("0.9.0".into()))
+    );
+    assert_eq!(after.status(), before);
 }
 
 /// The watcher never restarted the hub (it died, or the service manager refused): the hub still running ends the

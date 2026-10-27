@@ -23,13 +23,17 @@ in and restarts, in order:
 2. **Every connected machine's node** does the same, all at once, as soon as the hub runs the new build. Nothing is
    installed on a machine before the hub runs the new build. A machine running something that can't carry on through a
    restart (a live browser, device or desktop session, or a preview) waits until it's idle, says so on its line, and
-   updates then; the others don't wait for it.
+   updates then. The other machines don't wait for it. A machine still busy after 4 hours is skipped, with
+   **Retry** on its line.
 3. **Each machine's Claude Code** goes to the version the new fleetd was tested with (`claude install <version>`).
    Sessions already running finish on the version they started with; new ones start on the new one. If the install
    fails, the machine keeps the version it had and the rest of the update goes on. See
    [Claude Code's version](/docs/machines#claude-version).
-4. **The app** installs its own update and restarts. It downloads that update in the background, so it is usually
-   ready by then. A message you were typing is still there after the restart.
+4. **The app** installs its own update and restarts, once every machine is done. It downloads that update in the
+   background, so it is usually ready by then. A message you were typing is still there after the restart. Only the
+   window where you pressed **Update** restarts this way, and it waits for a busy machine too, up to those 4 hours:
+   its line says **Waiting** until then. Any other app window never restarts by itself: it waits for your click on
+   **Update** or **Restart to update**.
 
 Nothing waits on a timer: each restart starts as soon as the build is in place, and each part shows as updated as soon
 as its machine is back on the new build.
@@ -47,7 +51,8 @@ When a part fails, the others still finish:
 - If the hub itself didn't update, its machines aren't asked, and **Update** tries the whole update again.
 
 A failed or skipped machine has **Retry** on its line, which updates just that machine (its fleetd, then its Claude
-Code). After a part failed, the app doesn't restart by itself, so the result stays on screen: its line has **Update**
+Code) to the build the hub runs. If the hub has moved to another build since (with `fleetd update` on its machine,
+say), Retry says so instead, and **Update** brings every machine to the hub's build. After a part failed, the app doesn't restart by itself, so the result stays on screen: its line has **Update**
 instead.
 
 Updating needs a key with Admin on every machine, as `fleetd pair` gives the app. The first time, a hub from before
