@@ -261,8 +261,30 @@ default types, or with `opened` and `synchronize`). For each one:
   reports, so it can stay a required check.
 - `main` still runs it after each merge, where a failure opens a fix order like any [check after the merge](#after-merge).
 
-To skip work a change doesn't touch, decide in a first step of the job and let the job pass, rather than filtering the
-workflow by `paths:`: a workflow that never starts never reports, and the PR stays out of every batch. If the workflows
+To skip work a change doesn't touch, decide on a cheap Linux runner and skip the job by `if:` on that decision, so a
+scarce runner starts only for real work. A job skipped this way still reports, as passing:
+
+```yaml
+jobs:
+  scope:
+    runs-on: ubuntu-latest
+    outputs:
+      macos: ${{ steps.scope.outputs.macos }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - id: scope
+        run: |
+          if git diff --quiet HEAD^1 HEAD -- src/macos; then echo macos=false; else echo macos=true; fi >> "$GITHUB_OUTPUT"
+  macos:
+    needs: scope
+    if: ${{ !cancelled() && !endsWith(github.head_ref, 'train/batch') && needs.scope.outputs.macos != 'false' }}
+    runs-on: macos-latest
+```
+
+Don't filter the workflow by `paths:` instead: a workflow that never starts never reports, and the PR stays out of
+every batch. If the workflows
 can't be read, the train uses the last answer it had for the repo; with none, ready PRs stay out of batches until it
 can read them.
 
