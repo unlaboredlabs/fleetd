@@ -40,6 +40,17 @@ export const IPC = {
   pairSetup: "pair:setup",
   /** invoke() → string. This computer's host name, to tell whether it is one of the hub's machines. */
   systemHostName: "system:host-name",
+  /**
+   * invoke(machineId) → JoinHere. Makes this computer a machine of the hub (src/main/joinHere.ts); each step comes as
+   * `machinesJoinHereChanged`. One at a time: a second call while one runs answers with the one running.
+   */
+  machinesJoinHere: "machines:join-here",
+  /** invoke() → ThisComputer. Whether this computer's fleetd dir holds a hub or an enrolled node, or neither. */
+  machinesThisComputer: "machines:this-computer",
+  /** invoke() → JoinHere | null. The join running or last ended since the app started. */
+  machinesJoinHereState: "machines:join-here-state",
+  /** main → renderer: JoinHere, on every change. */
+  machinesJoinHereChanged: "machines:join-here-changed",
   /** invoke() → string | null. A native folder picker; null when cancelled. */
   projectsPickFolder: "projects:pick-folder",
   /** invoke(path) → DropInfo. What a folder or file dropped on the window holds for Add project. */
@@ -93,5 +104,10 @@ export const IPC = {
   appOpen: "app:open",
 } as const;
 
-type PushChannel = typeof IPC.hubFrame | typeof IPC.menuCommand | typeof IPC.appOpen | typeof IPC.updatesChanged;
+type PushChannel =
+  | typeof IPC.hubFrame
+  | typeof IPC.menuCommand
+  | typeof IPC.appOpen
+  | typeof IPC.updatesChanged
+  | typeof IPC.machinesJoinHereChanged;
 export type InvokeChannel = Exclude<(typeof IPC)[keyof typeof IPC], PushChannel>;

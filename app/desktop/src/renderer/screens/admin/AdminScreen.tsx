@@ -1,10 +1,11 @@
 // Administration (#/admin/<section>): the hub's owners' and admins' page, apart from Settings so nobody else ever sees
-// an admin control. People, Invites, Hub settings (everything hub-wide that used to sit in Settings: the fleet and
-// machine caps, machine roles, task profiles and memory caps) and Setup. The shell shows AdminSidebar in the sidebar's
+// an admin control. People, Invites, Machines (Add machine), Hub settings (everything hub-wide that used to sit in
+// Settings: the fleet and machine caps, machine roles, task profiles and memory caps) and Setup. The shell shows AdminSidebar in the sidebar's
 // place while it is open, as it does Settings'.
-import { ArrowLeft, ListChecks, SlidersHorizontal, UserPlus, Users } from "lucide-react";
+import { ArrowLeft, ListChecks, Server, SlidersHorizontal, UserPlus, Users } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button, Separator, Sidebar, SidebarItem, SidebarSection, Text } from "../../ui";
+import { AddMachine } from "../addMachine";
 import { HubCaps, TaskProfiles } from "../settings/Agents";
 import { MachineRoles } from "../settings/MachineRoles";
 import { HubMemoryCaps } from "../settings/MemoryCaps";
@@ -19,6 +20,7 @@ import s from "../settings/settings.module.css";
 const SECTIONS: ReadonlyArray<{ section: AdminSection; label: string; icon: ReactNode }> = [
   { section: "people", label: "People", icon: <Users /> },
   { section: "invites", label: "Invites", icon: <UserPlus /> },
+  { section: "machines", label: "Machines", icon: <Server /> },
   { section: "hub", label: "Hub settings", icon: <SlidersHorizontal /> },
   { section: "setup", label: "Setup", icon: <ListChecks /> },
 ];
@@ -76,11 +78,25 @@ function page(section: AdminSection, { administers, me, pending, offline }: HubR
       return <People me={me} />;
     case "invites":
       return <Invites me={me} />;
+    case "machines":
+      return <Machines />;
     case "hub":
       return <HubSettings />;
     case "setup":
       return <Setup />;
   }
+}
+
+/** Adding machines to the hub: this computer, one the hub reaches over SSH, or any other. */
+function Machines() {
+  return (
+    <div className={s.scroll} data-screen="admin.machines">
+      <div className={s.column}>
+        <PageHead title="Machines">The computers that run this hub's agents. Machine roles are in Hub settings.</PageHead>
+        <AddMachine />
+      </div>
+    </div>
+  );
 }
 
 /** Everything hub-wide: it reaches every project and machine, so only an owner or admin changes it. */

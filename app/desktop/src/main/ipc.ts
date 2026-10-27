@@ -14,6 +14,10 @@ import { applyMenuState } from "./menuState";
 import type { Notifier } from "./notify";
 import type { Opener } from "./opener";
 import { hostName, pickFolder, readDrop } from "./projects";
+import { RELEASE_BUILD } from "./build";
+import { fixtureRequest } from "./hub/fixture";
+import { fleetdDir, joinHere, realPorts, thisComputer } from "./joinHere";
+import type { JoinHere } from "../shared/joinHere";
 import { isOwnPage } from "./security";
 import type { SessionWindows } from "./sessionWindow";
 import type { Updates } from "./updater";
@@ -59,6 +63,22 @@ export const registerIpc = (
   handle(IPC.projectEnvSubmit, (_event, request) => submitProjectEnv(request, (tool, input) => hub.call({ tool, input })));
   handle(IPC.mcpServerSubmit, (_event, request) => submitMcpServer(request, (tool, input) => hub.call({ tool, input })));
   handle(IPC.systemHostName, () => hostName());
+  // One join at a time: the page asking again while one runs gets that one, and follows it on the push channel.
+  let joining: Promise<JoinHere> | undefined;
+  let lastJoin: JoinHere | null = null;
+  const sendJoin = (state: JoinHere) => {
+    lastJoin = state;
+    for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.webContents.send(IPC.machinesJoinHereChanged, state);
+  };
+  handle(IPC.machinesJoinHere, (_event, machineId) => {
+    joining ??= joinHere(realPorts((tool, input) => hub.call({ tool, input })), machineId, sendJoin).finally(() => {
+      joining = undefined;
+    });
+    return joining;
+  });
+  handle(IPC.machinesJoinHereState, () => lastJoin);
+  // Under a fixture, a computer that is neither, whatever this one holds.
+  handle(IPC.machinesThisComputer, () => (fixtureRequest(process.env, RELEASE_BUILD).kind === "fixture" ? { kind: "none" } : thisComputer(fleetdDir())));
   handle(IPC.projectsPickFolder, (event) => pickFolder(event.sender));
   handle(IPC.projectsReadDrop, (_event, path) => readDrop(path));
   handle(IPC.copy, (_event, text) => clipboard.writeText(text));

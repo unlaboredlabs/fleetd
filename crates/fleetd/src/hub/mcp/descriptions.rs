@@ -400,4 +400,28 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
         "navi_asks",
         "What a Navi asked other projects for with project_message, newest first: each ask's handle (N<n>), the project it went to, its words and when, and the orders that project's lead opened for it, each with its state and headline. Read on the Navi's machine. A hub that names the navi_asks feature in its ready frame has it.",
     ),
+    (
+        "machine_add_plan",
+        "What machine_add would run to add a machine: host (an SSH host the hub reaches: a name in its ~/.ssh/config, a tailnet name or an address) or local: true (the hub's own machine), machineId defaulting to the host's first label. Reads the machine over SSH (read-only) and answers its OS and CPU, each step with its command, and notes (linger, an untested claude). joined: it is a machine already, and adding it again repairs it. Changes nothing. A person's device with Admin on every machine.",
+    ),
+    (
+        "machine_add",
+        "Add a machine: fleetd machine add, run by the hub. host or local: true as machine_add_plan. Answers at once with its run (runId, steps planned so far); the hub reads the machine, copies its own fleetd there, writes the node's user service, enrolls it with a one-time token and waits until it is online. Each step it starts or ends sends a machine_add.step event; machine_add_status reads the run, each step with its output, and a failure with its fix. Safe to run again: finished steps are skipped. A person's device with Admin on every machine.",
+    ),
+    (
+        "machine_add_status",
+        "machine_add's runs, newest first, or one by runId: each step (planned, running, done or failed) with its command and output, the notes, and a failure's message and fix. The hub forgets runs when it restarts. A person's device with Admin on every machine.",
+    ),
+    (
+        "machine_hosts",
+        "Hosts the hub could add as machines: its own machine, those it set up before, the Hosts in its ~/.ssh/config and its tailnet's online Linux and macOS peers, each with the machine id it would get and joined when it is a machine already. A person's device with Admin on every machine.",
+    ),
+    (
+        "machine_remove",
+        "Remove a machine: fleetd machine remove, run by the hub. Stops and removes the node's service on a machine the hub set up (purge: also its files and claude.env), then revokes its node key and forgets it. A machine that joined by itself only has its key revoked: stop its node there by hand. A step that fails says what to run by hand; the key is revoked anyway. A person's device with Admin on every machine.",
+    ),
+    (
+        "machine_join",
+        "A one-time code (15 minutes) for machineId to join the hub by itself, as fleetd pair --worker prints it: the hub's address, the code, its commit identity, and line, the one command that installs fleetd on that machine and joins. For a machine the hub can't reach over SSH. A person's device with Admin on every machine.",
+    ),
 ];

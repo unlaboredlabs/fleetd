@@ -1090,6 +1090,11 @@
           "const": "people.changed",
           "description": "A person was invited, joined, renamed, given another role or removed, an invite was revoked, or a device signed\nout; `data` is `people::PeopleChangedData`. people_list reads the rest.",
           "type": "string"
+        },
+        {
+          "const": "machine_add.step",
+          "description": "A machine_add started, moved a step or ended; `data` is `machine_setup::MachineAddStepData`.\nmachine_add_status reads the rest.",
+          "type": "string"
         }
       ],
       "x-open": true

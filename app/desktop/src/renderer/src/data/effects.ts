@@ -105,6 +105,8 @@ export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unk
   // A preview started, moved a step, became ready, ended or failed: Try it reads the project's previews again.
   if (type === "preview.state") out.push({ tool: "previews_list" });
   if (type === "doctor.changed") out.push({ tool: "doctor_list" });
+  // Add machine: a run started, moved a step or ended.
+  if (type === "machine_add.step") out.push({ tool: "machine_add_status" });
   // Administration's machine roles: a machine coming and going, and a session starting or ending, move its rows.
   if (type.startsWith("machine.") || type === "browser.session") out.push({ tool: "machine_roles" });
   // The hub's attention policy is a global decision. Only the open Decisions tab has its list mounted, so this

@@ -1,6 +1,6 @@
 //! `fleetd machine add|remove`: sets up (or undoes) a worker over SSH, printing every remote command before it runs.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use fleetd_contracts::ids::MachineId;
@@ -10,13 +10,17 @@ use sha2::{Digest, Sha256};
 use super::super::args::{self, Kind, Spec};
 use super::super::hub_key::{HubAccess, open_hub, resolve_home};
 use super::machine_plan::{
-    MachineAddInput, MachineLayout, Stdin, Step, fresh_facts, local_target, login_command,
-    login_status_command, parse_facts, plan_machine_add, plan_machine_remove, probe_command,
+    Facts, MachineAddInput, MachineLayout, MachinePlan, Stdin, Step, fresh_facts, local_target,
+    login_command, login_status_command, parse_facts, plan_machine_add, plan_machine_remove,
+    probe_command,
 };
-use super::ssh::{SshTarget, run_ssh, show_ssh};
-use super::state::{GitIdentity, MachineRecord, read_setup, write_setup};
+use super::ssh::{RunResult, SshTarget, run_ssh, show_ssh};
+use super::state::{GitIdentity, MachineRecord, SetupState, read_setup, write_setup};
 use super::units::unit_suffix;
 use super::{Probe, current_exe, parse_listen, probe_listen, say};
+use crate::hub::auth::Auth;
+use crate::hub::store::HubStore;
+use crate::update::BoxFuture;
 
 pub fn machine_usage() -> String {
     use crate::node::runner::claude::version::SUPPORTED;
@@ -77,15 +81,16 @@ fn describe_stdin(step: &Step, exe: &Path, exe_len: u64) -> Option<String> {
     })
 }
 
-fn print_step(index: usize, total: usize, step: &Step, exe: &Path, exe_len: u64) {
-    say(&format!("[{index}/{total}] {}", step.title));
-    say(&format!("  $ {}", step.command));
-    if let Some(stdin) = describe_stdin(step, exe, exe_len) {
-        say(&format!("    ({stdin})"));
+fn plan_step(index: usize, total: usize, step: &Step, exe: &Path, exe_len: u64) -> Begin {
+    Begin {
+        stage: Stage::Step(index, total),
+        title: step.title.clone(),
+        command: Some(step.command.clone()),
+        stdin: describe_stdin(step, exe, exe_len),
     }
 }
 
-fn tail(text: &str) -> String {
+pub fn tail(text: &str) -> String {
     let lines: Vec<&str> = text.trim().split('\n').collect();
     lines[lines.len().saturating_sub(15)..].join("\n")
 }
@@ -96,18 +101,164 @@ fn now_ms() -> i64 {
         .map_or(0, |d| d.as_millis() as i64)
 }
 
+/// Runs a command on the machine: over SSH, or here for `--local`. The hub's tests stand in a fake.
+pub trait Runner: Send + Sync {
+    fn run<'a>(
+        &'a self,
+        target: &'a SshTarget,
+        command: &'a str,
+        stdin: Option<&'a [u8]>,
+    ) -> BoxFuture<'a, RunResult>;
+}
+
+/// The real one: `ssh`, or `sh` on this machine.
+pub struct Ssh;
+
+impl Runner for Ssh {
+    fn run<'a>(
+        &'a self,
+        target: &'a SshTarget,
+        command: &'a str,
+        stdin: Option<&'a [u8]>,
+    ) -> BoxFuture<'a, RunResult> {
+        Box::pin(run_ssh(target, command, stdin))
+    }
+}
+
+/// Where a step stands in a run, as the CLI labels it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Stage {
+    /// `[probe]`: the read-only look at the machine.
+    Probe,
+    /// `[i/n]`: one of the plan's steps.
+    Step(usize, usize),
+    /// `[hub]`: the hub's wait for the node.
+    Hub,
+}
+
+/// A step as it begins.
+#[derive(Clone, Debug)]
+pub struct Begin {
+    pub stage: Stage,
+    pub title: String,
+    /// The command it runs on the machine; None for the hub's wait.
+    pub command: Option<String>,
+    /// What goes to its stdin, described.
+    pub stdin: Option<String>,
+}
+
+/// What `machine add` and `machine remove` report as they go: the CLI prints it, the hub's machine_add streams it to
+/// the app. A failed `add` ends with its [`Stop`] instead.
+pub trait Progress: Send + Sync {
+    /// The plan's steps once the machine has been read, before the first of them begins.
+    fn planned(&self, _steps: &[Begin]) {}
+    fn begin(&self, step: Begin);
+    /// The step that began last ended; `output` is what it printed (nothing for the read of the machine).
+    fn done(&self, output: &str);
+    /// The step that began last failed (`machine remove`): its exit code, the end of its output, and the fix.
+    fn failed(&self, code: i32, output: &str, fix: &str);
+    /// The rest: the opening line, a note, "x is online".
+    fn say(&self, line: &str);
+}
+
+/// The CLI's: every step and its command printed before it runs.
+pub struct Print;
+
+impl Progress for Print {
+    fn begin(&self, step: Begin) {
+        match step.stage {
+            Stage::Probe => say(&format!("[probe] {}", step.title)),
+            Stage::Hub => say(&format!("[hub] {}", step.title)),
+            Stage::Step(index, total) => {
+                say(&format!("[{index}/{total}] {}", step.title));
+                if let Some(command) = &step.command {
+                    say(&format!("  $ {command}"));
+                }
+                if let Some(stdin) = &step.stdin {
+                    say(&format!("    ({stdin})"));
+                }
+            }
+        }
+    }
+
+    fn done(&self, output: &str) {
+        let shown = output.trim();
+        if !shown.is_empty() && shown.len() < 200 && !shown.contains('\n') {
+            say(&format!("  → {shown}"));
+        }
+    }
+
+    fn failed(&self, code: i32, output: &str, fix: &str) {
+        say(&format!("  failed (exit {code}): {output}"));
+        say(&format!("  Fix: {fix}"));
+    }
+
+    fn say(&self, line: &str) {
+        say(line);
+    }
+}
+
+/// Why `machine add` or `remove` stopped: what to tell, with its fix, and the CLI's exit code (2 for a usage error).
+#[derive(Debug, PartialEq, Eq)]
+pub struct Stop {
+    pub code: u8,
+    pub message: String,
+}
+
+impl Stop {
+    pub fn fail(message: impl Into<String>) -> Self {
+        Self {
+            code: 1,
+            message: message.into(),
+        }
+    }
+
+    fn usage(message: impl Into<String>) -> Self {
+        Self {
+            code: 2,
+            message: message.into(),
+        }
+    }
+
+    /// Prints it as the CLI does; the exit code.
+    pub fn print(self) -> u8 {
+        if self.code == 2 {
+            usage(&self.message)
+        } else {
+            fail(&self.message)
+        }
+    }
+}
+
+/// The hub's database as `machine add` and `remove` use it: opened beside the hub by the CLI, the hub's own in its
+/// tools.
+#[derive(Clone, Copy)]
+pub struct HubSide<'a> {
+    pub auth: &'a Auth,
+    pub store: &'a HubStore,
+}
+
+impl HubAccess {
+    pub fn side(&self) -> HubSide<'_> {
+        HubSide {
+            auth: &self.auth,
+            store: &self.store,
+        }
+    }
+}
+
 /// True once the hub has heard from the machine's node at or after `since_ms` (online, or degraded with a reason it
 /// reports). A quick node restart does not flap the status, so there may be no fresh machine.online event to wait
 /// for; the hub writes from its own process, so this re-reads the record every second.
 async fn wait_linked(
-    hub: &HubAccess,
+    store: &HubStore,
     machine_id: &MachineId,
     since_ms: i64,
     timeout: Duration,
 ) -> Option<MachineStatus> {
     let deadline = since_ms + timeout.as_millis() as i64;
     while now_ms() < deadline {
-        if let Ok(Some(machine)) = hub.store.machine_get(machine_id)
+        if let Ok(Some(machine)) = store.machine_get(machine_id)
             && machine.status != MachineStatus::Offline
             && crate::hub::store::parse_ms(&machine.last_seen_at.to_string())
                 .is_some_and(|at| at >= since_ms)
@@ -137,6 +288,79 @@ pub fn local_host_name() -> String {
         .unwrap_or_else(|| "this-machine".into())
 }
 
+/// Where a machine to add was found.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Found {
+    /// This machine, the hub's.
+    Here,
+    /// Set up from this hub before.
+    SetUp,
+    /// A `Host` in ~/.ssh/config.
+    SshConfig,
+    /// An online Linux or macOS peer on the tailnet.
+    Tailnet,
+}
+
+/// A machine `fleetd init` and the app's Add machine offer.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Candidate {
+    pub machine_id: String,
+    /// The SSH host; None for this machine.
+    pub host: Option<String>,
+    pub ssh_config: Option<String>,
+    pub found: Found,
+}
+
+/// This machine, those set up before, then the hosts in ~/.ssh/config (`ssh_hosts`) and the tailnet's peers: each
+/// machine id once, the first place it was found winning.
+pub fn candidates(
+    recorded: &std::collections::BTreeMap<String, MachineRecord>,
+    ssh_hosts: &[String],
+    peers: &[super::detect::Peer],
+) -> Vec<Candidate> {
+    let local_id = recorded.iter().find(|(_, r)| r.local).map_or_else(
+        || machine_id_from_host(&local_host_name()),
+        |(id, _)| id.clone(),
+    );
+    let mut out = vec![Candidate {
+        machine_id: local_id,
+        host: None,
+        ssh_config: None,
+        found: Found::Here,
+    }];
+    for (id, record) in recorded.iter().filter(|(_, r)| !r.local) {
+        out.push(Candidate {
+            machine_id: id.clone(),
+            host: Some(record.ssh_host.clone()),
+            ssh_config: record.ssh_config.clone(),
+            found: Found::SetUp,
+        });
+    }
+    let found = ssh_hosts
+        .iter()
+        .map(|host| (machine_id_from_host(host), host.clone(), Found::SshConfig))
+        .chain(peers.iter().map(|peer| {
+            (
+                machine_id_from_host(&peer.name),
+                peer.dns_name.clone(),
+                Found::Tailnet,
+            )
+        }));
+    for (machine_id, host, how) in found {
+        if MachineId::new(machine_id.clone()).is_ok()
+            && !out.iter().any(|c| c.machine_id == machine_id)
+        {
+            out.push(Candidate {
+                machine_id,
+                host: Some(host),
+                ssh_config: None,
+                found: how,
+            });
+        }
+    }
+    out
+}
+
 /// What a finished `machine add` set up, for `fleetd init` to check and fix fleetd's Claude login there.
 pub struct Added {
     pub machine_id: String,
@@ -148,10 +372,13 @@ pub struct Added {
     pub run_by_hand: Option<String>,
     /// The CLAUDE_CONFIG_DIR its node runs claude with; `None`: the user's own.
     pub claude_config_dir: Option<String>,
+    /// What to know or do by hand, each also said as a `note:` line.
+    pub notes: Vec<String>,
 }
 
 /// Where the one-time enrollment token comes from: the hub's database (on the hub), `fleetd pair --worker` (on a
 /// worker joining by itself), or nowhere: a joined worker being repaired keeps its enrolment.
+#[derive(Clone)]
 pub enum Enroll {
     Hub,
     Token(String),
@@ -339,11 +566,83 @@ async fn add_command(argv: &[String]) -> u8 {
 /// `machine add`, returning what it set up (`None` for a dry run); `Err` carries the exit code after the error is
 /// printed.
 pub async fn add(a: AddArgs) -> Result<Option<Added>, u8> {
-    let fail = |message: &str| Err(fail(message));
-    let usage = |message: &str| Err(usage(message));
+    let exe = current_exe().map_err(|message| fail(&message))?;
+    let r = resolve(&a, &exe).map_err(Stop::print)?;
+    if a.dry_run {
+        return dry_run(&r).map(|()| None).map_err(Stop::print);
+    }
+    let hub = if r.joining {
+        None
+    } else {
+        let listen = r
+            .state
+            .as_ref()
+            .and_then(|s| parse_listen(&s.listen))
+            .unwrap_or_default();
+        if probe_listen(&listen).await != Probe::Hub {
+            return Err(fail(&format!(
+                "no hub answers at {}:{}. Fix: fleetd init (it starts the hub), then run {}",
+                listen.0, listen.1, r.again
+            )));
+        }
+        Some(open_hub(&r.home).map_err(|message| fail(&message))?)
+    };
+    let side = hub.as_ref().map(HubAccess::side);
+    let prepared = prepare(&r, side, &Ssh, &Print).await.map_err(Stop::print)?;
+    execute(r, prepared, side, &Ssh, &Print)
+        .await
+        .map(Some)
+        .map_err(Stop::print)
+}
+
+/// `machine add`'s arguments, checked and resolved against the hub's setup, before anything touches the machine.
+pub struct Resolved {
+    machine: MachineId,
+    pub machine_id: String,
+    local: bool,
+    pub host: String,
+    joining: bool,
+    home: PathBuf,
+    state: Option<SetupState>,
+    target: SshTarget,
+    input: MachineAddInput,
+    binary: Vec<u8>,
+    exe: PathBuf,
+    /// How to run it again.
+    again: String,
+    enroll: Enroll,
+    claude_config_dir: Option<String>,
+}
+
+/// The machine as its read found it, and what `machine add` will run there.
+pub struct Prepared {
+    facts: Facts,
+    pub plan: MachinePlan,
+    input: MachineAddInput,
+}
+
+impl Prepared {
+    /// `linux-x64`, `darwin-arm64`.
+    pub fn platform(&self) -> String {
+        format!("{}-{}", self.facts.platform, self.facts.arch)
+    }
+
+    /// The plan's steps as they will begin, numbered.
+    pub fn steps(&self, r: &Resolved) -> Vec<Begin> {
+        let total = self.plan.steps.len();
+        self.plan
+            .steps
+            .iter()
+            .enumerate()
+            .map(|(i, step)| plan_step(i + 1, total, step, &r.exe, r.binary.len() as u64))
+            .collect()
+    }
+}
+
+/// Checks `a` and reads what `machine add` needs from the hub's setup and from `exe`, the fleetd the machine gets.
+pub fn resolve(a: &AddArgs, exe: &Path) -> Result<Resolved, Stop> {
     let local = a.host.is_none();
     let host = a.host.clone().unwrap_or_else(|| "localhost".to_owned());
-    let host = &host;
     let machine_id = a.machine_id.clone().unwrap_or_else(|| {
         machine_id_from_host(&if local {
             local_host_name()
@@ -352,28 +651,25 @@ pub async fn add(a: AddArgs) -> Result<Option<Added>, u8> {
         })
     });
     let Ok(machine) = MachineId::new(machine_id.clone()) else {
-        return usage(&format!(
+        return Err(Stop::usage(format!(
             "'{machine_id}' is not a machine id ([a-z0-9-]{{1,32}}); pass --machine-id"
-        ));
+        )));
     };
     let joining = !matches!(a.enroll, Enroll::Hub);
-    let home = match resolve_home(a.home.as_deref()) {
-        Ok(home) => home,
-        Err(message) => return fail(&message),
-    };
+    let home = resolve_home(a.home.as_deref()).map_err(Stop::fail)?;
     let state = if joining {
         None
     } else {
         match read_setup(&home) {
             Ok(Some(state)) => Some(state),
             Ok(None) => {
-                return fail(&format!(
+                return Err(Stop::fail(format!(
                     "{} has no hub set up. Fix: {}",
                     home.display(),
                     super::no_setup_fix(&home)
-                ));
+                )));
             }
-            Err(message) => return fail(&message),
+            Err(message) => return Err(Stop::fail(message)),
         }
     };
     let suffix = match a.unit_suffix.as_deref() {
@@ -381,37 +677,26 @@ pub async fn add(a: AddArgs) -> Result<Option<Added>, u8> {
             .as_ref()
             .map(|s| s.unit_suffix.clone())
             .unwrap_or_default(),
-        Some(text) => match unit_suffix(Some(text)) {
-            Some(suffix) => suffix,
-            None => {
-                return usage(&format!(
-                    "--unit-suffix takes letters, digits and dashes, got '{text}'"
-                ));
-            }
-        },
+        Some(text) => unit_suffix(Some(text)).ok_or_else(|| {
+            Stop::usage(format!(
+                "--unit-suffix takes letters, digits and dashes, got '{text}'"
+            ))
+        })?,
     };
     let Some(hub_url) = a
         .hub_url
         .clone()
         .or_else(|| state.as_ref().map(|s| s.url.clone()))
     else {
-        return usage("--hub-url is required to join a hub");
+        return Err(Stop::usage("--hub-url is required to join a hub"));
     };
     // The machine gets this very binary; for now only a machine that can run it.
-    let exe = match current_exe() {
-        Ok(exe) => exe,
-        Err(message) => return fail(&message),
-    };
-    let binary = match std::fs::read(&exe) {
-        Ok(bytes) => bytes,
-        Err(error) => {
-            return fail(&format!(
-                "machine add copies the running fleetd to the machine, and {} is unreadable: {error}",
-                exe.display()
-            ));
-        }
-    };
-    let exe_len = binary.len() as u64;
+    let binary = std::fs::read(exe).map_err(|error| {
+        Stop::fail(format!(
+            "machine add copies the running fleetd to the machine, and {} is unreadable: {error}",
+            exe.display()
+        ))
+    })?;
     let target = SshTarget {
         host: host.clone(),
         config: a.ssh_config.as_deref().map(|config| {
@@ -424,7 +709,7 @@ pub async fn add(a: AddArgs) -> Result<Option<Added>, u8> {
     let input = MachineAddInput {
         machine_id: machine_id.clone(),
         tags: a.tags.clone(),
-        hub_url: hub_url.clone(),
+        hub_url,
         unit_suffix: suffix,
         git_identity: a
             .git_identity
@@ -444,71 +729,83 @@ pub async fn add(a: AddArgs) -> Result<Option<Added>, u8> {
     } else {
         format!("fleetd machine add {host}")
     };
+    Ok(Resolved {
+        machine,
+        machine_id,
+        local,
+        host,
+        joining,
+        home,
+        state,
+        target,
+        input,
+        binary,
+        exe: exe.to_owned(),
+        again,
+        enroll: a.enroll.clone(),
+        claude_config_dir: a.claude_config_dir.clone(),
+    })
+}
 
-    if a.dry_run {
-        let user = match host.split_once('@') {
-            Some((user, _)) => user.to_owned(),
-            None => std::env::var("USER")
-                .or_else(|_| std::env::var("LOGNAME"))
-                .unwrap_or_else(|_| "user".into()),
-        };
-        let plan = match plan_machine_add(&fresh_facts(&user, &input.binary_target.1), &input) {
-            Ok(plan) => plan,
-            Err(message) => return fail(&message),
-        };
-        say(&format!(
-            "dry run: nothing runs. Planned for a fresh Linux machine at {host} (home {}); a real run first reads the machine's state and leaves out what is already done:",
-            plan.layout
-                .fleetd
-                .strip_suffix("/.fleetd")
-                .unwrap_or(&plan.layout.fleetd)
-        ));
-        say("[probe] read the machine's state (read-only)");
-        for (i, step) in plan.steps.iter().enumerate() {
-            print_step(i + 1, plan.steps.len(), step, &exe, exe_len);
-        }
-        say(&format!("[hub] wait until {machine_id} is online"));
-        for note in &plan.notes {
-            say(&format!("note: {note}"));
-        }
-        return Ok(None);
-    }
-
-    let hub = if joining {
-        None
-    } else {
-        let listen = state
-            .as_ref()
-            .and_then(|s| parse_listen(&s.listen))
-            .unwrap_or_default();
-        if probe_listen(&listen).await != Probe::Hub {
-            return fail(&format!(
-                "no hub answers at {}:{}. Fix: fleetd init (it starts the hub), then run {again}",
-                listen.0, listen.1
-            ));
-        }
-        match open_hub(&home) {
-            Ok(hub) => Some(hub),
-            Err(message) => return fail(&message),
-        }
+/// `--dry-run`: the plan for a fresh machine, printed; nothing connects.
+fn dry_run(r: &Resolved) -> Result<(), Stop> {
+    let user = match r.host.split_once('@') {
+        Some((user, _)) => user.to_owned(),
+        None => std::env::var("USER")
+            .or_else(|_| std::env::var("LOGNAME"))
+            .unwrap_or_else(|_| "user".into()),
     };
-
+    let plan = plan_machine_add(&fresh_facts(&user, &r.input.binary_target.1), &r.input)
+        .map_err(Stop::fail)?;
     say(&format!(
-        "setting up {machine_id}{}; every command is shown before it runs.",
-        if local {
-            String::new()
-        } else {
-            format!(" on {host}")
-        }
+        "dry run: nothing runs. Planned for a fresh Linux machine at {} (home {}); a real run first reads the machine's state and leaves out what is already done:",
+        r.host,
+        plan.layout
+            .fleetd
+            .strip_suffix("/.fleetd")
+            .unwrap_or(&plan.layout.fleetd)
     ));
     say("[probe] read the machine's state (read-only)");
+    let total = plan.steps.len();
+    for (i, step) in plan.steps.iter().enumerate() {
+        Print.begin(plan_step(i + 1, total, step, &r.exe, r.binary.len() as u64));
+    }
+    say(&format!("[hub] wait until {} is online", r.machine_id));
+    for note in &plan.notes {
+        say(&format!("note: {note}"));
+    }
+    Ok(())
+}
+
+/// Reads the machine (read-only) and plans `machine add` there; changes nothing. `hub` says whether it already holds
+/// the node's key; a joining worker has none.
+pub async fn prepare(
+    r: &Resolved,
+    hub: Option<HubSide<'_>>,
+    runner: &dyn Runner,
+    progress: &dyn Progress,
+) -> Result<Prepared, Stop> {
+    progress.say(&format!(
+        "setting up {}{}; every command is shown before it runs.",
+        r.machine_id,
+        if r.local {
+            String::new()
+        } else {
+            format!(" on {}", r.host)
+        }
+    ));
+    progress.begin(Begin {
+        stage: Stage::Probe,
+        title: "read the machine's state (read-only)".into(),
+        command: None,
+        stdin: None,
+    });
     let relocated = crate::home::relocated().map(|d| d.to_string_lossy().into_owned());
-    let probed = run_ssh(
-        &target,
-        &probe_command(&input.unit_suffix, relocated.as_deref().filter(|_| local)),
-        None,
-    )
-    .await;
+    let probe = probe_command(
+        &r.input.unit_suffix,
+        relocated.as_deref().filter(|_| r.local),
+    );
+    let probed = runner.run(&r.target, &probe, None).await;
     let facts = match (probed.code, parse_facts(&probed.stdout)) {
         (0, Ok(facts)) => facts,
         (code, parsed) => {
@@ -516,53 +813,89 @@ pub async fn add(a: AddArgs) -> Result<Option<Added>, u8> {
                 Err(e) if code == 0 => e,
                 _ => tail(&probed.stderr),
             };
-            return fail(&format!(
-                "cannot read {host}{} (exit {code}): {why}\nFix: {}then run {again}",
-                if local { "" } else { " over SSH" },
-                if local {
+            return Err(Stop::fail(format!(
+                "cannot read {}{} (exit {code}): {why}\nFix: {}then run {}",
+                r.host,
+                if r.local { "" } else { " over SSH" },
+                if r.local {
                     String::new()
                 } else {
-                    format!("make `ssh {host} true` work without a password (ssh-copy-id {host}), ")
-                }
-            ));
+                    format!(
+                        "make `ssh {h} true` work without a password (ssh-copy-id {h}), ",
+                        h = r.host
+                    )
+                },
+                r.again
+            )));
         }
     };
+    // What it printed is the machine's files: nothing to show.
+    progress.done("");
 
     // A joined worker being repaired: the hub holds its key as long as its node.json says enrolled.
-    let has_key = matches!(a.enroll, Enroll::Keep)
-        || hub.as_ref().is_some_and(|hub| {
+    let has_key = matches!(r.enroll, Enroll::Keep)
+        || hub.is_some_and(|hub| {
             hub.auth
-                .node_pub_key(&machine)
+                .node_pub_key(&r.machine)
                 .is_ok_and(|key| key.is_some())
         });
     let input = MachineAddInput {
         hub_has_node_key: has_key,
-        ..input
+        ..r.input.clone()
     };
-    let plan = match plan_machine_add(&facts, &input) {
-        Ok(plan) => plan,
-        Err(message) => return fail(&format!("{message}, then run {again}")),
-    };
+    let plan = plan_machine_add(&facts, &input)
+        .map_err(|message| Stop::fail(format!("{message}, then run {}", r.again)))?;
     // Never stop or re-enrol a joined node without a fresh code: that is what --join with --rejoin is for.
-    if matches!(a.enroll, Enroll::Keep)
+    if matches!(r.enroll, Enroll::Keep)
         && plan
             .steps
             .iter()
             .any(|s| s.stdin == Some(Stdin::EnrollToken))
     {
-        return fail(&format!(
-            "this machine's node is no longer enrolled with {hub_url} as {machine_id}. Fix: on the hub, run fleetd pair --worker {machine_id}, then run what it prints here with --rejoin"
-        ));
+        return Err(Stop::fail(format!(
+            "this machine's node is no longer enrolled with {} as {id}. Fix: on the hub, run fleetd pair --worker {id}, then run what it prints here with --rejoin",
+            input.hub_url,
+            id = r.machine_id
+        )));
     }
+    let prepared = Prepared { facts, plan, input };
+    let mut steps = prepared.steps(r);
+    if prepared.plan.run_by_hand.is_none() && hub.is_some() {
+        steps.push(wait_step(&r.machine_id));
+    }
+    progress.planned(&steps);
+    Ok(prepared)
+}
+
+fn wait_step(machine_id: &str) -> Begin {
+    Begin {
+        stage: Stage::Hub,
+        title: format!("waiting until {machine_id} is online (up to 2 min)"),
+        command: None,
+        stdin: None,
+    }
+}
+
+/// Runs the plan [`prepare`] made: records the machine in the hub's setup, runs each step, waits until its node is
+/// online and checks its claude login.
+pub async fn execute(
+    r: Resolved,
+    p: Prepared,
+    hub: Option<HubSide<'_>>,
+    runner: &dyn Runner,
+    progress: &dyn Progress,
+) -> Result<Added, Stop> {
+    let Prepared { facts, plan, input } = p;
+    let (machine_id, host) = (&r.machine_id, &r.host);
     // Recorded before anything changes, so `machine remove` can undo a run that stopped half way.
-    if let Some(state) = &state {
+    if let Some(state) = &r.state {
         let mut recorded = state.clone();
         recorded.machines.insert(
             machine_id.clone(),
             MachineRecord {
                 ssh_host: host.clone(),
-                ssh_config: target.config.clone(),
-                local,
+                ssh_config: r.target.config.clone(),
+                local: r.local,
                 platform: plan.platform,
                 home: facts.home.clone(),
                 config_home: facts.config_home.clone(),
@@ -570,100 +903,96 @@ pub async fn add(a: AddArgs) -> Result<Option<Added>, u8> {
                 unit_suffix: input.unit_suffix.clone(),
             },
         );
-        if let Err(message) = write_setup(&home, &recorded) {
-            return fail(&message);
-        }
+        write_setup(&r.home, &recorded).map_err(Stop::fail)?;
     }
 
     // Set after each step, so after the last one (the node's (re)start) only the new node can count as linked.
     let mut steps_done = now_ms();
+    let total = plan.steps.len();
     for (i, step) in plan.steps.iter().enumerate() {
-        print_step(i + 1, plan.steps.len(), step, &exe, exe_len);
+        progress.begin(plan_step(i + 1, total, step, &r.exe, r.binary.len() as u64));
         let stdin: Option<Vec<u8>> = match &step.stdin {
             None => None,
             Some(Stdin::Text { text, .. }) => Some(text.clone().into_bytes()),
-            Some(Stdin::Binary) => Some(binary.clone()),
-            Some(Stdin::EnrollToken) => match (&a.enroll, &hub) {
+            Some(Stdin::Binary) => Some(r.binary.clone()),
+            Some(Stdin::EnrollToken) => match (&r.enroll, hub) {
                 (Enroll::Token(token), _) => Some(format!("{token}\n").into_bytes()),
-                (Enroll::Hub, Some(hub)) => match hub.auth.create_enroll_token(&machine) {
+                (Enroll::Hub, Some(hub)) => match hub.auth.create_enroll_token(&r.machine) {
                     Ok(token) => Some(format!("{}\n", token.token).into_bytes()),
-                    Err(error) => return fail(&error.to_string()),
+                    Err(error) => return Err(Stop::fail(error.to_string())),
                 },
                 (Enroll::Hub, None) | (Enroll::Keep, _) => {
                     unreachable!("only a hub or a code enrolls")
                 }
             },
         };
-        let result = run_ssh(&target, &step.command, stdin.as_deref()).await;
+        let result = runner.run(&r.target, &step.command, stdin.as_deref()).await;
         if result.code != 0 {
-            let fix = if step.stdin == Some(Stdin::EnrollToken) && joining {
+            let fix = if step.stdin == Some(Stdin::EnrollToken) && r.joining {
                 "the code is single use and lasts 15 minutes: on the hub, run fleetd pair --worker for a new one".to_owned()
             } else {
-                format!("fix that, then run {again}; finished steps are skipped")
+                format!("fix that, then run {}; finished steps are skipped", r.again)
             };
-            return fail(&format!(
+            return Err(Stop::fail(format!(
                 "step {} failed (exit {}):\n{}\nFix: {fix}.",
                 i + 1,
                 result.code,
                 tail(&format!("{}\n{}", result.stdout, result.stderr))
-            ));
+            )));
         }
         steps_done = now_ms();
-        let shown = result.stdout.trim();
-        if !shown.is_empty() && shown.len() < 200 && !shown.contains('\n') {
-            say(&format!("  → {shown}"));
-        }
+        progress.done(&result.stdout);
     }
 
     if let Some(cmd) = &plan.run_by_hand {
-        say(&format!(
+        progress.say(&format!(
             "{machine_id} is enrolled; with --no-service, start its node yourself{}:\n  {cmd}",
-            if local {
+            if r.local {
                 String::new()
             } else {
                 format!(" on {host}")
             }
         ));
-    } else if let Some(hub) = &hub {
+    } else if let Some(hub) = hub {
         let already = !plan.node_restarts
             && hub
                 .store
-                .machine_get(&machine)
+                .machine_get(&r.machine)
                 .ok()
                 .flatten()
                 .is_some_and(|m| m.status != MachineStatus::Offline);
         if !already {
-            say(&format!(
-                "[hub] waiting until {machine_id} is online (up to 2 min)"
-            ));
-            if wait_linked(hub, &machine, steps_done, Duration::from_secs(120))
+            progress.begin(wait_step(machine_id));
+            if wait_linked(hub.store, &r.machine, steps_done, Duration::from_secs(120))
                 .await
                 .is_none()
             {
-                return fail(&format!(
-                    "{machine_id} did not come online within 2 min. Its node log is {}/node.log on {host}; the node must reach the hub at {}. Fix: make that address reachable from {host} (fleetd init --url <address>), then run {again}",
-                    plan.layout.logs, input.hub_url
-                ));
+                return Err(Stop::fail(format!(
+                    "{machine_id} did not come online within 2 min. Its node log is {}/node.log on {host}; the node must reach the hub at {}. Fix: make that address reachable from {host} (fleetd init --url <address>), then run {}",
+                    plan.layout.logs, input.hub_url, r.again
+                )));
             }
+            progress.done("");
         }
-        say(&format!("{machine_id} is online."));
+        progress.say(&format!("{machine_id} is online."));
     }
     // A worker's claude with no login fails every session; say so now, not at the first order.
     let claude = facts.claude.clone().unwrap_or_default();
-    let config_dir = a.claude_config_dir.clone();
-    let status = run_ssh(
-        &target,
-        &login_status_command(&plan.layout, &claude, config_dir.as_deref()),
-        None,
-    )
-    .await;
+    let config_dir = r.claude_config_dir.clone();
+    let status = runner
+        .run(
+            &r.target,
+            &login_status_command(&plan.layout, &claude, config_dir.as_deref()),
+            None,
+        )
+        .await;
     let logged_in = logged_in(&status.stdout);
     let mut notes = plan.notes.clone();
     if !logged_in {
         let login = login_command(&claude, config_dir.as_deref());
         notes.push(format!(
             "claude on {machine_id} is not logged in, so its sessions can't start. Fix: {}",
-            if local {
+            if r.local {
                 login
             } else {
                 format!("ssh -t {host} {}", super::units::q(&login))
@@ -671,17 +1000,18 @@ pub async fn add(a: AddArgs) -> Result<Option<Added>, u8> {
         ));
     }
     for note in &notes {
-        say(&format!("note: {note}"));
+        progress.say(&format!("note: {note}"));
     }
-    Ok(Some(Added {
-        machine_id,
-        target,
+    Ok(Added {
+        machine_id: r.machine_id,
+        target: r.target,
         layout: plan.layout,
         claude,
         logged_in,
         run_by_hand: plan.run_by_hand,
         claude_config_dir: config_dir,
-    }))
+        notes,
+    })
 }
 
 async fn remove_command(argv: &[String]) -> u8 {
@@ -702,24 +1032,50 @@ async fn remove_command(argv: &[String]) -> u8 {
     else {
         return usage("machine remove takes a machine id");
     };
-    let machine_id = machine.to_string();
     let home = match resolve_home(v.str("home")) {
         Ok(home) => home,
         Err(message) => return fail(&message),
     };
-    let state = match read_setup(&home) {
-        Ok(state) => state,
+    let hub = match open_hub(&home) {
+        Ok(hub) => hub,
         Err(message) => return fail(&message),
     };
+    match remove(&home, &machine, v.flag("purge"), hub.side(), &Ssh, &Print).await {
+        Ok(removed) if removed.remote_ok => 0,
+        Ok(_) => 1,
+        Err(stop) => stop.print(),
+    }
+}
+
+/// What `machine remove` did.
+pub struct Removed {
+    /// The hub held the node's key and revoked it.
+    pub revoked: bool,
+    /// Every step on the machine ran (true when it had none to run).
+    pub remote_ok: bool,
+}
+
+/// `machine remove`: stops and removes the node's service on a machine `machine add` set up (with `purge` its files
+/// too), then revokes its key on the hub and forgets it. A step that fails is reported with the steps left to run by
+/// hand, and the key is revoked anyway.
+pub async fn remove(
+    home: &Path,
+    machine: &MachineId,
+    purge: bool,
+    hub: HubSide<'_>,
+    runner: &dyn Runner,
+    progress: &dyn Progress,
+) -> Result<Removed, Stop> {
+    let machine_id = machine.to_string();
+    let state = read_setup(home).map_err(Stop::fail)?;
     let record = state
         .as_ref()
         .and_then(|s| s.machines.get(&machine_id))
         .cloned();
-    let purge = v.flag("purge");
 
     let mut remote_ok = true;
     match &record {
-        None => say(&format!(
+        None => progress.say(&format!(
             "{machine_id} was not set up by fleetd machine add from this hub, so only its key is revoked here; stop its node by hand."
         )),
         Some(record) => {
@@ -751,7 +1107,9 @@ async fn remove_command(argv: &[String]) -> u8 {
                         &node_home,
                     );
                     if !own {
-                        say(&format!("left {unit} alone: it runs another fleet's node"));
+                        progress.say(&format!(
+                            "left {unit} alone: it runs another fleet's node"
+                        ));
                     }
                     own
                 }
@@ -766,68 +1124,57 @@ async fn remove_command(argv: &[String]) -> u8 {
                 own_service,
                 purge,
             );
-            for (i, step) in steps.iter().enumerate() {
-                say(&format!(
-                    "[{}/{}] {}\n  $ {}",
-                    i + 1,
-                    steps.len(),
-                    step.title,
-                    step.command
-                ));
-                let result = run_ssh(&target, &step.command, None).await;
+            let total = steps.len();
+            let begins: Vec<Begin> = steps
+                .iter()
+                .enumerate()
+                .map(|(i, step)| plan_step(i + 1, total, step, Path::new(""), 0))
+                .collect();
+            progress.planned(&begins);
+            for (i, begin) in begins.into_iter().enumerate() {
+                progress.begin(begin);
+                let result = runner.run(&target, &steps[i].command, None).await;
                 if result.code != 0 {
                     remote_ok = false;
-                    say(&format!(
-                        "  failed (exit {}): {}",
-                        result.code,
-                        tail(&result.stderr)
-                    ));
                     let rest: Vec<String> = steps[i..]
                         .iter()
                         .map(|s| format!("    {}", show_ssh(&target, &s.command)))
                         .collect();
-                    say(&format!(
-                        "  Fix: run the remaining steps yourself:\n{}",
-                        rest.join("\n")
-                    ));
+                    progress.failed(
+                        result.code,
+                        &tail(&result.stderr),
+                        &format!("run the remaining steps yourself:\n{}", rest.join("\n")),
+                    );
                     break;
                 }
+                progress.done(&result.stdout);
             }
         }
     }
 
-    let hub = match open_hub(&home) {
-        Ok(hub) => hub,
-        Err(message) => return fail(&message),
-    };
-    let revoked = match hub
+    let revoked = hub
         .auth
-        .revoke_node(&machine)
-        .and_then(|revoked| hub.store.machine_remove(&machine).map(|()| revoked))
-    {
-        Ok(revoked) => revoked,
-        Err(error) => return fail(&error.to_string()),
-    };
-    say(&if revoked {
+        .revoke_node(machine)
+        .and_then(|revoked| hub.store.machine_remove(machine).map(|()| revoked))
+        .map_err(|error| Stop::fail(error.to_string()))?;
+    progress.say(&if revoked {
         format!("revoked {machine_id}'s node key; the hub refuses that node from now on.")
     } else {
         format!("the hub held no node key for {machine_id}.")
     });
     if let (Some(mut state), Some(_)) = (state, &record) {
         state.machines.remove(&machine_id);
-        if let Err(message) = write_setup(&home, &state) {
-            return fail(&message);
-        }
+        write_setup(home, &state).map_err(Stop::fail)?;
     }
     if let Some(record) = &record
         && !purge
     {
-        say(&format!(
+        progress.say(&format!(
             "fleetd's Claude login and the node's files stay on {}; --purge deletes them.",
             record.ssh_host
         ));
     }
-    if remote_ok { 0 } else { 1 }
+    Ok(Removed { revoked, remote_ok })
 }
 
 /// `fleetd machine …`.

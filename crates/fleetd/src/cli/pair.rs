@@ -308,21 +308,52 @@ pub fn worker_command(home: Option<&str>, machine: &str) -> Result<String, Strin
     let machine_id = fleetd_contracts::ids::MachineId::new(machine)
         .map_err(|_| format!("'{machine}' is not a machine id ([a-z0-9-]{{1,32}})"))?;
     let home = super::hub_key::resolve_home(home)?;
-    let setup = super::setup::state::read_setup(&home)?;
-    let urls = local_hub_urls(&home)?;
     let hub = super::hub_key::open_hub(&home)?;
-    let token = hub
-        .auth
-        .create_enroll_token(&machine_id)
-        .map_err(|error| error.to_string())?;
-    let identity = setup
-        .and_then(|s| s.git_identity)
-        .map(|id| format!("{} <{}>", id.name, id.email));
+    let join = worker_join(&home, &hub.auth, &machine_id)?;
     Ok(format!(
         "On {machine}, run:\n\n  {}\n\nThe code works once, until {}. {machine} needs claude installed and must reach the hub at that address.\n",
-        join_line(&urls[0], &token.token, machine, identity.as_deref()),
-        token.expires_at
+        join.line, join.expires_at
     ))
+}
+
+/// What a worker needs to join the hub at `home` by itself: its address, a one-time code, the commit identity, and
+/// the line that installs fleetd and joins with them.
+pub struct WorkerJoin {
+    pub hub: String,
+    pub code: String,
+    /// RFC 3339.
+    pub expires_at: String,
+    /// `Name <email>`.
+    pub git_identity: Option<String>,
+    pub line: String,
+}
+
+/// Mints the one-time code `fleetd pair --worker` prints, and the app's Add machine shows.
+pub fn worker_join(
+    home: &Path,
+    auth: &crate::hub::auth::Auth,
+    machine: &fleetd_contracts::ids::MachineId,
+) -> Result<WorkerJoin, String> {
+    let setup = super::setup::state::read_setup(home)?;
+    let urls = local_hub_urls(home)?;
+    let token = auth
+        .create_enroll_token(machine)
+        .map_err(|error| error.to_string())?;
+    let git_identity = setup
+        .and_then(|s| s.git_identity)
+        .map(|id| format!("{} <{}>", id.name, id.email));
+    Ok(WorkerJoin {
+        line: join_line(
+            &urls[0],
+            &token.token,
+            machine.as_str(),
+            git_identity.as_deref(),
+        ),
+        hub: urls[0].clone(),
+        code: token.token,
+        expires_at: token.expires_at,
+        git_identity,
+    })
 }
 
 /// One line that installs fleetd and joins the hub, asking nothing: install.sh takes the join options and runs

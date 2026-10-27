@@ -30,6 +30,7 @@ describe("routes", () => {
       { id: "projects.add" },
       { id: "settings", tab: "prompts" },
       { id: "admin", section: "people" },
+      { id: "admin", section: "machines" },
       { id: "admin", section: "hub" },
       { id: "onboarding", hub: "http://100.64.0.1:4790", code: "ABCD-2345" },
       { id: "onboarding", hub: null, code: null },

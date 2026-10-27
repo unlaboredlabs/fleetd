@@ -48,7 +48,7 @@ export type SettingsTab = (typeof SETTINGS_TABS)[number];
 export type SettingsView = "edit" | "compare" | "update";
 
 /** The Administration page's sections: for the hub's owners and admins only, never mixed into Settings. */
-export const ADMIN_SECTIONS = ["people", "invites", "hub", "setup"] as const;
+export const ADMIN_SECTIONS = ["people", "invites", "machines", "hub", "setup"] as const;
 export type AdminSection = (typeof ADMIN_SECTIONS)[number];
 
 export type Screen =

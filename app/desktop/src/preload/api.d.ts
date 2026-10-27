@@ -3,6 +3,7 @@ import type { MenuCommand } from "../shared/menu";
 import type { BrowserInput } from "../shared/contracts";
 import type { CallOutcome, ConnectOutcome, DropInfo, HubFrame, OpenOutcome, SecretOutcome } from "../shared/hub";
 import type { ChatScope, ErrorReport, McpServerRequest, OrderFocus, ProjectEnvRequest, SecretRequest, SessionWindowRequest } from "../shared/ipc";
+import type { JoinHere, ThisComputer } from "../shared/joinHere";
 import type { KeyStore, PairOutcome, PairRequest, PairStart, Probe, SetupOutcome } from "../shared/pairing";
 import type { UpdatesState } from "../shared/updates";
 
@@ -83,6 +84,17 @@ export interface FleetdApi {
   readonly system: {
     /** This computer's host name (without .local). */
     hostName(): Promise<string>;
+  };
+  /** Add machine's "This computer" (src/main/joinHere.ts). */
+  readonly machines: {
+    /** Makes this computer a machine of the hub as `machineId`; resolves with how it ended. Never rejects. */
+    joinHere(machineId: string): Promise<JoinHere>;
+    /** Whether this computer's fleetd dir holds a hub or an enrolled node (under any id), or neither. Never rejects. */
+    thisComputer(): Promise<ThisComputer>;
+    /** The join running or last ended since the app started, if any. */
+    joinHereState(): Promise<JoinHere | null>;
+    /** Every change of a join. Returns the unsubscribe. */
+    onJoinHere(listener: (state: JoinHere) => void): () => void;
   };
   readonly projects: {
     /** A native folder picker; null when cancelled. */
