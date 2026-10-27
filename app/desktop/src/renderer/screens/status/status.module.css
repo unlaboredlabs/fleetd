@@ -169,3 +169,17 @@
   border: 1px solid var(--hairline);
   border-radius: var(--radius-sm);
 }
+
+/* With several hubs: a section per hub, its name over its rows, a hairline between hubs. */
+.hub + .hub {
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--hairline);
+}
+.hubHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--control);
+  margin-bottom: var(--space-2);
+}

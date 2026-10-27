@@ -1,5 +1,12 @@
 /** Every IPC channel. The preload exposes only these, and main validates each request against shared/ipc.ts. */
+// Every hub channel takes the hub's id (shared/hubs.ts) first: the app may be paired with several (docs/design/hubs.md).
 export const IPC = {
+  /** invoke() → HubEntry[]. The hubs this app is paired with, in sidebar order. */
+  hubsList: "hubs:list",
+  /** invoke(HubId, {label, color}) → ConnectOutcome. Renames a hub, or changes its colour. */
+  hubsUpdate: "hubs:update",
+  /** main → renderer: HubEntry[], on every change (a hub added, renamed or removed, or first paired). */
+  hubsChanged: "hubs:changed",
   /** invoke() → HubState. Main starts pushing `hubFrame` to this window and asks the hub for a fresh snapshot. */
   hubSubscribe: "hub:subscribe",
   /** invoke() → void. Stops the pushes to this window. */
@@ -22,9 +29,9 @@ export const IPC = {
   hubCacheRead: "hub:cache-read",
   /** invoke(string) → void. Keeps the disk cache when it is for the paired hub; a fixture keeps nothing. */
   hubCacheWrite: "hub:cache-write",
-  /** invoke(ConnectRequest) → ConnectOutcome. Saves the hub URL and key, then connects. */
+  /** invoke(ConnectRequest) → ConnectOutcome. Saves the hub URL and key (into the hub its target names), then connects. */
   hubConnect: "hub:connect",
-  /** invoke() → void. Disconnects and deletes the saved key. */
+  /** invoke() → void. Disconnects, deletes the saved key and cache, and takes the hub off the list (the last one stays). */
   hubForget: "hub:forget",
   /** invoke() → PairStart. app-pair.json and whether a hub answers, for the connect screen. */
   pairStart: "pair:start",
@@ -65,7 +72,7 @@ export const IPC = {
   mcpServerSubmit: "mcp:server-submit",
   /** invoke(url) → OpenOutcome. Opens an http(s) link in the user's browser; refuses other schemes. */
   openExternal: "app:openExternal",
-  /** main → renderer: HubFrame */
+  /** main → renderer: (HubId, HubFrame) */
   hubFrame: "hub:frame",
   /** invoke() → void. The page can take commands and targets now; main sends what it held for it. */
   appReady: "app:ready",
@@ -106,6 +113,7 @@ export const IPC = {
 
 type PushChannel =
   | typeof IPC.hubFrame
+  | typeof IPC.hubsChanged
   | typeof IPC.menuCommand
   | typeof IPC.appOpen
   | typeof IPC.updatesChanged

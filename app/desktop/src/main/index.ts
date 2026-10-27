@@ -11,8 +11,7 @@ import { fixtureRequest, loadFixture } from "./hub/fixture";
 import { fromEnv } from "./hub/credentials";
 import { osCredentialEnv } from "./hub/os";
 import type { KeyStore } from "../shared/pairing";
-import { HubCacheFile } from "./hub/cache";
-import { HubService, type HubMode } from "./hub/service";
+import { Hubs, type HubsMode } from "./hub/hubs";
 import { webSocketTransport } from "./hub/transport";
 import { instrument } from "./instrument";
 import { registerIpc } from "./ipc";
@@ -75,13 +74,13 @@ app.on("before-quit", () => {
   quitting = true;
 });
 /** Set once the hub service exists, for Copy Diagnostics. */
-let hubService: HubService | null = null;
+let hubService: Hubs | null = null;
 const diagnosticsText = (): string =>
   diagnostics({
     version: app.getVersion(),
     versions: { electron: process.versions.electron, chrome: process.versions.chrome },
     os: `${process.platform} ${release()} ${process.arch}`,
-    hub: hubService?.state() ?? { phase: "unpaired" },
+    hubs: hubService?.all().map((h) => h.state()) ?? [{ phase: "unpaired" }],
     log: appLog,
   });
 const help = {
@@ -107,7 +106,7 @@ const fixtureDir = (): string => process.env["FLEETD_FIXTURE_DIR"] ?? join(app.g
 const fixtureFile = (name: string): string => (isAbsolute(name) ? name : join(fixtureDir(), `${name}.json`));
 
 /** The hub, or a fixture standing in for it; `fixtureFile` is also where pairing finds the fixture's `pair` section. */
-const hubMode = (): { mode: HubMode; fixtureFile: string | null; keyStore: KeyStore } => {
+const hubMode = (): { mode: HubsMode; fixtureFile: string | null; keyStore: KeyStore } => {
   const request = fixtureRequest(process.env, RELEASE_BUILD);
   if (request.kind === "ignored") console.warn(request.reason);
   if (request.kind !== "fixture") {
@@ -115,10 +114,11 @@ const hubMode = (): { mode: HubMode; fixtureFile: string | null; keyStore: KeySt
     return {
       mode: {
         kind: "hub",
+        dir: FLEETD_DIR,
         credentials,
         vars: process.env,
         transport: webSocketTransport,
-        cache: new HubCacheFile(join(app.getPath("userData"), "hub-cache.json")),
+        cacheDir: app.getPath("userData"),
       },
       fixtureFile: null,
       keyStore: fromEnv(process.env) === null ? credentials.store : { kind: "env" },
@@ -132,7 +132,7 @@ const hubMode = (): { mode: HubMode; fixtureFile: string | null; keyStore: KeySt
 };
 
 /** What every window of the app's page runs with: the preload, the sandbox and what the page reads at startup. */
-const pagePreferences = (mode: HubMode) => {
+const pagePreferences = (mode: HubsMode) => {
   const mac = process.platform === "darwin";
   return {
     preload: join(import.meta.dirname, "../preload/index.cjs"),
@@ -146,12 +146,14 @@ const pagePreferences = (mode: HubMode) => {
       `--fleetd-version=${app.getVersion()}`,
       // The page shows a "sample data" banner for as long as a fixture stands in for the hub.
       ...(mode.kind === "fixture" ? [`--fleetd-fixture=${mode.fixture.name}`] : []),
+      // The hubs as the window opens, so the page renders at once rather than after a round trip; it asks again after.
+      `--fleetd-hubs=${encodeURIComponent(JSON.stringify(hubService?.list() ?? []))}`,
       ...(mac ? ["--fleetd-vibrancy"] : []),
     ],
   };
 };
 
-const createWindow = (mode: HubMode): BrowserWindow => {
+const createWindow = (mode: HubsMode): BrowserWindow => {
   const mac = process.platform === "darwin";
   const placement = restorePlacement(LIMITS);
   const win = new BrowserWindow({
@@ -218,19 +220,19 @@ void app.whenReady().then(() => {
   lockSession(join(import.meta.dirname, "../renderer"));
   // Every window has spellcheck off; this keeps the session from setting up (and fetching) dictionaries anyway.
   session.defaultSession.setSpellCheckerEnabled(false);
-  let mode: HubMode;
+  let mode: HubsMode;
   let pairing: PairingService;
-  let hub: HubService;
+  let hub: Hubs;
   let fixtureFile: string | null;
   try {
     const chosen = hubMode();
     fixtureFile = chosen.fixtureFile;
     mode = chosen.mode;
-    const service = new HubService(mode);
+    const service = new Hubs(mode);
     hub = service;
     hubService = service;
-    const connect = (url: string, key: string) => service.connect({ url, key });
-    const firstRun = () => service.state().phase === "unpaired";
+    const connect: Parameters<typeof realPairingDeps>[1] = (url, key, target) => service.connect({ url, key }, target);
+    const firstRun = () => service.firstRun();
     pairing = new PairingService(
       chosen.fixtureFile === null
         ? realPairingDeps(FLEETD_DIR, connect, firstRun, chosen.keyStore)
@@ -272,7 +274,8 @@ void app.whenReady().then(() => {
     on: () => presence.on,
     focused: () => BrowserWindow.getFocusedWindow() !== null,
     active: (seconds) => powerMonitor.getSystemIdleState(seconds) === "active",
-    project: () => hub.onScreen(),
+    // Each hub hears its own project on screen, if any (Hubs.presence).
+    project: () => null,
     send: (frame) => hub.presence(frame),
   });
   app.on("will-quit", () => {

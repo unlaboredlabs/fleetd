@@ -2,16 +2,22 @@ import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from "ele
 import type { LinkHandlerStatus, OpenTarget } from "../shared/app";
 import { IPC } from "../shared/channels";
 import type { CallOutcome, ConnectOutcome, DropInfo, HubFrame, OpenOutcome, SecretOutcome } from "../shared/hub";
+import type { HubEntry, HubId } from "../shared/hubs";
 import type { JoinHere, ThisComputer } from "../shared/joinHere";
 import type { KeyStore, PairOutcome, PairStart, Probe, SetupOutcome } from "../shared/pairing";
 import type { UpdatesState } from "../shared/updates";
 import type { FleetdApi } from "./api";
 
-const listeners = new Set<(frame: HubFrame) => void>();
+/** Each hub's subscribers. */
+const listeners = new Map<HubId, Set<(frame: HubFrame) => void>>();
 
 // One IPC listener for all subscribers; the IpcRendererEvent (which carries `sender`) never reaches the page.
-ipcRenderer.on(IPC.hubFrame, (_event: IpcRendererEvent, frame: HubFrame) => {
-  for (const listener of listeners) listener(frame);
+ipcRenderer.on(IPC.hubFrame, (_event: IpcRendererEvent, hub: HubId, frame: HubFrame) => {
+  for (const listener of listeners.get(hub) ?? []) listener(frame);
+});
+const hubsListeners = new Set<(list: readonly HubEntry[]) => void>();
+ipcRenderer.on(IPC.hubsChanged, (_event: IpcRendererEvent, list: readonly HubEntry[]) => {
+  for (const listener of hubsListeners) listener(list);
 });
 
 const commandListeners = new Set<(id: string) => void>();
@@ -29,13 +35,25 @@ ipcRenderer.on(IPC.updatesChanged, (_event: IpcRendererEvent, state: UpdatesStat
   for (const listener of updateListeners) listener(state);
 });
 
-const joinListeners = new Set<(state: JoinHere) => void>();
-ipcRenderer.on(IPC.machinesJoinHereChanged, (_event: IpcRendererEvent, state: JoinHere) => {
-  for (const listener of joinListeners) listener(state);
+/** Each hub's join listeners: a join's changes reach the page of the hub it joins only. */
+const joinListeners = new Set<{ readonly hub: HubId; readonly listener: (state: JoinHere) => void }>();
+ipcRenderer.on(IPC.machinesJoinHereChanged, (_event: IpcRendererEvent, hub: HubId, state: JoinHere) => {
+  for (const l of joinListeners) if (l.hub === hub) l.listener(state);
 });
 
 const arg = (name: string): string | null => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3) ?? null;
 const fixture = arg("fleetd-fixture");
+/** The hubs main had as it made this window; empty when it couldn't say, and the page asks. */
+const initialHubs = ((): readonly HubEntry[] => {
+  try {
+    const raw: unknown = JSON.parse(decodeURIComponent(arg("fleetd-hubs") ?? "[]"));
+    const ok = (h: unknown): h is HubEntry =>
+      typeof h === "object" && h !== null && typeof (h as HubEntry).id === "string" && typeof (h as HubEntry).label === "string";
+    return Array.isArray(raw) && raw.every(ok) ? raw : [];
+  } catch {
+    return [];
+  }
+})();
 const vibrancy = process.argv.includes("--fleetd-vibrancy");
 
 const api: FleetdApi = {
@@ -45,34 +63,48 @@ const api: FleetdApi = {
   platform: process.platform === "darwin" || process.platform === "linux" || process.platform === "win32" ? process.platform : "other",
   copy: (text) => ipcRenderer.invoke(IPC.copy, text) as Promise<void>,
   secret: {
-    submit: (request) => ipcRenderer.invoke(IPC.secretSubmit, request) as Promise<SecretOutcome>,
-    projectEnv: (request) => ipcRenderer.invoke(IPC.projectEnvSubmit, request) as Promise<CallOutcome>,
-    mcpServer: (request) => ipcRenderer.invoke(IPC.mcpServerSubmit, request) as Promise<CallOutcome>,
+    submit: (hub, request) => ipcRenderer.invoke(IPC.secretSubmit, hub, request) as Promise<SecretOutcome>,
+    projectEnv: (hub, request) => ipcRenderer.invoke(IPC.projectEnvSubmit, hub, request) as Promise<CallOutcome>,
+    mcpServer: (hub, request) => ipcRenderer.invoke(IPC.mcpServerSubmit, hub, request) as Promise<CallOutcome>,
   },
   openExternal: (url) => ipcRenderer.invoke(IPC.openExternal, url) as Promise<OpenOutcome>,
-  hub: {
+  hubs: {
+    initial: initialHubs,
+    list: () => ipcRenderer.invoke(IPC.hubsList) as Promise<readonly HubEntry[]>,
     subscribe: (listener) => {
-      listeners.add(listener);
+      hubsListeners.add(listener);
+      return () => hubsListeners.delete(listener);
+    },
+    update: (hub, change) => ipcRenderer.invoke(IPC.hubsUpdate, hub, change) as Promise<ConnectOutcome>,
+  },
+  hub: {
+    subscribe: (hub, listener) => {
+      const set = listeners.get(hub) ?? new Set();
+      listeners.set(hub, set);
+      set.add(listener);
       // Every subscriber starts from a state and (when live) a fresh snapshot; earlier ones just see a resync.
-      void ipcRenderer.invoke(IPC.hubSubscribe);
+      void ipcRenderer.invoke(IPC.hubSubscribe, hub);
       return () => {
-        if (listeners.delete(listener) && listeners.size === 0) void ipcRenderer.invoke(IPC.hubUnsubscribe);
+        if (set.delete(listener) && set.size === 0) {
+          listeners.delete(hub);
+          void ipcRenderer.invoke(IPC.hubUnsubscribe, hub);
+        }
       };
     },
-    call: (tool, input, options) =>
-      ipcRenderer.invoke(IPC.hubCall, { tool, input, ...(options?.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }) }) as Promise<CallOutcome>,
-    chat: (project) => ipcRenderer.invoke(IPC.hubChat, project) as Promise<void>,
-    focus: (workstreamId) => ipcRenderer.invoke(IPC.hubFocus, workstreamId) as Promise<void>,
-    watch: (session) => ipcRenderer.invoke(IPC.hubWatch, session) as Promise<void>,
-    input: (session, input) => ipcRenderer.invoke(IPC.hubInput, session, input) as Promise<void>,
-    resync: () => ipcRenderer.invoke(IPC.hubResync) as Promise<void>,
-    retryNow: () => ipcRenderer.invoke(IPC.hubRetryNow) as Promise<void>,
+    call: (hub, tool, input, options) =>
+      ipcRenderer.invoke(IPC.hubCall, hub, { tool, input, ...(options?.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }) }) as Promise<CallOutcome>,
+    chat: (hub, project) => ipcRenderer.invoke(IPC.hubChat, hub, project) as Promise<void>,
+    focus: (hub, workstreamId) => ipcRenderer.invoke(IPC.hubFocus, hub, workstreamId) as Promise<void>,
+    watch: (hub, session) => ipcRenderer.invoke(IPC.hubWatch, hub, session) as Promise<void>,
+    input: (hub, session, input) => ipcRenderer.invoke(IPC.hubInput, hub, session, input) as Promise<void>,
+    resync: (hub) => ipcRenderer.invoke(IPC.hubResync, hub) as Promise<void>,
+    retryNow: (hub) => ipcRenderer.invoke(IPC.hubRetryNow, hub) as Promise<void>,
     cache: {
-      read: () => ipcRenderer.invoke(IPC.hubCacheRead) as Promise<string | null>,
-      write: (text) => ipcRenderer.invoke(IPC.hubCacheWrite, text) as Promise<void>,
+      read: (hub) => ipcRenderer.invoke(IPC.hubCacheRead, hub) as Promise<string | null>,
+      write: (hub, text) => ipcRenderer.invoke(IPC.hubCacheWrite, hub, text) as Promise<void>,
     },
-    connect: (url, key) => ipcRenderer.invoke(IPC.hubConnect, { url, key }) as Promise<ConnectOutcome>,
-    forget: () => ipcRenderer.invoke(IPC.hubForget) as Promise<void>,
+    connect: (url, key, target) => ipcRenderer.invoke(IPC.hubConnect, { url, key, ...(target === undefined ? {} : { target }) }) as Promise<ConnectOutcome>,
+    forget: (hub) => ipcRenderer.invoke(IPC.hubForget, hub) as Promise<void>,
   },
   pair: {
     start: () => ipcRenderer.invoke(IPC.pairStart) as Promise<PairStart>,
@@ -86,12 +118,13 @@ const api: FleetdApi = {
     hostName: () => ipcRenderer.invoke(IPC.systemHostName) as Promise<string>,
   },
   machines: {
-    joinHere: (machineId) => ipcRenderer.invoke(IPC.machinesJoinHere, machineId) as Promise<JoinHere>,
-    joinHereState: () => ipcRenderer.invoke(IPC.machinesJoinHereState) as Promise<JoinHere | null>,
+    joinHere: (hub, machineId) => ipcRenderer.invoke(IPC.machinesJoinHere, hub, machineId) as Promise<JoinHere>,
+    joinHereState: (hub) => ipcRenderer.invoke(IPC.machinesJoinHereState, hub) as Promise<JoinHere | null>,
     thisComputer: () => ipcRenderer.invoke(IPC.machinesThisComputer) as Promise<ThisComputer>,
-    onJoinHere: (listener) => {
-      joinListeners.add(listener);
-      return () => joinListeners.delete(listener);
+    onJoinHere: (hub, listener) => {
+      const entry = { hub, listener };
+      joinListeners.add(entry);
+      return () => joinListeners.delete(entry);
     },
   },
   projects: {

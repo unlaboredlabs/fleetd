@@ -227,7 +227,7 @@ describe("a secret save", () => {
   it("keeps what was typed until it is saved, so Retry sends it again", async () => {
     const sent: string[] = [];
     let outcome: SecretOutcome = { ok: false, error: { code: "machine_offline", message: "devbox (machine_offline): node not connected" } };
-    vi.stubGlobal("fleetd", { secret: { submit: (r: { value: string }) => (sent.push(r.value), Promise.resolve(outcome)) } });
+    vi.stubGlobal("fleetd", { secret: { submit: (_hub: string, r: { value: string }) => (sent.push(r.value), Promise.resolve(outcome)) } });
     const hub = await render("Q1");
     await type("sk_test_123");
     await click(button("Save secret"));

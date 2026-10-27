@@ -37,10 +37,11 @@ a single-hub app's links don't change. Navigating without a hub stays on the hub
 own memory per project (chats seen, the last project opened) is keyed by hub plus project.
 
 **One sidebar.** The Navis come first, across every hub, each with its hub label. A Navi is a project with
-`kind: "assistant"` (D184), and the sidebar gets its own section for Navis in #651. After them, each hub's projects
-sit under its label, a quiet heading with a hairline and the colour as a small mark. Each group collapses, and the
-app remembers which ones you collapsed. With one hub there is no label and no group: the sidebar looks as it does
-today.
+`kind: "assistant"` (D184), and #651's Navi section sits above every hub's groups. A Navi's menu (rename, archive,
+settings) acts on its own hub, and a collapsed group never hides its Navis. After them, each hub's projects sit under
+its label, a quiet heading with a hairline and the colour as a small mark. Each group collapses, and the app
+remembers which ones you collapsed. ⌘1–9 count the rows on show: the Navis, then each open group's projects. With one
+hub there is no label and no group: the sidebar looks as it does with #651 alone.
 
 **Merged attention.** Every hub counts, and each item says its hub when two or more are paired:
 
@@ -80,9 +81,12 @@ reachable, revokes it there too. Either way, the Navi's next call is refused wit
 \<label\>", with the reason (refused, no route, TLS) and the fix. The Navi's calls fail with the same sentence, never
 silently.
 
-**Where it's managed in the app.** Both lists come from `hub_links_get` on each hub. Links stored on a hub show in
-the Navi's own settings ("Linked hubs"); keys minted on a hub show in the person's own settings for theirs and on
-Administration for an admin, never as admin controls in Settings (D186):
+**Where it's managed in the app.** Not built yet: the app has no screen for links. Until it does, the hub tools are
+the only way to make, list and remove them (`hub_link_mint`, `hub_link_add`, `hub_links_get`, `hub_link_revoke`,
+`hub_link_remove`). The screen, when it comes, reads both lists from
+`hub_links_get` on each hub. Links stored on a hub show in the Navi's own settings ("Linked hubs"). Keys minted on a
+hub show in the person's own settings for their own keys, and on Administration for an admin. They never appear as
+admin controls in Settings (D186):
 
 - **Reaches** (links stored on this hub): the other hub's label and address, the projects it is limited to (or all),
   its state (working, can't reach, revoked), when it was last used, and Revoke.
@@ -91,8 +95,9 @@ Administration for an admin, never as admin controls in Settings (D186):
 - **New link**, on the hub to be reached: pick projects (optional), then copy the one-time link text and paste it on
   the other hub.
 
-**What the app shows elsewhere.** In a Navi's chat, a message it sent through a link names the project with its hub
-label ("to Shop on Acme"). In the target project's chat on B, the message shows as "\<person\> via \<A's label\> Navi",
+**What the app shows elsewhere.** Nothing of its own yet, and nothing it needs to: the hubs write it. In a Navi's chat,
+its wake lines name the project with the other hub's label ("N4 to Storefront on acme: …"). In the target project's
+chat on B, the message shows as "\<person\> via \<A's label\> Navi",
 because B sees only the requests. Like a Navi's message on its own hub, it is input to B's lead, never an answer or an
 approval. Nothing else in the app changes: B's projects show under B's label only when the app
 is paired with B as well.

@@ -1,6 +1,7 @@
 // What the app shell passes between main and the renderer that isn't hub traffic: things to open (a clicked
 // notification, a fleetd:// link) and notifications to post. Menu commands are the palette registry's ids.
 import { z } from "zod";
+import { HUB_ID } from "./hubs";
 
 /** Ids from the hub, as they appear in a notification's target. */
 const machineId = z.string().regex(/^[a-z0-9-]{1,32}$/u);
@@ -20,11 +21,14 @@ const hubUrl = z
     }
   }, "a http(s) hub address");
 
+/** Which of the app's hubs it is on (shared/hubs.ts); absent, the first. */
+const at = z.string().regex(HUB_ID).optional();
+
 const notifyTargets = [
   /** A project's lead chat, at one message when the notification is about it. */
-  z.strictObject({ kind: z.literal("chat"), machineId, projectId: hubId, messageId: hubId.optional() }),
-  z.strictObject({ kind: z.literal("machines") }),
-  z.strictObject({ kind: z.literal("status") }),
+  z.strictObject({ kind: z.literal("chat"), machineId, projectId: hubId, messageId: hubId.optional(), at }),
+  z.strictObject({ kind: z.literal("machines"), at }),
+  z.strictObject({ kind: z.literal("status"), at }),
   /** Settings → Notifications: where the test notification leads. */
   z.strictObject({ kind: z.literal("notifications") }),
 ] as const;

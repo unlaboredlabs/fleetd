@@ -10,6 +10,7 @@ import {
   type ToolOutput,
 } from "../../../shared/contracts";
 import type { HubError, HubFrame } from "../../../shared/hub";
+import { FIRST_HUB, type HubId } from "../../../shared/hubs";
 import type { ChatScope, OrderFocus } from "../../../shared/ipc";
 import { keepCache, type CacheIo } from "./cache";
 import { createChatActions, refOf, type ChatActions } from "./chat-layer";
@@ -28,7 +29,7 @@ const FINAL_CODES = new Set(["invalid", "forbidden", "not_found"]);
 
 export const callKey = <T extends ToolName>(tool: T, input: ToolInput<T>) => ["call", tool, input] as const;
 
-/** The slice of `window.fleetd.hub` the data layer uses. */
+/** The slice of `window.fleetd.hub` the data layer uses, for one hub (`bindHub`). */
 export interface HubApi {
   readonly call: RawCall;
   subscribe(listener: (frame: HubFrame) => void): () => void;
@@ -50,6 +51,8 @@ const INVALIDATE_EVERY_MS = 100;
 const SLOW_EVERY_MS: Partial<Record<ToolName, number>> = { work_list: 2_000 };
 
 export interface DataLayer {
+  /** The hub it reads (shared/hubs.ts): each hub the app is paired with has a layer of its own. */
+  readonly hub: HubId;
   readonly store: DataStore;
   readonly queryClient: QueryClient;
   readonly call: Call;
@@ -77,7 +80,18 @@ export interface DataLayer {
   start(): () => void;
 }
 
-export const createDataLayer = (hub: HubApi, now: () => number = Date.now): DataLayer => {
+/** `window.fleetd.hub` for one hub: every call names it. */
+export const bindHub = (api: Window["fleetd"]["hub"], id: HubId): HubApi => ({
+  call: (tool, input, options) => api.call(id, tool, input, options),
+  subscribe: (listener) => api.subscribe(id, listener),
+  resync: () => api.resync(id),
+  chat: (project) => api.chat(id, project),
+  focus: (workstreamId) => api.focus(id, workstreamId),
+  retryNow: () => api.retryNow(id),
+  cache: { read: () => api.cache.read(id), write: (text) => api.cache.write(id, text) },
+});
+
+export const createDataLayer = (hub: HubApi, now: () => number = Date.now, id: HubId = FIRST_HUB): DataLayer => {
   const store = createDataStore();
   const typed = typedCall(hub.call);
   const chat = createChatActions(store, typed, (key) => void hub.chat(key === null ? null : refOf(key)), now);
@@ -207,6 +221,7 @@ export const createDataLayer = (hub: HubApi, now: () => number = Date.now): Data
   };
 
   return {
+    hub: id,
     store,
     queryClient,
     call,

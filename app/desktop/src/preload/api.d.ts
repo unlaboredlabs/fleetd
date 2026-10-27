@@ -2,6 +2,7 @@ import type { LinkHandlerClaim, LinkHandlerStatus, NotifyRequest, OpenTarget } f
 import type { MenuCommand } from "../shared/menu";
 import type { BrowserInput } from "../shared/contracts";
 import type { CallOutcome, ConnectOutcome, DropInfo, HubFrame, OpenOutcome, SecretOutcome } from "../shared/hub";
+import type { HubColor, HubEntry, HubId, PairTarget } from "../shared/hubs";
 import type { ChatScope, ErrorReport, McpServerRequest, OrderFocus, ProjectEnvRequest, SecretRequest, SessionWindowRequest } from "../shared/ipc";
 import type { JoinHere, ThisComputer } from "../shared/joinHere";
 import type { KeyStore, PairOutcome, PairRequest, PairStart, Probe, SetupOutcome } from "../shared/pairing";
@@ -19,53 +20,66 @@ export interface FleetdApi {
   /** Writes text to the clipboard (the page has no clipboard permission of its own). */
   copy(text: string): Promise<void>;
   readonly secret: {
-    /** Main seals `value` to `boxPubKey` and submits it; the value is never sent back or shown again. */
-    submit(request: SecretRequest): Promise<SecretOutcome>;
+    /** Main seals `value` to `boxPubKey` and submits it to `hub`; the value is never sent back or shown again. */
+    submit(hub: HubId, request: SecretRequest): Promise<SecretOutcome>;
     /**
      * A project's environment changes: main seals each secret's value to `boxPubKey` and calls project_env_set. The
      * output lists the project's variables, a secret's by fingerprint only.
      */
-    projectEnv(request: ProjectEnvRequest): Promise<CallOutcome>;
+    projectEnv(hub: HubId, request: ProjectEnvRequest): Promise<CallOutcome>;
     /**
      * An MCP server to save: main seals each secret value to every machine in `boxes` and calls mcp_server_set. The
      * output has the server as the hub keeps it, a secret's by the machines holding it only.
      */
-    mcpServer(request: McpServerRequest): Promise<CallOutcome>;
+    mcpServer(hub: HubId, request: McpServerRequest): Promise<CallOutcome>;
   };
   /**
    * Opens an https link to github.com (or a subdomain) or fleetd.sh in the user's browser. Anything else comes back
    * as `{ ok: false, message }` saying why; it never rejects.
    */
   openExternal(url: string): Promise<OpenOutcome>;
+  /** The hubs this app is paired with (docs/design/hubs.md), in sidebar order; never empty. */
+  readonly hubs: {
+    /** The hubs as main had them when it made this window, so the page renders without waiting; `list()` is current. */
+    readonly initial: readonly HubEntry[];
+    list(): Promise<readonly HubEntry[]>;
+    /** Every change after the first `list()`: a hub added, renamed or removed, or first paired. Returns the unsubscribe. */
+    subscribe(listener: (list: readonly HubEntry[]) => void): () => void;
+    /** A new label (free text, trimmed) and colour; null takes the colour away. */
+    update(hub: HubId, change: { label: string; color: HubColor | null }): Promise<ConnectOutcome>;
+  };
+  /** One hub's connection: every call names the hub first. */
   readonly hub: {
     /**
      * Frames start with the current state; when connected, a fresh snapshot follows, then events and live frames.
      * Returns the unsubscribe.
      */
-    subscribe(listener: (frame: HubFrame) => void): () => void;
-    /** Any MCP tool, with the saved key. Never rejects: failures come back as `{ ok: false, error }`. */
-    call(tool: string, input: unknown, options?: { timeoutMs?: number }): Promise<CallOutcome>;
+    subscribe(hub: HubId, listener: (frame: HubFrame) => void): () => void;
+    /** Any MCP tool, with the hub's saved key. Never rejects: failures come back as `{ ok: false, error }`. */
+    call(hub: HubId, tool: string, input: unknown, options?: { timeoutMs?: number }): Promise<CallOutcome>;
     /** The chat whose streamed text arrives as `chat_delta` frames, or null to stop. Kept across reconnects. */
-    chat(project: ChatScope | null): Promise<void>;
+    chat(hub: HubId, project: ChatScope | null): Promise<void>;
     /** The order whose lanes stream their text in live frames, or null for none. Kept across reconnects. */
-    focus(workstreamId: OrderFocus | null): Promise<void>;
+    focus(hub: HubId, workstreamId: OrderFocus | null): Promise<void>;
     /** The browser session whose frames this window shows, or null for none. Kept across reconnects. */
-    watch(session: string | null): Promise<void>;
+    watch(hub: HubId, session: string | null): Promise<void>;
     /** A person's input to a session they took over, in its last frame's pixels; dropped while offline. */
-    input(session: string, input: BrowserInput): Promise<void>;
-    resync(): Promise<void>;
+    input(hub: HubId, session: string, input: BrowserInput): Promise<void>;
+    resync(hub: HubId): Promise<void>;
     /** Dials the hub now instead of at the next retry (Retry now while offline). */
-    retryNow(): Promise<void>;
+    retryNow(hub: HubId): Promise<void>;
     /**
-     * The last hub data the app saw, as the renderer wrote it (src/renderer/src/data/cache.ts). Main keeps it in
-     * userData for the paired hub only; reading gives null for any other hub, and Forget deletes it.
+     * The last data the app saw from a hub, as the renderer wrote it (src/renderer/src/data/cache.ts). Main keeps one
+     * per hub in userData, for the address it is paired with only; Forget deletes it.
      */
     readonly cache: {
-      read(): Promise<string | null>;
-      write(text: string): Promise<void>;
+      read(hub: HubId): Promise<string | null>;
+      write(hub: HubId, text: string): Promise<void>;
     };
-    connect(url: string, key: string): Promise<ConnectOutcome>;
-    forget(): Promise<void>;
+    /** Saves a key into the hub `target` names (absent: the first) and connects. */
+    connect(url: string, key: string, target?: PairTarget): Promise<ConnectOutcome>;
+    /** Forgets the hub's key and cache and takes it off the list; the last one stays, not paired. */
+    forget(hub: HubId): Promise<void>;
   };
   readonly pair: {
     /** Whether `fleetd init` left a code on this computer (not the code), and whether a hub answers. Never rejects. */
@@ -87,14 +101,14 @@ export interface FleetdApi {
   };
   /** Add machine's "This computer" (src/main/joinHere.ts). */
   readonly machines: {
-    /** Makes this computer a machine of the hub as `machineId`; resolves with how it ended. Never rejects. */
-    joinHere(machineId: string): Promise<JoinHere>;
+    /** Makes this computer a machine of `hub` as `machineId`; resolves with how it ended. Never rejects. */
+    joinHere(hub: HubId, machineId: string): Promise<JoinHere>;
     /** Whether this computer's fleetd dir holds a hub or an enrolled node (under any id), or neither. Never rejects. */
     thisComputer(): Promise<ThisComputer>;
-    /** The join running or last ended since the app started, if any. */
-    joinHereState(): Promise<JoinHere | null>;
-    /** Every change of a join. Returns the unsubscribe. */
-    onJoinHere(listener: (state: JoinHere) => void): () => void;
+    /** `hub`'s join, running or last ended since the app started, if any. */
+    joinHereState(hub: HubId): Promise<JoinHere | null>;
+    /** Every change of `hub`'s join. Returns the unsubscribe. */
+    onJoinHere(hub: HubId, listener: (state: JoinHere) => void): () => void;
   };
   readonly projects: {
     /** A native folder picker; null when cancelled. */

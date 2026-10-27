@@ -5,6 +5,7 @@ import { FixtureSource, type FixtureFile } from "../src/main/hub/fixture.ts";
 import { sessionHash } from "../src/main/sessionWindow.ts";
 import type { FleetdApi } from "../src/preload/api";
 import type { HubFrame } from "../src/shared/hub";
+import { FIRST_HUB, type HubEntry } from "../src/shared/hubs";
 import type { CallRequest } from "../src/shared/ipc";
 import type { UpdatesState } from "../src/shared/updates";
 
@@ -35,17 +36,34 @@ const picker = (names: readonly string[], current: string) => {
   document.body.append(select);
 };
 
-const fleetdApi = (file: File): FleetdApi => {
+/** One hub of the fixture's, as main's HubService serves it. */
+const hubOf = (fixture: FixtureFile) => {
   const listeners = new Set<(frame: HubFrame) => void>();
   // As main's HubService: a subscriber gets no events or live frames until its snapshot.
   const awaitingSnapshot = new Set<(frame: HubFrame) => void>();
-  const source = new FixtureSource(file, (frame) => {
+  const source = new FixtureSource(fixture, (frame) => {
     for (const listener of listeners) {
       if (frame.t === "snapshot") awaitingSnapshot.delete(listener);
       else if ((frame.t === "event" || frame.t === "live") && awaitingSnapshot.has(listener)) continue;
       listener(frame);
     }
   });
+  return { listeners, awaitingSnapshot, source, file: fixture };
+};
+
+const fleetdApi = (file: File): FleetdApi => {
+  // The file's own hub first, then any it lists beside it, with ids as main gives them (main/hub/hubs.ts).
+  const { hubs: more = [], label, color, ...first } = file;
+  const entries: HubEntry[] = [
+    { id: FIRST_HUB, label: label ?? "devbox", ...(color === undefined ? {} : { color }) },
+    ...more.map((h, i): HubEntry => ({ id: `h${String(i + 2)}`, label: h.label, ...(h.color === undefined ? {} : { color: h.color }) })),
+  ];
+  const hubs = new Map([[FIRST_HUB, hubOf(first)], ...more.map((h, i) => [`h${String(i + 2)}`, hubOf(h.fixture)] as const)]);
+  const of = (id: string) => {
+    const hub = hubs.get(id);
+    if (hub === undefined) throw new Error(`no hub ${id} in this fixture`);
+    return hub;
+  };
   const updates: UpdatesState = { current: file.update?.current ?? "0.0.0", app: file.update?.app ?? { kind: "current" }, release: file.update?.release ?? null };
   const done = () => Promise.resolve();
   return {
@@ -63,8 +81,15 @@ const fleetdApi = (file: File): FleetdApi => {
       window.open(url, "_blank", "noopener");
       return Promise.resolve({ ok: true });
     },
+    hubs: {
+      initial: entries,
+      list: () => Promise.resolve(entries),
+      subscribe: () => () => undefined,
+      update: () => Promise.resolve({ ok: false, message: notHere.message }),
+    },
     hub: {
-      subscribe: (listener) => {
+      subscribe: (id, listener) => {
+        const { listeners, awaitingSnapshot, source } = of(id);
         listeners.add(listener);
         awaitingSnapshot.add(listener);
         listener({ t: "state", state: source.state });
@@ -75,24 +100,30 @@ const fleetdApi = (file: File): FleetdApi => {
           awaitingSnapshot.delete(listener);
         };
       },
-      call: (tool, input) => source.call({ tool, input: input as CallRequest["input"] }),
+      call: (id, tool, input) => of(id).source.call({ tool, input: input as CallRequest["input"] }),
       chat: done,
       focus: done,
-      watch: (session) => {
-        source.watch(session);
+      watch: (id, session) => {
+        of(id).source.watch(session);
         return done();
       },
       input: done,
-      resync: () => {
-        source.resync();
+      resync: (id) => {
+        of(id).source.resync();
         return done();
       },
-      retryNow: () => {
-        source.reconnectNow();
+      retryNow: (id) => {
+        of(id).source.reconnectNow();
         return done();
       },
-      cache: { read: () => Promise.resolve(file.cache === undefined ? null : JSON.stringify(file.cache)), write: done },
-      connect: () => Promise.resolve(source.connectAnswer),
+      cache: {
+        read: (id) => {
+          const cache = of(id).file.cache;
+          return Promise.resolve(cache === undefined ? null : JSON.stringify(cache));
+        },
+        write: done,
+      },
+      connect: () => Promise.resolve(of(FIRST_HUB).source.connectAnswer),
       forget: done,
     },
     pair: {
@@ -105,7 +136,7 @@ const fleetdApi = (file: File): FleetdApi => {
     },
     system: { hostName: () => Promise.resolve("devbox") },
     machines: {
-      joinHere: (machineId) => Promise.resolve({ machineId, state: "failed", steps: [], message: notHere.message }),
+      joinHere: (_hub, machineId) => Promise.resolve({ machineId, state: "failed", steps: [], message: notHere.message }),
       joinHereState: () => Promise.resolve(null),
       thisComputer: () => Promise.resolve({ kind: "none" }),
       onJoinHere: () => () => undefined,
