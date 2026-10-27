@@ -88,6 +88,16 @@ const two = (base: Fixture): Fixture => {
     { author: "human", text: "Remind me to renew the car insurance before the 14th." },
     { author: "lead", text: "Done: a reminder on the 10th at 09:00, and I'll check the renewal email when it comes." },
   ]);
+  // Ada's to-do list, its panel's Plan.
+  f.answer("checklist_get", { projectRef: { ...ADA } }, {
+    projectRef: { ...ADA },
+    items: [
+      { id: 1, text: "Reply to Ana about Tuesday's lunch", state: "doing", updatedAt: at(f.now, -120_000) },
+      { id: 2, text: "Book a table for two at 12:30", state: "todo", updatedAt: at(f.now, -120_000) },
+      { id: 3, text: "Follow storefront's saved carts until it lands", state: "todo", updatedAt: at(f.now, -1_500_000) },
+    ],
+    updatedAt: at(f.now, -120_000),
+  });
   f.answer("requests_list", { limit: 100 }, {
     requests: [{ requestId: "Q1", projectRef: { ...ADA }, kind: "approval", state: "open", text: "Send an email to Ana Ruiz <ana@example.com>", createdAt: at(f.now, -120_000) }],
   });

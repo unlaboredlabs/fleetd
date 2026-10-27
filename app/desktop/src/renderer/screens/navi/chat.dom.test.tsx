@@ -81,13 +81,20 @@ it("asks what the Navi can do for you, with an assistant's starters, and the box
   expect(host.querySelector("textarea")?.getAttribute("placeholder")).toBe("Message Ada");
 });
 
+const tabs = () => [...host.querySelectorAll("[data-section]")].map((t) => t.getAttribute("data-section"));
+
 it("gives the panel a Navi's sections, and a link to a project's view opens its first", async () => {
-  await mount(<ProjectPanel project={ADA} view={{ tab: "prs", pr: null }} onWide={() => undefined} />);
-  const tabs = () => [...host.querySelectorAll("[data-section]")].map((t) => t.getAttribute("data-section"));
+  await mount(<ProjectPanel project={ADA} view={{ tab: "prs", pr: null }} onWide={() => undefined} />, ["navi_asks"]);
   expect(tabs()).toEqual(["asked", "plan", "history"]);
   expect(host.querySelector("[aria-selected=true][data-section]")?.getAttribute("data-section")).toBe("asked");
   act(() => root.unmount());
   root = createRoot(host);
-  await mount(<ProjectPanel project={ADA} view={{ tab: "asked" }} onWide={() => undefined} />, ["browser_sessions"]);
+  await mount(<ProjectPanel project={ADA} view={{ tab: "asked" }} onWide={() => undefined} />, ["navi_asks", "browser_sessions"]);
   expect(tabs()).toEqual(["asked", "screens", "plan", "history"]);
+});
+
+it("shows no Asked on a hub that doesn't serve it, and a link to it opens the Plan", async () => {
+  await mount(<ProjectPanel project={ADA} view={{ tab: "asked" }} onWide={() => undefined} />);
+  expect(tabs()).toEqual(["plan", "history"]);
+  expect(host.querySelector("[aria-selected=true][data-section]")?.getAttribute("data-section")).toBe("plan");
 });

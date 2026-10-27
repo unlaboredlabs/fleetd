@@ -740,7 +740,8 @@ export const screens: readonly Screen[] = [
     }, (page) => page.getByLabel("Loading the decisions")),
   },
   // Navi (fixtures/navi): the first run, with Meet Navi in the sidebar; two Navis pinned above the projects and one
-  // archived; Ada's chat with its send to approve, beside the work it asked for; and a hub that doesn't serve that yet.
+  // archived; Ada's chat with its send to approve, beside the work it asked for; and a hub that doesn't serve that, so
+  // no Asked tab.
   { id: "navi", route: "#/navi", fixtures: ["navi-none", "navi-two", "long-text"] },
   {
     id: "chat",
@@ -759,7 +760,10 @@ export const screens: readonly Screen[] = [
     fixtures: ["navi-old-hub"],
     variant: "navi",
     open: async (page) => {
-      await page.getByRole("complementary", { name: "Project panel" }).locator('[data-screen="asked.unserved"]').waitFor();
+      // No Asked on a hub that doesn't serve it: the link opens the Plan.
+      const panel = page.getByRole("complementary", { name: "Project panel" });
+      await panel.locator('[data-section="plan"][aria-selected="true"]').waitFor();
+      await expect(panel.locator('[data-section="asked"]')).toHaveCount(0);
     },
   },
   // Resized from its edge with the keyboard: at its widest, and at its narrowest, where the tabs fold to icons.

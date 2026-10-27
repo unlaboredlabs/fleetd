@@ -60,7 +60,7 @@ export const SECTIONS: readonly Section[] = [
   },
 ];
 
-/** A Navi's panel. Screens only once the hub serves them (sectionsFor). */
+/** A Navi's panel. Asked and Screens only once the hub serves them (sectionsFor). */
 export const NAVI_SECTIONS: readonly Section[] = [
   { id: "asked", label: "Asked", icon: Send, line: "Work this Navi asked your projects for, and how each order is going.", views: [["asked", "Asked work"]] },
   { id: "screens", label: "Screens", icon: AppWindow, line: "The browsers and devices this Navi uses: watch live, take over, replay.", views: [["sessions", "Screens"]] },
@@ -77,7 +77,7 @@ export const NAVI_SECTIONS: readonly Section[] = [
   },
 ];
 
-/** The sections a project's panel shows: a Navi's, or a project of code's; a Navi's Screens only once served. */
+/** The sections a project's panel shows: a Navi's, or a project of code's; a Navi's Asked and Screens only once served. */
 export const sectionsFor = (navi: boolean, features: readonly string[] = []): readonly Section[] =>
   navi ? NAVI_SECTIONS.filter((g) => g.views.some(([tab]) => served(tab, features))) : SECTIONS;
 

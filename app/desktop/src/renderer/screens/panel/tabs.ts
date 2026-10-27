@@ -111,6 +111,7 @@ export const PANEL_TABS = [
     detail: "The work this Navi asked your projects for, and how each order is going",
     keywords: ["navi", "asked", "orders", "requests", "delegated", "factory"],
     pane: () => import("../navi/AskedPane").then((m) => m.AskedPane),
+    feature: "navi_asks",
   },
 ] as const satisfies readonly PanelTabEntry[];
 

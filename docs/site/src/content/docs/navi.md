@@ -38,7 +38,8 @@ The panel beside the chat has a Navi's own sections:
 | Plan | Its checklist. |
 | History | What happened, and what you and the Navi decided. |
 
-Asked needs a hub that serves `navi_asks`. On an older hub the section says so.
+Asked shows on a hub that serves `navi_asks`. On any other hub, a Navi still tells you in its chat when work it asked
+for lands.
 
 ## Make one from the terminal
 

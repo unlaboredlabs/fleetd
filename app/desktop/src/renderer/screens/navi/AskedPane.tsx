@@ -1,7 +1,8 @@
 // A Navi's panel, Asked work: each message it sent another project's lead (project_message), newest first, with the
 // orders that lead opened for it and how each is going; the project's name opens its chat. Read from the hub's
 // navi_asks for this Navi (#649, docs/design/navi.md), again whenever the order board changes, since the same events
-// move both. A hub that doesn't serve it (no `navi_asks` feature) gets a plain sentence, never a guess.
+// move both. The tab shows only on a hub that serves it (the `navi_asks` feature); a link to it on another hub gets
+// a plain sentence, never a guess.
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import type { RawCall } from "../../../shared/contracts";
@@ -55,8 +56,8 @@ export function AskedPane({ project }: { project: ProjectKey }) {
     return (
       <div className={s.screen} data-screen="asked.unserved">
         <div className={s.empty}>
-          <EmptyState title="Asked work isn’t on this hub yet">
-            When this Navi asks one of your projects for something, the order it becomes and how it’s going show here. Update the hub to a fleetd that shares them with the app.
+          <EmptyState title="This hub doesn’t share asked work with the app">
+            Your Navi still asks your projects for work and tells you in its chat when it lands.
           </EmptyState>
         </div>
       </div>
