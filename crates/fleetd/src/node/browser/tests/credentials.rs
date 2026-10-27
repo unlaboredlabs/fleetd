@@ -856,6 +856,55 @@ async fn a_filled_field_cant_be_tested_against_guesses_with_validation_and_inval
     call(&rig.broker, json!({ "op": "session_end" })).await;
 }
 
+/// `selectors`' nodes on the page, from a fresh document: looked up again while Chrome answers with a transient error
+/// (a document it replaced under load).
+async fn nodes<const N: usize>(
+    driver: &mut Driver,
+    page: &str,
+    selectors: [&str; N],
+) -> [Value; N] {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    'again: loop {
+        let root = driver
+            .ok_settled(Some(page), "DOM.getDocument", json!({ "depth": -1 }))
+            .await["root"]["nodeId"]
+            .clone();
+        let mut found = Vec::new();
+        for selector in selectors {
+            let answer = driver
+                .send(
+                    Some(page),
+                    "DOM.querySelector",
+                    json!({ "nodeId": root, "selector": selector }),
+                )
+                .await;
+            let node = &answer["result"]["nodeId"];
+            if answer.get("error").is_some() || node == 0 {
+                assert!(
+                    (transient(&answer) || node == 0) && Instant::now() < deadline,
+                    "{selector}: {answer}"
+                );
+                tokio::time::sleep(Duration::from_millis(100)).await;
+                continue 'again;
+            }
+            found.push(node.clone());
+        }
+        return found.try_into().unwrap();
+    }
+}
+
+/// A fill, tried again while it fails before typing on a transient error of Chrome's.
+async fn fill_settled(rig: &Rig, reference: &str, target: &str, submit: Option<bool>) -> Value {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let filled = fill(rig, reference, target, submit).await;
+        if filled.get("error").is_none() || !transient(&filled) || Instant::now() >= deadline {
+            return filled;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
 /// A filled field stays in its own form: it can't be tied to another form by its `form` attribute, nor moved into
 /// one, nor can its form be made to send another way (`method`, `target`, `enctype`), by agent-browser's own script
 /// shape, by script or by DOM command; another form would send it to its own address.
@@ -877,27 +926,17 @@ async fn a_filled_field_cant_be_moved_to_a_form_that_sends_elsewhere() {
         .unwrap();
     let page = driver.page().await;
     open(&mut driver, &page, &format!("{site}/two")).await;
-    let filled = fill(&rig, PASSWORD_REF, "#pw", Some(false)).await;
+    driver
+        .wait_for(
+            &page,
+            "document.readyState === 'complete' && !!document.querySelector('#away #email')",
+        )
+        .await;
+    let filled = fill_settled(&rig, PASSWORD_REF, "#pw", Some(false)).await;
     assert!(filled["result"].is_object(), "{filled}");
     let mut heard = filled.to_string();
-    let root = driver
-        .ok(Some(&page), "DOM.getDocument", json!({ "depth": -1 }))
-        .await["root"]["nodeId"]
-        .clone();
-    let mut nodes = Vec::new();
-    for selector in ["#pw", "#user", "#away", "form"] {
-        nodes.push(
-            driver
-                .ok(
-                    Some(&page),
-                    "DOM.querySelector",
-                    json!({ "nodeId": root, "selector": selector }),
-                )
-                .await["nodeId"]
-                .clone(),
-        );
-    }
-    let [pw, user, away, login] = <[Value; 4]>::try_from(nodes).unwrap();
+    let [pw, user, away, login] =
+        nodes(&mut driver, &page, ["#pw", "#user", "#away", "form"]).await;
     let refused = |answer: &Value| {
         answer["error"]["message"]
             .as_str()
@@ -961,9 +1000,12 @@ async fn a_filled_field_cant_be_moved_to_a_form_that_sends_elsewhere() {
         assert!(refused(&answer), "{method}: {answer}");
         heard.push_str(&answer.to_string());
     }
-    // The login form still sends as it did.
+    // The login form still sends as it did. Its nodes are looked up again, in case Chrome replaced them meanwhile; a
+    // new document makes the ids before it stale, so every node used from here comes from this lookup.
+    let [pw, away, login, email] =
+        nodes(&mut driver, &page, ["#pw", "#away", "form", "#email"]).await;
     let form = driver
-        .ok(Some(&page), "DOM.getAttributes", json!({ "nodeId": login }))
+        .ok_settled(Some(&page), "DOM.getAttributes", json!({ "nodeId": login }))
         .await;
     assert_eq!(
         form["attributes"],
@@ -972,11 +1014,11 @@ async fn a_filled_field_cant_be_moved_to_a_form_that_sends_elsewhere() {
     );
     // The field is still in its own form, and the other form takes nothing of it.
     let attributes = driver
-        .ok(Some(&page), "DOM.getAttributes", json!({ "nodeId": pw }))
+        .ok_settled(Some(&page), "DOM.getAttributes", json!({ "nodeId": pw }))
         .await;
     assert!(!attributes.to_string().contains("\"form\""), "{attributes}");
     let away_now = driver
-        .ok(
+        .ok_settled(
             Some(&page),
             "DOM.describeNode",
             json!({ "nodeId": away, "depth": -1 }),
@@ -987,31 +1029,17 @@ async fn a_filled_field_cant_be_moved_to_a_form_that_sends_elsewhere() {
         "nothing moved into it: {away_now}"
     );
     heard.push_str(&format!("{attributes}{away_now}"));
-    // Sending the other form sends only its own field.
-    let button = driver
-        .ok(
-            Some(&page),
-            "DOM.querySelector",
-            json!({ "nodeId": root, "selector": "#send" }),
-        )
-        .await["nodeId"]
-        .clone();
-    let send = driver
-        .ok(Some(&page), "DOM.getBoxModel", json!({ "nodeId": button }))
+    // Sending the other form sends only its own field: Enter in its field submits it, with no layout to wait on.
+    driver
+        .ok_settled(Some(&page), "DOM.focus", json!({ "nodeId": email }))
         .await;
-    let quad = &send["model"]["content"];
-    let (x, y) = (
-        (quad[0].as_f64().unwrap() + quad[4].as_f64().unwrap()) / 2.0,
-        (quad[1].as_f64().unwrap() + quad[5].as_f64().unwrap()) / 2.0,
-    );
-    for kind in ["mousePressed", "mouseReleased"] {
-        driver
-            .ok(
-                Some(&page),
-                "Input.dispatchMouseEvent",
-                json!({ "type": kind, "x": x, "y": y, "button": "left", "clickCount": 1 }),
-            )
-            .await;
+    for kind in ["keyDown", "keyUp"] {
+        let mut key =
+            json!({ "type": kind, "key": "Enter", "code": "Enter", "windowsVirtualKeyCode": 13 });
+        if kind == "keyDown" {
+            key["text"] = "\r".into();
+        }
+        driver.ok(Some(&page), "Input.dispatchKeyEvent", key).await;
     }
     wait_title(&mut driver, &page, "Stolen").await;
     let bodies = bodies.lock().unwrap().clone();

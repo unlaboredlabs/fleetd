@@ -268,6 +268,23 @@ async fn call(broker: &Arc<Broker>, call: Value) -> Value {
     serde_json::to_value(broker.handle(THREAD.to_owned(), frame).await).unwrap()
 }
 
+/// What real Chrome answers for a moment under load: a node or execution context that was just replaced, a page
+/// between loads, a box not laid out yet. Never one of fleetd's refusals.
+const TRANSIENT: &[&str] = &[
+    "Could not find node with given id",
+    "No node with given id found",
+    "Cannot find context with specified id",
+    "Execution context was destroyed",
+    "Inspected target navigated or closed",
+    "Could not compute box model",
+];
+
+/// Whether `answer` (a CDP answer, or a tool result) failed with a [`TRANSIENT`] error.
+pub(crate) fn transient(answer: &Value) -> bool {
+    let text = answer.to_string();
+    !text.contains("1Password") && TRANSIENT.iter().any(|t| text.contains(t))
+}
+
 /// A raw CDP client, as agent-browser is one, on the session's proxy URL.
 pub(crate) struct Driver {
     ws: tokio_tungstenite::WebSocketStream<
@@ -325,6 +342,28 @@ impl Driver {
         let answer = self.send(session, method, params).await;
         assert!(answer.get("error").is_none(), "{method}: {answer}");
         answer["result"].clone()
+    }
+
+    /// As [`Driver::ok`], but tries again, for up to 10 s, while real Chrome's answer is one it gives for a moment
+    /// under load ([`transient`]); any other error fails as `ok` does.
+    pub(crate) async fn ok_settled(
+        &mut self,
+        session: Option<&str>,
+        method: &str,
+        params: Value,
+    ) -> Value {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            let answer = self.send(session, method, params.clone()).await;
+            if answer.get("error").is_none() {
+                return answer["result"].clone();
+            }
+            assert!(
+                transient(&answer) && Instant::now() < deadline,
+                "{method}: {answer}"
+            );
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
     }
 
     pub(crate) async fn eval(&mut self, page: &str, expression: &str) -> Value {
