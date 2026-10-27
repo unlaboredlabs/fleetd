@@ -43,28 +43,59 @@ export const limitPart = (l: LoginLimit): Part | null => {
 
 const worst = (tones: ReadonlyArray<Tone>): Tone => (tones.includes("danger") ? "danger" : tones.includes("warning") ? "warning" : "quiet");
 
+/** "load 3.1/32", "mem 41%", "claude 58% 5h · 41% wk": what the node reports, in its worst usage tone. */
+const usageParts = (live: MachineLive | undefined): ReadonlyArray<Part> => {
+  const load = live?.load;
+  if (!load) return [];
+  const out: Array<Part> = [{ text: `load ${load.load1.toFixed(1)}/${load.cpus}`, tone: "quiet" }];
+  if (load.memUsedPct !== undefined) out.push({ text: `mem ${load.memUsedPct}%`, tone: "quiet" });
+  const limits = (load.limits ?? []).map(limitPart).filter((p): p is Part => p !== null);
+  if (limits.length > 0) out.push({ text: `claude ${limits.map((p) => p.text).join(" · ")}`, tone: worst(limits.map((p) => p.tone)) });
+  return out;
+};
+
+const offlinePart = (m: Machine, nowMs: number): Part => {
+  const seen = Date.parse(m.lastSeenAt);
+  return { text: Number.isNaN(seen) ? "offline" : `offline, last seen ${agoText(nowMs - seen)}`, tone: "warning" };
+};
+
 /**
  * A machine's line: "offline, last seen 12 min ago", or "3 running", "slept 10m46s", "load 3.1/32", "mem 41%",
  * "claude 58% 5h · 41% wk". The snapshot's machine says status and last seen; its live entry says load and usage.
  */
 export const machineParts = (m: Machine, live: MachineLive | undefined, nowMs: number): ReadonlyArray<Part> => {
-  if (m.status === "offline") {
-    const seen = Date.parse(m.lastSeenAt);
-    return [{ text: Number.isNaN(seen) ? "offline" : `offline, last seen ${agoText(nowMs - seen)}`, tone: "warning" }];
-  }
+  if (m.status === "offline") return [offlinePart(m, nowMs)];
   const out: Array<Part> = [];
   if (m.status === "degraded") out.push({ text: "degraded", tone: "warning" });
   if (live) out.push({ text: `${live.running} running`, tone: "quiet" });
   const slept = sleptText(live?.slept ?? m.lastSlept, nowMs);
   if (slept) out.push({ text: slept, tone: "warning" });
-  const load = live?.load;
-  if (load) {
-    out.push({ text: `load ${load.load1.toFixed(1)}/${load.cpus}`, tone: "quiet" });
-    if (load.memUsedPct !== undefined) out.push({ text: `mem ${load.memUsedPct}%`, tone: "quiet" });
-    const limits = (load.limits ?? []).map(limitPart).filter((p): p is Part => p !== null);
-    if (limits.length > 0) out.push({ text: `claude ${limits.map((p) => p.text).join(" · ")}`, tone: worst(limits.map((p) => p.tone)) });
-  }
-  return out;
+  return [...out, ...usageParts(live)];
+};
+
+export interface Glance {
+  /** "online", "degraded", "offline, last seen 12 min ago". */
+  readonly state: Part;
+  /** "3 running", while it reports. */
+  readonly running: string | null;
+  /** What wants a look, shown on its row: a recent sleep, claude usage near or at its limit. */
+  readonly notes: ReadonlyArray<Part>;
+  /** The rest, behind its disclosure: load, memory, usage within limits, the node's version, its tags. */
+  readonly facts: ReadonlyArray<Part>;
+}
+
+/** A machine on the Machines screen: its row says the state, what it runs and what wants a look; the rest opens. */
+export const machineGlance = (m: Machine, live: MachineLive | undefined, nowMs: number): Glance => {
+  const version: Part = { text: `fleetd ${m.nodeVersion}${m.tags.length > 0 ? ` · ${m.tags.join(", ")}` : ""}`, tone: "quiet" };
+  if (m.status === "offline") return { state: offlinePart(m, nowMs), running: null, notes: [], facts: [version] };
+  const slept = sleptText(live?.slept ?? m.lastSlept, nowMs);
+  const usage = usageParts(live);
+  return {
+    state: m.status === "degraded" ? { text: "degraded", tone: "warning" } : { text: "online", tone: "quiet" },
+    running: live ? `${live.running} running` : null,
+    notes: [...(slept ? [{ text: slept, tone: "warning" as const }] : []), ...usage.filter((p) => p.tone !== "quiet")],
+    facts: [...usage.filter((p) => p.tone === "quiet"), version],
+  };
 };
 
 /** "agents 8 / 40 · 1 queued", the words the chat header's Max agents control uses. */

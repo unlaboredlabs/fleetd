@@ -234,58 +234,128 @@
   flex: 1;
   min-width: 0;
 }
-.cards {
+/* One row a machine, apart by a hairline; its details open under its name. No card. */
+.machineList {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  min-width: 0;
 }
-.card {
+.machine {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius-md);
+  padding: var(--space-1) 0;
   min-width: 0;
 }
-.cardHead {
+.machine + .machine {
+  border-top: 1px solid var(--hairline);
+}
+.machineHead {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 8rem) minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--space-2);
+  min-height: var(--row);
+  min-width: 0;
+  cursor: pointer;
+}
+.toggle {
   display: flex;
   align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--quiet);
+  cursor: pointer;
+}
+.machineHead:hover .toggle {
+  color: var(--text);
+}
+.toggle:focus-visible,
+.fold:focus-visible,
+.link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.chevron {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  transition: transform var(--dur-quick) var(--ease-snap);
+}
+.chevronOpen {
+  transform: rotate(90deg);
+}
+.glance,
+.notes,
+.facts {
+  display: flex;
   flex-wrap: wrap;
-  gap: var(--space-1-5) var(--space-3);
+  align-items: baseline;
+  gap: 0 var(--space-3);
   min-width: 0;
 }
-.cardName {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-width: 0;
-  max-width: 100%;
+.notes {
+  justify-content: flex-end;
 }
-.parts {
+/* Under the name, where the chevron's column ends. */
+.reason,
+.detail {
+  margin-left: calc(16px + var(--space-2));
+}
+.reason {
+  padding-bottom: var(--space-1);
+}
+.detail {
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1) var(--space-3);
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-1) 0 var(--space-2);
+  min-width: 0;
 }
 .projects {
   display: flex;
   flex-direction: column;
-  border-top: 1px solid var(--hairline);
-  padding-top: var(--space-1);
+  min-width: 0;
 }
 .project {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) auto auto;
+  grid-template-columns: minmax(0, 16rem) minmax(0, 1fr) auto auto;
   align-items: center;
   column-gap: var(--space-3);
   min-height: var(--row);
+}
+/* Opens the passing checks; .link goes to a machine's roles. Both quiet words, no button chrome. */
+.fold,
+.link {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  width: fit-content;
+  min-height: var(--row);
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--quiet);
+  font: inherit;
+  cursor: pointer;
+}
+.fold:hover,
+.link:hover {
+  color: var(--text);
 }
 
 /* Setup checks. */
 .checks {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: var(--space-2);
   min-width: 0;
 }
 .checkGroup {
@@ -295,11 +365,13 @@
 }
 .checkRow {
   display: grid;
-  grid-template-columns: 12px minmax(120px, 180px) minmax(0, 1fr);
+  grid-template-columns: minmax(120px, 10rem) minmax(0, 1fr);
   align-items: baseline;
   column-gap: var(--space-3);
-  padding: var(--space-2) 0;
-  border-bottom: 1px solid var(--hairline);
+  padding: var(--space-1-5) 0;
+}
+.checkRow + .checkRow {
+  border-top: 1px solid var(--hairline);
 }
 .checkBody {
   display: flex;
@@ -313,4 +385,7 @@
   gap: var(--space-1);
   min-width: 0;
   overflow-wrap: anywhere;
+}
+.checkGroup .checkGroup {
+  margin-top: var(--space-2);
 }

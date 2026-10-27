@@ -173,6 +173,20 @@ Open Time from the sidebar, the agents strip in a chat, or the command palette. 
 
 Times are in your own time zone. How to read it: [Where time went](/docs/time-inspector).
 
+## Machines {#machines}
+
+Open Machines from the sidebar or the command palette. The title shows how many agents run across the fleet
+("agents 2 / 12"), beside Add project.
+
+Each machine is one row: its name, its state (online, degraded, or offline and when it was last seen), how many agents
+run there and how many projects it has. On the right, anything that wants a look: a recent sleep, Claude usage near
+its limit, a setup check that failed. A degraded machine says why under its name. Click a row to open it: load, memory,
+Claude usage, its fleetd version and tags, its projects (each with Open, Settings and Remove) and Roles and screens,
+which goes to [Settings › Machines](#settings).
+
+Under the machines, the [setup checks](/docs/machines#health) the hub ran: the ones that failed or warned, each with
+its fix (a command to copy, or Fix), then the rest a click away. Re-run runs them again.
+
 ## Settings {#settings}
 
 Open Settings with ⌘,. It takes the sidebar's place; Back returns to where you were. Type in "Search settings" to find
