@@ -533,6 +533,33 @@ pub struct RunnerInfo {
     /// `DISABLE_AUTOUPDATER`), so its version can change under the machine. Absent for a runner without one, or from
     /// a node before it.
     pub self_update: Option<bool>,
+    /// The OS sandbox a Navi runs in on this machine, and any gap in it. Absent from a node before it, or on a system
+    /// fleetd has no sandbox for.
+    pub sandbox: Option<NaviSandbox>,
+}
+
+/// What a Navi's OS sandbox is on a machine, in a person's words.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct NaviSandbox {
+    pub status: SandboxStatus,
+    /// "Navis run in bubblewrap, with abstract sockets scoped (Landlock)."
+    pub line: String,
+    /// What to run to close a gap or make Navis run here.
+    pub fix: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(extend("x-open" = true))]
+pub enum SandboxStatus {
+    /// Navis run fenced, with nothing left open fleetd knows of.
+    Ready,
+    /// Navis run fenced, with a gap the line names.
+    Gap,
+    /// Navis can't run here: no sandbox starts.
+    Missing,
 }
 
 /// Why a worktree's base may be behind its remote's default branch.

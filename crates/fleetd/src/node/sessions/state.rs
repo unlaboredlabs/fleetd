@@ -8,11 +8,11 @@ use fleetd_contracts::model::RuntimeMode;
 use fleetd_contracts::prim::Text;
 use fleetd_contracts::sessions::{
     FailureClass, ItemKind, PermissionDecision, RESUME_REFUSED, RunEnd, RunFailure, RunInfo,
-    RunStatus, SessionStatus, SessionSummary, ThreadItem,
+    RunStatus, SessionRole, SessionStatus, SessionSummary, ThreadItem,
 };
 
-use crate::node::runner::claude::ALWAYS_DISALLOWED;
 use crate::node::runner::claude::failure;
+use crate::node::runner::claude::{self, ALWAYS_DISALLOWED};
 use crate::node::runner::{ExitInfo, RunOutcome};
 use crate::node::store::SessionLocal;
 use crate::node::util::{head_utf16, tail_utf16};
@@ -223,6 +223,25 @@ pub fn start_mode(
         ));
     }
     Ok(true)
+}
+
+/// How the node answers a permission prompt itself, or None when it goes on to the hub: a session held to its allowed
+/// tools refuses every ask first, whatever a Navi's own rules would allow, then a Navi's rules
+/// ([`claude::role_answer`]), then [`auto_answer`].
+pub fn node_answer(
+    role: SessionRole,
+    cwd: &Path,
+    scratch: &Path,
+    mode: RuntimeMode,
+    allowed_only: bool,
+    tool_name: &str,
+    input: &serde_json::Value,
+) -> Option<PermissionDecision> {
+    let auto = || auto_answer(mode, allowed_only, tool_name, input);
+    if allowed_only {
+        return auto();
+    }
+    claude::role_answer(role, cwd, scratch, tool_name, input).or_else(auto)
 }
 
 /// A permission prompt the node answers without asking anyone: everything under full access (bypassPermissions
@@ -611,6 +630,42 @@ mod tests {
                     "{tool} under {mode:?}"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn a_navi_held_to_its_allowed_tools_is_refused_before_its_own_rules_allow_anything() {
+        let dir = tempfile::tempdir().unwrap();
+        let folder = dir.path().join("ada");
+        std::fs::create_dir_all(&folder).unwrap();
+        let read = serde_json::json!({ "file_path": folder.join("notes.md") });
+        let screen = serde_json::json!({ "command": "agent-browser snapshot -i" });
+        let answer = |held, tool, input| {
+            node_answer(
+                SessionRole::Assistant,
+                &folder,
+                dir.path(),
+                RuntimeMode::ApprovalRequired,
+                held,
+                tool,
+                input,
+            )
+        };
+        for (tool, input) in [("Read", &read), ("Bash", &screen)] {
+            assert!(
+                matches!(
+                    answer(false, tool, input),
+                    Some(PermissionDecision::Allow { .. })
+                ),
+                "{tool}"
+            );
+            assert!(
+                matches!(
+                    answer(true, tool, input),
+                    Some(PermissionDecision::Deny { .. })
+                ),
+                "{tool}"
+            );
         }
     }
 

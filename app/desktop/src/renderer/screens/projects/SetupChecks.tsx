@@ -24,6 +24,7 @@ const LABELS: Readonly<Record<string, string>> = {
   https: "HTTPS",
   online: "Node online",
   runner_conformance: "Runner",
+  navi_sandbox: "Navi sandbox",
   commit_identity: "Commit identity",
   disk: "Free disk space",
 };

@@ -28,6 +28,7 @@ describe("setup checks", () => {
   it("names checks in words, never by id", () => {
     expect(checkLabel("hub/gh_auth")).toBe("GitHub CLI login");
     expect(checkLabel("devbox/claude_login")).toBe("Claude login");
+    expect(checkLabel("devbox/navi_sandbox")).toBe("Navi sandbox");
     expect(checkLabel("devbox/some_new_check")).toBe("Some new check");
   });
 

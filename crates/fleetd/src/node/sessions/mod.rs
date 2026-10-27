@@ -47,6 +47,7 @@ use super::runner::claude::{
     ALWAYS_DISALLOWED, AUTO_MEMORY_OFF_ENV, DEFAULT_ENV, HELPER_MODEL_ENV, PROMPT_CACHE_TTL_VARS,
     SESSION_ENV, default_cache_ttl, subagents_off_settings_env,
 };
+use super::runner::sandbox;
 use super::runner::{
     ExitInfo, RunOutcome, Runner, RunnerError, RunnerEvent, SessionCommand, SessionSpec,
 };
@@ -402,6 +403,7 @@ fn runner_error(e: RunnerError) -> SessionError {
         RunnerError::Missing { .. } => Some(
             "Install a supported claude: curl -fsSL https://claude.ai/install.sh | bash".into(),
         ),
+        RunnerError::Sandbox { fix, .. } => Some(fix.clone()),
         _ => None,
     };
     SessionError {
@@ -1975,6 +1977,7 @@ impl SessionService {
             )
         })?;
         let secrets = Arc::new(secrets);
+        self.inner.runner.fence(&spec).await.map_err(runner_error)?;
         let handle = self.inner.runner.spawn(spec).map_err(runner_error)?;
         row.local.started = true;
         row.local.pid = Some(handle.pid);
@@ -2262,14 +2265,25 @@ impl SessionService {
         // A Navi's agent-browser reads only a config fleetd keeps, outside its folder: never `./agent-browser.json` in
         // the folder it writes, nor `~/.agent-browser/config.json`, either of which could add scripts, headers or a proxy
         // to every page.
+        let mut sandbox = None;
         if row.local.role == SessionRole::Assistant {
-            let config = dir.join(claude::ASSISTANT_BROWSER_CONFIG);
-            std::fs::write(&config, "{}\n")?;
-            env.retain(|(k, _)| k != "AGENT_BROWSER_CONFIG");
-            env.push((
-                "AGENT_BROWSER_CONFIG".to_owned(),
-                config.to_string_lossy().into_owned(),
-            ));
+            let browser_config = dir.join(claude::ASSISTANT_BROWSER_CONFIG);
+            std::fs::write(&browser_config, "{}\n")?;
+            // Its agent-browser daemon listens in its scratch dir: the sandbox hides every other socket dir.
+            let sockets = share::scratch_dir(&config.home, id).join("agent-browser");
+            env.retain(|(k, _)| k != "AGENT_BROWSER_CONFIG" && k != "AGENT_BROWSER_SOCKET_DIR");
+            env.extend([
+                (
+                    "AGENT_BROWSER_CONFIG".to_owned(),
+                    browser_config.to_string_lossy().into_owned(),
+                ),
+                (
+                    "AGENT_BROWSER_SOCKET_DIR".to_owned(),
+                    sockets.to_string_lossy().into_owned(),
+                ),
+            ]);
+            env.retain(|(k, _)| !sandbox::NO_ENV.contains(&k.as_str()));
+            sandbox = Some(self.navi_fence(row, &dir, &env));
         }
         let spec = SessionSpec {
             session_id: id.to_owned(),
@@ -2302,8 +2316,59 @@ impl SessionService {
             plugin_dirs,
             env,
             transcript: Some(transcript),
+            sandbox,
         };
         Ok((spec, secrets, order_digest))
+    }
+
+    /// The sandbox of a Navi's session in `dir`, whose claude gets `env`: what it may write and read
+    /// (`runner::sandbox`).
+    fn navi_fence(&self, row: &SessionRow, dir: &Path, env: &[(String, String)]) -> sandbox::Fence {
+        let home = &self.inner.config.home;
+        let id = row.summary.session_id.as_str();
+        // The binary fleetd's MCP server runs as (`fleetd_server`).
+        let exe = super::self_exe::pinned().map_or_else(
+            || PathBuf::from(agent_exe(std::env::current_exe(), std::process::id())),
+            Path::to_path_buf,
+        );
+        let other_roots = self
+            .inner
+            .store
+            .projects()
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|p| p.project_id != row.summary.project_id)
+            .map(|p| PathBuf::from(p.workspace_root))
+            .filter(|r| r.is_absolute())
+            .collect();
+        let runtime_dir = std::env::var_os("XDG_RUNTIME_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| format!("/run/user/{}", nix::unistd::getuid()).into());
+        let claude_dir = setup::config_dir(env);
+        // claude keeps its global config beside its config dir, or in the one a person chose.
+        let claude_json = if env
+            .iter()
+            .any(|(k, v)| k == "CLAUDE_CONFIG_DIR" && !v.is_empty())
+        {
+            claude_dir.join(".claude.json")
+        } else {
+            super::util::home_dir().join(".claude.json")
+        };
+        sandbox::navi_fence(&sandbox::NaviPaths {
+            user_home: &super::util::home_dir(),
+            fleetd_dir: &crate::home::fleetd_dir(),
+            node_home: home,
+            folder: &row.local.cwd,
+            scratch: &share::scratch_dir(home, id),
+            session_dir: dir,
+            session_id: id,
+            claude_dir: &claude_dir,
+            claude_json: &claude_json,
+            exe: &exe,
+            socket: &super::lead::lead_socket_path(home),
+            runtime_dir: Some(&runtime_dir),
+            other_roots,
+        })
     }
 
     /// Applies one process's events in order until it exits. Text deltas go only to followers, at most one frame
@@ -2740,21 +2805,15 @@ impl SessionService {
     ) {
         let scratch = share::scratch_dir(&self.inner.config.home, id);
         let decision = self.update(id, |c| {
-            let decision = claude::role_answer(
+            let decision = state::node_answer(
                 c.row.local.role,
                 &c.row.local.cwd,
                 &scratch,
+                c.row.summary.runtime_mode,
+                c.row.local.allowed_only,
                 &tool_name,
                 &input,
-            )
-            .or_else(|| {
-                state::auto_answer(
-                    c.row.summary.runtime_mode,
-                    c.row.local.allowed_only,
-                    &tool_name,
-                    &input,
-                )
-            });
+            );
             let at = c.at.clone();
             c.put_item(ThreadItem {
                 id: NonEmpty::unchecked(permission_item_id(&request_id)),
