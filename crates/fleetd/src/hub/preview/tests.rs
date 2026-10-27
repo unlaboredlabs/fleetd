@@ -915,10 +915,10 @@ async fn feedback_goes_to_the_lead_when_the_writer_is_gone_in_plain_words() {
 #[test]
 fn the_owner_login_is_the_machine_users() {
     let status = r#"{ "Self": { "UserID": 42, "HostName": "devbox" },
-        "User": { "42": { "ID": 42, "LoginName": "wynn@github" }, "7": { "ID": 7, "LoginName": "other@github" } } }"#;
+        "User": { "42": { "ID": 42, "LoginName": "ada@github" }, "7": { "ID": 7, "LoginName": "other@github" } } }"#;
     assert_eq!(
         super::login_of_status(status).as_deref(),
-        Some("wynn@github")
+        Some("ada@github")
     );
     assert_eq!(super::login_of_status("{}"), None);
     assert_eq!(super::login_of_status("not json"), None);

@@ -1053,6 +1053,71 @@ async fn a_filled_field_cant_be_moved_to_a_form_that_sends_elsewhere() {
     call(&rig.broker, json!({ "op": "session_end" })).await;
 }
 
+/// After a fill, a DOM write whose node the proxy can't look up (the browser errs, or the write names none) is refused
+/// with a plain word to try again, never sent on: it could be a write to the filled field. A write to a field it can
+/// place still goes through.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_dom_write_the_node_cant_place_is_refused_after_a_fill() {
+    let Some(rig) = rig_with(vec![(TOKEN_ENV.into(), TOKEN.into())]).await else {
+        return;
+    };
+    let (site, _bodies, _site) = shop().await;
+    let (_, vault_for) = fake(vec![format!("{site}/")]);
+    rig.broker.set_vaults(vault_for);
+    let started = call(
+        &rig.broker,
+        json!({ "op": "session_start", "purpose": "Sign in" }),
+    )
+    .await;
+    let mut driver = Driver::connect(started["result"]["cdp"].as_str().unwrap())
+        .await
+        .unwrap();
+    let page = driver.page().await;
+    open(&mut driver, &page, &site).await;
+    let filled = fill(&rig, PASSWORD_REF, "#pw", Some(false)).await;
+    assert!(filled["result"].is_object(), "{filled}");
+    let mut heard = filled.to_string();
+    for params in [
+        json!({ "nodeId": 987_654_321, "name": "class", "value": "x" }),
+        json!({ "backendNodeId": 987_654_321, "name": "class", "value": "x" }),
+        json!({ "objectId": "no-such-object", "name": "class", "value": "x" }),
+        json!({ "name": "class", "value": "x" }),
+    ] {
+        let answer = driver
+            .send(Some(&page), "DOM.setAttributeValue", params.clone())
+            .await;
+        let message = answer["error"]["message"].as_str().unwrap_or_default();
+        assert!(
+            message.contains("filled a login from 1Password")
+                && message.contains("couldn't tell which element")
+                && message.contains("Try again"),
+            "{params}: {answer}"
+        );
+        heard.push_str(&answer.to_string());
+    }
+    let root = driver
+        .ok(Some(&page), "DOM.getDocument", json!({ "depth": 0 }))
+        .await["root"]["nodeId"]
+        .clone();
+    let user = driver
+        .ok(
+            Some(&page),
+            "DOM.querySelector",
+            json!({ "nodeId": root, "selector": "#user" }),
+        )
+        .await["nodeId"]
+        .clone();
+    driver
+        .ok(
+            Some(&page),
+            "DOM.setAttributeValue",
+            json!({ "nodeId": user, "name": "class", "value": "x" }),
+        )
+        .await;
+    assert_clean("what the agent heard", &heard);
+    call(&rig.broker, json!({ "op": "session_end" })).await;
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn without_a_token_a_fill_says_which_variable_to_ask_for() {
     let Some(rig) = rig().await else { return };
