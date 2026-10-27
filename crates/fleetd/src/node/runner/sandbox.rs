@@ -146,6 +146,57 @@ pub struct NaviPaths<'a> {
     pub runtime_dir: Option<&'a Path>,
     /// Every other project's root on this node.
     pub other_roots: Vec<PathBuf>,
+    /// The `claude` binary the node runs.
+    pub claude_bin: &'a Path,
+    /// The session's PATH: its programs in the home are read again (Linux).
+    pub path: Vec<PathBuf>,
+}
+
+/// In the user's home on Linux, read again inside its empty tmpfs: git's own settings. Nothing else of the home is
+/// there but the programs a Navi runs ([`home_programs`]) and the paths its fence names.
+const HOME_READ: &[&str] = &[".gitconfig", ".config/git"];
+
+/// The programs a Navi runs from the user's home, read-only: claude's binary; every PATH dir in the home, as its
+/// install when it is a `bin` (`~/.nvm/versions/node/v22` for its `bin`, so npm finds its modules), but `~/.local/bin`
+/// alone; and the dir each program there links to elsewhere in the home (`~/.local/bin/claude` →
+/// `~/.local/share/claude/versions/…`).
+fn home_programs(home: &Path, claude: &Path, path: &[PathBuf]) -> Vec<PathBuf> {
+    let inside = |p: &Path| p.starts_with(home) && p != home;
+    let mut dirs = Vec::new();
+    let mut programs = vec![claude.to_owned()];
+    if inside(claude) {
+        dirs.push(claude.to_owned());
+    }
+    for dir in path.iter().map(|d| real(d)).filter(|d| inside(d)) {
+        let install = match (dir.file_name(), dir.parent()) {
+            (Some(name), Some(parent))
+                if name == "bin" && inside(parent) && parent != home.join(".local") =>
+            {
+                parent.to_owned()
+            }
+            _ => dir.clone(),
+        };
+        dirs.push(install);
+        programs.extend(
+            std::fs::read_dir(&dir)
+                .into_iter()
+                .flatten()
+                .flatten()
+                .map(|e| e.path()),
+        );
+    }
+    for program in programs {
+        let target = real(&program);
+        if target != program
+            && inside(&target)
+            && let Some(dir) = target.parent().filter(|d| inside(d))
+        {
+            dirs.push(dir.to_owned());
+        }
+    }
+    dirs.sort();
+    dirs.dedup();
+    dirs
 }
 
 /// `path` with symlinks resolved, through its nearest part that exists: the sandbox sees real paths, and a symlink
@@ -190,7 +241,7 @@ pub fn navi_fence(p: &NaviPaths) -> Fence {
     }
     // Its agent-device's daemon and logs.
     write.push(real(&p.session_dir.join("agent-device")));
-    let private = CLAUDE_SHARED
+    let mut private: Vec<(PathBuf, PathBuf)> = CLAUDE_SHARED
         .iter()
         .map(|d| (real(&p.session_dir.join("claude").join(d)), claude.join(d)))
         .collect();
@@ -223,8 +274,23 @@ pub fn navi_fence(p: &NaviPaths) -> Fence {
     let mut show = vec![real(p.session_dir), real(p.exe), real(p.socket), claude];
     show.extend(NODE_TOOLS.iter().map(|t| real(&p.node_home.join(t))));
     // Its own copy of claude's global config, without other tools' secrets, where there is one to stand in for.
+    // Linux: the home is an allow-list. It gets an empty tmpfs, and only what the fence names comes back, so nothing
+    // else there, made before the session or during it (another session's `.claude.json.tmp…`), is ever in sight.
+    let home_listed = cfg!(target_os = "linux");
+    if home_listed {
+        hide.push(user_home.clone());
+        show.extend(home_programs(&user_home, &real(p.claude_bin), &p.path));
+        show.extend(HOME_READ.iter().map(|f| user_home.join(f)));
+        // Caches (claude's logs, a tool's downloads) written where every program looks, but its own.
+        private.push((
+            real(&p.session_dir.join("home-cache")),
+            user_home.join(".cache"),
+        ));
+    }
     let claude_json = real(p.claude_json);
-    let config_copy = claude_json.is_file().then(|| {
+    // In the listed home there need be nothing under it: its copy stands where the real one would.
+    let in_listed_home = home_listed && claude_json.parent() == Some(user_home.as_path());
+    let config_copy = (claude_json.is_file() || in_listed_home).then(|| {
         (
             claude_json.clone(),
             real(&p.session_dir.join("claude").join(".claude.json")),
@@ -235,8 +301,13 @@ pub fn navi_fence(p: &NaviPaths) -> Fence {
     {
         hide.push(config.clone());
     }
-    // claude's backups and other copies of it beside it (`.claude.json.backup.<time>`), with the same MCP servers.
-    if let (Some(dir), Some(name)) = (claude_json.parent(), claude_json.file_name()) {
+    // claude's backups and other copies of it beside it (`.claude.json.backup.<time>`), with the same MCP servers,
+    // where the home isn't listed already.
+    if let (false, Some(dir), Some(name)) = (
+        in_listed_home,
+        claude_json.parent(),
+        claude_json.file_name(),
+    ) {
         let prefix = format!("{}.", name.to_string_lossy());
         hide.extend(
             std::fs::read_dir(dir)
@@ -246,6 +317,20 @@ pub fn navi_fence(p: &NaviPaths) -> Fence {
                 .filter(|e| e.file_name().to_string_lossy().starts_with(&prefix))
                 .map(|e| e.path()),
         );
+    }
+    // In the listed home, a hidden path matters only inside what comes back (`~/.claude/projects` in `~/.claude`,
+    // cargo's credentials in its install): the rest is out of sight already, and isn't mounted over.
+    if home_listed {
+        let back: Vec<&PathBuf> = show
+            .iter()
+            .chain(&write)
+            .chain(private.iter().map(|(_, to)| to))
+            .collect();
+        hide.retain(|h| {
+            !h.starts_with(&user_home)
+                || *h == user_home
+                || back.iter().any(|b| h.starts_with(b) && h != *b)
+        });
     }
     Fence {
         write,

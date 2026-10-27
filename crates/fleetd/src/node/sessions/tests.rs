@@ -3850,7 +3850,9 @@ async fn a_navi_gets_its_folder_under_the_node_home_and_its_lead_the_assistant_r
         .expect("a Navi's session is sandboxed");
     let real = crate::node::runner::sandbox::real;
     assert!(fence.write.contains(&real(&folder)));
-    assert!(fence.hide.contains(&real(&dir.path().join("node"))));
+    // Hidden by name, or by the home's tmpfs on Linux when the node's home is in it.
+    let node = real(&dir.path().join("node"));
+    assert!(fence.hide.iter().any(|h| node.starts_with(h)));
     assert!(!fence.write.iter().any(|w| w.ends_with(".claude")));
     let sockets = spec
         .env

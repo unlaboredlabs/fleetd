@@ -2401,6 +2401,12 @@ impl SessionService {
             socket: &super::lead::lead_socket_path(home),
             runtime_dir: Some(&runtime_dir),
             other_roots,
+            claude_bin: &super::claude_binary(),
+            path: env
+                .iter()
+                .find(|(k, _)| k == "PATH")
+                .map(|(_, v)| std::env::split_paths(v).collect())
+                .unwrap_or_default(),
         })
     }
 
