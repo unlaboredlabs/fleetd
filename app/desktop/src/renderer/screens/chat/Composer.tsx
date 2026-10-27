@@ -13,7 +13,7 @@ interface ProjectRef {
 }
 
 import { ArrowUp, Check, Paperclip, Reply, Square, X } from "lucide-react";
-import { useEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent } from "react";
 import type { AttachmentRef } from "../../../shared/contracts";
 import type { ChatItem } from "../../src/data/chat";
 import { useData, useDataLayer } from "../../src/data/react";
@@ -201,7 +201,43 @@ export function ChatComposer({ project, onSent, autoFocus, recall, replyTo, onCa
     };
   }, [drafts, projectKey]);
 
-
+  // The tools render when what they show changes, not on every key: each is a tooltip, a button and their popper.
+  // Their clicks call the latest send and stop.
+  const latest = useRef({ send, stop });
+  useLayoutEffect(() => {
+    latest.current = { send, stop };
+  });
+  const attachTool = useMemo(
+    () => (
+      <Tooltip content="Attach a file">
+        <Button variant="quiet" iconOnly aria-label="Attach a file" onClick={() => fileInput.current?.click()}>
+          <Paperclip />
+        </Button>
+      </Tooltip>
+    ),
+    [],
+  );
+  const stopTool = useMemo(
+    () =>
+      showStop ? (
+        <Tooltip content={stopping ? "Stopping the lead and its agents…" : "Stop the lead and its agents"}>
+          <Button variant="secondary" size="md" iconOnly round aria-label={stopping ? "Stopping the lead and its agents" : "Stop the lead and its agents"} disabled={stopping || stopOffline} onClick={() => latest.current.stop()}>
+            <Square />
+          </Button>
+        </Tooltip>
+      ) : null,
+    [showStop, stopping, stopOffline],
+  );
+  const sendTool = useMemo(
+    () => (
+      <Tooltip content="Send">
+        <Button variant="primary" size="md" iconOnly round aria-label="Send" disabled={!sendable} onClick={() => latest.current.send()}>
+          <ArrowUp />
+        </Button>
+      </Tooltip>
+    ),
+    [sendable],
+  );
 
   const note = draft.error;
   const said = note ?? stopError;
@@ -262,11 +298,7 @@ export function ChatComposer({ project, onSent, autoFocus, recall, replyTo, onCa
           </div>
         ) : null}
         <div className={c.tools}>
-          <Tooltip content="Attach a file">
-            <Button variant="quiet" iconOnly aria-label="Attach a file" onClick={() => fileInput.current?.click()}>
-              <Paperclip />
-            </Button>
-          </Tooltip>
+          {attachTool}
           <input
             ref={fileInput}
             type="file"
@@ -283,18 +315,8 @@ export function ChatComposer({ project, onSent, autoFocus, recall, replyTo, onCa
             </Text>
           ) : null}
           <span className={c.spacer} />
-          {showStop ? (
-            <Tooltip content={stopping ? "Stopping the lead and its agents…" : "Stop the lead and its agents"}>
-              <Button variant="secondary" size="md" iconOnly round aria-label={stopping ? "Stopping the lead and its agents" : "Stop the lead and its agents"} disabled={stopping || stopOffline} onClick={stop}>
-                <Square />
-              </Button>
-            </Tooltip>
-          ) : null}
-          <Tooltip content="Send">
-            <Button variant="primary" size="md" iconOnly round aria-label="Send" disabled={!sendable} onClick={() => send()}>
-              <ArrowUp />
-            </Button>
-          </Tooltip>
+          {stopTool}
+          {sendTool}
         </div>
       </div>
       <div role="status" className={c.note}>
