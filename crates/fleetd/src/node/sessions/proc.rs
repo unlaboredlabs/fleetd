@@ -1,5 +1,6 @@
 //! A recorded claude process from before a node restart: identified by pid plus start time, so a pid the kernel
 //! has since reused is never signalled, and stopped together with every process its session started.
+use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -94,36 +95,111 @@ fn marker_session(marker: &str) -> Option<&str> {
     fields.nth(3)
 }
 
+/// After SIGTERM, how long a leftover gets to go before SIGKILL.
+const ORPHAN_GRACE: Duration = Duration::from_secs(2);
+
 /// Where a process of a screen or a session lives under the node's home: the sessions' scratch dirs (an agent's own
 /// headless Chrome keeps its profile there) and the browser pool's profiles.
 fn orphan_roots(home: &Path) -> [PathBuf; 2] {
     [home.join("tmp"), home.join("browser").join("profiles")]
 }
 
-/// Whether a process (its NUL-separated command line and environment) belongs to a session or screen under `roots`:
-/// its TMPDIR is a session's scratch dir, or an argument names a path there (`--user-data-dir=<root>/...`).
+/// Whether a process (its NUL-separated command line and environment) is a session's or a screen's: a browser whose
+/// profile (`--user-data-dir`) is under `roots`, or a process whose TMPDIR is a session's scratch dir (`roots[0]`).
+/// One that merely names such a path (a person's `less` or `tail -f` of a file there) is not.
 fn orphaned(cmdline: &[u8], environ: &[u8], roots: &[PathBuf]) -> bool {
-    let under = |text: &str| {
-        roots.iter().any(|root| {
-            let root = root.to_string_lossy();
-            text.find(root.as_ref())
-                .is_some_and(|at| text[at + root.len()..].starts_with('/'))
-        })
+    let under = |dir: &[u8], roots: &[PathBuf]| {
+        let dir = Path::new(std::ffi::OsStr::from_bytes(dir));
+        roots
+            .iter()
+            .any(|root| dir.starts_with(root) && dir != root)
     };
+    let args: Vec<&[u8]> = cmdline.split(|b| *b == 0).collect();
+    let profile = args.iter().enumerate().find_map(|(n, arg)| {
+        arg.strip_prefix(b"--user-data-dir=").or_else(|| {
+            (*arg == b"--user-data-dir")
+                .then(|| args.get(n + 1).copied())
+                .flatten()
+        })
+    });
     let tmpdir = environ
         .split(|b| *b == 0)
-        .find_map(|var| var.strip_prefix(b"TMPDIR="))
-        .map(String::from_utf8_lossy);
-    tmpdir.is_some_and(|dir| under(&format!("{dir}/")))
-        || cmdline
-            .split(|b| *b == 0)
-            .any(|arg| under(&String::from_utf8_lossy(arg)))
+        .find_map(|var| var.strip_prefix(b"TMPDIR="));
+    profile.is_some_and(|dir| under(dir, roots))
+        || tmpdir.is_some_and(|dir| under(dir, &roots[..1]))
 }
 
-/// Kills what sessions and screens of a node that went away left running, with everything they started: as the node
-/// starts, before any session of its own runs, no live session owns them (the Oct 26 headless Chrome, its profile
-/// under a session's scratch dir, ran on for days). Linux only. Returns how many it found.
+/// A process's command line and environment, each NUL-separated; empty when they can't be read (another user's).
 #[cfg(target_os = "linux")]
+fn args_and_env(pid: i32) -> (Vec<u8>, Vec<u8>) {
+    let read = |what: &str| std::fs::read(format!("/proc/{pid}/{what}")).unwrap_or_default();
+    (read("cmdline"), read("environ"))
+}
+
+/// A process's command line and environment, each NUL-separated, by `sysctl(KERN_PROCARGS2)`; empty when they can't
+/// be read (another user's).
+#[cfg(target_os = "macos")]
+fn args_and_env(pid: i32) -> (Vec<u8>, Vec<u8>) {
+    let mut mib = [libc::CTL_KERN, libc::KERN_PROCARGS2, pid];
+    let mut size: libc::size_t = 0;
+    // SAFETY: a size query: no buffer, `size` written.
+    let sized = unsafe {
+        libc::sysctl(
+            mib.as_mut_ptr(),
+            3,
+            std::ptr::null_mut(),
+            &mut size,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    if sized != 0 || size == 0 {
+        return Default::default();
+    }
+    let mut buf = vec![0u8; size];
+    // SAFETY: `buf` holds `size` bytes, and sysctl writes at most that many, saying how many in `size`.
+    let read = unsafe {
+        libc::sysctl(
+            mib.as_mut_ptr(),
+            3,
+            buf.as_mut_ptr().cast(),
+            &mut size,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    if read != 0 {
+        return Default::default();
+    }
+    buf.truncate(size);
+    split_procargs(&buf).unwrap_or_default()
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+fn args_and_env(_pid: i32) -> (Vec<u8>, Vec<u8>) {
+    Default::default()
+}
+
+/// macOS's `KERN_PROCARGS2` buffer as a command line and an environment, each NUL-separated: it holds the argument
+/// count, the executable's path, NUL padding, the arguments, then the environment up to an empty string.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn split_procargs(buf: &[u8]) -> Option<(Vec<u8>, Vec<u8>)> {
+    let argc = usize::try_from(i32::from_ne_bytes(buf.get(..4)?.try_into().ok()?)).ok()?;
+    let rest = &buf[4..];
+    let mut at = rest.iter().position(|b| *b == 0)?;
+    while rest.get(at) == Some(&0) {
+        at += 1;
+    }
+    let mut fields = rest.get(at..)?.split(|b| *b == 0);
+    let args: Vec<&[u8]> = fields.by_ref().take(argc).collect();
+    let env: Vec<&[u8]> = fields.take_while(|f| !f.is_empty()).collect();
+    Some((args.join(&0u8), env.join(&0u8)))
+}
+
+/// Stops what sessions and screens of a node that went away left running, with everything they started: as the node
+/// starts, before any session of its own runs, no live session owns them (the Oct 26 headless Chrome, its profile
+/// under a session's scratch dir, ran on for days). SIGTERM first, SIGKILL to those still there after
+/// [`ORPHAN_GRACE`]. Returns how many it found.
 pub fn kill_orphans(home: &Path) -> usize {
     let own = nix::unistd::getpid().as_raw();
     let roots = orphan_roots(home);
@@ -132,9 +208,8 @@ pub fn kill_orphans(home: &Path) -> usize {
         .iter()
         .filter(|p| p.pid != own && !p.zombie)
         .filter(|p| {
-            let read =
-                |what: &str| std::fs::read(format!("/proc/{}/{what}", p.pid)).unwrap_or_default();
-            orphaned(&read("cmdline"), &read("environ"), &roots)
+            let (cmdline, environ) = args_and_env(p.pid);
+            orphaned(&cmdline, &environ, &roots)
         })
         .copied()
         .collect();
@@ -144,13 +219,17 @@ pub fn kill_orphans(home: &Path) -> usize {
     }
     process::dedupe(&mut found);
     found.retain(|p| p.pid != own);
+    if found.is_empty() {
+        return 0;
+    }
+    process::signal(&found, Signal::SIGTERM);
+    let deadline = std::time::Instant::now() + ORPHAN_GRACE;
+    while !found.iter().all(gone) && std::time::Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    found.retain(|p| !gone(p));
     process::signal(&found, Signal::SIGKILL);
     count
-}
-
-#[cfg(not(target_os = "linux"))]
-pub fn kill_orphans(_home: &Path) -> usize {
-    0
 }
 
 /// Stops what session `session` left running when the node went away: SIGTERM to claude's process group (claude
@@ -277,7 +356,7 @@ mod tests {
     }
 
     #[test]
-    fn an_orphan_is_a_process_of_a_scratch_dir_or_a_browser_profile() {
+    fn an_orphan_is_a_browser_of_a_profile_or_a_process_of_a_scratch_dir() {
         let roots = orphan_roots(Path::new("/n"));
         let nul = |parts: &[&str]| parts.join("\0").into_bytes();
         let path = nul(&["PATH=/usr/bin"]);
@@ -295,8 +374,28 @@ mod tests {
             &roots
         ));
         assert!(orphaned(
+            &nul(&["chrome", "--user-data-dir", "/n/tmp/0a1b/prof"]),
+            &path,
+            &roots
+        ));
+        assert!(orphaned(
             &nul(&["node", "server.js"]),
             &nul(&["TMPDIR=/n/tmp/0a1b"]),
+            &roots
+        ));
+        // A person's look at a file there is no session's.
+        for person in [
+            ["less", "/n/tmp/0a1b/out.log"],
+            ["tail", "-f=/n/browser/profiles/p/x"],
+        ] {
+            assert!(
+                !orphaned(&nul(&person), &nul(&["TMPDIR=/tmp"]), &roots),
+                "{person:?}"
+            );
+        }
+        assert!(!orphaned(
+            &nul(&["vim", "--user-data-dir-x=/n/tmp/a"]),
+            &path,
             &roots
         ));
         assert!(!orphaned(
@@ -310,17 +409,43 @@ mod tests {
             &roots
         ));
         assert!(!orphaned(
+            &chrome("/n/tmp"),
+            &nul(&["TMPDIR=/n/tmp"]),
+            &roots
+        ));
+        assert!(!orphaned(
             &chrome("/n/browser/ms-playwright/x"),
             &path,
             &roots
         ));
+        // A TMPDIR in the browser's profiles is no session's scratch dir.
+        assert!(!orphaned(
+            &path,
+            &nul(&["TMPDIR=/n/browser/profiles/p"]),
+            &roots
+        ));
     }
 
-    /// A process standing in for a leftover: `sh` with `args` and TMPDIR at `tmpdir`, waiting on a `sleep` it started.
-    /// Returns once the `sleep` runs.
-    async fn leftover(tmpdir: &Path, args: &[&str]) -> (tokio::process::Child, u32) {
+    /// macOS's KERN_PROCARGS2 layout: argc, the executable's path, padding, the arguments, the environment.
+    #[test]
+    fn a_macos_process_args_buffer_splits_into_its_command_line_and_environment() {
+        let mut buf = 2i32.to_ne_bytes().to_vec();
+        buf.extend(b"/Applications/Chrome\0\0\0\0chrome\0--user-data-dir=/n/tmp/a\0TMPDIR=/n/tmp/a\0HOME=/h\0\0junk\0");
+        let (cmdline, environ) = split_procargs(&buf).unwrap();
+        assert_eq!(cmdline, b"chrome\0--user-data-dir=/n/tmp/a");
+        assert_eq!(environ, b"TMPDIR=/n/tmp/a\0HOME=/h");
+        assert_eq!(split_procargs(&[1, 0]), None);
+    }
+
+    /// A process standing in for a leftover: `sh` running `before`, with `args` and TMPDIR at `tmpdir`, waiting on a
+    /// `sleep` it started. Returns once the `sleep` runs.
+    async fn leftover(tmpdir: &Path, before: &str, args: &[&str]) -> (tokio::process::Child, u32) {
         let mut child = tokio::process::Command::new("sh")
-            .args(["-c", "sleep 30 & echo $!; wait", "leftover"])
+            .args([
+                "-c",
+                &format!("{before} sleep 30 & echo $!; wait"),
+                "leftover",
+            ])
             .args(args)
             .env("TMPDIR", tmpdir)
             .stdout(std::process::Stdio::piped())
@@ -330,11 +455,7 @@ mod tests {
         let mut lines = tokio::io::BufReader::new(child.stdout.take().unwrap()).lines();
         let sleep: u32 = lines.next_line().await.unwrap().unwrap().parse().unwrap();
         let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
-        while std::fs::read_to_string(format!("/proc/{sleep}/comm"))
-            .unwrap_or_default()
-            .trim()
-            != "sleep"
-        {
+        while !args_and_env(sleep as i32).0.starts_with(b"sleep") {
             assert!(
                 tokio::time::Instant::now() < deadline,
                 "the sleep never started"
@@ -344,19 +465,24 @@ mod tests {
         (child, sleep)
     }
 
+    fn signal_of(status: std::process::ExitStatus) -> Option<i32> {
+        std::os::unix::process::ExitStatusExt::signal(&status)
+    }
+
     /// The devbox's headless Chrome, its profile under a session's scratch dir, ran on for a day after its session:
-    /// a starting node kills such processes and what they started, and nothing outside its home.
+    /// a starting node stops such processes and what they started (SIGTERM, then SIGKILL for one that ignores it), and
+    /// nothing else, a person's `less` of a file there included.
     #[tokio::test]
-    async fn a_starting_node_kills_what_sessions_left_running_under_its_home() {
+    async fn a_starting_node_stops_what_sessions_left_running_under_its_home() {
         let home = tempfile::tempdir().unwrap();
         let other = home.path().join("tmpx");
-        let profile = format!(
-            "--user-data-dir={}",
-            home.path().join("tmp/0a1b/ab/prof").display()
-        );
-        let (mut by_env, by_env_sleep) = leftover(&home.path().join("tmp/0a1b"), &[]).await;
-        let (mut by_arg, by_arg_sleep) = leftover(&other, &[&profile]).await;
-        let (mut kept, kept_sleep) = leftover(&other, &[]).await;
+        let scratch = home.path().join("tmp/0a1b");
+        let profile = format!("--user-data-dir={}", scratch.join("ab/prof").display());
+        let log = scratch.join("out.log").display().to_string();
+        let (mut by_env, by_env_sleep) = leftover(&scratch, "", &[]).await;
+        let (mut by_arg, by_arg_sleep) = leftover(&other, "", &[&profile]).await;
+        let (mut stubborn, stubborn_sleep) = leftover(&scratch, "trap '' TERM;", &[]).await;
+        let (mut kept, kept_sleep) = leftover(&other, "", &[&log]).await;
 
         let found = {
             let home = home.path().to_owned();
@@ -365,18 +491,14 @@ mod tests {
                 .unwrap()
         };
         assert_eq!(
-            found, 3,
-            "both, and the sleep that inherited the scratch TMPDIR"
+            found, 5,
+            "the three, and the sleeps that inherited the scratch TMPDIR"
         );
-        for child in [&mut by_env, &mut by_arg] {
-            let status = child.wait().await.unwrap();
-            assert_eq!(
-                std::os::unix::process::ExitStatusExt::signal(&status),
-                Some(9)
-            );
-        }
+        assert_eq!(signal_of(by_env.wait().await.unwrap()), Some(15));
+        assert_eq!(signal_of(by_arg.wait().await.unwrap()), Some(15));
+        assert_eq!(signal_of(stubborn.wait().await.unwrap()), Some(9));
         let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
-        while [by_env_sleep, by_arg_sleep]
+        while [by_env_sleep, by_arg_sleep, stubborn_sleep]
             .iter()
             .any(|p| start_time(*p).is_some())
         {

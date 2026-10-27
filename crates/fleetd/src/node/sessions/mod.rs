@@ -694,11 +694,11 @@ impl SessionService {
         let _ = self.inner.browser.set(hooks);
     }
 
-    /// The hub says the session's task ended: its screens (a browser, a device, a desktop, here or hosted elsewhere)
-    /// end now, as when its claude exits, not when it is reaped or idles out.
-    pub fn end_screens(&self, thread: &str) {
+    /// The hub says the session's task ended with its screen `session` open: that screen (a browser, a device, a
+    /// desktop, here or hosted elsewhere) ends now, not when it idles out. Any other screen of the session stays.
+    pub fn end_screen(&self, thread: &str, session: &str) {
         if let Some(browser) = self.inner.browser.get() {
-            browser.ended(thread);
+            browser.screen_ended(thread, session);
         }
     }
 

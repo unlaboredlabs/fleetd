@@ -148,7 +148,7 @@ pub const CAP_PREVIEWS: &str = "previews";
 /// `SessionRole::Assistant` (a Navi's lead) and a relative `project_upsert` root under the node's home (its folder).
 pub const CAP_ASSISTANT: &str = "assistant";
 
-/// `session_end`: the node takes [`SessionEndFrame`], and ends an agent session's screens when the hub says its task
+/// `session_end`: the node takes [`SessionEndFrame`], and ends an agent session's screen when the hub says its task
 /// ended.
 pub const CAP_SESSION_END: &str = "session_end";
 
@@ -594,8 +594,8 @@ pub enum HubToNode {
 }
 
 /// Hub -> node: the task of the agent session `threadId` ended, and its screen `sessionId` is still live on the hub:
-/// the node ends that agent session's screens (a browser, a device, a desktop; one hosted elsewhere too) and kills
-/// their processes. Nothing when it holds none.
+/// the node ends that screen (a browser, a device, a desktop; one hosted elsewhere too) and kills its processes.
+/// Nothing when the agent session no longer holds it; any other screen of it stays.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionEndFrame {

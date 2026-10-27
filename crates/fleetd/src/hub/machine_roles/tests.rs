@@ -1022,7 +1022,9 @@ async fn the_hub_ends_a_session_whose_task_ended_and_tells_its_node() {
         assert_eq!(state(&hub).0, BrowserSessionState::Live);
     }
     task_state(&hub, "done");
+    let mut told = crate::hub::browser::Told::new();
     assert_eq!(crate::hub::browser::end_outlived(&hub).unwrap(), 1);
+    assert_eq!(crate::hub::browser::tell_nodes(&hub, &mut told).unwrap(), 1);
     assert_eq!(
         state(&hub),
         (
@@ -1042,4 +1044,36 @@ async fn the_hub_ends_a_session_whose_task_ended_and_tells_its_node() {
         })
     );
     assert_eq!(crate::hub::browser::end_outlived(&hub).unwrap(), 0, "once");
+    assert_eq!(
+        crate::hub::browser::tell_nodes(&hub, &mut told).unwrap(),
+        0,
+        "once per link"
+    );
+
+    // The node linked again (the frame may have been lost with its last link): it hears of it again.
+    let mut devbox = hub.link.test_link(
+        &mid("devbox"),
+        &[fleetd_contracts::node_link::CAP_SESSION_END],
+    );
+    assert_eq!(crate::hub::browser::tell_nodes(&hub, &mut told).unwrap(), 1);
+    assert!(matches!(
+        devbox.recv().await,
+        Some(HubToNode::SessionEnd(_))
+    ));
+
+    // Its node reported the session since (it closed it): nothing more to say, however often it links.
+    let call: LeadCall = serde_json::from_value(json!({
+        "op": "browser_session", "sessionId": id, "threadId": "th-1", "purpose": "Check the signup form",
+        "state": "uploading", "startedAt": crate::hub::store::iso_ms(NOW_MS as i64),
+        "endedAt": crate::hub::store::iso_ms(NOW_MS as i64),
+    }))
+    .unwrap();
+    let handler = hub.lead_calls.handler("browser_session").unwrap();
+    handler.handle(task_caller(), call).await.unwrap();
+    let _devbox = hub.link.test_link(
+        &mid("devbox"),
+        &[fleetd_contracts::node_link::CAP_SESSION_END],
+    );
+    assert_eq!(crate::hub::browser::tell_nodes(&hub, &mut told).unwrap(), 0);
+    assert_eq!(state(&hub).0, BrowserSessionState::Uploading);
 }
