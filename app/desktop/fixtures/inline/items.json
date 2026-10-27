@@ -172,6 +172,57 @@
         "summary": "Edit src/billing/invoice.ts"
       },
       "state": "open"
+    },
+    {
+      "kind": "command_approval",
+      "requestId": "Q12",
+      "machineId": "devbox",
+      "state": "open",
+      "permission": {
+        "threadId": "t-navi",
+        "requestId": "perm-3",
+        "toolName": "mcp__google__send_message",
+        "summary": "Sends a message",
+        "preview": {
+          "integration": "google",
+          "server": "google",
+          "tool": "send_message",
+          "action": "send",
+          "title": "Send an email",
+          "account": "me@example.com",
+          "to": [
+            "Ana Ruiz <ana@example.com>",
+            "bo@example.com"
+          ],
+          "cc": [
+            "cy@example.com"
+          ],
+          "subject": "Lunch on Tuesday",
+          "body": "Hi Ana,\n\nTuesday at 12:30 at the usual place? I'll book a table.\n\nNavi, for Sam",
+          "input": "{\n  \"account\": \"me@example.com\",\n  \"to\": \"Ana Ruiz <ana@example.com>, bo@example.com\",\n  \"cc\": [\n    \"cy@example.com\"\n  ],\n  \"subject\": \"Lunch on Tuesday\",\n  \"body\": \"Hi Ana,\\n\\nTuesday at 12:30 at the usual place? I'll book a table.\\n\\nNavi, for Sam\"\n}"
+        }
+      }
+    },
+    {
+      "kind": "command_approval",
+      "requestId": "Q13",
+      "machineId": "devbox",
+      "state": "open",
+      "permission": {
+        "threadId": "t-navi",
+        "requestId": "perm-4",
+        "toolName": "mcp__notion__API-patch-page",
+        "summary": "Updates a page",
+        "preview": {
+          "integration": "notion",
+          "server": "notion",
+          "tool": "API-patch-page",
+          "action": "delete",
+          "title": "Move a Notion page to the trash",
+          "target": "Trip planning (2f1c…)",
+          "input": "{\n  \"page_id\": \"2f1c\",\n  \"archived\": true\n}"
+        }
+      }
     }
   ]
 }

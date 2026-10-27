@@ -3,6 +3,7 @@
 import type { ChatItem, CommandApprovalItem, GatedClass, GatedRunSpec, HumanRequest, Machine, SecretRequestItem } from "../../../shared/contracts";
 import type { HubError } from "../../../shared/hub";
 import { shortElapsed } from "../chat/format";
+import { previewNeedsConfirm, previewTitle } from "./toolPreview";
 
 /**
  * The item as the hub's request says it is now. A request's changes arrive as request.updated events (and a fresh
@@ -149,7 +150,8 @@ export const secretOutcome = (item: SecretRequestItem): Outcome | undefined => {
 };
 
 /** Only a command that can't be undone asks once more before it runs. */
-export const needsConfirm = (item: CommandApprovalItem): boolean => item.gated?.class === "irreversible";
+export const needsConfirm = (item: CommandApprovalItem): boolean =>
+  item.gated?.class === "irreversible" || (item.permission?.preview !== undefined && previewNeedsConfirm(item.permission.preview));
 
 /** The lead's line without its code marks, for a folded row's plain text. */
 const plain = (text: string): string => text.replace(/`/gu, "");
@@ -159,7 +161,12 @@ export const approvalTitle = (item: CommandApprovalItem): string =>
   plain(
     item.previewConfig !== undefined
       ? `How to run Try it: ${item.previewConfig.why}`
-      : (item.gated?.reason ?? (item.permission === undefined ? "An agent's request" : `An agent wanted to use ${item.permission.toolName}`)),
+      : (item.gated?.reason ??
+          (item.permission === undefined
+            ? "An agent's request"
+            : item.permission.preview !== undefined
+              ? previewTitle(item.permission.preview)
+              : `An agent wanted to use ${item.permission.toolName}`)),
   );
 
 /** What an answered secret was for, in the lead's words: its key is a slug, never row text. */
