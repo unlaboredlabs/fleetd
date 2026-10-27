@@ -26,11 +26,13 @@ describe("an integration's approval card", () => {
     ]);
   });
   it("says who a reply reaches when the tool picks them, and an event's or a page's subject is its title", () => {
-    const reply: ToolPreview = { ...email, tool: "reply", to: [], bcc: [], subject: undefined, audience: "That message's sender", target: "Message 18c2" };
+    const { subject: _subject, ...noSubject } = email;
+    const reply: ToolPreview = { ...noSubject, tool: "reply", to: [], bcc: [], audience: "That message's sender", target: "Message 18c2" };
     expect(previewRows(reply).map((r) => r.label)).toEqual(["From", "Reaches", "On"]);
     const event: ToolPreview = { ...email, when: "10:00 → 11:00", subject: "Review" };
     expect(previewRows(event).find((r) => r.values[0] === "Review")?.label).toBe("Title");
-    expect(previewRows({ ...email, integration: "notion", account: undefined, to: [], bcc: [], subject: "Trip" })).toEqual([{ label: "Title", values: ["Trip"] }]);
+    const { account: _account, ...noAccount } = email;
+    expect(previewRows({ ...noAccount, integration: "notion", to: [], bcc: [], subject: "Trip" })).toEqual([{ label: "Title", values: ["Trip"] }]);
   });
   it("folds to its title with its recipients", () => {
     expect(previewTitle(email)).toBe("Send an email to ana@example.com and 2 more");
