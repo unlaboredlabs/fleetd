@@ -156,6 +156,36 @@ describe("an update of everything", () => {
     expect(n.progress?.text).toBe("Updating the machines: 1 of 2 done");
   });
 
+  it("shows each machine's Claude Code under it, from its version to the tested one, and names one that failed", () => {
+    const run = runOf(
+      [
+        p({ part: "hub", name: "the hub", state: "done" }),
+        p({ machineId: "builder", name: "builder", state: "done" }),
+        p({ part: "claude", machineId: "builder", name: "builder", from: "2.1.310", to: "2.1.302", state: "done" }),
+        p({ machineId: "mac", name: "mac", state: "done" }),
+        p({
+          part: "claude",
+          machineId: "mac",
+          name: "mac",
+          from: "2.1.310",
+          to: "2.1.302",
+          state: "failed",
+          stage: "install",
+          message: "`claude install 2.1.302` failed (404), so 2.1.310 stays",
+        }),
+      ],
+      true,
+    );
+    const v = during(run, { phase: "finished" });
+    expect(v.nodes.map((n) => [n.name, n.status])).toEqual([
+      ["builder", "Updated to Nightly · Oct 23, 10:30 UTC · def5678"],
+      ["builder: Claude Code", "Claude Code 2.1.310 → 2.1.302: new sessions start on 2.1.302"],
+      ["mac", "Updated to Nightly · Oct 23, 10:30 UTC · def5678"],
+      ["mac: Claude Code", "Claude Code 2.1.310 → 2.1.302 failed: `claude install 2.1.302` failed (404), so 2.1.310 stays"],
+    ]);
+    expect(v.progress?.text).toBe("Update failed: mac's Claude Code. The rest updated; this app updates with its own button.");
+  });
+
   it("says which part failed and how, and that nothing else changed when the hub did", () => {
     const run = runOf(
       [

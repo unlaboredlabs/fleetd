@@ -377,6 +377,7 @@ async fn run_link_once(
             fleetd_contracts::node_link::CAP_WORKTREE_SETUP.to_owned(),
             fleetd_contracts::node_link::CAP_SELF_UPDATE.to_owned(),
             fleetd_contracts::node_link::CAP_UPDATE_FETCH.to_owned(),
+            fleetd_contracts::node_link::CAP_CLAUDE_INSTALL.to_owned(),
             fleetd_contracts::node_link::CAP_SESSION_SEAL.to_owned(),
         ]
         .into_iter()
@@ -514,9 +515,9 @@ async fn run_link_once(
             HubToNode::NodeAction(action) => {
                 let tx = tx.clone();
                 let flush = flush.clone();
-                let home = shared.node_sessions.home();
+                let sessions = shared.node_sessions.clone();
                 tasks.spawn(async move {
-                    let (result, watch) = run_node_action(action, &home).await;
+                    let (result, watch) = run_node_action(action, &sessions).await;
                     let id = result.id.clone();
                     let _ = tx.send(to_json(&NodeToHub::NodeActionResult(result)));
                     let Some(watch) = watch else { return };

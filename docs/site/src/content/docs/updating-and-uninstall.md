@@ -18,7 +18,11 @@ Click it, then **Update**. One click updates everything, in order:
 2. **Every connected machine's node** does the same, all at once, as soon as the hub runs the new build. Each one
    already downloaded it while the hub downloaded its own, so it only checks it against `SHA256SUMS` again, puts it in
    place and restarts. Nothing is installed on a machine before the hub runs the new build.
-3. **The app** installs its own update and restarts. It downloads that update in the background, from when you
+3. **Each machine's Claude Code** goes to the version the new fleetd was tested with (`claude install <version>`), in
+   a line of its own: "Claude Code 2.1.310 → 2.1.302". Sessions already running finish on the version they started
+   with; new ones start on the new one. If the install fails, the machine keeps the version it had, the line says
+   why, and the rest of the update goes on. See [Claude Code's version](/docs/machines#claude-version).
+4. **The app** installs its own update and restarts. It downloads that update in the background, from when you
    press **Update** at the latest, so it is usually ready by then. A message you were typing is still there after the
    restart.
 
@@ -53,7 +57,8 @@ fleetd update
 ```
 
 It replaces the CLI, checked against the release's `SHA256SUMS`, then restarts the hub and node services that run this
-binary right away. What they were running carries on by itself, as above. `fleetd machine add <ssh-host>` on the hub
+binary right away. On a machine that runs agents, it then moves Claude Code to the version the new fleetd was tested
+with, as the app's update does. What they were running carries on by itself, as above. `fleetd machine add <ssh-host>` on the hub
 also copies the hub's binary to a worker.
 
 `fleetd status` and `fleetd doctor` say when the CLI, the hub and the nodes run different versions.
