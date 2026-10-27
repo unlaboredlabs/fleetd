@@ -16,8 +16,9 @@ use super::simctl::Simctl;
 use super::wrapper;
 use crate::node::device::agent_device;
 
-/// A clone of a settled simulator boots in seconds; this allows a loaded machine.
-pub const BOOT_TIMEOUT: Duration = Duration::from_secs(120);
+/// A clone of a settled simulator boots in seconds on a Mac; on GitHub's 3-vCPU macOS VM, 80-100 s when idle, more with
+/// another simulator running. This allows a loaded machine.
+pub const BOOT_TIMEOUT: Duration = Duration::from_secs(300);
 /// The golden's first boot: it migrates data and builds caches.
 const FIRST_BOOT: Duration = Duration::from_secs(600);
 /// agent-device's runner builds with xcodebuild: minutes on a laptop.

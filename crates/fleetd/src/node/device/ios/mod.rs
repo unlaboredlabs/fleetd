@@ -818,7 +818,8 @@ impl Simulators {
     }
 }
 
-/// Every minute: ends sessions idle past the limit, and sends the recordings still waiting for the hub.
+/// Every minute: ends sessions idle past the limit, tops the pool up, and sends the recordings still waiting for the
+/// hub.
 async fn housekeeping(simulators: std::sync::Weak<Simulators>) {
     let mut uploading: Option<tokio::task::JoinHandle<()>> = None;
     loop {
@@ -838,6 +839,10 @@ async fn housekeeping(simulators: std::sync::Weak<Simulators>) {
         for session in stale {
             tracing::info!(session = %session.id, "iOS session idle; ending it");
             this.close(session).await;
+        }
+        // A refill that failed (a boot that timed out on a loaded machine) tries again; a full pool does nothing.
+        if let Prep::Ready(pool) = &*lock(&this.prep) {
+            pool.refill();
         }
         if uploading.as_ref().is_none_or(|u| u.is_finished()) {
             let live: Vec<String> = lock(&this.sessions)
