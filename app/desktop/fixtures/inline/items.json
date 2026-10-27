@@ -192,14 +192,23 @@
           "account": "me@example.com",
           "to": [
             "Ana Ruiz <ana@example.com>",
-            "bo@example.com"
+            "bo@example.com.au"
           ],
           "cc": [
             "cy@example.com"
           ],
           "subject": "Lunch on Tuesday",
           "body": "Hi Ana,\n\nTuesday at 12:30 at the usual place? I'll book a table.\n\nNavi, for Sam",
-          "input": "{\n  \"account\": \"me@example.com\",\n  \"to\": \"Ana Ruiz <ana@example.com>, bo@example.com\",\n  \"cc\": [\n    \"cy@example.com\"\n  ],\n  \"subject\": \"Lunch on Tuesday\",\n  \"body\": \"Hi Ana,\\n\\nTuesday at 12:30 at the usual place? I'll book a table.\\n\\nNavi, for Sam\"\n}"
+          "input": "{\n  \"account\": \"me@example.com\",\n  \"to\": \"Ana Ruiz <ana@example.com>, bo@example.com.au\",\n  \"cc\": [\n    \"cy@example.com\"\n  ],\n  \"bcc\": [\n    \"sam@example.com\"\n  ],\n  \"subject\": \"Lunch on Tuesday\",\n  \"body\": \"Hi Ana,\\n\\nTuesday at 12:30 at the usual place? I'll book a table.\\n\\nNavi, for Sam\",\n  \"attachments\": [\n    {\n      \"path\": \"/home/dev/navi/menu.pdf\"\n    }\n  ]\n}",
+          "bcc": [
+            "sam@example.com"
+          ],
+          "attachments": [
+            {
+              "name": "menu.pdf",
+              "from": "a file on xaq's machine"
+            }
+          ]
         }
       }
     },
@@ -221,6 +230,34 @@
           "title": "Move a Notion page to the trash",
           "target": "Trip planning (2f1c…)",
           "input": "{\n  \"page_id\": \"2f1c\",\n  \"archived\": true\n}"
+        }
+      }
+    },
+    {
+      "kind": "command_approval",
+      "requestId": "Q14",
+      "machineId": "devbox",
+      "state": "approved",
+      "answeredAt": "2026-10-19T09:12:00.000Z",
+      "by": "desk",
+      "permission": {
+        "threadId": "t-navi",
+        "requestId": "perm-5",
+        "toolName": "mcp__google__send_message",
+        "summary": "Sends a message",
+        "preview": {
+          "integration": "google",
+          "server": "google",
+          "tool": "send_message",
+          "action": "send",
+          "title": "Send an email",
+          "account": "me@example.com",
+          "to": [
+            "ana@example.com"
+          ],
+          "subject": "Re: Lunch on Tuesday",
+          "body": "12:30 it is.",
+          "input": "{\n  \"account\": \"me@example.com\",\n  \"to\": \"ana@example.com\",\n  \"subject\": \"Re: Lunch on Tuesday\",\n  \"body\": \"12:30 it is.\"\n}"
         }
       }
     }

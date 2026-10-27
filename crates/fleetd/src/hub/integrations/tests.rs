@@ -105,7 +105,6 @@ fn an_email_asks_with_every_recipient_the_subject_and_the_whole_body() {
         p.body.as_deref(),
         Some("Hi Ana,\n\nTuesday at noon?\n\nNavi")
     );
-    assert!(!p.body_cut);
     // Nothing is hidden: the whole input is on the card too.
     assert!(p.input.contains("dee@example.com") && p.input.contains("\"account\""));
 }
@@ -232,7 +231,7 @@ fn a_notion_change_shows_the_page_and_the_text() {
 fn a_custom_tool_asks_unless_marked_as_reading() {
     let p = ask("mcp__bank__update_payee", json!({ "name": "Ana" }));
     assert_eq!(p.integration, IntegrationKind::Custom);
-    assert_eq!(p.title.as_str(), "Change with update_payee on bank");
+    assert_eq!(p.title.as_str(), "Use update_payee on bank");
     assert_eq!(
         ask("mcp__bank__pay_invoice", json!({})).action,
         ToolAction::Spend
@@ -327,14 +326,13 @@ fn only_mcp_tools_are_this_table_s() {
 }
 
 #[test]
-fn a_long_body_is_cut_on_the_card_but_the_input_never_is() {
+fn a_long_body_comes_whole_and_too_large_a_call_is_refused() {
     let body = "x".repeat(30_000);
     let p = ask(
         "mcp__google__send_message",
         json!({ "to": "a@example.com", "subject": "s", "body": body }),
     );
-    assert!(p.body_cut);
-    assert_eq!(p.body.as_deref().unwrap().chars().count(), 20_000);
+    assert_eq!(p.body.as_deref(), Some(body.as_str()));
     assert!(p.input.contains(&body));
     // Too large to show whole: refused, never asked about half-seen.
     assert_eq!(
@@ -344,6 +342,39 @@ fn a_long_body_is_cut_on_the_card_but_the_input_never_is() {
         ),
         super::policy::TOO_LARGE
     );
+}
+
+#[test]
+fn attachments_are_listed_and_their_bytes_said_by_size() {
+    // 300 KB of bytes: past the card's bound as base64, within it once said by size.
+    let bytes = "QUJD".repeat(100_000);
+    let p = ask(
+        "mcp__google__send_message",
+        json!({
+            "to": "a@example.com", "subject": "Lease", "body": "Attached.",
+            "attachments": [
+                { "content_base64": bytes, "filename": "tenant-form.pdf", "mime_type": "application/pdf" },
+                { "path": "/home/dev/Documents/report.pdf" },
+                { "message_id": "18c2", "attachment_id": "a7" },
+                { "drive_file_id": "1AbC" }
+            ]
+        }),
+    );
+    let names: Vec<(&str, Option<u64>, Option<&str>)> = p
+        .attachments
+        .iter()
+        .map(|a| (a.name.as_str(), a.bytes, a.from.as_deref()))
+        .collect();
+    assert_eq!(
+        names,
+        [
+            ("tenant-form.pdf", Some(300_000), None),
+            ("report.pdf", None, Some("a file on xaq's machine")),
+            ("Attachment a7", None, Some("from message 18c2")),
+            ("Drive file 1AbC", None, Some("from Drive")),
+        ]
+    );
+    assert!(p.input.contains("[the file's 300000 bytes]") && !p.input.contains("QUJD"));
 }
 
 #[test]

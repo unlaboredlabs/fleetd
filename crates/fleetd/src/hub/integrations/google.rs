@@ -9,7 +9,7 @@
 use serde_json::Value;
 
 use super::notion;
-use super::policy::{Draft, Rule, addresses, text_of};
+use super::policy::{Attachment, Draft, Rule, addresses, base64_bytes, text_of};
 use fleetd_contracts::integrations::ToolAction::{self, Delete, Send, Write};
 
 /// xaq's tools that only read: Gmail, Calendar, its broker's call status, and the Workspace extension's reads under its
@@ -265,7 +265,46 @@ pub fn draft(tool: &str, input: &Value) -> Draft {
     if d.account.is_none() {
         d.account = account;
     }
+    if d.attachments.is_empty() {
+        d.attachments = attachments(&input["attachments"]);
+    }
     d
+}
+
+/// The files a send, draft, reply or forward attaches, from each of xaq's sources: bytes in the call, a path on xaq's
+/// machine, another message's attachment, a Drive file.
+fn attachments(v: &Value) -> Vec<Attachment> {
+    let Some(items) = v.as_array() else {
+        return Vec::new();
+    };
+    items
+        .iter()
+        .map(|a| {
+            let path = text_of(a, &["path"]);
+            let base = path
+                .as_deref()
+                .and_then(|p| p.rsplit('/').next())
+                .map(str::to_owned);
+            let message = text_of(a, &["message_id"]);
+            let drive = text_of(a, &["drive_file_id"]);
+            let name = text_of(a, &["filename"])
+                .or(base)
+                .or_else(|| text_of(a, &["attachment_id"]).map(|id| format!("Attachment {id}")))
+                .or_else(|| drive.as_ref().map(|id| format!("Drive file {id}")))
+                .unwrap_or_else(|| "A file".to_owned());
+            Attachment {
+                name,
+                bytes: a["content_base64"].as_str().map(base64_bytes),
+                from: if path.is_some() {
+                    Some("a file on xaq's machine".to_owned())
+                } else if let Some(m) = message {
+                    Some(format!("from message {m}"))
+                } else {
+                    drive.map(|_| "from Drive".to_owned())
+                },
+            }
+        })
+        .collect()
 }
 
 /// A Workspace extension tool's card: the file it acts on and what goes in.
@@ -302,7 +341,10 @@ fn workspace(tool: &str, input: &Value) -> Draft {
             .map(|v| serde_json::to_string_pretty(v).unwrap_or_default())
     });
     Draft {
-        title: Some(format!("Google Workspace: {}", inner.replace('_', " "))),
+        title: Some(format!(
+            "Use Google Workspace's {}",
+            inner.replace('_', " ")
+        )),
         subject: name,
         body,
         target,

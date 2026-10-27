@@ -124,7 +124,7 @@ it is a summary the Navi wrote.</p>
 <tbody>
 <tr>
 <td>Heading</td>
-<td>What it does and where: <strong>Sends · Google</strong>, <strong>Deletes · Notion</strong>. <strong>Reaches other people</strong>, <strong>Can’t be undone</strong> or <strong>Costs money</strong> on the right.</td>
+<td>What it does and where, <strong>Sends · Google</strong> or <strong>Deletes · Notion</strong>, then who asks: “Ada wants to send an email”. A share, delete or spend says <strong>Gives access</strong>, <strong>Can’t be undone</strong> or <strong>Costs money</strong> on the right; a send lets its recipients speak.</td>
 </tr>
 <tr>
 <td>From</td>
@@ -132,7 +132,7 @@ it is a summary the Navi wrote.</p>
 </tr>
 <tr>
 <td>To, Cc, Bcc</td>
-<td>Every recipient, as the tool gets them. An event’s guests are its To.</td>
+<td>Every recipient, as the tool gets them. An address outside the From account’s domain says “outside example.com” after it; Bcc says “hidden from the others”. An event’s guests are its To.</td>
 </tr>
 <tr>
 <td>Reaches</td>
@@ -147,21 +147,27 @@ it is a summary the Navi wrote.</p>
 <td>An event’s start and end.</td>
 </tr>
 <tr>
+<td>Attached</td>
+<td>Each file, with its size when its bytes are in the call, or where it comes from: a message, Drive, a file on xaq’s machine.</td>
+</tr>
+<tr>
 <td>On</td>
 <td>The message, event, page or file it acts on.</td>
 </tr>
 <tr>
 <td>Body</td>
-<td>The whole text that goes out or goes in, under a hairline. A body over 20,000 characters is cut here, saying so.</td>
+<td>The whole text that goes out or goes in, under a hairline. A long one folds, with <strong>Show all</strong> in place.</td>
 </tr>
 <tr>
 <td>Everything it sends</td>
-<td>The tool’s whole input as JSON, behind a disclosure, so nothing is hidden behind the rows.</td>
+<td>The tool’s whole input as JSON, closed until you open it, so nothing is hidden behind the rows. A file’s bytes are said by their size. A call too large to show whole is refused, never asked about.</td>
 </tr>
 </tbody>
 </table>
-<p><strong>Approve</strong> runs exactly that input. <strong>Deny</strong>, or <kbd>Esc</kbd>, tells the Navi no. A delete or a spend asks once
-more in the card before it runs.</p>
+<p>The buttons name the act: <strong>Send it</strong> and <strong>Don’t send</strong>, <strong>Share it</strong>, <strong>Delete it</strong>, <strong>Pay</strong>. Either runs exactly that
+input, or tells the Navi no; <kbd>Enter</kbd> and <kbd>Esc</kbd> do the same. A delete or a spend asks once more in the
+card before it runs. Once answered, the card folds to one line: “Sent to <a href="mailto:ana@example.com">ana@example.com</a> and 2 more · you approved at
+09:12”.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="google">Google: Gmail, Calendar and Drive</h2><a class="sl-anchor-link" href="#google"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Google: Gmail, Calendar and Drive”</span></a></div>
 <p>Google comes through <a href="https://www.npmjs.com/package/xaq-cli">xaq</a>, a small self-hosted broker that holds your Google sign-in
 and gives the Navi one MCP endpoint and one key. fleetd uses xaq rather than its own Google code for three reasons:</p>
