@@ -223,7 +223,9 @@ async function applyView(page: Page) {
 
 // Waits until the page is at its set viewport and scale; if a late native resize knocked it off, applies the
 // override again once and lets the layout settle at it (a virtual list moves its rewrapped rows a frame or more
-// later). Run before checking and before every screenshot, so both see the size that was asked for.
+// later). It settles too when the page is at its size but resized since it last settled: on macOS the override can
+// come back by itself a frame after the knock, with the rows not yet moved. Run before checking and before every
+// screenshot, so both see the size that was asked for, laid out.
 async function holdView(page: Page) {
   const view = views.get(page);
   if (!view) return;
@@ -238,14 +240,23 @@ async function holdView(page: Page) {
         () => true,
         () => false,
       );
-  if (await at(2_000)) return;
-  await applyView(page);
-  if (!(await at(3_000))) {
-    const got = await page.evaluate(() => `${window.innerWidth}×${window.innerHeight} @${window.devicePixelRatio}`);
-    throw new Error(`the page is ${got}, not the ${view.width}×${view.height} @${scale} it was set to`);
+  if (await at(2_000)) {
+    if (!(await resizedSinceSettle(page))) return;
+  } else {
+    await applyView(page);
+    if (!(await at(3_000))) {
+      const got = await page.evaluate(() => `${window.innerWidth}×${window.innerHeight} @${window.devicePixelRatio}`);
+      throw new Error(`the page is ${got}, not the ${view.width}×${view.height} @${scale} it was set to`);
+    }
   }
   await settle(page);
 }
+
+// Whether the page's viewport has changed since settle() last saw its layout hold still.
+function resizedSinceSettle(page: Page) {
+  return page.evaluate(() => (window as QaWindow).__qaResized === true);
+}
+type QaWindow = Window & { __qaResized?: boolean };
 
 // Whether the page is at its set viewport and scale now.
 async function atView(page: Page) {
@@ -256,11 +267,12 @@ async function atView(page: Page) {
 
 // The checks, at the size that was set. A late native resize (macOS) that lands while they run makes them measure a
 // layout caught mid-change, a virtual list's rows rewrapped at the other width but not yet moved: overlaps that no
-// screenshot shows. So the size is put back and they run again.
+// screenshot shows. So when the page is off its size, or was resized at all since it settled (a knock already undone
+// by the time they end), the size is put back, the layout settles and they run again.
 async function checkAtView(page: Page, reserved: Box[]) {
   for (let i = 0; ; i++) {
     const findings = await check(page, reserved);
-    if (i === 2 || (await atView(page))) return findings;
+    if (i === 2 || ((await atView(page)) && !(await resizedSinceSettle(page)))) return findings;
     await holdView(page);
   }
 }
@@ -325,6 +337,9 @@ export async function assertExpectedState(page: Page, screen: Pick<Screen, "id" 
 export async function settle(page: Page) {
   await page.waitForFunction(() => !document.querySelector("[aria-busy='true']"), undefined, { timeout: 10_000 });
   await page.evaluate(async () => {
+    // Notes any viewport change from here on; cleared below once the layout has held still.
+    const qa = window as QaWindow;
+    if (qa.__qaResized === undefined) addEventListener("resize", () => (qa.__qaResized = true));
     await document.fonts.ready;
     const frame = () => new Promise((done) => requestAnimationFrame(() => done(null)));
     const layout = () => {
@@ -344,6 +359,7 @@ export async function settle(page: Page) {
       still = now === last ? still + 1 : 0;
       last = now;
     }
+    qa.__qaResized = false;
   });
 }
 
