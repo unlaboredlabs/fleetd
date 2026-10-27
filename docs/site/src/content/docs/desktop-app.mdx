@@ -50,7 +50,7 @@ To change hubs, open Settings (⌘,) → General → Hub.
 | Part | Shows |
 |---|---|
 | Sidebar | Your projects, each saying why it wants you: "reply", "approve", "secret" or "blocked". Otherwise "CI red" while a check fails on main (which blocks nothing), or how many agents are working. A project in bold has a new message from its lead. Below them: Status, Time, Machines and Settings. |
-| The top row | The page's title and its controls, then Commands. In a chat: the project's name, its state word and its [Max agents](/docs/projects#max-agents) control, and the panel's toggle. |
+| The top row | The page's title and its controls, then the command palette (⌘K) and the panel's toggle. In a chat: the project's name, then only [what needs you](#chat), if anything. The panel starts at the window's top, so its tabs share this row. |
 | The chat | The selected project's conversation with its lead. |
 | The panel | Beside a chat, on the right: a tab each for the project's [agents](#agents), its [pull requests](/docs/chat#prs), its [merge train](#train), its [checklist](#checklist), its [activity](#activity) and its [decisions](#decisions). Open it with the toggle at the top right or ⌥⌘B. |
 
@@ -82,12 +82,11 @@ on a chat attach to your message. See [Add a project](/docs/projects#add-a-proje
 |---|---|
 | Messages | The conversation, with Markdown, attachments and pasted images. Older history loads as you scroll up, including work from before the chat existed. A chat opens where you stopped reading, under a "New" line. Scrolled up, a button takes you back to the newest message and counts what arrived meanwhile. |
 | The box at the bottom | Your message ("Message the lead"), ready to type as soon as a chat opens. Enter sends; Shift+Enter adds a line; ↑ in an empty box brings back your last message; the clip or ⌘⇧A attaches a file. While the lead works, a message steers it, and Stop beside Send ends its turn now. Unsent words stay, even after you quit. |
-| The line above the box | While the lead waits on you, what for ("2 questions, asked at 09:02", "1 command to approve"). Show scrolls to it. |
 | An empty chat | Asks what the lead should do, with a few starters that fill the box for you to edit. |
 | The agents strip | Under the lead's message, after any approval or secret it asks for: how many agents are working, and on which PRs. Click it to open [Agents](#agents); click a PR number to open [the PR](/docs/chat#prs). |
 | One-line events | Pull requests opened, merged or sent back. A PR's number or GitHub link here or in a message opens [the PR](/docs/chat#prs) in the panel. |
 | Secret and approval items | A masked field with "Save secret", or a command (or a tool's permission request) with Approve and Deny. See [Secrets & approvals](/docs/approvals-and-secrets). |
-| The top row | The project, its state word (as in [Status](#status)), and its [Max agents](/docs/projects#max-agents) control ("agents 6 / 12"). |
+| The top row | The project's name, then what needs you, and nothing when nothing does. While the lead waits on you, what for ("Waiting on you: 2 questions, asked at 09:02") and Show, which scrolls to it. Otherwise why the project is blocked, with Resume when its machine's usage pause is why, or a check red on main, which blocks nothing. |
 
 ![The storefront project's chat: you asked to round the cart totals once, the lead replied that the writers start from PR #10's branch and split the change into three PRs, and the strip above the message box shows three agents working. The panel's Agents tab lists them: reviewers on #221 and #222 and a writer. In the sidebar, billing says reply and checkout says CI red.](/docs/img/chat.png)
 
@@ -114,6 +113,9 @@ first message and prompts it started with; **All agents** or Esc goes back to th
 **All projects**, above the list, lists every project's agents instead, each project under its name, those with an
 agent waiting on you first. Click an agent of another project to open its work beside that project's chat.
 **This project** goes back. The panel remembers which you chose.
+
+Beside the count of agents working, **max** is the project's [Max agents](/docs/projects#max-agents) ("4 working · max
+20"). Click it to change it in Settings › Agents.
 
 ## Train {#train}
 

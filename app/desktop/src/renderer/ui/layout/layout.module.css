@@ -1,6 +1,9 @@
 /* The frame: the sidebar down the left from the top of the window, the top row and the content beside it. Content
    keeps the QA gate's edge inset. */
 .frame {
+  position: relative;
+  /* What the corner (below) takes from the right end of the row it sits in; none without one. */
+  --corner-w: 0px;
   display: grid;
   grid-template-rows: var(--top-bar-height) minmax(0, 1fr);
   grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
@@ -17,21 +20,39 @@
     "top"
     "main";
 }
-/* A panel on the right: the top row runs over it too. */
+/* A panel on the right, from the window's top as the sidebar is: the top row stops at its edge, and the panel's own
+   first row (its tabs) sits beside it, so the right side has one header row, not two. */
 .withAside {
   grid-template-columns: var(--sidebar-w) minmax(0, 1fr) auto;
   grid-template-areas:
-    "side top top"
+    "side top aside"
     "side main aside";
 }
 .noSidebar.withAside {
   grid-template-columns: minmax(0, 1fr) auto;
   grid-template-areas:
-    "top top"
+    "top aside"
     "main aside";
 }
 .frame > .topBar {
   grid-area: top;
+}
+/* The window's top right, over whichever row ends there (the top row, or the aside's first): the panel's toggle, in one
+   place whether the panel shows or not. Its button opts out of the drag region as every control does (base.css). */
+.withCorner {
+  --corner-w: calc(var(--control) + var(--space-1) + var(--space-3));
+}
+.corner {
+  position: absolute;
+  z-index: 3;
+  top: 0;
+  right: var(--space-3);
+  display: flex;
+  align-items: center;
+  height: var(--top-bar-height);
+}
+.withCorner:not(.withAside) > .topBar {
+  padding-inline-end: var(--corner-w);
 }
 .main {
   grid-area: main;

@@ -1,5 +1,5 @@
-// The chat's data, from E1's layer (one source of hub data): the chat view, the project's state word, whether the
-// live strip has agents to show, and the actions that page through its history. The shell opens the chat on screen.
+// The chat's data, from E1's layer (one source of hub data): the chat view, what the top bar says needs you (blocked
+// and why, a warning, a usage pause to resume), whether the live strip has agents to show, and the actions that page through its history. The shell opens the chat on screen.
 import { useCallback } from "react";
 import type { HubError } from "../../../shared/hub";
 import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
@@ -9,22 +9,19 @@ import {
   selectLeadWorking,
   selectProjectRow,
   type ChatView,
-  type ProjectStateWord,
 } from "../../src/data/selectors";
 import { projectKey } from "../../src/data/store";
 import { selectStrip } from "../live/strip";
 import type { ProjectRef } from "./slots";
 
 // Status's own query (same input, so one cached read), only for what the hub alone knows (blocked and why, a warning); needs-you
-// and working come from the project row the sidebar dot reads, so the dot, the header and Status agree.
+// and working come from the project row the sidebar dot reads, so the dot, the top bar and Status agree.
 const ALL = {} as const;
 
 export interface ChatData {
   readonly view: ChatView | undefined;
-  /** The project's state word: the sidebar's and Status's. */
-  readonly state: ProjectStateWord | undefined;
   readonly leadWorking: boolean | undefined;
-  /** Blocked (the state word says so): the hub's reason, "" when it gave none. */
+  /** Blocked (the state word, the sidebar's and Status's, says so): the hub's reason, "" when it gave none. */
   readonly blocked: string | undefined;
   /** What stops nothing but is worth knowing, in any state: a check red on main, and whether a fix is under way. */
   readonly warning: string | undefined;
@@ -60,5 +57,5 @@ export function useChatData(project: ProjectRef): ChatData {
   const loadOlder = useCallback(() => layer.chat.loadOlder(key), [layer, key]);
   // open() reads the newest page again while none has landed.
   const retry = useCallback(() => layer.chat.open(key), [layer, key]);
-  return { view, state, blocked, warning, usagePausedOn, leadWorking, loadError, retry, strip, title, missing, loadOlder };
+  return { view, blocked, warning, usagePausedOn, leadWorking, loadError, retry, strip, title, missing, loadOlder };
 }

@@ -51,7 +51,7 @@ describe("status rows", () => {
     ]);
   });
 
-  it("say waiting on you only when the chat does, so Status, the sidebar dot and the chat header agree", () => {
+  it("say waiting on you only when the chat does, so Status, the sidebar dot and the chat's top bar agree", () => {
     // The row's own "waiting on you" never counts; the hub's chat state is the one source for it.
     expect(orderRows([row("billing", "waiting_on_you")], [project("billing")])[0]?.word).toBe("idle");
     expect(orderRows([row("billing", "idle")], [project("billing", { needsYou: true })])[0]?.word).toBe("waiting_on_you");

@@ -15,6 +15,8 @@ import { ActivityLine } from "../live/parts";
 import { steerNext } from "../live/Steer";
 import { describe, isFinal } from "../live/words";
 import { useNow } from "../live/clock";
+import { projectAgents } from "../settings/agentsModel";
+import { formatRoute } from "../settings/route";
 import { useRoute } from "../shell/navigation";
 import { panelRoute, toHash, type ProjectKey } from "../shell/routes";
 import { AgentWork } from "./AgentWork";
@@ -124,6 +126,11 @@ function AgentList({ project: ref, scope, onScope }: { project: ProjectKey; scop
   // Rows that join the list later enter once; those it opened with, or scrolled to, don't.
   useArrivals(`agents:${project}`, all?.filter((a) => a.project === project).map((a) => a.id));
   const none = agents?.every(isLine) === true;
+  // This project's Max agents, beside its count: the top bar no longer carries it. Only this connection's numbers.
+  const limit = useData((st) => {
+    const slots = st.fresh ? (st.live.slots ?? st.slots) : undefined;
+    return slots === undefined || scope !== "project" ? undefined : projectAgents(slots, ref).limit;
+  });
 
   return (
     <div className={s.pane} data-screen="agents">
@@ -150,7 +157,7 @@ function AgentList({ project: ref, scope, onScope }: { project: ProjectKey; scop
             </Button>
           </span>
         ) : counts !== undefined ? (
-          <Counts counts={counts} />
+          <Counts counts={counts} max={limit === undefined ? undefined : { limit, href: formatRoute({ tab: "agents", for: project }) }} />
         ) : null}
       </div>
       {items === undefined && !fresh ? (
@@ -212,10 +219,19 @@ function AgentList({ project: ref, scope, onScope }: { project: ProjectKey; scop
   );
 }
 
-/** What works, what waits on you and what is queued, each with its dot; nothing when none of the three. */
-function Counts({ counts }: { counts: ReturnType<typeof tally> }) {
+/**
+ * What works, what waits on you and what is queued, each with its dot, and with This project its Max agents ("4
+ * working · max 20"), which opens its slider in Settings; nothing when there is none of them.
+ */
+function Counts({ counts, max }: { counts: ReturnType<typeof tally>; max: { limit: number; href: string } | undefined }) {
   const { working, waiting, queued } = counts;
-  if (working + waiting + queued === 0) return null;
+  if (working + waiting + queued === 0 && max === undefined) return null;
+  const cap =
+    max === undefined ? null : (
+      <a className={s.max} href={max.href} title="Max agents for this project" aria-label={`Max agents: ${String(max.limit)}`}>
+        {`max ${String(max.limit)}`}
+      </a>
+    );
   return (
     <span className={s.counts}>
       {waiting > 0 ? (
@@ -227,7 +243,10 @@ function Counts({ counts }: { counts: ReturnType<typeof tally> }) {
       {working > 0 ? (
         <span className={s.count}>
           <StateDot status="working" still />
-          <Text size="xs" tone="quiet" tabular>{`${String(working)} working`}</Text>
+          <Text size="xs" tone="quiet" tabular>
+            {`${String(working)} working`}
+            {cap === null ? null : <> · {cap}</>}
+          </Text>
         </span>
       ) : null}
       {queued > 0 ? (
@@ -236,6 +255,11 @@ function Counts({ counts }: { counts: ReturnType<typeof tally> }) {
           <Text size="xs" tone="quiet" tabular>{`${String(queued)} queued`}</Text>
         </span>
       ) : null}
+      {working > 0 || cap === null ? null : (
+        <Text size="xs" tone="quiet" tabular>
+          {cap}
+        </Text>
+      )}
     </span>
   );
 }

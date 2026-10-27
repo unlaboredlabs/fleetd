@@ -1,6 +1,6 @@
 // Status is one row per project, from the hub's `status_get` (H6): a state word, its work in groups (waiting on you,
-// in review, working, landing, idle, done), agents running, last merged. The state word is the one the sidebar dot and the chat header show
-// (projectStateWord over the data layer's project row): "waiting on you" comes only from the hub's chat state, and
+// in review, working, landing, idle, done), agents running, last merged. The state word is the one the sidebar dot shows, and the one
+// the chat's top bar follows when it says waiting on you or blocked (projectStateWord over the data layer's project row): "waiting on you" comes only from the hub's chat state, and
 // this row adds only "blocked" and a working its agents can't show. An unknown state reads as idle.
 
 import type { ProjectStatusRow, StatusGroup, StatusItem } from "../../../shared/contracts";

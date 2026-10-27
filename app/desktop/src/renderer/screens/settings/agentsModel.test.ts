@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SlotState } from "../../../shared/contracts";
 import {
-  agentsLabel,
   appliedLine,
   changeLine,
   clampMax,
@@ -55,7 +54,7 @@ describe("machines", () => {
   it("lets a project's slider go to the fleet cap, and says when its machine holds it below", () => {
     const a = projectAgents(fleet, storefront);
     expect(a).toMatchObject({ max: 30, cap: 22, machineCap: 22, top: 50, limit: 22, own: true });
-    expect(agentsLabel(a)).toBe("agents 22 / 22 · 8 queued");
+    expect(a).toMatchObject({ running: 22, queued: 8 });
     expect(machineHolds(a, 22, "devbox")).toBeNull();
     // Raising it while devbox runs its 22: the queued wait for the machine, not start.
     expect(changeLine(a, 40)).toBe("Up to 40 at once, but its machine runs 22 at most: the 8 queued wait for it.");
@@ -104,8 +103,6 @@ describe("max agents", () => {
     expect(projectAgents(slots, { machineId: "devbox", projectId: "new" })).toEqual({ running: 0, queued: 0, max: 12, limit: 12, free: 4, ...at12, own: false });
     // A share above a cap lowered later is held to the cap.
     expect(projectAgents({ ...slots, cap: 4 }, storefront).max).toBe(4);
-    expect(agentsLabel(projectAgents(slots, storefront))).toBe("agents 6 / 6 · 2 queued");
-    expect(agentsLabel(projectAgents(slots, billing))).toBe("agents 2 / 12");
   });
 
   it("holds a project to its machine's cap, and a project at that cap has no max of its own", () => {
@@ -157,8 +154,8 @@ describe("max agents", () => {
       perMachine: [{ machineId: "devbox", cap: 16, auto: 16, running: 8, why: "memory 34 GB" }],
       perProject: [...hub.perProject.slice(0, 1), { projectRef: billing, maxAgents: 16, own: false, running: 2, queued: 0 }],
     };
-    expect(agentsLabel(projectAgents(raised, storefront))).toBe("agents 6 / 12");
-    expect(agentsLabel(projectAgents(raised, billing))).toBe("agents 2 / 16");
+    expect(projectAgents(raised, storefront)).toMatchObject({ running: 6, limit: 12 });
+    expect(projectAgents(raised, billing)).toMatchObject({ running: 2, limit: 16 });
     expect(sourceLine(raised, projectAgents(raised, billing))).toBe("Follows the default: its machine's cap, within the whole fleet's.");
     expect(sourceLine(raised, projectAgents(raised, storefront))).toBe("Set for this project. The default is 16.");
   });
