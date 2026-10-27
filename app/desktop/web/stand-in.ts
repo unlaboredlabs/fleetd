@@ -76,6 +76,7 @@ const fleetdApi = (file: File): FleetdApi => {
       submit: () => Promise.resolve({ ok: false, error: notHere }),
       projectEnv: () => Promise.resolve({ ok: false, error: notHere }),
       mcpServer: () => Promise.resolve({ ok: false, error: notHere }),
+      hubLink: () => Promise.resolve({ ok: false, error: notHere }),
     },
     openExternal: (url) => {
       window.open(url, "_blank", "noopener");

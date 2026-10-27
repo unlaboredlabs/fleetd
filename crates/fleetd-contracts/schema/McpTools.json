@@ -5689,11 +5689,22 @@
         "navi": {
           "$ref": "#/$defs/ProjectRef"
         },
+        "projects": {
+          "description": "The projects it is limited to there, as the other hub last said; absent: every project its person reaches.",
+          "items": {
+            "$ref": "#/$defs/LinkProject"
+          },
+          "type": "array"
+        },
         "state": {
           "$ref": "#/$defs/HubLinkState"
         },
         "url": {
           "description": "The other hub's URL: https, or http over a tailnet or this machine.",
+          "type": "string"
+        },
+        "who": {
+          "description": "The person it acts as there, as the other hub last said; absent until a hub that says has answered.",
           "type": "string"
         }
       },

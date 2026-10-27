@@ -17,7 +17,7 @@ use fleetd_contracts::navi::{
 use serde::de::DeserializeOwned;
 use zeroize::Zeroizing;
 
-use super::{Kept, box_key, failed, kept, kept_get, set_cursor, set_state};
+use super::{Kept, box_key, failed, kept, kept_get, set_cursor, set_hello, set_state};
 use crate::hub::api::Hub;
 use crate::hub::leads::wakes::{LineKind, Trigger};
 use crate::hub::navi::bridge::{Woken, ask_sent, is_navi, record_sent};
@@ -406,8 +406,26 @@ fn wake(hub: &Hub, navi: &ProjectRef, line: &str) {
     );
 }
 
-/// Follows one kept link until it is removed here, dead there, its Navi archived, or the hub stops.
+/// Reads the link's hello again, for the person it acts as and its projects there; a read that fails leaves them as
+/// they were and the link's state alone (the feed read that follows records how the other hub answered).
+pub async fn refresh(hub: &Hub, link_id: &str) {
+    let Ok(Some(link)) = followed(hub, link_id) else {
+        return;
+    };
+    let Ok(key) = open_key(hub, &link) else {
+        return;
+    };
+    if let Ok(hello) = call::<LinkHello>(&link.url, &key, None, "hello", CALL).await
+        && let Err(e) = set_hello(&hub.db, link_id, &hello)
+    {
+        tracing::warn!(link = %link_id, error = %e, "hub link hello");
+    }
+}
+
+/// Follows one kept link until it is removed here, dead there, its Navi archived, or the hub stops. It reads the
+/// link's hello first, so a hub that restarts shows its links' people and projects as the other hub has them now.
 pub async fn follow(hub: Arc<Hub>, link_id: String) {
+    refresh(&hub, &link_id).await;
     loop {
         if hub.shutdown.is_triggered() {
             return;

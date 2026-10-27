@@ -2102,9 +2102,13 @@ export type HubLink = {
   label: string;
   linkId: HubLinkId;
   navi: ProjectRef;
+  /** The projects it is limited to there, as the other hub last said; absent: every project its person reaches. */
+  projects?: LinkProject[];
   state: HubLinkState;
   /** The other hub's URL: https, or http over a tailnet or this machine. */
   url: string;
+  /** The person it acts as there, as the other hub last said; absent until a hub that says has answered. */
+  who?: string;
 };
 
 export type HubLinkAddInput = {
