@@ -914,7 +914,9 @@ output!(ProjectRemoveOutput { ok: True });
 // project_settings_get, project_settings_set, project_env_set: a project's own settings (Settings › Projects).
 input!(ProjectSettingsGetInput {
     machine_id: MachineId,
-    project_id: ProjectId
+    project_id: ProjectId,
+    /// The repo whose setup, train and preview to read; absent: the project's own directory.
+    repo: Option<crate::repos::RepoName>,
 });
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -924,6 +926,8 @@ pub struct ProjectSettings {
     pub project_id: ProjectId,
     pub title: String,
     pub workspace_root: String,
+    /// The repo `setup`, `train` and `preview` are for; absent for the project's own directory, and from older hubs.
+    pub repo: Option<crate::repos::RepoName>,
     /// True: a finished task's worktree stays on the machine. False (the default): a reader's goes when it finishes
     /// and a writer's once its PR merges.
     pub keep_worktrees: bool,
@@ -949,6 +953,9 @@ input!(
     ProjectSettingsSetInput {
         machine_id: MachineId,
         project_id: ProjectId,
+        /// The repo whose setup, train and preview to set; absent: the project's own directory. Title and
+        /// keepWorktrees are the project's either way.
+        repo: Option<crate::repos::RepoName>,
         /// The project's name in fleetd; its folder keeps its own.
         title: Option<Line<1, 200>>,
         keep_worktrees: Option<bool>,
@@ -2284,6 +2291,29 @@ mod tests {
         let wake: WakeSetInput = decode(wake).unwrap();
         assert!(wake.once);
         assert_eq!(wake.catch_up, WakeCatchUp::FireOnce);
+    }
+
+    #[test]
+    fn project_settings_take_an_optional_repo() {
+        let r = json!({ "machineId": "devbox", "projectId": "p1" });
+        let get: ProjectSettingsGetInput = decode(r.clone()).unwrap();
+        assert_eq!(get.repo, None);
+        let mut in_repo = r.clone();
+        in_repo["repo"] = json!("api");
+        let get: ProjectSettingsGetInput = decode(in_repo.clone()).unwrap();
+        assert_eq!(get.repo.as_ref().map(|r| r.as_str()), Some("api"));
+        in_repo["repo"] = json!("Api");
+        assert!(decode::<ProjectSettingsGetInput>(in_repo).is_err());
+        let set = json!({ "machineId": "devbox", "projectId": "p1", "repo": "api", "keepWorktrees": true });
+        let set: ProjectSettingsSetInput = decode(set).unwrap();
+        assert_eq!(set.repo.as_ref().map(|r| r.as_str()), Some("api"));
+        // A repo alone sets nothing.
+        assert!(
+            decode::<ProjectSettingsSetInput>(
+                json!({ "machineId": "devbox", "projectId": "p1", "repo": "api" })
+            )
+            .is_err()
+        );
     }
 
     #[test]

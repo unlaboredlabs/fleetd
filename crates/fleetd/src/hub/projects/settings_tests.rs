@@ -521,3 +521,42 @@ async fn the_train_settings_save_and_read_back_and_none_clears_them() {
         json!({ "fastChecks": [], "afterMerge": [] })
     );
 }
+
+/// No project holds a repo yet, so naming one is refused and changes nothing, rather than acting on the project's own
+/// settings.
+#[tokio::test]
+async fn a_named_repo_is_refused_until_projects_hold_repos() {
+    let (hub, _home) = hub();
+    let _calls = node(&hub, true).await;
+    for (tool, input) in [
+        (
+            "project_settings_get",
+            json!({ "machineId": "lab", "projectId": "p1", "repo": "api" }),
+        ),
+        (
+            "project_settings_set",
+            json!({ "machineId": "lab", "projectId": "p1", "repo": "api", "keepWorktrees": true }),
+        ),
+    ] {
+        let refused = call(&hub, &person(), tool, input).await;
+        assert!(
+            matches!(&refused, Err(CallError::Tool(e)) if e.code == fleetd_contracts::mcp::ErrorCode::NotFound && e.fix.is_some()),
+            "{tool}: {refused:?}"
+        );
+    }
+    assert!(
+        !hub.db
+            .project_settings()
+            .keep_worktrees(&project())
+            .unwrap()
+    );
+    let s = call(
+        &hub,
+        &person(),
+        "project_settings_get",
+        json!({ "machineId": "lab", "projectId": "p1" }),
+    )
+    .await
+    .unwrap();
+    assert!(s["settings"].get("repo").is_none());
+}

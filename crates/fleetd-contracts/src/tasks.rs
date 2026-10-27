@@ -95,6 +95,8 @@ pub struct TaskResult {
 pub struct Task {
     pub task_id: TaskId,
     pub project_ref: ProjectRef,
+    /// The project's repo it works in; absent for the project's own directory, and on rows an older hub stored.
+    pub repo_id: Option<crate::repos::RepoId>,
     pub workstream_id: WorkstreamId,
     pub title: TaskTitle,
     pub kind: TaskKind,
@@ -405,6 +407,13 @@ mod tests {
         // Round trip keeps the wire shape.
         let decoded: Task = serde_json::from_value(task.clone()).unwrap();
         assert_eq!(serde_json::to_value(&decoded).unwrap(), task);
+        // A row with no repoId (every row an older hub stored) works in the project's own directory.
+        assert_eq!(decoded.repo_id, None);
+        let in_repo = with(task.clone(), "repoId", json!("R2"));
+        let decoded: Task = serde_json::from_value(in_repo.clone()).unwrap();
+        assert_eq!(decoded.repo_id.as_ref().map(|r| r.as_str()), Some("R2"));
+        assert_eq!(serde_json::to_value(&decoded).unwrap(), in_repo);
+        assert!(!accepts::<Task>(with(task, "repoId", json!("api"))));
     }
 
     #[test]
