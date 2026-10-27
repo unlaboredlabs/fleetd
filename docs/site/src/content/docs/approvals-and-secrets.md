@@ -36,6 +36,13 @@ command as a [gated command](/docs/glossary#gated-command).
 If the machine was offline when you approved, the item opens again and says why. Click "Approve again" once it is
 back. If an answer doesn't go through, the item says why in one line; click Retry.
 
+## Approve a Navi's email, event or page {#integrations}
+
+A Navi asks before any write, send, delete or share through its [integrations](/docs/integrations). Its card shows
+the account, every recipient, the subject and the whole body, or the page or file and the change, all read from the
+exact input that runs. Approve sends exactly that, once: there is no "always allow". Moving money, trading and creating
+accounts are refused even if approved. See [The approval card](/docs/integrations#card).
+
 ## Enter a secret {#secrets}
 
 When a lead needs an API key or a password, it asks with `request_secret`, and the item names the machine and where

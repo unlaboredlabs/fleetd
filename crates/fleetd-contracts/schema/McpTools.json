@@ -6357,7 +6357,7 @@
       "oneOf": [
         {
           "const": "google",
-          "description": "Gmail, Google Calendar and Google Drive through xaq (npm `xaq-cli`), which holds the Google sign-in: fleetd\nkeeps only xaq's address and an agent key.",
+          "description": "Gmail, Google Calendar and Google Drive: fleetd's own Google tools, read by the names and fields in\n`hub/integrations/google.rs`.",
           "type": "string"
         },
         {
@@ -11903,6 +11903,35 @@
       },
       "required": [
         "words"
+      ],
+      "type": "object"
+    },
+    "PreviewAttachment": {
+      "description": "A file an asking tool attaches, as its input names it.",
+      "properties": {
+        "bytes": {
+          "description": "Its size, when its bytes are in the input.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "from": {
+          "description": "Where it comes from, when not from the input: \"from Drive\", \"from message 18c2\".",
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "name": {
+          "description": "The name the recipient sees: \"tenant-form.pdf\", or what the file is when the tool names it by id.",
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
       ],
       "type": "object"
     },
@@ -18163,7 +18192,7 @@
       "description": "What an approval card shows for an asking tool: who it reaches and what it says, or what it changes. Every field is\nread from the exact input the tool runs with once approved; nothing is a summary the agent wrote.",
       "properties": {
         "account": {
-          "description": "The account it acts as, when the tool names one (an xaq account's address).",
+          "description": "The account it acts as, when the tool names one (the connected Google account's address).",
           "maxLength": 320,
           "minLength": 1,
           "pattern": "^[^\\r\\n]*$",
@@ -18171,6 +18200,13 @@
         },
         "action": {
           "$ref": "#/$defs/ToolAction"
+        },
+        "attachments": {
+          "description": "Every file it attaches.",
+          "items": {
+            "$ref": "#/$defs/PreviewAttachment"
+          },
+          "type": "array"
         },
         "audience": {
           "description": "Who it reaches when the tool decides that itself, such as a reply to a message's sender: said in words, since\nthe card can't list them.",
@@ -18190,12 +18226,8 @@
         },
         "body": {
           "description": "The text that goes out or goes in: the email's body, the event's notes, the page's new content.",
-          "maxLength": 20000,
+          "maxLength": 100000,
           "type": "string"
-        },
-        "bodyCut": {
-          "description": "The body was longer and is cut here.",
-          "type": "boolean"
         },
         "cc": {
           "items": {
@@ -18208,7 +18240,7 @@
         },
         "input": {
           "description": "Everything the tool gets, as JSON, so nothing is hidden behind the fields above.",
-          "maxLength": 20000,
+          "maxLength": 100000,
           "type": "string"
         },
         "integration": {
@@ -18228,7 +18260,7 @@
           "type": "string"
         },
         "title": {
-          "description": "One line: \"Send an email\", \"Reply to a message\", \"Delete a Notion block\".",
+          "description": "What it does, as a verb phrase the app puts after \"<the Navi> wants to\": \"Send an email\", \"Reply to an email\".",
           "maxLength": 200,
           "minLength": 1,
           "pattern": "^[^\\r\\n]*$",
