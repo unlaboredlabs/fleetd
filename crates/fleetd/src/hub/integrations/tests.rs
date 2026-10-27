@@ -327,7 +327,7 @@ fn only_mcp_tools_are_this_table_s() {
 }
 
 #[test]
-fn a_long_body_is_cut_saying_so_and_the_input_is_bounded() {
+fn a_long_body_is_cut_on_the_card_but_the_input_never_is() {
     let body = "x".repeat(30_000);
     let p = ask(
         "mcp__google__send_message",
@@ -335,7 +335,15 @@ fn a_long_body_is_cut_saying_so_and_the_input_is_bounded() {
     );
     assert!(p.body_cut);
     assert_eq!(p.body.as_deref().unwrap().chars().count(), 20_000);
-    assert!(p.input.chars().count() <= 20_000);
+    assert!(p.input.contains(&body));
+    // Too large to show whole: refused, never asked about half-seen.
+    assert_eq!(
+        blocked(
+            "mcp__google__send_message",
+            json!({ "to": "a@example.com", "subject": "s", "body": "x".repeat(120_000) })
+        ),
+        super::policy::TOO_LARGE
+    );
 }
 
 #[test]

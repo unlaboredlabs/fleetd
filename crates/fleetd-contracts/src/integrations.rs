@@ -80,8 +80,9 @@ pub enum ToolAction {
 /// The longest body a card shows; a longer one is cut, saying so, and the whole input is under [`ToolPreview::input`].
 pub const PREVIEW_BODY_MAX: usize = 20_000;
 
-/// The tool's input as it runs, pretty-printed, at most this many characters.
-pub const PREVIEW_INPUT_MAX: usize = 20_000;
+/// The tool's input as it runs, pretty-printed, at most this many characters. It is never cut: an input past it is
+/// refused rather than asked about, so approving never runs more than the card shows.
+pub const PREVIEW_INPUT_MAX: usize = 100_000;
 
 /// What an approval card shows for an asking tool: who it reaches and what it says, or what it changes. Every field is
 /// read from the exact input the tool runs with once approved; nothing is a summary the agent wrote.
