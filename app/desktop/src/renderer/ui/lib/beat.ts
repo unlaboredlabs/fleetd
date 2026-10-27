@@ -5,9 +5,9 @@
 // few cells that change, never the page. Between beats nothing moves and no frame is drawn (a running CSS animation
 // would keep a frame every vsync, and a key would wait for the next).
 //
-// The beat keeps stepping while you type, click or scroll, but on your frames: a beat that falls due within
-// INPUT_RIDE_MS of a key, click or wheel waits for the next one and steps with it, so the two draw on one frame and a
-// key never waits out a frame of the beat's own. If nothing comes within a beat, it steps by itself.
+// The beat keeps its tempo whatever you do: it steps on the clock, never on your input, so typing, clicking or
+// scrolling neither slows it nor makes it stutter. A step that falls due on the same frame as a key draws with it;
+// one held up by a long task lands as soon as the thread is free, and the next stays on the clock.
 //
 // :root carries data-beat while the beat runs; no beat while the window is hidden, or with reduced motion: then :root
 // has no data-beat, and each loop shows its still shape.
@@ -15,8 +15,6 @@ import { useCallback, useLayoutEffect, useRef, type RefObject } from "react";
 
 export const BEAT_MS = 120;
 export const BEATS = 24;
-/** How long after a key, click or wheel a beat that falls due waits to step with the next one. */
-export const INPUT_RIDE_MS = 600;
 
 /** One loop's step: writes what the loop shows on `beat` onto its elements, touching only what changes. */
 export type Step = (beat: number) => void;
@@ -24,24 +22,17 @@ export type Step = (beat: number) => void;
 const loops = new Set<{ step: Step }>();
 let timer: number | undefined;
 let beat = 0;
-let inputAt = -Infinity;
-/** A beat fell due while you were typing, clicking or scrolling: it steps with your next input. */
-let due = false;
+/** When beat 0 would have stepped, on performance.now()'s clock: beat n steps at `zero + n × BEAT_MS`. */
+let zero = 0;
 
-const advance = (): void => {
-  due = false;
-  beat = (beat + 1) % BEATS;
+/** Steps to the beat the clock is on and waits for the next: a tick a long task held late doesn't slow the loops. */
+const tick = (): void => {
+  const now = performance.now();
+  const n = Math.max(Math.round((now - zero) / BEAT_MS), 1);
+  zero += n * BEAT_MS;
+  beat = (beat + n) % BEATS;
   for (const loop of loops) loop.step(beat);
-};
-
-const onBeat = (): void => {
-  if (!due && performance.now() - inputAt < INPUT_RIDE_MS) due = true;
-  else advance();
-};
-
-const onInput = (): void => {
-  inputAt = performance.now();
-  if (due && timer !== undefined) advance();
+  timer = window.setTimeout(tick, zero + BEAT_MS - now);
 };
 
 const reduced = (): boolean => typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -51,21 +42,17 @@ const sync = (): void => {
   const run = loops.size > 0 && !document.hidden && !reduced();
   if (run && timer === undefined) {
     root.dataset["beat"] = "";
-    timer = window.setInterval(onBeat, BEAT_MS);
+    zero = performance.now();
+    timer = window.setTimeout(tick, BEAT_MS);
   } else if (!run && timer !== undefined) {
-    window.clearInterval(timer);
+    window.clearTimeout(timer);
     timer = undefined;
-    // A beat that starts again steps by itself until your next input.
-    due = false;
-    inputAt = -Infinity;
     delete root.dataset["beat"];
   }
 };
 
 if (typeof document !== "undefined") {
   document.addEventListener("visibilitychange", sync);
-  // Capture, ahead of the app's own handlers: whatever they change draws on the same frame as the beat.
-  for (const type of ["keydown", "pointerdown", "wheel"] as const) window.addEventListener(type, onInput, { capture: true, passive: true });
   if (typeof window.matchMedia === "function") window.matchMedia("(prefers-reduced-motion: reduce)").addEventListener("change", sync);
 }
 
