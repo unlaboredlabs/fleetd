@@ -1785,15 +1785,22 @@ pub struct HubBusyItem {
 }
 
 // hub_update: updates the hub to the newest build of its channel, then every connected node, without waiting for work
-// to finish: what a restart cuts off carries on by itself. Admin on every machine, a human key only. Answers at once
-// with the run; hub_update_status follows it. A run already going is returned, not started again.
+// to finish: what a restart cuts off carries on by itself, and a machine running what can't (a live session, a preview)
+// updates once it's idle. Admin on every machine, a human key only. Answers at once with the run; hub_update_status
+// follows it. A run already going is returned, not started again. With `machine`, updates that machine of the last run
+// again (Retry).
 input!(HubUpdateInput {
     /// Absent: the channel the hub's build came from.
     channel: Option<HubChannel>,
+    /// Retry this machine of the last run, whose hub updated: its node, then its Claude Code.
+    machine: Option<MachineId>,
 });
 output!(HubUpdateOutput {
     /// The update going now or the last one; absent when the hub never updated itself.
     run: Option<UpdateRun>,
+    /// The channel's newest build, already downloaded and checked on the hub (and fetched by its nodes), so an update
+    /// only swaps and restarts: what "fleetd <version> is ready" names. Absent when there is none newer.
+    ready: Option<Text<1, 200>>,
 });
 // hub_update_status: the update going now, or the last one.
 input!(HubUpdateStatusInput {});
