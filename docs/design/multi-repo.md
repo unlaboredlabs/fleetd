@@ -1,6 +1,6 @@
 # W79 design: projects that hold zero or more repos
 
-Status: design, partly built (stages 1a and 1b). This records intent when written; the code is the source of truth.
+Status: design, partly built (stages 1a, 1b and 1d). This records intent when written; the code is the source of truth.
 Check `git log` for what has landed.
 
 ## The model
@@ -34,8 +34,16 @@ refuses anything else), or when its work is bound to a remote (`work_projects`).
 - when `project_add` registers a checkout, with or without a remote.
 
 A project whose directory isn't a git repo never gets one. A git checkout with no remote added before this hub has
-none until a person adds it (stage 2). While `work_projects` is still the source of the work scope (until 1d), the
-own repo's `repo_key` and `base` follow it: binding and unbinding update them in the same transaction.
+none until a person adds it (stage 2). The own repo's `repo_key` and `base` follow `work_projects`: binding and
+unbinding update both in the same transaction.
+
+## The work-ledger scope (1d)
+
+A repo's work lands on its `repo_key` and `base`: `work.scope_of_repo(R<n>)` reads them from its row, `None` while the
+repo has no remote. `work.scope_of(ProjectRef)` is the project's own repo's scope, read from `work_projects` as before,
+so a one-repo project's scope is unchanged, a plain directory has none, and a rolled-back hub, which writes only
+`work_projects`, still works (the next read or hub start brings the own repo's row back in line). Projects on one repo
+and base still share one view of the work in flight.
 
 **Serving.** `ProjectSummary.repos` comes from `repos` whenever the hub serves a summary; a node's row never carries
 it, so a node's refresh can't wipe it.
