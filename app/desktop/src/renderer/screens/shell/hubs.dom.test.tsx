@@ -25,6 +25,8 @@ interface FakeHub {
 const fake = vi.hoisted(() => {
   const hubs = new Map<string, { listeners: Set<(frame: unknown) => void>; calls: Array<{ tool: string; input: unknown }> }>();
   const badge: number[] = [];
+  // The chat each hub streams, as the page last asked (hub.chat): a project, or null for none.
+  const chats: Array<[string, unknown]> = [];
   // What a clicked notification or a fleetd:// link hands the window (main's opener).
   const opened = new Set<(target: unknown) => void>();
   const of = (id: string) => {
@@ -61,7 +63,7 @@ const fake = vi.hoisted(() => {
         if (tool === "orders_board") return Promise.resolve({ ok: true, output: { orders: [] } });
         return Promise.resolve({ ok: false, error: { code: "not_found", message: `${tool} isn't faked` } });
       },
-      chat: done,
+      chat: (id: string, project: unknown) => (chats.push([id, project]), done()),
       focus: done,
       watch: done,
       input: done,
@@ -73,7 +75,7 @@ const fake = vi.hoisted(() => {
     pair: { store: () => Promise.resolve(null), probe: (hub: string) => Promise.resolve({ answers: false, hub }), start: () => new Promise(() => undefined) },
     system: { hostName: () => Promise.resolve("devbox") },
   });
-  return { hubs, of, badge, opened };
+  return { hubs, of, badge, opened, chats };
 });
 
 const hub = (id: string): FakeHub => ({
@@ -137,6 +139,7 @@ beforeEach(() => {
   window.localStorage.clear();
   fake.hubs.clear();
   fake.badge.length = 0;
+  fake.chats.length = 0;
 });
 afterEach(() => {
   act(() => root.unmount());
@@ -298,6 +301,29 @@ it("pins every hub's Navis on top, each saying its hub, and a collapsed hub keep
     runCommand("project.open.3");
   });
   expect(window.location.hash).toBe("#/project/devbox/storefront?at=hub");
+});
+
+it("keeps the chat it shows streaming when `#/` comes back before the page reads the home redirect", async () => {
+  window.location.hash = "#/";
+  // As the packaged smoke does: the moment the home redirect lands on a project, `#/` again, before the page's own
+  // hashchange listener reads it. The page never sees the project's route, yet shows the project's chat.
+  const reset = () => {
+    if (!window.location.hash.startsWith("#/project/")) return;
+    window.removeEventListener("hashchange", reset);
+    window.location.hash = "#/";
+  };
+  window.addEventListener("hashchange", reset);
+  await mount([{ id: "hub", label: "devbox" }]);
+  act(() => {
+    hub("hub").send(live());
+    hub("hub").send(project("devbox", "storefront"));
+  });
+  await settle();
+  await settle();
+  expect(window.location.hash).toBe("#/");
+  expect(host.querySelector('[data-screen^="chat"]')).not.toBeNull();
+  // The chat on screen is the one the hub streams.
+  expect(fake.chats.at(-1)).toEqual(["hub", { machineId: "devbox", projectId: "storefront" }]);
 });
 
 it("with one hub, shows no name and no group: the sidebar is as it always was", async () => {

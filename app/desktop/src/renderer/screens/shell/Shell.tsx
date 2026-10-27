@@ -81,26 +81,17 @@ export function Shell() {
 }
 
 /**
- * One hub's always-on work, inside its scope: its sidebar rows and needs-you count for the frame (hubRows.ts), its
- * notifications, and its chat: open on the project on screen when the screen is on this hub, else closed.
+ * One hub's always-on work, inside its scope: its sidebar rows and needs-you count for the frame (hubRows.ts), and its
+ * notifications. The chat on screen is the frame's to open.
  */
 function HubWatch({ open }: { open: ProjectKey | null }) {
   const { id } = useHub();
-  const layer = useDataLayer();
   const state = useHubState();
   const projects = useSidebarProjects(open);
   const needsYou = useData(selectNeedsYouTotal);
   useEffect(() => publishRows(id, { projects, needsYou, state }), [id, projects, needsYou, state]);
   useEffect(() => () => dropRows(id), [id]);
   useNotifications(state.phase === "live");
-  const openKey = open === null ? null : projectId(open);
-  useEffect(() => {
-    if (openKey === null) {
-      layer.chat.close();
-      return;
-    }
-    layer.chat.open(openKey);
-  }, [layer, openKey]);
   return null;
 }
 
@@ -163,6 +154,18 @@ function Frame({ route, hubs, sidebar }: { route: Routed; hubs: readonly HubView
   const open = screen.id === "project" ? screen.project : null;
   // The open project's row key: the hub's own key, prefixed with the hub unless it is the first (hubKey).
   const openKey = open === null ? null : hubKey(route.at, projectId(open));
+  // The chat on screen is the one open, and the one that streams: the screen as shown, `#/` resolved to its project
+  // (the route alone can still say home). The frame is its hub's, so leaving the hub closes it.
+  const layer = useDataLayer();
+  const chatKey = open === null ? null : projectId(open);
+  useEffect(() => {
+    if (chatKey === null) {
+      layer.chat.close();
+      return;
+    }
+    layer.chat.open(chatKey);
+  }, [layer, chatKey]);
+  useEffect(() => () => layer.chat.close(), [layer]);
   // The palette's Agents and Pull requests: the project on screen, else the one `#/` opens on this hub.
   const homeHere = projects === undefined ? null : homeProject(projects.filter((p) => p.hub === route.at), readLast());
   const panelProject = open ?? (homeHere === null ? null : routeOf(homeHere));
