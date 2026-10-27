@@ -247,6 +247,16 @@ impl NodeLinkServer {
         self.browser_live.frame(machine_id, frame);
     }
 
+    /// The machine's live link, by its id: a new one each time its node links.
+    pub fn link_id(&self, machine_id: &MachineId) -> Option<u64> {
+        self.state
+            .lock()
+            .unwrap()
+            .links
+            .get(machine_id)
+            .map(|(id, _)| *id)
+    }
+
     /// Whether the machine's live node listed `capability` in its hello.
     pub fn node_can(&self, machine_id: &MachineId, capability: &str) -> bool {
         self.state

@@ -754,6 +754,32 @@ impl Router {
         self.open(thread).is_some()
     }
 
+    /// Ends the agent session's screen `session` if it is open here, whatever its kind; any other is left. Whether
+    /// it was.
+    pub fn end_screen(&self, thread: &str, session: &str) -> bool {
+        let is = |id: Option<&BrowserSessionId>| id.is_some_and(|id| id.as_str() == session);
+        if let Some(browser) = &self.browser
+            && is(browser.live(thread).as_ref().map(|s| &s.id))
+        {
+            SessionHooks::ended(browser.as_ref(), thread);
+        } else if let Some(devices) = &self.devices
+            && is(devices.live(thread).as_ref().map(|s| &s.id))
+        {
+            devices.ended(thread);
+        } else if let Some(ios) = &self.ios
+            && is(ios.live(thread).as_ref().map(|s| &s.id))
+        {
+            ios.ended(thread);
+        } else if let Some(desktops) = &self.desktops
+            && is(desktops.live(thread).as_ref().map(|s| &s.id))
+        {
+            desktops.ended(thread);
+        } else {
+            return false;
+        }
+        true
+    }
+
     fn device_live(&self, thread: &str) -> Option<Arc<Session>> {
         self.devices.as_ref().and_then(|d| d.live(thread))
     }
@@ -1032,5 +1058,9 @@ impl SessionHooks for Router {
         if let Some(desktops) = &self.desktops {
             desktops.ended(thread);
         }
+    }
+
+    fn screen_ended(&self, thread: &str, session: &str) {
+        self.end_screen(thread, session);
     }
 }

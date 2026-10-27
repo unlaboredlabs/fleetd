@@ -326,6 +326,7 @@ async fn an_agent_on_one_node_drives_a_browser_on_another_through_the_hub() {
         secrets_for: Arc::new(|_| Ok(Secrets(secrets()))),
         mask_for: Arc::new(|_| Ok(Masker::new(&secrets()))),
         filled_elsewhere: super::session_route::FilledElsewhere::default(),
+        hosted_ids: Default::default(),
     });
     // 1Password is devbox's alone: mac1 never gets the token, and never makes a vault.
     devbox.set_vaults(Arc::new({
@@ -454,10 +455,24 @@ async fn an_agent_on_one_node_drives_a_browser_on_another_through_the_hub() {
     );
     tokio::time::sleep(Duration::from_millis(1200)).await;
 
+    // The hub's end of an earlier screen of the agent's leaves this one: devbox knows its hosted screen's id.
+    assert_eq!(
+        router.hosted_ids.lock().unwrap().get(AGENT),
+        Some(&id),
+        "devbox knows which screen it holds on mac1"
+    );
+    SessionHooks::screen_ended(router.as_ref(), AGENT, "B00000000000000000000000000000000");
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert!(
+        devbox.remote(AGENT).is_some(),
+        "another screen's end leaves it"
+    );
+
     let relay_before_end = devbox.remote(AGENT).unwrap();
     let ended = tool(&router, json!({ "op": "session_end" })).await;
     assert!(ended["error"].is_null(), "{ended}");
     assert!(devbox.remote(AGENT).is_none());
+    assert!(router.hosted_ids.lock().unwrap().get(AGENT).is_none());
 
     // The recording lands on the hub, filed under the agent's project and session, with the agent's steps in it.
     let session_id = fleetd_contracts::browser::BrowserSessionId::unchecked(&id);
