@@ -122,7 +122,10 @@ admin).
 | `GET feed?after=&wait=` | news about the link's own asks: an order opened, done, stopped, a PR merged or failed |
 | `POST revoke` | the link revokes itself (A removing it) |
 
-Each call checks the key, the link not revoked, not idle for 90 days, and its device not revoked, then the device's
+Each call checks the key, the link not revoked, not idle for 90 days, and its device not revoked; a key dead for any
+of these is refused with 401 and `dead: true` (`LinkRefusal`), and only that body makes A mark the link revoked. A
+store failure is a 500, and any other refusal or a 401 without `dead` leaves the link as it was, so a passing error
+never kills it. A calls only the URL it was given: no redirects, and no answer over 1 MB. Then come the device's
 grants: read to see a project, operate to ask in it, and the link's project limits. A project outside them is refused
 (`forbidden`, "X is not one of this link's projects"); one the person can't read doesn't exist for the link. Nothing
 else takes a link key: `/mcp` and `/app` refuse it (it is no `fld_` key), so there is no tool, no chat read, no

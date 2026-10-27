@@ -148,8 +148,8 @@ async fn add(
     let sealed = STANDARD
         .decode(input.sealed.as_str())
         .map_err(|_| ToolError::new(ErrorCode::Invalid, "sealed is not base64."))?;
-    let key = box_key(&hub)
-        .map_err(box_failed)?
+    let box_key = box_key(&hub).map_err(box_failed)?;
+    let pasted = box_key
         .open(&sealed)
         .and_then(|plain| String::from_utf8(plain.to_vec()).ok())
         .map(zeroize::Zeroizing::new)
@@ -157,7 +157,12 @@ async fn add(
             ToolError::new(ErrorCode::Invalid, "The key wasn't sealed to this hub.")
                 .with_fix("Seal it to boxPubKey from hub_links_get.")
         })?;
-    let hello = client::hello(input.label.as_str(), &url, key.trim()).await?;
+    // A pasted key often carries a newline: the hub keeps it trimmed, sealed again to itself.
+    let key = zeroize::Zeroizing::new(pasted.trim().to_owned());
+    let sealed = box_key
+        .seal(key.as_bytes())
+        .ok_or_else(crate::hub::api::internal_error)?;
+    let hello = client::hello(input.label.as_str(), &url, &key).await?;
     let Some(link_id) = keep(&hub, navi, &input.label, &url, &sealed, hello.cursor)? else {
         return Err(ToolError::new(
             ErrorCode::Invalid,
