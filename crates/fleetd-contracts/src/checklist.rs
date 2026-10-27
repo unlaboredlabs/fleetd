@@ -1,7 +1,7 @@
 //! A project's checklist: the lead's to-do list, which the human sees in the panel beside the chat. The lead keeps it
-//! with `checklist`; the app reads it with `checklist_get` and reads it again on `checklist.changed`. The human can only
-//! take items off (`checklist_remove`), and the lead hears of it. Nothing is derived from it: no figure, no estimate,
-//! only what the lead says each item is at.
+//! with `checklist`; the app reads it with `checklist_get` and reads it again on `checklist.changed`. A person takes
+//! items off (`checklist_remove`), or ticks, edits or removes them (`checklist_edit`), which records who did; the lead
+//! hears of it. Nothing is derived from it: no figure, no estimate, only what the lead says each item is at.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -56,6 +56,8 @@ pub struct TodoItem {
     pub state: TodoState,
     pub link: Option<TodoLink>,
     pub updated_at: Timestamp,
+    /// The person who last ticked or changed it (`checklist_edit`); absent when the lead did.
+    pub person: Option<crate::people::PersonRef>,
 }
 
 /// One change to the list: without `id` it adds an item (text required, state todo unless given); with `id` it sets
@@ -120,6 +122,7 @@ pub struct ChecklistResult {
 }
 
 /// `checklist.changed`. The items are not in the event; checklist_get reads them.
+#[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ChecklistChangedData {
@@ -128,6 +131,8 @@ pub struct ChecklistChangedData {
     pub total: Count,
     /// The lead (`lead:<machine>/<project>`) or a person (`human:<key name>`).
     pub by: String,
+    /// The person who changed it (`checklist_edit`), removals included; absent when the lead did.
+    pub person: Option<crate::people::PersonRef>,
 }
 
 #[cfg(test)]

@@ -244,6 +244,8 @@ pub struct ChatMessage {
     pub delivery: Option<ChatDelivery>,
     /// The name of the key that wrote it: a person's device for a human message, the agent for an agent's.
     pub by: Option<Line<1, 120>>,
+    /// A human message: the person who wrote it. Absent from a hub before people.
+    pub person: Option<crate::people::PersonRef>,
     /// A human message: where it was written.
     pub client: Option<ChatClient>,
     /// A human message: the bubble it answers.

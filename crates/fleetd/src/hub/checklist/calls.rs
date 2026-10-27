@@ -76,6 +76,7 @@ pub(super) fn changed(
         done: Count::unchecked(done as i64),
         total: Count::unchecked(total as i64),
         by: by.to_owned(),
+        person: None,
     };
     hub.events.append(NewEvent {
         at: iso_ms(now).into(),

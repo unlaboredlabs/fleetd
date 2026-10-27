@@ -156,7 +156,8 @@ pub enum HubEventType {
     /// M11: doctor checks changed status; `data.changes` lists `{ id, from, to }` (from absent on the first run).
     #[serde(rename = "doctor.changed")]
     DoctorChanged,
-    /// A device redeemed a pairing code from `fleetd pair` and got a human key; `data.keyId`, `data.deviceName`.
+    /// A device redeemed a pairing code from `fleetd pair` or an invite and got a human key; `data.keyId`,
+    /// `data.deviceName`, `data.personId` (absent from a hub before people), `data.inviteId` (an invite's).
     #[serde(rename = "key.paired")]
     KeyPaired,
     /// A prompt override was saved or reset: `data.id`, `data.scope`, `data.projectRef`, `data.ref` (absent on reset),
@@ -257,6 +258,10 @@ pub enum HubEventType {
     /// previews_list reads the rest.
     #[serde(rename = "preview.state")]
     PreviewState,
+    /// A person was invited, joined, renamed, given another role or removed, an invite was revoked, or a device signed
+    /// out; `data` is `people::PeopleChangedData`. people_list reads the rest.
+    #[serde(rename = "people.changed")]
+    PeopleChanged,
 }
 
 impl HubEventType {
@@ -342,6 +347,7 @@ impl HubEventType {
             Self::SkillsChanged => "skills.changed",
             Self::BrowserSession => "browser.session",
             Self::PreviewState => "preview.state",
+            Self::PeopleChanged => "people.changed",
         }
     }
 }

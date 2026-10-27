@@ -759,6 +759,10 @@
           "minItems": 1,
           "type": "array"
         },
+        "person": {
+          "$ref": "#/$defs/PersonRef",
+          "description": "A human message: the person who wrote it. Absent from a hub before people."
+        },
         "previewSuggestion": {
           "$ref": "#/$defs/PreviewSuggestion",
           "description": "An agent's suggestion to try a PR (preview_suggest), posted once per PR with `text` in its words: the app\nshows it as one line with Try it. Nothing runs from it."
@@ -969,6 +973,10 @@
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
+        },
+        "person": {
+          "$ref": "#/$defs/PersonRef",
+          "description": "The person who changed it (`checklist_edit`), removals included; absent when the lead did."
         },
         "projectRef": {
           "$ref": "#/$defs/ProjectRef"
@@ -1501,6 +1509,9 @@
         "machine.slept": {
           "$ref": "#/$defs/MachineSleptData"
         },
+        "people.changed": {
+          "$ref": "#/$defs/PeopleChangedData"
+        },
         "pr.merged": {
           "$ref": "#/$defs/TrainEventData"
         },
@@ -1639,6 +1650,7 @@
         "machine.guard",
         "machine.recovery_paused",
         "machine.slept",
+        "people.changed",
         "pr.merged",
         "pr.merged_outside",
         "preview.state",
@@ -1681,6 +1693,10 @@
         "workstream.state"
       ],
       "type": "object"
+    },
+    "InviteId": {
+      "pattern": "^inv_[a-z2-7]{8}$",
+      "type": "string"
     },
     "LandingRoute": {
       "description": "How a commit reached a base branch.",
@@ -1808,6 +1824,69 @@
       "required": [
         "leads",
         "tasks"
+      ],
+      "type": "object"
+    },
+    "PeopleChange": {
+      "enum": [
+        "invited",
+        "joined",
+        "invite_revoked",
+        "renamed",
+        "role_changed",
+        "removed",
+        "device_revoked"
+      ],
+      "type": "string",
+      "x-open": true
+    },
+    "PeopleChangedData": {
+      "description": "`people.changed`.",
+      "properties": {
+        "by": {
+          "$ref": "#/$defs/PersonRef",
+          "description": "Who made the change; absent for the hub machine's own CLI and for a device joining."
+        },
+        "change": {
+          "$ref": "#/$defs/PeopleChange"
+        },
+        "inviteId": {
+          "$ref": "#/$defs/InviteId"
+        },
+        "keyId": {
+          "type": "string"
+        },
+        "person": {
+          "$ref": "#/$defs/PersonRef",
+          "description": "Whom it is about."
+        }
+      },
+      "required": [
+        "change",
+        "person"
+      ],
+      "type": "object"
+    },
+    "PersonId": {
+      "pattern": "^p_[a-z2-7]{8}$",
+      "type": "string"
+    },
+    "PersonRef": {
+      "description": "Who did something, with their name at the time: on chat messages, approvals, secrets, decisions and checklist\nchanges.",
+      "properties": {
+        "name": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "personId": {
+          "$ref": "#/$defs/PersonId"
+        }
+      },
+      "required": [
+        "personId",
+        "name"
       ],
       "type": "object"
     },

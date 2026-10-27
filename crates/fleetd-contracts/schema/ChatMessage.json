@@ -497,6 +497,10 @@
           "minItems": 1,
           "type": "array"
         },
+        "person": {
+          "$ref": "#/$defs/PersonRef",
+          "description": "A human message: the person who wrote it. Absent from a hub before people."
+        },
         "previewSuggestion": {
           "$ref": "#/$defs/PreviewSuggestion",
           "description": "An agent's suggestion to try a PR (preview_suggest), posted once per PR with `text` in its words: the app\nshows it as one line with Try it. Nothing runs from it."
@@ -880,6 +884,29 @@
       "description": "Lowercase slug, [a-z0-9][a-z0-9-]{0,47}, other than memory",
       "pattern": "^[a-z0-9][a-z0-9-]{0,47}$",
       "type": "string"
+    },
+    "PersonId": {
+      "pattern": "^p_[a-z2-7]{8}$",
+      "type": "string"
+    },
+    "PersonRef": {
+      "description": "Who did something, with their name at the time: on chat messages, approvals, secrets, decisions and checklist\nchanges.",
+      "properties": {
+        "name": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "personId": {
+          "$ref": "#/$defs/PersonId"
+        }
+      },
+      "required": [
+        "personId",
+        "name"
+      ],
+      "type": "object"
     },
     "PrBlock": {
       "description": "A pull request: the client fills in its live state (title, checks, review, merged) from the hub.",

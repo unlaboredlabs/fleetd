@@ -82,6 +82,7 @@ pub fn edited(
                 state: edit.state.unwrap_or_default(),
                 link: edit.link.clone().filter(|l| !l.is_empty()),
                 updated_at: at.clone(),
+                person: None,
             });
             next.next_id += 1;
             continue;

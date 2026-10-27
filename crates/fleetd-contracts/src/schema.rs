@@ -106,6 +106,7 @@ fn hub_event_data_document_for(side: Side) -> Value {
         data!(crate::checklist::ChecklistChangedData: ChecklistChanged);
         data!(crate::browser::BrowserSessionEventData: BrowserSession);
         data!(crate::preview::PreviewEventData: PreviewState);
+        data!(crate::people::PeopleChangedData: PeopleChanged);
         data!(SteerEventData: SteerQueued, SteerDelivered, SteerAcknowledged, SteerUnacknowledged, SteerWithdrawn,
             SteerFailed);
         let required: Vec<Value> = properties.keys().cloned().map(Value::String).collect();

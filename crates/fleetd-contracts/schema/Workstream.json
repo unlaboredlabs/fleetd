@@ -79,6 +79,29 @@
       "pattern": "^[a-z0-9-]{1,32}$",
       "type": "string"
     },
+    "PersonId": {
+      "pattern": "^p_[a-z2-7]{8}$",
+      "type": "string"
+    },
+    "PersonRef": {
+      "description": "Who did something, with their name at the time: on chat messages, approvals, secrets, decisions and checklist\nchanges.",
+      "properties": {
+        "name": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "personId": {
+          "$ref": "#/$defs/PersonId"
+        }
+      },
+      "required": [
+        "personId",
+        "name"
+      ],
+      "type": "object"
+    },
     "ProjectId": {
       "type": "string"
     },
@@ -124,6 +147,10 @@
         },
         "source": {
           "$ref": "#/$defs/WorkstreamSource"
+        },
+        "startedBy": {
+          "$ref": "#/$defs/PersonRef",
+          "description": "The person whose message started it: the writer of the human message the lead was answering when it opened the\norder, or the person who sent it as an order. Absent for an automation's, a train fix's or an agent's order, and\nfrom a hub before people."
         },
         "state": {
           "$ref": "#/$defs/WorkstreamState"

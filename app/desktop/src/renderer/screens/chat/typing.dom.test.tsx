@@ -11,6 +11,7 @@ import { DataProvider } from "../../src/data/react";
 import { AT, live, liveLane, project, snapshot } from "../../src/data/fixtures.test-util";
 import { leadLaneId } from "../../src/data/selectors";
 import { projectKey } from "../../src/data/store";
+import { AppFrame, TopBar } from "../../ui/layout/Layout";
 import { TooltipProvider } from "../../ui/primitives/Tooltip";
 import { ChatScreen } from "./ChatScreen";
 
@@ -76,7 +77,10 @@ const mount = async () => {
     root?.render(
       <DataProvider layer={layer}>
         <TooltipProvider>
-          <ChatScreen project={project} />
+          {/* In the window's frame, as in the app: the screen's title and what needs you sit in its top bar. */}
+          <AppFrame topBar={<TopBar />}>
+            <ChatScreen project={project} />
+          </AppFrame>
         </TooltipProvider>
       </DataProvider>,
     );
