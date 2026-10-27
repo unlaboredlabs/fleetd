@@ -213,6 +213,17 @@ async fn run_node(
     let node_sessions = sessions::SessionService::start(store, runner, session_config)
         .await
         .map_err(|e| NodeError::Setup(format!("cannot settle the stored sessions: {e}")))?;
+    // Claude Code changes only when fleetd brings it to the version it was tested with: its own background update goes
+    // off, for a person's claude on this machine too (the doctor says when it couldn't).
+    let settings =
+        runner::claude::setup::config_dir(&node_sessions.runner_env()).join("settings.json");
+    match runner::claude::install::turn_autoupdater_off(&settings) {
+        Ok(true) => {
+            tracing::info!(settings = %settings.display(), "turned Claude Code's own update off")
+        }
+        Ok(false) => {}
+        Err(e) => tracing::warn!("couldn't turn Claude Code's own update off: {e}"),
+    }
     let wakes = Arc::new(power::Wakes::default());
     let _power = util::AbortOnDrop(tokio::spawn(power::run(
         node_sessions.clone(),
@@ -407,7 +418,7 @@ async fn run_node(
 
 /// `claude` from PATH, else the native installer's `~/.local/bin/claude` (a service's PATH often lacks it). A
 /// missing binary is the runner's probe to report, not a reason to stop the node.
-fn claude_binary() -> PathBuf {
+pub(crate) fn claude_binary() -> PathBuf {
     let on_path = std::env::var_os("PATH").and_then(|path| {
         std::env::split_paths(&path)
             .map(|dir| dir.join("claude"))

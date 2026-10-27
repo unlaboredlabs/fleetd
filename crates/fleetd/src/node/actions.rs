@@ -48,13 +48,15 @@ pub async fn probe_host() -> NodeProbe {
     }
 }
 
-/// `home` is the node's home: an update keeps its previous binary and the watcher's plan there. With the answer, the
-/// files shared with the watcher when an update started one. A fetch is answered at once and downloads on its own
-/// task, not the link's, so the hub's restart doesn't cut it off.
+/// `sessions` is the node's: an update keeps its previous binary and the watcher's plan in its home, and Claude Code's
+/// install runs with its runner's environment. With the answer, the files shared with the watcher when an update
+/// started one. A fetch is answered at once and downloads on its own task, not the link's, so the hub's restart doesn't
+/// cut it off.
 pub async fn run_node_action(
     frame: NodeAction,
-    home: &std::path::Path,
+    sessions: &super::sessions::SessionService,
 ) -> (NodeActionResult, Option<super::update::Watch>) {
+    let home = &sessions.home();
     match frame.action {
         NodeActionKind::Probe => (
             NodeActionResult {
@@ -66,6 +68,49 @@ pub async fn run_node_action(
             },
             None,
         ),
+        NodeActionKind::Claude => {
+            let Some(target) = frame.claude else {
+                let none = crate::update::Failure::new(
+                    fleetd_contracts::mcp::UpdateStage::Install,
+                    "the hub named no Claude Code version",
+                );
+                return (failed(frame.id, &none), None);
+            };
+            let claude = super::runner::claude::install::Real {
+                binary: super::claude_binary(),
+                env: sessions.runner_env(),
+            };
+            let done = super::runner::claude::install::bring_to(&claude, target.as_str()).await;
+            // The runner's version as the hub sees it, at once rather than at the next probe.
+            if matches!(
+                done,
+                Ok(super::runner::claude::install::Installed::Done { .. })
+            ) {
+                sessions.reprobe().await;
+            }
+            match done {
+                Ok(installed) => (
+                    NodeActionResult {
+                        id: frame.id,
+                        ok: true,
+                        stage: None,
+                        message: head_text(&match installed {
+                            super::runner::claude::install::Installed::Current(v) => {
+                                format!("{} {v}", super::runner::claude::install::ALREADY)
+                            }
+                            super::runner::claude::install::Installed::Done { from, to } => {
+                                format!(
+                                    "Claude Code {from} -> {to}: new sessions start on {to}, running ones finish on {from}"
+                                )
+                            }
+                        }),
+                        probe: None,
+                    },
+                    None,
+                ),
+                Err(f) => (failed(frame.id, &f), None),
+            }
+        }
         NodeActionKind::Fetch => match frame.update {
             Some(update) => {
                 let home = home.to_owned();

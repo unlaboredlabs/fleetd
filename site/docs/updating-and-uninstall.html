@@ -83,6 +83,10 @@ put back and restarted.</li>
 <li><strong>Every connected machine’s node</strong> does the same, all at once, as soon as the hub runs the new build. Each one
 already downloaded it while the hub downloaded its own, so it only checks it against <code dir="auto">SHA256SUMS</code> again, puts it in
 place and restarts. Nothing is installed on a machine before the hub runs the new build.</li>
+<li><strong>Each machine’s Claude Code</strong> goes to the version the new fleetd was tested with (<code dir="auto">claude install &lt;version&gt;</code>), in
+a line of its own: “Claude Code 2.1.310 → 2.1.302”. Sessions already running finish on the version they started
+with; new ones start on the new one. If the install fails, the machine keeps the version it had, the line says
+why, and the rest of the update goes on. See <a href="/docs/machines#claude-version">Claude Code’s version</a>.</li>
 <li><strong>The app</strong> installs its own update and restarts. It downloads that update in the background, from when you
 press <strong>Update</strong> at the latest, so it is usually ready by then. A message you were typing is still there after the
 restart.</li>
@@ -109,7 +113,8 @@ by itself: check whether it ran before you approve it again.</li>
 <p>On a machine without the app (a headless worker, say), run:</p>
 <div class="expressive-code"><link rel="stylesheet" href="/docs/_astro/ec.cqkp3.css"><script type="module" src="/docs/_astro/ec.0vx5m.js"></script><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="sh"><code><div class="ec-line"><div class="code"><span style="--0:#80A665;--1:#4B7231">fleetd</span><span style="--0:#DBD7CAEE;--1:#393A34"> </span><span style="--0:#C98A7D;--1:#96574A">update</span><span style="--0:#DBD7CAEE;--1:#393A34"> </span><span style="--0:#C99076;--1:#995728">--check</span></div></div><div class="ec-line"><div class="code"><span style="--0:#80A665;--1:#4B7231">fleetd</span><span style="--0:#DBD7CAEE;--1:#393A34"> </span><span style="--0:#C98A7D;--1:#96574A">update</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="fleetd update --checkfleetd update"><div></div></button></div></figure></div>
 <p>It replaces the CLI, checked against the release’s <code dir="auto">SHA256SUMS</code>, then restarts the hub and node services that run this
-binary right away. What they were running carries on by itself, as above. <code dir="auto">fleetd machine add &lt;ssh-host&gt;</code> on the hub
+binary right away. On a machine that runs agents, it then moves Claude Code to the version the new fleetd was tested
+with, as the app’s update does. What they were running carries on by itself, as above. <code dir="auto">fleetd machine add &lt;ssh-host&gt;</code> on the hub
 also copies the hub’s binary to a worker.</p>
 <p><code dir="auto">fleetd status</code> and <code dir="auto">fleetd doctor</code> say when the CLI, the hub and the nodes run different versions.</p>
 <div class="sl-heading-wrapper level-h3"><h3 id="app">The desktop app</h3><a class="sl-anchor-link" href="#app"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “The desktop app”</span></a></div>
