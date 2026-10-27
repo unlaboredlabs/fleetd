@@ -17,7 +17,8 @@ describe("budgets", () => {
     expect(regressionLimit("firstPaintOverMs", 300)).toBe(390);
     // 30% of 100 = 30 is under the slack.
     expect(regressionLimit("firstPaintOverMs", 100)).toBe(160);
-    expect(regressionLimit("scrollFps", 60)).toBe(54);
+    // 7% of 60 = 4.2 beats the 3 fps slack.
+    expect(regressionLimit("scrollFps", 60)).toBeCloseTo(55.8);
     // CI gates first paint only over the bare Electron window, never absolutely.
     expect(regressionLimit("firstPaintMs", 300)).toBeUndefined();
   });
