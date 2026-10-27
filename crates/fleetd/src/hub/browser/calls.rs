@@ -14,7 +14,7 @@ use fleetd_contracts::browser::{
 use fleetd_contracts::lead_calls::{LeadCall, LeadCallResult};
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
 
-use super::{announce, count, dir, file_path, get, put_on, stored_bytes};
+use super::{announce, count, dir, file_path, get, get_on, put_on, stored_bytes};
 use crate::hub::api::Hub;
 use crate::hub::link::lead_calls::{CallerAgent, LeadCallFuture, op_of};
 use crate::hub::link::{LeadCaller, LeadCalls};
@@ -99,34 +99,8 @@ fn session(
     call: BrowserSessionCall,
 ) -> Result<LeadCallResult, McpToolError> {
     let stored = own(hub, caller, call.session_id.as_str())?;
-    if let Some(s) = &stored
-        && matches!(
-            s.state,
-            BrowserSessionState::Recorded | BrowserSessionState::Expired
-        )
-    {
-        // Final: a late or repeated report changes nothing.
-        return Ok(LeadCallResult::BrowserSession(BrowserSessionResult {
-            session_id: s.session_id.clone(),
-            state: s.state,
-        }));
-    }
     if call.state == BrowserSessionState::Expired {
         return Err(invalid("Only the hub expires a recording."));
-    }
-    if call.state == BrowserSessionState::Recorded {
-        for entry in call.files.iter() {
-            let held = stored_bytes(hub, &call.session_id, entry.file);
-            if held != entry.bytes.get() as u64 {
-                return Err(invalid(format!(
-                    "The hub holds {held} bytes of {}'s {}, not {}.",
-                    call.session_id,
-                    entry.file.as_str(),
-                    entry.bytes
-                ))
-                .with_fix("upload the file again from offset 0"));
-            }
-        }
     }
     let started_ms = parse_ms(call.started_at.as_str())
         .ok_or_else(|| invalid("startedAt is not an ISO time."))?;
@@ -156,18 +130,59 @@ fn session(
         credentials_filled: call.credentials_filled,
         note: call.note,
     };
-    if next.state == BrowserSessionState::Lost {
-        // What arrived of a recording that can't be finished is no use to anyone.
-        let _ = std::fs::remove_dir_all(dir(hub, &next.session_id));
+    // Read, checked and written in one transaction, its files with it: the node's reports race (its end report and
+    // its upload's), and one that read the row before another made it final must not undo it.
+    let written = hub
+        .db
+        .transaction(|c| {
+            let now = get_on(c, &next.session_id)?;
+            if let Some(s) = now.filter(|s| {
+                matches!(
+                    s.state,
+                    BrowserSessionState::Recorded | BrowserSessionState::Expired
+                )
+            }) {
+                // Final: a late or repeated report changes nothing.
+                return Ok(Err(s.state));
+            }
+            if next.state == BrowserSessionState::Recorded {
+                for entry in next.files.iter() {
+                    let held = stored_bytes(hub, &next.session_id, entry.file);
+                    if held != entry.bytes.get() as u64 {
+                        return Ok(Ok(Some((entry.file, held, entry.bytes))));
+                    }
+                }
+            }
+            put_on(c, &next, started_ms)?;
+            if next.state == BrowserSessionState::Lost {
+                // What arrived of a recording that can't be finished is no use to anyone.
+                let _ = std::fs::remove_dir_all(dir(hub, &next.session_id));
+            }
+            Ok(Ok(None))
+        })
+        .map_err(failed)?;
+    match written {
+        Err(state) => {
+            return Ok(LeadCallResult::BrowserSession(BrowserSessionResult {
+                session_id: next.session_id,
+                state,
+            }));
+        }
+        Ok(Some((file, held, bytes))) => {
+            return Err(invalid(format!(
+                "The hub holds {held} bytes of {}'s {}, not {bytes}.",
+                next.session_id,
+                file.as_str(),
+            ))
+            .with_fix("upload the file again from offset 0"));
+        }
+        Ok(None) => {}
     }
     let changed = stored.as_ref().is_none_or(|s| {
         s.state != next.state
             || s.control != next.control
             || s.credentials_filled != next.credentials_filled
     });
-    hub.db
-        .transaction(|c| put_on(c, &next, started_ms))
-        .map_err(failed)?;
     hub.link
         .browser_live
         .control_reported(&next.session_id, next.control);
