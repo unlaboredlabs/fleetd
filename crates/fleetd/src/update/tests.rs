@@ -161,6 +161,8 @@ pub struct FakeRunner {
     /// comes up.
     pub comes_up: Mutex<Vec<Option<String>>>,
     pub restarts: Mutex<Vec<String>>,
+    /// The fake clock at each restart.
+    pub restarted_at: Mutex<Vec<i64>>,
     refuse_restart: bool,
     running: Mutex<Option<String>>,
     now: AtomicI64,
@@ -177,6 +179,7 @@ impl FakeRunner {
                     .collect(),
             ),
             restarts: Mutex::default(),
+            restarted_at: Mutex::default(),
             refuse_restart: false,
             running: Mutex::default(),
             now: AtomicI64::new(1_000_000),
@@ -195,6 +198,7 @@ impl FakeRunner {
 impl Ports for FakeRunner {
     fn restart(&self, service: &Service) -> Result<(), String> {
         self.restarts.lock().unwrap().push(service.name.clone());
+        self.restarted_at.lock().unwrap().push(self.now_ms());
         if self.refuse_restart {
             return Err(format!(
                 "restarting {} exited with exit status: 1",
@@ -245,6 +249,7 @@ fn plan(dir: &Path) -> Plan {
         },
         wait_secs: 90,
         verdict: dir.join("update/hub-verdict.json"),
+        answered: None,
     }
 }
 
@@ -286,6 +291,52 @@ async fn a_new_build_that_doesnt_come_up_healthy_is_put_back() {
         runner.now_ms() >= 1_000_000 + 90_000,
         "it waited the whole 90 s"
     );
+}
+
+/// A hub answered before its watcher started, so it restarts at once; a node only once it says its answer is on the
+/// link, or after [`super::finish::ANSWER_WAIT`] if it never does, and in neither case later.
+#[tokio::test]
+async fn a_hub_restarts_at_once_and_a_node_once_its_answer_is_out() {
+    let dir = tempfile::tempdir().unwrap();
+    let hub = plan(dir.path());
+    let runner = FakeRunner::new(&[Some(NEW)]);
+    assert_eq!(finish(&hub, &runner).await.state, UpdateState::Done);
+    assert_eq!(*runner.restarted_at.lock().unwrap(), [1_000_000]);
+
+    let answered = dir.path().join("update/node-answered");
+    let node = Plan {
+        answered: Some(answered.clone()),
+        ..plan(dir.path())
+    };
+    let runner = FakeRunner::new(&[Some(NEW)]);
+    assert_eq!(finish(&node, &runner).await.state, UpdateState::Done);
+    let at = runner.restarted_at.lock().unwrap()[0];
+    assert!(
+        (1_002_000..1_002_200).contains(&at),
+        "never answered: restarted after the cap, at {at}"
+    );
+
+    super::finish::mark_answered(&answered);
+    let runner = FakeRunner::new(&[Some(NEW)]);
+    assert_eq!(finish(&node, &runner).await.state, UpdateState::Done);
+    assert_eq!(*runner.restarted_at.lock().unwrap(), [1_000_000]);
+}
+
+/// A node's new build that doesn't come up is put back as a hub's is, its answer's wait making no difference.
+#[tokio::test]
+async fn a_nodes_new_build_that_doesnt_come_up_is_put_back() {
+    let dir = tempfile::tempdir().unwrap();
+    let answered = dir.path().join("update/node-answered");
+    let node = Plan {
+        answered: Some(answered.clone()),
+        ..plan(dir.path())
+    };
+    super::finish::mark_answered(&answered);
+    let runner = FakeRunner::new(&[None, Some(OLD)]);
+    let verdict = finish(&node, &runner).await;
+    assert_eq!(verdict.state, UpdateState::RolledBack);
+    assert_eq!(fs::read(&node.exe).unwrap(), b"old");
+    assert_eq!(runner.restarts.lock().unwrap().len(), 2);
 }
 
 /// The service manager refused: nothing restarted, so the old build still runs; only its binary goes back, and the

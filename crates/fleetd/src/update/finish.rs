@@ -15,9 +15,10 @@ use super::service::{self, Service};
 
 /// How long a restarted hub or node gets to come up healthy before the previous build goes back.
 pub const HEALTH_WAIT_SECS: u64 = 90;
-const POLL: Duration = Duration::from_secs(1);
-/// Before the restart: the service answers whoever asked for the update first (a node its hub, the hub its run).
-const SETTLE: Duration = Duration::from_secs(2);
+/// How often the watcher looks: at the restarted service's health, and for the answer it waits on.
+const POLL: Duration = Duration::from_millis(100);
+/// The longest the restart waits for [`Plan::answered`]: a node whose answer never goes out is restarted anyway.
+pub const ANSWER_WAIT: Duration = Duration::from_secs(2);
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -33,6 +34,10 @@ pub struct Plan {
     pub wait_secs: u64,
     /// Where the verdict goes.
     pub verdict: PathBuf,
+    /// A node's: the file it writes once its answer to the hub is on the link, which the restart waits for (at most
+    /// [`ANSWER_WAIT`]) so the restart doesn't cut it off. None (a hub's, which answered before it started): at once.
+    #[serde(default)]
+    pub answered: Option<PathBuf>,
 }
 
 /// How the watcher tells the restarted service came up on a version.
@@ -74,7 +79,12 @@ pub trait Ports: Sync {
 pub async fn finish(plan: &Plan, ports: &dyn Ports) -> Verdict {
     let to = crate::version_shown(&plan.to);
     let from = crate::version_shown(&plan.from);
-    ports.sleep(SETTLE).await;
+    if let Some(answered) = &plan.answered {
+        let deadline = ports.now_ms() + ms(ANSWER_WAIT);
+        while !answered.exists() && ports.now_ms() < deadline {
+            ports.sleep(POLL).await;
+        }
+    }
     let started = ports.now_ms();
     if let Err(e) = ports.restart(&plan.service) {
         // The service manager refused: nothing restarted and the service runs what it ran, so only the binary at the
@@ -126,6 +136,10 @@ pub async fn finish(plan: &Plan, ports: &dyn Ports) -> Verdict {
     }
 }
 
+fn ms(d: Duration) -> i64 {
+    i64::try_from(d.as_millis()).unwrap_or(i64::MAX)
+}
+
 async fn up(plan: &Plan, ports: &dyn Ports, version: &str, since_ms: i64) -> bool {
     let deadline = since_ms + i64::try_from(plan.wait_secs).unwrap_or(i64::MAX / 1000) * 1000;
     loop {
@@ -156,6 +170,14 @@ pub fn mark_up(node_home: &Path, version: &str) {
     }
 }
 
+/// Called by the node once its answer to the hub is on the link: its watcher restarts it now. A failure only costs the
+/// watcher's [`ANSWER_WAIT`], so it is logged.
+pub fn mark_answered(path: &Path) {
+    if let Err(e) = super::replace_file(path, b"") {
+        tracing::warn!("couldn't write {}: {e}", path.display());
+    }
+}
+
 pub fn read_verdict(path: &Path) -> Option<Verdict> {
     serde_json::from_slice(&fs::read(path).ok()?).ok()
 }
@@ -167,6 +189,9 @@ pub fn start(plan: &Plan, plan_path: &Path) -> Result<(), String> {
         fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
     let _ = fs::remove_file(&plan.verdict);
+    if let Some(answered) = &plan.answered {
+        let _ = fs::remove_file(answered);
+    }
     super::replace_file(plan_path, &json).map_err(|e| e.to_string())?;
     service::spawn_outside(&plan.prev, &["update-finish", &plan_path.to_string_lossy()])
 }

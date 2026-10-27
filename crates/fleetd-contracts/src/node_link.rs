@@ -117,6 +117,9 @@ pub const CAP_SESSION_DESKTOP: &str = "session_linux_desktop";
 /// the frame, so the hub asks only nodes that list it.
 pub const CAP_SELF_UPDATE: &str = "self_update";
 
+/// `update_fetch`: the node takes `node_action` `fetch`, and downloads the hub's next build while the hub updates.
+pub const CAP_UPDATE_FETCH: &str = "update_fetch";
+
 /// `session_host`: the node hosts sessions for agents on other machines (machine_roles.rs).
 pub const CAP_SESSION_HOST: &str = "session_host";
 
@@ -402,6 +405,10 @@ pub enum NodeActionKind {
     /// Install `update.version` of `update.channel`, checked against the release's SHA256SUMS, then restart the
     /// node's service; the previous binary comes back if the new one doesn't come up. Answered before the restart.
     Update,
+    /// Download `update.version` of `update.channel` and check it against the release's SHA256SUMS, for the `update`
+    /// that follows once the hub runs it; nothing is installed or restarted. Answered at once, before the download.
+    /// Only for a node that lists [`CAP_UPDATE_FETCH`].
+    Fetch,
 }
 
 /// Hub -> node: M11 doctor's probe, and the hub's update of its nodes.
@@ -410,7 +417,7 @@ pub enum NodeActionKind {
 pub struct NodeAction {
     pub id: NonEmpty,
     pub action: NodeActionKind,
-    /// `update` only.
+    /// `update` and `fetch` only.
     pub update: Option<NodeUpdate>,
 }
 

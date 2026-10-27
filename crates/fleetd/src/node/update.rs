@@ -3,6 +3,10 @@
 //! that restarts the node's service and puts the previous binary back if the new one doesn't come up. It answers before
 //! the restart; the hub sees the outcome in the version the node reconnects with, or, when the service manager refuses
 //! the restart, in a second answer the node still running sends ([`not_restarted`]).
+//!
+//! `node_action` `fetch` comes first, while the hub fetches its own build: the node downloads the build its hub is
+//! about to run and keeps it ([`fetch`]), so its update, once the hub runs it, needn't download it again. What it kept
+//! is checked against the release's SHA256SUMS again before it is installed.
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -59,6 +63,78 @@ impl Place {
     pub fn plan_path(&self) -> PathBuf {
         self.dir().join("node-plan.json")
     }
+
+    /// The build [`fetch`] kept for the update that follows.
+    fn fetched(&self) -> PathBuf {
+        self.dir().join("fleetd.next")
+    }
+}
+
+/// Held while a fetch downloads: the update waits for it rather than downloading the same build alongside.
+static FETCHING: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+/// The channel's newest build and its sums, read together; a newest build other than `to` is refused.
+async fn release_of(
+    to: &str,
+    feed: &dyn Feed,
+) -> Result<std::collections::HashMap<String, String>, Failure> {
+    let (release, sums) = tokio::join!(crate::update::release(feed), crate::update::sums(feed));
+    let newest = release?.cli_version;
+    if newest.as_deref() != Some(to) {
+        return Err(Failure::new(
+            UpdateStage::Download,
+            format!(
+                "the channel's newest build is now {}, not the hub's {}: update again",
+                newest
+                    .as_deref()
+                    .map_or_else(|| "none".to_owned(), crate::version_label),
+                crate::version_label(to)
+            ),
+        ));
+    }
+    sums
+}
+
+/// The file at `path` when it is the build the sums name for `asset`.
+fn matching(
+    path: &Path,
+    sums: &std::collections::HashMap<String, String>,
+    asset: &str,
+) -> Option<Vec<u8>> {
+    fs::read(path)
+        .ok()
+        .filter(|b| sums.get(asset) == Some(&crate::update::sha256_hex(b)))
+}
+
+/// Downloads `update.version` ahead of the update, checked against the release's SHA256SUMS, and keeps it beside the
+/// node's binary. Installs nothing and restarts nothing; the update that follows uses it.
+pub async fn fetch(update: &NodeUpdate, place: &Place, feed: &dyn Feed) -> Result<(), Failure> {
+    let _fetching = FETCHING.lock().await;
+    let to = update.version.as_str();
+    // Nothing the update that follows could install; or this binary is the hub's too, which the hub, downloading it
+    // now, puts in place itself.
+    if to == place.running
+        || !place.release_build
+        || !place.services.iter().any(|s| !s.hub())
+        || place.services.iter().any(Service::hub)
+    {
+        return Ok(());
+    }
+    let sums = release_of(to, feed).await?;
+    if matching(&place.exe, &sums, &place.asset).is_some()
+        || matching(&place.fetched(), &sums, &place.asset).is_some()
+    {
+        return Ok(());
+    }
+    let bytes = crate::update::checked(feed, &sums, &place.asset).await?;
+    fs::create_dir_all(place.dir())
+        .and_then(|()| crate::update::replace_file(&place.fetched(), &bytes))
+        .map_err(|e| {
+            Failure::new(
+                UpdateStage::Install,
+                format!("couldn't keep the downloaded build: {e}"),
+            )
+        })
 }
 
 /// Puts `update.version` in place, checked, keeping `previous` (the running binary) for a rollback.
@@ -85,24 +161,11 @@ pub async fn stage(
             "this node runs a local build of fleetd: install a release with curl -fsSL https://fleetd.sh | sh",
         ));
     }
-    let newest = crate::update::release(feed).await?.cli_version;
-    if newest.as_deref() != Some(to) {
-        return Err(Failure::new(
-            UpdateStage::Download,
-            format!(
-                "the channel's newest build is now {}, not the hub's {}: update again",
-                newest
-                    .as_deref()
-                    .map_or_else(|| "none".to_owned(), crate::version_label),
-                crate::version_label(to)
-            ),
-        ));
-    }
-    let sums = crate::update::sums(feed).await?;
+    // A fetch still downloading this build finishes first.
+    let _fetching = FETCHING.lock().await;
+    let sums = release_of(to, feed).await?;
     // On the hub's machine the hub's update already put this build at the shared path.
-    let in_place = fs::read(&place.exe)
-        .ok()
-        .is_some_and(|b| sums.get(&place.asset) == Some(&crate::update::sha256_hex(&b)));
+    let in_place = matching(&place.exe, &sums, &place.asset).is_some();
     let prev = place.dir().join("fleetd.prev");
     let previous = previous().map_err(|e| {
         Failure::new(
@@ -122,9 +185,13 @@ pub async fn stage(
                 )
             })?;
     } else {
-        let bytes = crate::update::checked(feed, &sums, &place.asset).await?;
+        let bytes = match matching(&place.fetched(), &sums, &place.asset) {
+            Some(fetched) => fetched,
+            None => crate::update::checked(feed, &sums, &place.asset).await?,
+        };
         crate::update::swap(&place.exe, &bytes, &previous, &prev)?;
     }
+    let _ = fs::remove_file(place.fetched());
     Ok(Staged::Restarting(Box::new(Plan {
         exe: place.exe.clone(),
         prev,
@@ -136,19 +203,27 @@ pub async fn stage(
         },
         wait_secs: HEALTH_WAIT_SECS,
         verdict: place.dir().join("node-verdict.json"),
+        answered: Some(place.dir().join("node-answered")),
     })))
 }
 
-/// What the node answers the hub, and the watcher's verdict file when it started one.
+/// What the node answers the hub, and the watcher it started.
 #[derive(Debug, PartialEq)]
 pub struct Answer {
     pub message: String,
-    pub verdict: Option<PathBuf>,
+    pub watch: Option<Watch>,
 }
 
-/// The node action: stage the update, then start the watcher that restarts this node.
-pub async fn run(update: &NodeUpdate, home: &Path) -> Result<Answer, Failure> {
-    let place = Place::here(home)?;
+/// The files the node and the watcher of its restart share.
+#[derive(Debug, PartialEq)]
+pub struct Watch {
+    /// The node writes it once its answer is on the link ([`finish::mark_answered`]); the restart waits for it.
+    pub answered: PathBuf,
+    /// The watcher's verdict.
+    pub verdict: PathBuf,
+}
+
+fn feed(update: &NodeUpdate) -> Result<crate::update::HttpFeed, Failure> {
     let channel = match update.channel {
         HubChannel::Nightly => Channel::Nightly,
         HubChannel::Stable => Channel::Stable,
@@ -159,11 +234,31 @@ pub async fn run(update: &NodeUpdate, home: &Path) -> Result<Answer, Failure> {
             ));
         }
     };
-    let feed = crate::update::HttpFeed::new(channel.base_url());
+    Ok(crate::update::HttpFeed::new(channel.base_url()))
+}
+
+/// The `fetch` node action, after the node answered it: a failure only means the update downloads the build itself.
+pub async fn run_fetch(update: &NodeUpdate, home: &Path) {
+    let fetched = match (Place::here(home), feed(update)) {
+        (Ok(place), Ok(feed)) => fetch(update, &place, &feed).await,
+        (Err(f), _) | (_, Err(f)) => Err(f),
+    };
+    if let Err(f) = fetched {
+        tracing::warn!(
+            "update: fetching {} ahead failed: {f}",
+            update.version.as_str()
+        );
+    }
+}
+
+/// The node action: stage the update, then start the watcher that restarts this node.
+pub async fn run(update: &NodeUpdate, home: &Path) -> Result<Answer, Failure> {
+    let place = Place::here(home)?;
+    let feed = feed(update)?;
     match stage(update, &place, &feed, crate::update::running_binary).await? {
         Staged::Current => Ok(Answer {
             message: format!("already runs {}", crate::version_label(&update.version)),
-            verdict: None,
+            watch: None,
         }),
         Staged::Restarting(plan) => {
             if let Err(e) = finish::start(&plan, &place.plan_path()) {
@@ -175,9 +270,15 @@ pub async fn run(update: &NodeUpdate, home: &Path) -> Result<Answer, Failure> {
                     ),
                 ));
             }
+            let Plan {
+                to,
+                answered,
+                verdict,
+                ..
+            } = *plan;
             Ok(Answer {
-                message: format!("restarting on {}", crate::version_label(&plan.to)),
-                verdict: Some(plan.verdict),
+                message: format!("restarting on {}", crate::version_label(&to)),
+                watch: answered.map(|answered| Watch { answered, verdict }),
             })
         }
     }
@@ -314,6 +415,83 @@ mod tests {
         };
         assert_eq!(fs::read(&place.exe).unwrap(), b"new");
         assert_eq!(fs::read(&plan.prev).unwrap(), b"old");
+    }
+
+    /// The build fetched while the hub updated is what the update installs, with nothing downloaded again.
+    #[tokio::test]
+    async fn a_fetched_build_is_installed_without_downloading_it_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let place = place(dir.path());
+        fetch(&to(NEW), &place, &feed(b"new")).await.unwrap();
+        assert_eq!(fs::read(place.fetched()).unwrap(), b"new");
+        assert_eq!(fs::read(&place.exe).unwrap(), b"old", "nothing installed");
+
+        let offline = feed(b"new");
+        offline.files.lock().unwrap().remove("fleetd-linux-x64");
+        let Staged::Restarting(plan) = stage(&to(NEW), &place, &offline, || Ok(b"old".to_vec()))
+            .await
+            .unwrap()
+        else {
+            panic!("not staged");
+        };
+        assert_eq!(fs::read(&place.exe).unwrap(), b"new");
+        assert_eq!(fs::read(&plan.prev).unwrap(), b"old");
+        assert!(!place.fetched().exists(), "used up");
+    }
+
+    /// What was kept is checked against the sums again: one that doesn't match is never installed.
+    #[tokio::test]
+    async fn a_kept_build_that_doesnt_match_the_sums_is_not_installed() {
+        let dir = tempfile::tempdir().unwrap();
+        let place = place(dir.path());
+        fs::create_dir_all(place.dir()).unwrap();
+        fs::write(place.fetched(), b"evil").unwrap();
+        let offline = feed(b"new");
+        offline.files.lock().unwrap().remove("fleetd-linux-x64");
+        let failed = stage(&to(NEW), &place, &offline, || Ok(b"old".to_vec()))
+            .await
+            .unwrap_err();
+        assert_eq!(failed.stage, UpdateStage::Download);
+        assert_eq!(fs::read(&place.exe).unwrap(), b"old");
+
+        stage(&to(NEW), &place, &feed(b"new"), || Ok(b"old".to_vec()))
+            .await
+            .unwrap();
+        assert_eq!(fs::read(&place.exe).unwrap(), b"new", "downloaded instead");
+    }
+
+    /// A fetch keeps nothing it needn't: not for a node that runs the build, has it in place, shares its binary with
+    /// the hub (which is downloading it too), or can't install it.
+    #[tokio::test]
+    async fn a_fetch_downloads_only_what_the_update_will_install() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut place = place(dir.path());
+        fetch(&to(OLD), &place, &feed(b"new")).await.unwrap();
+        fs::write(&place.exe, b"new").unwrap();
+        fetch(&to(NEW), &place, &feed(b"new")).await.unwrap();
+        fs::write(&place.exe, b"old").unwrap();
+        place.services.insert(
+            0,
+            Service {
+                name: "fleetd-hub.service".into(),
+                unit: "hub".into(),
+            },
+        );
+        fetch(&to(NEW), &place, &feed(b"new")).await.unwrap();
+        place.services.clear();
+        fetch(&to(NEW), &place, &feed(b"new")).await.unwrap();
+        assert!(!place.fetched().exists());
+
+        let tampered = feed(b"new");
+        tampered
+            .files
+            .lock()
+            .unwrap()
+            .insert("fleetd-linux-x64".into(), b"evil".to_vec());
+        let place = self::place(&dir.path().join("other"));
+        let failed = fetch(&to(NEW), &place, &tampered).await.unwrap_err();
+        assert_eq!(failed.stage, UpdateStage::Checksum);
+        assert!(!place.fetched().exists());
     }
 
     #[tokio::test]

@@ -32,10 +32,10 @@ const deps = (start: Answer, statuses: Answer[], app: AppUpdate | AppUpdate[]) =
   const d = {
     call,
     retry: vi.fn(),
-    sleep: () => {
+    sleep: vi.fn((_ms: number) => {
       if (apps.length > 1) apps.shift();
       return Promise.resolve();
-    },
+    }),
     app: { state, check: vi.fn(), install: vi.fn() },
   } satisfies FlowDeps;
   return { d, calls };
@@ -57,6 +57,8 @@ describe("the Update button's run", () => {
     expect(d.retry).toHaveBeenCalledTimes(2);
     expect(d.app.install).toHaveBeenCalledOnce();
     expect(currentFlow()).toEqual({ phase: "app" });
+    // Read every half second: a part that settled shows within one, and the hub back from its restart is dialled again.
+    expect(d.sleep.mock.calls.map(([ms]) => ms)).toEqual([500, 500, 500, 500]);
   });
 
   it("leaves this app alone when the hub didn't update, and ends", async () => {

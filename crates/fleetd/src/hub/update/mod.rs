@@ -2,13 +2,15 @@
 //! same, with the CLI's own pieces (`crate::update`). It never waits for work to finish: a restart cuts off what runs,
 //! and that carries on by itself afterwards (`crate::update`'s doc says how).
 //!
-//! The hub downloads the build and checks it against the release's SHA256SUMS (a failure changes nothing), keeps the
-//! running binary, puts the new one in place and starts the watcher (`update::finish`) from the kept binary, outside
+//! The hub downloads the build and checks it against the release's SHA256SUMS (a failure changes nothing), while
+//! every online node that can downloads it too (`node_action` `fetch`, nothing installed), then keeps the running
+//! binary, puts the new one in place and starts the watcher (`update::finish`) from the kept binary, outside
 //! its own service. The watcher restarts the hub, waits for `/healthz` to answer on the new build, and puts the kept
 //! binary back if it doesn't. The run lives in `<hub home>/update/run.json`, so the hub that comes up, new or put
-//! back, takes it from there: it reads the watcher's verdict, then updates the nodes, each with `node_action`
-//! `update`, and learns how each came back from the version it reconnects with, or that it never restarted from the
-//! second answer a node sends when its service manager refused the restart.
+//! back, takes it from there: it reads the watcher's verdict, then updates the nodes, all at once, each with
+//! `node_action` `update`, and learns how each came back from the version it reconnects with (it wakes on each link
+//! that goes live or drops), or that it never restarted from the second answer a node sends when its service manager
+//! refused the restart.
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -44,6 +46,8 @@ pub struct NodeFacts {
     pub live_since: Option<i64>,
     /// Its node lists `self_update`.
     pub can_update: bool,
+    /// Its node lists `update_fetch`.
+    pub can_fetch: bool,
 }
 
 /// What the update does to the hub's machine and its nodes; tests stand in fakes.
@@ -64,6 +68,11 @@ pub trait UpdatePorts: Send + Sync {
     fn health_url(&self) -> String;
     fn start_watcher(&self, plan: &Plan, plan_path: &Path) -> Result<(), String>;
     fn nodes(&self) -> Vec<NodeFacts>;
+    /// Asks the node to download `update` ahead of its update, without waiting for its answer.
+    fn fetch_on_node(&self, machine_id: &MachineId, update: &NodeUpdate);
+    /// Resolves once the machine's link goes live or drops after this call. Made before the facts it follows are
+    /// read, so a change between the two isn't missed.
+    fn node_changed(&self, machine_id: &MachineId) -> BoxFuture<'static, ()>;
     /// The node's answer, and the wait for its second, sent only when its restart was refused.
     fn update_node<'a>(
         &'a self,
@@ -83,7 +92,10 @@ pub trait Refusal: Send {
 /// How long the update waits on things, and how often it looks; tests shorten them.
 #[derive(Clone, Copy, Debug)]
 pub struct Timing {
+    /// For the files the watcher writes.
     pub poll: Duration,
+    /// For a node, between the changes of its link it wakes on: for its second answer, and in case a change was missed.
+    pub node_poll: Duration,
     /// For the watcher's verdict once the hub is back.
     pub verdict: Duration,
     /// For a node to reconnect after its update, or after the hub's own restart.
@@ -95,10 +107,11 @@ pub struct Timing {
 impl Default for Timing {
     fn default() -> Self {
         Self {
-            poll: Duration::from_secs(2),
+            poll: Duration::from_millis(100),
+            node_poll: Duration::from_secs(1),
             verdict: Duration::from_secs(HEALTH_WAIT_SECS * 2),
             node_back: Duration::from_secs(HEALTH_WAIT_SECS * 3),
-            // The watcher's settle, the new build's 90 s, and the previous build's 90 s once put back.
+            // The new build's 90 s and the previous build's 90 s once put back, with room to spare.
             restart: Duration::from_secs(HEALTH_WAIT_SECS * 3),
         }
     }
@@ -205,23 +218,25 @@ impl Updates {
             finished_at: None,
             parts: List::new(parts).expect("at most UPDATE_PARTS_MAX parts"),
         };
+        self.save(&run);
         *held = Some(run.clone());
         drop(held);
-        self.save();
         let this = Arc::clone(self);
         tokio::spawn(async move { this.drive_hub(ports).await });
         Ok(run)
     }
 
-    /// Changes the run and writes it down.
+    /// Changes the run and writes it down, under the lock: nodes update at once, and two writes of `run.json` at the
+    /// same time would share its temporary file.
     fn change(&self, f: impl FnOnce(&mut UpdateRun)) {
-        if let Some(run) = self.run.lock().unwrap().as_mut() {
+        let mut held = self.run.lock().unwrap();
+        if let Some(run) = held.as_mut() {
             f(run);
             if run.finished_at.is_none() && run.parts.iter().all(|p| p.state.settled()) {
                 run.finished_at = Some(Timestamp::from(self.now()));
             }
+            self.save(run);
         }
-        self.save();
     }
 
     fn set_part(
@@ -261,12 +276,11 @@ impl Updates {
         });
     }
 
-    fn save(&self) {
-        let Some(run) = self.status() else { return };
+    fn save(&self, run: &UpdateRun) {
         let wrote = fs::create_dir_all(&self.dir).and_then(|()| {
             crate::update::replace_file(
                 &self.dir.join("run.json"),
-                &serde_json::to_vec_pretty(&run).unwrap_or_default(),
+                &serde_json::to_vec_pretty(run).unwrap_or_default(),
             )
         });
         if let Err(e) = wrote {
@@ -428,6 +442,7 @@ impl Updates {
         let asset = ports
             .asset()
             .map_err(|e| Failure::new(UpdateStage::Download, e))?;
+        self.fetch_ahead(ports, &to);
         let bytes = crate::update::verified(&*feed, &asset).await?;
         let previous = ports.previous().map_err(|e| {
             Failure::new(
@@ -450,7 +465,33 @@ impl Updates {
             },
             wait_secs: HEALTH_WAIT_SECS,
             verdict: self.dir.join("hub-verdict.json"),
+            answered: None,
         }))
+    }
+
+    /// Every node the run waits for, online, that can fetch and doesn't run `to` downloads it now, alongside the hub, so
+    /// its own update needn't once the hub runs it.
+    fn fetch_ahead(&self, ports: &dyn UpdatePorts, to: &str) {
+        let Some(run) = self.status() else { return };
+        let waiting: Vec<&MachineId> = run
+            .parts
+            .iter()
+            .filter(|p| p.part == UpdatePartKind::Node && p.state == UpdateState::Waiting)
+            .filter_map(|p| p.machine_id.as_ref())
+            .collect();
+        let update = NodeUpdate {
+            version: text(to),
+            channel: run.channel,
+        };
+        for node in ports.nodes() {
+            if waiting.contains(&&node.machine_id)
+                && node.live_since.is_some()
+                && node.can_fetch
+                && node.version != to
+            {
+                ports.fetch_on_node(&node.machine_id, &update);
+            }
+        }
     }
 
     /// At the hub's start: takes an unfinished update from where the previous process left it. Runs until it ends.
@@ -583,6 +624,7 @@ impl Updates {
         };
         let to = update.version.as_str();
         let label = crate::version_label(to);
+        let mut changed = ports.node_changed(machine_id);
         let Some(node) = facts(ports) else {
             return self.set_part(
                 Some(machine_id),
@@ -607,7 +649,8 @@ impl Updates {
             if now_ms(self.clock.as_ref()) >= deadline {
                 return self.set_part(Some(machine_id), UpdateState::Skipped, None, OFFLINE);
             }
-            self.clock.sleep(self.timing.poll).await;
+            self.node_wait(changed).await;
+            changed = ports.node_changed(machine_id);
             match facts(ports) {
                 Some(n) => node = n,
                 None => {
@@ -674,6 +717,7 @@ impl Updates {
         );
         let deadline = asked + ms(self.timing.node_back);
         loop {
+            let changed = ports.node_changed(machine_id);
             match facts(ports) {
                 Some(n) if n.live_since.is_some_and(|at| at > asked) && n.version == to => {
                     return self.set_part(
@@ -716,7 +760,15 @@ impl Updates {
                     ),
                 );
             }
-            self.clock.sleep(self.timing.poll).await;
+            self.node_wait(changed).await;
+        }
+    }
+
+    /// Until the node's link changes, or [`Timing::node_poll`] at the most.
+    async fn node_wait(&self, changed: BoxFuture<'static, ()>) {
+        tokio::select! {
+            () = changed => {}
+            () = self.clock.sleep(self.timing.node_poll) => {}
         }
     }
 }

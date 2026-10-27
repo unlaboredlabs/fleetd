@@ -176,9 +176,15 @@ pub async fn sums(feed: &dyn Feed) -> Result<HashMap<String, String>, Failure> {
     Ok(parse_sums(&String::from_utf8_lossy(&sums)))
 }
 
-/// A checked download: the release's SHA256SUMS line for `name`, and the asset's bytes that match it.
+/// A checked download: the release's SHA256SUMS line for `name`, and the asset's bytes that match it. Both are
+/// downloaded at once; nothing is kept unless they match.
 pub async fn verified(feed: &dyn Feed, name: &str) -> Result<Vec<u8>, Failure> {
-    checked(feed, &sums(feed).await?, name).await
+    let (sums, bytes) = tokio::join!(sums(feed), download(feed, name));
+    let sums = sums?;
+    if !sums.contains_key(name) {
+        return Err(not_in_release(name));
+    }
+    match_sums(&sums, name, bytes?)
 }
 
 /// [`verified`] against sums already read.
@@ -187,18 +193,35 @@ pub async fn checked(
     sums: &HashMap<String, String>,
     name: &str,
 ) -> Result<Vec<u8>, Failure> {
-    let expected = sums.get(name).ok_or_else(|| {
-        Failure::new(
-            UpdateStage::Download,
-            format!("`{name}` is not in the release"),
-        )
-    })?;
-    let bytes = feed.get(name).await.map_err(|e| {
+    if !sums.contains_key(name) {
+        return Err(not_in_release(name));
+    }
+    match_sums(sums, name, download(feed, name).await?)
+}
+
+fn not_in_release(name: &str) -> Failure {
+    Failure::new(
+        UpdateStage::Download,
+        format!("`{name}` is not in the release"),
+    )
+}
+
+async fn download(feed: &dyn Feed, name: &str) -> Result<Vec<u8>, Failure> {
+    feed.get(name).await.map_err(|e| {
         Failure::new(
             UpdateStage::Download,
             format!("couldn't download `{name}`: {e}"),
         )
-    })?;
+    })
+}
+
+/// `bytes` when they are what the sums name for `name`.
+fn match_sums(
+    sums: &HashMap<String, String>,
+    name: &str,
+    bytes: Vec<u8>,
+) -> Result<Vec<u8>, Failure> {
+    let expected = sums.get(name).ok_or_else(|| not_in_release(name))?;
     let actual = sha256_hex(&bytes);
     if &actual != expected {
         return Err(Failure::new(

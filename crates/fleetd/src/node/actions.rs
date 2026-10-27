@@ -49,11 +49,12 @@ pub async fn probe_host() -> NodeProbe {
 }
 
 /// `home` is the node's home: an update keeps its previous binary and the watcher's plan there. With the answer, the
-/// watcher's verdict file when an update started one.
+/// files shared with the watcher when an update started one. A fetch is answered at once and downloads on its own
+/// task, not the link's, so the hub's restart doesn't cut it off.
 pub async fn run_node_action(
     frame: NodeAction,
     home: &std::path::Path,
-) -> (NodeActionResult, Option<std::path::PathBuf>) {
+) -> (NodeActionResult, Option<super::update::Watch>) {
     match frame.action {
         NodeActionKind::Probe => (
             NodeActionResult {
@@ -65,6 +66,32 @@ pub async fn run_node_action(
             },
             None,
         ),
+        NodeActionKind::Fetch => match frame.update {
+            Some(update) => {
+                let home = home.to_owned();
+                tokio::spawn(async move { super::update::run_fetch(&update, &home).await });
+                (
+                    NodeActionResult {
+                        id: frame.id,
+                        ok: true,
+                        stage: None,
+                        message: head_text("fetching"),
+                        probe: None,
+                    },
+                    None,
+                )
+            }
+            None => (
+                failed(
+                    frame.id,
+                    &crate::update::Failure::new(
+                        fleetd_contracts::mcp::UpdateStage::Download,
+                        "the hub named no build to fetch",
+                    ),
+                ),
+                None,
+            ),
+        },
         NodeActionKind::Update => {
             let done = match &frame.update {
                 Some(update) => super::update::run(update, home).await,
@@ -82,7 +109,7 @@ pub async fn run_node_action(
                         message: head_text(&answer.message),
                         probe: None,
                     },
-                    answer.verdict,
+                    answer.watch,
                 ),
                 Err(f) => (failed(frame.id, &f), None),
             }
