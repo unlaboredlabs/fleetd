@@ -58,7 +58,12 @@ impl TaskRecords {
                 number_of(&t.task_id)
             ])?;
         }
-        db.prepare_cached("UPDATE tasks SET state = ?, thread_id = ?, ended_at = ?, pending_message = ?, data = ? WHERE n = ?")?.execute(params![
+        // A task that runs again may have its worktree back: the sweep looks at it afresh once it ends again.
+        db.prepare_cached(
+            "UPDATE tasks SET state = ?1, thread_id = ?2, ended_at = ?3, pending_message = ?4, data = ?5,
+               worktree = CASE WHEN ?1 IN ('done', 'failed', 'cancelled') THEN worktree END WHERE n = ?6",
+        )?
+        .execute(params![
             state_str(t.state),
             t.thread_ref.as_ref().map(|r| r.thread_id.as_str().to_owned()),
             t.ended_at.as_ref().map(|e| e.as_str().to_owned()),
@@ -211,6 +216,31 @@ impl TaskRecords {
         )?
         .query_map([], stored_of)?
         .collect()
+    }
+
+    /// Ended tasks with a thread that ended before `before` (an ISO time) and whose worktree the sweep hasn't seen
+    /// removed, oldest first; with whether the person was already told it is kept.
+    pub fn unswept(db: &Connection, before: &str) -> rusqlite::Result<Vec<(Task, bool)>> {
+        db.prepare_cached(
+            "SELECT data, worktree FROM tasks WHERE state IN ('done', 'failed', 'cancelled') AND thread_id IS NOT NULL
+               AND ended_at < ?1 AND (worktree IS NULL OR worktree = 'flagged') ORDER BY n",
+        )?
+        .query_map([before], |row| {
+            Ok((
+                decode(&row.get::<_, String>(0)?)?,
+                row.get::<_, Option<String>>(1)?.is_some(),
+            ))
+        })?
+        .collect()
+    }
+
+    /// What the sweep found of an ended task's worktree: `removed` or `flagged`. A task running again keeps NULL.
+    pub fn set_worktree(db: &Connection, task_id: &TaskId, seen: &str) -> rusqlite::Result<()> {
+        db.prepare_cached(
+            "UPDATE tasks SET worktree = ? WHERE n = ? AND state IN ('done', 'failed', 'cancelled')",
+        )?
+        .execute(params![seen, number_of(task_id)])?;
+        Ok(())
     }
 
     /// The running tasks on a machine, oldest first.

@@ -165,7 +165,8 @@ static TOOLS: &[Tool] = &[
     lead(
         "close",
         "close",
-        "The workstream is done: say why in one line. It stops nothing; stop any agent of it you no longer need.",
+        "The workstream is done: say why in one line. Its agents still queued, running or waiting are stopped; the merge \
+         train's reviewers are left to the train.",
         inline_schema::<CloseCall>,
     ),
     lead(

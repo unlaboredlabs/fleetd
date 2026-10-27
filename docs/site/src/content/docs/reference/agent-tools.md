@@ -283,7 +283,7 @@ Log a decision: one you made yourself, or the human's answer to a question you a
 
 ### close
 
-The workstream is done: say why in one line. It stops nothing; stop any agent of it you no longer need.
+The workstream is done: say why in one line. Its agents still queued, running or waiting are stopped; the merge train's reviewers are left to the train.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|

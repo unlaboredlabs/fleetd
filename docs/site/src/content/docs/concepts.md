@@ -131,9 +131,11 @@ until it has some.
 
 ### Done {#done}
 
-The lead closes work with `close` and one line on why. The reason is recorded, and closing stops nothing: an agent
-still running keeps going until the lead stops it, and the status shows it. What counts as shipped is decided
-elsewhere: only the merge train merges, after green CI and review.
+The lead closes work with `close` and one line on why. The reason is recorded, and the order's agents still queued,
+running or waiting for an answer are stopped, so none goes on, or starts later, for work that is over. The merge
+train's reviewers are left to the train. An agent whose machine is offline can't be stopped yet: the lead hears which,
+and stops it later. What counts as shipped is decided elsewhere: only the merge train merges, after green CI and
+review.
 
 ## What agents can call
 

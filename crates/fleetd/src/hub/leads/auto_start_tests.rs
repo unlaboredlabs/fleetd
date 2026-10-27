@@ -667,6 +667,13 @@ impl crate::hub::leads::hooks::TasksHook for IdleTasks {
     ) -> BoxFuture<()> {
         Box::pin(async {})
     }
+    fn leftovers(
+        &self,
+        _: &ProjectRef,
+        _: &fleetd_contracts::ledger::WorkstreamId,
+    ) -> Vec<fleetd_contracts::tasks::TaskId> {
+        Vec::new()
+    }
 }
 
 /// The idle line counts as shown only once it reached the lead: a launch or a wake that failed leaves it for the

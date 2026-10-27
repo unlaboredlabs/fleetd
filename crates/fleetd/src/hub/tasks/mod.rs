@@ -36,6 +36,9 @@ pub mod sweep;
 mod sweep_tests;
 pub mod tools;
 pub mod wire;
+pub mod worktrees;
+#[cfg(test)]
+mod worktrees_tests;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -1040,6 +1043,13 @@ impl Tasks {
             // A recovering task waits out its delay; its timer runs the queue then. One its machine's breaker holds
             // waits for that to close.
             if recovery::waiting(stored.task.recovery.as_ref(), now) || self.held(&stored.task) {
+                continue;
+            }
+            // One whose order closed or stopped meanwhile takes no slot: the close cancels it.
+            if self
+                .workstream(&stored.task.workstream_id)
+                .is_some_and(|w| w.state != fleetd_contracts::ledger::WorkstreamState::Open)
+            {
                 continue;
             }
             // Its work may have ended while it waited: then it isn't resumed, and ends with its run's plain result.
@@ -2923,6 +2933,25 @@ impl Tasks {
             }
         }
         out
+    }
+
+    /// The workstream's live (queued, running, idle) tasks in the project, oldest first.
+    pub fn live_in(&self, project_ref: &ProjectRef, workstream_id: &WorkstreamId) -> Vec<TaskId> {
+        let filter = TaskFilter {
+            project_ref: Some(project_ref.clone()),
+            state: None,
+            workstream_id: Some(workstream_id.clone()),
+            limit: SCAN_LIMIT,
+        };
+        let mut live: Vec<TaskId> = self
+            .list(&filter)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|t| LIVE_TASKS.contains(&t.state))
+            .map(|t| t.task_id)
+            .collect();
+        live.reverse();
+        live
     }
 
     /// `Tasks.cancel({projectRef, by: "hub"}, taskId, reason)` for a removed project, errors ignored.

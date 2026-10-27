@@ -249,6 +249,7 @@ async fn a_trigger_while_a_run_is_open_is_skipped_and_recorded() {
     h.area
         .workstreams
         .close(&h.project, &w, "deps are current", "lead:lab-a/p-a")
+        .await
         .unwrap();
     let third = autos
         .run(id, Start::Manual { by: "human".into() })
@@ -914,6 +915,7 @@ async fn a_run_a_stop_left_without_its_order_opens_it_at_start_and_never_blocks_
     h.area
         .workstreams
         .close(&h.project, &w, "fixed", "lead:lab-a/p-a")
+        .await
         .unwrap();
     let next = autos
         .run(

@@ -895,4 +895,9 @@ pub(crate) const MIGRATIONS: &[&str] = &[
   CREATE INDEX repos_by_checkout ON repos (checkout_machine_id, checkout_project_id);
   CREATE INDEX repos_by_key ON repos (repo_key);
   "#,
+    // The nightly worktree sweep (W87): what it knows of an ended task's worktree. NULL: maybe still on its machine;
+    // 'removed'; 'flagged': kept for work only there, and the person told. A task that runs again goes back to NULL.
+    r#"
+  ALTER TABLE tasks ADD COLUMN worktree TEXT;
+  "#,
 ];

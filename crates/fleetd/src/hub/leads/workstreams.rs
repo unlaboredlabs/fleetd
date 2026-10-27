@@ -234,10 +234,11 @@ impl Workstreams {
         Ok(result(w.state, format!("Brief edited. {running}")))
     }
 
-    /// `close` from the lead of `caller`: the workstream is done, with why. It stops nothing; what still runs keeps
-    /// running, and the status shows it. Refused while any of its PRs is still in the train: done would lie, and a
-    /// closed workstream's PRs can't get a reviewer.
-    pub fn close(
+    /// `close` from the lead of `caller`: the workstream is done, with why, and its agents still queued, running or
+    /// idle are stopped, so none goes on, or starts later, for an order that is over. The merge train's reviewers are
+    /// the train's to end. Refused while any of its PRs is still in the train: done would lie, and a closed
+    /// workstream's PRs can't get a reviewer.
+    pub async fn close(
         &self,
         caller: &ProjectRef,
         workstream_id: &WorkstreamId,
@@ -277,14 +278,48 @@ impl Workstreams {
             format!("{id} is done: {why}"),
             Some(serde_json::json!({ "workstreamId": id, "reason": why, "by": by })),
         )?;
+        let (stopped, running) = self.stop_leftovers(caller, id, why).await;
+        let mut next = "Closed.".to_owned();
+        if !stopped.is_empty() {
+            next.push_str(&format!(
+                " Stopped its agents still at it: {}.",
+                stopped.join(", ")
+            ));
+        }
+        if !running.is_empty() {
+            next.push_str(&format!(
+                " {} could not be stopped yet: call stop_agent on each shortly.",
+                running.join(", ")
+            ));
+        }
         Ok(CloseResult {
             workstream_id: id.clone(),
             state: WorkstreamState::Done,
-            next: Some(
-                "Closed. Nothing was stopped: stop any agent of it you no longer need with stop_agent, and tell the \
-                 human in a line."
-                    .into(),
-            ),
+            next: Some(next),
         })
+    }
+
+    /// Cancels the closed workstream's leftover agents (`TasksHook::leftovers`): those it stopped, and those still
+    /// live after (their machine didn't answer).
+    async fn stop_leftovers(
+        &self,
+        r: &ProjectRef,
+        id: &WorkstreamId,
+        why: &str,
+    ) -> (Vec<String>, Vec<String>) {
+        let Some(tasks) = self.ctx.hooks.tasks.get() else {
+            return Default::default();
+        };
+        let leftovers = tasks.leftovers(r, id);
+        let reason = format!("Cancelled: {id} was closed ({why}).");
+        for task_id in &leftovers {
+            tasks.cancel(r, task_id, &reason).await;
+        }
+        let running = tasks.leftovers(r, id);
+        let (running, stopped): (Vec<_>, Vec<_>) = leftovers
+            .into_iter()
+            .map(|t| t.as_str().to_owned())
+            .partition(|t| running.iter().any(|r| r.as_str() == t));
+        (stopped, running)
     }
 }
