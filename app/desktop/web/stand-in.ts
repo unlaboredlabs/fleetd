@@ -104,6 +104,11 @@ const fleetdApi = (file: File): FleetdApi => {
       setup: () => Promise.resolve({ ok: false, message: "Run this in a terminal:", command: "fleetd init" }),
     },
     system: { hostName: () => Promise.resolve("devbox") },
+    machines: {
+      joinHere: (machineId) => Promise.resolve({ machineId, state: "failed", steps: [], message: notHere.message }),
+      joinHereState: () => Promise.resolve(null),
+      onJoinHere: () => () => undefined,
+    },
     projects: { pickFolder: () => Promise.resolve(null), readDrop: () => Promise.resolve({ kind: "other" }) },
     updates: { state: () => Promise.resolve(updates), subscribe: () => () => undefined, check: done, install: done, keep: done },
     app: {

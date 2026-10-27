@@ -1,0 +1,387 @@
+// Add machine (W105): an owner or admin makes a computer one of the hub's machines, without a terminal. Three ways:
+//   - This computer: one click. On the hub's own machine the hub adds it (machine_add local); on any other, main
+//     downloads the right fleetd, checks it, and joins with a one-time code (src/main/joinHere.ts).
+//   - A machine the hub can reach: pick one of machine_hosts, see machine_add_plan's steps, Add, and watch each step;
+//     a failed step shows its output, the fix and Retry (finished steps are skipped).
+//   - Any other machine: a line to paste on it (next).
+// A run goes on in the hub when the page closes; opening it again shows the run still going or the last one that
+// failed. Every step is a machine_add.step event, which reads machine_add_status again.
+//
+// One component with no page around it, so Administration › Machines and the hub's first-run setup (docs/design,
+// its Machines step) show the same flow. Mount it only where the person is an owner or admin.
+import { useEffect, useState } from "react";
+import type { MachineAddRun, MachineHost, SetupStep } from "../../../shared/contracts";
+import type { JoinHere } from "../../../shared/joinHere";
+import { useData, useToolQuery } from "../../src/data/react";
+import { Button, StateGlyph, Text } from "../../ui";
+import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
+import { glyphOf, hereOf, hostLine, joinSteps, pickable, resumable, runLine, shortOutput, stepTitle, type Here } from "./model";
+import s from "./addMachine.module.css";
+
+type View =
+  | { readonly kind: "choose" }
+  | { readonly kind: "hosts" }
+  | { readonly kind: "plan"; readonly host: MachineHost }
+  | { readonly kind: "run"; readonly runId: string }
+  | { readonly kind: "here" };
+
+const noInput = {};
+
+/** This computer's host name, once main has said. */
+const useHostName = (): string | undefined => {
+  const [name, setName] = useState<string>();
+  useEffect(() => {
+    let live = true;
+    void window.fleetd.system.hostName().then((n) => live && setName(n));
+    return () => {
+      live = false;
+    };
+  }, []);
+  return name;
+};
+
+/** The join of this computer main runs, as it reports it. */
+const useJoinHere = (): JoinHere | null => {
+  const [join, setJoin] = useState<JoinHere | null>(null);
+  useEffect(() => {
+    let live = true;
+    void window.fleetd.machines.joinHereState().then((j) => live && j !== null && setJoin(j));
+    const off = window.fleetd.machines.onJoinHere(setJoin);
+    return () => {
+      live = false;
+      off();
+    };
+  }, []);
+  return join;
+};
+
+const useOnline = (machineId: string | undefined): boolean =>
+  useData((d) => (machineId === undefined ? false : (d.machines[machineId]?.status ?? "offline") !== "offline"));
+
+export function AddMachine() {
+  const live = useLive();
+  const call = useHubCall();
+  const refetch = useRefetch();
+  const status = useToolQuery("machine_add_status", noInput);
+  const hosts = useToolQuery("machine_hosts", noInput);
+  const hostName = useHostName();
+  const join = useJoinHere();
+  const machines = useData((d) => d.machines);
+  const [view, setView] = useState<View>();
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string>();
+
+  // Opening on a run still going (or one that just failed), or on this computer's join.
+  const runs = status.data?.runs;
+  const shown: View =
+    view ??
+    (join?.state === "running"
+      ? { kind: "here" }
+      : (() => {
+          const r = runs === undefined ? undefined : resumable(runs);
+          return r === undefined ? { kind: "choose" } : { kind: "run", runId: r.runId };
+        })());
+
+  const here = hosts.data && hostName !== undefined ? hereOf(hosts.data.hosts, hostName, new Set(Object.keys(machines))) : undefined;
+
+  const add = (target: { host: string } | { local: true }) => {
+    setBusy(true);
+    setProblem(undefined);
+    call("machine_add", target)
+      .then(
+        (out) => {
+          setView({ kind: "run", runId: out.run.runId });
+          refetch(["machine_add_status"]);
+        },
+        (e: unknown) => setProblem(errorText(e)),
+      )
+      .finally(() => setBusy(false));
+  };
+
+  /** Back to the three ways, with the hosts read again: the one just added is a machine now. */
+  const done = () => {
+    setView({ kind: "choose" });
+    refetch(["machine_hosts"]);
+  };
+
+  const addHere = (h: Here) => {
+    setProblem(undefined);
+    if (h.kind === "hub") return add({ local: true });
+    setView({ kind: "here" });
+    void window.fleetd.machines.joinHere(h.machineId);
+  };
+
+  return (
+    <section className={s.panel} aria-label="Add machine" data-state={shown.kind}>
+      {!live ? (
+        <Text tone="quiet">Connect to the hub to add a machine.</Text>
+      ) : shown.kind === "choose" ? (
+        <Choose here={here} hostName={hostName} busy={busy} onHere={addHere} onHosts={() => setView({ kind: "hosts" })} />
+      ) : shown.kind === "hosts" ? (
+        <Hosts read={hosts} onPick={(host) => setView({ kind: "plan", host })} onBack={() => setView({ kind: "choose" })} />
+      ) : shown.kind === "plan" ? (
+        <Plan host={shown.host} busy={busy} onAdd={() => add(shown.host.host === undefined ? { local: true } : { host: shown.host.host })} onBack={() => setView({ kind: "hosts" })} />
+      ) : shown.kind === "run" ? (
+        <Run
+          run={runs?.find((r) => r.runId === shown.runId)}
+          pending={status.isPending}
+          busy={busy}
+          onRetry={(r) => add(r.host === undefined ? { local: true } : { host: r.host })}
+          onDone={done}
+        />
+      ) : (
+        <JoinHereRun join={join} onRetry={() => here && addHere(here)} onDone={done} />
+      )}
+      {problem === undefined ? null : <Text tone="danger">{problem}</Text>}
+    </section>
+  );
+}
+
+function Head(props: { title: string; line?: string | undefined }) {
+  return (
+    <div className={s.head}>
+      <Text strong>{props.title}</Text>
+      {props.line === undefined ? null : (
+        <Text size="xs" tone="quiet">
+          {props.line}
+        </Text>
+      )}
+    </div>
+  );
+}
+
+function Choose(props: { here: Here | undefined; hostName: string | undefined; busy: boolean; onHere: (h: Here) => void; onHosts: () => void }) {
+  const { here } = props;
+  const hereLine =
+    here === undefined
+      ? "Looking at this computer…"
+      : here.joined
+        ? `${here.machineId} is a machine of this hub already: adding it again repairs it.`
+        : here.kind === "hub"
+          ? `${here.machineId}, the hub's own machine: the hub sets up its node with its own fleetd.`
+          : `${here.machineId}: downloads fleetd for this computer, checks it and runs its node as a user service.`;
+  return (
+    <>
+      <Head title="Add machine" line="A machine runs agents and their browsers and devices. It needs claude installed." />
+      <ul className={s.rows}>
+        <li className={s.row}>
+          <div className={s.rowText}>
+            <Text>This computer</Text>
+            <Text size="xs" tone="quiet">
+              {hereLine}
+            </Text>
+          </div>
+          <Button className={s.rowAction} disabled={here === undefined || props.busy} onClick={() => here && props.onHere(here)}>
+            {here?.joined ? "Repair" : "Add this computer"}
+          </Button>
+        </li>
+        <li className={s.row}>
+          <div className={s.rowText}>
+            <Text>A machine the hub can reach</Text>
+            <Text size="xs" tone="quiet">
+              Over SSH from the hub: one in its ~/.ssh/config or on its tailnet.
+            </Text>
+          </div>
+          <Button className={s.rowAction} onClick={props.onHosts}>
+            Choose…
+          </Button>
+        </li>
+        <li className={s.row}>
+          <div className={s.rowText}>
+            <Text>Any other machine</Text>
+            <Text size="xs" tone="quiet">
+              A laptop, or one behind NAT: one line to paste in its terminal. Coming next; until then, fleetd pair --worker on the hub prints it.
+            </Text>
+          </div>
+          <Button className={s.rowAction} disabled>
+            Get the line
+          </Button>
+        </li>
+      </ul>
+    </>
+  );
+}
+
+function Hosts(props: { read: ReturnType<typeof useToolQuery<"machine_hosts">>; onPick: (h: MachineHost) => void; onBack: () => void }) {
+  const hosts = props.read.data?.hosts;
+  return (
+    <>
+      <Head title="A machine the hub can reach" line="The hub connects with its own SSH keys, so `ssh <host> true` must work from the hub without a password." />
+      {props.read.error ? (
+        <Text tone="danger">{`Couldn't list them: ${errorText(props.read.error)}`}</Text>
+      ) : hosts === undefined ? (
+        <Text tone="quiet">Looking…</Text>
+      ) : (
+        <ul className={s.rows} aria-label="Hosts">
+          {pickable(hosts).map((h) => (
+            <li key={h.machineId} className={s.row}>
+              <div className={s.rowText}>
+                <Text tone={h.joined ? "quiet" : "default"}>{h.machineId}</Text>
+                <Text size="xs" tone="quiet">
+                  {h.joined ? `${hostLine(h)} · a machine already` : hostLine(h)}
+                </Text>
+              </div>
+              <Button className={s.rowAction} variant={h.joined ? "quiet" : "secondary"} onClick={() => props.onPick(h)}>
+                {h.joined ? "Repair…" : "Plan…"}
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className={s.actions}>
+        <Button variant="ghost" onClick={props.onBack}>
+          Back
+        </Button>
+      </div>
+    </>
+  );
+}
+
+function Steps(props: { steps: ReadonlyArray<SetupStep> }) {
+  return (
+    <ol className={s.steps} aria-label="Steps">
+      {props.steps.map((step, i) => {
+        const short = shortOutput(step);
+        return (
+          <li key={`${i}-${step.title}`} className={s.step} data-step={step.state}>
+            <StateGlyph state={glyphOf(step.state)} size="sm" />
+            <div className={s.stepBody}>
+              <Text size="sm" tone={step.state === "planned" ? "quiet" : step.state === "failed" ? "danger" : "default"}>
+                {stepTitle(step.title)}
+              </Text>
+              {step.command === undefined ? null : (
+                <Text size="xs" tone="faint" mono className={s.command}>
+                  {step.command.length > 240 ? `${step.command.slice(0, 240)}…` : step.command}
+                </Text>
+              )}
+              {short === undefined ? null : (
+                <Text size="xs" tone="quiet" mono>
+                  {`→ ${short}`}
+                </Text>
+              )}
+              {step.state === "failed" && step.output ? <pre className={s.output}>{step.output}</pre> : null}
+            </div>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+function Notes(props: { notes: ReadonlyArray<string> }) {
+  if (props.notes.length === 0) return null;
+  return (
+    <ul className={s.notes} aria-label="Notes">
+      {props.notes.map((n) => (
+        <li key={n}>
+          <Text size="xs" tone="quiet">
+            {n}
+          </Text>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function Plan(props: { host: MachineHost; busy: boolean; onAdd: () => void; onBack: () => void }) {
+  const input = props.host.host === undefined ? { local: true as const } : { host: props.host.host };
+  const plan = useToolQuery("machine_add_plan", input);
+  const m = props.host.machineId;
+  return (
+    <>
+      <Head
+        title={props.host.joined ? `Repair ${m}` : `Add ${m}`}
+        line={plan.data ? `${plan.data.platform} · ${hostLine(props.host)}. Nothing has changed on it yet.` : `Reading ${m} over SSH; nothing changes on it.`}
+      />
+      {plan.error ? (
+        <Text tone="danger">{errorText(plan.error)}</Text>
+      ) : plan.data === undefined ? (
+        <Text tone="quiet">Reading the machine…</Text>
+      ) : (
+        <>
+          <Steps steps={plan.data.steps} />
+          <Notes notes={plan.data.notes} />
+        </>
+      )}
+      <div className={s.actions}>
+        <Button variant="primary" disabled={plan.data === undefined || props.busy} onClick={props.onAdd}>
+          {props.host.joined ? `Repair ${m}` : `Add ${m}`}
+        </Button>
+        <Button variant="ghost" onClick={props.onBack}>
+          Back
+        </Button>
+      </div>
+    </>
+  );
+}
+
+function Run(props: { run: MachineAddRun | undefined; pending: boolean; busy: boolean; onRetry: (r: MachineAddRun) => void; onDone: () => void }) {
+  const { run } = props;
+  const online = useOnline(run?.machineId);
+  if (run === undefined) {
+    return props.pending ? (
+      <Text tone="quiet">Loading…</Text>
+    ) : (
+      <>
+        <Text tone="quiet">The hub no longer has this run: it restarted. Add the machine again; finished steps are skipped.</Text>
+        <div className={s.actions}>
+          <Button onClick={props.onDone}>Back</Button>
+        </div>
+      </>
+    );
+  }
+  return (
+    <>
+      <Head title={run.host === undefined ? `${run.machineId}, the hub's own machine` : `${run.machineId} · ${run.host}`} line={runLine(run, online)} />
+      <Steps steps={run.steps} />
+      {run.state === "failed" ? (
+        <div className={s.head}>
+          {run.message === undefined ? null : <Text tone="danger">{run.message.split("\n")[0]}</Text>}
+          {run.fix === undefined ? null : (
+            <Text size="xs" tone="quiet">
+              {run.fix}
+            </Text>
+          )}
+        </div>
+      ) : null}
+      <Notes notes={run.notes} />
+      <div className={s.actions}>
+        {run.state === "failed" ? (
+          <Button variant="primary" disabled={props.busy} onClick={() => props.onRetry(run)}>
+            Retry
+          </Button>
+        ) : null}
+        {run.state === "running" ? null : (
+          <Button variant={run.state === "failed" ? "ghost" : "secondary"} onClick={props.onDone}>
+            {run.state === "failed" ? "Back" : "Done"}
+          </Button>
+        )}
+      </div>
+    </>
+  );
+}
+
+function JoinHereRun(props: { join: JoinHere | null; onRetry: () => void; onDone: () => void }) {
+  const online = useOnline(props.join?.machineId);
+  const { join } = props;
+  if (join === null) return <Text tone="quiet">Starting…</Text>;
+  return (
+    <>
+      <Head title={`${join.machineId}, this computer`} line={runLine(join, online)} />
+      <Steps steps={joinSteps(join, online)} />
+      {join.state === "failed" && join.message !== undefined ? <Text tone="danger">{join.message}</Text> : null}
+      <div className={s.actions}>
+        {join.state === "failed" ? (
+          <Button variant="primary" onClick={props.onRetry}>
+            Retry
+          </Button>
+        ) : null}
+        {join.state === "running" ? null : (
+          <Button variant={join.state === "failed" ? "ghost" : "secondary"} onClick={props.onDone}>
+            {join.state === "failed" ? "Back" : "Done"}
+          </Button>
+        )}
+      </div>
+    </>
+  );
+}
