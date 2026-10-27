@@ -1,11 +1,12 @@
-// "Add project…" (#/projects/add): one sheet that clones a GitHub repo onto a worker or adds a folder already on
-// one. One field (paste a URL, type a path, or filter), the repos the hub found, the machine it goes to; then the
-// clone's progress, the ready state with what the lead will need, or the error and its fix. Up/Down pick, Enter
-// adds, Esc closes (a clone carries on).
+// "Add project…" (#/projects/add): one sheet that clones a GitHub repo onto a worker, adds a folder already on one,
+// or starts a new, empty project in a folder the hub makes. One field (paste a URL, type a path, filter, or name a new
+// project), the repos the hub found, the machine it goes to; then the clone's progress, the ready state with what the
+// lead will need (a new project opens at once), or the error and its fix. Up/Down pick, Enter adds, Esc closes (a
+// clone carries on).
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { Button, Dot, Input, Sheet, Text, Truncate, copyText, cx } from "../../ui";
-import { clonePath, discovery as discoveryOf, orList, plan, rows as rowsFor, target, type Discovery, type Failure, type Found, type Plan, type Ready, type Request, type Row, type Worker } from "./discovery";
+import { Button, Checkbox, Dot, Input, Sheet, Text, Truncate, copyText, cx } from "../../ui";
+import { clonePath, discovery as discoveryOf, newPath, orList, plan, rows as rowsFor, target, type Discovery, type Failure, type Found, type Plan, type Ready, type Request, type Row, type Worker } from "./discovery";
 import { CallError, callKey } from "../../src/data/queries";
 import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import type { Job, Phase } from "./flow";
@@ -18,11 +19,14 @@ import {
   localMachine,
   openProject,
   pickMachine,
+  setFolder,
+  setGitInit,
   setText,
   sheetHidden,
   sheetShown,
   startAdd,
   useAddUi,
+  type AddUi,
   type Note,
 } from "./store";
 import s from "./projects.module.css";
@@ -111,8 +115,18 @@ const usePick = () => {
   return { ui, d: withWorkers, rows, selected, select, to, planFor };
 };
 
-const requestFor = (p: Plan, to: Worker | null): { request: Request; path: string } | null => {
+/** A new project's folder on its machine: as the person edited it, else `<projectsRoot>/<name>`; null when unknown. */
+const newFolder = (p: Extract<Plan, { kind: "new" }>, d: Discovery | null, ui: AddUi): string | null =>
+  ui.folder ?? newPath(d?.workers.find((w) => w.machineId === p.machineId), p.name);
+
+const requestFor = (p: Plan, to: Worker | null, folder: string | null, ui: AddUi): { request: Request; path: string } | null => {
   switch (p.kind) {
+    case "new": {
+      const name = p.name.trim();
+      if (p.machineId === undefined || name === "" || folder === null) return null;
+      const path = folder.trim().replace(/(.)\/+$/u, "$1");
+      return { request: { kind: "new", machineId: p.machineId, name, path, gitInit: ui.gitInit === true }, path };
+    }
     case "clone":
       return to ? { request: { kind: "clone", repo: p.repo, machineId: to.machineId, useExisting: false }, path: clonePath(to, p.repo) ?? "" } : null;
     case "folder":
@@ -122,19 +136,23 @@ const requestFor = (p: Plan, to: Worker | null): { request: Request; path: strin
   }
 };
 
-const submit = (p: Plan, to: Worker | null) => {
+const submit = (p: Plan, pick: Pick_) => {
   if (p.kind === "open") {
     openProject(p.project.machineId, p.project.projectId);
     return;
   }
+  const folder = p.kind === "new" ? newFolder(p, pick.d, pick.ui) : null;
   // A typed path must be absolute on the machine: ~ and ./ mean nothing to the hub.
-  if (p.kind === "folder" && !p.path.startsWith("/")) return;
-  const r = requestFor(p, to);
+  if ((p.kind === "folder" && !p.path.startsWith("/")) || (p.kind === "new" && !folder?.trim().startsWith("/"))) return;
+  const r = requestFor(p, pick.to, folder, pick.ui);
   if (r) startAdd(r.request, r.path);
 };
 
+/** What submitting reads of the pick: the machine it goes to, what the hub found, and the sheet's own state. */
+type Pick_ = Pick<PickData, "to" | "d" | "ui">;
+
 function Pick({ pick }: { pick: PickData }) {
-  const { ui, d, rows, selected, select, to, planFor } = pick;
+  const { ui, d, rows, selected, select, planFor } = pick;
   const onKey = (e: KeyboardEvent<HTMLInputElement>) => {
     if (rows.length === 0 && e.key !== "Enter") return;
     if (e.key === "ArrowDown" || (e.ctrlKey && e.key === "n")) {
@@ -145,7 +163,7 @@ function Pick({ pick }: { pick: PickData }) {
       select((selected - 1 + rows.length) % rows.length);
     } else if (e.key === "Enter") {
       e.preventDefault();
-      submit(planFor(rows[selected]), to);
+      submit(planFor(rows[selected]), pick);
     }
   };
 
@@ -154,7 +172,7 @@ function Pick({ pick }: { pick: PickData }) {
       <Input
         autoFocus
         aria-label="GitHub URL, folder path, or filter"
-        placeholder="Paste a GitHub URL, type a folder's path, or filter the list"
+        placeholder="Paste a GitHub URL, type a folder's path, or name a new project"
         value={ui.text}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={onKey}
@@ -166,7 +184,7 @@ function Pick({ pick }: { pick: PickData }) {
             Looking for repos on your machines and on GitHub…
           </Text>
         ) : (
-          <List d={d} rows={rows} selected={selected} select={select} text={ui.text} to={to} planFor={planFor} />
+          <List d={d} rows={rows} selected={selected} select={select} text={ui.text} pick={pick} planFor={planFor} />
         )}
       </div>
     </>
@@ -184,6 +202,7 @@ function NoteLine({ note }: { note: Note }) {
 const groupOf = (r: Row, found: ReadonlyArray<Found>, name: (id: string) => string): string => {
   if (r.kind === "clone") return "Paste";
   if (r.kind === "folder") return "Folder";
+  if (r.kind === "new") return "New";
   const f = found[r.index];
   return f?.source.kind === "checkout" ? `On ${name(f.source.machineId)}` : "GitHub";
 };
@@ -194,10 +213,10 @@ function List(props: {
   selected: number;
   select: (n: number) => void;
   text: string;
-  to: Worker | null;
+  pick: Pick_;
   planFor: (r: Row) => Plan;
 }) {
-  const { d, rows, selected, select, text, to, planFor } = props;
+  const { d, rows, selected, select, text, pick, planFor } = props;
   const name = (id: string) => d.workers.find((w) => w.machineId === id)?.name ?? id;
   if (rows.length === 0) {
     const hint = otherHost(text);
@@ -224,7 +243,7 @@ function List(props: {
                   {group}
                 </Text>
               ) : null}
-              <RowView row={r} d={d} planFor={planFor} selected={i === selected} onPick={() => select(i)} onGo={() => submit(planFor(r), to)} />
+              <RowView row={r} d={d} planFor={planFor} selected={i === selected} onPick={() => select(i)} onGo={() => submit(planFor(r), pick)} />
             </div>
           );
         })}
@@ -235,6 +254,7 @@ function List(props: {
 }
 
 const rowKey = (r: Row, found: ReadonlyArray<Found>): string => {
+  if (r.kind === "new") return "new";
   if (r.kind !== "found") return `${r.kind}:${r.kind === "clone" ? r.repo : r.path}`;
   const f = found[r.index];
   return f?.source.kind === "checkout" ? `co:${f.source.machineId}:${f.source.path}` : `gh:${f?.name ?? r.index}`;
@@ -254,6 +274,11 @@ function RowView(props: { row: Row; d: Discovery; planFor: (r: Row) => Plan; sel
   if (row.kind === "clone") {
     title = `Clone ${row.repo}`;
     sub = "from GitHub";
+  } else if (row.kind === "new") {
+    title = row.name === "" ? "New project" : `New project ${row.name}`;
+    const p = props.planFor(row);
+    const on = p.kind === "new" && p.machineId !== undefined ? (d.workers.find((w) => w.machineId === p.machineId)?.name ?? p.machineId) : null;
+    sub = row.name === "" ? "Type its name above: an empty folder, no repo needed" : on === null ? "no machine is online" : `an empty folder on ${on}, no repo needed`;
   } else if (row.kind === "folder") {
     title = row.path;
     mono = true;
@@ -334,8 +359,8 @@ function Empty({ d }: { d: Discovery }) {
       <Text tone="quiet">Looked for git checkouts in ~/src, ~/code, ~/projects and ~/dev, two folders deep. {gh}</Text>
       <Text tone="quiet">
         {local
-          ? "Paste a GitHub URL above, type a folder's full path, or Browse… for a folder on this computer."
-          : "Paste a GitHub URL above, or type a folder's full path on one of your machines."}
+          ? "Paste a GitHub URL above, type a folder's full path, Browse… for a folder on this computer, or type a name to start a new project."
+          : "Paste a GitHub URL above, type a folder's full path on one of your machines, or type a name to start a new project."}
       </Text>
       <Problems d={d} />
     </div>
@@ -362,7 +387,7 @@ function MachinePicker({ workers, chosen, best }: { workers: ReadonlyArray<Worke
 }
 
 function PickFooter({ pick }: { pick: PickData }) {
-  const { d, rows, selected, to, planFor } = pick;
+  const { d, rows, selected, to, planFor, ui } = pick;
   const p = planFor(rows[selected]);
   const local = localMachine();
   const workers = d?.workers ?? [];
@@ -371,6 +396,7 @@ function PickFooter({ pick }: { pick: PickData }) {
   let label = "Add project";
   let enabled = d !== null;
   let picker = false;
+  let folder: string | null = null;
   const nameOf = (id: string) => workers.find((w) => w.machineId === id)?.name ?? id;
   switch (p.kind) {
     case "clone": {
@@ -397,6 +423,19 @@ function PickFooter({ pick }: { pick: PickData }) {
         else note = "Type the full path, starting with /.";
       }
       break;
+    case "new": {
+      label = "Create project";
+      picker = true;
+      const on = workers.find((w) => w.machineId === p.machineId);
+      folder = newFolder(p, d, ui);
+      if (p.name.trim() === "") note = "Type the new project's name above.";
+      else if (p.machineId === undefined) note = "No machine is online to make its folder on.";
+      else if (on !== undefined && on.projectsRoot === undefined) note = `Update fleetd on ${on.name} to create a project there.`;
+      else if (!folder?.trim().startsWith("/")) note = "Type the folder's full path, starting with /.";
+      enabled = note === "";
+      if (on !== undefined && on.projectsRoot === undefined) folder = null;
+      break;
+    }
     case "open":
       label = "Open project";
       note = `Already a project on ${nameOf(p.project.machineId)}.`;
@@ -406,8 +445,9 @@ function PickFooter({ pick }: { pick: PickData }) {
       break;
   }
   return (
-    <div className={s.footer}>
-      {picker && workers.length > 0 ? <MachinePicker workers={workers} chosen={p.kind === "folder" ? p.machineId : to?.machineId} best={d?.best} /> : null}
+    <div className={s.footer} {...(p.kind === "new" ? { "data-screen": "projects.add.new" } : {})}>
+      {picker && workers.length > 0 ? <MachinePicker workers={workers} chosen={p.kind === "folder" || p.kind === "new" ? p.machineId : to?.machineId} best={d?.best} /> : null}
+      {p.kind === "new" && folder !== null && p.name.trim() !== "" ? <NewFolder folder={folder} gitInit={ui.gitInit === true} /> : null}
       {note ? (
         <Text size="sm" tone="quiet">
           {note}
@@ -422,10 +462,20 @@ function PickFooter({ pick }: { pick: PickData }) {
           ) : null}
         </span>
         {local ? <BrowseButton /> : null}
-        <Button variant="primary" disabled={!enabled} onClick={() => submit(p, to)}>
+        <Button variant="primary" disabled={!enabled} onClick={() => submit(p, pick)}>
           {label}
         </Button>
       </div>
+    </div>
+  );
+}
+
+/** Where a new project's folder goes, editable, and whether it starts as a git repo. */
+function NewFolder({ folder, gitInit }: { folder: string; gitInit: boolean }) {
+  return (
+    <div className={s.newFolder}>
+      <Input mono aria-label="Folder" value={folder} onChange={(e) => setFolder(e.target.value)} />
+      <Checkbox label="Start a git repo in it" checked={gitInit} onCheckedChange={(on) => setGitInit(on === true)} />
     </div>
   );
 }
@@ -461,7 +511,7 @@ function Working({ job }: { job: Job }) {
     <div data-screen="projects.add.cloning">
       <Truncate size="sm" tone="quiet" mono>{`${tilde(job.path)} on ${name}`}</Truncate>
       <div className={s.steps}>
-        {STEPS.filter(([step]) => job.clone || step !== "clone").map(([step, label, idle]) => {
+        {STEPS.filter(([step]) => (job.create ? step === "register" : job.clone || step !== "clone")).map(([step, label, idle]) => {
           const now = step === job.step;
           const done = ORDER[step] < ORDER[job.step];
           return (

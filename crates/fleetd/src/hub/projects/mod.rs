@@ -1,6 +1,8 @@
 //! Adding a project, the one path MCP, the app and the CLI share: discover repos, inspect one, add a path (a git
 //! checkout or a plain folder) or clone a GitHub repository with progress events, and remove. The node does the filesystem and git work on its machine;
 //! gh runs on the hub machine, and `gh repo list` falls back to the target worker when the hub has no gh login.
+#[cfg(test)]
+mod create_tests;
 pub mod inspect;
 pub mod order_env;
 pub mod profiles;
@@ -325,11 +327,12 @@ async fn clone_target(
     let path = match dest {
         Some(d) => d.strip_suffix('/').unwrap_or(d).to_owned(),
         None => {
-            let (root, _) = hub
+            let root = hub
                 .executors
                 .repo_scan(m)
                 .await
-                .map_err(|e| problem_error(&node_problem(m, &e)))?;
+                .map_err(|e| problem_error(&node_problem(m, &e)))?
+                .clone_root;
             let name = repo.as_str().rsplit('/').next().unwrap_or(repo.as_str());
             format!("{}/{name}", root.trim_end_matches('/'))
         }
@@ -367,16 +370,19 @@ pub async fn discover(
                 machine_id: m.clone(),
                 online: hub.executors.is_connected(m),
                 clone_root: None,
+                projects_root: None,
                 repos: vec![],
                 problem: Some(problem),
             };
         }
         match hub.executors.repo_scan(m).await {
-            Ok((root, repos)) => MachineRepos {
+            Ok(scan) => MachineRepos {
                 machine_id: m.clone(),
                 online: true,
-                clone_root: Some(root),
-                repos: repos
+                clone_root: Some(scan.clone_root),
+                projects_root: scan.projects_root,
+                repos: scan
+                    .repos
                     .into_iter()
                     .map(|r| FoundRepo {
                         name: r.path.rsplit('/').next().unwrap_or(&r.path).to_owned(),
@@ -392,6 +398,7 @@ pub async fn discover(
                 machine_id: m.clone(),
                 online: true,
                 clone_root: None,
+                projects_root: None,
                 repos: vec![],
                 problem: Some(node_problem(m, &e)),
             },
@@ -585,6 +592,9 @@ pub async fn add(
     require(caller, Role::Operate, Some(&m))?;
     let title = input.title.as_ref().map(|t| t.as_str().to_owned());
     let dry_run = input.dry_run == Some(true);
+    if input.create == Some(true) {
+        return create(&hub, &m, &input, dry_run).await;
+    }
     if let Some(path) = &input.path {
         let path = path.as_str().strip_suffix('/').unwrap_or(path.as_str());
         let facts = checkout(&hub, &m, path).await?;
@@ -666,6 +676,106 @@ pub async fn add(
         created: true,
         add_id: Some(add_id),
         inspect: None,
+        clone: None,
+        truncated: None,
+    })
+}
+
+fn cant_make(m: &MachineId) -> ToolError {
+    problem_error(&problem(
+        ProjectProblemCode::NodeTooOld,
+        format!("{m}'s node is too old to make a new project's folder"),
+        format!("Run fleetd update on {m}, or pick another machine"),
+    ))
+}
+
+/// Why the node didn't make the folder at `path`: it holds files already, or it can't be made there.
+fn folder_refused(m: &MachineId, path: &str, e: ExecutorError) -> ToolError {
+    match &e {
+        ExecutorError::NodeRequestFailed { message, .. }
+            if message.contains(fleetd_contracts::sessions::FOLDER_NOT_EMPTY) =>
+        {
+            problem_error(&problem(
+                ProjectProblemCode::DestExists,
+                format!("{path} on {m} already holds files"),
+                "Pick another folder for the new project, or add that one as it is by typing its path",
+            ))
+        }
+        ExecutorError::NodeRequestFailed { message, .. }
+            if !message.starts_with("no answer within") =>
+        {
+            error(
+                ErrorCode::Invalid,
+                message.clone(),
+                "Pick another folder for the new project",
+            )
+        }
+        _ => problem_error(&node_problem(m, &e)),
+    }
+}
+
+/// `project_add` with `create`: the node makes the folder (`path`, else `<projectsRoot>/<name>`), empty or new, and
+/// `git init`s it when asked; then it is added as a `path` is, a plain folder with no repo unless it was.
+async fn create(
+    hub: &Hub,
+    m: &MachineId,
+    input: &ProjectAddInput,
+    dry_run: bool,
+) -> Result<ProjectAddOutput, ToolError> {
+    if !hub
+        .link
+        .node_can(m, fleetd_contracts::node_link::CAP_FOLDER_MAKE)
+    {
+        return Err(cant_make(m));
+    }
+    let title = input.title.as_ref().map(|t| t.as_str().trim().to_owned());
+    let path = match &input.path {
+        Some(p) => p
+            .as_str()
+            .strip_suffix('/')
+            .unwrap_or(p.as_str())
+            .to_owned(),
+        None => {
+            let root = hub
+                .executors
+                .repo_scan(m)
+                .await
+                .map_err(|e| problem_error(&node_problem(m, &e)))?
+                .projects_root
+                .ok_or_else(|| cant_make(m))?;
+            let name = crate::hub::navi::slug_or(title.as_deref().unwrap_or_default(), "project");
+            format!("{}/{name}", root.trim_end_matches('/'))
+        }
+    };
+    let git_init = input.git_init == Some(true);
+    let path = hub
+        .executors
+        .folder_make(m, &path, git_init, dry_run)
+        .await
+        .map_err(|e| folder_refused(m, &path, e))?;
+    if dry_run {
+        return Ok(ProjectAddOutput {
+            next: Some(format!(
+                "project_add with create makes {path} on {m}, a new project."
+            )),
+            ..dry(m.clone(), path, inspect::folder(), None)
+        });
+    }
+    let facts = checkout(hub, m, &path).await?;
+    let inspect = inspect_checkout(&facts).await?;
+    let (project_id, created, inspect) =
+        register(hub, m, &path, title.as_deref(), &facts, inspect, None).await?;
+    Ok(ProjectAddOutput {
+        next: Some(format!(
+            "{}. Write to its lead with chat_send; project_repo_add adds a repo later.",
+            inspect.lead_needs
+        )),
+        machine_id: m.clone(),
+        path,
+        project_id: Some(project_id),
+        created,
+        add_id: None,
+        inspect: Some(inspect),
         clone: None,
         truncated: None,
     })

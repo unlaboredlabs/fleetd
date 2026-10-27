@@ -24,6 +24,14 @@ const LANDED_LOG_TIMEOUT: Duration = Duration::from_secs(60);
 /// A large repository over a slow link.
 pub const CLONE_TIMEOUT: Duration = Duration::from_secs(60 * 60);
 
+/// A machine's `repo_scan`: its checkouts, where a clone goes and where a new project's folder goes.
+pub struct RepoScan {
+    pub clone_root: String,
+    /// Absent from a node that can't make a project's folder.
+    pub projects_root: Option<String>,
+    pub repos: Vec<ScannedRepo>,
+}
+
 /// A running clone: its progress frames until it ends, then its result.
 pub struct CloneRun {
     pub add_id: String,
@@ -37,17 +45,47 @@ impl Executors {
         }
     }
 
-    pub async fn repo_scan(
-        &self,
-        machine_id: &MachineId,
-    ) -> Result<(String, Vec<ScannedRepo>), ExecutorError> {
+    pub async fn repo_scan(&self, machine_id: &MachineId) -> Result<RepoScan, ExecutorError> {
         let op = NodeOperation::Read;
         match self
             .call(machine_id, op, SessionCall::RepoScan, SCAN_TIMEOUT)
             .await?
         {
-            SessionOutput::Repos { clone_root, repos } => Ok((clone_root, repos)),
+            SessionOutput::Repos {
+                clone_root,
+                repos,
+                projects_root,
+            } => Ok(RepoScan {
+                clone_root,
+                projects_root,
+                repos,
+            }),
             _ => Err(failed(machine_id, op, "the node sent no repo list")),
+        }
+    }
+
+    /// Makes a new project's folder at `path` (absolute, or `~/x`): see `SessionCall::FolderMake`. Returns its absolute
+    /// path. Only to a node listing `CAP_FOLDER_MAKE`.
+    pub async fn folder_make(
+        &self,
+        machine_id: &MachineId,
+        path: &str,
+        git_init: bool,
+        dry_run: bool,
+    ) -> Result<String, ExecutorError> {
+        let op = NodeOperation::Project;
+        let call = SessionCall::FolderMake {
+            path: non_empty(machine_id, op, "path", path)?,
+            git_init,
+            dry_run,
+        };
+        match self.call(machine_id, op, call, SCAN_TIMEOUT).await? {
+            SessionOutput::Folder { path } => Ok(path),
+            _ => Err(failed(
+                machine_id,
+                op,
+                "the node did not say where the folder is",
+            )),
         }
     }
 
