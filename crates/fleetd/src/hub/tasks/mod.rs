@@ -2263,10 +2263,17 @@ impl Tasks {
             _ => {}
         }
         let profile = resolve_profile(input.profile, input.kind, self.d.ports.medium_allowed(r));
+        // It works in the project's own directory: its own repo, or none for a plain directory (W79).
+        let repo_id = self
+            .d
+            .db
+            .transaction(|c| Ok(crate::hub::repos::store::ensure_own(c, r, None)?))
+            .map_err(store_error)?
+            .map(|repo| repo.repo_id);
         let task = Task {
             task_id: TaskId::unchecked("T0"),
             project_ref: r.clone(),
-            repo_id: None,
+            repo_id,
             workstream_id: input.workstream_id.clone(),
             title: input.title.clone(),
             kind: input.kind,
@@ -3310,6 +3317,84 @@ mod tests {
             None,
             "only writers hear of writers"
         );
+    }
+
+    /// A task records the repo it works in (W79): the project's own repo, or none in a plain directory. A row with
+    /// no `repoId`, as an older hub stored them all, reads as the project's own repo once it has one.
+    #[tokio::test]
+    async fn a_task_records_its_projects_own_repo_or_none_in_a_plain_directory() {
+        let (tasks, _node) = tasks();
+        let p1 = ProjectRef {
+            machine_id: MachineId::unchecked("lab-a"),
+            project_id: ProjectId::unchecked("p1"),
+        };
+        let caller = TaskCaller {
+            project_ref: p1.clone(),
+            by: "lead".into(),
+        };
+        let stored = |task: &Task| {
+            tasks
+                .d
+                .db
+                .with(|c| {
+                    Ok(c.query_row(
+                        "SELECT json_extract(data, '$.repoId') FROM tasks WHERE n = ?",
+                        [task.task_id.as_str()[1..].parse::<i64>().unwrap()],
+                        |row| row.get::<_, Option<String>>(0),
+                    )?)
+                })
+                .unwrap()
+        };
+
+        // p1's directory isn't known to be a git repo: a plain directory, no repo.
+        let plain = tasks
+            .spawn(&caller, writer("write the notes"))
+            .await
+            .unwrap();
+        assert_eq!(plain.repo_id, None);
+        assert_eq!(stored(&plain), None);
+        assert_eq!(tasks.get(&plain.task_id).unwrap().unwrap().repo_id, None);
+
+        // Adding it sees a git repo there: its own repo, R1.
+        let own = tasks
+            .d
+            .db
+            .transaction(|c| {
+                Ok(crate::hub::repos::store::ensure_own(
+                    c,
+                    &p1,
+                    Some("/work/p1"),
+                )?)
+            })
+            .unwrap()
+            .unwrap();
+        assert_eq!(own.repo_id.as_str(), "R1");
+        let task = tasks.spawn(&caller, writer("fix the api")).await.unwrap();
+        assert_eq!(task.repo_id.as_ref(), Some(&own.repo_id));
+        assert_eq!(stored(&task).as_deref(), Some("R1"));
+
+        // The row stored with none reads as the own repo, in a listing too, and the task listing serves it.
+        assert_eq!(stored(&plain), None);
+        assert_eq!(
+            tasks.get(&plain.task_id).unwrap().unwrap().repo_id.as_ref(),
+            Some(&own.repo_id)
+        );
+        let listed = tasks
+            .list(&TaskFilter {
+                project_ref: Some(p1),
+                state: None,
+                workstream_id: None,
+                limit: 10,
+            })
+            .unwrap();
+        assert_eq!(
+            listed
+                .iter()
+                .map(|t| (t.task_id.as_str(), t.repo_id.as_ref().map(|r| r.as_str())))
+                .collect::<Vec<_>>(),
+            [("T2", Some("R1")), ("T1", Some("R1"))]
+        );
+        assert_eq!(serde_json::to_value(&listed[1]).unwrap()["repoId"], "R1");
     }
 
     /// No policy file is needed, and an offline node doesn't fail the spawn: the task queues "offline". Back

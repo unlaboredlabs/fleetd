@@ -8,6 +8,7 @@ use fleetd_contracts::tasks::{Task, TaskId, TaskState};
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
 use super::TaskFilter;
+use crate::hub::repos::store as repos;
 
 #[derive(Clone, Debug)]
 pub struct StoredTask {
@@ -29,15 +30,21 @@ fn state_str(state: TaskState) -> String {
         .unwrap_or_default()
 }
 
-fn decode(data: &str) -> rusqlite::Result<Task> {
-    serde_json::from_str(data).map_err(|e| {
+/// A row with no `repoId` (every row an older hub stored, and a plain directory's) reads as the project's own repo,
+/// or none for a plain directory (W79).
+fn decode(db: &Connection, data: &str) -> rusqlite::Result<Task> {
+    let mut task: Task = serde_json::from_str(data).map_err(|e| {
         rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
-    })
+    })?;
+    if task.repo_id.is_none() {
+        task.repo_id = repos::own(db, &task.project_ref)?.map(|repo| repo.repo_id);
+    }
+    Ok(task)
 }
 
-fn stored_of(row: &Row<'_>) -> rusqlite::Result<StoredTask> {
+fn stored_of(db: &Connection, row: &Row<'_>) -> rusqlite::Result<StoredTask> {
     Ok(StoredTask {
-        task: decode(&row.get::<_, String>(0)?)?,
+        task: decode(db, &row.get::<_, String>(0)?)?,
         pending_message: row.get(1)?,
     })
 }
@@ -99,7 +106,7 @@ impl TaskRecords {
 
     pub fn get(db: &Connection, task_id: &TaskId) -> rusqlite::Result<Option<StoredTask>> {
         db.prepare_cached("SELECT data, pending_message FROM tasks WHERE n = ?")?
-            .query_row([number_of(task_id)], stored_of)
+            .query_row([number_of(task_id)], |row| stored_of(db, row))
             .optional()
     }
 
@@ -138,7 +145,7 @@ impl TaskRecords {
         let mut stmt = db.prepare_cached(
             "SELECT data, pending_message FROM tasks WHERE pr_lookup = 1 ORDER BY n",
         )?;
-        let rows = stmt.query_map([], stored_of)?;
+        let rows = stmt.query_map([], |row| stored_of(db, row))?;
         rows.map(|r| r.map(|s| s.task)).collect()
     }
 
@@ -146,7 +153,7 @@ impl TaskRecords {
     /// earlier thread still finds its task, which tells it from the thread it is on now.
     pub fn by_thread(db: &Connection, r: &ThreadRef) -> rusqlite::Result<Option<StoredTask>> {
         let current = db.prepare_cached("SELECT data, pending_message FROM tasks WHERE machine_id = ? AND thread_id = ? ORDER BY n DESC LIMIT 1")?
-            .query_row(params![r.machine_id.as_str(), r.thread_id.as_str()], stored_of)
+            .query_row(params![r.machine_id.as_str(), r.thread_id.as_str()], |row| stored_of(db, row))
             .optional()?;
         if current.is_some() {
             return Ok(current);
@@ -157,7 +164,7 @@ impl TaskRecords {
         )?
         .query_row(
             params![r.machine_id.as_str(), r.thread_id.as_str()],
-            stored_of,
+            |row| stored_of(db, row),
         )
         .optional()
     }
@@ -169,7 +176,7 @@ impl TaskRecords {
             .prepare_cached(
                 "SELECT data, pending_message FROM tasks WHERE thread_id = ? ORDER BY n DESC LIMIT 1",
             )?
-            .query_row([thread_id], stored_of)
+            .query_row([thread_id], |row| stored_of(db, row))
             .optional()?;
         if current.is_some() {
             return Ok(current);
@@ -178,7 +185,7 @@ impl TaskRecords {
             "SELECT t.data, t.pending_message FROM task_threads p JOIN tasks t ON t.n = p.n
              WHERE p.thread_id = ? ORDER BY t.n DESC LIMIT 1",
         )?
-        .query_row([thread_id], stored_of)
+        .query_row([thread_id], |row| stored_of(db, row))
         .optional()
     }
 
@@ -189,7 +196,7 @@ impl TaskRecords {
              ORDER BY n DESC LIMIT 1",
         )?
         .query_row(params![r.machine_id.as_str(), r.project_id.as_str()], |row| {
-            decode(&row.get::<_, String>(0)?)
+            decode(db, &row.get::<_, String>(0)?)
         })
         .optional()
         .map(|task| task.and_then(|t| t.base))
@@ -205,7 +212,7 @@ impl TaskRecords {
                WHERE machine_id = ? AND json_extract(data, '$.base') IS NOT NULL GROUP BY project_id)
              ORDER BY n",
         )?
-        .query_map([machine_id], |row| decode(&row.get::<_, String>(0)?))?
+        .query_map([machine_id], |row| decode(db, &row.get::<_, String>(0)?))?
         .map(|task| task.map(|t| t.base.map(|b| (t.project_ref, b))))
         .filter_map(Result::transpose)
         .collect()
@@ -216,7 +223,7 @@ impl TaskRecords {
         db.prepare_cached(
             "SELECT data, pending_message FROM tasks WHERE state = 'queued' ORDER BY n",
         )?
-        .query_map([], stored_of)?
+        .query_map([], |row| stored_of(db, row))?
         .collect()
     }
 
@@ -229,7 +236,7 @@ impl TaskRecords {
         )?
         .query_map([before], |row| {
             Ok((
-                decode(&row.get::<_, String>(0)?)?,
+                decode(db, &row.get::<_, String>(0)?)?,
                 row.get::<_, Option<String>>(1)?.is_some(),
             ))
         })?
@@ -259,7 +266,7 @@ impl TaskRecords {
         db.prepare_cached(
             "SELECT data FROM tasks WHERE machine_id = ?1 AND state = 'running' ORDER BY n",
         )?
-        .query_map([machine_id], |row| decode(&row.get::<_, String>(0)?))?
+        .query_map([machine_id], |row| decode(db, &row.get::<_, String>(0)?))?
         .collect()
     }
 
@@ -285,7 +292,7 @@ impl TaskRecords {
                 filter.workstream_id.as_ref().map(|w| w.as_str().to_owned()),
                 filter.limit as i64,
             ],
-            |row| decode(&row.get::<_, String>(0)?),
+            |row| decode(db, &row.get::<_, String>(0)?),
         )?
         .collect()
     }
@@ -310,7 +317,7 @@ impl TaskRecords {
                 since,
                 limit as i64
             ],
-            |row| decode(&row.get::<_, String>(0)?),
+            |row| decode(db, &row.get::<_, String>(0)?),
         )?
         .collect()
     }
@@ -324,7 +331,7 @@ impl TaskRecords {
         )?
         .query_map(
             params![r.machine_id.as_str(), r.project_id.as_str(), limit as i64],
-            |row| decode(&row.get::<_, String>(0)?),
+            |row| decode(db, &row.get::<_, String>(0)?),
         )?
         .collect()
     }
