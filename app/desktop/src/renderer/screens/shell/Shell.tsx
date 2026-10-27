@@ -63,9 +63,16 @@ export function Shell() {
   const sidebar = useSidebar();
   setRouteHubs(hubs.map((h) => h.id));
   const route = useRoute();
-  const hub = hubs.find((h) => h.id === route.at) ?? hubs[0];
+  // `#/` opens the last project, which may be on another hub than the route's: the screen goes on that project's hub,
+  // so the frame, its chat and every read are that hub's, before the redirect names it and after, if it never lands.
+  const placed = usePlaced(hubs, route.at);
+  const homeRow = route.id === "home" && placed !== undefined ? homeProject(placed, readLast()) : null;
+  const at = homeRow?.hub ?? route.at;
+  const hub = hubs.find((h) => h.id === at) ?? hubs[0];
+  // The project on screen, the same object while it is the same project: each hub's watcher reads by it.
+  const homeOpen = useMemo(() => (homeRow === null ? null : routeOf(homeRow)), [homeRow?.key]); // eslint-disable-line react-hooks/exhaustive-deps
   if (hub === undefined) return null;
-  const open = route.id === "project" ? route.project : route.id === "session" ? route.project : null;
+  const open = route.id === "project" || route.id === "session" ? route.project : homeRow?.hub === hub.id ? homeOpen : null;
   // Keyed by the hub: a query keeps the client it was made with, so what is on screen starts afresh on another hub
   // rather than reading the one before. The sidebar's shown or hidden is the window's, not a hub's.
   return (

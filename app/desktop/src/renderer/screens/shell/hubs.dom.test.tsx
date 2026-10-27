@@ -303,16 +303,18 @@ it("pins every hub's Navis on top, each saying its hub, and a collapsed hub keep
   expect(window.location.hash).toBe("#/project/devbox/storefront?at=hub");
 });
 
+/**
+ * `#/`'s redirect to its project never lands, as when the packaged smoke sets `#/` again before the page reads it:
+ * the page keeps showing the project from `#/` itself. Returns the undo.
+ */
+const holdHome = () => {
+  const replace = vi.spyOn(window.location, "replace").mockImplementation(() => undefined);
+  return () => replace.mockRestore();
+};
+
 it("keeps the chat it shows streaming when `#/` comes back before the page reads the home redirect", async () => {
   window.location.hash = "#/";
-  // As the packaged smoke does: the moment the home redirect lands on a project, `#/` again, before the page's own
-  // hashchange listener reads it. The page never sees the project's route, yet shows the project's chat.
-  const reset = () => {
-    if (!window.location.hash.startsWith("#/project/")) return;
-    window.removeEventListener("hashchange", reset);
-    window.location.hash = "#/";
-  };
-  window.addEventListener("hashchange", reset);
+  const reset = holdHome();
   await mount([{ id: "hub", label: "devbox" }]);
   act(() => {
     hub("hub").send(live());
@@ -324,6 +326,36 @@ it("keeps the chat it shows streaming when `#/` comes back before the page reads
   expect(host.querySelector('[data-screen^="chat"]')).not.toBeNull();
   // The chat on screen is the one the hub streams.
   expect(fake.chats.at(-1)).toEqual(["hub", { machineId: "devbox", projectId: "storefront" }]);
+  reset();
+});
+
+it("opens `#/`'s last project on its own hub, the chat streaming from there, even if the redirect is never read", async () => {
+  // The last project opened was Acme's billing (kept by hub and project, shell's LAST_PROJECT).
+  window.localStorage.setItem("fleetd.lastProject", "a1b2:laptop/billing");
+  window.location.hash = "#/";
+  const reset = holdHome();
+  await mount([
+    { id: "hub", label: "Personal" },
+    { id: "a1b2", label: "Acme" },
+  ]);
+  act(() => {
+    hub("hub").send(live());
+    hub("hub").send(project("devbox", "storefront"));
+    hub("a1b2").send(live());
+    hub("a1b2").send(project("laptop", "billing"));
+  });
+  await settle();
+  await settle();
+  expect(window.location.hash).toBe("#/");
+  expect(host.querySelector('[data-screen^="chat"]')).not.toBeNull();
+  // Acme streams billing's chat; Personal was never asked for it, and its own chat is closed.
+  expect(fake.chats.filter(([id]) => id === "a1b2").at(-1)).toEqual(["a1b2", { machineId: "laptop", projectId: "billing" }]);
+  expect(fake.chats.filter(([id, p]) => id === "hub" && p !== null)).toEqual([]);
+  // And the chat's own reads went to Acme.
+  const about = (calls: FakeHub["calls"]) => calls.filter((c) => JSON.stringify(c.input).includes("billing"));
+  expect(about(hub("a1b2").calls).length).toBeGreaterThan(0);
+  expect(about(hub("hub").calls)).toEqual([]);
+  reset();
 });
 
 it("with one hub, shows no name and no group: the sidebar is as it always was", async () => {
