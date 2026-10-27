@@ -16,6 +16,7 @@ pub mod doctor;
 pub mod effort;
 pub mod events;
 pub mod hello;
+pub mod hub_links;
 pub mod ids;
 pub mod lead_calls;
 pub mod ledger;

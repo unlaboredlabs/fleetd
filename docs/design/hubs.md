@@ -80,7 +80,9 @@ reachable, revokes it there too. Either way, the Navi's next call is refused wit
 \<label\>", with the reason (refused, no route, TLS) and the fix. The Navi's calls fail with the same sentence, never
 silently.
 
-**Where it's managed in the app: Settings › Hubs, per hub.** The app reads both lists from each hub:
+**Where it's managed in the app.** Both lists come from `hub_links_get` on each hub. Links stored on a hub show in
+the Navi's own settings ("Linked hubs"); keys minted on a hub show in the person's own settings for theirs and on
+Administration for an admin, never as admin controls in Settings (D186):
 
 - **Reaches** (links stored on this hub): the other hub's label and address, the projects it is limited to (or all),
   its state (working, can't reach, revoked), when it was last used, and Revoke.
@@ -90,7 +92,71 @@ silently.
   the other hub.
 
 **What the app shows elsewhere.** In a Navi's chat, a message it sent through a link names the project with its hub
-label ("to Shop on Acme"). In the target project's chat on B, the message shows as the person, sent "through a link",
+label ("to Shop on Acme"). In the target project's chat on B, the message shows as "\<person\> via \<A's label\> Navi",
 because B sees only the requests. Like a Navi's message on its own hub, it is input to B's lead, never an answer or an
 approval. Nothing else in the app changes: B's projects show under B's label only when the app
 is paired with B as well.
+
+### The link contract, as built
+
+The code is `crates/fleetd/src/hub/hub_links/` (store, `serve.rs` on B, `client.rs` on A, `tools.rs`); the types are
+`crates/fleetd-contracts/src/hub_links.rs`. Hub B is the hub whose projects a link reaches, hub A the hub with the Navi.
+
+**Minting and keeping.** On B, a person's device calls `hub_link_mint {label, projects?}`: `label` is what they call
+A ("home"), `projects` limits the link (each one they can operate), and the answer carries the key, `flk_…`, once. B
+keeps its SHA-256 and the minting device's key id. Until people (#646) are on the hub, the link acts at that device's
+grants and dies with it; with people, it acts as the person at their role. On A, the person calls `hub_link_add {navi,
+label, url, sealed}`: the app seals the key with `crypto_box_seal` to A's own box key (`boxPubKey` from
+`hub_links_get`, kept in A's home), A opens it only to call B, checks it with `GET /link/v1/hello` and keeps it
+sealed per Navi. No tool returns it again and it never enters a chat or transcript. `hub_links_get {navi?}` reads
+both sides: the Navi's links on A with their state, and the links minted on B (the caller's own, or every one for an
+admin).
+
+**1. What a link key may do on B.** A link key works only on `/link/v1`, and only these five calls:
+
+| Call | What it does |
+| --- | --- |
+| `GET hello` | the link's label, the projects it reaches, the feed's start cursor |
+| `POST ask {project, text}` | `project_message` into a project's chat; needs operate on the project's machine |
+| `GET status?project=` | `factory_status` over the projects it reaches, with the link's own asks and their orders |
+| `GET feed?after=&wait=` | news about the link's own asks: an order opened, done, stopped, a PR merged or failed |
+| `POST revoke` | the link revokes itself (A removing it) |
+
+Each call checks the key, the link not revoked, not idle for 90 days, and its device not revoked, then the device's
+grants: read to see a project, operate to ask in it, and the link's project limits. A project outside them is refused
+(`forbidden`, "X is not one of this link's projects"); one the person can't read doesn't exist for the link. Nothing
+else takes a link key: `/mcp` and `/app` refuse it (it is no `fld_` key), so there is no tool, no chat read, no
+approval, no secret and no admin through a link.
+
+**2. A message through a link is never the person's answer.** It goes into B's project chat as an agent message
+(`ChatAuthor::Agent`) written by "\<person\> via \<A's label\> Navi", for example "Wynn via home Navi". B's lead reads it
+through `chat.agent`, as input. It answers no question (needs-you stays as it was), approves no gated command, enters no
+secret and approves no merge: those take a person's own device on B. B stores the ask in `navi_asks` with `via_link`
+and sees nothing of the Navi: no title, no chat, no transcript.
+
+**3. How A hears about landings.** B never calls A; only A needs to reach B. A runs one follower per link
+(`client::follow`) that long-polls `GET feed`: B holds the request up to 25 seconds and answers as soon as one of the
+link's asks has news, from a cursor A keeps on the link. A maps B's handle to its own (`navi_asks.to_hub`, `remote`)
+and wakes the Navi's lead with one line, "- N4 to Storefront on acme: PR #42 (acme/shop) of order W3 merged". When B
+doesn't answer, the follower retries every 30 seconds and the link reads "unreachable" with the reason; nothing is lost,
+as the cursor waits.
+
+**4. Revoking while the other side is unreachable.**
+
+- A removes the link while B is down: A deletes the sealed key at once, so the Navi's next call is refused ("no linked
+  hub called acme") and the follower stops. A asks B to revoke it too; when B doesn't answer, `hub_link_remove` says
+  so (`revokedThere: false`). B still lists the link until its person or an admin revokes it, but its key exists
+  nowhere any more. A link unused for 90 days expires: B refuses its next use and marks it revoked. A followed link is
+  used every 25 seconds, so only abandoned links expire.
+- B revokes the link while A can't reach B: B refuses the key at once, but A hears of it only on its next call that
+  gets through, since B never calls A. Until then A's calls fail as "can't reach"; the first one that reaches B gets
+  "revoked", marks the link revoked on A, wakes the Navi once ("The link to acme no longer works…") and stops its
+  follower. Either way, nothing goes through a revoked link.
+
+**Reachability.** A link URL is `https://`, or `http://` only to loopback or over a tailnet (100.64.0.0/10,
+fd7a:115c:a1e0::/48, `*.ts.net`); plain HTTP elsewhere is refused before anything is sent, since the key would cross
+the network in the clear. An unreachable B gives `failed` with "Can't reach acme at \<url\>: \<reason\>." and the fix
+"A hub link needs acme's hub reachable from this hub, over a tailnet or HTTPS."
+
+**The Navi's calls.** `project_message` and `factory_status` take `hub`, a linked hub's label. Without it,
+`factory_status` lists the Navi's linked hubs with their state (`hubs`). Handles stay this hub's `N<n>`.
