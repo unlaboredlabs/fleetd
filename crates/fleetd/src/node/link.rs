@@ -376,6 +376,7 @@ async fn run_link_once(
             fleetd_contracts::node_link::CAP_SKILLS.to_owned(),
             fleetd_contracts::node_link::CAP_ORDER_ENV.to_owned(),
             fleetd_contracts::node_link::CAP_WORKTREE_SETUP.to_owned(),
+            fleetd_contracts::node_link::CAP_ALLOWED_ONLY.to_owned(),
             fleetd_contracts::node_link::CAP_SELF_UPDATE.to_owned(),
             fleetd_contracts::node_link::CAP_UPDATE_FETCH.to_owned(),
             fleetd_contracts::node_link::CAP_CLAUDE_INSTALL.to_owned(),
