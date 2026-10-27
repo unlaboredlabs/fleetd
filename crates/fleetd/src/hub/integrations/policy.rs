@@ -108,25 +108,37 @@ pub fn base64_bytes(text: &str) -> u64 {
     (text.len() as u64 * 3 / 4).saturating_sub(pad)
 }
 
-/// `input` as the card shows it: each file's bytes (`content_base64`) said by their size, which no one reads.
-pub fn shown_input(input: &Value) -> Value {
-    match input {
-        Value::Object(o) => Value::Object(
-            o.iter()
-                .map(|(k, v)| {
-                    let v = match (k.as_str(), v) {
-                        ("content_base64", Value::String(b)) => {
-                            Value::String(format!("[the file's {} bytes]", base64_bytes(b)))
-                        }
-                        _ => shown_input(v),
-                    };
-                    (k.clone(), v)
-                })
-                .collect(),
-        ),
-        Value::Array(items) => Value::Array(items.iter().map(shown_input).collect()),
-        other => other.clone(),
+/// Whether `text` reads as base64, standard or url-safe: nothing else is a file's bytes.
+fn is_base64(text: &str) -> bool {
+    !text.is_empty()
+        && text
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'+' | b'/' | b'-' | b'_' | b'='))
+}
+
+/// `input` as the card shows it: the bytes of each file xaq attaches (an `attachments` item with a `filename` and
+/// base64 `content_base64`) said by their size, which no one reads. Nothing else is changed, on any server.
+pub fn shown_input(kind: IntegrationKind, input: &Value) -> Value {
+    let mut shown = input.clone();
+    if kind != IntegrationKind::Google {
+        return shown;
     }
+    let Some(items) = shown.get_mut("attachments").and_then(Value::as_array_mut) else {
+        return shown;
+    };
+    for item in items.iter_mut().filter_map(Value::as_object_mut) {
+        let bytes = match item.get("content_base64") {
+            Some(Value::String(b)) if item.contains_key("filename") && is_base64(b) => {
+                base64_bytes(b)
+            }
+            _ => continue,
+        };
+        item.insert(
+            "content_base64".into(),
+            Value::String(format!("[the file's {bytes} bytes]")),
+        );
+    }
+    shown
 }
 
 /// A tool name's words, lower case: `create_account`, `createAccount` and `API-create-account` are all
@@ -295,10 +307,11 @@ pub fn verdict(tool_name: &str, input: &Value, servers: &[McpServer]) -> Option<
         Rule::Read => Verdict::Allow,
         Rule::Blocked(n) => Verdict::Block(n.why()),
         Rule::Ask(action) => {
-            let shown = shown_input(input);
-            if holds_credential(&shown) {
+            // On the raw input: a file's real bytes match no credential's shape, and nothing else is spared.
+            if holds_credential(input) {
                 return Some(Verdict::Block(Never::Credential.why()));
             }
+            let shown = shown_input(kind, input);
             if js_len(&serde_json::to_string_pretty(&shown).unwrap_or_default()) > PREVIEW_INPUT_MAX
             {
                 return Some(Verdict::Block(TOO_LARGE));
@@ -405,7 +418,7 @@ pub fn preview(
         .title
         .clone()
         .unwrap_or_else(|| format!("Use {tool} on {server}"));
-    let pretty = serde_json::to_string_pretty(&shown_input(input)).unwrap_or_default();
+    let pretty = serde_json::to_string_pretty(&shown_input(kind, input)).unwrap_or_default();
     Some(ToolPreview {
         integration: kind,
         server: McpServerName::new(server).ok()?,
