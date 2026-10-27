@@ -221,9 +221,21 @@ jobs:
           FLEETD_TEST_AGENT_BROWSER="$bin" cargo test --locked -p fleetd --lib agent_browser
         env:
           FLEETD_REQUIRE_AGENT_BROWSER: "1"
+      - name: A Navi's sandbox holds (bubblewrap)
+        # node/runner/sandbox: a Navi can't write outside its folder or read the token store, and works as usual
+        # inside it. rust-crates runs the same tests without bubblewrap, where they skip and say why;
+        # FLEETD_REQUIRE_SANDBOX makes them fail here instead. Ubuntu's AppArmor blocks the user namespaces bwrap needs
+        # unless a profile allows them; the runner turns the restriction off.
+        run: |
+          sudo apt-get install -y --no-install-recommends bubblewrap
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          bwrap --ro-bind / / --unshare-all true
+          cargo test --locked -p fleetd --lib node::runner::sandbox
+        env:
+          FLEETD_REQUIRE_SANDBOX: "1"
 
   rust-macos:
-    # rust (linux)'s sealed boxes on macOS, and the node's power code (IOKit).
+    # rust (linux)'s sealed boxes on macOS, the node's power code (IOKit), and a Navi's sandbox-exec.
     name: rust (macos)
     if: >-
       github.event_name != 'pull_request' || endsWith(github.head_ref, 'train/batch')
@@ -278,6 +290,11 @@ jobs:
         # releases it.
         if: steps.scope.outputs.run == 'true'
         run: cargo test --locked -p fleetd --lib node::power
+      - name: A Navi's sandbox holds (sandbox-exec)
+        if: steps.scope.outputs.run == 'true'
+        run: cargo test --locked -p fleetd --lib node::runner::sandbox
+        env:
+          FLEETD_REQUIRE_SANDBOX: "1"
 
   ios-sessions:
     # node/device/ios on a real iOS simulator: the probes its design rests on (simctl clone needs its source shut down,

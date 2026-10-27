@@ -288,6 +288,10 @@ pub fn screen_command(command: &str) -> bool {
         return false;
     }
     let verb = verb.text.as_str();
+    // `get cdp-url` hands over the browser's DevTools URL, raw control of the browser past every check here: it asks.
+    if verb == "get" && words[2..].iter().any(|w| w.text == "cdp-url") {
+        return false;
+    }
     words[2..].iter().enumerate().all(|(i, w)| {
         let after_name = i > 0 && words[2 + i - 1].text == "--name";
         if w.quoted && !(matches!(verb, "fill" | "type") || (verb == "find" && after_name)) {
@@ -304,7 +308,7 @@ pub fn screen_command(command: &str) -> bool {
 /// Files inside a Navi's folder its lead may read but never change: claude's own settings and MCP servers there,
 /// fleetd's policy file, and agent-browser's project config, would let it give itself allow rules, hooks, tools, or
 /// scripts, headers and a proxy on every page.
-const ASSISTANT_KEPT: &[&str] = &[".claude", ".mcp.json", ".fleetd", "agent-browser.json"];
+pub const ASSISTANT_KEPT: &[&str] = &[".claude", ".mcp.json", ".fleetd", "agent-browser.json"];
 
 /// The config file a Navi's agent-browser reads instead of any other (`AGENT_BROWSER_CONFIG`), in its session's own
 /// directory: empty, so fleetd's environment alone decides how its browser runs.
@@ -781,6 +785,26 @@ impl Runner for ClaudeRunner {
         Box::pin(conformance::probe(&self.binary, env))
     }
 
+    /// Starts the sandbox once on a blocking thread: it waits on bwrap, and the runtime's threads don't wait.
+    fn fence<'a>(&'a self, spec: &'a SessionSpec) -> BoxFut<'a, Result<(), RunnerError>> {
+        Box::pin(async move {
+            let Some(fence) = spec.sandbox.clone() else {
+                return Ok(());
+            };
+            let cwd = spec.cwd.clone();
+            tokio::task::spawn_blocking(move || super::sandbox::check(&fence, &cwd))
+                .await
+                .map_err(|e| RunnerError::Sandbox {
+                    message: format!("A Navi's sandbox check stopped: {e}"),
+                    fix: "Send again.".into(),
+                })?
+                .map_err(|r| RunnerError::Sandbox {
+                    message: r.message,
+                    fix: r.fix,
+                })
+        })
+    }
+
     fn spawn(&self, mut spec: SessionSpec) -> Result<SessionHandle, RunnerError> {
         let binary = self.binary.display().to_string();
         let refuse = |message: String| RunnerError::Spawn {
@@ -835,15 +859,27 @@ impl Runner for ClaudeRunner {
                 .stderr(std::process::Stdio::piped())
                 .process_group(0)
                 .kill_on_drop(true);
+            // A Navi's sandbox reaches no abstract socket made outside it (an X server's), where the kernel can say so.
+            if spec.sandbox.is_some()
+                && let Some(hook) = super::sandbox::scope_hook()
+            {
+                // SAFETY: the hook makes system calls only.
+                unsafe {
+                    cmd.pre_exec(hook);
+                }
+            }
             cmd
         };
-        let spawned = scope::spawn(
-            scope.as_ref(),
-            &self.binary,
-            self.args(&spec),
-            &spec.session_id,
-            build,
-        );
+        // A Navi's claude starts inside its sandbox (checked by `fence`), or not at all.
+        let (program, args) = match &spec.sandbox {
+            Some(fence) => super::sandbox::wrap(fence, &spec.cwd, &self.binary, self.args(&spec))
+                .map_err(|r| RunnerError::Sandbox {
+                message: r.message,
+                fix: r.fix,
+            })?,
+            None => (self.binary.clone(), self.args(&spec)),
+        };
+        let spawned = scope::spawn(scope.as_ref(), &program, args, &spec.session_id, build);
         let (child, scope_failed) = spawned.map_err(|error| {
             if error.kind() == std::io::ErrorKind::NotFound && !self.binary.exists() {
                 RunnerError::Missing {
@@ -1018,6 +1054,9 @@ mod tests {
             "agent-browser click @e3 --cdp=9222",
             "agent-browser snapshot --action-policy ./p.json",
             "agent-browser get text @e1 --config ./c.json",
+            // The browser's DevTools URL: raw control of the browser.
+            "agent-browser get cdp-url",
+            "agent-browser get --json cdp-url",
             "agent-browser fill @e2 x --headers '{\"a\":1}'",
             "agent-browser scroll down --args --no-sandbox",
             "agent-browser reload --executable-path /tmp/chrome",
@@ -1303,6 +1342,7 @@ mod tests {
             plugin_dirs: Vec::new(),
             env: Vec::new(),
             transcript: None,
+            sandbox: None,
         }
     }
 

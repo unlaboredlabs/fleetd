@@ -16,6 +16,7 @@
 //! Files ending `.documented.jsonl` are built from the Agent SDK's types, not recorded.
 pub mod claude;
 pub mod process;
+pub mod sandbox;
 pub mod scope;
 pub mod shell;
 
@@ -79,6 +80,9 @@ pub struct SessionSpec {
     pub env: Vec<(String, String)>,
     /// Raw stdout and stderr lines are appended here for debugging and conformance.
     pub transcript: Option<PathBuf>,
+    /// The OS sandbox the process and everything it starts run in: a Navi's ([`sandbox::navi_fence`]). None for every
+    /// other session.
+    pub sandbox: Option<sandbox::Fence>,
 }
 
 /// Commands to a live session's process.
@@ -237,6 +241,9 @@ pub enum RunnerError {
     Missing { binary: String },
     #[error("could not start {binary}: {message}")]
     Spawn { binary: String, message: String },
+    /// The session must run in a sandbox, and none could start here.
+    #[error("{message}")]
+    Sandbox { message: String, fix: String },
 }
 
 /// One agent runtime, one per [`RunnerKind`].
@@ -245,6 +252,12 @@ pub trait Runner: Send + Sync + 'static {
     /// `env` is the environment a session would get now (the user's own setup, plus `claude.env`): the login it reports
     /// depends on exactly that, and the node re-reads it per spawn.
     fn probe<'a>(&'a self, env: &'a [(String, String)]) -> BoxFut<'a, RunnerInfo>;
+    /// Makes `spec`'s sandbox ready and checks that it starts, off the async runtime, before [`Runner::spawn`]: a
+    /// session whose sandbox can't start is refused here. Nothing to do for a session without one.
+    fn fence<'a>(&'a self, spec: &'a SessionSpec) -> BoxFut<'a, Result<(), RunnerError>> {
+        let _ = spec;
+        Box::pin(async { Ok(()) })
+    }
     /// Starts the process for `spec` and returns once it is running; the first run starts with a `Send`.
     fn spawn(&self, spec: SessionSpec) -> Result<SessionHandle, RunnerError>;
     /// The model and effort a session of `profile` runs on when no setting chose them, and where one whose model
