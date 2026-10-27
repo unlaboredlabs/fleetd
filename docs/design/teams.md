@@ -12,8 +12,15 @@ The product questions (§10) are answered, and these decisions override anything
    private** to their one person.
 2. **Hub admins can read people's Navis.** Navis are private between members, not from the hub's admins.
 3. **Accounts:**
-   - **Claude:** the hub can be configured with a **Claude API key and an optional custom endpoint**, and each person
-     can **connect their own Claude subscription**.
+   - **Claude: each person chooses** (D198), in their own settings, and can switch at any time:
+     - **their own Claude subscription**, connected from the app with a long-lived token (what `claude setup-token`
+       makes), sealed to the hub's machines like other secrets; or
+     - **the hub's API configuration**: the admin's Claude API key and an optional custom endpoint.
+   - **Whose account runs what:** an order's agents and its lead's turns use the choice of the person who started it
+     (`startedBy`). A Navi uses its owner's. Work nobody started (automations, train fixes, lead wakes with no person
+     behind them) uses the hub's API configuration, else the hub owner's subscription.
+   - The admin can **turn the hub's API option off for members** on the Administration page. Someone with neither is
+     **asked to connect before their first order**. One person's subscription is never used for anyone else's work.
    - **GitHub: one GitHub App per hub** (D190). The admin creates it during setup through GitHub's app-manifest link,
      so there is nothing to paste, and fleetd runs no shared app. No separate OAuth app.
      - Its **installation token** does the hub's own work: the train, merges, CI reads, webhooks, and PRs no person
@@ -312,8 +319,20 @@ Settings › People and on the Navi page. For strict privacy, run your Navi on *
   - A person's own credentials (their email, their bank, their 1Password) belong in **their Navi**, never in a team
     project.
 - **Accounts the agents use** (Decided, 3; a later step):
-  - **Claude:** a hub-wide Claude API key with an optional custom endpoint, or a person's own connected Claude
-    subscription.
+  - **Claude:** each person picks, in their own settings, their own subscription or the hub's API configuration
+    (D198), and can switch at any time.
+    - A subscription is connected from the app with a long-lived token (what `claude setup-token` makes). It is
+      sealed to the hub's machines like other secrets, and the agents run for that person's work get it as
+      `CLAUDE_CODE_OAUTH_TOKEN`. The hub's way sets `ANTHROPIC_API_KEY`, plus `ANTHROPIC_BASE_URL` when an endpoint is
+      set.
+    - An order's agents and its lead's turns use its `startedBy`'s choice; a Navi uses its owner's. Work nobody
+      started (automations, train fixes, lead wakes with no person behind them) uses the hub's API configuration,
+      else the hub owner's subscription.
+    - The admin can turn the hub's API option off for members on the Administration page; then each member connects
+      a subscription. Someone with neither is asked to connect before their first order. One person's subscription is
+      never used for anyone else's work.
+    - Usage limits are tracked per account: when one person's subscription hits its limit, only the work running on
+      it waits for the reset, and everyone else's carries on.
   - **GitHub:** the hub's one GitHub App (D190). Each person connects their account through its user sign-in. An
     order's PRs open with the user-to-server token of the person who started it (`startedBy`), its commits authored
     by them with `Co-Authored-By` the agent and anyone else in the order. Automations, train fixes, merges, CI reads
@@ -437,8 +456,14 @@ This builds on the Navi plan's first version.
 - Attribution in the activity log by person; PR attribution comes with step 8.
 
 **Step 8: Accounts (m).** (Decided, 3.)
-- Hub-wide Claude API key and optional custom endpoint, on the Administration page; a person connects their own
-  Claude subscription.
+- Claude (D198):
+  - The hub's API key and optional endpoint on the Administration page, with a switch to turn that option off for
+    members.
+  - In each person's own settings, the choice: connect their own subscription (a `claude setup-token` token, sealed to
+    the hub's machines) or use the hub's API configuration.
+  - Each spawn gets the account of the order's `startedBy` (a Navi's owner; for work nobody started, the hub's API
+    configuration, else the hub owner's subscription): `CLAUDE_CODE_OAUTH_TOKEN`, or `ANTHROPIC_API_KEY` and
+    `ANTHROPIC_BASE_URL`. Asked to connect before a first order; usage limits tracked per account.
 - One GitHub App per hub, created by the admin through GitHub's app-manifest link: its installation token for the
   hub's own work, and its user sign-in (user-to-server tokens, refreshed) for each person.
 - PRs under the account of the order's `startedBy`, commits authored by them with `Co-Authored-By` the agent and the
@@ -475,7 +500,6 @@ Answered: see Decided at the top. The research's recommendations, as asked:
    team shares context more easily that way.
 2. **Can hub admins read people's Navis?** *Recommend no, through fleetd.* Say plainly that the hub's operator can
    read the disk, and point privacy-minded people to running their Navi on their own machine.
-3. **Whose GitHub and Claude accounts do a team hub's agents use?** *Recommend the machines' own accounts as today*,
-   with setup steering team hubs to a GitHub bot account (or App) and a Claude Team or API setup. Record each person
-   through `Co-Authored-By` and the activity log, rather than per-person tokens. Per-person accounts would mean
-   sealing each person's tokens per order, which is a large change for little gain.
+3. **Whose GitHub and Claude accounts do a team hub's agents use?** The research recommended the machines' own
+   accounts, as before teams. That was not taken: GitHub is per person through the hub's App (D187, D190), and Claude
+   is each person's choice of their own subscription or the hub's API configuration (D198). See Decided, 3.
