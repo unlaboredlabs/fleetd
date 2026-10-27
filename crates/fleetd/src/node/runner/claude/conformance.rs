@@ -87,6 +87,7 @@ pub async fn probe(binary: &Path, env: &[(String, String)]) -> RunnerInfo {
             .await
             .ok()
             .flatten(),
+        account_overrides: Some(setup::account_overrides(env)),
     };
     if let Some((url, source)) = setup::proxy_of(env) {
         info.proxy = Some(url);

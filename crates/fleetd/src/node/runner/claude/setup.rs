@@ -152,6 +152,22 @@ pub fn proxy_of(env: &[(String, String)]) -> Option<(String, String)> {
     (url != DEFAULT_BASE_URL).then_some((url, source))
 }
 
+/// The account variables (`ACCOUNT_CLEARS`) the user settings' `env` sets with `env`, by name, in that list's
+/// order: read only, and the values are never kept.
+pub fn account_overrides(env: &[(String, String)]) -> Vec<String> {
+    let Some(set) = settings_env(&user_settings(env)) else {
+        return Vec::new();
+    };
+    fleetd_contracts::claude_accounts::ACCOUNT_CLEARS
+        .iter()
+        .filter(|name| {
+            set.get(**name)
+                .is_some_and(|v| !v.is_null() && v.as_str().is_none_or(|s| !s.trim().is_empty()))
+        })
+        .map(|name| (*name).to_owned())
+        .collect()
+}
+
 /// Not passed to claude: the node marks the env file a variable came from, so a proxy can name its source.
 pub const FLEETD_ENV_SOURCE: &str = "FLEETD_ENV_SOURCE";
 
@@ -226,6 +242,32 @@ mod tests {
         );
         let outside = Path::new("/nonexistent-home-sibling/settings.json");
         assert_eq!(tilde(outside), "/nonexistent-home-sibling/settings.json");
+    }
+
+    /// Only the account variables a temp home's settings set, by name; the process environment and other settings
+    /// never count, and the real ~/.claude is never read.
+    #[test]
+    fn account_overrides_name_the_credentials_user_settings_set() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path().to_str().unwrap();
+        let base = env(&[
+            ("HOME", home),
+            ("ANTHROPIC_API_KEY", "from-the-environment"),
+        ]);
+        assert!(account_overrides(&base).is_empty(), "no settings file");
+        std::fs::create_dir_all(dir.path().join(".claude")).unwrap();
+        std::fs::write(
+            dir.path().join(".claude/settings.json"),
+            r#"{"env":{"ANTHROPIC_BASE_URL":"http://127.0.0.1:8317","DISABLE_AUTOUPDATER":"1","ANTHROPIC_AUTH_TOKEN":"devbox-token","CLAUDE_CODE_OAUTH_TOKEN":""}}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            account_overrides(&base),
+            vec![
+                "ANTHROPIC_BASE_URL".to_owned(),
+                "ANTHROPIC_AUTH_TOKEN".to_owned()
+            ]
+        );
     }
 
     #[test]

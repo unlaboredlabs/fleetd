@@ -313,6 +313,36 @@ impl DoctorFleet for OpsPorts {
             until: crate::hub::tasks::sweep::clock_time(paused.until_ms),
         })
     }
+    fn claude_setup(&self) -> BoxFut<'_, Option<crate::hub::doctor::checks::ClaudeSetupView>> {
+        Box::pin(async move {
+            let hub = self.hub();
+            let read = || -> Result<_, crate::hub::store::StoreError> {
+                let setup = hub.db.claude_accounts().setup()?;
+                let owner = crate::hub::people::active(&hub.db)?
+                    .into_iter()
+                    .find(|p| Some(&p.person_id) == setup.owner.as_ref())
+                    .map(|p| {
+                        (
+                            p.name.as_str().to_owned(),
+                            setup.subscriptions.get(&p.person_id).cloned(),
+                        )
+                    });
+                let machines = hub
+                    .store
+                    .machines_list()?
+                    .into_iter()
+                    .map(|m| m.machine_id.as_str().to_owned())
+                    .collect();
+                Ok(crate::hub::doctor::checks::ClaudeSetupView {
+                    configured: setup.configured(),
+                    hub_api: setup.hub_api,
+                    owner,
+                    machines,
+                })
+            };
+            logged(read(), "reading the hub's Claude accounts")
+        })
+    }
     fn unowned_sessions(
         &self,
         machine_id: &str,

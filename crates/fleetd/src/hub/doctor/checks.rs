@@ -9,6 +9,9 @@ use std::sync::LazyLock;
 
 use crate::hub::tasks::base;
 use crate::node::runner::{RunnerGuide, guide};
+use fleetd_contracts::claude_accounts::{
+    ClaudeHubApi, ClaudeSealedOn, ClaudeSubscription, ClaudeTest,
+};
 use fleetd_contracts::node_link::{
     AndroidHealth, AndroidState, DesktopHealth, DesktopState, IosHealth, IosState, NodeDisk,
 };
@@ -584,6 +587,181 @@ fn version_entry(
             fix.map(|command| manual(&format!("Change the installed {name}"), Some(command))),
         ),
     }
+}
+
+// Claude accounts (teams step 8, D200)
+
+/// What the Claude checks read of the hub's accounts: never a key or token, only where each is and its last Test.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ClaudeSetupView {
+    pub hub_api: Option<ClaudeHubApi>,
+    /// The hub's owner, by name, and their subscription; `None` on a hub with no owner.
+    pub owner: Option<(String, Option<ClaudeSubscription>)>,
+    /// Any account is set up: else every machine runs on its own login, and no machine's settings outrank one.
+    pub configured: bool,
+    /// Every machine agents run on.
+    pub machines: Vec<String>,
+}
+
+/// One account's state as a check: its last Test failed, machines don't hold it, it is untested, or it works.
+fn account_entry(
+    name: &str,
+    what: &str,
+    sealed_on: &[ClaudeSealedOn],
+    last_test: Option<&ClaudeTest>,
+    machines: &[String],
+    fix: &str,
+) -> Entry {
+    if let Some(t) = last_test.filter(|t| !t.ok) {
+        let said = t
+            .error
+            .as_deref()
+            .unwrap_or("claude failed")
+            .trim_end_matches('.');
+        return hub_entry(
+            name,
+            Fail,
+            &format!("{what} failed its Test on {}: {said}.", t.machine_id),
+            Some(manual(fix, None)),
+        );
+    }
+    let missing: Vec<&str> = machines
+        .iter()
+        .map(String::as_str)
+        .filter(|m| !sealed_on.iter().any(|s| s.machine_id.as_str() == *m))
+        .collect();
+    if !missing.is_empty() {
+        let list = missing.join(", ");
+        return hub_entry(
+            name,
+            Warn,
+            &format!("{what} isn't on {list}, so nothing runs on it there."),
+            Some(manual(
+                &format!(
+                    "Save it again while {list} {} online",
+                    if missing.len() == 1 { "is" } else { "are" }
+                ),
+                None,
+            )),
+        );
+    }
+    match last_test {
+        Some(t) => hub_entry(
+            name,
+            Pass,
+            &format!("{what} works: tested on {}.", t.machine_id),
+            None,
+        ),
+        None => hub_entry(
+            name,
+            Unknown,
+            &format!("{what} is saved but not tested yet."),
+            Some(manual("Press Test beside it", None)),
+        ),
+    }
+}
+
+/// `hub/claude_key`: the hub's API configuration, which projects' leads and work nobody started run on first, and
+/// anyone who chooses it.
+pub fn claude_key(setup: &ClaudeSetupView) -> Entry {
+    let fix = "Check the key and endpoint on Administration › Claude, then save them again";
+    match &setup.hub_api {
+        None => hub_entry(
+            "claude_key",
+            Unknown,
+            "The hub has no Claude API key.",
+            Some(manual("Add one on Administration › Claude", None)),
+        ),
+        Some(api) => {
+            let what = match &api.endpoint {
+                Some(url) => format!("The hub's Claude API key (through {url})"),
+                None => "The hub's Claude API key".to_owned(),
+            };
+            account_entry(
+                "claude_key",
+                &what,
+                &api.sealed_on,
+                api.last_test.as_ref(),
+                &setup.machines,
+                fix,
+            )
+        }
+    }
+}
+
+/// `hub/claude_owner`: the hub owner's own subscription, which projects' leads and work nobody started fall back to
+/// without a hub API key.
+pub fn claude_owner(setup: &ClaudeSetupView) -> Entry {
+    let Some((name, subscription)) = &setup.owner else {
+        return hub_entry(
+            "claude_owner",
+            Unknown,
+            "The hub has no owner to connect a subscription.",
+            None,
+        );
+    };
+    match subscription {
+        None => hub_entry(
+            "claude_owner",
+            Unknown,
+            &format!("{name}, the hub's owner, has no Claude subscription connected."),
+            Some(manual(
+                &format!("{name} connects it in Settings › Claude"),
+                None,
+            )),
+        ),
+        Some(sub) => account_entry(
+            "claude_owner",
+            &format!("{name}'s Claude subscription"),
+            &sub.sealed_on,
+            sub.last_test.as_ref(),
+            &setup.machines,
+            &format!(
+                "{name} runs `claude setup-token` again and pastes the new token in Settings › Claude"
+            ),
+        ),
+    }
+}
+
+/// `claude_account_override`: the machine's claude user settings set a credential or gateway in their `env`, which
+/// claude applies over the account fleetd gives a session. Only once the hub has an account set up, and only from a
+/// node that reads its settings for it.
+pub fn claude_account_override(
+    machine_id: &str,
+    info: &RunnerInfo,
+    configured: bool,
+) -> Option<Entry> {
+    let names = info.account_overrides.as_ref().filter(|_| configured)?;
+    let settings = info.config_dir.as_deref().map_or_else(
+        || "~/.claude/settings.json".to_owned(),
+        |d| format!("{d}/settings.json"),
+    );
+    if names.is_empty() {
+        return Some(machine_entry(
+            machine_id,
+            "claude_account_override",
+            Pass,
+            &format!(
+                "{machine_id}'s claude settings set no credential of their own: its sessions run on the account fleetd gives them."
+            ),
+            None,
+        ));
+    }
+    let list = names.join(", ");
+    Some(machine_entry(
+        machine_id,
+        "claude_account_override",
+        Warn,
+        &format!(
+            "{settings} on {machine_id} sets {list} in its \"env\", which claude applies over the Claude account fleetd gives each session there."
+        ),
+        Some(manual(
+            &format!(
+                "On {machine_id}, move {list} out of the \"env\" of {settings} (into ~/.fleetd/claude.env for the machine's own login), then restart its node"
+            ),
+            None,
+        )),
+    ))
 }
 
 pub fn usage_breaker(machine_id: &str, breaker: &UsageBreaker) -> Entry {
@@ -1301,6 +1479,7 @@ mod tests {
             config_dir: None,
             self_update: None,
             sandbox: None,
+            account_overrides: None,
         };
         let fix = |info: Option<RunnerInfo>| {
             let entry = machine_online(&degraded, None, info.as_ref());
@@ -1364,6 +1543,176 @@ mod tests {
         );
     }
 
+    fn sealed(machine: &str) -> ClaudeSealedOn {
+        ClaudeSealedOn {
+            machine_id: fleetd_contracts::ids::MachineId::new(machine).unwrap(),
+            fingerprint: fleetd_contracts::secrets::SecretFingerprint::new("0123abcd").unwrap(),
+        }
+    }
+
+    fn tested(ok: bool) -> ClaudeTest {
+        ClaudeTest {
+            at: fleetd_contracts::ids::Timestamp::from("2026-10-27T10:00:00.000Z"),
+            machine_id: fleetd_contracts::ids::MachineId::new("devbox").unwrap(),
+            ok,
+            error: (!ok).then(|| "Invalid API key · Fix external API key".to_owned()),
+        }
+    }
+
+    /// The hub's key and the owner's subscription read the same way: none is to do, a failed Test fails, a machine
+    /// without it warns, untested waits for Test, tested works.
+    #[test]
+    fn the_claude_checks_read_the_key_and_the_owners_subscription() {
+        let at = |checked: Entry| {
+            (
+                checked.check.id,
+                checked.check.status,
+                checked.check.message,
+            )
+        };
+        let machines = vec!["devbox".to_owned(), "buildbox".to_owned()];
+        let none = ClaudeSetupView {
+            owner: Some(("Sam Rivera".into(), None)),
+            machines: machines.clone(),
+            ..Default::default()
+        };
+        assert_eq!(
+            at(claude_key(&none)),
+            (
+                "hub/claude_key".into(),
+                Unknown,
+                "The hub has no Claude API key.".into()
+            )
+        );
+        assert_eq!(
+            at(claude_owner(&none)),
+            (
+                "hub/claude_owner".into(),
+                Unknown,
+                "Sam Rivera, the hub's owner, has no Claude subscription connected.".into()
+            )
+        );
+        let api = |sealed_on: Vec<ClaudeSealedOn>, last_test: Option<ClaudeTest>| ClaudeHubApi {
+            endpoint: Some(
+                fleetd_contracts::claude_accounts::ClaudeEndpoint::new(
+                    "https://gateway.devbox.example",
+                )
+                .unwrap(),
+            ),
+            sealed_on,
+            updated_at: fleetd_contracts::ids::Timestamp::from("2026-10-27T09:00:00.000Z"),
+            updated_by: None,
+            last_test,
+        };
+        let with = |a: ClaudeHubApi| ClaudeSetupView {
+            hub_api: Some(a),
+            configured: true,
+            ..none.clone()
+        };
+        let both = vec![sealed("devbox"), sealed("buildbox")];
+        let failed = claude_key(&with(api(both.clone(), Some(tested(false)))));
+        assert_eq!(failed.check.status, Fail);
+        assert_eq!(
+            failed.check.message,
+            "The hub's Claude API key (through https://gateway.devbox.example) failed its Test on devbox: Invalid API key · Fix external API key."
+        );
+        let partly = claude_key(&with(api(vec![sealed("devbox")], Some(tested(true)))));
+        assert_eq!(partly.check.status, Warn);
+        assert!(
+            partly.check.message.contains("isn't on buildbox"),
+            "{}",
+            partly.check.message
+        );
+        assert_eq!(
+            partly.check.fix.unwrap().label,
+            "Save it again while buildbox is online"
+        );
+        assert_eq!(
+            claude_key(&with(api(both.clone(), None))).check.status,
+            Unknown
+        );
+        assert_eq!(
+            claude_key(&with(api(both.clone(), Some(tested(true)))))
+                .check
+                .status,
+            Pass
+        );
+        let owner = |last_test| ClaudeSetupView {
+            owner: Some((
+                "Sam Rivera".into(),
+                Some(ClaudeSubscription {
+                    sealed_on: both.clone(),
+                    connected_at: fleetd_contracts::ids::Timestamp::from(
+                        "2026-10-27T09:00:00.000Z",
+                    ),
+                    last_test,
+                }),
+            )),
+            configured: true,
+            ..none.clone()
+        };
+        assert_eq!(
+            at(claude_owner(&owner(Some(tested(true))))),
+            (
+                "hub/claude_owner".into(),
+                Pass,
+                "Sam Rivera's Claude subscription works: tested on devbox.".into()
+            )
+        );
+        let expired = claude_owner(&owner(Some(tested(false))));
+        assert_eq!(expired.check.status, Fail);
+        assert!(
+            expired
+                .check
+                .fix
+                .unwrap()
+                .label
+                .contains("claude setup-token")
+        );
+    }
+
+    /// Credentials in a machine's claude settings warn once an account is set up; with none, or from a node that
+    /// doesn't say, there is no check.
+    #[test]
+    fn claude_settings_that_outrank_the_account_warn() {
+        let info = |overrides: Option<Vec<&str>>| RunnerInfo {
+            runner: fleetd_contracts::sessions::RunnerKind::Claude,
+            version: None,
+            supported: String::new(),
+            version_ok: true,
+            login: LoginStatus::LoggedIn,
+            login_kind: None,
+            conformance_ok: None,
+            problem: None,
+            login_label: None,
+            proxy: None,
+            proxy_source: None,
+            config_dir: Some("/home/ada/.claude".into()),
+            self_update: None,
+            sandbox: None,
+            account_overrides: overrides.map(|o| o.into_iter().map(str::to_owned).collect()),
+        };
+        let set = info(Some(vec!["ANTHROPIC_BASE_URL", "ANTHROPIC_API_KEY"]));
+        assert_eq!(claude_account_override("devbox", &set, false), None);
+        assert_eq!(claude_account_override("devbox", &info(None), true), None);
+        let warned = claude_account_override("devbox", &set, true).unwrap().check;
+        assert_eq!(
+            (warned.id.as_str(), warned.status),
+            ("devbox/claude_account_override", Warn)
+        );
+        assert_eq!(
+            warned.message,
+            "/home/ada/.claude/settings.json on devbox sets ANTHROPIC_BASE_URL, ANTHROPIC_API_KEY in its \"env\", which claude applies over the Claude account fleetd gives each session there."
+        );
+        assert_eq!(
+            claude_account_override("devbox", &info(Some(vec![])), true)
+                .unwrap()
+                .check
+                .status,
+            Pass
+        );
+    }
+
     /// Claude Code updating itself is a warning naming the setting; off is a pass; a node that doesn't say adds none.
     #[test]
     fn the_doctor_checks_claude_doesnt_update_itself() {
@@ -1382,6 +1731,7 @@ mod tests {
             config_dir: Some("/home/u/.claude".into()),
             self_update,
             sandbox: None,
+            account_overrides: None,
         };
         let sandboxed = |status, line: &str| {
             let mut i = info(None);
@@ -1444,6 +1794,7 @@ mod tests {
             config_dir: None,
             self_update: None,
             sandbox: None,
+            account_overrides: None,
         };
         let statuses = |i: &RunnerInfo| {
             runner_checks("mac", i)
