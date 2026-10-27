@@ -7,6 +7,7 @@ use fleetd_contracts::effort::TaskProfile;
 use fleetd_contracts::lead_calls::{LeadCall, LeadCallResult, TaskListResult, TaskResultFrame};
 use fleetd_contracts::mcp::{CapSetInput, ErrorCode, TaskGetInput, TasksListInput};
 use fleetd_contracts::prim::List;
+use fleetd_contracts::repos::ProjectRepo;
 use fleetd_contracts::tasks::{Task, TaskKind};
 use serde_json::{Value, json};
 
@@ -140,6 +141,17 @@ fn frame(task: Task) -> TaskResultFrame {
     }
 }
 
+/// What a task's `repoId` names, when the project has several repos: `Repos: R1 api, R4 web.`
+fn repos_line(repos: &[ProjectRepo]) -> Option<String> {
+    (repos.len() > 1).then(|| {
+        let named: Vec<String> = repos
+            .iter()
+            .map(|repo| format!("{} {}", repo.repo_id.as_str(), repo.name.as_str()))
+            .collect();
+        format!("Repos: {}.", named.join(", "))
+    })
+}
+
 fn internal(error: StoreError) -> TaskError {
     tracing::error!(%error, "task lead call failed");
     internal_error()
@@ -165,7 +177,17 @@ pub async fn lead_call(
                 )
             });
             let also = tasks.also_writing(&task, &spawned.observed).await;
-            let mut next = [based, tasks.queued_next(&task), also, spawned.note]
+            // With several repos, which one it works in.
+            let repos = tasks.repos_of(r);
+            let repo = (repos.len() > 1)
+                .then(|| {
+                    repos
+                        .iter()
+                        .find(|repo| Some(&repo.repo_id) == task.repo_id.as_ref())
+                })
+                .flatten()
+                .map(|repo| format!("It works in repo {}.", repo.name.as_str()));
+            let mut next = [repo, based, tasks.queued_next(&task), also, spawned.note]
                 .into_iter()
                 .flatten()
                 .reduce(|a, b| format!("{a} {b}"));
@@ -192,7 +214,7 @@ pub async fn lead_call(
                         Ok(LeadCallResult::TaskList(TaskListResult {
                             tasks: List::unchecked(vec![task]),
                             truncated: None,
-                            next: None,
+                            next: repos_line(&tasks.repos_of(r)),
                         }))
                     }
                     _ => Err(TaskError::new(
@@ -214,7 +236,7 @@ pub async fn lead_call(
             Ok(LeadCallResult::TaskList(TaskListResult {
                 tasks: List::unchecked(listed),
                 truncated: truncated.then_some(true),
-                next: None,
+                next: repos_line(&tasks.repos_of(r)),
             }))
         }
         LeadCall::TaskMessage(c) => Ok(LeadCallResult::TaskMessage(frame(

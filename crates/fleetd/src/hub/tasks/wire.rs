@@ -84,19 +84,19 @@ impl TaskPorts for HubTaskPorts {
         request: LaunchRequest,
     ) -> BoxFut<'a, Result<(ThreadId, Option<WorktreeBase>), PortError>> {
         Box::pin(async move {
-            let project = ProjectRef {
-                machine_id: machine_id.clone(),
-                project_id: request.project_id.clone(),
-            };
-            // A new worktree is set up first, by a node that can.
+            // A new worktree is set up first, by a node that can, with its repo's commands.
             let setup = match (&request.worktree, self.hub()) {
                 (Some(_), Some(hub))
                     if hub
                         .link
                         .node_can(machine_id, fleetd_contracts::node_link::CAP_WORKTREE_SETUP) =>
                 {
-                    crate::hub::projects::settings::task_setup(&hub, &project)
-                        .map_err(|e| PortError::Failed(e.to_string()))?
+                    crate::hub::projects::settings::task_setup(
+                        &hub,
+                        &request.project_ref,
+                        request.repo_id.as_ref(),
+                    )
+                    .map_err(|e| PortError::Failed(e.to_string()))?
                 }
                 _ => None,
             };

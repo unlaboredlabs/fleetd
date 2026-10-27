@@ -49,6 +49,7 @@ use fleetd_contracts::lead_calls::{BriefReadResult, TaskSpawnCall};
 use fleetd_contracts::ledger::WorkstreamId;
 use fleetd_contracts::prim::NonEmpty;
 use fleetd_contracts::prim::{Int, Text};
+use fleetd_contracts::repos::{ProjectRepo, RepoId};
 use fleetd_contracts::sessions::{RunEnd, WorktreeBase};
 use fleetd_contracts::tasks::{
     FetchFailedData, PrUrl, RecoveryMode, Task, TaskId, TaskKind, TaskRecovery, TaskResult,
@@ -129,6 +130,14 @@ fn end_cause(event: &HubEvent) -> Option<RunEnd> {
 
 fn same_project(a: &ProjectRef, b: &ProjectRef) -> bool {
     a.machine_id == b.machine_id && a.project_id == b.project_id
+}
+
+/// The PR is in the repo: its URL is on the repo's remote (`github.com/acme/api/pull/3` on `github.com/acme/api`).
+fn holds_pr(repo: &ProjectRepo, pr: &str) -> bool {
+    let pr = fleetd_contracts::projects::short_remote(pr).to_lowercase();
+    repo.repo_key
+        .as_ref()
+        .is_some_and(|key| pr.starts_with(&format!("{}/", key.as_str().to_lowercase())))
 }
 
 fn lead_error(code: ErrorCode, message: impl Into<String>, fix: Option<&str>) -> TaskError {
@@ -482,32 +491,61 @@ impl Tasks {
     /// the task's thread and its worktree, and whose agent gets the handoff after its brief.
     async fn launch(&self, task: &Task, handoff: Option<&str>) -> Result<Launched, StartError> {
         let r = &task.project_ref;
-        let Some(project) = self.d.store.project_get(r)? else {
-            return Err(StartError::Other(format!(
+        // Its worktree, branch and setup are its repo's: the work runs in the repo's checkout (W79).
+        let repo = self.repo_of(task)?;
+        let checkout = repo.as_ref().map_or(r, |repo| &repo.checkout);
+        let gone = |p: &ProjectRef| {
+            StartError::Other(format!(
                 "No project {} on machine {}.",
-                r.project_id.as_str(),
-                r.machine_id.as_str()
-            )));
+                p.project_id.as_str(),
+                p.machine_id.as_str()
+            ))
         };
-        let policy = self.d.policies.get(r).await?;
+        let Some(project) = self.d.store.project_get(r)? else {
+            return Err(gone(r));
+        };
+        let workspace_root = if checkout == r {
+            project.workspace_root.clone()
+        } else {
+            match self.d.store.project_get(checkout)? {
+                Some(p) => p.workspace_root,
+                None => return Err(gone(checkout)),
+            }
+        };
+        let policy = self.d.policies.get(checkout).await?;
         let brief = self.workstream(&task.workstream_id).and_then(|w| w.brief);
         let write = task.kind == TaskKind::Write;
         // Every task gets a worktree of its own from the default branch, a writer's on its branch and a reader's
         // detached, so none works in the human's checkout. A reader still runs there, as before, on a node too old to
         // decode a detached workspace (it would drop its link), and in a directory with no branch or a repo with no
         // commit yet, which can't have one.
-        let base_branch = if write || self.d.ports.detached_worktrees(&r.machine_id) {
+        let base_branch = if write || self.d.ports.detached_worktrees(&checkout.machine_id) {
             self.d
                 .ports
-                .default_branch(&r.machine_id, &project.workspace_root)
+                .default_branch(&checkout.machine_id, &workspace_root)
                 .await?
         } else {
             None
         };
+        // In another repo it needs a worktree of its own: run in the checkout itself, its session would be the
+        // checkout's, not the project's, and every call it made would be refused.
+        if let Some(repo) = &repo
+            && base_branch.is_none()
+        {
+            return Err(StartError::Other(
+                if write || self.d.ports.detached_worktrees(&checkout.machine_id) {
+                    format!("repo {} has no commits yet", repo.name.as_str())
+                } else {
+                    format!(
+                        "update {} to run agents in other repos",
+                        checkout.machine_id.as_str()
+                    )
+                },
+            ));
+        }
         if write && base_branch.is_none() {
             return Err(StartError::Other(format!(
-                "no branch with a commit at {}",
-                project.workspace_root
+                "no branch with a commit at {workspace_root}"
             )));
         }
         let branch = write.then(|| {
@@ -553,7 +591,9 @@ impl Tasks {
             .and(task.thread_ref.as_ref())
             .map(|t| t.thread_id.clone());
         let request = LaunchRequest {
-            project_id: r.project_id.clone(),
+            project_id: checkout.project_id.clone(),
+            project_ref: r.clone(),
+            repo_id: task.repo_id.clone(),
             prompt: prompt.clone(),
             profile: task.profile,
             title: js_prefix(
@@ -571,7 +611,7 @@ impl Tasks {
             }),
             order_id: Some(task.workstream_id.clone()),
         };
-        let (thread_id, base) = self.d.ports.launch(&r.machine_id, request).await?;
+        let (thread_id, base) = self.d.ports.launch(&checkout.machine_id, request).await?;
         // Every later message to this thread renders from the texts it starts with. The thread runs either way.
         if let Err(error) = self.d.db.prompts().pin(
             &set,
@@ -585,7 +625,7 @@ impl Tasks {
         }
         Ok((
             ThreadRef {
-                machine_id: r.machine_id.clone(),
+                machine_id: checkout.machine_id.clone(),
                 thread_id,
             },
             branch,
@@ -718,14 +758,18 @@ impl Tasks {
     ) -> Result<Task, StoreError> {
         let task = &stored.task;
         let r = &task.project_ref;
+        // The machine it runs on: its repo checkout's. One whose repo is gone fails at its launch.
+        let machine = &self
+            .checkout_of(task)
+            .map_or_else(|_| r.machine_id.clone(), |checkout| checkout.machine_id);
         // Checked before the slot: taking and releasing one would run the queue again at once.
-        let offline = format!("machine {} is offline", r.machine_id.as_str());
-        if !self.d.ports.is_connected(&r.machine_id) {
-            self.retry_when_live(&r.machine_id);
+        let offline = format!("machine {} is offline", machine.as_str());
+        if !self.d.ports.is_connected(machine) {
+            self.retry_when_live(machine);
             return self.queue(stored, "offline", &offline);
         }
         // M4 usage: a paused login takes no new turns; usage.resumed runs the queue again.
-        if let Some(paused) = self.hooks.usage.get().and_then(|u| u.gate(&r.machine_id)) {
+        if let Some(paused) = self.hooks.usage.get().and_then(|u| u.gate(machine)) {
             return self.queue(stored, "usage", &paused);
         }
         // A recovery due now goes on as its mode says: in its thread, `/compact` first, or in a fresh thread.
@@ -752,7 +796,7 @@ impl Tasks {
         // continues in the worktree it has, a fresh restart too.
         if !continuing
             && !fresh
-            && let Some(paused) = self.d.ports.paused(&r.machine_id)
+            && let Some(paused) = self.d.ports.paused(machine)
         {
             return self.queue(stored, "guard", &paused);
         }
@@ -856,7 +900,7 @@ impl Tasks {
             Ok(started) => started,
             Err(StartError::Offline) => {
                 self.d.slots.release(task.task_id.as_str())?;
-                self.retry_when_live(&r.machine_id);
+                self.retry_when_live(machine);
                 return self.queue(stored, "offline", &offline);
             }
             // Its thread can't go on (claude's conversation is gone, or its config dir changed): a new one takes over.
@@ -1109,8 +1153,8 @@ impl Tasks {
         self.put(stored)
     }
 
-    /// The project's `origin` remote, shortened ("github.com/acme/shop"), as git reads it in its checkout on the
-    /// node: `Some(None)` when it has none (or the project is gone), `None` when the node couldn't say.
+    /// The checkout's `origin` remote, shortened ("github.com/acme/shop"), as git reads it on the node: `Some(None)`
+    /// when it has none (or the checkout is gone), `None` when the node couldn't say.
     async fn origin(&self, r: &ProjectRef) -> Option<Option<String>> {
         let Ok(found) = self.d.store.project_get(r) else {
             return None;
@@ -1814,10 +1858,14 @@ impl Tasks {
             texts.push(result.tail.as_str().to_owned());
         }
         let texts = || texts.iter().map(String::as_str);
-        let remote = tokio::time::timeout(PR_LOOKUP_TIMEOUT, self.origin(&task.project_ref))
-            .await
-            .ok()
-            .flatten()?;
+        // A repo removed since has no remote to read: no PR is looked up.
+        let remote = match self.checkout_of(task) {
+            Ok(checkout) => tokio::time::timeout(PR_LOOKUP_TIMEOUT, self.origin(&checkout))
+                .await
+                .ok()
+                .flatten()?,
+            Err(_) => None,
+        };
         let Some(remote) = remote else {
             return Some(Lookup::default());
         };
@@ -2226,8 +2274,11 @@ impl Tasks {
         // Binding may ask the node, and so does each writer's changed paths: both happen before the lock, the paths
         // within `OBSERVE_TIMEOUT`, so a slow node never holds up other task calls. Under the lock the check reads
         // the store only.
+        // The repo it works in: the scope, the checkout and the policy file are that repo's (W79).
+        let repo = self.spawn_repo(r, &input)?;
+        let other = repo.as_ref().filter(|repo| repo.checkout != *r);
         let checked = if input.kind == TaskKind::Write {
-            let scope = self.spawn_scope(r).await?;
+            let scope = self.spawn_scope(r, other).await?;
             let observed = match &scope {
                 SpawnScope::Bound(scope) => self
                     .d
@@ -2278,19 +2329,15 @@ impl Tasks {
             None => (None, Vec::new()),
         };
         // A broken policy file refuses the spawn now, not at its launch. An offline machine's file can't be read: the
-        // task queues "offline", and its launch reads the file and still refuses a broken one.
-        match self.d.policies.get(r).await {
+        // task queues "offline", and its launch reads the file and still refuses a broken one. It is the checkout's
+        // the task works in.
+        let checkout = other.map_or(r, |repo| &repo.checkout);
+        match self.d.policies.get(checkout).await {
             Err(e) if e.code != ErrorCode::MachineOffline => return Err(e),
             _ => {}
         }
         let profile = resolve_profile(input.profile, input.kind, self.d.ports.medium_allowed(r));
-        // It works in the project's own directory: its own repo, or none for a plain directory (W79).
-        let repo_id = self
-            .d
-            .db
-            .transaction(|c| Ok(crate::hub::repos::store::ensure_own(c, r, None)?))
-            .map_err(store_error)?
-            .map(|repo| repo.repo_id);
+        let repo_id = repo.map(|repo| repo.repo_id);
         let task = Task {
             task_id: TaskId::unchecked("T0"),
             project_ref: r.clone(),
@@ -2346,12 +2393,19 @@ impl Tasks {
         })
     }
 
-    /// The project's repo and base for a writer's duplicate check. Unrecorded, they are read from its root, waiting at
-    /// most `BIND_WAIT`: a slow remote finishes in the background, so a later spawn has them. One read runs per
-    /// project at a time.
-    async fn spawn_scope(&self, r: &ProjectRef) -> Result<SpawnScope, TaskError> {
-        if let Some(scope) = self.d.ports.work_scope(r).await.map_err(store_error)? {
+    /// The repo and base for a writer's duplicate check: `other`'s as recorded (one of the project's other repos), else
+    /// the project's. The project's unrecorded are read from its root, waiting at most `BIND_WAIT`: a slow remote
+    /// finishes in the background, so a later spawn has them. One read runs per project at a time.
+    async fn spawn_scope(
+        &self,
+        r: &ProjectRef,
+        other: Option<&ProjectRepo>,
+    ) -> Result<SpawnScope, TaskError> {
+        if let Some(scope) = self.scope_for(r, other).await.map_err(store_error)? {
             return Ok(SpawnScope::Bound(scope));
+        }
+        if other.is_some() {
+            return Ok(SpawnScope::NoRepo);
         }
         if !self.binding.lock().unwrap().insert(r.clone()) {
             return Ok(SpawnScope::Binding);
@@ -2382,7 +2436,8 @@ impl Tasks {
     /// asked, as a launch holds the tasks lock. Nothing when it can't be read: the spawn was checked already.
     async fn elsewhere_for(&self, task: &Task) -> Vec<String> {
         let r = &task.project_ref;
-        let Ok(Some(scope)) = self.d.ports.work_scope(r).await else {
+        let other = self.other_repo(r, task.repo_id.as_ref());
+        let Ok(Some(scope)) = self.scope_for(r, other.as_ref()).await else {
             return Vec::new();
         };
         let intent = duplicates::intent(
@@ -2399,6 +2454,119 @@ impl Tasks {
                 tracing::warn!(%error, task = task.task_id.as_str(), "tasks: work elsewhere not read");
                 Vec::new()
             }
+        }
+    }
+
+    /// The repo a new task works in (W79): `repo` by name, else the project's repo that `pr` is in, else its own
+    /// repo; none for a plain directory. An unknown name is refused with the project's repos.
+    fn spawn_repo(
+        &self,
+        r: &ProjectRef,
+        input: &SpawnInput,
+    ) -> Result<Option<ProjectRepo>, TaskError> {
+        let repos = self
+            .d
+            .db
+            .transaction(|c| {
+                crate::hub::repos::store::ensure_own(c, r, None)?;
+                Ok(crate::hub::repos::store::of(c, r)?)
+            })
+            .map_err(store_error)?;
+        if let Some(name) = &input.repo {
+            return match repos.iter().find(|repo| repo.name == *name) {
+                Some(repo) => Ok(Some(repo.clone())),
+                None if repos.is_empty() => Err(lead_error(
+                    ErrorCode::NotFound,
+                    format!("No repo {} in this project: it has none.", name.as_str()),
+                    Some("Leave repo out: the agent works in the project's directory."),
+                )),
+                None => {
+                    let names: Vec<&str> = repos.iter().map(|repo| repo.name.as_str()).collect();
+                    Err(lead_error(
+                        ErrorCode::NotFound,
+                        format!("No repo {} in this project.", name.as_str()),
+                        Some(&format!("Use one of its repos: {}.", names.join(", "))),
+                    ))
+                }
+            };
+        }
+        let of_pr = input
+            .pr
+            .as_ref()
+            .and_then(|pr| repos.iter().find(|repo| holds_pr(repo, pr.as_str())));
+        Ok(of_pr
+            .or_else(|| repos.iter().find(|repo| repo.checkout == *r))
+            .cloned())
+    }
+
+    /// The project's repos, oldest first; none when they can't be read.
+    pub fn repos_of(&self, r: &ProjectRef) -> Vec<ProjectRepo> {
+        self.d
+            .db
+            .with(|c| Ok(crate::hub::repos::store::of(c, r)?))
+            .unwrap_or_else(|error: StoreError| {
+                tracing::warn!(%error, "tasks: repos not read");
+                Vec::new()
+            })
+    }
+
+    /// One of the project's other repos, the task's `repo_id`: its files are in another checkout (W79). None for the
+    /// project's own repo, a plain directory, and a repo the project no longer has.
+    fn other_repo(&self, r: &ProjectRef, repo_id: Option<&RepoId>) -> Option<ProjectRepo> {
+        let repo_id = repo_id?;
+        match self
+            .d
+            .db
+            .with(|c| Ok(crate::hub::repos::store::get(c, repo_id)?))
+        {
+            Ok(Some((project, repo))) if project == *r && repo.checkout != *r => Some(repo),
+            Ok(_) => None,
+            Err(error) => {
+                tracing::warn!(%error, repo = repo_id.as_str(), "tasks: repo not read");
+                None
+            }
+        }
+    }
+
+    /// The repo a task works in when it is one of the project's other repos; none for its own directory (its own repo,
+    /// or a plain directory). A repo the project no longer has fails it: its work never moves to another directory.
+    fn repo_of(&self, task: &Task) -> Result<Option<ProjectRepo>, StartError> {
+        let r = &task.project_ref;
+        let Some(repo_id) = &task.repo_id else {
+            return Ok(None);
+        };
+        match self
+            .d
+            .db
+            .with(|c| Ok(crate::hub::repos::store::get(c, repo_id)?))?
+        {
+            Some((project, repo)) if project == *r => Ok((repo.checkout != *r).then_some(repo)),
+            _ => Err(StartError::Other(format!(
+                "its repo {} was removed from the project",
+                repo_id.as_str()
+            ))),
+        }
+    }
+
+    /// The node checkout a task works in: its repo's, else the project's own directory.
+    fn checkout_of(&self, task: &Task) -> Result<ProjectRef, StartError> {
+        Ok(self
+            .repo_of(task)?
+            .map_or_else(|| task.project_ref.clone(), |repo| repo.checkout))
+    }
+
+    /// The repo and base work lands on: `other`'s as recorded, else the project's.
+    async fn scope_for(
+        &self,
+        r: &ProjectRef,
+        other: Option<&ProjectRepo>,
+    ) -> Result<Option<WorkScope>, StoreError> {
+        match other {
+            Some(repo) => self
+                .d
+                .db
+                .with(|c| Ok(crate::hub::work::store::scope_of_repo(c, &repo.repo_id)?)),
+            None => self.d.ports.work_scope(r).await,
         }
     }
 
@@ -2895,7 +3063,9 @@ impl Tasks {
                 })
                 .unwrap_or_default()
             })
-            .filter(|t| t.kind == TaskKind::Write && t.task_id != task.task_id)
+            .filter(|t| {
+                t.kind == TaskKind::Write && t.task_id != task.task_id && t.repo_id == task.repo_id
+            })
             .take(ALSO_WRITING_MAX)
             .collect();
         if others.is_empty() {
@@ -3015,6 +3185,7 @@ mod tests {
     use fleetd_contracts::lead_calls::TaskResultFrame;
     use fleetd_contracts::lead_calls::{LeadCall, LeadCallResult, TaskSpawnCall};
     use fleetd_contracts::ledger::{Brief, Workstream};
+    use fleetd_contracts::repos::RepoName;
     use fleetd_contracts::sessions::BaseErrorKind;
     use serde_json::json;
 
@@ -3030,8 +3201,16 @@ mod tests {
     #[derive(Default)]
     struct Node {
         launched: Mutex<Vec<Option<String>>>,
+        /// Each launch's machine, node checkout and repo, and the directory its base branch was read in.
+        checkouts: Mutex<Vec<(String, String, Option<String>)>>,
+        branch_dirs: Mutex<Vec<String>>,
+        /// A node too old for detached worktrees; directories with no commit yet.
+        old_node: std::sync::atomic::AtomicBool,
+        no_commits: Mutex<Vec<String>>,
         offline: std::sync::atomic::AtomicBool,
         policy: Mutex<Option<String>>,
+        /// The checkouts whose policy file was read.
+        policy_reads: Mutex<Vec<String>>,
         /// Where each writer's worktree starts, as the node reports it.
         base: Mutex<Option<WorktreeBase>>,
         /// The project's recorded repo and base; `work_bind` records one, counting its reads in `binds`. With
@@ -3042,8 +3221,9 @@ mod tests {
         bind_gate: Arc<tokio::sync::Notify>,
         /// A read that panics.
         bind_panics: std::sync::atomic::AtomicBool,
-        /// `git remote get-url origin` in the project's checkout; unread when `None`.
+        /// `git remote get-url origin` in the project's checkout; unread when `None`. `origins`: in another directory.
         origin: Mutex<Option<String>>,
+        origins: Mutex<HashMap<String, String>>,
         /// The host's PR for a branch: `None` hangs, as a host that never answers.
         host_pr: Mutex<Option<Result<Option<String>, BranchPrError>>>,
         looked_up: Mutex<Vec<(String, String)>>,
@@ -3073,9 +3253,14 @@ mod tests {
         }
         fn launch<'a>(
             &'a self,
-            _: &'a MachineId,
+            machine_id: &'a MachineId,
             request: LaunchRequest,
         ) -> BoxFut<'a, Result<(ThreadId, Option<WorktreeBase>), PortError>> {
+            self.checkouts.lock().unwrap().push((
+                machine_id.to_string(),
+                request.project_id.to_string(),
+                request.repo_id.as_ref().map(|r| r.as_str().to_owned()),
+            ));
             let base = request
                 .worktree
                 .as_ref()
@@ -3106,7 +3291,7 @@ mod tests {
             None
         }
         fn detached_worktrees(&self, _: &MachineId) -> bool {
-            true
+            !self.old_node.load(std::sync::atomic::Ordering::SeqCst)
         }
         fn action_texts<'a>(
             &'a self,
@@ -3119,9 +3304,11 @@ mod tests {
         fn default_branch<'a>(
             &'a self,
             _: &'a MachineId,
-            _: &'a str,
+            cwd: &'a str,
         ) -> BoxFut<'a, Result<Option<String>, PortError>> {
-            Box::pin(async { Ok(Some("main".to_owned())) })
+            self.branch_dirs.lock().unwrap().push(cwd.to_owned());
+            let empty = self.no_commits.lock().unwrap().iter().any(|d| d == cwd);
+            Box::pin(async move { Ok((!empty).then(|| "main".to_owned())) })
         }
         fn changes<'a>(&'a self, thread: &'a ThreadRef) -> BoxFut<'a, Option<ThreadChanges>> {
             let paths = vec![format!("docs/{}.md", thread.thread_id.as_str())];
@@ -3160,16 +3347,18 @@ mod tests {
         fn run_command<'a>(
             &'a self,
             _: &'a MachineId,
-            _: &'a str,
+            cwd: &'a str,
             _: Vec<String>,
             _: u32,
         ) -> BoxFut<'a, Option<CmdOutput>> {
             // An offline node runs nothing.
             let origin = self
-                .origin
+                .origins
                 .lock()
                 .unwrap()
-                .clone()
+                .get(cwd)
+                .cloned()
+                .or_else(|| self.origin.lock().unwrap().clone())
                 .filter(|_| !self.offline());
             self.origin_asked.notify_one();
             Box::pin(async move {
@@ -3234,6 +3423,10 @@ mod tests {
             &'a self,
             project_ref: &'a ProjectRef,
         ) -> BoxFut<'a, Result<Option<String>, TaskError>> {
+            self.policy_reads
+                .lock()
+                .unwrap()
+                .push(project_ref.project_id.to_string());
             let read = if self.offline() {
                 Err(PortError::Offline.to_task_error(&project_ref.machine_id))
             } else {
@@ -3416,6 +3609,238 @@ mod tests {
             [("T2", Some("R1")), ("T1", Some("R1"))]
         );
         assert_eq!(serde_json::to_value(&listed[1]).unwrap()["repoId"], "R1");
+    }
+
+    /// p1, a git checkout with its own repo `p1` on acme/shop, and a second repo `web` (acme/web) whose files are in
+    /// the node checkout p2 at /work/web, inserted as adding a repo will.
+    fn with_second_repo(tasks: &Tasks) -> ProjectRepo {
+        tasks
+            .d
+            .store
+            .projects_upsert_many(
+                &MachineId::unchecked("lab-a"),
+                &[serde_json::from_value(json!({
+                    "machineId": "lab-a", "projectId": "p2", "title": "web", "workspaceRoot": "/work/web",
+                    "threads": { "running": 0, "waiting": 0, "idle": 0, "failed": 0 }, "lastActivityAt": AT,
+                }))
+                .unwrap()],
+            )
+            .unwrap();
+        let p1 = lead().project_ref;
+        tasks
+            .d
+            .db
+            .transaction(|c| {
+                crate::hub::repos::store::ensure_own(c, &p1, Some("/work/p1"))?;
+                c.execute(
+                    "INSERT INTO repos (machine_id, project_id, name, checkout_machine_id, checkout_project_id,
+                     repo_key, base) VALUES ('lab-a', 'p1', 'web', 'lab-a', 'p2', 'github.com/acme/web', 'main')",
+                    [],
+                )?;
+                Ok(crate::hub::repos::store::by_name(c, &p1, &RepoName::unchecked("web"))?)
+            })
+            .unwrap()
+            .unwrap()
+    }
+
+    /// `repo` picks the repo an agent works in (W79): it launches in that repo's checkout, with its base branch read
+    /// there, its policy file read from there, and the repo's setup (named by the request). Without `repo` it works in
+    /// the project's own directory, as before, or in the repo of the PR it is given; an unknown repo is refused with
+    /// the project's repos.
+    #[tokio::test]
+    async fn an_agent_works_in_the_repo_it_is_spawned_in() {
+        let (tasks, node) = tasks();
+        let web = with_second_repo(&tasks);
+        assert_eq!(web.repo_id.as_str(), "R2");
+        let mut call = writer("restyle the cart");
+        call.repo = Some(web.name.clone());
+        let in_web = tasks.spawn(&lead(), call).await.unwrap();
+        assert_eq!(in_web.repo_id.as_ref(), Some(&web.repo_id));
+        assert_eq!(in_web.state, TaskState::Running);
+        assert_eq!(
+            in_web.thread_ref.as_ref().unwrap().machine_id.as_str(),
+            "lab-a"
+        );
+        let own = tasks.spawn(&lead(), writer("fix the api")).await.unwrap();
+        assert_eq!(own.repo_id.as_ref().map(|r| r.as_str()), Some("R1"));
+        assert_eq!(
+            *node.checkouts.lock().unwrap(),
+            [
+                ("lab-a".to_owned(), "p2".to_owned(), Some("R2".to_owned())),
+                ("lab-a".to_owned(), "p1".to_owned(), Some("R1".to_owned())),
+            ]
+        );
+        assert_eq!(*node.branch_dirs.lock().unwrap(), ["/work/web", "/work/p1"]);
+        // Read at the spawn and at the launch, from each one's checkout.
+        assert_eq!(*node.policy_reads.lock().unwrap(), ["p2", "p1"]);
+        assert_eq!(
+            *node.launched.lock().unwrap(),
+            [
+                Some("fleetd/T1-restyle-the-cart".to_owned()),
+                Some("fleetd/T2-fix-the-api".to_owned())
+            ]
+        );
+
+        // A review of a PR in acme/web runs there.
+        let review: TaskSpawnCall = serde_json::from_value(json!({
+            "workstreamId": "W1", "title": "review the cart", "kind": "review", "prompt": "review it",
+            "pr": "https://github.com/acme/web/pull/7",
+        }))
+        .unwrap();
+        let review = tasks.spawn(&lead(), review).await.unwrap();
+        assert_eq!(review.repo_id.as_ref(), Some(&web.repo_id));
+        assert_eq!(node.checkouts.lock().unwrap()[2].1, "p2");
+
+        let mut unknown = writer("write the docs");
+        unknown.repo = Some(RepoName::unchecked("docs"));
+        let refused = tasks.spawn(&lead(), unknown).await.unwrap_err();
+        assert_eq!(refused.code, ErrorCode::NotFound);
+        assert_eq!(refused.message, "No repo docs in this project.");
+        assert_eq!(
+            refused.fix.as_deref(),
+            Some("Use one of its repos: p1, web.")
+        );
+    }
+
+    /// A task whose repo was removed before it launched fails, and its lead hears why: its work never moves to the
+    /// project's own directory.
+    #[tokio::test]
+    async fn a_task_whose_repo_was_removed_fails_to_start() {
+        let (tasks, node) = tasks();
+        let web = with_second_repo(&tasks);
+        node.offline
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        let mut call = writer("restyle the cart");
+        call.repo = Some(web.name);
+        let queued = tasks.spawn(&lead(), call).await.unwrap();
+        assert_eq!(queued.state, TaskState::Queued);
+
+        tasks
+            .d
+            .db
+            .with(|c| Ok(c.execute("DELETE FROM repos WHERE name = 'web'", [])?))
+            .unwrap();
+        node.offline
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+        {
+            let _guard = tasks.lock.lock().await;
+            tasks.retry_queue().await;
+        }
+        let failed = tasks.get(&queued.task_id).unwrap().unwrap();
+        assert_eq!(failed.state, TaskState::Failed);
+        let tail = failed.result.unwrap().tail;
+        assert!(
+            tail.as_str()
+                .contains("its repo R2 was removed from the project"),
+            "{tail:?}"
+        );
+        assert!(
+            node.checkouts.lock().unwrap().is_empty(),
+            "nothing launched"
+        );
+        let wakes = node.wakes.lock().unwrap().clone();
+        assert!(
+            wakes
+                .iter()
+                .any(|(kind, text)| *kind == WakeKind::TaskResult
+                    && text.contains("its repo R2 was removed from the project")),
+            "{wakes:?}"
+        );
+    }
+
+    /// In another repo a task needs a worktree of its own. A reader on a node too old for detached worktrees, or any
+    /// task in a repo with no commit yet, is refused a start with the reason instead of running in the checkout.
+    #[tokio::test]
+    async fn a_task_in_another_repo_without_a_worktree_is_refused() {
+        let (tasks, node) = tasks();
+        let web = with_second_repo(&tasks);
+        let reader = |title: &str| -> TaskSpawnCall {
+            serde_json::from_value(json!({
+                "workstreamId": "W1", "title": title, "kind": "read", "prompt": "read it", "repo": "web",
+            }))
+            .unwrap()
+        };
+        node.old_node
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        let old = tasks.spawn(&lead(), reader("read the cart")).await.unwrap();
+        assert_eq!(old.state, TaskState::Failed);
+        assert!(
+            old.result
+                .unwrap()
+                .tail
+                .as_str()
+                .contains("update lab-a to run agents in other repos")
+        );
+        // The project's own directory runs a reader in its checkout, as before.
+        let own: TaskSpawnCall = serde_json::from_value(json!({
+            "workstreamId": "W1", "title": "read the api", "kind": "read", "prompt": "read it",
+        }))
+        .unwrap();
+        assert_eq!(
+            tasks.spawn(&lead(), own).await.unwrap().state,
+            TaskState::Running
+        );
+
+        node.old_node
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+        node.no_commits.lock().unwrap().push("/work/web".into());
+        let empty = tasks
+            .spawn(&lead(), reader("read the new repo"))
+            .await
+            .unwrap();
+        assert!(
+            empty
+                .result
+                .unwrap()
+                .tail
+                .as_str()
+                .contains("repo web has no commits yet")
+        );
+        let mut call = writer("start the site");
+        call.repo = Some(web.name);
+        let writer = tasks.spawn(&lead(), call).await.unwrap();
+        assert_eq!(writer.state, TaskState::Failed);
+        assert!(
+            writer
+                .result
+                .unwrap()
+                .tail
+                .as_str()
+                .contains("repo web has no commits yet")
+        );
+        assert_eq!(
+            node.checkouts.lock().unwrap().len(),
+            1,
+            "only the own directory's reader launched"
+        );
+    }
+
+    /// A finished writer in a second repo finds its PR on that repo's remote, read in its checkout.
+    #[tokio::test]
+    async fn a_writer_in_a_second_repo_finds_its_pr_on_that_repos_remote() {
+        let (tasks, node) = tasks();
+        let web = with_second_repo(&tasks);
+        *node.origin.lock().unwrap() = Some("git@github.com:acme/shop.git".into());
+        node.origins
+            .lock()
+            .unwrap()
+            .insert("/work/web".into(), "git@github.com:acme/web.git".into());
+        let pr = "https://github.com/acme/web/pull/3";
+        *node.host_pr.lock().unwrap() = Some(Ok(Some(pr.into())));
+        let mut call = writer("restyle the cart");
+        call.repo = Some(web.name);
+        let writer = tasks.spawn(&lead(), call).await.unwrap();
+        complete(&tasks, &writer).await;
+
+        told(&node.found, "the train is told of the PR").await;
+        assert_eq!(result_pr(&tasks, &writer).as_deref(), Some(pr));
+        assert_eq!(
+            *node.looked_up.lock().unwrap(),
+            [(
+                "github.com/acme/web".to_owned(),
+                "fleetd/T1-restyle-the-cart".to_owned()
+            )]
+        );
     }
 
     /// No policy file is needed, and an offline node doesn't fail the spawn: the task queues "offline". Back

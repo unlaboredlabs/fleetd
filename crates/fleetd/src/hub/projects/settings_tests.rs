@@ -561,7 +561,7 @@ async fn an_unknown_repo_is_refused_and_changes_nothing() {
 }
 
 /// Naming a repo reads and writes its own setup and preview, the project's when it has none; leaving it out keeps the
-/// project's, and the rest are the project's either way. A launch and a preview read the project's own repo's.
+/// project's, and the rest are the project's either way. A launch in the own repo and a preview read the own repo's.
 #[tokio::test]
 async fn a_repos_setup_and_preview_are_its_own_and_fall_back_to_the_projects() {
     let (hub, _home) = hub();
@@ -612,7 +612,9 @@ async fn a_repos_setup_and_preview_are_its_own_and_fall_back_to_the_projects() {
     assert_eq!(own["settings"]["setup"]["commands"], json!(["make deps"]));
     assert_eq!(own["settings"]["preview"]["web"]["start"], "make serve");
     assert_eq!(own["settings"]["keepWorktrees"], true);
-    let task_setup = crate::hub::projects::settings::task_setup(&hub, &project()).unwrap();
+    let own_repo = hub.repos.own(&project()).unwrap().map(|repo| repo.repo_id);
+    let task_setup =
+        crate::hub::projects::settings::task_setup(&hub, &project(), own_repo.as_ref()).unwrap();
     assert_eq!(
         serde_json::to_value(task_setup).unwrap()["commands"],
         json!(["pnpm install"])
@@ -647,6 +649,38 @@ async fn a_repos_setup_and_preview_are_its_own_and_fall_back_to_the_projects() {
             && e.fix.as_deref().is_some_and(|f| f.contains("(app)"))),
         "{refused:?}"
     );
+    // A task in a second repo runs that repo's setup (W79): its own once set, else the project's.
+    hub.db
+        .with(|c| {
+            c.execute(
+                "INSERT INTO repos (machine_id, project_id, name, checkout_machine_id, checkout_project_id)
+                 VALUES ('lab', 'p1', 'web', 'lab', 'p2')",
+                [],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    let web = hub
+        .repos
+        .repo_by_name(
+            &project(),
+            &fleetd_contracts::repos::RepoName::unchecked("web"),
+        )
+        .unwrap()
+        .unwrap()
+        .repo_id;
+    let web_setup = || {
+        let setup =
+            crate::hub::projects::settings::task_setup(&hub, &project(), Some(&web)).unwrap();
+        serde_json::to_value(setup).unwrap()["commands"].clone()
+    };
+    assert_eq!(web_setup(), json!(["make deps"]));
+    set(with(
+        json!({ "repo": "web", "setup": { "commands": ["npm ci"] } }),
+    ))
+    .await
+    .unwrap();
+    assert_eq!(web_setup(), json!(["npm ci"]));
 }
 
 /// The train's rules are the repo's: naming a repo whose files are in another checkout reads and writes that

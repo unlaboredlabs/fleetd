@@ -58,8 +58,9 @@ pub fn render_lead_start(
     }
 }
 
-/// The project's repos for the lead's first message, by name, each with its checkout and where its work lands; none
-/// for a project that is only its own repo, or a plain folder with none, whose message is as before.
+/// The project's repos for the lead's first message, by name, each with its checkout and where its work lands, and how
+/// to start an agent in one (`spawn_agent`'s `repo`); none for a project that is only its own repo, or a plain folder
+/// with none, whose message is as before.
 pub fn repos_block(project_ref: &ProjectRef, repos: &[ProjectRepo]) -> Option<String> {
     if repos.iter().all(|r| &r.checkout == project_ref) {
         return None;
@@ -81,8 +82,18 @@ pub fn repos_block(project_ref: &ProjectRef, repos: &[ProjectRepo]) -> Option<St
             format!("- `{}`: {path}{lands}{own}", r.name)
         })
         .collect();
+    let absent = repos
+        .iter()
+        .find(|r| &r.checkout == project_ref)
+        .map_or_else(
+            || "the project's directory".to_owned(),
+            |r| format!("`{}`", r.name),
+        );
     Some(format!(
-        "## Repos\nThis project holds these repos, each a checkout on {}:\n{}",
+        "## Repos\nThis project holds these repos, each a checkout on {}:\n{}\n\nName the one each agent works in with \
+         `spawn_agent`'s `repo`: its worktree, branch, setup and PR are that repo's. Without `repo`, an agent given a `pr` \
+         works in that PR's repo, and any other in {absent}. Other repos' files are not in your directory: read them \
+         through a read task.",
         project_ref.machine_id,
         lines.join("\n")
     ))
@@ -143,7 +154,10 @@ mod tests {
             block,
             "## Repos\nThis project holds these repos, each a checkout on devbox:\n\
              - `app`: /work/app, github.com/acme/app on main (the project's own directory)\n\
-             - `notes`: /work/notes, no remote"
+             - `notes`: /work/notes, no remote\n\n\
+             Name the one each agent works in with `spawn_agent`'s `repo`: its worktree, branch, setup and PR are that \
+             repo's. Without `repo`, an agent given a `pr` works in that PR's repo, and any other in `app`. Other repos' \
+             files are not in your directory: read them through a read task."
         );
     }
 
