@@ -79,3 +79,11 @@ project's own repo (none for a plain directory, which reads the project's): `pro
 7. Several machines per repo, with secrets sealed for each node.
 8. Metrics per repo, rolled up per project.
 9. Clean-up: drop `work_projects` and the old `project_settings` columns once no supported hub needs a rollback.
+
+## Tasks record their repo (1e)
+
+A new task stores the repo it works in, `Task.repoId` in its row's JSON (`hub/tasks/mod.rs` spawn): the project's own
+repo, or none for a plain directory, as every task still works in the project's own directory. A row with no `repoId`
+(every row an older hub stored, and a plain directory's) reads as the project's own repo when it has one
+(`hub/tasks/records.rs`), so absent keeps meaning the project's own directory. Nothing reads it yet apart from the task
+listings that serve it. Changes carry no repo id: a PR's project and GitHub repo name its repo.
