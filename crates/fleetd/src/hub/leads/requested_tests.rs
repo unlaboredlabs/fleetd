@@ -340,3 +340,37 @@ async fn a_submitted_order_was_asked_for_when_submitted_and_an_older_lead_one_wh
         }
     );
 }
+
+/// Teams: the order a person starts by writing to the lead in the app records them as who started it.
+#[tokio::test]
+async fn an_order_the_lead_opens_records_the_person_whose_message_started_it() {
+    let lab = Lab::new();
+    let alice = fleetd_contracts::people::PersonRef {
+        person_id: fleetd_contracts::people::PersonId::unchecked("p_alice234"),
+        name: fleetd_contracts::people::PersonName::unchecked("Alice"),
+    };
+    lab.later(60);
+    lab.hub
+        .chat
+        .add(
+            &project(),
+            NewMessage {
+                author: Some(ChatAuthor::Human),
+                text: "build schedules".into(),
+                delivery: Some(ChatDelivery::Turn),
+                person: Some(alice.clone()),
+                created_ms: Some(lab.now()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    lab.later(30);
+    let w = lab.opens().await;
+    assert_eq!(w.started_by.as_ref(), Some(&alice));
+
+    // An order the lead opens on its own, with no person's message in its turn, names no one.
+    lab.event(HubEventType::ThreadCompleted, "lead-thread");
+    lab.later(60);
+    let own = lab.opens().await;
+    assert_eq!(own.started_by, None);
+}

@@ -1,6 +1,6 @@
 # Team-ready fleetd: people, sign-in, roles, group chats and private Navis
 
-Research W98 (T746) at `4e2d25279`; step 1 built in W99. Paths are under `crates/fleetd/src/` unless shown
+Research W98 (T746) at `4e2d25279`; step 1 is W99. Paths are under `crates/fleetd/src/` unless shown
 otherwise, and the file:line references are as of that research commit. Builds on the Navi plan and multi-repo
 ([multi-repo.md](multi-repo.md)).
 
@@ -14,12 +14,16 @@ The product questions (§10) are answered, and these decisions override anything
 3. **Accounts:**
    - **Claude:** the hub can be configured with a **Claude API key and an optional custom endpoint**, and each person
      can **connect their own Claude subscription**.
-   - **GitHub:** **every person connects their own GitHub account by OAuth**, through a bring-your-own OAuth app the
-     hub admin configures (fleetd runs no shared OAuth app).
-   - **PRs open under the GitHub account of the person whose message started the order**, with their own
-     OAuth-connected GitHub. Commits are authored by them, with `Co-Authored-By` the agent; anyone else in the order
-     is added as a co-author.
-   - **Automations and train-opened fixes use the hub's own GitHub account**, and so do merging and the train's checks.
+   - **GitHub: one GitHub App per hub** (D190). The admin creates it during setup through GitHub's app-manifest link,
+     so there is nothing to paste, and fleetd runs no shared app. No separate OAuth app.
+     - Its **installation token** does the hub's own work: the train, merges, CI reads, webhooks, and PRs no person
+       asked for.
+     - **Each person connects their GitHub account through the same App's user sign-in** (a user-to-server token,
+       refreshed as it expires).
+   - **PRs open under the GitHub account of the person whose message started the order**, with their user-to-server
+     token. Commits are authored by them, with `Co-Authored-By` the agent; anyone else in the order is added as a
+     co-author.
+   - **Automations and train-opened fixes use the App's installation token**, and so do merging and the train's checks.
    - A person without GitHub connected is **asked to connect before their first PR**. fleetd never silently uses
      someone else's account.
    - Each order records **which person started it** (`Workstream.startedBy`, from step 1), so this needs no migration.
@@ -144,7 +148,8 @@ project           + visibility: open | private;  an assistant project is private
 - It keeps "who is in" a decision of the hub's admin, as Linear, Slack and Tailscale invites all do. Network
   reachability alone never grants membership.
 - Tailscale gives the convenient second-device flow, and the team's MFA, wherever it is available.
-- GitHub can come later as a **link on the profile**, not a sign-in, for PR attribution (§6).
+- GitHub comes later as a **connection on the profile** through the hub's GitHub App, not a sign-in to fleetd, so
+  PRs open as the person (Decided, 3).
 - Passkeys fit later, once hubs commonly serve HTTPS on a stable name.
 
 ---
@@ -218,12 +223,12 @@ the 186 call sites is the largest single piece of work (§8, step 3).
   - The lead sees each author and role, and the prompt rule is: "Take an answer to a question you asked a specific
     person from that person. Treat anyone else's answer as input, and check with the person."
   - Viewers can't post, so nothing they write can count.
-- **Orders record who asked.** When the lead opens an order in a turn, the hub stamps `requestedBy` with the authors
-  of that turn's human messages. The lead doesn't choose it. This matters for the audit and for "waiting on whoever
-  asked".
-- **Decisions record a person.** `by: person:<id>` replaces `human:<device>` (`hub/ledger/tools.rs:54-67`). When the
-  lead records a decision a person made in chat, it cites the message, and the hub fills `decidedBy` from that
-  message's author.
+- **Orders record who asked.** When the lead opens an order in a turn, the hub stamps `startedBy` with the writer of
+  that turn's first human message (`Workstream.startedBy`, a `PersonRef`). The lead doesn't choose it. This matters for
+  the audit, for "waiting on whoever asked", and for whose GitHub account opens its PRs (Decided, 3).
+- **Decisions record a person.** A human key's decision keeps `by: human:<device>` (`hub/ledger/tools.rs:54-67`) and
+  adds `person` (a `PersonRef`), as does a revoke (`retired.person`). Later, when the lead records a decision a
+  person made in chat, it cites the message, and the hub fills `person` from that message's author.
   - Overturning a decision is open to its decider and the project's maintainers. Anyone else's overturn goes to the
     lead as input and @mentions the decider.
   - Global decisions stay admin-only.
@@ -301,7 +306,7 @@ Settings › People and on the Navi page. For strict privacy, run your Navi on *
 
 **Whose credentials:**
 - **Project secrets** (`request_secret`, env vars, MCP tokens) are the project's.
-  - They are sealed to the machine, as today, and record **`givenBy` (person) and when** next to the fingerprint.
+  - They are sealed to the machine, as today, and record **who gave them** (`answeredByPerson` on the request) and when, next to the fingerprint.
   - Members see names, fingerprints and givers, never values.
   - Maintainers rotate or remove them.
   - A person's own credentials (their email, their bank, their 1Password) belong in **their Navi**, never in a team
@@ -309,11 +314,11 @@ Settings › People and on the Navi page. For strict privacy, run your Navi on *
 - **Accounts the agents use** (Decided, 3; a later step):
   - **Claude:** a hub-wide Claude API key with an optional custom endpoint, or a person's own connected Claude
     subscription.
-  - **GitHub:** each person's own GitHub, connected by OAuth through the admin's own OAuth app. An order's PRs open
-    under the account of the person who started it (`startedBy`), its commits authored by them with `Co-Authored-By`
-    the agent and anyone else in the order. Automations, train fixes, merges and the train's checks use the hub's own
-    GitHub account. Someone with no GitHub connected is asked to connect before their first PR; no one's account is
-    used for anyone else.
+  - **GitHub:** the hub's one GitHub App (D190). Each person connects their account through its user sign-in. An
+    order's PRs open with the user-to-server token of the person who started it (`startedBy`), its commits authored
+    by them with `Co-Authored-By` the agent and anyone else in the order. Automations, train fixes, merges, CI reads
+    and the train's checks use the App's installation token. Someone with no GitHub connected is asked to connect
+    before their first PR; no one's account is used for anyone else.
 
 **Who approves what:** the table in §3, enforced in `Approvals::answer` and `submit_secret`.
 - `Money` and `Irreversible` commands need a project maintainer; the rest need any project member, or the addressee.
@@ -327,7 +332,7 @@ Settings › People and on the Navi page. For strict privacy, run your Navi on *
 - invite created, redeemed or revoked;
 - device paired or revoked, through Tailscale or a code;
 - role and membership changes;
-- approval answered (`answeredBy: person:<id>` plus the device);
+- approval answered (`answeredByPerson`, a `PersonRef`, next to `answeredBy: human:<device>`);
 - secret given (person, fingerprint, sink);
 - decision recorded or overturned;
 - order requested;
@@ -375,9 +380,10 @@ events table today.
 
 ## 8. Phased plan
 
-**Step 1: People, invites and names (m). The smallest useful step. Built in W99.**
+**Step 1: People, invites and names (m). The smallest useful step. Being built in W99.**
 - The `people` table (id, name, hub role, created), with `person_id` on keys and the migration (§7).
 - `fleetd invite`, invite links (7 days, single use), and the Administration page's People (invite, remove, role).
+  A new person needs a name. Only an owner makes, unmakes or removes an owner, and the hub always keeps one.
 - Hub roles owner, admin, member, with member = operate on every machine and admin = today's admin.
 - The lead sees "Alice writes".
 - Approvals, secrets, decisions and checklist ticks record the person; the activity events carry them. Each order
@@ -386,7 +392,7 @@ events table today.
   model `security.md:6` already describes.
 - Navi stays owner-only until step 3.
 
-What step 1 shipped, in the wire types (`crates/fleetd-contracts/src/people.rs`):
+What step 1 adds, in the wire types (`crates/fleetd-contracts/src/people.rs`):
 - `Person` (`personId`, `name`, `role`, `createdAt`, `removedAt`), `HubRole` (owner, admin, member), `PersonRef`
   (id and name at the time), `Invite` and `people.changed`.
 - `person` on `AgentKeyInfo`, `ChatMessage`, `Decision` and `DecisionRetired`, `TodoItem` and `checklist.changed`;
@@ -433,9 +439,10 @@ This builds on the Navi plan's first version.
 **Step 8: Accounts (m).** (Decided, 3.)
 - Hub-wide Claude API key and optional custom endpoint, on the Administration page; a person connects their own
   Claude subscription.
-- GitHub by OAuth for every person, through the admin's own OAuth app, set up with a guided, sealed flow.
+- One GitHub App per hub, created by the admin through GitHub's app-manifest link: its installation token for the
+  hub's own work, and its user sign-in (user-to-server tokens, refreshed) for each person.
 - PRs under the account of the order's `startedBy`, commits authored by them with `Co-Authored-By` the agent and the
-  order's other people; the hub's own account for automations, train fixes, merges and checks; asked to connect
+  order's other people; the installation token for automations, train fixes, merges and checks; asked to connect
   before a first PR.
 
 **Later, if asked:**

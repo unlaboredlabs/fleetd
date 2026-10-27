@@ -172,7 +172,7 @@ pub fn record_decision(
         why: input.why.as_deref().map(super::text),
         source: actor.source,
         by: Some(actor.by.clone()),
-        person: None,
+        person: actor.person.clone(),
         supersedes,
         state: DecisionState::Active,
         at: Timestamp(iso_ms(now_ms)),

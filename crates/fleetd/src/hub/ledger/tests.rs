@@ -41,6 +41,7 @@ fn human() -> Actor {
     Actor {
         source: DecisionSource::Human,
         by: "human:desk".into(),
+        person: None,
     }
 }
 
@@ -48,6 +49,7 @@ fn lead() -> Actor {
     Actor {
         source: DecisionSource::Lead,
         by: "lead:lab-a/p1".into(),
+        person: None,
     }
 }
 

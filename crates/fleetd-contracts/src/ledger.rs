@@ -146,9 +146,9 @@ pub struct Workstream {
     pub headline_at: Option<Timestamp>,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
-    /// The person whose message started it: the writer of the human message the lead was answering when it opened the
-    /// order, or the person who sent it as an order. Absent for an automation's, a train fix's or an agent's order, and
-    /// from a hub before people.
+    /// The person whose message started it: the writer of the first human message in the lead's turn that opened the
+    /// order. Absent for an order the lead opened with no person's message in its turn (an automation's, a train fix's,
+    /// an agent's), and from a hub before people.
     pub started_by: Option<crate::people::PersonRef>,
 }
 

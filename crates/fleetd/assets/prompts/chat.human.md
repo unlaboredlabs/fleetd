@@ -1,3 +1,3 @@
-The human writes in your chat:
+{{writer}} writes in your chat:
 
 {{text}}{{files}}

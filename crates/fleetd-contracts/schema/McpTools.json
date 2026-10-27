@@ -18417,7 +18417,7 @@
         },
         "startedBy": {
           "$ref": "#/$defs/PersonRef",
-          "description": "The person whose message started it: the writer of the human message the lead was answering when it opened the\norder, or the person who sent it as an order. Absent for an automation's, a train fix's or an agent's order, and\nfrom a hub before people."
+          "description": "The person whose message started it: the writer of the first human message in the lead's turn that opened the\norder. Absent for an order the lead opened with no person's message in its turn (an automation's, a train fix's,\nan agent's), and from a hub before people."
         },
         "state": {
           "$ref": "#/$defs/WorkstreamState"

@@ -27,6 +27,7 @@ pub mod metrics;
 pub mod navi;
 pub mod orders;
 pub mod pair;
+pub mod people;
 pub mod policy;
 pub mod preview;
 pub mod projects;
