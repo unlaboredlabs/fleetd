@@ -2,7 +2,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { BEAT_MS, BEATS, INPUT_RIDE_MS, useBeat, useBeatRef } from "./beat";
+import { BEAT_MS, BEATS, useBeat, useBeatRef } from "./beat";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -51,37 +51,41 @@ it("steps every loop while something live is mounted, and stops with the last of
   expect(steps).toHaveLength(4);
 });
 
-it("keeps stepping while you type, click and scroll", () => {
+it("keeps its tempo while you type, click and scroll: a step every beat, on the clock, never on your input", () => {
   act(() => root.render(<Live on />));
   steps = [];
+  const at: number[] = [];
   const input = (i: number) => (i % 3 === 0 ? new KeyboardEvent("keydown", { key: "a" }) : i % 3 === 1 ? new PointerEvent("pointerdown") : new WheelEvent("wheel"));
-  // A key, a click or a wheel every 50 ms for 2.4 s: 20 beats fall due.
+  const start = performance.now();
+  // A key, a click or a wheel every 50 ms for 2.4 s: 20 beats fall due, and each steps on time.
   for (let i = 0; i < 48; i++) {
+    const before = steps.length;
     window.dispatchEvent(input(i));
+    expect(steps).toHaveLength(before);
     wait(50);
+    if (steps.length > before) at.push(performance.now() - start);
   }
-  expect(steps.length).toBeGreaterThanOrEqual(19);
+  expect(steps).toHaveLength(20);
   expect(new Set(steps).size).toBe(steps.length);
+  // Within the 50 ms the loop above waits between inputs of when each beat fell due.
+  at.forEach((t, i) => expect(t - (i + 1) * BEAT_MS).toBeLessThan(50));
 });
 
-it("steps with your next key, so the two draw on one frame, and by itself once you stop", () => {
+it("keeps to the clock after a long task held a step late, rather than slowing the loops down", () => {
+  // A long task holds the thread for 2.4 beats: the clock moves on while no timer can fire.
+  let held = 0;
+  const now = performance.now.bind(performance);
+  vi.spyOn(performance, "now").mockImplementation(() => now() + held);
   act(() => root.render(<Live on />));
-  wait(BEAT_MS / 2);
-  steps = [];
-  window.dispatchEvent(new KeyboardEvent("keydown", { key: "a" }));
-  // The beat falls due while you type: it waits for your next key...
-  wait(BEAT_MS / 2);
-  expect(steps).toHaveLength(0);
-  window.dispatchEvent(new KeyboardEvent("keydown", { key: "b" }));
-  expect(steps).toHaveLength(1);
-  // ...but never longer than a beat.
+  const first = steps[0] ?? 0;
+  held = BEAT_MS * 2.4;
+  // The late tick lands on the beat the clock is on, 3.4 beats in, so the 3rd...
+  wait(BEAT_MS);
+  expect(steps.slice(1)).toEqual([(first + 3) % BEATS]);
+  // ...and the beats after it keep to the clock: the 4th 0.6 beats later, the 5th a beat after that.
   wait(BEAT_MS * 2);
-  expect(steps).toHaveLength(2);
-  // Once you have stopped, it steps on every beat again.
-  wait(INPUT_RIDE_MS);
-  const before = steps.length;
-  wait(BEAT_MS * 4);
-  expect(steps.length - before).toBe(4);
+  expect(steps.slice(1)).toEqual([3, 4, 5].map((n) => (first + n) % BEATS));
+  vi.restoreAllMocks();
 });
 
 function Band({ on }: { on: boolean }) {
