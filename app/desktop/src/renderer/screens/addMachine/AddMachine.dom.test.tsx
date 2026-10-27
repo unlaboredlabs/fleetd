@@ -1,16 +1,16 @@
 // @vitest-environment happy-dom
 // Add machine: the three ways in, a host the hub can reach planned, added with its live steps, a failed step with
-// its output and Retry, and this computer joined by main.
+// its output and Retry, this computer joined by main, and any other machine's paste line from waiting to joined.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { MachineAddRun, MachineHost } from "../../../shared/contracts";
+import type { Machine, MachineAddRun, MachineHost } from "../../../shared/contracts";
 import type { HubFrame } from "../../../shared/hub";
 import type { JoinHere, ThisComputer } from "../../../shared/joinHere";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { UiProvider } from "../../ui";
-import { AddMachine } from "./AddMachine";
+import { AddMachine, type View } from "./AddMachine";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -84,6 +84,11 @@ let host: HTMLDivElement;
 let root: Root;
 let calls: Array<{ tool: string; input: unknown }>;
 let runs: MachineAddRun[];
+/** machine_join's code expiry. */
+let expiresAt: string;
+/** The hub's frames, for a test to send more. */
+let send: (frame: HubFrame) => void = () => undefined;
+const LINE = "curl -fsSL https://fleetd.sh | sh -s -- --join http://devbox.example.ts.net:4790 --code K7Q2-M4XP --machine-id laptop";
 
 beforeEach(() => {
   host = document.createElement("div");
@@ -94,6 +99,7 @@ beforeEach(() => {
   hostName = "laptop";
   computer = { kind: "none" };
   hubInfo = undefined;
+  expiresAt = new Date(Date.now() + 15 * 60_000).toISOString();
   joinHere.mockClear();
 });
 afterEach(() => {
@@ -104,7 +110,7 @@ afterEach(() => {
 
 const settle = () => act(async () => new Promise((r) => setTimeout(r, 0)));
 
-const render = async () => {
+const render = async (open?: { view: View; at: number }) => {
   let listener: (frame: HubFrame) => void = () => undefined;
   const hub: HubApi = {
     call: (tool, input) => {
@@ -121,7 +127,16 @@ const render = async () => {
               ? { machineId: "builder-1", host: "builder-1", platform: "linux-x64", steps: PLAN, notes: ["linger is no for ada, so the node stops when ada logs out. Fix: sudo loginctl enable-linger ada"], joined: false }
               : tool === "machine_add"
                 ? ((runs = [run({ runId: "Mfedcba9876543210fedcba9876543210", steps: [step("read the machine's state (read-only)", "running")] }), ...runs]), { run: runs[0] })
-                : {};
+                : tool === "machine_join"
+                  ? {
+                      machineId: (input as { machineId: string }).machineId,
+                      hubUrl: "http://devbox.example.ts.net:4790",
+                      code: "K7Q2-M4XP",
+                      expiresAt,
+                      gitIdentity: "ada-lovelace <1+ada-lovelace@users.noreply.github.com>",
+                      line: (input as { rejoin?: boolean }).rejoin ? `${LINE} --rejoin` : LINE,
+                    }
+                  : {};
       return Promise.resolve({ ok: true, output });
     },
     subscribe: (l) => ((listener = l), () => undefined),
@@ -133,12 +148,13 @@ const render = async () => {
     root.render(
       <UiProvider>
         <DataProvider layer={createDataLayer(hub)}>
-          <AddMachine />
+          <AddMachine open={open} />
         </DataProvider>
       </UiProvider>,
     );
     await Promise.resolve();
   });
+  send = listener;
   await act(async () => {
     listener({ t: "state", state: { phase: "live", hub: "devbox:4790", protocol: 1 } });
     listener({ t: "snapshot", snapshot: { cursor: 1, attention: [], machines: [{ machineId: "devbox", name: "devbox", nodeVersion: "1", status: "online", lastSeenAt: AT, tags: [] }], projects: [] } });
@@ -167,7 +183,77 @@ it("offers this computer, a machine the hub can reach, and any other machine", a
   expect(host.textContent).toContain("laptop: downloads the hub's fleetd for this computer");
   expect(host.textContent).toContain("A machine the hub can reach");
   expect(host.textContent).toContain("Any other machine");
-  expect(button("Get the line")?.disabled).toBe(true);
+  expect(button("Get the line…")?.disabled).toBe(false);
+});
+
+const typeName = async (name: string) => {
+  const input = host.querySelector<HTMLInputElement>("form[aria-label='Name the machine'] input");
+  if (input === null) throw new Error("no name field");
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(input, name);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    await Promise.resolve();
+  });
+};
+const waitLine = () => host.querySelector("[data-line]");
+const snapshot = (machines: Machine[]) =>
+  act(async () => {
+    send({ t: "snapshot", snapshot: { cursor: 2, attention: [], machines, projects: [] } });
+    await new Promise((r) => setTimeout(r, 0));
+  });
+const DEVBOX: Machine = { machineId: "devbox", name: "devbox", nodeVersion: "1", status: "online", lastSeenAt: AT, tags: [] };
+
+it("gives any other machine one line to paste, and turns its wait into Joined once its node is online", async () => {
+  await render();
+  await click("Get the line…");
+  expect(state()).toBe("line");
+  await typeName("Laptop!");
+  await click("Make the line");
+  expect(host.textContent).toContain("Lower-case letters, digits and dashes");
+  expect(calls.some((c) => c.tool === "machine_join")).toBe(false);
+  await typeName("devbox");
+  await click("Make the line");
+  expect(host.textContent).toContain("devbox is a machine already: Repair it from the list.");
+  await typeName("laptop");
+  await click("Make the line");
+  expect(calls.filter((c) => c.tool === "machine_join").map((c) => c.input)).toEqual([{ machineId: "laptop" }]);
+  expect(host.querySelector("[aria-label='The line'] code")?.textContent).toBe(LINE);
+  expect(host.textContent).toContain("The code works once, until");
+  expect(host.textContent).toContain("committing as ada-lovelace <1+ada-lovelace@users.noreply.github.com>");
+  expect(button("Copy")).toBeDefined();
+  expect(waitLine()?.getAttribute("data-line")).toBe("waiting");
+  expect(waitLine()?.textContent).toBe("Waiting for laptop…");
+  expect(button("Open laptop")).toBeUndefined();
+
+  await snapshot([DEVBOX, { ...DEVBOX, machineId: "laptop", name: "laptop" }]);
+  expect(waitLine()?.getAttribute("data-line")).toBe("joined");
+  expect(waitLine()?.textContent).toBe("laptop joined.");
+  await click("Open laptop");
+  expect(window.location.hash).toBe("#/admin/machines/laptop");
+});
+
+it("says when the code expired before the line ran, and makes a new one", async () => {
+  expiresAt = new Date(Date.now() - 1000).toISOString();
+  await render();
+  await click("Get the line…");
+  await typeName("laptop");
+  await click("Make the line");
+  expect(waitLine()?.getAttribute("data-line")).toBe("expired");
+  expect(host.textContent).toContain("The code expired before the line ran. Make a new one.");
+  expiresAt = new Date(Date.now() + 15 * 60_000).toISOString();
+  await click("Make a new line");
+  expect(calls.filter((c) => c.tool === "machine_join")).toHaveLength(2);
+  expect(waitLine()?.getAttribute("data-line")).toBe("waiting");
+});
+
+it("repairs a machine that joined by itself with a line that enrolls it again, made at once", async () => {
+  await render({ view: { kind: "line", machineId: "laptop", rejoin: true }, at: 1 });
+  expect(state()).toBe("line");
+  expect(host.textContent).toContain("Repair laptop");
+  expect(host.querySelector("form[aria-label='Name the machine']")).toBeNull();
+  expect(calls.filter((c) => c.tool === "machine_join").map((c) => c.input)).toEqual([{ machineId: "laptop", rejoin: true }]);
+  expect(host.querySelector("[aria-label='The line'] code")?.textContent).toBe(`${LINE} --rejoin`);
+  expect(waitLine()?.textContent).toBe("Waiting for laptop…");
 });
 
 it("plans a host the hub can reach, adds it and follows its steps", async () => {
