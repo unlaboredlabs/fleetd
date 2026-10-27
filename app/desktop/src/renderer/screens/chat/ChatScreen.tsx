@@ -1,13 +1,12 @@
 // A project's lead chat, the app's main surface (lead-chat spec §1): the conversation with the project's lead,
 // fleet activity quietly inside it (PR and merge one-liners), the two inline items chat can't carry (a secret, a
 // gated command), and the composer, which has the cursor as soon as the chat opens, with the live strip docked to its
-// top. Above them, a line says what the lead waits on you for; an empty chat asks what to do. It opens where you
-// stopped reading, under a "New" divider.
+// top. The top bar says what needs you after the title (what the lead waits on you for, a block, a red main), and is
+// just the title when nothing does; an empty chat asks what to do. It opens where you stopped reading, under a "New"
+// divider.
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { BubbleActionsContext, type BubbleActions, type ReplyTarget } from "./actions";
-import { Button, FrameTitle, IdChip, StatusChip, Text, type StatusTone } from "../../ui";
-import { STATE_WORDS } from "../status/rows";
-import type { ProjectStateWord } from "../../src/data/selectors";
+import { Button, FrameTitle, IdChip, StatusChip, Text } from "../../ui";
 import { useData, useDataLayer } from "../../src/data/react";
 import { selectNeedsYou } from "../../src/data/selectors";
 import { seenOf } from "../../src/data/seen";
@@ -22,12 +21,9 @@ import { useChatData } from "./data";
 import { EmptyChat } from "./EmptyChat";
 import { arrivalsOf, chatRows, heldLabel, rowIndexOf, type Arrivals } from "./model";
 import { ChatComposer } from "./Composer";
-import { AgentsCapControl } from "../settings";
 import type { ProjectRef } from "./slots";
 import { useAsOfWords } from "../shell/offline";
 import s from "./view.module.css";
-
-const TONE: Readonly<Record<ProjectStateWord, StatusTone>> = { waiting_on_you: "needs-you", blocked: "failed", working: "working", idle: "idle" };
 
 export function ChatScreen({ project, message }: { project: ProjectRef; message?: string }) {
   const data = useChatData(project);
@@ -103,7 +99,6 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
   const newAt = sent === 0 ? rows?.findIndex((r) => r.kind === "new") : undefined;
   const openAt = rows === undefined ? undefined : target !== undefined ? rowIndexOf(rows, target) : newAt === -1 ? undefined : newAt;
   const empty = view !== undefined && view.items.length === 0 && !view.hasOlder;
-  const state = data.state;
   const title = data.title ?? "";
   const [replyTo, setReplyTo] = useState<ReplyTarget>();
   const onSent = useCallback(() => {
@@ -146,19 +141,29 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
         data.missing ? "chat.missing" : view !== undefined ? "chat" : data.loadError !== undefined ? "chat.error" : offline ? "chat.offline" : "chat.loading"
       }
     >
-      <FrameTitle title={title || undefined}>
+      <FrameTitle
+        title={title || undefined}
+        detail={
+          data.missing ? undefined : (
+            <AttentionLine
+              waiting={waiting}
+              // As the held chip says: a held chat doesn't say what the project is now.
+              blocked={view?.held === true ? undefined : data.blocked}
+              warning={view?.held === true ? undefined : data.warning}
+              which={showing >= 0 && targets !== undefined && targets.length > 1 ? `${String(showing + 1)} of ${String(targets.length)}` : undefined}
+              resume={view?.held === true ? undefined : data.usagePausedOn}
+              onShow={showNext}
+            />
+          )
+        }
+      >
         {view?.held === true ? (
           // A held chat is as it was then, connected or not, until this connection's newest page lands; what the
           // lead is doing now isn't known from it.
           <span className={s.state}>
             <StatusChip tone="quiet">{heldLabel(view.offline, asOf)}</StatusChip>
           </span>
-        ) : state ? (
-          <span className={s.state}>
-            <StatusChip tone={TONE[state]}>{STATE_WORDS[state]}</StatusChip>
-          </span>
         ) : null}
-        {data.missing ? null : <AgentsCapControl projectRef={project} />}
       </FrameTitle>
       {view?.held === true && !view.offline && data.loadError !== undefined ? (
         // Connected, but this chat's newest page couldn't be read: it stays marked as last known, with why.
@@ -201,15 +206,6 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
       )}
       {data.missing ? null : (
         <div className={s.composer}>
-          <AttentionLine
-            waiting={waiting}
-            // As the header chip: a held chat doesn't say what the project is now.
-            blocked={view?.held === true ? undefined : data.blocked}
-            warning={view?.held === true ? undefined : data.warning}
-            which={showing >= 0 && targets !== undefined && targets.length > 1 ? `${String(showing + 1)} of ${String(targets.length)}` : undefined}
-            resume={view?.held === true ? undefined : data.usagePausedOn}
-            onShow={showNext}
-          />
           {strip ? (
             <Boundary part="the live strip">
               <LiveStrip project={project} />

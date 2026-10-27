@@ -98,7 +98,7 @@ export const machineGlance = (m: Machine, live: MachineLive | undefined, nowMs: 
   };
 };
 
-/** "agents 8 / 40 · 1 queued", the words the chat header's Max agents control uses. */
+/** "agents 8 / 40 · 1 queued": how many agents run across the fleet, of how many at once. */
 export const slotsText = (s: SlotState): string => `agents ${s.used} / ${s.cap}${s.queued > 0 ? ` · ${s.queued} queued` : ""}`;
 
 /** Offline last, then by name. */

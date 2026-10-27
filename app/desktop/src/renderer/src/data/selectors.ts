@@ -177,7 +177,7 @@ export const hubNow = (s: DataState, localNowMs: number): number => localNowMs +
 
 const active = (status: AgentLane["status"]): boolean => status === "working" || status === "starting";
 
-/** A project's state word: the sidebar dot, the chat header and the Status row all show this one. */
+/** A project's state word: the sidebar dot, the chat's top bar and the Status row all show this one. */
 export type ProjectStateWord = "waiting_on_you" | "blocked" | "working" | "idle";
 
 /**
@@ -218,7 +218,7 @@ const sameRow = (a: ProjectRow, b: ProjectRow): boolean =>
   a.project === b.project && a.needsYou === b.needsYou && a.running === b.running && a.working === b.working && a.state === b.state && a.lastSeq === b.lastSeq;
 
 // The rows last handed out: a lane frame (4 Hz on the strip) that changes no row's fields hands back the same rows
-// and the same list, so the sidebar and the chat header don't re-render for it.
+// and the same list, so the sidebar and the chat's top bar don't re-render for it.
 let lastRows: readonly ProjectRow[] | undefined;
 /** The last rows of a fresh connection, for the moment after a reconnect before the board is read again. */
 let lastLive: ReadonlyMap<ProjectKey, ProjectRow> = new Map();
@@ -277,7 +277,7 @@ export const selectShownProjects = memo(
 /** When what is held was last current, while there is no fresh connection; undefined when live or nothing is held. */
 export const selectOfflineAsOf = (s: DataState): number | undefined => (s.fresh ? undefined : s.asOf);
 
-/** One project's row: what the sidebar dot, the chat header and the Status row read. */
+/** One project's row: what the sidebar dot, the chat's top bar and the Status row read. */
 export const selectProjectRow = perKey((key) =>
   memo(
     (s) => [selectProjectList(s)],

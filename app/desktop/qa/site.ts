@@ -27,7 +27,7 @@ export const siteShots: readonly SiteShot[] = [
   { file: "docs/site/public/img/chat.png", screen: "chat", variant: "strip", fixture: "live-3" },
   { file: "docs/site/public/img/chat-history.png", screen: "chat", variant: "history", fixture: "chat-long" },
   { file: "docs/site/public/img/status.png", screen: "status.fleet", fixture: "typical" },
-  { file: "docs/site/public/img/max-agents.png", screen: "chat", variant: "max-agents", fixture: "settings-agents" },
+  { file: "docs/site/public/img/max-agents.png", screen: "settings.agents", variant: "from-panel", fixture: "settings-agents" },
   { file: "docs/site/public/img/chat-command.png", screen: "chat", variant: "inline-chat", fixture: "chat-gated" },
   { file: "docs/site/public/img/chat-secret.png", screen: "chat", variant: "inline-chat", fixture: "chat-secret" },
   { file: "docs/site/public/img/add-project.png", screen: "projects.add.cloning", fixture: "projects-cloning" },

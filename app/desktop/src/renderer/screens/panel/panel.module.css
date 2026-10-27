@@ -9,10 +9,20 @@
   min-height: 0;
 }
 
-/* The section tabs' row (Sections.tsx). */
+/* The section tabs' row (Sections.tsx): the panel's header, in the window's top row beside the chat's title and as
+   tall as it, so the window drags from around the tabs. */
 .head {
   flex: none;
-  padding: var(--space-1-5) var(--space-2) 0;
+  display: flex;
+  align-items: center;
+  height: var(--top-bar-height);
+  padding: 0 var(--space-2);
+  -webkit-app-region: drag;
+  user-select: none;
+}
+.head > * {
+  flex: 1;
+  min-width: 0;
 }
 /* A section, and inside one of two views its inner tabs: the rest of the panel's height. */
 .section {

@@ -9,6 +9,7 @@ import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { AT, live, project, snapshot } from "../../src/data/fixtures.test-util";
 import { TooltipProvider } from "../../ui/primitives/Tooltip";
+import { AppFrame, TopBar } from "../../ui/layout/Layout";
 import { runCommand } from "../palette";
 import { ChatScreen } from "./ChatScreen";
 
@@ -118,7 +119,10 @@ const mount = async (
     root?.render(
       <DataProvider layer={layer}>
         <TooltipProvider>
-          <ChatScreen project={project} />
+          {/* The frame's top row, where the chat's title and what needs you show. */}
+          <AppFrame topBar={<TopBar />}>
+            <ChatScreen project={project} />
+          </AppFrame>
         </TooltipProvider>
       </DataProvider>,
     );

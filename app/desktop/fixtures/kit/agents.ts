@@ -1,5 +1,5 @@
-// One count of agents per project, so every place a shot shows it agrees: the chat header ("agents 4 / 6") and the
-// Max agents popover read the slot state; the strip and the sidebar read the orders' lanes merged with the live
+// One count of agents per project, so every place a shot shows it agrees: the panel's Agents tab ("4 working · max
+// 6") and Settings' Max agents read the slot state; the strip and the sidebar read the orders' lanes merged with the live
 // feed; Status reads its rows. `pnpm fixtures` runs this on every fixture last, after the groups have added theirs.
 //
 // The lanes are the truth: the slot state and the Status rows are derived from them. A fixture whose point is a

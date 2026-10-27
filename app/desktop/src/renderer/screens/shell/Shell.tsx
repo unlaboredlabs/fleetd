@@ -203,9 +203,8 @@ export function Shell() {
       trailing={
         chrome ? (
           <>
-            <Button variant="quiet" icon={<Search />} shortcut={display("palette.toggle", platform)} onClick={() => openPalette()}>
-              Commands
-            </Button>
+            {/* The shortcut is the label: the key you learn, not a word to read every time. */}
+            <Button variant="quiet" icon={<Search />} shortcut={display("palette.toggle", platform)} aria-label="Commands" title="Commands" onClick={() => openPalette()} />
             <PanelToggle panel={panel} />
           </>
         ) : undefined

@@ -1,9 +1,10 @@
-// The quiet line above the composer while the lead waits on you: what for, and Show, which brings it into view and
-// marks it; with more than one place to go, each press goes to the next and the line says which ("1 of 2").
-// The palette and the live strip's "waiting on you" row reach the same Show through the chat.showWaiting command.
-// Otherwise, while the project is blocked, why: the hub's reason, so you know before sending into it, and Resume when
-// its machine's usage pause is the reason. Otherwise the hub's warning, which stops nothing (a check red on main).
-import { Button, Dot, Text } from "../../ui";
+// What needs you, in the top bar after the chat's title, which is otherwise just the title. While the lead waits on
+// you: what for, and Show, which brings it into view and marks it; with more than one place to go, each press goes to
+// the next and the line says which ("1 of 2"). The palette and the live strip's "waiting on you" row reach the same
+// Show through the chat.showWaiting command. Otherwise, while the project is blocked, why: the hub's reason, so you
+// know before sending into it, and Resume when its machine's usage pause is the reason. Otherwise the hub's warning,
+// which stops nothing (a check red on main). One row with no dot: the words truncate, and Show or Resume stays.
+import { Button, Text } from "../../ui";
 import { useCommands } from "../palette";
 import { HubText } from "../projects/HubText";
 import { ResumeButton } from "../status/Resume";
@@ -36,8 +37,7 @@ export function AttentionLine({
   if (waiting === undefined && blocked === undefined) {
     return warning === undefined ? null : (
       <div className={s.attention} data-attention="warning">
-        <Dot color="var(--warning)" />
-        <Text size="xs" tone="quiet">
+        <Text size="xs" tone="warning" className={s.attentionWords}>
           <HubText>{warning}</HubText>
         </Text>
       </div>
@@ -46,8 +46,7 @@ export function AttentionLine({
   if (waiting === undefined) {
     return blocked === undefined ? null : (
       <div className={s.attention} data-attention="blocked">
-        <Dot color="var(--danger)" />
-        <Text size="xs" tone="quiet">
+        <Text size="xs" tone="quiet" className={s.attentionWords}>
           <Text size="xs" strong tone="danger">
             {blocked === "" ? "Blocked" : "Blocked:"}
           </Text>
@@ -59,32 +58,25 @@ export function AttentionLine({
   }
   return (
     <div className={s.attention} data-attention>
-      <Dot color="var(--warning)" />
-      <Text size="xs" tone="quiet">
+      <Text size="xs" tone="quiet" className={s.attentionWords}>
         <Text size="xs" strong>
-          The lead is waiting on you:
+          Waiting on you:
         </Text>{" "}
         {waiting.what}
-        {/* Always there, so the first "1 of 2" is announced. */}
-        <span role="status">
-          {which !== undefined ? (
-            <>
-              {" · "}
-              <Text size="xs" tone="quiet" tabular>
-                {which}
-              </Text>
-            </>
-          ) : null}
-        </span>
-        {canShow ? (
-          <>
-            {" "}
-            <Button variant="link" onClick={onShow}>
-              Show
-            </Button>
-          </>
-        ) : null}
       </Text>
+      {/* Always there, so the first "1 of 2" is announced. */}
+      <span role="status">
+        {which !== undefined ? (
+          <Text size="xs" tone="quiet" tabular>
+            {which}
+          </Text>
+        ) : null}
+      </span>
+      {canShow ? (
+        <Button variant="link" onClick={onShow}>
+          Show
+        </Button>
+      ) : null}
     </div>
   );
 }
