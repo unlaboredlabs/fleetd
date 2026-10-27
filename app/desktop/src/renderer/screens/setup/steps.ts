@@ -90,7 +90,7 @@ export const guides = (hub: string): ReadonlyArray<Guide> => {
       parts: [
         {
           title: "Pick the address",
-          note: "Your tailnet, with HTTPS from Tailscale Serve, is the one that works everywhere: Google takes only HTTPS.",
+          note: "Your tailnet keeps it private. HTTPS (Tailscale Serve) is optional: it turns on GitHub's webhooks and Google's web sign-in.",
           links: [{ label: "Tailscale admin", url: "https://login.tailscale.com/admin/machines" }],
           values: [{ label: "Hub address", value: base }],
         },
@@ -151,7 +151,9 @@ export const guides = (hub: string): ReadonlyArray<Guide> => {
             { label: "Homepage URL", value: base, filled: true },
             { label: "Sign-in callback", value: `${base}/oauth/github/callback`, filled: true },
             { label: "Repository access", value: "Contents, pull requests and workflows: write. Checks, actions, statuses: read.", plain: true },
-            { label: "Webhooks", value: "Off on a tailnet: the hub asks GitHub instead. On once GitHub can reach the hub.", plain: true },
+            https
+              ? { label: "Webhooks", value: `${base}/webhooks/github`, filled: true, note: "On, since the hub has an HTTPS address." }
+              : { label: "Webhooks", value: "Off: the hub polls GitHub, as the train already does.", plain: true },
           ],
         },
         {
@@ -205,20 +207,25 @@ export const guides = (hub: string): ReadonlyArray<Guide> => {
           links: [{ label: "Google Auth Platform › Branding", url: "https://console.cloud.google.com/auth/branding" }],
           values: [
             { label: "App name", value: name },
-            { label: "Audience", value: "Internal if everyone is in your Google Workspace. Otherwise External, with each person added as a test user.", plain: true },
+            { label: "Audience", value: "Internal if everyone is in your Google Workspace; otherwise External.", plain: true },
             ...GOOGLE_SCOPES.map((s) => ({ ...s, label: `Scope: ${s.label}`, note: "Data access › Add or remove scopes" })),
+            {
+              label: "Publishing status",
+              value: "External: press Publish app, so it is In production. People then click past Google's unverified-app warning once; in Testing their sign-ins would lapse after 7 days.",
+              plain: true,
+            },
           ],
         },
         {
           title: "Create the OAuth client",
           links: [{ label: "Google Auth Platform › Clients", url: "https://console.cloud.google.com/auth/clients/create" }],
           values: [
-            { label: "Application type", value: "Web application", plain: true },
+            { label: "Application type", value: "Desktop app", plain: true },
             { label: "Name", value: name },
-            https
-              ? { label: "Authorized redirect URI", value: `${base}/oauth/google/callback`, note: "Exactly this, no trailing slash." }
-              : { label: "Authorized redirect URI", value: "Google takes only HTTPS: give the hub an HTTPS address first (step 1).", plain: true },
-            { label: "JavaScript origins", value: "Leave empty.", plain: true },
+            { label: "Redirect", value: "Nothing to add: the fleetd app catches Google's answer on its own computer (127.0.0.1).", plain: true },
+            ...(https
+              ? [{ label: "Or, on this HTTPS hub", value: `${base}/oauth/google/callback`, note: "A Web application client with this redirect also signs in from a browser." }]
+              : []),
           ],
         },
       ],
@@ -226,7 +233,7 @@ export const guides = (hub: string): ReadonlyArray<Guide> => {
         { name: "clientId", label: "Client ID", placeholder: "….apps.googleusercontent.com" },
         { name: "clientSecret", label: "Client secret", secret: true, placeholder: "GOCSPX-…" },
       ],
-      fieldsNote: "Then each person connects their own Google account from their Navi.",
+      fieldsNote: "Then each person connects their own Google account from their Navi; if a sign-in lapses, Navi offers Reconnect.",
       test: "Ask Google whether it knows this client",
       checks: ["hub/google"],
     },

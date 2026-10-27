@@ -1,6 +1,7 @@
 # One setup for the hub admin
 
-Status: proposed (W100), revised for D189 (Google, native) and D190 (one GitHub App per hub). This is the design,
+Status: proposed (W100), revised for D189 (Google, native), D190 (one GitHub App per hub) and the answers to its open
+questions (§6). This is the design,
 with a prototype of the app's screens: `#/setup` in `app/desktop/src/renderer/screens/setup`, against
 `fixtures/setup`. The build waits for approval and for teams step 1 and the Navi integrations to land.
 
@@ -75,12 +76,12 @@ In order. **Need** says when it must be done; nothing blocks using fleetd before
 
 | Step | Need | What the admin pastes or picks | Values fleetd computes | Link | Result fields | Test | Exists |
 |---|---|---|---|---|---|---|---|
-| Where the hub listens | Required | Tailnet, this machine only, or LAN; HTTPS through Tailscale Serve | Each option's URL; `tailscale serve` command | Tailscale admin | none | Reach `/healthz` from this device | init, `hub/reachable`, `hub/https` |
+| Where the hub listens | Required | Tailnet, this machine only, or LAN; HTTPS through Tailscale Serve is optional | Each option's URL; `tailscale serve` command | Tailscale admin | none | Reach `/healthz` from this device | init, `hub/reachable`, `hub/https` |
 | Machines | Required | The machines to add | `fleetd machine add <host>`, or a join command with a code | none | none | The checks: online, runner | init, `machine add`, `*/online` |
 | Claude | Required | A hub API key and an optional endpoint, **or** nothing: each person connects their own subscription | Key name `fleetd on devbox` | Claude Console › API keys | API key (sealed), endpoint | `GET /v1/models` at the endpoint | per-machine `claude login` only; key and subscriptions are D186 |
 | GitHub App | Before the first PR | Nothing to paste: confirm the App GitHub shows, pick the repositories to install it on, connect your own account | The manifest: name, homepage, callback `<hub>/oauth/github/callback`, repository permissions, webhook | "Create on my account" or "in an organization", then GitHub's install page | none: GitHub hands the App's keys to the hub | Mint an installation token and list the repositories it reaches; the admin's own sign-in proves the callback | D190; today `gh auth` on the hub (`hub/gh_auth`) |
 | Invite people | Optional | A name, admin or not | The invite link | none | Name | The link opens | teams step 1, in flight |
-| Google | Optional | A Cloud project, the three APIs, the sign-in screen, a Web OAuth client | Project and app name, the Gmail, Calendar and Drive scopes, redirect `<hub>/oauth/google/callback` (HTTPS only) | Cloud Console: new project, enable APIs, Auth Platform › Branding, › Clients | Client ID, client secret (sealed to the hub) | Exchange a dummy code: `invalid_grant` means Google knows the client; then each person connects from their Navi | D189; Navi integrations, in flight (#635) |
+| Google | Optional | A Cloud project, the three APIs, the sign-in screen published In production, a Desktop app OAuth client | Project and app name, the Gmail, Calendar and Drive scopes; on an HTTPS hub, also a web redirect `<hub>/oauth/google/callback` | Cloud Console: new project, enable APIs, Auth Platform › Branding, › Clients | Client ID, client secret (sealed to the hub) | Exchange a dummy code: `invalid_grant` means Google knows the client; then each person connects from their Navi | D189; Navi integrations, in flight (#635) |
 | Notion | Optional | An internal integration | Integration name | Notion › Integrations | Secret (sealed) | `mcp_server_test` (search) | Navi integrations, in flight |
 | 1Password | Optional | A service account for one vault | Account name | 1Password › Service accounts | Token (sealed) | List the vault's item titles | per project today (`OP_SERVICE_ACCOUNT_TOKEN`) |
 
@@ -151,15 +152,18 @@ Secret fields use the existing sealed flow (`app/desktop/src/main/secret.ts`): t
 "Sealed on this device; the hub keeps only its fingerprint". Each field names its **sink**:
 
 - **Machines** (the Claude API key, the Notion and 1Password tokens) are sealed to every machine's box key, like a
-  global MCP server's secret today (`McpValueSet::Secret`).
+  global MCP server's secret today (`McpValueSet::Secret`), and to the hub's own key.
+  - **A machine added later** gets them when an admin approves it once: "Give buildbox the hub's saved secrets
+    (Claude key, Notion, 1Password)?" Then the hub opens its copies and re-seals them to the new machine's key.
+  - Nothing is copied to a machine without that approval. Until then, the step reads "sealed on 2 of 3 machines".
 - **Hub** is new. It holds what the hub process uses itself:
   - the GitHub App's private key, client secret and webhook secret, which GitHub sends straight to the hub when the
     App is created (the manifest conversion), so no person ever sees them;
   - the Google client secret;
   - each person's GitHub and Google tokens, which the hub refreshes.
 
-  The hub gets a box key of its own in its home. The admin's app seals the Google client secret to it, and the hub
-  opens these in its own process only.
+  The hub gets a box key of its own in its home. The admin's app seals the Google client secret (and each machine
+  secret's hub copy) to it, and the hub opens these in its own process only.
 
 In the terminal, `fleetd init` reads a secret with hidden input and seals it the same way before it leaves the CLI.
 
@@ -167,9 +171,11 @@ In the terminal, `fleetd init` reads a secret with hidden input and seals it the
 
 Values come from the hub's URL as devices reach it (`--url`, else the listen address), so a callback is right the
 first time: `http://devbox.your-tailnet.ts.net:4790/oauth/github/callback`. Names default to `fleetd on <host>`, so an
-admin with several hubs can tell their apps apart at each provider. Google takes only HTTPS
-redirects, so the address step recommends the tailnet with HTTPS from Tailscale Serve. On a plain-HTTP hub the Google
-step shows no redirect URI, only "give the hub an HTTPS address first (step 1)".
+admin with several hubs can tell their apps apart at each provider.
+
+A plain-HTTP tailnet hub is enough for every step. HTTPS (Tailscale Serve) is optional and adds two things:
+- GitHub's webhooks, in the App's manifest;
+- a web redirect for Google, besides the Desktop app client.
 
 ### 3.6 The GitHub App (D190)
 
@@ -184,7 +190,7 @@ no `gh auth` on the hub.
    - `redirect_url: <hub>/setup/github/created` and `setup_url: <hub>/setup/github/installed`;
    - `public: false`;
    - the permissions: contents, pull requests and workflows write; checks, actions and statuses read;
-   - a webhook at `<hub>/webhooks/github`, active only when GitHub can reach the hub.
+   - a webhook at `<hub>/webhooks/github` only when the hub's address is HTTPS; otherwise webhooks are off.
 
    The admin checks the name and presses Create. GitHub redirects to the hub with a code. The hub converts it
    (`POST /app-manifests/{code}/conversions`, within the hour) into the App's id, slug, client ID, client secret,
@@ -201,8 +207,8 @@ no `gh auth` on the hub.
 - A person's own token opens their PRs, so each PR opens as the person who asked (D187).
 - A person who hasn't connected is asked to, before their first PR, and never falls back to someone else's token.
 
-**Webhooks.** A tailnet hub can't be reached by GitHub, so the hook stays off and the hub asks GitHub, as today. It
-turns on once the hub has an address GitHub can reach (Tailscale Funnel, a public HTTPS name).
+**Webhooks.** The hub polls GitHub by default, as the train already does. Webhooks are optional, for hubs reachable
+over HTTPS, and the manifest leaves them off unless the hub's address is HTTPS.
 
 **Test** mints an installation token, lists the repositories it reaches (`GET /installation/repositories`), and
 checks the admin's own token (`GET /user`). The status line says: "The App "fleetd on devbox" is installed on acme with
@@ -221,15 +227,25 @@ person then connects their own Google account from their Navi.
      - `calendar.events`;
      - `drive.readonly`;
      - plus `openid` and `email`, to name the account.
-  4. A Web application client whose only redirect URI is `<hub>/oauth/google/callback`. The client ID and secret
-     are pasted into the step, and the secret is sealed to the hub.
+
+     The audience is Internal if everyone is in one Google Workspace (no warning, no review). Otherwise it is
+     External, and the step tells the admin to press **Publish app**, so the status is **In production**. People
+     then see Google's "unverified app" warning once and click past it. In Testing, their sign-ins would lapse after
+     7 days.
+  4. A **Desktop app** client, the default. It needs no redirect URI: the fleetd app catches Google's answer on its
+     own computer (`http://127.0.0.1:<port>`), so a plain-HTTP tailnet hub works. On an HTTPS hub, a Web
+     application client with `<hub>/oauth/google/callback` also works from a browser. The client ID and secret are
+     pasted into the step, and the secret is sealed to the hub.
+
+  T805 (native Google) owns the exact client type and scope list. This step shows whatever it fixes.
 - **Test** exchanges a dummy code at Google's token endpoint. `invalid_grant` means Google knows the client and its
   secret; `invalid_client` means it doesn't.
 - **Each person** connects from their Navi:
-  - The hub runs the code flow with `access_type=offline` and keeps that person's refresh token in the hub sink.
+  - The app opens Google's sign-in and catches the loopback redirect. The hub exchanges the code (`access_type=offline`)
+    and keeps that person's refresh token in the hub sink.
+  - When a token lapses or is revoked at Google, the Navi offers a one-click **Reconnect**.
   - Navi's Google tools use only the token of the person whose Navi it is.
   - Disconnecting, or the person being removed, revokes the token.
-- **HTTPS.** Google accepts only HTTPS redirect URIs, which is why the address step recommends Tailscale Serve.
 
 ## 4. Three renderings of the same steps
 
@@ -284,7 +300,9 @@ table with copy buttons, live checks after the paste, "progress is saved".
   - What "each person's subscription" checks per person.
   - The agent profiles' model settings (#626) stay in Settings › Agents, not setup.
 - **Google (D189) and the Navi integrations (T745, #635)**
-  - `/oauth/google/callback`, and the scopes as one constant.
+  - The Desktop app client with the loopback redirect the app catches (T805); `/oauth/google/callback` only on HTTPS
+    hubs; the scopes as one constant.
+  - Reconnect in the Navi when a token lapses.
   - A `hub/google` check (the dummy code exchange), and each person's connection state for their Navi.
   - The client secret and people's refresh tokens in the hub sink.
   - Navi's Google tools on the hub's own Google client, replacing the xaq adapter (`google.rs`).
@@ -297,23 +315,20 @@ table with copy buttons, live checks after the paste, "progress is saved".
   - `unknown` means "not set up" for the new checks.
   - `checks.rs` stays the one place a status is decided.
 
-## 6. Open questions
+## 6. Decided
 
-Settled since the first draft: GitHub is one GitHub App through the manifest flow (D190), and Google is native with
-the admin's own client (D189). An HTTPS address is what the address step recommends, since Google needs it.
+None are open. Each answer below is already in the sections above.
 
-1. **Machines added after a secret was saved.** A machine secret is sealed to the machines the app knew of at the
-   time. A new machine has no copy until an admin's app seals one for it. Either the admin's app re-seals on its own
-   when it sees a new machine, or the hub keeps these in its own sink and re-seals to new nodes (the hub then sees
-   plaintext). Recommendation: the app re-seals; the step shows "sealed on 2 of 3 machines" until it has.
-2. **Google for people outside one Workspace.** An Internal client needs no review but takes only that Workspace's
-   accounts. An External one in Testing takes up to 100 listed test users, but their sign-ins lapse after 7 days.
-   Publishing it with `gmail.modify` shows "unverified app" until Google verifies it. Recommendation:
-   - Internal when everyone is in one Workspace.
-   - Otherwise External in Testing, with each person added as a test user. Their Navi asks them to reconnect when a
-     sign-in lapses.
-3. **GitHub webhooks on a tailnet hub.** GitHub can't reach the hub, so the hub keeps asking GitHub, as today.
-   Recommendation: off by default. Offer Tailscale Funnel for the webhook alone later, if polling is too slow.
+1. **GitHub** is one GitHub App per hub, created through the manifest flow (D190).
+2. **Google** is native, with the admin's own client (D189):
+   - a Desktop app client with a loopback redirect by default, so no HTTPS is needed;
+   - published In production, so sign-ins don't lapse after 7 days; people click past Google's unverified-app
+     warning once;
+   - a one-click Reconnect when a token lapses anyway.
+3. **A machine added later** gets the saved secrets once an admin approves it. The hub re-seals them to the machine's
+   key; nothing is copied silently.
+4. **GitHub webhooks** are off by default, and the hub polls, as the train does. They are on only for hubs whose address
+   is HTTPS.
 
 ## 7. Build order, after approval
 
