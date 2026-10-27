@@ -56,7 +56,11 @@ async fn token(State(fake): State<Shared>, RawForm(raw): RawForm) -> impl IntoRe
         String::new(),
         String::from_utf8_lossy(&raw).into_owned(),
     ));
-    if field(&form, "client_secret") != CLIENT_SECRET || field(&form, "client_id") != CLIENT_ID {
+    let service = field(&form, "grant_type") == "urn:ietf:params:oauth:grant-type:jwt-bearer";
+    if !service
+        && (field(&form, "client_secret") != CLIENT_SECRET
+            || field(&form, "client_id") != CLIENT_ID)
+    {
         return (
             StatusCode::UNAUTHORIZED,
             axum::Json(json!({ "error": "invalid_client" })),
@@ -82,6 +86,36 @@ async fn token(State(fake): State<Shared>, RawForm(raw): RawForm) -> impl IntoRe
                     "scope": "openid https://www.googleapis.com/auth/gmail.readonly", "token_type": "Bearer",
                     "id_token": format!("e30.{claims}.sig"),
                 })),
+            )
+        }
+        "urn:ietf:params:oauth:grant-type:jwt-bearer" => {
+            // The service account's assertion, signed with its key.
+            let assertion = field(&form, "assertion");
+            let parts: Vec<&str> = assertion.split('.').collect();
+            let claims: Value =
+                serde_json::from_slice(&URL_SAFE_NO_PAD.decode(parts[1]).unwrap()).unwrap();
+            let public = ring::signature::UnparsedPublicKey::new(
+                &ring::signature::RSA_PKCS1_2048_8192_SHA256,
+                test_key().public().as_ref().to_vec(),
+            );
+            let signed = public
+                .verify(
+                    format!("{}.{}", parts[0], parts[1]).as_bytes(),
+                    &URL_SAFE_NO_PAD.decode(parts[2]).unwrap(),
+                )
+                .is_ok();
+            if !signed
+                || claims["iss"] != "navi-mail@acme-mail.iam.gserviceaccount.com"
+                || claims["scope"] != fleetd_contracts::google::PUBSUB_SCOPE
+            {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    axum::Json(json!({ "error": "invalid_grant" })),
+                );
+            }
+            (
+                StatusCode::OK,
+                axum::Json(json!({ "access_token": "sa-access", "expires_in": 3599 })),
             )
         }
         "refresh_token" => {
@@ -134,7 +168,13 @@ async fn api(
         .and_then(|h| h.to_str().ok())
         .unwrap_or_default()
         .to_owned();
-    if bearer != format!("Bearer {}", f.access) {
+    let pubsub = path.starts_with("v1/");
+    let expected = if pubsub {
+        "sa-access".to_owned()
+    } else {
+        f.access.clone()
+    };
+    if bearer != format!("Bearer {expected}") {
         return (
             StatusCode::UNAUTHORIZED,
             axum::Json(json!({ "error": { "message": "Invalid Credentials" } })),
@@ -148,6 +188,15 @@ async fn api(
         .join("&");
     f.seen
         .push((method.to_string(), path.clone(), q, body.clone()));
+    // Gmail keeps about a week of history.
+    if path == "/gmail/v1/users/me/history"
+        && query.iter().any(|(k, v)| k == "startHistoryId" && v == "1")
+    {
+        return (
+            StatusCode::NOT_FOUND,
+            axum::Json(json!({ "error": { "message": "Requested entity was not found." } })),
+        );
+    }
     (StatusCode::OK, axum::Json(answer(&method, &path, &query)))
 }
 
@@ -216,6 +265,36 @@ fn answer(method: &axum::http::Method, path: &str, query: &[(String, String)]) -
         ("GET", "/drive/v3/files/f1/export") => json!("The plan, as text."),
         ("POST", "/drive/v3/files/f1/permissions") => json!({ "id": "perm1" }),
         ("POST", "/upload/drive/v3/files") => json!({ "id": "f2", "name": "notes.txt" }),
+        ("POST", "/v1/projects/acme-mail/subscriptions/navi-mail:pull") => {
+            json!({ "receivedMessages": [
+                { "ackId": "ack-1", "message": { "data": STANDARD.encode(r#"{"emailAddress":"ana@example.com","historyId":200}"#) } },
+                { "ackId": "ack-2", "message": { "data": STANDARD.encode(r#"{"emailAddress":"bo@example.com","historyId":"77"}"#) } },
+            ]})
+        }
+        ("POST", "/gmail/v1/users/me/watch") => {
+            json!({ "historyId": "100", "expiration": "1793000000000" })
+        }
+        ("GET", "/gmail/v1/users/me/profile") => {
+            json!({ "emailAddress": "ana@example.com", "historyId": "300" })
+        }
+        ("GET", "/gmail/v1/users/me/history") => json!({ "historyId": "210", "history": [
+            { "messagesAdded": [{ "message": { "id": "m2", "threadId": "t2", "labelIds": ["INBOX", "UNREAD"] } }] },
+            { "messagesAdded": [{ "message": { "id": "m3", "threadId": "t3", "labelIds": ["INBOX", "IMPORTANT"] } }] },
+            { "messagesAdded": [{ "message": { "id": "m4", "threadId": "t4", "labelIds": ["SENT", "INBOX"] } }] },
+        ]}),
+        ("GET", "/gmail/v1/users/me/messages") => {
+            json!({ "messages": [{ "id": "m3", "threadId": "t3" }] })
+        }
+        ("GET", "/gmail/v1/users/me/messages/m2") => {
+            json!({ "id": "m2", "snippet": "Lunch?", "payload": { "headers": [
+                { "name": "From", "value": "Cy <cy@vendor.test>" }, { "name": "Subject", "value": "Lunch" },
+            ]}})
+        }
+        ("GET", "/gmail/v1/users/me/messages/m3") => {
+            json!({ "id": "m3", "snippet": "Please review", "payload": { "headers": [
+                { "name": "From", "value": "Boss <boss@example.com>" }, { "name": "Subject", "value": "Q3 plan" },
+            ]}})
+        }
         _ => json!({}),
     }
 }
@@ -233,7 +312,8 @@ async fn fake_google() -> (Endpoints, Shared) {
     let ep = Endpoints {
         oauth: base.clone(),
         gmail: base.clone(),
-        www: base,
+        www: base.clone(),
+        pubsub: base,
     };
     (ep, fake)
 }
@@ -1083,5 +1163,166 @@ async fn another_client_lapses_the_connections_the_old_one_made() {
     assert_eq!(
         status(home.path(), "p1").unwrap().1.as_deref(),
         Some("invalid_client")
+    );
+}
+
+// New mail
+
+const TEST_KEY: &str = include_str!("testdata/service-account-test-key.pem");
+
+fn test_key() -> ring::signature::RsaKeyPair {
+    super::mail::tests_signer(TEST_KEY)
+}
+
+/// A service account's JSON key as Google gives it, with a key made for these tests only.
+fn service_account() -> String {
+    json!({
+        "type": "service_account", "project_id": "acme-mail", "private_key_id": "k1",
+        "private_key": TEST_KEY, "client_email": "navi-mail@acme-mail.iam.gserviceaccount.com",
+        "token_uri": "https://oauth2.googleapis.com/token",
+    })
+    .to_string()
+}
+
+fn seal_to(home: &Path, value: &str) -> String {
+    let key = super::super::identity::load_or_create_box_key(home).unwrap();
+    let public = crypto_box::PublicKey::from(
+        <[u8; 32]>::try_from(STANDARD.decode(key.public_key()).unwrap().as_slice()).unwrap(),
+    );
+    STANDARD.encode(
+        public
+            .seal(&mut crypto_box::aead::OsRng, value.as_bytes())
+            .unwrap(),
+    )
+}
+
+#[tokio::test]
+async fn the_subscription_is_read_with_the_service_account_and_its_notices_acknowledged() {
+    let home = tempfile::tempdir().unwrap();
+    let (ep, fake) = fake_google().await;
+    let key = super::super::identity::load_or_create_box_key(home.path()).unwrap();
+    let subscription = "projects/acme-mail/subscriptions/navi-mail";
+    let error = mail::pubsub_set(
+        home.path(),
+        subscription,
+        Some(&seal_to(home.path(), r#"{"type":"authorized_user"}"#)),
+        Some(&key),
+    )
+    .unwrap_err();
+    assert!(error.contains("service account's JSON key"), "{error}");
+
+    let sa = service_account();
+    let fingerprint = mail::pubsub_set(
+        home.path(),
+        subscription,
+        Some(&seal_to(home.path(), &sa)),
+        Some(&key),
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(fingerprint.as_str(), fingerprint_of(sa.as_bytes()));
+    let kept = home.path().join("google/pubsub.json");
+    assert_eq!(
+        std::fs::metadata(&kept).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+
+    let notices = mail::pull(home.path(), &ep).await.unwrap();
+    assert_eq!(
+        notices,
+        vec![
+            fleetd_contracts::google::MailNotice {
+                email: "ana@example.com".into(),
+                history_id: 200
+            },
+            fleetd_contracts::google::MailNotice {
+                email: "bo@example.com".into(),
+                history_id: 77
+            },
+        ]
+    );
+    let seen = fake.lock().unwrap().seen.clone();
+    let (_, path, _, body) = seen.last().unwrap();
+    assert_eq!(
+        path,
+        "/v1/projects/acme-mail/subscriptions/navi-mail:acknowledge"
+    );
+    assert_eq!(
+        serde_json::from_str::<Value>(body).unwrap()["ackIds"],
+        json!(["ack-1", "ack-2"])
+    );
+
+    mail::pubsub_set(home.path(), subscription, None, Some(&key)).unwrap();
+    assert!(!kept.exists());
+}
+
+#[tokio::test]
+async fn a_watch_tells_the_topic_of_inbox_mail_and_says_when_it_ends() {
+    let (home, _ep, fake, session) = signed_in().await;
+    let ends = mail::watch(&session, "projects/acme-mail/topics/navi-mail")
+        .await
+        .unwrap();
+    assert_eq!(ends, 1_793_000_000_000);
+    let (_, path, _, body) = fake.lock().unwrap().seen.last().cloned().unwrap();
+    assert_eq!(path, "/gmail/v1/users/me/watch");
+    assert_eq!(
+        serde_json::from_str::<Value>(&body).unwrap(),
+        json!({ "topicName": "projects/acme-mail/topics/navi-mail", "labelIds": ["INBOX"], "labelFilterBehavior": "include" })
+    );
+    // Checks start where the watch did.
+    let state: Value =
+        serde_json::from_slice(&std::fs::read(mail::state_path(home.path(), "p1")).unwrap())
+            .unwrap();
+    assert_eq!(state["historyId"], 100);
+}
+
+#[tokio::test]
+async fn a_check_finds_new_inbox_mail_since_the_last_and_the_rule_filters_it() {
+    let (home, _ep, fake, session) = signed_in().await;
+    let state = mail::state_path(home.path(), "p1");
+    // The first check only marks where the next starts.
+    assert!(mail::check(&session, None).await.unwrap().is_empty());
+    assert_eq!(
+        serde_json::from_slice::<Value>(&std::fs::read(&state).unwrap()).unwrap()["historyId"],
+        300
+    );
+
+    std::fs::write(&state, r#"{"historyId":100}"#).unwrap();
+    let all = mail::check(&session, None).await.unwrap();
+    let ids: Vec<&str> = all.iter().map(|m| m.message_id.as_str()).collect();
+    // Sent mail isn't new mail.
+    assert_eq!(ids, ["m2", "m3"]);
+    assert_eq!(all[1].from.as_deref(), Some("Boss <boss@example.com>"));
+    assert_eq!(all[1].subject.as_deref(), Some("Q3 plan"));
+    assert_eq!(all[1].thread_id, "t3");
+    assert_eq!(
+        serde_json::from_slice::<Value>(&std::fs::read(&state).unwrap()).unwrap()["historyId"],
+        210
+    );
+
+    std::fs::write(&state, r#"{"historyId":100}"#).unwrap();
+    let matched = mail::check(&session, Some("from:boss@example.com"))
+        .await
+        .unwrap();
+    assert_eq!(matched.len(), 1);
+    assert_eq!(matched[0].message_id, "m3");
+    let seen = fake.lock().unwrap().seen.clone();
+    let (_, _, q, _) = seen
+        .iter()
+        .find(|(_, p, _, _)| p == "/gmail/v1/users/me/messages")
+        .unwrap();
+    assert!(q.contains("q=(from:boss@example.com) newer_than:7d"), "{q}");
+}
+
+#[tokio::test]
+async fn a_history_gmail_forgot_starts_again_from_now() {
+    let (home, _ep, _fake, session) = signed_in().await;
+    let state = mail::state_path(home.path(), "p1");
+    std::fs::create_dir_all(state.parent().unwrap()).unwrap();
+    std::fs::write(&state, r#"{"historyId":1}"#).unwrap();
+    assert!(mail::check(&session, None).await.unwrap().is_empty());
+    assert_eq!(
+        serde_json::from_slice::<Value>(&std::fs::read(&state).unwrap()).unwrap()["historyId"],
+        300
     );
 }

@@ -63,7 +63,25 @@ brand!(
     pattern = r"^http://127\.0\.0\.1:[1-9][0-9]{0,4}(/[A-Za-z0-9/._-]*)?$"
 );
 
+brand!(
+    /// A Pub/Sub topic in the admin's Cloud project: `projects/<project>/topics/<topic>`.
+    PubsubTopic,
+    name = "PubsubTopic",
+    pattern = r"^projects/[a-z][a-z0-9-]{4,28}[a-z0-9]/topics/[A-Za-z][A-Za-z0-9._~+%-]{2,254}$"
+);
+
+brand!(
+    /// A Pub/Sub subscription of that topic: `projects/<project>/subscriptions/<subscription>`.
+    PubsubSubscription,
+    name = "PubsubSubscription",
+    pattern = r"^projects/[a-z][a-z0-9-]{4,28}[a-z0-9]/subscriptions/[A-Za-z][A-Za-z0-9._~+%-]{2,254}$"
+);
+
+/// The Gmail scope a service account reads its Pub/Sub subscription with.
+pub const PUBSUB_SCOPE: &str = "https://www.googleapis.com/auth/pubsub";
+
 /// The hub's admin's OAuth client, as the hub keeps it: no secret.
+#[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct GoogleClient {
@@ -72,6 +90,76 @@ pub struct GoogleClient {
     #[serde(default)]
     pub sealed_on: Vec<McpSealedOn>,
     pub updated_at: Timestamp,
+    /// New mail in real time: Gmail tells this topic, and one machine reads its subscription. None: the hub checks
+    /// each Navi's mail about every minute instead.
+    pub pubsub: Option<GooglePubsub>,
+}
+
+/// Gmail's push notifications through the admin's Pub/Sub, as the hub keeps them: no key.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct GooglePubsub {
+    pub topic: PubsubTopic,
+    pub subscription: PubsubSubscription,
+    /// The machine whose node holds the service account key and reads the subscription.
+    pub machine_id: crate::ids::MachineId,
+    /// That node's fingerprint of the key.
+    pub fingerprint: SecretFingerprint,
+}
+
+/// When a Navi's new mail wakes it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum MailWakeRule {
+    /// New mail doesn't wake it; it reads mail when asked.
+    #[default]
+    Off,
+    /// Every new message in the inbox.
+    All,
+    /// Only new mail matching `query`, in Gmail's search syntax.
+    Query,
+}
+
+/// How the hub hears of new mail now.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum MailMode {
+    /// Gmail's push through Pub/Sub, read within seconds.
+    Push,
+    /// Checking each Navi's mail about every minute: Pub/Sub isn't set up, or its stream dropped.
+    Polling,
+}
+
+/// A Navi's mail wake, as the person set it.
+#[skip_serializing_none]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct MailWake {
+    pub rule: MailWakeRule,
+    /// With `rule: query`: Gmail search, e.g. `from:boss@example.com OR is:important`.
+    pub query: Option<Line<1, 500>>,
+    /// When Gmail's watch of the inbox ends, in ms since the epoch; renewed a day before.
+    pub watch_expires_ms: Option<i64>,
+}
+
+/// One new message, as a wake says it: who from, its subject and the start of it, untrusted.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct NewMail {
+    pub message_id: String,
+    pub thread_id: String,
+    pub from: Option<String>,
+    pub subject: Option<String>,
+    pub snippet: Option<String>,
+}
+
+/// One Pub/Sub notice: this address's mailbox changed up to this history id.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct MailNotice {
+    pub email: String,
+    pub history_id: u64,
 }
 
 /// One Navi's Google account.
@@ -85,6 +173,9 @@ pub struct GoogleAccount {
     /// What the person granted: Google lets them untick some.
     pub scopes: Vec<Line<1, 200>>,
     pub connected_at: Timestamp,
+    /// When new mail wakes the Navi.
+    #[serde(default)]
+    pub mail: MailWake,
     /// Google stopped taking the connection (revoked, or a testing app's 7 days ran out): why, as the Navi's node last
     /// saw it. The app offers Reconnect.
     pub lapsed: Option<String>,
@@ -133,6 +224,28 @@ pub enum GoogleCall {
     /// Google first; otherwise only this Navi's tokens go.
     #[serde(rename_all = "camelCase")]
     Disconnect { project_id: ProjectId, revoke: bool },
+    /// Keep the service account key that reads the Pub/Sub subscription, opened with the node's box key. No `sealed`:
+    /// forget it.
+    #[serde(rename_all = "camelCase")]
+    PubsubSet {
+        subscription: PubsubSubscription,
+        sealed: Option<SealedSecret>,
+    },
+    /// Read the subscription, waiting up to about 50 s for a notice, and acknowledge what came.
+    MailPull,
+    /// Ask Gmail to tell the topic of new inbox mail for the project's account, for 7 days.
+    #[serde(rename_all = "camelCase")]
+    MailWatch {
+        project_id: ProjectId,
+        topic: PubsubTopic,
+    },
+    /// The project's new inbox mail since the last check (the first check only marks where to start), matching
+    /// `query` when given.
+    #[serde(rename_all = "camelCase")]
+    MailCheck {
+        project_id: ProjectId,
+        query: Option<Line<1, 500>>,
+    },
 }
 
 /// Node -> hub, the answer to a [`GoogleCall`].
@@ -157,6 +270,20 @@ pub enum GoogleAnswer {
     /// Whether Google confirmed the revoke; the tokens are deleted either way.
     Disconnected {
         revoked: bool,
+    },
+    /// The key's fingerprint; none once forgotten.
+    PubsubSaved {
+        fingerprint: Option<SecretFingerprint>,
+    },
+    Pulled {
+        notices: Vec<MailNotice>,
+    },
+    #[serde(rename_all = "camelCase")]
+    Watching {
+        expires_ms: i64,
+    },
+    NewMail {
+        mails: Vec<NewMail>,
     },
 }
 

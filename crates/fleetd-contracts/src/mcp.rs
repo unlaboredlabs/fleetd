@@ -1416,6 +1416,10 @@ output!(GoogleGetOutput {
     scopes: Vec<String>,
     /// Where the consent page sends the person back: a loopback address, any port.
     redirect: String,
+    /// How the hub hears of new mail now: push through Pub/Sub, or polling.
+    mail_mode: crate::google::MailMode,
+    /// Why it polls although Pub/Sub is set up: what the last read of the subscription said.
+    mail_problem: Option<String>,
 });
 input!(
     #[serde(remote = "Self")]
@@ -1464,6 +1468,34 @@ input!(GoogleConnectInput {
     redirect_uri: crate::google::LoopbackUri,
 });
 output!(GoogleConnectOutput {
+    account: crate::google::GoogleAccount,
+});
+input!(GooglePubsubSetInput {
+    /// None: turn real-time mail off; the hub checks each Navi's mail about every minute.
+    pubsub: Option<GooglePubsubSet>,
+});
+/// Gmail's push through the admin's Pub/Sub: the topic Gmail tells, the subscription one machine reads, and the
+/// service account key it reads with, sealed to that machine.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct GooglePubsubSet {
+    pub topic: crate::google::PubsubTopic,
+    pub subscription: crate::google::PubsubSubscription,
+    pub machine_id: MachineId,
+    /// The service account's JSON key, sealed with crypto_box_seal to that machine's boxPubKey.
+    pub sealed: crate::secrets::SealedSecret,
+}
+output!(GooglePubsubSetOutput {
+    client: crate::google::GoogleClient,
+});
+input!(GoogleMailSetInput {
+    /// The Navi.
+    project: ProjectRef,
+    rule: crate::google::MailWakeRule,
+    /// With rule query: Gmail search.
+    query: Option<crate::prim::Line<1, 500>>,
+});
+output!(GoogleMailSetOutput {
     account: crate::google::GoogleAccount,
 });
 input!(GoogleDisconnectInput {
@@ -2750,6 +2782,8 @@ tools! {
     google_client_test => GoogleClientTest, Operate, GoogleClientTestInput, GoogleClientTestOutput;
     google_connect => GoogleConnect, Operate, GoogleConnectInput, GoogleConnectOutput;
     google_disconnect => GoogleDisconnect, Operate, GoogleDisconnectInput, GoogleDisconnectOutput;
+    google_pubsub_set => GooglePubsubSet, Operate, GooglePubsubSetInput, GooglePubsubSetOutput;
+    google_mail_set => GoogleMailSet, Operate, GoogleMailSetInput, GoogleMailSetOutput;
     wake_set => WakeSet, Operate, WakeSetInput, WakeSetOutput;
     wake_list => WakeList, Read, WakeListInput, WakeListOutput;
     wake_cancel => WakeCancel, Operate, WakeCancelInput, WakeCancelOutput;

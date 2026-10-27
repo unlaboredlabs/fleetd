@@ -33,6 +33,8 @@ nix = { version = "0.30", features = ["fs", "poll", "process", "signal", "term",
 rand = { workspace = true }
 reqwest = { workspace = true }
 sha2 = { workspace = true }
+# Google: signing a service account's token request (RS256)
+ring = "0.17"
 # browser sessions: the shapes of the scripts a sealed session lets through
 oxc_allocator = "0.155"
 oxc_ast = "0.155"

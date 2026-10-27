@@ -5110,6 +5110,13 @@
           "description": "Google stopped taking the connection (revoked, or a testing app's 7 days ran out): why, as the Navi's node last\nsaw it. The app offers Reconnect.",
           "type": "string"
         },
+        "mail": {
+          "$ref": "#/$defs/MailWake",
+          "default": {
+            "rule": "off"
+          },
+          "description": "When new mail wakes the Navi."
+        },
         "projectRef": {
           "$ref": "#/$defs/ProjectRef"
         },
@@ -5137,6 +5144,10 @@
       "properties": {
         "clientId": {
           "$ref": "#/$defs/GoogleClientId"
+        },
+        "pubsub": {
+          "$ref": "#/$defs/GooglePubsub",
+          "description": "New mail in real time: Gmail tells this topic, and one machine reads its subscription. None: the hub checks\neach Navi's mail about every minute instead."
         },
         "sealedOn": {
           "default": [],
@@ -5345,6 +5356,14 @@
           "$ref": "#/$defs/GoogleClient",
           "description": "The admin's OAuth client; none until one is saved."
         },
+        "mailMode": {
+          "$ref": "#/$defs/MailMode",
+          "description": "How the hub hears of new mail now: push through Pub/Sub, or polling."
+        },
+        "mailProblem": {
+          "description": "Why it polls although Pub/Sub is set up: what the last read of the subscription said.",
+          "type": "string"
+        },
         "next": {
           "type": "string"
         },
@@ -5365,7 +5384,125 @@
       },
       "required": [
         "scopes",
-        "redirect"
+        "redirect",
+        "mailMode"
+      ],
+      "type": "object"
+    },
+    "GoogleMailSetInput": {
+      "properties": {
+        "project": {
+          "$ref": "#/$defs/ProjectRef",
+          "description": "The Navi."
+        },
+        "query": {
+          "description": "With rule query: Gmail search.",
+          "maxLength": 500,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "rule": {
+          "$ref": "#/$defs/MailWakeRule"
+        }
+      },
+      "required": [
+        "project",
+        "rule"
+      ],
+      "type": "object"
+    },
+    "GoogleMailSetOutput": {
+      "properties": {
+        "account": {
+          "$ref": "#/$defs/GoogleAccount"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "account"
+      ],
+      "type": "object"
+    },
+    "GooglePubsub": {
+      "description": "Gmail's push notifications through the admin's Pub/Sub, as the hub keeps them: no key.",
+      "properties": {
+        "fingerprint": {
+          "$ref": "#/$defs/SecretFingerprint",
+          "description": "That node's fingerprint of the key."
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId",
+          "description": "The machine whose node holds the service account key and reads the subscription."
+        },
+        "subscription": {
+          "$ref": "#/$defs/PubsubSubscription"
+        },
+        "topic": {
+          "$ref": "#/$defs/PubsubTopic"
+        }
+      },
+      "required": [
+        "topic",
+        "subscription",
+        "machineId",
+        "fingerprint"
+      ],
+      "type": "object"
+    },
+    "GooglePubsubSet": {
+      "description": "Gmail's push through the admin's Pub/Sub: the topic Gmail tells, the subscription one machine reads, and the\nservice account key it reads with, sealed to that machine.",
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "sealed": {
+          "$ref": "#/$defs/SealedSecret",
+          "description": "The service account's JSON key, sealed with crypto_box_seal to that machine's boxPubKey."
+        },
+        "subscription": {
+          "$ref": "#/$defs/PubsubSubscription"
+        },
+        "topic": {
+          "$ref": "#/$defs/PubsubTopic"
+        }
+      },
+      "required": [
+        "topic",
+        "subscription",
+        "machineId",
+        "sealed"
+      ],
+      "type": "object"
+    },
+    "GooglePubsubSetInput": {
+      "properties": {
+        "pubsub": {
+          "$ref": "#/$defs/GooglePubsubSet",
+          "description": "None: turn real-time mail off; the hub checks each Navi's mail about every minute."
+        }
+      },
+      "type": "object"
+    },
+    "GooglePubsubSetOutput": {
+      "properties": {
+        "client": {
+          "$ref": "#/$defs/GoogleClient"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "client"
       ],
       "type": "object"
     },
@@ -7837,6 +7974,65 @@
       ],
       "type": "string"
     },
+    "MailMode": {
+      "description": "How the hub hears of new mail now.",
+      "oneOf": [
+        {
+          "const": "push",
+          "description": "Gmail's push through Pub/Sub, read within seconds.",
+          "type": "string"
+        },
+        {
+          "const": "polling",
+          "description": "Checking each Navi's mail about every minute: Pub/Sub isn't set up, or its stream dropped.",
+          "type": "string"
+        }
+      ]
+    },
+    "MailWake": {
+      "description": "A Navi's mail wake, as the person set it.",
+      "properties": {
+        "query": {
+          "description": "With `rule: query`: Gmail search, e.g. `from:boss@example.com OR is:important`.",
+          "maxLength": 500,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "rule": {
+          "$ref": "#/$defs/MailWakeRule"
+        },
+        "watchExpiresMs": {
+          "description": "When Gmail's watch of the inbox ends, in ms since the epoch; renewed a day before.",
+          "format": "int64",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "rule"
+      ],
+      "type": "object"
+    },
+    "MailWakeRule": {
+      "description": "When a Navi's new mail wakes it.",
+      "oneOf": [
+        {
+          "const": "off",
+          "description": "New mail doesn't wake it; it reads mail when asked.",
+          "type": "string"
+        },
+        {
+          "const": "all",
+          "description": "Every new message in the inbox.",
+          "type": "string"
+        },
+        {
+          "const": "query",
+          "description": "Only new mail matching `query`, in Gmail's search syntax.",
+          "type": "string"
+        }
+      ]
+    },
     "MatchStrength": {
       "description": "How sure the matcher is that new work repeats a piece in flight.",
       "oneOf": [
@@ -8560,6 +8756,18 @@
         "google_get.output": {
           "$ref": "#/$defs/GoogleGetOutput"
         },
+        "google_mail_set.input": {
+          "$ref": "#/$defs/GoogleMailSetInput"
+        },
+        "google_mail_set.output": {
+          "$ref": "#/$defs/GoogleMailSetOutput"
+        },
+        "google_pubsub_set.input": {
+          "$ref": "#/$defs/GooglePubsubSetInput"
+        },
+        "google_pubsub_set.output": {
+          "$ref": "#/$defs/GooglePubsubSetOutput"
+        },
         "hub_info.input": {
           "$ref": "#/$defs/HubInfoInput"
         },
@@ -9230,6 +9438,10 @@
         "google_disconnect.output",
         "google_get.input",
         "google_get.output",
+        "google_mail_set.input",
+        "google_mail_set.output",
+        "google_pubsub_set.input",
+        "google_pubsub_set.output",
         "hub_info.input",
         "hub_info.output",
         "hub_link_add.input",
@@ -14573,6 +14785,14 @@
         "safety_rule_missing",
         "too_long"
       ],
+      "type": "string"
+    },
+    "PubsubSubscription": {
+      "pattern": "^projects/[a-z][a-z0-9-]{4,28}[a-z0-9]/subscriptions/[A-Za-z][A-Za-z0-9._~+%-]{2,254}$",
+      "type": "string"
+    },
+    "PubsubTopic": {
+      "pattern": "^projects/[a-z][a-z0-9-]{4,28}[a-z0-9]/topics/[A-Za-z][A-Za-z0-9._~+%-]{2,254}$",
       "type": "string"
     },
     "QuietWindow": {
