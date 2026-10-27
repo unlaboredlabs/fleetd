@@ -13,6 +13,13 @@ name: Desktop QA
 # The macOS leg doesn't decide merges (D158): it runs after them, on every push to main and nightly, and on demand (a
 # manual run, or a PR labelled `macos`), never on the merge train's runs. A failure on main or nightly opens an issue
 # labelled `macos-qa-failed` with the run's link (macos-report below); the next green macOS run on main closes it.
+#
+# Only main's newest push runs: a push to main cancels main's older push run, queued or running, so a few merges an
+# hour hold 3 macOS runners once, not 3 per merge, and the train's batch CI gets `rust (macos)` a runner. Nothing
+# goes untested: on main, Scope compares with the last push run whose shards all finished (.github/main-base.sh),
+# or runs in full without one. The nightly and manual runs are never cancelled. A push run's macOS shards (qa-macos)
+# first wait (gate below) while a train batch run has macOS jobs queued: GitHub doesn't start queued jobs in order,
+# and the batch's decide a merge.
 
 on:
   pull_request:
@@ -30,56 +37,105 @@ on:
         default: ""
 
 # As in ci.yml: a newer push to a PR cancels its run, and a run macos-label.yml dispatches for it has a group of its
-# own, so it never cancels the PR's own run; runs on main and on the train's batch PR are never cancelled.
+# own, so it never cancels the PR's own run; runs on the train's batch PR are never cancelled. On main, a push run
+# shares one group with the other push runs, so a newer one cancels it; nightly and manual runs each have their own.
 concurrency:
   group: >-
-    ${{ (github.ref == 'refs/heads/main' || endsWith(github.head_ref || github.ref, 'train/batch'))
+    ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && format('{0}-main', github.workflow)
+    || (github.ref == 'refs/heads/main' || endsWith(github.head_ref || github.ref, 'train/batch'))
     && format('{0}-{1}', github.workflow, github.run_id)
     || github.event_name == 'workflow_dispatch' && inputs.pr && format('{0}-{1}-label', github.workflow, inputs.pr)
     || format('{0}-{1}', github.workflow, github.event.pull_request.number || github.ref) }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && !endsWith(github.head_ref || github.ref, 'train/batch') }}
+  cancel-in-progress: >-
+    ${{ github.event_name == 'push' && github.ref == 'refs/heads/main'
+    || github.ref != 'refs/heads/main' && !endsWith(github.head_ref || github.ref, 'train/batch') }}
 
 permissions:
   contents: read
 
 jobs:
+  gate:
+    # A push to main lets the train go first: its macOS shards (qa-macos) start once no train batch run has a macOS
+    # job queued, a minute after the push (the train pushes the next batch just after it merges one) and at most 10
+    # minutes on. Any API error lets them start. The Linux shards don't wait. Skipped elsewhere.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      actions: read
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          queued() {
+            gh api "repos/$GH_REPO/actions/runs?per_page=100" \
+              -q '.workflow_runs[] | select(.status != "completed" and (.head_branch | endswith("train/batch"))) | .id' |
+              while read -r run; do
+                gh api "repos/$GH_REPO/actions/runs/$run/jobs?per_page=100" \
+                  -q '.jobs[] | select(.status == "queued" and any(.labels[]; startswith("macos"))) | .name'
+              done
+          }
+          sleep 60
+          for _ in $(seq 18); do
+            jobs=$(queued 2>/dev/null) || break
+            [ -z "$jobs" ] && break
+            echo "Waiting for the train batch's queued macOS jobs:"
+            echo "$jobs"
+            sleep 30
+          done
+
   qa:
     strategy:
       fail-fast: false
       # The macOS leg runs on main (push and schedule), on workflow_dispatch and on a PR labelled `macos`, never on the
       # train's batch PR or for `fleetd:next` (macos-label.yml dispatches this workflow only for `macos`). Elsewhere it
-      # is left out of the matrix.
+      # is left out of the matrix. On a push to main it is qa-macos below, behind the gate.
       matrix:
         include: >-
           ${{ fromJSON(format('[{0}{1}]',
           '{"os":"ubuntu-latest","scale":1,"shard":1,"of":4},{"os":"ubuntu-latest","scale":1,"shard":2,"of":4},
           {"os":"ubuntu-latest","scale":1,"shard":3,"of":4},{"os":"ubuntu-latest","scale":1,"shard":4,"of":4}',
-          (github.event_name != 'pull_request' || !endsWith(github.head_ref, 'train/batch')
+          (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+          || github.event_name == 'pull_request' && !endsWith(github.head_ref, 'train/batch')
           && contains(github.event.pull_request.labels.*.name, 'macos'))
           && ',{"os":"macos-latest","scale":2,"shard":1,"of":3},{"os":"macos-latest","scale":2,"shard":2,"of":3},
           {"os":"macos-latest","scale":2,"shard":3,"of":3}' || '')) }}
     name: qa (${{ matrix.os }}, ${{ matrix.shard }}/${{ matrix.of }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
     defaults:
       run:
         working-directory: app/desktop
     env:
       QA_SCALE: ${{ matrix.scale }}
-    steps:
+    steps: &qa-steps
       - uses: actions/checkout@v7
         with:
           fetch-depth: 2
       - name: Scope
         # Runs when app/desktop or this workflow changed, and always on a manual or nightly run; otherwise reports
-        # success at once, so it can be required.
+        # success at once, so it can be required. A push to main compares with the last push run that wasn't cancelled,
+        # and runs in full when it finds none.
         id: scope
         working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           run=true
+          base=HEAD^1
+          if [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_REF" = refs/heads/main ]; then
+            last=$(.github/main-base.sh desktop-qa.yml "qa (")
+            if [ -n "$last" ] && git fetch -q --depth=1 origin "$last"; then base=$last; else base=; fi
+            echo "Comparing with ${base:-nothing: no earlier finished run found, so it runs in full}."
+          fi
           if [ "${{ github.event_name }}" != workflow_dispatch ] && [ "${{ github.event_name }}" != schedule ] \
-            && git rev-parse -q --verify HEAD^1 >/dev/null \
-            && git diff --quiet HEAD^1 HEAD -- app/desktop .github/workflows/desktop-qa.yml; then
+            && [ -n "$base" ] && git rev-parse -q --verify "$base" >/dev/null \
+            && git diff --quiet "$base" HEAD -- app/desktop .github/workflows/desktop-qa.yml; then
             run=false
             echo "app/desktop didn't change."
           fi
@@ -128,12 +184,38 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+  qa-macos:
+    # qa's macOS leg on a push to main, after the gate; the same steps, under the same check names.
+    needs: gate
+    if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+        include:
+          - os: macos-latest
+            scale: 2
+            of: 3
+    name: qa (${{ matrix.os }}, ${{ matrix.shard }}/${{ matrix.of }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+    defaults:
+      run:
+        working-directory: app/desktop
+    env:
+      QA_SCALE: ${{ matrix.scale }}
+    steps: *qa-steps
+
   macos-report:
     # main's and nightly's macOS QA, made findable: a failed (or timed out) shard opens an issue labelled
     # `macos-qa-failed` with the run's link, or comments on the one already open; a run whose shards all ran their
-    # screens and passed closes it. A run that changed nothing in app/desktop ran no screens and leaves it be.
-    needs: qa
-    if: always() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    # screens and passed closes it. A run that changed nothing in app/desktop ran no screens and leaves it be, and a
+    # run a newer push cancelled reports nothing: the newer one does.
+    needs: [qa, qa-macos]
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
