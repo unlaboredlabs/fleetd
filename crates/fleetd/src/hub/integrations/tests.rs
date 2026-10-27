@@ -449,3 +449,34 @@ fn review_follow_ups_a_share_reads_as_a_share_a_changed_event_reaches_its_guests
         Never::Credential.why()
     );
 }
+
+#[test]
+fn only_xaq_s_file_bytes_are_said_by_size_and_a_credential_anywhere_is_still_refused() {
+    // A key in a field that is called content_base64 but isn't a file's bytes: refused, on any server.
+    for (tool, input) in [
+        (
+            "mcp__google__send_message",
+            json!({ "to": "a@example.com", "subject": "s", "body": "b",
+                "attachments": [{ "content_base64": "sk-ant-abcdefghijklmnop0123", "filename": "k.txt" }] }),
+        ),
+        (
+            "mcp__bank__update_payee",
+            json!({ "content_base64": "sk-ant-abcdefghijklmnop0123" }),
+        ),
+    ] {
+        assert_eq!(blocked(tool, input), Never::Credential.why(), "{tool}");
+    }
+    // A custom server's content_base64 is shown as it is: the card hides nothing of it.
+    let p = ask(
+        "mcp__bank__upload_statement",
+        json!({ "content_base64": "QUJD" }),
+    );
+    assert!(p.input.contains("\"QUJD\""));
+    // xaq's attachment without a filename isn't the shape xaq takes bytes in: shown as it is too.
+    let q = ask(
+        "mcp__google__create_draft",
+        json!({ "to": "a@example.com", "subject": "s", "body": "b",
+            "attachments": [{ "content_base64": "QUJD" }] }),
+    );
+    assert!(q.input.contains("\"QUJD\""));
+}

@@ -106,35 +106,31 @@ export const foldedBody = (body: string): string | undefined => {
   return head.length > BODY_FOLD_CHARS ? `${head.slice(0, BODY_FOLD_CHARS).trimEnd()}…` : `${head.trimEnd()}…`;
 };
 
-const PAST: Readonly<Record<ToolAction, readonly [string, string]>> = {
-  send: ["Sent", "Not sent"],
-  share: ["Shared", "Not shared"],
-  delete: ["Deleted", "Not deleted"],
-  spend: ["Paid", "Not paid"],
-  write: ["Done", "Not done"],
-};
-
-/** "to ana@example.com and 2 more", or the target, for the folded line. */
+/** " to ana@example.com and 2 more", or " · <target>", for the folded line. */
 const reached = (p: ToolPreview): string => {
   const to = [...(p.to ?? []), ...(p.cc ?? []), ...(p.bcc ?? [])];
   const first = to[0];
   if (first !== undefined) return to.length === 1 ? ` to ${first}` : ` to ${first} and ${String(to.length - 1)} more`;
-  return p.target === undefined ? `: ${p.title}` : ` · ${p.target}`;
+  return p.target === undefined ? "" : ` · ${p.target}`;
 };
 
-/** The line an answered card folds to: "Sent to ana@example.com and 2 more", or undefined while it waits. */
+/**
+ * The line an answered card folds to: what the person decided ("Approved: send an email to ana@example.com and 2 more"),
+ * or undefined while it waits. Never "Sent": the hub knows the answer, not the tool's result, and xaq may still ask on
+ * its own approve page, refuse or fail. What happened then is in the Navi's chat.
+ */
 export const previewOutcome = (p: ToolPreview, item: CommandApprovalItem): Outcome | undefined => {
-  const [done, not] = PAST[p.action];
+  const what = `${p.title.charAt(0).toLowerCase()}${p.title.slice(1)}${reached(p)}`;
   switch (item.state) {
     case "open":
       return undefined;
     case "approved":
     case "ran":
-      return { tone: "success", text: `${done}${reached(p)}` };
+      return { tone: "quiet", text: `Approved: ${what}` };
     case "failed":
-      return { tone: "danger", text: `${not}: it failed${reached(p)}` };
+      return { tone: "danger", text: `Approved, didn't run: ${what}` };
     case "denied":
-      return { tone: "quiet", text: `${not}${reached(p)}` };
+      return { tone: "quiet", text: `Declined: ${what}` };
     default:
       return { tone: "quiet", text: "Changed in a newer fleetd. Update the app to see it." };
   }

@@ -68,10 +68,12 @@ describe("an integration's approval card", () => {
     expect(foldedBody(long)?.split("\n")).toHaveLength(18);
     expect(foldedBody("x".repeat(5000))?.length).toBe(1201);
   });
-  it("folds, once answered, to what happened and who answered when", () => {
+  it("folds, once answered, to what was decided and who answered when", () => {
     expect(previewOutcome(email, item("open"))).toBeUndefined();
-    expect(previewOutcome(email, item("approved"))).toEqual({ tone: "success", text: "Sent to Ana <ana@example.com> and 2 more" });
-    expect(previewOutcome(email, item("denied"))?.text).toBe("Not sent to Ana <ana@example.com> and 2 more");
+    // What the person decided, never "Sent": xaq may still ask, refuse or fail after fleetd's card.
+    expect(previewOutcome(email, item("approved"))).toEqual({ tone: "quiet", text: "Approved: send an email to Ana <ana@example.com> and 2 more" });
+    expect(previewOutcome(email, item("denied"))?.text).toBe("Declined: send an email to Ana <ana@example.com> and 2 more");
+    expect(previewOutcome({ ...email, action: "delete", title: "Delete a calendar event", to: [], bcc: [], target: "Event e1" }, item("approved"))?.text).toBe("Approved: delete a calendar event · Event e1");
     expect(answeredWords(item("approved"))).toMatch(/^you approved at \d\d:\d\d$/u);
     expect(answeredWords(item("denied"))).toMatch(/^you said no at /u);
   });

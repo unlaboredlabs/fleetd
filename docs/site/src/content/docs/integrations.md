@@ -44,8 +44,8 @@ it is a summary the Navi wrote.
 
 The buttons name the act: **Send it** and **Don't send**, **Share it**, **Delete it**, **Pay**. Either runs exactly that
 input, or tells the Navi no; <kbd>Enter</kbd> and <kbd>Esc</kbd> do the same. A delete or a spend asks once more in the
-card before it runs. Once answered, the card folds to one line: "Sent to ana@example.com and 2 more · you approved at
-09:12".
+card before it runs. Once answered, the card folds to what you decided: "Approved: send an email to ana@example.com and 2
+more · you approved at 09:12". xaq may still ask on its own approve page; what the send did is in the Navi's chat.
 
 ## Google: Gmail, Calendar and Drive {#google}
 

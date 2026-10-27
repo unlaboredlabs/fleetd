@@ -477,9 +477,9 @@ describe("an integration's approval", () => {
     await settle();
     expect(hub.answers).toEqual([{ requestId: "Q13", decision: "approve" }]);
   });
-  it("folds, once answered, to what happened and who said so when", async () => {
+  it("folds, once answered, to what was decided and who said so when", async () => {
     await render("Q14");
     const fold = one("button[aria-expanded]") as HTMLButtonElement;
-    expect(fold.textContent).toMatch(/^Sent to ana@example\.com· you approved at \d\d:\d\d$/u);
+    expect(fold.textContent).toMatch(/^Approved: send an email to ana@example\.com· you approved at \d\d:\d\d$/u);
   });
 });
