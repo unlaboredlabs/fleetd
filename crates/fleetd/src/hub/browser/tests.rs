@@ -820,12 +820,12 @@ fn a_final_session_is_never_written_back() {
 
 /// The devbox's CI flake: a node reports a session's end (`uploading`) as it closes it, while its upload reports
 /// `uploading` and then `recorded` at the same time. However they interleave, the session ends recorded, its
-/// recording kept, and a `lost` racing them never deletes what was recorded.
+/// recording kept; and a `lost` racing them never deletes what was recorded, nor leaves anything set aside.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn racing_reports_never_undo_a_recorded_session() {
-    let (hub, _clock, home) = hub();
-    let r = project("storefront");
     for round in 0..50 {
+        let (hub, _clock, home) = hub();
+        let r = project("storefront");
         let id = format!("B{round:032x}");
         node_call(&hub, &r, report(&id, "live", json!([])), "browser_session")
             .await
@@ -854,5 +854,15 @@ async fn racing_reports_never_undo_a_recorded_session() {
                 "round {round}"
             );
         }
+        let left: Vec<_> = std::fs::read_dir(home.path().join("browser"))
+            .unwrap()
+            .filter_map(Result::ok)
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.starts_with('.'))
+            .collect();
+        assert!(
+            left.is_empty(),
+            "round {round}: set aside and kept {left:?}"
+        );
     }
 }
