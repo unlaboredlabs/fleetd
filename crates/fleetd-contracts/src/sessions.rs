@@ -362,6 +362,18 @@ pub enum SessionCall {
         url: NonEmpty,
         dest: NonEmpty,
     },
+    /// Make the folder at `path` for a new project: absolute, or `~/x` under the user's home. Missing folders are
+    /// made, an empty one is taken as it is, and one holding anything is refused ([`FOLDER_NOT_EMPTY`]). `gitInit` runs
+    /// `git init` in it; `dryRun` only checks. Answers with the absolute path. Only nodes listing
+    /// [`crate::node_link::CAP_FOLDER_MAKE`] get it.
+    #[serde(rename_all = "camelCase")]
+    FolderMake {
+        path: NonEmpty,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        git_init: bool,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        dry_run: bool,
+    },
     /// `gh repo list` for the logged-in user and their orgs, run on this machine.
     GhRepoList,
     /// The project's default branch `branch` as git alone records it, for a repo whose host fleetd can't read: fetched
@@ -404,6 +416,10 @@ pub const RESUME_REFUSED: &str = "the session can't resume: ";
 /// How a node's `project_upsert` with a relative root starts its refusal when that folder is already there and isn't
 /// that project's: a new Navi never takes over a folder, and its files, that another one left.
 pub const FOLDER_TAKEN: &str = "folder taken: ";
+
+/// How a node's `folder_make` starts its refusal when the folder is already there and holds something: a new project
+/// never takes over files.
+pub const FOLDER_NOT_EMPTY: &str = "folder not empty: ";
 
 /// Why a call failed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
@@ -608,7 +624,8 @@ pub struct WorktreeBase {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SessionOutput {
     Done,
-    /// A `project_upsert` with a relative root: the absolute folder it names, made if it was missing.
+    /// A `project_upsert` with a relative root, or a `folder_make`: the absolute folder it names, made if it was
+    /// missing.
     Folder {
         path: String,
     },
@@ -652,6 +669,8 @@ pub enum SessionOutput {
     Repos {
         clone_root: String,
         repos: Vec<ScannedRepo>,
+        /// Where a new project's folder goes by default; absent from nodes that can't make one.
+        projects_root: Option<String>,
     },
     /// Answer to `repo_inspect`, and to `repo_clone` for the new checkout.
     RepoFacts(RepoFacts),

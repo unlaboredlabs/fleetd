@@ -22,6 +22,10 @@ pub const PROJECT_USAGE: &str =
              add a project: a checkout or a plain folder on a machine (this one by default),
              or a GitHub repo cloned onto one (the least busy worker by default), with progress;
              then its CI, merge rules and what the lead will need. No argument: pick one
+  project add --new <name> [--machine <id>] [--dest <dir>] [--git-init] [--home <dir>] [--hub <url>]
+             start a new, empty project: the machine makes its folder (~/fleetd/projects/<name>
+             by default, or --dest; one that holds files is refused). A plain folder with no
+             repo, unless --git-init; add a repo later with project repo add
   project list [--machine <id>] [--home <dir>] [--hub <url>]
   project stop <machine>/<project> --key-file <human key> [--yes] [--home <dir>] [--hub <url>]
              stop its lead's turn and its agents, as you; the lead and its chat stay,
@@ -87,6 +91,8 @@ const SPEC: Spec = Spec {
         ("fast-check", Kind::Multi),
         ("after-merge", Kind::Multi),
         ("name", Kind::Str),
+        ("new", Kind::Str),
+        ("git-init", Kind::Bool),
     ],
     positionals: true,
 };
@@ -1104,6 +1110,9 @@ async fn add(client: &mut McpClient, out: &Out, v: &args::Parsed, home: &Path) -
         let _ = cliclack::intro("Add a project");
     }
     let given_machine = v.string("machine");
+    if let Some(name) = v.string("new") {
+        return add_new(client, out, v, &name, given_machine).await;
+    }
     let picked = match v.positionals.first() {
         Some(text) => match add_source(text) {
             Some(AddSource::Path(p)) => {
@@ -1222,6 +1231,44 @@ async fn add(client: &mut McpClient, out: &Out, v: &args::Parsed, home: &Path) -
     out.info(&describe(
         added.pointer("/data/inspect").unwrap_or(&Value::Null),
     ));
+    finish(out)
+}
+
+/// `project add --new`: the hub has the machine make the folder, then adds it as a plain folder.
+async fn add_new(
+    client: &mut McpClient,
+    out: &Out,
+    v: &args::Parsed,
+    name: &str,
+    machine: Option<String>,
+) -> Result<(), Stop> {
+    let mut input = json!({ "create": true, "title": name });
+    if let Some(m) = machine {
+        input["machineId"] = json!(m);
+    }
+    if let Some(dest) = v.string("dest") {
+        // The folder is on the machine, whose home this terminal doesn't know.
+        if !dest.starts_with('/') {
+            return Err(Stop(
+                2,
+                format!("--dest {dest} is not a full path on the machine"),
+                Some(
+                    "Give it starting with /, or leave it out for ~/fleetd/projects/<name>".into(),
+                ),
+            ));
+        }
+        input["path"] = json!(dest);
+    }
+    if v.flag("git-init") {
+        input["gitInit"] = json!(true);
+    }
+    let added = call(client, "project_add", input).await?;
+    let machine = s(&added, "/machineId");
+    out.success(&format!(
+        "{name} made at {} on {machine}",
+        tilde(s(&added, "/path"))
+    ));
+    out.info(&describe(added.get("inspect").unwrap_or(&Value::Null)));
     finish(out)
 }
 

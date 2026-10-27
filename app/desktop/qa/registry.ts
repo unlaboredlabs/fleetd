@@ -84,6 +84,7 @@ export const fixtures = [
   // Group fixtures (fixtures/<group>/index.ts), named <group>-<what>.
   "projects-cloning",
   "projects-dropped",
+  "projects-new",
   // W100: the hub admin's setup, a design prototype (fixtures/setup).
   "setup-fresh",
   "setup-claude-logins",
@@ -1494,6 +1495,69 @@ export const screens: readonly Screen[] = [
       await page.getByRole("listbox", { name: "Repos" }).waitFor();
       await page.getByRole("textbox", { name: "GitHub URL, folder path, or filter" }).fill("/home/dev/src/pricing");
       await page.keyboard.press("Enter");
+    },
+  },
+  // W123: a new, empty project. A name that matches nothing offers it; the footer shows the folder the hub will make,
+  // editable, and git init; a machine whose node is too old says to update it.
+  {
+    id: "projects.add.new",
+    route: "#/projects/add",
+    fixtures: ["typical", "long-text"],
+    open: async (page) => {
+      await page.getByRole("listbox", { name: "Repos" }).waitFor();
+      await page.getByRole("textbox", { name: "GitHub URL, folder path, or filter" }).fill("Field notes");
+      await page.getByRole("textbox", { name: "Folder", exact: true }).waitFor();
+    },
+  },
+  {
+    id: "projects.add.new",
+    route: "#/projects/add",
+    fixtures: ["node-too-old"],
+    variant: "too-old",
+    open: async (page) => {
+      await page.getByRole("listbox", { name: "Repos" }).waitFor();
+      await page.getByRole("textbox", { name: "GitHub URL, folder path, or filter" }).fill("Field notes");
+      await page.getByRole("group", { name: "Machine" }).getByRole("button", { name: /^buildbox/u }).click();
+      await page.getByText(/^Update fleetd on buildbox/u).waitFor();
+    },
+  },
+  // The folder the hub would make already holds files: refused, nothing added.
+  {
+    id: "projects.add.error",
+    route: "#/projects/add",
+    fixtures: ["typical"],
+    variant: "new",
+    expect: "error",
+    open: async (page) => {
+      await page.getByRole("listbox", { name: "Repos" }).waitFor();
+      await page.getByRole("textbox", { name: "GitHub URL, folder path, or filter" }).fill("Old notes");
+      await page.keyboard.press("Enter");
+    },
+  },
+  // Made: the project opens at once, and a toast says where a repo goes later; Settings › Projects says it has none.
+  {
+    id: "chat",
+    variant: "new-project",
+    route: "#/projects/add",
+    fixtures: ["projects-new"],
+    open: async (page) => {
+      await page.getByRole("listbox", { name: "Repos" }).waitFor();
+      await page.getByRole("textbox", { name: "GitHub URL, folder path, or filter" }).fill("Field notes");
+      await page.keyboard.press("Enter");
+      await page.getByText("Field notes is ready on devbox").first().waitFor();
+    },
+  },
+  {
+    id: "settings.projects",
+    variant: "plain-folder",
+    route: "#/projects/add",
+    fixtures: ["projects-new"],
+    open: async (page) => {
+      await page.getByRole("listbox", { name: "Repos" }).waitFor();
+      await page.getByRole("textbox", { name: "GitHub URL, folder path, or filter" }).fill("Field notes");
+      await page.keyboard.press("Enter");
+      await page.getByRole("button", { name: "Add a repo" }).click();
+      await page.getByText("No repo, a plain folder.").waitFor({ timeout: 15_000 });
     },
   },
   {

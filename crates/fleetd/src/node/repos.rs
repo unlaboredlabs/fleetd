@@ -24,6 +24,54 @@ pub fn clone_root(home: &Path) -> PathBuf {
         .unwrap_or_else(|| home.join("src"))
 }
 
+/// Where a new project's folder goes by default, as `<this>/<name>`: visible, since it is a person's own project they
+/// may open in their editor (a Navi's folder is private, under the node's home).
+pub fn projects_root(home: &Path) -> PathBuf {
+    home.join("fleetd").join("projects")
+}
+
+/// Makes a new project's folder at `dir`: a missing one is made, an empty one taken as it is, one holding anything
+/// refused. `git_init` runs `git init` in it; `dry_run` only checks.
+pub fn folder_make(dir: &Path, git_init: bool, dry_run: bool) -> Result<(), String> {
+    use fleetd_contracts::sessions::FOLDER_NOT_EMPTY;
+    let shown = dir.display();
+    match std::fs::read_dir(dir) {
+        Ok(mut entries) => {
+            if entries.next().is_some() {
+                return Err(format!("{FOLDER_NOT_EMPTY}{shown}"));
+            }
+        }
+        Err(_) if dir.is_file() => return Err(format!("{shown} is a file, not a folder")),
+        Err(_) if !dir.exists() => {
+            if let Some(file) = dir.ancestors().skip(1).find(|a| a.is_file()) {
+                return Err(format!(
+                    "{} is a file, so {shown} can't be made",
+                    file.display()
+                ));
+            }
+            if !dry_run {
+                std::fs::create_dir_all(dir).map_err(|e| format!("{shown} was not made: {e}"))?;
+            }
+        }
+        Err(e) => return Err(format!("{shown} can't be read: {e}")),
+    }
+    if git_init && !dry_run {
+        let out = std::process::Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(["init", "--quiet"])
+            .output()
+            .map_err(|e| format!("git init did not run in {shown}: {e}"))?;
+        if !out.status.success() {
+            return Err(format!(
+                "git init failed in {shown}: {}",
+                String::from_utf8_lossy(&out.stderr).trim()
+            ));
+        }
+    }
+    Ok(())
+}
+
 pub fn scan(home: &Path) -> (String, Vec<ScannedRepo>) {
     let roots: Vec<PathBuf> = REPO_ROOTS.iter().map(|r| home.join(r)).collect();
     let mut repos: Vec<ScannedRepo> = find_repos(&roots)
@@ -346,6 +394,46 @@ pub async fn gh_repo_list() -> GhRepos {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_new_projects_folder_goes_under_the_visible_fleetd_projects_folder() {
+        assert_eq!(
+            projects_root(Path::new("/home/me")),
+            Path::new("/home/me/fleetd/projects")
+        );
+    }
+
+    #[test]
+    fn a_new_projects_folder_is_made_or_taken_empty_and_never_over_files() {
+        let home = tempfile::tempdir().unwrap();
+        // Missing, parents and all: made, with no git.
+        let notes = home.path().join("fleetd/projects/notes");
+        folder_make(&notes, false, false).unwrap();
+        assert!(notes.is_dir() && !notes.join(".git").exists());
+        // Empty and already there: taken as it is.
+        folder_make(&notes, false, false).unwrap();
+        // Holding anything: refused, and left as it was.
+        std::fs::write(notes.join("todo.md"), "milk").unwrap();
+        let refused = folder_make(&notes, true, false).unwrap_err();
+        assert!(
+            refused.starts_with(fleetd_contracts::sessions::FOLDER_NOT_EMPTY),
+            "{refused}"
+        );
+        assert!(!notes.join(".git").exists());
+        // A dry run makes nothing; git init only when asked.
+        let site = home.path().join("work/site");
+        folder_make(&site, true, true).unwrap();
+        assert!(!site.exists());
+        folder_make(&site, true, false).unwrap();
+        assert!(site.join(".git").is_dir());
+        // Under a file: can't be made.
+        let under = notes.join("todo.md/x");
+        assert!(
+            folder_make(&under, false, false)
+                .unwrap_err()
+                .contains("is a file")
+        );
+    }
 
     #[test]
     fn reads_git_clone_progress() {
