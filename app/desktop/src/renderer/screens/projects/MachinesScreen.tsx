@@ -1,15 +1,17 @@
-// Machines (#/machines): every machine the hub knows, online or not, with when it was last seen, a recent sleep,
-// what it runs and its usage, the slot board, and each machine's projects (open, its settings, or remove).
+// Machines (#/machines): every machine the hub knows, online or not, one row each: its state, what it runs and what
+// wants a look (a recent sleep, usage near its limit, a failing check). Opening a row shows the rest: load, memory,
+// its node's version and tags, its projects (open, their settings, or remove) and the way to its roles. Then the
+// slot board in the title and the setup checks.
 
-import { MoreHorizontal } from "lucide-react";
+import { ChevronRight, MoreHorizontal } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useData } from "../../src/data/react";
 import { selectMachines, selectProjects } from "../../src/data/selectors";
-import { Button, Dot, FrameTitle, IdChip, Menu, MenuContent, MenuItem, MenuTrigger, Text, Truncate } from "../../ui";
-import type { Machine, ProjectSummary } from "./contracts";
-import { machineOrder, machineParts, slotsText, type Tone } from "./machineText";
+import { Button, FrameTitle, IdChip, Menu, MenuContent, MenuItem, MenuTrigger, Text, Truncate, cx } from "../../ui";
+import type { Machine, MachineLive, ProjectSummary } from "./contracts";
+import { machineGlance, machineOrder, slotsText, type Tone } from "./machineText";
 import { RemoveProjectDialog, type RemoveTarget } from "./RemoveProjectDialog";
-import { SetupChecks } from "./SetupChecks";
+import { SetupChecks, useChecks, wantsLook } from "./SetupChecks";
 import { HubText } from "./HubText";
 import { toHash } from "../shell/routes";
 import { tilde } from "./source";
@@ -17,7 +19,6 @@ import { openAddProject, openProject } from "./store";
 import s from "./projects.module.css";
 
 const TONE: Record<Tone, "quiet" | "warning" | "danger"> = { quiet: "quiet", warning: "warning", danger: "danger" };
-const STATUS_DOT: Record<Machine["status"], string> = { online: "var(--success)", degraded: "var(--warning)", offline: "var(--faint)" };
 
 /** "Last seen" and "slept" are minutes-grained: one re-render a minute, not a ticking clock. */
 const useMinute = (): number => {
@@ -37,6 +38,14 @@ export function MachinesScreen() {
   const live = useData((d) => d.hub.phase === "live");
   const now = useMinute() + (useData((d) => d.live.skewMs) ?? 0);
   const [removing, setRemoving] = useState<RemoveTarget | null>(null);
+  const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set());
+  const checks = useChecks().data?.checks;
+  const toggle = (id: string) =>
+    setOpen((was) => {
+      const next = new Set(was);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
 
   // Undefined until the layer has a fresh snapshot: a skeleton, never cached data shown as live.
   const machines = useMemo(() => (views === undefined ? undefined : [...views].sort((a, b) => machineOrder(a.machine, b.machine))), [views]);
@@ -59,14 +68,17 @@ export function MachinesScreen() {
           <Text tone="quiet">{"On the hub, run fleetd machine add with the machine's SSH host (or --local for the hub itself). It shows here once its node connects."}</Text>
         </div>
       ) : (
-        <div className={s.cards}>
+        <div className={s.machineList}>
           {machines.map(({ machine, live: load }) => (
-            <MachineCard
+            <MachineRow
               key={machine.machineId}
               machine={machine}
               projects={(projects ?? []).filter((p) => p.machineId === machine.machineId)}
+              failing={(checks ?? []).filter((c) => c.machineId === machine.machineId && wantsLook(c)).length}
               now={now}
               live={load}
+              open={open.has(machine.machineId)}
+              onToggle={() => toggle(machine.machineId)}
               onRemove={setRemoving}
             />
           ))}
@@ -79,50 +91,100 @@ export function MachinesScreen() {
   );
 }
 
-function MachineCard(props: {
+const count = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;
+
+function MachineRow(props: {
   machine: Machine;
   projects: ReadonlyArray<ProjectSummary>;
+  /** Its setup checks that failed or warned. */
+  failing: number;
   now: number;
-  live: Parameters<typeof machineParts>[1];
+  live: MachineLive | undefined;
+  open: boolean;
+  onToggle: () => void;
   onRemove: (p: RemoveTarget) => void;
 }) {
-  const { machine: m } = props;
-  const parts = machineParts(m, props.live, props.now);
+  const { machine: m, open } = props;
+  const glance = machineGlance(m, props.live, props.now);
+  const runs = [glance.running, props.projects.length > 0 ? count(props.projects.length, "project", "projects") : "no projects"].filter(Boolean).join(" · ");
+  const detailId = `machine-${m.machineId}`;
   return (
-    <section className={s.card} aria-label={m.name}>
-      <div className={s.cardHead}>
-        <span className={s.cardName}>
-          <Dot color={STATUS_DOT[m.status]} label={m.status} />
-          <IdChip label={m.name} id={m.machineId} kind="machine" strong />
+    <section className={s.machine} aria-label={m.name} data-open={open || undefined}>
+      {/* The chevron is the control; a click anywhere else on the line opens it too. */}
+      <div className={s.machineHead} onClick={props.onToggle}>
+        <button
+          type="button"
+          className={s.toggle}
+          aria-expanded={open}
+          aria-controls={detailId}
+          aria-label={`${m.name} details`}
+          onClick={(e) => {
+            e.stopPropagation();
+            props.onToggle();
+          }}
+        >
+          <ChevronRight aria-hidden className={cx(s.chevron, open && s.chevronOpen)} />
+        </button>
+        <IdChip label={m.name} id={m.machineId} kind="machine" inRow strong={m.status !== "offline"} tone={m.status === "offline" ? "quiet" : "default"} />
+        <span className={s.glance}>
+          <Text size="sm" tone={TONE[glance.state.tone]} tabular>
+            {glance.state.text}
+          </Text>
+          <Text size="sm" tone="quiet" tabular>
+            {runs}
+          </Text>
         </span>
-        {m.status === "online" && parts.length === 0 ? <Text size="sm" tone="quiet">online</Text> : null}
-        <span className={s.parts}>
-          {parts.map((p) => (
+        <span className={s.notes}>
+          {glance.notes.map((p) => (
             <Text key={p.text} size="sm" tone={TONE[p.tone]} tabular>
               {p.text}
             </Text>
           ))}
+          {props.failing > 0 ? (
+            <Text size="sm" tone="warning">
+              {props.failing === 1 ? "1 check wants a look" : `${props.failing} checks want a look`}
+            </Text>
+          ) : null}
         </span>
-        <Text size="xs" tone="faint">
-          {`fleetd ${m.nodeVersion}${m.tags.length > 0 ? ` · ${m.tags.join(", ")}` : ""}`}
-        </Text>
       </div>
       {m.status === "degraded" && m.degradedReason ? (
-        <Text size="sm" tone="warning">
+        <Text size="sm" tone="warning" className={s.reason}>
           <HubText>{m.degradedReason}</HubText>
         </Text>
       ) : null}
-      {props.projects.length > 0 ? (
-        <div className={s.projects} role="list" aria-label={`Projects on ${m.name}`}>
-          {props.projects.map((p) => (
-            <ProjectRow key={p.projectId} project={p} onRemove={props.onRemove} />
-          ))}
+      {open ? (
+        <div className={s.detail} id={detailId}>
+          <span className={s.facts}>
+            {glance.facts.map((p) => (
+              <Text key={p.text} size="xs" tone="quiet" tabular>
+                {p.text}
+              </Text>
+            ))}
+          </span>
+          {props.projects.length > 0 ? (
+            <div className={s.projects} role="list" aria-label={`Projects on ${m.name}`}>
+              {props.projects.map((p) => (
+                <ProjectRow key={p.projectId} project={p} onRemove={props.onRemove} />
+              ))}
+            </div>
+          ) : (
+            <Text size="sm" tone="quiet">
+              No projects here yet.
+            </Text>
+          )}
+          <button
+            type="button"
+            className={s.link}
+            onClick={() => {
+              window.location.hash = toHash({ id: "settings", tab: "machines" });
+            }}
+          >
+            <Text size="sm" tone="inherit">
+              Roles and screens…
+            </Text>
+          </button>
         </div>
-      ) : (
-        <Text size="sm" tone="quiet">
-          No projects here yet.
-        </Text>
-      )}
+      ) : null}
     </section>
   );
 }

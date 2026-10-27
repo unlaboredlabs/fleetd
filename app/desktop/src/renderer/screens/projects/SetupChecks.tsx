@@ -1,13 +1,14 @@
 // Setup checks on Machines: the hub's doctor results (doctor_list, through the data layer, refetched on
 // doctor.changed), with Re-run, and each failing check's fix: a command to copy, or a Fix button the hub runs.
-// The palette and doctor notifications send people here for exactly this.
+// The palette and doctor notifications send people here for exactly this. What wants a look shows; the checks that
+// pass are one click away.
 
-import { Check, Copy } from "lucide-react";
+import { Check, ChevronRight, Copy } from "lucide-react";
 import { useState } from "react";
 import type { DoctorCheck } from "../../../shared/contracts";
 import { CallError, callKey } from "../../src/data/queries";
 import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
-import { Button, Dot, InlineCode, Text, copyText, cx, humanizeKey, toast } from "../../ui";
+import { Button, InlineCode, Text, copyText, cx, humanizeKey, toast, type TextTone } from "../../ui";
 import { HubText } from "./HubText";
 import { agoText } from "./machineText";
 import s from "./projects.module.css";
@@ -33,12 +34,14 @@ export const checkLabel = (id: string): string => {
   return LABELS[name] ?? humanizeKey(name);
 };
 
-const DOT: Readonly<Record<DoctorCheck["status"], string>> = {
-  ok: "var(--success)",
-  warn: "var(--warning)",
-  fail: "var(--danger)",
-  unknown: "var(--faint)",
-};
+/** A check's name says its state: no dot beside it. */
+const TONE: Readonly<Record<DoctorCheck["status"], TextTone>> = { ok: "default", warn: "warning", fail: "danger", unknown: "quiet" };
+
+/** Whether a check wants a look: it failed or warned. */
+export const wantsLook = (c: DoctorCheck): boolean => c.status === "fail" || c.status === "warn";
+
+/** The hub's checks, shared by the section and the machine rows that count theirs. */
+export const useChecks = () => useToolQuery("doctor_list", allChecks);
 
 /** Hub checks first, then each machine's, keeping the hub's order inside a group. */
 export const groupChecks = (
@@ -57,9 +60,10 @@ export const groupChecks = (
 
 export function SetupChecks({ now }: { now: number }) {
   const data = useDataLayer();
-  const query = useToolQuery("doctor_list", allChecks);
+  const query = useChecks();
   const machines = useData((d) => d.machines);
   const [rerunning, setRerunning] = useState(false);
+  const [showPassing, setShowPassing] = useState(false);
 
   const rerun = async () => {
     setRerunning(true);
@@ -69,21 +73,37 @@ export function SetupChecks({ now }: { now: number }) {
     else toast({ title: "The checks didn't re-run", description: out.error.message, tone: "danger" });
   };
 
-  const checked = query.data ? `Checked ${agoText(now - Date.parse(query.data.checkedAt))}` : query.error ? "" : "Checking…";
+  const checks = query.data?.checks ?? [];
+  const look = checks.filter(wantsLook);
+  const rest = checks.filter((c) => !wantsLook(c));
+  const passed = checks.filter((c) => c.status === "ok").length;
+  const counted = query.data ? (look.length === 0 && passed === checks.length ? `All ${checks.length} pass` : `${passed} of ${checks.length} pass`) : "";
+  const checked = query.data ? `${counted} · checked ${agoText(now - Date.parse(query.data.checkedAt))}` : query.error ? "" : "Checking…";
   const error = query.error instanceof CallError ? query.error.error : query.error ? { message: query.error.message } : undefined;
+  const groups = (list: ReadonlyArray<DoctorCheck>) =>
+    groupChecks(list, (id) => machines[id]?.name ?? id).map((g) => (
+      <div key={g.title} className={s.checkGroup}>
+        <Text as="h3" size="xs" tone="quiet" strong>
+          {g.title}
+        </Text>
+        {g.checks.map((c) => (
+          <CheckRow key={c.id} check={c} />
+        ))}
+      </div>
+    ));
 
   return (
     <section className={s.checks} aria-label="Setup checks" data-screen="machines.checks">
       <div className={s.pageHead}>
-        <Text as="h2" size="lg" strong className={cx(s.pageTitle)}>
+        <Text as="h2" strong className={cx(s.pageTitle)}>
           Setup checks
         </Text>
         {checked ? (
-          <Text size="sm" tone="quiet">
+          <Text size="sm" tone="quiet" tabular>
             {checked}
           </Text>
         ) : null}
-        <Button variant="ghost" disabled={rerunning} onClick={() => void rerun()}>
+        <Button variant="ghost" size="sm" disabled={rerunning} onClick={() => void rerun()}>
           {rerunning ? "Re-running…" : "Re-run"}
         </Button>
       </div>
@@ -92,18 +112,16 @@ export function SetupChecks({ now }: { now: number }) {
           <HubText>{"fix" in error && error.fix ? `${error.message} ${error.fix}` : error.message}</HubText>
         </Text>
       ) : null}
-      {query.data
-        ? groupChecks(query.data.checks, (id) => machines[id]?.name ?? id).map((g) => (
-            <div key={g.title} className={s.checkGroup}>
-              <Text as="h3" size="sm" tone="quiet" strong>
-                {g.title}
-              </Text>
-              {g.checks.map((c) => (
-                <CheckRow key={c.id} check={c} />
-              ))}
-            </div>
-          ))
-        : null}
+      {groups(look)}
+      {rest.length > 0 ? (
+        <div className={s.checkGroup}>
+          <button type="button" className={s.fold} aria-expanded={showPassing} onClick={() => setShowPassing((v) => !v)}>
+            <ChevronRight aria-hidden className={cx(s.chevron, showPassing && s.chevronOpen)} />
+            <Text size="sm" tone="inherit">{rest.length === passed ? `${passed} passing` : `${rest.length} more`}</Text>
+          </button>
+          {showPassing ? groups(rest) : null}
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -128,8 +146,9 @@ function CheckRow({ check }: { check: DoctorCheck }) {
 
   return (
     <div className={s.checkRow}>
-      <Dot color={DOT[check.status]} label={check.status} />
-      <Text strong={!ok}>{checkLabel(check.id)}</Text>
+      <Text tone={TONE[check.status]} strong={!ok}>
+        {checkLabel(check.id)}
+      </Text>
       <div className={s.checkBody}>
         <Text tone={ok ? "quiet" : "default"}>
           <HubText>{check.message}</HubText>

@@ -1602,6 +1602,19 @@ export const screens: readonly Screen[] = [
   { id: "agents.work", route: AGENT_ROUTE, fixtures: ["agents-work"], variant: "narrow", sizes: ["narrow"] },
   { id: "agents.work", route: `${CHAT}/agents/T99`, fixtures: ["typical"], variant: "finished" },
   { id: "machines", route: "#/machines", fixtures: ["typical", "empty", "long-text", "many-agents", "hub-unreachable", "projects-machines"] },
+  // A machine's row opened (its facts, its projects with their menus, the way to its roles) and the checks that pass.
+  {
+    id: "machines",
+    route: "#/machines",
+    fixtures: ["projects-machines", "long-text"],
+    variant: "open",
+    open: async (page) => {
+      await page.getByRole("button", { name: "devbox details" }).click();
+      await page.getByRole("list", { name: "Projects on devbox" }).waitFor();
+      await page.getByRole("button", { name: /^\d+ (passing|more)$/u }).click();
+      await page.getByRole("region", { name: "Setup checks" }).getByText("Hub reachable").waitFor();
+    },
+  },
   // F11: the command palette (opening on the project on screen, then go-tos), a typed search, and the shortcuts
   // sheet. status-rows has eight projects, one with a ~120-character name.
   {
