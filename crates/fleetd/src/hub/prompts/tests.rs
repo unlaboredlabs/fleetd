@@ -428,6 +428,7 @@ fn the_lead_speaks_only_when_it_matters_in_plain_words() {
         "must act or decide",
         "lands, fails or is blocked",
         "goes red and stays red",
+        "a showcase to look at, something to try or a risk",
         "to answer them",
         "never one message per PR",
         "Always post when an order the human asked for finishes",
