@@ -1889,6 +1889,7 @@ async fn a_pr_whose_required_checks_never_start_is_flagged_to_its_author_and_the
                 task_id: Some(task_id),
                 pr_url: GitHubPrUrl::unchecked(pr),
                 workstream_id: Some(ws()),
+                after: None,
             },
         )
         .await
@@ -2162,6 +2163,57 @@ async fn a_timed_out_change_whose_checks_go_red_later_goes_to_its_author() {
     assert!(!kit.train.step(REPO).await);
     assert_eq!(kit.get(&change_id).state, ChangeState::CiFailed);
     assert!(kit.gh.merges.lock().unwrap().is_empty());
+}
+
+/// A timed-out Change whose checks then read cancelled never just sits: their run is re-run twice, and when it is
+/// cancelled again the PR goes back to its author, saying why (D191).
+#[tokio::test(flavor = "multi_thread")]
+async fn a_timed_out_change_whose_checks_read_cancelled_is_re_run_then_goes_to_its_author() {
+    let kit = Kit::with(FakeCi::Actions, one_poll);
+    answer_checks(&kit, || {
+        vec![check(
+            "ci",
+            "in_progress",
+            None,
+            Some("2020-01-01T00:00:00Z"),
+        )]
+    });
+    let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")]);
+    let (_, change_id) = kit.author_task(Some(&pr)).await;
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(kit.get(&change_id).state, ChangeState::CiFailed);
+
+    // Each re-run is cancelled again, a newer job each time.
+    let reruns = kit.gh.reruns.clone();
+    answer_checks(&kit, move || {
+        let n = reruns.lock().unwrap().len() as u64;
+        vec![job(10 + n, 1, "ci", "cancelled")]
+    });
+    for _ in 0..2 {
+        kit.train.step(REPO).await;
+        assert!(timed_out_still(&kit, &change_id));
+    }
+    assert_eq!(*kit.gh.reruns.lock().unwrap(), [1, 1]);
+    kit.train.step(REPO).await;
+    let back = kit.get(&change_id);
+    assert_eq!(
+        (back.state, back.last_error.as_deref()),
+        (ChangeState::CiFailed, Some(super::service::CI_CANCELLED))
+    );
+    let sends = kit.host.sends.lock().unwrap().clone();
+    let (to, message) = sends.last().unwrap();
+    assert_eq!(to, "T1");
+    assert!(message.contains(super::service::CI_CANCELLED), "{message}");
+    // Back with its author: no more re-runs until a push.
+    kit.train.step(REPO).await;
+    assert_eq!(kit.gh.reruns.lock().unwrap().len(), 2);
+    assert!(kit.gh.merges.lock().unwrap().is_empty());
+}
+
+fn timed_out_still(kit: &Kit, change_id: &ChangeId) -> bool {
+    kit.get(change_id)
+        .last_error
+        .is_some_and(|e| e.starts_with(super::service::CI_TIMED_OUT))
 }
 
 /// D128: the running timeout counts from the first check's start. An hour queued for runners, then 30 min running,

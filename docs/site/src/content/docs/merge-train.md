@@ -76,7 +76,8 @@ a push to the PR cancelled its run, the train takes the new commit instead; othe
 PR shows `ci_failed` with "CI timed out", the lead is told, and the agent that wrote it isn't asked to push. The train
 keeps reading that commit's checks. If they finish green, the PR goes back in the queue ("CI finished after the
 timeout; back in the queue") and merges on that run, after the usual rebase if its base moved. If one goes red, the
-PR goes back to its agent as for any red CI. A new push starts over as usual.
+PR goes back to its agent as for any red CI. If they read cancelled, the train re-runs them twice, then sends the PR
+back to its agent to push again. A new push starts over as usual.
 
 When the hub restarts while a PR's CI runs, alone or in a batch, the new hub keeps watching the same run on the same
 commit, and merges once it is green. It doesn't rebase the PR or run its CI again.
