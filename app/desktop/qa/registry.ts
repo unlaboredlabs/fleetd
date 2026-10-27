@@ -225,6 +225,7 @@ export const fixtures = [
   "updates-hub-ready",
   "updates-run-updated",
   "updates-refused",
+  "updates-run-left-over",
   // Navi (fixtures/navi): no Navi yet; two Navis and an archived one, Ada asking to send an email and following work.
   "navi-none",
   "navi-two",
@@ -1175,6 +1176,17 @@ export const screens: readonly Screen[] = [
       await openUpdates(page);
       await page.getByRole("button", { name: "Update", exact: true }).click();
       await page.locator('[data-updates-part="all"] [role="alert"], [data-updates-part="all"] [role="status"]').first().waitFor();
+    },
+  },
+  // W112: a run nothing in the hub drives any more, followed when the sheet opens: Start over, quiet beside it.
+  {
+    id: "updates",
+    route: "#/",
+    fixtures: ["updates-run-left-over"],
+    variant: "left-over",
+    open: async (page) => {
+      await openUpdates(page);
+      await page.getByRole("button", { name: "Start over", exact: true }).waitFor();
     },
   },
   // UX-1 A3: a project's PRs in the panel. The list (open first, then merged or closed lately); none at all; GitHub

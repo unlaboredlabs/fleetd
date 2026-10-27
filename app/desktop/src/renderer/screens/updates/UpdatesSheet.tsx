@@ -1,5 +1,5 @@
-// The updates sheet's content, laid out from the view: one overall state with the Update button and what's new, one
-// line per part (the hub, each machine, Claude Code, this app) with Retry on one that failed, and every part's steps
+// The updates sheet's content, laid out from the view: one overall state with the Update button and what's new (or a
+// quiet Start over beside a run that stopped moving), one line per part (the hub, each machine, Claude Code, this app) with Retry on one that failed, and every part's steps
 // behind Details. Hairlines between lines, no boxes; still, never an animation.
 import { ChevronRight } from "lucide-react";
 import { useState, type ReactNode } from "react";
@@ -164,8 +164,8 @@ function HubSection({ part, nodes }: { part: HubPart; nodes: UpdatesView["nodes"
   );
 }
 
-function Overall({ view, onUpdate }: { view: UpdatesView; onUpdate: () => void }) {
-  const { update, progress } = view;
+function Overall({ view, onUpdate, onStartOver }: { view: UpdatesView; onUpdate: () => void; onStartOver: () => void }) {
+  const { update, progress, startOver } = view;
   if (update === null && progress === null) return null;
   return (
     <section className={s.overall} aria-label="Update" data-updates-part="all">
@@ -188,11 +188,23 @@ function Overall({ view, onUpdate }: { view: UpdatesView; onUpdate: () => void }
               {update.note}
             </Text>
           )}
+          {startOver === null ? null : (
+            <Text size="sm" tone="quiet" data-updates-start-over>
+              {startOver.note}
+            </Text>
+          )}
         </div>
         {update === null ? null : (
           <div className={s.actions}>
             <Button variant="primary" onClick={onUpdate}>
               {update.label}
+            </Button>
+          </div>
+        )}
+        {startOver === null ? null : (
+          <div className={s.actions}>
+            <Button variant="ghost" onClick={onStartOver}>
+              Start over
             </Button>
           </div>
         )}
@@ -232,17 +244,19 @@ function PartLineRow({ line, onRetry }: { line: PartLine; onRetry: (retry: Retry
 export interface SheetProps {
   readonly view: UpdatesView;
   readonly onUpdate: () => void;
+  /** Start over: ends a run that stopped moving and starts a new one. */
+  readonly onStartOver: () => void;
   readonly onRetry: (retry: Retry) => void;
   readonly onApp: (action: AppAction) => void;
   /** Details shown at first; a test opens them. */
   readonly details?: boolean;
 }
 
-export function UpdatesSheet({ view, onUpdate, onRetry, onApp, details = false }: SheetProps) {
+export function UpdatesSheet({ view, onUpdate, onStartOver, onRetry, onApp, details = false }: SheetProps) {
   const [open, setOpen] = useState(details);
   return (
     <div className={s.parts} data-screen="updates">
-      <Overall view={view} onUpdate={onUpdate} />
+      <Overall view={view} onUpdate={onUpdate} onStartOver={onStartOver} />
       {view.lines.length === 0 ? null : (
         <ul className={s.lines} aria-label="Each part">
           {view.lines.map((line) => (

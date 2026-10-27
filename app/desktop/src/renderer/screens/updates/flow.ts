@@ -1,6 +1,7 @@
 // The Update button's run: the hub updates itself and then its nodes (hub_update, followed with hub_update_status
 // through the hub's own restart), then, when every part came through, this app installs its update and relaunches.
-// Retry updates one machine of the last run again (hub_update with its machine). The hub downloads the channel's
+// Retry updates one machine of the last run again (hub_update with its machine); Start over ends a run that stopped
+// moving and starts a new one (hub_update with startOver). The hub downloads the channel's
 // newest build ahead and says so (`ready`), read on connect and every few minutes. A tiny external store, so the
 // sidebar line, the notice and the sheet show the same run; the steps take their effects as deps, so they are
 // unit-tested.
@@ -13,8 +14,11 @@ export type Flow =
   | { readonly phase: "idle" }
   /** Asking the hub to start. */
   | { readonly phase: "starting" }
-  /** Following the hub's run; `reconnecting` while the hub restarts and doesn't answer. */
-  | { readonly phase: "following"; readonly reconnecting: boolean }
+  /**
+   * Following the hub's run; `reconnecting` while the hub restarts and doesn't answer. `since`: when this window last
+   * saw the run change, epoch ms; `leftOver`: the hub says nothing drives it any more.
+   */
+  | { readonly phase: "following"; readonly reconnecting: boolean; readonly since?: number; readonly leftOver?: boolean }
   /** The hub and its nodes are done: this app downloads its update, then restarts. */
   | { readonly phase: "app" }
   /** `updated`: every machine came through and this app had nothing to install, so the sheet closes itself. */
@@ -27,6 +31,8 @@ export interface FlowDeps {
   /** Dials the hub now, not at the next retry: after its restart it is back in seconds. */
   readonly retry: () => void;
   readonly sleep: (ms: number) => Promise<void>;
+  /** Epoch ms; Date.now when absent. */
+  readonly now?: () => number;
   readonly app: {
     readonly state: () => UpdatesState | null;
     readonly check: () => void;
@@ -50,6 +56,8 @@ export const BEFORE_UPDATE =
 let flow: Flow = { phase: "idle" };
 let run: UpdateRun | null = null;
 let ready: string | null = null;
+/** Bumped by each follow: an earlier one, still waiting on the hub, then stops (Start over follows the new run). */
+let following = 0;
 const listeners = new Set<() => void>();
 
 const set = (next: { flow?: Flow; run?: UpdateRun | null; ready?: string | null }) => {
@@ -130,17 +138,41 @@ export const retryMachine = async (deps: FlowDeps, machineId: string): Promise<v
   await follow(deps, false);
 };
 
+/** Start over: the hub ends the run going on, which stopped moving, and starts a new one; this window follows that,
+ * as Update pressed here. */
+export const startOver = async (deps: FlowDeps): Promise<void> => {
+  if (flow.phase !== "following") return;
+  following += 1;
+  set({ flow: { phase: "starting" } });
+  const out = await deps.call("hub_update", { startOver: true });
+  if (!out.ok) {
+    set({ flow: { phase: "refused", message: out.error.fix === undefined ? out.error.message : `${out.error.message} ${out.error.fix}` } });
+    return;
+  }
+  set({ run: out.output.run ?? null, ready: null });
+  await follow(deps);
+};
+
 /** `withApp`: this app installs its update at the end, when every part came through. */
 const follow = async (deps: FlowDeps, withApp = true): Promise<void> => {
-  set({ flow: { phase: "following", reconnecting: false } });
+  const mine = (following += 1);
+  const now = deps.now ?? Date.now;
+  let since = now();
+  let leftOver = false;
+  set({ flow: { phase: "following", reconnecting: false, since } });
   while (run !== null && run.finishedAt === undefined) {
     await deps.sleep(FOLLOW_EVERY_MS);
+    if (mine !== following) return;
     const out = await deps.call("hub_update_status", {});
+    if (mine !== following) return;
     if (out.ok) {
-      set({ flow: { phase: "following", reconnecting: false }, run: out.output.run ?? run });
+      const next = out.output.run ?? run;
+      if (JSON.stringify(next) !== JSON.stringify(run)) since = now();
+      leftOver = out.output.leftOver === true;
+      set({ flow: { phase: "following", reconnecting: false, since, leftOver }, run: next });
     } else {
       // The hub is restarting: keep what it last said, and dial it again.
-      set({ flow: { phase: "following", reconnecting: true } });
+      set({ flow: { phase: "following", reconnecting: true, since, leftOver } });
       deps.retry();
     }
   }

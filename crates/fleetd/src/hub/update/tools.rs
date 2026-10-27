@@ -16,9 +16,14 @@ pub fn register(tools: &mut Registry) {
     tools.add("hub_update_status", hub_update_status);
 }
 
-fn next(run: Option<&UpdateRun>) -> String {
+fn next(run: Option<&UpdateRun>, left_over: bool) -> String {
     match run {
         None => "The hub hasn't updated itself yet.".into(),
+        Some(r) if r.finished_at.is_none() && left_over => {
+            "Left over: nothing in the hub drives this update any more, so it won't change again. Call hub_update to \
+             start a new one."
+                .into()
+        }
         Some(r) if r.finished_at.is_none() => {
             "Going on: the hub restarts while it updates, so the connection drops for a moment. Call \
              hub_update_status again to follow it."
@@ -49,6 +54,7 @@ async fn hub_update(
     }
     let started = match &input.machine {
         Some(machine) => hub.updates.retry(machine),
+        None if input.start_over == Some(true) => hub.updates.start_over(input.channel),
         None => hub.updates.start(input.channel),
     };
     let run = started.map_err(|refused| match refused {
@@ -70,10 +76,12 @@ async fn hub_update(
         )
         .with_fix("Press Update to bring every machine to the hub's build."),
     })?;
+    let left_over = hub.updates.left_over();
     Ok(HubUpdateOutput {
-        next: Some(next(Some(&run))),
+        next: Some(next(Some(&run), left_over)),
         run: Some(run),
         ready: ready(&hub),
+        left_over: left_over.then_some(true),
         truncated: None,
     })
 }
@@ -84,10 +92,12 @@ async fn hub_update_status(
     _input: HubUpdateStatusInput,
 ) -> Result<HubUpdateOutput, ToolError> {
     let run = hub.updates.status();
+    let left_over = hub.updates.left_over();
     Ok(HubUpdateOutput {
-        next: Some(next(run.as_ref())),
+        next: Some(next(run.as_ref(), left_over)),
         run,
         ready: ready(&hub),
+        left_over: left_over.then_some(true),
         truncated: None,
     })
 }

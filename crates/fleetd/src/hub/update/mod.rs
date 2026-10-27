@@ -159,6 +159,14 @@ pub struct Updates {
     /// The tasks of this process driving the run ([`Driving`]). An unfinished run none drives is left over (a task
     /// that ended without settling it): nothing waits behind it, and Update starts a new one.
     drivers: AtomicUsize,
+    /// Those tasks, for [`Self::start_over`] to stop.
+    tasks: Mutex<Vec<tokio::task::AbortHandle>>,
+}
+
+tokio::task_local! {
+    /// The id of the run the current task drives: its writes reach that run only, while it is unfinished, so a task
+    /// stopped by [`Updates::start_over`] can't touch the run that took its place.
+    static DRIVES: String;
 }
 
 /// A task of this process driving the run, counted while it lives.
@@ -196,6 +204,7 @@ impl Updates {
             ports: RwLock::default(),
             ready: Mutex::default(),
             drivers: AtomicUsize::new(0),
+            tasks: Mutex::default(),
         })
     }
 
@@ -208,10 +217,29 @@ impl Updates {
         self.ports.read().unwrap().clone()
     }
 
-    /// Counts a task driving the run until it ends; taken under the run's lock, with the check it follows.
-    fn drive(self: &Arc<Self>) -> Driving {
+    /// Runs `work` as a task driving the run `id`: counted while it lives, stopped by [`Self::start_over`], its writes
+    /// for that run only. Taken under the run's lock, with the check it follows.
+    fn drive(
+        self: &Arc<Self>,
+        id: &str,
+        work: impl Future<Output = ()> + Send + 'static,
+    ) -> tokio::task::JoinHandle<()> {
         self.drivers.fetch_add(1, Ordering::SeqCst);
-        Driving(Arc::clone(self))
+        let driving = Driving(Arc::clone(self));
+        let task = tokio::spawn(DRIVES.scope(id.to_owned(), async move {
+            let _driving = driving;
+            work.await;
+        }));
+        let mut tasks = self.tasks.lock().unwrap();
+        tasks.retain(|t| !t.is_finished());
+        tasks.push(task.abort_handle());
+        task
+    }
+
+    /// The last run isn't finished, yet nothing in this process drives it any more: it won't change again.
+    pub fn left_over(&self) -> bool {
+        self.status()
+            .is_some_and(|r| r.finished_at.is_none() && !self.going(&r))
     }
 
     /// The run isn't finished, and a task of this process drives it.
@@ -325,12 +353,9 @@ impl Updates {
         run.finished_at = None;
         let run = run.clone();
         self.save(&run);
-        let driving = self.drive();
-        drop(held);
         let this = Arc::clone(self);
         let machine_id = machine_id.clone();
-        tokio::spawn(async move {
-            let _driving = driving;
+        self.drive(&run.id, async move {
             let update = NodeUpdate {
                 version: to,
                 channel: this.status().map_or(HubChannel::Nightly, |r| r.channel),
@@ -413,14 +438,40 @@ impl Updates {
         };
         self.save(&run);
         *held = Some(run.clone());
-        let driving = self.drive();
-        drop(held);
         let this = Arc::clone(self);
-        tokio::spawn(async move {
-            let _driving = driving;
-            this.drive_hub(ports).await;
-        });
+        self.drive(&run.id, async move { this.drive_hub(ports).await });
         Ok(run)
+    }
+
+    /// Start over: ends the run going on, with every part left skipped, and starts a new one. Only once the hub's part
+    /// has its result: while the hub restarts, the run is returned as it is.
+    pub fn start_over(self: &Arc<Self>, channel: Option<HubChannel>) -> Result<UpdateRun, Refused> {
+        self.ports().ok_or(Refused::NotWired)?;
+        {
+            let mut held = self.run.lock().unwrap();
+            if let Some(run) = held.as_mut().filter(|r| r.finished_at.is_none()) {
+                let hub_settled = run
+                    .parts
+                    .iter()
+                    .any(|p| p.part == UpdatePartKind::Hub && p.state.settled());
+                if !hub_settled {
+                    return Ok(run.clone());
+                }
+                for task in self.tasks.lock().unwrap().drain(..) {
+                    task.abort();
+                }
+                let mut parts = run.parts.to_vec();
+                for p in parts.iter_mut().filter(|p| !p.state.settled()) {
+                    p.state = UpdateState::Skipped;
+                    p.stage = None;
+                    p.message = Some(text("not asked: the update started over"));
+                }
+                run.parts = List::new(parts).expect("same parts");
+                run.finished_at = Some(Timestamp::from(self.now()));
+                self.save(run);
+            }
+        }
+        self.start(channel)
     }
 
     /// Changes the run and writes it down, under the lock: nodes update at once, and two writes of `run.json` at the
@@ -428,6 +479,12 @@ impl Updates {
     fn change(&self, f: impl FnOnce(&mut UpdateRun)) {
         let mut held = self.run.lock().unwrap();
         if let Some(run) = held.as_mut() {
+            let elsewhere = DRIVES
+                .try_with(|id| run.finished_at.is_some() || id != run.id.as_str())
+                .unwrap_or(false);
+            if elsewhere {
+                return;
+            }
             f(run);
             if run.finished_at.is_none() && run.parts.iter().all(|p| p.state.settled()) {
                 run.finished_at = Some(Timestamp::from(self.now()));
@@ -734,7 +791,7 @@ impl Updates {
     /// Whatever it can't take on ends: a run never stays unfinished with nothing driving it.
     pub async fn resume(self: Arc<Self>) {
         let Some(ports) = self.ports() else { return };
-        let (run, _driving) = {
+        let task = {
             let held = self.run.lock().unwrap();
             // Update pressed already took its place.
             let Some(run) = held
@@ -743,8 +800,13 @@ impl Updates {
             else {
                 return;
             };
-            (run, self.drive())
+            let (this, id) = (Arc::clone(&self), run.id.to_string());
+            self.drive(&id, async move { this.take_on(ports, run).await })
         };
+        let _ = task.await;
+    }
+
+    async fn take_on(self: Arc<Self>, ports: Arc<dyn UpdatePorts>, run: UpdateRun) {
         let Some(hub) = run
             .parts
             .iter()
@@ -849,18 +911,18 @@ impl Updates {
             version: text(&to),
             channel,
         };
-        let jobs = waiting.into_iter().map(|machine_id| {
+        // Stopped with this task (start over), and driving its run as it does.
+        let mut jobs = tokio::task::JoinSet::new();
+        for machine_id in waiting {
             let this = Arc::clone(self);
             let ports = Arc::clone(&ports);
             let update = update.clone();
-            tokio::spawn(async move {
+            jobs.spawn(DRIVES.scope(run.id.to_string(), async move {
                 this.update_node(&*ports, &machine_id, &update).await;
                 this.update_claude(&*ports, &machine_id).await;
-            })
-        });
-        for job in jobs.collect::<Vec<_>>() {
-            let _ = job.await;
+            }));
         }
+        while jobs.join_next().await.is_some() {}
         // A part a node's job couldn't settle (it panicked) still ends the run.
         self.settle_nodes(
             UpdateState::Failed,

@@ -2195,9 +2195,19 @@ export type HubUpdateInput = {
   channel?: HubChannel;
   /** Retry this machine of the last run, whose hub updated: its node, then its Claude Code. */
   machine?: MachineId;
+  /**
+   * Start over: ends the run going on, once the hub has its result (never while the hub restarts), with every part
+   * left skipped, and starts a new one.
+   */
+  startOver?: boolean;
 };
 
 export type HubUpdateOutput = {
+  /**
+   * True when the run isn't finished but nothing in the hub drives it any more: it won't change again, and Update
+   * starts a new one. Absent otherwise.
+   */
+  leftOver?: boolean;
   next?: string;
   /**
    * The channel's newest build, already downloaded and checked on the hub (and fetched by its nodes), so an update
