@@ -324,12 +324,15 @@ pub fn text(answer: &Value) -> String {
     }
 }
 
-fn gmail(s: &Session, path: &str) -> String {
+pub(super) fn gmail(s: &Session, path: &str) -> String {
     format!("{}/gmail/v1/users/me/{path}", s.ep.gmail)
 }
 
 impl Session {
-    async fn send(&self, request: reqwest::RequestBuilder) -> Result<reqwest::Response, String> {
+    pub(super) async fn send(
+        &self,
+        request: reqwest::RequestBuilder,
+    ) -> Result<reqwest::Response, String> {
         let token = self.token().await?;
         let answer = request
             .bearer_auth(token.as_str())
@@ -355,12 +358,12 @@ impl Session {
         })
     }
 
-    async fn get(&self, url: &str, query: &[(&str, String)]) -> Result<Value, String> {
+    pub(super) async fn get(&self, url: &str, query: &[(&str, String)]) -> Result<Value, String> {
         let answer = self.send(self.http.get(url).query(query)).await?;
         answer.json().await.map_err(|e| e.to_string())
     }
 
-    async fn post(&self, url: &str, body: &Value) -> Result<Value, String> {
+    pub(super) async fn post(&self, url: &str, body: &Value) -> Result<Value, String> {
         let answer = self.send(self.http.post(url).json(body)).await?;
         Ok(answer.json().await.unwrap_or_default())
     }
@@ -368,7 +371,7 @@ impl Session {
 
 // Gmail
 
-fn header<'a>(message: &'a Value, name: &str) -> Option<&'a str> {
+pub(super) fn header<'a>(message: &'a Value, name: &str) -> Option<&'a str> {
     message["payload"]["headers"].as_array()?.iter().find(|h| {
         h["name"]
             .as_str()

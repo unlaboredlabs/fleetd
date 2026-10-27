@@ -1933,6 +1933,8 @@ export type GoogleAccount = {
    * saw it. The app offers Reconnect.
    */
   lapsed?: string;
+  /** When new mail wakes the Navi. */
+  mail?: MailWake;
   projectRef: ProjectRef;
   /** What the person granted: Google lets them untick some. */
   scopes: string[];
@@ -1941,6 +1943,11 @@ export type GoogleAccount = {
 /** The hub's admin's OAuth client, as the hub keeps it: no secret. */
 export type GoogleClient = {
   clientId: GoogleClientId;
+  /**
+   * New mail in real time: Gmail tells this topic, and one machine reads its subscription. None: the hub checks
+   * each Navi's mail about every minute instead.
+   */
+  pubsub?: GooglePubsub;
   /** Each machine whose node holds its secret, with that node's fingerprint of it. */
   sealedOn?: McpSealedOn[];
   updatedAt: Timestamp;
@@ -2024,11 +2031,62 @@ export type GoogleGetOutput = {
   account?: GoogleAccount;
   /** The admin's OAuth client; none until one is saved. */
   client?: GoogleClient;
+  /** How the hub hears of new mail now: push through Pub/Sub, or polling. */
+  mailMode: MailMode;
+  /** Why it polls although Pub/Sub is set up: what the last read of the subscription said. */
+  mailProblem?: string;
   next?: string;
   /** Where the consent page sends the person back: a loopback address, any port. */
   redirect: string;
   /** What connecting asks Google for. */
   scopes: string[];
+  truncated?: boolean;
+};
+
+export type GoogleMailSetInput = {
+  /** The Navi. */
+  project: ProjectRef;
+  /** With rule query: Gmail search. */
+  query?: string;
+  rule: MailWakeRule;
+};
+
+export type GoogleMailSetOutput = {
+  account: GoogleAccount;
+  next?: string;
+  truncated?: boolean;
+};
+
+/** Gmail's push notifications through the admin's Pub/Sub, as the hub keeps them: no key. */
+export type GooglePubsub = {
+  /** That node's fingerprint of the key. */
+  fingerprint: SecretFingerprint;
+  /** The machine whose node holds the service account key and reads the subscription. */
+  machineId: MachineId;
+  subscription: PubsubSubscription;
+  topic: PubsubTopic;
+};
+
+/**
+ * Gmail's push through the admin's Pub/Sub: the topic Gmail tells, the subscription one machine reads, and the
+ * service account key it reads with, sealed to that machine.
+ */
+export type GooglePubsubSet = {
+  machineId: MachineId;
+  /** The service account's JSON key, sealed with crypto_box_seal to that machine's boxPubKey. */
+  sealed: SealedSecret;
+  subscription: PubsubSubscription;
+  topic: PubsubTopic;
+};
+
+export type GooglePubsubSetInput = {
+  /** None: turn real-time mail off; the hub checks each Navi's mail about every minute. */
+  pubsub?: GooglePubsubSet;
+};
+
+export type GooglePubsubSetOutput = {
+  client: GoogleClient;
+  next?: string;
   truncated?: boolean;
 };
 
@@ -2965,6 +3023,21 @@ export type MachineSleptData = {
 };
 
 export type MachineStatus = "online" | "offline" | "degraded";
+
+/** How the hub hears of new mail now. */
+export type MailMode = "push" | "polling";
+
+/** A Navi's mail wake, as the person set it. */
+export type MailWake = {
+  /** With `rule: query`: Gmail search, e.g. `from:boss@example.com OR is:important`. */
+  query?: string;
+  rule: MailWakeRule;
+  /** When Gmail's watch of the inbox ends, in ms since the epoch; renewed a day before. */
+  watchExpiresMs?: number;
+};
+
+/** When a Navi's new mail wakes it. */
+export type MailWakeRule = "off" | "all" | "query";
 
 /** How sure the matcher is that new work repeats a piece in flight. */
 export type MatchStrength = "weak" | "strong" | "exact";
@@ -5061,6 +5134,10 @@ export type PromptWarning = {
 };
 
 export type PromptWarningCode = "placeholder_missing" | "placeholder_unknown" | "safety_rule_missing" | "too_long";
+
+export type PubsubSubscription = string;
+
+export type PubsubTopic = string;
 
 export type QuietWindow = {
   from: Timestamp;
@@ -7165,6 +7242,8 @@ export interface ToolMap {
   google_connect: { input: GoogleConnectInput; output: GoogleConnectOutput };
   google_disconnect: { input: GoogleDisconnectInput; output: GoogleDisconnectOutput };
   google_get: { input: GoogleGetInput; output: GoogleGetOutput };
+  google_mail_set: { input: GoogleMailSetInput; output: GoogleMailSetOutput };
+  google_pubsub_set: { input: GooglePubsubSetInput; output: GooglePubsubSetOutput };
   hub_info: { input: HubInfoInput; output: HubInfoOutput };
   hub_link_add: { input: HubLinkAddInput; output: HubLinkAddOutput };
   hub_link_mint: { input: HubLinkMintInput; output: HubLinkMintOutput };

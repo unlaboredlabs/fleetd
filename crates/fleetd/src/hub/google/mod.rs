@@ -2,6 +2,7 @@
 //! fingerprint of its secret (`google_client`), and each Navi's account address and scopes (`google_accounts`). The
 //! secret and the tokens stay on the Navi's node (node/google). A Navi with an account gets the native server `google`
 //! in its lead's MCP servers ([`server`]), which the integrations policy reads as Google's.
+pub mod mail;
 #[cfg(test)]
 mod tests;
 pub mod tools;

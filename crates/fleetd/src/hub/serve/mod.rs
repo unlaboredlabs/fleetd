@@ -511,6 +511,12 @@ pub fn start_loops(hub: &Arc<Hub>, tools: &Arc<Registry>) -> Vec<JoinHandle<()>>
     loops.push(tokio::spawn(crate::hub::hub_links::client::run(
         hub.clone(),
     )));
+    loops.push(tokio::spawn(crate::hub::google::mail::pull_loop(
+        hub.clone(),
+    )));
+    loops.push(tokio::spawn(crate::hub::google::mail::tick_loop(
+        hub.clone(),
+    )));
     hub.work
         .set_landings(Arc::new(crate::hub::work::landings::LandingStore(
             hub.db.clone(),
