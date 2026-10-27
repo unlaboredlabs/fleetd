@@ -106,36 +106,38 @@ fn compact(text: &str) -> String {
     text.chars().filter(|c| !c.is_ascii_whitespace()).collect()
 }
 
-/// The bytes a base64 string holds, wrapped or not.
+/// A file's bytes: `text` decoded as base64 in any of its four spellings (standard or url-safe, padded or not), wrapped
+/// in lines or not. A value that decodes is a file, whatever its length.
+pub(super) fn file_bytes(text: &str) -> Option<Vec<u8>> {
+    use base64::Engine;
+    use base64::engine::general_purpose::{STANDARD, STANDARD_NO_PAD, URL_SAFE, URL_SAFE_NO_PAD};
+    let text = compact(text);
+    if text.is_empty() {
+        return None;
+    }
+    [STANDARD, STANDARD_NO_PAD, URL_SAFE, URL_SAFE_NO_PAD]
+        .iter()
+        .find_map(|e| e.decode(&text).ok())
+}
+
+/// The bytes a base64 string holds, wrapped or not, for a file whose bytes don't decode here.
 pub fn base64_bytes(text: &str) -> u64 {
     let text = compact(text);
     let pad = text.chars().rev().take_while(|c| *c == '=').count() as u64;
     (text.len() as u64 * 3 / 4).saturating_sub(pad)
 }
 
-/// Whether `text` reads as base64, standard or url-safe, wrapped in lines or not: nothing else is a file's bytes.
-fn is_base64(text: &str) -> bool {
-    let text = compact(text);
-    !text.is_empty()
-        && text
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'+' | b'/' | b'-' | b'_' | b'='))
-}
-
-/// A value this long that decodes is a file's bytes; anything shorter, a key included, is read as text.
-const FILE_MIN: usize = 256;
-
-/// A real file's bytes, decoded: at least [`FILE_MIN`] characters of base64 in any of its four spellings.
-pub(super) fn file_bytes(text: &str) -> Option<Vec<u8>> {
-    use base64::Engine;
-    use base64::engine::general_purpose::{STANDARD, STANDARD_NO_PAD, URL_SAFE, URL_SAFE_NO_PAD};
-    let text = compact(text);
-    if text.len() < FILE_MIN {
-        return None;
-    }
-    [STANDARD, STANDARD_NO_PAD, URL_SAFE, URL_SAFE_NO_PAD]
-        .iter()
-        .find_map(|e| e.decode(&text).ok())
+/// Whether a file's bytes read as text: valid UTF-8 with almost no control characters. Only such a file is searched for
+/// a key; a binary one is shown by its name and size, and the person's approval decides.
+fn is_text(bytes: &[u8]) -> bool {
+    let Ok(text) = std::str::from_utf8(bytes) else {
+        return false;
+    };
+    let control = text
+        .chars()
+        .filter(|c| c.is_control() && !matches!(c, '\n' | '\r' | '\t'))
+        .count();
+    control * 100 <= text.chars().count()
 }
 
 /// `input` with the `content_base64` of each file a Google tool attaches (an `attachments` item with a `filename`) replaced by
@@ -167,45 +169,24 @@ fn with_files(
 /// `input` as the card shows it: the bytes of each file a Google tool attaches said by their size, which no one reads.
 pub fn shown_input(kind: IntegrationKind, input: &Value) -> Value {
     with_files(kind, input, |b| {
-        is_base64(b).then(|| Value::String(format!("[the file's {} bytes]", base64_bytes(b))))
+        let bytes = file_bytes(b)?;
+        Some(Value::String(format!("[the file's {} bytes]", bytes.len())))
     })
 }
 
-/// A Google API key's shape (`AIza` and 35 more): the one key shape a real file's standard base64 can spell by
-/// chance, about once in fifty of Gmail's largest attachments. Every other shape needs a character standard base64
-/// never holds (`-`, `_`, `.`, `:`, a space) or is too long a run to happen.
-static CHANCE_SHAPE: std::sync::LazyLock<regex::Regex> =
-    std::sync::LazyLock::new(|| regex::Regex::new(r"\bAIza[0-9A-Za-z_-]{35}").unwrap());
-
-/// Whether a file's base64 text, as it is, holds a key's shape: every shape, so a key padded out to look like a file is
-/// still found, but in standard base64 not the one random letters can spell.
-fn raw_holds_key(text: &str) -> bool {
-    let standard = text.bytes().all(|b| {
-        b.is_ascii_alphanumeric() || b.is_ascii_whitespace() || matches!(b, b'+' | b'/' | b'=')
-    });
-    let text = if standard {
-        CHANCE_SHAPE.replace_all(text, "")
-    } else {
-        std::borrow::Cow::Borrowed(text)
-    };
-    crate::hub::redact::redact(&text) != text
-}
-
-/// Whether a call would send or store what looks like a credential: in its text, and in the files a Google tool
-/// attaches, both as their base64 text (a key padded to a file's length is still a key) and decoded (a key inside a
-/// file). The base64 text of a real file is spared only the one shape its random letters can spell.
+/// Whether a call would send or store what looks like a credential: in its text, and inside the files a Google tool
+/// attaches that read as text. A file's base64 is never searched as it is: its random letters spell key shapes by
+/// chance, and refusing real mail for that would be worse than the key it might hide. A value that doesn't decode
+/// isn't a file, and is searched as text.
 fn sends_credential(kind: IntegrationKind, input: &Value) -> bool {
-    let mut raw_key = false;
     let mut files: Vec<Vec<u8>> = Vec::new();
     let text = with_files(kind, input, |b| {
         let bytes = file_bytes(b)?;
-        raw_key |= raw_holds_key(b);
         files.push(bytes);
         Some(Value::String("[file]".into()))
     });
-    raw_key
-        || holds_credential(&text)
-        || files.iter().any(|f| {
+    holds_credential(&text)
+        || files.iter().filter(|f| is_text(f)).any(|f| {
             let t = String::from_utf8_lossy(f);
             crate::hub::redact::redact(&t) != t
         })

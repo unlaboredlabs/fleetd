@@ -20,7 +20,7 @@ The hub decides from a table of every tool, not the Navi. The model can't talk i
 | **Reads** | Search and read mail, list events, check free/busy, search Drive, read a doc, search Notion, read a page | Runs without asking. |
 | **Writes, sends, deletes, shares** | Send, reply or forward an email; save a draft; label, archive or trash mail; create, change or delete an event; answer an invitation; change a doc, sheet or Notion page; trash a file | Asks you in the chat, **every time**, with exactly what it would do. There is no "always allow". |
 | **Spending** | A custom server's `pay`, `purchase` or `checkout` tool | Asks you, marked **Costs money**, and asks once more before it runs. |
-| **Never** | Moving money between accounts (`transfer`, `send_money`, `send_transaction`), trading (`buy_stock`, `sell`, and any `place_order` or `submit_order`, a shop's or a restaurant's too), creating accounts in your name; sending or storing anything that looks like a password, key or token; a call too large to show on the card in full | Refused, even if you would approve it. The Navi is told to leave it to you. Place orders yourself, or through a screen you take over. |
+| **Never** | Moving money between accounts (`transfer`, `send_money`, `send_transaction`), trading (`buy_stock`, `sell`, and any `place_order` or `submit_order`, a shop's or a restaurant's too), creating accounts in your name; sending or storing what looks like a password, key or token, in the call's text or inside an attached text file (a binary file is shown by name and size, and you decide); a call too large to show on the card in full | Refused, even if you would approve it. The Navi is told to leave it to you. Place orders yourself, or through a screen you take over. |
 
 A tool the table doesn't know asks. That covers a tool added to an integration later, a custom server's tools and the MCP
 servers in your own claude setup.
@@ -38,7 +38,7 @@ it is a summary the Navi wrote.
 | Reaches | Who gets it when the tool picks them, as a reply does: "That message's sender", or "Everyone on that message". |
 | Subject or Title | The email's subject, the event's or the page's title. |
 | When | An event's start and end. |
-| Attached | Each file, with its size when its bytes are in the call, or where it comes from: a message, Drive, a file on the Navi's machine. |
+| Attached | Each file, with its size when its bytes are in the call, or where it comes from: a message or Drive. |
 | On | The message, event, page or file it acts on. |
 | Body | The whole text that goes out or goes in, under a hairline. A long one folds, with **Show all** in place. |
 | Everything it sends | The tool's whole input as JSON, closed until you open it, so nothing is hidden behind the rows. A file's bytes are said by their size. A call too large to show whole is refused, never asked about. |
