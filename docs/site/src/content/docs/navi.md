@@ -48,7 +48,8 @@ writes drafts and notes in its folder, remembers and forgets, keeps its checklis
   Claude Code settings, MCP servers or fleetd policy in its folder either (`.claude`, `.mcp.json`, `.fleetd`), and a
   policy file's allow rules don't apply to a Navi at all.
 - **Sites:** the first time it fetches a page or opens a site in its browser, you're asked in its chat, with the site
-  named. Approve once and it fetches and opens that site unasked from then on; `www.` is the same site, a subdomain is
+  named. Approve once and it fetches and opens that site unasked from then on, with a plain URL: one with `?` or
+  `&`, quotes or other shell characters in a browser command asks each time. `www.` is the same site, a subdomain is
   another. The MCP tools `navi_sites` and `navi_site_revoke` list a Navi's sites and take one back; a revoked site asks
   again.
 
