@@ -145,7 +145,7 @@ fn suggest(
         CallerAgent::Task(task) => format!("{task}"),
         CallerAgent::Lead => "the lead".to_owned(),
         CallerAgent::Person => "you".to_owned(),
-        CallerAgent::Preview(_) => {
+        CallerAgent::Preview(_) | CallerAgent::EndedPreview(_) => {
             return Err(ToolError::new(
                 ErrorCode::Forbidden,
                 "A preview's session suggests nothing.",
@@ -287,7 +287,7 @@ async fn lead_start(
             )
             .with_fix("Suggest it with preview_suggest."));
         }
-        CallerAgent::Preview(_) => {
+        CallerAgent::Preview(_) | CallerAgent::EndedPreview(_) => {
             return Err(ToolError::new(
                 ErrorCode::Forbidden,
                 "A preview's session starts no preview.",

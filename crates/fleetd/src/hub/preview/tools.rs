@@ -99,15 +99,16 @@ async fn previews_list(
     if hub.store.project_get(&r)?.is_none() {
         return Err(unknown_project(&r));
     }
-    let previews: Vec<Preview> = list(&hub, &r)?
-        .into_iter()
-        .filter(|p| input.of.as_ref().is_none_or(|of| &p.of == of))
-        .collect();
     let all = list(&hub, &r)?;
+    let previews: Vec<Preview> = all
+        .iter()
+        .filter(|p| input.of.as_ref().is_none_or(|of| super::same_of(&p.of, of)))
+        .cloned()
+        .collect();
     let suggestions = super::calls::suggestions(&hub, &r)?
         .into_iter()
-        .filter(|s| input.of.as_ref().is_none_or(|of| &s.of == of))
-        .filter(|s| !all.iter().any(|p| p.of == s.of))
+        .filter(|s| input.of.as_ref().is_none_or(|of| super::same_of(&s.of, of)))
+        .filter(|s| !all.iter().any(|p| super::same_of(&p.of, &s.of)))
         .collect();
     Ok(PreviewsListOutput {
         previews: List::unchecked(previews),
