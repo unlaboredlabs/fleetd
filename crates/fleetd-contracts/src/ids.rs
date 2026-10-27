@@ -10,7 +10,8 @@ brand!(
     MachineId, name = "MachineId", pattern = r"^[a-z0-9-]{1,32}$", description = "Machine slug, [a-z0-9-]{1,32}"
 );
 brand!(
-    /// The node's project id on one machine. Only unique together with a MachineId.
+    /// The node's id for a directory it works in on one machine: a project's own, or a repo's checkout. Only unique
+    /// together with a MachineId.
     ProjectId, name = "ProjectId", check = |s| !s.is_empty(), expected = "a non-empty string"
 );
 brand!(
@@ -18,6 +19,10 @@ brand!(
     ThreadId, name = "ThreadId", check = |s| !s.is_empty(), expected = "a non-empty string"
 );
 
+/// A project: a workspace with a lead and its own directory, on its home machine, where the lead runs. Its
+/// `projectId` is the node's id for that directory, so the ref also addresses the files; the directory may be a git
+/// repo or a plain folder. A project holds zero or more repos (`ProjectRepo`), each in a node directory of its
+/// own or in the project's.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectRef {

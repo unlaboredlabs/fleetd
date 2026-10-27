@@ -33,6 +33,7 @@ pub mod project_settings;
 pub mod projects;
 pub mod prompts;
 pub mod prs;
+pub mod repos;
 pub mod schema;
 pub mod secrets;
 pub mod sessions;
