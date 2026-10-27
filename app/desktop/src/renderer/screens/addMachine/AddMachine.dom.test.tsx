@@ -18,6 +18,8 @@ const joinListeners = new Set<(j: JoinHere) => void>();
 const joinHere = vi.fn((_machineId: string) => Promise.resolve<JoinHere | null>(null));
 let hostName = "laptop";
 let computer: ThisComputer = { kind: "none" };
+/** hub_info's answer, when a test holds it back. */
+let hubInfo: Promise<{ ok: true; output: unknown }> | undefined;
 vi.hoisted(() => {
   (globalThis as { fleetd?: unknown }).fleetd = { platform: "linux" };
 });
@@ -91,6 +93,7 @@ beforeEach(() => {
   runs = [];
   hostName = "laptop";
   computer = { kind: "none" };
+  hubInfo = undefined;
   joinHere.mockClear();
 });
 afterEach(() => {
@@ -106,6 +109,7 @@ const render = async () => {
   const hub: HubApi = {
     call: (tool, input) => {
       calls.push({ tool, input });
+      if (tool === "hub_info" && hubInfo !== undefined) return hubInfo;
       const output =
         tool === "hub_info"
           ? { version: "0.9.0", protocol: 1, busy: [], admin: true, machineFingerprint: HUB_FP }
@@ -297,4 +301,23 @@ it("reads this computer again once its join ends, so it never offers a stale Rep
   expect(host.textContent).toContain("as laptop.");
   expect(button("Repair")).toBeUndefined();
   expect(button("Add this computer")).toBeUndefined();
+});
+
+it("decides nothing about this computer before the hub says which computer it runs on", async () => {
+  let answer: (v: { ok: true; output: unknown }) => void = () => undefined;
+  hubInfo = new Promise((resolve) => (answer = resolve));
+  computer = { kind: "none", fingerprint: HUB_FP };
+  await render();
+  expect(host.textContent).toContain("Looking at this computer…");
+  expect(button("Add this computer")?.disabled).toBe(true);
+  await act(async () => {
+    answer({ ok: true, output: { version: "0.9.0", protocol: 1, busy: [], admin: true, machineFingerprint: HUB_FP } });
+    await Promise.resolve();
+  });
+  await settle();
+  // It is the hub's own computer: the hub repairs it, nothing is joined.
+  expect(host.textContent).toContain("devbox is a machine of this hub already");
+  await click("Repair");
+  expect(calls.find((c) => c.tool === "machine_add")?.input).toEqual({ local: true });
+  expect(joinHere).not.toHaveBeenCalled();
 });
