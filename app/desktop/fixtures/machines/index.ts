@@ -2,10 +2,12 @@
 // tailnet, with this computer (the app's "laptop" under a fixture) not yet a machine. `machines-add` opens on the three
 // ways in, with every later step answered: the hosts, builder-1's plan, and machine_add. `machines-running` and
 // `machines-failed` open on a run the hub is following, one at its install step and one stopped at the node's service
-// with its output and Retry.
+// with its output and Retry. Any other machine's line is answered for laptop; `machines-joined` has laptop's node
+// come online a moment after the line is made, so its wait turns into Joined. `machines-checklist` has laptop joined
+// with claude logged out, and opens its page: the checklist and Claude's login from the app.
 import { defineGroup } from "../kit/group.ts";
-import { Fixture } from "../kit/fixture.ts";
-import type { JsonObject } from "../kit/json.ts";
+import { Fixture, HUB } from "../kit/fixture.ts";
+import { isObject, type JsonObject } from "../kit/json.ts";
 
 const RUN = "M0123456789abcdef0123456789abcdef";
 const AGAIN = "Mfedcba9876543210fedcba9876543210";
@@ -53,6 +55,37 @@ const run = (f: Fixture, over: JsonObject): JsonObject => ({
   ...over,
 });
 
+const LINE = `curl -fsSL https://fleetd.sh | sh -s -- --join ${HUB} --code K7QM-4XWD --machine-id laptop --git-identity 'dev <dev@example.com>'`;
+
+const laptop = (f: Fixture): JsonObject => ({ machineId: "laptop", name: "laptop", nodeVersion: "0.9.0", status: "online", lastSeenAt: f.now, tags: [] });
+
+/** The snapshot with laptop among its machines. */
+const withLaptop = (f: Fixture): JsonObject => {
+  const snapshot = f.snapshot ?? {};
+  const machines = Array.isArray(snapshot["machines"]) ? snapshot["machines"] : [];
+  return { ...snapshot, machines: [...machines, laptop(f)] };
+};
+
+const check = (name: string, status: string, message: string, fix?: JsonObject): JsonObject => ({
+  id: `laptop/${name}`,
+  scope: "machine",
+  machineId: "laptop",
+  status,
+  message,
+  ...(fix === undefined ? {} : { fix }),
+});
+
+/** laptop just after it joined: claude installed and logged out, its identity set, no project yet, Android not ready. */
+const LAPTOP_CHECKS: JsonObject[] = [
+  check("online", "ok", "laptop is online."),
+  check("claude_version", "ok", "laptop runs claude 2.1.302, the version fleetd was tested with."),
+  check("claude_login", "fail", "laptop: claude is not logged in, so its sessions can't start.", { kind: "manual", label: "Log claude in on laptop", command: "claude auth login" }),
+  check("runner_conformance", "ok", "claude speaks the stream-json protocol fleetd expects."),
+  check("commit_identity", "ok", "laptop commits as dev@example.com, the hub's identity."),
+  check("android", "warn", "Android screens are off: /dev/kvm isn't readable by dev.", { kind: "manual", label: "Let dev use KVM, then log in again", command: "sudo usermod -aG kvm dev" }),
+  check("desktop", "ok", "Linux desktop screens run in docker."),
+];
+
 /** The admin's hub with every Add machine call answered; `runs` is what machine_add_status has. */
 function hub(from: Fixture, name: string, note: string, runs: (f: Fixture) => JsonObject[]): Fixture {
   const f = Fixture.from(from, name, note);
@@ -69,12 +102,54 @@ function hub(from: Fixture, name: string, note: string, runs: (f: Fixture) => Js
     next: "machine_add runs these steps.",
   });
   f.answer("machine_add", undefined, { run: run(f, { runId: AGAIN, steps: [read("running"), ...STEPS([])] }) });
+  f.answer("machine_join", undefined, {
+    machineId: "laptop",
+    hubUrl: HUB,
+    code: "K7QM-4XWD",
+    expiresAt: "2026-10-19T10:45:00.000Z",
+    gitIdentity: "dev <dev@example.com>",
+    line: LINE,
+    next: "Run the line on laptop.",
+  });
+  f.answer("machine_join", { machineId: "laptop", rejoin: true }, {
+    machineId: "laptop",
+    hubUrl: HUB,
+    code: "K7QM-4XWD",
+    expiresAt: "2026-10-19T10:45:00.000Z",
+    line: `${LINE} --rejoin`,
+  });
+  f.answer("machine_remove", undefined, { machineId: "mac-mini", steps: [], revoked: true, next: "revoked mac-mini's node key; the hub refuses that node from now on." });
+  f.answer("machine_claude_login", undefined, {
+    machineId: "laptop",
+    loginUrl: "https://claude.ai/oauth/authorize?code=true&client_id=9d1c250a-e61b-44d9-88ed-5944d1962f5e&response_type=code&redirect_uri=https%3A%2F%2Fconsole.anthropic.com%2Foauth%2Fcode%2Fcallback&scope=org%3Acreate_api_key+user%3Aprofile+user%3Ainference&state=s1",
+    message: "sign in at the URL, then give the code it shows",
+  });
+  return f;
+}
+
+/** laptop joins a moment after its line is made. */
+function joined(from: Fixture): Fixture {
+  const f = hub(from, "machines-joined", "Any other machine: laptop's line, and its node online a moment later", () => []);
+  f.then("machine_join", undefined, { frames: [{ ms: 1200, kind: "snapshot", payload: withLaptop(f) }] });
+  return f;
+}
+
+/** laptop has joined; its page shows the checklist with claude logged out. */
+function checklist(from: Fixture): Fixture {
+  const f = hub(from, "machines-checklist", "laptop joined: its checklist with claude logged out, and Log in from the app", () => []);
+  f.snapshot = withLaptop(f);
+  // The recorded hub's checks, with laptop's after them; Check again answers the same.
+  const recorded = f.output("doctor_list", {});
+  const checks = isObject(recorded) && Array.isArray(recorded["checks"]) ? recorded["checks"] : [];
+  for (const input of [{}, { rerun: true }]) f.answer("doctor_list", input, { checks: [...checks, ...LAPTOP_CHECKS], checkedAt: f.now });
   return f;
 }
 
 export default defineGroup({
   fixtures: (base) => [
     hub(base("typical"), "machines-add", "Add machine's three ways in, on an admin's hub that sees builder-1 and mac-mini", () => []),
+    joined(base("typical")),
+    checklist(base("typical")),
     hub(base("typical"), "machines-running", "Adding builder-1: fleetd is being copied to it", (f) => [
       run(f, { steps: [read("done"), ...STEPS(["done", "running"])] }),
     ]),

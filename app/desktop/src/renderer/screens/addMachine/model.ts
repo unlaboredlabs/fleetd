@@ -109,3 +109,34 @@ export const joinSteps = (join: JoinHere, online: boolean): ReadonlyArray<SetupS
   const waitState: SetupStep["state"] = join.state !== "done" ? "planned" : online ? "done" : "running";
   return [...steps, { title: `wait until ${join.machineId} is online`, state: waitState }];
 };
+
+/** Why a name can't be a machine id, or undefined when it can. */
+export const machineIdProblem = (name: string): string | undefined => {
+  if (name.trim() === "") return "Give it a name: how the hub and its agents will call it.";
+  return /^[a-z0-9-]{1,32}$/u.test(name.trim()) ? undefined : "Lower-case letters, digits and dashes, up to 32.";
+};
+
+/** "Works once, until 14:32." in the person's own clock. */
+export const untilLine = (expiresAt: string): string =>
+  `The code works once, until ${new Date(expiresAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.`;
+
+/**
+ * Where the paste line stands: joined once its node is online and wasn't when the line was made (a repair of a machine
+ * still online has nothing to wait for), expired once its code has, else waiting.
+ */
+export type LineState = "waiting" | "joined" | "expired" | "online";
+
+export const lineState = (line: { readonly expiresAt: string; readonly onlineAtStart: boolean }, online: boolean, now: number): LineState => {
+  if (online && !line.onlineAtStart) return "joined";
+  if (online) return "online";
+  return now >= Date.parse(line.expiresAt) ? "expired" : "waiting";
+};
+
+export const lineWords = (state: LineState, machineId: string): string =>
+  state === "joined"
+    ? `${machineId} joined.`
+    : state === "online"
+      ? `${machineId} is online. Run the line on it to enroll it again.`
+      : state === "expired"
+        ? "The code expired before the line ran. Make a new one."
+        : `Waiting for ${machineId}…`;
