@@ -2812,15 +2812,13 @@ impl SessionService {
         let Ok(Some(row)) = self.store().session(id) else {
             return false;
         };
-        let refused = match failure.class {
-            // A request claude or the API refused for naming a model.
-            FailureClass::InvalidRequest => failure.model.is_some(),
-            // A gateway with no account for the model chosen; the profile's own may well have one.
-            FailureClass::PoolExhausted => {
-                failure.model.as_deref() == Some(row.summary.model.as_str())
-            }
-            _ => false,
-        };
+        // The session's own model, refused by claude or the API (an invalid request names a model only then), or
+        // one a gateway has no account for; the profile's own may well run. Never a model the failure names that
+        // isn't the session's, such as its helper calls'.
+        let refused = matches!(
+            failure.class,
+            FailureClass::InvalidRequest | FailureClass::PoolExhausted
+        ) && failure.model.as_deref() == Some(row.summary.model.as_str());
         let Some(profile) = row.local.profile.filter(|_| refused) else {
             return false;
         };

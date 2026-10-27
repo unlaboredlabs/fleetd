@@ -80,9 +80,6 @@ static NO_ACCOUNT: LazyLock<Regex> =
     LazyLock::new(|| re(r"(?i)no available account|no auth available|auth_unavailable"));
 // CLIProxyAPI: every credential for the model is cooling down; it says when in reset_seconds.
 static COOLDOWN: LazyLock<Regex> = LazyLock::new(|| re(r"(?i)model_cooldown|are cooling down"));
-// claude's stderr tag names the model it didn't know: `[claude-code:unrecognized_model] {"model":"x",…}`.
-static UNRECOGNIZED_MODEL_NAMED: LazyLock<Regex> =
-    LazyLock::new(|| re(r#"\[claude-code:unrecognized_model\]\s*\{"model":"([^"]+)""#));
 // The API's model_not_found, as claude shows it: "There's an issue with the selected model (x)."
 static SELECTED_MODEL: LazyLock<Regex> =
     LazyLock::new(|| re(r"(?i)issue with the selected model \(([^)\s]+)\)"));
@@ -275,9 +272,13 @@ pub fn classify(evidence: &FailureEvidence) -> Option<RunFailure> {
     };
     let (class, reset) = decide(e, stderr);
     let message = loud_message(&e.text, stderr, e.exit.as_ref());
+    let model = match class {
+        FailureClass::InvalidRequest => refused_model(e, stderr),
+        _ => gateway_model_of(class, message.as_str()),
+    };
     Some(RunFailure {
         class,
-        model: gateway_model_of(class, message.as_str()),
+        model,
         message,
         api_status: e.api_error_status,
         reset_at: reset.map(timestamp),
@@ -285,18 +286,20 @@ pub fn classify(evidence: &FailureEvidence) -> Option<RunFailure> {
     })
 }
 
-/// The model a failure names: the one a gateway has no account for, the one whose credentials cool down, or the
-/// one claude or the API refused (an invalid request that names one is a refused model).
+/// The model an invalid request was refused for, and only then: the API's `model_not_found` ("an issue with the
+/// selected model (x)"), or a gateway's "unknown provider for model x" that claude also tags as unknown. claude's tag
+/// alone names every model it doesn't know, gateway aliases included, so any other invalid request names none.
+fn refused_model(e: &FailureEvidence, stderr: &str) -> Option<String> {
+    if e.assistant_error.as_deref() == Some("model_not_found") {
+        return SELECTED_MODEL.captures(&e.text).map(|c| c[1].to_owned());
+    }
+    gateway_model(&e.text).filter(|_| stderr.contains(UNRECOGNIZED_MODEL))
+}
+
+/// The model a gateway named in the failure: the one it has no account for, or the one whose credentials cool down.
 fn gateway_model_of(class: FailureClass, message: &str) -> Option<String> {
     match class {
         FailureClass::PoolExhausted => gateway_model(message),
-        FailureClass::InvalidRequest => gateway_model(message)
-            .or_else(|| {
-                UNRECOGNIZED_MODEL_NAMED
-                    .captures(message)
-                    .map(|c| c[1].to_owned())
-            })
-            .or_else(|| SELECTED_MODEL.captures(message).map(|c| c[1].to_owned())),
         FailureClass::UsageLimit | FailureClass::RateLimit if COOLDOWN.is_match(message) => {
             COOLDOWN_MODEL.captures(message).map(|c| c[1].to_owned())
         }
@@ -859,6 +862,33 @@ mod tests {
         assert_eq!(classify(&e).unwrap().class, UsageLimit);
         e.text = "API Error: 503 no available account for gw-alias".into();
         assert_eq!(classify(&e).unwrap().class, PoolExhausted);
+    }
+
+    /// A request refused for anything but its model, on a gateway alias claude tags on every run, names no refused
+    /// model: the node never falls back from, nor the hub flags, a setting that works.
+    #[test]
+    fn a_tagged_invalid_request_names_no_refused_model() {
+        let tag =
+            "[claude-code:unrecognized_model] {\"model\":\"gw-alias\",\"query_source\":\"sdk\"}\n";
+        for (reason, text) in [
+            ("prompt_too_long", "Prompt is too long"),
+            (
+                "image_error",
+                "API Error: 400 messages.0.content.1.image.source: image exceeds 5 MB maximum",
+            ),
+        ] {
+            let e = FailureEvidence {
+                is_error: true,
+                api_error_status: Some(400),
+                terminal_reason: Some(reason.into()),
+                text: text.into(),
+                stderr: tag.into(),
+                now_ms: NOW as u64,
+                ..Default::default()
+            };
+            let f = classify(&e).unwrap();
+            assert_eq!((f.class, f.model), (InvalidRequest, None), "{reason}");
+        }
     }
 
     #[test]

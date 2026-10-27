@@ -3615,3 +3615,27 @@ async fn a_session_on_the_profile_s_own_model_fails_as_before() {
     assert_eq!(done.model_refused, None);
     assert_eq!(hub.runner.spawned().len(), 1);
 }
+
+#[tokio::test]
+async fn a_refusal_of_another_model_than_the_session_s_never_falls_back() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut hub = hub(
+        dir.path(),
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::fixture("invalid-model"),
+    )
+    .await;
+    hub.project(dir.path()).await;
+    // The failure names claude-does-not-exist-9; the session runs on a gateway's own name.
+    hub.ok(profile_launch(
+        "s1",
+        fleetd_contracts::effort::TaskProfile::High,
+        Some("gw-opus"),
+        None,
+    ))
+    .await;
+    let done = hub.settled("r1").await;
+    assert_eq!(done.status, SessionStatus::Failed);
+    assert_eq!((done.model.as_str(), done.model_refused), ("gw-opus", None));
+    assert_eq!(hub.runner.spawned().len(), 1);
+}
