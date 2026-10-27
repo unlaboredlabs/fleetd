@@ -1,5 +1,5 @@
-//! The hub's HTTP server: /healthz, /mcp, /app, /pair, /node/link, session relays and automations' /hooks on one port, loopback by
-//! default.
+//! The hub's HTTP server: /healthz, /mcp, /app, /pair, /node/link, session relays, automations' /hooks and hub links'
+//! /link/v1 on one port, loopback by default.
 use crate::hub::api::{Hub, Registry};
 use crate::hub::{app_ws, mcp, pair};
 
@@ -7,7 +7,7 @@ use axum::Router;
 use axum::body::Bytes;
 use axum::extract::ws::WebSocketUpgrade;
 use axum::extract::ws::rejection::WebSocketUpgradeRejection;
-use axum::extract::{ConnectInfo, Path, Request, State};
+use axum::extract::{ConnectInfo, Path, Query, Request, State};
 use axum::http::{HeaderMap, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{any, get, post};
@@ -39,6 +39,7 @@ pub fn router(hub: Arc<Hub>, tools: Arc<Registry>) -> Router {
         .route("/node/link", get(node_link_route))
         .route("/relay/{token}", get(relay_route))
         .route("/hooks/{automation_id}/{secret}", post(hook_route))
+        .route("/link/v1/{op}", any(hub_link_route))
         .with_state(Server {
             hub,
             tools,
@@ -98,6 +99,17 @@ async fn hook_route(
         request.into_body(),
     )
     .await
+}
+
+async fn hub_link_route(
+    State(server): State<Server>,
+    Path(op): Path<String>,
+    Query(query): Query<std::collections::HashMap<String, String>>,
+    method: Method,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    crate::hub::hub_links::serve::handle(server.hub, &op, method, &headers, &query, &body).await
 }
 
 fn expect_upgrade() -> Response {

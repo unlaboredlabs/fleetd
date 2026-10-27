@@ -69,7 +69,7 @@ pub struct EnrollToken {
 }
 
 /// RFC 4648 base32, lowercase, unpadded.
-fn base32(bytes: &[u8]) -> String {
+pub(crate) fn base32(bytes: &[u8]) -> String {
     let mut out = String::with_capacity(bytes.len() * 8 / 5 + 1);
     let (mut buffer, mut bits) = (0u32, 0u32);
     for &byte in bytes {
@@ -87,11 +87,11 @@ fn base32(bytes: &[u8]) -> String {
     out
 }
 
-fn secret(prefix: &str) -> String {
+pub(crate) fn secret(prefix: &str) -> String {
     format!("{prefix}{}", base32(&rand::random::<[u8; 32]>()))
 }
 
-fn sha256(s: &str) -> String {
+pub(crate) fn sha256(s: &str) -> String {
     Sha256::digest(s.as_bytes())
         .iter()
         .map(|b| format!("{b:02x}"))
@@ -105,7 +105,7 @@ fn is_agent_key(key: &str) -> bool {
 }
 
 /// Drops a leading `Bearer ` (any case, any whitespace run), then trims.
-fn strip_bearer(bearer: &str) -> &str {
+pub(crate) fn strip_bearer(bearer: &str) -> &str {
     let rest = match bearer.get(..6) {
         Some(scheme) if scheme.eq_ignore_ascii_case("bearer") => {
             let after = &bearer[6..];
@@ -335,6 +335,19 @@ impl Auth {
             Err(error) => tracing::warn!("cannot delete {}: {error}", file.display()),
         }
         Ok(revoked)
+    }
+
+    /// One key by its id, revoked or not.
+    pub fn get(&self, key_id: &str) -> Result<Option<AgentKeyInfo>, StoreError> {
+        let row = self.db.with(|conn| {
+            Ok(conn
+                .prepare_cached(&format!(
+                    "SELECT {KEY_COLUMNS} FROM agent_keys WHERE key_id = ?"
+                ))?
+                .query_row([key_id], KeyRow::read)
+                .optional()?)
+        })?;
+        row.as_ref().map(KeyRow::info).transpose()
     }
 
     pub fn list(&self) -> Result<Vec<AgentKeyInfo>, StoreError> {

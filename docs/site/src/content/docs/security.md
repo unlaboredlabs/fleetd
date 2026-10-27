@@ -52,6 +52,21 @@ is treated as you. Any process of the node's OS user can do what that user can. 
 different OS user.
 :::
 
+## Hub links {#hub-links}
+
+A hub link lets a Navi on one hub open and follow work in projects on another hub, for example from a personal hub
+into a team hub. You make it on the hub it reaches and add it to the Navi on the other.
+
+| Rule | Detail |
+|---|---|
+| It acts as you | A link key (`flk_…`) acts as you, at the access of the device that made it, limited to the projects you pick or not. Revoking that device revokes the link. |
+| It does five things | List the projects it reaches, ask a project's lead for work, read their status, follow its own asks, revoke itself. It can't use `/mcp` or the app's connection, so it reads no chat and answers no approval, question or secret. |
+| Its messages are never your answer | They go into the project's chat as "*you* via *label* Navi", an agent's input, like any Navi message. Approvals, secrets and merges still need you there. |
+| The other hub sees only the requests | Not the Navi, its chat or its title. |
+| The key stays sealed | The app seals it to the Navi's hub, which opens it only to call the other hub. Nothing shows it again. |
+| Only the Navi's hub calls out | It must reach the other hub over HTTPS or a tailnet; plain HTTP elsewhere is refused. When it can't reach it, the Navi and the link say "Can't reach *label*" with the reason. |
+| Revoke from either side | Removing it on the Navi's hub deletes the key at once and revokes it on the other hub when that answers. Revoking it on the other hub refuses its next call. A link unused for 90 days expires. |
+
 ## Secrets and commands {#secrets}
 
 - **Secrets never reach the hub in plain text.** The app seals each value to the target node's key (a libsodium
