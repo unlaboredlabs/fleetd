@@ -907,3 +907,148 @@ async fn revoking_on_the_other_hub_while_unreachable_stops_the_link_once_it_answ
     assert_eq!(code, ErrorCode::Forbidden);
     assert!(why.contains("revoked on this hub"), "{why}");
 }
+
+#[tokio::test]
+async fn a_pasted_key_with_a_newline_is_kept_trimmed_and_works() {
+    let l = linked(None).await;
+    let minted = tool(
+        &l.acme,
+        &l.you_acme,
+        "hub_link_mint",
+        json!({ "label": "home" }),
+    )
+    .await
+    .unwrap();
+    let pasted = format!("{}\n", minted["key"].as_str().unwrap());
+    let sealed = sealed(&l.home, &l.you_home, &pasted).await;
+    let added = tool(
+        &l.home,
+        &l.you_home,
+        "hub_link_add",
+        json!({ "navi": project("navi"), "label": "acme-pasted", "url": l.url, "sealed": sealed }),
+    )
+    .await
+    .unwrap();
+    let id = added["link"]["linkId"].as_str().unwrap();
+    let kept = super::kept_get(&l.home.db, id).unwrap().unwrap();
+    let key = super::box_key(&l.home).unwrap().open(&kept.sealed).unwrap();
+    assert_eq!(
+        key.as_slice(),
+        minted["key"].as_str().unwrap().as_bytes(),
+        "kept trimmed"
+    );
+    let out = lead(
+        &l.home,
+        &project("navi"),
+        json!({ "op": "project_message", "hub": "acme-pasted", "project": "storefront", "text": "Hi." }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(out["hub"], "acme-pasted");
+}
+
+/// Answers every `/link/v1` call under `/<how>/` as a broken or hostile hub would: `unauth` a 401 without `dead`,
+/// `redirect` a redirect to `to`, `big` 2 MB.
+async fn stand_in(to: &str) -> String {
+    use axum::response::IntoResponse;
+    let to = to.to_owned();
+    let router = axum::Router::new().route(
+        "/{how}/link/v1/{op}",
+        axum::routing::any(
+            move |axum::extract::Path((how, op)): axum::extract::Path<(String, String)>| {
+                let to = to.clone();
+                async move {
+                    match how.as_str() {
+                        "unauth" => (
+                            axum::http::StatusCode::UNAUTHORIZED,
+                            axum::Json(json!({ "code": "forbidden", "message": "Sign in first." })),
+                        )
+                            .into_response(),
+                        "redirect" => {
+                            axum::response::Redirect::temporary(&format!("{to}/link/v1/{op}"))
+                                .into_response()
+                        }
+                        _ => "x".repeat(2 * 1024 * 1024).into_response(),
+                    }
+                }
+            },
+        ),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, router).await });
+    url
+}
+
+#[tokio::test]
+async fn only_the_other_hubs_word_that_the_key_is_dead_revokes_the_link() {
+    let l = linked(None).await;
+    let navi = project("navi");
+    let status = json!({ "op": "factory_status", "hub": "acme" });
+    let state = |l: &Linked| {
+        super::kept_get(&l.home.db, &l.link_here)
+            .unwrap()
+            .unwrap()
+            .state
+    };
+
+    // A store failure on acme is a 500, not a revoke: the link works again once acme does.
+    let rename = |from: &str, to: &str| {
+        let sql = format!("ALTER TABLE {from} RENAME TO {to}");
+        l.acme.db.with(|c| Ok(c.execute_batch(&sql)?)).unwrap();
+    };
+    rename("agent_keys", "agent_keys_away");
+    let (code, why) = lead(&l.home, &navi, status.clone()).await.unwrap_err();
+    assert_eq!(code, ErrorCode::Failed, "{why}");
+    assert_eq!(state(&l), fleetd_contracts::hub_links::HubLinkState::Ok);
+    assert!(
+        follow_once(&l.home, &l.link_here, 0).await.is_err(),
+        "the follower retries"
+    );
+    rename("agent_keys_away", "agent_keys");
+    lead(&l.home, &navi, status.clone()).await.unwrap();
+
+    // A 401 without `dead`, as a proxy in front of the hub might answer, is a refusal, not a revoke.
+    let other = stand_in(&l.url).await;
+    point(&l, &format!("{other}/unauth"));
+    let (code, why) = lead(&l.home, &navi, status.clone()).await.unwrap_err();
+    assert_eq!(code, ErrorCode::Forbidden, "{why}");
+    assert!(why.contains("acme: Sign in first."), "{why}");
+    assert_ne!(
+        state(&l),
+        fleetd_contracts::hub_links::HubLinkState::Revoked
+    );
+    assert!(
+        follow_once(&l.home, &l.link_here, 0).await.is_err(),
+        "the follower retries"
+    );
+
+    // The key never follows a redirect, and an answer over 1 MB is refused.
+    for (how, says) in [
+        ("redirect", "answered 307"),
+        ("big", "more than 1048576 bytes"),
+    ] {
+        point(&l, &format!("{other}/{how}"));
+        let (code, why) = lead(&l.home, &navi, status.clone()).await.unwrap_err();
+        assert_eq!(code, ErrorCode::Failed, "{how}: {why}");
+        assert!(why.contains(says), "{how}: {why}");
+    }
+    assert_eq!(agent_posts(&l.acme, &project("storefront")), []);
+
+    // The real refusal says `dead`, and only then is the link revoked here.
+    point(&l, &l.url);
+    tool(
+        &l.acme,
+        &l.you_acme,
+        "hub_link_revoke",
+        json!({ "linkId": l.link_there }),
+    )
+    .await
+    .unwrap();
+    let (code, _) = lead(&l.home, &navi, status).await.unwrap_err();
+    assert_eq!(code, ErrorCode::Forbidden);
+    assert_eq!(
+        state(&l),
+        fleetd_contracts::hub_links::HubLinkState::Revoked
+    );
+}

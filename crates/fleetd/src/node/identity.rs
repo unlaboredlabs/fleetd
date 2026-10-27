@@ -114,6 +114,14 @@ impl NodeBoxKey {
     pub fn open(&self, sealed: &[u8]) -> Option<Zeroizing<Vec<u8>>> {
         self.secret.unseal(sealed).ok().map(Zeroizing::new)
     }
+
+    /// Seals `plain` to this key, as a browser does (`crypto_box_seal`).
+    pub fn seal(&self, plain: &[u8]) -> Option<Vec<u8>> {
+        self.secret
+            .public_key()
+            .seal(&mut crypto_box::aead::OsRng, plain)
+            .ok()
+    }
 }
 
 pub fn load_or_create_box_key(home: &Path) -> std::io::Result<NodeBoxKey> {

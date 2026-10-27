@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use fleetd_contracts::hub_links::{
     FEED_WAIT_MAX_SEC, HubLabel, HubLinkState, LinkAskCall, LinkAskResult, LinkFeed, LinkHello,
+    LinkRefusal,
 };
 use fleetd_contracts::ids::ProjectRef;
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
@@ -26,12 +27,16 @@ use crate::hub::store::now_ms;
 pub const RETRY: Duration = Duration::from_secs(30);
 const CONNECT: Duration = Duration::from_secs(5);
 const CALL: Duration = Duration::from_secs(20);
+/// The most a call there reads back.
+const BODY_MAX: usize = 1024 * 1024;
 
 fn http() -> &'static reqwest::Client {
     static HTTP: OnceLock<reqwest::Client> = OnceLock::new();
     HTTP.get_or_init(|| {
+        // No redirects: the key goes only to the URL the person gave, which check_url vetted.
         reqwest::Client::builder()
             .connect_timeout(CONNECT)
+            .redirect(reqwest::redirect::Policy::none())
             .build()
             .expect("an HTTP client")
     })
@@ -68,10 +73,7 @@ pub async fn call<T: DeserializeOwned>(
         .await
         .map_err(|e| Failure::Unreachable(reason(&e)))?;
     let status = response.status();
-    let bytes = response
-        .bytes()
-        .await
-        .map_err(|e| Failure::Unreachable(reason(&e)))?;
+    let bytes = read_capped(response).await?;
     if status.is_success() {
         return serde_json::from_slice(&bytes).map_err(|_| {
             Failure::Unreachable(format!(
@@ -79,16 +81,42 @@ pub async fn call<T: DeserializeOwned>(
             ))
         });
     }
-    let error: McpToolError = serde_json::from_slice(&bytes).map_err(|_| {
+    let refusal: LinkRefusal = serde_json::from_slice(&bytes).map_err(|_| {
         Failure::Unreachable(format!(
             "it answered {status}: is the URL a fleetd hub of this version or newer?"
         ))
     })?;
-    Err(if status == reqwest::StatusCode::UNAUTHORIZED {
-        Failure::Dead(error)
-    } else {
-        Failure::Refused(error)
-    })
+    // Only the hub's own word that the key is dead for good revokes the link here; any other 401 is a refusal.
+    Err(
+        if status == reqwest::StatusCode::UNAUTHORIZED && refusal.dead == Some(true) {
+            Failure::Dead(refusal.error)
+        } else {
+            Failure::Refused(refusal.error)
+        },
+    )
+}
+
+/// The body, refused past [`BODY_MAX`]: an answer that big is no fleetd hub's.
+async fn read_capped(mut response: reqwest::Response) -> Result<Vec<u8>, Failure> {
+    let too_big = || Failure::Unreachable(format!("it answered with more than {BODY_MAX} bytes"));
+    if response
+        .content_length()
+        .is_some_and(|n| n > BODY_MAX as u64)
+    {
+        return Err(too_big());
+    }
+    let mut body = Vec::new();
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|e| Failure::Unreachable(reason(&e)))?
+    {
+        if body.len() + chunk.len() > BODY_MAX {
+            return Err(too_big());
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(body)
 }
 
 fn reason(e: &reqwest::Error) -> String {

@@ -7,6 +7,7 @@ use serde_with::skip_serializing_none;
 
 use crate::brand;
 use crate::ids::{ProjectRef, Timestamp};
+use crate::mcp::McpToolError;
 use crate::ledger::IntakeText;
 use crate::navi::AskHandle;
 use crate::people::PersonRef;
@@ -24,6 +25,17 @@ pub type HubLabel = Line<1, 40>;
 pub const LINK_KEY_PREFIX: &str = "flk_";
 /// The longest a feed read waits for news, in seconds.
 pub const FEED_WAIT_MAX_SEC: u64 = 25;
+
+/// What `/link/v1` answers when it refuses. `dead` comes only with 401, for a key that is dead for good: unknown to the
+/// hub, revoked, expired, or its device revoked. Only that makes the hub with the Navi mark the link revoked; any other
+/// refusal, a store failure (500) or a 401 without it leaves the link as it was.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct LinkRefusal {
+    #[serde(flatten)]
+    pub error: McpToolError,
+    pub dead: Option<bool>,
+}
 
 /// A link minted on this hub, as its person and the hub's admins see it. The key itself is shown once, at minting.
 #[skip_serializing_none]
