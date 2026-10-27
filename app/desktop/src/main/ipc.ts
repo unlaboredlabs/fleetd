@@ -10,7 +10,7 @@ import { claimLinkHandler, linkHandlerStatus } from "./linkHandlerMain";
 import type { PairingService } from "./pairing/service";
 import type { PresenceSetting } from "./presence";
 import { cancelGoogle, connectGoogle } from "./google";
-import { submitGoogleClient, submitGooglePubsub, submitHubLink, submitMcpServer, submitProjectEnv, submitSecret } from "./secret";
+import { submitClaudeAccount, submitGoogleClient, submitGooglePubsub, submitHubLink, submitMcpServer, submitProjectEnv, submitSecret } from "./secret";
 import { applyMenuState } from "./menuState";
 import type { Notifier } from "./notify";
 import type { Opener } from "./opener";
@@ -82,6 +82,7 @@ export const registerIpc = (
     }),
   );
   handle(IPC.googleCancel, () => cancelGoogle());
+  handle(IPC.claudeAccountSubmit, (_event, id, request) => submitClaudeAccount(request, call(id)));
   handle(IPC.systemHostName, () => hostName());
   // This computer joins the hub the page's Add machine is on, and each hub keeps its own join's state. One join at a
   // time, as there is one fleetd dir here: asked again for the same hub while it runs, the page gets that one and

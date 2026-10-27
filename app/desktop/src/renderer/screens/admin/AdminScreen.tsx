@@ -1,12 +1,12 @@
 // Administration (#/admin/<section>): the hub's owners' and admins' page, apart from Settings so nobody else ever sees
 // an admin control. People, Invites, Machines (Add machine, the machines with Repair and Remove, and each one's page
-// with its checklist), Hub settings (everything hub-wide that used to sit in
+// with its checklist), Claude (the hub's API key and who may use it), Hub settings (everything hub-wide that used to sit in
 // Settings: the fleet and machine caps, machine roles, task profiles and memory caps), Skills (the hub-wide ones), Google
 // (the hub's OAuth client for Navis, google/AdminGoogle.tsx) and Setup. The shell shows AdminSidebar in the sidebar's
 // place while it is open, as it does Settings'. With several hubs (docs/design/hubs.md) it manages one hub at a time,
 // named above every page, and its sidebar switches between the hubs this person administers: nothing here acts on a
 // hub the page doesn't name.
-import { ArrowLeft, KeyRound, ListChecks, Server, SlidersHorizontal, Sparkles, UserPlus, Users } from "lucide-react";
+import { ArrowLeft, Bot, KeyRound, ListChecks, Server, SlidersHorizontal, Sparkles, UserPlus, Users } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Button, Separator, Sidebar, SidebarItem, SidebarSection, Text, Truncate } from "../../ui";
 import type { HubView } from "../../src/data/hubs";
@@ -21,6 +21,7 @@ import { HubSkills } from "../settings/Skills";
 import { AdminGoogle } from "../google/AdminGoogle";
 import { navigate, useRoute } from "../shell/navigation";
 import { toHash, type AdminSection } from "../shell/routes";
+import { ClaudeAdmin } from "./Claude";
 import { Invites } from "./Invites";
 import { MachineList } from "./MachineList";
 import { MachinePage } from "./MachinePage";
@@ -33,6 +34,7 @@ const SECTIONS: ReadonlyArray<{ section: AdminSection; label: string; icon: Reac
   { section: "people", label: "People", icon: <Users /> },
   { section: "invites", label: "Invites", icon: <UserPlus /> },
   { section: "machines", label: "Machines", icon: <Server /> },
+  { section: "claude", label: "Claude", icon: <Bot /> },
   { section: "hub", label: "Hub settings", icon: <SlidersHorizontal /> },
   { section: "skills", label: "Skills", icon: <Sparkles /> },
   { section: "google", label: "Google", icon: <KeyRound /> },
@@ -155,6 +157,8 @@ function page(section: AdminSection, machine: string | undefined, { administers,
       return <Invites me={me} />;
     case "machines":
       return machine === undefined ? <Machines /> : <MachinePage machineId={machine} />;
+    case "claude":
+      return <ClaudeAdmin me={me} />;
     case "hub":
       return <HubSettings />;
     case "skills":

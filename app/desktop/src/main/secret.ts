@@ -3,7 +3,7 @@
 // only relays ciphertext and the renderer never gets the plaintext back. It is never logged.
 import { SECRET_MAX_BYTES, type EnvVarSet, type McpValueSet, type ToolInput } from "../shared/contracts";
 import type { CallOutcome, HubError, SecretOutcome } from "../shared/hub";
-import type { GoogleClientRequest, GooglePubsubRequest, HubLinkRequest, McpServerRequest, ProjectEnvRequest, SecretRequest } from "../shared/ipc";
+import type { ClaudeAccountRequest, GoogleClientRequest, GooglePubsubRequest, HubLinkRequest, McpServerRequest, ProjectEnvRequest, SecretRequest } from "../shared/ipc";
 
 
 const refused = (message: string, fix?: string): { ok: false; error: HubError } => ({
@@ -178,4 +178,55 @@ export const submitGooglePubsub = async (
   const sealed = await seal(request.boxPubKey, request.key.trim());
   if (!sealed.ok) return { ok: false, error: { ...sealed.error, message: `For ${request.machineId}: ${sealed.error.message}` } };
   return call("google_pubsub_set", { pubsub: { topic: request.topic, subscription: request.subscription, machineId: request.machineId, sealed: sealed.sealed } });
+};
+
+/** One value sealed to each machine in `boxes`, as the Claude account tools take it. */
+const sealEach = async (
+  boxes: ClaudeAccountRequest["boxes"],
+  value: string,
+): Promise<{ ok: true; sealed: Array<{ machineId: string; sealed: string }> } | { ok: false; error: HubError }> => {
+  if (boxes.length === 0) return refused("No machine takes secrets yet: no node has a box key.", "Update fleetd on your machines, then save.");
+  const sealed: Array<{ machineId: string; sealed: string }> = [];
+  for (const box of boxes) {
+    const one = await seal(box.boxPubKey, value);
+    if (!one.ok) return { ok: false, error: { ...one.error, message: `${box.machineId}: ${one.error.message}` } };
+    sealed.push({ machineId: box.machineId, sealed: one.sealed });
+  }
+  return { ok: true, sealed };
+};
+
+/**
+ * A Claude account's secret: the hub's API key (with its endpoint; no key keeps the saved one) or the person's own
+ * `claude setup-token` token, sealed to every machine agents run on, then claude_hub_api_set or
+ * claude_subscription_set. One line, no spaces: a value pasted with its line break or quotes is trimmed, anything
+ * else refused here. The hub's answer has where it is sealed, by fingerprint, never the value.
+ */
+export const submitClaudeAccount = async (
+  request: ClaudeAccountRequest,
+  call: <T extends "claude_hub_api_set" | "claude_subscription_set">(tool: T, input: ToolInput<T>) => Promise<CallOutcome>,
+): Promise<CallOutcome> => {
+  const raw = request.account === "hub_api" ? request.key : request.token;
+  const value = raw?.trim().replace(/^["']|["']$/gu, "");
+  if (value !== undefined && (value === "" || /\s/u.test(value) || value.includes("\0"))) {
+    return request.account === "hub_api"
+      ? refused("That isn't an API key: it has spaces or line breaks in it.", "Copy the key again from the Claude Console and paste only the key.")
+      : refused("That isn't a token: it has spaces or line breaks in it.", "Run claude setup-token again and paste only the line it prints, starting sk-ant-oat.");
+  }
+  if (request.account === "mine") {
+    if (value === undefined) return refused("Paste the token first.", "Run claude setup-token and paste the line it prints.");
+    if (value.startsWith("sk-ant-api")) {
+      return refused("That's an API key, not a subscription token.", "Run claude setup-token, which signs in with your subscription, and paste the token it prints.");
+    }
+    const sealed = await sealEach(request.boxes, value);
+    if (!sealed.ok) return sealed;
+    return call("claude_subscription_set", { sealed: sealed.sealed });
+  }
+  const endpoint = request.endpoint === undefined ? {} : { endpoint: request.endpoint.replace(/\/+$/u, "") };
+  if (endpoint.endpoint !== undefined && !/^https?:\/\/\S{1,500}$/u.test(endpoint.endpoint)) {
+    return refused("The endpoint isn't an http:// or https:// URL.", "Paste the gateway's base URL, such as https://gateway.example.com, or leave it empty for Anthropic's own.");
+  }
+  if (value === undefined) return call("claude_hub_api_set", { sealed: [], ...endpoint });
+  const sealed = await sealEach(request.boxes, value);
+  if (!sealed.ok) return sealed;
+  return call("claude_hub_api_set", { sealed: sealed.sealed, ...endpoint });
 };

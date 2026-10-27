@@ -3,7 +3,7 @@ import type { MenuCommand } from "../shared/menu";
 import type { BrowserInput } from "../shared/contracts";
 import type { CallOutcome, ConnectOutcome, DropInfo, HubFrame, OpenOutcome, SecretOutcome } from "../shared/hub";
 import type { HubColor, HubEntry, HubId, PairTarget } from "../shared/hubs";
-import type { ChatScope, ErrorReport, GoogleClientRequest, GoogleConnectRequest, GooglePubsubRequest, HubLinkRequest, McpServerRequest, OrderFocus, ProjectEnvRequest, SecretRequest, SessionWindowRequest } from "../shared/ipc";
+import type { ChatScope, ClaudeAccountRequest, ErrorReport, GoogleClientRequest, GoogleConnectRequest, GooglePubsubRequest, HubLinkRequest, McpServerRequest, OrderFocus, ProjectEnvRequest, SecretRequest, SessionWindowRequest } from "../shared/ipc";
 import type { JoinHere, ThisComputer } from "../shared/joinHere";
 import type { KeyStore, PairOutcome, PairRequest, PairStart, Probe, SetupOutcome } from "../shared/pairing";
 import type { UpdatesState } from "../shared/updates";
@@ -47,6 +47,11 @@ export interface FleetdApi {
      * output has the client with its Pub/Sub by fingerprint, never the key.
      */
     googlePubsub(hub: HubId, request: GooglePubsubRequest): Promise<CallOutcome>;
+    /**
+     * A Claude account's key or token: main seals it to every machine in `boxes` and calls claude_hub_api_set or
+     * claude_subscription_set. The output has where it is sealed, by fingerprint only; nothing returns the value.
+     */
+    claudeAccount(hub: HubId, request: ClaudeAccountRequest): Promise<CallOutcome>;
   };
   readonly google: {
     /**

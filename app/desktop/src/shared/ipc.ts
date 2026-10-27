@@ -226,6 +226,23 @@ export const GoogleConnectRequest = z.strictObject({
 });
 export type GoogleConnectRequest = z.infer<typeof GoogleConnectRequest>;
 
+const Boxes = z.array(z.strictObject({ machineId: z.string().min(1).max(64), boxPubKey: z.string().regex(/^[A-Za-z0-9+/]{43}=$/u) })).max(500);
+/**
+ * A Claude account's secret (Settings › Claude, Administration › Claude): main seals it to every machine in `boxes`
+ * and calls claude_hub_api_set (the hub's key, with its endpoint; no key keeps the saved one) or
+ * claude_subscription_set (the person's own `claude setup-token` token). The hub gets the boxes, never the value.
+ */
+export const ClaudeAccountRequest = z.discriminatedUnion("account", [
+  z.strictObject({
+    account: z.literal("hub_api"),
+    key: z.string().min(1).max(SECRET_MAX_BYTES).optional(),
+    endpoint: z.string().trim().min(1).max(500).optional(),
+    boxes: Boxes,
+  }),
+  z.strictObject({ account: z.literal("mine"), token: z.string().min(1).max(SECRET_MAX_BYTES), boxes: Boxes }),
+]);
+export type ClaudeAccountRequest = z.infer<typeof ClaudeAccountRequest>;
+
 /** An error the page caught, for the app log: what failed, the error's own text and the route. Main scrubs it. */
 export const ErrorReport = z.strictObject({
   /** The part whose card is up ("the conversation"), or "uncaught error" / "unhandled rejection". */
@@ -323,6 +340,7 @@ export const REQUESTS = {
   [IPC.googlePubsubSubmit]: z.tuple([HubId, GooglePubsubRequest]),
   [IPC.googleConnect]: z.tuple([HubId, GoogleConnectRequest]),
   [IPC.googleCancel]: none,
+  [IPC.claudeAccountSubmit]: z.tuple([HubId, ClaudeAccountRequest]),
   [IPC.systemHostName]: none,
   [IPC.machinesJoinHere]: z.tuple([HubId, z.string().regex(/^[a-z0-9-]{1,32}$/u)]),
   [IPC.machinesJoinHereState]: z.tuple([HubId]),

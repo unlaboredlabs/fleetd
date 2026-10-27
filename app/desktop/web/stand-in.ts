@@ -79,6 +79,7 @@ const fleetdApi = (file: File): FleetdApi => {
       hubLink: () => Promise.resolve({ ok: false, error: notHere }),
       googleClient: () => Promise.resolve({ ok: false, error: notHere }),
       googlePubsub: () => Promise.resolve({ ok: false, error: notHere }),
+      claudeAccount: () => Promise.resolve({ ok: false, error: notHere }),
     },
     google: {
       connect: () => Promise.resolve({ ok: false, error: notHere }),

@@ -18,6 +18,7 @@ export interface SettingsOption {
 export const PAGE_LABEL: Readonly<Record<Tab, string>> = {
   general: "General",
   hubs: "Hubs",
+  claude: "Claude",
   notifications: "Notifications",
   agents: "Agents",
   projects: "Projects",
@@ -42,6 +43,10 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   { key: "hubs.hub", label: "Hub", tab: "hubs", keywords: ["pair", "connection", "disconnect", "key", "server", "rename", "name", "label", "colour", "color", "remove"] },
   { key: "hubs.links", label: "Links to this hub", tab: "hubs", keywords: ["hub link", "link key", "navi", "other hub", "revoke"] },
   { key: "hubs.add", label: "Add a hub", tab: "hubs", keywords: ["pair", "another hub", "second hub", "connect", "personal", "work"] },
+  page("claude", ["claude", "anthropic", "subscription", "account", "api key", "token", "setup-token", "billing", "plan"]),
+  { key: "claude.in-use", label: "Claude account in use", tab: "claude", keywords: ["claude", "account", "connect", "runs on"] },
+  { key: "claude.choice", label: "Runs on", tab: "claude", keywords: ["claude", "subscription", "hub api", "api key", "switch"] },
+  { key: "claude.subscription", label: "Your Claude subscription", tab: "claude", keywords: ["claude", "subscription", "token", "setup-token", "oauth", "connect", "test"] },
   page("notifications", ["alerts", "mute"]),
   { key: "notifications.kinds", label: "Notify me when", tab: "notifications", keywords: ["notifications", "alerts", "mute", "finished", "done"] },
   { key: "notifications.sound", label: "Sound", tab: "notifications", keywords: ["notifications", "mute", "silent"] },

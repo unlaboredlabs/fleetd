@@ -4,7 +4,7 @@ import rust from "./secret.rust-seal.json";
 import { SECRET_MAX_BYTES } from "../shared/contracts";
 import { IPC } from "../shared/channels";
 import { parseRequest } from "../shared/ipc";
-import { seal, submitGoogleClient, submitGooglePubsub, submitHubLink, submitMcpServer, submitProjectEnv, submitSecret } from "./secret";
+import { seal, submitClaudeAccount, submitGoogleClient, submitGooglePubsub, submitHubLink, submitMcpServer, submitProjectEnv, submitSecret } from "./secret";
 
 const bytes = (b64: string) => new Uint8Array(Buffer.from(b64, "base64"));
 
@@ -273,5 +273,61 @@ describe("a pasted hub link key", () => {
       if (!out.ok) expect(out.error.fix).toContain("JSON");
     }
     expect(sent).toEqual([]);
+  });
+});
+
+describe("a Claude account's key or token", () => {
+  const TOKEN = "sk-ant-oat01-devbox-token_AAAA";
+  const KEY = "sk-ant-api03-devbox-key_BBBB";
+
+  const run = async (request: unknown) => {
+    const parsed = parseRequest(IPC.claudeAccountSubmit, ["hub", request]);
+    if (!parsed.ok) throw new Error(`refused at the IPC boundary: ${parsed.reason}`);
+    const sent: Array<{ tool: string; input: unknown }> = [];
+    const out = await submitClaudeAccount(parsed.args[1], (tool, input) => {
+      sent.push({ tool, input });
+      return Promise.resolve({ ok: true, output: { me: {}, missingOn: ["buildbox"] } });
+    });
+    return { out, sent };
+  };
+
+  it("seals a person's token to every machine for claude_subscription_set, trimmed, and never sends it in the clear", async () => {
+    await sodium.ready;
+    const [pk, sk] = [bytes(rust.publicKey), bytes(rust.secretKey)];
+    const boxes = [
+      { machineId: "devbox", boxPubKey: rust.publicKey },
+      { machineId: "buildbox", boxPubKey: rust.publicKey },
+    ];
+    const { out, sent } = await run({ account: "mine", token: `  "${TOKEN}"\n`, boxes });
+    expect(out).toMatchObject({ ok: true, output: { missingOn: ["buildbox"] } });
+    expect(sent.map((s) => s.tool)).toEqual(["claude_subscription_set"]);
+    expect(JSON.stringify(sent)).not.toContain(TOKEN);
+    const input = sent[0]?.input as { sealed: Array<{ machineId: string; sealed: string }> };
+    expect(input.sealed.map((s) => s.machineId)).toEqual(["devbox", "buildbox"]);
+    for (const s of input.sealed) expect(sodium.to_string(sodium.crypto_box_seal_open(bytes(s.sealed), pk, sk))).toBe(TOKEN);
+  });
+
+  it("refuses an API key as a token, a value with spaces in it, and no machine to seal to, before anything is sent", async () => {
+    const boxes = [{ machineId: "devbox", boxPubKey: rust.publicKey }];
+    for (const [request, message] of [
+      [{ account: "mine", token: KEY, boxes }, "That's an API key, not a subscription token."],
+      [{ account: "mine", token: "sk-ant-oat01 part two", boxes }, "That isn't a token: it has spaces or line breaks in it."],
+      [{ account: "hub_api", key: `${KEY}\n${KEY}`, boxes }, "That isn't an API key: it has spaces or line breaks in it."],
+      [{ account: "hub_api", key: KEY, boxes: [] }, "No machine takes secrets yet: no node has a box key."],
+      [{ account: "hub_api", key: KEY, endpoint: "gateway.devbox.example", boxes }, "The endpoint isn't an http:// or https:// URL."],
+    ] as const) {
+      const { out, sent } = await run(request);
+      expect(out).toMatchObject({ ok: false, error: { message } });
+      expect(sent).toEqual([]);
+    }
+  });
+
+  it("seals the hub's key with its endpoint, and an endpoint change alone keeps the saved key", async () => {
+    const boxes = [{ machineId: "devbox", boxPubKey: rust.publicKey }];
+    const set = await run({ account: "hub_api", key: KEY, endpoint: "https://gateway.devbox.example/", boxes });
+    expect(set.sent[0]).toMatchObject({ tool: "claude_hub_api_set", input: { endpoint: "https://gateway.devbox.example", sealed: [{ machineId: "devbox" }] } });
+    expect(JSON.stringify(set.sent)).not.toContain(KEY);
+    const keep = await run({ account: "hub_api", endpoint: "https://gateway.devbox.example/v2", boxes });
+    expect(keep.sent).toEqual([{ tool: "claude_hub_api_set", input: { sealed: [], endpoint: "https://gateway.devbox.example/v2" } }]);
   });
 });
