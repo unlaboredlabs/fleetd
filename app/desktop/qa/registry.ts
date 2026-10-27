@@ -1979,6 +1979,30 @@ export const screens: readonly Screen[] = [
     },
   },
   { id: "admin.hub", route: "#/admin/hub", fixtures: ["admin-owner", "settings-agents", "admin-old-hub"] },
+  // Administration → Skills: the hub-wide ones (one installed and pinned), Update on the installed one, and Install.
+  { id: "admin.skills", route: "#/admin/skills", fixtures: ["admin-owner"] },
+  {
+    id: "admin.skills",
+    route: "#/admin/skills",
+    fixtures: ["admin-owner"],
+    variant: "installed",
+    open: async (page) => {
+      await page.getByRole("button", { name: /^pr-review/u }).click();
+      await expect(page.getByRole("button", { name: "Update" })).toBeVisible();
+    },
+  },
+  {
+    id: "admin.skills",
+    route: "#/admin/skills",
+    fixtures: ["admin-owner"],
+    variant: "install",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Install from a source…" }).click();
+      await page.getByRole("textbox", { name: "Source" }).fill("acme/agent-skills");
+      await page.getByRole("button", { name: "Install", exact: true }).click();
+      await page.getByText(/^Installed pr-review, pinned/u).waitFor();
+    },
+  },
   { id: "admin.setup", route: "#/admin/setup", fixtures: ["admin-owner"] },
   { id: "admin.denied", route: "#/admin/people", fixtures: ["admin-member"] },
   // No hub and nothing kept from one: connect first, never Loading… for ever.
@@ -2135,9 +2159,9 @@ export const screens: readonly Screen[] = [
     variant: "editor",
     open: (page) => page.getByRole("region", { name: "Weekday dependency check" }).getByRole("button", { name: "Edit" }).click(),
   },
-  // Skills: the global ones (one installed and pinned), then storefront's: its repo's .agents/skills and
-  // .claude/skills, its own (one outranked by the repo's of the same name) and the global ones; a hub skill open to
-  // edit, a repo skill open to read, New and Install.
+  // Skills: a project's (the first one, then storefront's): its repo's .agents/skills and .claude/skills, its own (one
+  // outranked by the repo's of the same name) and a read-only line naming the hub-wide ones; a project skill open to
+  // edit, a repo skill open to read, New and Install. The hub-wide ones are on Administration → Skills.
   { id: "settings.skills", route: "#/settings/skills", fixtures: ["typical", "empty", "hub-unreachable"] },
   { id: "settings.skills", route: "#/settings/skills?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22", fixtures: ["typical", "long-text"], variant: "project" },
   {
@@ -2162,16 +2186,6 @@ export const screens: readonly Screen[] = [
   },
   {
     id: "settings.skills",
-    route: "#/settings/skills",
-    fixtures: ["typical"],
-    variant: "installed",
-    open: async (page) => {
-      await page.getByRole("button", { name: /^pr-review/u }).click();
-      await expect(page.getByRole("button", { name: "Update" })).toBeVisible();
-    },
-  },
-  {
-    id: "settings.skills",
     route: "#/settings/skills?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22",
     fixtures: ["typical"],
     variant: "new",
@@ -2180,18 +2194,8 @@ export const screens: readonly Screen[] = [
       await page.getByRole("textbox", { name: "Name" }).fill("Release Notes");
     },
   },
-  {
-    id: "settings.skills",
-    route: "#/settings/skills",
-    fixtures: ["typical"],
-    variant: "install",
-    open: async (page) => {
-      await page.getByRole("button", { name: "Install from a source…" }).click();
-      await page.getByRole("textbox", { name: "Source" }).fill("acme/agent-skills");
-      await page.getByRole("button", { name: "Install", exact: true }).click();
-      await page.getByText(/^Installed pr-review, pinned/u).waitFor();
-    },
-  },
+  // A member's: the hub-wide line, without the way to Administration an owner or admin gets.
+  { id: "settings.skills", route: "#/settings/skills", fixtures: ["admin-member", "admin-owner"], variant: "role" },
   // Prompts before one is picked.
   { id: "settings.prompts", route: "#/settings/prompts", fixtures: ["settings-prompts"], variant: "none" },
   { id: "settings.general", route: "#/settings/general", fixtures: ["typical", "empty", "hub-unreachable"] },

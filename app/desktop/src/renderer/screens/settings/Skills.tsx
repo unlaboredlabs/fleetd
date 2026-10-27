@@ -1,14 +1,17 @@
-// Settings → Skills: the SKILL.md workflows fleetd's agents get, global or for one project (which adds the project's
-// own and its repo's .agents/skills and .claude/skills). A person views every one, edits, creates and deletes the
-// ones the hub keeps (skill_set, skill_delete, a human key's writes), installs from a skills.sh source pinned to a
-// commit (skill_install) and updates it (skill_update). Repo skills change in the repo.
-import { useEffect, useState } from "react";
+// Skills: the SKILL.md workflows fleetd's agents get. Settings → Skills is a project's (its repo's .agents/skills and
+// .claude/skills, and its own), with the hub-wide ones only named; Administration → Skills (HubSkills) is the hub-wide
+// ones', for owners and admins alone. Each views every one, edits, creates and deletes the ones the hub keeps
+// (skill_set, skill_delete, a human key's writes), installs from a skills.sh source pinned to a commit (skill_install)
+// and updates it (skill_update). Repo skills change in the repo.
+import { useEffect, useState, type ReactNode } from "react";
 import type { ProjectRef, SkillScope, SkillSummary } from "../../../shared/contracts";
 import { Button, Dialog, Field, IdChip, Input, Text, Textarea, cx } from "../../ui";
 import { useToolQuery } from "../../src/data/react";
 import { HUB, parseScope, projectRefOf, scopeKey, type Draft, type Scope } from "./editor";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import { PageHead, ScopeSelect, scopeName, useProjects } from "./parts";
+import { useAdministers } from "../admin/role";
+import { toHash } from "../shell/routes";
 import { replaceRoute, type SettingsRoute } from "./route";
 import { ORIGIN_LABEL, groups, installLine, nameProblem, rowKey, shadowLine, slug, template } from "./skillsModel";
 import s from "./settings.module.css";
@@ -25,19 +28,16 @@ const target = (scope: Scope): { scope: SkillScope; projectRef?: ProjectRef } =>
 export function Skills({ route }: { route: SettingsRoute }) {
   const live = useLive();
   const projects = useProjects();
-  const [scope, setScope] = useState<Scope>(() => (route.for ? parseScope(route.for) : HUB));
-  const ref = projectRefOf(scope);
-  const list = useToolQuery("skills_list", ref ? { projectRef: ref } : {}, { enabled: live });
-  const [selected, setSelected] = useState<string | null>(null);
-  const [dialog, setDialog] = useState<"new" | "install" | null>(null);
+  const administers = useAdministers();
+  const [picked, setPicked] = useState<Scope | null>(() => (route.for ? parseScope(route.for) : null));
+  // Settings is a member's: a project's skills only. With none picked, the first project.
+  const first = projects?.[0];
+  const scope = picked?.kind === "project" ? picked : first ? ({ kind: "project", ref: { machineId: first.machineId, projectId: first.projectId } } as const) : null;
+  const key = scope ? scopeKey(scope) : null;
 
   useEffect(() => {
-    replaceRoute({ tab: "skills", for: scope.kind === "project" ? scopeKey(scope) : null });
-  }, [scope]);
-  const pickScope = (next: Scope) => {
-    setScope(next);
-    setSelected(null);
-  };
+    if (key) replaceRoute({ tab: "skills", for: key });
+  }, [key]);
 
   if (!live) {
     return (
@@ -50,80 +50,136 @@ export function Skills({ route }: { route: SettingsRoute }) {
     );
   }
 
-  const skills = list.data?.skills ?? [];
-  const current = skills.find((x) => rowKey(x) === selected);
-  const where = scope.kind === "project" ? scopeName(scope, projects) : "every project";
-  const writable = skills.filter((x) => x.origin === target(scope).scope).map((x) => x.name);
+  const where = scope ? scopeName(scope, projects) : "";
   return (
     <div className={s.scroll} data-screen="settings.skills">
       <div className={s.column}>
         <PageHead title="Skills">
-          Workflows every agent can follow, from the repo, a project or the whole hub. Agents see each one&apos;s name and
+          Workflows a project&apos;s agents can follow, from its repo or kept for it here. Agents see each one&apos;s name and
           description, and open it when it fits. Name one in the chat with $.
         </PageHead>
         <div className={s.setting}>
           <div className={s.settingLabel}>
-            <Text strong>Scope</Text>
+            <Text strong>Project</Text>
             <Text size="xs" tone="quiet">
-              {scope.kind === "project"
-                ? `What ${where}'s agents get: its repo's, its own and the global skills. On a name clash the first wins.`
-                : "Skills for every project's agents."}
+              What {scope ? where : "a project"}&apos;s agents get: its repo&apos;s, its own and the hub-wide skills. On a name clash the first wins.
             </Text>
           </div>
-          <ScopeSelect id="skills-for" className={s.scopeSelect} value={scope} hubWide="Global" projects={projects} onChange={pickScope} />
+          <ScopeSelect id="skills-for" className={s.scopeSelect} value={scope} projects={projects} onChange={setPicked} />
         </div>
-        <div className={s.actions}>
-          <Button variant="primary" onClick={() => setDialog("new")}>
-            New skill
-          </Button>
-          <Button onClick={() => setDialog("install")}>Install from a source…</Button>
-        </div>
-        {list.isLoadingError ? (
-          <div className={s.inline}>
-            <Text tone="danger">{errorText(list.error)}</Text>
-            <Button onClick={() => void list.refetch()}>Try again</Button>
-          </div>
+        {projects !== undefined && scope === null ? <Text tone="quiet">No projects yet. A project&apos;s skills show here once it has one.</Text> : null}
+        {scope ? (
+          <SkillList
+            key={key}
+            scope={scope}
+            where={where}
+            hubWide={(names) => (
+              <div className={s.inline} aria-label="Hub-wide skills">
+                <Text size="xs" tone="quiet">
+                  {names.length > 0 ? `Hub-wide, for every project: ${names.join(", ")}.` : "No hub-wide skills."} Owners and admins manage them.
+                </Text>
+                {administers ? (
+                  <Button size="sm" variant="quiet" onClick={() => (window.location.hash = toHash({ id: "admin", section: "skills" }))}>
+                    Hub-wide skills in Administration
+                  </Button>
+                ) : null}
+              </div>
+            )}
+          />
         ) : null}
-        {list.data?.repoUnavailable ? (
-          <Text size="xs" tone="quiet">
-            {list.data.repoUnavailable}
-          </Text>
-        ) : null}
-        {list.data && skills.length === 0 ? <Text tone="quiet">No skills yet. Write one with New skill, or install one from skills.sh.</Text> : null}
-        {groups(skills).map((g) => (
-          <section key={g.origin} className={k.group} aria-label={ORIGIN_LABEL[g.origin]}>
-            <Text size="xs" tone="quiet" strong>
-              {ORIGIN_LABEL[g.origin]}
-            </Text>
-            <ul className={k.rows}>
-              {g.rows.map((row) => (
-                <li key={rowKey(row)}>
-                  <button
-                    type="button"
-                    className={cx(k.row, rowKey(row) === selected && k.current, row.shadowedBy && k.shadowed)}
-                    aria-pressed={rowKey(row) === selected}
-                    onClick={() => setSelected(rowKey(row) === selected ? null : rowKey(row))}
-                  >
-                    <Text strong>{row.name}</Text>
-                    <Text size="xs" tone="quiet" className={k.description}>
-                      {row.description || "No description."}
-                    </Text>
-                    {shadowLine(row) ?? installLine(row) ? (
-                      <Text size="xs" tone={row.shadowedBy ? "warning" : "faint"}>
-                        {shadowLine(row) ?? installLine(row)}
-                      </Text>
-                    ) : null}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </section>
-        ))}
-        {current ? <SkillEditor key={rowKey(current)} skill={current} scope={scope} onGone={() => setSelected(null)} /> : null}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Administration › Skills: the hub-wide skills every project's agents get, written, installed from skills.sh,
+ * updated and removed by an owner or admin (skill_install and the rest at scope global need one).
+ */
+export function HubSkills() {
+  const live = useLive();
+  return (
+    <div className={s.scroll} data-screen="admin.skills">
+      <div className={s.column}>
+        <PageHead title="Skills">
+          Hub-wide skills: every project&apos;s agents get them, after the project&apos;s repo&apos;s and its own. A project&apos;s own skills are in
+          Settings.
+        </PageHead>
+        {live ? <SkillList scope={HUB} where="every project" /> : <Text tone="quiet">Not connected. Connect to a hub to see its skills.</Text>}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * One scope's skills with New, Install and an editor: a project's (its repo's and its own; the hub-wide ones only
+ * named, through `hubWide`) or the hub-wide ones alone.
+ */
+function SkillList({ scope, where, hubWide }: { scope: Scope; where: string; hubWide?: (names: ReadonlyArray<string>) => ReactNode }) {
+  const ref = projectRefOf(scope);
+  const list = useToolQuery("skills_list", ref ? { projectRef: ref } : {});
+  const [selected, setSelected] = useState<string | null>(null);
+  const [dialog, setDialog] = useState<"new" | "install" | null>(null);
+
+  const all = list.data?.skills ?? [];
+  const skills = ref ? all.filter((x) => x.origin !== "global") : all;
+  const global = ref ? all.filter((x) => x.origin === "global").map((x) => x.name) : [];
+  const current = skills.find((x) => rowKey(x) === selected);
+  const writable = skills.filter((x) => x.origin === target(scope).scope).map((x) => x.name);
+  return (
+    <>
+      <div className={s.actions}>
+        <Button variant="primary" onClick={() => setDialog("new")}>
+          New skill
+        </Button>
+        <Button onClick={() => setDialog("install")}>Install from a source…</Button>
+      </div>
+      {list.isLoadingError ? (
+        <div className={s.inline}>
+          <Text tone="danger">{errorText(list.error)}</Text>
+          <Button onClick={() => void list.refetch()}>Try again</Button>
+        </div>
+      ) : null}
+      {list.data?.repoUnavailable ? (
+        <Text size="xs" tone="quiet">
+          {list.data.repoUnavailable}
+        </Text>
+      ) : null}
+      {list.data && skills.length === 0 ? <Text tone="quiet">No skills yet. Write one with New skill, or install one from skills.sh.</Text> : null}
+      {groups(skills).map((g) => (
+        <section key={g.origin} className={k.group} aria-label={ORIGIN_LABEL[g.origin]}>
+          <Text size="xs" tone="quiet" strong>
+            {ORIGIN_LABEL[g.origin]}
+          </Text>
+          <ul className={k.rows}>
+            {g.rows.map((row) => (
+              <li key={rowKey(row)}>
+                <button
+                  type="button"
+                  className={cx(k.row, rowKey(row) === selected && k.current, row.shadowedBy && k.shadowed)}
+                  aria-pressed={rowKey(row) === selected}
+                  onClick={() => setSelected(rowKey(row) === selected ? null : rowKey(row))}
+                >
+                  <Text strong>{row.name}</Text>
+                  <Text size="xs" tone="quiet" className={k.description}>
+                    {row.description || "No description."}
+                  </Text>
+                  {shadowLine(row) ?? installLine(row) ? (
+                    <Text size="xs" tone={row.shadowedBy ? "warning" : "faint"}>
+                      {shadowLine(row) ?? installLine(row)}
+                    </Text>
+                  ) : null}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ))}
+      {list.data && hubWide ? hubWide(global) : null}
+      {current ? <SkillEditor key={rowKey(current)} skill={current} scope={scope} onGone={() => setSelected(null)} /> : null}
       <NewSkill open={dialog === "new"} scope={scope} where={where} taken={writable} onClose={() => setDialog(null)} onMade={(name) => setSelected(`${target(scope).scope}/${name}`)} />
       <InstallSkills open={dialog === "install"} scope={scope} where={where} onClose={() => setDialog(null)} />
-    </div>
+    </>
   );
 }
 
