@@ -33,6 +33,8 @@ type Ran = (String, String, Option<Vec<u8>>);
 struct FakeMachine {
     hub: Mutex<Weak<Hub>>,
     ran: Mutex<Vec<Ran>>,
+    /// The ssh_config each command ran with.
+    configs: Mutex<Vec<Option<String>>>,
     fail: Mutex<Option<String>>,
     installed: Mutex<bool>,
     logged_in: bool,
@@ -43,6 +45,7 @@ impl FakeMachine {
         Arc::new(Self {
             hub: Mutex::default(),
             ran: Mutex::default(),
+            configs: Mutex::default(),
             fail: Mutex::default(),
             installed: Mutex::new(false),
             logged_in: true,
@@ -107,6 +110,7 @@ impl Runner for FakeMachine {
         stdin: Option<&'a [u8]>,
     ) -> BoxFuture<'a, RunResult> {
         Box::pin(async move {
+            self.configs.lock().unwrap().push(target.config.clone());
             self.ran.lock().unwrap().push((
                 target.host.clone(),
                 command.to_owned(),
@@ -576,4 +580,34 @@ async fn a_join_code_comes_with_the_line_to_paste() {
         "ada-lovelace <1+ada-lovelace@users.noreply.github.com>"
     );
     assert_eq!(out["hubUrl"], "http://devbox.example.ts.net:4790");
+}
+
+#[tokio::test]
+async fn a_repair_connects_with_the_ssh_config_it_was_set_up_with() {
+    let (hub, machine, home) = hub();
+    let mut setup = setup_json(&home);
+    setup["machines"]["lab"] = json!({
+        "sshHost": "lab", "sshConfig": "/home/dev/lab/ssh_config", "platform": "linux", "home": "/home/ada",
+        "configHome": "/home/ada/.config", "uid": 1000, "unitSuffix": "",
+    });
+    std::fs::write(home.path().join("setup.json"), setup.to_string()).unwrap();
+    let out = call(&hub, "machine_add", json!({ "host": "lab" })).await;
+    let run = finished(&hub, out["run"]["runId"].as_str().unwrap()).await;
+    assert_eq!(run["state"], "done", "{run:#}");
+    let configs = machine.configs.lock().unwrap().clone();
+    assert!(!configs.is_empty());
+    assert!(
+        configs
+            .iter()
+            .all(|c| c.as_deref() == Some("/home/dev/lab/ssh_config")),
+        "{configs:?}"
+    );
+    assert_eq!(
+        setup_json(&home)["machines"]["lab"]["sshConfig"],
+        "/home/dev/lab/ssh_config"
+    );
+    // Another host keeps ssh's own config.
+    let other = call(&hub, "machine_add_plan", json!({ "host": "builder-1" })).await;
+    assert_eq!(other["machineId"], "builder-1");
+    assert_eq!(machine.configs.lock().unwrap().last().unwrap(), &None);
 }

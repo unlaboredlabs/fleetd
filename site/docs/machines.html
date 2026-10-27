@@ -91,7 +91,7 @@ and admins add them in the app; the CLI does the same from a terminal on the hub
 <tr>
 <td>The computer the app runs on</td>
 <td><strong>This computer</strong></td>
-<td>One click. The app downloads the hub’s fleetd build for this computer, checks it against the release’s <code dir="auto">SHA256SUMS</code>, and joins the hub with a one-time code that never shows on screen. The node runs as a user service. On the hub’s own machine, the hub sets it up with its own fleetd instead.</td>
+<td>One click. The app downloads the release of the fleetd version the hub runs, built for this computer, checks it against that release’s <code dir="auto">SHA256SUMS</code>, and joins the hub with a one-time code that never shows on screen. The node runs as a user service. A nightly hub asks to be updated first once the nightly release has moved past it. On the hub’s own machine, the hub sets it up with its own fleetd instead; a computer whose node already belongs to a hub is left as it is.</td>
 </tr>
 <tr>
 <td>Reachable from the hub over SSH</td>

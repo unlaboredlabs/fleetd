@@ -107,6 +107,7 @@ const fleetdApi = (file: File): FleetdApi => {
     machines: {
       joinHere: (machineId) => Promise.resolve({ machineId, state: "failed", steps: [], message: notHere.message }),
       joinHereState: () => Promise.resolve(null),
+      thisComputer: () => Promise.resolve({ kind: "none" }),
       onJoinHere: () => () => undefined,
     },
     projects: { pickFolder: () => Promise.resolve(null), readDrop: () => Promise.resolve({ kind: "other" }) },

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MachineAddRun, MachineHost } from "../../../shared/contracts";
-import { hereOf, hostLine, joinSteps, pickable, resumable, shortOutput } from "./model";
+import { hereLine, hereOf, hostLine, joinSteps, pickable, resumable, shortOutput } from "./model";
 
 const hub: MachineHost = { machineId: "devbox", source: "hub", joined: true };
 const builder: MachineHost = { machineId: "builder-1", host: "builder-1", source: "ssh_config", joined: false };
@@ -16,9 +16,19 @@ const run = (runId: string, state: MachineAddRun["state"]): MachineAddRun => ({
 
 describe("Add machine's model", () => {
   it("adds the hub's own machine through the hub, and any other computer through main", () => {
-    expect(hereOf([hub, builder], "devbox.local", new Set())).toEqual({ kind: "hub", machineId: "devbox", joined: true });
-    expect(hereOf([hub, builder], "Ada's MacBook", new Set(["ada-s-macbook"]))).toEqual({ kind: "app", machineId: "ada-s-macbook", joined: true });
-    expect(hereOf([hub], "", new Set())).toBeUndefined();
+    const none = { kind: "none" } as const;
+    expect(hereOf([hub, builder], "devbox.local", none, new Set())).toEqual({ kind: "hub", machineId: "devbox", joined: true });
+    expect(hereOf([hub, builder], "Ada's MacBook", none, new Set(["ada-s-macbook"]))).toEqual({ kind: "app", machineId: "ada-s-macbook", joined: true });
+    expect(hereOf([hub], "", none, new Set())).toBeUndefined();
+  });
+
+  it("knows the hub's machine by what its fleetd dir holds, whatever its name now", () => {
+    // Added with --machine-id devbox, or renamed since: its name says nothing, its fleetd dir holds the hub.
+    expect(hereOf([hub, builder], "studio-2", { kind: "hub" }, new Set())).toEqual({ kind: "hub", machineId: "devbox", joined: true });
+    const node = { kind: "node", machineId: "studio", hub: "http://devbox:4790" } as const;
+    expect(hereOf([hub], "laptop", node, new Set(["studio"]))).toEqual({ kind: "node", machineId: "studio", hub: "http://devbox:4790", ours: true });
+    expect(hereLine(hereOf([hub], "laptop", node, new Set(["studio"])))).toBe("This computer is already part of the hub as studio.");
+    expect(hereLine(hereOf([hub], "laptop", node, new Set()))).toBe("This computer is already part of another hub (http://devbox:4790) as studio.");
   });
 
   it("lists hosts that aren't machines yet first, each with where the hub found it", () => {

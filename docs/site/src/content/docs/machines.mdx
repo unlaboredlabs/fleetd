@@ -16,7 +16,7 @@ Open **Administration › Machines** and press **Add machine**. It offers three 
 
 | The machine is | Pick | What happens |
 |---|---|---|
-| The computer the app runs on | **This computer** | One click. The app downloads the hub's fleetd build for this computer, checks it against the release's `SHA256SUMS`, and joins the hub with a one-time code that never shows on screen. The node runs as a user service. On the hub's own machine, the hub sets it up with its own fleetd instead. |
+| The computer the app runs on | **This computer** | One click. The app downloads the release of the fleetd version the hub runs, built for this computer, checks it against that release's `SHA256SUMS`, and joins the hub with a one-time code that never shows on screen. The node runs as a user service. A nightly hub asks to be updated first once the nightly release has moved past it. On the hub's own machine, the hub sets it up with its own fleetd instead; a computer whose node already belongs to a hub is left as it is. |
 | Reachable from the hub over SSH | **A machine the hub can reach** | Pick it from the hosts the hub sees (its `~/.ssh/config` and its tailnet), and read the plan: the machine's OS and CPU, each step with its command, and notes such as linger. Press **Add**, and watch each step run. |
 | Behind NAT, or with no SSH from the hub (a laptop) | **Any other machine** | For now, use [`fleetd pair --worker`](#join) on the hub. |
 
