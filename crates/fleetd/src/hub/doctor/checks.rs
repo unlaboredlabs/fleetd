@@ -511,7 +511,7 @@ fn self_update_entry(machine_id: &str, name: &str, info: &RunnerInfo) -> Option<
             &check,
             Pass,
             &format!(
-                "{name} on {machine_id} doesn't update itself: fleetd's update brings it to the version it was tested                  with."
+                "{name} on {machine_id} doesn't update itself: fleetd's update brings it to the version it was tested with."
             ),
             None,
         ),
@@ -525,7 +525,7 @@ fn self_update_entry(machine_id: &str, name: &str, info: &RunnerInfo) -> Option<
                 &check,
                 Warn,
                 &format!(
-                    "{name} on {machine_id} updates itself in the background, so its version can change under its                      agents: its node turns that off when it starts, and couldn't."
+                    "{name} on {machine_id} updates itself in the background, so its version can change under its agents: its node turns that off when it starts, and couldn't."
                 ),
                 Some(manual(
                     &format!(

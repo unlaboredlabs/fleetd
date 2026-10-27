@@ -186,6 +186,40 @@ describe("an update of everything", () => {
     expect(v.progress?.text).toBe("Update failed: mac's Claude Code. The rest updated; this app updates with its own button.");
   });
 
+  it("names a skipped machine once, leaves a Claude Code installed another way calm, and counts Claude Code in done", () => {
+    const run = runOf(
+      [
+        p({ part: "hub", name: "the hub", state: "done" }),
+        p({ machineId: "builder", name: "builder", state: "done" }),
+        p({
+          part: "claude",
+          machineId: "builder",
+          name: "builder",
+          from: "2.1.310",
+          to: "2.1.302",
+          state: "skipped",
+          message: "Claude Code is managed by Homebrew: run `brew upgrade claude-code` to update it (it runs 2.1.310)",
+        }),
+        p({ machineId: "mac", name: "mac", state: "skipped", message: "offline: press Update again once it's online" }),
+        p({ part: "claude", machineId: "mac", name: "mac", state: "skipped", message: "offline: press Update again once it's online" }),
+      ],
+      true,
+    );
+    const v = during(run, { phase: "finished" });
+    expect(v.nodes.find((n) => n.key === "claude:builder")).toMatchObject({
+      status: "Claude Code is managed by Homebrew: run `brew upgrade claude-code` to update it (it runs 2.1.310)",
+      tone: "quiet",
+    });
+    expect(v.progress).toEqual({ tone: "warning", text: "Updated, except mac: each says why, and how to update it." });
+
+    const going = runOf([
+      p({ part: "hub", name: "the hub", state: "done" }),
+      p({ machineId: "builder", name: "builder", state: "done" }),
+      p({ part: "claude", machineId: "builder", name: "builder", state: "downloading" }),
+    ]);
+    expect(during(going, { phase: "following", reconnecting: false }).progress?.text).toBe("Updating the machines: 0 of 1 done");
+  });
+
   it("says which part failed and how, and that nothing else changed when the hub did", () => {
     const run = runOf(
       [

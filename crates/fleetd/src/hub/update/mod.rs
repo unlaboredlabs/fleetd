@@ -858,6 +858,14 @@ impl Updates {
             format!("installing Claude Code {target}"),
         );
         match ports.install_claude(machine_id, &target).await {
+            // Installed another way, or not at all: left as it is, with how to update it. Not a failure.
+            Ok(r) if r.ok && r.message.as_str().starts_with(install::LEFT) => self.set_claude(
+                machine_id,
+                None,
+                UpdateState::Skipped,
+                None,
+                r.message.as_str(),
+            ),
             Ok(r) if r.ok && r.message.as_str().starts_with(install::ALREADY) => self.set_claude(
                 machine_id,
                 None,

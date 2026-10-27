@@ -214,7 +214,8 @@ const claudeRow = (p: UpdatePart): Omit<PartRow, "key" | "name" | "raw"> => {
     case "rolled_back":
       return { status: `${label} failed: ${said}`, tone: "danger" };
     default:
-      return { status: `Claude Code: ${said}`, tone: "warning" };
+      // Left as it is (installed another way, not installed, or its machine skipped): a calm note, not a warning.
+      return { status: said.startsWith("Claude Code") ? said : `Claude Code: ${said}`, tone: "quiet" };
   }
 };
 
@@ -308,16 +309,20 @@ export const updatesView = ({ app, hub, machines = [], run = null, flow = { phas
   else if (live !== null && live.finishedAt === undefined) {
     const hubP = live.parts.find((p) => p.part === "hub");
     const nodeParts = live.parts.filter((p) => p.part === "node");
+    // A machine is done once its node and its Claude Code are.
+    const settledOn = (id: string | undefined) =>
+      live.parts.filter((p) => p.part !== "hub" && p.machineId === id).every((p) => !["waiting", "downloading", "restarting"].includes(p.state));
     progress =
       hubP !== undefined && !["done", "current", "failed", "rolled_back", "skipped"].includes(hubP.state)
         ? { tone: "quiet", text: "Updating the hub…" }
-        : { tone: "quiet", text: `Updating the machines: ${String(nodeParts.filter((p) => !["waiting", "downloading", "restarting"].includes(p.state)).length)} of ${String(nodeParts.length)} done` };
+        : { tone: "quiet", text: `Updating the machines: ${String(nodeParts.filter((p) => settledOn(p.machineId)).length)} of ${String(nodeParts.length)} done` };
   } else if (flow.phase === "app" && app?.app.kind === "failed") {
     progress = { tone: "danger", text: `Update failed: this app. ${app.app.reason} The hub and its machines updated.` };
   } else if (flow.phase === "app") progress = { tone: "quiet", text: "Updating this app; it restarts once the download is in" };
   else if (live !== null) {
     const failed = failures(live);
-    const skipped = live.parts.filter((p) => p.state === "skipped").map((p) => p.name);
+    // Each machine once; a Claude Code left as it is says so on its own line, calmly.
+    const skipped = [...new Set(live.parts.filter((p) => p.state === "skipped" && p.part !== "claude").map((p) => p.name))];
     progress =
       failed.length > 0
         ? {
