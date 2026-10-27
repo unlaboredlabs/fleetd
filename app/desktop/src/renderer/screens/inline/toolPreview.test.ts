@@ -37,7 +37,7 @@ describe("an integration's approval card", () => {
     expect(actionWarning("share")?.tone).toBe("warning");
     expect(actionWarning("delete")?.text).toBe("Can't be undone");
   });
-  it("lists who it reaches the xaq way: outside the account's domain, and Bcc hidden from the others", () => {
+  it("lists who it reaches: outside the account's domain, and Bcc hidden from the others", () => {
     expect(domainOf("Ana <ana@Example.com>")).toBe("example.com");
     expect(domainOf("nobody")).toBeUndefined();
     expect(previewRows(email)).toEqual([
@@ -70,7 +70,7 @@ describe("an integration's approval card", () => {
   });
   it("folds, once answered, to what was decided and who answered when", () => {
     expect(previewOutcome(email, item("open"))).toBeUndefined();
-    // What the person decided, never "Sent": xaq may still ask, refuse or fail after fleetd's card.
+    // What the person decided, never "Sent": the tool may still refuse or fail after fleetd's card.
     expect(previewOutcome(email, item("approved"))).toEqual({ tone: "quiet", text: "Approved: send an email to Ana <ana@example.com> and 2 more" });
     expect(previewOutcome(email, item("denied"))?.text).toBe("Declined: send an email to Ana <ana@example.com> and 2 more");
     expect(previewOutcome({ ...email, action: "delete", title: "Delete a calendar event", to: [], bcc: [], target: "Event e1" }, item("approved"))?.text).toBe("Approved: delete a calendar event · Event e1");

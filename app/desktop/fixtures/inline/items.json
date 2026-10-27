@@ -199,14 +199,14 @@
           ],
           "subject": "Lunch on Tuesday",
           "body": "Hi Ana,\n\nTuesday at 12:30 at the usual place? I'll book a table.\n\nNavi, for Sam",
-          "input": "{\n  \"account\": \"me@example.com\",\n  \"to\": \"Ana Ruiz <ana@example.com>, bo@example.com.au\",\n  \"cc\": [\n    \"cy@example.com\"\n  ],\n  \"bcc\": [\n    \"sam@example.com\"\n  ],\n  \"subject\": \"Lunch on Tuesday\",\n  \"body\": \"Hi Ana,\\n\\nTuesday at 12:30 at the usual place? I'll book a table.\\n\\nNavi, for Sam\",\n  \"attachments\": [\n    {\n      \"path\": \"/home/dev/navi/menu.pdf\"\n    }\n  ]\n}",
+          "input": "{\n  \"account\": \"me@example.com\",\n  \"to\": \"Ana Ruiz <ana@example.com>, bo@example.com.au\",\n  \"cc\": [\n    \"cy@example.com\"\n  ],\n  \"bcc\": [\n    \"sam@example.com\"\n  ],\n  \"subject\": \"Lunch on Tuesday\",\n  \"body\": \"Hi Ana,\\n\\nTuesday at 12:30 at the usual place? I'll book a table.\\n\\nNavi, for Sam\",\n  \"attachments\": [\n    {\n      \"drive_file_id\": \"1AbC\",\n      \"filename\": \"menu.pdf\"\n    }\n  ]\n}",
           "bcc": [
             "sam@example.com"
           ],
           "attachments": [
             {
               "name": "menu.pdf",
-              "from": "a file on xaq's machine"
+              "from": "from Drive"
             }
           ]
         }
