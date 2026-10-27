@@ -553,11 +553,16 @@ async fn a_node_is_followed_by_its_link_not_a_timer() {
 async fn each_machines_claude_follows_its_node_and_a_failed_install_stops_nothing_else() {
     let home = tempfile::tempdir().unwrap();
     let mut fake = Fake::new(home.path(), b"new")
+        .node("brewbox", OLD, true, true, Some(Answer::BackOn(NEW)))
         .node("builder", OLD, true, true, Some(Answer::BackOn(NEW)))
         .node("laptop", OLD, true, true, Some(Answer::BackOn(OLD)))
         .node("mac", OLD, true, true, Some(Answer::BackOn(NEW)))
         .node("nas", OLD, false, true, None)
         .node("pi", NEW, true, true, None);
+    fake.claude.insert(
+        "brewbox".into(),
+        Ok("Claude Code is managed by Homebrew: run `brew upgrade claude-code` to update it (it runs 2.1.310)"),
+    );
     fake.claude.insert(
         "mac".into(),
         Err("`claude install 2.1.302` failed (Could not download: 404), so 2.1.310 stays"),
@@ -569,7 +574,7 @@ async fn each_machines_claude_follows_its_node_and_a_failed_install_stops_nothin
     let started = updates.start(None).unwrap();
     assert_eq!(
         started.parts.len(),
-        1 + 2 * 5,
+        1 + 2 * 6,
         "the hub, then a node and Claude Code per machine"
     );
     until(&updates, |r| hub_state(r) == UpdateState::Restarting).await;
@@ -618,9 +623,19 @@ async fn each_machines_claude_follows_its_node_and_a_failed_install_stops_nothin
         "not asked: its fleetd didn't update"
     );
     assert_eq!(claude(&run, "nas").state, UpdateState::Skipped);
+    // Claude Code that Homebrew manages is left as it is, calmly: a skip with its command, not a failure.
+    let brew = claude(&run, "brewbox");
+    assert_eq!((brew.state, brew.stage), (UpdateState::Skipped, None));
+    assert!(
+        brew.message
+            .as_ref()
+            .unwrap()
+            .as_str()
+            .contains("`brew upgrade claude-code`")
+    );
     let mut asked = fake.claude_asked.lock().unwrap().clone();
     asked.sort();
-    assert_eq!(asked, ["builder", "mac", "pi"]);
+    assert_eq!(asked, ["brewbox", "builder", "mac", "pi"]);
 }
 
 /// The watcher never restarted the hub (it died, or the service manager refused): the hub still running ends the

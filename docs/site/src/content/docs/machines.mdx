@@ -107,8 +107,9 @@ version (see [Update](/docs/updating-and-uninstall#everything)), and nothing mov
   profile). That covers a `claude` you run yourself on that machine too. `fleetd doctor` warns when it is on.
 - Sessions that are already running finish on the version they started with. New sessions start on the new one.
   Nothing waits for the machine to be idle.
-- Only Claude Code's native install (`~/.local/bin/claude`) is moved. A Homebrew, npm or package install is left as
-  it is, and the update says so.
+- Only Claude Code's native install (`~/.local/bin/claude`) is moved. A Homebrew, npm or package install, or a
+  machine without claude, is left as it is: the update says so in a calm line with the command that updates it
+  (`brew upgrade claude-code`, say), not as a failure.
 
 ## Remove a machine {#remove}
 

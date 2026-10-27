@@ -240,9 +240,9 @@ with, and the node turns claude’s own background update off (see <a href="/doc
 <td>Set <code dir="auto">"env": {"DISABLE_AUTOUPDATER": "1"}</code> in that file, then restart the node.</td>
 </tr>
 <tr>
-<td>An update’s Claude Code line says “isn’t the native install”</td>
-<td>claude came from Homebrew, npm or a package, which fleetd doesn’t change.</td>
-<td>Install the version it names the way claude was installed.</td>
+<td>An update’s Claude Code line says “managed by Homebrew”, “installed with npm” or “not installed”</td>
+<td>claude came from Homebrew, npm or a package, or isn’t there; fleetd leaves it as it is.</td>
+<td>Run the command the line names.</td>
 </tr>
 </tbody>
 </table>
