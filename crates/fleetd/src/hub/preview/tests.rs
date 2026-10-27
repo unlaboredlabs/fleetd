@@ -1564,3 +1564,29 @@ async fn a_preview_of_an_untracked_pr_ends_when_it_merges_or_closes() {
     assert_eq!(stored(&hub, &tracked).state, PreviewState::Starting);
     assert_eq!(asked.lock().unwrap().len(), 4);
 }
+
+/// A preview runs the way its repo, for now the project's own, says; the project's setting is the fallback.
+#[tokio::test]
+async fn a_preview_runs_as_its_repo_says() {
+    let (hub, _clock, _home) = hub();
+    let devbox = node(&hub, "devbox", None);
+    hub.repos.ensure_own(&shop(), Some("/work/shop")).unwrap();
+    tool(
+        &hub,
+        &key("human", "admin"),
+        "project_settings_set",
+        json!({ "machineId": "devbox", "projectId": "shop", "repo": "shop",
+            "preview": { "web": { "start": "pnpm dev --port $PORT" }, "idleMinutes": 15 } }),
+    )
+    .await
+    .unwrap();
+    start(&hub, &person(), 14).await.unwrap();
+    let run = serde_json::to_value(&devbox.runs()[0]).unwrap();
+    assert_eq!(run["web"]["start"], "pnpm dev --port $PORT");
+    assert_eq!(run["idleMinutes"], 15);
+    assert_eq!(
+        hub.db.project_settings().preview(&shop()).unwrap(),
+        Some(web()),
+        "the project's own setting stays"
+    );
+}

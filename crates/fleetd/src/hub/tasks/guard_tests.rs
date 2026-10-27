@@ -392,3 +392,45 @@ async fn a_launch_carries_its_order_and_the_projects_setup() {
     assert_eq!(new.order_id.as_ref().map(|o| o.as_str()), Some("W1"));
     assert_eq!(new.setup.as_deref(), Some(&setup));
 }
+
+/// A launch carries its repo's setup commands, for now the project's own repo's, and the project's when the repo has
+/// none of its own.
+#[tokio::test]
+async fn a_launch_carries_its_repos_setup() {
+    use fleetd_contracts::node_link::CAP_WORKTREE_SETUP;
+    let (hub, _home) = hub();
+    let mut calls = serve(&hub, Node::link(&hub).await);
+    hub.link.set_capabilities(&lab_a(), &[CAP_WORKTREE_SETUP]);
+    let project = fleetd_contracts::ids::ProjectRef {
+        machine_id: lab_a(),
+        project_id: fleetd_contracts::ids::ProjectId::unchecked("p1"),
+    };
+    let setup = |command: &str| -> fleetd_contracts::project_settings::WorktreeSetup {
+        serde_json::from_value(json!({ "commands": [command] })).unwrap()
+    };
+    let repo = hub
+        .repos
+        .ensure_own(&project, Some("/work/p1"))
+        .unwrap()
+        .unwrap();
+    let store = hub.db.project_settings();
+    store.set_setup(&project, &setup("make deps")).unwrap();
+    insert(
+        &hub,
+        json!({ "taskId": "T1", "title": "the project's", "state": "queued", "kind": "write" }),
+    );
+    start_queued(&hub.tasks).await;
+    let launch = next_launch(&mut calls).await;
+    assert_eq!(launch.setup.as_deref(), Some(&setup("make deps")));
+
+    store
+        .set_setup_in(&project, Some(&repo.repo_id), &setup("pnpm install"))
+        .unwrap();
+    insert(
+        &hub,
+        json!({ "taskId": "T2", "title": "the repo's", "state": "queued", "kind": "write" }),
+    );
+    start_queued(&hub.tasks).await;
+    let launch = next_launch(&mut calls).await;
+    assert_eq!(launch.setup.as_deref(), Some(&setup("pnpm install")));
+}
