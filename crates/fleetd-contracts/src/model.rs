@@ -117,6 +117,36 @@ pub struct ProjectSummary {
     /// The git repos it holds, from the hub; none for a plain directory, from a node, and from an older hub.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub repos: Vec<crate::repos::ProjectRepo>,
+    /// What the project is, from the hub: `assistant` for a Navi. Absent for a project of code, from a node, and
+    /// from an older hub.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<ProjectKind>,
+    /// A Navi's: the key that created it, from the hub. Recorded for per-person Navis later; nothing filters on it
+    /// yet. Absent for other projects, and for a Navi made before it was recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_by: Option<ProjectCreator>,
+    /// A Navi's: when it was archived. An archived Navi keeps its chat, memory and folder, and its lead doesn't
+    /// start until it is brought back (`navi_archive` with `archived: false`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub archived_at: Option<Timestamp>,
+}
+
+/// What a project is. Absent on a project: one of code, a lead with its repos and folders.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(extend("x-open" = true))]
+pub enum ProjectKind {
+    /// A Navi: a personal assistant in a plain folder of its own, whose lead runs the `navi.start` prompt in the
+    /// assistant role (`SessionRole::Assistant`).
+    Assistant,
+}
+
+/// The key a project was created with: its id, and the person's or device's name the key carries.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectCreator {
+    pub key_id: String,
+    pub name: String,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]

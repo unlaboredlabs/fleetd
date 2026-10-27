@@ -47,10 +47,10 @@ use fleetd_contracts::model::RuntimeMode;
 use fleetd_contracts::node_link::{HubToNode, NodeToHub};
 use fleetd_contracts::prim::NonEmpty;
 use fleetd_contracts::sessions::{
-    ItemKind, ItemStatus, MachineEvent, MachineEventFrame, RunnerInfo, SessionCall,
-    SessionCallFrame, SessionError, SessionErrorCode, SessionLaunch, SessionOutput, SessionResult,
-    SessionStatus, SessionSummary, SessionWorkspace, ThreadEvent, ThreadEventFrame, ThreadItem,
-    WorktreeBase, WorktreeSource,
+    ItemKind, ItemStatus, MachineEvent, MachineEventFrame, PendingPermission, PermissionDecision,
+    RunnerInfo, SessionCall, SessionCallFrame, SessionError, SessionErrorCode, SessionLaunch,
+    SessionOutput, SessionResult, SessionStatus, SessionSummary, SessionWorkspace, ThreadEvent,
+    ThreadEventFrame, ThreadItem, WorktreeBase, WorktreeSource,
 };
 use fleetd_contracts::steer::{SteerReceipt, SteerTag};
 use futures_util::StreamExt;
@@ -91,6 +91,7 @@ pub enum NodeOperation {
     Send,
     Interrupt,
     Stop,
+    Answer,
     Read,
     Project,
 }
@@ -102,6 +103,7 @@ impl NodeOperation {
             Self::Send => "send",
             Self::Interrupt => "interrupt",
             Self::Stop => "stop",
+            Self::Answer => "answer",
             Self::Read => "read",
             Self::Project => "project",
         }
@@ -469,7 +471,9 @@ fn from_session_error(
     error: SessionError,
 ) -> ExecutorError {
     match (error.code, session) {
-        (SessionErrorCode::NotFound, Some(thread_id)) if operation != NodeOperation::Launch => {
+        (SessionErrorCode::NotFound, Some(thread_id))
+            if operation != NodeOperation::Answer && operation != NodeOperation::Launch =>
+        {
             ExecutorError::ThreadNotFound {
                 machine_id: machine_id.clone(),
                 thread_id: thread_id.clone(),
@@ -1510,7 +1514,7 @@ impl Executors {
             _ => js_take(input.prompt.trim().split('\n').next().unwrap_or(""), 80).to_owned(),
         };
         let policy = self.tool_policy.lock().unwrap().clone();
-        let rules = match policy {
+        let mut rules = match policy {
             None => SessionRules::default(),
             Some(policy) => {
                 let project = ProjectRef {
@@ -1542,6 +1546,29 @@ impl Executors {
                 Default::default()
             });
         let fixed_mcp = options.mcp.is_some();
+        // A Navi's lead gets no allow rules from the policy file in its own folder, which it could write: only its
+        // denials hold.
+        if options.role == fleetd_contracts::sessions::SessionRole::Assistant {
+            rules.allow.clear();
+        }
+        // A Navi's lead never asks for its integrations' reads, and never gets a tool the blocked list refuses
+        // (hub/integrations); the hub's verdict still answers every prompt that comes.
+        if options.role == fleetd_contracts::sessions::SessionRole::Assistant
+            && let Some(db) = self.mcp_servers.get()
+        {
+            let r = ProjectRef {
+                machine_id: machine_id.clone(),
+                project_id: input.project_id.clone(),
+            };
+            match db.mcp_servers().servers_for(&r) {
+                Ok(servers) => {
+                    let integrations = crate::hub::integrations::policy::launch_rules(&servers);
+                    rules.allow.extend(integrations.allowed);
+                    rules.deny.extend(integrations.disallowed);
+                }
+                Err(e) => tracing::warn!(%machine_id, "a Navi's integration rules not read: {e}"),
+            }
+        }
         let skills = self.skill_bundles(machine_id, &input.project_id);
         let seed = format!("{machine_id}\n{}", input.client_request_id);
         let session_id = ThreadId::unchecked(uuid_from(&format!("session\n{seed}")));
@@ -1699,6 +1726,30 @@ impl Executors {
                 queued: false,
             },
         })
+    }
+
+    /// Answers the permission prompt the thread's run waits on.
+    pub async fn answer(
+        &self,
+        r: &ThreadRef,
+        request_id: &str,
+        decision: PermissionDecision,
+        by: Option<fleetd_contracts::time::DecidedBy>,
+    ) -> Result<(), ExecutorError> {
+        let op = NodeOperation::Answer;
+        let call = SessionCall::Answer {
+            session_id: r.thread_id.clone(),
+            request_id: non_empty(&r.machine_id, op, "request id", request_id)?,
+            decision,
+            by,
+        };
+        self.call(&r.machine_id, op, call, READ_TIMEOUT).await?;
+        Ok(())
+    }
+
+    /// The prompt the thread's run waits on now, from the machine stream.
+    pub fn pending_permission(&self, r: &ThreadRef) -> Option<PendingPermission> {
+        self.tracked(r)?.pending
     }
 
     pub async fn interrupt(
@@ -2199,6 +2250,31 @@ impl Executors {
         };
         self.call(machine_id, op, call, READ_TIMEOUT).await?;
         Ok(())
+    }
+
+    /// Registers a project in `folder`, a path under the node's home that the node makes when missing: a Navi's.
+    /// Returns the folder's absolute path. Only to a node listing `CAP_ASSISTANT`.
+    pub async fn project_folder(
+        self: &Arc<Self>,
+        machine_id: &MachineId,
+        project_id: &ProjectId,
+        title: &str,
+        folder: &str,
+    ) -> Result<String, ExecutorError> {
+        let op = NodeOperation::Project;
+        let call = SessionCall::ProjectUpsert {
+            project_id: project_id.clone(),
+            title: non_empty(machine_id, op, "title", title)?,
+            workspace_root: non_empty(machine_id, op, "folder", folder)?,
+        };
+        match self.call(machine_id, op, call, READ_TIMEOUT).await? {
+            SessionOutput::Folder { path } => Ok(path),
+            _ => Err(failed(
+                machine_id,
+                op,
+                "the node did not say where the folder is",
+            )),
+        }
     }
 
     /// `remove_worktrees` only to a node listing `CAP_PROJECT_SETTINGS`.

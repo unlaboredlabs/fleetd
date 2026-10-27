@@ -192,7 +192,7 @@ fleetd project add [<path|github-url>] [--machine <id>] [--title <t>] [--dest <d
     [--use-existing] [--yes] [--home <dir>] [--hub <url>]
 ```
 
-add a project: a checkout on a machine (this one by default), or a GitHub repo cloned onto one (the least busy worker by default), with progress; then its CI, merge rules and what the lead will need. No argument: pick one
+add a project: a checkout or a plain folder on a machine (this one by default), or a GitHub repo cloned onto one (the least busy worker by default), with progress; then its CI, merge rules and what the lead will need. No argument: pick one
 
 ### fleetd project list {#project-list}
 
@@ -287,6 +287,34 @@ fleetd project set <machine>/<project> [--fast-check <check>]... [--after-merge 
 ```
 
 how the merge train treats the repo's checks. It waits only for its fast set: the checks the base branch requires, plus each `--fast-check`, each until it reports. Each `--after-merge` never stops a merge, even once failed. A check outside the fast set that fails after the merge opens a fix order. Each option replaces its list; none empties it
+
+### fleetd navi create {#navi-create}
+
+```text
+fleetd navi create <name> [--machine <id>] [--home <dir>] [--hub <url>]
+```
+
+make a Navi: a personal assistant with its own chat, memory and folder (navi/\<name\> under the machine's fleetd home; the least busy worker by default)
+
+### fleetd navi list {#navi-list}
+
+```text
+fleetd navi list [--archived] [--machine <id>] [--home <dir>] [--hub <url>]
+```
+
+### fleetd navi rename {#navi-rename}
+
+```text
+fleetd navi rename <machine>/<navi> <name> [--home <dir>] [--hub <url>]
+```
+
+### fleetd navi {#navi}
+
+```text
+fleetd navi archive|unarchive <machine>/<navi> [--home <dir>] [--hub <url>]
+```
+
+archived, its lead stops and its chat, memory and folder stay; \<navi\> is its id or its name
 
 
 ## Running by hand {#running-by-hand}

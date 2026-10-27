@@ -14,10 +14,10 @@ use fleetd::hub::tasks::policy::{
     self, CallerAgent, MAX_DEPTH, MAX_OPEN_TASKS, SPAWN_OPS, WORKER_OPS,
 };
 use fleetd::node::runner::claude::{
-    AGENT_DISALLOWED_WHY, AUTO_MEMORY_OFF_ENV, AUTO_MEMORY_OFF_WHY, DEFAULT_ENV_WHY,
-    DISALLOWED_WHY, HELPER_MODEL_ENV, HELPER_MODEL_WHY, LEAD_DISALLOWED_WHY, NESTING_VARS_WHY,
-    PROMPT_CACHE_TTL_VARS, PROMPT_CACHE_TTL_WHY, SESSION_ENV_WHY, SUBAGENTS_OFF_ENV_WHY,
-    SUBAGENTS_ON_ENV_WHY, WORKER_ENV, WORKER_ENV_WHY,
+    AGENT_DISALLOWED_WHY, ASSISTANT_ALLOWED_WHY, ASSISTANT_ASK_WHY, AUTO_MEMORY_OFF_ENV,
+    AUTO_MEMORY_OFF_WHY, DEFAULT_ENV_WHY, DISALLOWED_WHY, HELPER_MODEL_ENV, HELPER_MODEL_WHY,
+    LEAD_DISALLOWED_WHY, NESTING_VARS_WHY, PROMPT_CACHE_TTL_VARS, PROMPT_CACHE_TTL_WHY,
+    SESSION_ENV_WHY, SUBAGENTS_OFF_ENV_WHY, SUBAGENTS_ON_ENV_WHY, WORKER_ENV, WORKER_ENV_WHY,
 };
 use fleetd::node::runner::claude::{conformance, version::TESTED};
 use fleetd_contracts::lead_calls::GatedRunCall;
@@ -872,6 +872,31 @@ fn builtins(root: &Path) -> Result<String, String> {
             ));
         }
     }
+    md.push_str(
+        "\n**A Navi's lead** keeps `Edit`, `Write`, `WebFetch` and `WebSearch`, and runs in `manual` permission mode: \
+         any tool not below asks first. Its file tools and fetches always ask, in its settings' `permissions.ask`, \
+         whatever your own settings allow. The node answers a file tool: allowed inside the Navi's own folder, \
+         refused outside it (and for its `.claude`, `.mcp.json` and `.fleetd`), whoever approves it. A policy file's \
+         allow rules don't apply to it. A fetch or `agent-browser \
+         open` goes through without asking to a site the person allowed at its first visit. Any other ask reaches \
+         the person as an approval in the Navi's chat, showing the tool and exactly what it would get.\n\n| Allowed \
+         without asking | Why |\n|---|---|\n",
+    );
+    for (tools, why) in grouped(
+        ASSISTANT_ALLOWED_WHY
+            .iter()
+            .map(|(t, why)| (format!("`{t}`"), *why)),
+    ) {
+        md.push_str(&format!("| {} | {} |\n", tools.join(", "), cell(why)));
+    }
+    md.push_str("\n| Always asked | Why |\n|---|---|\n");
+    for (tools, why) in grouped(
+        ASSISTANT_ASK_WHY
+            .iter()
+            .map(|(t, why)| (format!("`{t}`"), *why)),
+    ) {
+        md.push_str(&format!("| {} | {} |\n", tools.join(", "), cell(why)));
+    }
     md.push('\n');
     Ok(md)
 }
@@ -887,6 +912,7 @@ fn switches() -> Result<String, String> {
         &cache,
         Default::default(),
         HELPER_MODEL_ENV.1,
+        &[],
     ))
     .map_err(|e| format!("agent tools: the settings overlay: {e}"))?;
     let mut md = String::from(
@@ -945,6 +971,7 @@ fn switches() -> Result<String, String> {
     for ((role, ttl), why) in PROMPT_CACHE_TTL_WHY {
         let who = match role {
             SessionRole::Lead => "Leads",
+            SessionRole::Assistant => "Navis' leads",
             SessionRole::Worker => "Task agents",
             SessionRole::Plain => "Threads you start",
         };

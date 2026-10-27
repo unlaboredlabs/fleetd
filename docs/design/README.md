@@ -21,3 +21,5 @@ wins.
   a Navi on one hub reach projects on another.
 - [setup.md](setup.md): one setup for the hub admin: every step a check with why, values to paste, a link, fields and
   a Test, rendered the same by `fleetd init`, the app's first run and Administration › Setup.
+- [navi.md](navi.md): Navi, personal assistants inside fleetd: as many as a person likes, each a plain-folder project
+  whose lead runs as an assistant, with approvals for its tools, integrations and a bridge to the factory.

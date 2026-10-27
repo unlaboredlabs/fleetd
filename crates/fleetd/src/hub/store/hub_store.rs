@@ -1,6 +1,6 @@
 use super::{HubDb, StoreError};
 use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadRef, Timestamp};
-use fleetd_contracts::model::{Machine, MachineStatus, ProjectSummary, ThreadSummary};
+use fleetd_contracts::model::{Machine, MachineStatus, ProjectKind, ProjectSummary, ThreadSummary};
 use rusqlite::{OptionalExtension, named_params, params};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -50,7 +50,8 @@ fn escape_like(s: &str) -> String {
     out
 }
 
-/// The project with its repos from the hub's `repos`, whatever its stored row says.
+/// The project with what the hub keeps of it, whatever its stored row says: its repos from `repos`, and from
+/// `assistants` whether it is a Navi.
 fn with_repos(
     conn: &rusqlite::Connection,
     mut project: ProjectSummary,
@@ -60,6 +61,10 @@ fn with_repos(
         project_id: project.project_id.clone(),
     };
     project.repos = crate::hub::repos::store::of(conn, &r)?;
+    let navi = crate::hub::navi::store::of(conn, &r)?;
+    project.kind = navi.as_ref().map(|_| ProjectKind::Assistant);
+    (project.created_by, project.archived_at) =
+        navi.map_or((None, None), |n| (Some(n.created_by), n.archived_at));
     Ok(project)
 }
 
@@ -159,6 +164,9 @@ impl HubStore {
                 let row = ProjectSummary {
                     machine_id: machine_id.clone(),
                     repos: Vec::new(),
+                    kind: None,
+                    created_by: None,
+                    archived_at: None,
                     ..project.clone()
                 };
                 stmt.execute(params![
@@ -250,6 +258,8 @@ impl HubStore {
                 "order_env",
                 "memory_refreshes",
                 "memory_refresh_lines",
+                "assistants",
+                "navi_sites",
             ] {
                 conn.prepare_cached(&format!(
                     "DELETE FROM {table} WHERE machine_id = ? AND project_id = ?"

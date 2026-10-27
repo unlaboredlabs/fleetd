@@ -3707,7 +3707,7 @@
         },
         "permission": {
           "$ref": "#/$defs/ToolPermission",
-          "description": "A session's permission prompt: the tool and what it would do."
+          "description": "A session's permission prompt: the tool and what it would do. Boxed, as `previewConfig` is: with its input it\nis large beside the item's other fields."
         },
         "previewConfig": {
           "$ref": "#/$defs/PreviewConfigProposeCall",
@@ -8350,11 +8350,47 @@
         "metrics_retention_set.output": {
           "$ref": "#/$defs/MetricsRetentionSetOutput"
         },
+        "navi_archive.input": {
+          "$ref": "#/$defs/NaviArchiveInput"
+        },
+        "navi_archive.output": {
+          "$ref": "#/$defs/NaviArchiveOutput"
+        },
         "navi_asks.input": {
           "$ref": "#/$defs/NaviAsksInput"
         },
         "navi_asks.output": {
           "$ref": "#/$defs/NaviAsksOutput"
+        },
+        "navi_create.input": {
+          "$ref": "#/$defs/NaviCreateInput"
+        },
+        "navi_create.output": {
+          "$ref": "#/$defs/NaviCreateOutput"
+        },
+        "navi_list.input": {
+          "$ref": "#/$defs/NaviListInput"
+        },
+        "navi_list.output": {
+          "$ref": "#/$defs/NaviListOutput"
+        },
+        "navi_rename.input": {
+          "$ref": "#/$defs/NaviRenameInput"
+        },
+        "navi_rename.output": {
+          "$ref": "#/$defs/NaviRenameOutput"
+        },
+        "navi_site_revoke.input": {
+          "$ref": "#/$defs/NaviSiteRevokeInput"
+        },
+        "navi_site_revoke.output": {
+          "$ref": "#/$defs/NaviSiteRevokeOutput"
+        },
+        "navi_sites.input": {
+          "$ref": "#/$defs/NaviSitesInput"
+        },
+        "navi_sites.output": {
+          "$ref": "#/$defs/NaviSitesOutput"
         },
         "order_get.input": {
           "$ref": "#/$defs/OrderGetInput"
@@ -8848,8 +8884,20 @@
         "metrics_get.output",
         "metrics_retention_set.input",
         "metrics_retention_set.output",
+        "navi_archive.input",
+        "navi_archive.output",
         "navi_asks.input",
         "navi_asks.output",
+        "navi_create.input",
+        "navi_create.output",
+        "navi_list.input",
+        "navi_list.output",
+        "navi_rename.input",
+        "navi_rename.output",
+        "navi_site_revoke.input",
+        "navi_site_revoke.output",
+        "navi_sites.input",
+        "navi_sites.output",
         "order_get.input",
         "order_get.output",
         "orders_board.input",
@@ -10013,6 +10061,42 @@
       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@\\[\\]-]{0,79}$",
       "type": "string"
     },
+    "NaviArchiveInput": {
+      "properties": {
+        "archived": {
+          "description": "False brings an archived Navi back. Default true.",
+          "type": "boolean"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        }
+      },
+      "required": [
+        "machineId",
+        "projectId"
+      ],
+      "type": "object"
+    },
+    "NaviArchiveOutput": {
+      "properties": {
+        "navi": {
+          "$ref": "#/$defs/ProjectSummary"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "navi"
+      ],
+      "type": "object"
+    },
     "NaviAsk": {
       "description": "One ask in `navi_asks` (the app's read of a Navi's asked work): where it went, its words, and the orders opened\nfor it.",
       "properties": {
@@ -10106,6 +10190,218 @@
       "required": [
         "navi",
         "asks"
+      ],
+      "type": "object"
+    },
+    "NaviCreateInput": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId",
+          "description": "Where it lives; absent: the best worker (see `project_discover.best`)."
+        },
+        "name": {
+          "description": "What the person calls it (\"Ada\", \"Home\", \"Taxes\"). Its folder is named after it and keeps that name.",
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "NaviCreateOutput": {
+      "properties": {
+        "navi": {
+          "$ref": "#/$defs/ProjectSummary",
+          "description": "The new Navi: `kind` is `assistant`."
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "navi"
+      ],
+      "type": "object"
+    },
+    "NaviListInput": {
+      "properties": {
+        "archived": {
+          "description": "Include archived ones (default false).",
+          "type": "boolean"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId",
+          "description": "Only those on this machine; absent: every machine."
+        }
+      },
+      "type": "object"
+    },
+    "NaviListOutput": {
+      "properties": {
+        "navis": {
+          "description": "Oldest first.",
+          "items": {
+            "$ref": "#/$defs/ProjectSummary"
+          },
+          "type": "array"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "navis"
+      ],
+      "type": "object"
+    },
+    "NaviRenameInput": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "name": {
+          "description": "Its new name; its folder keeps the old one.",
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        }
+      },
+      "required": [
+        "machineId",
+        "projectId",
+        "name"
+      ],
+      "type": "object"
+    },
+    "NaviRenameOutput": {
+      "properties": {
+        "navi": {
+          "$ref": "#/$defs/ProjectSummary"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "navi"
+      ],
+      "type": "object"
+    },
+    "NaviSite": {
+      "description": "A site a Navi fetches and opens without asking: a person approved its first visit.",
+      "properties": {
+        "allowedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "allowedBy": {
+          "description": "Who approved it: `human:<their device's name>`.",
+          "type": "string"
+        },
+        "site": {
+          "description": "Its host, without a leading `www.`: `example.com`. Its subdomains are sites of their own.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "site",
+        "allowedAt",
+        "allowedBy"
+      ],
+      "type": "object"
+    },
+    "NaviSiteRevokeInput": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        },
+        "site": {
+          "maxLength": 253,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "machineId",
+        "projectId",
+        "site"
+      ],
+      "type": "object"
+    },
+    "NaviSiteRevokeOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "sites": {
+          "description": "What it may still fetch and open unasked.",
+          "items": {
+            "$ref": "#/$defs/NaviSite"
+          },
+          "type": "array"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "sites"
+      ],
+      "type": "object"
+    },
+    "NaviSitesInput": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        }
+      },
+      "required": [
+        "machineId",
+        "projectId"
+      ],
+      "type": "object"
+    },
+    "NaviSitesOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "sites": {
+          "description": "By site.",
+          "items": {
+            "$ref": "#/$defs/NaviSite"
+          },
+          "type": "array"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "sites"
       ],
       "type": "object"
     },
@@ -12360,6 +12656,22 @@
       ],
       "type": "object"
     },
+    "ProjectCreator": {
+      "description": "The key a project was created with: its id, and the person's or device's name the key carries.",
+      "properties": {
+        "keyId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "keyId",
+        "name"
+      ],
+      "type": "object"
+    },
     "ProjectDiscoverInput": {
       "properties": {
         "github": {
@@ -12668,6 +12980,17 @@
         "notes"
       ],
       "type": "object"
+    },
+    "ProjectKind": {
+      "description": "What a project is. Absent on a project: one of code, a lead with its repos and folders.",
+      "oneOf": [
+        {
+          "const": "assistant",
+          "description": "A Navi: a personal assistant in a plain folder of its own, whose lead runs the `navi.start` prompt in the\nassistant role (`SessionRole::Assistant`).",
+          "type": "string"
+        }
+      ],
+      "x-open": true
     },
     "ProjectProblem": {
       "description": "Why something could not be done, and the one step that fixes it.",
@@ -13354,6 +13677,18 @@
     },
     "ProjectSummary": {
       "properties": {
+        "archivedAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "A Navi's: when it was archived. An archived Navi keeps its chat, memory and folder, and its lead doesn't\nstart until it is brought back (`navi_archive` with `archived: false`)."
+        },
+        "createdBy": {
+          "$ref": "#/$defs/ProjectCreator",
+          "description": "A Navi's: the key that created it, from the hub. Recorded for per-person Navis later; nothing filters on it\nyet. Absent for other projects, and for a Navi made before it was recorded."
+        },
+        "kind": {
+          "$ref": "#/$defs/ProjectKind",
+          "description": "What the project is, from the hub: `assistant` for a Navi. Absent for a project of code, from a node, and\nfrom an older hub."
+        },
         "lastActivityAt": {
           "$ref": "#/$defs/Timestamp"
         },
@@ -17756,12 +18091,19 @@
     "ToolPermission": {
       "description": "An approval raised by a session's tool permission prompt instead of a gated command: answering it answers the prompt\non the project's node. Its machine is the request's project's.",
       "properties": {
+        "input": {
+          "description": "The tool's input exactly as the session asked (at most 64 KiB of JSON): approved, the tool runs with exactly\nthis. Absent when the node didn't send it; the tool then runs with what the session asked."
+        },
         "preview": {
           "$ref": "#/$defs/ToolPreview",
           "description": "An integration's asking tool (`hub/integrations`): exactly who it reaches and what it says, or what it changes,\nread from the input it runs with once approved. Boxed: it is large beside the prompt's other fields."
         },
         "requestId": {
           "minLength": 1,
+          "type": "string"
+        },
+        "site": {
+          "description": "A Navi's first fetch or browser visit to this site (its host, such as `example.com`): approved, the Navi may\nfetch and open it without asking from then on, until a person revokes it (`navi_site_revoke`).",
           "type": "string"
         },
         "summary": {

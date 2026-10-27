@@ -529,6 +529,16 @@ impl LeadWakes {
             tracing::info!(project = %key_of(r), triggers = triggers.len(), "lead wake dropped: project has no lead");
             return Ok(());
         };
+        // An archived Navi's lead takes no turns; the digest at its next start shows the same state.
+        if self
+            .ctx
+            .store
+            .project_get(r)?
+            .is_some_and(|p| p.archived_at.is_some())
+        {
+            tracing::info!(project = %key_of(r), triggers = triggers.len(), "lead wake dropped: the Navi is archived");
+            return Ok(());
+        }
         // The lead's first message carried a digest listing every intent made before it started; a wake would say it
         // twice. Strictly earlier: one made in the same millisecond may have missed the digest.
         let triggers: Vec<Trigger> = triggers

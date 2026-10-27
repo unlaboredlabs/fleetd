@@ -2257,6 +2257,20 @@ impl Tasks {
             let (message, fix) = crate::hub::repos::archived_note(&holder, &repo);
             return Err(lead_error(ErrorCode::Invalid, message, Some(&fix)));
         }
+        // A Navi's lead works through its own tools and approvals; an agent it started would run unasked.
+        if self
+            .db(|c| crate::hub::navi::store::of(c, r))
+            .map_err(store_error)?
+            .is_some()
+        {
+            return Err(lead_error(
+                ErrorCode::Invalid,
+                "A Navi doesn't start agents of its own.".to_owned(),
+                Some(
+                    "Hand the work to a project's lead; do the rest yourself, asking the person where it needs them.",
+                ),
+            ));
+        }
         // Binding may ask the node, and so does each writer's changed paths: both happen before the lock, the paths
         // within `OBSERVE_TIMEOUT`, so a slow node never holds up other task calls. Under the lock the check reads
         // the store only.

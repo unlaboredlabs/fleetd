@@ -8,7 +8,8 @@ use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef, ThreadId, ThreadRef, Timestamp};
 use fleetd_contracts::ledger::{Decision, HumanRequest, IntakeChannel, WorkstreamId};
 use fleetd_contracts::mcp::ErrorCode;
-use fleetd_contracts::model::{ProjectSummary, ThreadCounts};
+use fleetd_contracts::model::{ProjectSummary, RuntimeMode, ThreadCounts};
+use fleetd_contracts::sessions::SessionRole;
 
 use crate::hub::executor::LaunchInput;
 use crate::hub::leads::hooks::BoxFuture;
@@ -30,6 +31,7 @@ const LOGIN_FIX: &str = "On lab-a: CLAUDE_CONFIG_DIR=~/.fleetd/claude claude aut
 pub(crate) struct Node {
     runner_usable: AtomicBool,
     pub(crate) launches: Mutex<Vec<LaunchInput>>,
+    pub(crate) roles: Mutex<Vec<SessionRole>>,
     pub(crate) sends: Mutex<Vec<String>>,
     /// Sends fail (the write queue refused them) while set; they are still recorded.
     send_fails: AtomicBool,
@@ -38,12 +40,18 @@ pub(crate) struct Node {
 struct Ports(Arc<Node>);
 
 impl LeadPorts for Ports {
-    fn launch(&self, _: &MachineId, input: LaunchInput) -> BoxFuture<Result<ThreadId, LeadError>> {
+    fn launch(
+        &self,
+        _: &MachineId,
+        input: LaunchInput,
+        role: SessionRole,
+    ) -> BoxFuture<Result<ThreadId, LeadError>> {
         let node = Arc::clone(&self.0);
         Box::pin(async move {
             if !node.runner_usable.load(Ordering::SeqCst) {
                 return Err(LeadError::new(ErrorCode::Failed, NOT_LOGGED_IN, LOGIN_FIX));
             }
+            node.roles.lock().unwrap().push(role);
             let mut launches = node.launches.lock().unwrap();
             launches.push(input);
             Ok(ThreadId::unchecked(format!("lead-{}", launches.len())))
@@ -109,6 +117,9 @@ pub(crate) fn hub(runner_usable: bool) -> Hub {
                 threads: ThreadCounts::default(),
                 last_activity_at: Timestamp::from(iso_ms(T0_MS as i64)),
                 repos: Vec::new(),
+                kind: None,
+                created_by: None,
+                archived_at: None,
             }],
         )
         .unwrap();
@@ -725,4 +736,196 @@ async fn the_idle_line_is_used_up_only_by_a_message_that_went_out() {
     let sends = hub.node.sends.lock().unwrap().clone();
     let carried: Vec<bool> = sends.iter().map(|s| idle(s)).collect();
     assert_eq!(carried, [false, true, true, false], "{sends:#?}");
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_navis_lead_starts_as_an_assistant_and_not_at_all_while_archived() {
+    let hub = hub(true);
+    let by = fleetd_contracts::model::ProjectCreator {
+        key_id: "k1".into(),
+        name: "laptop".into(),
+    };
+    hub.area
+        .ctx
+        .db
+        .with(|c| {
+            Ok(crate::hub::navi::store::put(
+                c,
+                &hub.project,
+                &by,
+                T0_MS as i64,
+            )?)
+        })
+        .unwrap();
+    hub.area
+        .ctx
+        .db
+        .with(|c| {
+            Ok(crate::hub::navi::store::set_archived(
+                c,
+                &hub.project,
+                Some(T0_MS as i64),
+            )?)
+        })
+        .unwrap();
+    let AutoStart::Held(why) = hub.area.leads.auto_start(&hub.project, Some("hi")).await else {
+        panic!("an archived Navi's lead started")
+    };
+    assert!(why.message.contains("archived"), "{}", why.message);
+    assert!(hub.node.launches.lock().unwrap().is_empty());
+
+    hub.area
+        .ctx
+        .db
+        .with(|c| {
+            Ok(crate::hub::navi::store::set_archived(
+                c,
+                &hub.project,
+                None,
+            )?)
+        })
+        .unwrap();
+    let started = hub.area.leads.auto_start(&hub.project, Some("hi")).await;
+    assert!(matches!(started, AutoStart::Started(_)));
+    let launches = hub.node.launches.lock().unwrap();
+    assert_eq!(launches[0].runtime_mode, RuntimeMode::ApprovalRequired);
+    assert!(
+        launches[0]
+            .prompt
+            .starts_with("You are repo-a, a personal assistant")
+    );
+    assert!(launches[0].prompt.contains("/lab/repo-a"));
+    assert_eq!(*hub.node.roles.lock().unwrap(), [SessionRole::Assistant]);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_project_of_code_keeps_its_lead_as_before() {
+    let hub = hub(true);
+    assert!(matches!(
+        hub.area.leads.auto_start(&hub.project, None).await,
+        AutoStart::Started(_)
+    ));
+    let launches = hub.node.launches.lock().unwrap();
+    assert_eq!(launches[0].runtime_mode, RuntimeMode::FullAccess);
+    assert!(
+        launches[0]
+            .prompt
+            .starts_with("You are the lead of project repo-a")
+    );
+    assert_eq!(*hub.node.roles.lock().unwrap(), [SessionRole::Lead]);
+}
+
+/// Archiving holds every start: neither a fresh start of a cold lead nor a restart brings an archived Navi's lead back.
+#[tokio::test(flavor = "current_thread")]
+async fn an_archived_navis_cold_lead_stays_stopped() {
+    let hub = hub(true);
+    let by = fleetd_contracts::model::ProjectCreator {
+        key_id: "k1".into(),
+        name: "laptop".into(),
+    };
+    let db = &hub.area.ctx.db;
+    db.with(|c| {
+        Ok(crate::hub::navi::store::put(
+            c,
+            &hub.project,
+            &by,
+            T0_MS as i64,
+        )?)
+    })
+    .unwrap();
+    let AutoStart::Started(lead) = hub.area.leads.auto_start(&hub.project, Some("hi")).await else {
+        panic!("the Navi's lead did not start")
+    };
+    // Its thread went idle two hours ago: cold.
+    hub.area
+        .ctx
+        .store
+        .thread_upsert(&crate::hub::store::StoredThread {
+            thread: serde_json::from_value(serde_json::json!({
+                "machineId": MACHINE, "threadId": lead.thread_id, "projectId": "p-a", "title": "lead",
+                "status": "idle", "headline": "", "latestMessageTail": "",
+                "lastProgressAt": iso_ms(T0_MS as i64 - 2 * 3_600_000), "stale": false,
+                "asOf": iso_ms(T0_MS as i64),
+            }))
+            .unwrap(),
+            last_sequence: None,
+            last_run_id: None,
+            last_run_status: None,
+        })
+        .unwrap();
+    assert!(hub.area.leads.cold(&hub.project));
+    db.with(|c| {
+        Ok(crate::hub::navi::store::set_archived(
+            c,
+            &hub.project,
+            Some(T0_MS as i64),
+        )?)
+    })
+    .unwrap();
+    let fresh = hub
+        .area
+        .leads
+        .fresh_if_cold(&hub.project, "hello again")
+        .await;
+    assert!(fresh.is_err_and(|e| e.message.contains("archived")));
+    let restarted = hub.area.leads.restart(&hub.project).await;
+    assert!(restarted.is_err_and(|e| e.message.contains("archived")));
+    assert_eq!(
+        hub.node.launches.lock().unwrap().len(),
+        1,
+        "no second start"
+    );
+}
+
+/// A Navi archived while its lead runs takes no more turns: no chat message, wake or start reaches it.
+#[tokio::test(flavor = "current_thread")]
+async fn a_navi_archived_while_its_lead_runs_takes_no_more_turns() {
+    let hub = hub(true);
+    let by = fleetd_contracts::model::ProjectCreator {
+        key_id: "k1".into(),
+        name: "laptop".into(),
+    };
+    let db = &hub.area.ctx.db;
+    db.with(|c| {
+        Ok(crate::hub::navi::store::put(
+            c,
+            &hub.project,
+            &by,
+            T0_MS as i64,
+        )?)
+    })
+    .unwrap();
+    assert!(matches!(
+        hub.area.leads.auto_start(&hub.project, Some("hi")).await,
+        AutoStart::Started(_)
+    ));
+    db.with(|c| {
+        Ok(crate::hub::navi::store::set_archived(
+            c,
+            &hub.project,
+            Some(T0_MS as i64),
+        )?)
+    })
+    .unwrap();
+    // A message from the chat is held, not sent to the running lead.
+    assert!(matches!(
+        hub.area.leads.auto_start(&hub.project, Some("one more thing")).await,
+        AutoStart::Held(e) if e.message.contains("archived")
+    ));
+    // lead_start's path.
+    assert!(hub.area.leads.start(&hub.project).await.is_err());
+    // A wake is dropped.
+    hub.area.wakes.trigger(
+        &hub.project,
+        Trigger::Line {
+            kind: LineKind::Request,
+            text: "- Q1 approved".into(),
+        },
+    );
+    hub.after_debounce().await;
+    assert!(
+        hub.node.sends.lock().unwrap().is_empty(),
+        "no turn after archiving"
+    );
+    assert_eq!(hub.node.launches.lock().unwrap().len(), 1);
 }

@@ -30,12 +30,13 @@ use fleetd_contracts::ids::{ProjectId, ThreadId, Timestamp};
 use fleetd_contracts::prim::{NonEmpty, Text};
 use fleetd_contracts::project_settings::{ProjectWorktree, ProjectWorktrees};
 use fleetd_contracts::sessions::{
-    CloneProgressFrame, FailureClass, ItemKind, ItemStatus, MachineEvent, MachineEventFrame,
-    MessageRole, PendingPermission, PermissionDecision, ProjectInfo, RunEnd, RunFailure, RunInfo,
-    RunStatus, RunUsage, RunnerInfo, SendAccepted, SendMode, SendNow, SessionCall,
-    SessionCallFrame, SessionChanges, SessionError, SessionErrorCode, SessionLaunch, SessionOutput,
-    SessionReplyFrame, SessionResult, SessionRole, SessionStatus, SessionSummary, SessionWorkspace,
-    ThreadEvent, ThreadEventFrame, ThreadItem, ThreadMessage, ThreadSnapshot, WorktreeBase,
+    CloneProgressFrame, FOLDER_TAKEN, FailureClass, ItemKind, ItemStatus, MachineEvent,
+    MachineEventFrame, MessageRole, PENDING_INPUT_MAX, PendingPermission, PermissionDecision,
+    ProjectInfo, RunEnd, RunFailure, RunInfo, RunStatus, RunUsage, RunnerInfo, SendAccepted,
+    SendMode, SendNow, SessionCall, SessionCallFrame, SessionChanges, SessionError,
+    SessionErrorCode, SessionLaunch, SessionOutput, SessionReplyFrame, SessionResult, SessionRole,
+    SessionStatus, SessionSummary, SessionWorkspace, ThreadEvent, ThreadEventFrame, ThreadItem,
+    ThreadMessage, ThreadSnapshot, WorktreeBase,
 };
 use fleetd_contracts::steer::SteerTag;
 use tokio::sync::{mpsc, oneshot, watch};
@@ -324,11 +325,13 @@ fn agent_exe(exe: std::io::Result<PathBuf>, pid: u32) -> String {
 /// allow rule can't undo what sessions depend on: the pinned claude (no autoupdate), helper calls on `helper_model`,
 /// the subagent cap, the tools fleetd never gives an agent, auto memory off ([`AUTO_MEMORY_OFF_ENV`]), and `extra_env`
 /// (the session's prompt cache TTL and role defaults such as a task agent's command timeout). `skills` turns off
-/// claude's own skills of the names fleetd's plugin gives the session (`node::skills`).
+/// claude's own skills of the names fleetd's plugin gives the session (`node::skills`). `ask` are the role's ask rules
+/// (`claude::role_ask`), which outrank every allow rule.
 pub fn settings_overlay(
     extra_env: &[(String, String)],
     skills: serde_json::Map<String, serde_json::Value>,
     helper_model: &str,
+    ask: &[&str],
 ) -> String {
     let mut env = subagents_off_settings_env();
     env.extend(
@@ -347,6 +350,9 @@ pub fn settings_overlay(
     });
     if !skills.is_empty() {
         overlay["skillOverrides"] = skills.into();
+    }
+    if !ask.is_empty() {
+        overlay["permissions"]["ask"] = ask.into();
     }
     format!("{overlay}\n")
 }
@@ -407,6 +413,19 @@ fn path_safe(id: &str) -> bool {
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
         && !id.starts_with('.')
+}
+
+/// A relative project root (`navi/ada`) as the folder under the node's home it names; `None` for any other root. Each
+/// part is [`path_safe`], so it never leaves the home.
+fn home_folder(home: &Path, root: &str) -> Option<PathBuf> {
+    if root.starts_with('/') {
+        return None;
+    }
+    let parts: Vec<&str> = root.trim_end_matches('/').split('/').collect();
+    parts
+        .iter()
+        .all(|p| path_safe(p))
+        .then(|| parts.iter().fold(home.to_path_buf(), |dir, p| dir.join(p)))
 }
 
 async fn blocking<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
@@ -1374,6 +1393,32 @@ impl SessionService {
                 "project id {project_id} has characters a path can't hold"
             )));
         }
+        let folder = home_folder(&self.inner.config.home, &root);
+        let root = match &folder {
+            Some(dir) => {
+                // A new folder only: one already there (left by a removed Navi, or another's) is never taken over.
+                let ours = self
+                    .store()
+                    .project(project_id.as_str())?
+                    .is_some_and(|p| Path::new(&p.workspace_root) == dir);
+                let made = dir
+                    .parent()
+                    .map_or(Ok(()), std::fs::create_dir_all)
+                    .and_then(|()| std::fs::create_dir(dir));
+                match made {
+                    Ok(()) => {}
+                    Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists && ours => {}
+                    Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                        return Err(invalid(format!("{FOLDER_TAKEN}{}", dir.display())));
+                    }
+                    Err(e) => {
+                        return Err(invalid(format!("{} was not made: {e}", dir.display())));
+                    }
+                }
+                dir.to_string_lossy().into_owned()
+            }
+            None => root,
+        };
         let dir = Path::new(&root);
         if !dir.is_absolute() || !dir.is_dir() {
             return Err(invalid(format!(
@@ -1383,12 +1428,15 @@ impl SessionService {
         let info = ProjectInfo {
             project_id,
             title,
-            workspace_root: root,
+            workspace_root: root.clone(),
             updated_at: now(),
         };
         let st = self.st();
         st.machine(self.store().upsert_project(&info)?);
-        Ok(SessionOutput::Done)
+        Ok(match folder {
+            Some(_) => SessionOutput::Folder { path: root },
+            None => SessionOutput::Done,
+        })
     }
 
     async fn launch(&self, launch: SessionLaunch) -> Reply {
@@ -1948,7 +1996,7 @@ impl SessionService {
             Some(kept) => kept.role,
             None => match row.local.role {
                 SessionRole::Plain => return,
-                SessionRole::Lead => McpAgentRole::Lead,
+                SessionRole::Lead | SessionRole::Assistant => McpAgentRole::Lead,
                 SessionRole::Worker if row.local.branch.is_some() => McpAgentRole::Writer,
                 SessionRole::Worker => McpAgentRole::Reviewer,
             },
@@ -2116,7 +2164,12 @@ impl SessionService {
             .unwrap_or_else(|| HELPER_MODEL_ENV.1.to_owned());
         std::fs::write(
             &settings,
-            settings_overlay(&role_env, skills.overrides(), &helper_model),
+            settings_overlay(
+                &role_env,
+                skills.overrides(),
+                &helper_model,
+                claude::role_ask(row.local.role),
+            ),
         )?;
         env.extend([
             (
@@ -2176,7 +2229,13 @@ impl SessionService {
             effort: row.summary.effort,
             helper_model,
             runtime_mode: row.summary.runtime_mode,
-            allowed_tools: row.local.allowed_tools.clone(),
+            allowed_tools: row
+                .local
+                .allowed_tools
+                .iter()
+                .cloned()
+                .chain(claude::role_allowed(row.local.role))
+                .collect(),
             allowed_only: row.local.allowed_only,
             disallowed_tools: ALWAYS_DISALLOWED
                 .iter()
@@ -2627,13 +2686,23 @@ impl SessionService {
         summary: String,
         run_id: &Option<String>,
     ) {
+        let scratch = share::scratch_dir(&self.inner.config.home, id);
         let decision = self.update(id, |c| {
-            let decision = state::auto_answer(
-                c.row.summary.runtime_mode,
-                c.row.local.allowed_only,
+            let decision = claude::role_answer(
+                c.row.local.role,
+                &c.row.local.cwd,
+                &scratch,
                 &tool_name,
                 &input,
-            );
+            )
+            .or_else(|| {
+                state::auto_answer(
+                    c.row.summary.runtime_mode,
+                    c.row.local.allowed_only,
+                    &tool_name,
+                    &input,
+                )
+            });
             let at = c.at.clone();
             c.put_item(ThreadItem {
                 id: NonEmpty::unchecked(permission_item_id(&request_id)),
@@ -2662,6 +2731,9 @@ impl SessionService {
                         .unwrap_or_else(|_| NonEmpty::unchecked("?")),
                     summary: Text::new(tail_utf16(&summary, 2000))
                         .unwrap_or_else(|_| Text::unchecked("")),
+                    input: serde_json::to_string(&input)
+                        .is_ok_and(|json| json.len() <= PENDING_INPUT_MAX)
+                        .then(|| input.clone()),
                 });
                 if let Some(run) = c.active_mut() {
                     run.status = RunStatus::Waiting;

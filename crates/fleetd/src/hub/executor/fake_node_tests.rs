@@ -673,3 +673,37 @@ async fn a_launch_carries_the_hubs_skills_for_its_project_and_a_send_what_change
         ]
     );
 }
+
+/// A Navi's lead could write the policy file in its own folder, so it gets none of that file's allow rules: every such
+/// tool still asks. Its denials still hold.
+#[tokio::test]
+async fn a_navis_lead_gets_no_allow_rules_from_its_folders_policy_file() {
+    let mut node = Node::start(None).await;
+    node.subscribe(json!([])).await;
+    node.executors.set_tool_policy(Arc::new(Rules));
+    let executors = node.executors.clone();
+    let machine = node.machine.clone();
+    let launched = tokio::spawn(async move {
+        executors
+            .launch(
+                &machine,
+                &launch_input("navi-1"),
+                LaunchOptions {
+                    role: fleetd_contracts::sessions::SessionRole::Assistant,
+                    ..Default::default()
+                },
+            )
+            .await
+    });
+    let (id, call) = node.call().await;
+    let SessionCall::Launch(l) = call else {
+        panic!("not a launch: {call:?}")
+    };
+    assert!(l.allowed_tools.is_empty(), "{:?}", l.allowed_tools);
+    assert_eq!(l.disallowed_tools, ["WebFetch"]);
+    node.reply(
+        &id,
+        json!({ "ok": { "kind": "launched", "summary": session(l.session_id.as_str(), json!({})) } }),
+    );
+    launched.await.unwrap().unwrap();
+}

@@ -2,6 +2,7 @@ use super::*;
 use crate::hub::store::HubDb;
 use crate::hub::usage::ports::WaitPage;
 use fleetd_contracts::events::HubEvent;
+use fleetd_contracts::sessions::{PendingPermission, PermissionDecision};
 use std::sync::Mutex;
 
 /// The approvals over a real request store, a scripted node and a recorded event log.
@@ -26,6 +27,18 @@ struct Fake {
     /// Each preview setting saved for a project; a reason fails the save.
     previews_saved: Mutex<Vec<(ProjectRef, PreviewConfig)>>,
     preview_save_fails: Mutex<Option<String>>,
+    /// Each permission answer the node took: machine, thread, prompt and decision.
+    answers: Mutex<Vec<(String, String, String, PermissionDecision)>>,
+    /// The node fails each answer with this.
+    answer_fails: Mutex<Option<NodeCommandError>>,
+    /// The prompt the thread waits on, as the machine stream has it.
+    pending: Mutex<Option<PendingPermission>>,
+    /// The project's MCP servers, for the integrations policy.
+    servers: Mutex<Vec<fleetd_contracts::mcp_servers::McpServer>>,
+    /// The project is a Navi whose lead is thread t1 (true by default), and the sites it may visit unasked, each with
+    /// who allowed it.
+    navi: Mutex<bool>,
+    sites: Mutex<Vec<(String, String)>>,
 }
 
 impl Default for Fake {
@@ -48,6 +61,12 @@ impl Default for Fake {
             order_saved: Mutex::default(),
             previews_saved: Mutex::default(),
             preview_save_fails: Mutex::default(),
+            answers: Mutex::default(),
+            answer_fails: Mutex::default(),
+            pending: Mutex::default(),
+            servers: Mutex::default(),
+            navi: Mutex::new(true),
+            sites: Mutex::default(),
         }
     }
 }
@@ -114,9 +133,62 @@ impl ApprovalNodes for Fake {
         let l = *self.linked.lock().unwrap();
         Box::pin(async move { l })
     }
+    fn answer_permission(
+        &self,
+        m: &str,
+        t: &str,
+        request_id: &str,
+        decision: PermissionDecision,
+        _by: Option<fleetd_contracts::time::DecidedBy>,
+    ) -> BoxFut<'_, Result<(), NodeCommandError>> {
+        let result = match self.answer_fails.lock().unwrap().clone() {
+            Some(e) => Err(e),
+            None => {
+                self.answers.lock().unwrap().push((
+                    m.into(),
+                    t.into(),
+                    request_id.into(),
+                    decision,
+                ));
+                Ok(())
+            }
+        };
+        Box::pin(async move { result })
+    }
+    fn pending_permission(&self, _: &str, _: &str) -> BoxFut<'_, Option<PendingPermission>> {
+        let p = self.pending.lock().unwrap().clone();
+        Box::pin(async move { p })
+    }
 }
 
 impl ApprovalHub for Fake {
+    fn navi_lead(&self, _: &ProjectRef, thread_id: &str) -> BoxFut<'_, bool> {
+        let lead = *self.navi.lock().unwrap() && thread_id == "t1";
+        Box::pin(async move { lead })
+    }
+    fn navi_site(&self, _: &ProjectRef, site: Option<&str>) -> BoxFut<'_, Option<bool>> {
+        let known = (*self.navi.lock().unwrap()).then(|| {
+            site.is_some_and(|s| {
+                self.sites
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .any(|(known, _)| known == s)
+            })
+        });
+        Box::pin(async move { known })
+    }
+    fn navi_site_allow(&self, _: &ProjectRef, site: &str, by: &str) -> BoxFut<'_, ()> {
+        self.sites.lock().unwrap().push((site.into(), by.into()));
+        Box::pin(async {})
+    }
+    fn mcp_servers(
+        &self,
+        _: &ProjectRef,
+    ) -> BoxFut<'_, Vec<fleetd_contracts::mcp_servers::McpServer>> {
+        let servers = self.servers.lock().unwrap().clone();
+        Box::pin(async move { servers })
+    }
     fn box_key(&self, m: &str) -> BoxFut<'_, Option<Option<String>>> {
         let key = (m == "lab-a").then(|| Some("box-key".to_string()));
         Box::pin(async move { key })
@@ -808,4 +880,382 @@ async fn an_approval_and_a_secret_record_the_person_who_answered() {
         .unwrap();
     let saved = fake.request(open.request_id.as_str());
     assert_eq!(saved.answered_by_person.as_ref(), Some(&alice));
+}
+
+fn prompt(request_id: &str, tool: &str, summary: &str) -> Value {
+    json!({ "requestId": request_id, "toolName": tool, "summary": summary })
+}
+
+fn event(kind: &str, permission: Option<Value>) -> HubEvent {
+    let mut data = json!({ "status": "waiting" });
+    if let Some(p) = permission {
+        data["permission"] = p;
+    }
+    serde_json::from_value(json!({
+        "seq": 7, "at": "2026-10-27T10:00:00.000Z", "type": kind, "machineId": "lab-a", "projectId": "p1",
+        "threadId": "t1", "summary": "", "data": data,
+    }))
+    .unwrap()
+}
+
+fn requests(fake: &Fake) -> Vec<HumanRequest> {
+    fake.requests
+        .list(&RequestFilter {
+            limit: 10,
+            ..Default::default()
+        })
+        .unwrap()
+}
+
+/// A Navi's email send: what the approval shows is what runs once approved.
+fn send_input() -> Value {
+    json!({ "to": ["ana@example.com"], "subject": "Saturday", "body": "Could we book a cleaning?" })
+}
+
+/// A Navi with Google connected, as the integrations policy reads it.
+fn google() -> fleetd_contracts::mcp_servers::McpServer {
+    let mut s: fleetd_contracts::mcp_servers::McpServer = serde_json::from_value(json!({
+        "scope": { "kind": "project", "machineId": "lab-a", "projectId": "p1" },
+        "name": "google", "enabled": true,
+        "roles": { "lead": true, "writers": false, "reviewers": false },
+        "transport": { "type": "http", "url": "http://127.0.0.1:8787/mcp" },
+        "updatedAt": "2026-10-27T00:00:00Z"
+    }))
+    .unwrap();
+    s.integration = Some(fleetd_contracts::integrations::McpIntegration {
+        kind: fleetd_contracts::integrations::IntegrationKind::Google,
+        read_tools: fleetd_contracts::prim::List::new(vec![]).unwrap(),
+    });
+    s
+}
+
+fn pending_with(request_id: &str, tool: &str, input: Option<Value>) -> PendingPermission {
+    let mut p = prompt(request_id, tool, "a call");
+    if let Some(input) = input {
+        p["input"] = input;
+    }
+    serde_json::from_value(p).unwrap()
+}
+
+#[tokio::test]
+async fn a_prompt_becomes_one_approval_and_approve_runs_the_tool_with_exactly_the_input_shown() {
+    let fake = Arc::new(Fake::default());
+    *fake.servers.lock().unwrap() = vec![google()];
+    let a = approvals(&fake);
+    let tool = "mcp__google__send_message";
+    *fake.pending.lock().unwrap() = Some(
+        serde_json::from_value(json!({
+            "requestId": "q1", "toolName": tool, "summary": "send to ana@example.com", "input": send_input(),
+        }))
+        .unwrap(),
+    );
+    let waiting = event(
+        "thread.waiting",
+        Some(prompt("q1", tool, "send to ana@example.com")),
+    );
+    a.on_thread_event(&waiting).await;
+    a.on_thread_event(&waiting).await;
+    let open = requests(&fake);
+    assert_eq!(open.len(), 1, "the same prompt is filed once");
+    let r = &open[0];
+    assert_eq!(
+        (r.kind, r.state, r.text.as_str()),
+        (
+            RequestKind::Approval,
+            RequestState::Open,
+            "mcp__google__send_message: send to ana@example.com"
+        )
+    );
+    let permission = serde_json::to_value(&r.permission).unwrap();
+    assert_eq!(
+        (
+            &permission["threadId"],
+            &permission["requestId"],
+            &permission["toolName"],
+            &permission["input"]
+        ),
+        (&json!("t1"), &json!("q1"), &json!(tool), &send_input())
+    );
+    // The integration's card: every recipient, the subject and the body.
+    assert_eq!(permission["preview"]["to"], json!(["ana@example.com"]));
+    assert_eq!(permission["preview"]["subject"], "Saturday");
+    assert_eq!(permission["preview"]["body"], "Could we book a cleaning?");
+    // The chat shows it like a gated command, with the tool, its input and the card.
+    let item = serde_json::to_value(chat_item(r)).unwrap();
+    assert_eq!(item["kind"], "command_approval");
+    assert_eq!(item["permission"]["input"], send_input());
+    assert_eq!(item["permission"]["preview"]["title"], "Send an email");
+    assert!(
+        fake.answers.lock().unwrap().is_empty(),
+        "nothing is answered for the person"
+    );
+
+    // Only a person answers it.
+    assert!(a.answer(&agent(), "Q1", true, None).await.is_err());
+    a.answer(&person(), "Q1", true, None).await.unwrap();
+    assert_eq!(
+        fake.answers.lock().unwrap().as_slice(),
+        [(
+            "lab-a".into(),
+            "t1".into(),
+            "q1".into(),
+            PermissionDecision::Allow {
+                updated_input: Some(send_input())
+            }
+        )]
+    );
+    assert_eq!(
+        fake.request("Q1").evidence.unwrap().as_str(),
+        "allowed on lab-a, answered by human:desk"
+    );
+    assert!(
+        fake.runs.lock().unwrap().is_empty(),
+        "a tool prompt never runs a gated command"
+    );
+    assert!(
+        fake.woken.lock().unwrap().is_empty(),
+        "the run itself goes on: no wake"
+    );
+}
+
+#[tokio::test]
+async fn deny_tells_the_run_who_said_no_and_an_undelivered_approve_goes_back_to_the_person() {
+    let fake = Arc::new(Fake::default());
+    let a = approvals(&fake);
+    bash(&a, &fake, "q1", "rm -rf ~/Mail").await;
+    a.answer(&person(), "Q1", false, Some("not my mail".into()))
+        .await
+        .unwrap();
+    let answers = fake.answers.lock().unwrap().clone();
+    let PermissionDecision::Deny { message } = &answers[0].3 else {
+        panic!("{answers:?}")
+    };
+    assert_eq!(message.as_str(), "human:desk said no (Q1): not my mail");
+    assert_eq!(fake.request("Q1").state, RequestState::Denied);
+
+    // The node is offline when the person approves: nothing ran, so it is theirs to approve again.
+    bash(&a, &fake, "q2", "ls").await;
+    *fake.answer_fails.lock().unwrap() = Some(NodeCommandError {
+        reason: "offline".into(),
+        message: "lab-a is offline".into(),
+        fix: None,
+    });
+    a.answer(&person(), "Q2", true, None).await.unwrap();
+    let q2 = fake.request("Q2");
+    assert_eq!(q2.state, RequestState::Open);
+    assert!(q2.evidence.unwrap().as_str().starts_with("not delivered"));
+}
+
+#[tokio::test]
+async fn a_prompt_that_goes_away_closes_its_request() {
+    let fake = Arc::new(Fake::default());
+    let a = approvals(&fake);
+    bash(&a, &fake, "q1", "ls").await;
+    // A second prompt in the same run: the first was answered elsewhere.
+    bash(&a, &fake, "q2", "pwd").await;
+    assert_eq!(fake.request("Q1").state, RequestState::Denied);
+    assert_eq!(fake.request("Q2").state, RequestState::Open);
+    // The run ends.
+    a.on_thread_event(&event("thread.interrupted", None)).await;
+    let q2 = fake.request("Q2");
+    assert_eq!(q2.state, RequestState::Denied);
+    assert_eq!(q2.evidence.unwrap().as_str(), "expired: the run ended");
+    assert!(fake.answers.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn an_integrations_read_runs_unasked_and_a_blocked_or_unshowable_call_is_refused_with_nothing_filed()
+ {
+    let fake = Arc::new(Fake::default());
+    *fake.servers.lock().unwrap() = vec![google()];
+    let a = approvals(&fake);
+    for (id, tool, input) in [
+        (
+            "q1",
+            "mcp__google__search_threads",
+            Some(json!({ "query": "dentist" })),
+        ),
+        (
+            "q2",
+            "mcp__google__send_money",
+            Some(json!({ "to": "bo@example.com", "amount": 50 })),
+        ),
+        // The node sent no input: the card could not show what approving it sends.
+        ("q3", "mcp__google__send_message", None),
+    ] {
+        *fake.pending.lock().unwrap() = Some(pending_with(id, tool, input));
+        a.on_thread_event(&event("thread.waiting", Some(prompt(id, tool, "a call"))))
+            .await;
+    }
+    assert!(requests(&fake).is_empty(), "nothing asks the person");
+    let answers = fake.answers.lock().unwrap().clone();
+    assert_eq!(answers.len(), 3);
+    assert_eq!(
+        answers[0].3,
+        PermissionDecision::Allow {
+            updated_input: None
+        }
+    );
+    for (_, _, id, decision) in &answers[1..] {
+        let PermissionDecision::Deny { message } = decision else {
+            panic!("{id}: {decision:?}")
+        };
+        assert!(
+            message.as_str().starts_with("Blocked by fleetd"),
+            "{id}: {}",
+            message.as_str()
+        );
+    }
+}
+
+/// A command prompt on the Navi's lead, its input as the node sends it.
+async fn bash(a: &Approvals, fake: &Fake, id: &str, command: &str) {
+    *fake.pending.lock().unwrap() = Some(pending_with(
+        id,
+        "Bash",
+        Some(json!({ "command": command })),
+    ));
+    a.on_thread_event(&event("thread.waiting", Some(prompt(id, "Bash", command))))
+        .await;
+}
+
+fn fetch(id: &str, url: &str) -> (HubEvent, PendingPermission) {
+    let input = json!({ "url": url, "prompt": "the opening hours" });
+    (
+        event("thread.waiting", Some(prompt(id, "WebFetch", url))),
+        pending_with(id, "WebFetch", Some(input)),
+    )
+}
+
+async fn prompted(a: &Approvals, fake: &Fake, (event, pending): (HubEvent, PendingPermission)) {
+    *fake.pending.lock().unwrap() = Some(pending);
+    a.on_thread_event(&event).await;
+}
+
+/// A Navi's first fetch to a site asks the person; approving it allows the site, so the next fetch there goes through
+/// unasked; a site they revoke asks again.
+#[tokio::test]
+async fn a_navis_first_visit_to_a_site_asks_and_its_approval_allows_the_site() {
+    let fake = Arc::new(Fake::default());
+    *fake.navi.lock().unwrap() = true;
+    let a = approvals(&fake);
+    prompted(&a, &fake, fetch("q1", "https://www.dentist.example/hours")).await;
+    let open = requests(&fake);
+    assert_eq!(open.len(), 1, "the first visit asks");
+    let permission = open[0].permission.as_ref().unwrap();
+    assert_eq!(permission.site.as_deref(), Some("dentist.example"));
+    let item = serde_json::to_value(chat_item(&open[0])).unwrap();
+    assert_eq!(item["permission"]["site"], "dentist.example");
+    a.answer(&person(), "Q1", true, None).await.unwrap();
+    assert_eq!(
+        fake.sites.lock().unwrap().as_slice(),
+        [("dentist.example".to_owned(), "human:desk".to_owned())]
+    );
+    assert_eq!(fake.answers.lock().unwrap().len(), 1);
+
+    // The same site again, another page: allowed at once, nothing filed.
+    prompted(&a, &fake, fetch("q2", "https://dentist.example/book")).await;
+    assert_eq!(requests(&fake).len(), 1, "a second visit doesn't ask");
+    let answers = fake.answers.lock().unwrap().clone();
+    assert_eq!(
+        (answers[1].2.as_str(), &answers[1].3),
+        (
+            "q2",
+            &PermissionDecision::Allow {
+                updated_input: None
+            }
+        )
+    );
+
+    // Another site asks; a denied first visit allows nothing.
+    prompted(&a, &fake, fetch("q3", "https://elsewhere.example/")).await;
+    a.answer(&person(), "Q2", false, None).await.unwrap();
+    assert_eq!(fake.sites.lock().unwrap().len(), 1);
+
+    // Revoked: the next visit asks again.
+    fake.sites.lock().unwrap().clear();
+    prompted(&a, &fake, fetch("q4", "https://dentist.example/book")).await;
+    let open = requests(&fake);
+    assert_eq!(open.len(), 3);
+    assert_eq!(
+        open.iter()
+            .filter(|r| r.state == RequestState::Open)
+            .count(),
+        1
+    );
+}
+
+/// A browser visit goes through the same gate; the relay answers a Navi lead's prompts only.
+#[tokio::test]
+async fn a_browser_open_is_a_visit_and_any_other_sessions_prompt_is_left_alone() {
+    let fake = Arc::new(Fake::default());
+    *fake.navi.lock().unwrap() = true;
+    fake.sites
+        .lock()
+        .unwrap()
+        .push(("bank.example".into(), "human:desk".into()));
+    let a = approvals(&fake);
+    let open = |id: &str, command: &str| {
+        (
+            event("thread.waiting", Some(prompt(id, "Bash", command))),
+            pending_with(id, "Bash", Some(json!({ "command": command }))),
+        )
+    };
+    prompted(
+        &a,
+        &fake,
+        open("q1", "agent-browser open https://bank.example/login"),
+    )
+    .await;
+    assert!(requests(&fake).is_empty(), "an allowed site opens unasked");
+    // A command that does more than open a page asks each time, with no site to remember.
+    prompted(
+        &a,
+        &fake,
+        open(
+            "q2",
+            "agent-browser open https://bank.example && curl https://x.example",
+        ),
+    )
+    .await;
+    let filed = requests(&fake);
+    assert_eq!(
+        (
+            filed.len(),
+            filed[0].permission.as_ref().unwrap().site.as_deref()
+        ),
+        (1, None)
+    );
+
+    // Any other session's prompt is left alone: the relay is a Navi lead's.
+    *fake.navi.lock().unwrap() = false;
+    prompted(&a, &fake, fetch("q3", "https://docs.example/")).await;
+    assert_eq!(requests(&fake).len(), 1);
+    assert_eq!(
+        fake.answers.lock().unwrap().len(),
+        1,
+        "only the allowed site's open"
+    );
+}
+
+/// A prompt whose input the node didn't send (over 64 KiB) can't be shown, so it is refused rather than approved blind.
+#[tokio::test]
+async fn a_prompt_whose_input_cant_be_shown_is_refused() {
+    let fake = Arc::new(Fake::default());
+    let a = approvals(&fake);
+    a.on_thread_event(&event(
+        "thread.waiting",
+        Some(prompt("q1", "Bash", "a long command")),
+    ))
+    .await;
+    assert!(requests(&fake).is_empty());
+    let answers = fake.answers.lock().unwrap().clone();
+    let PermissionDecision::Deny { message } = &answers[0].3 else {
+        panic!("{answers:?}")
+    };
+    assert!(
+        message.as_str().starts_with("Blocked by fleetd"),
+        "{}",
+        message.as_str()
+    );
 }

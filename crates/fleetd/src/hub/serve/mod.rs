@@ -348,6 +348,7 @@ pub fn build_on_with(
         &leads,
         crate::hub::leads::wiring::Links {
             executors: &executors,
+            link: &link,
             queue: &queue,
             requests: &requests,
             decisions: &decisions,
