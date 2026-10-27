@@ -74,15 +74,40 @@ fn hub(
 }
 
 /// A person's device on `hub`, with `role` on every machine.
-fn person(hub: &Hub, name: &str, role: Role) -> Caller {
+/// A device `device` of the person `who` on `hub` (made on first use: an admin for `Role::Admin`, else a member), with
+/// `role` on every machine.
+fn person(hub: &Hub, who: &str, device: &str, role: Role) -> Caller {
+    let people = crate::hub::people::People::new(hub.db.clone(), hub.clock.clone());
+    let found = people
+        .list(false)
+        .unwrap()
+        .into_iter()
+        .find(|p| p.name.as_str() == who);
+    let someone = match found {
+        Some(p) => p,
+        None => {
+            let hub_role = if role == Role::Admin {
+                fleetd_contracts::people::HubRole::Admin
+            } else {
+                fleetd_contracts::people::HubRole::Member
+            };
+            people
+                .create(
+                    &fleetd_contracts::people::PersonName::unchecked(who),
+                    hub_role,
+                )
+                .unwrap()
+        }
+    };
     hub.auth
-        .create_key(
-            name,
+        .create_key_for(
+            device,
             &[Grant {
                 role,
                 machines: GrantMachines::All(Star::Value),
             }],
             KeyKind::Human,
+            Some(&someone.person_id),
         )
         .unwrap()
         .info
@@ -189,8 +214,8 @@ async fn linked(projects: Option<Value>) -> Linked {
         None,
     );
     let url = serve(&acme).await;
-    let you_acme = person(&acme, "laptop", Role::Operate);
-    let you_home = person(&home, "laptop", Role::Operate);
+    let you_acme = person(&acme, "Alex", "laptop", Role::Operate);
+    let you_home = person(&home, "Alex", "laptop", Role::Operate);
     let mut mint = json!({ "label": "home" });
     if let Some(p) = projects {
         mint["projects"] = p;
@@ -284,7 +309,7 @@ async fn an_ask_from_a_navi_opens_an_order_on_the_other_hub_as_the_person_and_it
     // Acme records it as the person, via home's Navi, and sees nothing of the Navi itself.
     let posts = agent_posts(&l.acme, &shop);
     assert_eq!(posts.len(), 1);
-    assert_eq!(posts[0].0, "laptop via home Navi");
+    assert_eq!(posts[0].0, "Alex via home Navi");
     assert!(posts[0].1.starts_with("Gift cards, please."));
     assert!(posts[0].1.contains("pass asked: \"N1\""), "{}", posts[0].1);
     assert!(
@@ -516,7 +541,7 @@ async fn revoking_on_the_other_hub_stops_the_link_at_once() {
         .unwrap();
     assert_eq!(mine["issued"][0]["label"], "home");
     assert_eq!(mine["issued"][0]["device"], "laptop");
-    let other = person(&l.acme, "phone", Role::Operate);
+    let other = person(&l.acme, "Sam", "phone", Role::Operate);
     let theirs = tool(&l.acme, &other, "hub_links_get", json!({}))
         .await
         .unwrap();
@@ -530,7 +555,7 @@ async fn revoking_on_the_other_hub_stops_the_link_at_once() {
     .await
     .unwrap_err();
     assert_eq!(code, ErrorCode::NotFound);
-    let admin = person(&l.acme, "admin", Role::Admin);
+    let admin = person(&l.acme, "Robin", "desk", Role::Admin);
     let all = tool(&l.acme, &admin, "hub_links_get", json!({}))
         .await
         .unwrap();
@@ -785,14 +810,14 @@ async fn a_message_through_a_link_is_never_the_persons_answer_approval_or_secret
         ChatAuthor::Agent,
         "an agent's input, not the person's"
     );
-    assert_eq!(said.by.as_deref(), Some("laptop via home Navi"));
+    assert_eq!(said.by.as_deref(), Some("Alex via home Navi"));
     assert!(
         crate::hub::chat::needs_you(&after),
         "the question still waits on the person"
     );
     let set = l.acme.db.prompts().current(Some(&shop));
-    let for_lead = crate::hub::chat::flow::for_lead(&set, said, None, "");
-    assert!(for_lead.contains("laptop via home Navi"), "{for_lead}");
+    let for_lead = crate::hub::chat::flow::for_lead(&set, said, None, "", "The human");
+    assert!(for_lead.contains("Alex via home Navi"), "{for_lead}");
 
     // The key opens /link/v1 and nothing else: no tool, no approval, no chat read.
     let http = reqwest::Client::new();

@@ -421,7 +421,7 @@ impl Auth {
         let row = self.db.with(|conn| {
             Ok(conn
                 .prepare_cached(&format!(
-                    "SELECT {KEY_COLUMNS} FROM agent_keys WHERE key_id = ?"
+                    "SELECT {KEY_COLUMNS} FROM {KEY_FROM} WHERE k.key_id = ?"
                 ))?
                 .query_row([key_id], KeyRow::read)
                 .optional()?)
