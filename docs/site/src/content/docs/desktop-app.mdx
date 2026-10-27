@@ -89,7 +89,7 @@ on a chat attach to your message. See [Add a project](/docs/projects#add-a-proje
 | Secret and approval items | A masked field with "Save secret", or a command (or a tool's permission request) with Approve and Deny. See [Secrets & approvals](/docs/approvals-and-secrets). |
 | The top row | The project, its state word (as in [Status](#status)), and its [Max agents](/docs/projects#max-agents) control ("agents 6 / 12"). |
 
-![The storefront project's chat: you asked to round the cart totals once, the lead replied that the writers start from PR #10's branch and split the change into three PRs, and the strip above the message box shows three agents working. The panel's Agents tab lists them: reviewers on #221 and #222 and a writer. In the sidebar, billing says reply and checkout says blocked.](/docs/img/chat.png)
+![The storefront project's chat: you asked to round the cart totals once, the lead replied that the writers start from PR #10's branch and split the change into three PRs, and the strip above the message box shows three agents working. The panel's Agents tab lists them: reviewers on #221 and #222 and a writer. In the sidebar, billing says reply and checkout says CI red.](/docs/img/chat.png)
 
 ### When the hub is out of reach {#offline}
 
@@ -151,7 +151,7 @@ the decisions in force.
 
 ## Status {#status}
 
-![Status with one row per project: billing waiting on you, checkout blocked, storefront working, each with its work in groups and its last merge.](/docs/img/status.png)
+![Status with one row per project: billing waiting on you, storefront working, and checkout idle with a CI red tag, each with its work in groups and its last merge.](/docs/img/status.png)
 
 Status shows one row per project: a state word (waiting on you, blocked, working or idle), its work in groups (waiting
 on you, in review, working, landing, idle, done), the agents running, and when the last pull request merged. Under it,

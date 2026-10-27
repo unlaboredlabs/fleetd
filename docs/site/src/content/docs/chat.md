@@ -14,7 +14,7 @@ Lead:  Fixed in "Align the checkout button on Safari", merged.
 
 Each project has one lead and one ongoing chat. Click the project in the sidebar to open it.
 
-![The storefront project's chat: you asked to round the cart totals once, the lead replied that the writers start from PR #10's branch and split the change into three PRs, and the strip above the message box shows three agents working. The panel's Agents tab lists them: reviewers on #221 and #222 and a writer. In the sidebar, billing says reply and checkout says blocked.](/docs/img/chat.png)
+![The storefront project's chat: you asked to round the cart totals once, the lead replied that the writers start from PR #10's branch and split the change into three PRs, and the strip above the message box shows three agents working. The panel's Agents tab lists them: reviewers on #221 and #222 and a writer. In the sidebar, billing says reply and checkout says CI red.](/docs/img/chat.png)
 
 ## Send a message {#send}
 
@@ -92,8 +92,8 @@ The lead logs each answer as a [decision](/docs/glossary#decision), so it never 
 sidebar, a project says "reply" while the lead's last message waits for your answer, "secret" or "approve" while an
 item is open, and "blocked" when something outside the work holds it up. ⌥⌘A jumps to the next one. In the chat, a
 line above the box says what it waits on, such as "2 questions, asked at 09:02" or "1 command to approve". Click Show
-to scroll to it. When nothing waits on you but the project is blocked, the line says why, such as "Blocked: main CI is
-red".
+to scroll to it. When nothing waits on you but the project is blocked, the line says why. A check red on main blocks nothing, so the
+line warns instead, naming the check and whether a fix is under way: "`rust (macos)` is red on main, fix in progress".
 
 ## How the lead writes {#voice}
 
