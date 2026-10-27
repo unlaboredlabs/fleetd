@@ -797,6 +797,37 @@ async fn a_changed_event_emails_no_one_unless_asked_and_then_names_every_guest()
 }
 
 #[tokio::test]
+async fn a_list_entry_holding_several_addresses_splits_as_the_card_shows_them() {
+    let (_home, _ep, fake, session) = signed_in().await;
+    let input = json!({ "to": ["bo@vendor.test, cy@vendor.test"], "subject": "Hi", "body": "." });
+    let card = crate::hub::integrations::policy::addresses(&input["to"]);
+    assert_eq!(card, ["bo@vendor.test", "cy@vendor.test"]);
+    tools::call(&session, "send_message", &input).await.unwrap();
+    let mime = raw_of(
+        &fake.lock().unwrap().seen,
+        "/gmail/v1/users/me/messages/send",
+    );
+    assert!(
+        mime.contains(&format!("To: {}\r\n", card.join(", "))),
+        "{mime}"
+    );
+
+    let event = json!({ "summary": "Lunch", "start": "2026-10-30T13:00:00", "end": "2026-10-30T14:00:00",
+                        "attendees": ["bo@vendor.test, cy@vendor.test"] });
+    tools::call(&session, "create_calendar_event", &event)
+        .await
+        .unwrap();
+    let body = fake.lock().unwrap().seen.last().cloned().unwrap().3;
+    let body: Value = serde_json::from_str(&body).unwrap();
+    let guests: Vec<Value> = crate::hub::integrations::policy::addresses(&event["attendees"])
+        .into_iter()
+        .map(|a| json!({ "email": a }))
+        .collect();
+    assert_eq!(body["attendees"], json!(guests));
+    assert_eq!(guests.len(), 2);
+}
+
+#[tokio::test]
 async fn guests_that_are_not_plain_addresses_are_refused_and_nothing_is_made() {
     let (_home, _ep, fake, session) = signed_in().await;
     let before = fake.lock().unwrap().seen.len();

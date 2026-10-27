@@ -63,8 +63,8 @@ fn hub() -> (Arc<Hub>, tempfile::TempDir) {
     hub.db
         .with(|c| {
             c.execute_batch(
-                "CREATE TABLE IF NOT EXISTS assistants (machine_id TEXT, project_id TEXT, archived_ms INTEGER);
-                 INSERT INTO assistants VALUES ('lab', 'ana', NULL);",
+                "INSERT INTO assistants (machine_id, project_id, created_ms, created_by_key, created_by_name)
+                 VALUES ('lab', 'ana', 0, 'person', 'Person');",
             )?;
             Ok(())
         })

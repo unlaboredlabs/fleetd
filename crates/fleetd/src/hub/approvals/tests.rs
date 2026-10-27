@@ -912,13 +912,13 @@ fn send_input() -> Value {
     json!({ "to": ["ana@example.com"], "subject": "Saturday", "body": "Could we book a cleaning?" })
 }
 
-/// A Navi with Google connected, as the integrations policy reads it.
+/// A Navi with Google connected, as the integrations policy reads it: the hub's own `fleetd google-mcp`.
 fn google() -> fleetd_contracts::mcp_servers::McpServer {
     let mut s: fleetd_contracts::mcp_servers::McpServer = serde_json::from_value(json!({
         "scope": { "kind": "project", "machineId": "lab-a", "projectId": "p1" },
         "name": "google", "enabled": true,
         "roles": { "lead": true, "writers": false, "reviewers": false },
-        "transport": { "type": "http", "url": "http://127.0.0.1:8787/mcp" },
+        "transport": { "type": "stdio", "command": "fleetd", "args": ["google-mcp"] },
         "updatedAt": "2026-10-27T00:00:00Z"
     }))
     .unwrap();

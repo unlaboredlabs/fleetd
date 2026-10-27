@@ -507,27 +507,29 @@ fn one_line(what: &str, text: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// `a@x.com, b@y.com` as its addresses, the way the hub's approval card reads them (hub/integrations/policy.rs).
+fn split(text: &str) -> Vec<String> {
+    text.split(',')
+        .map(str::trim)
+        .filter(|a| !a.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
 fn addresses(input: &Value, key: &str) -> Result<Vec<String>, String> {
     let list: Vec<String> = match &input[key] {
-        Value::String(s) => s
-            .split(',')
-            .map(str::trim)
-            .filter(|a| !a.is_empty())
-            .map(str::to_owned)
-            .collect(),
+        Value::String(s) => split(s),
         Value::Array(items) => {
             let mut list = Vec::new();
             for item in items {
                 // What the approval card showed is what goes: an item it can't read as an address is refused, not
-                // dropped.
+                // dropped, and one holding several, comma-joined, splits as the card splits it.
                 let Some(a) = item.as_str() else {
                     return Err(format!(
                         "{key} is a list of email addresses, each a string like \"ana@example.com\": {item} isn't one"
                     ));
                 };
-                if !a.trim().is_empty() {
-                    list.push(a.trim().to_owned());
-                }
+                list.extend(split(a));
             }
             list
         }
