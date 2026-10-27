@@ -3,6 +3,7 @@
 // offers comes from model.ts; the hub checks it all again.
 import { useState } from "react";
 import type { HubRole, PeopleListOutput, Person } from "../../../shared/contracts";
+import { lacksTool } from "../../src/data/errors";
 import { CallError } from "../../src/data/queries";
 import { useToolQuery } from "../../src/data/react";
 import { Button, Dialog, Select, Text } from "../../ui";
@@ -22,8 +23,7 @@ export const usePeople = () => {
 };
 
 /** A hub from before people answers that it has no such tool: it needs updating, not a retry. */
-export const lacksPeople = (error: unknown): boolean =>
-  error instanceof CallError && error.error.code === "not_found" && error.error.message.startsWith("No tool");
+export const lacksPeople = (error: unknown): boolean => error instanceof CallError && lacksTool(error.error);
 
 /** In place of People and Invites on a hub from before people; Hub settings still works there. */
 export function NeedsUpdate() {

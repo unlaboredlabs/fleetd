@@ -4,8 +4,6 @@
 // place while it is open, as it does Settings'.
 import { ArrowLeft, ListChecks, SlidersHorizontal, UserPlus, Users } from "lucide-react";
 import type { ReactNode } from "react";
-import type { HubInfoOutput } from "../../../shared/contracts";
-import { useToolQuery } from "../../src/data/react";
 import { Button, Separator, Sidebar, SidebarItem, SidebarSection, Text } from "../../ui";
 import { HubCaps, TaskProfiles } from "../settings/Agents";
 import { MachineRoles } from "../settings/MachineRoles";
@@ -14,11 +12,9 @@ import { PageHead } from "../settings/parts";
 import { useRoute } from "../shell/navigation";
 import { toHash, type AdminSection } from "../shell/routes";
 import { Invites } from "./Invites";
-import { administers } from "./model";
 import { People } from "./People";
+import { useHubRole, type HubRoleView } from "./role";
 import s from "../settings/settings.module.css";
-
-const noInput = {};
 
 const SECTIONS: ReadonlyArray<{ section: AdminSection; label: string; icon: ReactNode }> = [
   { section: "people", label: "People", icon: <Users /> },
@@ -54,12 +50,12 @@ export function AdminSidebar({ onBack }: { onBack: () => void }) {
 
 export function AdminScreen() {
   const section = useSection();
-  const info = useToolQuery("hub_info", noInput);
-  return <div className={s.frame}>{page(section, info.data, info.isPending)}</div>;
+  const role = useHubRole();
+  return <div className={s.frame}>{page(section, role)}</div>;
 }
 
-function page(section: AdminSection, info: HubInfoOutput | undefined, pending: boolean): ReactNode {
-  if (!administers(info)) {
+function page(section: AdminSection, { administers, me, pending }: HubRoleView): ReactNode {
+  if (!administers) {
     // A member who follows a link here sees why, and nothing else.
     return (
       <div className={s.scroll} data-screen={pending ? "admin.loading" : "admin.denied"}>
@@ -72,9 +68,9 @@ function page(section: AdminSection, info: HubInfoOutput | undefined, pending: b
   }
   switch (section) {
     case "people":
-      return <People me={info?.me} />;
+      return <People me={me} />;
     case "invites":
-      return <Invites me={info?.me} />;
+      return <Invites me={me} />;
     case "hub":
       return <HubSettings />;
     case "setup":

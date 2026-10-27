@@ -80,13 +80,13 @@ function Entry() {
   );
 }
 
-/** `old`: a hub from before people, which has none of the people tools. */
-const render = async (info: Partial<HubInfoOutput>, what: "page" | "sidebar" = "page", old = false) => {
+/** `old`: a hub from before people, which has none of the people tools; `info: null`, not even hub_info. */
+const render = async (info: Partial<HubInfoOutput> | null, what: "page" | "sidebar" = "page", old = false) => {
   let listener: (frame: HubFrame) => void = () => undefined;
   const hub: HubApi = {
     call: (tool, input) => {
       calls.push({ tool, input });
-      if (old && tool !== "hub_info") return Promise.resolve({ ok: false, error: { code: "not_found", message: `No tool ${tool}.` } });
+      if ((old && tool !== "hub_info") || (info === null && tool === "hub_info")) return Promise.resolve({ ok: false, error: { code: "not_found", message: `No tool ${tool}.` } });
       const output =
         tool === "hub_info"
           ? { version: "0.0.0", protocol: 1, busy: [], ...info }
@@ -259,4 +259,14 @@ it("asks for a hub update on a hub from before people, in place of a raw error",
     act(() => root.unmount());
     root = createRoot(host);
   }
+});
+
+it("lets a hub with no hub_info at all reach Administration, whose Hub settings work there", async () => {
+  await render(null, "sidebar", true);
+  expect(buttons().some((b) => b.textContent.includes("Administration"))).toBe(true);
+  act(() => root.unmount());
+  root = createRoot(host);
+  window.location.hash = "#/admin/hub";
+  await render(null, "page", true);
+  expect(host.querySelector("[data-screen='admin.hub']")).not.toBeNull();
 });
