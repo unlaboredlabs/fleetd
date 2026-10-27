@@ -4,6 +4,7 @@
 //! for tokens, revokes them on disconnect, and `fleetd google-mcp` (cli/google_mcp.rs) reads them here to serve the
 //! Navi's Gmail, Calendar and Drive tools ([`tools`]), refreshing the access token in place. No token or secret leaves
 //! these files: errors name what failed, never a value.
+pub mod mail;
 pub mod tools;
 
 #[cfg(test)]
@@ -24,7 +25,7 @@ use zeroize::{Zeroize, Zeroizing};
 use super::identity::NodeBoxKey;
 use super::secrets::{fingerprint_of, write_atomic};
 
-const DIR: &str = "google";
+pub(super) const DIR: &str = "google";
 
 /// Each Google call, the token endpoint's included.
 const TIMEOUT: Duration = Duration::from_secs(30);
@@ -37,6 +38,8 @@ pub struct Endpoints {
     pub gmail: String,
     /// Calendar, Drive and Drive's uploads.
     pub www: String,
+    /// Pub/Sub, for Gmail's push notifications.
+    pub pubsub: String,
 }
 
 impl Default for Endpoints {
@@ -45,6 +48,7 @@ impl Default for Endpoints {
             oauth: "https://oauth2.googleapis.com".into(),
             gmail: "https://gmail.googleapis.com".into(),
             www: "https://www.googleapis.com".into(),
+            pubsub: "https://pubsub.googleapis.com".into(),
         }
     }
 }
@@ -102,6 +106,7 @@ pub fn account_path(home: &Path, project_id: &str) -> PathBuf {
 
 /// Deletes a Navi's tokens when its project goes from the node; the hub revoked them first when it could.
 pub fn forget(home: &Path, project_id: &str) {
+    let _ = remove(&mail::state_path(home, project_id));
     if let Err(e) = remove(&account_path(home, project_id)) {
         tracing::warn!(project_id, "Google tokens not removed: {e}");
     }
@@ -112,7 +117,7 @@ pub fn connected(home: &Path, project_id: &str) -> bool {
     account_path(home, project_id).is_file()
 }
 
-fn read<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<Option<T>, String> {
+pub(super) fn read<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<Option<T>, String> {
     let bytes = match std::fs::read(path) {
         Ok(bytes) => Zeroizing::new(bytes),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -123,7 +128,7 @@ fn read<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<Option<T>, String> 
         .map_err(|_| format!("{} does not parse", path.display()))
 }
 
-fn write<T: Serialize>(path: &Path, value: &T) -> Result<(), String> {
+pub(super) fn write<T: Serialize>(path: &Path, value: &T) -> Result<(), String> {
     if let Some(dir) = path.parent() {
         super::config::mkdir_private(dir)
             .map_err(|e| format!("cannot make {}: {e}", dir.display()))?;
@@ -132,7 +137,7 @@ fn write<T: Serialize>(path: &Path, value: &T) -> Result<(), String> {
     write_atomic(path, &bytes).map_err(|e| format!("cannot write {}: {e}", path.display()))
 }
 
-fn remove(path: &Path) -> Result<(), String> {
+pub(super) fn remove(path: &Path) -> Result<(), String> {
     match std::fs::remove_file(path) {
         Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
             Err(format!("cannot remove {}: {e}", path.display()))
@@ -141,13 +146,13 @@ fn remove(path: &Path) -> Result<(), String> {
     }
 }
 
-fn now_ms() -> i64 {
+pub(super) fn now_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_millis() as i64)
 }
 
-fn http() -> reqwest::Client {
+pub(super) fn http() -> reqwest::Client {
     reqwest::Client::builder()
         .timeout(TIMEOUT)
         .build()
@@ -198,7 +203,10 @@ fn oauth_error(body: &Value) -> (String, String) {
     (code, said)
 }
 
-async fn token_call(ep: &Endpoints, form: &[(&str, &str)]) -> Result<Value, (String, String)> {
+pub(super) async fn token_call(
+    ep: &Endpoints,
+    form: &[(&str, &str)],
+) -> Result<Value, (String, String)> {
     let answer = http()
         .post(format!("{}/token", ep.oauth))
         .form(form)
@@ -383,6 +391,7 @@ pub async fn disconnect(
     };
     let revoked = revoke_grant && revoke(ep, &account.refresh_token).await;
     remove(&path)?;
+    let _ = remove(&mail::state_path(home, project_id));
     Ok(revoked)
 }
 
@@ -436,6 +445,32 @@ pub async fn answer(
         GoogleCall::Disconnect { project_id, revoke } => GoogleAnswer::Disconnected {
             revoked: disconnect(home, ep, project_id.as_str(), revoke).await?,
         },
+        GoogleCall::PubsubSet {
+            subscription,
+            sealed,
+        } => GoogleAnswer::PubsubSaved {
+            fingerprint: mail::pubsub_set(
+                home,
+                subscription.as_str(),
+                sealed.as_ref().map(|s| s.as_str()),
+                box_key,
+            )?,
+        },
+        GoogleCall::MailPull => GoogleAnswer::Pulled {
+            notices: mail::pull(home, ep).await?,
+        },
+        GoogleCall::MailWatch { project_id, topic } => {
+            let s = Session::new(home.to_path_buf(), project_id.to_string(), ep.clone());
+            GoogleAnswer::Watching {
+                expires_ms: mail::watch(&s, topic.as_str()).await?,
+            }
+        }
+        GoogleCall::MailCheck { project_id, query } => {
+            let s = Session::new(home.to_path_buf(), project_id.to_string(), ep.clone());
+            GoogleAnswer::NewMail {
+                mails: mail::check(&s, query.as_ref().map(|q| q.as_str())).await?,
+            }
+        }
     })
 }
 

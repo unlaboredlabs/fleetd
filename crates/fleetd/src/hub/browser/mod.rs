@@ -37,6 +37,63 @@ pub fn dir(hub: &Hub, session_id: &BrowserSessionId) -> PathBuf {
     hub.config.home.join("browser").join(session_id.as_str())
 }
 
+/// What a lost recording's folder is renamed to on its way out: `.{id}.lost-<ms>`, beside the recordings.
+const ASIDE: &str = ".lost-";
+
+/// Moves a session's recording out of its place (a rename, however large it is), to delete once the hub's database
+/// connection is free again ([`delete_aside`]). None when it has none.
+pub fn set_aside(hub: &Hub, id: &BrowserSessionId) -> Option<PathBuf> {
+    let from = dir(hub, id);
+    let to = from.with_file_name(format!(".{id}{ASIDE}{}", now_ms(hub.clock.as_ref())));
+    match std::fs::rename(&from, &to) {
+        Ok(()) => Some(to),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => {
+            tracing::warn!(session = %id, error = %e, "lost recording not moved aside; deleting it in place");
+            let _ = std::fs::remove_dir_all(&from);
+            None
+        }
+    }
+}
+
+/// Deletes a recording [`set_aside`] moved, off the async threads: a large one takes a while.
+pub async fn delete_aside(aside: PathBuf) {
+    let _ = tokio::task::spawn_blocking(move || std::fs::remove_dir_all(aside)).await;
+}
+
+/// Removes the recording folders no session keeps: those set aside that a stopped hub never deleted, and the folder
+/// of a session that ended lost, which a late upload piece (one that read the session before its loss) can make again.
+/// Each lost one is checked and moved aside in a transaction, so a session its node brought back meanwhile keeps its
+/// folder. Returns how many it removed.
+pub fn sweep_lost(hub: &Hub) -> Result<usize, StoreError> {
+    let Ok(entries) = std::fs::read_dir(hub.config.home.join("browser")) else {
+        return Ok(0);
+    };
+    let mut gone = Vec::new();
+    for entry in entries.filter_map(Result::ok) {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name.starts_with('.') && name.contains(ASIDE) {
+            gone.push(entry.path());
+            continue;
+        }
+        let id = BrowserSessionId::unchecked(&name);
+        let aside = hub.db.transaction(|c| {
+            Ok(get_on(c, &id)?
+                .filter(|s| s.state == BrowserSessionState::Lost)
+                .and_then(|_| set_aside(hub, &id)))
+        })?;
+        gone.extend(aside);
+    }
+    for path in &gone {
+        if let Err(e) = std::fs::remove_dir_all(path)
+            && e.kind() != std::io::ErrorKind::NotFound
+        {
+            tracing::warn!(path = %path.display(), error = %e, "lost recording not deleted");
+        }
+    }
+    Ok(gone.len())
+}
+
 pub fn file_path(hub: &Hub, session_id: &BrowserSessionId, file: RecordingFile) -> PathBuf {
     dir(hub, session_id).join(file.file_name())
 }
@@ -161,9 +218,9 @@ fn outlived(c: &Connection) -> Result<Vec<BrowserSession>, StoreError> {
 /// What a session the hub ended with its task says.
 pub const OUTLIVED_NOTE: &str = "its task ended with it still open, so the hub ended it";
 
-/// Ends every live session whose task ended (done, failed or cancelled; never one between turns): lost on the hub, and
-/// its agent's node told to close it and kill its processes ([`CAP_SESSION_END`]), here or on the machine hosting it.
-/// A recording its node still uploads records it after all. Returns how many it ended.
+/// Ends every live session whose task ended (done, failed or cancelled; never one between turns): lost on the hub,
+/// for [`tell_nodes`] to have its node close it. A recording its node still uploads records it after all. Returns how
+/// many it ended.
 pub fn end_outlived(hub: &Hub) -> Result<usize, StoreError> {
     let sessions = hub.db.with(outlived)?;
     let now = now_ms(hub.clock.as_ref());
@@ -173,27 +230,72 @@ pub fn end_outlived(hub: &Hub) -> Result<usize, StoreError> {
         s.takeover_reason = None;
         s.note = Some(Text::unchecked(OUTLIVED_NOTE));
         save(hub, &s)?;
-        let machine = &s.project_ref.machine_id;
-        if hub.link.node_can(machine, CAP_SESSION_END) {
-            hub.link.send_to(
-                machine,
-                HubToNode::SessionEnd(SessionEndFrame {
-                    thread_id: s.thread_id.clone(),
-                    session_id: s.session_id.clone(),
-                }),
-            );
-        }
         tracing::info!(session = %s.session_id, task = ?s.task_id, "screen outlived its task; ended");
     }
     Ok(sessions.len())
 }
 
-/// [`end_outlived`] as the hub starts and after each event (a task's end is one), until the hub stops.
+/// How long the hub keeps telling a node of a screen it ended: a node that idles a screen out sooner closes it anyway.
+const TELL_MS: i64 = DAY_MS;
+
+/// The sessions the hub ended with their task in the last [`TELL_MS`] that their node hasn't reported since: it may
+/// still have them open.
+fn untold(c: &Connection, now: i64) -> Result<Vec<BrowserSession>, StoreError> {
+    let mut stmt = c.prepare(
+        "SELECT data FROM browser_sessions WHERE state = 'lost' AND json_extract(data, '$.note') = ?1
+           AND json_extract(data, '$.endedAt') >= ?2",
+    )?;
+    let rows = stmt.query_map(params![OUTLIVED_NOTE, iso_ms(now - TELL_MS)], |row| {
+        row.get::<_, String>(0)
+    })?;
+    let mut out = Vec::new();
+    for data in rows {
+        out.push(serde_json::from_str(&data?)?);
+    }
+    Ok(out)
+}
+
+/// Each session told of, by id: the link of its node's it went out on.
+pub type Told = std::collections::HashMap<String, u64>;
+
+/// Tells the agent's node of each session [`end_outlived`] ended, to close it and kill its processes, here or on the
+/// machine hosting it ([`CAP_SESSION_END`]): once per link, so a node that was offline then, or reconnected since,
+/// hears of it when it links. Returns how many it told.
+pub fn tell_nodes(hub: &Hub, told: &mut Told) -> Result<usize, StoreError> {
+    let now = now_ms(hub.clock.as_ref());
+    let sessions = hub.db.with(|c| untold(c, now))?;
+    told.retain(|id, _| sessions.iter().any(|s| s.session_id.as_str() == id));
+    let mut sent = 0;
+    for s in sessions {
+        let machine = &s.project_ref.machine_id;
+        let Some(link) = hub.link.link_id(machine) else {
+            continue;
+        };
+        if told.get(s.session_id.as_str()) == Some(&link)
+            || !hub.link.node_can(machine, CAP_SESSION_END)
+        {
+            continue;
+        }
+        let frame = HubToNode::SessionEnd(SessionEndFrame {
+            thread_id: s.thread_id.clone(),
+            session_id: s.session_id.clone(),
+        });
+        if hub.link.send_to(machine, frame) {
+            told.insert(s.session_id.to_string(), link);
+            sent += 1;
+        }
+    }
+    Ok(sent)
+}
+
+/// [`end_outlived`] and [`tell_nodes`] as the hub starts and after each event (a task's end is one, a node's link
+/// another), until the hub stops.
 pub async fn run_end_outlived(hub: Arc<Hub>) {
     let mut head = hub.events.subscribe();
+    let mut told = Told::new();
     loop {
         head.borrow_and_update();
-        if let Err(e) = end_outlived(&hub) {
+        if let Err(e) = end_outlived(&hub).and_then(|_| tell_nodes(&hub, &mut told)) {
             tracing::warn!(error = %e, "screens of ended tasks not ended");
         }
         tokio::select! {
@@ -336,6 +438,16 @@ pub fn prune(hub: &Hub) -> Result<usize, StoreError> {
 /// The hourly prune, until the hub stops.
 pub async fn run_prune(hub: Arc<Hub>) {
     loop {
+        // As the hub starts and with each pass: what a stopped hub or a late upload piece left of lost recordings.
+        let sweep = {
+            let hub = hub.clone();
+            tokio::task::spawn_blocking(move || sweep_lost(&hub)).await
+        };
+        match sweep {
+            Ok(Ok(0)) | Err(_) => {}
+            Ok(Ok(n)) => tracing::info!(n, "lost browser recordings removed"),
+            Ok(Err(e)) => tracing::warn!(error = %e, "lost browser recordings not removed"),
+        }
         match prune(&hub) {
             Ok(0) => {}
             Ok(n) => tracing::info!(n, "browser recordings expired"),

@@ -122,7 +122,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "google_get",
-        "A Navi's own Google connection: the hub's OAuth client (clientId and the machines holding its secret, sealedOn; never the secret), with project that Navi's account (its address, the scopes granted, and lapsed: why Google stopped taking it, as its node says now), the scopes connecting asks for, and the redirect: a loopback address on any port, which a Desktop app client takes unregistered.",
+        "A Navi's own Google connection: the hub's OAuth client (clientId and the machines holding its secret, sealedOn; never the secret), with project that Navi's account (its address, the scopes granted, and lapsed: why Google stopped taking it, as its node says now), the scopes connecting asks for, and the redirect: a loopback address on any port, which a Desktop app client takes unregistered. mailMode says how the hub hears of new mail now: push (Gmail through the admin's Pub/Sub, within seconds) or polling (each Navi's inbox about every minute); mailProblem, why it polls although Pub/Sub is set up.",
     ),
     (
         "google_client_set",
@@ -139,6 +139,14 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     (
         "google_disconnect",
         "Human keys only, operate on the Navi's machine. Disconnect a Navi's Google account: its node revokes the grant at Google and deletes its tokens; revoked says whether Google confirmed. Refused while the machine is offline, since the tokens are there.",
+    ),
+    (
+        "google_pubsub_set",
+        "Human keys only, operate on every machine. Set up new mail in real time: pubsub.topic (projects/<project>/topics/<topic>) that Gmail publishes to (gmail-api-push@system.gserviceaccount.com needs Pub/Sub Publisher on it), pubsub.subscription (a pull subscription of it), pubsub.machineId (the one machine that reads it) and pubsub.sealed (the service account's JSON key, with Pub/Sub Subscriber on the subscription, sealed with crypto_box_seal to that machine's boxPubKey). That node checks the key and keeps it in its home; the hub keeps its fingerprint. No pubsub: turn it off, and the machine forgets the key; the hub checks each Navi's mail about every minute.",
+    ),
+    (
+        "google_mail_set",
+        "Human keys only, operate on the Navi's machine. Set when new mail wakes a Navi: rule off (it reads mail only when asked), all (each new inbox message) or query (only new mail matching query, in Gmail's search syntax). The wake names each message's sender, subject, start and thread, marked as the mailbox's untrusted words.",
     ),
     (
         "thread_tail",

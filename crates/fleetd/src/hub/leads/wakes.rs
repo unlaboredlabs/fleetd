@@ -50,6 +50,8 @@ pub enum LineKind {
     CutOff,
     /// Work a Navi asked another project for opened, closed, merged or failed (hub/navi/bridge.rs).
     Factory,
+    /// New mail in a Navi's inbox, under the person's rule (hub/google/mail.rs).
+    Mail,
 }
 
 #[derive(Debug, Clone)]
@@ -104,6 +106,7 @@ impl Trigger {
                 LineKind::Quiet => "quiet",
                 LineKind::CutOff => "cut_off",
                 LineKind::Factory => "factory",
+                LineKind::Mail => "mail",
             },
         }
     }

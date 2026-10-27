@@ -329,6 +329,7 @@ async fn run_node(
         secrets_for,
         mask_for: mask_for.clone(),
         filled_elsewhere: session_route::FilledElsewhere::default(),
+        hosted_ids: Default::default(),
     });
     if sessions_router.is_some() {
         node_sessions.set_browser(router.clone());

@@ -5,12 +5,14 @@ use std::sync::Arc;
 use fleetd_contracts::auth::Role;
 use fleetd_contracts::google::{
     GOOGLE_REDIRECT, GOOGLE_SCOPES, GoogleAccount, GoogleAnswer, GoogleCall, GoogleClient,
+    GooglePubsub, MailWake, MailWakeRule,
 };
 use fleetd_contracts::ids::{MachineId, ProjectRef};
 use fleetd_contracts::mcp::{
     ErrorCode, GoogleClientSetInput, GoogleClientSetOutput, GoogleClientTestInput,
     GoogleClientTestOutput, GoogleConnectInput, GoogleConnectOutput, GoogleDisconnectInput,
-    GoogleDisconnectOutput, GoogleGetInput, GoogleGetOutput,
+    GoogleDisconnectOutput, GoogleGetInput, GoogleGetOutput, GoogleMailSetInput,
+    GoogleMailSetOutput, GooglePubsubSetInput, GooglePubsubSetOutput,
 };
 use fleetd_contracts::mcp_servers::McpSealedOn;
 use fleetd_contracts::node_link::CAP_GOOGLE;
@@ -27,6 +29,8 @@ pub fn register(tools: &mut Registry) {
     tools.add("google_client_test", client_test);
     tools.add("google_connect", connect);
     tools.add("google_disconnect", disconnect);
+    tools.add("google_pubsub_set", pubsub_set);
+    tools.add("google_mail_set", mail_set);
 }
 
 /// The node can take Google calls: online and new enough.
@@ -110,11 +114,15 @@ async fn get(
             account
         }
     };
+    let client = store.client()?;
+    let (mail_mode, mail_problem) = super::mail::mode(&hub, client.as_ref())?;
     Ok(GoogleGetOutput {
-        client: store.client()?,
+        client,
         account,
         scopes: GOOGLE_SCOPES.iter().map(|s| (*s).to_owned()).collect(),
         redirect: GOOGLE_REDIRECT.to_owned(),
+        mail_mode,
+        mail_problem,
         next: None,
         truncated: None,
     })
@@ -172,6 +180,7 @@ async fn client_set(
         client_id: input.client_id,
         sealed_on,
         updated_at: crate::hub::mcp_servers::now(&hub),
+        pubsub: hub.db.google().client()?.and_then(|c| c.pubsub),
     };
     hub.db.google().put_client(&client)?;
     let mut next = "Test it, then connect a Google account from a Navi's Integrations.".to_owned();
@@ -264,11 +273,22 @@ async fn connect(
     let GoogleAnswer::Connected { email, scopes } = ask(&hub, &r.machine_id, call).await? else {
         return Err(unexpected(&r.machine_id));
     };
+    // A reconnect keeps the person's mail rule; the watch starts again.
+    let mail = hub
+        .db
+        .google()
+        .account(r)?
+        .map(|a| MailWake {
+            watch_expires_ms: None,
+            ..a.mail
+        })
+        .unwrap_or_default();
     let account = GoogleAccount {
         project_ref: r.clone(),
         email,
         scopes,
         connected_at: crate::hub::mcp_servers::now(&hub),
+        mail,
         lapsed: None,
     };
     hub.db.google().put_account(&account)?;
@@ -332,6 +352,118 @@ async fn disconnect(
              myaccount.google.com/permissions to be sure."
                 .into()
         }),
+        truncated: None,
+    })
+}
+
+async fn pubsub_set(
+    hub: Arc<Hub>,
+    caller: Caller,
+    input: GooglePubsubSetInput,
+) -> Result<GooglePubsubSetOutput, ToolError> {
+    if !is_human(&caller) || !allows_everywhere(&caller, Role::Operate) {
+        return Err(ToolError::new(
+            ErrorCode::Forbidden,
+            "Only a person with operate on every machine sets up real-time mail.",
+        )
+        .with_fix("Set it up in the desktop app: Administration › Google."));
+    }
+    let store = hub.db.google();
+    let mut client = store.client()?.ok_or_else(no_client)?;
+    // The machine that held the key forgets it, whatever comes next.
+    if let Some(before) = &client.pubsub
+        && input
+            .pubsub
+            .as_ref()
+            .is_none_or(|p| p.machine_id != before.machine_id)
+        && node_ready(&hub, &before.machine_id).is_ok()
+    {
+        let call = GoogleCall::PubsubSet {
+            subscription: before.subscription.clone(),
+            sealed: None,
+        };
+        if let Err(e) = ask(&hub, &before.machine_id, call).await {
+            tracing::warn!(machine_id = %before.machine_id, "Pub/Sub key not forgotten: {}", e.message);
+        }
+    }
+    client.pubsub = match input.pubsub {
+        None => None,
+        Some(p) => {
+            node_ready(&hub, &p.machine_id)?;
+            let call = GoogleCall::PubsubSet {
+                subscription: p.subscription.clone(),
+                sealed: Some(p.sealed),
+            };
+            let GoogleAnswer::PubsubSaved {
+                fingerprint: Some(fingerprint),
+            } = ask(&hub, &p.machine_id, call).await?
+            else {
+                return Err(unexpected(&p.machine_id));
+            };
+            Some(GooglePubsub {
+                topic: p.topic,
+                subscription: p.subscription,
+                machine_id: p.machine_id,
+                fingerprint,
+            })
+        }
+    };
+    client.updated_at = crate::hub::mcp_servers::now(&hub);
+    store.put_client(&client)?;
+    super::mail::reset(&hub)?;
+    let next = if client.pubsub.is_some() {
+        "Navis whose mail wakes them start watching their inbox within a minute; new mail reaches them in seconds."
+    } else {
+        "The hub checks the mail of each Navi whose mail wakes it about every minute."
+    };
+    Ok(GooglePubsubSetOutput {
+        client,
+        next: Some(next.into()),
+        truncated: None,
+    })
+}
+
+async fn mail_set(
+    hub: Arc<Hub>,
+    caller: Caller,
+    input: GoogleMailSetInput,
+) -> Result<GoogleMailSetOutput, ToolError> {
+    let r = &input.project;
+    if !is_human(&caller) || !allows(&caller, Role::Operate, Some(&r.machine_id)) {
+        return Err(ToolError::new(
+            ErrorCode::Forbidden,
+            "Only a person sets when their mail wakes a Navi, with operate on its machine.",
+        ));
+    }
+    let store = hub.db.google();
+    let mut account = store.account(r)?.ok_or_else(|| {
+        ToolError::new(ErrorCode::NotFound, "This Navi has no Google account.")
+            .with_fix("Connect Google first.")
+    })?;
+    if input.rule == MailWakeRule::Query && input.query.is_none() {
+        return Err(ToolError::new(
+            ErrorCode::Invalid,
+            "A query rule needs its query, in Gmail's search syntax.",
+        ));
+    }
+    account.mail = MailWake {
+        rule: input.rule,
+        query: (input.rule == MailWakeRule::Query)
+            .then_some(input.query)
+            .flatten(),
+        watch_expires_ms: account.mail.watch_expires_ms,
+    };
+    store.put_account(&account)?;
+    Ok(GoogleMailSetOutput {
+        account,
+        next: Some(
+            match input.rule {
+                MailWakeRule::Off => "New mail no longer wakes the Navi.",
+                MailWakeRule::All => "Each new message in the inbox wakes the Navi.",
+                MailWakeRule::Query => "New mail matching the query wakes the Navi.",
+            }
+            .into(),
+        ),
         truncated: None,
     })
 }

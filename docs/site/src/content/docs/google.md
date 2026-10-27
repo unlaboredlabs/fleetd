@@ -84,6 +84,33 @@ the app listens on such a port on their own computer, and Google sends them back
 hub has. Google takes only https or loopback addresses as redirects, and a hub on plain http at a Tailscale name is
 neither.
 
+### Real-time mail {#pubsub}
+
+Optional. Without it, a Navi whose mail wakes it still hears of new mail, within about a minute (see
+[New mail wakes a Navi](#new-mail)). With it, new mail reaches the Navi in seconds. Do it in the same Cloud project as
+the client. The hub needs no public address: one machine reads the subscription, the way a mail client checks for mail.
+
+1. **Turn on Pub/Sub.** Under **APIs & Services › Library**, enable **Cloud Pub/Sub API**.
+2. **Make the topic.** Under **Pub/Sub › Topics**, press **Create topic**, name it `navi-mail`, and untick **Add a
+   default subscription**. Its full name is `projects/<project>/topics/navi-mail`.
+3. **Let Gmail publish to it.** On the topic, open **Permissions**, press **Add principal**, enter
+   `gmail-api-push@system.gserviceaccount.com` and give it the **Pub/Sub Publisher** role. Without it, a Navi's watch
+   fails with a 403 that says so.
+4. **Make the subscription.** Under **Pub/Sub › Subscriptions**, press **Create subscription**, name it `navi-mail`,
+   pick the topic, and leave the delivery type at **Pull**. Its full name is
+   `projects/<project>/subscriptions/navi-mail`.
+5. **Make a service account to read it.** Under **IAM & Admin › Service accounts**, press **Create service account**,
+   name it `navi-mail`, and grant it nothing at the project. On the subscription, open **Permissions** and give it the
+   **Pub/Sub Subscriber** role. Then, on the service account, open **Keys › Add key › Create new key**, choose **JSON**,
+   and keep the file it downloads.
+6. **Save it in fleetd** with `google_pubsub_set`: the topic, the subscription, the machine that reads it, and the JSON
+   key sealed to that machine. Pick a machine that is usually online, such as the hub's own. The machine checks the key
+   and keeps it in its home, and the hub keeps only a fingerprint. Delete the downloaded file afterwards.
+
+`google_get` then says `mailMode: push`. While the machine is offline, its key is refused, or the subscription can't be
+read, it says `polling` and `mailProblem` says why, and Navis still hear of new mail each minute. `google_pubsub_set`
+with no `pubsub` turns it off, and the machine forgets the key.
+
 ## Connect a Google account {#connect}
 
 A person connects their own account from their own computer:
@@ -115,6 +142,33 @@ is told plainly to ask you to connect again, and nothing is sent.
 A client secret saved wrong lapses nothing: the Navi is told the hub's client was refused. The first refresh after the
 admin saves the right secret works again.
 
+## New mail wakes a Navi {#new-mail}
+
+A person chooses, per Navi, when new mail wakes it, with `google_mail_set`:
+
+| Rule | Wakes the Navi on |
+|---|---|
+| `off` (the default) | Nothing. It reads mail when you ask. |
+| `all` | Each new message in the inbox. |
+| `query` | Only new inbox mail matching a Gmail search, such as `from:boss@example.com OR is:important`. |
+
+How the hub hears of it:
+
+- **Push**, with [real-time mail](#pubsub) set up. The Navi's machine asks Gmail to watch the inbox (`users.watch`) and
+  tell the topic. A watch lasts 7 days, and the hub renews it a day before it ends. The machine holding the service
+  account key reads the subscription and acknowledges each notice. A notice names an address, and the hub has the
+  machine of each Navi connected to it check that Navi's inbox.
+- **Polling**, without Pub/Sub, or while reading it fails or no read has worked for 2 minutes. The hub checks each such
+  Navi's inbox about every minute. It goes back to push with the next good read.
+
+A check reads the inbox's history since the last one, so nothing is missed or told twice when the hub moves between
+push and polling. The first check only marks where to start. Sent mail and drafts don't wake anyone.
+
+The wake reaches the Navi's lead as one event: for each message (up to 10, then a count), its sender, subject, start
+and thread. Above them is a line saying it's from the mailbox and untrusted, whose instructions are its sender's, not
+yours. Each message stays on its own line, so a subject can't pass as fleetd's words. The Navi reads the whole thread
+with `get_thread`, and anything it sends still asks you with its card.
+
 ## Where the secrets live {#files}
 
 On the Navi's machine, under the node's home (`~/.fleetd/node`), each file at mode 0600:
@@ -123,8 +177,10 @@ On the Navi's machine, under the node's home (`~/.fleetd/node`), each file at mo
 |---|---|
 | `google/client.json` | The client ID and secret. |
 | `google/accounts/<project>.json` | One Navi's tokens and address. |
+| `google/pubsub.json` | The subscription and the service account's JSON key, on the machine that reads it. |
+| `google/mail/<project>.json` | Where the Navi's last mail check stopped, a Gmail history id. |
 
-Neither is inside the Navi's folder. The Navi's MCP config starts the server as the node's own fleetd binary in its
+None is inside the Navi's folder. The Navi's MCP config starts the server as the node's own fleetd binary in its
 `google-mcp` mode, given the node's home and the project, never a token. The server reads the tokens from these files
 and refreshes them in place. Removing a Navi's project from its machine deletes its tokens.
 
@@ -134,8 +190,10 @@ The app calls these, and only a person's key may change anything:
 
 | Tool | Does |
 |---|---|
-| `google_get` | The hub's client (no secret), a Navi's account with whether it lapsed, the scopes and the redirect. |
+| `google_get` | The hub's client (no secret), a Navi's account with whether it lapsed and its mail rule, the scopes, the redirect, and whether new mail comes by push or polling. |
 | `google_client_set` | Saves the client, its secret sealed to each machine. Needs operate on every machine. |
 | `google_client_test` | Asks Google whether it takes the client. |
 | `google_connect` | Hands a code, its PKCE verifier and its loopback redirect to the Navi's machine. Needs operate on that machine. |
 | `google_disconnect` | Revokes the Navi's grant and deletes its tokens. |
+| `google_pubsub_set` | Saves real-time mail: the topic, the subscription, and the service account key sealed to the machine that reads it. Needs operate on every machine. |
+| `google_mail_set` | Sets when new mail wakes a Navi: `off`, `all` or `query`. Needs operate on the Navi's machine. |

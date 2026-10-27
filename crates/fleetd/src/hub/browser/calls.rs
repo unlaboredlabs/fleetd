@@ -8,8 +8,8 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
 use fleetd_contracts::browser::{
     BrowserControl, BrowserRecordingPartCall, BrowserRecordingPartResult, BrowserSession,
-    BrowserSessionCall, BrowserSessionId, BrowserSessionResult, BrowserSessionState,
-    BrowserTakeoverCall, RECORDING_PART_BYTES, RecordingFile,
+    BrowserSessionCall, BrowserSessionResult, BrowserSessionState, BrowserTakeoverCall,
+    RECORDING_PART_BYTES, RecordingFile,
 };
 use fleetd_contracts::lead_calls::{LeadCall, LeadCallResult};
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
@@ -67,7 +67,7 @@ async fn answer(
         ));
     }
     match call {
-        LeadCall::BrowserSession(call) => session(hub, caller, call),
+        LeadCall::BrowserSession(call) => session(hub, caller, call).await,
         LeadCall::BrowserRecordingPart(call) => part(hub, caller, call).await,
         LeadCall::BrowserTakeover(call) => takeover(hub, caller, call),
         other => Err(invalid(format!("{} is not a browser call.", op_of(&other)))),
@@ -94,7 +94,7 @@ fn own(
     Ok(stored)
 }
 
-fn session(
+async fn session(
     hub: &Hub,
     caller: &LeadCaller,
     call: BrowserSessionCall,
@@ -158,7 +158,7 @@ fn session(
             put_on(c, &next, started_ms)?;
             // What arrived of a recording that can't be finished is no use to anyone.
             let aside = (next.state == BrowserSessionState::Lost)
-                .then(|| set_aside(hub, &next.session_id))
+                .then(|| super::set_aside(hub, &next.session_id))
                 .flatten();
             let changed = now.as_ref().is_none_or(|s| {
                 s.state != next.state
@@ -185,7 +185,7 @@ fn session(
         }
         Written::Done { changed, aside } => {
             if let Some(aside) = aside {
-                let _ = std::fs::remove_dir_all(aside);
+                super::delete_aside(aside).await;
             }
             changed
         }
@@ -214,22 +214,6 @@ enum Written {
         changed: bool,
         aside: Option<std::path::PathBuf>,
     },
-}
-
-/// Moves a session's recording out of its place (a rename, however large it is), for deleting later. None when it has
-/// none.
-fn set_aside(hub: &Hub, id: &BrowserSessionId) -> Option<std::path::PathBuf> {
-    let from = dir(hub, id);
-    let to = from.with_file_name(format!(".{id}.lost-{}", now_ms(hub.clock.as_ref())));
-    match std::fs::rename(&from, &to) {
-        Ok(()) => Some(to),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
-        Err(e) => {
-            tracing::warn!(session = %id, error = %e, "lost recording not moved aside; deleting it in place");
-            let _ = std::fs::remove_dir_all(&from);
-            None
-        }
-    }
 }
 
 async fn part(
