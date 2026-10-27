@@ -1586,7 +1586,11 @@ async fn a_session_whose_recording_folder_went_still_ends_on_the_hub() {
         );
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
-    assert!(!dir.exists(), "the upload cleared what it remade");
+    // The node clears it once the hub has answered the upload's last report, a moment after the hub says recorded.
+    while dir.exists() {
+        assert!(Instant::now() < deadline, "the upload left what it remade");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
 }
 
 /// Its session file can't be written at all (its folder's name taken by a file): the upload has nothing to go on,
@@ -1643,14 +1647,48 @@ async fn the_hub_ends_a_browser_whose_task_ended() {
         })
         .unwrap();
     assert_eq!(crate::hub::browser::end_outlived(&hub).unwrap(), 1);
+    crate::hub::browser::tell_nodes(&hub, &mut Default::default()).unwrap();
     let Some(fleetd_contracts::node_link::HubToNode::SessionEnd(end)) = to_node.recv().await else {
         panic!("no session_end for the node");
     };
-    // As the node's link hands it on (SessionService::end_screens).
-    SessionHooks::ended(rig.broker.as_ref(), end.thread_id.as_str());
+    // As the node's link hands it on (SessionService::end_screen).
+    SessionHooks::screen_ended(
+        rig.broker.as_ref(),
+        end.thread_id.as_str(),
+        end.session_id.as_str(),
+    );
     assert!(rig.broker.live(THREAD).is_none());
     let id = recorded(&rig.hub).await;
     assert_eq!(id, end.session_id.as_str());
+}
+
+/// The hub names the screen it ended: the agent session's screen goes only when it is that one, so a frame for an
+/// earlier screen of the same agent session (a node that linked again, say) leaves the one it opened since alone.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_hub_ends_only_the_screen_it_names() {
+    let Some(rig) = rig().await else { return };
+    let started = call(
+        &rig.broker,
+        json!({ "op": "session_start", "purpose": "Look" }),
+    )
+    .await;
+    let id = started["result"]["sessionId"].as_str().unwrap().to_owned();
+    let here = crate::node::device::Router {
+        browser: Some(rig.broker.clone()),
+        devices: None,
+        ios: None,
+        live: Default::default(),
+        desktops: None,
+    };
+    SessionHooks::screen_ended(&here, THREAD, "B00000000000000000000000000000000");
+    SessionHooks::screen_ended(&here, "th-someone-else", &id);
+    assert!(
+        rig.broker.live(THREAD).is_some(),
+        "another screen's end leaves it"
+    );
+    SessionHooks::screen_ended(&here, THREAD, &id);
+    assert!(rig.broker.live(THREAD).is_none());
+    assert_eq!(recorded(&rig.hub).await, id);
 }
 
 /// The hub's link to this node, for a test: what the hub sends goes to the broker as the node's link hands it on, and
