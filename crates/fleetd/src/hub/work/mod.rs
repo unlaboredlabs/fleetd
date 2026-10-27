@@ -645,7 +645,12 @@ impl Work {
             let projects = store::projects_in(c, scope)?;
             let mut tasks = Vec::new();
             for project in &projects {
-                tasks.extend(TaskRecords::live(c, project, PROJECT_ROWS)?);
+                // A project's tasks in its other repos land elsewhere.
+                for task in TaskRecords::live(c, project, PROJECT_ROWS)? {
+                    if store::scope_of_task(c, &task)?.as_ref() == Some(scope) {
+                        tasks.push(task);
+                    }
+                }
             }
             Ok((projects, store::in_scope(c, scope, since)?, tasks))
         })?;

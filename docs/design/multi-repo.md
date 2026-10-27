@@ -1,6 +1,6 @@
 # W79 design: projects that hold zero or more repos
 
-Status: design, partly built (stages 1, 2, 4 and 5). This records intent when written; the code is the source of
+Status: design, partly built (stages 1 to 5). This records intent when written; the code is the source of
 truth.
 Check `git log` for what has landed.
 
@@ -72,8 +72,8 @@ project's own repo (none for a plain directory, which reads the project's): `pro
    per repo, 1e tasks record their `repoId`, 1f Settings › Projects lists a project's repos.
 2. Add and remove repos: `project_repo_add`/`list`/`remove` (MCP, `fleetd project repo`, a "+ Repo" in Settings ›
    Projects), and a project that is just a directory. A checkout attached to another project stops showing as its own.
-3. Writers per repo: `spawn_agent` takes a `repo` (required with two or more), launches in the repo's checkout, and
-   checks duplicates, policy and skills against that repo; the lead's prompt lists the repos.
+3. Writers per repo: `spawn_agent` takes a `repo` (absent: the PR's repo, else the own one), launches in the repo's
+   checkout, and checks duplicates, policy and skills against that repo; the lead's prompt lists the repos.
 4. The train and PRs per repo: the train's git runs in a checkout of the repo; enqueue refuses PRs from repos outside
    the project.
 5. Cross-repo merge order: `after: [prUrl]` on `change_enqueue`; the train holds a downstream PR while its upstream
@@ -110,8 +110,7 @@ directory. For a one-repo project, that checkout is the project itself, so nothi
 has two or more (stage 2). A project with one repo or none takes any repo, as before: its lead may enqueue another
 repo's PR, such as a fork's upstream. The order
 board and the Train tab already group by repo (`hub/orders` `trains()`, `TrainPane`), one train per repo. A task's PR
-lookup still reads the project's own remote. Stage 3 moves it to the task's repo checkout, along with the launch, in
-`hub/tasks`.
+lookup reads its repo checkout's remote (stage 3).
 
 ## Merge order across repos (5)
 
@@ -158,3 +157,21 @@ add|list|remove`, and Add repo / Remove in Settings › Projects › Repos.
   own directory.
 - `ProjectRepo.path` is the checkout's directory, read from the node's row, so a hidden checkout still shows where it
   is.
+
+## Writers per repo (3)
+
+`spawn_agent` takes an optional `repo` (a name). Absent, a task given a `pr` works in the project's repo whose
+`repo_key` the PR's URL is on (so the train's reviewers run in the PR's repo), and any other in the project's own repo,
+or the plain directory; an unknown name is `not_found` with the project's repo names. The task records the repo
+(`Task.repoId`), and everything that touches files goes through `Tasks::checkout_of`: the repo's checkout for another
+of the project's repos, else the project's own directory (also for a repo the project no longer has). The launch runs
+on that checkout's machine and node project, reads its default branch and `.fleetd/policy.yaml` there, and sends the
+project and repo so `task_setup` reads the repo's setup; the PR lookup reads that checkout's `origin`.
+
+Duplicate checks use the repo's scope (`scope_of_repo` for another repo, the project's as before for its own).
+`work::store::projects_in` also returns projects holding the scope through another repo, and the ledger counts a
+project's task only in its own repo's scope (`scope_of_task`). "Also writing" lists writers in the same repo.
+
+The lead's first message lists the repos (`repos_block`, stage 2) and says how to pick one with `repo`; `agents` (and
+the spawn result) name the repos when there are several. The lead keeps working in its home directory. A session in a
+checkout gets the env, MCP servers and skills of the projects holding it (stage 2).
