@@ -318,8 +318,13 @@ async fn machine_join(
     input: MachineJoinInput,
 ) -> Result<MachineJoinOutput, ToolError> {
     admin(&caller)?;
-    let join = crate::cli::pair::worker_join(&hub.config.home, &hub.auth, &input.machine_id)
-        .map_err(|message| ToolError::new(ErrorCode::Failed, message))?;
+    let join = crate::cli::pair::worker_join(
+        &hub.config.home,
+        &hub.auth,
+        &input.machine_id,
+        input.rejoin == Some(true),
+    )
+    .map_err(|message| ToolError::new(ErrorCode::Failed, message))?;
     Ok(MachineJoinOutput {
         next: Some(format!(
             "Run the line on {}: it installs fleetd and joins. The code works once, until {}; the machine needs claude and must reach the hub at {}.",

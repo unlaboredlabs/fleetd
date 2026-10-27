@@ -847,3 +847,21 @@ async fn a_linux_arm_machine_is_refused_up_front() {
     );
     assert!(machine.builds.asked.lock().unwrap().is_empty());
 }
+
+#[tokio::test]
+async fn a_rejoin_line_repairs_a_machine_that_joined_by_itself() {
+    let (hub, _machine, _home) = hub();
+    let out = call(
+        &hub,
+        "machine_join",
+        json!({ "machineId": "laptop", "rejoin": true }),
+    )
+    .await;
+    assert!(
+        out["line"].as_str().unwrap().ends_with(" --rejoin"),
+        "{}",
+        out["line"]
+    );
+    let first = call(&hub, "machine_join", json!({ "machineId": "laptop" })).await;
+    assert!(!first["line"].as_str().unwrap().contains("--rejoin"));
+}
