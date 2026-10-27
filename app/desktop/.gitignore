@@ -4,5 +4,6 @@ dist/
 qa-results/
 test-results/
 /fixtures/*.json
+/fixtures/.staging/
 dist-test/
 smoke-results/
