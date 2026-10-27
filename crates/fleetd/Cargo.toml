@@ -77,6 +77,8 @@ libc = "0.2"
 # node power: logind's sleep inhibitor and IdleAction over the system bus (pure Rust)
 [target.'cfg(target_os = "linux")'.dependencies]
 zbus = { version = "5", default-features = false, features = ["tokio"] }
+# a Navi's sandbox: Landlock's scope on abstract Unix sockets (node/runner/sandbox.rs)
+libc = "0.2"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
