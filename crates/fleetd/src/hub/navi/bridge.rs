@@ -39,6 +39,8 @@ mod tests;
 pub const OPS: [&str; 2] = ["project_message", "factory_status"];
 /// The event log cursor [`run`] keeps in `time_cursors`.
 const CURSOR: &str = "navi.bridge";
+/// How long the same words to the same project count as a retry of the first ask, not a new one.
+const RETRY_MS: i64 = 10 * 60 * 1000;
 /// Asks per project `factory_status` lists, newest first.
 const ASKS_SHOWN: usize = 5;
 const TYPES: [HubEventType; 4] = [
@@ -199,20 +201,28 @@ async fn project_message(
     let to_ref = project_ref(&to);
     let text = call.text.to_string();
     let now = now_ms(hub.clock.as_ref());
+    // A retry, the same words to the same project within RETRY_MS, is the first ask: its message isn't posted again,
+    // only sent if it still waits (`send_as_agent` is idempotent per its request id).
     let n: i64 = hub
         .db
         .with(|c| {
+            let (fm, fp) = (from.machine_id.as_str(), from.project_id.as_str());
+            let (tm, tp) = (to_ref.machine_id.as_str(), to_ref.project_id.as_str());
+            let first: Option<i64> = c
+                .query_row(
+                    "SELECT n FROM navi_asks WHERE from_machine_id = ? AND from_project_id = ? AND to_machine_id = ?
+                     AND to_project_id = ? AND text = ? AND at_ms >= ? ORDER BY n DESC LIMIT 1",
+                    params![fm, fp, tm, tp, text, now - RETRY_MS],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            if let Some(n) = first {
+                return Ok(n);
+            }
             Ok(c.query_row(
                 "INSERT INTO navi_asks (from_machine_id, from_project_id, to_machine_id, to_project_id, text, at_ms)
                  VALUES (?, ?, ?, ?, ?, ?) RETURNING n",
-                params![
-                    from.machine_id.as_str(),
-                    from.project_id.as_str(),
-                    to_ref.machine_id.as_str(),
-                    to_ref.project_id.as_str(),
-                    text,
-                    now
-                ],
+                params![fm, fp, tm, tp, text, now],
                 |row| row.get(0),
             )?)
         })
