@@ -1780,7 +1780,7 @@
       "oneOf": [
         {
           "const": "google",
-          "description": "Gmail, Google Calendar and Google Drive through xaq (wynn-dev/xaq), which holds the Google sign-in: fleetd\nkeeps only xaq's address and an agent key.",
+          "description": "Gmail, Google Calendar and Google Drive through xaq (npm `xaq-cli`), which holds the Google sign-in: fleetd\nkeeps only xaq's address and an agent key.",
           "type": "string"
         },
         {

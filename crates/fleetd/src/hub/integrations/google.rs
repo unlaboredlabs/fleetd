@@ -1,4 +1,4 @@
-//! Google through xaq (wynn-dev/xaq): the person's own xaq holds the Google sign-in, made with their own Google Cloud
+//! Google through xaq (npm `xaq-cli`): the person's own xaq holds the Google sign-in, made with their own Google Cloud
 //! OAuth client in xaq's setup, and gives Navi one MCP endpoint (`<xaq>/mcp`) and an agent key (`aib_…`), which the app
 //! seals to Navi's machine as the `Authorization` header. This file is the whole adapter: xaq's tool names, which of
 //! them read, and how each asking one reads on a card. A fleetd-native Google connection would replace it.

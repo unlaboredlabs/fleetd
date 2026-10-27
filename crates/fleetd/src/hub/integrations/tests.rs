@@ -255,6 +255,29 @@ fn blocked_stays_blocked_even_when_marked_as_reading() {
         blocked("mcp__bank__place_trade", json!({})),
         Never::Trading.why()
     );
+    for money in [
+        "mcp__bank__send_money",
+        "mcp__bank__move_money",
+        "mcp__bank__send_funds",
+        "mcp__bank__send_transaction",
+        "mcp__bank__broadcastTx",
+    ] {
+        assert_eq!(blocked(money, json!({})), Never::Money.why(), "{money}");
+    }
+    for trade in [
+        "mcp__bank__buy_stock",
+        "mcp__bank__buy_shares",
+        "mcp__bank__place_order",
+        "mcp__bank__buy_crypto",
+        "mcp__bank__close_position",
+    ] {
+        assert_eq!(blocked(trade, json!({})), Never::Trading.why(), "{trade}");
+    }
+    // Buying something that isn't a holding is spending: it asks, marked as such.
+    assert_eq!(
+        ask("mcp__bank__buy_ticket", json!({})).action,
+        ToolAction::Spend
+    );
     assert_eq!(
         blocked("mcp__bank__create_account", json!({})),
         Never::Accounts.why()

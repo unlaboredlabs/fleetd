@@ -125,10 +125,31 @@ const MONEY: &[&str] = &[
     "wire",
     "remit",
     "remittance",
+    "money",
+    "fund",
+    "funds",
 ];
+/// Sending one of these moves money: `send_transaction`, `broadcast_tx`.
+const MONEY_SENT: (&[&str], &[&str]) = (
+    &["send", "sign", "submit", "broadcast"],
+    &["transaction", "transactions", "tx"],
+);
 const TRADING: &[&str] = &[
-    "trade", "trades", "trading", "sell", "swap", "stake", "unstake",
+    "trade", "trades", "trading", "sell", "swap", "stake", "unstake", "stock", "stocks", "equity",
+    "equities", "crypto", "bitcoin", "btc",
 ];
+/// Buying or ordering one of these trades: `buy_shares`, `place_order`.
+const TRADED: (&[&str], &[&str]) = (
+    &["buy", "place", "submit", "open", "close"],
+    &[
+        "order",
+        "orders",
+        "share",
+        "shares",
+        "position",
+        "positions",
+    ],
+);
 const SPEND: &[&str] = &[
     "pay", "payment", "payments", "purchase", "buy", "checkout", "charge",
 ];
@@ -144,10 +165,11 @@ const SHARE: &[&str] = &["share", "grant", "permission", "permissions"];
 pub fn never(tool: &str) -> Option<Never> {
     let w = words(tool);
     let has = |list: &[&str]| w.iter().any(|x| list.contains(&x.as_str()));
-    if has(MONEY) {
+    let both = |(verbs, nouns): (&[&str], &[&str])| has(verbs) && has(nouns);
+    if has(MONEY) || both(MONEY_SENT) {
         return Some(Never::Money);
     }
-    if has(TRADING) {
+    if has(TRADING) || both(TRADED) {
         return Some(Never::Trading);
     }
     let signs_up = w.iter().any(|x| x == "signup" || x == "register")

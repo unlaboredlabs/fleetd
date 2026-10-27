@@ -17,7 +17,7 @@ use crate::prim::{Line, List, Text};
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum IntegrationKind {
-    /// Gmail, Google Calendar and Google Drive through xaq (wynn-dev/xaq), which holds the Google sign-in: fleetd
+    /// Gmail, Google Calendar and Google Drive through xaq (npm `xaq-cli`), which holds the Google sign-in: fleetd
     /// keeps only xaq's address and an agent key.
     Google,
     /// Notion's official MCP server (`@notionhq/notion-mcp-server`) with the person's internal integration token.
