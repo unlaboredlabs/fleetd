@@ -114,6 +114,12 @@ checklist, an image, or a question with buttons. Tapping a button sends your ans
 can answer it. To change how it talks, edit the **Voice** prompt (`lead.voice`) like any
 [prompt](/docs/what-agents-are-told). Commit messages, PR bodies and agents' briefs stay plain whatever the voice.
 
+It stays quiet on routine progress: a rebase, a review passing, CI starting, a PR queued or an agent resuming posts
+nothing (the panel's Activity tab shows those). It writes when you must act or decide, when something you asked about
+lands, fails or is blocked, when a check on main stays red, and to answer you. What lands together comes in one short
+line. A merge partway through your request stays silent; the lead always writes when the request finishes. To change this, edit the **Lead** prompt
+(`lead.start`).
+
 ## Steer while it works {#steer}
 
 A message reaches the lead at once. How depends on what the lead is doing:

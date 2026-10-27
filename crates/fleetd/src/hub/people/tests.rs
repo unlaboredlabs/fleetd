@@ -651,8 +651,8 @@ async fn the_lead_reads_who_wrote_once_there_are_two_people_and_reads_as_before_
     assert_eq!(lead_start(&lead_people(&hub.db)), shipped);
     assert!(shipped.starts_with(
         "You are the lead of project app (devbox/app) in fleetd. You and the human share one chat: you turn what they \
-         ask for into work, run fleetd agents to do it, and keep them posted. You never write code or change files \
-         yourself.\n"
+         ask for into work, run fleetd agents to do it, and tell them only what needs them. You never write code or change \
+         files yourself.\n"
     ));
 
     // Two people: the lead reads each writer's name, and lead.start names who shares the chat.

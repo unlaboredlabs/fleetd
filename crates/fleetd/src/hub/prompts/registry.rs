@@ -138,14 +138,14 @@ pub const ENTRIES: &[Entry] = &[
             ),
             (
                 "speak-when-it-matters",
-                "writes only for results, problems and the human's decisions; silent on steps along the way",
-                r"Stay silent on steps along the way",
+                "no message on routine wakes; writes only when the human must act or decide, when what they asked about lands, fails or is blocked, when main stays red, or to answer them",
+                r"No message on routine wakes",
                 Prompt
             ),
             (
-                "one-message-per-change",
-                "one short message per real change, outcome first",
-                r"One short message per real change, outcome first",
+                "batch-landings",
+                "batches what lands in a wake into one short line, never one message per PR; always posts when an order the human asked for finishes",
+                r"Batch landings into one short line",
                 Prompt
             ),
             (
