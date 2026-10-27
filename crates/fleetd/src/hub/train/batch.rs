@@ -11,7 +11,7 @@
 //! as they would for one PR. The next pass's sweep deletes the scratch branch, which closes a batch PR left open.
 use std::time::Duration;
 
-use super::contract::{Change, ChangeState};
+use super::contract::{Change, ChangeId, ChangeState};
 use super::github::{
     BATCH_MARKER, BranchMerge, CheckRun, CommitStatus, MergeOutcome, NEXT_LABEL, Pull, batch_heads,
 };
@@ -169,6 +169,29 @@ impl Failed {
                 "was still in CI {} s after the one ahead passed",
                 wait.as_secs()
             ),
+        }
+    }
+}
+
+/// Why a batch whose CI passed didn't land, nothing released yet.
+enum Unlanded {
+    /// These members can't land now (a re-review, a push, a PR GitHub couldn't read); a batch without them could.
+    Members(Vec<ChangeId>, String),
+    /// GitHub refused the merge: each of its PRs goes alone.
+    Refused(String),
+    /// It couldn't be merged now, for no member's fault.
+    Failed(String),
+    /// The merge may have happened: nothing else lands until the next pass reads it.
+    Unknown(String),
+}
+
+impl Unlanded {
+    fn why(&self) -> &str {
+        match self {
+            Unlanded::Members(_, why)
+            | Unlanded::Refused(why)
+            | Unlanded::Failed(why)
+            | Unlanded::Unknown(why) => why,
         }
     }
 }
@@ -957,11 +980,65 @@ impl Train {
                 self.release(behind.own(), &why);
             }
         }
-        self.land(repo, base, lands).await;
-        if let Some((at, f)) = failed
-            && !matches!(f, Failed::Late(_))
-        {
-            self.fail_alone(&chain[at], &f).await;
+        // The furthest passed batch lands; one that can't (a member re-reviewed with findings, pushed to, or a merge
+        // refused) gives way to the nearest passed batch ahead of it whose members are all still clean, so a green
+        // batch is never lost to the one built on it.
+        let mut at = landing;
+        let landed = loop {
+            let unlanded = match self.land(repo, base, &chain[at]).await {
+                Ok(()) => break Ok(at),
+                Err(unlanded) => unlanded,
+            };
+            let ahead = match &unlanded {
+                _ if at == 0 => None,
+                Unlanded::Members(ids, _) => chain[..at]
+                    .iter()
+                    .rposition(|st| !st.members.iter().any(|m| ids.contains(&m.change.change_id))),
+                Unlanded::Refused(_) | Unlanded::Failed(_) => Some(at - 1),
+                Unlanded::Unknown(_) => None,
+            };
+            match ahead {
+                Some(ahead) => {
+                    tracing::info!(
+                        repo,
+                        pr = chain[at].pr,
+                        ahead = chain[ahead].pr,
+                        why = unlanded.why(),
+                        "train: the batch behind can't land; the one ahead lands"
+                    );
+                    let why = format!(
+                        "batch #{} passed CI but couldn't land ({}); batch #{} ahead of it landed without it, and it \
+                         forms again on {base}",
+                        chain[at].pr,
+                        unlanded.why(),
+                        chain[ahead].pr
+                    );
+                    for stage in &chain[ahead + 1..=at] {
+                        self.release(stage.own(), &why);
+                    }
+                    at = ahead;
+                }
+                None => break Err((at, unlanded)),
+            }
+        };
+        match landed {
+            Ok(_) => {
+                if let Some((at, f)) = failed
+                    && !matches!(f, Failed::Late(_))
+                {
+                    self.fail_alone(&chain[at], &f).await;
+                }
+            }
+            Err((at, unlanded)) => {
+                if let Some((red, _)) = &failed {
+                    // Nothing landed ahead of the red batch: its own PRs form again with the rest.
+                    self.release(chain[*red].own(), unlanded.why());
+                }
+                match unlanded {
+                    Unlanded::Refused(why) => self.alone(&chain[at].members, &why).await,
+                    other => self.release(&chain[at].members, other.why()),
+                }
+            }
         }
     }
 
@@ -1030,8 +1107,10 @@ impl Train {
     }
 
     /// The batch PR `stage`, whose CI passed, to merged: waits for its members' re-reviews, checks each member is
-    /// still where the batch took it, posts `fleetd/train` and merges pinned to its head.
-    async fn land(&self, repo: &str, base: &str, stage: &Stage) {
+    /// still where the batch took it, posts `fleetd/train` and merges pinned to its head. When it can't, why, with
+    /// its members back in `ci` (but those a re-review sent back to review): the caller lands a batch ahead of it or
+    /// lets them go.
+    async fn land(&self, repo: &str, base: &str, stage: &Stage) -> Result<(), Unlanded> {
         let (pr, sha, title) = (stage.pr, stage.sha.clone(), stage.title.as_str());
         let in_ci = stage.members.clone();
         let numbers: Vec<i64> = in_ci.iter().map(|m| m.change.pr_number.get()).collect();
@@ -1045,6 +1124,7 @@ impl Train {
         if !pending.is_empty() {
             let waits = self.await_reviews(&pending).await;
             let mut dropped = Vec::new();
+            let mut ids = Vec::new();
             for (change, wait) in pending.iter().zip(waits) {
                 match wait {
                     ReviewWait::Clean(reviews) => {
@@ -1052,6 +1132,7 @@ impl Train {
                     }
                     ReviewWait::Blocked => {
                         self.to_review(change, None);
+                        ids.push(change.change_id.clone());
                         dropped.push(format!(
                             "#{}'s re-review found blocking findings",
                             change.pr_number
@@ -1059,6 +1140,7 @@ impl Train {
                     }
                     ReviewWait::Waiting => {
                         self.to_review(change, Some(&self.review_overdue(change)));
+                        ids.push(change.change_id.clone());
                         dropped.push(format!(
                             "#{}'s re-review is still at work",
                             change.pr_number
@@ -1077,12 +1159,14 @@ impl Train {
                     "batch #{pr} passed CI, but {}; the batch forms again without it",
                     dropped.join(" and ")
                 );
-                return self.release(&in_ci, &why);
+                return Err(Unlanded::Members(ids, why));
             }
         }
 
         // A member pushed to, held or closed while CI ran is not what was tested: the batch goes, and the next pass
         // builds one without it.
+        let mut moved = Vec::new();
+        let mut why = None;
         for m in &in_ci {
             match self.github.pull(repo, m.change.pr_number.get()).await {
                 Ok(p)
@@ -1091,18 +1175,31 @@ impl Train {
                         && !p.held()
                         && p.head.sha.to_lowercase() == m.change.head_sha.as_str() => {}
                 Ok(_) => {
-                    let why = format!(
-                        "#{} was pushed to, held or closed while batch #{pr} was in CI",
-                        m.change.pr_number
-                    );
-                    return self.release(&in_ci, &why);
+                    moved.push(m.change.change_id.clone());
+                    why.get_or_insert_with(|| {
+                        format!(
+                            "#{} was pushed to, held or closed while batch #{pr} was in CI",
+                            m.change.pr_number
+                        )
+                    });
                 }
-                Err(e) => return self.release(&in_ci, &format!("GitHub: {}", e.message)),
+                Err(e) => {
+                    moved.push(m.change.change_id.clone());
+                    why.get_or_insert_with(|| format!("GitHub: {}", e.message));
+                }
             }
         }
+        if let Some(why) = why {
+            return Err(Unlanded::Members(moved, why));
+        }
         let merging = self.advance(&in_ci, ChangeState::Ci, ChangeState::Merging);
+        // Back in `ci` for whatever lands instead.
+        let back = |unlanded: Unlanded| {
+            self.advance(&merging, ChangeState::Merging, ChangeState::Ci);
+            Err(unlanded)
+        };
         if merging.len() != in_ci.len() {
-            return self.release(&in_ci, MEMBER_LEFT);
+            return back(Unlanded::Failed(MEMBER_LEFT.to_string()));
         }
         let description = format!("batch of {}: merged onto {base}, CI green", merging.len());
         if let Err(e) = self
@@ -1110,7 +1207,7 @@ impl Train {
             .post_train_status(repo, &sha, &description)
             .await
         {
-            return self.release(&merging, &format!("GitHub: {}", e.message));
+            return back(Unlanded::Failed(format!("GitHub: {}", e.message)));
         }
         let commit_title = format!("{title} (#{pr})");
         let commit_body = with_trailers(&member_lines(&merging), merging.iter().map(|m| &m.change));
@@ -1130,6 +1227,7 @@ impl Train {
                 for m in &merging {
                     self.finish_batch_member(&m.change, &landed).await;
                 }
+                Ok(())
             }
             Ok(MergeOutcome::Refused { status, message }) => {
                 tracing::info!(
@@ -1139,13 +1237,13 @@ impl Train {
                     message,
                     "train: batch refused, each member goes alone"
                 );
-                let why = format!(
+                back(Unlanded::Refused(format!(
                     "GitHub refused batch #{pr} (HTTP {status}): {message}; each of its PRs goes alone"
-                );
-                self.alone(&merging, &why).await;
+                )))
             }
-            // GitHub may have merged it all the same: the next pass's reconcile finishes the members if it did.
-            Err(e) => self.release(&merging, &format!("GitHub: {}", e.message)),
+            // GitHub may have merged it all the same: the next pass's reconcile finishes the members if it did. Nothing
+            // else lands meanwhile.
+            Err(e) => back(Unlanded::Unknown(format!("GitHub: {}", e.message))),
         }
     }
 

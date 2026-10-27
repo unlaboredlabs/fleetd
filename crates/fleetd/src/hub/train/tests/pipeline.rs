@@ -244,3 +244,71 @@ async fn a_lone_pr_behind_main_is_still_rebased_and_tested_again() {
     assert!(gh_log(&kit).iter().any(|l| l == "rebase #7"));
     assert_ne!(kit.gh.merges.lock().unwrap()[0].1, head);
 }
+
+/// Both batches pass, but a PR of the one behind was pushed to during its CI: the one behind can't land, and the green
+/// batch ahead lands instead of being thrown out with it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_batch_behind_that_cant_land_gives_way_to_the_green_batch_ahead() {
+    let kit = Kit::on_clock(FakeCi::Queued { polls: 3 }, Arc::new(Sleeps::default()));
+    let [a, b, c, d] = four(&kit).await;
+    let gh = Arc::downgrade(&kit.gh);
+    let pushed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let earlier = kit.gh.on_checks.lock().unwrap().take();
+    *kit.gh.on_checks.lock().unwrap() = Some(Box::new(move || {
+        if let Some(earlier) = &earlier {
+            earlier();
+        }
+        let Some(gh) = gh.upgrade() else { return };
+        if gh.head_of(BEHIND).is_some() && !pushed.swap(true, std::sync::atomic::Ordering::SeqCst) {
+            gh.push_empty("c");
+        }
+    }));
+
+    assert!(kit.train.step(REPO).await);
+
+    let merges = kit.gh.merges.lock().unwrap().clone();
+    assert_eq!(merges.len(), 1, "{merges:?}");
+    assert_eq!(branch_of(&kit, merges[0].0), "fleetd/train/batch");
+    for change in [&a, &b] {
+        assert_eq!(kit.get(&change.change_id).state, ChangeState::Merged);
+    }
+    for change in [&c, &d] {
+        let back = kit.get(&change.change_id);
+        assert_eq!(back.state, ChangeState::Ready);
+        let why = back.last_error.unwrap_or_default();
+        assert!(
+            why.contains("couldn't land") && why.contains("landed without it"),
+            "{why}"
+        );
+    }
+}
+
+/// The batch ahead passes and the one behind fails: the one ahead lands, then each PR of the one behind goes alone.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_red_batch_behind_lets_the_one_ahead_land_and_its_own_prs_go_alone() {
+    let kit = Kit::on_clock(FakeCi::Queued { polls: 3 }, Arc::new(Sleeps::default()));
+    let changes = four(&kit).await;
+    behind_reads(
+        &kit,
+        json!([{ "id": 1, "name": "ci", "status": "completed", "conclusion": "failure" }]),
+    );
+
+    assert!(kit.train.step(REPO).await);
+
+    let merged: Vec<(String, i64)> = kit
+        .gh
+        .merges
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|(n, _)| (branch_of(&kit, *n), *n))
+        .collect();
+    assert_eq!(merged[0].0, "fleetd/train/batch", "{merged:?}");
+    assert_eq!(
+        &merged[1..].iter().map(|(_, n)| *n).collect::<Vec<_>>(),
+        &[9, 10]
+    );
+    for change in &changes {
+        assert_eq!(kit.get(&change.change_id).state, ChangeState::Merged);
+    }
+}
