@@ -36,7 +36,7 @@ const withGitHub = (checks: Array<JsonObject>) =>
   set(checks, "hub/github_app", "ok", "The App \"fleetd on devbox\" is installed on acme with 12 repositories, its token works, and you're connected as dev.");
 
 const withGoogle = (checks: Array<JsonObject>) =>
-  set(checks, "hub/google", "ok", "Google knows the client \"fleetd on devbox\", and fleetd-gmail-hub answered a pull: Gmail arrives in real time.");
+  set(checks, "hub/google", "ok", "Google knows the client \"fleetd on devbox\", and devbox pulled from fleetd-gmail-hub as fleetd-gmail-reader: Gmail arrives in real time.");
 
 const NEXT = "Each failing check names the command that fixes it.";
 
@@ -61,7 +61,7 @@ export default defineGroup({
       ),
       fromEmpty(
         "setup-google",
-        "GitHub is done; the Google client is next, and its Test finds the client and a pull from the Gmail subscription.",
+        "GitHub is done; the Google client is next, and its Test finds the client and a pull with the reader's key.",
         withGitHub(withClaude(fresh())),
         withGoogle(withGitHub(withClaude(fresh()))),
       ),

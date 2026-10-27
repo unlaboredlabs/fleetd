@@ -46,6 +46,10 @@ export interface ResultField {
   readonly secret?: boolean;
   readonly placeholder?: string;
   readonly optional?: boolean;
+  /** A pasted file (a JSON key): several lines. */
+  readonly multiline?: boolean;
+  /** Where a secret is sealed to, said under it, when not the default. */
+  readonly note?: string;
 }
 
 export interface SetupStep {
@@ -70,10 +74,14 @@ export interface SetupStep {
 
 type Guide = Omit<SetupStep, "status" | "said">;
 
-/** Gmail in real time (D195): Gmail publishes to this topic, the hub pulls from this subscription. */
+/**
+ * Gmail in real time (D195): Gmail publishes to this topic as its push account, and one machine reads the
+ * subscription as this service account (T805), with the Pub/Sub scope.
+ */
 const GMAIL_TOPIC = "fleetd-gmail";
 const GMAIL_SUBSCRIPTION = "fleetd-gmail-hub";
 const GMAIL_PUSH = "gmail-api-push@system.gserviceaccount.com";
+const GMAIL_READER = "fleetd-gmail-reader";
 
 const GOOGLE_SCOPES = [
   { label: "Gmail", value: "https://www.googleapis.com/auth/gmail.modify" },
@@ -87,6 +95,7 @@ export const guides = (hub: string): ReadonlyArray<Guide> => {
   const host = new URL(base).hostname.split(".")[0] ?? "hub";
   const name = `fleetd on ${host}`;
   const https = base.startsWith("https://");
+  const project = `fleetd-${host}`;
   return [
     {
       id: "address",
@@ -198,7 +207,7 @@ export const guides = (hub: string): ReadonlyArray<Guide> => {
         {
           title: "Create a Google Cloud project",
           links: [{ label: "New project", url: "https://console.cloud.google.com/projectcreate" }],
-          values: [{ label: "Project name", value: `fleetd-${host}` }],
+          values: [{ label: "Project name", value: project, note: "Keep the project ID the same, so the commands below fit." }],
         },
         {
           title: "Turn on Gmail, Calendar and Drive",
@@ -238,7 +247,7 @@ export const guides = (hub: string): ReadonlyArray<Guide> => {
         {
           title: "Gmail in real time",
           optional: true,
-          note: "New mail reaches Navi in seconds. Gmail publishes to a Pub/Sub topic and the hub pulls from it, so no public address is needed. Without it, Navi checks Gmail about every minute.",
+          note: "New mail reaches Navi in seconds. Gmail publishes to a Pub/Sub topic and fleetd pulls from it, so no public address is needed. Without it, Navi checks Gmail about every minute.",
           links: [
             { label: "Enable Pub/Sub", url: "https://console.cloud.google.com/flows/enableapi?apiid=pubsub.googleapis.com" },
             { label: "Create the topic", url: "https://console.cloud.google.com/cloudpubsub/topic/create" },
@@ -248,15 +257,41 @@ export const guides = (hub: string): ReadonlyArray<Guide> => {
             { label: "Topic ID", value: GMAIL_TOPIC, note: "Untick \"Add a default subscription\"." },
             { label: "Publisher on the topic", value: GMAIL_PUSH, note: "Topic › Permissions › Add principal, role Pub/Sub Publisher. Gmail publishes as this account." },
             { label: "Subscription ID", value: GMAIL_SUBSCRIPTION, note: `Topic ${GMAIL_TOPIC}, delivery type Pull.` },
+          ],
+        },
+        {
+          title: "A key to read it",
+          optional: true,
+          note: "A service account that may only read the subscription. Its key goes to one machine, which pulls new-mail notices and passes them to the hub.",
+          links: [
+            { label: "Create the service account", url: "https://console.cloud.google.com/iam-admin/serviceaccounts/create" },
+            { label: "Subscriptions", url: "https://console.cloud.google.com/cloudpubsub/subscription/list" },
+            { label: "Service accounts", url: "https://console.cloud.google.com/iam-admin/serviceaccounts" },
+          ],
+          values: [
+            { label: "Service account ID", value: GMAIL_READER, note: "No project roles: skip the optional steps and press Done." },
+            {
+              label: "Subscriber on the subscription",
+              value: `${GMAIL_READER}@${project}.iam.gserviceaccount.com`,
+              note: `Subscriptions › ${GMAIL_SUBSCRIPTION} › Permissions › Add principal, role Pub/Sub Subscriber.`,
+            },
+            { label: "Key", value: `Service accounts › ${GMAIL_READER} › Keys › Add key › Create new key › JSON. Paste the downloaded file below, then delete it.`, plain: true },
             {
               label: "Or in Cloud Shell",
               value: [
-                `gcloud services enable pubsub.googleapis.com`,
-                `gcloud pubsub topics create ${GMAIL_TOPIC}`,
-                `gcloud pubsub topics add-iam-policy-binding ${GMAIL_TOPIC} --member=serviceAccount:${GMAIL_PUSH} --role=roles/pubsub.publisher`,
-                `gcloud pubsub subscriptions create ${GMAIL_SUBSCRIPTION} --topic=${GMAIL_TOPIC}`,
-              ].join(" &&\n"),
-              note: `The same, in one go, in project fleetd-${host}.`,
+                `SA=${GMAIL_READER}@${project}.iam.gserviceaccount.com`,
+                [
+                  `gcloud services enable pubsub.googleapis.com`,
+                  `gcloud pubsub topics create ${GMAIL_TOPIC}`,
+                  `gcloud pubsub topics add-iam-policy-binding ${GMAIL_TOPIC} --member=serviceAccount:${GMAIL_PUSH} --role=roles/pubsub.publisher`,
+                  `gcloud pubsub subscriptions create ${GMAIL_SUBSCRIPTION} --topic=${GMAIL_TOPIC}`,
+                  `gcloud iam service-accounts create ${GMAIL_READER}`,
+                  `gcloud pubsub subscriptions add-iam-policy-binding ${GMAIL_SUBSCRIPTION} --member=serviceAccount:$SA --role=roles/pubsub.subscriber`,
+                  `gcloud iam service-accounts keys create key.json --iam-account=$SA`,
+                  `cat key.json && rm key.json`,
+                ].join(" &&\n"),
+              ].join("\n"),
+              note: `Both parts in one go, in project ${project}: it prints the key once, to paste below.`,
             },
           ],
         },
@@ -264,11 +299,19 @@ export const guides = (hub: string): ReadonlyArray<Guide> => {
       fields: [
         { name: "clientId", label: "Client ID", placeholder: "….apps.googleusercontent.com" },
         { name: "clientSecret", label: "Client secret", secret: true, placeholder: "GOCSPX-…" },
-        { name: "gmailSubscription", label: "Gmail subscription", optional: true, placeholder: `projects/fleetd-${host}/subscriptions/${GMAIL_SUBSCRIPTION}` },
+        { name: "gmailSubscription", label: "Gmail subscription", optional: true, placeholder: `projects/${project}/subscriptions/${GMAIL_SUBSCRIPTION}` },
+        {
+          name: "gmailKey",
+          label: "Service account key (JSON)",
+          secret: true,
+          optional: true,
+          multiline: true,
+          placeholder: `{ "type": "service_account", "project_id": "${project}", … }`,
+          note: `Sealed on this device to ${host}, the one machine that reads the subscription; the hub keeps only its fingerprint.`,
+        },
       ],
-      fieldsNote:
-        "Then each person connects their own Google account from their Navi; if a sign-in lapses, Navi offers Reconnect. How the hub signs in to pull, and the exact scopes, follow T805's PR.",
-      test: "Ask Google whether it knows this client, and pull once from the subscription if there is one",
+      fieldsNote: "Then each person connects their own Google account from their Navi; if a sign-in lapses, Navi offers Reconnect.",
+      test: "Ask Google whether it knows this client; with a key, pull once from the subscription",
       checks: ["hub/google"],
     },
     {
