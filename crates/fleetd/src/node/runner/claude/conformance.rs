@@ -79,6 +79,9 @@ pub async fn probe(binary: &Path, env: &[(String, String)]) -> RunnerInfo {
         proxy: None,
         proxy_source: None,
         config_dir: Some(setup::config_dir(env).to_string_lossy().into_owned()),
+        self_update: Some(!super::install::autoupdater_off(
+            &setup::config_dir(env).join("settings.json"),
+        )),
     };
     if let Some((url, source)) = setup::proxy_of(env) {
         info.proxy = Some(url);

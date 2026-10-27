@@ -223,7 +223,29 @@ address stops answering, check where it points with <code dir="auto">tailscale s
 </tbody>
 </table>
 <p>fleetd is tested with claude <code dir="auto">&gt;=2.1.300, &lt;2.2.0</code>; other versions run, with a warning. A machine whose claude is
-missing or logged out runs no sessions until it is fixed. fleetd turns claude’s auto-updater off for its own sessions.</p>
+missing or logged out runs no sessions until it is fixed. Updating fleetd moves claude to the version it was tested
+with, and the node turns claude’s own background update off (see <a href="/docs/machines#claude-version">Claude Code’s version</a>).</p>
+<table>
+<thead>
+<tr>
+<th>Symptom</th>
+<th>Cause</th>
+<th>Fix</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>“claude on … updates itself in the background” <code dir="auto">[claude_self_update]</code> !</td>
+<td>The node couldn’t write <code dir="auto">DISABLE_AUTOUPDATER</code> into claude’s <code dir="auto">settings.json</code> (it isn’t valid JSON, say).</td>
+<td>Set <code dir="auto">"env": {"DISABLE_AUTOUPDATER": "1"}</code> in that file, then restart the node.</td>
+</tr>
+<tr>
+<td>An update’s Claude Code line names Homebrew or npm, or says “not installed”</td>
+<td>claude came from Homebrew, npm or a package, or isn’t there; fleetd leaves it as it is.</td>
+<td>Run the command the line names.</td>
+</tr>
+</tbody>
+</table>
 <div class="sl-heading-wrapper level-h2"><h2 id="machines">Machines</h2><a class="sl-anchor-link" href="#machines"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Machines”</span></a></div>
 <table>
 <thead>

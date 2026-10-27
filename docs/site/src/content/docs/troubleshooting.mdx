@@ -89,7 +89,13 @@ These apply to every worker.
 | An agent's activity says "claude offered its own agent tools (…)" | A newer `claude` has an agent tool fleetd's deny list didn't name. fleetd stopped that session, and the next start denies the tool. | Nothing. If it happens again, `claude install 2.1.302`. |
 
 fleetd is tested with claude `>=2.1.300, <2.2.0`; other versions run, with a warning. A machine whose claude is
-missing or logged out runs no sessions until it is fixed. fleetd turns claude's auto-updater off for its own sessions.
+missing or logged out runs no sessions until it is fixed. Updating fleetd moves claude to the version it was tested
+with, and the node turns claude's own background update off (see [Claude Code's version](/docs/machines#claude-version)).
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| "claude on … updates itself in the background" `[claude_self_update]` ! | The node couldn't write `DISABLE_AUTOUPDATER` into claude's `settings.json` (it isn't valid JSON, say). | Set `"env": {"DISABLE_AUTOUPDATER": "1"}` in that file, then restart the node. |
+| An update's Claude Code line names Homebrew or npm, or says "not installed" | claude came from Homebrew, npm or a package, or isn't there; fleetd leaves it as it is. | Run the command the line names. |
 
 ## Machines {#machines}
 
