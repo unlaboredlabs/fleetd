@@ -4,6 +4,7 @@
 import { useState } from "react";
 import type { HubRole, Invite, InviteCreateOutput, Person } from "../../../shared/contracts";
 import { Button, copyText, Field, Input, Radio, RadioGroup, Text, Truncate } from "../../ui";
+import { useHub, useSeveralHubs } from "../../src/data/react";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
 import { PageHead } from "../settings/parts";
 import { expiresLine, nameProblem, openInvites, ROLE_HELP, roleWord } from "./model";
@@ -63,6 +64,9 @@ export function Invites({ me }: { me: Person | undefined }) {
 
 function InviteForm({ onCreated }: { onCreated: (out: InviteCreateOutput) => void }) {
   const call = useHubCall();
+  // With several hubs the button names the hub the invite is for, so it is never minted on the wrong one.
+  const hub = useHub();
+  const several = useSeveralHubs();
   const refetch = useRefetch();
   const [name, setName] = useState("");
   const [role, setRole] = useState<HubRole>("member");
@@ -109,7 +113,7 @@ function InviteForm({ onCreated }: { onCreated: (out: InviteCreateOutput) => voi
       </div>
       <div className={s.actions}>
         <Button type="submit" variant="primary" disabled={busy}>
-          {busy ? "Creating…" : "Create invite link"}
+          {busy ? "Creating…" : several ? `Create invite link to ${hub.label}` : "Create invite link"}
         </Button>
       </div>
       {error === undefined ? null : (

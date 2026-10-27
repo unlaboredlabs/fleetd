@@ -59,6 +59,8 @@ export const fixtures = [
   "admin-member",
   // ...and a hub from before people, whose People and Invites ask for an update.
   "admin-old-hub",
+  // ...and with several hubs: Administration names the one it manages, and switches among those Sam administers.
+  "admin-hubs",
   // Administration › Machines (fixtures/machines): Add machine's three ways in, a run at its install step, and one
   // stopped at the node's service with its output and Retry.
   "machines-add",
@@ -1907,6 +1909,17 @@ export const screens: readonly Screen[] = [
   // caps, task profiles, machine roles, memory caps); Setup's placeholder; and a member who follows a link there.
   { id: "admin.people", route: "#/admin/people", fixtures: ["admin-owner", "admin-admin", "admin-old-hub"] },
   { id: "admin.invites", route: "#/admin/invites", fixtures: ["admin-owner", "admin-old-hub"] },
+  // Several hubs: the hub it manages above the page, and a switch to the hubs Sam administers (Club, a member's, isn't).
+  {
+    id: "admin.invites",
+    route: "#/admin/invites?at=h2",
+    fixtures: ["admin-hubs"],
+    variant: "hubs",
+    open: async (page) => {
+      await expect(page.getByRole("note", { name: "Managing Acme" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Create invite link to Acme" })).toBeVisible();
+    },
+  },
   {
     id: "admin.invites",
     route: "#/admin/invites",
