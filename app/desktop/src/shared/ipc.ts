@@ -192,6 +192,27 @@ export const HubLinkRequest = z.strictObject({
 });
 export type HubLinkRequest = z.infer<typeof HubLinkRequest>;
 
+/**
+ * The hub's Google OAuth client (Administration › Google): main seals `secret` to every box in `boxes` (each machine
+ * that may run a Navi) and calls google_client_set. The hub gets the boxes and the id, never the secret.
+ */
+export const GoogleClientRequest = z.strictObject({
+  /** google.rs GoogleClientId. */
+  clientId: z.string().regex(/^[A-Za-z0-9._-]{1,200}\.apps\.googleusercontent\.com$/u),
+  secret: z.string().min(1).max(SECRET_MAX_BYTES),
+  boxes: z.array(z.strictObject({ machineId: z.string().min(1).max(64), boxPubKey: z.string().regex(/^[A-Za-z0-9+/]{43}=$/u) })).min(1).max(500),
+});
+export type GoogleClientRequest = z.infer<typeof GoogleClientRequest>;
+/**
+ * Connect a Navi to a Google account (its Integrations): main reads the hub's client from google_get, opens Google's
+ * consent page with PKCE in the browser, catches the answer on a loopback port and calls google_connect itself, so the
+ * code never reaches the page.
+ */
+export const GoogleConnectRequest = z.strictObject({
+  project: z.strictObject({ machineId: z.string().min(1).max(64), projectId: z.string().min(1).max(200) }),
+});
+export type GoogleConnectRequest = z.infer<typeof GoogleConnectRequest>;
+
 /** An error the page caught, for the app log: what failed, the error's own text and the route. Main scrubs it. */
 export const ErrorReport = z.strictObject({
   /** The part whose card is up ("the conversation"), or "uncaught error" / "unhandled rejection". */
@@ -285,6 +306,9 @@ export const REQUESTS = {
   [IPC.projectEnvSubmit]: z.tuple([HubId, ProjectEnvRequest]),
   [IPC.mcpServerSubmit]: z.tuple([HubId, McpServerRequest]),
   [IPC.hubLinkSubmit]: z.tuple([HubId, HubLinkRequest]),
+  [IPC.googleClientSubmit]: z.tuple([HubId, GoogleClientRequest]),
+  [IPC.googleConnect]: z.tuple([HubId, GoogleConnectRequest]),
+  [IPC.googleCancel]: none,
   [IPC.systemHostName]: none,
   [IPC.machinesJoinHere]: z.tuple([HubId, z.string().regex(/^[a-z0-9-]{1,32}$/u)]),
   [IPC.machinesJoinHereState]: z.tuple([HubId]),

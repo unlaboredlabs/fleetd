@@ -3,7 +3,7 @@ import type { MenuCommand } from "../shared/menu";
 import type { BrowserInput } from "../shared/contracts";
 import type { CallOutcome, ConnectOutcome, DropInfo, HubFrame, OpenOutcome, SecretOutcome } from "../shared/hub";
 import type { HubColor, HubEntry, HubId, PairTarget } from "../shared/hubs";
-import type { ChatScope, ErrorReport, HubLinkRequest, McpServerRequest, OrderFocus, ProjectEnvRequest, SecretRequest, SessionWindowRequest } from "../shared/ipc";
+import type { ChatScope, ErrorReport, GoogleClientRequest, GoogleConnectRequest, HubLinkRequest, McpServerRequest, OrderFocus, ProjectEnvRequest, SecretRequest, SessionWindowRequest } from "../shared/ipc";
 import type { JoinHere, ThisComputer } from "../shared/joinHere";
 import type { KeyStore, PairOutcome, PairRequest, PairStart, Probe, SetupOutcome } from "../shared/pairing";
 import type { UpdatesState } from "../shared/updates";
@@ -37,6 +37,20 @@ export interface FleetdApi {
      * hub_link_add. The output has the link and what it reaches, never the key.
      */
     hubLink(hub: HubId, request: HubLinkRequest): Promise<CallOutcome>;
+    /**
+     * The hub's Google OAuth client: main seals the secret to every machine in `boxes` and calls google_client_set. The
+     * output has the client by its id and the machines holding it, never the secret.
+     */
+    googleClient(hub: HubId, request: GoogleClientRequest): Promise<CallOutcome>;
+  };
+  readonly google: {
+    /**
+     * Connects a Navi to the person's Google account: main opens Google's consent page in the browser, catches the
+     * answer on 127.0.0.1 and calls google_connect, answering as it does. Error code `cancelled` after `cancel()`.
+     */
+    connect(hub: HubId, request: GoogleConnectRequest): Promise<CallOutcome>;
+    /** Stops waiting for Google's answer. */
+    cancel(): Promise<void>;
   };
   /**
    * Opens an https link to github.com (or a subdomain) or fleetd.sh in the user's browser. Anything else comes back

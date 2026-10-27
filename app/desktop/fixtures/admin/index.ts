@@ -4,7 +4,8 @@
 // person_remove); hub_info names who this app's person is.
 import { defineGroup } from "../kit/group.ts";
 import { Fixture, HUB } from "../kit/fixture.ts";
-import type { JsonObject } from "../kit/json.ts";
+import { isObject, type JsonObject } from "../kit/json.ts";
+import { arr } from "../kit/stress.ts";
 
 const AT = "2026-10-12T09:00:00.000Z";
 const person = (personId: string, name: string, role: string, createdAt = AT): JsonObject => ({ personId, name, role, createdAt });
@@ -90,6 +91,31 @@ function hub(from: Fixture, name: string, note: string, me: JsonObject, admin: b
   return f;
 }
 
+/** Administration › Google (google/AdminGoogle.tsx): no client yet; one saved on devbox only, buildbox missing; and one Google refuses. */
+function google(from: Fixture, name: string, note: string, client: "none" | "set" | "refused"): Fixture {
+  const f = hub(from, name, note, sam, true);
+  const box = "Az+6kf/abi0V7SO+sn4h++sIgyPoNDAneLBDFaJf3TA=";
+  if (f.snapshot !== undefined) f.snapshot["machines"] = arr(f.snapshot["machines"]).map((m) => (isObject(m) ? { ...m, boxPubKey: box } : m));
+  const saved = { clientId: "418559210337-q8fj2v0c6m1k3s5t7u9w.apps.googleusercontent.com", sealedOn: [{ machineId: "devbox", fingerprint: "9c41e0b2" }], updatedAt: "2026-10-17T09:00:00.000Z" };
+  const scopes = [
+    "openid",
+    "email",
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/gmail.compose",
+    "https://www.googleapis.com/auth/calendar.events",
+    "https://www.googleapis.com/auth/drive",
+  ];
+  f.answer("google_get", undefined, { ...(client === "none" ? {} : { client: saved }), scopes, redirect: "http://127.0.0.1", mailMode: "polling" });
+  f.answer(
+    "google_client_test",
+    undefined,
+    client === "refused"
+      ? { machineId: "devbox", check: { ok: false, problem: "Google doesn't know this client: check the Client ID and secret, or make a new Desktop app client." } }
+      : { machineId: "devbox", check: { ok: true } },
+  );
+  return f;
+}
+
 /** A hub from before people: an admin key, and no people tools, which it says as it says of any unknown tool. */
 function oldHub(from: Fixture): Fixture {
   const f = Fixture.from(from, "admin-old-hub", "A hub from before people: its admin key reaches Hub settings, and People and Invites ask for an update");
@@ -108,6 +134,9 @@ export default defineGroup({
     hub(base("chat-empty"), "admin-owner", "Sam owns the hub: Alice is an admin, Bob a member, and Dana's invite waits", sam, true),
     hub(base("chat-empty"), "admin-admin", "The same hub as Alice, an admin: Sam the owner is out of her reach", alice, true),
     // Bob's device holds admin on every machine, as every paired device did before people: his role alone hides it.
+    google(base("chat-empty"), "admin-google-none", "Administration › Google on a hub with no OAuth client yet: the steps and the form", "none"),
+    google(base("chat-empty"), "admin-google-set", "Administration › Google with the client saved on devbox, not on buildbox; Test finds it", "set"),
+    google(base("chat-empty"), "admin-google-refused", "Administration › Google with a client Google doesn't know: Test says so", "refused"),
     hub(base("chat-empty"), "admin-member", "The same hub as Bob, a member: no Administration anywhere", bob, true),
   ],
 });

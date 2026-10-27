@@ -243,6 +243,16 @@ export const fixtures = [
   // Hub links (fixtures/navi): Ada's Linked hubs and Sam's links to this hub; and neither yet.
   "navi-links",
   "navi-links-none",
+  // Google on Ada's Integrations (fixtures/navi), a state each; Administration › Google (fixtures/admin).
+  "navi-google-none",
+  "navi-google-setup",
+  "navi-google-ready",
+  "navi-google-connected",
+  "navi-google-lapsed",
+  "navi-google-not-held",
+  "admin-google-none",
+  "admin-google-set",
+  "admin-google-refused",
   // fleetd.sh's showcase: one request played from send to merge, recorded by showcase.spec.ts (fixtures/showcase).
   "showcase-order",
 ] as const;
@@ -2006,6 +2016,17 @@ export const screens: readonly Screen[] = [
       await page.getByText(/^Installed pr-review, pinned/u).waitFor();
     },
   },
+  { id: "admin.google", route: "#/admin/google", fixtures: ["admin-google-none", "admin-google-set", "admin-google-refused"] },
+  {
+    id: "admin.google",
+    route: "#/admin/google",
+    fixtures: ["admin-google-set", "admin-google-refused"],
+    variant: "tested",
+    open: async (page) => {
+      await page.getByRole("region", { name: "OAuth client" }).getByRole("button", { name: "Test", exact: true }).click();
+      await page.getByText(/Tested on devbox\./u).waitFor();
+    },
+  },
   { id: "admin.setup", route: "#/admin/setup", fixtures: ["admin-owner"] },
   { id: "admin.denied", route: "#/admin/people", fixtures: ["admin-member"] },
   // No hub and nothing kept from one: connect first, never Loading… for ever.
@@ -2122,6 +2143,32 @@ export const screens: readonly Screen[] = [
       await region.getByRole("button", { name: "Link a hub" }).click();
       await region.getByRole("form", { name: "Link a hub" }).scrollIntoViewIfNeeded();
     },
+  },
+  // Google on a Navi's Integrations (google/NaviGoogle.tsx): no client (a member, an admin), ready, connected, lapsed
+  // and the Navi's machine not holding the client; then the connect dialog with its help open, and Disconnect's.
+  {
+    id: "settings.projects",
+    route: `#/settings/projects?for=${ADA.machineId}/${ADA.projectId}`,
+    fixtures: ["navi-google-none", "navi-google-setup", "navi-google-ready", "navi-google-connected", "navi-google-lapsed", "navi-google-not-held"],
+    variant: "google",
+    open: (page) => page.getByRole("listitem", { name: "Google" }).scrollIntoViewIfNeeded(),
+  },
+  {
+    id: "settings.projects",
+    route: `#/settings/projects?for=${ADA.machineId}/${ADA.projectId}`,
+    fixtures: ["navi-google-ready"],
+    variant: "google-connect",
+    open: async (page) => {
+      await page.getByRole("listitem", { name: "Google" }).getByRole("button", { name: "Connect", exact: true }).click();
+      await page.getByRole("dialog").getByText("Seeing a warning or an error on Google’s page?").click();
+    },
+  },
+  {
+    id: "settings.projects",
+    route: `#/settings/projects?for=${ADA.machineId}/${ADA.projectId}`,
+    fixtures: ["navi-google-connected"],
+    variant: "google-disconnect",
+    open: (page) => page.getByRole("listitem", { name: "Google" }).getByRole("button", { name: "Disconnect", exact: true }).click(),
   },
   {
     id: "settings.hubs",

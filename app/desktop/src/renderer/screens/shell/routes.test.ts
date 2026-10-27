@@ -34,6 +34,7 @@ describe("routes", () => {
       { id: "admin", section: "machines", machine: "laptop" },
       { id: "admin", section: "hub" },
       { id: "admin", section: "skills" },
+      { id: "admin", section: "google" },
       { id: "onboarding", hub: "http://100.64.0.1:4790", code: "ABCD-2345" },
       { id: "onboarding", hub: null, code: null },
     ];

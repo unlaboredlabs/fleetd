@@ -3,7 +3,7 @@
 // only relays ciphertext and the renderer never gets the plaintext back. It is never logged.
 import { SECRET_MAX_BYTES, type EnvVarSet, type McpValueSet, type ToolInput } from "../shared/contracts";
 import type { CallOutcome, HubError, SecretOutcome } from "../shared/hub";
-import type { HubLinkRequest, McpServerRequest, ProjectEnvRequest, SecretRequest } from "../shared/ipc";
+import type { GoogleClientRequest, HubLinkRequest, McpServerRequest, ProjectEnvRequest, SecretRequest } from "../shared/ipc";
 
 
 const refused = (message: string, fix?: string): { ok: false; error: HubError } => ({
@@ -135,4 +135,23 @@ export const submitMcpServer = async (
       ? {}
       : { integration: { kind: request.integration.kind, ...(request.integration.readTools === undefined ? {} : { readTools: request.integration.readTools }) } }),
   });
+};
+
+/**
+ * The hub's Google OAuth client: its secret sealed to every machine in `boxes`, then google_client_set. The hub keeps
+ * the id and each node's fingerprint of the secret; nothing returns the secret.
+ */
+export const submitGoogleClient = async (
+  request: GoogleClientRequest,
+  call: (tool: "google_client_set", input: ToolInput<"google_client_set">) => Promise<CallOutcome>,
+): Promise<CallOutcome> => {
+  const secret = request.secret.trim();
+  if (/\s/u.test(secret)) return refused("The client secret has a space or a line break in it.", "Copy it again from the client's page in Google Cloud Console.");
+  const sealed: Array<{ machineId: string; sealed: string }> = [];
+  for (const box of request.boxes) {
+    const one = await seal(box.boxPubKey, secret);
+    if (!one.ok) return { ok: false, error: { ...one.error, message: `For ${box.machineId}: ${one.error.message}` } };
+    sealed.push({ machineId: box.machineId, sealed: one.sealed });
+  }
+  return call("google_client_set", { clientId: request.clientId, sealed });
 };

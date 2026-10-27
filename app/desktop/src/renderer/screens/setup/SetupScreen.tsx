@@ -2,13 +2,14 @@
 // beside them, and the end. Each step's status comes from doctor_list; Test re-runs the checks and says what the
 // step's check says now. Nothing is saved yet: the hub's setup_save comes with the build.
 
-import { Check, Copy, ExternalLink } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { Check } from "lucide-react";
+import { useState } from "react";
 import { callKey } from "../../src/data/queries";
 import { useDataLayer, useToolQuery } from "../../src/data/react";
-import { Button, Field, Input, Text, Textarea, copyText, cx, toast } from "../../ui";
+import { Button, Field, Input, Text, Textarea, cx } from "../../ui";
+import { GuideParts, Part } from "./Guide";
 import { useHubState } from "../onboarding/hooks";
-import { needWords, requiredLeft, setupSteps, type PasteValue, type SetupStep, type StepId, type StepStatus } from "./steps";
+import { needWords, requiredLeft, setupSteps, type SetupStep, type StepId, type StepStatus } from "./steps";
 import s from "./setup.module.css";
 
 export type SetupView = "welcome" | "done" | StepId | null;
@@ -149,25 +150,7 @@ function StepPane({ step, steps, hub }: { step: SetupStep; steps: ReadonlyArray<
         </Text>
       ) : null}
 
-      {step.parts.map((part, i) => (
-        <Part key={part.title} n={i + 1} title={part.title} optional={part.optional === true}>
-          {part.note === undefined ? null : (
-            <Text as="p" size="sm" tone="quiet">
-              {part.note}
-            </Text>
-          )}
-          {part.links === undefined ? null : (
-            <div className={s.links}>
-              {part.links.map((link) => (
-                <Button key={link.url} icon={<ExternalLink size={14} />} onClick={() => void window.fleetd.openExternal(link.url)}>
-                  {link.label}
-                </Button>
-              ))}
-            </div>
-          )}
-          {part.values === undefined ? null : <Values values={part.values} />}
-        </Part>
-      ))}
+      <GuideParts parts={step.parts} />
 
       {step.fields.length === 0 ? null : (
         <Part n={step.parts.length + 1} title="Paste what you get back">
@@ -223,70 +206,6 @@ function StepPane({ step, steps, hub }: { step: SetupStep; steps: ReadonlyArray<
         </Button>
       </footer>
     </article>
-  );
-}
-
-/** A provider form's values: each to copy, or words to follow, or (filled) what fleetd fills in itself. */
-function Values({ values }: { values: ReadonlyArray<PasteValue> }) {
-  return (
-    <dl className={s.values}>
-      {values.map((v) => (
-        <div key={v.label} className={s.valueRow}>
-          <dt>
-            <Text size="sm" tone="quiet">
-              {v.label}
-            </Text>
-          </dt>
-          <dd>
-            {v.plain === true ? (
-              <Text size="sm">{v.value}</Text>
-            ) : v.filled === true ? (
-              <Text size="sm" mono className={s.value} data-text="code">
-                {v.value}
-              </Text>
-            ) : (
-              <span className={s.copyable}>
-                <Text size="sm" mono preserveLines className={s.value} data-text="code">
-                  {v.value}
-                </Text>
-                <Button
-                  variant="ghost"
-                  iconOnly
-                  aria-label={`Copy ${v.label}`}
-                  icon={<Copy size={14} />}
-                  onClick={() => {
-                    void copyText(v.value);
-                    toast({ title: `${v.label} copied` });
-                  }}
-                />
-              </span>
-            )}
-            {v.note === undefined ? null : (
-              <Text as="p" size="xs" tone="quiet">
-                {v.note}
-              </Text>
-            )}
-          </dd>
-        </div>
-      ))}
-    </dl>
-  );
-}
-
-function Part({ n, title, optional = false, children }: { n: number; title: string; optional?: boolean; children: ReactNode }) {
-  return (
-    <section className={s.part}>
-      <Text as="h3" size="sm" strong className={s.partHead}>
-        <span className={s.partNumber}>{n}</span>
-        {title}
-        {optional ? (
-          <Text size="xs" tone="faint">
-            Optional
-          </Text>
-        ) : null}
-      </Text>
-      <div className={s.partBody}>{children}</div>
-    </section>
   );
 }
 

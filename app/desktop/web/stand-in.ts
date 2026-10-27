@@ -77,6 +77,11 @@ const fleetdApi = (file: File): FleetdApi => {
       projectEnv: () => Promise.resolve({ ok: false, error: notHere }),
       mcpServer: () => Promise.resolve({ ok: false, error: notHere }),
       hubLink: () => Promise.resolve({ ok: false, error: notHere }),
+      googleClient: () => Promise.resolve({ ok: false, error: notHere }),
+    },
+    google: {
+      connect: () => Promise.resolve({ ok: false, error: notHere }),
+      cancel: done,
     },
     openExternal: (url) => {
       window.open(url, "_blank", "noopener");

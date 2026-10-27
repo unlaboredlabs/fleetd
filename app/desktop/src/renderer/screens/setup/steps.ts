@@ -3,6 +3,7 @@
 // Setup render the same ones. Until then the guide half lives here and the status half comes from doctor_list.
 
 import type { DoctorCheck } from "../../../shared/contracts";
+import { REDIRECT, SCOPES, scopeFor, scopeLabel } from "../google/model";
 
 export type StepId = "address" | "machines" | "claude" | "github" | "people" | "google" | "notion" | "onepassword";
 
@@ -94,11 +95,66 @@ const GMAIL_SUBSCRIPTION = "fleetd-gmail-hub";
 const GMAIL_PUSH = "gmail-api-push@system.gserviceaccount.com";
 const GMAIL_READER = "fleetd-gmail-reader";
 
-const GOOGLE_SCOPES = [
-  { label: "Gmail", value: "https://www.googleapis.com/auth/gmail.modify" },
-  { label: "Calendar", value: "https://www.googleapis.com/auth/calendar.events" },
-  { label: "Drive", value: "https://www.googleapis.com/auth/drive.readonly" },
-];
+/**
+ * The Google step's required parts, for this hub: the Cloud project, the APIs, the sign-in screen with the exact scopes
+ * the hub asks for, and a Desktop app client with the loopback redirect. Administration › Google shows the same ones,
+ * with google_get's scopes and redirect.
+ */
+export const googleParts = (hub: string, scopes: ReadonlyArray<string> = SCOPES, redirect: string = REDIRECT): ReadonlyArray<Part> => {
+  const host = new URL(hub.replace(/\/+$/u, "")).hostname.split(".")[0] ?? "hub";
+  const name = `fleetd on ${host}`;
+  return [
+    {
+      title: "Create a Google Cloud project",
+      links: [{ label: "New project", url: "https://console.cloud.google.com/projectcreate" }],
+      values: [{ label: "Project name", value: `fleetd-${host}`, note: "Keep the project ID the same as the name." }],
+    },
+    {
+      title: "Turn on Gmail, Calendar and Drive",
+      links: [
+        {
+          label: "Enable the three APIs",
+          url: "https://console.cloud.google.com/flows/enableapi?apiid=gmail.googleapis.com,calendar-json.googleapis.com,drive.googleapis.com",
+        },
+      ],
+    },
+    {
+      title: "Set up the sign-in screen",
+      links: [
+        { label: "Branding", url: "https://console.cloud.google.com/auth/branding" },
+        { label: "Audience", url: "https://console.cloud.google.com/auth/audience" },
+      ],
+      values: [
+        { label: "App name", value: name },
+        { label: "Audience", value: "Internal if everyone is in your Google Workspace; otherwise External.", plain: true },
+        {
+          label: "Publishing status",
+          value: "External: press Publish app, so it is In production. In Testing, Google ends each connection after 7 days.",
+          plain: true,
+        },
+      ],
+    },
+    {
+      title: "Add the scopes",
+      note: "Gmail and Drive are restricted scopes: until Google verifies the app, people see a warning when they connect and press Advanced, then Go to the app. An unverified app takes up to 100 people.",
+      links: [{ label: "Data access", url: "https://console.cloud.google.com/auth/scopes" }],
+      values: scopes.map((s) => ({ label: scopeLabel(s), value: s, note: scopeFor(s) })),
+    },
+    {
+      title: "Create the OAuth client",
+      links: [{ label: "Create client", url: "https://console.cloud.google.com/auth/clients/create" }],
+      values: [
+        { label: "Application type", value: "Desktop app", plain: true },
+        { label: "Name", value: name },
+        {
+          label: "Redirect URI",
+          value: redirect,
+          note: "Nothing to register: a Desktop app client takes it on any port. When someone connects, the fleetd app listens on a free port on their own computer, and Google sends them back there.",
+        },
+      ],
+    },
+  ];
+};
 
 /** Every step in order, its values computed for `hub` (the URL devices reach it at). */
 export const guides = (hub: string): ReadonlyArray<Guide> => {
@@ -230,46 +286,7 @@ export const guides = (hub: string): ReadonlyArray<Guide> => {
       why: "Each person's Navi reads and drafts their mail, calendar and Drive, through a Google client you own.",
       need: { kind: "optional" },
       parts: [
-        {
-          title: "Create a Google Cloud project",
-          links: [{ label: "New project", url: "https://console.cloud.google.com/projectcreate" }],
-          values: [{ label: "Project name", value: project, note: "Keep the project ID the same, so the commands below fit." }],
-        },
-        {
-          title: "Turn on Gmail, Calendar and Drive",
-          links: [
-            {
-              label: "Enable the three APIs",
-              url: "https://console.cloud.google.com/flows/enableapi?apiid=gmail.googleapis.com,calendar-json.googleapis.com,drive.googleapis.com",
-            },
-          ],
-        },
-        {
-          title: "Set up the sign-in screen",
-          links: [{ label: "Google Auth Platform › Branding", url: "https://console.cloud.google.com/auth/branding" }],
-          values: [
-            { label: "App name", value: name },
-            { label: "Audience", value: "Internal if everyone is in your Google Workspace; otherwise External.", plain: true },
-            ...GOOGLE_SCOPES.map((s) => ({ ...s, label: `Scope: ${s.label}`, note: "Data access › Add or remove scopes" })),
-            {
-              label: "Publishing status",
-              value: "External: press Publish app, so it is In production. People then click past Google's unverified-app warning once; in Testing their sign-ins would lapse after 7 days.",
-              plain: true,
-            },
-          ],
-        },
-        {
-          title: "Create the OAuth client",
-          links: [{ label: "Google Auth Platform › Clients", url: "https://console.cloud.google.com/auth/clients/create" }],
-          values: [
-            { label: "Application type", value: "Desktop app", plain: true },
-            { label: "Name", value: name },
-            { label: "Redirect", value: "Nothing to add: the fleetd app catches Google's answer on its own computer (127.0.0.1).", plain: true },
-            ...(https
-              ? [{ label: "Or, on this HTTPS hub", value: `${base}/oauth/google/callback`, note: "A Web application client with this redirect also signs in from a browser." }]
-              : []),
-          ],
-        },
+        ...googleParts(hub),
         {
           title: "Gmail in real time",
           optional: true,

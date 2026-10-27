@@ -1,0 +1,64 @@
+/* Google for Navi: Administration › Google and a Navi's Google row. Space and hairlines, no cards (ui/DESIGN.md). */
+.status,
+.guide,
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  min-width: 0;
+}
+.clientId {
+  overflow-wrap: anywhere;
+}
+.tested {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-1);
+}
+.form {
+  gap: var(--space-3);
+  max-width: 440px;
+}
+/* A saved client's steps, folded: a quiet line to open, the parts below it as on a fresh hub. */
+.fold summary {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  cursor: pointer;
+  list-style: none;
+}
+.fold summary::-webkit-details-marker {
+  display: none;
+}
+.fold summary > :first-child::after {
+  content: " ›";
+  color: var(--quiet);
+}
+.fold[open] summary > :first-child::after {
+  content: " ⌄";
+}
+/* A Navi's Google row: what is granted, under the account. */
+.granted {
+  overflow-wrap: anywhere;
+}
+.help summary {
+  cursor: pointer;
+  list-style-position: inside;
+}
+.help dl {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
+}
+.help dd {
+  margin: 0;
+}

@@ -72,6 +72,15 @@ export const IPC = {
   mcpServerSubmit: "mcp:server-submit",
   /** invoke(HubLinkRequest) → CallOutcome. Main seals a pasted link key to the hub's own key, then calls hub_link_add. */
   hubLinkSubmit: "hub-link:submit",
+  /** invoke(GoogleClientRequest) → CallOutcome. Main seals the client secret to each machine's key, then calls google_client_set. */
+  googleClientSubmit: "google:client-submit",
+  /**
+   * invoke(GoogleConnectRequest) → CallOutcome. Main opens Google's consent page, catches the code on a loopback port
+   * and calls google_connect; `cancelled` when the person stops waiting.
+   */
+  googleConnect: "google:connect",
+  /** invoke() → void. Stops waiting for Google's answer to the connect under way, if any. */
+  googleCancel: "google:cancel",
   /** invoke(url) → OpenOutcome. Opens an http(s) link in the user's browser; refuses other schemes. */
   openExternal: "app:openExternal",
   /** main → renderer: (HubId, HubFrame) */
