@@ -321,6 +321,59 @@ output!(ProfilesSetOutput {
     view: ProfilesView,
 });
 
+// hub_links_get, hub_link_mint, hub_link_revoke, hub_link_add, hub_link_remove: hub links (D194). Minting and revoking
+// happen on the hub whose projects a link reaches; adding and removing on the hub whose Navi uses it. Human keys only
+// for the writes (the handlers check).
+input!(HubLinksGetInput {
+    /// A Navi: the links this hub keeps for it. Absent: none.
+    navi: Option<ProjectRef>,
+});
+output!(HubLinksGetOutput {
+    /// The navi's links to other hubs.
+    links: Vec<crate::hub_links::HubLink>,
+    /// Links minted on this hub: the caller's own, or every one for an admin.
+    issued: Vec<crate::hub_links::IssuedLink>,
+    /// This hub's X25519 key, standard base64: what a link key is sealed to (`crypto_box_seal`) for hub_link_add.
+    box_pub_key: String,
+});
+input!(HubLinkMintInput {
+    /// What the person calls the hub the link is for.
+    label: crate::hub_links::HubLabel,
+    /// The projects it reaches, each one the caller may operate; absent: every project the caller reaches.
+    projects: Option<Vec<ProjectRef>>,
+});
+output!(HubLinkMintOutput {
+    link: crate::hub_links::IssuedLink,
+    /// "flk_…": shown once, never stored; paste it into the other hub's Navi, which seals it.
+    key: String,
+});
+input!(HubLinkRevokeInput {
+    link_id: crate::hub_links::HubLinkId,
+});
+output!(HubLinkRevokeOutput {
+    link: crate::hub_links::IssuedLink,
+});
+input!(HubLinkAddInput {
+    navi: ProjectRef,
+    label: crate::hub_links::HubLabel,
+    /// The other hub's URL, as the app pairs with it: https, or http over a tailnet.
+    url: Line<1, 500>,
+    /// The link key sealed to this hub's boxPubKey.
+    sealed: crate::secrets::SealedSecret,
+});
+output!(HubLinkAddOutput {
+    link: crate::hub_links::HubLink,
+    /// What the Navi reaches there.
+    projects: Vec<crate::hub_links::LinkProject>,
+});
+input!(HubLinkRemoveInput {
+    link_id: crate::hub_links::HubLinkId,
+});
+output!(HubLinkRemoveOutput {
+    /// Whether the other hub revoked the key too; false when it couldn't be reached (the key is gone here anyway).
+    revoked_there: bool,
+});
+
 brand!(
     /// "F" plus a positive integer, unique per hub: a file uploaded with attachment_put.
     AttachmentId, name = "AttachmentId", pattern = r"^F[1-9][0-9]*$"
@@ -2492,6 +2545,12 @@ tools! {
     profiles_get => ProfilesGet, Read, ProfilesGetInput, ProfilesGetOutput;
     // Operate on the project for its override; the fleet's needs admin on every machine (the handler checks).
     profiles_set => ProfilesSet, Operate, ProfilesSetInput, ProfilesSetOutput;
+    hub_links_get => HubLinksGet, Read, HubLinksGetInput, HubLinksGetOutput;
+    // Human keys only (the handlers check): a person links hubs.
+    hub_link_mint => HubLinkMint, Operate, HubLinkMintInput, HubLinkMintOutput;
+    hub_link_revoke => HubLinkRevoke, Operate, HubLinkRevokeInput, HubLinkRevokeOutput;
+    hub_link_add => HubLinkAdd, Operate, HubLinkAddInput, HubLinkAddOutput;
+    hub_link_remove => HubLinkRemove, Operate, HubLinkRemoveInput, HubLinkRemoveOutput;
     workstream_list => WorkstreamList, Read, WorkstreamListInput, WorkstreamListOutput;
     requests_list => RequestsList, Read, RequestsListInput, RequestsListOutput;
     decisions_search => DecisionsSearch, Read, DecisionsSearchInput, DecisionsSearchOutput;
