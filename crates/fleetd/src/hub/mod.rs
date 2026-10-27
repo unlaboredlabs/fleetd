@@ -23,6 +23,7 @@ pub mod mcp;
 pub mod mcp_servers;
 pub mod memory;
 pub mod metrics;
+pub mod navi;
 pub mod orders;
 pub mod pair;
 pub mod policy;

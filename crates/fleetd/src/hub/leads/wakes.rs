@@ -48,6 +48,8 @@ pub enum LineKind {
     Quiet,
     /// The lead's own turn was cut off by its node stopping or restarting (`cut_off`): it carries on.
     CutOff,
+    /// Work a Navi asked another project for opened, closed, merged or failed (hub/navi/bridge.rs).
+    Factory,
 }
 
 #[derive(Debug, Clone)]
@@ -101,6 +103,7 @@ impl Trigger {
                 LineKind::RecoveryPaused => "recovery_paused",
                 LineKind::Quiet => "quiet",
                 LineKind::CutOff => "cut_off",
+                LineKind::Factory => "factory",
             },
         }
     }

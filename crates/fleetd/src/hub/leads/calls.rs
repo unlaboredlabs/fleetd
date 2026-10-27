@@ -25,13 +25,16 @@ impl Area {
                     // No intent wake: the lead that opens it already knows.
                     None => {
                         self.workstreams
-                            .open(IntakeInput {
-                                project_ref: r.clone(),
-                                text: c.text.map(|t| t.to_string()).unwrap_or_default(),
-                                client_request_id: request_id(),
-                                channel: IntakeChannel::Lead,
-                                by: by.to_owned(),
-                            })?
+                            .open(
+                                IntakeInput {
+                                    project_ref: r.clone(),
+                                    text: c.text.map(|t| t.to_string()).unwrap_or_default(),
+                                    client_request_id: request_id(),
+                                    channel: IntakeChannel::Lead,
+                                    by: by.to_owned(),
+                                },
+                                c.asked.as_ref(),
+                            )?
                             .workstream_id
                     }
                 };
