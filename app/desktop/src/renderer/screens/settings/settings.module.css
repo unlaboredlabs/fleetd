@@ -440,3 +440,33 @@
 .machineHosts > li {
   display: contents;
 }
+/* Settings → Projects → Repos: a repo a row, rows apart by a hairline as machines are, its facts a label and a value. */
+.repoList {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.repoRow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-3) 0;
+}
+.repoRow:first-child {
+  padding-top: 0;
+}
+.repoRow + .repoRow {
+  border-top: 1px solid var(--hairline);
+}
+.repoFacts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  column-gap: var(--space-4);
+  row-gap: var(--space-1);
+  margin: 0;
+}
+.repoFacts dd {
+  margin: 0;
+  min-width: 0;
+}

@@ -53,6 +53,7 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   { key: "machines.roles", label: "Machine roles", tab: "machines", keywords: ["agents", "screens", "sessions", "browser", "android", "ios", "simulator", "emulator", "desktop", "chrome", "xcode", "kvm", "screen cap", "session cap"] },
   page("projects", ["project settings", "repo", "repository"]),
   { key: "projects.name", label: "Project name", tab: "projects", keywords: ["rename", "title"] },
+  { key: "projects.repos", label: "Repos", tab: "projects", keywords: ["repo", "repository", "remote", "base branch", "checkout", "preview", "folder"] },
   { key: "projects.worktrees", label: "Worktrees", tab: "projects", keywords: ["worktree", "cleanup", "keep", "base branch", "branch", "disk"] },
   { key: "projects.env", label: "Environment variables", tab: "projects", keywords: ["env", ".env", "secrets", "api key", "token", "variables"] },
   { key: "projects.mcp", label: "Project MCP servers", tab: "projects", keywords: ["mcp", "tools", "servers", "connections"] },
