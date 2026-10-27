@@ -4820,6 +4820,73 @@ async fn a_pr_merged_alone_waits_for_the_macos_run_its_label_starts() {
     assert!(log_at(&log, &format!("macos green {head}")) < log_at(&log, "merge #7"));
 }
 
+/// #638: the PR's own run writes its skip of the label's check after the label's run started it, so the skip has the
+/// newer id. The check that ran counts, not the skip: the PR merges, and the lead never hears CI didn't start.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_skip_written_after_the_label_runs_check_never_stands_in_for_it() {
+    let kit = Kit::on_clock(
+        FakeCi::Macos {
+            reacts: true,
+            uses: true,
+        },
+        Arc::new(Sleeps::default()),
+    );
+    answer_checks(&kit, || {
+        vec![
+            json!({ "id": 1, "name": "ci", "status": "completed", "conclusion": "success", "started_at": BEFORE, "completed_at": BEFORE }),
+            json!({ "id": 3, "name": "rust (macos)", "status": "completed", "conclusion": "success", "started_at": AFTER, "completed_at": AFTER }),
+            json!({ "id": 9, "name": "rust (macos)", "status": "completed", "conclusion": "skipped", "started_at": AFTER, "completed_at": BEFORE }),
+        ]
+    });
+    let a = kit
+        .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
+        .await;
+
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(state_of(&kit, &a), ChangeState::Merged);
+    let wakes = kit.host.wakes.lock().unwrap().clone();
+    assert!(
+        !wakes.iter().any(|w| w.contains("CI didn't start")),
+        "{wakes:?}"
+    );
+}
+
+#[test]
+fn the_latest_run_of_a_check_is_one_that_ran_over_a_later_skip() {
+    use super::github::{CheckRun, latest};
+    let run = |id: f64, conclusion: &str| CheckRun {
+        id,
+        name: "desktop-macos".into(),
+        status: "completed".into(),
+        conclusion: Some(conclusion.into()),
+        html_url: None,
+        started_at: None,
+        completed_at: None,
+        head_sha: None,
+    };
+    let pick = |runs: Vec<CheckRun>| latest(runs)[0].conclusion.clone().unwrap();
+    // #638's ids: the label's run's success, then the PR's own run's skip.
+    let (ran, skip) = (
+        run(122238754327.0, "success"),
+        run(122239339948.0, "skipped"),
+    );
+    assert_eq!(pick(vec![ran.clone(), skip.clone()]), "success");
+    assert_eq!(pick(vec![skip.clone(), ran]), "success");
+    // A red run that ran is not hidden by a skip either; among runs that ran, the newest counts as before.
+    assert_eq!(
+        pick(vec![run(1.0, "failure"), run(2.0, "skipped")]),
+        "failure"
+    );
+    assert_eq!(
+        pick(vec![run(1.0, "failure"), run(2.0, "success")]),
+        "success"
+    );
+    assert_eq!(
+        pick(vec![run(1.0, "skipped"), run(2.0, "skipped")]),
+        "skipped"
+    );
+}
+
 /// fleetd's own case: a PR touching `build-release.yml` and `nightly.yml`, whose release job every PR skips. That
 /// skip is the release workflow's on purpose, not the label's, so it never parks the PR: it merges once the label's
 /// macOS run is green, and the lead hears nothing.
