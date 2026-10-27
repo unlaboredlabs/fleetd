@@ -45,11 +45,16 @@ fn hub() -> (Arc<Hub>, tempfile::TempDir) {
 }
 
 /// Trades a code at `POST /pair` as the app does, and returns the key it was given.
-fn redeem(hub: &Hub, code: &str, device: &str) -> Caller {
+fn redeem_key(hub: &Hub, code: &str, device: &str) -> String {
     let body = json!({ "code": code, "deviceName": device }).to_string();
     let (status, out) = handle(hub, &Limiter::default(), None, None, body.as_bytes());
     assert_eq!(status, StatusCode::OK, "{out}");
-    hub.auth.verify(out["key"].as_str().unwrap()).unwrap()
+    out["key"].as_str().unwrap().to_owned()
+}
+
+/// [`redeem_key`], verified as the hub sees it on the device's next call.
+fn redeem(hub: &Hub, code: &str, device: &str) -> Caller {
+    hub.auth.verify(&redeem_key(hub, code, device)).unwrap()
 }
 
 /// The owner's app, paired with a plain `fleetd pair` code.
@@ -97,8 +102,8 @@ fn events(
     hub.events.page(0, Some(&[of]), None).unwrap().events
 }
 
-/// `who` invites `name` as `role` and that person's app redeems it on `device`.
-async fn join(hub: &Arc<Hub>, who: &Caller, name: &str, role: &str, device: &str) -> Caller {
+/// `who` invites `name` as `role` and that person's app redeems it on `device`: the device's key.
+async fn join_key(hub: &Arc<Hub>, who: &Caller, name: &str, role: &str, device: &str) -> String {
     let invite = ok(
         hub,
         who,
@@ -106,7 +111,14 @@ async fn join(hub: &Arc<Hub>, who: &Caller, name: &str, role: &str, device: &str
         json!({ "name": name, "role": role }),
     )
     .await;
-    redeem(hub, invite["code"].as_str().unwrap(), device)
+    redeem_key(hub, invite["code"].as_str().unwrap(), device)
+}
+
+/// [`join_key`], verified.
+async fn join(hub: &Arc<Hub>, who: &Caller, name: &str, role: &str, device: &str) -> Caller {
+    hub.auth
+        .verify(&join_key(hub, who, name, role, device).await)
+        .unwrap()
 }
 
 #[tokio::test]
@@ -238,10 +250,11 @@ async fn an_invite_redeemed_binds_the_device_to_its_person_and_the_people_list_s
 }
 
 #[tokio::test]
-async fn members_cant_invite_change_roles_or_remove_people_and_their_admin_grant_operates() {
+async fn members_cant_administer_and_a_promotion_reaches_the_device_their_invite_paired() {
     let (hub, _home) = hub();
     let owner = owner_device(&hub);
-    let bob = join(&hub, &owner, "Bob", "member", "bob-mac").await;
+    let key = join_key(&hub, &owner, "Bob", "member", "bob-mac").await;
+    let bob = hub.auth.verify(&key).unwrap();
     for (tool, input) in [
         ("invite_create", json!({ "name": "Eve" })),
         (
@@ -266,34 +279,12 @@ async fn members_cant_invite_change_roles_or_remove_people_and_their_admin_grant
         2
     );
 
-    // A member whose device was paired with an admin grant still operates only: the person's role caps the device.
-    let admin_code = PairCodes::new(hub.db.clone(), hub.clock.clone())
-        .create(None, Role::Admin)
-        .unwrap();
+    // The device Bob's invite paired operates only, as a member's does.
     let bobs_id = bob.person.as_ref().unwrap().person_id.clone();
-    let key = hub
-        .auth
-        .create_key_for(
-            "bob-ipad",
-            &[fleetd_contracts::auth::Grant {
-                role: Role::Admin,
-                machines: fleetd_contracts::auth::GrantMachines::All(
-                    fleetd_contracts::auth::Star::Value,
-                ),
-            }],
-            KeyKind::Human,
-            Some(&bobs_id),
-        )
-        .unwrap();
-    drop(admin_code);
-    let ipad = hub.auth.verify(&key.key).unwrap();
-    assert!(!crate::hub::api::allows_everywhere(&ipad, Role::Admin));
-    assert_eq!(
-        refused(&hub, &ipad, "invite_create", json!({ "name": "Eve" })).await,
-        ErrorCode::Forbidden
-    );
+    assert!(crate::hub::api::allows_everywhere(&bob, Role::Operate));
+    assert!(!crate::hub::api::allows_everywhere(&bob, Role::Admin));
 
-    // Made an admin, Bob invites; demoted, he can't again.
+    // Made an admin, Bob invites from that same device, with no new pairing; demoted, he can't again.
     ok(
         &hub,
         &owner,
@@ -301,8 +292,14 @@ async fn members_cant_invite_change_roles_or_remove_people_and_their_admin_grant
         json!({ "personId": bobs_id, "role": "admin" }),
     )
     .await;
-    let bob = hub.auth.verify(&key.key).unwrap();
-    ok(&hub, &bob, "invite_create", json!({ "name": "Eve" })).await;
+    let promoted = hub.auth.verify(&key).unwrap();
+    assert!(crate::hub::api::allows_everywhere(&promoted, Role::Admin));
+    ok(&hub, &promoted, "invite_create", json!({ "name": "Eve" })).await;
+    assert_eq!(
+        ok(&hub, &promoted, "hub_info", json!({})).await["admin"],
+        true,
+        "the app shows the Administration page"
+    );
     ok(
         &hub,
         &owner,
@@ -310,11 +307,24 @@ async fn members_cant_invite_change_roles_or_remove_people_and_their_admin_grant
         json!({ "personId": bobs_id, "role": "member" }),
     )
     .await;
-    let bob = hub.auth.verify(&key.key).unwrap();
+    let demoted = hub.auth.verify(&key).unwrap();
     assert_eq!(
-        refused(&hub, &bob, "invite_create", json!({ "name": "Mallory" })).await,
+        refused(
+            &hub,
+            &demoted,
+            "invite_create",
+            json!({ "name": "Mallory" })
+        )
+        .await,
         ErrorCode::Forbidden
     );
+
+    // A device paired with less keeps its own cap, whatever its person's role.
+    let wall = PairCodes::new(hub.db.clone(), hub.clock.clone())
+        .create(None, Role::Read)
+        .unwrap();
+    let wall = redeem(&hub, &wall.code, "wall");
+    assert!(!crate::hub::api::allows_everywhere(&wall, Role::Operate));
 }
 
 #[tokio::test]
@@ -348,6 +358,18 @@ async fn the_hub_keeps_its_owners_and_a_new_person_needs_a_name() {
             "{tool}"
         );
     }
+    // Nor sign out an owner's device; an owner signs out an admin's.
+    assert_eq!(
+        refused(
+            &hub,
+            &carol,
+            "device_revoke",
+            json!({ "keyId": owner.key_id })
+        )
+        .await,
+        ErrorCode::Forbidden
+    );
+    assert!(!revoked(&hub, owner.key_id.as_str()));
     // Nobody removes or demotes the last owner, the owner included.
     for (tool, input) in [
         (
@@ -392,8 +414,22 @@ async fn the_hub_keeps_its_owners_and_a_new_person_needs_a_name() {
     // A revoked invite takes the person who never joined with it.
     let invite = ok(&hub, &owner, "invite_create", json!({ "name": "Dan" })).await;
     let id = invite["invite"]["inviteId"].clone();
-    let revoked = ok(&hub, &owner, "invite_revoke", json!({ "inviteId": id })).await;
-    assert_eq!(revoked["invite"]["state"], "revoked");
+    let said = |hub: &Hub| {
+        events(hub, fleetd_contracts::events::HubEventType::PeopleChanged)
+            .into_iter()
+            .filter(|e| {
+                e.data
+                    .as_ref()
+                    .is_some_and(|d| d["change"] == "invite_revoked")
+            })
+            .count()
+    };
+    let taken = ok(&hub, &owner, "invite_revoke", json!({ "inviteId": id })).await;
+    assert_eq!(taken["invite"]["state"], "revoked");
+    // Again: the same answer, and nothing more said.
+    let again = ok(&hub, &owner, "invite_revoke", json!({ "inviteId": id })).await;
+    assert_eq!(again["invite"]["state"], "revoked");
+    assert_eq!(said(&hub), 1);
     let body = json!({ "code": invite["code"], "deviceName": "dan" }).to_string();
     let (status, _) = handle(&hub, &Limiter::default(), None, None, body.as_bytes());
     assert_eq!(status, StatusCode::UNAUTHORIZED);
