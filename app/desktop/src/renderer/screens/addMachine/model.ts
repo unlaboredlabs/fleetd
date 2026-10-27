@@ -121,8 +121,8 @@ export const untilLine = (expiresAt: string): string =>
   `The code works once, until ${new Date(expiresAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.`;
 
 /**
- * Where the paste line stands. Joined once its node is online after being offline since the line was made: at once for
- * a machine that was offline then, and for a repair of one still online, once the line has restarted its node.
+ * Where the paste line stands. Joined once its node is online: at once for a machine that was offline when the line
+ * was made, and for a repair of one still online, once the line has restarted its node (`restarted`).
  * Expired once its code has, else waiting; `online` is a repair's wait while its machine is still up on its old
  * enrollment.
  */
@@ -132,10 +132,10 @@ export const lineState = (
   line: { readonly expiresAt: string; readonly onlineAtStart: boolean },
   online: boolean,
   now: number,
-  /** Its node has been offline since the line was made. */
-  wentOffline: boolean,
+  /** Its node has linked to the hub again, or been offline, since the line was made. */
+  restarted: boolean,
 ): LineState => {
-  if (online && (!line.onlineAtStart || wentOffline)) return "joined";
+  if (online && (!line.onlineAtStart || restarted)) return "joined";
   if (now >= Date.parse(line.expiresAt)) return "expired";
   return online ? "online" : "waiting";
 };
