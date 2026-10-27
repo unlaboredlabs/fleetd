@@ -1869,7 +1869,7 @@ export const screens: readonly Screen[] = [
     variant: "line",
     open: async (page) => {
       await page.getByRole("button", { name: "Get the line…" }).click();
-      await page.getByLabel("Name").fill("laptop");
+      await page.getByRole("textbox", { name: "Name" }).fill("laptop");
       await page.getByRole("button", { name: "Make the line" }).click();
       await page.getByText("Waiting for laptop…").waitFor();
     },
@@ -1881,7 +1881,7 @@ export const screens: readonly Screen[] = [
     variant: "joined",
     open: async (page) => {
       await page.getByRole("button", { name: "Get the line…" }).click();
-      await page.getByLabel("Name").fill("laptop");
+      await page.getByRole("textbox", { name: "Name" }).fill("laptop");
       await page.getByRole("button", { name: "Make the line" }).click();
       await page.getByText("laptop joined.").waitFor();
     },

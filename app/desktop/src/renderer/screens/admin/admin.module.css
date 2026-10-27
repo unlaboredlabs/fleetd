@@ -149,3 +149,12 @@
 .machines {
   max-width: 680px;
 }
+
+/* The sign-in page's address, cut to one line. */
+.url {
+  display: flex;
+  min-width: 0;
+}
+.url > * {
+  min-width: 0;
+}
