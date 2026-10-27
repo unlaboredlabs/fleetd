@@ -17,3 +17,5 @@ wins.
   stored, and the stages that let one lead work across several repos.
 - [teams.md](teams.md): team-ready fleetd: people, invites, hub and project roles, a project as a group chat, private
   Navis, and the steps that get there.
+- [hubs.md](hubs.md): the app connected to several hubs at once under labels the person picks, and hub links that let
+  a Navi on one hub reach projects on another.
