@@ -140,6 +140,8 @@ export const fixtures = [
   "inline-items",
   "inline-failures",
   "inline-reopened",
+  // A Navi's integration cards (fixtures/inline/integrations.json).
+  "inline-integrations",
   // UX-1 A3: the PR list and PR view (fixtures/prs): no PRs, the reads on their way, GitHub out of reach, GitHub's
   // rate limit reached, a PR that fails to load, and a PR of 240 files with a 3,000-line file.
   "prs-none",
@@ -1001,7 +1003,8 @@ export const screens: readonly Screen[] = [
   // A5 (F5): the two inline items, every state: the masked secret field, the exact command with Approve / Deny, open
   // again after the node was offline; answered ones folded to one line (saved, not needed, ran, ran with an error,
   // not run, denied, running).
-  { id: "chat", route: CHAT, fixtures: ["inline-items"], variant: "inline" },
+  // ...and a Navi's integration cards: recipients, an outside address, a file, a Notion delete, an answered send.
+  { id: "chat", route: CHAT, fixtures: ["inline-items", "inline-integrations"], variant: "inline" },
   // The same chat offline from the disk cache: an open item says it can't be answered now, and a secret never claims
   // the hub doesn't know its machine.
   {

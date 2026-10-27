@@ -333,7 +333,8 @@ function PreviewDetail({ preview }: { preview: ToolPreview }) {
                   // The comma closes the value, after its note when it has one.
                   const comma = i < row.values.length - 1 ? "," : "";
                   return (
-                    <span key={`${String(i)}-${v.text}`} className={s.value}>
+                    // Exact values from the tool's input (addresses, file names): literal text, as a chat attachment's name is.
+                    <span key={`${String(i)}-${v.text}`} className={s.value} data-text="code">
                       <Text size="sm">{v.note === undefined ? `${v.text}${comma}` : v.text}</Text>
                       {v.note === undefined ? null : (
                         <Text size="xs" tone="quiet">
