@@ -287,6 +287,10 @@ async fn run_node(
                 // A hosted desktop's sealed secrets go once it reports itself ended, as a browser's do.
                 hosted.watch(Arc::new(browser::upload::RelayHub(relay.clone()))),
                 secrets_for.clone(),
+                {
+                    let sessions = node_sessions.clone();
+                    Arc::new(move |thread| sessions.session_cwd(thread))
+                },
             )
             .await,
         ),

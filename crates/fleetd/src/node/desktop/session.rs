@@ -85,10 +85,9 @@ pub struct Opened {
 }
 
 impl Session {
-    /// Takes a lent display and the node's connection to it, and starts reading its screen.
-    pub fn open(display: Display, x: X, opened: Opened) -> Result<Arc<Self>, String> {
-        std::fs::create_dir_all(&opened.dir)
-            .map_err(|e| format!("cannot make {}: {e}", opened.dir.display()))?;
+    /// Takes a lent display and the node's connection to it, and starts reading its screen. The recording's folder
+    /// is made already: nothing here fails, so no display is ever thrown away on the async threads.
+    pub fn open(display: Display, x: X, opened: Opened) -> Arc<Self> {
         let x = Arc::new(x);
         let (inputs, mut queued) = tokio::sync::mpsc::unbounded_channel::<BrowserInput>();
         let session = Arc::new(Self {
@@ -131,7 +130,7 @@ impl Session {
             }
         }));
         lock(&session.tasks).extend([capture, input]);
-        Ok(session)
+        session
     }
 
     pub fn offset_ms(&self) -> u64 {

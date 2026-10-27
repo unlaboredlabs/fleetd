@@ -128,19 +128,22 @@ fn a_container_sees_only_the_sessions_own_worktree_read_only() {
     let worktree = work.path().join("app");
     std::fs::create_dir(&worktree).unwrap();
     let cwd = worktree.to_str().unwrap();
-    let mount = super::worktree_mount(DesktopBackend::Container, THREAD, cwd);
+    let known = || Some(worktree.clone());
+    let mount = super::worktree_mount(DesktopBackend::Container, THREAD, known());
     assert_eq!(mount.as_deref(), Some(worktree.as_path()));
     // Not for an Xvfb session (its apps are on this machine already), a session hosted for an agent elsewhere (its
-    // cwd is on the agent's machine), a folder that isn't here, or one as broad as / or the home directory.
-    assert!(super::worktree_mount(DesktopBackend::Xvfb, THREAD, cwd).is_none());
+    // worktree is on the agent's machine), one the node doesn't know, a folder that isn't here, or one as broad as /
+    // or the home directory.
+    assert!(super::worktree_mount(DesktopBackend::Xvfb, THREAD, known()).is_none());
     let hosted = "H0123456789abcdef0123456789abcdef";
-    assert!(super::worktree_mount(DesktopBackend::Container, hosted, cwd).is_none());
-    assert!(super::worktree_mount(DesktopBackend::Container, THREAD, "/nonexistent/app").is_none());
-    assert!(super::worktree_mount(DesktopBackend::Container, THREAD, "/").is_none());
+    assert!(super::worktree_mount(DesktopBackend::Container, hosted, known()).is_none());
+    assert!(super::worktree_mount(DesktopBackend::Container, THREAD, None).is_none());
+    let mount_of =
+        |p: &str| super::worktree_mount(DesktopBackend::Container, THREAD, Some(p.into()));
+    assert!(mount_of("/nonexistent/app").is_none());
+    assert!(mount_of("/").is_none());
     let home = crate::node::util::home_dir();
-    assert!(
-        super::worktree_mount(DesktopBackend::Container, THREAD, home.to_str().unwrap()).is_none()
-    );
+    assert!(mount_of(home.to_str().unwrap()).is_none());
 
     // The container's run mounts that folder alone, read-only at the same path, beside its X socket and cookie.
     let runtime = super::container::Runtime::find(Some("/usr/bin/docker"), work.path()).unwrap();
@@ -223,6 +226,127 @@ fn an_image_that_doesnt_build_falls_back_to_xvfb() {
         .err()
         .unwrap();
     assert!(why.contains("no network"), "{why}");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_session_naming_another_agents_worktree_mounts_only_its_own() {
+    let node_home = tempfile::tempdir().unwrap();
+    let hub_home = tempfile::tempdir().unwrap();
+    let hub = hub(hub_home.path());
+    let work = tempfile::tempdir().unwrap();
+    let (own, other) = (work.path().join("own"), work.path().join("other"));
+    for dir in [&own, &other] {
+        std::fs::create_dir(dir).unwrap();
+    }
+    // A docker that has the image and records each `run`; its containers never come up, so each start ends there.
+    let runs = node_home.path().join("runs.log");
+    let docker = node_home.path().join("docker");
+    std::fs::write(
+        &docker,
+        format!(
+            "#!/bin/sh\ncase \"$1\" in run) echo \"$@\" >> '{}'; echo c1;; inspect) echo false;; esac\nexit 0\n",
+            runs.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&docker, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    let config = DesktopConfig {
+        enabled: Some(true),
+        backend: Some(DesktopBackend::Container),
+        runtime: Some(docker.to_string_lossy().into_owned()),
+        pool: Some(0),
+        ..DesktopConfig::default()
+    };
+    // The node knows THREAD's worktree is `own`, and nothing of any other session.
+    let known = own.clone();
+    let desktops = Desktops::start(
+        node_home.path(),
+        config,
+        hub.clone(),
+        Arc::new(|_| Ok(crate::node::mask::Secrets(Vec::new()))),
+        Arc::new(move |thread| (thread == THREAD).then(|| known.clone())),
+    )
+    .await;
+    let router = Router {
+        browser: None,
+        devices: None,
+        desktops: Some(desktops.clone()),
+        live: Default::default(),
+    };
+    let start = |thread: &'static str, cwd: PathBuf| {
+        let router = &router;
+        async move {
+            let frame: BrowserCallFrame = serde_json::from_value(json!({
+                "id": "t1", "cwd": cwd, "threadId": thread,
+                "call": { "op": "session_start", "purpose": "Peek", "kind": "linux_desktop" },
+            }))
+            .unwrap();
+            serde_json::to_value(router.handle(thread.to_owned(), frame).await).unwrap()
+        }
+    };
+    // THREAD names the other agent's worktree as its cwd; a session the node doesn't know names it too.
+    let first = start(THREAD, other.clone()).await;
+    assert!(
+        first["error"].is_object(),
+        "the fake's container never comes up: {first}"
+    );
+    let second = start("th-stranger", other.clone()).await;
+    assert!(second["error"].is_object(), "{second}");
+    let runs = std::fs::read_to_string(&runs).unwrap();
+    let lines: Vec<&str> = runs.lines().collect();
+    assert_eq!(lines.len(), 2, "{runs}");
+    let other = other.display().to_string();
+    assert!(
+        !runs.contains(&other),
+        "the named worktree is never mounted: {runs}"
+    );
+    let own = own.display().to_string();
+    assert!(lines[0].contains(&format!("-v {own}:{own}:ro")), "{runs}");
+    assert!(
+        !lines[1].contains(&own),
+        "a session the node doesn't know mounts nothing: {runs}"
+    );
+    desktops.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_start_on_a_machine_that_cant_prepare_says_why_at_once() {
+    let node_home = tempfile::tempdir().unwrap();
+    let hub_home = tempfile::tempdir().unwrap();
+    // Containers only, with a docker that isn't there: preparing fails at once.
+    let config = DesktopConfig {
+        backend: Some(DesktopBackend::Container),
+        runtime: Some("/nonexistent/docker".into()),
+        ..DesktopConfig::default()
+    };
+    let desktops = Desktops::start(
+        node_home.path(),
+        config,
+        hub(hub_home.path()),
+        Arc::new(|_| Ok(crate::node::mask::Secrets(Vec::new()))),
+        Arc::new(|_| None),
+    )
+    .await;
+    let router = Router {
+        browser: None,
+        devices: None,
+        desktops: Some(desktops.clone()),
+        live: Default::default(),
+    };
+    let asked = Instant::now();
+    let refused = call(
+        &router,
+        json!({ "op": "session_start", "purpose": "Try", "kind": "linux_desktop" }),
+    )
+    .await;
+    assert!(
+        asked.elapsed() < Duration::from_secs(10),
+        "not the whole wait"
+    );
+    let message = refused["error"]["message"].as_str().unwrap_or_default();
+    assert!(message.contains("can't host desktop sessions"), "{refused}");
+    assert!(message.contains("`docker info` failed"), "why: {refused}");
+    desktops.shutdown().await;
 }
 
 /// The hub in process, answering the node's calls as a task's session in project storefront.
@@ -429,6 +553,7 @@ async fn an_agent_types_into_xterm_on_a_desktop_session_a_person_takes_over_and_
                 SECRET.into(),
             )]))
         }),
+        Arc::new(|_| None),
     )
     .await;
     // Prepared at start (enabled), the pool fills: the session starts from a warm display.
@@ -687,6 +812,7 @@ async fn the_first_desktop_start_after_the_node_starts_waits_for_it_to_prepare()
         config,
         hub.clone(),
         Arc::new(|_| Ok(crate::node::mask::Secrets(Vec::new()))),
+        Arc::new(|_| None),
     )
     .await;
     assert!(!desktops.ready_now(), "nothing prepared yet");
@@ -694,6 +820,7 @@ async fn the_first_desktop_start_after_the_node_starts_waits_for_it_to_prepare()
         browser: None,
         devices: None,
         desktops: Some(desktops.clone()),
+        live: Default::default(),
     };
     let started = call(
         &router,
@@ -707,5 +834,170 @@ async fn the_first_desktop_start_after_the_node_starts_waits_for_it_to_prepare()
     );
     let ended = call(&router, json!({ "op": "session_end" })).await;
     assert!(ended["result"].is_object(), "{ended}");
+    desktops.shutdown().await;
+}
+
+/// One session call as the hub hands it to this node for an agent on another machine, answered under `key`.
+async fn via_host(
+    router: &Arc<Router>,
+    hosted: &crate::node::session_route::Hosted,
+    box_key: &crate::node::identity::NodeBoxKey,
+    key: &str,
+    call: Value,
+    sealed: Option<&str>,
+) -> Value {
+    let frame: HubToNode = serde_json::from_value(json!({
+        "t": "session_host", "id": "h1", "hostKey": key, "sealed": sealed,
+        "frame": { "id": "f1", "cwd": "/work/on/the/agents/machine", "call": call },
+    }))
+    .unwrap();
+    let result = crate::node::session_route::host(
+        None,
+        Some(router.clone()),
+        "http://hub.invalid",
+        frame,
+        hosted,
+        Some(box_key),
+    )
+    .await
+    .expect("an answer");
+    serde_json::to_value(result.frame).unwrap()
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_secret_typed_in_a_desktop_hosted_for_another_machine_is_masked_in_its_recording() {
+    let Some(config) = test_config() else { return };
+    let node_home = tempfile::tempdir().unwrap();
+    let hub_home = tempfile::tempdir().unwrap();
+    let hub = hub(hub_home.path());
+    // This node hosts the session; the agent's node sealed its secrets to this node's box key, as #572 has it.
+    let box_key = crate::node::identity::load_or_create_box_key(node_home.path()).unwrap();
+    let hosted = crate::node::session_route::Hosted::default();
+    let desktops = Desktops::start(
+        node_home.path(),
+        config,
+        hub.clone(),
+        hosted.secrets_for(Arc::new(|s| Err(format!("no session {s} on this machine")))),
+        Arc::new(|_| None),
+    )
+    .await;
+    let router = Arc::new(Router {
+        browser: None,
+        devices: None,
+        desktops: Some(desktops.clone()),
+        live: Default::default(),
+    });
+    let key = "H0123456789abcdef0123456789abcdef";
+    let public: [u8; 32] = B64
+        .decode(box_key.public_key())
+        .unwrap()
+        .try_into()
+        .unwrap();
+    let plain =
+        json!({ "secrets": [["SHOP_PASSWORD", SECRET]], "relayKey": B64.encode([7u8; 32]) });
+    let sealed = crypto_box::PublicKey::from(public)
+        .seal(
+            &mut crypto_box::aead::OsRng,
+            &serde_json::to_vec(&plain).unwrap(),
+        )
+        .unwrap();
+    let sealed = B64.encode(sealed);
+
+    let started = via_host(
+        &router,
+        &hosted,
+        &box_key,
+        key,
+        json!({ "op": "session_start", "purpose": "Hosted terminal", "kind": "linux_desktop" }),
+        Some(&sealed),
+    )
+    .await;
+    let id = started["result"]["sessionId"]
+        .as_str()
+        .expect("started")
+        .to_owned();
+    assert!(
+        started["result"]["worktree"].is_null(),
+        "nothing of this machine mounted: {started}"
+    );
+    assert!(
+        hosted.secrets(key).0.is_empty(),
+        "read at the start, then dropped"
+    );
+
+    let act = |action: Value| via_host(&router, &hosted, &box_key, key, action, None);
+    let launched =
+        act(json!({ "op": "desktop", "action": "launch", "text": "xterm -geometry 100x30+0+0" }))
+            .await;
+    assert!(launched["result"].is_object(), "{launched}");
+    let deadline = Instant::now() + Duration::from_secs(15);
+    loop {
+        let shot = act(json!({ "op": "desktop", "action": "screenshot" })).await;
+        if B64
+            .decode(shot["result"]["jpegB64"].as_str().unwrap())
+            .unwrap()
+            .len()
+            > 8000
+        {
+            break;
+        }
+        assert!(Instant::now() < deadline, "xterm's window never showed");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    act(json!({ "op": "desktop", "action": "left_click", "coordinate": [200, 150] })).await;
+    let typed = act(json!({
+        "op": "desktop", "action": "type", "text": format!("echo {SECRET} > \"$HOME/hosted.txt\""),
+    }))
+    .await;
+    assert!(typed["result"].is_object(), "{typed}");
+    act(json!({ "op": "desktop", "action": "key", "text": "Return" })).await;
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let said = loop {
+        let read =
+            act(json!({ "op": "desktop", "action": "launch", "text": "cat \"$HOME/hosted.txt\"" }))
+                .await;
+        let message = read["result"]["message"]
+            .as_str()
+            .unwrap_or_default()
+            .to_owned();
+        if message.contains("exited at once") && !message.contains("No such file") {
+            break message;
+        }
+        assert!(Instant::now() < deadline, "{read}");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    };
+    assert!(
+        said.contains("***SHOP_PASSWORD***") && !said.contains(SECRET),
+        "{said}"
+    );
+    let ended = act(json!({ "op": "session_end" })).await;
+    assert_eq!(ended["result"]["kind"], "linux_desktop", "{ended}");
+
+    let deadline = Instant::now() + Duration::from_secs(60);
+    loop {
+        let listed = sessions(&hub).await;
+        if listed["sessions"][0]["state"] == "recorded" {
+            break;
+        }
+        assert!(Instant::now() < deadline, "not recorded: {listed}");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    let actions = String::from_utf8(read_file(&hub, &id, "actions").await).unwrap();
+    assert!(
+        !actions.contains(SECRET),
+        "the sealed secret never reaches the recording"
+    );
+    let typed_line: Value = actions
+        .lines()
+        .map(|l| serde_json::from_str::<Value>(l).unwrap())
+        .find(|l| l["args"]["action"] == "type")
+        .unwrap();
+    assert!(
+        typed_line["args"]["text"]
+            .as_str()
+            .unwrap()
+            .contains("***SHOP_PASSWORD***"),
+        "{typed_line}"
+    );
     desktops.shutdown().await;
 }

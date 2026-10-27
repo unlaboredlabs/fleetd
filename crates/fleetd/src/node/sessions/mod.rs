@@ -1210,6 +1210,12 @@ impl SessionService {
         self.project_root(project_id).ok()
     }
 
+    /// The working directory this node started a session in (a task's worktree, a lead's workspace); None for a
+    /// session it doesn't have.
+    pub fn session_cwd(&self, id: &str) -> Option<PathBuf> {
+        Some(self.store().session(id).ok()??.local.cwd)
+    }
+
     fn project_root(&self, project_id: &str) -> Result<PathBuf, SessionError> {
         let project = self
             .store()

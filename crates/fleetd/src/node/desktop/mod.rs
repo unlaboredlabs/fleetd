@@ -241,14 +241,23 @@ pub fn capabilities(home: &Path) -> Vec<String> {
     }
 }
 
-/// The folder a container session's apps see, read-only: the agent's working directory when it is a folder of this
-/// machine's. A session hosted for an agent elsewhere sees none (its cwd names a folder on the agent's machine), nor
-/// does an Xvfb session, whose apps run on this machine already.
-pub(super) fn worktree_mount(backend: DesktopBackend, thread: &str, cwd: &str) -> Option<PathBuf> {
+/// An agent session's own working directory (its worktree), as this node started it; None for a session it doesn't
+/// know.
+pub type WorktreeFor = Arc<dyn Fn(&str) -> Option<PathBuf> + Send + Sync>;
+
+/// The folder a container session's apps see, read-only: the calling agent's own worktree, `known` as the node
+/// started its session, never a folder the call names. A session hosted for an agent elsewhere sees none (its worktree
+/// is on the agent's machine), nor does an Xvfb session, whose apps run on this machine already.
+pub(super) fn worktree_mount(
+    backend: DesktopBackend,
+    thread: &str,
+    known: Option<PathBuf>,
+) -> Option<PathBuf> {
     if backend != DesktopBackend::Container || crate::node::session_route::hosted(thread) {
         return None;
     }
-    let cwd = Path::new(cwd);
+    let cwd = known?;
+    let cwd = cwd.as_path();
     let home = crate::node::util::home_dir();
     let broad = cwd.parent().is_none() || cwd == home || home.starts_with(cwd);
     (cwd.is_absolute() && !broad && cwd.is_dir()).then(|| cwd.to_owned())
@@ -277,6 +286,7 @@ pub struct Desktops {
     starting: Arc<Mutex<HashSet<String>>>,
     hub: Arc<dyn HubCalls>,
     secrets_for: SecretsFor,
+    worktree_for: WorktreeFor,
     uploading: Mutex<HashSet<PathBuf>>,
     /// Woken when preparing ends, either way.
     prepared: tokio::sync::Notify,
@@ -312,6 +322,7 @@ impl Desktops {
         config: DesktopConfig,
         hub: Arc<dyn HubCalls>,
         secrets_for: SecretsFor,
+        worktree_for: WorktreeFor,
     ) -> Arc<Self> {
         let _ = std::fs::remove_file(state_path(home));
         let desktops = Arc::new(Self {
@@ -321,6 +332,7 @@ impl Desktops {
             starting: Arc::default(),
             hub,
             secrets_for,
+            worktree_for,
             uploading: Mutex::default(),
             prepared: tokio::sync::Notify::new(),
             _loop: Mutex::default(),
@@ -413,13 +425,14 @@ impl Desktops {
             // What failed is tried again by the next session that asks: a person may have fixed it.
             *lock(&self.prep) = Prep::Wanted;
         }
+        // Once: a preparing that fails ends the wait with why, and the next start tries again.
+        self.begin_prepare();
         let deadline = tokio::time::Instant::now() + PREPARE_WAIT;
         loop {
             let woken = self.prepared.notified();
             tokio::pin!(woken);
             // Registered before the state is read: an end of preparing in between still wakes it.
             woken.as_mut().enable();
-            self.begin_prepare();
             if !matches!(*lock(&self.prep), Prep::Preparing) {
                 break;
             }
@@ -488,7 +501,17 @@ impl Desktops {
             ));
         }
         let pool = self.pool().await?;
-        let mount = worktree_mount(pool.backend(), &thread, &cwd);
+        let mount = worktree_mount(pool.backend(), &thread, (self.worktree_for)(&thread));
+        let id = new_id();
+        let dir = recordings_dir(&self.home).join(id.as_str());
+        // Made before a display is taken, so nothing after it fails with a display to throw away here.
+        std::fs::create_dir_all(&dir).map_err(|e| {
+            refuse(
+                ErrorCode::Failed,
+                format!("The node could not make the session's recording folder: {e}."),
+                "say so in your result; the node's log says why",
+            )
+        })?;
         let secrets_for = self.secrets_for.clone();
         let secrets_thread = thread.clone();
         let secrets = tokio::task::spawn_blocking(move || secrets_for(&secrets_thread));
@@ -499,7 +522,10 @@ impl Desktops {
                 "try session_start again",
             )
         };
-        let display = pool.take(mount.as_deref()).await.map_err(didnt_start)?;
+        let display = pool.take(mount.as_deref()).await.map_err(|why| {
+            let _ = std::fs::remove_dir_all(&dir);
+            didnt_start(why)
+        })?;
         // Connecting, and throwing away a display that can't be used, wait on its X server and runtime.
         let (display, x) = tokio::task::spawn_blocking(move || {
             let x = display.connect();
@@ -508,11 +534,15 @@ impl Desktops {
         .await
         .map_err(|e| e.to_string())
         .and_then(|c| c)
-        .map_err(didnt_start)?;
+        .map_err(|why| {
+            let _ = std::fs::remove_dir_all(&dir);
+            didnt_start(why)
+        })?;
         let secrets = match secrets.await.map_err(|e| e.to_string()).and_then(|m| m) {
             Ok(secrets) => secrets,
             Err(why) => {
                 let _ = tokio::task::spawn_blocking(move || drop(display)).await;
+                let _ = std::fs::remove_dir_all(&dir);
                 return Err(refuse(
                     ErrorCode::Failed,
                     format!(
@@ -522,9 +552,7 @@ impl Desktops {
                 ));
             }
         };
-        let id = new_id();
         let backend = display.backend;
-        let dir = recordings_dir(&self.home).join(id.as_str());
         let session = Session::open(
             display,
             x,
@@ -537,15 +565,7 @@ impl Desktops {
                 ffmpeg: self.ffmpeg(),
                 secrets,
             },
-        )
-        .map_err(|why| {
-            let _ = std::fs::remove_dir_all(&dir);
-            refuse(
-                ErrorCode::Failed,
-                format!("The desktop did not start: {why}."),
-                "try session_start again",
-            )
-        })?;
+        );
         lock(&self.sessions).insert(thread.clone(), session.clone());
         session.step(
             "session_start",
