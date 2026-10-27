@@ -65,7 +65,7 @@ describe("FixtureSource rows", () => {
 });
 
 describe("FixtureSource chat_send", () => {
-  it("answers with the message under the sender's clientRequestId, as a hub keeps it", async () => {
+  it("answers with the message under the sender's clientRequestId, after its key, as a hub keeps it", async () => {
     const message = { messageId: "m10", text: "hi", clientRequestId: "qa-10" };
     const source = new FixtureSource(
       {
@@ -80,6 +80,6 @@ describe("FixtureSource chat_send", () => {
       () => undefined,
     );
     const out = await source.call({ tool: "chat_send", input: { text: "hi", clientRequestId: "c-1" } });
-    expect(out).toEqual({ ok: true, output: { message: { ...message, clientRequestId: "c-1" } } });
+    expect(out).toEqual({ ok: true, output: { message: { ...message, clientRequestId: "key_fx7qa2m4:c-1" } } });
   });
 });
