@@ -188,6 +188,8 @@ pub struct MemoryRefreshed {
     pub items: List<RememberedItem, 1, REFRESHED_LISTED>,
     /// Every change it made, when that is more than `items` lists. Undo all takes them all back.
     pub total: Option<Count>,
+    /// How many of all its changes are undone, when any is: those past `items` too, which the line doesn't show.
+    pub undone: Option<Count>,
 }
 
 /// "Memory refreshed: +2 ~1 −3", a refresh line's text, over all its changes: only the kinds there are.

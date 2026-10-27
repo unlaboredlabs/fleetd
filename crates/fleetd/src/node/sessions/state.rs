@@ -226,12 +226,21 @@ pub fn start_mode(
 }
 
 /// A permission prompt the node answers without asking anyone: everything under full access (bypassPermissions
-/// rarely asks, but an ask must never wedge a run), and tools fleetd never gives an agent.
+/// rarely asks, but an ask must never wedge a run), tools fleetd never gives an agent, and every ask of a session
+/// held to its allowed tools (`allowed_only`): claude asks only for a tool none of them names.
 pub fn auto_answer(
     mode: RuntimeMode,
+    allowed_only: bool,
     tool_name: &str,
     input: &serde_json::Value,
 ) -> Option<PermissionDecision> {
+    if allowed_only {
+        return Some(PermissionDecision::Deny {
+            message: Text::unchecked(format!(
+                "fleetd policy: {tool_name} is not one of the tools this session may use"
+            )),
+        });
+    }
     if ALWAYS_DISALLOWED.contains(&tool_name) {
         return Some(PermissionDecision::Deny {
             message: Text::unchecked(format!(
@@ -542,6 +551,7 @@ mod tests {
             pid_start: None,
             allowed_tools: vec![],
             disallowed_tools: vec![],
+            allowed_only: false,
             role: Default::default(),
             order_id: None,
             setup: None,
@@ -565,17 +575,42 @@ mod tests {
     fn policy_answers_full_access_and_denied_tools_and_asks_otherwise() {
         let input = serde_json::json!({"command": "rm -rf build"});
         assert!(matches!(
-            auto_answer(RuntimeMode::FullAccess, "Bash", &input),
+            auto_answer(RuntimeMode::FullAccess, false, "Bash", &input),
             Some(PermissionDecision::Allow { updated_input: Some(i) }) if i == input
         ));
         assert_eq!(
-            auto_answer(RuntimeMode::ApprovalRequired, "Bash", &input),
+            auto_answer(RuntimeMode::ApprovalRequired, false, "Bash", &input),
             None
         );
         assert!(matches!(
-            auto_answer(RuntimeMode::FullAccess, "AskUserQuestion", &input),
+            auto_answer(RuntimeMode::FullAccess, false, "AskUserQuestion", &input),
             Some(PermissionDecision::Deny { .. })
         ));
+    }
+
+    #[test]
+    fn a_session_held_to_its_allowed_tools_gets_every_ask_refused() {
+        let input = serde_json::json!({"file_path": "/work/src/main.rs"});
+        for mode in [RuntimeMode::ApprovalRequired, RuntimeMode::FullAccess] {
+            for tool in [
+                "Bash",
+                "Edit",
+                "Read",
+                "mcp__github__create_pull_request",
+                "mcp__fleetd__task_spawn",
+                "mcp__fleetd__session_start",
+                "SomeToolAddedLater",
+            ] {
+                assert!(
+                    matches!(
+                        auto_answer(mode, true, tool, &input),
+                        Some(PermissionDecision::Deny { message })
+                            if message.as_str().contains(tool)
+                    ),
+                    "{tool} under {mode:?}"
+                );
+            }
+        }
     }
 
     #[test]
