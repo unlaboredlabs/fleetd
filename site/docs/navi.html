@@ -125,7 +125,8 @@ approves it, so your keys, its MCP servers’ tokens and other projects stay out
 Claude Code settings, MCP servers or fleetd policy in its folder either (<code dir="auto">.claude</code>, <code dir="auto">.mcp.json</code>, <code dir="auto">.fleetd</code>), and a
 policy file’s allow rules don’t apply to a Navi at all.</li>
 <li><strong>Sites:</strong> the first time it fetches a page or opens a site in its browser, you’re asked in its chat, with the site
-named. Approve once and it fetches and opens that site unasked from then on; <code dir="auto">www.</code> is the same site, a subdomain is
+named. Approve once and it fetches and opens that site unasked from then on, with a plain URL: one with <code dir="auto">?</code> or
+<code dir="auto">&amp;</code>, quotes or other shell characters in a browser command asks each time. <code dir="auto">www.</code> is the same site, a subdomain is
 another. The MCP tools <code dir="auto">navi_sites</code> and <code dir="auto">navi_site_revoke</code> list a Navi’s sites and take one back; a revoked site asks
 again.</li>
 </ul>
