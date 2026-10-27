@@ -1,6 +1,7 @@
 //! Hub links (D194): a Navi on one hub opens and follows work in projects on another. On the other hub ("there"), a
-//! person mints a link key that acts as them, at their grants there, optionally limited to chosen projects. The hub
-//! with the Navi ("here") keeps it sealed and calls `/link/v1` there with it. Either side revokes it.
+//! person mints a link key that acts as them, at the lesser of their role there and the grants of the device that made
+//! it, never above operate, optionally limited to chosen projects. The hub with the Navi ("here") keeps it sealed and
+//! calls `/link/v1` there with it. Either side revokes it.
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_with::skip_serializing_none;
@@ -49,8 +50,9 @@ pub struct IssuedLink {
     pub prefix: String,
     /// The projects it reaches; absent: every project its person reaches.
     pub projects: Option<Vec<ProjectRef>>,
-    /// The device that minted it. The link acts as its person, at their role, and stops when they leave the hub; a
-    /// link from before people acts at this device's grants and dies with it.
+    /// The device that minted it. The link acts as its person, at the lesser of their role and this device's grants
+    /// when it was minted, never above operate, and stops when they leave the hub; a link from before people acts at
+    /// this device's grants and dies with it.
     pub key_id: String,
     pub device: String,
     /// Its person, on a hub with people.

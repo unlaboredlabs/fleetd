@@ -185,7 +185,11 @@ into a team hub. You make it on the hub it reaches and add it to the Navi on the
 <tbody>
 <tr>
 <td>It acts as you</td>
-<td>A link key (<code dir="auto">flk_…</code>) acts as you, at your <a href="/docs/people">role</a> on that hub, limited to the projects you pick or not. Removing you from the hub stops it; revoking the device you made it on doesn’t.</td>
+<td>A link key (<code dir="auto">flk_…</code>) acts as you, at the lesser of your <a href="/docs/people">role</a> on that hub and the grants of the device you made it on, never above operate, limited to the projects you pick or not. A read-only device can’t make one. Removing you from the hub stops it.</td>
+</tr>
+<tr>
+<td>Revoking a device leaves its links</td>
+<td>By design, revoking a lost device doesn’t stop the links made on it: they act as you, not as the device, and never gain rights it lacked. Revoke them too, with <code dir="auto">hub_link_revoke</code> on that hub.</td>
 </tr>
 <tr>
 <td>It does five things</td>
@@ -202,6 +206,10 @@ into a team hub. You make it on the hub it reaches and add it to the Navi on the
 <tr>
 <td>The key stays sealed</td>
 <td>The app seals it to the Navi’s hub, which opens it only to call the other hub. Nothing shows it again.</td>
+</tr>
+<tr>
+<td>A person names the host it calls</td>
+<td><code dir="auto">hub_link_add</code> makes the Navi’s hub contact the URL that a person with operate gives it. Only the Navi’s owner or an admin adds or removes a Navi’s links.</td>
 </tr>
 <tr>
 <td>Only the Navi’s hub calls out</td>

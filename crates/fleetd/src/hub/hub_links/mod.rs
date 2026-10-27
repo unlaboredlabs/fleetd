@@ -1,9 +1,10 @@
 //! Hub links (W104, D194): a Navi on one hub opens and follows work in projects on another.
 //!
 //! On the hub whose projects it reaches, a person's device mints a link (`hub_link_mint`): a key, `flk_…`, shown once,
-//! of which the hub keeps the SHA-256. The link acts as that device's person, at their hub role, limited to chosen
-//! projects or not,
-//! and only through `/link/v1` ([`serve`]): read the projects, ask a lead for work, read its status, follow its news.
+//! of which the hub keeps the SHA-256, with the device's grants. The link acts as that device's person, at the lesser
+//! of their hub role and the device's grants when it was minted, never above operate ([`link_grants`]), limited to
+//! chosen projects or not, and only through `/link/v1` ([`serve`]): read the projects, ask a lead for work, read its
+//! status, follow its news.
 //! Asks go into chats as "<person> via <label> Navi" (`navi::bridge`, `Asker::Link`). Its person or an admin revokes
 //! it (`hub_link_revoke`), and it stops when they leave the hub. A link minted before people acts at its device's
 //! grants and stops with its device.
@@ -19,7 +20,7 @@ pub mod tools;
 
 use std::net::IpAddr;
 
-use fleetd_contracts::auth::{AgentKeyInfo, Grant, GrantMachines, Role, Star};
+use fleetd_contracts::auth::{AgentKeyInfo, Grant, GrantMachines, Role};
 use fleetd_contracts::hub_links::{
     HubLabel, HubLink, HubLinkId, HubLinkState, IssuedLink, LINK_KEY_PREFIX, LinkedHub,
 };
@@ -42,14 +43,14 @@ fn link_id() -> String {
     format!("hl_{}", base32(&rand::random::<[u8; 5]>()))
 }
 
-/// A link minted here, as a request through it sees it: its person at their role, read again at each request.
+/// A link minted here, as a request through it sees it: its person and what it may do, read again at each request.
 #[derive(Clone, Debug)]
 pub struct Issued {
     pub link_id: String,
     pub label: String,
     pub projects: Option<Vec<ProjectRef>>,
     pub person: Option<PersonRef>,
-    /// What it may do: its person's role on every machine, or for a link from before people its device's grants.
+    /// What it may do ([`link_grants`]).
     pub grants: Vec<Grant>,
     /// Its person's name, or its device's for a link from before people.
     pub who: String,
@@ -89,9 +90,12 @@ struct IssuedRow {
     created_ms: i64,
     last_used_ms: Option<i64>,
     revoked_ms: Option<i64>,
+    /// The minting device's grants then, as JSON; None for a link minted before they were kept.
+    grants: Option<String>,
 }
 
-const ISSUED_COLUMNS: &str = "link_id, prefix, label, projects, key_id, device, person, created_ms, last_used_ms, revoked_ms";
+const ISSUED_COLUMNS: &str = "link_id, prefix, label, projects, key_id, device, person, created_ms, last_used_ms, revoked_ms, \
+     grants";
 
 impl IssuedRow {
     fn read(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
@@ -106,6 +110,7 @@ impl IssuedRow {
             created_ms: row.get(7)?,
             last_used_ms: row.get(8)?,
             revoked_ms: row.get(9)?,
+            grants: row.get(10)?,
         })
     }
 
@@ -169,11 +174,12 @@ pub fn mint(
         created_ms: now_ms(hub.clock.as_ref()),
         last_used_ms: None,
         revoked_ms: None,
+        grants: Some(serde_json::to_string(&by.grants)?),
     };
     hub.db.with(|c| {
         c.execute(
-            "INSERT INTO hub_links_issued (link_id, hash, prefix, label, projects, key_id, device, person, created_ms)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO hub_links_issued (link_id, hash, prefix, label, projects, key_id, device, person, created_ms,
+             grants) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             params![
                 row.link_id,
                 sha256(&key),
@@ -183,7 +189,8 @@ pub fn mint(
                 row.key_id,
                 row.device,
                 row.person,
-                row.created_ms
+                row.created_ms,
+                row.grants
             ],
         )?;
         Ok(())
@@ -290,11 +297,22 @@ pub fn verify(hub: &Hub, bearer: &str) -> Result<Issued, McpToolError> {
                     row.prefix
                 )));
             };
-            let grants = vec![Grant {
-                role: crate::hub::people::role_cap(someone.role),
-                machines: GrantMachines::All(Star::Value),
-            }];
-            (Some(someone.as_ref()), grants, someone.name.to_string())
+            // The device's grants at minting; a link from before they were kept reads its device's now.
+            let minted: Vec<Grant> = match &row.grants {
+                Some(json) => serde_json::from_str(json).map_err(|e| failed(e.into()))?,
+                None => hub
+                    .auth
+                    .get(&row.key_id)
+                    .map_err(failed)?
+                    .map(|d| d.grants)
+                    .unwrap_or_default(),
+            };
+            let cap = crate::hub::people::role_cap(someone.role);
+            (
+                Some(someone.as_ref()),
+                link_grants(&minted, cap),
+                someone.name.to_string(),
+            )
         }
         // No person behind it: its device's grants, and it dies with its device.
         None => {
@@ -305,7 +323,11 @@ pub fn verify(hub: &Hub, bearer: &str) -> Result<Issued, McpToolError> {
                     row.prefix
                 )));
             };
-            (None, device.grants, device.name)
+            (
+                None,
+                link_grants(&device.grants, Role::Operate),
+                device.name,
+            )
         }
     };
     if row
@@ -330,6 +352,12 @@ pub fn verify(hub: &Hub, bearer: &str) -> Result<Issued, McpToolError> {
         link_id: row.link_id,
         label: row.label,
     })
+}
+
+/// What a link may do: the minting device's grants, none above its person's role cap (`cap`), and none above
+/// operate, since nothing a link calls needs more.
+pub fn link_grants(device: &[Grant], cap: Role) -> Vec<Grant> {
+    crate::hub::people::capped(device, cap.min(Role::Operate))
 }
 
 pub fn failed(e: StoreError) -> McpToolError {

@@ -2393,8 +2393,9 @@ export type IssuedLink = {
   createdAt: Timestamp;
   device: string;
   /**
-   * The device that minted it. The link acts as its person, at their role, and stops when they leave the hub; a
-   * link from before people acts at this device's grants and dies with it.
+   * The device that minted it. The link acts as its person, at the lesser of their role and this device's grants
+   * when it was minted, never above operate, and stops when they leave the hub; a link from before people acts at
+   * this device's grants and dies with it.
    */
   keyId: string;
   /** What the person called the hub it is for; requests through it read "asked via <label> Navi". */

@@ -67,8 +67,8 @@ offline) for `pnpm web:preview` and QA.
 A link lets a Navi on hub A reach projects on hub B. Another workstream builds it. This section is the contract the
 app relies on.
 
-**What a link is.** The person mints a key on hub B. That key acts as them, at their role on B, optionally limited to
-projects they choose. They paste it into hub A, and A keeps it sealed, like any secret. Through it, A's Navi opens
+**What a link is.** The person mints a key on hub B. That key acts as them, at the lesser of their role on B and the grants of the
+device that made it, never above operate, optionally limited to projects they choose. They paste it into hub A, and A keeps it sealed, like any secret. Through it, A's Navi opens
 orders in B's projects (`project_message`), reads their status (`factory_status`) and hears when work lands. B records
 every request as that person and sees nothing of the Navi or its chat. D186, under which admins can read Navis, applies
 only to Navis on the admin's own hub.
@@ -104,14 +104,15 @@ The code is `crates/fleetd/src/hub/hub_links/` (store, `serve.rs` on B, `client.
 
 **Minting and keeping.** On B, a person's device calls `hub_link_mint {label, projects?}`: `label` is what they call
 A ("home"), `projects` limits the link (each one they can operate), and the answer carries the key, `flk_…`, once. B
-keeps its SHA-256, the minting device's key id and its person. The link acts as that person at their hub role (at
-most operate: a link has no admin call), whatever device they use later, and stops when they are removed from the
-hub. A link minted before people acts at its device's grants and dies with it. On A, the person calls
-`hub_link_add {navi, label, url, sealed}`: the app seals the key with `crypto_box_seal` to A's own box key (`boxPubKey` from
-`hub_links_get`, kept in A's home), A opens it only to call B, checks it with `GET /link/v1/hello` and keeps it
-sealed per Navi. No tool returns it again and it never enters a chat or transcript. `hub_links_get {navi?}` reads
-both sides: the Navi's links on A with their state, and the links minted on B (the caller's own, or every one for an
-admin).
+keeps its SHA-256, the minting device's key id, its grants and its person. The link acts as that person at the lesser
+of their hub role, read at each request, and those grants, never above operate (a link has no admin call): a read-only
+device can't mint one (`forbidden`), and a link never holds more than the device that made it. It stops when its
+person is removed from the hub; revoking the device doesn't stop it. A link minted before people acts at its device's
+grants and dies with it. On A, the Navi's owner or an admin calls `hub_link_add {navi, label, url, sealed}`: the app
+seals the key with `crypto_box_seal` to A's own box key (`boxPubKey` from `hub_links_get`, kept in A's home), A opens
+it only to call B, checks it with `GET /link/v1/hello` and keeps it sealed per Navi. No tool returns it again and it
+never enters a chat or transcript. `hub_links_get {navi?}` reads both sides: the Navi's links on A with their state,
+and the links minted on B (the caller's own, or every one for an admin).
 
 **1. What a link key may do on B.** A link key works only on `/link/v1`, and only these five calls:
 
@@ -126,8 +127,8 @@ admin).
 Each call checks the key, the link not revoked, not idle for 90 days, and its person still on the hub; a key dead for any
 of these is refused with 401 and `dead: true` (`LinkRefusal`), and only that body makes A mark the link revoked. A
 store failure is a 500, and any other refusal or a 401 without `dead` leaves the link as it was, so a passing error
-never kills it. A calls only the URL it was given: no redirects, and no answer over 1 MB. Then comes the person's
-role: read to see a project, operate to ask in it, and the link's project limits. A project outside them is refused
+never kills it. A calls only the URL it was given: no redirects, and no answer over 1 MB. Then come the link's rights (its
+person's role and its device's grants, as above): read to see a project, operate to ask in it, and the link's project limits. A project outside them is refused
 (`forbidden`, "X is not one of this link's projects"); one the person can't read doesn't exist for the link. Nothing
 else takes a link key: `/mcp` and `/app` refuse it (it is no `fld_` key), so there is no tool, no chat read, no
 approval, no secret and no admin through a link.
@@ -143,7 +144,8 @@ and sees nothing of the Navi: no title, no chat, no transcript.
 link's asks has news, from a cursor A keeps on the link. A maps B's handle to its own (`navi_asks.to_hub`, `remote`)
 and wakes the Navi's lead with one line, "- N4 to Storefront on acme: PR #42 (acme/shop) of order W3 merged". When B
 doesn't answer, the follower retries every 30 seconds and the link reads "unreachable" with the reason; nothing is lost,
-as the cursor waits.
+as the cursor waits. The follower stops when the link is removed on A, even mid-read (what that read brought wakes no
+one), and when its Navi is archived.
 
 **4. Revoking while the other side is unreachable.**
 
