@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 use tokio::sync::Notify;
 
 use super::contract::*;
-use super::github::{GhOut, GhRunner, NEXT_LABEL, TRAIN_CONTEXT, batch_heads};
+use super::github::{BATCH_MARKER, GhOut, GhRunner, NEXT_LABEL, TRAIN_CONTEXT, batch_heads};
 use super::host::*;
 use super::records::{Db, ListFilter};
 use super::service::{ReviewGate, Train, TrainOptions, Verdict};
@@ -1800,12 +1800,41 @@ async fn a_pr_github_finds_conflicting_goes_back_to_its_author_within_one_pass()
     assert_eq!(kit.gate.reviewed.lock().unwrap().len(), reviewed + 1);
 }
 
-/// A PR waiting in line whose head has no check `CHECKS_START_WAIT` after the train saw it: its author and the lead
-/// hear once why, and it keeps its place. A head with checks says nothing (D191).
+/// After a restart, a ready PR whose batch already landed is finished as merged, never sent back as conflicting,
+/// though GitHub now reads it as conflicting with the base that has its changes.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_pr_whose_checks_never_start_is_flagged_to_its_author_and_the_lead_once() {
+async fn a_member_of_a_landed_batch_is_merged_never_sent_back_as_conflicting() {
+    let kit = Kit::new();
+    let member = kit
+        .enqueue(kit.open_pr(7, "landed", &[add("l.txt", "l\n")]))
+        .await;
+    assert_eq!(member.state, ChangeState::Ready);
+    let head = kit.head_of("landed");
+    let mut batch = FakePull::open(
+        "fleetd/train/batch",
+        "main",
+        &format!("{BATCH_MARKER} #7@{head}"),
+    );
+    batch.state = "closed".into();
+    batch.merged = true;
+    batch.merged_at = Some("2026-10-27T12:00:00Z".into());
+    batch.merge_sha = Some(kit.head_of("main"));
+    kit.gh.pulls.lock().unwrap().insert(100, batch);
+    set_mergeable(&kit, 7, Some(false));
+
+    kit.train.step(REPO).await;
+    assert_eq!(state_of(&kit, &member), ChangeState::Merged);
+    assert!(kit.host.events_of("change.needs_rebase").is_empty());
+}
+
+/// A PR waiting in line whose head has none of its base's required checks `CHECKS_START_WAIT` after the train saw it:
+/// its author and the lead hear once why, and it keeps its place. Another check doesn't count; a required one only
+/// queued does (D191).
+#[tokio::test(flavor = "multi_thread")]
+async fn a_pr_whose_required_checks_never_start_is_flagged_to_its_author_and_the_lead_once() {
     let clock = Arc::new(Sleeps::default());
-    let kit = Kit::on_clock(FakeCi::Actions, clock.clone());
+    // main requires `build`.
+    let kit = Kit::on_clock(FakeCi::Required, clock.clone());
     let task_id = TaskId::unchecked("T1");
     kit.host.tasks.lock().unwrap().insert(
         task_id.to_string(),
@@ -1836,11 +1865,15 @@ async fn a_pr_whose_checks_never_start_is_flagged_to_its_author_and_the_lead_onc
     let running = kit
         .enqueue(kit.open_pr(8, "running", &[add("p.txt", "p\n")]))
         .await;
-    kit.gh
-        .head_runs
-        .lock()
-        .unwrap()
-        .insert(kit.head_of("silent"), json!([]));
+    {
+        let mut runs = kit.gh.head_runs.lock().unwrap();
+        let lint = check("lint", "completed", Some("success"), None);
+        runs.insert(kit.head_of("silent"), json!([lint]));
+        runs.insert(
+            kit.head_of("running"),
+            json!([check("build", "queued", None, None)]),
+        );
+    }
     let flagged = |kit: &Kit| {
         let sends = kit.host.sends.lock().unwrap().clone();
         let wakes = kit.host.wakes.lock().unwrap().clone();
