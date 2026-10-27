@@ -254,8 +254,7 @@ pub fn verdict(tool_name: &str, input: &Value, servers: &[McpServer]) -> Option<
         Rule::Read => Verdict::Allow,
         Rule::Blocked(n) => Verdict::Block(n.why()),
         Rule::Ask(action) => {
-            let text = input.to_string();
-            if crate::hub::redact::redact(&text) != text {
+            if holds_credential(input) {
                 return Some(Verdict::Block(Never::Credential.why()));
             }
             match preview(kind, server_name, tool, action, input) {
@@ -267,6 +266,23 @@ pub fn verdict(tool_name: &str, input: &Value, servers: &[McpServer]) -> Option<
             }
         }
     })
+}
+
+/// Whether any part of `input` looks like a credential: the whole of it, and each string in it on its own, so one
+/// inside a JSON-encoded string (which Notion's server takes at times) is read unescaped.
+fn holds_credential(input: &Value) -> bool {
+    let shows = |text: &str| crate::hub::redact::redact(text) != text;
+    fn strings<'a>(v: &'a Value, out: &mut Vec<&'a str>) {
+        match v {
+            Value::String(s) => out.push(s),
+            Value::Array(items) => items.iter().for_each(|i| strings(i, out)),
+            Value::Object(o) => o.values().for_each(|i| strings(i, out)),
+            _ => {}
+        }
+    }
+    let mut all = Vec::new();
+    strings(input, &mut all);
+    shows(&input.to_string()) || all.into_iter().any(shows)
 }
 
 /// What a session's claude gets at launch: the read tools in `--allowedTools`, so it never asks for them, and a tool

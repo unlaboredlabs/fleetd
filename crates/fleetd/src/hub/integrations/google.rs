@@ -69,9 +69,13 @@ const WORKSPACE_DELETES: &[&str] = &[
     "slides_delete_slide",
 ];
 
-/// An event write reaches its guests when it has any.
-fn has_guests(input: &Value) -> bool {
-    !addresses(&input["attendees"]).is_empty()
+/// An event write reaches its guests when it has any: a new event's are in its input; a changed one may have guests
+/// already, whom Google emails unless told not to.
+fn reaches_guests(tool: &str, input: &Value) -> bool {
+    match tool {
+        "create_calendar_event" => !addresses(&input["attendees"]).is_empty(),
+        _ => input["notify_attendees"].as_bool() != Some(false),
+    }
 }
 
 pub fn rule(tool: &str, input: &Value) -> Option<Rule> {
@@ -79,8 +83,8 @@ pub fn rule(tool: &str, input: &Value) -> Option<Rule> {
         return Some(Rule::Read);
     }
     if let Some((_, action)) = ASKS.iter().find(|(name, _)| *name == tool) {
-        let send =
-            matches!(tool, "create_calendar_event" | "update_calendar_event") && has_guests(input);
+        let send = matches!(tool, "create_calendar_event" | "update_calendar_event")
+            && reaches_guests(tool, input);
         return Some(Rule::Ask(if send { Send } else { *action }));
     }
     // A broker connection's tool: the Workspace extension's under any connection name, or xaq's Notion connection's.
@@ -95,7 +99,8 @@ pub fn rule(tool: &str, input: &Value) -> Option<Rule> {
         .iter()
         .any(|p| inner.starts_with(p))
     {
-        return Some(Rule::Ask(Write));
+        // One the table doesn't list asks as what its name says: a share as a share.
+        return Some(Rule::Ask(super::policy::guess(inner)));
     }
     notion::rule(inner, input)
 }
@@ -222,13 +227,16 @@ pub fn draft(tool: &str, input: &Value) -> Draft {
                     }
                     .into(),
                 ),
-                audience: (!guests.is_empty()).then(|| {
-                    if quiet {
-                        "Guests see it in their calendars; Google doesn't email them".to_owned()
-                    } else {
-                        "Google emails each guest".to_owned()
-                    }
-                }),
+                audience: match (guests.is_empty(), quiet, tool) {
+                    (false, true, _) => Some(
+                        "Guests see it in their calendars; Google doesn't email them".to_owned(),
+                    ),
+                    (false, false, _) => Some("Google emails each guest".to_owned()),
+                    (true, false, "update_calendar_event") => Some(
+                        "Its guests, if it has any: Google emails them about the change".to_owned(),
+                    ),
+                    (true, _, _) => None,
+                },
                 to: guests,
                 subject: text_of(input, &["summary"]),
                 body: text_of(input, &["description"]),
