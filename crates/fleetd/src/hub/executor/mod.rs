@@ -171,9 +171,10 @@ pub struct LaunchOptions {
     pub order_id: Option<fleetd_contracts::ledger::WorkstreamId>,
     /// The project's setup commands, for a new worktree on a node that runs them.
     pub setup: Option<fleetd_contracts::project_settings::WorktreeSetup>,
-    /// Runtime tools it never gets, on top of the project's denials and fleetd's own (claude's `--disallowedTools`
-    /// syntax); the node applies them at every start of its process.
-    pub deny_tools: Vec<String>,
+    /// These tools and no other (claude's `--allowedTools` syntax), in place of the project's own allow rules: the
+    /// node refuses anything else, an MCP server's tool or one added later too (`SessionLaunch::allowed_only`). None:
+    /// the tools a session of its role gets.
+    pub only_tools: Option<Vec<String>>,
     /// These MCP servers instead of `mcp_role`'s, kept for the thread's life: a send never brings it the project's.
     pub mcp: Option<fleetd_contracts::mcp_servers::McpSessionConfig>,
 }
@@ -1537,12 +1538,9 @@ impl Executors {
             workspace: options.workspace.unwrap_or(SessionWorkspace::Root),
             prompt: non_empty(machine_id, op, "prompt", &input.prompt)?,
             run_id: NonEmpty::unchecked(uuid_from(&format!("run\n{seed}"))),
-            allowed_tools: rules.allow,
-            disallowed_tools: rules
-                .deny
-                .into_iter()
-                .chain(options.deny_tools.iter().cloned())
-                .collect(),
+            allowed_only: options.only_tools.is_some(),
+            allowed_tools: options.only_tools.unwrap_or(rules.allow),
+            disallowed_tools: rules.deny,
             role: options.role,
             mcp_role: options.mcp_role,
             mcp: options.mcp.or_else(|| {

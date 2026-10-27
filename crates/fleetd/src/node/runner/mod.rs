@@ -62,6 +62,9 @@ pub struct SessionSpec {
     pub runtime_mode: RuntimeMode,
     /// `--allowedTools` rules from policy; anything else asks (ApprovalRequired) or runs (FullAccess).
     pub allowed_tools: Vec<String>,
+    /// Only `allowed_tools`: claude gets none of its own tools but those named there (`--tools`), and asks for any
+    /// other, which the node refuses (`sessions::state::auto_answer`).
+    pub allowed_only: bool,
     /// `--disallowedTools`, always including the tools fleetd keeps from agents.
     pub disallowed_tools: Vec<String>,
     /// fleetd's MCP servers, written by the node; the user's own servers load too.

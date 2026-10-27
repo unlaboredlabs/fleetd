@@ -2768,6 +2768,8 @@ export type MemoryRefreshed = {
   items: RememberedItem[];
   /** Every change it made, when that is more than `items` lists. Undo all takes them all back. */
   total?: number;
+  /** How many of all its changes are undone, when any is: those past `items` too, which the line doesn't show. */
+  undone?: number;
 };
 
 export type MemoryScope = "user" | "project";
