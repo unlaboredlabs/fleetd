@@ -1,6 +1,7 @@
 //! Batches: two or more ready Changes into one base, each reviewed for its current patch and green on its own head by
 //! its fast set (the base's required checks and the repo's own; cancelled and superseded runs and every other check
-//! left to the batch's CI), up to `BATCH_MAX` of them in queue order, merged together after one CI run. Each pass
+//! left to the batch's CI) and by the checks the batch's CI skips (`batch_skipped`: a repo's scarce macOS jobs, D204),
+//! up to `BATCH_MAX` of them in queue order, merged together after one CI run. Each pass
 //! records why each ready PR was left out, on the Change and in the log. A PR approved at an earlier patch whose
 //! re-review is at work joins as a ready one does: the merge waits for that review too, and blocking findings drop it
 //! from the batch, which forms again without it. The train builds the batch on GitHub: its
@@ -16,7 +17,7 @@ use super::github::{
     BATCH_MARKER, BranchMerge, CheckRun, CommitStatus, MergeOutcome, NEXT_LABEL, Pull, batch_heads,
 };
 use super::host::BoxFut;
-use super::next::WAITING_ON;
+use super::next::{WAITING_ON, gated_name};
 use super::records::DRAFT;
 use super::regen::{Conflict, REGENERATING};
 use super::service::{
@@ -44,26 +45,32 @@ fn named(runs: &[String]) -> String {
         .join(", ")
 }
 
-/// Why a ready PR's own head keeps it out of a batch, by its fast set: a check there failed or still runs, or one of
-/// it, required or added, never reported (`statuses` are read for those), or the head has no checks at all. A cancelled
-/// or superseded run, and any check outside the fast set, doesn't count: the batch's own CI decides. None when it may
-/// join. `runs` are the newest of each check; `fast` None when the base's rules or the settings can't be read, and an
-/// empty fast set, judge by every check.
+/// Why a ready PR's own head keeps it out of a batch, by its fast set and the checks the batch skips (`batch`, as
+/// `batch_skipped` names them): a check there failed or still runs, or one of them never reported (`statuses` are read
+/// for those), or the head has no checks at all. A cancelled or superseded run of the fast set, and any check outside
+/// both, doesn't count: the batch's own CI decides. A check the batch skips is decided here only, so a cancelled one
+/// counts as failed. None when it may join. `runs` are the newest of each check; `fast` None when the base's rules or
+/// the settings can't be read, and an empty fast set, judge by every check.
 pub(super) fn own_checks(
     runs: &[CheckRun],
     statuses: &[CommitStatus],
     fast: Option<&Fast>,
+    batch: &[String],
 ) -> Option<String> {
     if runs.is_empty() && statuses.is_empty() {
         return Some("its own head has no checks yet".into());
     }
     let cancelled = |r: &CheckRun| r.conclusion.as_deref() == Some("cancelled");
+    let skipped_by_batch = |r: &CheckRun| batch.iter().any(|n| gated_name(n, &r.name));
     let judged: Vec<&CheckRun> = match fast.filter(|f| !f.set.is_empty()) {
         Some(fast) => runs
             .iter()
-            .filter(|r| fast.holds(&r.name) && !cancelled(r))
+            .filter(|r| skipped_by_batch(r) || (fast.holds(&r.name) && !cancelled(r)))
             .collect(),
-        None if fast.is_some() => runs.iter().filter(|r| !cancelled(r)).collect(),
+        None if fast.is_some() => runs
+            .iter()
+            .filter(|r| skipped_by_batch(r) || !cancelled(r))
+            .collect(),
         None => runs.iter().collect(),
     };
     let names = |f: &dyn Fn(&CheckRun) -> bool| -> Vec<String> {
@@ -75,8 +82,14 @@ pub(super) fn own_checks(
     };
     let mut red = names(&|r| is_red(r));
     let set = fast.map(|f| f.set.as_slice()).unwrap_or_default();
+    let mut wanted: Vec<&String> = Vec::new();
+    for name in set.iter().chain(batch) {
+        if !wanted.contains(&name) && !runs.iter().any(|r| gated_name(name, &r.name)) {
+            wanted.push(name);
+        }
+    }
     let mut missing = Vec::new();
-    for name in set.iter().filter(|n| !runs.iter().any(|r| &r.name == *n)) {
+    for name in wanted {
         match statuses
             .iter()
             .find(|s| &s.context == name)
@@ -322,6 +335,7 @@ impl Train {
             .filter(|c| c.state == ChangeState::Ready || self.rereviewing(c))
             .collect();
         let (candidates, settled) = self.candidates(repo, ready).await;
+        self.prune_heads(repo);
         let Some(head) = candidates.first() else {
             self.relabel(repo, &[], &[]).await;
             return settled;
@@ -519,9 +533,25 @@ impl Train {
             }
         };
         let fast = self.fast(repo, base).await;
+        let Some(workflows) = self.workflows(repo, base).await else {
+            return Some("its workflows could not be read for the checks a batch skips".into());
+        };
+        let sha = change.head_sha.as_str();
+        if let Some(why) = self
+            .rerun_cancelled_skips(repo, sha, &runs, &workflows.batch)
+            .await
+        {
+            return Some(why);
+        }
+        let runs = self.proven_runs(repo, sha, runs, &workflows.batch).await;
+        let batch = workflows.batch_names();
         let unrun = fast
             .as_ref()
-            .is_some_and(|f| f.set.iter().any(|n| !runs.iter().any(|r| &r.name == n)));
+            .map(|f| f.set.as_slice())
+            .unwrap_or_default()
+            .iter()
+            .chain(&batch)
+            .any(|n| !runs.iter().any(|r| gated_name(n, &r.name)));
         // A head with no check runs may still carry statuses.
         let statuses = if unrun || runs.is_empty() {
             match self.github.statuses(repo, change.head_sha.as_str()).await {
@@ -536,7 +566,7 @@ impl Train {
         } else {
             Vec::new()
         };
-        own_checks(&runs, &statuses, fast.as_ref())
+        own_checks(&runs, &statuses, fast.as_ref(), &batch)
     }
 
     /// Records why this pass left a ready Change out of the batch, on the Change (`LEFT_OUT`) and in the log; None

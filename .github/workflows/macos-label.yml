@@ -1,16 +1,14 @@
 name: macOS label
 
-# Adding `fleetd:next` (the merge train's: it merges the PR next) or `macos` (by hand) to a PR runs CI on its branch with
-# the macOS jobs, which ci.yml runs only on labelled PRs. `macos` also runs Desktop QA with its macOS leg, which never
-# decides a merge (D158, desktop-qa.yml), so `fleetd:next` doesn't. The label is caught here rather than in ci.yml: a
-# `labeled` run there for any other label would add skipped check runs that replace the PR's real results (the merge
-# train and GitHub keep only the newest run of each check). Nothing is dispatched for the train's batch PR, whose CI
-# runs the macOS jobs anyway, nor once the branch has moved since the label went on: that push's own runs see the label
-# and run the macOS jobs. CI isn't dispatched again for a PR that already had the other label.
+# Adding `macos` to a PR (by hand) runs Desktop QA on its branch with its macOS leg, which never decides a merge (D158,
+# desktop-qa.yml). CI's macOS jobs need no label: they run on every PR whose paths call for them (ci.yml). The label is
+# caught here rather than in desktop-qa.yml: a `labeled` run there for any other label would add skipped check runs
+# that replace the PR's real results (the merge train and GitHub keep only the newest run of each check). Nothing is
+# dispatched for the train's batch PR, nor once the branch has moved since the label went on: that push's own run sees
+# the label and runs the macOS leg.
 #
-# The dispatched runs have a concurrency group of their own (ci.yml): one that joined the PR's would cancel the PR's own
-# runs on the same head, which GitHub's ruleset reads the required checks from, and block the merge (#510). So nothing
-# else cancels them, and the PR's next push does it (label-runs-stale.yml).
+# The dispatched run has a concurrency group of its own (desktop-qa.yml): one that joined the PR's would cancel the
+# PR's own run on the same head. So nothing else cancels it, and the PR's next push does it (label-runs-stale.yml).
 
 on:
   pull_request:
@@ -21,10 +19,7 @@ permissions:
 
 jobs:
   dispatch:
-    if: >-
-      !endsWith(github.head_ref, 'train/batch')
-      && ((github.event.label.name == 'fleetd:next' && !contains(github.event.pull_request.labels.*.name, 'macos'))
-      || github.event.label.name == 'macos')
+    if: ${{ !endsWith(github.head_ref, 'train/batch') && github.event.label.name == 'macos' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -34,16 +29,9 @@ jobs:
           BRANCH: ${{ github.head_ref }}
           PR: ${{ github.event.pull_request.number }}
           LABELLED: ${{ github.event.pull_request.head.sha }}
-          LABEL: ${{ github.event.label.name }}
-          NEXT: ${{ contains(github.event.pull_request.labels.*.name, 'fleetd:next') }}
         run: |
           if [ "$(gh api "repos/$GH_REPO/git/ref/heads/$BRANCH" -q .object.sha)" != "$LABELLED" ]; then
-            echo "$BRANCH moved since the label went on: its own runs have the macOS jobs"
+            echo "$BRANCH moved since the label went on: its own run has the macOS leg"
             exit 0
           fi
-          if [ "$LABEL" = fleetd:next ] || [ "$NEXT" != true ]; then
-            gh workflow run ci.yml --ref "$BRANCH" -f pr="$PR"
-          fi
-          if [ "$LABEL" = macos ]; then
-            gh workflow run desktop-qa.yml --ref "$BRANCH" -f pr="$PR"
-          fi
+          gh workflow run desktop-qa.yml --ref "$BRANCH" -f pr="$PR"

@@ -180,6 +180,10 @@ struct FakeGh {
     head_runs: Mutex<HashMap<String, Value>>,
     /// The checks main requires through a ruleset, when set: in place of what `ci` requires.
     required: Mutex<Option<Vec<String>>>,
+    /// Workflow files (name, text) on main besides `ci`'s, where `ci` has none.
+    workflow_files: Mutex<Vec<(&'static str, &'static str)>>,
+    /// The annotation messages of check runs by id; none for any other.
+    annotations: Mutex<HashMap<String, Vec<&'static str>>>,
 }
 
 fn ok(body: Value) -> GhOut {
@@ -634,6 +638,16 @@ impl FakeGh {
                 ),
                 stderr: String::new(),
             },
+            (["check-runs", id, "annotations"], "GET") => {
+                let notes = self.annotations.lock().unwrap().get(*id).cloned();
+                ok(json!(
+                    notes
+                        .unwrap_or_default()
+                        .iter()
+                        .map(|m| json!({ "message": m }))
+                        .collect::<Vec<_>>()
+                ))
+            }
             (["commits", sha, "check-runs"], _) => {
                 if let Some(look) = &*self.on_checks.lock().unwrap() {
                     look();
@@ -694,7 +708,9 @@ impl FakeGh {
             (["rules", "branches", ..], "GET") if self.required.lock().unwrap().is_some() => {
                 let names = self.required.lock().unwrap().clone().unwrap_or_default();
                 let checks: Vec<Value> = names.iter().map(|n| json!({ "context": n })).collect();
-                ok(json!([{ "type": "required_status_checks", "ruleset_id": 1, "parameters": { "required_status_checks": checks } }]))
+                ok(
+                    json!([{ "type": "required_status_checks", "ruleset_id": 1, "parameters": { "required_status_checks": checks } }]),
+                )
             }
             (["rules", "branches", ..], "GET") => ok(match self.ci {
                 FakeCi::Required => {
@@ -708,20 +724,33 @@ impl FakeGh {
                 }
                 _ => json!([]),
             }),
-            (["contents", ".github", "workflows", ..], "GET") if *self.fail_workflows.lock().unwrap() => {
+            (["contents", ".github", "workflows", ..], "GET")
+                if *self.fail_workflows.lock().unwrap() =>
+            {
                 http_error(500, "Server Error")
             }
-            (["contents", ".github", "workflows"], "GET") => match self.ci {
-                FakeCi::Macos { .. } => ok(Value::Array(
-                    self.workflows()
+            (["contents", ".github", "workflows"], "GET") => {
+                let files = match self.ci {
+                    FakeCi::Macos { .. } => self.workflows(),
+                    _ => self.workflow_files.lock().unwrap().clone(),
+                };
+                if files.is_empty() {
+                    return http_error(404, "Not Found");
+                }
+                ok(Value::Array(
+                    files
                         .iter()
                         .map(|(file, _)| json!({ "path": format!(".github/workflows/{file}"), "type": "file" }))
                         .collect(),
-                )),
-                _ => http_error(404, "Not Found"),
-            },
+                ))
+            }
             (["contents", ".github", "workflows", file], "GET") => {
-                match self.workflows().into_iter().find(|(f, _)| f == file) {
+                let added = self.workflow_files.lock().unwrap().clone();
+                match added
+                    .into_iter()
+                    .chain(self.workflows())
+                    .find(|(f, _)| f == file)
+                {
                     Some((_, text)) => GhOut {
                         exit_code: 0,
                         stdout: text.into(),
@@ -769,7 +798,10 @@ impl FakeGh {
                     return ok(json!([]));
                 }
                 let range = format!("refs/heads/{base}...refs/heads/{branch}");
-                let files = git(&self.origin, &["diff", "--name-status", "--no-renames", &range]);
+                let files = git(
+                    &self.origin,
+                    &["diff", "--name-status", "--no-renames", &range],
+                );
                 ok(Value::Array(
                     files
                         .lines()
@@ -1416,6 +1448,8 @@ impl Kit {
             runs: Mutex::default(),
             reruns: Arc::default(),
             head_runs: Mutex::default(),
+            workflow_files: Mutex::default(),
+            annotations: Mutex::default(),
             required: Mutex::default(),
         });
         let host = Arc::new(FakeHost {
@@ -5572,6 +5606,284 @@ async fn a_pr_left_out_of_a_batch_says_why() {
     // Alone in line, the red one is taken by itself (rebased, its new head is tested), and no reason is left on it.
     assert!(kit.train.step(REPO).await);
     assert!(!why(&red).is_some_and(|e| e.starts_with(super::batch::LEFT_OUT)));
+}
+
+/// D204: CI that skips its macOS jobs on the batch PR (`!endsWith(github.head_ref, 'train/batch')`). A PR joins a batch
+/// only once its own head passed them, or skipped them for want of work: `desktop-macos` needs `macos scope`, whose run
+/// passed on that head and said "no work for desktop-macos". One still running, failed or not reported stays out and
+/// says which, and so does a skip whose scope was cancelled (the run cancelled before the check started), which the
+/// train re-runs. The batch
+/// never waits for them: they read skipped on its head, `rust (macos)` too, which main requires, and it merges on its
+/// first read.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_pr_joins_a_batch_only_once_its_own_head_passed_the_checks_the_batch_skips() {
+    let kit = kit_on(&RepoCi {
+        required: &["build", "rust (macos)"],
+        fast: &[],
+        runs: || {
+            vec![
+                run(1, "build", Some("success")),
+                run(2, "rust (macos)", Some("skipped")),
+                run(3, "desktop-macos", Some("skipped")),
+            ]
+        },
+    });
+    kit.gh.workflow_files.lock().unwrap().push((
+        "ci.yml",
+        "name: CI\non:\n  pull_request:\n  push:\n    branches: [main]\njobs:\n  build:\n    runs-on: ubuntu-latest\n  \
+         rust-macos:\n    name: rust (macos)\n    if: ${{ !endsWith(github.head_ref, 'train/batch') }}\n    \
+         runs-on: macos-latest\n  macos-scope:\n    name: macos scope\n    runs-on: ubuntu-latest\n  desktop-macos:\n    \
+         needs: macos-scope\n    if: ${{ !cancelled() && !endsWith(github.head_ref, \"train/batch\") }}\n    \
+         runs-on: macos-latest\n",
+    ));
+    kit.gh
+        .annotations
+        .lock()
+        .unwrap()
+        .insert("40".into(), vec!["no work for desktop-macos"]);
+    let own = |desktop: Option<Value>, scope: Option<Value>| {
+        let mut runs = vec![
+            run(1, "build", Some("success")),
+            run(2, "rust (macos)", Some("success")),
+        ];
+        runs.extend(desktop);
+        runs.extend(scope);
+        json!(runs)
+    };
+    let scope = |id, conclusion| Some(run(id, "macos scope", Some(conclusion)));
+    let mut prs = Vec::new();
+    for (n, branch, file, desktop, scope) in [
+        (
+            7,
+            "a",
+            "a.txt",
+            Some(run(3, "desktop-macos", Some("success"))),
+            scope(39, "success"),
+        ),
+        (
+            8,
+            "slow",
+            "slow.txt",
+            Some(run(3, "desktop-macos", None)),
+            scope(39, "success"),
+        ),
+        (
+            9,
+            "red",
+            "red.txt",
+            Some(run(3, "desktop-macos", Some("failure"))),
+            scope(39, "success"),
+        ),
+        (10, "unrun", "unrun.txt", None, scope(39, "success")),
+        (
+            11,
+            "e",
+            "e.txt",
+            Some(run(3, "desktop-macos", Some("skipped"))),
+            scope(40, "success"),
+        ),
+        (
+            12,
+            "cut",
+            "cut.txt",
+            Some(run(3, "desktop-macos", Some("skipped"))),
+            scope(41, "cancelled"),
+        ),
+        (
+            13,
+            "said",
+            "said.txt",
+            Some(run(3, "desktop-macos", Some("skipped"))),
+            scope(39, "success"),
+        ),
+    ] {
+        let change = kit
+            .enqueue(kit.open_pr(n, branch, &[add(file, "x\n")]))
+            .await;
+        kit.gh
+            .head_runs
+            .lock()
+            .unwrap()
+            .insert(kit.head_of(branch), own(desktop, scope));
+        prs.push(change);
+    }
+
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(members_of_batch(&kit), [7, 11]);
+    assert_eq!(merged_prs(&kit).len(), 1);
+    let why = |c: &Change| kit.get(&c.change_id).last_error;
+    assert_eq!(state_of(&kit, &prs[0]), ChangeState::Merged);
+    assert_eq!(state_of(&kit, &prs[4]), ChangeState::Merged);
+    assert_eq!(
+        why(&prs[1]).as_deref(),
+        Some("not in this batch: its own head's `desktop-macos` still running")
+    );
+    assert_eq!(
+        why(&prs[2]).as_deref(),
+        Some("not in this batch: its own head's `desktop-macos` failed")
+    );
+    // Never ran, or skipped by a scope that never said it had no work.
+    for pr in [&prs[3], &prs[6]] {
+        assert_eq!(
+            why(pr).as_deref(),
+            Some("not in this batch: its own head hasn't reported `desktop-macos` yet")
+        );
+    }
+    // Cancelled before it started: the train runs it again.
+    assert_eq!(
+        why(&prs[5]).as_deref(),
+        Some("not in this batch: its own head's `macos scope` was cancelled; the train re-ran it")
+    );
+}
+
+/// A cancelled check the batch skips, or a cancelled `macos scope`, on a ready PR's own head: nothing would run it
+/// again, so the PR would wait forever. The train re-runs that workflow run once and says so on the PR's line;
+/// cancelled again, it says to push or re-run it, and re-runs nothing more. What it read of a head goes once the head
+/// leaves the line.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_cancelled_check_the_batch_skips_is_re_run_once_and_the_pr_says_so() {
+    let kit = kit_on(&RepoCi {
+        required: &["build"],
+        fast: &[],
+        runs: || {
+            vec![
+                run(1, "build", Some("success")),
+                run(3, "desktop-macos", Some("skipped")),
+            ]
+        },
+    });
+    kit.gh.workflow_files.lock().unwrap().push((
+        "ci.yml",
+        "name: CI\non:\n  pull_request:\njobs:\n  build:\n    runs-on: ubuntu-latest\n  macos-scope:\n    \
+         name: macos scope\n    runs-on: ubuntu-latest\n  desktop-macos:\n    needs: macos-scope\n    \
+         if: ${{ !cancelled() && !endsWith(github.head_ref, 'train/batch') }}\n    runs-on: macos-latest\n",
+    ));
+    let own =
+        |desktop: Value, scope: Value| json!([run(1, "build", Some("success")), desktop, scope]);
+    let mut prs = Vec::new();
+    for (n, branch, file, desktop, scope) in [
+        (
+            7,
+            "a",
+            "a.txt",
+            run(3, "desktop-macos", Some("success")),
+            run(39, "macos scope", Some("success")),
+        ),
+        (
+            8,
+            "b",
+            "b.txt",
+            run(3, "desktop-macos", Some("success")),
+            run(39, "macos scope", Some("success")),
+        ),
+        (
+            9,
+            "cut",
+            "cut.txt",
+            run(60, "desktop-macos", Some("cancelled")),
+            run(39, "macos scope", Some("success")),
+        ),
+        (
+            10,
+            "scope",
+            "scope.txt",
+            run(3, "desktop-macos", Some("skipped")),
+            run(61, "macos scope", Some("cancelled")),
+        ),
+    ] {
+        let change = kit
+            .enqueue(kit.open_pr(n, branch, &[add(file, "x\n")]))
+            .await;
+        kit.gh
+            .head_runs
+            .lock()
+            .unwrap()
+            .insert(kit.head_of(branch), own(desktop, scope));
+        prs.push(change);
+    }
+    let merged = [kit.head_of("a"), kit.head_of("b")];
+    let why = |c: &Change| kit.get(&c.change_id).last_error;
+
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(members_of_batch(&kit), [7, 8]);
+    assert_eq!(*kit.gh.reruns.lock().unwrap(), [60, 61]);
+    assert_eq!(
+        why(&prs[2]).as_deref(),
+        Some(
+            "not in this batch: its own head's `desktop-macos` was cancelled; the train re-ran it"
+        )
+    );
+    assert_eq!(
+        why(&prs[3]).as_deref(),
+        Some("not in this batch: its own head's `macos scope` was cancelled; the train re-ran it")
+    );
+
+    // Still cancelled on the next pass: no second re-run, and the PR says what to do.
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(kit.gh.reruns.lock().unwrap().len(), 2);
+    assert_eq!(
+        why(&prs[3]).as_deref(),
+        Some(
+            "not in this batch: its own head's `macos scope` was cancelled again after the train re-ran it: push \
+             again or re-run it"
+        )
+    );
+    let heads: Vec<String> = kit
+        .train
+        .next_labels
+        .heads
+        .lock()
+        .unwrap()
+        .keys()
+        .map(|(_, sha)| sha.clone())
+        .collect();
+    assert!(heads.contains(&kit.head_of("scope")), "{heads:?}");
+    assert!(!heads.iter().any(|h| merged.contains(h)), "{heads:?}");
+}
+
+/// D204: a check the batch skips never ran on the merged tree before the merge, so main's run of it is watched, even one
+/// main requires: failing there, it opens a fix order.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_check_the_batch_skips_that_fails_on_main_opens_a_fix_order() {
+    let kit = kit_on(&RepoCi {
+        required: &["build", "rust (macos)"],
+        fast: &[],
+        runs: || {
+            vec![
+                run(1, "build", Some("success")),
+                run(2, "rust (macos)", Some("success")),
+            ]
+        },
+    });
+    kit.gh.workflow_files.lock().unwrap().push((
+        "ci.yml",
+        "name: CI\non:\n  pull_request:\n  push:\njobs:\n  build:\n    runs-on: ubuntu-latest\n  rust-macos:\n    \
+         name: rust (macos)\n    if: ${{ !endsWith(github.head_ref, 'train/batch') }}\n    runs-on: macos-latest\n",
+    ));
+    let a = kit
+        .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
+        .await;
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(state_of(&kit, &a), ChangeState::Merged);
+    assert!(kit.host.orders.lock().unwrap().is_empty());
+
+    kit.gh.head_runs.lock().unwrap().insert(
+        kit.head_of("main"),
+        json!([
+            run(1, "build", Some("success")),
+            run(50, "rust (macos)", Some("failure"))
+        ]),
+    );
+    kit.train.step(REPO).await;
+    let orders = kit.host.orders.lock().unwrap().clone();
+    assert_eq!(orders.len(), 1);
+    assert!(
+        orders[0]
+            .1
+            .starts_with("Fix the check `rust (macos)` on main"),
+        "{}",
+        orders[0].1
+    );
 }
 
 impl Kit {

@@ -6,23 +6,13 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
-    inputs:
-      pr:
-        # Set by macos-label.yml: the PR's dispatched runs share a concurrency group of their own.
-        description: The pull request this run is for
-        type: string
-        default: ""
 
-# A newer push to a PR cancels its running CI. A run macos-label.yml dispatches for it has a group of its own, so it
-# never cancels the PR's own run: GitHub's ruleset reads the required checks from that run, and one cancelled by a
-# dispatched run on the same head blocked the merge though the dispatched run passed (#510). A newer dispatch replaces
-# it, and macos-label.yml cancels it once a push moves the PR on. Runs on main and on the merge train's batch PR
-# (<prefix>train/batch) are never cancelled: each gets a group of its own.
+# A newer push to a PR cancels its running CI. Runs on main and on the merge train's batch PR (<prefix>train/batch) are
+# never cancelled: each gets a group of its own.
 concurrency:
   group: >-
     ${{ (github.ref == 'refs/heads/main' || endsWith(github.head_ref || github.ref, 'train/batch'))
     && format('{0}-{1}', github.workflow, github.run_id)
-    || github.event_name == 'workflow_dispatch' && inputs.pr && format('{0}-{1}-label', github.workflow, inputs.pr)
     || format('{0}-{1}', github.workflow, github.event.pull_request.number || github.ref) }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' && !endsWith(github.head_ref || github.ref, 'train/batch') }}
 
@@ -37,11 +27,11 @@ env:
 # Everything runs on GitHub-hosted runners, which are free for public repos. Rust caches are saved from main only:
 # the repo's 10 GB cache quota holds one copy per job, and pull requests restore main's.
 #
-# macOS runners are few, and GitHub doesn't start queued jobs in order, so the macOS jobs (rust-macos, desktop-macos)
-# run only where they decide a merge: on main, on workflow_dispatch, on the merge train's batch PR, and on a PR labelled
-# `fleetd:next` (the train puts it on the PR it merges alone, before it rebases it) or `macos` (by hand). Adding either
-# label runs this workflow on the PR's branch (macos-label.yml). Elsewhere they are skipped; a skipped job still
-# reports, so the required `rust (macos)` does too.
+# macOS runners are few (5 at once), so the macOS jobs (rust-macos, ios-sessions, desktop-macos) run on each PR's own
+# head, only when their paths changed (macos-scope decides on Linux, so no macOS runner starts for nothing), and must
+# pass there before the merge train lets the PR join a batch (D204). The train's batch PR skips them (`!endsWith(github.head_ref, 'train/batch')`, which the train reads to know
+# them): its Linux checks finish in minutes, and it never waits for a macOS runner. A skipped job still reports, so the
+# required `rust (macos)` does too. Main runs them after each merge.
 
 jobs:
   rust-crates:
@@ -234,64 +224,90 @@ jobs:
         env:
           FLEETD_REQUIRE_SANDBOX: "1"
 
-  rust-macos:
-    # rust (linux)'s sealed boxes on macOS, the node's power code (IOKit), and a Navi's sandbox-exec.
-    name: rust (macos)
-    if: >-
-      github.event_name != 'pull_request' || endsWith(github.head_ref, 'train/batch')
-      || contains(github.event.pull_request.labels.*.name, 'fleetd:next')
-      || contains(github.event.pull_request.labels.*.name, 'macos')
-    runs-on: macos-latest
-    timeout-minutes: 30
+  macos-scope:
+    # Which macOS jobs have work, decided on Linux so a macOS runner starts only for real work: each macOS job needs
+    # this one and is skipped (which passes, required or not) when its paths didn't change. HEAD^1 is the base for a
+    # PR's merge commit and the previous main for a (squash-merged) push; a manual run from a branch compares with the
+    # branch's merge base on main, and ios sessions on a push to main with the last push run that ran it to the end
+    # (.github/main-base.sh). No base to compare with runs them all, and so does a failure here. The merge train trusts
+    # such a skip on a PR's head only when this job passed there and said so.
+    name: macos scope
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      rust: ${{ steps.scope.outputs.rust }}
+      ios: ${{ steps.scope.outputs.ios }}
+      desktop: ${{ steps.scope.outputs.desktop }}
     steps:
       - uses: actions/checkout@v7
         with:
           # A manual run from a branch compares with its merge base on main, so it needs the history.
           fetch-depth: ${{ github.event_name == 'workflow_dispatch' && '0' || '2' }}
-      - name: Scope
-        # Does the work only when the node's code, the dependency set or this workflow changed; otherwise it reports
-        # success at once. HEAD^1 is the base for a PR's merge commit and the previous main for a (squash-merged)
-        # push; a manual run from a branch compares with the branch's merge base on main. The rest of crates/fleetd's
-        # macOS code is cross-built and checked by darwin-deps and the edge build.
-        id: scope
+      - id: scope
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
-          run=true
           base=$(git rev-parse -q --verify HEAD^1 || true)
           if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$GITHUB_REF" != refs/heads/main ]; then
             base=$(git merge-base origin/main HEAD || true)
           fi
-          if [ -n "$base" ] &&
-            git diff --quiet "$base" HEAD -- crates/fleetd/src/node Cargo.toml Cargo.lock .github/workflows/ci.yml; then
-            run=false
-            echo "Nothing macOS-relevant changed; rust (linux) covers this."
+          # scope <output> <check> <paths>: <output>=true when any of the paths, or this workflow, changed. Otherwise
+          # it says "no work for <check>" in a notice: the merge train counts that check's skip on this head as
+          # passing only with it, so a run cancelled before the check started never reads as green.
+          scope() {
+            out=$1
+            check=$2
+            shift 2
+            run=true
+            if [ -n "$base" ] && git diff --quiet "$base" HEAD -- "$@" .github/workflows/ci.yml; then
+              run=false
+              echo "::notice::no work for $check"
+            fi
+            echo "$out=$run" | tee -a "$GITHUB_OUTPUT"
+          }
+          scope rust "rust (macos)" crates/fleetd/src/node Cargo.toml Cargo.lock
+          scope desktop desktop-macos app/desktop
+          if [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_REF" = refs/heads/main ]; then
+            last=$(.github/main-base.sh ci.yml "ios sessions" skipped)
+            if [ -n "$last" ] && git fetch -q --depth=1 origin "$last"; then base=$last; else base=; fi
+            echo "ios sessions compares with ${base:-nothing: no earlier finished run found, so it runs in full}."
           fi
-          echo "run=$run" >> "$GITHUB_OUTPUT"
-      - if: steps.scope.outputs.run == 'true'
-        uses: actions/setup-node@v7
+          scope ios "ios sessions" crates/fleetd/src/node/device
+
+  rust-macos:
+    # rust (linux)'s sealed boxes on macOS, the node's power code (IOKit), and a Navi's sandbox-exec. Only when the
+    # node's code, the dependency set or this workflow changed (macos-scope); the rest of crates/fleetd's macOS code is
+    # cross-built and checked by darwin-deps and the edge build.
+    name: rust (macos)
+    needs: macos-scope
+    if: ${{ !cancelled() && !endsWith(github.head_ref, 'train/batch') && needs.macos-scope.outputs.rust != 'false' }}
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
           cache-dependency-path: tests/lab/package-lock.json
-      - if: steps.scope.outputs.run == 'true'
-        run: npm ci --prefix tests/lab --no-audit --no-fund
-      - if: steps.scope.outputs.run == 'true'
-        uses: dtolnay/rust-toolchain@stable
-      - if: steps.scope.outputs.run == 'true'
-        uses: Swatinem/rust-cache@v2
+      - run: npm ci --prefix tests/lab --no-audit --no-fund
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Sealed boxes against libsodium
-        if: steps.scope.outputs.run == 'true'
         run: cargo test --locked -p fleetd --lib node::identity
         env:
           FLEETD_REQUIRE_NODE_SEAL: "1"
       - name: Node power on macOS
         # The sleep assertion and the wake clock, natively: the test takes a real assertion on the runner and
         # releases it.
-        if: steps.scope.outputs.run == 'true'
         run: cargo test --locked -p fleetd --lib node::power
       - name: A Navi's sandbox holds (sandbox-exec)
-        if: steps.scope.outputs.run == 'true'
         run: cargo test --locked -p fleetd --lib node::runner::sandbox
         env:
           FLEETD_REQUIRE_SANDBOX: "1"
@@ -300,16 +316,14 @@ jobs:
     # node/device/ios on a real iOS simulator: the probes its design rests on (simctl clone needs its source shut down,
     # boot times, the live view's screenshot loop, recordVideo's MP4; idb's stream where idb is installed, which the
     # runner's Homebrew refuses: facebook/fb is an untrusted tap), then a session end to end
-    # with the hub in process. Only where rust-macos runs, and only when node/device or this workflow changed: making
-    # the golden simulator (a settling boot and an xcodebuild of agent-device's runner) takes minutes. On main, only the
-    # newest push runs it: a push cancels the job in main's older push runs, and Scope compares with the last push run
-    # whose job wasn't cancelled (.github/main-base.sh), or runs in full without one, so no change goes untested. The
-    # hub ignores cancelled checks when it looks for red on main (hub/train/watch.rs).
+    # with the hub in process. Only when node/device or this workflow changed (macos-scope): making the golden
+    # simulator (a settling boot and an xcodebuild of agent-device's runner) takes minutes. On main, only the newest
+    # push runs it: a push cancels the job in main's older push runs, and macos-scope compares with the last push run
+    # whose job wasn't cancelled (.github/main-base.sh), or runs it in full without one, so no change goes untested.
+    # The hub ignores cancelled checks when it looks for red on main (hub/train/watch.rs).
     name: ios sessions
-    if: >-
-      github.event_name != 'pull_request' || endsWith(github.head_ref, 'train/batch')
-      || contains(github.event.pull_request.labels.*.name, 'fleetd:next')
-      || contains(github.event.pull_request.labels.*.name, 'macos')
+    needs: macos-scope
+    if: ${{ !cancelled() && !endsWith(github.head_ref, 'train/batch') && needs.macos-scope.outputs.ios != 'false' }}
     concurrency:
       group: >-
         ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'ios-sessions-main'
@@ -317,51 +331,19 @@ jobs:
       cancel-in-progress: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     runs-on: macos-latest
     timeout-minutes: 60
-    permissions:
-      contents: read
-      actions: read
     steps:
       - uses: actions/checkout@v7
-        with:
-          fetch-depth: ${{ github.event_name == 'workflow_dispatch' && '0' || '2' }}
-      - name: Scope
-        id: scope
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-        run: |
-          run=true
-          base=$(git rev-parse -q --verify HEAD^1 || true)
-          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$GITHUB_REF" != refs/heads/main ]; then
-            base=$(git merge-base origin/main HEAD || true)
-          fi
-          if [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_REF" = refs/heads/main ]; then
-            last=$(.github/main-base.sh ci.yml "ios sessions")
-            if [ -n "$last" ] && git fetch -q --depth=1 origin "$last"; then base=$last; else base=; fi
-            echo "Comparing with ${base:-nothing: no earlier finished run found, so it runs in full}."
-          fi
-          if [ -n "$base" ] &&
-            git diff --quiet "$base" HEAD -- crates/fleetd/src/node/device .github/workflows/ci.yml; then
-            run=false
-            echo "node/device didn't change."
-          fi
-          echo "run=$run" >> "$GITHUB_OUTPUT"
-      - if: steps.scope.outputs.run == 'true'
-        uses: actions/setup-node@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
-      - if: steps.scope.outputs.run == 'true'
-        uses: dtolnay/rust-toolchain@stable
-      - if: steps.scope.outputs.run == 'true'
-        uses: Swatinem/rust-cache@v2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       # The probe first, on a quiet machine; then the rest, the session end to end among them.
       - name: What iOS sessions rest on, measured
-        if: steps.scope.outputs.run == 'true'
         run: cargo test --locked -p fleetd --lib node::device::ios::tests::probes -- --nocapture
       - name: iOS sessions on a simulator
-        if: steps.scope.outputs.run == 'true'
         run: cargo test --locked -p fleetd --lib node::device::ios -- --nocapture --test-threads=1 --skip probes
         env:
           FLEETD_TEST_IOS_HOME: ${{ runner.temp }}/fleetd-test-ios
@@ -516,12 +498,10 @@ jobs:
 
   desktop-macos:
     # The edge build's macOS packaged smoke (build-release.yml, desktop-macos) on an ad-hoc signed arm64 test build, so
-    # a change that breaks the packed mac app fails here rather than only in the edge build. Same scope as desktop, and
-    # skipped where rust-macos is.
-    if: >-
-      github.event_name != 'pull_request' || endsWith(github.head_ref, 'train/batch')
-      || contains(github.event.pull_request.labels.*.name, 'fleetd:next')
-      || contains(github.event.pull_request.labels.*.name, 'macos')
+    # a change that breaks the packed mac app fails here rather than only in the edge build. Only when app/desktop or
+    # this workflow changed (macos-scope), as desktop.
+    needs: macos-scope
+    if: ${{ !cancelled() && !endsWith(github.head_ref, 'train/batch') && needs.macos-scope.outputs.desktop != 'false' }}
     runs-on: macos-latest
     timeout-minutes: 15
     defaults:
@@ -529,37 +509,16 @@ jobs:
         working-directory: app/desktop
     steps:
       - uses: actions/checkout@v7
-        with:
-          # A manual run from a branch compares with its merge base on main, so it needs the history.
-          fetch-depth: ${{ github.event_name == 'workflow_dispatch' && '0' || '2' }}
-      - name: Scope
-        id: scope
-        working-directory: .
-        run: |
-          run=true
-          base=$(git rev-parse -q --verify HEAD^1 || true)
-          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$GITHUB_REF" != refs/heads/main ]; then
-            base=$(git merge-base origin/main HEAD || true)
-          fi
-          if [ -n "$base" ] && git diff --quiet "$base" HEAD -- app/desktop .github/workflows/ci.yml; then
-            run=false
-            echo "app/desktop didn't change."
-          fi
-          echo "run=$run" >> "$GITHUB_OUTPUT"
-      - if: steps.scope.outputs.run == 'true'
-        uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@v6
         with:
           package_json_file: app/desktop/package.json
-      - if: steps.scope.outputs.run == 'true'
-        uses: actions/setup-node@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
           cache-dependency-path: app/desktop/pnpm-lock.yaml
-      - if: steps.scope.outputs.run == 'true'
-        run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile
       - name: Packaged smoke (macOS)
-        if: steps.scope.outputs.run == 'true'
         run: |
           pnpm fixtures
           pnpm build:test
@@ -569,9 +528,8 @@ jobs:
       - name: Packaged recording (macOS)
         # FLEETD_RECORD in the packed app (scripts/demo-mac.sh records the edge build this way): the recorder page loads
         # from the asar, which the unpackaged Demo recording run can't catch.
-        if: steps.scope.outputs.run == 'true'
         run: node scripts/packaged-smoke.ts --record dist-test/mac-arm64/fleetd.app/Contents/MacOS/fleetd
-      - if: failure() && steps.scope.outputs.run == 'true'
+      - if: failure()
         uses: actions/upload-artifact@v7
         with:
           name: packaged-smoke-macos
