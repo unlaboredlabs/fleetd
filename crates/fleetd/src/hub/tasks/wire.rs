@@ -95,9 +95,7 @@ impl TaskPorts for HubTaskPorts {
                         .link
                         .node_can(machine_id, fleetd_contracts::node_link::CAP_WORKTREE_SETUP) =>
                 {
-                    hub.db
-                        .project_settings()
-                        .setup(&project)
+                    crate::hub::projects::settings::task_setup(&hub, &project)
                         .map_err(|e| PortError::Failed(e.to_string()))?
                 }
                 _ => None,

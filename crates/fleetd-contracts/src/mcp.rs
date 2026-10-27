@@ -915,7 +915,7 @@ output!(ProjectRemoveOutput { ok: True });
 input!(ProjectSettingsGetInput {
     machine_id: MachineId,
     project_id: ProjectId,
-    /// The repo whose setup, train and preview to read; absent: the project's own directory.
+    /// The repo whose setup and preview to read (its own, else the project's); absent: the project's.
     repo: Option<crate::repos::RepoName>,
 });
 #[skip_serializing_none]
@@ -926,7 +926,7 @@ pub struct ProjectSettings {
     pub project_id: ProjectId,
     pub title: String,
     pub workspace_root: String,
-    /// The repo `setup`, `train` and `preview` are for; absent for the project's own directory, and from older hubs.
+    /// The repo `setup` and `preview` are for; absent when they are the project's, and from older hubs.
     pub repo: Option<crate::repos::RepoName>,
     /// True: a finished task's worktree stays on the machine. False (the default): a reader's goes when it finishes
     /// and a writer's once its PR merges.
@@ -953,8 +953,8 @@ input!(
     ProjectSettingsSetInput {
         machine_id: MachineId,
         project_id: ProjectId,
-        /// The repo whose setup, train and preview to set; absent: the project's own directory. Title and
-        /// keepWorktrees are the project's either way.
+        /// The repo whose own setup and preview to set, an empty one giving it the project's; absent: the
+        /// project's. Title, keepWorktrees and train are the project's either way.
         repo: Option<crate::repos::RepoName>,
         /// The project's name in fleetd; its folder keeps its own.
         title: Option<Line<1, 200>>,
