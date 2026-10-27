@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from "ele
 import type { LinkHandlerStatus, OpenTarget } from "../shared/app";
 import { IPC } from "../shared/channels";
 import type { CallOutcome, ConnectOutcome, DropInfo, HubFrame, OpenOutcome, SecretOutcome } from "../shared/hub";
+import type { JoinHere, ThisComputer } from "../shared/joinHere";
 import type { KeyStore, PairOutcome, PairStart, Probe, SetupOutcome } from "../shared/pairing";
 import type { UpdatesState } from "../shared/updates";
 import type { FleetdApi } from "./api";
@@ -26,6 +27,11 @@ ipcRenderer.on(IPC.appOpen, (_event: IpcRendererEvent, target: OpenTarget) => {
 const updateListeners = new Set<(state: UpdatesState) => void>();
 ipcRenderer.on(IPC.updatesChanged, (_event: IpcRendererEvent, state: UpdatesState) => {
   for (const listener of updateListeners) listener(state);
+});
+
+const joinListeners = new Set<(state: JoinHere) => void>();
+ipcRenderer.on(IPC.machinesJoinHereChanged, (_event: IpcRendererEvent, state: JoinHere) => {
+  for (const listener of joinListeners) listener(state);
 });
 
 const arg = (name: string): string | null => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3) ?? null;
@@ -78,6 +84,15 @@ const api: FleetdApi = {
   },
   system: {
     hostName: () => ipcRenderer.invoke(IPC.systemHostName) as Promise<string>,
+  },
+  machines: {
+    joinHere: (machineId) => ipcRenderer.invoke(IPC.machinesJoinHere, machineId) as Promise<JoinHere>,
+    joinHereState: () => ipcRenderer.invoke(IPC.machinesJoinHereState) as Promise<JoinHere | null>,
+    thisComputer: () => ipcRenderer.invoke(IPC.machinesThisComputer) as Promise<ThisComputer>,
+    onJoinHere: (listener) => {
+      joinListeners.add(listener);
+      return () => joinListeners.delete(listener);
+    },
   },
   projects: {
     pickFolder: () => ipcRenderer.invoke(IPC.projectsPickFolder) as Promise<string | null>,

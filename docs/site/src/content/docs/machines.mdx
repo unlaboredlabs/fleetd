@@ -5,12 +5,30 @@ description: Add workers to the hub, log in their Claude, remove them, and check
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 
-You'll add [workers](/docs/glossary#worker), the machines that run agents, and keep them healthy. Run every command
-on this page on the hub unless it says otherwise.
+You'll add [workers](/docs/glossary#worker), the machines that run agents, and keep them healthy. The hub's owners
+and admins add them in the app; the CLI does the same from a terminal on the hub.
 
-A worker needs the `claude` CLI, and for now the same OS and CPU as the hub.
+A worker needs the `claude` CLI. A machine the hub reaches over SSH needs, for now, the same OS and CPU as the hub.
 
-## Pick how to add it
+## Add a machine in the app {#app}
+
+Open **Administration › Machines** and press **Add machine**. It offers three ways:
+
+| The machine is | Pick | What happens |
+|---|---|---|
+| The computer the app runs on | **This computer** | One click. The app downloads the release of the fleetd version the hub runs, built for this computer, checks it against that release's `SHA256SUMS`, and joins the hub with a one-time code that never shows on screen. The node runs as a user service. A nightly hub asks to be updated first once the nightly release has moved past it. On the hub's own machine, the hub sets it up with its own fleetd instead; a computer whose node already belongs to a hub is left as it is. |
+| Reachable from the hub over SSH | **A machine the hub can reach** | Pick it from the hosts the hub sees (its `~/.ssh/config` and its tailnet), and read the plan: the machine's OS and CPU, each step with its command, and notes such as linger. Press **Add**, and watch each step run. |
+| Behind NAT, or with no SSH from the hub (a laptop) | **Any other machine** | For now, use [`fleetd pair --worker`](#join) on the hub. |
+
+Adding a machine the hub can reach runs [`fleetd machine add`](#ssh) in the hub, step by step. A failed step shows
+its output and what to fix; **Retry** runs it again and skips the steps that finished. The run goes on in the hub if
+you leave the page, and Add machine shows it when you come back.
+
+Only a person with Admin on every machine sees Administration. Agents' keys can't add or remove machines.
+
+## Add a machine from the CLI {#cli}
+
+Run these on the hub unless it says otherwise.
 
 | The machine is | Use |
 |---|---|
@@ -18,7 +36,7 @@ A worker needs the `claude` CLI, and for now the same OS and CPU as the hub.
 | The hub machine itself | [`fleetd machine add --local`](#local) |
 | Behind NAT, or has no SSH from the hub (a laptop) | [`fleetd pair --worker <name>`](#join) |
 
-## Add a machine over SSH {#ssh}
+### Over SSH {#ssh}
 
 1. See the plan without changing anything:
 
@@ -49,7 +67,7 @@ machine from a list.
 
 It is safe to run again: a real run reads the machine's state first and skips what is done.
 
-## Add the hub machine {#local}
+### The hub machine {#local}
 
 ```sh
 fleetd machine add --local
@@ -58,7 +76,7 @@ fleetd machine add --local
 The same steps, run on this machine without SSH. `fleetd init` does this when you pick "(this machine)". Run it again
 to repair the hub machine's node.
 
-## Add a machine the hub can't reach {#join}
+### A machine the hub can't reach {#join}
 
 1. On the hub, print a join command for the new machine:
 

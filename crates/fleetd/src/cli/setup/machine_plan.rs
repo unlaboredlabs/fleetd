@@ -200,6 +200,7 @@ pub fn local_target() -> (String, String) {
     (os.to_owned(), arch.to_owned())
 }
 
+#[derive(Clone)]
 pub struct MachineAddInput {
     pub machine_id: String,
     pub tags: Vec<String>,
