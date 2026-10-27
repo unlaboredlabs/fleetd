@@ -87,6 +87,14 @@ writes drafts and notes in its folder, remembers and forgets, keeps its checklis
   `data:`, `about:` and other schemes ask every time. The MCP tools `navi_sites` and `navi_site_revoke` list a
   Navi's sites and take one back; a revoked site asks again.
 
+**When the sandbox can't start, the Navi doesn't run.** Its chat says why and how to fix it. On Linux a Navi needs
+bubblewrap: install it (`sudo apt install bubblewrap`, `sudo dnf install bubblewrap`, `sudo pacman -S bubblewrap`).
+On Ubuntu 23.10 and later, AppArmor may also block the user namespaces bubblewrap uses; `bwrap --ro-bind / /
+--unshare-all true` says so, and Ubuntu's `apparmor` package has a profile that allows them
+(`/etc/apparmor.d/bwrap-userns-restrict`). A setuid-root `bwrap` (`ls -l $(which bwrap)` shows `rws`) runs unprivileged
+for a Navi, so it needs unprivileged user namespaces too (on Debian before 11: `sudo sysctl
+kernel.unprivileged_userns_clone=1`). A Mac uses its built-in `sandbox-exec`.
+
 Anything hard to undo, or that someone else sees, waits for you every time: sending an email or message, accepting
 an invite, spending, posting publicly, deleting, signing or accepting terms, changing a password. There is no
 "always allow".
@@ -99,14 +107,6 @@ the tool and exactly what it would get: the recipients, the full text. **Approve
 input. **Deny** tells the Navi you said no, with your reason if you give one. A prompt that goes away on its own (the
 run ended) closes its approval. Moving money, trading and creating accounts through an integration are blocked even
 if approved.
-
-**When the sandbox can't start, the Navi doesn't run.** Its chat says why and how to fix it. On Linux a Navi needs
-bubblewrap: install it (`sudo apt install bubblewrap`, `sudo dnf install bubblewrap`, `sudo pacman -S bubblewrap`).
-On Ubuntu 23.10 and later, AppArmor may also block the user namespaces bubblewrap uses; `bwrap --ro-bind / /
---unshare-all true` says so, and Ubuntu's `apparmor` package has a profile that allows them
-(`/etc/apparmor.d/bwrap-userns-restrict`). A setuid-root `bwrap` (`ls -l $(which bwrap)` shows `rws`) runs unprivileged
-for a Navi, so it needs unprivileged user namespaces too (on Debian before 11: `sudo sysctl
-kernel.unprivileged_userns_clone=1`). A Mac uses its built-in `sandbox-exec`.
 
 **What screens can still do.** The site gate covers opening a site; it doesn't follow a page after that. Inside a
 page it already opened, a Navi clicks, types and fills unasked, which is how screens work, so a click or a form that

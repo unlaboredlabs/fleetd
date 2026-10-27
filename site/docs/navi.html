@@ -179,6 +179,11 @@ another, and <code dir="auto">localhost</code> is a site per port (<code dir="au
 <code dir="auto">data:</code>, <code dir="auto">about:</code> and other schemes ask every time. The MCP tools <code dir="auto">navi_sites</code> and <code dir="auto">navi_site_revoke</code> list a
 Navi’s sites and take one back; a revoked site asks again.</li>
 </ul>
+<p><strong>When the sandbox can’t start, the Navi doesn’t run.</strong> Its chat says why and how to fix it. On Linux a Navi needs
+bubblewrap: install it (<code dir="auto">sudo apt install bubblewrap</code>, <code dir="auto">sudo dnf install bubblewrap</code>, <code dir="auto">sudo pacman -S bubblewrap</code>).
+On Ubuntu 23.10 and later, AppArmor may also block the user namespaces bubblewrap uses; <code dir="auto">bwrap --ro-bind / / --unshare-all true</code> says so, and Ubuntu’s <code dir="auto">apparmor</code> package has a profile that allows them
+(<code dir="auto">/etc/apparmor.d/bwrap-userns-restrict</code>). A setuid-root <code dir="auto">bwrap</code> (<code dir="auto">ls -l $(which bwrap)</code> shows <code dir="auto">rws</code>) runs unprivileged
+for a Navi, so it needs unprivileged user namespaces too (on Debian before 11: <code dir="auto">sudo sysctl kernel.unprivileged_userns_clone=1</code>). A Mac uses its built-in <code dir="auto">sandbox-exec</code>.</p>
 <p>Anything hard to undo, or that someone else sees, waits for you every time: sending an email or message, accepting
 an invite, spending, posting publicly, deleting, signing or accepting terms, changing a password. There is no
 “always allow”.</p>
@@ -190,11 +195,6 @@ the tool and exactly what it would get: the recipients, the full text. <strong>A
 input. <strong>Deny</strong> tells the Navi you said no, with your reason if you give one. A prompt that goes away on its own (the
 run ended) closes its approval. Moving money, trading and creating accounts through an integration are blocked even
 if approved.</p>
-<p><strong>When the sandbox can’t start, the Navi doesn’t run.</strong> Its chat says why and how to fix it. On Linux a Navi needs
-bubblewrap: install it (<code dir="auto">sudo apt install bubblewrap</code>, <code dir="auto">sudo dnf install bubblewrap</code>, <code dir="auto">sudo pacman -S bubblewrap</code>).
-On Ubuntu 23.10 and later, AppArmor may also block the user namespaces bubblewrap uses; <code dir="auto">bwrap --ro-bind / / --unshare-all true</code> says so, and Ubuntu’s <code dir="auto">apparmor</code> package has a profile that allows them
-(<code dir="auto">/etc/apparmor.d/bwrap-userns-restrict</code>). A setuid-root <code dir="auto">bwrap</code> (<code dir="auto">ls -l $(which bwrap)</code> shows <code dir="auto">rws</code>) runs unprivileged
-for a Navi, so it needs unprivileged user namespaces too (on Debian before 11: <code dir="auto">sudo sysctl kernel.unprivileged_userns_clone=1</code>). A Mac uses its built-in <code dir="auto">sandbox-exec</code>.</p>
 <p><strong>What screens can still do.</strong> The site gate covers opening a site; it doesn’t follow a page after that. Inside a
 page it already opened, a Navi clicks, types and fills unasked, which is how screens work, so a click or a form that
 leads to another site isn’t asked. Its Android, iOS and desktop screens (<code dir="auto">agent-device</code>) don’t ask per site at all.
