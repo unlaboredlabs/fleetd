@@ -61,8 +61,9 @@ breaks a rule changes this page in the same PR and says why.
   - Scan (words being made, `[data-sweep]` in `base.css`): a narrow band of 2 px dither steps across the words, then
     rests. The train's CI band is the same.
   - Dots (the lead writing): three square cells lit in turn, two beats each.
-  - The beat **keeps its tempo while you type, click or scroll.** It steps on the clock, never on your input; a step a
-    long task held late lands on the beat the clock is on, so the loops never slow down.
+  - The beat **keeps its tempo while you type, click or scroll.** It steps on the clock; a step a long task held late
+    lands on the beat the clock is on, so the loops never slow down. A key, click or wheel within 30 ms of a step,
+    before or after, takes the step onto its own frame: while you type, the beat draws no frame of its own for a key to wait out.
   - A new loop is CSS keyed on `data-step` plus `useBeatRef(live)` on its element, or `useBeat(live, step)` writing
     only what changes; never `animation: … infinite`.
 - **Only what is live moves, and only while it is live:** an agent at work, the lead thinking, a PR in CI, the lead
