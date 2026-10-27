@@ -1,5 +1,5 @@
-//! machine_add_plan, machine_add, machine_add_status, machine_hosts, machine_remove and machine_join: an owner's or
-//! admin's device only, as everything on the Administration page.
+//! machine_add_plan, machine_add, machine_add_status, machine_hosts, machine_remove, machine_join and
+//! machine_claude_login: an owner's or admin's device only, as everything on the Administration page.
 use std::sync::{Arc, Mutex};
 
 use fleetd_contracts::auth::Role;
@@ -7,8 +7,9 @@ use fleetd_contracts::ids::{MachineId, Timestamp};
 use fleetd_contracts::machine_setup::{MachineHost, MachineHostSource, SetupStepState, SshHost};
 use fleetd_contracts::mcp::{
     ErrorCode, MachineAddInput, MachineAddOutput, MachineAddPlanInput, MachineAddPlanOutput,
-    MachineAddStatusInput, MachineAddStatusOutput, MachineHostsInput, MachineHostsOutput,
-    MachineJoinInput, MachineJoinOutput, MachineRemoveInput, MachineRemoveOutput,
+    MachineAddStatusInput, MachineAddStatusOutput, MachineClaudeLoginInput,
+    MachineClaudeLoginOutput, MachineHostsInput, MachineHostsOutput, MachineJoinInput,
+    MachineJoinOutput, MachineRemoveInput, MachineRemoveOutput,
 };
 
 use super::{Steps, spawn_add, split_fix};
@@ -27,6 +28,7 @@ pub fn register(tools: &mut Registry) {
     tools.add("machine_hosts", machine_hosts);
     tools.add("machine_remove", machine_remove);
     tools.add("machine_join", machine_join);
+    tools.add("machine_claude_login", machine_claude_login);
 }
 
 /// Adding a machine runs commands on it and enrolls it, so it takes a person with Admin on every machine.
@@ -337,5 +339,74 @@ async fn machine_join(
         git_identity: join.git_identity,
         line: join.line,
         truncated: None,
+    })
+}
+
+/// The code passes through to the node and nowhere else: no log, no event. What claude gets for it stays on the machine.
+async fn machine_claude_login(
+    hub: Arc<Hub>,
+    caller: Caller,
+    input: MachineClaudeLoginInput,
+) -> Result<MachineClaudeLoginOutput, ToolError> {
+    admin(&caller)?;
+    let machine = &input.machine_id;
+    if hub.store.machine_get(machine)?.is_none() {
+        return Err(ToolError::new(
+            ErrorCode::NotFound,
+            format!("{machine} is not one of this hub's machines."),
+        ));
+    }
+    let code = input.code.as_deref().map(str::trim);
+    if code == Some("") {
+        return Err(ToolError::new(
+            ErrorCode::Invalid,
+            "The code is empty: paste the one the sign-in page shows.",
+        ));
+    }
+    let answer = hub
+        .machine_setup
+        .ports()
+        .claude_login(&hub, machine, code)
+        .await
+        .map_err(|message| {
+            let (message, fix) = split_fix(&message);
+            let error = ToolError::new(ErrorCode::Failed, message);
+            match fix {
+                Some(fix) => error.with_fix(fix),
+                None => error,
+            }
+        })?;
+    if !answer.ok {
+        return Err(
+            ToolError::new(ErrorCode::Failed, answer.message.as_str()).with_fix(
+                if code.is_none() {
+                    format!("Check that claude runs on {machine}, then try again.")
+                } else {
+                    "Start the login again: each sign-in page's code works once.".into()
+                },
+            ),
+        );
+    }
+    Ok(match answer.login_url {
+        Some(url) if code.is_none() => MachineClaudeLoginOutput {
+            next: Some(format!(
+                "Open loginUrl and sign in; then call machine_claude_login again with machineId {machine} and the code the page shows. The login waits 10 minutes."
+            )),
+            machine_id: input.machine_id,
+            login_url: Some(url.as_str().to_owned()),
+            logged_in: None,
+            message: answer.message.as_str().to_owned(),
+            truncated: None,
+        },
+        _ => MachineClaudeLoginOutput {
+            next: Some(format!(
+                "claude on {machine} is logged in: its sessions can start."
+            )),
+            machine_id: input.machine_id,
+            login_url: None,
+            logged_in: Some(true),
+            message: answer.message.as_str().to_owned(),
+            truncated: None,
+        },
     })
 }
