@@ -132,6 +132,10 @@ pub const CAP_SELF_UPDATE: &str = "self_update";
 /// `claude_install`: the node takes `node_action` `claude`, and brings its Claude Code to a version with `claude install`.
 pub const CAP_CLAUDE_INSTALL: &str = "claude_install";
 
+/// `claude_login`: the node takes `node_action` `claude_login` and `claude_login_code`, and logs its Claude Code in with
+/// `claude auth login`, the person signing in on their own device (Administration › Machines).
+pub const CAP_CLAUDE_LOGIN: &str = "claude_login";
+
 /// `update_fetch`: the node takes `node_action` `fetch`, and downloads the hub's next build while the hub updates.
 pub const CAP_UPDATE_FETCH: &str = "update_fetch";
 
@@ -435,6 +439,13 @@ pub enum NodeActionKind {
     /// Nothing restarts: sessions running keep the binary they started with, new ones start on the new one. A failed
     /// install keeps the version there was. Answered once done. Only for a node that lists [`CAP_CLAUDE_INSTALL`].
     Claude,
+    /// Start `claude auth login` with the runner's environment, and answer with the sign-in URL it prints
+    /// (`login_url`). The login waits for its code, at most 10 minutes; a new one replaces it. Only for a node that
+    /// lists [`CAP_CLAUDE_LOGIN`].
+    ClaudeLogin,
+    /// Give the waiting login the code its sign-in page showed (`code`), and answer once it has ended. Claude Code
+    /// keeps its token on the machine: it never comes back. Only for a node that lists [`CAP_CLAUDE_LOGIN`].
+    ClaudeLoginCode,
 }
 
 /// Hub -> node: M11 doctor's probe, and the hub's update of its nodes.
@@ -447,6 +458,8 @@ pub struct NodeAction {
     pub update: Option<NodeUpdate>,
     /// `claude` only: the Claude Code version to install, as `claude --version` prints its number.
     pub claude: Option<Text<1, 40>>,
+    /// `claude_login_code` only: the code the sign-in page showed.
+    pub code: Option<Text<1, 500>>,
 }
 
 /// The build a node updates to: what its hub runs now.
@@ -485,6 +498,8 @@ pub struct NodeActionResult {
     pub probe: Option<NodeProbe>,
     /// `update` that failed: where. Nothing was changed.
     pub stage: Option<crate::mcp::UpdateStage>,
+    /// `claude_login` that started: where the person signs in.
+    pub login_url: Option<Text<1, 4000>>,
 }
 
 /// Node -> hub: time spans from the node's outbox rows `fromRid..=toRid`, oldest first. A resend after a

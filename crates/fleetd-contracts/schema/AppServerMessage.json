@@ -1365,6 +1365,10 @@
         "asOf": {
           "$ref": "#/$defs/Timestamp"
         },
+        "linkedSince": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When the hub's link to its node last came up: each new link (a restart, a rejoin) moves it, though a quick\nrestart never shows the machine offline. Absent while it has none, and from older hubs."
+        },
         "load": {
           "$ref": "#/$defs/NodeLoad",
           "description": "Absent: the node does not report load (older node, or the read failed). Show no load then."

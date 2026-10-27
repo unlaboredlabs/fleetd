@@ -109,3 +109,42 @@ export const joinSteps = (join: JoinHere, online: boolean): ReadonlyArray<SetupS
   const waitState: SetupStep["state"] = join.state !== "done" ? "planned" : online ? "done" : "running";
   return [...steps, { title: `wait until ${join.machineId} is online`, state: waitState }];
 };
+
+/** Why a name can't be a machine id, or undefined when it can. */
+export const machineIdProblem = (name: string): string | undefined => {
+  if (name.trim() === "") return "Give it a name: how the hub and its agents will call it.";
+  return /^[a-z0-9-]{1,32}$/u.test(name.trim()) ? undefined : "Lower-case letters, digits and dashes, up to 32.";
+};
+
+/** "Works once, until 14:32." in the person's own clock. */
+export const untilLine = (expiresAt: string): string =>
+  `The code works once, until ${new Date(expiresAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.`;
+
+/**
+ * Where the paste line stands. Joined once its node is online: at once for a machine that was offline when the line
+ * was made, and for a repair of one still online, once the line has restarted its node (`restarted`).
+ * Expired once its code has, else waiting; `online` is a repair's wait while its machine is still up on its old
+ * enrollment.
+ */
+export type LineState = "waiting" | "joined" | "expired" | "online";
+
+export const lineState = (
+  line: { readonly expiresAt: string; readonly onlineAtStart: boolean },
+  online: boolean,
+  now: number,
+  /** Its node has linked to the hub again, or been offline, since the line was made. */
+  restarted: boolean,
+): LineState => {
+  if (online && (!line.onlineAtStart || restarted)) return "joined";
+  if (now >= Date.parse(line.expiresAt)) return "expired";
+  return online ? "online" : "waiting";
+};
+
+export const lineWords = (state: LineState, machineId: string): string =>
+  state === "joined"
+    ? `${machineId} joined.`
+    : state === "online"
+      ? `${machineId} is online on its old enrollment. Run the line on it: it joins again once its node restarts.`
+      : state === "expired"
+        ? "The code expired before the line ran. Make a new one."
+        : `Waiting for ${machineId}…`;

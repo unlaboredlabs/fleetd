@@ -1,11 +1,12 @@
 // Administration (#/admin/<section>): the hub's owners' and admins' page, apart from Settings so nobody else ever sees
-// an admin control. People, Invites, Machines (Add machine), Hub settings (everything hub-wide that used to sit in
+// an admin control. People, Invites, Machines (Add machine, the machines with Repair and Remove, and each one's page
+// with its checklist), Hub settings (everything hub-wide that used to sit in
 // Settings: the fleet and machine caps, machine roles, task profiles and memory caps) and Setup. The shell shows AdminSidebar in the sidebar's
 // place while it is open, as it does Settings'.
 import { ArrowLeft, ListChecks, Server, SlidersHorizontal, UserPlus, Users } from "lucide-react";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Button, Separator, Sidebar, SidebarItem, SidebarSection, Text } from "../../ui";
-import { AddMachine } from "../addMachine";
+import { AddMachine, type View } from "../addMachine";
 import { HubCaps, TaskProfiles } from "../settings/Agents";
 import { MachineRoles } from "../settings/MachineRoles";
 import { HubMemoryCaps } from "../settings/MemoryCaps";
@@ -13,6 +14,8 @@ import { PageHead } from "../settings/parts";
 import { useRoute } from "../shell/navigation";
 import { toHash, type AdminSection } from "../shell/routes";
 import { Invites } from "./Invites";
+import { MachineList } from "./MachineList";
+import { MachinePage } from "./MachinePage";
 import { People } from "./People";
 import { useHubRole, type HubRoleView } from "./role";
 import s from "../settings/settings.module.css";
@@ -28,6 +31,12 @@ const SECTIONS: ReadonlyArray<{ section: AdminSection; label: string; icon: Reac
 const useSection = (): AdminSection => {
   const route = useRoute();
   return route.id === "admin" ? route.section : "people";
+};
+
+/** The machine whose page is open, on Machines. */
+const useMachine = (): string | undefined => {
+  const route = useRoute();
+  return route.id === "admin" ? route.machine : undefined;
 };
 
 const go = (section: AdminSection) => {
@@ -52,11 +61,16 @@ export function AdminSidebar({ onBack }: { onBack: () => void }) {
 
 export function AdminScreen() {
   const section = useSection();
+  const machine = useMachine();
   const role = useHubRole();
-  return <div className={s.frame}>{page(section, role)}</div>;
+  // A fresh snapshot (a machine that just joined brings one) drops hub_info's answer until it is read again: the page
+  // stays as the last answer had it meanwhile, so what is open on it (a machine's line, waiting) isn't lost.
+  const [settled, setSettled] = useState<HubRoleView>();
+  if (!role.pending && (settled?.administers !== role.administers || settled.me !== role.me || settled.offline !== role.offline)) setSettled(role);
+  return <div className={s.frame}>{page(section, machine, role.pending && settled !== undefined ? settled : role)}</div>;
 }
 
-function page(section: AdminSection, { administers, me, pending, offline }: HubRoleView): ReactNode {
+function page(section: AdminSection, machine: string | undefined, { administers, me, pending, offline }: HubRoleView): ReactNode {
   if (!administers) {
     // A member who follows a link here sees why, and nothing else; with no hub, there is no one to ask yet.
     const [screen, text] = offline
@@ -79,7 +93,7 @@ function page(section: AdminSection, { administers, me, pending, offline }: HubR
     case "invites":
       return <Invites me={me} />;
     case "machines":
-      return <Machines />;
+      return machine === undefined ? <Machines /> : <MachinePage machineId={machine} />;
     case "hub":
       return <HubSettings />;
     case "setup":
@@ -87,13 +101,24 @@ function page(section: AdminSection, { administers, me, pending, offline }: HubR
   }
 }
 
-/** Adding machines to the hub: this computer, one the hub reaches over SSH, or any other. */
+/**
+ * Adding machines to the hub (this computer, one the hub reaches over SSH, or any other), then its machines, each with
+ * Repair (which opens in Add machine) and Remove, and a page of its own with its checklist.
+ */
 function Machines() {
+  const [open, setOpen] = useState<{ view: View; at: number }>();
   return (
     <div className={s.scroll} data-screen="admin.machines">
       <div className={s.column}>
         <PageHead title="Machines">The computers that run this hub's agents. Machine roles are in Hub settings.</PageHead>
-        <AddMachine />
+        <AddMachine open={open} />
+        <Separator />
+        <MachineList
+          onRepair={(r) => {
+            setOpen({ view: r, at: Date.now() });
+            document.querySelector("section[aria-label='Add machine']")?.scrollIntoView({ block: "nearest" });
+          }}
+        />
       </div>
     </div>
   );

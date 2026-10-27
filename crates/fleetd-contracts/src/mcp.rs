@@ -1762,6 +1762,8 @@ output!(MachineRemoveOutput {
 // app's "This computer" joins with it, and any other machine with the line.
 input!(MachineJoinInput {
     machine_id: MachineId,
+    /// A machine that joined before: the line enrolls it again (`--rejoin`), which repairs it.
+    rejoin: Option<bool>,
 });
 output!(MachineJoinOutput {
     machine_id: MachineId,
@@ -1774,6 +1776,24 @@ output!(MachineJoinOutput {
     git_identity: Option<String>,
     /// The one line to run on the machine: it installs fleetd and joins.
     line: String,
+});
+
+// machine_claude_login: the machine's node runs `claude auth login`; the person signs in on their own device and gives
+// back the code the page shows. Claude Code keeps its token on the machine, so it never reaches the hub, the app or a
+// transcript.
+input!(MachineClaudeLoginInput {
+    machine_id: MachineId,
+    /// Absent: start the login, which answers its sign-in URL. The code the sign-in page showed: finish it.
+    code: Option<String>,
+});
+output!(MachineClaudeLoginOutput {
+    machine_id: MachineId,
+    /// A login that started: where to sign in.
+    login_url: Option<String>,
+    /// A login that finished: claude on the machine is logged in now.
+    logged_in: Option<bool>,
+    /// The node's words: what happened, or why not.
+    message: String,
 });
 
 fn one_target(host: bool, local: Option<bool>) -> Result<(), String> {
@@ -2700,6 +2720,7 @@ tools! {
     machine_hosts => MachineHosts, Admin, MachineHostsInput, MachineHostsOutput;
     machine_remove => MachineRemove, Admin, MachineRemoveInput, MachineRemoveOutput;
     machine_join => MachineJoin, Admin, MachineJoinInput, MachineJoinOutput;
+    machine_claude_login => MachineClaudeLogin, Admin, MachineClaudeLoginInput, MachineClaudeLoginOutput;
     // Human keys only (the handlers check), except previews_list.
     preview_start => PreviewStart, Operate, PreviewStartInput, PreviewStartOutput;
     preview_end => PreviewEnd, Operate, PreviewEndInput, PreviewEndOutput;
