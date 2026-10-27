@@ -65,14 +65,15 @@ it), and the session's skill list has it from its next start. A deleted skill go
 
 ## Manage skills in the app {#app}
 
-Open Settings → Skills. Pick **Global** or a project.
+A project's skills are in Settings → Skills: pick the project. Changing them takes operate on its machine. The
+hub-wide (global) skills it gets are named on one line there, read-only.
 
-Changing a project's skills takes operate on its machine. Global skills reach every machine's agents, so changing
-them takes admin on every machine.
+Global skills reach every machine's agents, so changing them takes admin on every machine: they are in
+[Administration](/docs/desktop-app#administration) › Skills, which only the hub's owners and admins see.
 
-- **List**: every skill the agents of that scope get, marked with where it comes from. A skill that another source
+- **List**: every skill of the project or hub-wide, marked with where it comes from. A skill that another source
   outranks says which one.
-- **View and edit**: open one to read its `SKILL.md`. Project and global skills are editable here. Repo skills change
+- **View and edit**: open one to read its `SKILL.md`. Project and global skills are editable. Repo skills change
   in the repo.
 - **New**: name it, write its `SKILL.md`, save.
 - **Delete**: removes a project or global skill from the hub.

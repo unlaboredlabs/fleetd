@@ -69,13 +69,17 @@ least busy worker.
 ## What it does on its own, and what it asks first
 
 A Navi searches the web freely, and reads your connected mail, calendar and files and the factory's status. It also
-writes drafts and notes in its folder, remembers and forgets, keeps its checklist, works screens and logs in with
-1Password.
+writes drafts and notes in its folder, saves [Gmail drafts](/docs/google#tools) that only you send, remembers and
+forgets, keeps its checklist, works screens and logs in with 1Password.
 
 - **Files:** it reads and writes only inside its own folder. A read or an edit anywhere else is refused, whoever
   approves it, so your keys, its MCP servers' tokens and other projects stay out of its reach. It can't change its own
   Claude Code settings, MCP servers or fleetd policy in its folder either (`.claude`, `.mcp.json`, `.fleetd`), and a
   policy file's allow rules don't apply to a Navi at all.
+- **Sandbox:** on top of those checks, a Navi's Claude Code and every command, MCP server and tool it starts run in
+  an OS sandbox ([Security](/docs/security#navi-sandbox)). Whatever a command tries, it writes only inside its folder
+  and its own scratch and `/tmp`, and can't read fleetd's directory, `~/.config`, `~/.ssh`, other projects or the
+  integrations' tokens.
 - **Sites:** the first time it fetches a page or opens a site in its browser, you're asked in its chat, with the site
   named. Approve once and it fetches and opens that site unasked from then on, with a plain URL: one with `?` or
   `&`, quotes or other shell characters in a browser command asks each time. `www.` is the same site, a subdomain is
@@ -83,8 +87,16 @@ writes drafts and notes in its folder, remembers and forgets, keeps its checklis
   `data:`, `about:` and other schemes ask every time. The MCP tools `navi_sites` and `navi_site_revoke` list a
   Navi's sites and take one back; a revoked site asks again.
 
+**When the sandbox can't start, the Navi doesn't run.** Its chat says why and how to fix it. On Linux a Navi needs
+bubblewrap: install it (`sudo apt install bubblewrap`, `sudo dnf install bubblewrap`, `sudo pacman -S bubblewrap`).
+On Ubuntu 23.10 and later, AppArmor may also block the user namespaces bubblewrap uses; `bwrap --ro-bind / /
+--unshare-all true` says so, and Ubuntu's `apparmor` package has a profile that allows them
+(`/etc/apparmor.d/bwrap-userns-restrict`). A setuid-root `bwrap` (`ls -l $(which bwrap)` shows `rws`) runs unprivileged
+for a Navi, so it needs unprivileged user namespaces too (on Debian before 11: `sudo sysctl
+kernel.unprivileged_userns_clone=1`). A Mac uses its built-in `sandbox-exec`.
+
 Anything hard to undo, or that someone else sees, waits for you every time: sending an email or message, accepting
-an invite, spending, posting publicly, deleting, signing or accepting terms, changing a password. There is no
+an invite, making or changing a calendar event, uploading or sharing a file, spending, posting publicly, deleting, signing or accepting terms, changing a password. There is no
 "always allow".
 
 This is enforced outside the model. A Navi's lead runs in Claude Code's `manual` permission mode with a short
@@ -108,6 +120,41 @@ Anything else in a browser command asks: other quoting (double quotes, a quote j
 brackets, `*`, `~` or braces, shell syntax, a script in the page (`wait --fn`, `eval`), or a flag that changes which
 browser runs or how (`--session`, `--cdp`, `--headers`).
 
+## Hub links {#hub-links}
+
+A Navi can open and follow work in projects on another hub, such as a team hub when the Navi lives on your personal
+one. You make a link key on the hub it reaches and add it to the Navi. It acts as you there, and either side can
+revoke it. [Security](/docs/security#hub-links) has the rules.
+
+**On the hub it reaches.** Open **Settings › Hubs**, **Links to this hub** under that hub, and click **Make a link key**:
+
+1. Name the other hub as you think of it, such as *home*. Requests through the link read "*you* via home Navi"
+   there.
+2. Leave **Every project you can reach**, or pick **Only some projects** and tick them.
+3. **Make link key** shows the key (`flk_…`) once. **Copy** takes it with the address other hubs reach this hub
+   at: its HTTPS or tailnet URL. When the hub has no such address set, type it in the box that appears.
+
+The list below shows the links made as you: what each is for, its projects, when it was last used, and **Revoke**.
+An admin sees everyone's on **Administration › People**, under **Hub links**, each with the person it acts as.
+
+**On the Navi's hub.** Open the Navi's settings (the gear beside its name), **Linked hubs**, and click **Link a
+hub**. Paste what you copied into **Link key**: the address fills itself. Name the hub as the Navi should call it
+(*acme*), then click **Link hub**. The app seals the key to this hub, which checks it with the other hub and never
+shows it again. Then tell the Navi what you want ("ask the Shop lead on acme for saved carts"). It follows the
+order and tells you when it lands.
+
+Each linked hub shows its address, the person it acts as there and its projects (*only Shop, Website*, or *every
+project of theirs*), and one word for its state:
+
+| State | Means |
+|---|---|
+| Working | Its last call went through. |
+| Can't reach | This hub can't reach the other one. The row gives the address and the reason, such as *connection refused*. A link needs the other hub reachable from this one over a tailnet or HTTPS. |
+| Revoked | The other hub refused the key: it was revoked there, or you left that hub. Remove it, or make a new key there and add it. |
+
+**Remove** deletes the key at once and asks the other hub to revoke it too. When that hub doesn't answer, the
+notice says so: its link stays listed there until someone revokes it, but nothing can use it.
+
 ## Memory
 
 A Navi keeps your private life (family, health, money, accounts) in its own memory, never in `user.md`. Every
@@ -122,4 +169,6 @@ Navis are MCP tools on the hub: `navi_create {name, machineId?}`, `navi_list {ar
 Navi as a project summary with `kind: "assistant"`, `createdBy` (the id and name of the key that made it) and, once
 archived, `archivedAt`. Every other project has no `kind`. Talk to a Navi with `chat_send`, as to any project.
 `navi_asks {navi}` lists what a Navi asked other projects for, with the orders opened for each, on a hub whose ready
-frame names the `navi_asks` feature.
+frame names the `navi_asks` feature. Hub links are `hub_links_get {navi?}`, `hub_link_mint {label, projects?}`,
+`hub_link_revoke {linkId}`, `hub_link_add {navi, label, url, sealed}` (the key sealed to `boxPubKey` from
+`hub_links_get`) and `hub_link_remove {linkId}`.

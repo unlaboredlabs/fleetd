@@ -70,6 +70,8 @@ export const IPC = {
   projectEnvSubmit: "project:env-submit",
   /** invoke(McpServerRequest) → CallOutcome. Main seals each secret to each machine's key, then calls mcp_server_set. */
   mcpServerSubmit: "mcp:server-submit",
+  /** invoke(HubLinkRequest) → CallOutcome. Main seals a pasted link key to the hub's own key, then calls hub_link_add. */
+  hubLinkSubmit: "hub-link:submit",
   /** invoke(url) → OpenOutcome. Opens an http(s) link in the user's browser; refuses other schemes. */
   openExternal: "app:openExternal",
   /** main → renderer: (HubId, HubFrame) */

@@ -217,7 +217,12 @@ async fn add(
         )
         .with_fix("Pick another label, or remove that link first."));
     };
-    tokio::spawn(client::follow(hub.clone(), link_id.clone()));
+    // The link is kept: from here on nothing fails the add, so it is never kept without its follower.
+    if let Err(e) = super::set_hello(&hub.db, &link_id, &hello) {
+        tracing::warn!(link = %link_id, error = %e, "hub link hello");
+    }
+    // The hello just read is fresh: the follower doesn't read it again.
+    tokio::spawn(client::follow(hub.clone(), link_id.clone(), false));
     let link = kept_get(&hub.db, &link_id)?
         .map(|k| k.info())
         .ok_or_else(crate::hub::api::internal_error)?;

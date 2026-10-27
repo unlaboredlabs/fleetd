@@ -280,6 +280,7 @@ async fn a_launch_runs_its_turn_streams_it_and_later_sends_continue_the_session(
     let spec = &hub.runner.spawned()[0];
     assert!(!spec.resume, "a first start uses --session-id");
     assert_eq!(spec.cwd, root);
+    assert_eq!(spec.sandbox, None, "only a Navi's session is sandboxed");
     // A task's session gets fleetd's agent MCP server with the worker's tools, naming the session.
     let mcp: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(spec.mcp_config.as_ref().unwrap()).unwrap())
@@ -3692,6 +3693,39 @@ async fn a_refusal_of_another_model_than_the_session_s_never_falls_back() {
 }
 
 #[tokio::test]
+async fn a_new_projects_folder_is_made_where_the_hub_says_and_a_relative_one_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let hub = hub(
+        dir.path(),
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::fixture("init-partial-two-turns"),
+    )
+    .await;
+    let folder = dir.path().join("fleetd/projects/notes");
+    let path = folder.to_string_lossy().into_owned();
+    let made = hub
+        .ok(SessionCall::FolderMake {
+            path: NonEmpty::unchecked(path.clone()),
+            git_init: false,
+            dry_run: false,
+        })
+        .await;
+    assert_eq!(made, SessionOutput::Folder { path: path.clone() });
+    assert!(folder.is_dir() && !folder.join(".git").exists());
+    std::fs::write(folder.join("a.md"), "").unwrap();
+    for bad in [path.as_str(), "notes", "/tmp/../etc/x"] {
+        let refused = hub
+            .call(SessionCall::FolderMake {
+                path: NonEmpty::unchecked(bad),
+                git_init: false,
+                dry_run: true,
+            })
+            .await;
+        assert!(matches!(refused, SessionResult::Err(_)), "{bad}");
+    }
+}
+
+#[tokio::test]
 async fn a_navi_gets_its_folder_under_the_node_home_and_its_lead_the_assistant_rules() {
     let dir = tempfile::tempdir().unwrap();
     let mut hub = hub(
@@ -3809,4 +3843,38 @@ async fn a_navi_gets_its_folder_under_the_node_home_and_its_lead_the_assistant_r
         mcp["mcpServers"]["fleetd"]["args"],
         serde_json::json!(["agent-mcp", "--role", "lead"])
     );
+    // It runs in its sandbox: writing its folder and scratch dir, never the node's home or another session's state.
+    let fence = spec
+        .sandbox
+        .as_ref()
+        .expect("a Navi's session is sandboxed");
+    let real = crate::node::runner::sandbox::real;
+    assert!(fence.write.contains(&real(&folder)));
+    assert!(fence.hide.contains(&real(&dir.path().join("node"))));
+    assert!(!fence.write.iter().any(|w| w.ends_with(".claude")));
+    let sockets = spec
+        .env
+        .iter()
+        .find(|(k, _)| k == "AGENT_BROWSER_SOCKET_DIR")
+        .map(|(_, v)| PathBuf::from(v))
+        .expect("AGENT_BROWSER_SOCKET_DIR");
+    assert!(fence.write.iter().any(|w| sockets.starts_with(w)));
+    // Nor any variable naming a socket outside it: D-Bus, systemd, an SSH agent, the person's X server.
+    assert!(
+        !spec
+            .env
+            .iter()
+            .any(|(k, _)| crate::node::runner::sandbox::NO_ENV.contains(&k.as_str()))
+    );
+}
+
+#[test]
+fn a_session_whose_sandbox_cant_start_says_how_to_fix_it() {
+    let e = super::runner_error(crate::node::runner::RunnerError::Sandbox {
+        message: "A Navi runs only inside a sandbox, and this machine has no bubblewrap (bwrap)."
+            .into(),
+        fix: "Install bubblewrap on this machine".into(),
+    });
+    assert!(e.message.contains("no bubblewrap"), "{}", e.message);
+    assert_eq!(e.fix.as_deref(), Some("Install bubblewrap on this machine"));
 }

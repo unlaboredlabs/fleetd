@@ -9,6 +9,7 @@ pub mod cmd;
 pub mod config;
 pub mod desktop;
 pub mod device;
+pub mod google;
 pub mod hosts;
 pub mod identity;
 pub mod landed;

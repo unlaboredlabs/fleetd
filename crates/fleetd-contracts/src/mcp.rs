@@ -956,12 +956,19 @@ output!(ProjectDiscoverOutput {
 // (`url`). A path is added at once; a clone answers with `addId` and streams `project.clone_progress`, then
 // `project.added` or `project.add_failed`. The same directory again returns its project. `dryRun` adds nothing: it
 // answers the facts (default branch, CI and merge rules, what the lead will need) and, for a url, where it would clone.
+// `create` starts a new, empty project: the node makes its folder (`path`, else `<projectsRoot>/<name>`), and it is
+// added as a plain folder.
 input!(
     #[serde(remote = "Self")]
     ProjectAddInput {
     /// Absent: the best worker (see `project_discover.best`).
     machine_id: Option<MachineId>,
     path: Option<WorkspacePath>,
+    /// Make a new folder for the project first: at `path`, else `<projectsRoot>/<name from title>`. An empty folder
+    /// already there is taken; one holding anything is refused.
+    create: Option<bool>,
+    /// With `create`: `git init` the new folder. Absent: a plain folder with no git.
+    git_init: Option<bool>,
     /// A GitHub URL, `git@github.com:o/r.git`, or `owner/repo`.
     url: Option<Text<1, 300>>,
     /// With `url`: clone here instead of `<cloneRoot>/<name>`.
@@ -973,6 +980,20 @@ input!(
     dry_run: Option<bool>,
 });
 checked!(ProjectAddInput, |input| {
+    if input.create == Some(true) {
+        if input.url.is_some() || input.dest.is_some() || input.use_existing.is_some() {
+            return Err(
+                "create makes an empty folder: url, dest and useExisting don't go with it".into(),
+            );
+        }
+        if input.path.is_none() && input.title.is_none() {
+            return Err("give title (the new project's name), path (its folder), or both".into());
+        }
+        return Ok(());
+    }
+    if input.git_init.is_some() {
+        return Err("gitInit goes with create only".into());
+    }
     match (&input.path, &input.url) {
         (Some(_), Some(_)) => return Err("give path or url, not both".into()),
         (None, None) => {
@@ -1378,6 +1399,79 @@ input!(McpServerTestInput {
 output!(McpServerTestOutput {
     machine_id: MachineId,
     result: crate::mcp_servers::McpTestResult,
+});
+
+// google_get, google_client_set, google_client_test, google_connect, google_disconnect: a Navi's own Google
+// connection (crate::google).
+input!(GoogleGetInput {
+    /// Also this Navi's account.
+    project: Option<ProjectRef>,
+});
+output!(GoogleGetOutput {
+    /// The admin's OAuth client; none until one is saved.
+    client: Option<crate::google::GoogleClient>,
+    /// The asked Navi's account, when it has one.
+    account: Option<crate::google::GoogleAccount>,
+    /// What connecting asks Google for.
+    scopes: Vec<String>,
+    /// Where the consent page sends the person back: a loopback address, any port.
+    redirect: String,
+});
+input!(
+    #[serde(remote = "Self")]
+    GoogleClientSetInput {
+        client_id: crate::google::GoogleClientId,
+        /// The client secret sealed to each machine that runs a Navi.
+        sealed: Vec<crate::mcp_servers::McpSeal>,
+    }
+);
+checked!(GoogleClientSetInput, |input| {
+    if input.sealed.is_empty() {
+        return Err("the client secret is sealed to no machine".into());
+    }
+    let mut machines = std::collections::BTreeSet::new();
+    if !input
+        .sealed
+        .iter()
+        .all(|s| machines.insert(s.machine_id.as_str()))
+    {
+        return Err("the client secret is sealed to a machine twice".into());
+    }
+    Ok(())
+});
+output!(GoogleClientSetOutput {
+    client: crate::google::GoogleClient,
+    /// Machines that were offline: their Navis can't connect until the client is saved again while they are online.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    missing_on: Vec<MachineId>,
+});
+input!(GoogleClientTestInput {
+    /// Where to test; default: the first machine online that holds the client.
+    machine_id: Option<MachineId>,
+});
+output!(GoogleClientTestOutput {
+    machine_id: MachineId,
+    check: crate::google::GoogleClientCheck,
+});
+input!(GoogleConnectInput {
+    /// The Navi.
+    project: ProjectRef,
+    /// From Google's redirect.
+    code: crate::google::GoogleCode,
+    /// The PKCE verifier whose challenge the consent page was opened with.
+    code_verifier: crate::google::PkceVerifier,
+    /// The loopback address the code was sent to.
+    redirect_uri: crate::google::LoopbackUri,
+});
+output!(GoogleConnectOutput {
+    account: crate::google::GoogleAccount,
+});
+input!(GoogleDisconnectInput {
+    project: ProjectRef
+});
+output!(GoogleDisconnectOutput {
+    /// Whether Google confirmed the revoke; the tokens are gone from the machine either way.
+    revoked: bool,
 });
 
 // prompt_get, prompt_set, session_prompt_get: every prompt fleetd sends a model.
@@ -2060,6 +2154,9 @@ output!(HubInfoOutput {
     /// A hash of the OS's id for the hub's computer, as nodes give theirs: the app on that computer knows it runs the
     /// hub. Absent where the OS gives none, and from older hubs.
     machine_fingerprint: Option<String>,
+    /// The address another hub reaches this one at, for a hub link: its URL when that is https, or http over a
+    /// tailnet, and not this machine's loopback. Absent when it has no such address, and from older hubs.
+    url: Option<String>,
 });
 
 // people_list: the hub's people, oldest first, with the devices and invites the caller may see: an owner's or admin's
@@ -2646,6 +2743,13 @@ tools! {
     mcp_server_remove => McpServerRemove, Operate, McpServerRemoveInput, McpServerRemoveOutput;
     mcp_settings_set => McpSettingsSet, Operate, McpSettingsSetInput, McpSettingsSetOutput;
     mcp_server_test => McpServerTest, Operate, McpServerTestInput, McpServerTestOutput;
+    google_get => GoogleGet, Read, GoogleGetInput, GoogleGetOutput;
+    // Human keys only (the handlers check): the client with operate on every machine, as a global MCP server; an
+    // account with operate on its Navi's machine.
+    google_client_set => GoogleClientSet, Operate, GoogleClientSetInput, GoogleClientSetOutput;
+    google_client_test => GoogleClientTest, Operate, GoogleClientTestInput, GoogleClientTestOutput;
+    google_connect => GoogleConnect, Operate, GoogleConnectInput, GoogleConnectOutput;
+    google_disconnect => GoogleDisconnect, Operate, GoogleDisconnectInput, GoogleDisconnectOutput;
     wake_set => WakeSet, Operate, WakeSetInput, WakeSetOutput;
     wake_list => WakeList, Read, WakeListInput, WakeListOutput;
     wake_cancel => WakeCancel, Operate, WakeCancelInput, WakeCancelOutput;

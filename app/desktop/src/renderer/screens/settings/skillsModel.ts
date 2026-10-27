@@ -6,7 +6,7 @@ export const ORIGIN_LABEL: Readonly<Record<SkillOrigin, string>> = {
   repo_agents: "Repo · .agents/skills",
   repo_claude: "Repo · .claude/skills",
   project: "This project",
-  global: "Global",
+  global: "Hub-wide",
 };
 
 /** Kept by the hub, so edited here; the repo's change in the repo. */

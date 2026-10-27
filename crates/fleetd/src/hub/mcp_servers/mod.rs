@@ -186,6 +186,11 @@ impl McpServerStore<'_> {
             })?;
             by_name.extend(servers.into_iter().map(|s| (s.name.to_string(), s)));
         }
+        // A Navi with a Google account gets fleetd's own server, over one of the same name.
+        if let Some(account) = self.db.google().account(r)? {
+            let google = crate::hub::google::server(&account);
+            by_name.insert(google.name.to_string(), google);
+        }
         Ok(by_name.into_values().collect())
     }
 

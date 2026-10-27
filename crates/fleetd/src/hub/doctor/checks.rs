@@ -12,7 +12,9 @@ use crate::node::runner::{RunnerGuide, guide};
 use fleetd_contracts::node_link::{
     AndroidHealth, AndroidState, DesktopHealth, DesktopState, IosHealth, IosState, NodeDisk,
 };
-use fleetd_contracts::sessions::{BaseErrorKind, LoginStatus, RunnerInfo, WorktreeBase};
+use fleetd_contracts::sessions::{
+    BaseErrorKind, LoginStatus, RunnerInfo, SandboxStatus, WorktreeBase,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -498,7 +500,31 @@ pub fn runner_checks(machine_id: &str, info: &RunnerInfo) -> Vec<Entry> {
     };
     let mut checks = vec![version, login, conformance];
     checks.extend(self_update_entry(machine_id, name, info));
+    checks.extend(navi_sandbox_entry(machine_id, info));
     checks
+}
+
+/// `navi_sandbox`: the OS sandbox a Navi runs in on the machine, as its node reports it. A gap warns. A machine where
+/// none starts reads quiet rather than wanting a look: other agents run as before, and only a Navi needs it. None from
+/// a node that doesn't say.
+fn navi_sandbox_entry(machine_id: &str, info: &RunnerInfo) -> Option<Entry> {
+    let sandbox = info.sandbox.as_ref()?;
+    let status = match sandbox.status {
+        SandboxStatus::Ready => Pass,
+        SandboxStatus::Gap => Warn,
+        SandboxStatus::Missing => Unknown,
+    };
+    let fix = sandbox
+        .fix
+        .as_ref()
+        .map(|fix| manual(&format!("On {machine_id}: {fix}"), None));
+    Some(machine_entry(
+        machine_id,
+        "navi_sandbox",
+        status,
+        &format!("{machine_id}: {}", sandbox.line),
+        fix,
+    ))
 }
 
 /// `<runner>_self_update`: the runner's own background update is off, so only fleetd's update moves its version (to
@@ -1274,6 +1300,7 @@ mod tests {
             proxy_source: None,
             config_dir: None,
             self_update: None,
+            sandbox: None,
         };
         let fix = |info: Option<RunnerInfo>| {
             let entry = machine_online(&degraded, None, info.as_ref());
@@ -1354,7 +1381,32 @@ mod tests {
             proxy_source: None,
             config_dir: Some("/home/u/.claude".into()),
             self_update,
+            sandbox: None,
         };
+        let sandboxed = |status, line: &str| {
+            let mut i = info(None);
+            i.sandbox = Some(fleetd_contracts::sessions::NaviSandbox {
+                status,
+                line: line.into(),
+                fix: (status != SandboxStatus::Ready).then(|| "Install bubblewrap".into()),
+            });
+            runner_checks("devbox", &i).pop().unwrap().check
+        };
+        let ready = sandboxed(SandboxStatus::Ready, "Navis run in bubblewrap.");
+        assert_eq!(
+            (ready.id.as_str(), ready.status),
+            ("devbox/navi_sandbox", Pass)
+        );
+        let gap = sandboxed(
+            SandboxStatus::Gap,
+            "this kernel can't scope abstract sockets",
+        );
+        assert_eq!(gap.status, Warn);
+        assert!(gap.message.contains("abstract sockets"), "{}", gap.message);
+        // A machine with no sandbox runs every other agent as before: it reads quiet, with its fix.
+        let none = sandboxed(SandboxStatus::Missing, "no bubblewrap");
+        assert_eq!(none.status, Unknown);
+        assert!(none.fix.is_some());
         let last = |i: &RunnerInfo| runner_checks("mac", i).pop().unwrap().check;
         let off = last(&info(Some(false)));
         assert_eq!(
@@ -1391,6 +1443,7 @@ mod tests {
             proxy_source: None,
             config_dir: None,
             self_update: None,
+            sandbox: None,
         };
         let statuses = |i: &RunnerInfo| {
             runner_checks("mac", i)

@@ -89,6 +89,10 @@ pub struct HubLink {
     pub error: Option<String>,
     pub checked_at: Option<Timestamp>,
     pub created_at: Timestamp,
+    /// The person it acts as there, as the other hub last said; absent until a hub that says has answered.
+    pub who: Option<String>,
+    /// The projects it is limited to there, as the other hub last said; absent: every project its person reaches.
+    pub projects: Option<Vec<LinkProject>>,
 }
 
 /// One project a link reaches.
@@ -100,6 +104,7 @@ pub struct LinkProject {
 }
 
 /// `GET /link/v1/hello`: the link as the other hub sees it, and where its feed starts.
+#[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct LinkHello {
@@ -107,6 +112,10 @@ pub struct LinkHello {
     pub projects: Vec<LinkProject>,
     /// The event log head there: the feed's first `after`.
     pub cursor: i64,
+    /// The person it acts as: their name, or its device's for a link from before people. Absent from an older hub.
+    pub who: Option<String>,
+    /// Whether it is limited to `projects` rather than every project its person reaches. Absent from an older hub.
+    pub limited: Option<bool>,
 }
 
 /// `POST /link/v1/ask`: `project_message` through the link.

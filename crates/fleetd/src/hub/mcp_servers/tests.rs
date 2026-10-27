@@ -730,10 +730,11 @@ async fn a_navis_lead_launches_with_its_integrations_reads_allowed() {
     let (hub, _home) = hub();
     let mut calls = node(&hub).await;
     let plain = json!({ "kind": "plain", "name": "Authorization", "value": "public" });
-    // fleetd's own Google tools, as a server of kind google.
+    // A server marked Google that isn't fleetd's own is a custom server: what reads is what the person marked as
+    // reading.
     let mut google = integration(plain);
     google["name"] = "google".into();
-    google["integration"] = json!({ "kind": "google" });
+    google["integration"] = json!({ "kind": "google", "readTools": ["search_threads"] });
     make_navi(&hub);
     call(&hub, &person(), "mcp_server_set", google)
         .await

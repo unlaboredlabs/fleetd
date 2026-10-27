@@ -179,6 +179,19 @@ export const McpServerRequest = z.strictObject({
     .optional(),
 });
 export type McpServerRequest = z.infer<typeof McpServerRequest>;
+/**
+ * A link key pasted into a Navi's Linked hubs (Settings › Projects): main seals `key` to `boxPubKey`, the hub's own key
+ * from hub_links_get, and calls hub_link_add. The hub gets the box, never the key, and nothing returns it.
+ */
+export const HubLinkRequest = z.strictObject({
+  navi: z.strictObject({ machineId: z.string().min(1).max(64), projectId: z.string().min(1).max(200) }),
+  label: z.string().trim().min(1).max(40),
+  url: z.string().trim().min(1).max(2048),
+  boxPubKey: z.string().regex(/^[A-Za-z0-9+/]{43}=$/u),
+  key: z.string().trim().min(1).max(200),
+});
+export type HubLinkRequest = z.infer<typeof HubLinkRequest>;
+
 /** An error the page caught, for the app log: what failed, the error's own text and the route. Main scrubs it. */
 export const ErrorReport = z.strictObject({
   /** The part whose card is up ("the conversation"), or "uncaught error" / "unhandled rejection". */
@@ -271,6 +284,7 @@ export const REQUESTS = {
   [IPC.secretSubmit]: z.tuple([HubId, SecretRequest]),
   [IPC.projectEnvSubmit]: z.tuple([HubId, ProjectEnvRequest]),
   [IPC.mcpServerSubmit]: z.tuple([HubId, McpServerRequest]),
+  [IPC.hubLinkSubmit]: z.tuple([HubId, HubLinkRequest]),
   [IPC.systemHostName]: none,
   [IPC.machinesJoinHere]: z.tuple([HubId, z.string().regex(/^[a-z0-9-]{1,32}$/u)]),
   [IPC.machinesJoinHereState]: z.tuple([HubId]),

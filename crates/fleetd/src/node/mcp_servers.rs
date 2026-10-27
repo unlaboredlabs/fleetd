@@ -306,6 +306,35 @@ pub fn secrets(home: &Path, dir: &Path) -> Vec<(String, String)> {
         .collect()
 }
 
+/// The entry for fleetd's own Google server (`fleetd google-mcp`, as the hub gives it for a Navi with an account):
+/// this node's binary, told where its home is and whose tokens to read; `Some(None)` when the node holds no tokens for
+/// the project. None for any other server.
+fn native_google(home: &Path, server: &McpSessionServer) -> Option<Option<Value>> {
+    use fleetd_contracts::google::{GOOGLE_MCP_ARG, GOOGLE_SERVER};
+    let McpTransport::Stdio { command, args } = &server.transport else {
+        return None;
+    };
+    let McpSecretScope::Project { project_id } = &server.secrets else {
+        return None;
+    };
+    let native = server.name.as_str() == GOOGLE_SERVER
+        && command.as_str() == "fleetd"
+        && args.len() == 1
+        && args[0].as_str() == GOOGLE_MCP_ARG;
+    if !native {
+        return None;
+    }
+    if !super::google::connected(home, project_id.as_str()) {
+        return Some(None);
+    }
+    Some(Some(json!({
+        "type": "stdio",
+        "command": super::sessions::self_command(),
+        "args": [GOOGLE_MCP_ARG, "--home", home.to_string_lossy(), "--project", project_id.as_str()],
+        "env": {},
+    })))
+}
+
 /// What a session's claude starts with: its `--mcp-config`, the secrets in it, and whether `--strict-mcp-config`
 /// keeps the person's own servers out.
 pub struct SessionMcp {
@@ -332,6 +361,13 @@ pub fn session_config(
             .filter(|s| s.roles.has(kept.role))
             .filter(|s| !fleetd_contracts::mcp_servers::mcp_name_reserved(s.name.as_str()))
         {
+            if let Some(entry) = native_google(home, server) {
+                // Left out when this node holds no tokens for it: it would start only to fail every call.
+                if let Some(entry) = entry {
+                    servers.insert(server.name.to_string(), entry);
+                }
+                continue;
+            }
             match resolve(home, server) {
                 Ok(resolved) => {
                     servers.insert(resolved.name.clone(), resolved.entry());

@@ -1,126 +1,58 @@
-//! Google: the Gmail, Calendar and Drive tools of a server marked `integration: google`, by their names, which of them
-//! read, and how each asking one reads on a card. The rule shapes here (names, and the input fields each card reads)
-//! are what fleetd's own Google tools are read by; a tool it doesn't know asks, as its name says.
-//!
-//! Gmail and Calendar tools are named plainly (`search_threads`, `send_message`, `create_calendar_event`, …). Drive,
-//! Docs, Sheets and Slides tools may come under a connection's prefix, `<connection>__<tool>`
-//! (`workspace__drive_search`), and are read by the part after it.
+//! fleetd's own Google server (`fleetd google-mcp`, node/google/tools.rs; the hub gives it to a Navi with an account,
+//! hub/google): its tool names, which of them read, and how each asking one reads on a card. A read, and a draft,
+//! which sends nothing, run unasked; a send, a reply, an event change, an upload and a share ask, showing everyone it
+//! reaches and everything that goes out. Mail with attachments is refused: the tools can't attach files yet.
 use serde_json::Value;
 
-use super::notion;
-use super::policy::{Attachment, Draft, Rule, addresses, attachment_size, text_of};
-use fleetd_contracts::integrations::ToolAction::{self, Delete, Send, Write};
+use super::policy::{Draft, Never, Rule, addresses, text_of};
+use fleetd_contracts::integrations::ToolAction::{Send, Share, Write};
 
-/// The tools that only read: Gmail, Calendar, a call's status, and Drive, Docs, Sheets and Slides reads under their
-/// default prefix.
+/// The tools that run unasked: node/google/tools.rs marks the same ones `readOnlyHint`.
 pub const READS: &[&str] = &[
-    "list_accounts",
-    "list_labels",
     "search_threads",
     "get_thread",
-    "get_message",
-    "get_attachment",
-    "list_attachments",
-    "list_events",
-    "wait_for_events",
-    "ack_events",
-    "get_send_status",
-    "get_call_status",
-    "search_tools",
-    "list_calendars",
+    "create_draft",
     "list_calendar_events",
     "get_calendar_event",
-    "get_free_busy",
-    "workspace__drive_search",
-    "workspace__drive_list_folder",
-    "workspace__drive_get",
-    "workspace__drive_export",
-    "workspace__docs_read",
-    "workspace__docs_comments_list",
-    "workspace__sheets_list_tabs",
-    "workspace__sheets_read",
-    "workspace__slides_read",
+    "drive_search",
+    "drive_read",
 ];
 
-/// The tools that ask, and what each does.
-const ASKS: &[(&str, ToolAction)] = &[
-    ("send_message", Send),
-    ("reply", Send),
-    ("forward", Send),
-    ("respond_to_invitation", Send),
-    ("create_draft", Write),
-    ("mark_read", Write),
-    ("archive", Write),
-    ("modify_labels", Write),
-    ("trash", Delete),
-    // Creating or changing an event with guests is a send: see [`rule`].
-    ("create_calendar_event", Write),
-    ("update_calendar_event", Write),
-    ("delete_calendar_event", Delete),
-];
-
-/// The Drive, Docs, Sheets and Slides tools that remove something; their other writes change files the person can
-/// restore.
-const WORKSPACE_DELETES: &[&str] = &[
-    "drive_trash",
-    "docs_overwrite",
-    "sheets_clear",
-    "sheets_delete_tab",
-    "slides_delete_slide",
-];
-
-/// An event write reaches its guests when it has any: a new event's are in its input; a changed one may have guests
-/// already, whom Google emails unless told not to.
-fn reaches_guests(tool: &str, input: &Value) -> bool {
+/// Whether an event write emails its guests: a new event emails the guests it names unless told not to; a change
+/// emails only when told to.
+fn emails_guests(tool: &str, input: &Value) -> bool {
     match tool {
-        "create_calendar_event" => !addresses(&input["attendees"]).is_empty(),
-        _ => input["notify_attendees"].as_bool() != Some(false),
+        "create_calendar_event" => {
+            !addresses(&input["attendees"]).is_empty()
+                && input["notify_attendees"].as_bool() != Some(false)
+        }
+        _ => input["notify_attendees"].as_bool() == Some(true),
     }
 }
 
 pub fn rule(tool: &str, input: &Value) -> Option<Rule> {
+    // Refused before any card: the tools can't attach files yet, and node/google/tools.rs refuses them too, for a draft
+    // that runs unasked.
+    if matches!(tool, "send_message" | "reply" | "create_draft") && !input["attachments"].is_null()
+    {
+        return Some(Rule::Blocked(Never::Attachments));
+    }
     if READS.contains(&tool) {
         return Some(Rule::Read);
     }
-    if let Some((_, action)) = ASKS.iter().find(|(name, _)| *name == tool) {
-        let send = matches!(tool, "create_calendar_event" | "update_calendar_event")
-            && reaches_guests(tool, input);
-        return Some(Rule::Ask(if send { Send } else { *action }));
-    }
-    // A tool under a connection's prefix: Drive, Docs, Sheets or Slides under any prefix, or Notion's hosted tools.
-    let (_, inner) = tool.rsplit_once("__")?;
-    if READS.contains(&format!("workspace__{inner}").as_str()) {
-        return Some(Rule::Read);
-    }
-    if WORKSPACE_DELETES.contains(&inner) {
-        return Some(Rule::Ask(Delete));
-    }
-    if ["drive_", "docs_", "sheets_", "slides_"]
-        .iter()
-        .any(|p| inner.starts_with(p))
-    {
-        // One the table doesn't list asks as what its name says: a share as a share.
-        return Some(Rule::Ask(super::policy::guess(inner)));
-    }
-    notion::rule(inner, input)
+    Some(Rule::Ask(match tool {
+        "send_message" | "reply" => Send,
+        "create_calendar_event" | "update_calendar_event" if emails_guests(tool, input) => Send,
+        "create_calendar_event" | "update_calendar_event" | "drive_upload" => Write,
+        "drive_share" => Share,
+        // A tool added later, unknown here, asks as its name says.
+        _ => return None,
+    }))
 }
 
-fn titled(title: &str) -> Draft {
-    Draft {
-        title: Some(title.to_owned()),
-        ..Draft::default()
-    }
-}
-
-/// `start` → `end` of an event, each a date-time string or `{dateTime|date}`.
+/// `start` → `end` of an event: date-times or dates, as the tool takes them.
 fn when(input: &Value) -> Option<String> {
-    let at = |v: &Value| -> Option<String> {
-        v.as_str()
-            .map(str::to_owned)
-            .or_else(|| text_of(v, &["dateTime", "date_time", "date"]))
-    };
-    let (start, end) = (at(&input["start"]), at(&input["end"]));
-    match (start, end) {
+    match (text_of(input, &["start"]), text_of(input, &["end"])) {
         (Some(s), Some(e)) => Some(format!("{s} → {e}")),
         (Some(s), None) => Some(s),
         (None, Some(e)) => Some(format!("until {e}")),
@@ -128,226 +60,104 @@ fn when(input: &Value) -> Option<String> {
     }
 }
 
+fn titled(title: impl Into<String>) -> Draft {
+    Draft {
+        title: Some(title.into()),
+        ..Draft::default()
+    }
+}
+
 pub fn draft(tool: &str, input: &Value) -> Draft {
-    let account = text_of(input, &["account"]);
-    let message = text_of(input, &["message_id"]).map(|m| format!("Message {m}"));
-    let thread = text_of(input, &["thread_id"]).map(|t| format!("Thread {t}"));
-    let mut d = match tool {
-        "send_message" | "create_draft" => Draft {
-            title: Some(
-                if tool == "send_message" {
-                    "Send an email"
-                } else {
-                    "Save a draft in Gmail"
-                }
-                .into(),
-            ),
-            to: addresses(&input["to"]),
-            cc: addresses(&input["cc"]),
-            bcc: addresses(&input["bcc"]),
-            subject: text_of(input, &["subject"]),
-            body: text_of(input, &["body"]),
-            target: thread,
-            ..Draft::default()
-        },
-        "reply" => Draft {
-            title: Some("Reply to an email".into()),
-            audience: Some(
-                if input["reply_all"].as_bool() == Some(true) {
-                    "Everyone on that message: its sender, and its To and Cc in Cc"
-                } else {
-                    "That message's sender (its Reply-To when it has one)"
-                }
-                .into(),
-            ),
-            body: text_of(input, &["body"]),
-            target: message,
-            ..Draft::default()
-        },
-        "forward" => Draft {
-            title: Some(
-                if input["include_attachments"].as_bool() == Some(true) {
-                    "Forward an email with its attachments"
-                } else {
-                    "Forward an email"
-                }
-                .into(),
-            ),
-            to: addresses(&input["to"]),
-            body: text_of(input, &["body"]),
-            target: message,
-            ..Draft::default()
-        },
-        "trash" => Draft {
-            target: thread.or(message),
-            ..titled("Move email to the Trash")
-        },
-        "archive" => Draft {
-            target: thread.or(message),
-            ..titled("Archive email")
-        },
-        "mark_read" => Draft {
-            target: thread.or(message),
-            ..titled("Mark email as read")
-        },
-        "modify_labels" => {
-            let list = |k: &str| -> String {
-                input[k]
-                    .as_array()
-                    .map(|a| {
-                        a.iter()
-                            .filter_map(Value::as_str)
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    })
-                    .unwrap_or_default()
-            };
-            let (add, remove) = (list("add"), list("remove"));
-            let change = [("Add", add), ("Remove", remove)]
-                .into_iter()
-                .filter(|(_, l)| !l.is_empty())
-                .map(|(what, l)| format!("{what}: {l}"))
-                .collect::<Vec<_>>()
-                .join("\n");
-            Draft {
-                target: thread.or(message),
-                body: (!change.is_empty()).then_some(change),
-                ..titled("Change Gmail labels")
-            }
-        }
+    let message = |d: Draft| Draft {
+        to: addresses(&input["to"]),
+        cc: addresses(&input["cc"]),
+        bcc: addresses(&input["bcc"]),
+        subject: text_of(input, &["subject"]),
+        body: text_of(input, &["body"]),
+        ..d
+    };
+    match tool {
+        "send_message" => message(Draft {
+            target: text_of(input, &["thread_id"]).map(|t| format!("In thread {t}")),
+            ..titled("Send an email")
+        }),
+        "reply" => message(Draft {
+            target: text_of(input, &["message_id"]).map(|m| format!("Reply to message {m}")),
+            ..titled("Reply to an email")
+        }),
         "create_calendar_event" | "update_calendar_event" => {
             let guests = addresses(&input["attendees"]);
-            let quiet = input["notify_attendees"].as_bool() == Some(false);
+            let removed = addresses(&input["removed_attendees"]);
+            let emailed = emails_guests(tool, input);
+            let audience = match (emailed, tool) {
+                (true, "create_calendar_event") => {
+                    Some("Google emails each guest an invitation".to_owned())
+                }
+                (true, _) if removed.is_empty() => {
+                    Some("Google emails each guest about the change".to_owned())
+                }
+                (true, _) => Some(format!(
+                    "Google emails each guest about the change, and a cancellation to the {} removed: {}",
+                    removed.len(),
+                    removed.join(", ")
+                )),
+                (false, _) if !guests.is_empty() => {
+                    Some("Guests see it in their calendars; Google doesn't email them".to_owned())
+                }
+                (false, _) => None,
+            };
+            // Everyone Google emails is on the card: the guests, and those removed.
+            let mut to = guests;
+            if emailed {
+                to.extend(removed);
+            }
             Draft {
-                title: Some(
-                    if tool == "create_calendar_event" {
-                        "Create a calendar event"
-                    } else {
-                        "Change a calendar event"
-                    }
-                    .into(),
-                ),
-                audience: match (guests.is_empty(), quiet, tool) {
-                    (false, true, _) => Some(
-                        "Guests see it in their calendars; Google doesn't email them".to_owned(),
-                    ),
-                    (false, false, _) => Some("Google emails each guest".to_owned()),
-                    (true, false, "update_calendar_event") => Some(
-                        "Its guests, if it has any: Google emails them about the change".to_owned(),
-                    ),
-                    (true, _, _) => None,
-                },
-                to: guests,
+                to,
+                audience,
                 subject: text_of(input, &["summary"]),
                 body: text_of(input, &["description"]),
                 when: when(input),
                 target: text_of(input, &["event_id"])
                     .map(|e| format!("Event {e}"))
                     .or_else(|| text_of(input, &["location"])),
-                ..Draft::default()
+                ..titled(if tool == "create_calendar_event" {
+                    "Create a calendar event"
+                } else {
+                    "Change a calendar event"
+                })
             }
         }
-        "delete_calendar_event" => Draft {
-            audience: (input["notify_attendees"].as_bool() != Some(false))
-                .then(|| "Google tells its guests it's cancelled".to_owned()),
-            target: text_of(input, &["event_id"]).map(|e| format!("Event {e}")),
-            ..titled("Delete a calendar event")
-        },
-        "respond_to_invitation" => Draft {
-            subject: text_of(input, &["response", "status"]),
-            body: text_of(input, &["comment", "note"]),
-            audience: Some("The event's organizer".into()),
-            target: text_of(input, &["event_id"]).map(|e| format!("Event {e}")),
-            ..titled("Answer an invitation")
-        },
-        _ => workspace(tool, input),
-    };
-    if d.account.is_none() {
-        d.account = account;
-    }
-    if d.attachments.is_empty() {
-        d.attachments = attachments(&input["attachments"]);
-    }
-    d
-}
-
-/// The files a send, draft, reply or forward attaches, from each source: bytes in the call, a path, another message's
-/// attachment, a Drive file. A path's file is shown by its name.
-fn attachments(v: &Value) -> Vec<Attachment> {
-    let Some(items) = v.as_array() else {
-        return Vec::new();
-    };
-    items
-        .iter()
-        .map(|a| {
-            let path = text_of(a, &["path"]);
-            let base = path
-                .as_deref()
-                .and_then(|p| p.rsplit('/').next())
-                .map(str::to_owned);
-            let message = text_of(a, &["message_id"]);
-            let drive = text_of(a, &["drive_file_id"]);
-            let name = text_of(a, &["filename"])
-                .or(base)
-                .or_else(|| text_of(a, &["attachment_id"]).map(|id| format!("Attachment {id}")))
-                .or_else(|| drive.as_ref().map(|id| format!("Drive file {id}")))
-                .unwrap_or_else(|| "A file".to_owned());
-            Attachment {
-                name,
-                bytes: a["content_base64"].as_str().map(attachment_size),
-                from: if let Some(p) = &path {
-                    Some(format!("from {p}"))
-                } else if let Some(m) = message {
-                    Some(format!("from message {m}"))
-                } else {
-                    drive.map(|_| "from Drive".to_owned())
-                },
+        "drive_upload" => {
+            let name = text_of(input, &["name"]).unwrap_or_else(|| "a file".into());
+            let bytes = input["content"].as_str().map_or(0, str::len);
+            Draft {
+                subject: Some(format!("{name} ({bytes} bytes)")),
+                body: input["content"].as_str().map(str::to_owned),
+                target: Some(match text_of(input, &["folder_id"]) {
+                    Some(f) => format!("Folder {f}"),
+                    None => "My Drive".to_owned(),
+                }),
+                ..titled(format!("Upload {name} to Drive"))
             }
-        })
-        .collect()
-}
-
-/// A Drive, Docs, Sheets or Slides tool's card: the file it acts on and what goes in.
-fn workspace(tool: &str, input: &Value) -> Draft {
-    let Some((_, inner)) = tool.rsplit_once("__") else {
-        return Draft::default();
-    };
-    if !["drive_", "docs_", "sheets_", "slides_"]
-        .iter()
-        .any(|p| inner.starts_with(p))
-    {
-        return notion::draft(inner, input);
-    }
-    let target = text_of(
-        input,
-        &[
-            "documentId",
-            "spreadsheetId",
-            "presentationId",
-            "fileId",
-            "folderId",
-            "parentId",
-        ],
-    );
-    let name = text_of(input, &["title", "name"]);
-    let body = text_of(
-        input,
-        &["markdown", "text", "content", "replaceText", "comment"],
-    )
-    .or_else(|| {
-        input
-            .get("values")
-            .or(input.get("rows"))
-            .map(|v| serde_json::to_string_pretty(v).unwrap_or_default())
-    });
-    Draft {
-        title: Some(format!(
-            "Use Google Workspace's {}",
-            inner.replace('_', " ")
-        )),
-        subject: name,
-        body,
-        target,
-        ..Draft::default()
+        }
+        "drive_share" => {
+            let role = text_of(input, &["role"]).unwrap_or_else(|| "reader".into());
+            let notify = input["notify"].as_bool() != Some(false);
+            Draft {
+                to: addresses(&input["emails"]),
+                audience: Some(
+                    if notify {
+                        "Google emails each of them a link"
+                    } else {
+                        "Shared without an email"
+                    }
+                    .into(),
+                ),
+                body: notify.then(|| text_of(input, &["message"])).flatten(),
+                target: text_of(input, &["file_id"]).map(|f| format!("File {f}")),
+                ..titled(format!("Share a Drive file as {role}"))
+            }
+        }
+        _ => Draft::default(),
     }
 }

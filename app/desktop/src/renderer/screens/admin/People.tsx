@@ -1,6 +1,7 @@
 // Administration → People: everyone on the hub, with their role and devices. An owner or admin changes a role in place
 // (person_set) or removes someone (person_remove, once confirmed: their devices are signed out at once). What a row
-// offers comes from model.ts; the hub checks it all again.
+// offers comes from model.ts; the hub checks it all again. Below them, every hub link minted here, which acts as its
+// person (hubLinks/AllLinks.tsx).
 import { useState } from "react";
 import type { HubRole, PeopleListOutput, Person } from "../../../shared/contracts";
 import { lacksTool } from "../../src/data/errors";
@@ -10,6 +11,7 @@ import { Button, Dialog, Select, Text } from "../../ui";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
 import { PageHead } from "../settings/parts";
 import { setUpdatesOpen } from "../updates/state";
+import { AllLinks } from "../hubLinks/AllLinks";
 import { devicesLine, peopleRows, roleWord, type PersonRow } from "./model";
 import s from "../settings/settings.module.css";
 import a from "./admin.module.css";
@@ -55,6 +57,7 @@ export function People({ me }: { me: Person | undefined }) {
         ) : (
           <PeopleList list={read.data} me={me} />
         )}
+        <AllLinks />
       </div>
     </div>
   );

@@ -3,7 +3,7 @@ import type { MenuCommand } from "../shared/menu";
 import type { BrowserInput } from "../shared/contracts";
 import type { CallOutcome, ConnectOutcome, DropInfo, HubFrame, OpenOutcome, SecretOutcome } from "../shared/hub";
 import type { HubColor, HubEntry, HubId, PairTarget } from "../shared/hubs";
-import type { ChatScope, ErrorReport, McpServerRequest, OrderFocus, ProjectEnvRequest, SecretRequest, SessionWindowRequest } from "../shared/ipc";
+import type { ChatScope, ErrorReport, HubLinkRequest, McpServerRequest, OrderFocus, ProjectEnvRequest, SecretRequest, SessionWindowRequest } from "../shared/ipc";
 import type { JoinHere, ThisComputer } from "../shared/joinHere";
 import type { KeyStore, PairOutcome, PairRequest, PairStart, Probe, SetupOutcome } from "../shared/pairing";
 import type { UpdatesState } from "../shared/updates";
@@ -32,6 +32,11 @@ export interface FleetdApi {
      * output has the server as the hub keeps it, a secret's by the machines holding it only.
      */
     mcpServer(hub: HubId, request: McpServerRequest): Promise<CallOutcome>;
+    /**
+     * A link key pasted into a Navi's Linked hubs: main seals it to `boxPubKey`, the hub's own key, and calls
+     * hub_link_add. The output has the link and what it reaches, never the key.
+     */
+    hubLink(hub: HubId, request: HubLinkRequest): Promise<CallOutcome>;
   };
   /**
    * Opens an https link to github.com (or a subdomain) or fleetd.sh in the user's browser. Anything else comes back

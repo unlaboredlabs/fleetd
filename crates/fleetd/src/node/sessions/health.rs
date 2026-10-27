@@ -109,6 +109,7 @@ mod tests {
             proxy_source: None,
             config_dir: None,
             self_update: None,
+            sandbox: None,
         }
     }
 

@@ -48,6 +48,11 @@ pub fn of(db: &HubDb, r: &ProjectRef) -> Result<Option<store::Navi>, StoreError>
 
 /// A folder name from a Navi's name: lowercase letters, digits and dashes, at most 40; "navi" when nothing is left.
 pub fn slug(name: &str) -> String {
+    slug_or(name, FOLDER)
+}
+
+/// A folder name from a name, as [`slug`] makes a Navi's (a new project's too); `fallback` when nothing is left.
+pub fn slug_or(name: &str, fallback: &str) -> String {
     let mut out = String::new();
     for c in name.trim().chars().flat_map(char::to_lowercase) {
         if c.is_ascii_alphanumeric() {
@@ -61,7 +66,7 @@ pub fn slug(name: &str) -> String {
     }
     let out = out.trim_end_matches('-');
     if out.is_empty() {
-        FOLDER.to_owned()
+        fallback.to_owned()
     } else {
         out.to_owned()
     }

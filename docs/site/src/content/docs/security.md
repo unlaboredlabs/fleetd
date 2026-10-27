@@ -71,15 +71,76 @@ but it keeps nothing private from them.
 - **Notifications** carry a one-line summary, never a secret.
 - **An approved command runs exactly as stored**, and only after a person approves it.
 
+## Navi sandbox {#navi-sandbox}
+
+A [Navi](/docs/navi) reads mail and web pages that anyone can write, so fleetd assumes one may be talked into
+something. Its tool checks (files only in its folder, sites asked once, sends always asked) run inside the session;
+an OS sandbox holds when a command finds a way around them. Only Navis run in it; other agents don't.
+
+Both systems apply the same fence. These are the paths, with `~` the machine user's home and `~/.claude` Claude
+Code's config dir (or `$CLAUDE_CONFIG_DIR`).
+
+**Writes**, on both: its folder (except `.claude`, `.fleetd`, `.mcp.json` and `agent-browser.json` in it), its
+scratch dir, and Claude Code's files for its own session: its conversation in `~/.claude/projects/<its folder>`,
+`~/.claude/session-env/<session>`, `~/.claude/file-history/<session>`, and the login file
+`~/.claude/.credentials.json` when there is one. Claude Code saves a refreshed token there; one it couldn't save would
+log out every session on the machine. Everything else takes no writes, `~/.claude/settings.json` included, so it
+can't add hooks or MCP servers for other agents.
+
+**`~/.claude.json`** holds every MCP server's settings, with their tokens, and every project's history. On Linux a
+Navi gets its own copy in its place, made fresh at each start: without `mcpServers`, without `projects`, and without
+any key named like a secret but Claude Code's own login. What it writes there stays in its copy. On macOS, where
+nothing can stand in for a path, the real file is hidden. Its backups and other copies beside it
+(`~/.claude.json.backup.*`) are hidden on both.
+
+**Can't read**, on both:
+
+- fleetd's directory: the hub, the node, worktrees, secrets and integration tokens, Chrome's profiles. Only its own
+  session's files are read again: its MCP config, settings and skills, the `fleetd` binary and the node's socket,
+  and the agent-browser and agent-device installs.
+- Other projects' checkouts on the machine.
+- Claude Code's record of other sessions: `~/.claude/projects` (but its own), `history.jsonl`, `file-history`,
+  `session-env` and `sessions`; its IDE connections (`ide`, whose lock files hold a token) and its `backups`.
+- Logins and keys: `~/.config`, `~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.docker`, `~/.kube`, `~/.password-store`,
+  `~/.local/share/keyrings`, `~/.netrc`, `~/.git-credentials`, `~/.npmrc`, `~/.pypirc`, `~/.cargo/credentials` and
+  `credentials.toml`, `~/.android/adbkey`, `~/.mozilla`, `~/.pgpass`, `~/.vault-token`, `~/.azure`, `~/.terraform.d`,
+  and `~/snap` (each snap's own data, logins included).
+- Shell and REPL history: `~/.bash_history`, `~/.zsh_history`, fish's `~/.local/share/fish/fish_history`,
+  `~/.python_history`, `~/.node_repl_history`.
+- The X server: `~/.Xauthority` and `/tmp/.X11-unix`. `DISPLAY` and `XAUTHORITY` are unset.
+- `~/.agent-browser`, where other sessions' browsers listen. Its own listens in its scratch dir.
+- The docker socket (`/run/docker.sock`, `/var/run/docker.sock`).
+
+| | Linux (bubblewrap) | macOS (`sandbox-exec`) |
+|---|---|---|
+| Also can't read | `$XDG_RUNTIME_DIR` (`/run/user/<uid>`): the user's D-Bus, systemd and SSH agent sockets, which would start commands outside. Their variables are unset. | `~/Library` whole: browser cookies, app tokens, keychain files. Claude Code reads its login through the keychain's daemon, not the files. |
+| Abstract sockets | Landlock scopes them (Linux 6.12 and later): nothing inside connects to one made outside, such as an X server's or a D-Bus bus's. On an older kernel they stay reachable, and the machine's Navi sandbox check says so. | Not used on macOS |
+| `/tmp` | Its own | The machine's, read-only. Its scratch dir is its `TMPDIR`. |
+| Processes | Its own (`/proc`, a pid namespace): no other process, so no way back to the disk through one | Others are visible, as for any program |
+| Claude Code's shared state | Shell snapshots, todos, tasks, plans, `statsig`, `debug` and the paste cache get a private copy per session | Read-only: `sandbox-exec` can't give a private copy. A Mac Navi's todo list, plan files and shell snapshot may not save. |
+| Terminal | A session of its own (`--new-session`): it can't push keystrokes into the node's terminal | |
+| Network | As before: the site gate decides | The same |
+
+- **No sandbox, no Navi.** When bubblewrap is missing or can't start, the Navi doesn't run, and its chat says how to
+  fix it ([Navi](/docs/navi)). fleetd never runs a Navi unsandboxed.
+- **Each machine says which it gets.** Machines › Setup checks shows a **Navi sandbox** line per machine: bubblewrap
+  with abstract sockets scoped; bubblewrap on a kernel too old to scope them (a warning, with the fix); or none, so
+  Navis can't run there (with how to install bubblewrap).
+- **What it doesn't cover.** The network is shared, as the site gate needs. On Linux before 6.12, abstract Unix
+  sockets stay reachable, including an X server that accepts local connections without a cookie
+  (`xhost +si:localuser`, the GNOME default). fleetd's own screens don't listen there. Its folder, its session's MCP config (with its own servers' tokens) and
+  Claude Code's login are readable to it, since Claude Code needs them. Everything else on the machine is readable,
+  without writes.
+
 ## Hub links {#hub-links}
 
 A hub link lets a Navi on one hub open and follow work in projects on another hub, for example from a personal hub
-into a team hub. You make it on the hub it reaches and add it to the Navi on the other.
+into a team hub. You make it on the hub it reaches and add it to the Navi on the other ([how](/docs/navi#hub-links)).
 
 | Rule | Detail |
 |---|---|
 | It acts as you | A link key (`flk_…`) acts as you, at the lesser of your [role](/docs/people) on that hub and the grants of the device you made it on, never above operate, limited to the projects you pick or not. A read-only device can't make one. Removing you from the hub stops it. |
-| Revoking a device leaves its links | By design, revoking a lost device doesn't stop the links made on it: they act as you, not as the device, and never gain rights it lacked. Revoke them too, with `hub_link_revoke` on that hub. |
+| Revoking a device leaves its links | By design, revoking a lost device doesn't stop the links made on it: they act as you, not as the device, and never gain rights it lacked. Revoke them too, in **Settings › Hubs**, **Links to this hub**, on that hub. |
 | It does five things | List the projects it reaches, ask a project's lead for work, read their status, follow its own asks, revoke itself. It can't use `/mcp` or the app's connection, so it reads no chat and answers no approval, question or secret. |
 | Its messages are never your answer | They go into the project's chat as "*you* via *label* Navi", an agent's input, like any Navi message. Approvals, secrets and merges still need you there. |
 | The other hub sees only the requests | Not the Navi, its chat or its title. |

@@ -1,7 +1,8 @@
 //! `/link/v1/<op>`: what a link minted here may do, with its key as `Authorization: Bearer flk_…`. Nothing else on the
 //! hub takes a link key, and nothing here administers anything.
 //!
-//! - `GET hello`: the link's label, the projects it reaches, and the feed's start.
+//! - `GET hello`: the link's label, its person, the projects it reaches (and whether it is limited to them), and the
+//!   feed's start.
 //! - `POST ask` (`LinkAskCall`): `project_message` as the link's person, "<person> via <label> Navi".
 //! - `GET status?project=`: `factory_status` over the projects it reaches, with its own asks.
 //! - `GET feed?after=&wait=`: what happened to its asks after `after`, waiting up to `wait` seconds for some.
@@ -105,6 +106,8 @@ fn hello(hub: &Hub, link: &Issued) -> Result<LinkHello, McpToolError> {
             })
             .collect(),
         cursor: hub.events.head(),
+        who: Some(link.who.clone()),
+        limited: Some(link.projects.is_some()),
     })
 }
 

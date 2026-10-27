@@ -1,6 +1,6 @@
 //! The per-tool policy the hub enforces on a session's MCP tools. Every tool resolves to a [`Rule`]: first the blocked
-//! list, by the words of the tool's name, for every server; then the integration's own table ([`super::google`],
-//! [`super::notion`], or a custom server's tools the person marked as reading); anything else asks, with an action
+//! list, by the words of the tool's name, for every server; then the integration's own table ([`super::google`] for
+//! the hub's own native server only, [`super::notion`], or a custom server's tools the person marked as reading); anything else asks, with an action
 //! guessed from its name. An asking tool whose input looks like it holds a credential is blocked too.
 use fleetd_contracts::integrations::{
     IntegrationKind, McpToolName, PREVIEW_INPUT_MAX, PreviewAttachment, ToolAction, ToolPolicy,
@@ -25,6 +25,9 @@ pub enum Never {
     Trading,
     Accounts,
     Credential,
+    /// A Gmail send, reply or draft with files: fleetd's own Google tools can't attach them yet, so the person is never
+    /// asked to approve a call that would fail or go without them.
+    Attachments,
 }
 
 impl Never {
@@ -47,6 +50,10 @@ impl Never {
                 "Blocked by fleetd: this would send or store what looks like a password, key or token, which never \
                  leaves through an assistant, even with approval. Leave the value out; a secret goes through \
                  request_secret."
+            }
+            Never::Attachments => {
+                "Blocked by fleetd: Gmail attachments aren't supported yet. Send it without the files, or share them \
+                 from Drive with drive_share and say so in the message."
             }
         }
     }
@@ -181,7 +188,7 @@ pub fn shown_input(kind: IntegrationKind, input: &Value) -> Value {
 /// attaches that read as text. A real file's base64 is never searched as it is: its random letters spell key shapes by
 /// chance, and refusing real mail for that would be worse than the key it might hide. A value under [`SHORT_VALUE`]
 /// characters is searched as it is too, and a value that doesn't decode isn't a file, and is searched as text.
-fn sends_credential(kind: IntegrationKind, input: &Value) -> bool {
+pub(super) fn sends_credential(kind: IntegrationKind, input: &Value) -> bool {
     let mut files: Vec<Vec<u8>> = Vec::new();
     let mut short_key = false;
     let text = with_files(kind, input, |b| {
@@ -308,9 +315,15 @@ pub fn guess(tool: &str) -> ToolAction {
     }
 }
 
+/// A server's integration as the policy reads it: Google's table only for the hub's own native server
+/// ([`crate::hub::google::is_native`]); any other server marked Google is a custom one, every write asking with its
+/// whole input.
 fn kind_of(server: Option<&McpServer>) -> (IntegrationKind, &[McpToolName]) {
-    match server.and_then(|s| s.integration.as_ref()) {
-        Some(i) => (i.kind, i.read_tools.as_slice()),
+    match server.and_then(|s| Some((s, s.integration.as_ref()?))) {
+        Some((s, i)) if i.kind == IntegrationKind::Google && !crate::hub::google::is_native(s) => {
+            (IntegrationKind::Custom, i.read_tools.as_slice())
+        }
+        Some((_, i)) => (i.kind, i.read_tools.as_slice()),
         None => (IntegrationKind::Custom, &[]),
     }
 }

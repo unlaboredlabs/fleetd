@@ -46,7 +46,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "project_add",
-        "Add a project. path: a directory on the machine, added at once with its inspect: a git checkout, or a plain folder with no git (its lead chats, remembers and uses screens there; agents that change code need a repo). url: a GitHub repo cloned onto the machine (machineId defaults to the best worker, dest to <cloneRoot>/<name>); answers with addId, then events project.clone_progress and project.added (or project.add_failed with a fix) carry data.addId. When the destination already holds the same repo, pass useExisting. The same directory again returns its project; title renames it. dryRun adds nothing: it answers the inspect (default branch, CI with active workflows and required checks, merge rules with protection, rulesets, squash allowed and required reviews, and leadNeeds: one line on what the lead and merge train will need) and, for a url, clone: where it would go and whether that directory already holds the repo.",
+        "Add a project. path: a directory on the machine, added at once with its inspect: a git checkout, or a plain folder with no git (its lead chats, remembers and uses screens there; agents that change code need a repo). url: a GitHub repo cloned onto the machine (machineId defaults to the best worker, dest to <cloneRoot>/<name>); answers with addId, then events project.clone_progress and project.added (or project.add_failed with a fix) carry data.addId. When the destination already holds the same repo, pass useExisting. create starts a new, empty project with no repo: the machine makes its folder (path, else <projectsRoot>/<name from title>, projectsRoot being ~/fleetd/projects as project_discover says), takes an empty folder that is already there, refuses one that holds anything, and runs git init in it only with gitInit; a repo can be added later with project_repo_add. The same directory again returns its project; title renames it. dryRun adds nothing: it answers the inspect (default branch, CI with active workflows and required checks, merge rules with protection, rulesets, squash allowed and required reviews, and leadNeeds: one line on what the lead and merge train will need) and, for a url, clone: where it would go and whether that directory already holds the repo.",
     ),
     (
         "project_remove",
@@ -119,6 +119,26 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     (
         "mcp_server_test",
         "Test connection: the node starts the server (stdio, in the project's checkout with its variables, or the home directory for a global one) or connects to it (http, sse) with its secrets resolved there, initializes it and lists its tools within 30 s. result has the server's name and tools, or error: what went wrong, a command's stderr tail with its secrets masked. A global server is tested on machineId, by default the first machine online.",
+    ),
+    (
+        "google_get",
+        "A Navi's own Google connection: the hub's OAuth client (clientId and the machines holding its secret, sealedOn; never the secret), with project that Navi's account (its address, the scopes granted, and lapsed: why Google stopped taking it, as its node says now), the scopes connecting asks for, and the redirect: a loopback address on any port, which a Desktop app client takes unregistered.",
+    ),
+    (
+        "google_client_set",
+        "Human keys only, operate on every machine. Save the hub's Google OAuth client, of the Desktop app type: clientId, and sealed, its secret sealed on the client with crypto_box_seal to each machine's boxPubKey that runs Navis. Each node keeps it in its home and answers with the fingerprint; the hub never keeps the secret. missingOn names machines that were offline.",
+    ),
+    (
+        "google_client_test",
+        "Ask Google whether it takes the client: the node holding it (machineId, by default the first online) trades a code that can't work, and Google's answer says whether it knows the client and its secret. check.ok, or check.problem in a line a person can act on.",
+    ),
+    (
+        "google_connect",
+        "Human keys only, operate on the Navi's machine. Connect a Google account to a Navi: the app opened Google's consent page with PKCE and caught the code on a loopback address; code, codeVerifier and that redirectUri go to the Navi's node, which trades them for tokens with the client's secret and keeps them in its home, outside the Navi's folder. Only a Navi takes one. The Navi's lead gets the google server's tools from its next start; reads and drafts run at once, a send, reply, invitation, upload or share asks the person.",
+    ),
+    (
+        "google_disconnect",
+        "Human keys only, operate on the Navi's machine. Disconnect a Navi's Google account: its node revokes the grant at Google and deletes its tokens; revoked says whether Google confirmed. Refused while the machine is offline, since the tokens are there.",
     ),
     (
         "thread_tail",
