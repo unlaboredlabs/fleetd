@@ -1,6 +1,7 @@
 // #/setup: the hub admin's setup, a design prototype (docs/design/setup.md). The welcome, the steps with one open
 // beside them, and the end. Each step's status comes from doctor_list; Test re-runs the checks and says what the
-// step's check says now. Nothing is saved yet: the hub's setup_save comes with the build.
+// step's check says now. Nothing is saved here yet: the hub's setup_save comes with the build. A step whose values
+// are saved elsewhere already (Google: Administration › Google) sends the admin there instead of showing fields.
 
 import { Check } from "lucide-react";
 import { useState } from "react";
@@ -151,6 +152,17 @@ function StepPane({ step, steps, hub }: { step: SetupStep; steps: ReadonlyArray<
       ) : null}
 
       <GuideParts parts={step.parts} />
+
+      {step.savedIn === undefined ? null : (
+        <Part n={step.parts.length + 1} title="Save it in fleetd">
+          <Text as="p" size="sm" tone="quiet">
+            {step.savedIn.note}
+          </Text>
+          <span>
+            <Button onClick={() => (window.location.hash = step.savedIn?.hash ?? "#/")}>{step.savedIn.label}</Button>
+          </span>
+        </Part>
+      )}
 
       {step.fields.length === 0 ? null : (
         <Part n={step.parts.length + 1} title="Paste what you get back">

@@ -113,15 +113,20 @@ the client. The hub needs no public address: one machine reads the subscription,
    name it `fleetd-gmail-reader`, and grant it nothing at the project. On the subscription, open **Permissions** and
    give it the **Pub/Sub Subscriber** role. Then, on the service account, open **Keys › Add key › Create new key**,
    choose **JSON**, and keep the file it downloads.
-6. **Save it in fleetd** with `google_pubsub_set`: the topic, the subscription, the machine that reads it, and the JSON
-   key sealed to that machine. Pick a machine that is usually online, such as the hub's own, on a fleetd new enough
-   for real-time mail. The machine checks the key and keeps it in its home, and the hub keeps only a fingerprint.
-   Delete the downloaded file afterwards.
+6. **Save it in fleetd**, in the app's **Administration › Google**, under **Real-time mail › Set up real-time mail**.
+   The page shows these steps with the names to copy, and a Cloud Shell block that does steps 1 to 5 at once. Fill in
+   the topic and the subscription (both prefilled with these names, in a project named for your hub), pick the machine
+   that reads it under **Read on**, paste the JSON key and press **Save**. Pick a machine that is usually online, such
+   as the hub's own, on a fleetd new enough for real-time mail. The app checks it's a service account's key and seals it
+   on your computer to that machine's key. The machine keeps it in its home, and the hub keeps only a fingerprint. The
+   key is never shown again. Delete the downloaded file afterwards.
 
+Real-time mail then shows the subscription, the machine reading it and how new mail arrives: **By push** within
+seconds, or **By checking about every minute for now** with why, while the machine is offline, its key is refused or
+the subscription can't be read. Navis still hear of new mail each minute meanwhile, and it goes back to push by itself.
 When the machine changes, the new one takes the key before the old one forgets it, so a refused key changes nothing.
-`google_get` then says `mailMode: push`. While the machine is offline, its key is refused, or the subscription can't be
-read, it says `polling` and `mailProblem` says why, and Navis still hear of new mail each minute. `google_pubsub_set`
-with no `pubsub` turns it off, and the machine forgets the key.
+**Turn off** asks first, then the machine forgets the key. Under the hood these are `google_pubsub_set` and
+`google_get`'s `mailMode` and `mailProblem`.
 
 ## Connect a Google account {#connect}
 
@@ -174,7 +179,10 @@ admin saves the right secret works again.
 
 ## New mail wakes a Navi {#new-mail}
 
-A person chooses, per Navi, when new mail wakes it, with `google_mail_set`:
+A person chooses, per Navi, when new mail wakes it: on the Navi's **Integrations › Google**, once connected, **New mail
+wakes this Navi** is **Off**, **All new mail** or **Matching a search**. Off and All save at once; a search saves with
+its **Save** button. While it's on, the row says how mail arrives: by push, or by checking about every minute and why.
+Under the hood this is `google_mail_set`:
 
 | Rule | Wakes the Navi on |
 |---|---|

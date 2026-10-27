@@ -119,3 +119,43 @@ export const notHolding = (out: GoogleGetOutput, boxes: ReadonlyArray<{ machineI
   const held = new Set((out.client?.sealedOn ?? []).map((s) => s.machineId));
   return boxes.map((b) => b.machineId).filter((m) => !held.has(m));
 };
+
+/** Why a Pub/Sub topic's full name won't do, or null (google.rs PubsubTopic). */
+export const topicProblem = (t: string): string | null =>
+  /^projects\/[a-z][a-z0-9-]{4,28}[a-z0-9]\/topics\/[A-Za-z][A-Za-z0-9._~+%-]{2,254}$/u.test(t.trim()) ? null : "A topic's full name is projects/<project>/topics/<topic>.";
+
+/** Why a Pub/Sub subscription's full name won't do, or null (google.rs PubsubSubscription). */
+export const subscriptionProblem = (t: string): string | null =>
+  /^projects\/[a-z][a-z0-9-]{4,28}[a-z0-9]\/subscriptions\/[A-Za-z][A-Za-z0-9._~+%-]{2,254}$/u.test(t.trim())
+    ? null
+    : "A subscription's full name is projects/<project>/subscriptions/<subscription>.";
+
+/** Why a pasted service account key won't do, or null; main checks it again before sealing. */
+export const keyProblem = (key: string): string | null => {
+  const t = key.trim();
+  if (t === "") return "Paste the service account's JSON key.";
+  try {
+    const k = JSON.parse(t) as unknown;
+    if (typeof k === "object" && k !== null && (k as Record<string, unknown>)["type"] === "service_account") return null;
+  } catch {
+    return "That isn't JSON: paste the whole downloaded file.";
+  }
+  return "That isn't a service account's key: its JSON has \"type\": \"service_account\".";
+};
+
+/** How the hub hears of new mail now, in a line, from google_get. */
+export const mailModeLine = (info: Pick<GoogleGetOutput, "client" | "mailMode" | "mailProblem">): { tone: "success" | "quiet" | "warning"; text: string } => {
+  if (info.mailMode === "push") return { tone: "success", text: "By push: new mail reaches it within seconds." };
+  if (info.client?.pubsub === undefined) return { tone: "quiet", text: "By checking about every minute: real-time mail isn't set up on this hub." };
+  const why = (info.mailProblem ?? "").trim().replace(/\.$/u, "");
+  return { tone: "warning", text: `By checking about every minute for now${why === "" ? "" : `: ${why}`}. Real-time mail comes back by itself once it reads again.` };
+};
+
+/** Why a Gmail search for a mail wake won't do, or null (MailWake.query: a line of 1 to 500). */
+export const queryProblem = (q: string): string | null => {
+  const t = q.trim();
+  if (t === "") return "Type a Gmail search, such as from:boss@example.com OR is:important.";
+  if (/[\r\n]/u.test(t)) return "Keep the search on one line.";
+  if (t.length > 500) return "Keep the search under 500 characters.";
+  return null;
+};

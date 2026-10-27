@@ -2,17 +2,18 @@
 // granted. Connect hands over to main (window.fleetd.google.connect), which opens Google's consent page in the
 // browser and calls google_connect with the code it catches, so the page never holds a code or a token. Disconnect is
 // google_disconnect, which revokes at Google unless another Navi uses the account. Without the hub's OAuth client, an
-// admin is sent to Administration › Google and anyone else told to ask one.
+// admin is sent to Administration › Google and anyone else told to ask one. Once connected, the person picks when new
+// mail wakes the Navi (MailWakeControl, google_mail_set).
 import { useState, type ReactNode } from "react";
-import type { GoogleConnectOutput, GoogleDisconnectOutput, GoogleGetOutput } from "../../../shared/contracts";
+import type { GoogleConnectOutput, GoogleDisconnectOutput, GoogleGetOutput, MailWake, MailWakeRule } from "../../../shared/contracts";
 import { lacksTool } from "../../src/data/errors";
 import { CallError } from "../../src/data/queries";
 import { useDataLayer, useToolQuery } from "../../src/data/react";
-import { Button, Dialog, Text, Truncate } from "../../ui";
+import { Button, Dialog, Field, Input, Segmented, Text, Truncate } from "../../ui";
 import { useAdministers } from "../admin/role";
 import { toHash } from "../shell/routes";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
-import { dayWords, googleView, lapsedLine, listWords, scopeFor, scopeName, type GoogleView } from "./model";
+import { dayWords, googleView, lapsedLine, listWords, mailModeLine, queryProblem, scopeFor, scopeName, type GoogleView } from "./model";
 import s from "./google.module.css";
 import settings from "../settings/settings.module.css";
 
@@ -57,7 +58,10 @@ export function GoogleRow({ projectRef, machine }: { projectRef: Ref; machine: s
           </Text>
         </div>
       ) : view === undefined ? null : (
-        <Under view={view} admin={admin} machine={machine} />
+        <>
+          <Under view={view} admin={admin} machine={machine} />
+          {view.kind === "connected" && read.data !== undefined ? <MailWakeControl projectRef={projectRef} info={read.data} wake={view.account.mail} /> : null}
+        </>
       )}
       {note === null ? null : (
         <div role="status">
@@ -370,5 +374,97 @@ function Disconnect(props: { projectRef: Ref; email: string; machine: string; on
         </div>
       )}
     </Dialog>
+  );
+}
+
+const RULES: ReadonlyArray<{ value: MailWakeRule; label: string }> = [
+  { value: "off", label: "Off" },
+  { value: "all", label: "All new mail" },
+  { value: "query", label: "Matching a search" },
+];
+
+/**
+ * When new mail wakes the Navi (google_mail_set): off, the default; every new message; or mail matching a Gmail
+ * search. Off and All save at once; a search saves with its button. While on, how mail arrives: push, or checking each
+ * minute and why (google_get's mailMode and mailProblem).
+ */
+function MailWakeControl({ projectRef, info, wake }: { projectRef: Ref; info: GoogleGetOutput; wake: MailWake | undefined }) {
+  const hubCall = useHubCall();
+  const refetch = useRefetch();
+  const saved: MailWakeRule = wake?.rule ?? "off";
+  const [rule, setRule] = useState<MailWakeRule>(saved);
+  const [query, setQuery] = useState(wake?.query ?? "");
+  const [busy, setBusy] = useState(false);
+  const [said, setSaid] = useState<{ ok: boolean; text: string } | null>(null);
+  const save = (next: MailWakeRule, q?: string) => {
+    setBusy(true);
+    setSaid(null);
+    hubCall("google_mail_set", { project: projectRef, rule: next, ...(q === undefined ? {} : { query: q }) }).then(
+      (out) => {
+        setBusy(false);
+        setSaid({ ok: true, text: out.next ?? "Saved." });
+        refetch(["google_get"]);
+      },
+      (e: unknown) => {
+        setBusy(false);
+        setRule(saved);
+        setSaid({ ok: false, text: errorText(e) });
+      },
+    );
+  };
+  const pick = (next: MailWakeRule) => {
+    setRule(next);
+    setSaid(null);
+    if (next !== "query" && next !== saved) save(next);
+  };
+  const issue = rule === "query" && query.trim() !== "" ? queryProblem(query) : null;
+  const changed = rule === "query" && (saved !== "query" || query.trim() !== (wake?.query ?? ""));
+  const mode = mailModeLine(info);
+  return (
+    <div className={s.mail} role="group" aria-label="New mail">
+      <div className={s.mailHead}>
+        <Text size="xs" tone="quiet">
+          New mail wakes this Navi
+        </Text>
+        <Segmented label="New mail wakes this Navi" options={RULES} value={rule} disabled={busy} onChange={pick} />
+      </div>
+      {rule !== "query" ? null : (
+        <div className={s.mailQuery}>
+          <Field label="Gmail search" error={issue}>
+            <Input
+              mono
+              aria-label="Gmail search"
+              value={query}
+              disabled={busy}
+              spellCheck={false}
+              placeholder="from:boss@example.com OR is:important"
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && changed && queryProblem(query) === null) save("query", query.trim());
+              }}
+            />
+          </Field>
+          {changed ? (
+            <span>
+              <Button size="sm" disabled={busy || queryProblem(query) !== null} onClick={() => save("query", query.trim())}>
+                {busy ? "Saving…" : "Save"}
+              </Button>
+            </span>
+          ) : null}
+        </div>
+      )}
+      {saved === "off" ? null : (
+        <Text size="xs" tone={mode.tone}>
+          {mode.text}
+        </Text>
+      )}
+      {said === null ? null : (
+        <div role={said.ok ? "status" : "alert"}>
+          <Text size="xs" tone={said.ok ? "quiet" : "danger"}>
+            {said.text}
+          </Text>
+        </div>
+      )}
+    </div>
   );
 }

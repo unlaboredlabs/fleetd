@@ -237,22 +237,31 @@ const GOOGLE_SCOPES = [
 const GOOGLE_CLIENT = "418559210337-q8fj2v0c6m1k3s5t7u9w.apps.googleusercontent.com";
 const SAM_GOOGLE = "sam@example.com";
 
-const googleClient = (f: Fixture, machines: ReadonlyArray<string>): JsonObject => ({
+const googleClient = (f: Fixture, machines: ReadonlyArray<string>, realtime = false): JsonObject => ({
   clientId: GOOGLE_CLIENT,
   sealedOn: machines.map((machineId) => ({ machineId, fingerprint: "9c41e0b2" })),
   updatedAt: at(f.now, -2 * 86_400_000),
+  ...(realtime
+    ? { pubsub: { topic: "projects/fleetd-devbox/topics/fleetd-gmail", subscription: "projects/fleetd-devbox/subscriptions/fleetd-gmail-hub", machineId: "devbox", fingerprint: "71d03a5e" } }
+    : {}),
 });
 
-const googleAccount = (f: Fixture, ref: Ref, scopes: ReadonlyArray<string>, lapsed?: string): JsonObject => ({
+const googleAccount = (f: Fixture, ref: Ref, scopes: ReadonlyArray<string>, lapsed?: string, mail?: JsonObject): JsonObject => ({
   projectRef: { ...ref },
   email: SAM_GOOGLE,
   // Google names `email` as userinfo.email in what it grants.
   scopes: scopes.map((x) => (x === "email" ? "https://www.googleapis.com/auth/userinfo.email" : x)),
   connectedAt: at(f.now, -86_400_000),
   ...(lapsed === undefined ? {} : { lapsed }),
+  ...(mail === undefined ? {} : { mail }),
 });
 
-const googleNavi = (from: Fixture, name: string, note: string, opts: { admin: boolean; client?: JsonObject; ada?: JsonObject; home?: JsonObject }): Fixture => {
+const googleNavi = (
+  from: Fixture,
+  name: string,
+  note: string,
+  opts: { admin: boolean; client?: JsonObject; ada?: JsonObject; home?: JsonObject; mailMode?: "push" | "polling"; mailProblem?: string },
+): Fixture => {
   const f = Fixture.from(from, name, note);
   adaSettings(f);
   if (f.snapshot !== undefined) f.snapshot["machines"] = arr(f.snapshot["machines"]).map((m) => (isObject(m) ? { ...m, boxPubKey: BOX } : m));
@@ -263,8 +272,16 @@ const googleNavi = (from: Fixture, name: string, note: string, opts: { admin: bo
     ...(account === undefined ? {} : { account }),
     scopes: GOOGLE_SCOPES,
     redirect: "http://127.0.0.1",
-    mailMode: "polling",
+    mailMode: opts.mailMode ?? "polling",
+    ...(opts.mailProblem === undefined ? {} : { mailProblem: opts.mailProblem }),
   });
+  // Answered only where Ada has an account to set it on.
+  for (const rule of opts.ada === undefined ? [] : ["off", "all", "query"]) {
+    f.answer("google_mail_set", { project: { ...ADA }, rule }, {
+      account: { ...(opts.ada ?? {}), mail: { rule } },
+      next: rule === "off" ? "New mail no longer wakes the Navi." : rule === "all" ? "Each new message in the inbox wakes the Navi." : "New mail matching the query wakes the Navi.",
+    });
+  }
   f.answer("google_get", { project: { ...HOME } }, get(opts.home));
   f.answer("google_get", { project: { ...ADA } }, get(opts.ada));
   for (const input of [{ navi: { ...ADA } }, undefined]) f.answer("hub_links_get", input, { boxPubKey: BOX, links: [], issued: [] });
@@ -278,11 +295,23 @@ const google = (from: Fixture): Fixture[] => {
     googleNavi(from, "navi-google-none", "Google on a hub with no OAuth client yet, seen by a member: ask an admin.", { admin: false }),
     googleNavi(from, "navi-google-setup", "Google on a hub with no OAuth client yet, seen by its owner: a link to Administration › Google.", { admin: true }),
     googleNavi(from, "navi-google-ready", "The hub has a Google client; Ada isn't connected yet.", { admin: false, client }),
-    googleNavi(from, "navi-google-connected", "Ada is connected to sam@example.com with every scope; Home without Drive.", {
+    googleNavi(from, "navi-google-connected", "Ada is connected to sam@example.com with every scope, and all new mail wakes it, by push; Home without Drive.", {
+      admin: false,
+      client: googleClient(from, ["devbox", "buildbox"], true),
+      mailMode: "push",
+      ada: googleAccount(from, ADA, GOOGLE_SCOPES, undefined, { rule: "all", watchExpiresMs: Date.parse(from.now) + 6 * 86_400_000 }),
+      home: googleAccount(from, HOME, GOOGLE_SCOPES.filter((x) => !x.endsWith("/drive"))),
+    }),
+    googleNavi(from, "navi-google-mail-query", "New mail from Ana or marked important wakes Ada; the hub polls, because the subscription can't be read.", {
+      admin: false,
+      client: googleClient(from, ["devbox", "buildbox"], true),
+      mailProblem: "Google refused the service account's key: give it the Pub/Sub Subscriber role on the subscription",
+      ada: googleAccount(from, ADA, GOOGLE_SCOPES, undefined, { rule: "query", query: "from:ana@example.com OR is:important" }),
+    }),
+    googleNavi(from, "navi-google-mail-off", "Ada is connected and its mail doesn't wake it, on a hub without real-time mail.", {
       admin: false,
       client,
       ada: googleAccount(from, ADA, GOOGLE_SCOPES),
-      home: googleAccount(from, HOME, GOOGLE_SCOPES.filter((x) => !x.endsWith("/drive"))),
     }),
     googleNavi(from, "navi-google-lapsed", "Google stopped taking Ada's connection: Reconnect.", {
       admin: false,

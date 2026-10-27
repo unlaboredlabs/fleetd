@@ -252,9 +252,13 @@ export const fixtures = [
   "navi-google-connected",
   "navi-google-lapsed",
   "navi-google-not-held",
+  "navi-google-mail-query",
+  "navi-google-mail-off",
   "admin-google-none",
   "admin-google-set",
   "admin-google-refused",
+  "admin-google-push",
+  "admin-google-polling",
   // fleetd.sh's showcase: one request played from send to merge, recorded by showcase.spec.ts (fixtures/showcase).
   "showcase-order",
 ] as const;
@@ -2029,7 +2033,18 @@ export const screens: readonly Screen[] = [
       await page.getByText(/^Installed pr-review, pinned/u).waitFor();
     },
   },
-  { id: "admin.google", route: "#/admin/google", fixtures: ["admin-google-none", "admin-google-set", "admin-google-refused"] },
+  { id: "admin.google", route: "#/admin/google", fixtures: ["admin-google-none", "admin-google-set", "admin-google-refused", "admin-google-push", "admin-google-polling"] },
+  {
+    id: "admin.google",
+    route: "#/admin/google",
+    fixtures: ["admin-google-set", "admin-google-push"],
+    variant: "real-time-mail",
+    open: async (page) => {
+      const region = page.getByRole("region", { name: "Real-time mail" });
+      await region.getByText(/^(Set up|Change) real-time mail$/u).click();
+      await region.getByRole("button", { name: "Save", exact: true }).scrollIntoViewIfNeeded();
+    },
+  },
   {
     id: "admin.google",
     route: "#/admin/google",
@@ -2162,7 +2177,16 @@ export const screens: readonly Screen[] = [
   {
     id: "settings.projects",
     route: `#/settings/projects?for=${ADA.machineId}/${ADA.projectId}`,
-    fixtures: ["navi-google-none", "navi-google-setup", "navi-google-ready", "navi-google-connected", "navi-google-lapsed", "navi-google-not-held"],
+    fixtures: [
+      "navi-google-none",
+      "navi-google-setup",
+      "navi-google-ready",
+      "navi-google-connected",
+      "navi-google-lapsed",
+      "navi-google-not-held",
+      "navi-google-mail-query",
+      "navi-google-mail-off",
+    ],
     variant: "google",
     open: (page) => page.getByRole("listitem", { name: "Google" }).scrollIntoViewIfNeeded(),
   },

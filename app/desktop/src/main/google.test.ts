@@ -125,6 +125,48 @@ describe("connecting a Navi to Google from the app", () => {
     expect(sent.some((x) => x.tool === "google_connect")).toBe(false);
   });
 
+  it("ends a connect cancelled, or replaced, while it is still starting: no browser opens for it", async () => {
+    const sent: Sent[] = [];
+    let opened = 0;
+    const open = () => {
+      opened += 1;
+      return Promise.resolve();
+    };
+    // Cancel while google_get is on its way.
+    const slow = ((tool: string, input: unknown) => {
+      cancelGoogle();
+      return hub(sent)(tool as "google_get", input as never);
+    }) as Parameters<typeof connectGoogle>[1];
+    const out = await connectGoogle({ project }, slow, open);
+    expect(out.ok ? "" : out.error.code).toBe("cancelled");
+    expect(opened).toBe(0);
+    // A second connect while the first starts ends the first.
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((r) => (release = r));
+    const waiting = ((tool: string, input: unknown) => held.then(() => hub(sent)(tool as "google_get", input as never))) as Parameters<typeof connectGoogle>[1];
+    const first = connectGoogle({ project }, waiting, open);
+    const second = connectGoogle({ project }, hub(sent), () => {
+      setTimeout(cancelGoogle, 10);
+      return Promise.resolve();
+    });
+    release();
+    const a = await first;
+    expect(a.ok ? "" : a.error.code).toBe("cancelled");
+    expect((await second).ok).toBe(false);
+    expect(opened).toBe(0);
+  });
+
+  it("says at once when the browser can't open Google's page, rather than waiting for it", async () => {
+    const started = Date.now();
+    const out = await connectGoogle({ project }, hub([]), () => Promise.reject(new Error("Only http and https links open in the browser.")));
+    expect(Date.now() - started).toBeLessThan(2000);
+    expect(out.ok).toBe(false);
+    if (!out.ok) {
+      expect(out.error.message).toContain("The browser didn't open Google's page: Only http and https links open in the browser.");
+      expect(out.error.fix).toBeTruthy();
+    }
+  });
+
   it("escapes what it shows on the landing page", () => {
     expect(landing("Not connected", "<script>x</script>")).not.toContain("<script>");
   });

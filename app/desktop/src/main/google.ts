@@ -4,7 +4,7 @@
 // page, and the Navi's machine redeems them with the client secret it holds. One connect at a time: a new one, or
 // Cancel, ends the one waiting.
 import { createHash, randomBytes } from "node:crypto";
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { GoogleGetOutput, ToolInput } from "../shared/contracts";
 import type { CallOutcome, HubError } from "../shared/hub";
@@ -98,49 +98,69 @@ export const connectGoogle = async (
   waitMs: number = WAIT_MS,
 ): Promise<CallOutcome> => {
   cancelGoogle();
-  const got = await call("google_get", { project: request.project });
-  if (!got.ok) return got;
-  const info = got.output as GoogleGetOutput;
-  if (info.client === undefined) {
-    return failed("invalid", "The hub has no Google OAuth client yet.", "The hub's admin sets one up in Administration › Google.");
-  }
-  const { verifier, challenge } = pkce();
-  const state = base64url(randomBytes(16));
-  // The one request that counts, and the response it waits on until the hub has answered.
-  let answered: { res: ServerResponse } | undefined;
+  // Registered before the first wait, so a Cancel or a new connect while this one starts ends it too.
+  let ended: Answer | undefined;
   let end: (answer: Answer) => void = () => undefined;
   const answer = new Promise<Answer>((resolve) => {
-    end = resolve;
+    end = (a) => {
+      ended ??= a;
+      resolve(a);
+    };
   });
-  const server = createServer((req: IncomingMessage, res: ServerResponse) => {
-    const url = new URL(req.url ?? "/", "http://127.0.0.1");
-    if (req.method !== "GET" || url.pathname !== "/" || answered !== undefined) {
-      send(res, 404, landing("Nothing here", "This address is fleetd's, for Google's answer only."));
-      return;
-    }
-    if (url.searchParams.get("state") !== state) {
-      send(res, 400, landing("This isn't fleetd's sign-in", "Go back to fleetd and press Connect again."));
-      return;
-    }
-    answered = { res };
-    const code = url.searchParams.get("code");
-    end(code === null ? { kind: "refused", error: url.searchParams.get("error") ?? "no_code" } : { kind: "code", code });
-  });
-  const listening = await new Promise<{ ok: true; port: number } | { ok: false }>((resolve) => {
-    server.once("error", () => resolve({ ok: false }));
-    server.listen(0, "127.0.0.1", () => resolve({ ok: true, port: (server.address() as AddressInfo).port }));
-  });
-  if (!listening.ok) return failed("failed", "fleetd couldn't listen on this computer for Google's answer.", "Try again; a firewall that blocks 127.0.0.1 stops it.");
-  const redirect = `http://127.0.0.1:${String(listening.port)}`;
-  const timer = setTimeout(() => end({ kind: "timeout" }), waitMs);
   const self: Pending = { end: (a) => end(a) };
   pending = self;
-  const finish = (status: number, title: string, line: string): void => {
-    if (answered !== undefined) send(answered.res, status, landing(title, line));
-  };
+  const stopped = (): CallOutcome | undefined =>
+    ended === undefined ? undefined : ended.kind === "cancelled" ? failed("cancelled", "Connecting was cancelled.") : undefined;
+  let server: Server | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
+    const got = await call("google_get", { project: request.project });
+    if (!got.ok) return got;
+    const early = stopped();
+    if (early !== undefined) return early;
+    const info = got.output as GoogleGetOutput;
+    if (info.client === undefined) {
+      return failed("invalid", "The hub has no Google OAuth client yet.", "The hub's admin sets one up in Administration › Google.");
+    }
+    const { verifier, challenge } = pkce();
+    const state = base64url(randomBytes(16));
+    // The one request that counts, and the response it waits on until the hub has answered.
+    let answered: { res: ServerResponse } | undefined;
+    const listener = createServer((req: IncomingMessage, res: ServerResponse) => {
+      const url = new URL(req.url ?? "/", "http://127.0.0.1");
+      if (req.method !== "GET" || url.pathname !== "/" || answered !== undefined || ended !== undefined) {
+        send(res, 404, landing("Nothing here", "This address is fleetd's, for Google's answer only."));
+        return;
+      }
+      if (url.searchParams.get("state") !== state) {
+        send(res, 400, landing("This isn't fleetd's sign-in", "Go back to fleetd and press Connect again."));
+        return;
+      }
+      answered = { res };
+      const code = url.searchParams.get("code");
+      end(code === null ? { kind: "refused", error: url.searchParams.get("error") ?? "no_code" } : { kind: "code", code });
+    });
+    server = listener;
+    const listening = await new Promise<{ ok: true; port: number } | { ok: false }>((resolve) => {
+      listener.once("error", () => resolve({ ok: false }));
+      listener.listen(0, "127.0.0.1", () => resolve({ ok: true, port: (listener.address() as AddressInfo).port }));
+    });
+    if (!listening.ok) return failed("failed", "fleetd couldn't listen on this computer for Google's answer.", "Try again; a firewall that blocks 127.0.0.1 stops it.");
+    const late = stopped();
+    if (late !== undefined) return late;
+    const redirect = `http://127.0.0.1:${String(listening.port)}`;
+    const finish = (status: number, title: string, line: string): void => {
+      if (answered !== undefined) send(answered.res, status, landing(title, line));
+    };
     const hint = info.account?.email;
-    await open(consentUrl({ clientId: info.client.clientId, scopes: info.scopes, redirect, challenge, state, ...(hint === undefined ? {} : { hint }) }));
+    const url = consentUrl({ clientId: info.client.clientId, scopes: info.scopes, redirect, challenge, state, ...(hint === undefined ? {} : { hint }) });
+    // A browser that doesn't open is said at once, not after the wait.
+    const opened = await open(url).then(
+      () => null,
+      (e: unknown) => (e instanceof Error ? e.message : String(e)),
+    );
+    if (opened !== null) return failed("failed", `The browser didn't open Google's page: ${opened}`, "Check that a default browser is set, then connect again.");
+    timer = setTimeout(() => end({ kind: "timeout" }), waitMs);
     const a = await answer;
     if (a.kind === "cancelled") return failed("cancelled", "Connecting was cancelled.");
     if (a.kind === "timeout") return failed("timeout", "Google didn't answer in time.", "Connect again, and finish on Google's page within 10 minutes.");
@@ -156,7 +176,7 @@ export const connectGoogle = async (
   } finally {
     clearTimeout(timer);
     if (pending === self) pending = undefined;
-    server.close();
-    server.closeIdleConnections();
+    server?.close();
+    server?.closeIdleConnections();
   }
 };
