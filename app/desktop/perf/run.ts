@@ -171,7 +171,8 @@ const main = async () => {
     const rule = RULES[metric];
     const value = results[metric];
     const ok = withinBudget(metric, value);
-    const shown = metric === "keyP95Ms" ? value.toFixed(1) : value.toFixed(0);
+    // Frame rates to a tenth: 56.7 fps misses a budget of 57, and printed whole it would read 57 next to MISS.
+    const shown = metric === "keyP95Ms" || metric === "scrollFps" ? value.toFixed(1) : value.toFixed(0);
     const gate = rule.limit !== undefined ? `budget ${rule.higher ? "≥" : "<"} ${rule.limit} ${rule.unit}` : rule.regress !== undefined ? "CI regression" : "information";
     const verdict = ok === undefined ? "    " : ok ? "ok  " : "MISS";
     return { ok, line: `  ${rule.label.padEnd(19)} ${`${shown} ${rule.unit}`.padStart(8)}   ${gate.padEnd(17)} ${verdict}  ${detail[metric]}` };
