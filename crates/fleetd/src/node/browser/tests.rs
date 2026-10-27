@@ -1618,6 +1618,8 @@ async fn a_session_with_no_session_file_still_ends_on_the_hub() {
     )
     .await;
     let id = started["result"]["sessionId"].as_str().unwrap().to_owned();
+    // Live on the hub first, so what follows is its end and not a report still on its way.
+    live_on_hub(&rig.hub).await;
     let dir = super::upload::recordings_dir(rig.node_home.path()).join(&id);
     std::fs::remove_dir_all(&dir).unwrap();
     std::fs::write(&dir, b"not a folder").unwrap();
