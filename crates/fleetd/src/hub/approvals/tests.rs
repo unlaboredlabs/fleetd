@@ -208,6 +208,7 @@ fn person() -> Caller<'static> {
     Caller {
         human: true,
         name: "desk",
+        person: None,
         allows_operate: ANYWHERE,
     }
 }
@@ -216,6 +217,7 @@ fn agent() -> Caller<'static> {
     Caller {
         human: false,
         name: "lead-key",
+        person: None,
         allows_operate: ANYWHERE,
     }
 }
@@ -776,4 +778,34 @@ async fn an_approved_preview_setting_is_saved_and_a_denied_one_never_is() {
         (failed.state, failed.evidence.as_ref().map(|e| e.as_str())),
         (RequestState::Failed, Some("not saved: the project is gone"))
     );
+}
+
+/// Teams: an approval and a secret record the person who answered, next to their device.
+#[tokio::test]
+async fn an_approval_and_a_secret_record_the_person_who_answered() {
+    let alice = fleetd_contracts::people::PersonRef {
+        person_id: fleetd_contracts::people::PersonId::unchecked("p_alice234"),
+        name: fleetd_contracts::people::PersonName::unchecked("Alice"),
+    };
+    let fake = Arc::new(Fake::default());
+    let a = approvals(&fake);
+    let alices = Caller {
+        person: Some(&alice),
+        ..person()
+    };
+    a.gated_run(&p1(), migration()).await.unwrap();
+    let approved = a.answer(&alices, "Q1", true, None).await.unwrap();
+    assert_eq!(approved.answered_by.as_deref(), Some("human:desk"));
+    assert_eq!(approved.answered_by_person.as_ref(), Some(&alice));
+
+    let call: fleetd_contracts::lead_calls::RequestSecretCall = serde_json::from_value(json!({
+        "key": "stripe.test_key", "sink": "env:lab-a:/srv/app/.env", "text": "The Stripe test key",
+    }))
+    .unwrap();
+    let open = a.request_secret(&p1(), call).await.unwrap();
+    a.submit_secret(&alices, open.request_id.as_str(), "sealed-bytes")
+        .await
+        .unwrap();
+    let saved = fake.request(open.request_id.as_str());
+    assert_eq!(saved.answered_by_person.as_ref(), Some(&alice));
 }

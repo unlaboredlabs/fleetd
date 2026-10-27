@@ -153,6 +153,8 @@ fn waiting_reason(e: &crate::hub::leads::LeadError) -> String {
 struct Writer {
     author: ChatAuthor,
     by: String,
+    /// A human message's person.
+    person: Option<fleetd_contracts::people::PersonRef>,
     client: Option<ChatClient>,
 }
 
@@ -195,12 +197,14 @@ fn writer(hub: &Hub, caller: &Caller, input: &ChatSendInput) -> Result<Writer, T
         Writer {
             author: ChatAuthor::Human,
             by: caller.name.to_string(),
+            person: caller.person.clone(),
             client: Some(input.client.unwrap_or(ChatClient::App)),
         }
     } else {
         Writer {
             author: ChatAuthor::Agent,
             by: caller.name.to_string(),
+            person: None,
             client: None,
         }
     })
@@ -272,6 +276,7 @@ pub async fn send(
                             .unwrap_or_default(),
                         request: Some(request),
                         by: Some(writer.by),
+                        person: writer.person,
                         client: writer.client,
                         reply_to,
                         delivery: Some(ChatDelivery::Queued),
@@ -371,6 +376,7 @@ async fn go(
                 &message,
                 replied.as_ref(),
                 &files,
+                &crate::hub::people::writer(&hub.db, message.person.as_ref()),
             )
         }),
         false => None,
@@ -431,12 +437,13 @@ fn sent(hub: &Hub, message: &mut fleetd_contracts::chat::ChatMessage, delivery: 
 /// A chat message as the lead reads it: the writer's own words in the `chat.human` or `chat.agent` prompt. The
 /// human's are the human's wherever they wrote them; an agent's say plainly that they are not. A reply to one of the
 /// lead's bubbles (`replied`, the message `reply_to` names) opens with that bubble whole, in place of its one-line
-/// quote, and when the lead wrote it.
+/// quote, and when the lead wrote it. `writer` names a human message's writer ([`crate::hub::people::writer`]).
 pub fn for_lead(
     set: &PromptSet,
     message: &fleetd_contracts::chat::ChatMessage,
     replied: Option<&fleetd_contracts::chat::ChatMessage>,
     files: &str,
+    writer: &str,
 ) -> String {
     let replying = message
         .reply_to
@@ -456,7 +463,10 @@ pub fn for_lead(
                 ("files", &files),
             ],
         ),
-        _ => set.render("chat.human", &[("text", &text), ("files", &files)]),
+        _ => set.render(
+            "chat.human",
+            &[("writer", &writer), ("text", &text), ("files", &files)],
+        ),
     }
 }
 
@@ -556,7 +566,8 @@ async fn deliver(
         .prompts()
         .for_thread(&thread.machine_id, thread.thread_id.as_str());
     let replied = replied(hub, message);
-    let text = for_lead(&set, message, replied.as_ref(), &files);
+    let writer = crate::hub::people::writer(&hub.db, message.person.as_ref());
+    let text = for_lead(&set, message, replied.as_ref(), &files, &writer);
     let crid = format!("chat:{}", message.message_id);
     let opts = SendOpts {
         mode: if now { SendMode::Now } else { SendMode::Plain },

@@ -49,9 +49,9 @@ fn answer(hub: &Hub, caller: &LeadCaller, call: LeadCall) -> Result<LeadCallResu
     };
     let r = &caller.project_ref;
     let now = now_ms(hub.clock.as_ref());
-    let (list, changed_now) = super::apply(&hub.db, r, &call, now).map_err(failed)??;
+    let (list, changed_now) = super::apply(&hub.db, r, &call, now, None).map_err(failed)??;
     let next = if changed_now {
-        changed(hub, r, &list, &caller.by, now).map_err(failed)?;
+        changed(hub, r, &list, &caller.by, None, now).map_err(failed)?;
         "The human sees it in the panel's Checklist tab."
     } else {
         "No change: the checklist was already so."
@@ -62,12 +62,13 @@ fn answer(hub: &Hub, caller: &LeadCaller, call: LeadCall) -> Result<LeadCallResu
     }))
 }
 
-/// `checklist.changed`, which tells the app to read the list again.
-pub(super) fn changed(
+/// `checklist.changed`, which tells the app to read the list again; `person` made the change (None: the lead).
+pub fn changed(
     hub: &Hub,
     r: &ProjectRef,
     list: &Checklist,
     by: &str,
+    person: Option<&fleetd_contracts::people::PersonRef>,
     now: i64,
 ) -> Result<(), StoreError> {
     let (done, total) = (list.done(), list.items.len());
@@ -76,7 +77,7 @@ pub(super) fn changed(
         done: Count::unchecked(done as i64),
         total: Count::unchecked(total as i64),
         by: by.to_owned(),
-        person: None,
+        person: person.cloned(),
     };
     hub.events.append(NewEvent {
         at: iso_ms(now).into(),

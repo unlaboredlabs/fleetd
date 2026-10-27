@@ -75,6 +75,7 @@ fn decide(hub: &Hub, project: &ProjectRef, key: &str, value: &str) -> String {
     let actor = Actor {
         source: DecisionSource::Lead,
         by: "lead:lab-a/p1".into(),
+        person: None,
     };
     let decision = hub.decisions.record(input, &actor).unwrap();
     decision.decision_id.to_string()

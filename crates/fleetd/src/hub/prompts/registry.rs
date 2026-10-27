@@ -116,7 +116,7 @@ pub const ENTRIES: &[Entry] = &[
         Lead,
         "Lead",
         "lead start and every fresh lead start, followed by the state block",
-        "project!=the project's title; projectRef!=<machineId>/<projectId>",
+        "project!=the project's title; projectRef!=<machineId>/<projectId>; people=nothing, or a sentence naming the hub's people when it has more than one",
         &[
             (
                 "never-write-code",
@@ -294,7 +294,7 @@ pub const ENTRIES: &[Entry] = &[
         Lead,
         "Chat: the human",
         "with each chat message the human sends the lead",
-        "text!=the human's words; files=the attached files' paths, or nothing",
+        "text!=the human's words; files=the attached files' paths, or nothing; writer=\"The human\", or the writer's name when the hub has more than one person",
         &[]
     ),
     entry!(

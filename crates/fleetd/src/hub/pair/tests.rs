@@ -60,7 +60,7 @@ fn a_code_redeems_once_in_any_spelling_and_returns_its_name() {
     );
     let typed = minted.code.to_lowercase().replace('-', "");
     assert_eq!(
-        codes.redeem(&typed).unwrap(),
+        codes.redeem(&typed).map(|r| (r.name, r.role)).unwrap(),
         (Some("laptop".to_owned()), Role::Operate)
     );
     assert!(matches!(
@@ -80,7 +80,10 @@ fn a_code_expires_after_fifteen_minutes() {
     let late = codes.create(None, DEFAULT_ROLE).unwrap();
     assert_eq!(late.expires_at, iso_ms(1_000_000 + CODE_TTL_MS));
     clock.advance(Duration::from_millis(CODE_TTL_MS as u64 - 1));
-    assert_eq!(codes.redeem(&early.code).unwrap(), (None, DEFAULT_ROLE));
+    assert_eq!(
+        codes.redeem(&early.code).map(|r| (r.name, r.role)).unwrap(),
+        (None, DEFAULT_ROLE)
+    );
     clock.advance(Duration::from_millis(1));
     assert!(matches!(
         codes.redeem(&late.code),
@@ -198,5 +201,8 @@ fn a_code_minted_before_codes_carried_a_role_still_grants_operate() {
         Ok(())
     })
     .unwrap();
-    assert_eq!(codes.redeem("0123-ABCD").unwrap(), (None, Role::Operate));
+    assert_eq!(
+        codes.redeem("0123-ABCD").map(|r| (r.name, r.role)).unwrap(),
+        (None, Role::Operate)
+    );
 }

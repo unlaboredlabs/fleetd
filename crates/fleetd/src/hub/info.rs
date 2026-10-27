@@ -11,7 +11,7 @@ use fleetd_contracts::train::{Change, ChangeState};
 
 use fleetd_contracts::auth::Role;
 
-use crate::hub::api::{Caller, Hub, Registry, ToolError, allows_everywhere, readable};
+use crate::hub::api::{Caller, Hub, Registry, ToolError, allows_everywhere, is_human, readable};
 use crate::hub::approvals::store::RequestFilter;
 use crate::hub::executor::shell_mapper::js_take;
 use crate::hub::tasks::TaskFilter;
@@ -54,6 +54,12 @@ async fn hub_info(
     } else {
         "Restarting now cuts each busy item off; it carries on by itself once the hub or node is back."
     };
+    let people = crate::hub::people::People::new(hub.db.clone(), hub.clock.clone());
+    let me = match caller.person.as_ref().filter(|_| is_human(&caller)) {
+        Some(person) => people.get(&person.person_id)?,
+        None => None,
+    };
+    let count = fleetd_contracts::prim::Count::unchecked(people.count()? as i64);
     Ok(HubInfoOutput {
         version: version.to_owned(),
         protocol: fleetd_contracts::hello::ProtocolVersion::CURRENT,
@@ -62,8 +68,8 @@ async fn hub_info(
         busy: List::new(busy)
             .map_err(|e| ToolError::new(fleetd_contracts::mcp::ErrorCode::Failed, e))?,
         admin: Some(allows_everywhere(&caller, Role::Admin)),
-        me: None,
-        people: None,
+        me,
+        people: Some(count),
         next: Some(next.to_owned()),
         truncated,
     })

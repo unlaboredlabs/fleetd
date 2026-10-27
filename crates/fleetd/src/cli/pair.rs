@@ -94,7 +94,7 @@ fn write_app_pair(file: &Path, hub: &str, code: &str, expires_at: &str) -> Resul
 }
 
 /// The hub's listen address and URL from `setup.json`, or the defaults when `fleetd init` never ran.
-fn local_hub_urls(home: &Path) -> Result<Vec<String>, String> {
+pub(crate) fn local_hub_urls(home: &Path) -> Result<Vec<String>, String> {
     let setup = super::setup::state::read_setup(home)?;
     // Without init's setup.json, the hub someone started by hand tells its address in its own command line.
     let running = setup.is_none().then(|| running_listen(home)).flatten();

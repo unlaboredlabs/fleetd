@@ -9,6 +9,7 @@ pub mod mcp_client;
 pub mod metrics;
 pub mod node;
 pub mod pair;
+pub mod people;
 pub mod project;
 pub mod prompts;
 pub mod setup;
@@ -63,7 +64,7 @@ commands:
   help       show this message
 {}
 setting up (on the hub machine):
-{}{}{}
+{}{}{}{}
 projects:
 {}
 running by hand:
@@ -72,6 +73,7 @@ running by hand:
         setup::SETUP_USAGE,
         setup::machine::machine_usage(),
         pair::PAIR_USAGE,
+        people::PEOPLE_USAGE,
         project::PROJECT_USAGE,
         node::HUB_START_USAGE,
         hub_key::HUB_KEY_USAGE,
@@ -107,6 +109,7 @@ pub fn help_for(argv: &[String]) -> Option<String> {
         "init" | "doctor" | "uninstall" => setup::SETUP_USAGE.to_owned(),
         "machine" => setup::machine::machine_usage(),
         "pair" => pair::PAIR_USAGE.to_owned(),
+        "invite" | "people" => people::PEOPLE_USAGE.to_owned(),
         "project" | "projects" => project::PROJECT_USAGE.to_owned(),
         "hub" => match rest.first().map(String::as_str) {
             Some("start" | "serve") => node::HUB_START_USAGE.to_owned(),
@@ -156,6 +159,8 @@ pub fn run(argv: &[String]) -> CliResult {
             stderr: String::new(),
         },
         Some("pair") => pair::pair_command(&argv[1..]),
+        Some("invite") => people::invite_command(&argv[1..]),
+        Some("people") => people::people_command(&argv[1..]),
         Some("prompts") => prompts::prompts_command(&argv[1..]),
         Some("instructions") => prompts::instructions_command(&argv[1..]),
         Some("hub") => match argv.get(1).map(String::as_str) {

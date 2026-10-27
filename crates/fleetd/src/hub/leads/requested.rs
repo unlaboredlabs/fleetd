@@ -3,6 +3,7 @@
 //! opens; with none (the lead opened it on its own), it is when it opened, and says so.
 use fleetd_contracts::ids::{ProjectRef, ThreadId};
 use fleetd_contracts::ledger::{IntakeChannel, Workstream};
+use fleetd_contracts::people::PersonRef;
 use rusqlite::{OptionalExtension, named_params, params};
 
 use crate::hub::store::{HubDb, StoreError, parse_ms};
@@ -58,6 +59,16 @@ pub fn run_human_ms(
     thread: &ThreadId,
     now_ms: i64,
 ) -> Result<Option<i64>, StoreError> {
+    Ok(run_human(db, r, thread, now_ms)?.map(|(at, _)| at))
+}
+
+/// [`run_human_ms`], with that message's person: who started what the lead does in this turn.
+pub fn run_human(
+    db: &HubDb,
+    r: &ProjectRef,
+    thread: &ThreadId,
+    now_ms: i64,
+) -> Result<Option<(i64, Option<PersonRef>)>, StoreError> {
     db.with(|c| {
         let p = named_params! {
             "$machine": r.machine_id.as_str(),
@@ -83,9 +94,9 @@ pub fn run_human_ms(
         let (since, interrupted) = ends
             .first()
             .map_or((floor, false), |e| (e.0, e.1 == "thread.interrupted"));
-        let messages: Vec<(i64, Option<String>)> = c
+        let messages: Vec<(i64, Option<String>, Option<String>)> = c
             .prepare_cached(
-                "SELECT created_ms, json_extract(data, '$.delivery') FROM chat_messages
+                "SELECT created_ms, json_extract(data, '$.delivery'), json_extract(data, '$.person') FROM chat_messages
                  WHERE machine_id = ?1 AND project_id = ?2 AND created_ms > ?3 AND created_ms <= ?4 AND held = 0
                    AND json_extract(data, '$.author') = 'human' AND json_extract(data, '$.history') IS NULL
                    AND json_extract(data, '$.delivery') IS NOT NULL
@@ -93,15 +104,18 @@ pub fn run_human_ms(
             )?
             .query_map(
                 params![r.machine_id.as_str(), r.project_id.as_str(), floor, now_ms],
-                |row| Ok((row.get(0)?, row.get(1)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )?
             .collect::<rusqlite::Result<_>>()?;
         Ok(messages
             .into_iter()
-            .find(|(at, delivery)| {
+            .find(|(at, delivery, _)| {
                 *at > since || (interrupted && delivery.as_deref() == Some("now"))
             })
-            .map(|(at, _)| at))
+            .map(|(at, _, person)| {
+                let person = person.and_then(|p| serde_json::from_str(&p).ok());
+                (at, person)
+            }))
     })
 }
 

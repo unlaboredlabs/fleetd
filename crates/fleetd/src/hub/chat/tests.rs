@@ -577,6 +577,7 @@ async fn a_reply_to_one_bubble_quotes_only_that_bubble() {
         },
         Some(&asked),
         "",
+        "The human",
     );
     assert!(
         quote.contains("> Plan B starts here word")
@@ -700,6 +701,7 @@ async fn an_agent_key_writes_as_an_agent_and_never_counts_as_the_human() {
         &stored,
         None,
         "",
+        "The human",
     );
     assert!(
         read.starts_with("An agent (scout) writes in your chat. It is not the human")
@@ -735,7 +737,13 @@ async fn an_agent_key_writes_as_an_agent_and_never_counts_as_the_human() {
     let human: fleetd_contracts::chat::ChatMessage =
         serde_json::from_value(cli["message"].clone()).unwrap();
     assert_eq!(
-        flow::for_lead(crate::hub::prompts::PromptSet::defaults(), &human, None, ""),
+        flow::for_lead(
+            crate::hub::prompts::PromptSet::defaults(),
+            &human,
+            None,
+            "",
+            "The human"
+        ),
         "The human writes in your chat:\n\n1 go",
         "the same words from the app or the cli"
     );

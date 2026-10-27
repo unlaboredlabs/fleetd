@@ -141,7 +141,7 @@ async fn a_navi_writes_to_another_lead_as_itself_never_as_the_person() {
     );
     // What the lead reads says it is an agent's, not the person's.
     let set = hub.db.prompts().current(Some(&project("storefront")));
-    let for_lead = crate::hub::chat::flow::for_lead(&set, said, None, "");
+    let for_lead = crate::hub::chat::flow::for_lead(&set, said, None, "", "The human");
     assert!(for_lead.contains("Navi Home"), "{for_lead}");
 }
 

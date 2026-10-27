@@ -19,10 +19,12 @@ pub fn render_lead_start(
     medium_allowed: bool,
     digest: &str,
     memory: &str,
+    people: &str,
 ) -> String {
     let start = set.render(
         "lead.start",
         &[
+            ("people", &people),
             ("project", &title),
             (
                 "projectRef",
@@ -92,13 +94,13 @@ mod tests {
             project_id: ProjectId::unchecked("p1"),
         };
         let set = PromptSet::defaults();
-        let text = render_lead_start(set, &r, "storefront", true, "DIGEST", "");
+        let text = render_lead_start(set, &r, "storefront", true, "DIGEST", "", "");
         let guide = text.find("## Task profiles").unwrap();
         assert!(
             text.find("spawn_agent").unwrap() < guide && guide < text.find("DIGEST").unwrap(),
             "{text}"
         );
-        let off = render_lead_start(set, &r, "storefront", false, "D", "");
+        let off = render_lead_start(set, &r, "storefront", false, "D", "", "");
         assert!(!off.contains("## Task profiles") && off.contains("spawn_agent"));
         // The lead keeps the human's checklist as it runs the work.
         assert!(off.contains("Keep the checklist current with `checklist`"));
