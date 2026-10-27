@@ -83,8 +83,9 @@
 <p>A conflict or red CI goes back to the agent that wrote the PR; for red CI, with the failing checks.</p>
 <p>GitHub runs no CI on a PR that conflicts with its base. So on every pass the train reads each waiting PR’s mergeable
 state, and once GitHub says it conflicts, the PR goes back to its agent as <code dir="auto">needs_rebase</code> (“conflicts with main, so
-GitHub runs no CI on it”) without waiting for its turn. A waiting PR whose commit has no check 15 minutes after the
-train first saw it is flagged to its agent and the lead, once per commit, and keeps its place.</p>
+GitHub runs no CI on it”) without waiting for its turn. A waiting PR whose commit has none of its base’s required
+checks (any check, when the base requires none) 15 minutes after the train first saw it is flagged to its agent and the
+lead, once per commit, and keeps its place.</p>
 <p>fleetd merges only on green CI. A ready PR on a repo with no CI (no GitHub Actions workflow, and no required check but
 <code dir="auto">fleetd/train</code>) waits, and its queue entry and <code dir="auto">fleetd doctor</code> say to add one. It goes on by itself once a workflow
 exists.</p>

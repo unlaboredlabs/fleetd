@@ -2023,7 +2023,8 @@ impl Train {
     }
 
     /// A Change in line whose head has no check `checks_start_wait` after the train first saw it: GitHub skipped its
-    /// CI, or no workflow took the push. Its author and the lead hear once per head, and it keeps its place (D191).
+    /// CI, or no workflow took the push. Only the base's required checks count when it has any; else any check does.
+    /// Its author and the lead hear once per head, and it keeps its place (D191).
     async fn unstarted_checks(&self, change: &Change, base: &str) {
         let head = change.head_sha.as_str();
         let now = self.now_ms();
@@ -2039,13 +2040,24 @@ impl Train {
                 return;
             }
         }
-        if !self.has_ci(&change.repo, base).await.unwrap_or(false) {
+        let Ok(ci) = self.ci_config(&change.repo, base).await else {
+            return;
+        };
+        let required: Vec<&String> = ci
+            .required_checks
+            .iter()
+            .filter(|c| *c != TRAIN_CONTEXT)
+            .collect();
+        if ci.workflows.is_empty() && required.is_empty() {
             return;
         }
+        let counts = |name: &str| {
+            name != TRAIN_CONTEXT && (required.is_empty() || required.iter().any(|r| *r == name))
+        };
         let started = match self.github.check_runs(&change.repo, head).await {
-            Ok(runs) if !runs.is_empty() => true,
+            Ok(runs) if runs.iter().any(|r| counts(&r.name)) => true,
             Ok(_) => match self.github.statuses(&change.repo, head).await {
-                Ok(statuses) => statuses.iter().any(|s| s.context != TRAIN_CONTEXT),
+                Ok(statuses) => statuses.iter().any(|s| counts(&s.context)),
                 Err(e) => {
                     return tracing::warn!(change_id = %change.change_id, error = %e.message, "train: statuses not read");
                 }
@@ -2414,13 +2426,14 @@ impl Train {
         if !lock(&self.recovered).contains(&repo) {
             self.recover(&repo).await;
         }
+        // Before refresh: a member of a batch that landed is merged, never read as a waiting PR that conflicts.
+        self.reconcile_batches(&repo).await;
         self.refresh(&repo).await;
         self.ready_pass(&repo, &train.project_ref).await;
         self.main_ci_pass(&repo, &train.project_ref).await;
         self.watch_pass(&repo).await;
         self.check_merged_outside(&repo, train.watch_since_ms, &train.project_ref)
             .await;
-        self.reconcile_batches(&repo).await;
         self.sweep_scratch(&repo).await;
         self.after_pass(&repo).await;
         self.next(&repo).await
