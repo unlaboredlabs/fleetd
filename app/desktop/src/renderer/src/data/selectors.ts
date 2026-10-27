@@ -177,7 +177,7 @@ export const hubNow = (s: DataState, localNowMs: number): number => localNowMs +
 
 const active = (status: AgentLane["status"]): boolean => status === "working" || status === "starting";
 
-/** A project's state word: the sidebar dot, the chat's top bar and the Status row all show this one. */
+/** A project's state word: the sidebar dot and the Status row show this one, and the chat's top bar follows it. */
 export type ProjectStateWord = "waiting_on_you" | "blocked" | "working" | "idle";
 
 /**

@@ -202,11 +202,8 @@ export function Shell() {
       leading={chrome && !showSidebar ? toggle : undefined}
       trailing={
         chrome ? (
-          <>
-            {/* The shortcut is the label: the key you learn, not a word to read every time. */}
-            <Button variant="quiet" icon={<Search />} shortcut={display("palette.toggle", platform)} aria-label="Commands" title="Commands" onClick={() => openPalette()} />
-            <PanelToggle panel={panel} />
-          </>
+          // The shortcut is the label: the key you learn, not a word to read every time.
+          <Button variant="quiet" icon={<Search />} shortcut={display("palette.toggle", platform)} aria-label="Commands" title="Commands" onClick={() => openPalette()} />
         ) : undefined
       }
     />
@@ -217,6 +214,8 @@ export function Shell() {
       <AppFrame
         translucent
         topBar={top}
+        // At the window's top right, open or closed, so the click that opened the panel closes it in the same place.
+        corner={chrome && panel.project !== null ? <PanelToggle panel={panel} /> : undefined}
         sidebarTop={settings ? undefined : toggle}
         sidebar={
           !chrome ? undefined : settings ? (

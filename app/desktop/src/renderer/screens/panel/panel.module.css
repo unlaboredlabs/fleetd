@@ -9,14 +9,16 @@
   min-height: 0;
 }
 
-/* The section tabs' row (Sections.tsx): the panel's header, in the window's top row beside the chat's title and as
-   tall as it, so the window drags from around the tabs. */
+/* The section tabs' row (Sections.tsx): the panel's header, in the window's top row beside the chat's title, as tall
+   as it and over the same hairline, so the two read as one row; the window drags from around the tabs. Its right end
+   leaves the frame's corner (the panel's toggle) its room. */
 .head {
   flex: none;
   display: flex;
   align-items: center;
   height: var(--top-bar-height);
-  padding: 0 var(--space-2);
+  padding: 0 max(var(--space-2), var(--corner-w, 0px)) 0 var(--space-2);
+  border-bottom: 1px solid var(--hairline);
   -webkit-app-region: drag;
   user-select: none;
 }

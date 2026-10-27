@@ -1,6 +1,9 @@
 /* The frame: the sidebar down the left from the top of the window, the top row and the content beside it. Content
    keeps the QA gate's edge inset. */
 .frame {
+  position: relative;
+  /* What the corner (below) takes from the right end of the row it sits in; none without one. */
+  --corner-w: 0px;
   display: grid;
   grid-template-rows: var(--top-bar-height) minmax(0, 1fr);
   grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
@@ -33,6 +36,23 @@
 }
 .frame > .topBar {
   grid-area: top;
+}
+/* The window's top right, over whichever row ends there (the top row, or the aside's first): the panel's toggle, in one
+   place whether the panel shows or not. Its button opts out of the drag region as every control does (base.css). */
+.withCorner {
+  --corner-w: calc(var(--control) + var(--space-1) + var(--space-3));
+}
+.corner {
+  position: absolute;
+  z-index: 3;
+  top: 0;
+  right: var(--space-3);
+  display: flex;
+  align-items: center;
+  height: var(--top-bar-height);
+}
+.withCorner:not(.withAside) > .topBar {
+  padding-inline-end: var(--corner-w);
 }
 .main {
   grid-area: main;
