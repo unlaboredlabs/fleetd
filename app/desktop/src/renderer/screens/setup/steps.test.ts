@@ -27,8 +27,13 @@ describe("setup steps", () => {
     const google = guides("http://devbox:4790").find((g) => g.id === "google");
     expect(google?.parts.find((p) => p.title === "Gmail in real time")?.optional).toBe(true);
     expect(value("http://devbox:4790", "google", "Publisher on the topic")?.value).toBe("gmail-api-push@system.gserviceaccount.com");
-    expect(value("http://devbox:4790", "google", "Or in Cloud Shell")?.value).toContain("--role=roles/pubsub.publisher");
-    expect(google?.fields.find((f) => f.name === "gmailSubscription")?.optional).toBe(true);
+    // ...and a service account that may only read the subscription, whose JSON key is sealed to one machine (T805).
+    expect(value("http://devbox:4790", "google", "Subscriber on the subscription")?.value).toBe("fleetd-gmail-reader@fleetd-devbox.iam.gserviceaccount.com");
+    const shell = value("http://devbox:4790", "google", "Or in Cloud Shell")?.value ?? "";
+    expect(shell).toContain("--role=roles/pubsub.publisher");
+    expect(shell).toContain("subscriptions add-iam-policy-binding fleetd-gmail-hub");
+    expect(shell).toContain("--role=roles/pubsub.subscriber");
+    expect(google?.fields.find((f) => f.name === "gmailKey")).toMatchObject({ secret: true, optional: true, multiline: true });
   });
 
   it("reads each status from its checks: none or unknown is to do, the worst failing one wants a look", () => {

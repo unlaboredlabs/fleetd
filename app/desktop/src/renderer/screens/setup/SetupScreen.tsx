@@ -6,7 +6,7 @@ import { Check, Copy, ExternalLink } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { callKey } from "../../src/data/queries";
 import { useDataLayer, useToolQuery } from "../../src/data/react";
-import { Button, Field, Input, Text, copyText, cx, toast } from "../../ui";
+import { Button, Field, Input, Text, Textarea, copyText, cx, toast } from "../../ui";
 import { useHubState } from "../onboarding/hooks";
 import { needWords, requiredLeft, setupSteps, type PasteValue, type SetupStep, type StepId, type StepStatus } from "./steps";
 import s from "./setup.module.css";
@@ -171,9 +171,13 @@ function StepPane({ step, steps, hub }: { step: SetupStep; steps: ReadonlyArray<
               <Field
                 key={f.name}
                 label={f.optional === true ? `${f.label} (optional)` : f.label}
-                description={f.secret === true ? "Sealed on this device; the hub keeps only its fingerprint." : undefined}
+                description={f.note ?? (f.secret === true ? "Sealed on this device; the hub keeps only its fingerprint." : undefined)}
               >
-                <Input type={f.secret === true ? "password" : "text"} placeholder={f.placeholder} spellCheck={false} autoComplete="off" />
+                {f.multiline === true ? (
+                  <Textarea mono minRows={3} placeholder={f.placeholder} spellCheck={false} autoComplete="off" />
+                ) : (
+                  <Input type={f.secret === true ? "password" : "text"} placeholder={f.placeholder} spellCheck={false} autoComplete="off" />
+                )}
               </Field>
             ))}
           </div>
