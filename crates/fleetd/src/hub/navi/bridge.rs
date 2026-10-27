@@ -7,6 +7,11 @@
 //! opens an order for it passes `asked: "N<n>"` to `brief`; `workstream.created` says so, and from then on [`run`]
 //! follows the order in the event log: its opening, its close or stop, and its PRs merging or failing in the train
 //! each wake the asking Navi's lead with one line.
+//!
+//! A hub link (`hub::hub_links`) is the bridge's other asker: a Navi on another hub, acting as the person who minted
+//! the link here. Its asks go into chats as "<person> via <label> Navi", reach only the link's projects, and what
+//! happens to them goes out on the link's feed instead of a wake. A Navi here names a linked hub with `hub`, and the
+//! calls go there (`hub_links::client`).
 use std::sync::{Arc, Weak};
 
 use fleetd_contracts::checklist::TodoState;
@@ -25,6 +30,7 @@ use fleetd_contracts::train::ChangeState;
 use rusqlite::{OptionalExtension, params};
 
 use crate::hub::api::Hub;
+use crate::hub::hub_links::Issued;
 use crate::hub::leads::records::WorkstreamFilter;
 use crate::hub::leads::wakes::{LineKind, Trigger};
 use crate::hub::link::lead_calls::{LeadCallFuture, op_of};
@@ -80,15 +86,21 @@ async fn answer(
     call: LeadCall,
 ) -> Result<LeadCallResult, McpToolError> {
     may_use(&hub.db, &caller.project_ref)?;
+    let navi = &caller.project_ref;
     match call {
-        LeadCall::ProjectMessage(call) => Ok(LeadCallResult::ProjectMessage(
-            project_message(hub, &caller.project_ref, call).await?,
-        )),
-        LeadCall::FactoryStatus(call) => Ok(LeadCallResult::FactoryStatus(factory_status(
-            hub,
-            &caller.project_ref,
-            &call,
-        )?)),
+        LeadCall::ProjectMessage(call) => Ok(LeadCallResult::ProjectMessage(match &call.hub {
+            Some(label) => crate::hub::hub_links::client::ask(hub, navi, label, &call).await?,
+            None => project_message(hub, &Asker::Navi(navi.clone()), call).await?,
+        })),
+        LeadCall::FactoryStatus(call) => Ok(LeadCallResult::FactoryStatus(match &call.hub {
+            Some(label) => crate::hub::hub_links::client::status(hub, navi, label, &call).await?,
+            None => {
+                let mut out = factory_status(hub, &Asker::Navi(navi.clone()), &call)?;
+                let hubs = crate::hub::hub_links::linked(&hub.db, navi).map_err(failed)?;
+                out.hubs = (!hubs.is_empty()).then_some(hubs);
+                out
+            }
+        })),
         other => Err(McpToolError::new(
             ErrorCode::Invalid,
             format!("{} is not a factory bridge call.", op_of(&other)),
@@ -132,10 +144,41 @@ pub fn is_navi(db: &HubDb, r: &ProjectRef, archived: bool) -> Result<bool, Store
     })
 }
 
+/// Who asks: a Navi on this hub, or a link minted here, for a Navi on another hub.
+pub enum Asker {
+    Navi(ProjectRef),
+    Link(Box<Issued>),
+}
+
+impl Asker {
+    /// The asker sees the project at all: a Navi every project here, a link those its device reads.
+    fn sees(&self, p: &ProjectRef) -> bool {
+        match self {
+            Asker::Navi(_) => true,
+            Asker::Link(link) => link.allows(fleetd_contracts::auth::Role::Read, &p.machine_id),
+        }
+    }
+
+    /// The asker reaches the project: not a Navi's own, and one of a link's projects.
+    fn reaches(&self, p: &ProjectRef) -> bool {
+        match self {
+            Asker::Navi(from) => from != p,
+            Asker::Link(link) => self.sees(p) && link.limits(p),
+        }
+    }
+}
+
 /// The project `name` names, by project id or title, other than the caller's own. One person owns every project on a
-/// hub today, so any other project is the caller's to message; company Navi brings owners.
-fn target(hub: &Hub, from: &ProjectRef, name: &str) -> Result<ProjectSummary, McpToolError> {
-    let all = hub.store.projects_shown(None, None).map_err(failed)?;
+/// hub today, so any other project is the caller's to message; company Navi brings owners. A link reaches only its
+/// projects, among those its device reads.
+fn target(hub: &Hub, asker: &Asker, name: &str) -> Result<ProjectSummary, McpToolError> {
+    let all: Vec<ProjectSummary> = hub
+        .store
+        .projects_shown(None, None)
+        .map_err(failed)?
+        .into_iter()
+        .filter(|p| asker.sees(&project_ref(p)))
+        .collect();
     let by_id: Vec<_> = all
         .iter()
         .filter(|p| p.project_id.as_str() == name)
@@ -164,12 +207,16 @@ fn target(hub: &Hub, from: &ProjectRef, name: &str) -> Result<ProjectSummary, Mc
             .with_fix("Name it by its project id, from factory_status."));
         }
     };
-    if p.machine_id == from.machine_id && p.project_id == from.project_id {
-        return Err(
-            McpToolError::new(ErrorCode::Invalid, "That is this Navi's own project.").with_fix(
-                "project_message writes to another project's lead; say it in your own reply.",
-            ),
-        );
+    if !asker.reaches(&project_ref(&p)) {
+        return Err(match asker {
+            Asker::Navi(_) => McpToolError::new(ErrorCode::Invalid, "That is this Navi's own project.")
+                .with_fix("project_message writes to another project's lead; say it in your own reply."),
+            Asker::Link(_) => McpToolError::new(
+                ErrorCode::Forbidden,
+                format!("{} is not one of this link's projects.", p.title),
+            )
+            .with_fix("factory_status lists the projects the link reaches; the person can widen it where it was made."),
+        });
     }
     Ok(p)
 }
@@ -196,13 +243,32 @@ pub fn author(hub: &Hub, r: &ProjectRef) -> String {
     }
 }
 
-async fn project_message(
+pub async fn project_message(
     hub: &Arc<Hub>,
-    from: &ProjectRef,
+    asker: &Asker,
     call: ProjectMessageCall,
 ) -> Result<ProjectMessageResult, McpToolError> {
-    let to = target(hub, from, call.project.as_str())?;
+    let to = target(hub, asker, call.project.as_str())?;
     let to_ref = project_ref(&to);
+    if let Asker::Link(link) = asker
+        && !link.allows(fleetd_contracts::auth::Role::Operate, &to_ref.machine_id)
+    {
+        return Err(McpToolError::new(
+            ErrorCode::Forbidden,
+            format!(
+                "The link's person can't open orders in {}: they only read it.",
+                to.title
+            ),
+        )
+        .with_fix("Ask an admin of that hub for operate on its machine."));
+    }
+    let (from, via) = match asker {
+        Asker::Navi(from) => (from.clone(), None),
+        Asker::Link(link) => (
+            pref(String::new(), String::new()),
+            Some(link.link_id.clone()),
+        ),
+    };
     let text = call.text.to_string();
     let now = now_ms(hub.clock.as_ref());
     // A retry, the same words to the same project within RETRY_MS, is the first ask: its message isn't posted again,
@@ -215,8 +281,9 @@ async fn project_message(
             let first: Option<i64> = c
                 .query_row(
                     "SELECT n FROM navi_asks WHERE from_machine_id = ? AND from_project_id = ? AND to_machine_id = ?
-                     AND to_project_id = ? AND text = ? AND at_ms >= ? ORDER BY n DESC LIMIT 1",
-                    params![fm, fp, tm, tp, text, now - RETRY_MS],
+                     AND to_project_id = ? AND text = ? AND at_ms >= ? AND via_link IS ? AND to_hub IS NULL
+                     ORDER BY n DESC LIMIT 1",
+                    params![fm, fp, tm, tp, text, now - RETRY_MS, via],
                     |row| row.get(0),
                 )
                 .optional()?;
@@ -224,15 +291,18 @@ async fn project_message(
                 return Ok(n);
             }
             Ok(c.query_row(
-                "INSERT INTO navi_asks (from_machine_id, from_project_id, to_machine_id, to_project_id, text, at_ms)
-                 VALUES (?, ?, ?, ?, ?, ?) RETURNING n",
-                params![fm, fp, tm, tp, text, now],
+                "INSERT INTO navi_asks (from_machine_id, from_project_id, to_machine_id, to_project_id, text, at_ms,
+                 via_link) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING n",
+                params![fm, fp, tm, tp, text, now, via],
                 |row| row.get(0),
             )?)
         })
         .map_err(failed)?;
     let handle = AskHandle::unchecked(format!("N{n}"));
-    let by = author(hub, from);
+    let by = match asker {
+        Asker::Navi(from) => author(hub, from),
+        Asker::Link(link) => link.author(),
+    };
     let body = format!("{text}\n\n{}", ask_footer(&handle));
     let (_, lead_waiting) =
         crate::hub::chat::flow::send_as_agent(hub, &to_ref, &by, body, format!("navi:{handle}"))
@@ -248,16 +318,17 @@ async fn project_message(
         project_ref: to_ref,
         title: to.title,
         lead_waiting,
+        hub: None,
     })
 }
 
-fn factory_status(
+pub fn factory_status(
     hub: &Hub,
-    from: &ProjectRef,
+    asker: &Asker,
     call: &FactoryStatusCall,
 ) -> Result<FactoryStatusResult, McpToolError> {
     let only = match &call.project {
-        Some(name) => Some(project_ref(&target(hub, from, name.as_str())?)),
+        Some(name) => Some(project_ref(&target(hub, asker, name.as_str())?)),
         None => None,
     };
     let now = now_ms(hub.clock.as_ref());
@@ -265,11 +336,11 @@ fn factory_status(
         tracing::error!(error = %e, "navi bridge: status rows");
         McpToolError::new(ErrorCode::Failed, "The hub failed to answer that request.")
     })?;
-    let asks = asks_from(&hub.db, from).map_err(failed)?;
+    let asks = asks_of(&hub.db, asker).map_err(failed)?;
     let mut projects = Vec::new();
     for row in rows {
         let r = &row.project_ref;
-        if r == from || only.as_ref().is_some_and(|o| o != r) {
+        if !asker.reaches(r) || only.as_ref().is_some_and(|o| o != r) {
             continue;
         }
         let orders = hub
@@ -282,7 +353,10 @@ fn factory_status(
             })
             .map_err(failed)?;
         let checklist = crate::hub::checklist::read(&hub.db, r).map_err(failed)?;
-        let to_it: Vec<&Ask> = asks.iter().filter(|a| a.to == *r).collect();
+        let to_it: Vec<&Ask> = asks
+            .iter()
+            .filter(|a| a.to == *r && a.to_hub.is_none())
+            .collect();
         let asked_for = |w: &WorkstreamId| {
             to_it
                 .iter()
@@ -325,6 +399,7 @@ fn factory_status(
         });
     }
     let next = match (&only, projects.is_empty()) {
+        (_, true) if matches!(asker, Asker::Link(_)) => "The link reaches no project on this hub.",
         (_, true) => "No other project on this hub yet.",
         (Some(_), false) => {
             "Write to its lead with project_message; what it needs the person for is in its own chat."
@@ -335,18 +410,24 @@ fn factory_status(
     };
     Ok(FactoryStatusResult {
         projects,
+        hubs: None,
         next: Some(next.into()),
     })
 }
 
 /// One ask, as the bridge keeps it.
-pub(super) struct Ask {
+pub struct Ask {
     pub handle: AskHandle,
     pub from: ProjectRef,
     pub to: ProjectRef,
     pub text: String,
     pub at_ms: i64,
     pub orders: Vec<WorkstreamId>,
+    /// It came in through this link minted here.
+    pub via_link: Option<String>,
+    /// It went out through this link kept here, as the ask `remote` there.
+    pub to_hub: Option<String>,
+    pub remote: Option<String>,
 }
 
 fn pref(machine: String, project: String) -> ProjectRef {
@@ -356,8 +437,7 @@ fn pref(machine: String, project: String) -> ProjectRef {
     }
 }
 
-const ASK_COLUMNS: &str =
-    "n, from_machine_id, from_project_id, to_machine_id, to_project_id, text, at_ms";
+const ASK_COLUMNS: &str = "n, from_machine_id, from_project_id, to_machine_id, to_project_id, text, at_ms, via_link, to_hub, remote";
 
 fn ask_row(c: &rusqlite::Connection, row: &rusqlite::Row<'_>) -> rusqlite::Result<Ask> {
     let n: i64 = row.get(0)?;
@@ -376,22 +456,88 @@ fn ask_row(c: &rusqlite::Connection, row: &rusqlite::Row<'_>) -> rusqlite::Resul
         text: row.get(5)?,
         at_ms: row.get(6)?,
         orders,
+        via_link: row.get(7)?,
+        to_hub: row.get(8)?,
+        remote: row.get(9)?,
     })
 }
 
-/// A Navi's asks, newest first.
+/// A Navi's asks to projects on this hub, newest first. Its asks through a hub link name projects there, whose ids
+/// mean nothing here.
 pub(super) fn asks_from(db: &HubDb, from: &ProjectRef) -> Result<Vec<Ask>, StoreError> {
+    Ok(asks_of(db, &Asker::Navi(from.clone()))?
+        .into_iter()
+        .filter(|a| a.to_hub.is_none())
+        .collect())
+}
+
+/// An asker's asks, newest first.
+pub(super) fn asks_of(db: &HubDb, asker: &Asker) -> Result<Vec<Ask>, StoreError> {
     db.with(|c| {
-        let mut stmt = c.prepare_cached(&format!(
-            "SELECT {ASK_COLUMNS} FROM navi_asks WHERE from_machine_id = ? AND from_project_id = ?
-             ORDER BY n DESC LIMIT 200"
-        ))?;
-        let rows = stmt.query_map(
-            params![from.machine_id.as_str(), from.project_id.as_str()],
-            |row| ask_row(c, row),
-        )?;
-        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+        let rows = match asker {
+            Asker::Navi(from) => c
+                .prepare_cached(&format!(
+                    "SELECT {ASK_COLUMNS} FROM navi_asks WHERE from_machine_id = ? AND from_project_id = ?
+                     ORDER BY n DESC LIMIT 200"
+                ))?
+                .query_map(
+                    params![from.machine_id.as_str(), from.project_id.as_str()],
+                    |row| ask_row(c, row),
+                )?
+                .collect::<rusqlite::Result<Vec<_>>>()?,
+            Asker::Link(link) => c
+                .prepare_cached(&format!(
+                    "SELECT {ASK_COLUMNS} FROM navi_asks WHERE via_link = ? ORDER BY n DESC LIMIT 200"
+                ))?
+                .query_map([&link.link_id], |row| ask_row(c, row))?
+                .collect::<rusqlite::Result<Vec<_>>>()?,
+        };
+        Ok(rows)
     })
+}
+
+/// The ask a Navi here sent through a kept link, by its handle there.
+pub fn ask_sent(db: &HubDb, link_id: &str, remote: &str) -> Result<Option<Ask>, StoreError> {
+    db.with(|c| {
+        Ok(c.query_row(
+            &format!("SELECT {ASK_COLUMNS} FROM navi_asks WHERE to_hub = ? AND remote = ?"),
+            [link_id, remote],
+            |row| ask_row(c, row),
+        )
+        .optional()?)
+    })
+}
+
+/// Records an ask a Navi here sent through a kept link (once per handle there): its handle here.
+pub fn record_sent(
+    db: &HubDb,
+    from: &ProjectRef,
+    link_id: &str,
+    sent: &fleetd_contracts::hub_links::LinkAskResult,
+    text: &str,
+    now: i64,
+) -> Result<AskHandle, StoreError> {
+    if let Some(ask) = ask_sent(db, link_id, sent.handle.as_str())? {
+        return Ok(ask.handle);
+    }
+    let n: i64 = db.with(|c| {
+        Ok(c.query_row(
+            "INSERT INTO navi_asks (from_machine_id, from_project_id, to_machine_id, to_project_id, text, at_ms,
+             to_hub, remote) VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING n",
+            params![
+                from.machine_id.as_str(),
+                from.project_id.as_str(),
+                sent.project_ref.machine_id.as_str(),
+                sent.project_ref.project_id.as_str(),
+                text,
+                now,
+                link_id,
+                sent.handle.as_str()
+            ],
+            |row| row.get(0),
+        )?)
+    })?;
+    Ok(AskHandle::unchecked(format!("N{n}")))
 }
 
 fn ask(db: &HubDb, handle: &str) -> Result<Option<Ask>, StoreError> {
@@ -467,7 +613,16 @@ pub fn step(hub: &Hub, cursor: i64) -> Result<(i64, bool, Vec<Woken>), StoreErro
     let page = hub.events.page(cursor, Some(&TYPES), None)?;
     let mut sent = Vec::new();
     for e in &page.events {
-        if let Some((asker, line)) = wake_line(hub, e)? {
+        // An ask that came in through a link is followed on its feed, not woken here.
+        if let Some((asked, what)) = news(hub, e)?
+            && asked.via_link.is_none()
+        {
+            let line = format!(
+                "- {} to {}: {what}",
+                asked.handle,
+                project_title(hub, &asked.to)
+            );
+            let asker = asked.from;
             hub.leads.wakes.trigger(
                 &asker,
                 Trigger::Line {
@@ -485,8 +640,31 @@ pub fn step(hub: &Hub, cursor: i64) -> Result<(i64, bool, Vec<Woken>), StoreErro
     Ok((page.cursor, page.more, sent))
 }
 
-/// The asking Navi and its wake line, for an event about an order one asked for.
-fn wake_line(hub: &Hub, e: &HubEvent) -> Result<Option<(ProjectRef, String)>, StoreError> {
+/// One page of what happened to a link's asks after `cursor`: (the cursor to resume from, whether more pages are
+/// ready, the news).
+pub fn feed(
+    hub: &Hub,
+    link_id: &str,
+    cursor: i64,
+) -> Result<(i64, bool, Vec<fleetd_contracts::hub_links::LinkFeedItem>), StoreError> {
+    let page = hub.events.page(cursor, Some(&TYPES), None)?;
+    let mut items = Vec::new();
+    for e in &page.events {
+        if let Some((asked, what)) = news(hub, e)?
+            && asked.via_link.as_deref() == Some(link_id)
+        {
+            items.push(fleetd_contracts::hub_links::LinkFeedItem {
+                title: project_title(hub, &asked.to),
+                handle: asked.handle,
+                what,
+            });
+        }
+    }
+    Ok((page.cursor, page.more, items))
+}
+
+/// The ask an event is about, and what happened to it, for an event about an order one asked for.
+fn news(hub: &Hub, e: &HubEvent) -> Result<Option<(Ask, String)>, StoreError> {
     let data = e.data.clone().unwrap_or_default();
     let Some(w) = data["workstreamId"]
         .as_str()
@@ -513,9 +691,10 @@ fn wake_line(hub: &Hub, e: &HubEvent) -> Result<Option<(ProjectRef, String)>, St
         let Some(handle) = data["asked"].as_str() else {
             return Ok(None);
         };
-        // Only the project asked can open an order for the ask.
+        // Only the project asked can open an order for the ask, and only for one asked here, not one sent elsewhere.
         let Some(asked) = ask(&hub.db, handle)?.filter(|a| {
-            Some(&a.to.machine_id) == e.machine_id.as_ref()
+            a.to_hub.is_none()
+                && Some(&a.to.machine_id) == e.machine_id.as_ref()
                 && Some(&a.to.project_id) == e.project_id.as_ref()
         }) else {
             return Ok(None);
@@ -527,13 +706,8 @@ fn wake_line(hub: &Hub, e: &HubEvent) -> Result<Option<(ProjectRef, String)>, St
             )?;
             Ok(())
         })?;
-        let line = format!(
-            "- {} to {}: its lead opened order {w}{}",
-            asked.handle,
-            project_title(hub, &asked.to),
-            title()
-        );
-        return Ok(Some((asked.from, line)));
+        let what = format!("its lead opened order {w}{}", title());
+        return Ok(Some((asked, what)));
     }
     let Some(asked) = ask_of(&hub.db, &w)? else {
         return Ok(None);
@@ -559,12 +733,7 @@ fn wake_line(hub: &Hub, e: &HubEvent) -> Result<Option<(ProjectRef, String)>, St
         }
         _ => return Ok(None),
     };
-    let line = format!(
-        "- {} to {}: {what}",
-        asked.handle,
-        project_title(hub, &asked.to)
-    );
-    Ok(Some((asked.from, line)))
+    Ok(Some((asked, what)))
 }
 
 pub(super) fn project_title(hub: &Hub, r: &ProjectRef) -> String {

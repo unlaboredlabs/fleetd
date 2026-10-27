@@ -5655,6 +5655,273 @@
       ],
       "type": "object"
     },
+    "HubLink": {
+      "description": "A link this hub keeps for one of its Navis. The key stays sealed in the hub; nothing returns it.",
+      "properties": {
+        "checkedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "createdAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "error": {
+          "description": "Why it is unreachable or revoked, in the words the person reads.",
+          "type": "string"
+        },
+        "label": {
+          "maxLength": 40,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "linkId": {
+          "$ref": "#/$defs/HubLinkId"
+        },
+        "navi": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "state": {
+          "$ref": "#/$defs/HubLinkState"
+        },
+        "url": {
+          "description": "The other hub's URL: https, or http over a tailnet or this machine.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "linkId",
+        "navi",
+        "label",
+        "url",
+        "state",
+        "createdAt"
+      ],
+      "type": "object"
+    },
+    "HubLinkAddInput": {
+      "properties": {
+        "label": {
+          "maxLength": 40,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "navi": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "sealed": {
+          "$ref": "#/$defs/SealedSecret",
+          "description": "The link key sealed to this hub's boxPubKey."
+        },
+        "url": {
+          "description": "The other hub's URL, as the app pairs with it: https, or http over a tailnet.",
+          "maxLength": 500,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "navi",
+        "label",
+        "url",
+        "sealed"
+      ],
+      "type": "object"
+    },
+    "HubLinkAddOutput": {
+      "properties": {
+        "link": {
+          "$ref": "#/$defs/HubLink"
+        },
+        "next": {
+          "type": "string"
+        },
+        "projects": {
+          "description": "What the Navi reaches there.",
+          "items": {
+            "$ref": "#/$defs/LinkProject"
+          },
+          "type": "array"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "link",
+        "projects"
+      ],
+      "type": "object"
+    },
+    "HubLinkId": {
+      "pattern": "^hl_[a-z2-7]{8}$",
+      "type": "string"
+    },
+    "HubLinkMintInput": {
+      "properties": {
+        "label": {
+          "description": "What the person calls the hub the link is for.",
+          "maxLength": 40,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "projects": {
+          "description": "The projects it reaches, each one the caller may operate; absent: every project the caller reaches.",
+          "items": {
+            "$ref": "#/$defs/ProjectRef"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "label"
+      ],
+      "type": "object"
+    },
+    "HubLinkMintOutput": {
+      "properties": {
+        "key": {
+          "description": "\"flk_…\": shown once, never stored; paste it into the other hub's Navi, which seals it.",
+          "type": "string"
+        },
+        "link": {
+          "$ref": "#/$defs/IssuedLink"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "link",
+        "key"
+      ],
+      "type": "object"
+    },
+    "HubLinkRemoveInput": {
+      "properties": {
+        "linkId": {
+          "$ref": "#/$defs/HubLinkId"
+        }
+      },
+      "required": [
+        "linkId"
+      ],
+      "type": "object"
+    },
+    "HubLinkRemoveOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "revokedThere": {
+          "description": "Whether the other hub revoked the key too; false when it couldn't be reached (the key is gone here anyway).",
+          "type": "boolean"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "revokedThere"
+      ],
+      "type": "object"
+    },
+    "HubLinkRevokeInput": {
+      "properties": {
+        "linkId": {
+          "$ref": "#/$defs/HubLinkId"
+        }
+      },
+      "required": [
+        "linkId"
+      ],
+      "type": "object"
+    },
+    "HubLinkRevokeOutput": {
+      "properties": {
+        "link": {
+          "$ref": "#/$defs/IssuedLink"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "link"
+      ],
+      "type": "object"
+    },
+    "HubLinkState": {
+      "oneOf": [
+        {
+          "const": "ok",
+          "description": "The last call there went through.",
+          "type": "string"
+        },
+        {
+          "const": "unreachable",
+          "description": "The last call there didn't: the other hub is down or this hub can't reach it.",
+          "type": "string"
+        },
+        {
+          "const": "revoked",
+          "description": "The other hub refused the key: revoked there, or its device was.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
+    "HubLinksGetInput": {
+      "properties": {
+        "navi": {
+          "$ref": "#/$defs/ProjectRef",
+          "description": "A Navi: the links this hub keeps for it. Absent: none."
+        }
+      },
+      "type": "object"
+    },
+    "HubLinksGetOutput": {
+      "properties": {
+        "boxPubKey": {
+          "description": "This hub's X25519 key, standard base64: what a link key is sealed to (`crypto_box_seal`) for hub_link_add.",
+          "type": "string"
+        },
+        "issued": {
+          "description": "Links minted on this hub: the caller's own, or every one for an admin.",
+          "items": {
+            "$ref": "#/$defs/IssuedLink"
+          },
+          "type": "array"
+        },
+        "links": {
+          "description": "The navi's links to other hubs.",
+          "items": {
+            "$ref": "#/$defs/HubLink"
+          },
+          "type": "array"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "links",
+        "issued",
+        "boxPubKey"
+      ],
+      "type": "object"
+    },
     "HubRole": {
       "description": "What a person may do on the hub. Owners and admins invite people, change roles and change hub-wide settings;\nmembers work in projects. Each device is still capped by its own grants.",
       "enum": [
@@ -6225,6 +6492,61 @@
       ],
       "x-open": true
     },
+    "IssuedLink": {
+      "description": "A link minted on this hub, as its person and the hub's admins see it. The key itself is shown once, at minting.",
+      "properties": {
+        "createdAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "device": {
+          "type": "string"
+        },
+        "keyId": {
+          "description": "The device that minted it: the link acts at its grants and dies with it.",
+          "type": "string"
+        },
+        "label": {
+          "description": "What the person called the hub it is for; requests through it read \"asked via <label> Navi\".",
+          "maxLength": 40,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "lastUsedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "linkId": {
+          "$ref": "#/$defs/HubLinkId"
+        },
+        "person": {
+          "$ref": "#/$defs/PersonRef",
+          "description": "Its person, on a hub with people."
+        },
+        "prefix": {
+          "description": "\"flk_\" plus the first 6 characters of the key's body.",
+          "type": "string"
+        },
+        "projects": {
+          "description": "The projects it reaches; absent: every project its person reaches.",
+          "items": {
+            "$ref": "#/$defs/ProjectRef"
+          },
+          "type": "array"
+        },
+        "revokedAt": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "linkId",
+        "label",
+        "prefix",
+        "keyId",
+        "device",
+        "createdAt"
+      ],
+      "type": "object"
+    },
     "KeyKind": {
       "description": "\"human\": a person's device, such as the desktop app. What it answers is recorded as the human's.",
       "enum": [
@@ -6444,6 +6766,22 @@
         "stopped"
       ],
       "type": "string"
+    },
+    "LinkProject": {
+      "description": "One project a link reaches.",
+      "properties": {
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "projectRef",
+        "title"
+      ],
+      "type": "object"
     },
     "LiveLane": {
       "description": "One lane's live values. In a frame that is not `full`, only lanes that changed are sent.",
@@ -7465,6 +7803,36 @@
         "hub_info.output": {
           "$ref": "#/$defs/HubInfoOutput"
         },
+        "hub_link_add.input": {
+          "$ref": "#/$defs/HubLinkAddInput"
+        },
+        "hub_link_add.output": {
+          "$ref": "#/$defs/HubLinkAddOutput"
+        },
+        "hub_link_mint.input": {
+          "$ref": "#/$defs/HubLinkMintInput"
+        },
+        "hub_link_mint.output": {
+          "$ref": "#/$defs/HubLinkMintOutput"
+        },
+        "hub_link_remove.input": {
+          "$ref": "#/$defs/HubLinkRemoveInput"
+        },
+        "hub_link_remove.output": {
+          "$ref": "#/$defs/HubLinkRemoveOutput"
+        },
+        "hub_link_revoke.input": {
+          "$ref": "#/$defs/HubLinkRevokeInput"
+        },
+        "hub_link_revoke.output": {
+          "$ref": "#/$defs/HubLinkRevokeOutput"
+        },
+        "hub_links_get.input": {
+          "$ref": "#/$defs/HubLinksGetInput"
+        },
+        "hub_links_get.output": {
+          "$ref": "#/$defs/HubLinksGetOutput"
+        },
         "hub_update.input": {
           "$ref": "#/$defs/HubUpdateInput"
         },
@@ -8013,6 +8381,16 @@
         "fleetd_status.output",
         "hub_info.input",
         "hub_info.output",
+        "hub_link_add.input",
+        "hub_link_add.output",
+        "hub_link_mint.input",
+        "hub_link_mint.output",
+        "hub_link_remove.input",
+        "hub_link_remove.output",
+        "hub_link_revoke.input",
+        "hub_link_revoke.output",
+        "hub_links_get.input",
+        "hub_links_get.output",
         "hub_update.input",
         "hub_update.output",
         "hub_update_status.input",
