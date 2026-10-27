@@ -1,10 +1,11 @@
-// The sidebar's projects, from the data layer: the project list (needs-you and agents at work), the open requests
+// The sidebar's projects, from the data layer, the Navis first (navi/model.ts): the project list (needs-you and agents at work), the open requests
 // (what a lead waits on you for), Status's rows (what is blocked, what is red on main) and what you last saw in each chat. Offline, the
 // projects held from before, with their marks as last known (the open requests the store keeps).
 import { useEffect, useMemo } from "react";
 import { useData, useToolQuery } from "../../src/data/react";
 import { markSeen, useSeen } from "../../src/data/seen";
 import { selectMachines, selectShownProjects } from "../../src/data/selectors";
+import { sidebarOrder } from "../navi/model";
 import { projectId, toSidebar, type SidebarProject } from "./model";
 import type { ProjectKey } from "./routes";
 
@@ -38,7 +39,10 @@ export const useSidebarProjects = (open: ProjectKey | null): ReadonlyArray<Sideb
     }
     markSeen(marks);
   }, [rows, openKey, seen]);
-  return useMemo(() => toSidebar(rows, { requests, blocked, warnings, seen, open }), [rows, requests, blocked, warnings, seen, open]);
+  return useMemo(() => {
+    const shown = toSidebar(rows, { requests, blocked, warnings, seen, open });
+    return shown === undefined ? undefined : sidebarOrder(shown);
+  }, [rows, requests, blocked, warnings, seen, open]);
 };
 
 /** Machines not online, for the sidebar's Machines entry; undefined until known. */

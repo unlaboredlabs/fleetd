@@ -21,6 +21,7 @@ import { STEER_WORDS } from "../fixtures/agents/steers.ts";
 import { SESSION } from "../fixtures/sessions/ids.ts";
 import { CHAT_SENDS } from "../fixtures/composer/sends.ts";
 import { OFFLINE_SENDS } from "../fixtures/offline/sends.ts";
+import { ADA_ROUTE } from "../fixtures/navi/ids.ts";
 
 /**
  * What the system answers when the app posts a notification: shown, or not supported. Nothing reaches the screen of
@@ -224,6 +225,10 @@ export const fixtures = [
   "updates-hub-ready",
   "updates-run-updated",
   "updates-refused",
+  // Navi (fixtures/navi): no Navi yet; two Navis and an archived one, Ada asking to send an email and following work.
+  "navi-none",
+  "navi-two",
+  "navi-old-hub",
   // fleetd.sh's showcase: one request played from send to merge, recorded by showcase.spec.ts (fixtures/showcase).
   "showcase-order",
 ] as const;
@@ -733,6 +738,29 @@ export const screens: readonly Screen[] = [
         window.location.hash = r;
       }, `${CHAT}/decisions`);
     }, (page) => page.getByLabel("Loading the decisions")),
+  },
+  // Navi (fixtures/navi): the first run, with Meet Navi in the sidebar; two Navis pinned above the projects and one
+  // archived; Ada's chat with its send to approve, beside the work it asked for; and a hub that doesn't serve that yet.
+  { id: "navi", route: "#/navi", fixtures: ["navi-none", "navi-two", "long-text"] },
+  {
+    id: "chat",
+    route: `${ADA_ROUTE}/asked`,
+    fixtures: ["navi-two"],
+    variant: "navi",
+    open: async (page) => {
+      const panel = page.getByRole("complementary", { name: "Project panel" });
+      await panel.locator('[data-screen="asked"]').waitFor();
+      await expect(page.getByRole("textbox", { name: /Message Ada/u })).toBeVisible();
+    },
+  },
+  {
+    id: "chat",
+    route: `${ADA_ROUTE}/asked`,
+    fixtures: ["navi-old-hub"],
+    variant: "navi",
+    open: async (page) => {
+      await page.getByRole("complementary", { name: "Project panel" }).locator('[data-screen="asked.unserved"]').waitFor();
+    },
   },
   // Resized from its edge with the keyboard: at its widest, and at its narrowest, where the tabs fold to icons.
   {

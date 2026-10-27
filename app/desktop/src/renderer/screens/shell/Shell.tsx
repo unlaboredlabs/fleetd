@@ -16,6 +16,8 @@ import { homeProject, nextWanting, projectId, routeOf, stepProject } from "./mod
 import { useMachinesDown, useSidebarProjects } from "./data";
 import { navigate, useRoute } from "./navigation";
 import { PANEL_TABS, served } from "../panel/tabs";
+import { inSections, sectionsFor } from "../panel/Sections";
+import { isNavi } from "../navi/model";
 import { HOME, listView, panelRoute, type Screen } from "./routes";
 import { PanelSlot, PanelToggle, useProjectPanel } from "./panel";
 import { ConnectionBanner, GetStarted, needsOnboarding } from "../onboarding";
@@ -92,6 +94,10 @@ export function Shell() {
   // The palette's Agents and Pull requests: the project on screen, else the one `#/` opens.
   const panelProject = open ?? (projects === undefined ? null : homeProject(projects, readLast()));
   const panel = useProjectPanel(screen);
+  // A Navi's panel has its own views: the palette's Go to offers only those a panel for it shows.
+  const panelKey = panelProject === null ? null : projectId(panelProject);
+  const panelNavi = projects?.find((p) => p.key === panelKey)?.project;
+  const panelSections = sectionsFor(panelNavi !== undefined && isNavi(panelNavi), features);
   // The chat on screen is the one open, and the one that streams.
   const openKey = open === null ? null : projectId(open);
   useEffect(() => {
@@ -171,7 +177,7 @@ export function Shell() {
           detail: tab.detail,
           group: "go-to",
           keywords: [...tab.keywords],
-          enabled: () => chrome && panelProject !== null && served(tab.id, features),
+          enabled: () => chrome && panelProject !== null && served(tab.id, features) && inSections(tab.id, panelSections),
           run: () => {
             if (panelProject !== null) go(panelRoute(panelProject, listView(tab.id)));
           },

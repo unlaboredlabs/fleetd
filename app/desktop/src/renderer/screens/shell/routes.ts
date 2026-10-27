@@ -60,6 +60,8 @@ export type Screen =
    */
   | { readonly id: "project"; readonly project: ProjectKey; readonly message: string | null; readonly panel?: PanelView }
   | { readonly id: "status" }
+  /** Your Navis: what Navi is, a new one, and the archived ones (navi/NaviScreen). */
+  | { readonly id: "navi" }
   /** Merges and what they cost the person (D33), for one project (`?project=<machine>/<project>`) or (null) all. */
   | { readonly id: "factory"; readonly project: ProjectKey | null }
   | { readonly id: "machines" }
@@ -131,6 +133,8 @@ const screenOf = (parts: ReadonlyArray<string>, query: URLSearchParams): Screen 
     }
     case "status":
       return { id: "status" };
+    case "navi":
+      return { id: "navi" };
     case "session": {
       const id = parts[3];
       return a === undefined || b === undefined || id === undefined ? HOME : { id: "session", project: { machineId: a, projectId: b }, session: id };
@@ -210,6 +214,7 @@ const path = (screen: Screen): Array<string> => {
     case "session":
       return ["session", screen.project.machineId, screen.project.projectId, screen.session];
     case "status":
+    case "navi":
     case "factory":
     case "machines":
     case "onboarding":

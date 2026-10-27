@@ -1,10 +1,10 @@
-// The sidebar: the projects first (alphabetical, so none moves), each opening its lead chat and saying why it wants
-// you ("reply", "approve", "secret", "blocked") or how many agents work; a chat with a message you haven't seen is
-// bold. Then Status, Factory, Time, Machines and Settings (a project's agents and PRs are in the panel beside its chat); then
+// The sidebar: your Navis pinned on top (navi/model.ts), then the projects (each alphabetical, so none moves), each
+// opening its chat and saying why it wants you ("reply", "approve", "secret", "blocked") or how many agents work; a
+// chat with a message you haven't seen is bold. With no Navi yet, one quiet row offers to meet it (#/navi). Then Status, Factory, Time, Machines and Settings (a project's agents and PRs are in the panel beside its chat); then
 // any update to make, and the hub (HubStatus). Holding ⌘ (Ctrl) shows jump numbers
-// on the first nine projects, which ⌘1..9 open. A project's right-click menu opens it or its settings, copies its
-// path, or removes it (RemoveProjectDialog asks first).
-import { Activity, Clock, Factory, Plus, Server, Settings, ShieldCheck } from "lucide-react";
+// on the first nine rows, which ⌘1..9 open. A project's right-click menu opens it or its settings, copies its
+// path, or removes it (RemoveProjectDialog asks first); a Navi's renames or archives it instead (Undo in the toast).
+import { Activity, Clock, Factory, Plus, Server, Settings, ShieldCheck, Sparkle } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import type { HubState } from "../../../shared/hub";
 import { display, type ShortcutId } from "../../../shared/shortcuts";
@@ -23,6 +23,9 @@ import {
   Text,
   Tooltip,
 } from "../../ui";
+import { useDataLayer } from "../../src/data/react";
+import { archiveNavi, RenameNaviDialog, type NaviTarget } from "../navi/actions";
+import { splitNavis } from "../navi/model";
 import { RemoveProjectDialog, type RemoveTarget } from "../projects/RemoveProjectDialog";
 import { UpdatesLine } from "../updates";
 import { HubStatus } from "./HubStatus";
@@ -115,7 +118,9 @@ export function Sidebar({ projects, machinesDown, screen, hub, jumpHints, factor
     <SidebarItem label={label} icon={icon} current={current} trailing={trailing} onClick={() => go(target)} />
   );
   const open = screen.id === "project" ? screen.project : null;
+  const layer = useDataLayer();
   const [removing, setRemoving] = useState<RemoveTarget | null>(null);
+  const [renaming, setRenaming] = useState<NaviTarget | null>(null);
   const menu = (p: SidebarProject) => () => {
     const { machineId, projectId, title, workspaceRoot } = p.project;
     return (
@@ -130,6 +135,34 @@ export function Sidebar({ projects, machinesDown, screen, hub, jumpHints, factor
       </>
     );
   };
+  const naviMenu = (p: SidebarProject) => () => {
+    const { machineId, projectId, title, workspaceRoot } = p.project;
+    return (
+      <>
+        <ContextMenuItem onSelect={() => go({ id: "project", project: routeOf(p), message: null })}>Open</ContextMenuItem>
+        <ContextMenuItem onSelect={() => setRenaming({ machineId, projectId, title })}>Rename…</ContextMenuItem>
+        {/* Its connections (Google, Notion, MCP servers) are in its settings. */}
+        <ContextMenuItem onSelect={() => go({ id: "settings", tab: "projects", for: p.key })}>Open settings</ContextMenuItem>
+        <ContextMenuCopy text={workspaceRoot}>Copy folder path</ContextMenuCopy>
+        <ContextMenuSeparator />
+        <ContextMenuItem onSelect={() => void archiveNavi(layer, { machineId, projectId, title })}>Archive</ContextMenuItem>
+      </>
+    );
+  };
+  const split = projects === undefined ? undefined : splitNavis(projects);
+  // The jump numbers follow the sidebar's order: the Navis, then the projects.
+  const row = (p: SidebarProject, i: number, menuOf: (p: SidebarProject) => () => ReactNode) => (
+    <ContextMenu key={p.key} menu={menuOf(p)}>
+      <SidebarItem
+        label={p.project.title}
+        current={sameProject(open, p.project)}
+        emphasis={p.unread}
+        trailing={trailing(p, jumpHints && i < 9 ? i + 1 : null, asOf)}
+        onClick={() => go({ id: "project", project: routeOf(p), message: null })}
+      />
+    </ContextMenu>
+  );
+  const naviCount = split?.navis.length ?? 0;
 
   return (
     <Frame
@@ -142,6 +175,24 @@ export function Sidebar({ projects, machinesDown, screen, hub, jumpHints, factor
         </div>
       }
     >
+      {split === undefined ? null : (
+        <SidebarSection
+          title="Navi"
+          action={
+            split.navis.length === 0 ? undefined : (
+              <Button variant="quiet" size="sm" icon={<Plus />} onClick={() => go({ id: "navi" })} aria-label="New Navi">
+                New
+              </Button>
+            )
+          }
+        >
+          {split.navis.length === 0 ? (
+            <SidebarItem label="Meet Navi" icon={<Sparkle />} current={screen.id === "navi"} onClick={() => go({ id: "navi" })} />
+          ) : (
+            split.navis.map((p, i) => row(p, i, naviMenu))
+          )}
+        </SidebarSection>
+      )}
       <SidebarSection
         title={asOf === undefined ? "Projects" : `Projects, ${asOf}`}
         action={
@@ -150,7 +201,7 @@ export function Sidebar({ projects, machinesDown, screen, hub, jumpHints, factor
           </Button>
         }
       >
-        {projects === undefined ? (
+        {split === undefined ? (
           // Loading (startup, or a resync after the link dropped): never the "no projects" sentence, never old rows.
           // Busy only while something is on its way, not while the hub is unreachable.
           <div className={s.sidebarSkeleton} aria-busy={hub.phase === "live" || hub.phase === "connecting"} aria-label="Loading projects">
@@ -158,22 +209,12 @@ export function Sidebar({ projects, machinesDown, screen, hub, jumpHints, factor
             <span />
             <span />
           </div>
-        ) : projects.length === 0 ? (
+        ) : split.projects.length === 0 ? (
           <Text as="p" size="xs" tone="quiet" className={s.sidebarNote}>
             No projects yet. Add one: a GitHub repo, or a folder on one of your machines.
           </Text>
         ) : (
-          projects.map((p, i) => (
-            <ContextMenu key={p.key} menu={menu(p)}>
-              <SidebarItem
-                label={p.project.title}
-                current={sameProject(open, p.project)}
-                emphasis={p.unread}
-                trailing={trailing(p, jumpHints && i < 9 ? i + 1 : null, asOf)}
-                onClick={() => go({ id: "project", project: routeOf(p), message: null })}
-              />
-            </ContextMenu>
-          ))
+          split.projects.map((p, i) => row(p, naviCount + i, menu))
         )}
       </SidebarSection>
 
@@ -208,6 +249,7 @@ export function Sidebar({ projects, machinesDown, screen, hub, jumpHints, factor
         />
       </SidebarSection>
       <RemoveProjectDialog project={removing} onClose={() => setRemoving(null)} />
+      <RenameNaviDialog navi={renaming} onClose={() => setRenaming(null)} />
     </Frame>
   );
 }
