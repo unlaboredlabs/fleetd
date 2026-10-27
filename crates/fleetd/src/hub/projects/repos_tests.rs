@@ -507,6 +507,69 @@ async fn an_automation_run_on_an_archived_project_reaches_no_lead() {
     );
 }
 
+/// A steer at an archived project's order gives its stopped lead no turn: refused with why, and any send to that lead
+/// (a steer queued before, a wake, the write queue) is refused where it goes out to the node.
+#[tokio::test]
+async fn a_steer_at_an_archived_projects_order_reaches_no_lead() {
+    let (hub, _home) = hub();
+    let mut calls = node(&hub).await;
+    hub.leads
+        .records
+        .lead_put(&crate::hub::leads::records::StoredLead {
+            project_ref: project("shop"),
+            thread_id: fleetd_contracts::ids::ThreadId::unchecked("shop-lead"),
+            started_at: AT.to_owned().into(),
+            last_wake_at: None,
+            session_generation: 0,
+        })
+        .unwrap();
+    let (order, _) = hub
+        .leads
+        .records
+        .workstream_create(crate::hub::leads::records::NewWorkstream {
+            project_ref: project("shop"),
+            title: "Ship the cart".into(),
+            text: "Ship the cart".into(),
+            channel: fleetd_contracts::ledger::IntakeChannel::App,
+            by: "human".into(),
+            at: AT.into(),
+            client_request_id: None,
+        })
+        .unwrap();
+    call(
+        &hub,
+        "project_repo_add",
+        json!({ "machineId": "devbox", "projectId": "app", "path": "/work/shop" }),
+    )
+    .await
+    .unwrap();
+    drain(&mut calls);
+    let steered = call(
+        &hub,
+        "steer_send",
+        json!({ "target": { "workstreamId": order.workstream_id }, "text": "skip the review", "clientRequestId": "s1" }),
+    )
+    .await;
+    let sent = drain(&mut calls);
+    assert!(
+        !sent.iter().any(|c| matches!(c, SessionCall::Send { .. })),
+        "{steered:?} {sent:?}"
+    );
+    assert!(refused(steered).contains("archived"));
+    // The same holds for any send to that thread, whichever path it takes.
+    let thread = fleetd_contracts::ids::ThreadRef {
+        machine_id: devbox(),
+        thread_id: fleetd_contracts::ids::ThreadId::unchecked("shop-lead"),
+    };
+    let error = hub
+        .executors
+        .send(&thread, "hello", "c1")
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("archived"), "{error}");
+    assert!(drain(&mut calls).is_empty());
+}
+
 /// Removing a repo ends that repo's live tasks only, deletes nothing, and the checkout no project holds shows as its
 /// own project again. The project's own repo can't be removed.
 #[tokio::test]

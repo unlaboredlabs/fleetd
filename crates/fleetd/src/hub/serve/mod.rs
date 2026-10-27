@@ -326,6 +326,7 @@ pub fn build_on_with(
     executors.set_tool_policy(policies.clone());
     executors.set_mcp_servers(db.clone());
     executors.set_skills(db.clone());
+    executors.set_archive(db.clone());
     let tasks = crate::hub::tasks::Tasks::new(crate::hub::tasks::TaskDeps {
         db: db.clone(),
         store: store.clone(),
