@@ -77,22 +77,23 @@ impl Waiting {
     }
 }
 
-/// Ends it without waiting on whoever drops it (an async task, often under the lock): a login still running is killed
-/// with its process group, and reaped on a thread of its own.
+/// Ends it without waiting on whoever drops it (an async task, often under the lock): its whole process group is
+/// killed, claude and whatever it started, even once claude itself has exited, and claude is reaped on a thread of its
+/// own. The group's id can't be another's while anything is left in it, and a login is dropped moments after claude
+/// is seen to exit, far too soon for its id to come round again.
 impl Drop for Waiting {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Relaxed);
         let Some(mut child) = self.child.take() else {
             return;
         };
-        // Only while it runs is its id surely still its group's.
+        if let Ok(pid) = i32::try_from(child.id()) {
+            let _ = nix::sys::signal::killpg(
+                nix::unistd::Pid::from_raw(pid),
+                nix::sys::signal::Signal::SIGKILL,
+            );
+        }
         if matches!(child.try_wait(), Ok(None)) {
-            if let Ok(pid) = i32::try_from(child.id()) {
-                let _ = nix::sys::signal::killpg(
-                    nix::unistd::Pid::from_raw(pid),
-                    nix::sys::signal::Signal::SIGKILL,
-                );
-            }
             let _ = child.kill();
         }
         std::thread::spawn(move || {
@@ -437,5 +438,46 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
         panic!("the reader is still running");
+    }
+
+    /// Gone, or a zombie its new parent hasn't reaped yet.
+    fn gone(pid: i32) -> bool {
+        let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).unwrap_or_default();
+        nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), None).is_err()
+            || stat
+                .split(") ")
+                .nth(1)
+                .is_some_and(|rest| rest.starts_with('Z'))
+    }
+
+    /// claude may leave a child of its own running as it exits: ending the login ends that too.
+    #[tokio::test]
+    async fn a_login_that_ended_leaves_nothing_it_started_running() {
+        let dir = tempfile::tempdir().unwrap();
+        let pid_file = dir.path().join("child.pid");
+        let bin = fake_claude(
+            dir.path(),
+            &format!("sleep 30 & echo $! > '{}'", pid_file.display()),
+        );
+        let logins = Logins::with_code_wait(Duration::from_secs(5));
+        logins.start(&bin, &env()).await.unwrap();
+        let child: i32 = std::fs::read_to_string(&pid_file)
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        assert!(
+            !gone(child),
+            "the stand-in's child should run until the login ends"
+        );
+        // claude exits once it has the code; its child would go on.
+        assert_eq!(logins.finish("abc#s1").await.unwrap(), "Login successful.");
+        for _ in 0..30 {
+            if gone(child) {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        panic!("claude's child {child} is still running");
     }
 }
