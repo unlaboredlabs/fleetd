@@ -210,6 +210,17 @@ section + section .group {
   border-radius: var(--radius-md);
   background: var(--raised);
 }
+/* A phone's screen: as tall as fits under the view's head, its width following, so it shows whole. */
+.frame[data-shape="portrait"] {
+  align-self: center;
+  width: min(100%, calc(min(520px, 58vh) * var(--aspect)));
+}
+/* Its bar is as narrow: its words wrap rather than run past it. */
+.frame[data-shape="portrait"] .bar {
+  height: auto;
+  min-height: var(--control);
+  padding-block: 2px;
+}
 .bar {
   display: flex;
   align-items: center;

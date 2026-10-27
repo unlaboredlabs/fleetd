@@ -124,10 +124,6 @@ figcaption b{color:var(--ink);font-weight:500}
 .feats.quiet li{border-top-color:var(--rule)}
 .pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--gap);margin-top:clamp(8px,1.5vw,16px)}
 
-.fact{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:8px var(--gap);align-items:baseline}
-.fig{font-size:clamp(44px,6vw,72px);line-height:1;font-weight:500;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
-.fact p{color:var(--grey);font-size:16px;max-width:40em}
-.fact p+p{margin-top:10px;font-size:14px}
 
 .steps{list-style:none;margin:0;padding:0;counter-reset:s;display:grid;gap:28px}
 .steps>li{display:grid;grid-template-columns:2.2em minmax(0,1fr);border-top:1px solid var(--ink);padding-top:14px;counter-increment:s}
@@ -153,7 +149,7 @@ summary:hover{color:var(--ink)}
 .end a:hover{color:var(--ink);text-decoration:underline}
 
 @media (max-width:1000px){
-  .hero,.head,.fact{grid-template-columns:minmax(0,1fr)}
+  .hero,.head{grid-template-columns:minmax(0,1fr)}
   .install{max-width:36em}
   .feats,.docs{grid-template-columns:repeat(2,minmax(0,1fr))}
   .line{grid-template-columns:repeat(3,minmax(0,1fr));gap:0 20px}
@@ -210,25 +206,25 @@ summary:hover{color:var(--ink)}
   </div>
 </section>
 
-<!-- To record the showcase again: `pnpm site:showcase` in app/desktop (site/README.md). Keep the alt text, the steps
-     and the caption true to the recording. -->
+<!-- To record the showcase again: `pnpm site:showcase` in app/desktop (site/README.md). Keep the alt text (the
+     poster's), the steps and the caption true to the recording. -->
 <figure class="w show" aria-labelledby="show-cap">
   <div class="shot" id="show">
     <picture>
       <source srcset="/showcase-dark-small.jpg 1400w, /showcase-dark.jpg 2800w" sizes="(min-width: 1240px) 1112px, calc(100vw - 2 * clamp(20px, 4.4vw, 64px))" media="(prefers-color-scheme: dark)">
-      <img src="/showcase-light.jpg" srcset="/showcase-light-small.jpg 1400w, /showcase-light.jpg 2800w" sizes="(min-width: 1240px) 1112px, calc(100vw - 2 * clamp(20px, 4.4vw, 64px))" width="2800" height="1800" fetchpriority="high" alt="The fleetd app on the storefront project, after one request has run through. You asked: let shoppers save their cart and pick it up on any device. The lead answered that one writer saves the cart and one brings it back at sign-in, each PR with its own reviewer; then that #231 is up with a reviewer on it; then that #231 is merged and the second PR opens next. The panel’s merge line lists Saved carts are stored per shopper, #231, as merged, above two earlier merges. Under the chat, one writer is still at work.">
+      <img src="/showcase-light.jpg" srcset="/showcase-light-small.jpg 1400w, /showcase-light.jpg 2800w" sizes="(min-width: 1240px) 1112px, calc(100vw - 2 * clamp(20px, 4.4vw, 64px))" width="2800" height="1800" fetchpriority="high" alt="The fleetd app on the storefront project, with seven agents at work on four orders. You asked to let shoppers save their cart and pick it up on the web or the iPhone app; the lead split it into three parts, each with its own writer, said #231 is up with a reviewer on it, then that the iPhone app’s sign-in texts a code to a test number and asked you to take over its screen. The panel shows that screen: an iPhone simulator on the app’s sign-in code page, the code 418093 typed in, its bar saying you’re in control, and Hand back under it.">
     </picture>
     <video muted loop playsinline preload="none" disablepictureinpicture aria-hidden="true" tabindex="-1" data-src="/showcase-"></video>
     <button class="play" type="button" aria-controls="show">Pause</button>
   </div>
   <ol class="line" id="line">
     <li data-step="ask"><b>You ask</b><p>Say what you want in the project’s chat.</p></li>
-    <li data-step="plan"><b>The lead plans</b><p>It splits the work and starts agents.</p></li>
-    <li data-step="build"><b>Agents build</b><p>In parallel, each on its own branch.</p></li>
-    <li data-step="review"><b>A reviewer checks</b><p>Every pull request, before it merges.</p></li>
-    <li data-step="merge"><b>The train merges</b><p>Rebased onto main, merged on green CI.</p></li>
+    <li data-step="plan"><b>The lead splits it</b><p>Into parts, each with its own agent.</p></li>
+    <li data-step="build"><b>Agents build</b><p>In parallel, beside the other orders.</p></li>
+    <li data-step="screens"><b>Screens test it</b><p>A browser and an iPhone, live; take over any time.</p></li>
+    <li data-step="merge"><b>The train merges</b><p>Reviewed PRs, in batches, on green CI.</p></li>
   </ol>
-  <figcaption id="show-cap"><b>One request, from message to merged pull request.</b> Recorded from the fleetd app on sample data, with the waits cut short: a real change takes minutes to hours, and you can close the app meanwhile.</figcaption>
+  <figcaption id="show-cap"><b>A busy storefront takes one more request, from the message to a merged batch.</b> Recorded from the fleetd app on sample data, with the waits cut short: a real change takes minutes to hours, and you can close the app meanwhile.</figcaption>
 </figure>
 
 <section class="w sec" aria-labelledby="line-h">
@@ -265,18 +261,6 @@ summary:hover{color:var(--ink)}
       <a class="shot" href="/chat-secret.png"><picture><source srcset="/chat-secret-dark.png" media="(prefers-color-scheme: dark)"><img src="/chat-secret.png" width="2800" height="1800" loading="lazy" decoding="async" alt="storefront’s chat in the fleetd app: the lead needs the Stripe test key, which goes to devbox only. A Secret card says it is saved as STRIPE_TEST_KEY in the project’s .env.test on devbox, with a masked field and Save secret. Above it, a secret saved earlier, shown only as saved. The panel’s Agents tab lists the two agents on the checkout tests against Stripe test mode."></picture></a>
       <figcaption><b>A secret, kept out of the chat.</b> The value is sealed to devbox’s key on your computer; fleetd never shows it again.</figcaption>
     </figure>
-  </div>
-</section>
-
-<section class="w sec" aria-labelledby="dogfood">
-  <div class="fact">
-    <div>
-      <h2 id="dogfood" class="fig">87</h2>
-    </div>
-    <div>
-      <p>pull requests fleetd’s agents wrote and its merge train merged into fleetd’s own repository, from 20 October 2026 00:00 to 26 October 18:11, UTC. fleetd is built with fleetd: the lead plans, agents write and review, the train merges, and the people behind it answer the lead’s questions.</p>
-      <p>Counted by <code>fleetd metrics --days 7</code> on the hub that builds fleetd. Merges people made themselves that week aren’t in it. <a href="/train-week.txt">The 87, each with its pull request on GitHub</a>.</p>
-    </div>
   </div>
 </section>
 
@@ -400,15 +384,14 @@ document.querySelectorAll("[data-copy]").forEach(function(b){
   });
 });
 
-// The showcase. The still is what everyone gets first. On a wide screen without reduced motion, the recording loads
-// once the page has and the frame is near the screen, and plays while it is on screen. On a small screen, or with
-// reduced motion, it waits for Play: the reader's data and wish come first. It follows the system
-// theme and marks the step it is on.
+// The showcase. The still is what everyone gets first. Without reduced motion, the recording loads at once, the small
+// one on a small screen, and plays while the frame is on screen; with reduced motion, the still stays until Play. It
+// follows the system theme and marks the step it is on.
 (function(){
   var box=document.getElementById("show"),video=box.querySelector("video"),button=box.querySelector(".play");
   var steps=[].slice.call(document.querySelectorAll("#line [data-step]"));
   var calm=matchMedia("(prefers-reduced-motion: reduce)"),dark=matchMedia("(prefers-color-scheme: dark)");
-  var chapters,paused=calm.matches||box.clientWidth<640;
+  var chapters,paused=calm.matches;
   var mark=function(){
     if(!chapters)return;
     var t=video.currentTime,now;
@@ -442,12 +425,9 @@ document.querySelectorAll("[data-copy]").forEach(function(b){
   });
   calm.addEventListener("change",function(){if(calm.matches){hold();box.classList.remove("on");box.classList.add("ready");clear()}});
   dark.addEventListener("change",function(){if(video.getAttribute("src")){source();if(!paused)video.play().catch(function(){})}});
-  var watch=function(){
-    new IntersectionObserver(function(es){
-      if(es[es.length-1].isIntersecting)start();else video.pause();
-    },{rootMargin:"200px 0px"}).observe(box);
-  };
-  if(document.readyState==="complete")watch();else addEventListener("load",watch);
+  new IntersectionObserver(function(es){
+    if(es[es.length-1].isIntersecting)start();else video.pause();
+  },{rootMargin:"200px 0px"}).observe(box);
 })();
 </script>
 </body>
