@@ -471,3 +471,47 @@ async fn a_writer_whose_node_does_not_answer_is_listed_as_changes_unknown() {
         next(&passed)
     );
 }
+
+/// Each repo is checked against its own work (W79): a writer in `app`'s second repo `lib` doesn't repeat a writer in
+/// `app`'s own repo, a second one in `lib` repeats the first, and the own repo's check doesn't see `lib`'s.
+#[tokio::test]
+async fn the_duplicate_check_is_per_repo() {
+    let (hub, app, _web, _home) = hub();
+    hub.db
+        .with(|c| {
+            c.execute(
+                "INSERT INTO repos (machine_id, project_id, name, checkout_machine_id, checkout_project_id, repo_key,
+                 base) VALUES ('devbox', 'app', 'lib', 'devbox', 'lib', 'gitlab.example.com/acme/lib', 'main')",
+                [],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    writer_of(&hub, &app, "dark mode toggle in settings");
+    let ask = "Dark mode toggle for the settings page";
+
+    let in_lib = spawn(&hub, &app, call(ask, json!({ "repo": "lib" })))
+        .await
+        .unwrap();
+    assert_eq!(in_lib.task.task_id.as_str(), "T2");
+    assert_eq!(in_lib.task.repo_id.as_ref().map(|r| r.as_str()), Some("R1"));
+    assert!(!next(&in_lib).contains("elsewhere"), "{}", next(&in_lib));
+
+    let again = spawn(&hub, &app, call(ask, json!({ "repo": "lib" })))
+        .await
+        .unwrap_err();
+    assert!(
+        again.message.starts_with("Possible duplicate: T2 "),
+        "{}",
+        again.message
+    );
+    assert!(!again.message.contains("T1"), "{}", again.message);
+
+    let own = spawn(&hub, &app, call(ask, json!({}))).await.unwrap_err();
+    assert!(
+        own.message.starts_with("Possible duplicate: T1 "),
+        "{}",
+        own.message
+    );
+    assert!(!own.message.contains("T2"), "{}", own.message);
+}

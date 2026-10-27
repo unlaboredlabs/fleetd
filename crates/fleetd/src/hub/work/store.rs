@@ -182,10 +182,26 @@ pub fn scope_of_repo(db: &Connection, repo_id: &RepoId) -> rusqlite::Result<Opti
     )
 }
 
-/// Every project whose work lands on the scope, in a stable order.
+/// The repo and base a project's task lands on: its repo's when that is one of the project's other repos (W79), else
+/// the project's own.
+pub fn scope_of_task(db: &Connection, task: &Task) -> rusqlite::Result<Option<WorkScope>> {
+    let project = &task.project_ref;
+    if let Some(repo_id) = &task.repo_id
+        && let Some((owner, repo)) = crate::hub::repos::store::get(db, repo_id)?
+        && owner == *project
+        && repo.checkout != *project
+    {
+        return scope_of_repo(db, repo_id);
+    }
+    scope_of(db, project)
+}
+
+/// Every project whose work lands on the scope, in a stable order: by its own repo, or by another of its repos.
 pub fn projects_in(db: &Connection, scope: &WorkScope) -> rusqlite::Result<Vec<ProjectRef>> {
     db.prepare_cached(
-        "SELECT machine_id, project_id FROM work_projects WHERE repo_key = ? AND base = ?
+        "SELECT machine_id, project_id FROM work_projects WHERE repo_key = ?1 AND base = ?2
+         UNION SELECT machine_id, project_id FROM repos WHERE repo_key = ?1 AND base = ?2
+           AND NOT (checkout_machine_id = machine_id AND checkout_project_id = project_id)
          ORDER BY machine_id, project_id",
     )?
     .query_map(params![scope.repo_key.as_str(), scope.base.as_str()], |r| {
