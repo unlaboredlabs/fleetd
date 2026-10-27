@@ -1,6 +1,7 @@
 // `pnpm fixtures`: writes fixtures/<name>.json, the files FLEETD_FIXTURE=<name> loads (src/main/hub/fixture.ts).
 // The shared fixtures come from kit/shared.ts, every fixtures/<group>/index.ts may extend them and add its own, and
-// every payload is checked against the hub's JSON Schemas. Any problem fails the build; nothing is half-written.
+// every payload is checked against the hub's JSON Schemas. Any problem fails the build before a fixture is replaced;
+// only a crash while the checked files move into place could leave a mix of old and new.
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -46,6 +47,8 @@ const base = (name: SharedName) => Fixture.from(get(name), name, get(name).note)
 const STAGING = path.join(DIR, ".staging");
 fs.rmSync(STAGING, { recursive: true, force: true });
 fs.mkdirSync(STAGING);
+// However the build ends (a problem, a loader that throws, success), the staging files go with it.
+process.on("exit", () => fs.rmSync(STAGING, { recursive: true, force: true }));
 const names = new Set<string>();
 const problems: Array<string> = [];
 const written: Array<string> = [];
@@ -98,7 +101,6 @@ for (const file of fs.readdirSync(RECORDED).filter((x) => x.endsWith(".json"))) 
   problems.push(...findLeaks(fs.readFileSync(path.join(RECORDED, file), "utf8")).map((leak) => `recorded/${file} leaks ${leak}`));
 }
 if (problems.length > 0) {
-  fs.rmSync(STAGING, { recursive: true, force: true });
   for (const p of problems.slice(0, 40)) console.error(p);
   console.error(`${problems.length} problems; no fixture written.`);
   process.exit(1);
@@ -107,5 +109,4 @@ if (problems.length > 0) {
 // Only build output lives at the top level, so anything not rebuilt is stale.
 for (const file of fs.readdirSync(DIR)) if (file.endsWith(".json") && !names.has(file.slice(0, -5))) fs.rmSync(path.join(DIR, file));
 for (const name of names) fs.renameSync(path.join(STAGING, `${name}.json`), path.join(DIR, `${name}.json`));
-fs.rmSync(STAGING, { recursive: true, force: true });
 for (const line of written) console.log(line);
