@@ -58,11 +58,21 @@ export class HubService {
     return this.#source?.state ?? this.#unpaired;
   }
 
-  /** Each subscribe starts the window from the current state, then (when connected) a fresh snapshot and live frame. */
+  /**
+   * Each subscribe starts the window from the current state, then (when connected) a fresh snapshot and live frame.
+   * A window that loads a new page (a reload) is no subscriber until that page subscribes itself: frames meant for the
+   * page before (a fixture's replay still running) would reach the new one ahead of its own reads, the cache's too.
+   */
   subscribe(contents: WebContents): void {
     if (!this.#subscribers.has(contents)) {
       this.#subscribers.add(contents);
-      contents.once("destroyed", () => this.unsubscribe(contents));
+      const gone = () => {
+        contents.off("destroyed", gone);
+        contents.off("did-navigate", gone);
+        this.unsubscribe(contents);
+      };
+      contents.once("destroyed", gone);
+      contents.once("did-navigate", gone);
     }
     this.#awaitingSnapshot.add(contents);
     this.#send(contents, { t: "state", state: this.state() });
