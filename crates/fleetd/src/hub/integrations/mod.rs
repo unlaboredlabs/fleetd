@@ -15,5 +15,28 @@ pub mod google;
 pub mod notion;
 pub mod policy;
 
+use fleetd_contracts::ids::ProjectRef;
+use rusqlite::{OptionalExtension, params};
+
+use crate::hub::store::{HubDb, StoreError};
+
+/// The project kind of a Navi (`ProjectSummary.kind`).
+pub const ASSISTANT: &str = "assistant";
+
+/// Whether the project is a Navi. Integrations connect only to one: its lead asks before anything but a read, where a
+/// coding project's lead runs with full access and would send unasked.
+pub fn is_navi(db: &HubDb, r: &ProjectRef) -> Result<bool, StoreError> {
+    let kind: Option<String> = db.with(|c| {
+        Ok(c.query_row(
+            "SELECT json_extract(data, '$.kind') FROM projects WHERE machine_id = ? AND project_id = ?",
+            params![r.machine_id.as_str(), r.project_id.as_str()],
+            |row| row.get(0),
+        )
+        .optional()?
+        .flatten())
+    })?;
+    Ok(kind.as_deref() == Some(ASSISTANT))
+}
+
 #[cfg(test)]
 mod tests;

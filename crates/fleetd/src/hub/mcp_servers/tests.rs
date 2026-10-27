@@ -603,10 +603,55 @@ fn google_via_xaq(key: Value) -> Value {
         "integration": { "kind": "google" } })
 }
 
+/// Marks p1 a Navi, as creating one from the app does.
+fn make_navi(hub: &Hub) {
+    hub.db
+        .with(|c| {
+            c.execute(
+                "UPDATE projects SET data = json_set(data, '$.kind', 'assistant') WHERE project_id = 'p1'",
+                [],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[tokio::test]
+async fn an_integration_connects_to_a_navi_only() {
+    let (hub, _home) = hub();
+    let _calls = node(&hub).await;
+    let plain = json!({ "kind": "plain", "name": "X-Team", "value": "core" });
+    let error = call(
+        &hub,
+        &person(),
+        "mcp_server_set",
+        google_via_xaq(plain.clone()),
+    )
+    .await
+    .unwrap_err();
+    assert!(format!("{error:?}").contains("Navi only"), "{error:?}");
+    let mut global = google_via_xaq(plain.clone());
+    global["scope"] = json!({ "kind": "global" });
+    assert!(
+        call(&hub, &person(), "mcp_server_set", global)
+            .await
+            .is_err()
+    );
+    // The same server without an integration is a plain MCP server, as before.
+    let mut bare = google_via_xaq(plain.clone());
+    bare.as_object_mut().unwrap().remove("integration");
+    call(&hub, &person(), "mcp_server_set", bare).await.unwrap();
+    make_navi(&hub);
+    call(&hub, &person(), "mcp_server_set", google_via_xaq(plain))
+        .await
+        .unwrap();
+}
+
 #[tokio::test]
 async fn an_integration_connects_with_its_key_sealed_and_revoking_forgets_the_key() {
     let (hub, _home) = hub();
     let mut calls = node(&hub).await;
+    make_navi(&hub);
     const KEY: &str = "Bearer aib_never_on_the_hub_0123456789";
     let saved = call(
         &hub,
