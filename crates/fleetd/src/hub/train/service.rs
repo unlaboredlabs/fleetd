@@ -2404,6 +2404,29 @@ impl Train {
         self.sync.main_ci(&repo.to_lowercase())
     }
 
+    /// A train on `repo` for `project_ref` whose main CI last read red with `failing`, each check with a fix order
+    /// `fix` when given, as `main_ci_pass` and `watch` would leave it.
+    #[cfg(test)]
+    pub(crate) fn main_red_for_test(
+        &self,
+        repo: &str,
+        project_ref: &ProjectRef,
+        failing: &[&str],
+        fix: Option<&WorkstreamId>,
+    ) {
+        let now = self.now_ms();
+        self.records.ensure_train(repo, project_ref, now);
+        self.sync.set_base(repo, "main".into());
+        let failing: Vec<String> = failing.iter().map(|f| f.to_string()).collect();
+        if let Some(order) = fix {
+            for check in &failing {
+                self.records.put_fix_order(repo, check, "a1", order, now);
+            }
+        }
+        self.sync
+            .record(repo, "a1".into(), CiState::Red, failing, now);
+    }
+
     /// While main-branch CI is red, a note for the status view: which checks, and whether a fix is under way (an open
     /// fix order for the check, `watch`). The train doesn't hold merges for it, so it is a warning, not a block.
     pub fn main_ci_note(&self, repo: &str) -> Option<String> {
