@@ -6054,6 +6054,26 @@
         }
       ]
     },
+    "IntegrationKind": {
+      "description": "What a configured MCP server is to the hub's tool policy.",
+      "oneOf": [
+        {
+          "const": "google",
+          "description": "Gmail, Google Calendar and Google Drive through xaq (wynn-dev/xaq), which holds the Google sign-in: fleetd\nkeeps only xaq's address and an agent key.",
+          "type": "string"
+        },
+        {
+          "const": "notion",
+          "description": "Notion's official MCP server (`@notionhq/notion-mcp-server`) with the person's internal integration token.",
+          "type": "string"
+        },
+        {
+          "const": "custom",
+          "description": "Any other server, by URL or command: every tool asks unless the person marked it as one that only reads.",
+          "type": "string"
+        }
+      ]
+    },
     "Invite": {
       "description": "A single-use pairing code bound to a person, valid for 7 days. The code itself is shown once, at creation.",
       "properties": {
@@ -6759,6 +6779,27 @@
     "McpArg": {
       "type": "string"
     },
+    "McpIntegration": {
+      "description": "The integration a server is, on its row (`McpServer.integration`). A server without one is a custom one with no\ntool marked as reading.",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/IntegrationKind"
+        },
+        "readTools": {
+          "description": "A custom server's tools that only read, as the person marked them when connecting it. Ignored for Google and\nNotion, whose tools the hub's table knows. A tool the policy blocks stays blocked even when listed here.",
+          "items": {
+            "$ref": "#/$defs/McpToolName"
+          },
+          "maxItems": 200,
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
     "McpRoles": {
       "description": "Which of fleetd's agents get a server. A plain thread a person starts gets none.",
       "properties": {
@@ -6876,6 +6917,10 @@
           },
           "type": "array"
         },
+        "integration": {
+          "$ref": "#/$defs/McpIntegration",
+          "description": "What it is to a Navi (Google, Notion or custom), for the hub's tool policy; none for a server added before\nintegrations, which counts as custom."
+        },
         "name": {
           "$ref": "#/$defs/McpServerName"
         },
@@ -6963,6 +7008,10 @@
           },
           "maxItems": 50,
           "type": "array"
+        },
+        "integration": {
+          "$ref": "#/$defs/McpIntegration",
+          "description": "What it is to a Navi: Google, Notion or custom, for the hub's tool policy."
         },
         "name": {
           "$ref": "#/$defs/McpServerName"
@@ -7151,12 +7200,24 @@
         },
         "name": {
           "type": "string"
+        },
+        "policy": {
+          "$ref": "#/$defs/ToolPolicy",
+          "description": "What the hub's tool policy does with it (`hub/integrations`), filled in by the hub."
+        },
+        "readOnly": {
+          "description": "The server says the tool only reads (MCP's `readOnlyHint`): the connect screen offers it as one to run unasked.",
+          "type": "boolean"
         }
       },
       "required": [
         "name"
       ],
       "type": "object"
+    },
+    "McpToolName": {
+      "pattern": "^[A-Za-z0-9_.:/-]{1,128}$",
+      "type": "string"
     },
     "McpTools": {
       "properties": {
@@ -16798,9 +16859,43 @@
       ],
       "type": "object"
     },
+    "ToolAction": {
+      "description": "What an asking tool would do, for the card's heading and its urgency.",
+      "oneOf": [
+        {
+          "const": "send",
+          "description": "Reaches another person: an email, a reply, an invitation or an answer to one.",
+          "type": "string"
+        },
+        {
+          "const": "write",
+          "description": "Changes something of the person's: a draft, a label, a page, a document.",
+          "type": "string"
+        },
+        {
+          "const": "delete",
+          "description": "Removes something: mail to the trash, an event, a page, a file.",
+          "type": "string"
+        },
+        {
+          "const": "share",
+          "description": "Gives someone else access to something.",
+          "type": "string"
+        },
+        {
+          "const": "spend",
+          "description": "Pays or buys: money leaves the person's account.",
+          "type": "string"
+        }
+      ]
+    },
     "ToolPermission": {
       "description": "An approval raised by a session's tool permission prompt instead of a gated command: answering it answers the prompt\non the project's node. Its machine is the request's project's.",
       "properties": {
+        "preview": {
+          "$ref": "#/$defs/ToolPreview",
+          "description": "An integration's asking tool (`hub/integrations`): exactly who it reaches and what it says, or what it changes,\nread from the input it runs with once approved. Boxed: it is large beside the prompt's other fields."
+        },
         "requestId": {
           "minLength": 1,
           "type": "string"
@@ -16823,6 +16918,132 @@
         "requestId",
         "toolName",
         "summary"
+      ],
+      "type": "object"
+    },
+    "ToolPolicy": {
+      "description": "The hub's policy for one tool.",
+      "oneOf": [
+        {
+          "const": "read",
+          "description": "Reads: runs without asking.",
+          "type": "string"
+        },
+        {
+          "const": "ask",
+          "description": "Writes, sends, deletes or shares: asks the person every time, showing exactly what it would do.",
+          "type": "string"
+        },
+        {
+          "const": "blocked",
+          "description": "Moves money, trades or creates accounts, or would send what looks like a credential: refused even if\napproved.",
+          "type": "string"
+        }
+      ]
+    },
+    "ToolPreview": {
+      "description": "What an approval card shows for an asking tool: who it reaches and what it says, or what it changes. Every field is\nread from the exact input the tool runs with once approved; nothing is a summary the agent wrote.",
+      "properties": {
+        "account": {
+          "description": "The account it acts as, when the tool names one (an xaq account's address).",
+          "maxLength": 320,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "action": {
+          "$ref": "#/$defs/ToolAction"
+        },
+        "audience": {
+          "description": "Who it reaches when the tool decides that itself, such as a reply to a message's sender: said in words, since\nthe card can't list them.",
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "bcc": {
+          "items": {
+            "maxLength": 320,
+            "minLength": 1,
+            "pattern": "^[^\\r\\n]*$",
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "body": {
+          "description": "The text that goes out or goes in: the email's body, the event's notes, the page's new content.",
+          "maxLength": 20000,
+          "type": "string"
+        },
+        "bodyCut": {
+          "description": "The body was longer and is cut here.",
+          "type": "boolean"
+        },
+        "cc": {
+          "items": {
+            "maxLength": 320,
+            "minLength": 1,
+            "pattern": "^[^\\r\\n]*$",
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "input": {
+          "description": "Everything the tool gets, as JSON, so nothing is hidden behind the fields above.",
+          "maxLength": 20000,
+          "type": "string"
+        },
+        "integration": {
+          "$ref": "#/$defs/IntegrationKind"
+        },
+        "server": {
+          "$ref": "#/$defs/McpServerName",
+          "description": "The configured server's name, as claude prefixes its tools (`mcp__<server>__<tool>`)."
+        },
+        "subject": {
+          "maxLength": 1000,
+          "type": "string"
+        },
+        "target": {
+          "description": "What it acts on: a message, an event, a page or a file, by name or id.",
+          "maxLength": 2000,
+          "type": "string"
+        },
+        "title": {
+          "description": "One line: \"Send an email\", \"Reply to a message\", \"Delete a Notion block\".",
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "to": {
+          "description": "Every recipient, as the tool gets them.",
+          "items": {
+            "maxLength": 320,
+            "minLength": 1,
+            "pattern": "^[^\\r\\n]*$",
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "tool": {
+          "$ref": "#/$defs/McpToolName"
+        },
+        "when": {
+          "description": "When, for an event: \"2026-11-03 10:00 → 11:00\".",
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "integration",
+        "server",
+        "tool",
+        "action",
+        "title",
+        "input"
       ],
       "type": "object"
     },

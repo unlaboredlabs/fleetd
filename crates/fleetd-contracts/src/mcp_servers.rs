@@ -173,6 +173,9 @@ pub struct McpServer {
     /// An HTTP or SSE server's headers.
     #[serde(default)]
     pub headers: Vec<McpValue>,
+    /// What it is to a Navi (Google, Notion or custom), for the hub's tool policy; none for a server added before
+    /// integrations, which counts as custom.
+    pub integration: Option<crate::integrations::McpIntegration>,
     pub updated_at: Timestamp,
 }
 
@@ -327,9 +330,14 @@ pub struct McpSessionConfig {
 /// One tool a server lists.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct McpToolInfo {
     pub name: String,
     pub description: Option<String>,
+    /// The server says the tool only reads (MCP's `readOnlyHint`): the connect screen offers it as one to run unasked.
+    pub read_only: Option<bool>,
+    /// What the hub's tool policy does with it (`hub/integrations`), filled in by the hub.
+    pub policy: Option<crate::integrations::ToolPolicy>,
 }
 
 /// What a connection test found: the tools a server lists, or why it couldn't be reached.

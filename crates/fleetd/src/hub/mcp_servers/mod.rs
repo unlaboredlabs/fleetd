@@ -165,12 +165,11 @@ impl McpServerStore<'_> {
         })
     }
 
-    /// What a session of the project gets: its enabled servers, and the enabled global ones it has no server of the
-    /// same name for (a project's server replaces a global one even while it is off, which turns that one off there).
-    /// A session in a repo checkout another project holds gets that project's servers too, over the checkout's own;
-    /// with several, the one that added it first wins a name (W79). A server none of whose roles is on, or whose
-    /// secrets aren't all on the project's machine, is left out.
-    pub fn session_config(&self, r: &ProjectRef) -> Result<McpSessionConfig, StoreError> {
+    /// The servers a project's sessions are configured from, by name: the global ones, the project's own over them, and
+    /// in a repo checkout another project holds that project's servers too, over the checkout's own; with several, the
+    /// one that added it first wins a name (W79). What the hub's tool policy (`hub/integrations`) reads a session's MCP
+    /// tools against.
+    pub fn servers_for(&self, r: &ProjectRef) -> Result<Vec<McpServer>, StoreError> {
         let holders = self
             .db
             .with(|c| Ok(crate::hub::repos::store::holders(c, r)?))?;
@@ -187,8 +186,16 @@ impl McpServerStore<'_> {
             })?;
             by_name.extend(servers.into_iter().map(|s| (s.name.to_string(), s)));
         }
-        let servers = by_name
-            .values()
+        Ok(by_name.into_values().collect())
+    }
+
+    /// What a session of the project gets: [`Self::servers_for`]'s enabled ones (a project's server replaces a global one
+    /// even while it is off, which turns that one off there). A server none of whose roles is on, or whose secrets aren't
+    /// all on the project's machine, is left out.
+    pub fn session_config(&self, r: &ProjectRef) -> Result<McpSessionConfig, StoreError> {
+        let servers = self
+            .servers_for(r)?
+            .iter()
             .filter(|s| s.enabled && s.roles.any())
             .filter_map(|s| for_session(s, &r.machine_id))
             .collect();

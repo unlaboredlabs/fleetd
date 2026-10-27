@@ -17,6 +17,7 @@ pub mod effort;
 pub mod events;
 pub mod hello;
 pub mod ids;
+pub mod integrations;
 pub mod lead_calls;
 pub mod ledger;
 pub mod live;

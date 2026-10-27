@@ -15,6 +15,7 @@ pub mod executor;
 pub mod http;
 pub mod info;
 pub mod intake;
+pub mod integrations;
 pub mod leads;
 pub mod ledger;
 pub mod link;

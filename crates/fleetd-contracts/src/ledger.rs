@@ -343,6 +343,9 @@ pub struct ToolPermission {
     pub tool_name: NonEmpty,
     /// The command, the path, or the tool's own description.
     pub summary: Text<0, 2000>,
+    /// An integration's asking tool (`hub/integrations`): exactly who it reaches and what it says, or what it changes,
+    /// read from the input it runs with once approved. Boxed: it is large beside the prompt's other fields.
+    pub preview: Option<Box<crate::integrations::ToolPreview>>,
 }
 
 /// What a lead needs a person for that chat can't carry safely: a secret value (entered in a masked field and sealed to
