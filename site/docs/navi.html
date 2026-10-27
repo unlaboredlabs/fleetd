@@ -127,7 +127,8 @@ policy file’s allow rules don’t apply to a Navi at all.</li>
 <li><strong>Sites:</strong> the first time it fetches a page or opens a site in its browser, you’re asked in its chat, with the site
 named. Approve once and it fetches and opens that site unasked from then on, with a plain URL: one with <code dir="auto">?</code> or
 <code dir="auto">&amp;</code>, quotes or other shell characters in a browser command asks each time. <code dir="auto">www.</code> is the same site, a subdomain is
-another. The MCP tools <code dir="auto">navi_sites</code> and <code dir="auto">navi_site_revoke</code> list a Navi’s sites and take one back; a revoked site asks
+another, and <code dir="auto">localhost</code> is a site per port (<code dir="auto">localhost:3000</code>). Only <code dir="auto">http</code> and <code dir="auto">https</code> name a site: <code dir="auto">file:</code>,
+<code dir="auto">data:</code>, <code dir="auto">about:</code> and other schemes ask every time. The MCP tools <code dir="auto">navi_sites</code> and <code dir="auto">navi_site_revoke</code> list a Navi’s sites and take one back; a revoked site asks
 again.</li>
 </ul>
 <p>Anything hard to undo, or that someone else sees, waits for you every time: sending an email or message, accepting

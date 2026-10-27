@@ -34,13 +34,26 @@ fn plain(url: &str) -> bool {
             .all(|c| c.is_alphanumeric() || "-._~:/?#[]@!*+,=%".contains(c))
 }
 
+/// Whether `url` names a scheme of its own (`file:`, `data:`, `about:`, `https://`): text before a `:` that isn't a
+/// host's port (`localhost:3000`, `example.org:8080/a`).
+fn has_scheme(url: &str) -> bool {
+    let Some((scheme, rest)) = url.split_once(':') else {
+        return false;
+    };
+    let port = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    !scheme.contains(['/', '.'])
+        && (rest.starts_with("//") || port.is_empty() || !port.chars().all(|c| c.is_ascii_digit()))
+}
+
 /// The site `url` is on: its host as the URL library reads it (lower case, IDN as punycode), without a leading
-/// `www.`; none for anything but a plain http or https URL with no user in it.
+/// `www.`; a loopback host with its port (`localhost:3000`), since each port is a different program. None for anything
+/// but a plain http or https URL with no user in it: `file:`, `data:`, `javascript:`, `about:`, `chrome:` and the rest
+/// ask every time.
 pub fn site_of(url: &str) -> Option<String> {
     if !plain(url) {
         return None;
     }
-    let parsed = if url.contains("://") {
+    let parsed = if has_scheme(url) {
         url::Url::parse(url)
     } else {
         url::Url::parse(&format!("https://{url}"))
@@ -57,6 +70,17 @@ pub fn site_of(url: &str) -> Option<String> {
         .trim_end_matches('.')
         .to_ascii_lowercase();
     let host = host.strip_prefix("www.").unwrap_or(&host).to_owned();
+    let loopback = host == "localhost"
+        || host.ends_with(".localhost")
+        || match parsed.host() {
+            Some(url::Host::Ipv4(ip)) => ip.is_loopback(),
+            Some(url::Host::Ipv6(ip)) => ip.is_loopback(),
+            _ => false,
+        };
+    let host = match parsed.port_or_known_default() {
+        Some(port) if loopback => format!("{host}:{port}"),
+        _ => host,
+    };
     (!host.is_empty()).then_some(host)
 }
 
@@ -193,6 +217,27 @@ mod tests {
         ] {
             assert_eq!(bash(flagged), Some(Visit::Unknown), "{flagged}");
         }
+        // Only http and https name a site; every other scheme asks each time.
+        for url in [
+            "file:/etc/passwd",
+            "file:///etc/passwd",
+            "data:text/html,hi",
+            "javascript:alert(1)",
+            "about:blank",
+            "chrome://settings",
+            "view-source:https://allowed.example",
+        ] {
+            assert_eq!(fetch(url), Some(Visit::Unknown), "{url}");
+        }
+        // A loopback host is a site per port: each port is another program.
+        assert_eq!(fetch("http://localhost:3000/app"), site("localhost:3000"));
+        assert_eq!(
+            bash("agent-browser open localhost:5173"),
+            site("localhost:5173")
+        );
+        assert_eq!(fetch("http://127.0.0.1:8080/"), site("127.0.0.1:8080"));
+        assert_eq!(fetch("http://localhost/"), site("localhost:80"));
+        assert_eq!(fetch("https://example.org:8443/a"), site("example.org"));
         // `read` fetches a URL as `open` does.
         assert_eq!(
             bash("agent-browser read https://dentist.example/a"),
