@@ -67,6 +67,9 @@ export default defineConfig({
     host: "127.0.0.1",
     port: Number(process.env["PORT"] ?? "5180"),
     strictPort: true,
+    // Try it's proxy passes the person's Host (the node's tailnet name) through unchanged; the server listens on
+    // 127.0.0.1 only, so the proxy is all that reaches it.
+    allowedHosts: true,
     // A preview, not a dev loop: no socket to reconnect through a proxy.
     hmr: false,
     fs: { allow: [desktopDir] },
