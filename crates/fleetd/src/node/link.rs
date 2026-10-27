@@ -12,7 +12,7 @@ use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 
 use super::actions::run_node_action;
-use super::cmd::run_cmd_check;
+use super::cmd::run_cmd_check_from;
 use super::identity::{NodeBoxKey, NodeIdentity};
 use super::lead::LeadRelay;
 use super::power::Wakes;
@@ -502,7 +502,8 @@ async fn run_link_once(
                 let shared = shared.clone();
                 let tx = tx.clone();
                 tasks.spawn(async move {
-                    let result = run_cmd_check(check, &shared.cmd_roots).await;
+                    let home = shared.secrets.as_ref().map(|s| s.home.as_path());
+                    let result = run_cmd_check_from(check, &shared.cmd_roots, home).await;
                     let _ = tx.send(to_json(&NodeToHub::CmdResult(result)));
                 });
             }

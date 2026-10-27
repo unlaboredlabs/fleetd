@@ -21,6 +21,7 @@ import { ChatSuggestion } from "../tryit/Suggestion";
 import { useNow, useOnScreen } from "../live";
 import type { ChatItem as InlineItem } from "../../../shared/contracts";
 import { InlineChatItem } from "../inline";
+import { isNavi } from "../settings/integrationsModel";
 import type { ProjectRef } from "./slots";
 import { InlineText } from "./text";
 import s from "./view.module.css";
@@ -71,12 +72,16 @@ function Top({ state, onLoadOlder }: { state: TopState; onLoadOlder: () => void 
  */
 function Inline({ item, enter }: { item: ChatItem; enter: Arrival | undefined }) {
   const inline = (item.message as { readonly item?: InlineItem } | undefined)?.item;
+  // In a Navi's chat, an integration's card names the Navi: "Ada wants to send an email".
+  const ref = (item.message as { readonly projectRef?: ProjectRef } | undefined)?.projectRef;
+  const project = useData((d) => (ref === undefined ? undefined : d.projects[projectKey(ref)]));
+  const asker = isNavi(project) ? project?.title : undefined;
   const e = useEnter(enter);
   return (
     <div className={cx(s.message, e.className)} style={e.style} data-entry="inline">
       <Waited id={item.id}>
         {inline !== undefined ? (
-          <InlineChatItem item={inline} />
+          <InlineChatItem item={inline} asker={asker} />
         ) : (
           <Text size="xs" tone="quiet">
             {item.kind === "secret" ? "The lead needs a secret here." : "The lead wants to run a command that needs your approval."}
