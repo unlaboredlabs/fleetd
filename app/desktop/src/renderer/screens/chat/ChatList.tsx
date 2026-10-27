@@ -3,7 +3,7 @@
 // (the follow rule is T3 Code's: apps/web MessagesTimeline.logic.ts). Scrolling to the top loads older pages; the
 // list keeps its place while they arrive above. Scrolled up, a button counts what arrived below and goes back to it.
 import type { Virtualizer } from "@tanstack/react-virtual";
-import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Button, cx, StateGlyph, Text, useBeatRef, VirtualList } from "../../ui";
 import { useData } from "../../src/data/react";
 import { projectKey } from "../../src/data/store";
@@ -25,12 +25,20 @@ import { InlineText } from "./text";
 import s from "./view.module.css";
 
 function Top({ state, onLoadOlder }: { state: TopState; onLoadOlder: () => void }) {
-  // Reaching the top of what is loaded asks for the page before it.
+  // Reaching the top of what is loaded asks for the page before it. The observer says so once the line is in view,
+  // measured after a page that just landed has kept the place: the line it pushed out of view asks for no more.
+  const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (state === "more") onLoadOlder();
+    const el = ref.current;
+    if (state !== "more" || !el) return;
+    const io = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) onLoadOlder();
+    });
+    io.observe(el);
+    return () => io.disconnect();
   }, [state, onLoadOlder]);
   return (
-    <div className={s.top}>
+    <div ref={ref} className={s.top}>
       {state === "loading" ? (
         <Text size="xs" tone="quiet">
           Loading earlier messages…
@@ -309,6 +317,24 @@ export function ChatList(props: {
       el.removeEventListener("keydown", release);
     };
   }, [openKey, openSeq, openPart]);
+
+  // An older page keeps the place. TanStack keeps the row at the scroll offset where it was, but at the very top that
+  // row is the top line, or the day's line under it, both still first once the page lands below them: the view would
+  // stay on the new page, whose top line asks for the one before, and so on to the start. So there the oldest
+  // message read before stays where it was.
+  const oldest = useRef<{ key: string | number | bigint; start: number }>(undefined);
+  useLayoutEffect(() => {
+    const v = virtualizer.current;
+    if (!v) return;
+    const was = oldest.current;
+    const first = rows.findIndex((r) => "item" in r);
+    const at = was === undefined ? -1 : rows.findIndex((r) => r.key === was.key);
+    const row = v.measurementsCache[at];
+    const offset = v.scrollOffset ?? 0;
+    if (was !== undefined && row !== undefined && at > first && offset < was.start) v.scrollToOffset(offset + row.start - was.start);
+    const now = v.measurementsCache[first];
+    oldest.current = now === undefined ? undefined : { key: now.key, start: now.start };
+  }, [rows]);
 
   // Scrolled up past the follow threshold (followOptions'), the newest message's key then; undefined at the end.
   const [awayFrom, setAwayFrom] = useState<string>();
