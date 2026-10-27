@@ -1009,6 +1009,54 @@
       ],
       "x-open": true
     },
+    "IosHealth": {
+      "properties": {
+        "fix": {
+          "description": "The command a person runs to fix it, when there is one.",
+          "maxLength": 500,
+          "type": "string"
+        },
+        "message": {
+          "description": "Plain words: the runtime and device sessions use, or what is wrong.",
+          "maxLength": 500,
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/IosState"
+        }
+      },
+      "required": [
+        "state",
+        "message"
+      ],
+      "type": "object"
+    },
+    "IosState": {
+      "description": "Where a node's iOS sessions stand, for the doctor.",
+      "oneOf": [
+        {
+          "const": "ready",
+          "description": "The golden simulator is made: sessions start.",
+          "type": "string"
+        },
+        {
+          "const": "wanted",
+          "description": "Xcode and an iOS runtime work, but the machine isn't opted in: node.json's `ios.enabled` makes the golden.",
+          "type": "string"
+        },
+        {
+          "const": "preparing",
+          "description": "Making the golden simulator: one boot left to settle, and agent-device's runner built for it.",
+          "type": "string"
+        },
+        {
+          "const": "unavailable",
+          "description": "Can't run here until a person fixes something (no Xcode, no iOS runtime, no Node.js, or the golden failed).",
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
     "LaneStatus": {
       "oneOf": [
         {
@@ -1327,6 +1375,10 @@
           },
           "maxItems": 4,
           "type": "array"
+        },
+        "ios": {
+          "$ref": "#/$defs/IosHealth",
+          "description": "Whether the machine can host iOS sessions; absent off macOS, where node.json turns them off, on a Mac without\nXcode that didn't opt in, and from older nodes."
         },
         "limits": {
           "default": [],

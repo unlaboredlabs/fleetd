@@ -108,7 +108,7 @@ export interface BrowserSession {
   readonly now?: string;
   readonly actions: readonly SessionAction[];
   /** Once recorded: how long it ran, and which files the hub has (its video only where the node had ffmpeg). */
-  readonly recording?: { readonly durationMs: number; readonly files: readonly ("actions" | "dom" | "video")[] };
+  readonly recording?: { readonly durationMs: number; readonly files: readonly ("actions" | "dom" | "video" | "video_mp4")[] };
   /** How many logins the node filled from 1Password; never their values. */
   readonly credentialsFilled?: number;
   /** Why it was lost, or what its recording lacks. */

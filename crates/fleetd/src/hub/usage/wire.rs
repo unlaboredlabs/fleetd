@@ -260,6 +260,10 @@ impl DoctorFleet for OpsPorts {
         let m = machine(machine_id)?;
         self.hub().link.load(&m).and_then(|l| l.android)
     }
+    fn ios(&self, machine_id: &str) -> Option<fleetd_contracts::node_link::IosHealth> {
+        let m = machine(machine_id)?;
+        self.hub().link.load(&m).and_then(|l| l.ios)
+    }
     fn repos_without_ci(&self) -> Vec<String> {
         self.hub().train.repos_without_ci()
     }

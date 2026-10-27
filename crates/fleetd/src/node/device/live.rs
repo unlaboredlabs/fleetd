@@ -1,8 +1,9 @@
-//! Android sessions' live view and takeover, as browser sessions have them: the hub's `browser_watch`,
+//! Android and iOS sessions' live view and takeover, as browser sessions have them: the hub's `browser_watch`,
 //! `browser_input` and `browser_control` for a session reach [`Router::from_hub`], which hands a browser session's to
-//! its broker and an Android session's to [`Devices`]. A watched device's screen goes out through a pump that turns
-//! each new scrcpy frame into a `browser_frame` in the link's frame slot (newest only, as a browser's); a person's
-//! mouse and keys become one finger, a scroll, a key or text.
+//! its broker, an Android session's to [`Devices`] and an iOS one's to [`Simulators`]. A watched device's screen goes
+//! out through a pump that turns each new frame (scrcpy's, or the simulator's screenshot loop) into a `browser_frame`
+//! in the link's frame slot (newest only, as a browser's); a person's mouse and keys become one finger, a scroll, a key
+//! or text.
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
@@ -16,13 +17,62 @@ use fleetd_contracts::node_link::{HubToNode, NodeToHub};
 use fleetd_contracts::prim::{Int, NonEmpty};
 use tokio::sync::watch;
 
+use super::ios::Simulators;
 use super::scrcpy::{Frame, Input, TouchAction};
 use super::{Devices, Router};
 use crate::node::browser::FrameSlot;
 use crate::node::util::AbortOnDrop;
 use crate::node::wire::to_json;
 
-/// What the Router keeps for Android sessions' live view: the pump of each watched session, and which sessions
+/// What live view needs of a kind of device session: Android's ([`Devices`]) and iOS's ([`Simulators`]).
+pub trait Screens: Send + Sync {
+    /// Whether a session of this id is live here.
+    fn holds(&self, session: &str) -> bool;
+    /// Its screen, as JPEG frames.
+    fn frames(&self, session: &str) -> Option<watch::Receiver<Option<Frame>>>;
+    /// Who drives it.
+    fn control(&self, session: &str) -> Option<BrowserControl>;
+    /// A person's input, while they have control.
+    fn input(&self, session: &str, input: &Input) -> bool;
+    /// Hands it to a person or back to the agent.
+    fn set_control(
+        &self,
+        session: &str,
+        control: BrowserControl,
+        by: &str,
+    ) -> Option<BrowserControl>;
+}
+
+macro_rules! screens {
+    ($kind:ty) => {
+        impl Screens for $kind {
+            fn holds(&self, session: &str) -> bool {
+                <$kind>::holds(self, session)
+            }
+            fn frames(&self, session: &str) -> Option<watch::Receiver<Option<Frame>>> {
+                <$kind>::frames(self, session)
+            }
+            fn control(&self, session: &str) -> Option<BrowserControl> {
+                <$kind>::control(self, session)
+            }
+            fn input(&self, session: &str, input: &Input) -> bool {
+                <$kind>::input(self, session, input)
+            }
+            fn set_control(
+                &self,
+                session: &str,
+                control: BrowserControl,
+                by: &str,
+            ) -> Option<BrowserControl> {
+                <$kind>::set_control(self, session, control, by)
+            }
+        }
+    };
+}
+screens!(Devices);
+screens!(Simulators);
+
+/// What the Router keeps for Android and iOS sessions' live view: the pump of each watched session, and which sessions
 /// have a finger down (a move counts as a drag only then).
 #[derive(Default)]
 pub struct DeviceLive {
@@ -144,7 +194,7 @@ pub fn device_input(input: &BrowserInput, pressed: &mut bool) -> Option<Input> {
 
 impl Router {
     /// A frame from the hub for a session: to the browser broker for a browser session, to [`Devices`] for an Android
-    /// one. Never blocks the link's loop.
+    /// one, to [`Simulators`] for an iOS one. Never blocks the link's loop.
     pub fn from_hub(&self, frame: HubToNode, slot: &Arc<FrameSlot>) {
         let session = match &frame {
             HubToNode::BrowserWatch(f) => f.session_id.clone(),
@@ -156,9 +206,21 @@ impl Router {
             broker.from_hub(frame, slot);
             return;
         }
-        let Some(devices) = self.devices.as_ref().filter(|d| d.holds(session.as_str())) else {
+        let android = self
+            .devices
+            .clone()
+            .map(|d| d as Arc<dyn Screens>)
+            .filter(|d| d.holds(session.as_str()));
+        let ios = || {
+            self.ios
+                .clone()
+                .map(|i| i as Arc<dyn Screens>)
+                .filter(|i| i.holds(session.as_str()))
+        };
+        let Some(devices) = android.or_else(ios) else {
             return;
         };
+        let devices = &devices;
         match frame {
             HubToNode::BrowserWatch(watch) => {
                 self.watch_device(devices, &session, watch.on.then(|| slot.clone()))
@@ -197,7 +259,7 @@ impl Router {
     /// Starts or stops sending a device session's screen to the hub.
     fn watch_device(
         &self,
-        devices: &Arc<Devices>,
+        devices: &Arc<dyn Screens>,
         session: &BrowserSessionId,
         slot: Option<Arc<FrameSlot>>,
     ) {

@@ -310,7 +310,7 @@ the number you set, 1 to 64.</p>
 </tr>
 <tr>
 <td>iOS simulator</td>
-<td>macOS with Xcode and at least one iOS simulator runtime.</td>
+<td>fleetd’s own golden simulator and its clones: macOS with Xcode, an iOS simulator runtime and Node.js, and opted in with <code dir="auto">"ios": {"enabled": true}</code> in node.json (or the golden made already). While the node makes its golden (minutes), or after making it failed, the hub still sends it iOS sessions: the node says it is still making it, and the next session tries a failed one again. The doctor’s <code dir="auto">ios</code> check says where it stands. See <a href="/docs/browser-sessions#ios-setup">iOS sessions</a>.</td>
 </tr>
 <tr>
 <td>Desktop</td>

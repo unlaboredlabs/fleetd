@@ -2069,6 +2069,19 @@ export type IntakeRef = {
   url: GitHubPrUrl;
 };
 
+export type IosHealth = {
+  /** The command a person runs to fix it, when there is one. */
+  fix?: string;
+  /** Plain words: the runtime and device sessions use, or what is wrong. */
+  message: string;
+  state: IosState;
+};
+
+/** Where a node's iOS sessions stand, for the doctor. */
+export type KnownIosState = "ready" | "wanted" | "preparing" | "unavailable";
+/** KnownIosState, or a value from a newer hub. */
+export type IosState = KnownIosState | (string & {});
+
 export type KeyAction = "down" | "up";
 
 export type KindTotal = {
@@ -2801,6 +2814,11 @@ export type NodeLoad = {
    * from older nodes.
    */
   hosts?: HostCheck[];
+  /**
+   * Whether the machine can host iOS sessions; absent off macOS, where node.json turns them off, on a Mac without
+   * Xcode that didn't opt in, and from older nodes.
+   */
+  ios?: IosHealth;
   /**
    * The latest claude.ai subscription limit of each type claude reported. Empty behind API keys and gateways,
    * which send none.
@@ -3952,7 +3970,7 @@ export type RecentLanding = {
 };
 
 /** The files of a recording, each scrubbed on the node before upload. */
-export type RecordingFile = "actions" | "dom" | "video";
+export type RecordingFile = "actions" | "dom" | "video" | "video_mp4";
 
 /** How a recovering task goes on. */
 export type RecoveryMode = "resume" | "compact" | "fresh";
@@ -4217,10 +4235,12 @@ export type SessionHost = KnownSessionHost | (string & {});
 /**
  * What a session drives: a fresh Chrome with an empty profile (`browser`, driven with agent-browser), or a fresh
  * `-read-only` copy of an Android emulator booted from its Quick Boot snapshot (`android`, driven with agent-device at
- * the copy's serial). Both kinds share the session tools, the action log, the video and the hub's storage; an android
- * recording has no `dom` file. A node hosts android sessions when it lists the `session_android` capability.
+ * the copy's serial), or a fresh clone of an iOS simulator from the node's settled golden device (`ios`, driven with
+ * agent-device at the clone's udid). Every kind shares the session tools, the action log, the video and the hub's
+ * storage; a device recording has no `dom` file, and an iOS one's video is `video_mp4`. A node hosts android sessions
+ * when it lists the `session_android` capability, and iOS ones when it lists `session_ios`.
  */
-export type KnownSessionKind = "browser" | "android";
+export type KnownSessionKind = "browser" | "android" | "ios";
 /** KnownSessionKind, or a value from a newer hub. */
 export type SessionKind = KnownSessionKind | (string & {});
 

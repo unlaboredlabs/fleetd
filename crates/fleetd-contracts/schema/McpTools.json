@@ -11657,6 +11657,11 @@
           "const": "video",
           "description": "`video.webm`: VP9 from the node's own screencast of the page, 1280×800. Absent when the node has no ffmpeg.",
           "type": "string"
+        },
+        {
+          "const": "video_mp4",
+          "description": "`video.mp4`: H.264 from the iOS simulator's own recording (`simctl io recordVideo`), in its screen's pixels.",
+          "type": "string"
         }
       ]
     },
@@ -12327,10 +12332,11 @@
       "x-open": true
     },
     "SessionKind": {
-      "description": "What a session drives: a fresh Chrome with an empty profile (`browser`, driven with agent-browser), or a fresh\n`-read-only` copy of an Android emulator booted from its Quick Boot snapshot (`android`, driven with agent-device at\nthe copy's serial). Both kinds share the session tools, the action log, the video and the hub's storage; an android\nrecording has no `dom` file. A node hosts android sessions when it lists the `session_android` capability.",
+      "description": "What a session drives: a fresh Chrome with an empty profile (`browser`, driven with agent-browser), or a fresh\n`-read-only` copy of an Android emulator booted from its Quick Boot snapshot (`android`, driven with agent-device at\nthe copy's serial), or a fresh clone of an iOS simulator from the node's settled golden device (`ios`, driven with\nagent-device at the clone's udid). Every kind shares the session tools, the action log, the video and the hub's\nstorage; a device recording has no `dom` file, and an iOS one's video is `video_mp4`. A node hosts android sessions\nwhen it lists the `session_android` capability, and iOS ones when it lists `session_ios`.",
       "enum": [
         "browser",
-        "android"
+        "android",
+        "ios"
       ],
       "type": "string",
       "x-open": true

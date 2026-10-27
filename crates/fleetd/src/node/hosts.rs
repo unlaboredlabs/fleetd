@@ -1,9 +1,9 @@
 //! What this machine can host for sessions (machine roles, W46), sent with each heartbeat's load: a browser (the
 //! broker's Chrome, or its install on the first session), an Android emulator (fleetd's own pinned one, node/device,
-//! with KVM), iOS simulators (Xcode on macOS) and a Linux desktop (docker or Xvfb). Each says why in plain words. Read
-//! at most every few minutes: `xcrun simctl` takes a second.
+//! with KVM), iOS simulators (fleetd's own golden and its clones, node/device/ios, with Xcode on macOS) and a Linux
+//! desktop (docker or Xvfb). Each says why in plain words. Read at most every few minutes: `xcrun simctl` takes a
+//! second.
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -14,6 +14,7 @@ use fleetd_contracts::node_link::AndroidState;
 
 use super::browser::BrowserConfig;
 use super::browser::chrome;
+use super::device::ios::IosConfig;
 use super::device::{self, DeviceConfig};
 
 const FRESH: Duration = Duration::from_secs(300);
@@ -99,45 +100,26 @@ pub fn android(home: &Path, config: &DeviceConfig) -> HostCheck {
     }
 }
 
-/// iOS simulators from `xcrun simctl list devices available -j`'s JSON: how many are iOS.
-pub fn ios_simulators(json: &str) -> Option<usize> {
-    let v: serde_json::Value = serde_json::from_str(json).ok()?;
-    let devices = v.get("devices")?.as_object()?;
-    Some(
-        devices
-            .iter()
-            .filter(|(runtime, _)| runtime.contains("iOS"))
-            .map(|(_, list)| list.as_array().map_or(0, Vec::len))
-            .sum(),
-    )
-}
-
-fn ios() -> HostCheck {
+/// fleetd's own iOS simulators (node/device/ios): ready once the node's golden simulator is made, else what stands in
+/// the way, as the doctor says it.
+pub fn ios(home: &Path, config: &IosConfig) -> HostCheck {
     let host = SessionHost::Ios;
-    if !cfg!(target_os = "macos") {
-        return check(host, false, "iOS simulators need macOS");
+    if !config.enabled() {
+        let why = match device::ios::supported() {
+            true => "iOS sessions are off in node.json",
+            false => "iOS simulators need macOS",
+        };
+        return check(host, false, why);
     }
-    let simctl = Command::new("xcrun")
-        .args(["simctl", "list", "devices", "available", "-j"])
-        .output();
-    let out = match simctl {
-        Ok(out) if out.status.success() => out,
-        _ => {
-            return check(
-                host,
-                false,
-                "no Xcode: install it and run xcode-select --switch",
-            );
-        }
-    };
-    match ios_simulators(&String::from_utf8_lossy(&out.stdout)) {
-        Some(0) | None => check(
+    // Ready where the golden is made, and also on a Mac opted in while it is made or after it failed, so the hub sends
+    // the session there: the node says it is still making it, and the next session_start tries a failed one again.
+    match device::ios::host(home, config) {
+        Some((health, placeable)) => check(host, placeable, health.message.as_str()),
+        None => check(
             host,
             false,
-            "Xcode, but no iOS simulator (add a runtime in Xcode > Settings > Components)",
+            "no Xcode: install it, then opt this Mac in with \"ios\": {\"enabled\": true} in node.json",
         ),
-        Some(1) => check(host, true, "Xcode with 1 iOS simulator"),
-        Some(n) => check(host, true, format!("Xcode with {n} iOS simulators")),
     }
 }
 
@@ -163,7 +145,12 @@ fn desktop() -> HostCheck {
 }
 
 /// What this machine can host now, read at most every few minutes. Blocking: run it off the async threads.
-pub fn checks(home: &Path, config: &BrowserConfig, device: &DeviceConfig) -> HostChecks {
+pub fn checks(
+    home: &Path,
+    config: &BrowserConfig,
+    device: &DeviceConfig,
+    ios_config: &IosConfig,
+) -> HostChecks {
     static LAST: Mutex<Option<(Instant, Vec<HostCheck>)>> = Mutex::new(None);
     let mut last = LAST
         .lock()
@@ -176,7 +163,7 @@ pub fn checks(home: &Path, config: &BrowserConfig, device: &DeviceConfig) -> Hos
     let checks = vec![
         browser(home, config),
         android(home, device),
-        ios(),
+        ios(home, ios_config),
         desktop(),
     ];
     *last = Some((Instant::now(), checks.clone()));
@@ -234,13 +221,23 @@ mod tests {
     }
 
     #[test]
-    fn ios_counts_only_ios_simulators() {
-        let json = r#"{"devices":{
-            "com.apple.CoreSimulator.SimRuntime.iOS-18-0":[{"name":"iPhone 16"},{"name":"iPad"}],
-            "com.apple.CoreSimulator.SimRuntime.watchOS-11-0":[{"name":"Watch"}]
-        }}"#;
-        assert_eq!(ios_simulators(json), Some(2));
-        assert_eq!(ios_simulators("not json"), None);
+    fn ios_is_fleetds_own_simulator_and_only_where_set_up() {
+        let home = tempfile::tempdir().unwrap();
+        let off = IosConfig {
+            enabled: Some(false),
+            ..IosConfig::default()
+        };
+        assert!(!ios(home.path(), &off).ready);
+        let opted_in = IosConfig {
+            enabled: Some(true),
+            ..IosConfig::default()
+        };
+        // Which states a Mac opted in is placed in: node/device/ios's tests, where they can be set up anywhere.
+        if !device::ios::supported() {
+            let asked = ios(home.path(), &opted_in);
+            assert!(!asked.ready);
+            assert_eq!(asked.detail.as_str(), "iOS simulators need macOS");
+        }
     }
 
     #[test]

@@ -28,8 +28,9 @@ use crate::node::mask::Secrets;
 
 const THREAD: &str = "th-android-1";
 
-/// The hub in process, answering the node's calls as a task's session in project storefront.
-struct TestHub {
+/// The hub in process, answering the node's calls as a task's session in project storefront (iOS sessions' tests
+/// use it too).
+pub(super) struct TestHub {
     hub: Arc<Hub>,
     project: ProjectRef,
 }
@@ -50,7 +51,7 @@ impl HubCalls for TestHub {
     }
 }
 
-fn hub(home: &Path) -> Arc<TestHub> {
+pub(super) fn hub(home: &Path) -> Arc<TestHub> {
     let config = HubConfig {
         home: home.to_path_buf(),
         listen: Listen::default(),
@@ -89,7 +90,7 @@ fn reader() -> fleetd_contracts::auth::AgentKeyInfo {
     .unwrap()
 }
 
-async fn sessions(hub: &TestHub) -> Value {
+pub(super) async fn sessions(hub: &TestHub) -> Value {
     crate::hub::api::registry()
         .call(
             &hub.hub,
@@ -101,7 +102,7 @@ async fn sessions(hub: &TestHub) -> Value {
         .unwrap()
 }
 
-async fn read_file(hub: &TestHub, id: &str, file: &str) -> Vec<u8> {
+pub(super) async fn read_file(hub: &TestHub, id: &str, file: &str) -> Vec<u8> {
     let mut out = Vec::new();
     loop {
         let piece = crate::hub::api::registry()
@@ -196,7 +197,7 @@ async fn agent_device(router: &Router, args: &[&str]) -> (bool, String) {
     (out.status.success(), text)
 }
 
-fn command_item(command: &str, output: &str, ok: bool) -> ThreadItem {
+pub(super) fn command_item(command: &str, output: &str, ok: bool) -> ThreadItem {
     serde_json::from_value(json!({
         "id": "toolu_1", "status": if ok { "completed" } else { "failed" }, "title": command,
         "startedAt": "2026-10-26T10:00:00.000Z", "completedAt": "2026-10-26T10:00:00.900Z",
@@ -263,6 +264,7 @@ async fn an_agent_opens_settings_on_an_android_session_and_its_recording_is_on_t
     let router = Router {
         browser: None,
         devices: Some(devices.clone()),
+        ios: None,
         live: Default::default(),
     };
 
@@ -448,6 +450,7 @@ async fn a_machine_without_android_sessions_says_so_and_one_session_kind_at_a_ti
     let router = Router {
         browser: None,
         devices: None,
+        ios: None,
         live: Default::default(),
     };
     let refused = call(
@@ -534,6 +537,7 @@ async fn a_machine_not_set_up_keeps_agents_sdk_and_path_and_installs_nothing() {
     let router = Router {
         browser: None,
         devices: Some(devices.clone()),
+        ios: None,
         live: Default::default(),
     };
     assert!(!devices.offered());

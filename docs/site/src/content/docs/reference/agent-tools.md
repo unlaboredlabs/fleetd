@@ -761,11 +761,11 @@ Start a preview of a PR (or an order's PRs merged together) for the person to tr
 
 ### session_start
 
-Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end. It is recorded (video, the page after each step, a line per agent-browser command) for the person to replay. Drive it with the agent-browser CLI in Bash, which is already pointed at it: pass no --cdp and launch no browser of your own. purpose: one line on what for. kind android instead opens a fresh Android emulator (Android 15), driven with the agent-device CLI, which is already pointed at it: pass no --serial or --platform.
+Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end. It is recorded (video, the page after each step, a line per agent-browser command) for the person to replay. Drive it with the agent-browser CLI in Bash, which is already pointed at it: pass no --cdp and launch no browser of your own. purpose: one line on what for. kind android instead opens a fresh Android emulator (Android 15), driven with the agent-device CLI, which is already pointed at it: pass no --serial or --platform. kind ios opens a fresh iOS simulator on a Mac the same way: pass no --udid or --platform.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `kind` | string | no | `android` for an Android emulator, driven with agent-device; absent for a browser. One of `browser`, `android`. |
+| `kind` | string | no | `android` for an Android emulator, `ios` for an iOS simulator, each driven with agent-device; absent for a browser. One of `browser`, `android`, `ios`. |
 | `purpose` | string | yes | What you need the browser for, in one line; the person replaying it sees it. At most 200 characters. |
 
 **Who may call:** a lead, a task's agent, answered by its node, which runs the browser. **Needs a human:** no.
@@ -1010,11 +1010,11 @@ Propose how Try it runs this project's web app, once you know: setup commands (i
 
 ### session_start (task)
 
-Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end. It is recorded (video, the page after each step, a line per agent-browser command) for the person to replay. Drive it with the agent-browser CLI in Bash, which is already pointed at it: pass no --cdp and launch no browser of your own. purpose: one line on what for. kind android instead opens a fresh Android emulator (Android 15), driven with the agent-device CLI, which is already pointed at it: pass no --serial or --platform.
+Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end. It is recorded (video, the page after each step, a line per agent-browser command) for the person to replay. Drive it with the agent-browser CLI in Bash, which is already pointed at it: pass no --cdp and launch no browser of your own. purpose: one line on what for. kind android instead opens a fresh Android emulator (Android 15), driven with the agent-device CLI, which is already pointed at it: pass no --serial or --platform. kind ios opens a fresh iOS simulator on a Mac the same way: pass no --udid or --platform.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `kind` | string | no | `android` for an Android emulator, driven with agent-device; absent for a browser. One of `browser`, `android`. |
+| `kind` | string | no | `android` for an Android emulator, `ios` for an iOS simulator, each driven with agent-device; absent for a browser. One of `browser`, `android`, `ios`. |
 | `purpose` | string | yes | What you need the browser for, in one line; the person replaying it sees it. At most 200 characters. |
 
 **Who may call:** a lead, a task's agent, answered by its node, which runs the browser. **Needs a human:** no.
