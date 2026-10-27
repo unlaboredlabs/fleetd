@@ -2,16 +2,18 @@
 // with a view each side of an inner row of tabs. A row opens one agent's live work or one PR in the list's place, with
 // a way back above it. Sections, views, rows and Back are all routes (shell/routes.ts), so links from the chat, Status
 // and the palette open the same views. Only the open view's pane is mounted and reads from the hub; the counts on the
-// tabs read only what is cheap.
+// tabs read only what is cheap. A Navi's panel has its own sections (Sections.tsx, NAVI_SECTIONS).
 import { ChevronLeft } from "lucide-react";
 import { lazy, Suspense, type ComponentType, type LazyExoticComponent } from "react";
 import { Boundary } from "../../src/Boundary";
 import { useData } from "../../src/data/react";
+import { projectKey } from "../../src/data/store";
+import { isNavi } from "../navi/model";
 import { Button, TabPanel, Tabs } from "../../ui";
 import { navigate } from "../shell/navigation";
 import { hasItem, listView, panelRoute, type PanelView, type ProjectKey } from "../shell/routes";
 import { PanesProvider } from "./panes";
-import { noteView, SectionHead, sectionOf, SectionTabs, servedSection, viewOf } from "./Sections";
+import { inSections, noteView, SectionHead, sectionOf, sectionsFor, SectionTabs, servedSection, viewOf } from "./Sections";
 import { isPanelTab, PANEL_TABS, served, tabEntry, type CountProps, type PanelTab, type PanelTabEntry, type PaneProps } from "./tabs";
 import s from "./panel.module.css";
 
@@ -27,12 +29,18 @@ const COUNTS: Readonly<Partial<Record<PanelTab, Lazy<CountProps>>>> = Object.fro
 
 export function ProjectPanel({ project, view: asked, onWide }: { project: ProjectKey; view: PanelView; onWide: (wide: boolean) => void }) {
   const features = useData((st) => st.features);
-  // A link to a view this hub doesn't serve opens its section's first.
-  const view = served(asked.tab, features) ? asked : listView(sectionOf(asked.tab).views[0]?.[0] ?? "agents");
+  const navi = useData((st) => {
+    const p = st.projects[projectKey(project)];
+    return p !== undefined && isNavi(p);
+  });
+  const sections = sectionsFor(navi, features);
+  // A link to a view this hub doesn't serve opens its section's first; one this kind of project hasn't, its first section.
+  const fallback = sectionOf(asked.tab, sections).views[0]?.[0] ?? "agents";
+  const view = served(asked.tab, features) && inSections(asked.tab, sections) ? asked : listView(fallback);
   const entry = tabEntry(view.tab);
-  const section = servedSection(sectionOf(view.tab), features);
+  const section = servedSection(sectionOf(view.tab, sections), features);
   const Pane = PANES[view.tab];
-  noteView(project, view.tab);
+  noteView(project, view.tab, sections);
   const pick = (tab: string) => {
     if (isPanelTab(tab)) navigate(panelRoute(project, listView(tab)), { replace: true });
   };
@@ -55,9 +63,9 @@ export function ProjectPanel({ project, view: asked, onWide }: { project: Projec
   );
   return (
     <PanesProvider>
-      <Tabs className={s.panel} value={section.id} onValueChange={(id) => pick(viewOf(project, id, features))}>
+      <Tabs className={s.panel} value={section.id} onValueChange={(id) => pick(viewOf(project, id, features, sections))}>
         <div className={s.head}>
-          <SectionTabs count={count} features={features} />
+          <SectionTabs count={count} features={features} sections={sections} />
         </div>
         <TabPanel value={section.id} className={s.section}>
           {section.views.length > 1 ? (

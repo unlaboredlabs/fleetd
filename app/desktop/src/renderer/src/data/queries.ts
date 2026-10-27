@@ -69,6 +69,8 @@ export interface DataLayer {
   readonly chat: ChatActions;
   /** Reconnect now, not at the next retry (the offline banner's Retry now). */
   retryNow(): void;
+  /** Read the hub's snapshot again (the projects, the machines) on the live link, as a project.added event does. */
+  resync(): void;
   /** The order whose lanes stream their text, or null. Main always subscribes to every open order's lanes. */
   focus(workstreamId: OrderFocus | null): void;
   /** Start applying main's frames; returns the stop. */
@@ -213,6 +215,7 @@ export const createDataLayer = (hub: HubApi, now: () => number = Date.now): Data
     readOf,
     chat: chat.actions,
     retryNow: () => void hub.retryNow?.(),
+    resync: () => void hub.resync(),
     focus: (workstreamId) => void hub.focus(workstreamId),
     start: () => {
       const stopChat = store.subscribe((s, prev) => chat.onState(prev, s));

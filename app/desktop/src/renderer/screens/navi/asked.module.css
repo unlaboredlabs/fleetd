@@ -1,0 +1,106 @@
+/* The panel's Asked work: one ask a row, apart by a hairline; the project and when on top, Navi's words, then the
+   orders it became. No cards, no coloured edges (ui/DESIGN.md). */
+.screen {
+  --pad: var(--space-4);
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+.scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: var(--space-4);
+}
+.empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-8) var(--pad);
+}
+.note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--pad);
+}
+.rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.ask {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--pad);
+}
+.ask + .ask {
+  border-top: 1px solid var(--hairline);
+}
+.head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.project {
+  all: unset;
+  cursor: pointer;
+  font-weight: 500;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.project:hover {
+  text-decoration: underline;
+  text-decoration-color: var(--faint);
+  text-underline-offset: 2px;
+}
+.project:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+.when {
+  margin-left: auto;
+  flex: none;
+}
+.orders {
+  list-style: none;
+  margin: var(--space-1) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.order {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.orderHead {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--pad);
+}
+.skeleton > span {
+  height: var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--selected);
+}
+.skeleton > span:nth-child(2) {
+  width: 70%;
+}

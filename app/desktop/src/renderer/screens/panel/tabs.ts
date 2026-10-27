@@ -2,7 +2,7 @@
 // the palette's Go to commands and the remembered tab all read. A new tab is one entry here: its words, its icon, its
 // pane and, if it has one, its count, each loaded the first time the panel shows it. Agents, Sessions and Pull requests
 // also name an item in their routes (one agent's work, one session, one PR); every other tab's view is `{ tab }`.
-import { Activity, AppWindow, Bot, GitPullRequest, ListChecks, Scale, TrainFront, type LucideIcon } from "lucide-react";
+import { Activity, AppWindow, Bot, GitPullRequest, ListChecks, Scale, Send, TrainFront, type LucideIcon } from "lucide-react";
 import type { ComponentType } from "react";
 import type { PanelView, ProjectKey } from "../shell/routes";
 
@@ -102,6 +102,16 @@ export const PANEL_TABS = [
     keywords: ["decided", "choices", "settled", "why", "revoke"],
     pane: () => import("../decisions/DecisionsPane").then((m) => m.DecisionsPane),
     count: () => import("./counts").then((m) => m.DecisionCount),
+  },
+  {
+    // A Navi's only (panel/Sections.tsx, NAVI_SECTIONS).
+    id: "asked",
+    label: "Asked work",
+    icon: Send,
+    detail: "The work this Navi asked your projects for, and how each order is going",
+    keywords: ["navi", "asked", "orders", "requests", "delegated", "factory"],
+    pane: () => import("../navi/AskedPane").then((m) => m.AskedPane),
+    feature: "navi_asks",
   },
 ] as const satisfies readonly PanelTabEntry[];
 

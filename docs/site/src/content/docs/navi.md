@@ -12,7 +12,36 @@ every project has, unchanged: [chat](/docs/chat), memory and its nightly refresh
 [automations](/docs/automations), [screens](/docs/browser-sessions), the checklist and
 [approvals](/docs/approvals-and-secrets).
 
-## Make one
+## In the app
+
+Your Navis are pinned at the top of the sidebar, above Projects. With none yet, the sidebar shows **Meet Navi**. It
+opens a page that says what Navi does, with a name box and one button, **Create your Navi**. Leave the name empty
+and it's called Navi. Its chat opens once it's ready.
+
+- **New** beside the Navi heading makes another one.
+- A Navi's right-click menu has **Rename…**, **Open settings**, **Copy folder path** and **Archive**.
+- Archive takes effect at once, with **Undo** in the notice. Archived Navis are listed on the Navi page (**New**
+  opens it), each with **Bring back**.
+- ⌘1–9 (Ctrl on Linux and Windows) number the Navis first, then the projects.
+
+A Navi's chat is the project chat, framed for an assistant. The title is its name, and the box says *Message Ada*.
+The gear beside its name opens its settings, where its memory and automations are kept. A
+send or any other approval shows in the chat with **Approve** and **Deny**. The sidebar marks the Navi *approve*
+until you answer.
+
+The panel beside the chat has a Navi's own sections:
+
+| Section | Shows |
+|---|---|
+| Asked | The work this Navi asked your other projects for, newest first. Each item shows the project (click to open its chat), when it was asked, the Navi's words, and each order opened for it (*In progress* with its latest headline, *Done* or *Stopped*). |
+| Screens | The browsers and devices it uses, once your hub serves screens. |
+| Plan | Its checklist. |
+| History | What happened, and what you and the Navi decided. |
+
+Asked shows on a hub that serves `navi_asks`. On any other hub, a Navi still tells you in its chat when work it asked
+for lands.
+
+## Make one from the terminal
 
 ```sh
 fleetd navi create Ada
@@ -87,3 +116,5 @@ Navis are MCP tools on the hub: `navi_create {name, machineId?}`, `navi_list {ar
 `navi_sites {machineId, projectId}` and `navi_site_revoke {machineId, projectId, site}`. Each returns the
 Navi as a project summary with `kind: "assistant"`, `createdBy` (the id and name of the key that made it) and, once
 archived, `archivedAt`. Every other project has no `kind`. Talk to a Navi with `chat_send`, as to any project.
+`navi_asks {navi}` lists what a Navi asked other projects for, with the orders opened for each, on a hub whose ready
+frame names the `navi_asks` feature.

@@ -2,8 +2,10 @@
 // fleet activity quietly inside it (PR and merge one-liners), the two inline items chat can't carry (a secret, a
 // gated command), and the composer, which has the cursor as soon as the chat opens, with the live strip docked to its
 // top. The top bar says what needs you after the title (what the lead waits on you for, a block, what there is to look
-// at, a red main), and is just the title when nothing does; an empty chat asks what to do. It opens where you stopped reading, under a "New"
-// divider.
+// at, a red main), and is just the title when nothing does; an empty chat asks what to do. It opens where you stopped
+// reading, under a "New" divider. A Navi's chat is the same screen as an assistant's: its name in the box, an
+// assistant's starters, and its settings (where its connections are) a click away in the title.
+import { Settings } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BubbleActionsContext, type BubbleActions, type ReplyTarget } from "./actions";
 import { Button, FrameTitle, IdChip, StatusChip, Text } from "../../ui";
@@ -23,6 +25,8 @@ import { arrivalsOf, chatRows, heldLabel, keepRows, rowIndexOf, type Arrivals, t
 import { ChatComposer } from "./Composer";
 import type { ProjectRef } from "./slots";
 import { useAsOfWords } from "../shell/offline";
+import { navigate } from "../shell/navigation";
+import { isNavi } from "../navi/model";
 import s from "./view.module.css";
 
 export function ChatScreen({ project, message }: { project: ProjectRef; message?: string }) {
@@ -105,6 +109,11 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
   const openAt = rows === undefined ? undefined : target !== undefined ? rowIndexOf(rows, target) : newAt === -1 ? undefined : newAt;
   const empty = view !== undefined && view.items.length === 0 && !view.hasOlder;
   const title = data.title ?? "";
+  const navi = useData((d) => {
+    const p = d.projects[key];
+    return p !== undefined && isNavi(p);
+  });
+  const who = navi && title !== "" ? title : undefined;
   const [replyTo, setReplyTo] = useState<ReplyTarget>();
   const onSent = useCallback(() => {
     // Back to following the newest message.
@@ -226,6 +235,17 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
             <StatusChip tone="quiet">{heldLabel(view.offline, asOf)}</StatusChip>
           </span>
         ) : null}
+        {navi && !data.missing ? (
+          <Button
+            variant="quiet"
+            iconOnly
+            aria-label={`${title || "Navi"}’s settings`}
+            title={`${title || "Navi"}’s settings: its connections, memory and automations`}
+            onClick={() => navigate({ id: "settings", tab: "projects", for: key })}
+          >
+            <Settings />
+          </Button>
+        ) : null}
       </FrameTitle>
       {view?.held === true && !view.offline && data.loadError !== undefined ? (
         // Connected, but this chat's newest page couldn't be read: it stays marked as last known, with why.
@@ -260,7 +280,7 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
           <Text tone="quiet">{view === undefined && data.title !== undefined ? "Loading the conversation…" : "Loading…"}</Text>
         </div>
       ) : empty ? (
-        <EmptyChat project={project} title={title} />
+        <EmptyChat project={project} title={title} navi={navi} />
       ) : (
         <BubbleActionsContext.Provider value={actions}>
           <ChatList rows={rows} project={project} onLoadOlder={data.loadOlder} openAt={openAt} openSeq={shown?.n} openPart={shown?.part} sent={sent} entering={arrived?.entering} />
@@ -273,7 +293,7 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
               <LiveStrip project={project} />
             </Boundary>
           ) : null}
-          <ChatComposer project={project} autoFocus recall={recall} onSent={onSent} replyTo={replyTo} onCancelReply={() => setReplyTo(undefined)} />
+          <ChatComposer project={project} autoFocus recall={recall} onSent={onSent} replyTo={replyTo} onCancelReply={() => setReplyTo(undefined)} who={who} />
         </div>
       )}
     </div>
