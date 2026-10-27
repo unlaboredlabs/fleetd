@@ -19,7 +19,8 @@ the message ends with:
 
 > (Ask N3. If you open an order for it, pass asked: "N3" to brief, so Navi hears when it lands.)
 
-The person sees all of it: Navi's message in the target chat under Navi's name, and Navi's own turn in its chat.
+A retry, with the same words to the same project within 10 minutes, returns the first handle and posts nothing new. The
+person sees all of it: Navi's message in the target chat under Navi's name, and Navi's own turn in its chat.
 
 **`factory_status {project?}`.** One read-only call over every other project, or the one named. Each project comes
 with its status row's state (working, waiting on the person, blocked, idle), why it's blocked, a red main

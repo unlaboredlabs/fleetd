@@ -351,3 +351,46 @@ async fn the_navi_hears_when_its_order_opens_closes_and_its_pr_merges_or_fails()
         )]
     );
 }
+
+#[tokio::test]
+async fn a_retried_message_is_the_first_ask_not_a_second_post() {
+    let (hub, _home) = hub();
+    let navi = project("navi");
+    let message =
+        |text: &str| json!({ "op": "project_message", "project": "storefront", "text": text });
+    let agent_posts = |hub: &Hub| {
+        let (messages, _, _) = hub
+            .chat
+            .page(&project("storefront"), None, None, 50)
+            .unwrap();
+        messages
+            .iter()
+            .filter(|m| m.author == ChatAuthor::Agent)
+            .count()
+    };
+    let first = call(&hub, &navi, message("Gift cards, please."))
+        .await
+        .unwrap();
+    let again = call(&hub, &navi, message("Gift cards, please."))
+        .await
+        .unwrap();
+    assert_eq!(first["handle"], "N1");
+    assert_eq!(again["handle"], "N1", "a retry returns the first handle");
+    assert_eq!(agent_posts(&hub), 1, "and posts nothing new");
+    // Other words are a new ask.
+    let other = call(&hub, &navi, message("And dark mode.")).await.unwrap();
+    assert_eq!(other["handle"], "N2");
+    assert_eq!(agent_posts(&hub), 2);
+    // The same words after the retry window are a new ask too.
+    hub.db
+        .with(|c| {
+            c.execute("UPDATE navi_asks SET at_ms = at_ms - 11 * 60 * 1000", [])?;
+            Ok(())
+        })
+        .unwrap();
+    let later = call(&hub, &navi, message("Gift cards, please."))
+        .await
+        .unwrap();
+    assert_eq!(later["handle"], "N3");
+    assert_eq!(agent_posts(&hub), 3);
+}
