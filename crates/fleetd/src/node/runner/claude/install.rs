@@ -84,7 +84,7 @@ pub async fn bring_to(claude: &dyn Claude, target: &str) -> Result<Installed, Fa
             Some("managed by Homebrew: run `brew upgrade claude-code` to update it".to_owned())
         }
         InstalledBy::Npm => Some(format!(
-            "installed with npm: run `npm install -g @anthropic-ai/claude-code@{target}` to update it"
+            "installed from npm: run `npm install -g @anthropic-ai/claude-code@{target}` to update it"
         )),
         InstalledBy::Package => Some(
             "installed by the system's package manager: upgrade `claude-code` with it to update it"

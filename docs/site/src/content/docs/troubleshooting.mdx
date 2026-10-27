@@ -95,7 +95,7 @@ with, and the node turns claude's own background update off (see [Claude Code's 
 | Symptom | Cause | Fix |
 |---|---|---|
 | "claude on … updates itself in the background" `[claude_self_update]` ! | The node couldn't write `DISABLE_AUTOUPDATER` into claude's `settings.json` (it isn't valid JSON, say). | Set `"env": {"DISABLE_AUTOUPDATER": "1"}` in that file, then restart the node. |
-| An update's Claude Code line says "managed by Homebrew", "installed with npm" or "not installed" | claude came from Homebrew, npm or a package, or isn't there; fleetd leaves it as it is. | Run the command the line names. |
+| An update's Claude Code line names Homebrew or npm, or says "not installed" | claude came from Homebrew, npm or a package, or isn't there; fleetd leaves it as it is. | Run the command the line names. |
 
 ## Machines {#machines}
 
