@@ -2,7 +2,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { BEAT_MS, BEATS, useBeat, useBeatRef } from "./beat";
+import { BEAT_MS, BEATS, RIDE_MS, useBeat, useBeatRef } from "./beat";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -51,24 +51,60 @@ it("steps every loop while something live is mounted, and stops with the last of
   expect(steps).toHaveLength(4);
 });
 
-it("keeps its tempo while you type, click and scroll: a step every beat, on the clock, never on your input", () => {
+const key = () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "a" }));
+const next = (n: number) => (n + 1) % BEATS;
+
+it("keeps its tempo while you type, click and scroll: a step every beat, within RIDE_MS of the clock", () => {
   act(() => root.render(<Live on />));
   steps = [];
   const at: number[] = [];
   const input = (i: number) => (i % 3 === 0 ? new KeyboardEvent("keydown", { key: "a" }) : i % 3 === 1 ? new PointerEvent("pointerdown") : new WheelEvent("wheel"));
   const start = performance.now();
-  // A key, a click or a wheel every 50 ms for 2.4 s: 20 beats fall due, and each steps on time.
+  const stepped = () => {
+    while (at.length < steps.length) at.push(performance.now() - start);
+  };
+  // A key, a click or a wheel every 50 ms for 2.4 s: 20 beats fall due, and each steps once, near its time.
   for (let i = 0; i < 48; i++) {
-    const before = steps.length;
     window.dispatchEvent(input(i));
-    expect(steps).toHaveLength(before);
-    wait(50);
-    if (steps.length > before) at.push(performance.now() - start);
+    stepped();
+    for (let ms = 0; ms < 50; ms += 5) {
+      wait(5);
+      stepped();
+    }
   }
+  // The last fell due just after an input: it waits out RIDE_MS for one more.
+  wait(RIDE_MS);
+  stepped();
   expect(steps).toHaveLength(20);
   expect(new Set(steps).size).toBe(steps.length);
-  // Within the 50 ms the loop above waits between inputs of when each beat fell due.
-  at.forEach((t, i) => expect(t - (i + 1) * BEAT_MS).toBeLessThan(50));
+  at.forEach((t, i) => expect(Math.abs(t - (i + 1) * BEAT_MS)).toBeLessThanOrEqual(RIDE_MS));
+});
+
+it("draws a step with a key that comes within RIDE_MS of it, so a key never waits out a frame of the beat's own", () => {
+  act(() => root.render(<Live on />));
+  steps = [];
+  // A key just before a step falls due takes it along...
+  wait(BEAT_MS - RIDE_MS + 5);
+  key();
+  expect(steps).toHaveLength(1);
+  // ...and the next stays on the clock, a beat after this one fell due.
+  wait(RIDE_MS - 5);
+  expect(steps).toHaveLength(1);
+  // A step that falls due just after a key waits for the next one, up to RIDE_MS...
+  wait(BEAT_MS - 50);
+  key();
+  wait(50 + RIDE_MS - 5);
+  expect(steps).toHaveLength(1);
+  key();
+  expect(steps).toHaveLength(2);
+  // ...and steps by itself when none comes.
+  wait(BEAT_MS - RIDE_MS + 5 - 40);
+  key();
+  wait(40);
+  expect(steps).toHaveLength(2);
+  wait(RIDE_MS);
+  expect(steps).toHaveLength(3);
+  expect(steps.slice(1)).toEqual([next(steps[0] ?? 0), next(next(steps[0] ?? 0))]);
 });
 
 it("keeps to the clock after a long task held a step late, rather than slowing the loops down", () => {
