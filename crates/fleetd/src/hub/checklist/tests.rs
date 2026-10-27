@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use fleetd_contracts::auth::KeyKind;
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef};
 use fleetd_contracts::lead_calls::{LeadCall, LeadCallResult};
@@ -79,6 +80,36 @@ async fn checklist(hub: &Hub, r: &ProjectRef, call: Value) -> Result<Value, Stri
             e.fix.unwrap_or_default()
         )),
     }
+}
+
+/// A person's device: a human key with operate.
+fn person() -> Caller {
+    let c: Caller = serde_json::from_value(json!({
+        "keyId": "k3", "name": "laptop", "prefix": "fld_abcdeh", "createdAt": AT,
+        "grants": [{ "role": "operate", "machines": "*" }],
+    }))
+    .unwrap();
+    Caller {
+        kind: Some(KeyKind::Human),
+        ..c
+    }
+}
+
+/// The app's Delete and Clear done.
+async fn remove(
+    hub: &Arc<Hub>,
+    caller: &Caller,
+    r: &ProjectRef,
+    ids: Value,
+) -> Result<Value, CallError> {
+    crate::hub::api::registry()
+        .call(
+            hub,
+            caller,
+            "checklist_remove",
+            json!({ "projectRef": r, "ids": ids }),
+        )
+        .await
 }
 
 async fn get(hub: &Arc<Hub>, r: &ProjectRef) -> Result<Value, CallError> {
@@ -328,5 +359,123 @@ async fn the_leads_digest_shows_what_is_still_open() {
             "- 2 doing: Dark mode (T4, PR #12)",
             "- 3 todo: Release notes",
         ]
+    );
+}
+
+#[tokio::test]
+async fn a_person_deletes_an_item_and_clears_the_done_ones_and_the_lead_reads_the_new_list() {
+    let (hub, _home) = hub();
+    let r = project("storefront");
+    checklist(
+        &hub,
+        &r,
+        json!({ "items": [
+            { "text": "Receipts", "state": "done" },
+            { "text": "Dark mode", "state": "doing" },
+            { "text": "Release notes" },
+            { "text": "Gift cards", "state": "done" },
+        ] }),
+    )
+    .await
+    .unwrap();
+
+    // Delete one: the list after it comes back, the app hears of it, and the lead's next wake names what went.
+    let out = remove(&hub, &person(), &r, json!([3])).await.unwrap();
+    assert_eq!(
+        shape(&out["items"]),
+        [
+            (1, "done".into(), "Receipts".into()),
+            (2, "doing".into(), "Dark mode".into()),
+            (4, "done".into(), "Gift cards".into()),
+        ]
+    );
+    let last = changes(&hub).pop().unwrap();
+    assert_eq!(last["data"]["by"], "human:laptop");
+    assert_eq!(last["summary"], "checklist: 2 of 3 done");
+    assert_eq!(
+        hub.leads.wakes.held(&r),
+        [
+            "- the human took 1 item off the checklist: 3 \"Release notes\"; leave it off unless they ask again"
+        ]
+    );
+
+    // Clear done: the app sends the done ids it showed.
+    remove(&hub, &person(), &r, json!([1, 4])).await.unwrap();
+    assert_eq!(
+        shape(&get(&hub, &r).await.unwrap()["items"]),
+        [(2, "doing".into(), "Dark mode".into())]
+    );
+    assert!(
+        hub.leads.wakes.held(&r)[1]
+            .contains("2 items off the checklist: 1 \"Receipts\", 4 \"Gift cards\"")
+    );
+
+    // The lead's checklist reads the same list: an edit by a removed id is refused with what is there, its digest
+    // shows only what is left, and a new item takes a fresh id.
+    let gone = checklist(
+        &hub,
+        &r,
+        json!({ "items": [{ "id": 3, "state": "doing" }] }),
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        gone.contains("No item 3") && gone.contains("Its items are 2."),
+        "{gone}"
+    );
+    assert_eq!(
+        super::digest_lines(&hub.db, &r).unwrap(),
+        [
+            "0 of 1 done; keep it current with `checklist`",
+            "- 2 doing: Dark mode"
+        ]
+    );
+    let digest = hub.leads.wakes.digest(&r).await.unwrap();
+    assert!(
+        digest.contains("- 2 doing: Dark mode") && !digest.contains("Release notes"),
+        "{digest}"
+    );
+    let added = checklist(&hub, &r, json!({ "items": [{ "text": "Ship it" }] }))
+        .await
+        .unwrap();
+    assert_eq!(shape(&added["items"])[1].0, 5);
+
+    // Ids already gone (the lead removed them first, or a second window) change nothing and tell no one.
+    let before = changes(&hub).len();
+    remove(&hub, &person(), &r, json!([1, 3])).await.unwrap();
+    assert_eq!(changes(&hub).len(), before);
+    assert_eq!(hub.leads.wakes.held(&r).len(), 2);
+}
+
+#[tokio::test]
+async fn only_a_persons_device_with_operate_removes_items() {
+    let (hub, _home) = hub();
+    let r = project("storefront");
+    checklist(&hub, &r, json!({ "items": [{ "text": "One" }] }))
+        .await
+        .unwrap();
+    let Err(CallError::Tool(e)) = remove(&hub, &reader(), &r, json!([1])).await else {
+        panic!("a read key removes an item");
+    };
+    assert_eq!(e.code, ErrorCode::Forbidden);
+    let agent = Caller {
+        kind: Some(KeyKind::Agent),
+        ..person()
+    };
+    let Err(CallError::Tool(e)) = remove(&hub, &agent, &r, json!([1])).await else {
+        panic!("an agent key removes an item");
+    };
+    assert_eq!(e.code, ErrorCode::Forbidden);
+    let Err(CallError::Tool(e)) = remove(&hub, &person(), &project("nope"), json!([1])).await
+    else {
+        panic!("an unknown project's item is removed");
+    };
+    assert_eq!(e.code, ErrorCode::NotFound);
+    assert_eq!(
+        get(&hub, &r).await.unwrap()["items"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
     );
 }

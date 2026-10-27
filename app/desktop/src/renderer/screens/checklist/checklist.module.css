@@ -39,6 +39,17 @@
   gap: var(--space-2);
   min-width: 0;
 }
+.summaryEnd {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+/* A quiet word that takes no more height than the line it sits on, so the list doesn't move when it comes or goes. */
+.clear {
+  align-self: center;
+  margin-block: -4px;
+}
 /* Done in the success tone, doing a quieter step after it, the rest the track. */
 .meter {
   display: flex;
@@ -125,7 +136,7 @@
 }
 .row {
   display: grid;
-  grid-template-columns: 16px minmax(0, 1fr);
+  grid-template-columns: 16px minmax(0, 1fr) auto;
   gap: var(--space-2);
   align-items: start;
   min-height: 36px;
@@ -185,4 +196,14 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   vertical-align: bottom;
+}
+/* Delete shows on the row's hover, or once it has focus: the list stays still until you reach for it. */
+.delete {
+  margin: -2px -4px -2px 0;
+  opacity: 0;
+  transition: opacity var(--dur-quick) var(--ease-snap);
+}
+.row:hover .delete,
+.delete:focus-visible {
+  opacity: 1;
 }

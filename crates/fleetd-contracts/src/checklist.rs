@@ -1,6 +1,7 @@
 //! A project's checklist: the lead's to-do list, which the human sees in the panel beside the chat. The lead keeps it
-//! with `checklist`; the app reads it with `checklist_get` and reads it again on `checklist.changed`. Read-only for the
-//! human. Nothing is derived from it: no figure, no estimate, only what the lead says each item is at.
+//! with `checklist`; the app reads it with `checklist_get` and reads it again on `checklist.changed`. The human can only
+//! take items off (`checklist_remove`), and the lead hears of it. Nothing is derived from it: no figure, no estimate,
+//! only what the lead says each item is at.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -125,6 +126,7 @@ pub struct ChecklistChangedData {
     pub project_ref: ProjectRef,
     pub done: Count,
     pub total: Count,
+    /// The lead (`lead:<machine>/<project>`) or a person (`human:<key name>`).
     pub by: String,
 }
 

@@ -962,6 +962,7 @@
       "description": "`checklist.changed`. The items are not in the event; checklist_get reads them.",
       "properties": {
         "by": {
+          "description": "The lead (`lead:<machine>/<project>`) or a person (`human:<key name>`).",
           "type": "string"
         },
         "done": {
