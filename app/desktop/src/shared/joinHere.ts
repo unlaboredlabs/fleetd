@@ -20,10 +20,11 @@ export interface JoinHere {
 }
 
 /**
- * What this computer's fleetd dir holds, read by main (src/main/joinHere.ts thisComputer): the hub's home, a node
- * already enrolled with a hub (under whatever id), or neither. Only "none" is ever joined from the app.
+ * What this computer's fleetd dir holds, read by main (src/main/joinHere.ts thisComputer): a hub's home (with the id
+ * in its `hub-id`, once that hub has made one), a node already enrolled with a hub (under whatever id), or neither.
+ * Only "none" is ever joined from the app.
  */
 export type ThisComputer =
-  | { readonly kind: "hub" }
+  | { readonly kind: "hub"; readonly hubId?: string }
   | { readonly kind: "node"; readonly machineId: string; readonly hub: string }
   | { readonly kind: "none" };

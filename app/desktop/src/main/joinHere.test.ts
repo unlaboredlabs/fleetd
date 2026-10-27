@@ -5,7 +5,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { CallOutcome } from "../shared/hub";
 import type { JoinHere } from "../shared/joinHere";
-import { assetFor, expectedSum, joinHere, thisComputer, type JoinPorts } from "./joinHere";
+import { assetFor, expectedSum, fleetdDir, joinHere, thisComputer, type JoinPorts } from "./joinHere";
 
 const BUILD = new TextEncoder().encode("#!/bin/sh\necho fleetd\n");
 const SUM = createHash("sha256").update(BUILD).digest("hex");
@@ -146,6 +146,26 @@ describe("joining this computer", () => {
     expect(await thisComputer(dir)).toEqual({ kind: "node", machineId: "hubbox", hub: "http://devbox:4790" });
     occupied(dir, { "hub/hub.sqlite": "" });
     expect(await thisComputer(dir)).toEqual({ kind: "hub" });
+    occupied(dir, { "hub/hub-id": `${"c".repeat(64)}\n` });
+    expect(await thisComputer(dir)).toEqual({ kind: "hub", hubId: "c".repeat(64) });
+  });
+
+  it("finds the fleetd dir as the CLI does", () => {
+    expect(fleetdDir(undefined, "/home/dev")).toBe("/home/dev/.fleetd");
+    expect(fleetdDir("", "/home/dev")).toBe("/home/dev/.fleetd");
+    expect(fleetdDir("~", "/home/dev")).toBe("/home/dev");
+    expect(fleetdDir("~/fleets/lab", "/home/dev")).toBe("/home/dev/fleets/lab");
+    expect(fleetdDir("/srv/fleetd", "/home/dev")).toBe("/srv/fleetd");
+    expect(fleetdDir("lab", "/home/dev")).toBe(path.resolve("lab"));
+  });
+
+  it("says when the hub's version has no release, and installs nothing", async () => {
+    const { p, dir, ran } = ports({ version: "0.9.3" });
+    const end = await joinHere({ ...p, download: (url) => Promise.reject(new Error(`${url} answered 404`)) }, "laptop", () => undefined);
+    expect(end.state).toBe("failed");
+    expect(end.message).toContain("There is no release for v0.9.3, the version the hub runs");
+    expect(fs.existsSync(path.join(dir, "bin", "fleetd"))).toBe(false);
+    expect(ran).toEqual([]);
   });
 
   it("shows the join's output when it fails", async () => {

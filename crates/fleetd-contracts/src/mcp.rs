@@ -1690,6 +1690,9 @@ output!(MachineAddStatusOutput {
 input!(MachineHostsInput {});
 output!(MachineHostsOutput {
     hosts: Vec<crate::machine_setup::MachineHost>,
+    /// This hub's id (64 hex digits, in `<hub home>/hub-id`): a computer whose fleetd dir holds the same id runs
+    /// this hub.
+    hub_id: String,
 });
 
 input!(MachineRemoveInput {

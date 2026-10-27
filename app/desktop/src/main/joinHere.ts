@@ -35,8 +35,15 @@ export interface JoinPorts {
   arch: string;
 }
 
-/** The fleetd dir: FLEETD_HOME, else ~/.fleetd, as the CLI has it. */
-export const fleetdDir = (): string => process.env["FLEETD_HOME"] ?? path.join(os.homedir(), ".fleetd");
+/**
+ * The fleetd dir as the CLI resolves it (crates/fleetd/src/home.rs): FLEETD_HOME unless empty, with `~` expanded and
+ * a relative path taken against the working directory, else ~/.fleetd.
+ */
+export const fleetdDir = (env: string | undefined = process.env["FLEETD_HOME"], home: string = os.homedir()): string => {
+  if (env === undefined || env === "") return path.join(home, ".fleetd");
+  if (env === "~") return home;
+  return path.resolve(env.startsWith("~/") ? path.join(home, env.slice(2)) : env);
+};
 
 function str(o: unknown, key: string): string | undefined {
   const v = typeof o === "object" && o !== null ? (o as Record<string, unknown>)[key] : undefined;
@@ -101,7 +108,10 @@ const exists = (file: string): Promise<boolean> =>
  */
 export const thisComputer = async (fleetdDir: string): Promise<ThisComputer> => {
   const hubHome = path.join(fleetdDir, "hub");
-  if ((await exists(path.join(hubHome, "hub.sqlite"))) || (await exists(path.join(hubHome, "setup.json")))) return { kind: "hub" };
+  if ((await exists(path.join(hubHome, "hub.sqlite"))) || (await exists(path.join(hubHome, "setup.json")))) {
+    const id = (await fs.readFile(path.join(hubHome, "hub-id"), "utf8").catch(() => "")).trim();
+    return /^[0-9a-f]{64}$/u.test(id) ? { kind: "hub", hubId: id } : { kind: "hub" };
+  }
   let node: unknown;
   try {
     node = JSON.parse(await fs.readFile(path.join(fleetdDir, "node", "node.json"), "utf8"));
@@ -195,7 +205,15 @@ export async function joinHere(ports: JoinPorts, machineId: string, report: (sta
         );
       }
     }
-    sums = new TextDecoder().decode(await ports.download(`${base}/SHA256SUMS`));
+    try {
+      sums = new TextDecoder().decode(await ports.download(`${base}/SHA256SUMS`));
+    } catch (error) {
+      // A hub built from source runs a version no release was made for.
+      if (!nightly && base.startsWith(RELEASES) && String(error).includes("answered 404")) {
+        return fail(`There is no release for v${version}, the version the hub runs (a build from source?), so there is no build to match it. Run a released fleetd on the hub, then try again.`);
+      }
+      throw error;
+    }
     build = await ports.download(`${base}/${asset}`);
   } catch (error) {
     return fail(`Couldn't download fleetd: ${error instanceof Error ? error.message : String(error)}. Check this computer's connection, then try again.`);
