@@ -18,7 +18,9 @@ const devbox = (name: string, status: Status, message: string): JsonObject => ({
 const fresh = (): Array<JsonObject> => [
   hub("reachable", "ok", `The hub answers at ${HUB_URL}/healthz.`),
   devbox("online", "ok", "devbox is online and its node answers."),
-  hub("claude_key", "unknown", "No Claude key on the hub yet, and claude on devbox isn't logged in."),
+  hub("claude_key", "unknown", "No Claude key on the hub yet."),
+  // A real hub always reports each machine's own claude login; with a hub key it doesn't matter.
+  devbox("claude_login", "fail", "claude is logged out on devbox: run claude /login there, or give the hub an API key."),
   hub("github_app", "unknown", "No GitHub App yet: no PR can open and the train can't merge."),
   hub("people", "unknown", "Only you so far."),
   hub("google", "unknown", "Not connected."),
@@ -29,8 +31,13 @@ const fresh = (): Array<JsonObject> => [
 const set = (checks: Array<JsonObject>, id: string, status: Status, message: string) =>
   checks.map((c) => (c["id"] === id ? { ...c, status, message } : c));
 
+/** Claude through the hub's key: devbox stays logged out, which a key-mode hub expects. */
 const withClaude = (checks: Array<JsonObject>) =>
   set(checks, "hub/claude_key", "ok", "The hub's API key answers (key ending …Q2wA, api.anthropic.com).");
+
+/** Claude through every machine's own login, with no hub key. */
+const withLogins = (checks: Array<JsonObject>) =>
+  set(checks, "devbox/claude_login", "ok", "claude on devbox is logged in with a long-lived login token.");
 
 const withGitHub = (checks: Array<JsonObject>) =>
   set(checks, "hub/github_app", "ok", "The App \"fleetd on devbox\" is installed on acme with 12 repositories, its token works, and you're connected as dev.");
@@ -52,7 +59,8 @@ export default defineGroup({
       return f;
     };
     return [
-      fromEmpty("setup-fresh", "A hub fleetd init just made on devbox: hub and machine done, every account to do.", fresh()),
+      fromEmpty("setup-fresh", "A hub fleetd init just made on devbox: hub and machine done, devbox's claude logged out, every account to do.", fresh()),
+      fromEmpty("setup-claude-logins", "Claude done the other way: no hub key, and every machine logged in on its own.", withLogins(fresh())),
       fromEmpty(
         "setup-github",
         "Claude is done; the GitHub App is next, and its Test finds it installed and connected.",

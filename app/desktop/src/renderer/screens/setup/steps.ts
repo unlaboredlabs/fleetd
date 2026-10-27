@@ -68,11 +68,22 @@ export interface SetupStep {
   readonly fieldsNote?: string;
   /** What Test does, in a few words; absent where the checks are the test. */
   readonly test?: string;
-  /** The doctor checks whose worst status is this step's: `hub/<name>`, or `*` for every machine's. */
+  /** The ways to complete the step; one is enough. Most steps have one. */
+  readonly ways: ReadonlyArray<Way>;
+  /** The way the status was read from, when there is more than one: the one done, else the one that wants a look. */
+  readonly way?: string;
+}
+
+/**
+ * One way to complete a step: its doctor checks (`hub/<name>`, or a star for every machine's), whose worst status
+ * is the way's. `label` names it where a step has several ("the hub's API key").
+ */
+export interface Way {
+  readonly label?: string;
   readonly checks: ReadonlyArray<string>;
 }
 
-type Guide = Omit<SetupStep, "status" | "said">;
+type Guide = Omit<SetupStep, "status" | "said" | "way">;
 
 /**
  * Gmail in real time (D195): Gmail publishes to this topic as its push account, and one machine reads the
@@ -113,7 +124,7 @@ export const guides = (hub: string): ReadonlyArray<Guide> => {
       ],
       fields: [],
       test: "Reach the hub from this device",
-      checks: ["hub/reachable", "hub/https"],
+      ways: [{ checks: ["hub/reachable", "hub/https"] }],
     },
     {
       id: "machines",
@@ -121,9 +132,20 @@ export const guides = (hub: string): ReadonlyArray<Guide> => {
       title: "Machines that run agents",
       why: "Agents run on machines; the hub's own machine can be one.",
       need: { kind: "required" },
-      parts: [{ title: "Add a machine", values: [{ label: "On the machine", value: "fleetd init --join", note: "or from the hub: fleetd machine add <ssh host>" }] }],
+      parts: [
+        {
+          title: "Add a machine",
+          values: [
+            {
+              label: "On the machine",
+              value: `fleetd init --join ${base} --code <code>`,
+              note: "The one-time code from fleetd pair --worker <name> on the hub. Or, from the hub: fleetd machine add <ssh host>.",
+            },
+          ],
+        },
+      ],
       fields: [],
-      checks: ["*/online"],
+      ways: [{ checks: ["*/online"] }],
     },
     {
       id: "claude",
@@ -146,7 +168,11 @@ export const guides = (hub: string): ReadonlyArray<Guide> => {
         { name: "endpoint", label: "Endpoint", optional: true, placeholder: "https://api.anthropic.com" },
       ],
       test: "Ask Claude for a one-word answer",
-      checks: ["hub/claude_key", "*/claude_login"],
+      // Either is enough: with a hub key, machines need no login of their own (D186).
+      ways: [
+        { label: "the hub's API key", checks: ["hub/claude_key"] },
+        { label: "every machine's own login", checks: ["*/claude_login"] },
+      ],
     },
     {
       id: "github",
@@ -174,7 +200,7 @@ export const guides = (hub: string): ReadonlyArray<Guide> => {
         },
         {
           title: "Install it on your repositories",
-          note: "Pick the repositories fleetd works on; you can add more on GitHub at any time.",
+          note: "Pick the repositories fleetd works on; you can add more on GitHub later. The link follows the App's name as GitHub saved it.",
           links: [{ label: "Install the App", url: `https://github.com/apps/fleetd-on-${host}/installations/new` }],
         },
         {
@@ -185,7 +211,7 @@ export const guides = (hub: string): ReadonlyArray<Guide> => {
       ],
       fields: [],
       test: "Mint the App's token and list the repositories it reaches",
-      checks: ["hub/github_app"],
+      ways: [{ checks: ["hub/github_app"] }],
     },
     {
       id: "people",
@@ -195,7 +221,7 @@ export const guides = (hub: string): ReadonlyArray<Guide> => {
       need: { kind: "optional" },
       parts: [],
       fields: [{ name: "handle", label: "Their name", placeholder: "alice" }],
-      checks: ["hub/people"],
+      ways: [{ checks: ["hub/people"] }],
     },
     {
       id: "google",
@@ -279,6 +305,7 @@ export const guides = (hub: string): ReadonlyArray<Guide> => {
             {
               label: "Or in Cloud Shell",
               value: [
+                `gcloud config set project ${project}`,
                 `SA=${GMAIL_READER}@${project}.iam.gserviceaccount.com`,
                 [
                   `gcloud services enable pubsub.googleapis.com`,
@@ -286,12 +313,13 @@ export const guides = (hub: string): ReadonlyArray<Guide> => {
                   `gcloud pubsub topics add-iam-policy-binding ${GMAIL_TOPIC} --member=serviceAccount:${GMAIL_PUSH} --role=roles/pubsub.publisher`,
                   `gcloud pubsub subscriptions create ${GMAIL_SUBSCRIPTION} --topic=${GMAIL_TOPIC}`,
                   `gcloud iam service-accounts create ${GMAIL_READER}`,
+                  `sleep 30`,
                   `gcloud pubsub subscriptions add-iam-policy-binding ${GMAIL_SUBSCRIPTION} --member=serviceAccount:$SA --role=roles/pubsub.subscriber`,
                   `gcloud iam service-accounts keys create key.json --iam-account=$SA`,
                   `cat key.json && rm key.json`,
                 ].join(" &&\n"),
               ].join("\n"),
-              note: `Both parts in one go, in project ${project}: it prints the key once, to paste below.`,
+              note: `Both parts in one go, in project ${project}: it prints the key once, to paste below. A new account can take a minute to show up; if the Subscriber grant says it doesn't exist, run the last three lines again.`,
             },
           ],
         },
@@ -312,7 +340,7 @@ export const guides = (hub: string): ReadonlyArray<Guide> => {
       ],
       fieldsNote: "Then each person connects their own Google account from their Navi; if a sign-in lapses, Navi offers Reconnect.",
       test: "Ask Google whether it knows this client; with a key, pull once from the subscription",
-      checks: ["hub/google"],
+      ways: [{ checks: ["hub/google"] }],
     },
     {
       id: "notion",
@@ -329,7 +357,7 @@ export const guides = (hub: string): ReadonlyArray<Guide> => {
       ],
       fields: [{ name: "token", label: "Internal integration secret", secret: true, placeholder: "ntn_…" }],
       test: "Search the pages it can see",
-      checks: ["hub/notion"],
+      ways: [{ checks: ["hub/notion"] }],
     },
     {
       id: "onepassword",
@@ -346,7 +374,7 @@ export const guides = (hub: string): ReadonlyArray<Guide> => {
       ],
       fields: [{ name: "token", label: "Service account token", secret: true, placeholder: "ops_…" }],
       test: "Read the vault's item names",
-      checks: ["hub/onepassword"],
+      ways: [{ checks: ["hub/onepassword"] }],
     },
   ];
 };
@@ -356,10 +384,24 @@ const RANK: Readonly<Record<DoctorCheck["status"], number>> = { ok: 0, unknown: 
 const matches = (pattern: string, id: string): boolean =>
   pattern.startsWith("*/") ? !id.startsWith("hub/") && id.endsWith(pattern.slice(1)) : id === pattern;
 
+type Read = { readonly status: StepStatus; readonly said?: string };
+
+/** One way's status from its checks: none yet, or the worst unknown ("not set up"), is todo; the worst failing or
+ * warning is look; all passing is done. */
+const readWay = (way: Way, checks: ReadonlyArray<DoctorCheck>): Read => {
+  const own = checks.filter((c) => way.checks.some((p) => matches(p, c.id)));
+  const worst = own.reduce<DoctorCheck | undefined>((w, c) => (w === undefined || RANK[c.status] > RANK[w.status] ? c : w), undefined);
+  const said = worst === undefined ? {} : { said: worst.message };
+  if (worst === undefined || worst.status === "unknown") return { status: "todo", ...said };
+  return { status: worst.status === "ok" ? "done" : "look", ...said };
+};
+
+const BEST: ReadonlyArray<StepStatus> = ["done", "look", "todo"];
+
 /**
- * Each step's status from its checks: none yet, or the worst one unknown ("not set up"), is todo; the worst failing or
- * warning is look; all passing is done. Skipping is the only state the hub keeps; everything else is read from what is
- * there, so the flow resumes at any point.
+ * Each step's status is its best way's: one way done is enough, else one set up but failing wants a look, else it is
+ * to do. Skipping is the only state the hub keeps; everything else is read from what is there, so the flow resumes at
+ * any point.
  */
 export const setupSteps = (
   hub: string,
@@ -367,12 +409,12 @@ export const setupSteps = (
   skipped: ReadonlySet<StepId> = new Set(),
 ): ReadonlyArray<SetupStep> =>
   guides(hub).map((guide) => {
-    const own = checks.filter((c) => guide.checks.some((p) => matches(p, c.id)));
-    const worst = own.reduce<DoctorCheck | undefined>((w, c) => (w === undefined || RANK[c.status] > RANK[w.status] ? c : w), undefined);
-    const said = worst?.message;
-    const base = { ...guide, ...(said === undefined ? {} : { said }) };
-    if (worst === undefined || worst.status === "unknown") return { ...base, status: skipped.has(guide.id) ? "skipped" : "todo" };
-    return { ...base, status: worst.status === "ok" ? "done" : "look" };
+    const reads = guide.ways.map((way) => ({ way, ...readWay(way, checks) }));
+    const best = BEST.flatMap((status) => reads.filter((r) => r.status === status))[0];
+    const said = best?.said ?? reads.find((r) => r.said !== undefined)?.said;
+    const way = guide.ways.length > 1 && best !== undefined && best.status !== "todo" ? best.way.label : undefined;
+    const status = best === undefined || best.status === "todo" ? (skipped.has(guide.id) ? "skipped" : "todo") : best.status;
+    return { ...guide, status, ...(said === undefined ? {} : { said }), ...(way === undefined ? {} : { way }) };
   });
 
 /** Required steps left: until none, the app keeps the setup in front; after, it is a quiet line in Administration. */

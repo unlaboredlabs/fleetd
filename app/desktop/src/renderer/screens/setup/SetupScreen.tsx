@@ -45,7 +45,7 @@ export function SetupScreen({ view }: { view: string | null }) {
         </header>
         <div className={s.split}>
           <StepRail steps={steps} open={open.id} />
-          <StepPane step={open} steps={steps} hub={hub} />
+          <StepPane key={open.id} step={open} steps={steps} hub={hub} />
         </div>
       </div>
     </div>
@@ -138,6 +138,11 @@ function StepPane({ step, steps, hub }: { step: SetupStep; steps: ReadonlyArray<
       <Text as="p" tone="quiet">
         {step.why}
       </Text>
+      {step.way === undefined ? null : (
+        <Text as="p" size="sm" tone={step.status === "done" ? "success" : "quiet"}>
+          {step.status === "done" ? `Done with ${step.way}.` : `Using ${step.way}.`}
+        </Text>
+      )}
       {step.status === "look" && step.said !== undefined ? (
         <Text as="p" size="sm" tone="warning">
           {step.said}
@@ -350,22 +355,30 @@ function StepSummary({ title, steps, brief = false }: { title: string; steps: Re
 function Done({ steps }: { steps: ReadonlyArray<SetupStep> }) {
   const ready = steps.filter((st) => st.status === "done");
   const waiting = steps.filter((st) => st.status !== "done");
+  const left = requiredLeft(steps);
   return (
     <div className={s.screen} data-screen="setup.done">
       <div className={s.narrow}>
         <Text as="h1" size="xl" strong>
-          fleetd is ready
+          {left === 0 ? "fleetd is ready" : "Almost there"}
         </Text>
         <Text as="p" tone="quiet">
-          Add a project and say hi to its lead. What you left for later waits in Administration › Setup, and fleetd asks
-          for it the first time it is needed.
+          {left === 0
+            ? "Add a project and say hi to its lead. What you left for later waits in Administration › Setup, and fleetd asks for it the first time it is needed."
+            : `${left} required ${left === 1 ? "step is" : "steps are"} left before agents can run.`}
         </Text>
         <StepSummary title="Ready" steps={ready} brief />
-        {waiting.length === 0 ? null : <StepSummary title="Later" steps={waiting} brief />}
+        {waiting.length === 0 ? null : <StepSummary title={left === 0 ? "Later" : "Left"} steps={waiting} brief />}
         <div className={s.welcomeFoot}>
-          <Button variant="primary" size="md" onClick={() => (window.location.hash = "#/projects/add")}>
-            Add a project
-          </Button>
+          {left === 0 ? (
+            <Button variant="primary" size="md" onClick={() => (window.location.hash = "#/projects/add")}>
+              Add a project
+            </Button>
+          ) : (
+            <Button variant="primary" size="md" onClick={() => go(waiting.find((st) => st.need.kind === "required")?.id ?? null)}>
+              Back to setup
+            </Button>
+          )}
         </div>
       </div>
     </div>

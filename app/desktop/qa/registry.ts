@@ -81,6 +81,7 @@ export const fixtures = [
   "projects-dropped",
   // W100: the hub admin's setup, a design prototype (fixtures/setup).
   "setup-fresh",
+  "setup-claude-logins",
   "setup-github",
   "setup-google",
   "setup-done",
@@ -1354,7 +1355,7 @@ export const screens: readonly Screen[] = [
   // W100: the hub admin's setup (a design prototype, docs/design/setup.md): the welcome, a step open beside the list
   // (Claude to do, the GitHub App, the Google client), and the end.
   { id: "setup.welcome", route: "#/setup/welcome", fixtures: ["setup-fresh"] },
-  { id: "setup", route: "#/setup/claude", fixtures: ["setup-fresh"] },
+  { id: "setup", route: "#/setup/claude", fixtures: ["setup-fresh", "setup-claude-logins", "setup-github"] },
   { id: "setup", route: "#/setup/github", fixtures: ["setup-github"] },
   { id: "setup", route: "#/setup/google", fixtures: ["setup-google"] },
   { id: "setup.done", route: "#/setup/done", fixtures: ["setup-done"] },

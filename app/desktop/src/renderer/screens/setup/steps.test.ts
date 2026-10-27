@@ -55,8 +55,29 @@ describe("setup steps", () => {
     expect(steps["notion"]?.status).toBe("todo");
   });
 
+  it("takes Claude as done either way: the hub's key with machines logged out, or every machine's own login", () => {
+    const claude = (...checks: ReadonlyArray<DoctorCheck>) => byId(setupSteps("http://devbox:4790", checks))["claude"];
+    const out = (machine: string) => check(`${machine}/claude_login`, "fail", `claude is logged out on ${machine}`);
+    const ok = (machine: string) => check(`${machine}/claude_login`, "ok");
+    // The hub's key: machines need no login of their own.
+    expect(claude(check("hub/claude_key", "ok"), out("devbox"), out("buildbox"))).toMatchObject({ status: "done", way: "the hub's API key" });
+    // No key: done once every machine is logged in, and not while one isn't.
+    expect(claude(check("hub/claude_key", "unknown"), ok("devbox"), ok("buildbox"))).toMatchObject({ status: "done", way: "every machine's own login" });
+    expect(claude(check("hub/claude_key", "unknown"), ok("devbox"), out("buildbox"))).toMatchObject({
+      status: "look",
+      way: "every machine's own login",
+      said: "claude is logged out on buildbox",
+    });
+    // A key that fails wants a look, unless the machines' logins already do the job.
+    expect(claude(check("hub/claude_key", "fail", "The key was revoked."), out("devbox"))).toMatchObject({ status: "look", said: "The key was revoked." });
+    expect(claude(check("hub/claude_key", "fail"), ok("devbox"))).toMatchObject({ status: "done", way: "every machine's own login" });
+    // Neither set up yet.
+    expect(claude(check("hub/claude_key", "unknown"))).toMatchObject({ status: "todo" });
+    expect(claude(check("hub/claude_key", "unknown"))).not.toHaveProperty("way");
+  });
+
   it("keeps a skip only for a step that isn't set up, and counts what is required", () => {
-    const checks = [check("hub/reachable", "ok"), check("devbox/online", "ok"), check("hub/notion", "ok")];
+    const checks = [check("hub/reachable", "ok"), check("devbox/online", "ok"), check("devbox/claude_login", "fail"), check("hub/notion", "ok")];
     const steps = setupSteps("http://devbox:4790", checks, new Set(["notion", "google"] as const));
     expect(byId(steps)["google"]?.status).toBe("skipped");
     expect(byId(steps)["notion"]?.status).toBe("done");
