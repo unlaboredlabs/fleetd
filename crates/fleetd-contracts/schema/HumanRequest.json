@@ -75,6 +75,10 @@
           "description": "\"human:<device>\".",
           "type": "string"
         },
+        "answeredByPerson": {
+          "$ref": "#/$defs/PersonRef",
+          "description": "The person who answered it: approved or denied it, or entered the secret. Absent from a hub before people."
+        },
         "createdAt": {
           "$ref": "#/$defs/Timestamp"
         },
@@ -148,6 +152,29 @@
       "description": "Machine slug, [a-z0-9-]{1,32}",
       "pattern": "^[a-z0-9-]{1,32}$",
       "type": "string"
+    },
+    "PersonId": {
+      "pattern": "^p_[a-z2-7]{8}$",
+      "type": "string"
+    },
+    "PersonRef": {
+      "description": "Who did something, with their name at the time: on chat messages, approvals, secrets, decisions and checklist\nchanges.",
+      "properties": {
+        "name": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "personId": {
+          "$ref": "#/$defs/PersonId"
+        }
+      },
+      "required": [
+        "personId",
+        "name"
+      ],
+      "type": "object"
     },
     "PreviewConfig": {
       "description": "A project's preview setting (Settings › Projects › Try it, or `project_settings_set {preview}`). Nothing runs\nbecause of it: it says how to run a preview someone asks for.",

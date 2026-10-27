@@ -5,9 +5,9 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_with::skip_serializing_none;
 
-use crate::auth::Role;
+use crate::auth::{AgentKeyInfo, Role};
 use crate::chat::{ChatMessageId, ChatRequestId};
-use crate::checklist::{CHECKLIST_MAX, TodoItem};
+use crate::checklist::{CHECKLIST_MAX, TodoEdit, TodoItem};
 use crate::doctor::{DoctorCheck, DoctorCheckId};
 use crate::events::{HubEvent, HubEventType};
 use crate::hello::ProtocolVersion;
@@ -19,6 +19,9 @@ use crate::ledger::{
 use crate::live::{AgentLane, OrderCard, TrainLive};
 use crate::memory::{MemoryCaps, MemoryFile, MemoryScope, MemoryText, MemoryTopic};
 use crate::model::{ActionItem, Machine, ProjectOutcome, ProjectSummary, ThreadSummary};
+use crate::people::{
+    DEVICES_MAX, HubRole, Invite, InviteId, PEOPLE_MAX, Person, PersonId, PersonName,
+};
 use crate::prim::{
     Count, Int, IntOr, Line, List, MAX_SAFE_INT, NonEmpty, Positive, Text, True, UniqueList,
 };
@@ -1322,6 +1325,18 @@ output!(ChecklistRemoveOutput {
     updated_at: Option<Timestamp>,
 });
 
+// checklist_edit: a person ticks, reopens, edits, adds or removes items on a project's checklist. Human keys only (the
+// handler checks); the change records who made it.
+input!(ChecklistEditInput {
+    project_ref: ProjectRef,
+    items: List<TodoEdit, 1, CHECKLIST_MAX>,
+});
+output!(ChecklistEditOutput {
+    project_ref: ProjectRef,
+    items: List<TodoItem, 0, CHECKLIST_MAX>,
+    updated_at: Option<Timestamp>,
+});
+
 // browser_sessions: a project's browser sessions, newest first, or one by sessionId (the Sessions view).
 input!(BrowserSessionsInput {
     project_ref: ProjectRef,
@@ -1651,6 +1666,74 @@ output!(HubInfoOutput {
     /// The caller's key holds Admin on every machine, so it may change the fleet and machine caps. Absent from a hub
     /// before this, which leaves an app to try.
     admin: Option<bool>,
+    /// The person the caller's human key belongs to. Absent for an agent key, and from a hub before people.
+    me: Option<Person>,
+    /// How many people the hub has, removed ones left out. Absent from a hub before people.
+    people: Option<Count>,
+});
+
+// people_list: the hub's people, oldest first, with the devices and invites the caller may see: an owner's or admin's
+// human key sees every device and open invite; anyone else sees their own devices only, and no invites.
+input!(PeopleListInput {
+    /// Removed people too.
+    include_removed: Option<bool>,
+});
+output!(PeopleListOutput {
+    people: List<Person, 0, PEOPLE_MAX>,
+    /// Human keys, each with its person, oldest first; revoked ones left out.
+    devices: List<AgentKeyInfo, 0, DEVICES_MAX>,
+    /// Open invites, newest first.
+    invites: List<Invite, 0, PEOPLE_MAX>,
+    /// The caller's person; absent for an agent key.
+    me: Option<PersonId>,
+});
+
+// invite_create: an owner or admin invites someone. Without personId it adds a person (name, role; default member);
+// with it, it pairs one more device for that person. The code and link are shown only this once.
+input!(InviteCreateInput {
+    name: Option<PersonName>,
+    role: Option<HubRole>,
+    person_id: Option<PersonId>,
+});
+output!(InviteCreateOutput {
+    invite: Invite,
+    /// `XXXX-XXXX`: entered in the app's pairing screen with the hub address.
+    code: String,
+    /// `fleetd://pair?hub=…&code=…`.
+    link: String,
+    hub_url: String,
+});
+
+// invite_revoke: an owner or admin takes back an open invite. A person invited by it who never joined is removed.
+input!(InviteRevokeInput {
+    invite_id: InviteId
+});
+output!(InviteRevokeOutput { invite: Invite });
+
+// person_set: an owner or admin renames a person or changes their role. Only an owner makes or unmakes an owner, and
+// the hub always keeps one.
+input!(PersonSetInput {
+    person_id: PersonId,
+    name: Option<PersonName>,
+    role: Option<HubRole>,
+});
+output!(PersonSetOutput { person: Person });
+
+// person_remove: an owner or admin removes a person: their devices are revoked and their invites closed. What they did
+// keeps their name.
+input!(PersonRemoveInput {
+    person_id: PersonId
+});
+output!(PersonRemoveOutput {
+    person: Person,
+    /// Devices revoked.
+    revoked: Count,
+});
+
+// device_revoke: a person signs out one of their own devices; an owner or admin, anyone's.
+input!(DeviceRevokeInput { key_id: NonEmpty });
+output!(DeviceRevokeOutput {
+    device: AgentKeyInfo,
 });
 
 /// The release channel a hub's build follows: nightly when its version contains "-nightly.", stable otherwise.
@@ -2186,6 +2269,8 @@ tools! {
     checklist_get => ChecklistGet, Read, ChecklistGetInput, ChecklistGetOutput;
     // Human keys only (the handler checks).
     checklist_remove => ChecklistRemove, Operate, ChecklistRemoveInput, ChecklistRemoveOutput;
+    // Human keys only (the handler checks).
+    checklist_edit => ChecklistEdit, Operate, ChecklistEditInput, ChecklistEditOutput;
     browser_sessions => BrowserSessions, Read, BrowserSessionsInput, BrowserSessionsOutput;
     browser_recording_get => BrowserRecordingGet, Read, BrowserRecordingGetInput, BrowserRecordingGetOutput;
     // Human keys only (the handler checks).
@@ -2224,6 +2309,14 @@ tools! {
     // Human keys with Admin on every machine only (the handler checks).
     hub_update => HubUpdate, Admin, HubUpdateInput, HubUpdateOutput;
     hub_update_status => HubUpdateStatus, Read, HubUpdateStatusInput, HubUpdateOutput;
+    people_list => PeopleList, Read, PeopleListInput, PeopleListOutput;
+    // Owners' and admins' human keys only (the handlers check).
+    invite_create => InviteCreate, Admin, InviteCreateInput, InviteCreateOutput;
+    invite_revoke => InviteRevoke, Admin, InviteRevokeInput, InviteRevokeOutput;
+    person_set => PersonSet, Admin, PersonSetInput, PersonSetOutput;
+    person_remove => PersonRemove, Admin, PersonRemoveInput, PersonRemoveOutput;
+    // Human keys only: a person's own devices, or anyone's for an owner or admin (the handler checks).
+    device_revoke => DeviceRevoke, Operate, DeviceRevokeInput, DeviceRevokeOutput;
     agents_list => AgentsList, Read, AgentsListInput, AgentsListOutput;
     agent_work => AgentWork, Read, AgentWorkInput, AgentWorkOutput;
     pr_list => PrList, Read, PrListInput, PrListOutput;

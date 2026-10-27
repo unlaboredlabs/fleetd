@@ -146,6 +146,10 @@ pub struct Workstream {
     pub headline_at: Option<Timestamp>,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
+    /// The person whose message started it: the writer of the human message the lead was answering when it opened the
+    /// order, or the person who sent it as an order. Absent for an automation's, a train fix's or an agent's order, and
+    /// from a hub before people.
+    pub started_by: Option<crate::people::PersonRef>,
 }
 
 // Decisions
@@ -195,6 +199,8 @@ pub struct Decision {
     pub source: DecisionSource,
     /// Who recorded it: the agent key name, "lead:<machineId>/<projectId>" or "human:<device>".
     pub by: Option<String>,
+    /// The person who recorded it, for a human key's decision. Absent from a hub before people.
+    pub person: Option<crate::people::PersonRef>,
     /// The earlier active decision on the same key and scope that this one replaced.
     pub supersedes: Option<DecisionId>,
     pub state: DecisionState,
@@ -209,6 +215,8 @@ pub struct Decision {
 #[serde(rename_all = "camelCase")]
 pub struct DecisionRetired {
     pub by: String,
+    /// The person who took it back. Absent from a hub before people.
+    pub person: Option<crate::people::PersonRef>,
     pub at: Timestamp,
     pub why: Option<DecisionWhy>,
 }
@@ -427,6 +435,8 @@ pub struct HumanRequest {
     pub answered_at: Option<Timestamp>,
     /// "human:<device>".
     pub answered_by: Option<String>,
+    /// The person who answered it: approved or denied it, or entered the secret. Absent from a hub before people.
+    pub answered_by_person: Option<crate::people::PersonRef>,
     /// An approved command: when its result came back (ran or failed), so a client can say how long it took.
     pub finished_at: Option<Timestamp>,
 }

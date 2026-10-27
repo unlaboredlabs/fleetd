@@ -298,6 +298,7 @@ impl Chat {
                     .and_then(|r| fleetd_contracts::prim::NonEmpty::new(r).ok()),
                 delivery: new.delivery,
                 by: new.by.as_deref().and_then(line),
+                person: None,
                 client: new.client,
                 reply_to: new.reply_to,
                 item: new.item,
