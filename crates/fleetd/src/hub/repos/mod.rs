@@ -3,7 +3,8 @@
 //! adding it saw one, or its work is bound to a remote. Every project the hub has cached gets it at start, and again
 //! whenever its node reports it, its work is bound, or its repos are read. A plain directory has none.
 //!
-//! Nothing acts on repos yet: the hub stores them and serves them in `ProjectSummary.repos`.
+//! The hub stores them, serves them in `ProjectSummary.repos`, and keeps a repo's own `setup` and `preview` on its row
+//! (`projects::settings`).
 use std::sync::Arc;
 
 use fleetd_contracts::ids::ProjectRef;

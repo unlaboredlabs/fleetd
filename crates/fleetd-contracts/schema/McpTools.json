@@ -10929,7 +10929,7 @@
         },
         "repo": {
           "$ref": "#/$defs/RepoName",
-          "description": "The repo `setup`, `train` and `preview` are for; absent for the project's own directory, and from older hubs."
+          "description": "The repo `setup` and `preview` are for; absent when they are the project's, and from older hubs."
         },
         "setup": {
           "$ref": "#/$defs/WorktreeSetup",
@@ -10979,7 +10979,7 @@
         },
         "repo": {
           "$ref": "#/$defs/RepoName",
-          "description": "The repo whose setup, train and preview to read; absent: the project's own directory."
+          "description": "The repo whose setup and preview to read (its own, else the project's); absent: the project's."
         }
       },
       "required": [
@@ -11022,7 +11022,7 @@
         },
         "repo": {
           "$ref": "#/$defs/RepoName",
-          "description": "The repo whose setup, train and preview to set; absent: the project's own directory. Title and\nkeepWorktrees are the project's either way."
+          "description": "The repo whose own setup and preview to set, an empty one giving it the project's; absent: the\nproject's. Title, keepWorktrees and train are the project's either way."
         },
         "setup": {
           "$ref": "#/$defs/WorktreeSetup",
