@@ -304,13 +304,16 @@ async fn a_submitted_order_was_asked_for_when_submitted_and_an_older_lead_one_wh
         .hub
         .leads
         .workstreams
-        .open(IntakeInput {
-            project_ref: project(),
-            text: "schedules".into(),
-            client_request_id: "c2".into(),
-            channel: IntakeChannel::Lead,
-            by: "lead:devbox/app".into(),
-        })
+        .open(
+            IntakeInput {
+                project_ref: project(),
+                text: "schedules".into(),
+                client_request_id: "c2".into(),
+                channel: IntakeChannel::Lead,
+                by: "lead:devbox/app".into(),
+            },
+            None,
+        )
         .unwrap();
     lab.hub
         .db

@@ -324,6 +324,10 @@ fn limits(lead: &[&Tool], task: &[&Tool]) -> Result<String, String> {
 /// The roles that are offered a tool making call `op` and that the hub lets make it.
 fn who_may_call(tool: &Tool) -> String {
     let op = tool.op;
+    // The hub refuses them to every lead but a Navi's (`hub/navi/bridge.rs`).
+    if fleetd::hub::navi::bridge::OPS.contains(&op) {
+        return "a Navi's lead".into();
+    }
     let mut who = Vec::new();
     for (role, caller, name) in [
         (Role::Lead, CallerAgent::Lead, "a lead"),
@@ -683,6 +687,11 @@ fn example(role: Role, tool: &str) -> Option<Value> {
         (Role::Lead, "skill_install") => {
             json!({ "source": "vercel-labs/agent-skills@web-design-guidelines", "scope": "project" })
         }
+        (Role::Lead, "project_message") => json!({
+            "project": "storefront",
+            "text": "Please add gift cards at checkout; the person asked for it this morning.",
+        }),
+        (Role::Lead, "factory_status") => json!({ "project": "storefront" }),
         (Role::Lead, "usage_resume") => json!({ "machineId": "devbox" }),
         (Role::Lead, "change_enqueue") => json!({
             "prUrl": "https://github.com/acme/shop/pull/42",

@@ -65,6 +65,8 @@ Every lead gets these.
 | [`automation_runs`](#automation_runs) | An automation's runs, newest first, with the order each opened; with runId, that run and its whole webhook body. | No |
 | [`checklist`](#checklist) | Keep the project's checklist: the to-dos the human sees beside the chat, each todo, doing or done. | No |
 | [`skill_install`](#skill_install) | Install skills (SKILL.md workflows) from a skills.sh source (owner/repo, owner/repo@skill, a GitHub URL) for this project (scope project; global skills take an admin, so the human installs those); pinned to the commit fetched, and the human updates it from Settings > Skills. | No |
+| [`project_message`](#project_message) | A Navi's call: write to another project's lead in its chat, as this Navi, never as the person: "please add X", or a question. | No |
+| [`factory_status`](#factory_status) | A Navi's call: the other projects in one read, or the one named: each one's state (working, waiting on the person, blocked, idle), a red main, running agents, open orders, its checklist not done, its last merge and merges over 7 days, and this Navi's asks to it with the orders opened for them. | No |
 | [`usage_resume`](#usage_resume) | Lift the usage pause on your project's machine now and send every agent parked there "continue": only once you know its login has capacity again (the human says so, or a turn of yours just went through). | No |
 | [`change_enqueue`](#change_enqueue) | Put a PR no task's result put there on its repo's merge train; only the train merges. | No |
 | [`review_read`](#review_read) | Read every finding of the latest reviews of your PRs, blocking and non-blocking, in full, each with path:line. | No |
@@ -174,10 +176,11 @@ Stop a task: interrupts its thread and releases its slot.
 
 ### brief
 
-Open and start work. Without workstreamId it opens a new order from text (the human's words) and this brief, and starts it: new work from the chat starts this way, even when every order is closed. With workstreamId it sets that workstream's brief (goal, why, pointers, constraints, doneWhen lines) and starts it, or edits it later.
+Open and start work. Without workstreamId it opens a new order from text (the human's words) and this brief, and starts it: new work from the chat starts this way, even when every order is closed. With workstreamId it sets that workstream's brief (goal, why, pointers, constraints, doneWhen lines) and starts it, or edits it later. An order opened for a Navi's message gives asked, its N&lt;n> handle, so the Navi hears when it lands.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
+| `asked` | string | no | The Navi message (`project_message`) this order is opened for, so that Navi hears when it lands. |
 | `brief` | object | yes |  |
 | `brief.constraints` | string[] | yes | At most 20 items. |
 | `brief.doneWhen` | string[] | yes | At least one. At most 20 items. |
@@ -612,6 +615,46 @@ Install skills (SKILL.md workflows) from a skills.sh source (owner/repo, owner/r
   "arguments": {
     "scope": "project",
     "source": "vercel-labs/agent-skills@web-design-guidelines"
+  }
+}
+```
+
+### project_message
+
+A Navi's call: write to another project's lead in its chat, as this Navi, never as the person: "please add X", or a question. Its lead reads it as input, never as the person's answer or approval, and may open an order for it. Returns a handle (N&lt;n>); a later wake says when an order opened for it opens, closes, merges or fails. project is a title or project id from factory_status. Open an order this way only when the person asked for it in this conversation.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `project` | string | yes | The project: its title, as factory_status names it, or its project id. At most 200 characters. |
+| `text` | string | yes | At most 4000 characters. |
+
+**Who may call:** a Navi's lead, checked by the hub. **Needs a human:** no.
+
+```json
+{
+  "name": "project_message",
+  "arguments": {
+    "project": "storefront",
+    "text": "Please add gift cards at checkout; the person asked for it this morning."
+  }
+}
+```
+
+### factory_status
+
+A Navi's call: the other projects in one read, or the one named: each one's state (working, waiting on the person, blocked, idle), a red main, running agents, open orders, its checklist not done, its last merge and merges over 7 days, and this Navi's asks to it with the orders opened for them. Read-only.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `project` | string | no | One project, by title or project id; absent, every project but this one. At most 200 characters. |
+
+**Who may call:** a Navi's lead, checked by the hub. **Needs a human:** no.
+
+```json
+{
+  "name": "factory_status",
+  "arguments": {
+    "project": "storefront"
   }
 }
 ```

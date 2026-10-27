@@ -300,6 +300,48 @@ pub async fn send(
     })
 }
 
+/// A message one of fleetd's own agents writes to another project's lead, as the agent `by` (Navi's bridge,
+/// hub/navi): stored and sent as `send` does an agent key's, idempotent per `request`. Returns it, and why it waits
+/// when it does.
+pub async fn send_as_agent(
+    hub: &Arc<Hub>,
+    r: &ProjectRef,
+    by: &str,
+    text: String,
+    request: String,
+) -> Result<(fleetd_contracts::chat::ChatMessage, Option<String>), ToolError> {
+    let message = match hub.chat.by_request(r, &request).map_err(store_error)? {
+        Some(message) => message,
+        None => {
+            if !hub.chat.allow_agent(by) {
+                return Err(ToolError::new(
+                    ErrorCode::Invalid,
+                    format!("{by} wrote {AGENT_PER_MINUTE} chat messages in the last minute."),
+                )
+                .with_fix("Wait a minute, and put what you have in one message."));
+            }
+            ensure(hub, r).await.map_err(store_error)?;
+            let new = NewMessage {
+                author: Some(ChatAuthor::Agent),
+                text,
+                request: Some(request),
+                by: Some(by.to_owned()),
+                delivery: Some(ChatDelivery::Queued),
+                held: true,
+                ..Default::default()
+            };
+            hub.chat.add(r, new).map_err(store_error)?.0
+        }
+    };
+    let (message, lead_waiting) = if hub.chat.is_held(&message).map_err(store_error)? {
+        go(hub, r, message, false).await
+    } else {
+        (message, None)
+    };
+    state(hub, r).map_err(store_error)?;
+    Ok((message, lead_waiting))
+}
+
 /// Sends a held message to the project's lead, starting it if it has none: released once its session or the
 /// offline queue took it, with how it went in; still held, with why, when it couldn't go. `now` stops a working
 /// lead's running step for it; an idle or starting lead takes it as any message. A message that starts the lead ends
