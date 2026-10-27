@@ -545,10 +545,10 @@ pub const MACHINE_SET_USAGE: &str =
              in place of what it is measured to fit; auto: what it fits again. Raising
              starts queued agents at once; lowering stops nothing
   machine set <id> --roles agents,sessions [--max-sessions <n>|auto] [--home <dir>] [--hub <url>]
-             what the machine is for (admin key): agents, sessions (browsers and devices) or
-             both, and the most sessions it hosts at once (1 to 64; auto: what it fits).
-             A session an agent starts runs on its own machine when it can, else on another
-             that can, through the hub. Without agents, running agents finish and new ones
+             what the machine is for (admin key): agents, sessions (screens: browsers and
+             devices) or both, and the most screens it hosts at once (1 to 64; auto: what it
+             fits). A screen an agent starts runs on its own machine when it can, else on
+             another that can, through the hub. Without agents, running agents finish and new ones
              wait
 ";
 
@@ -606,7 +606,7 @@ pub fn roles_input(
     Ok(Some(input))
 }
 
-/// "devbox: agents and sessions, 2 of 4 sessions (auto: 8 CPUs, 16 GB)."
+/// "devbox: agents and screens, 2 of 4 screens (auto: 8 CPUs, 16 GB)."
 fn roles_line(machine: &Value) -> String {
     let roles: Vec<&str> = machine
         .get("roles")
@@ -614,10 +614,12 @@ fn roles_line(machine: &Value) -> String {
         .into_iter()
         .flatten()
         .filter_map(Value::as_str)
+        // The sessions role, as a person reads it.
+        .map(|r| if r == "sessions" { "screens" } else { r })
         .collect();
     let n = |k: &str| machine.get(k).and_then(Value::as_i64).unwrap_or(0);
     format!(
-        "{}: {}, {} of {} sessions ({}).",
+        "{}: {}, {} of {} screens ({}).",
         s(machine, "/machineId"),
         roles.join(" and "),
         n("sessionsLive"),

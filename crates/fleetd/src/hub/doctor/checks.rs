@@ -1129,7 +1129,7 @@ mod tests {
         let health = |state, backend, fix: Option<&str>| DesktopHealth {
             state,
             backend,
-            message: fleetd_contracts::prim::Text::unchecked("Desktop sessions run on Xvfb."),
+            message: fleetd_contracts::prim::Text::unchecked("Desktop screens run on Xvfb."),
             fix: fix.map(fleetd_contracts::prim::Text::unchecked),
         };
         let xvfb = health(

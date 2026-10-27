@@ -187,7 +187,7 @@ fn health_with(home: &Path, config: &DesktopConfig, block: bool) -> Option<Deskt
             DesktopState::Ready,
             Some(DesktopBackend::Container),
             format!(
-                "Desktop sessions run in {} containers; the first session builds the image.",
+                "Desktop screens run in {} containers; the first one builds the image.",
                 runtime.name()
             ),
             None,
@@ -196,7 +196,7 @@ fn health_with(home: &Path, config: &DesktopConfig, block: bool) -> Option<Deskt
             DesktopState::Ready,
             Some(DesktopBackend::Xvfb),
             format!(
-                "Desktop sessions run on Xvfb ({}) with a fresh home each{}.",
+                "Desktop screens run on Xvfb ({}) with a fresh home each{}.",
                 xvfb.display(),
                 match (runtime, answers) {
                     (Some(_), Some(Err(why))) => format!("; not in containers: {why}"),
@@ -210,7 +210,7 @@ fn health_with(home: &Path, config: &DesktopConfig, block: bool) -> Option<Deskt
         (Some(runtime), Some(Err(why)), None) => health_of(
             DesktopState::Unavailable,
             Some(DesktopBackend::Container),
-            format!("Desktop sessions can't run here: {why}, and there's no Xvfb.",),
+            format!("Desktop screens can't run here: {why}, and there's no Xvfb.",),
             Some(&format!(
                 "sudo usermod -aG docker $USER (then log in again), or sudo apt install xvfb; {} must answer `{} info`",
                 runtime.bin.display(),
@@ -220,7 +220,7 @@ fn health_with(home: &Path, config: &DesktopConfig, block: bool) -> Option<Deskt
         _ => health_of(
             DesktopState::Unavailable,
             None,
-            "Desktop sessions need docker or podman, or Xvfb; this machine has none that works."
+            "Desktop screens need docker or podman, or Xvfb; this machine has none that works."
                 .into(),
             Some(INSTALL_FIX),
         ),
@@ -386,7 +386,7 @@ impl Desktops {
                     desktops.write_state(&health_of(
                         DesktopState::Unavailable,
                         None,
-                        format!("Desktop sessions can't run here: {why}."),
+                        format!("Desktop screens can't run here: {why}."),
                         Some(INSTALL_FIX),
                     ));
                     *lock(&desktops.prep) = Prep::Unavailable(why);
@@ -406,10 +406,10 @@ impl Desktops {
             Some(backend),
             match backend {
                 DesktopBackend::Container => {
-                    "Desktop sessions run in containers of the pinned image.".into()
+                    "Desktop screens run in containers of the pinned image.".into()
                 }
                 DesktopBackend::Xvfb => {
-                    "Desktop sessions run on Xvfb with a fresh home each.".into()
+                    "Desktop screens run on Xvfb with a fresh home each.".into()
                 }
             },
             None,

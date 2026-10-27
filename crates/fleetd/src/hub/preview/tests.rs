@@ -404,7 +404,7 @@ async fn a_preview_goes_only_to_a_node_that_runs_previews() {
         })
         .unwrap();
     let (_, why) = refused(start(&hub, &person(), 14).await);
-    assert!(why.contains("hosts no sessions"), "{why}");
+    assert!(why.contains("hosts no screens"), "{why}");
     hub.db
         .with(|c| crate::hub::machine_roles::set_roles(c, &mid("devbox"), &Default::default()))
         .unwrap();

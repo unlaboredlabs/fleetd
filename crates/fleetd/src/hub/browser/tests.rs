@@ -510,11 +510,11 @@ async fn a_takeover_request_waits_on_you_until_a_person_has_control() {
     assert_eq!(counts.waiting_on_you.get(), 1);
     let item = items
         .iter()
-        .find(|i| i.why.as_ref().is_some_and(|w| w.as_str() == "browser"))
+        .find(|i| i.why.as_ref().is_some_and(|w| w.as_str() == "screen"))
         .unwrap();
     assert_eq!(
         item.title.as_str(),
-        "Take over the browser: Solve the captcha"
+        "Take over the screen: Solve the captcha"
     );
     assert_eq!(item.task_id.as_ref().unwrap().as_str(), "T7");
     // The node reports the person has control: no longer waiting.

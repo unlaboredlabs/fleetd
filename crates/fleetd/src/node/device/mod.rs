@@ -142,7 +142,7 @@ pub fn health(home: &Path, config: &DeviceConfig) -> Option<AndroidHealth> {
         return Some(health(
             AndroidState::Ready,
             format!(
-                "Android sessions are ready: {}, agent-device {}.",
+                "Android screens are ready: {}, agent-device {}.",
                 sdk::PINS,
                 agent_device::VERSION
             ),
@@ -158,7 +158,7 @@ pub fn health(home: &Path, config: &DeviceConfig) -> Option<AndroidHealth> {
             installing: true, ..
         } => health(
             AndroidState::Installing,
-            "Installing the Android emulator for sessions (about 2 GB), then booting it once to save its snapshot."
+            "Installing the Android emulator for screens (about 2 GB), then booting it once to save its snapshot."
                 .to_owned(),
             None,
         ),
@@ -171,7 +171,7 @@ pub fn health(home: &Path, config: &DeviceConfig) -> Option<AndroidHealth> {
         ),
         _ => health(
             AndroidState::Wanted,
-            "KVM works; the Android emulator installs when an agent first asks for an android session.".to_owned(),
+            "KVM works; the Android emulator installs when an agent first asks for an Android screen.".to_owned(),
             None,
         ),
     })

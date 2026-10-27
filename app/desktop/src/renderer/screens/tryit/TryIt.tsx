@@ -179,7 +179,7 @@ function Running({ preview: p, pr, mayAct }: { preview: Preview; pr: number; may
         {ready ? (
           <div className={s.under}>
             <Text size="xs" tone="quiet" className={s.underWords}>
-              {d.marking ? "Click where it’s wrong; each click is a pin you can say something about." : "Your clicks and keys go to the page. The session is recorded, as every session is."}
+              {d.marking ? "Click where it’s wrong; each click is a pin you can say something about." : "Your clicks and keys go to the page. The screen is recorded, as every screen is."}
             </Text>
             {mayAct ? (
               <Button
@@ -424,7 +424,7 @@ function Feedback({ preview: p, pr, draft: d, frame }: { preview: Preview; pr: n
                 screenshot-1.png
               </span>
             ) : null}
-            {sent.clip ? <span className={s.file} data-text="code">{`the session’s last ${String(CLIP_SECONDS)} s`}</span> : null}
+            {sent.clip ? <span className={s.file} data-text="code">{`the screen’s last ${String(CLIP_SECONDS)} s`}</span> : null}
           </span>
         </div>
       </section>
@@ -483,7 +483,7 @@ function Feedback({ preview: p, pr, draft: d, frame }: { preview: Preview; pr: n
         <span className={s.file}>
           <ImageIcon aria-hidden className={s.fileIcon} />A screenshot of the page with its pins
         </span>
-        <Checkbox label={`The last ${String(CLIP_SECONDS)} s of the session`} checked={d.clip} onCheckedChange={(v) => setDraft(id, (x) => ({ ...x, clip: v === true }))} />
+        <Checkbox label={`The last ${String(CLIP_SECONDS)} s of the screen`} checked={d.clip} onCheckedChange={(v) => setDraft(id, (x) => ({ ...x, clip: v === true }))} />
       </div>
       {failed === null ? null : (
         <p className={s.failed} role="alert">

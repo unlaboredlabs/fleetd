@@ -180,18 +180,18 @@ section + section .group {
   min-width: 0;
 }
 
-/* The page and its steps: stacked (the view scrolls), and side by side once there is room for both, the steps as
-   tall as the page beside them and scrolling within it. */
+/* A replay: the recording the full width. Its steps, opened, go under it (the view scrolls), and beside it once there
+   is room for both, as tall as the recording and scrolling within it. */
 .stage {
   flex: none;
   display: grid;
   gap: var(--space-3);
 }
 @container (min-width: 640px) {
-  .stage {
+  .withSteps {
     grid-template-columns: minmax(0, 1fr) minmax(240px, 34%);
   }
-  .stage > .steps {
+  .withSteps > .steps {
     contain: size;
     min-height: 200px;
   }
@@ -671,8 +671,4 @@ section + section .group {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
-}
-.stepsNote {
-  margin: 0;
-  padding: var(--space-2);
 }

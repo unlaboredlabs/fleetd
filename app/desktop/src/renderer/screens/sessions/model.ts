@@ -273,7 +273,7 @@ const wordsOf = (a: SessionAction): ActionLine => {
     case "resume":
       return { who, words: a.text === undefined ? "Looked at the page again" : `Looked at the page again: ${a.text}`, tone: "quiet" };
     case "end":
-      return { who, words: a.text === undefined ? "Ended the session" : `Ended the session: ${a.text}`, tone: "quiet" };
+      return { who, words: a.text === undefined ? "Ended the screen" : `Ended the screen: ${a.text}`, tone: "quiet" };
     case "fail":
       return { who, words: `Stopped: ${a.text ?? "the page failed"}`, tone: "danger" };
   }

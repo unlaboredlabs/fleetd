@@ -40,7 +40,7 @@ fn check(host: SessionHost, ready: bool, detail: impl Into<String>) -> HostCheck
 pub fn browser(home: &Path, config: &BrowserConfig) -> HostCheck {
     let host = SessionHost::Browser;
     if !config.enabled() {
-        return check(host, false, "browser sessions are off in node.json");
+        return check(host, false, "browser screens are off in node.json");
     }
     if let Some(chrome) = &config.chrome {
         return match Path::new(chrome).is_file() {
@@ -57,7 +57,7 @@ pub fn browser(home: &Path, config: &BrowserConfig) -> HostCheck {
         None => check(
             host,
             true,
-            "Chrome not installed yet: the node installs it with the first session",
+            "Chrome not installed yet: the node installs it with the first screen",
         ),
     }
 }
@@ -69,8 +69,8 @@ pub fn android(home: &Path, config: &DeviceConfig) -> HostCheck {
     let host = SessionHost::Android;
     if !config.enabled() {
         let why = match device::sdk::supported() {
-            true => "Android sessions are off in node.json",
-            false => "Android sessions run on Linux x86_64 with KVM",
+            true => "Android screens are off in node.json",
+            false => "Android screens run on Linux x86_64 with KVM",
         };
         return check(host, false, why);
     }
@@ -99,7 +99,7 @@ pub fn ios(home: &Path, config: &IosConfig) -> HostCheck {
     let host = SessionHost::Ios;
     if !config.enabled() {
         let why = match device::ios::supported() {
-            true => "iOS sessions are off in node.json",
+            true => "iOS screens are off in node.json",
             false => "iOS simulators need macOS",
         };
         return check(host, false, why);
@@ -120,14 +120,10 @@ pub fn ios(home: &Path, config: &IosConfig) -> HostCheck {
 fn desktop(home: &Path, config: &DesktopConfig) -> HostCheck {
     let host = SessionHost::Desktop;
     if !cfg!(target_os = "linux") {
-        return check(
-            host,
-            false,
-            "desktop sessions run on Linux (docker or Xvfb)",
-        );
+        return check(host, false, "desktop screens run on Linux (docker or Xvfb)");
     }
     if !config.enabled() {
-        return check(host, false, "desktop sessions are off in node.json");
+        return check(host, false, "desktop screens are off in node.json");
     }
     match desktop::health(home, config) {
         Some(health) => check(

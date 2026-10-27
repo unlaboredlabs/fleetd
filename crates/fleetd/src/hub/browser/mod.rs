@@ -171,7 +171,7 @@ pub fn announce(hub: &Hub, s: &BrowserSession, now: i64) -> Result<(), StoreErro
         machine_id: Some(s.project_ref.machine_id.clone()),
         project_id: Some(s.project_ref.project_id.clone()),
         thread_id: Some(s.thread_id.clone()),
-        summary: format!("browser session of {who}: {}", s.state.as_str()),
+        summary: format!("screen of {who}: {}", s.state.as_str()),
         data: Some(serde_json::to_value(data)?),
         attention: None,
     })?;

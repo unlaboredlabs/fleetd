@@ -114,7 +114,7 @@ the most agents the machine runs at once (admin key), up to the fleet cap, in pl
 fleetd machine set <id> --roles agents,sessions [--max-sessions <n>|auto] [--home <dir>] [--hub <url>]
 ```
 
-what the machine is for (admin key): agents, sessions (browsers and devices) or both, and the most sessions it hosts at once (1 to 64; auto: what it fits). A session an agent starts runs on its own machine when it can, else on another that can, through the hub. Without agents, running agents finish and new ones wait
+what the machine is for (admin key): agents, sessions (screens: browsers and devices) or both, and the most screens it hosts at once (1 to 64; auto: what it fits). A screen an agent starts runs on its own machine when it can, else on another that can, through the hub. Without agents, running agents finish and new ones wait
 
 ### fleetd pair {#pair}
 
