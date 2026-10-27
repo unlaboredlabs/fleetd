@@ -276,8 +276,8 @@ nothing, and no run may change a file outside <code dir="auto">generated</code>.
 <p>The commands run as the node’s user, as agent work does there, but reach for no credential: their HOME is a scratch
 directory, git under them has no credential helper and no hooks, and they get no SSH agent. The fetch and the push are
 separate steps. Programs are found on the node’s PATH, the one its agent sessions get; a missing one is named in the
-reason. The commands get <code dir="auto">FLEETD_REGENERATE_CACHE</code>, a directory under the node’s home
-(<code dir="auto">~/.fleetd/node/cache/regenerate/&lt;owner&gt;-&lt;name&gt;</code>) kept between runs, for build caches such as <code dir="auto">CARGO_TARGET_DIR</code>.
+reason. The commands get <code dir="auto">FLEETD_REGENERATE_CACHE</code>, a directory in the node’s own home
+(<code dir="auto">~/.fleetd/node/cache/regenerate/&lt;owner&gt;-&lt;name&gt;</code>, or under the node’s <code dir="auto">--home</code>) kept between runs, for build caches such as <code dir="auto">CARGO_TARGET_DIR</code>.
 Meanwhile the PR keeps its place in line, its queue entry says the train is regenerating it, and the train goes on with
 the others. Once the train pushes, the agent that wrote the PR is told, so it builds on the train’s commit instead of
 overwriting it.</p>

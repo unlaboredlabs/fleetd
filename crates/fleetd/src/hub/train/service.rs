@@ -444,7 +444,7 @@ pub(super) fn running_since(runs: &[CheckRun], fallback: i64) -> Option<i64> {
     )
 }
 
-type RepoLocks = Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>;
+pub(super) type RepoLocks = Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>;
 
 pub struct Train {
     pub(super) me: Weak<Train>,
@@ -506,13 +506,15 @@ pub struct Train {
     pub(super) migrations_read: Mutex<HashSet<super::regen::RegenKey>>,
     /// The regenerations running in the background.
     pub(super) regen_tasks: Mutex<Vec<tokio::task::JoinHandle<()>>>,
+    /// One regeneration at a time per checkout, by its machine and project: the rest wait their turn.
+    pub(super) regen_turns: RepoLocks,
 }
 
 pub(crate) fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-fn repo_lock(locks: &RepoLocks, repo: &str) -> Arc<tokio::sync::Mutex<()>> {
+pub(super) fn repo_lock(locks: &RepoLocks, repo: &str) -> Arc<tokio::sync::Mutex<()>> {
     lock(locks).entry(repo.to_string()).or_default().clone()
 }
 
@@ -561,6 +563,7 @@ impl Train {
             regens: Mutex::default(),
             migrations_read: Mutex::default(),
             regen_tasks: Mutex::default(),
+            regen_turns: Mutex::default(),
         })
     }
 

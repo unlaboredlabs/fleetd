@@ -62,7 +62,7 @@ async fn until_merged(kit: &Kit, change: &ChangeId) {
 
 /// `MAKE`, refused unless it runs with a scratch HOME, no git credential helper, and its cache under the node's home.
 const MAKE_CONFINED: &str = "test \"$HOME\" != /tmp && test -z \"$(git config --get credential.helper)\" \
-    && case \"$FLEETD_REGENERATE_CACHE\" in */node-home/node/cache/regenerate/acme-storefront) true ;; *) false ;; esac \
+    && case \"$FLEETD_REGENERATE_CACHE\" in */node-home/cache/regenerate/acme-storefront) true ;; *) false ;; esac \
     && mkdir -p gen && cat src/*.txt > gen/all.txt";
 
 #[tokio::test(flavor = "multi_thread")]
@@ -335,4 +335,43 @@ async fn a_program_missing_from_the_nodes_path_is_named_plainly() {
         why.contains("needs a program that is not on this node's PATH"),
         "{why}"
     );
+}
+
+/// Two PRs in line that conflict at once are regenerated one after the other in their checkout, never together, and
+/// neither is bounced for it.
+#[tokio::test(flavor = "multi_thread")]
+async fn regenerations_in_one_checkout_take_turns() {
+    let kit = regen_kit(MAKE);
+    let mut changes = Vec::new();
+    for (n, branch, file) in [(7, "add-b", "src/b.txt"), (8, "add-d", "src/d.txt")] {
+        let pr = kit.open_pr(
+            n,
+            branch,
+            &[(file, Some("x\n")), ("gen/all.txt", Some("a\nx\n"))],
+        );
+        changes.push(kit.enqueue_held(pr).await);
+    }
+    kit.commit(
+        "main",
+        &[("src/c.txt", Some("c\n")), ("gen/all.txt", Some("a\nc\n"))],
+        None,
+    );
+    set_mergeable(&kit, 7, Some(false));
+    set_mergeable(&kit, 8, Some(false));
+
+    kit.train.step(REPO).await;
+    kit.train.regenerations_done().await;
+
+    assert_eq!(kit.host.node_busy.lock().unwrap().1, 1);
+    assert!(kit.host.events_of("change.needs_rebase").is_empty());
+    // Each rebased onto main, src/*.txt in name order.
+    assert_eq!(
+        kit.file_on("add-b", "gen/all.txt").as_deref(),
+        Some("a\nx\nc")
+    );
+    assert_eq!(
+        kit.file_on("add-d", "gen/all.txt").as_deref(),
+        Some("a\nc\nx")
+    );
+    assert_eq!(changes.len(), 2);
 }

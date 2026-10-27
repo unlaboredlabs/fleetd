@@ -986,6 +986,8 @@ struct FakeHost {
     node_refusal: Mutex<Option<String>>,
     /// Each command run on the node, its argv's first two entries.
     node_runs: Mutex<Vec<String>>,
+    /// Scripts running on the node now, and the most there ever were at once.
+    node_busy: Mutex<(usize, usize)>,
 }
 
 impl FakeHost {
@@ -1232,11 +1234,20 @@ impl TrainHost for FakeHost {
                 .env_clear()
                 .env("PATH", std::env::var("PATH").unwrap_or_default())
                 .env("TMPDIR", dir.parent().unwrap())
-                .env("FLEETD_HOME", dir.parent().unwrap().join("node-home"))
+                .env("FLEETD_NODE_HOME", dir.parent().unwrap().join("node-home"))
                 .envs(GIT_ENV)
                 .kill_on_drop(true)
                 .output();
+            let script = argv[0] == "sh";
+            if script {
+                let mut busy = self.node_busy.lock().unwrap();
+                busy.0 += 1;
+                busy.1 = busy.1.max(busy.0);
+            }
             let out = tokio::time::timeout(Duration::from_secs(timeout_sec.into()), child).await;
+            if script {
+                self.node_busy.lock().unwrap().0 -= 1;
+            }
             Ok(match out {
                 Ok(Ok(out)) => NodeRun {
                     exit_code: out.status.code().map(i64::from),
@@ -1427,6 +1438,7 @@ impl Kit {
             checkout: Mutex::default(),
             node_refusal: Mutex::default(),
             node_runs: Mutex::default(),
+            node_busy: Mutex::default(),
         });
         let gate = Arc::new(FakeGate::default());
         let mut options = TrainOptions {

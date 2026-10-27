@@ -202,8 +202,8 @@ migration that sorts at or before the base's newest, the train:
 The commands run as the node's user, as agent work does there, but reach for no credential: their HOME is a scratch
 directory, git under them has no credential helper and no hooks, and they get no SSH agent. The fetch and the push are
 separate steps. Programs are found on the node's PATH, the one its agent sessions get; a missing one is named in the
-reason. The commands get `FLEETD_REGENERATE_CACHE`, a directory under the node's home
-(`~/.fleetd/node/cache/regenerate/<owner>-<name>`) kept between runs, for build caches such as `CARGO_TARGET_DIR`.
+reason. The commands get `FLEETD_REGENERATE_CACHE`, a directory in the node's own home
+(`~/.fleetd/node/cache/regenerate/<owner>-<name>`, or under the node's `--home`) kept between runs, for build caches such as `CARGO_TARGET_DIR`.
 Meanwhile the PR keeps its place in line, its queue entry says the train is regenerating it, and the train goes on with
 the others. Once the train pushes, the agent that wrote the PR is told, so it builds on the train's commit instead of
 overwriting it.
