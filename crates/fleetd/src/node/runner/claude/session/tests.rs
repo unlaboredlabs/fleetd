@@ -108,6 +108,7 @@ impl Fake {
                 ("NODE_PID".into(), std::process::id().to_string()),
             ],
             transcript: Some(dir.path().join("transcript.jsonl")),
+            sandbox: None,
         };
         let mut handle = spawn_retrying(&runner, spec);
         // Init comes once the escaping child has written its pid.

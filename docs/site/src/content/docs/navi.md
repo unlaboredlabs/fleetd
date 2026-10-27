@@ -76,6 +76,10 @@ writes drafts and notes in its folder, remembers and forgets, keeps its checklis
   approves it, so your keys, its MCP servers' tokens and other projects stay out of its reach. It can't change its own
   Claude Code settings, MCP servers or fleetd policy in its folder either (`.claude`, `.mcp.json`, `.fleetd`), and a
   policy file's allow rules don't apply to a Navi at all.
+- **Sandbox:** on top of those checks, a Navi's Claude Code and every command, MCP server and tool it starts run in
+  an OS sandbox ([Security](/docs/security#navi-sandbox)). Whatever a command tries, it writes only inside its folder
+  and its own scratch and `/tmp`, and can't read fleetd's directory, `~/.config`, `~/.ssh`, other projects or the
+  integrations' tokens.
 - **Sites:** the first time it fetches a page or opens a site in its browser, you're asked in its chat, with the site
   named. Approve once and it fetches and opens that site unasked from then on, with a plain URL: one with `?` or
   `&`, quotes or other shell characters in a browser command asks each time. `www.` is the same site, a subdomain is
@@ -95,6 +99,12 @@ the tool and exactly what it would get: the recipients, the full text. **Approve
 input. **Deny** tells the Navi you said no, with your reason if you give one. A prompt that goes away on its own (the
 run ended) closes its approval. Moving money, trading and creating accounts through an integration are blocked even
 if approved.
+
+**When the sandbox can't start, the Navi doesn't run.** Its chat says why and how to fix it. On Linux a Navi needs
+bubblewrap: install it (`sudo apt install bubblewrap`, `sudo dnf install bubblewrap`, `sudo pacman -S bubblewrap`).
+On Ubuntu 23.10 and later, AppArmor may also block the user namespaces bubblewrap uses; `bwrap --ro-bind / /
+--unshare-all true` says so, and Ubuntu's `apparmor` package has a profile that allows them
+(`/etc/apparmor.d/bwrap-userns-restrict`). A Mac uses its built-in `sandbox-exec`.
 
 **What screens can still do.** The site gate covers opening a site; it doesn't follow a page after that. Inside a
 page it already opened, a Navi clicks, types and fills unasked, which is how screens work, so a click or a form that

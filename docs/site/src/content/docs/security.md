@@ -71,6 +71,28 @@ but it keeps nothing private from them.
 - **Notifications** carry a one-line summary, never a secret.
 - **An approved command runs exactly as stored**, and only after a person approves it.
 
+## Navi sandbox {#navi-sandbox}
+
+A [Navi](/docs/navi) reads mail and web pages that anyone can write, so fleetd assumes one may be talked into
+something. Its tool checks (files only in its folder, sites asked once, sends always asked) run inside the session;
+an OS sandbox holds when a command finds a way around them. Only Navis run in it; other agents don't.
+
+| | Linux (bubblewrap) | macOS (`sandbox-exec`) |
+|---|---|---|
+| Writes | Its folder, its scratch dir, a `/tmp` of its own, and Claude Code's state for its own session | The same, without a private `/tmp` |
+| Can't read | fleetd's directory (the hub, node, worktrees, tokens), `~/.config`, `~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.docker`, `~/.kube`, `~/.netrc`, `~/.git-credentials`, other projects' checkouts | The same |
+| Reads | The rest of the machine, read-only: programs, libraries, `~/.gitconfig`, Claude Code's login and settings | The same |
+| Also | Its own process list (`/proc`), so no other process is in reach; none of the user's runtime sockets (D-Bus, systemd, an SSH agent) | Not these |
+| Network | As before: the site gate decides | The same |
+
+- **Nothing it writes reaches another agent.** A Navi writes its own conversation and session files. Shell
+  snapshots, todos and plans that other sessions read get a private copy on Linux, and are read-only on macOS.
+  `~/.claude/settings.json` and `~/.claude.json` are read-only, so it can't add hooks or MCP servers for other agents.
+- **No sandbox, no Navi.** When bubblewrap is missing or can't start, the Navi doesn't run, and its chat says how to
+  fix it ([Navi](/docs/navi)). fleetd never runs a Navi unsandboxed.
+- **What it doesn't cover.** The network is shared, as the site gate needs. Its folder's own files, its MCP servers'
+  config for the session and Claude Code's login are readable to it: Claude Code needs them.
+
 ## Hub links {#hub-links}
 
 A hub link lets a Navi on one hub open and follow work in projects on another hub, for example from a personal hub

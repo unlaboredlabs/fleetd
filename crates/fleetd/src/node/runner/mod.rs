@@ -16,6 +16,7 @@
 //! Files ending `.documented.jsonl` are built from the Agent SDK's types, not recorded.
 pub mod claude;
 pub mod process;
+pub mod sandbox;
 pub mod scope;
 pub mod shell;
 
@@ -79,6 +80,9 @@ pub struct SessionSpec {
     pub env: Vec<(String, String)>,
     /// Raw stdout and stderr lines are appended here for debugging and conformance.
     pub transcript: Option<PathBuf>,
+    /// The OS sandbox the process and everything it starts run in: a Navi's ([`sandbox::navi_fence`]). None for every
+    /// other session.
+    pub sandbox: Option<sandbox::Fence>,
 }
 
 /// Commands to a live session's process.
@@ -237,6 +241,9 @@ pub enum RunnerError {
     Missing { binary: String },
     #[error("could not start {binary}: {message}")]
     Spawn { binary: String, message: String },
+    /// The session must run in a sandbox, and none could start here.
+    #[error("{message}")]
+    Sandbox { message: String, fix: String },
 }
 
 /// One agent runtime, one per [`RunnerKind`].

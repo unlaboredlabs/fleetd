@@ -168,6 +168,10 @@ writes drafts and notes in its folder, remembers and forgets, keeps its checklis
 approves it, so your keys, its MCP servers’ tokens and other projects stay out of its reach. It can’t change its own
 Claude Code settings, MCP servers or fleetd policy in its folder either (<code dir="auto">.claude</code>, <code dir="auto">.mcp.json</code>, <code dir="auto">.fleetd</code>), and a
 policy file’s allow rules don’t apply to a Navi at all.</li>
+<li><strong>Sandbox:</strong> on top of those checks, a Navi’s Claude Code and every command, MCP server and tool it starts run in
+an OS sandbox (<a href="/docs/security#navi-sandbox">Security</a>). Whatever a command tries, it writes only inside its folder
+and its own scratch and <code dir="auto">/tmp</code>, and can’t read fleetd’s directory, <code dir="auto">~/.config</code>, <code dir="auto">~/.ssh</code>, other projects or the
+integrations’ tokens.</li>
 <li><strong>Sites:</strong> the first time it fetches a page or opens a site in its browser, you’re asked in its chat, with the site
 named. Approve once and it fetches and opens that site unasked from then on, with a plain URL: one with <code dir="auto">?</code> or
 <code dir="auto">&amp;</code>, quotes or other shell characters in a browser command asks each time. <code dir="auto">www.</code> is the same site, a subdomain is
@@ -186,6 +190,10 @@ the tool and exactly what it would get: the recipients, the full text. <strong>A
 input. <strong>Deny</strong> tells the Navi you said no, with your reason if you give one. A prompt that goes away on its own (the
 run ended) closes its approval. Moving money, trading and creating accounts through an integration are blocked even
 if approved.</p>
+<p><strong>When the sandbox can’t start, the Navi doesn’t run.</strong> Its chat says why and how to fix it. On Linux a Navi needs
+bubblewrap: install it (<code dir="auto">sudo apt install bubblewrap</code>, <code dir="auto">sudo dnf install bubblewrap</code>, <code dir="auto">sudo pacman -S bubblewrap</code>).
+On Ubuntu 23.10 and later, AppArmor may also block the user namespaces bubblewrap uses; <code dir="auto">bwrap --ro-bind / / --unshare-all true</code> says so, and Ubuntu’s <code dir="auto">apparmor</code> package has a profile that allows them
+(<code dir="auto">/etc/apparmor.d/bwrap-userns-restrict</code>). A Mac uses its built-in <code dir="auto">sandbox-exec</code>.</p>
 <p><strong>What screens can still do.</strong> The site gate covers opening a site; it doesn’t follow a page after that. Inside a
 page it already opened, a Navi clicks, types and fills unasked, which is how screens work, so a click or a form that
 leads to another site isn’t asked. Its Android, iOS and desktop screens (<code dir="auto">agent-device</code>) don’t ask per site at all.
