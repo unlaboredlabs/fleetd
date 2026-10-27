@@ -1,10 +1,10 @@
-// One browser session, in the panel's wide width. While it runs: the page as the agent sees it, the full width, what
-// the agent is doing now, and Take over. Taken over, the page is yours: the frame's bar turns to say so, your
-// clicks and keys go to the page, and Hand back gives it to the agent, which looks at the page again and goes on;
-// meanwhile it waits, and its line says so. An agent that asks you to take over says why above the page. Once it has
-// ended: its replay, the recording the full width; Steps opens its steps beside it, each step a jump to its moment and a
-// way into the page's snapshot at that step. A login filled from 1Password is a step in words; its value is never on the hub to show, nor
-// in a snapshot.
+// One screen (a browser session, or a device's), in the panel's wide width. While it runs: the page as the agent sees
+// it, the full width, what the agent is doing now, and Take over. Taken over, the page is yours: the frame's bar turns
+// to say so, your clicks and keys go to the page, and Hand back gives it to the agent, which looks at the page again
+// and goes on; meanwhile it waits, and its line says so. An agent that asks you to take over says why above the page.
+// Once it has ended: its replay, the recording the full width; Steps opens its steps beside it, each step a jump to its
+// moment and a way into the page's snapshot at that step. A login filled from 1Password is a step in words; its value
+// is never on the hub to show, nor in a snapshot.
 import { AppWindow, ChevronLeft, CornerUpLeft, Hand, KeyRound, ListOrdered, ListTree, Pause, Play } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 import { Button, EmptyState, StateGlyph, Text, Tooltip, Truncate, cx, toast } from "../../ui";
@@ -115,10 +115,9 @@ function Head({ session: x, windowed }: { session: BrowserSession; windowed: boo
 
 /**
  * The page now, the full width, what the agent does and the one control (Take over or Hand back); its steps come with
- * its recording, once it ends. Beside Take
- * over, the pop-out takes the page over in a window of its own; while the session is in its window, this one shows that
- * and offers to bring that window forward. Taken over, ⌘⇧↩ (Ctrl+Shift+Enter) hands back: the app's keymap catches it
- * in the capture phase, so the page never sees those keys.
+ * its recording, once it ends. Beside Take over, the pop-out takes the page over in a window of its own; while the
+ * screen is in its window, this one shows that and offers to bring that window forward. Taken over, ⌘⇧↩
+ * (Ctrl+Shift+Enter) hands back: the app's keymap catches it in the capture phase, so the page never sees those keys.
  */
 function Live({ session: x, windowed }: { session: BrowserSession; windowed: boolean }) {
   const layer = useDataLayer();
@@ -328,10 +327,10 @@ function StepWords({ action }: { action: SessionAction }) {
 const SPEEDS = [1, 2, 4] as const;
 
 /**
- * The recording, the full width, and its steps behind Steps, closed until you open them. Play runs it; the scrubber's ticks are the steps, a dithered stretch the time
- * a person had the page; a step jumps to its moment, and the step on screen is marked. A step's snapshot, opened from
- * its line, takes the steps' place: the page's structure as that step found it, what it acted on highlighted there and
- * outlined on the page. Play, the scrubber, Back or Escape close it.
+ * The recording, the full width, and its steps behind Steps, closed until you open them. Play runs it; the scrubber's
+ * ticks are the steps, a dithered stretch the time a person had the page; a step jumps to its moment, and the step on
+ * screen is marked. A step's snapshot, opened from its line, takes the steps' place: the page's structure as that step
+ * found it, what it acted on highlighted there and outlined on the page. Play, the scrubber, Back or Escape close it.
  */
 function Replay({ session: x }: { session: BrowserSession }) {
   if (x.state === "saving" || x.state === "lost" || x.state === "expired") return <NoRecording session={x} />;
@@ -374,8 +373,8 @@ function Recorded({ session: x }: { session: BrowserSession }) {
 }
 
 /**
- * Plays a recording: its video when it has one (the video's clock leads), else a clock of its own over its steps. Steps,
- * at the end of its controls, opens them beside it (under it in a narrow panel) and closes them again.
+ * Plays a recording: its video when it has one (the video's clock leads), else a clock of its own over its steps.
+ * Steps, at the end of its controls, opens them beside it (under it in a narrow panel) and closes them again.
  */
 function Player({ session: x, actions, video }: { session: BrowserSession; actions: readonly SessionAction[]; video?: Blob }) {
   const duration = x.recording?.durationMs ?? actions.at(-1)?.at ?? 0;

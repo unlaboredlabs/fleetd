@@ -46,8 +46,8 @@ async fn browser_control(
 ) -> Result<BrowserControlOutput, ToolError> {
     let id = &input.session_id;
     let not_found = || {
-        ToolError::new(ErrorCode::NotFound, format!("No browser session {id}."))
-            .with_fix("Call browser_sessions for the project's sessions.")
+        ToolError::new(ErrorCode::NotFound, format!("No screen {id}."))
+            .with_fix("Call browser_sessions for the project's screens.")
     };
     let mut session = get(&hub.db, id)?.ok_or_else(not_found)?;
     let machine = session.project_ref.machine_id.clone();
@@ -65,10 +65,7 @@ async fn browser_control(
     if session.state != BrowserSessionState::Live {
         return Err(ToolError::new(
             ErrorCode::Invalid,
-            format!(
-                "Browser session {id} is {}, not live.",
-                session.state.as_str()
-            ),
+            format!("Screen {id} is {}, not live.", session.state.as_str()),
         ));
     }
     let next = match (input.control, session.control) {
@@ -117,11 +114,11 @@ async fn browser_control(
             return Err(ToolError::new(
                 ErrorCode::Failed,
                 format!(
-                    "{machine}'s node didn't confirm the change: browser session {id} may have just ended there. \
+                    "{machine}'s node didn't confirm the change: screen {id} may have just ended there. \
                      Nothing changed."
                 ),
             )
-            .with_fix("Read the session again with browser_sessions, and try again if it is still live."));
+            .with_fix("Read the screen again with browser_sessions, and try again if it is still live."));
         }
         session = get(&hub.db, id)?.ok_or_else(not_found)?;
     }
@@ -157,7 +154,7 @@ async fn browser_sessions(
     };
     let next = sessions
         .is_empty()
-        .then(|| "No browser sessions yet: an agent opens one with session_start.".to_owned());
+        .then(|| "No screens yet: an agent opens one with session_start.".to_owned());
     Ok(BrowserSessionsOutput {
         sessions: List::unchecked(sessions),
         retention: hub.db.with(retention_on)?,
@@ -173,8 +170,8 @@ async fn browser_recording_get(
 ) -> Result<BrowserRecordingGetOutput, ToolError> {
     let id = &input.session_id;
     let not_found = || {
-        ToolError::new(ErrorCode::NotFound, format!("No browser session {id}."))
-            .with_fix("Call browser_sessions for the project's sessions.")
+        ToolError::new(ErrorCode::NotFound, format!("No screen {id}."))
+            .with_fix("Call browser_sessions for the project's screens.")
     };
     let session = get(&hub.db, id)?.ok_or_else(not_found)?;
     // Knowing an id gives nothing on a machine the key can't read.
@@ -185,12 +182,12 @@ async fn browser_recording_get(
         return Err(ToolError::new(
             ErrorCode::NotFound,
             format!(
-                "Browser session {id} has no {} recording ({}).",
+                "Screen {id} has no {} recording ({}).",
                 input.file.as_str(),
                 session.state.as_str()
             ),
         )
-        .with_fix("browser_sessions lists the files each session has."));
+        .with_fix("browser_sessions lists the files each screen has."));
     }
     let path = file_path(&hub, id, input.file);
     let offset = input.offset.get() as u64;

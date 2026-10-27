@@ -221,8 +221,8 @@ impl Drop for Watch {
 }
 
 fn no_session(id: &BrowserSessionId) -> ToolError {
-    ToolError::new(ErrorCode::NotFound, format!("No browser session {id}."))
-        .with_fix("Call browser_sessions for the project's sessions.")
+    ToolError::new(ErrorCode::NotFound, format!("No screen {id}."))
+        .with_fix("Call browser_sessions for the project's screens.")
 }
 
 /// The app's `browser_watch` of a live session: any key that can read its machine.
@@ -236,7 +236,7 @@ pub fn start_watch(hub: &Hub, caller: &Caller, id: &BrowserSessionId) -> Result<
         return Err(ToolError::new(
             ErrorCode::Invalid,
             format!(
-                "Browser session {id} is {}: replay its recording instead.",
+                "Screen {id} is {}: replay its recording instead.",
                 session.state.as_str()
             ),
         )
@@ -266,7 +266,7 @@ pub fn input(
     if !is_human(caller) {
         return Err(ToolError::new(
             ErrorCode::Forbidden,
-            "Only a person's device drives a browser session.",
+            "Only a person's device drives a screen.",
         )
         .with_fix("Use the desktop app."));
     }
@@ -274,7 +274,7 @@ pub fn input(
     if session.state != BrowserSessionState::Live || session.control != BrowserControl::Human {
         return Err(ToolError::new(
             ErrorCode::Invalid,
-            format!("Browser session {id} isn't yours to drive: its agent has control."),
+            format!("Screen {id} isn't yours to drive: its agent has control."),
         )
         .with_fix("Take it over first with browser_control control human."));
     }

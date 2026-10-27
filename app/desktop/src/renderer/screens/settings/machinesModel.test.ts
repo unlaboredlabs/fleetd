@@ -53,7 +53,7 @@ describe("machine roles", () => {
     expect(hostsNote({ ...devbox, hosts: [], online: false })).toBe("Offline: what it can host shows once it is back.");
     expect(hostsNote({ ...devbox, hostsOthers: false, hostsOthersNote: "Its fleetd is older: it hosts only its own agents' screens until it is updated." })).toContain("older");
     // No key to seal to says so, not "older".
-    const noKey = "It gave the hub no key to seal a session's secrets to: it hosts only its own agents' screens until its node links again.";
+    const noKey = "It gave the hub no key to seal a screen's secrets to: it hosts only its own agents' screens until its node links again.";
     expect(hostsNote({ ...devbox, hostsOthers: false, hostsOthersNote: noKey })).toBe(noKey);
   });
 });

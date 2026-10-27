@@ -304,10 +304,7 @@ async fn a_session_stays_its_projects() {
     )
     .await
     .unwrap_err();
-    assert!(
-        format!("{hidden:?}").contains("No browser session"),
-        "{hidden:?}"
-    );
+    assert!(format!("{hidden:?}").contains("No screen"), "{hidden:?}");
 }
 
 #[tokio::test]
