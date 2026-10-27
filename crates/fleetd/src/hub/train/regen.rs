@@ -13,7 +13,7 @@ use serde::Deserialize;
 use super::contract::{Change, ChangeId, ChangeState};
 use super::github::Pull;
 use super::host::NodeRun;
-use super::service::{Train, error_text, lock, short};
+use super::service::{Train, error_text, lock, repo_lock, short};
 
 /// Where a repo says how its generated files are made, on its base branch.
 pub const CONFIG_PATH: &str = ".fleetd/regenerate.json";
@@ -174,7 +174,7 @@ onto=refs/remotes/origin/$base
 git cat-file -e "$head^{commit}" 2>/dev/null || refuse "the PR's head ${head} is not in the checkout"
 git rev-parse -q --verify "$onto" >/dev/null || refuse "origin/$base is not in the checkout"
 root=$(pwd)
-FLEETD_REGENERATE_CACHE=${FLEETD_HOME:-$HOME/.fleetd}/node/cache/regenerate/$(printf '%s' "$repo" | tr '/' '-')
+FLEETD_REGENERATE_CACHE=${FLEETD_NODE_HOME:-$HOME/.fleetd/node}/cache/regenerate/$(printf '%s' "$repo" | tr '/' '-')
 export FLEETD_REGENERATE_CACHE
 mkdir -p "$FLEETD_REGENERATE_CACHE" || refuse "no cache directory at $FLEETD_REGENERATE_CACHE"
 tmp=$(mktemp -d) || refuse "no scratch directory"
@@ -441,8 +441,21 @@ impl Train {
             c
         });
         let (change, pull, why) = (change.clone(), pull.clone(), why.to_string());
+        let checkout = self.train_checkout(&change.repo, &change.project_ref);
+        let turn = format!("{}/{}", checkout.machine_id, checkout.project_id);
         let task = tokio::spawn(async move {
-            let outcome = me.regenerate(&change, &pull, &config).await;
+            // One at a time in a checkout: two would race for its refs and its worktrees.
+            let turns = repo_lock(&me.regen_turns, &turn);
+            let _turn = turns.lock().await;
+            let still = me
+                .records
+                .get(&change.change_id)
+                .is_some_and(|c| c.head_sha == change.head_sha);
+            let outcome = if still {
+                me.regenerate(&change, &pull, &config).await
+            } else {
+                Err("the PR moved while it waited its turn".to_string())
+            };
             me.regenerated(&change, &pull, &why, bounce, outcome).await;
         });
         let mut tasks = lock(&self.regen_tasks);

@@ -221,14 +221,36 @@ pub async fn run_confined(run: ConfinedRun<'_>, roots: &[String]) -> RunOutcome 
 /// Runs one `cmd_check` and always answers it. `exitCode` is null when the command timed out, died of a signal,
 /// could not start, or was refused; `outputTail` then says which.
 pub async fn run_cmd_check(frame: CmdCheck, roots: &[String]) -> CmdResult {
+    run_cmd_check_from(frame, roots, None).await
+}
+
+/// `run_cmd_check` on a node whose home is `home`: the command gets it as `FLEETD_NODE_HOME`, so what it keeps (the
+/// merge train's build caches) stays in the node's own home, wherever `--home` put it.
+pub async fn run_cmd_check_from(
+    frame: CmdCheck,
+    roots: &[String],
+    home: Option<&Path>,
+) -> CmdResult {
     // Git the hub runs (the landing scanner's fetches) reaches an SSH remote through the user's agent; nothing else
     // gets it.
     let git = frame.argv.first().is_some_and(|c| c == "git");
+    let env = home.map(|home| {
+        let mut env = if git {
+            super::util::git_command_env()
+        } else {
+            scrubbed_env()
+        };
+        env.push((
+            "FLEETD_NODE_HOME".to_owned(),
+            home.to_string_lossy().into_owned(),
+        ));
+        env
+    });
     let run = ConfinedRun {
         cwd: &frame.cwd,
         argv: &frame.argv,
         timeout_sec: frame.timeout_sec.get() as u64,
-        env: git.then(super::util::git_command_env),
+        env: env.or_else(|| git.then(super::util::git_command_env)),
         scrub: &[],
     };
     let outcome = run_confined(run, roots).await;
@@ -277,6 +299,16 @@ mod tests {
                     .and_then(|f| f.parse::<u64>().ok())
                     .is_some_and(|flags| flags & PF_EXITING != 0)
         })
+    }
+
+    #[tokio::test]
+    async fn a_command_knows_the_nodes_own_home() {
+        let root = tempfile::tempdir().unwrap();
+        let roots = vec![root.path().to_string_lossy().into_owned()];
+        let home = root.path().join("elsewhere");
+        let argv = ["sh", "-c", "printf '%s' \"$FLEETD_NODE_HOME\""];
+        let told = run_cmd_check_from(check(root.path(), &argv, 30), &roots, Some(&home)).await;
+        assert_eq!(parts(&told), (Some(0), home.to_str().unwrap(), false));
     }
 
     #[tokio::test]
