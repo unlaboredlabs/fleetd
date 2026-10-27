@@ -669,11 +669,18 @@ async fn an_agent_opens_settings_on_an_ios_session_and_its_recording_is_on_the_h
         first.height,
         first.jpeg.len() / 1024
     );
+    // The loop goes on, as fast as this Mac's simctl takes screenshots: on a busy CI runner, with recordVideo and the
+    // XCTest runner on the same simulator, one can take 5 s or time out at 10, so the rate is measured, not asserted.
     let t = Instant::now();
-    let tenth = frame_after(&mut frames, first.seq + 8, Duration::from_secs(30)).await;
+    let mut last = first.seq;
+    while last == first.seq || t.elapsed() < Duration::from_secs(10) {
+        last = frame_after(&mut frames, last, Duration::from_secs(30))
+            .await
+            .seq;
+    }
     eprintln!(
         "live view: {:.1} frames a second",
-        (tenth.seq - first.seq) as f64 / t.elapsed().as_secs_f64()
+        (last - first.seq) as f64 / t.elapsed().as_secs_f64()
     );
     assert!(
         !simulators.input(&id, &Input::Text("x".into())),
@@ -691,16 +698,19 @@ async fn an_agent_opens_settings_on_an_ios_session_and_its_recording_is_on_the_h
         key: "BrowserHome".into(),
         modifiers: 0,
     };
+    // agent-device's home goes through the XCTest runner, and the frame that shows it through simctl's slow screenshots.
     let t = Instant::now();
     assert!(simulators.input(&id, &home_key(true)));
     assert!(simulators.input(&id, &home_key(false)));
+    let mut seen = before.seq;
     loop {
-        let frame = frame_after(&mut frames, before.seq, Duration::from_secs(30)).await;
+        let frame = frame_after(&mut frames, seen, Duration::from_secs(30)).await;
         if frame.jpeg != before.jpeg {
             break;
         }
+        seen = frame.seq;
         assert!(
-            t.elapsed() < Duration::from_secs(30),
+            t.elapsed() < Duration::from_secs(60),
             "the screen never changed"
         );
     }
