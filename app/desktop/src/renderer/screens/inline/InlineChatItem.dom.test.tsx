@@ -440,7 +440,7 @@ describe("a request the hub reopens", () => {
 });
 
 describe("an integration's approval", () => {
-  it("shows every recipient the xaq way, the subject, the whole body, the files and everything it sends", async () => {
+  it("shows every recipient, marking outside ones, the subject, the whole body, the files and everything it sends", async () => {
     const hub = await render("Q12");
     const text = host.textContent;
     expect(text).toContain("Sends · Google");
@@ -449,7 +449,7 @@ describe("an integration's approval", () => {
     expect(text).toContain("Navi wants to send an email");
     expect(text).toContain("bo@example.com.auoutside example.com");
     expect(text).toContain("hidden from the others");
-    expect(text).toContain("menu.pdfa file on xaq's machine");
+    expect(text).toContain("menu.pdffrom Drive");
     expect(text).toContain("Lunch on Tuesday");
     expect(one("[data-tool=send_message]").textContent).toContain("Tuesday at 12:30 at the usual place? I'll book a table.");
     // Labelled rows, in the order a person checks them.

@@ -482,6 +482,43 @@ takes read on the Navi's machine, and a hub has it when its `ready` frame names 
 **Storage.** `navi_asks` holds one row per message (from, to, text, when); `navi_ask_orders` maps each order opened
 for an ask to it. An ask may become several orders.
 
+## 9. Integrations and approvals (W97)
+
+A Navi reaches outside services through MCP servers marked with what they are (`McpServer.integration`: `google`,
+`notion` or `custom`). The code is `crates/fleetd/src/hub/integrations/`; the contracts are
+`crates/fleetd-contracts/src/integrations.rs`.
+
+**Connecting.** From the Navi's settings (Integrations), never a coding project's: `mcp_server_set` refuses an
+`integration` on a project whose kind isn't `assistant`, since a coding lead runs with full access. Notion is its
+official server (`npx -y @notionhq/notion-mcp-server`) with the person's internal integration secret as `NOTION_TOKEN`;
+a custom server is any URL or command, with the tools the person marked as only reading in `read_tools`. A key or token
+is sealed in the app to the Navi's machine; the hub keeps its fingerprint only, and Disconnect (`mcp_server_remove`)
+makes the node forget it. Google (Gmail, Calendar, Drive) is fleetd's own: the hub serves it as a server named `google`
+of kind `google`, and `hub/integrations/google.rs` holds its tool names and the input fields its cards read.
+
+**The gate, outside the model.** `policy::verdict(tool, input, servers)` answers each permission prompt for an MCP tool
+of the Navi's lead: Allow for a read; Ask with a `ToolPreview` for a write, send, delete, share or spend; Block for what
+is refused even if approved. `policy::launch_rules` puts the read tools in `--allowedTools` and the blocked ones in
+`--disallowedTools`. The relay (Navi core) calls both. The order of rules:
+
+1. The blocked list, by the words of any tool's name on any server: moving money (transfer, payout, withdraw, wire,
+   money, funds, sending a transaction), trading (trade, sell, swap, stock, crypto; buying or placing shares, orders,
+   positions) and creating accounts (sign up, create or open an account).
+2. The integration's table: `google.rs`, `notion.rs` (`API-*` reads by verb, `API-patch-page` with `archived` is a
+   delete), or a custom server's `read_tools`.
+3. Anything else asks, with its action guessed from its name.
+
+An ask is also blocked when its input looks like a credential (`hub/redact`, on the text, on each attached file's
+base64 text, and on its decoded contents), or when its whole input, a file's bytes said by their size, doesn't fit the
+card (100,000 characters). Nothing is ever "always allowed".
+
+**The card.** `ToolPreview` carries the account, every To/Cc/Bcc, an audience line when the tool picks recipients
+itself, the subject or title, the time, the attachments (name, size, source), the target and the whole body, all read
+from the input the tool runs with, plus that input as JSON. The app names the Navi ("Ada wants to send an email"), marks
+an address outside the account's domain and Bcc, puts its one warning word only on a share, delete or spend, names the
+act on its buttons (Send it / Don't send), and once answered folds to what was decided ("Approved: send an email to …"),
+never "Sent": the hub knows the answer, not the tool's result.
+
 ---
 
 ## Sources

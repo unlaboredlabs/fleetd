@@ -1,8 +1,8 @@
-// A Navi's Integrations (its Projects page, only for a project of kind assistant): Google through the person's own
-// xaq, Notion through its official server with their own integration token, and any other MCP server. Each is one of
-// the Navi's MCP servers: connecting seals the key or token in main to Navi's machine and saves it (mcp_server_set),
-// then tests it at once (mcp_server_test), which lists each tool by the hub's policy: read freely, ask each time, never.
-// Disconnect is mcp_server_remove, which also erases the key on the machine.
+// A Navi's Integrations (its Projects page, only for a project of kind assistant): Notion through its official server
+// with the person's own integration token, and any other MCP server. Each is one of the Navi's MCP servers:
+// connecting seals the token or key in main to Navi's machine and saves it (mcp_server_set), then tests it at once
+// (mcp_server_test), which lists each tool by the hub's policy: read freely, ask each time, never. Disconnect is
+// mcp_server_remove, which also erases the key on the machine. Google is fleetd's own, connected where it is built.
 import { useState, type ReactNode } from "react";
 import { Button, Checkbox, Dialog, Field, InlineCode, Input, Radio, RadioGroup, Text, Textarea, Truncate } from "../../ui";
 import type { IntegrationKind, McpServer, McpTestResult } from "../../../shared/contracts";
@@ -10,7 +10,7 @@ import type { McpServerRequest } from "../../../shared/ipc";
 import { CallError } from "../../src/data/queries";
 import { useData, useToolQuery } from "../../src/data/react";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
-import { byPolicy, connectionsOf, customRequest, DOCS, emptyNote, googleRequest, notionRequest, policyLine, suggestedReads, testProblem, XAQ_DEFAULT, XAQ_DOCS, xaqAddress, xaqRedirectUri } from "./integrationsModel";
+import { byPolicy, connectionsOf, customRequest, DOCS, emptyNote, notionRequest, policyLine, suggestedReads, testProblem } from "./integrationsModel";
 import { emptyDraft, nameProblem, type Draft } from "./mcpModel";
 import { Setting } from "./parts";
 import s from "./settings.module.css";
@@ -44,7 +44,7 @@ function useConnect() {
   };
 }
 
-type Dialogs = { kind: "google" } | { kind: "notion" } | { kind: "custom" } | { kind: "disconnect"; server: McpServer };
+type Dialogs = { kind: "notion" } | { kind: "custom" } | { kind: "disconnect"; server: McpServer };
 
 export function IntegrationsSection({ projectRef }: { projectRef: Ref }) {
   const live = useLive();
@@ -72,17 +72,6 @@ export function IntegrationsSection({ projectRef }: { projectRef: Ref }) {
   return (
     <Setting reveal="projects.integrations" label="Integrations" help={help}>
       <div role="list" aria-label="Integrations" className={s.integrations}>
-        <Row
-          kind="google"
-          title="Google"
-          what="Gmail, Calendar and Drive, through your own xaq."
-          server={c.google}
-          machine={machine.name}
-          tested={c.google === undefined ? undefined : tests[c.google.name]}
-          onTested={tested}
-          onConnect={() => setDialog({ kind: "google" })}
-          onDisconnect={(server) => setDialog({ kind: "disconnect", server })}
-        />
         <Row
           kind="notion"
           title="Notion"
@@ -115,7 +104,6 @@ export function IntegrationsSection({ projectRef }: { projectRef: Ref }) {
           How integrations work
         </Button>
       </div>
-      {dialog?.kind === "google" ? <ConnectGoogle projectRef={projectRef} onClose={() => setDialog(null)} onDone={done("google")} /> : null}
       {dialog?.kind === "notion" ? <ConnectNotion projectRef={projectRef} onClose={() => setDialog(null)} onDone={done("notion")} /> : null}
       {dialog?.kind === "custom" ? (
         <ConnectCustom projectRef={projectRef} taken={(read.data.project ?? []).map((x) => x.name)} onClose={() => setDialog(null)} onDone={(name, t) => done(name)(t)} />
@@ -186,23 +174,23 @@ function Row(props: {
       </div>
       {server !== undefined && sealed ? (
         <Text size="xs" tone="quiet">
-          {props.kind === "google" ? "Agent key" : props.kind === "notion" ? "Integration secret" : "Key"} sealed on {props.machine}. Navi never sees it.
+          {props.kind === "notion" ? "Integration secret" : "Key"} sealed on {props.machine}. Navi never sees it.
         </Text>
       ) : null}
-      {props.tested === undefined ? null : <Found kind={props.kind} tested={props.tested} machine={props.machine} url={server?.transport.type === "stdio" ? undefined : server?.transport.url} />}
+      {props.tested === undefined ? null : <Found kind={props.kind} tested={props.tested} machine={props.machine} />}
     </div>
   );
 }
 
 /** What a test found: the tools by policy, or the failure in the integration's words. */
-function Found(props: { kind: IntegrationKind; tested: Tested; machine: string; url?: string | undefined }) {
+function Found(props: { kind: IntegrationKind; tested: Tested; machine: string }) {
   const { tested } = props;
   if ("error" in tested || tested.result.error !== undefined) {
     const error = "error" in tested ? tested.error : (tested.result.error ?? "");
     return (
       <div role="alert">
         <Text size="sm" tone="danger">
-          {testProblem(props.kind, error, props.machine, props.url)}
+          {testProblem(props.kind, error, props.machine)}
         </Text>
       </div>
     );
@@ -272,78 +260,6 @@ function SealedNote({ machine, what }: { machine: string; what: string }) {
     <Text size="xs" tone="quiet">
       {`The ${what} is sealed on this computer to ${machine}'s key, so only ${machine} can open it. fleetd never shows it again, and Navi never sees it: it isn't in any chat or transcript.`}
     </Text>
-  );
-}
-
-function ConnectGoogle(props: { projectRef: Ref; onClose: () => void; onDone: (t: Tested) => void }) {
-  const machine = useMachine(props.projectRef);
-  const connect = useConnect();
-  const [address, setAddress] = useState(XAQ_DEFAULT);
-  const [key, setKey] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
-  const at = xaqAddress(address);
-  const built = googleRequest(address, key, { kind: "project", ...props.projectRef }, machine.boxes);
-  const go = () => {
-    if (!built.ok) return;
-    setBusy(true);
-    setProblem(null);
-    void connect(built.request).then((out) => {
-      setBusy(false);
-      if (out.ok) props.onDone(out.tested);
-      else setProblem(out.problem);
-    });
-  };
-  return (
-    <Dialog
-      open
-      wide
-      onOpenChange={(o) => !o && !busy && props.onClose()}
-      title="Connect Google"
-      description="Gmail, Calendar and Drive reach Navi through xaq, a small broker you run yourself. It holds your Google sign-in, made with your own Google Cloud app, and gives Navi one key."
-      footer={<ConnectFooter busy={busy} ok={built.ok} label="Connect and test" onClose={props.onClose} onConnect={go} />}
-    >
-      <div className={s.stack}>
-        <Text strong size="sm">
-          Not set up yet? Five steps
-        </Text>
-        <Steps>
-          <Step>
-            On {machine.name}, where Navi runs, start xaq: <InlineCode>npx xaq-cli</InlineCode>. Open the link it prints. Already running? Go to step 4.
-          </Step>
-          <Step>
-            In xaq&apos;s setup, choose Gmail and Calendar. It walks you through your own Google Cloud project and OAuth client. Make it a Web application client with this redirect URI, the same one xaq shows:{" "}
-            <InlineCode>{at.ok ? xaqRedirectUri(at.base) : xaqRedirectUri(XAQ_DEFAULT)}</InlineCode>. Publish the consent screen to In production, or Google signs you out after 7 days.
-          </Step>
-          <Step>For Drive, Docs and Sheets, add the Google Workspace connection in xaq: Connections, then Add connection.</Step>
-          <Step>
-            In xaq, Agents, New agent: name it Navi. Give it read, draft, send, organize and trash on your account, calendar.read and calendar.write, and the Google Workspace connection. Keep its send mode on Approval, so xaq asks once more after fleetd&apos;s card, and set its tool list to All tools.
-          </Step>
-          <Step>Copy the agent&apos;s key (it starts with aib_) and paste it below.</Step>
-        </Steps>
-        <div className={s.inline}>
-          <Button size="sm" variant="ghost" onClick={() => open(XAQ_DOCS)}>
-            xaq&apos;s own guide
-          </Button>
-          <Button size="sm" variant="ghost" onClick={() => open(`${DOCS}#google`)}>
-            Step by step in the docs
-          </Button>
-        </div>
-        <Field label="xaq's address" description={`As ${machine.name} reaches it. Navi uses ${at.ok ? at.mcp : "its /mcp"}.`} error={at.ok || address.trim() === "" ? null : at.problem}>
-          <Input mono aria-label="xaq's address" value={address} disabled={busy} spellCheck={false} placeholder={XAQ_DEFAULT} onChange={(e) => setAddress(e.target.value)} />
-        </Field>
-        <Field label="Agent key">
-          <Input mono aria-label="Agent key" className={s.secretValue} data-secret="" value={key} disabled={busy} autoComplete="off" spellCheck={false} placeholder="aib_…" onChange={(e) => setKey(e.target.value)} />
-        </Field>
-        <SealedNote machine={machine.name} what="key" />
-        {!built.ok && key.trim() !== "" ? (
-          <Text size="sm" tone="quiet">
-            {built.problem}
-          </Text>
-        ) : null}
-        <Problem text={problem} />
-      </div>
-    </Dialog>
   );
 }
 
@@ -519,7 +435,7 @@ function ConnectCustom(props: { projectRef: Ref; taken: ReadonlyArray<string>; o
         </div>
       ) : (
         <div className={s.stack}>
-          <Found kind="custom" tested={tested} machine={machine.name} url={stdio ? undefined : draft.url} />
+          <Found kind="custom" tested={tested} machine={machine.name} />
           {tools.map((t) => (
             <Checkbox
               key={t.name}
@@ -548,11 +464,9 @@ function Disconnect(props: { server: McpServer; machine: string; onClose: () => 
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const kind = props.server.integration?.kind ?? "custom";
-  const name = kind === "google" ? "Google" : kind === "notion" ? "Notion" : props.server.name;
+  const name = kind === "notion" ? "Notion" : props.server.name;
   const source =
-    kind === "google"
-      ? "To cut it off at the source too, delete Navi's agent in xaq."
-      : kind === "notion"
+    kind === "notion"
         ? "To cut it off at the source too, delete the integration in Notion (notion.so/profile/integrations)."
         : "To cut it off at the source too, revoke the key where you made it.";
   const go = () => {
