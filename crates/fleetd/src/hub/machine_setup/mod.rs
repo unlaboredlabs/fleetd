@@ -4,6 +4,7 @@
 //! updates the run and sends a `machine_add.step` event, and `machine_add_status` reads the run. Runs live in memory:
 //! a hub that restarts forgets them, and adding the machine again picks up where it stopped (finished steps are
 //! skipped). A machine of another OS or CPU than the hub's gets the hub's own version built for it, from its release.
+//! `machine_claude_login` logs a machine's claude in through its node (node/claude_login.rs).
 pub mod tools;
 
 #[cfg(test)]
@@ -18,6 +19,7 @@ use fleetd_contracts::ids::{MachineId, Timestamp};
 use fleetd_contracts::machine_setup::{
     MachineAddRun, MachineAddRunId, MachineAddState, MachineAddStepData, SetupStep, SetupStepState,
 };
+use fleetd_contracts::node_link::{CAP_CLAUDE_LOGIN, NodeActionResult};
 
 use crate::cli::setup::detect::Peer;
 use crate::cli::setup::machine::{Begin, Builds, Progress, Releases, Runner, Ssh, Stop, tail};
@@ -40,6 +42,13 @@ pub trait SetupPorts: Send + Sync {
     fn builds(&self) -> Arc<dyn Builds>;
     /// The `Host`s in the hub user's ~/.ssh/config, and the tailnet's peers.
     fn hosts(&self) -> BoxFuture<'_, (Vec<String>, Vec<Peer>)>;
+    /// The machine's node runs `claude auth login`: without `code` it starts, with the code it ends.
+    fn claude_login<'a>(
+        &'a self,
+        hub: &'a Hub,
+        machine: &'a MachineId,
+        code: Option<&'a str>,
+    ) -> BoxFuture<'a, Result<NodeActionResult, String>>;
 }
 
 /// The real ones: ssh, the running fleetd, ~/.ssh/config and `tailscale status`.
@@ -76,6 +85,25 @@ impl SetupPorts for RealPorts {
                 .map(|net| net.peers)
                 .unwrap_or_default();
             (ssh, peers)
+        })
+    }
+
+    fn claude_login<'a>(
+        &'a self,
+        hub: &'a Hub,
+        machine: &'a MachineId,
+        code: Option<&'a str>,
+    ) -> BoxFuture<'a, Result<NodeActionResult, String>> {
+        Box::pin(async move {
+            if !hub.link.node_can(machine, CAP_CLAUDE_LOGIN) {
+                return Err(format!(
+                    "{machine} isn't connected, or its fleetd is too old to log claude in from here. Fix: update its fleetd, or run claude auth login on {machine}"
+                ));
+            }
+            hub.node_commands
+                .claude_login(machine, code)
+                .await
+                .map_err(|e| e.message)
         })
     }
 }

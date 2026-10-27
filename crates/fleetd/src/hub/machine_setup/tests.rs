@@ -8,6 +8,7 @@ use fleetd_contracts::auth::KeyKind;
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::MachineId;
 use fleetd_contracts::mcp::ErrorCode;
+use fleetd_contracts::node_link::NodeActionResult;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
@@ -44,6 +45,8 @@ struct FakeMachine {
     builds: Arc<FakeBuilds>,
     /// The machine is Linux on ARM, which fleetd has no build for.
     linux_arm: Mutex<bool>,
+    /// What its node was asked to log in with: None to start, else the code.
+    logins: Mutex<Vec<Option<String>>>,
 }
 
 impl FakeMachine {
@@ -58,6 +61,7 @@ impl FakeMachine {
             other_os: Mutex::new(false),
             builds: Arc::default(),
             linux_arm: Mutex::new(false),
+            logins: Mutex::default(),
         })
     }
 
@@ -259,6 +263,28 @@ impl SetupPorts for Ports {
     }
     fn builds(&self) -> Arc<dyn Builds> {
         self.builds.clone()
+    }
+    /// The node's login: it starts with a URL, and takes only the code `abc#s1`.
+    fn claude_login<'a>(
+        &'a self,
+        _hub: &'a Hub,
+        _machine: &'a MachineId,
+        code: Option<&'a str>,
+    ) -> BoxFuture<'a, Result<NodeActionResult, String>> {
+        Box::pin(async move {
+            self.machine
+                .logins
+                .lock()
+                .unwrap()
+                .push(code.map(str::to_owned));
+            Ok(serde_json::from_value(match code {
+                None => json!({ "id": "a1", "ok": true, "message": "sign in at the URL, then give the code it shows",
+                    "login_url": "https://claude.ai/oauth/authorize?state=s1" }),
+                Some("abc#s1") => json!({ "id": "a1", "ok": true, "message": "Login successful." }),
+                Some(_) => json!({ "id": "a1", "ok": false, "message": "claude auth login failed: Invalid code" }),
+            })
+            .unwrap())
+        })
     }
     fn hosts(&self) -> BoxFuture<'_, (Vec<String>, Vec<Peer>)> {
         Box::pin(async {
@@ -552,6 +578,8 @@ async fn only_an_admins_device_adds_or_removes() {
         (&agent, "machine_add"),
         (&agent, "machine_remove"),
         (&agent, "machine_join"),
+        (&agent, "machine_claude_login"),
+        (&person("operate"), "machine_claude_login"),
     ] {
         let input = json!({ "host": "builder-1", "machineId": "builder-1" });
         let input = if tool == "machine_add" {
@@ -846,4 +874,117 @@ async fn a_linux_arm_machine_is_refused_up_front() {
         e.message
     );
     assert!(machine.builds.asked.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn a_rejoin_line_repairs_a_machine_that_joined_by_itself() {
+    let (hub, _machine, _home) = hub();
+    let out = call(
+        &hub,
+        "machine_join",
+        json!({ "machineId": "laptop", "rejoin": true }),
+    )
+    .await;
+    assert!(
+        out["line"].as_str().unwrap().ends_with(" --rejoin"),
+        "{}",
+        out["line"]
+    );
+    let first = call(&hub, "machine_join", json!({ "machineId": "laptop" })).await;
+    assert!(!first["line"].as_str().unwrap().contains("--rejoin"));
+}
+
+#[tokio::test]
+async fn claude_logs_in_on_a_machine_through_its_node_and_the_code_goes_nowhere_else() {
+    let (hub, machine, _home) = hub();
+    let m = serde_json::from_value(json!({
+        "machineId": "laptop", "name": "laptop", "tags": [], "status": "online", "lastSeenAt": AT,
+        "nodeVersion": "0.1.0",
+    }))
+    .unwrap();
+    hub.store.machine_upsert(&m, None).unwrap();
+
+    let started = call(
+        &hub,
+        "machine_claude_login",
+        json!({ "machineId": "laptop" }),
+    )
+    .await;
+    assert_eq!(
+        started["loginUrl"],
+        "https://claude.ai/oauth/authorize?state=s1"
+    );
+    assert!(started.get("loggedIn").is_none());
+
+    let wrong = call_as(
+        &hub,
+        &person("admin"),
+        "machine_claude_login",
+        json!({ "machineId": "laptop", "code": "nope" }),
+    )
+    .await;
+    match wrong {
+        Err(CallError::Tool(e)) => {
+            assert_eq!(e.code, ErrorCode::Failed);
+            assert_eq!(e.message, "claude auth login failed: Invalid code");
+            assert!(e.fix.unwrap().starts_with("Start the login again"));
+        }
+        other => panic!("{other:?}"),
+    }
+
+    let done = call(
+        &hub,
+        "machine_claude_login",
+        json!({ "machineId": "laptop", "code": " abc#s1 " }),
+    )
+    .await;
+    assert_eq!(done["loggedIn"], true);
+    assert_eq!(done["message"], "Login successful.");
+    assert_eq!(
+        machine.logins.lock().unwrap().clone(),
+        [None, Some("nope".into()), Some("abc#s1".into())]
+    );
+    // No event carries it.
+    let events = hub.events.page(0, None, None).unwrap().events;
+    assert!(
+        events
+            .iter()
+            .all(|e| !serde_json::to_string(e).unwrap().contains("abc#s1")),
+        "{events:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_login_on_a_machine_the_hub_doesnt_know_or_with_no_code_asks_nothing_of_a_node() {
+    let (hub, machine, _home) = hub();
+    for (input, code) in [
+        (json!({ "machineId": "ghost" }), ErrorCode::NotFound),
+        (
+            json!({ "machineId": "ghost", "code": "x" }),
+            ErrorCode::NotFound,
+        ),
+    ] {
+        match call_as(&hub, &person("admin"), "machine_claude_login", input).await {
+            Err(CallError::Tool(e)) => assert_eq!(e.code, code),
+            other => panic!("{other:?}"),
+        }
+    }
+    let m = serde_json::from_value(json!({
+        "machineId": "laptop", "name": "laptop", "tags": [], "status": "online", "lastSeenAt": AT,
+        "nodeVersion": "0.1.0",
+    }))
+    .unwrap();
+    hub.store.machine_upsert(&m, None).unwrap();
+    match call_as(
+        &hub,
+        &person("admin"),
+        "machine_claude_login",
+        json!({ "machineId": "laptop", "code": "  " }),
+    )
+    .await
+    {
+        Err(CallError::Tool(e)) => assert_eq!(e.code, ErrorCode::Invalid),
+        other => panic!("{other:?}"),
+    }
+    assert!(machine.logins.lock().unwrap().is_empty());
 }

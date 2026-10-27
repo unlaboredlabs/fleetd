@@ -1,4 +1,5 @@
-//! `node_action` frames from the hub's doctor: probe the commit identity. Each always answers, in plain words.
+//! `node_action` frames from the hub: the doctor's probe of the commit identity, updates, Claude Code's install and its
+//! login from the app. Each always answers, in plain words.
 use std::time::Duration;
 
 use super::util::{exec, head_utf16};
@@ -64,6 +65,7 @@ pub async fn run_node_action(
                 ok: true,
                 message: head_text("probed"),
                 probe: Some(probe_host().await),
+                login_url: None,
                 stage: None,
             },
             None,
@@ -106,11 +108,52 @@ pub async fn run_node_action(
                             super::runner::claude::install::Installed::Left(said) => said,
                         }),
                         probe: None,
+                        login_url: None,
                     },
                     None,
                 ),
                 Err(f) => (failed(frame.id, &f), None),
             }
+        }
+        NodeActionKind::ClaudeLogin => {
+            let started = super::claude_login::LOGINS
+                .start(&super::claude_binary(), &sessions.runner_env())
+                .await;
+            (
+                login_answer(
+                    frame.id,
+                    started.as_ref().map(String::as_str).map_err(String::as_str),
+                    true,
+                ),
+                None,
+            )
+        }
+        NodeActionKind::ClaudeLoginCode => {
+            let Some(code) = frame.code else {
+                return (
+                    login_answer(frame.id, Err("the hub sent no code"), false),
+                    None,
+                );
+            };
+            let done = super::claude_login::LOGINS.finish(code.as_str()).await;
+            // Logged in as the hub sees it, at once rather than at the next probe: the login is the probe's to judge.
+            let done = match done {
+                Ok(said) => match sessions.reprobe().await.login {
+                    fleetd_contracts::sessions::LoginStatus::LoggedOut => {
+                        Err(format!("{said}; but claude still reports no login"))
+                    }
+                    _ => Ok(said),
+                },
+                Err(e) => Err(e),
+            };
+            (
+                login_answer(
+                    frame.id,
+                    done.as_ref().map(String::as_str).map_err(String::as_str),
+                    false,
+                ),
+                None,
+            )
         }
         NodeActionKind::Fetch => match frame.update {
             Some(update) => {
@@ -123,6 +166,7 @@ pub async fn run_node_action(
                         stage: None,
                         message: head_text("fetching"),
                         probe: None,
+                        login_url: None,
                     },
                     None,
                 )
@@ -154,12 +198,32 @@ pub async fn run_node_action(
                         stage: None,
                         message: head_text(&answer.message),
                         probe: None,
+                        login_url: None,
                     },
                     answer.watch,
                 ),
                 Err(f) => (failed(frame.id, &f), None),
             }
         }
+    }
+}
+
+/// A login's answer: the URL it started with (`url`), or the words it ended with.
+fn login_answer(
+    id: fleetd_contracts::prim::NonEmpty,
+    done: Result<&str, &str>,
+    url: bool,
+) -> NodeActionResult {
+    NodeActionResult {
+        id,
+        ok: done.is_ok(),
+        message: head_text(match done {
+            Ok(_) if url => "sign in at the URL, then give the code it shows",
+            Ok(said) | Err(said) => said,
+        }),
+        probe: None,
+        stage: None,
+        login_url: done.ok().filter(|_| url).map(head_text),
     }
 }
 
@@ -174,5 +238,6 @@ pub fn failed(
         stage: Some(f.stage),
         message: head_text(&f.message),
         probe: None,
+        login_url: None,
     }
 }

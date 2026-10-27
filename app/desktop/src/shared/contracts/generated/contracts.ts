@@ -2663,6 +2663,24 @@ export type MachineAddStepData = {
   state: MachineAddState;
 };
 
+export type MachineClaudeLoginInput = {
+  /** Absent: start the login, which answers its sign-in URL. The code the sign-in page showed: finish it. */
+  code?: string;
+  machineId: MachineId;
+};
+
+export type MachineClaudeLoginOutput = {
+  /** A login that finished: claude on the machine is logged in now. */
+  loggedIn?: boolean;
+  /** A login that started: where to sign in. */
+  loginUrl?: string;
+  machineId: MachineId;
+  /** The node's words: what happened, or why not. */
+  message: string;
+  next?: string;
+  truncated?: boolean;
+};
+
 /** `machine.guard`. */
 export type MachineGuardData = {
   /** true: new agents wait; false: they start again. */
@@ -2698,6 +2716,8 @@ export type MachineId = string;
 
 export type MachineJoinInput = {
   machineId: MachineId;
+  /** A machine that joined before: the line enrolls it again (`--rejoin`), which repairs it. */
+  rejoin?: boolean;
 };
 
 export type MachineJoinOutput = {
@@ -2718,6 +2738,11 @@ export type MachineJoinOutput = {
 /** A machine's load and running agents, from its heartbeat (every 15 s) and the hub's executors. */
 export type MachineLive = {
   asOf: Timestamp;
+  /**
+   * When the hub's link to its node last came up: each new link (a restart, a rejoin) moves it, though a quick
+   * restart never shows the machine offline. Absent while it has none, and from older hubs.
+   */
+  linkedSince?: Timestamp;
   /** Absent: the node does not report load (older node, or the read failed). Show no load then. */
   load?: NodeLoad;
   machineId: MachineId;
@@ -7015,6 +7040,7 @@ export interface ToolMap {
   machine_add: { input: MachineAddInput; output: MachineAddOutput };
   machine_add_plan: { input: MachineAddPlanInput; output: MachineAddPlanOutput };
   machine_add_status: { input: MachineAddStatusInput; output: MachineAddStatusOutput };
+  machine_claude_login: { input: MachineClaudeLoginInput; output: MachineClaudeLoginOutput };
   machine_hosts: { input: MachineHostsInput; output: MachineHostsOutput };
   machine_join: { input: MachineJoinInput; output: MachineJoinOutput };
   machine_remove: { input: MachineRemoveInput; output: MachineRemoveOutput };

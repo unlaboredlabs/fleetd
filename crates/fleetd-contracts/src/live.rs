@@ -169,6 +169,9 @@ pub struct MachineLive {
     pub as_of: Timestamp,
     /// Its latest sleep; show it while recent ([`crate::model::SleptSpan::recent_text`]).
     pub slept: Option<crate::model::SleptSpan>,
+    /// When the hub's link to its node last came up: each new link (a restart, a rejoin) moves it, though a quick
+    /// restart never shows the machine offline. Absent while it has none, and from older hubs.
+    pub linked_since: Option<Timestamp>,
 }
 
 /// Bounds of one live frame.
