@@ -163,6 +163,9 @@ pub trait SessionHooks: Send + Sync + 'static {
     fn item(&self, thread: &str, item: &ThreadItem);
     /// The session's claude exited (it finished, was stopped or idled out, or crashed).
     fn ended(&self, thread: &str);
+    /// The hub ended the agent session's screen `session`, its task having ended: it closes, if it is still the
+    /// screen the agent session holds. Any other screen it holds stays.
+    fn screen_ended(&self, thread: &str, session: &str);
     /// The values filled into the session's browsers from 1Password, when there are more than `known`: masked in what
     /// the session reports, as its own secrets are.
     fn filled_since(&self, thread: &str, known: usize) -> Option<Secrets>;
@@ -1020,6 +1023,12 @@ impl SessionHooks for Broker {
             session.step("agent_session_ended", json!({}), true, None, 0);
             broker.close(session).await;
         });
+    }
+
+    fn screen_ended(&self, thread: &str, session: &str) {
+        if self.live(thread).is_some_and(|s| s.id.as_str() == session) {
+            SessionHooks::ended(self, thread);
+        }
     }
 
     fn plugin_dirs(&self) -> Vec<PathBuf> {

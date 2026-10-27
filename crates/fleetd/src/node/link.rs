@@ -611,10 +611,12 @@ async fn run_link_once(
                     previews.stop(stop);
                 }
             }
-            // Only to nodes listing CAP_SESSION_END: the session's task ended, and its screens go with it.
+            // Only to nodes listing CAP_SESSION_END: the session's task ended, and that screen goes with it.
             HubToNode::SessionEnd(end) => {
                 tracing::info!(session = %end.session_id, thread = %end.thread_id, "the hub ended a screen whose task ended");
-                shared.node_sessions.end_screens(end.thread_id.as_str());
+                shared
+                    .node_sessions
+                    .end_screen(end.thread_id.as_str(), end.session_id.as_str());
             }
             HubToNode::Challenge(_) | HubToNode::Welcome(_) | HubToNode::Heartbeat(_) => {}
         }

@@ -75,9 +75,28 @@ pub struct Router {
     pub secrets_for: SecretsFor,
     pub mask_for: MaskFor,
     pub filled_elsewhere: FilledElsewhere,
+    /// The id of each agent session's browser hosted on another machine, as its start answered.
+    pub hosted_ids: HostedIds,
 }
 
+/// Agent session -> the id of its browser hosted elsewhere.
+pub type HostedIds = Arc<Mutex<HashMap<String, String>>>;
+
 impl Router {
+    /// Ends the agent session's browser hosted on another machine, through the hub, as its `session_end` would.
+    fn end_hosted(&self, thread: &str) {
+        let end: BrowserCallFrame = serde_json::from_value(json!({
+            "id": "ended", "cwd": "/", "call": { "op": "session_end" },
+        }))
+        .expect("a session_end frame");
+        let (router, thread) = (Arc::new(self.clone()), thread.to_owned());
+        tokio::spawn(async move {
+            if let Some(error) = route(router, thread, end).await.error {
+                tracing::info!(error = %error.message, "hosted session not ended");
+            }
+        });
+    }
+
     /// The sessions on this machine, every kind.
     fn here(&self) -> device::Router {
         device::Router {
@@ -302,6 +321,11 @@ async fn route(router: Arc<Router>, thread: String, frame: BrowserCallFrame) -> 
     if ending {
         broker.set_remote(&thread, None);
         broker.forget_remote_vault(&thread);
+        router
+            .hosted_ids
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(&thread);
     } else if let (Some(token), Some((key, runner, runner_key))) = (&routed.relay, relay_key) {
         // The agent's driver reaches the session through the hub's relay, from this node's proxy.
         match relay_url(&router.hub, token.as_str()) {
@@ -337,11 +361,17 @@ async fn route(router: Arc<Router>, thread: String, frame: BrowserCallFrame) -> 
         Some(mut answer) => {
             answer.id = frame.id;
             // The agent's own address for it, as its AGENT_BROWSER_CDP names it: never the runner's.
-            if starting
-                && let Some(BrowserCallResult::SessionStart(started)) = &mut answer.result
-                && let Some(cdp) = broker.cdp_url(&thread)
-            {
-                started.cdp = Some(Text::unchecked(cdp));
+            if starting && let Some(BrowserCallResult::SessionStart(started)) = &mut answer.result {
+                if broker.remote(&thread).is_some() {
+                    router
+                        .hosted_ids
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .insert(thread.clone(), started.session_id.to_string());
+                }
+                if let Some(cdp) = broker.cdp_url(&thread) {
+                    started.cdp = Some(Text::unchecked(cdp));
+                }
             }
             answer
         }
@@ -489,16 +519,23 @@ impl SessionHooks for Router {
             broker.ended(thread);
             return;
         }
-        let end: BrowserCallFrame = serde_json::from_value(json!({
-            "id": "ended", "cwd": "/", "call": { "op": "session_end" },
-        }))
-        .expect("a session_end frame");
-        let (router, thread) = (Arc::new(self.clone()), thread.to_owned());
-        tokio::spawn(async move {
-            if let Some(error) = route(router, thread, end).await.error {
-                tracing::info!(error = %error.message, "hosted session not ended with its agent");
-            }
-        });
+        self.end_hosted(thread);
+    }
+
+    /// Its screen here if it is `session`; else its browser hosted elsewhere, if that is `session`.
+    fn screen_ended(&self, thread: &str, session: &str) {
+        if self.here().end_screen(thread, session) {
+            return;
+        }
+        let hosted = self
+            .hosted_ids
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(thread)
+            .is_some_and(|id| id == session);
+        if hosted {
+            self.end_hosted(thread);
+        }
     }
 
     fn item(&self, thread: &str, item: &ThreadItem) {
@@ -811,6 +848,7 @@ mod tests {
             secrets_for: Arc::new(|_| Ok(Secrets(Vec::new()))),
             mask_for: Arc::new(|_| Ok(Masker::new(&[]))),
             filled_elsewhere: FilledElsewhere::default(),
+            hosted_ids: Default::default(),
         })
     }
 
