@@ -7,6 +7,7 @@ pub mod chat;
 pub mod hub_key;
 pub mod mcp_client;
 pub mod metrics;
+pub mod navi;
 pub mod node;
 pub mod pair;
 pub mod project;
@@ -65,7 +66,7 @@ commands:
 setting up (on the hub machine):
 {}{}{}
 projects:
-{}
+{}{}
 running by hand:
 {}{}{}{}{}{}{}{}{}{}{}",
         UPDATE_USAGE,
@@ -73,6 +74,7 @@ running by hand:
         setup::machine::machine_usage(),
         pair::PAIR_USAGE,
         project::PROJECT_USAGE,
+        navi::NAVI_USAGE,
         node::HUB_START_USAGE,
         hub_key::HUB_KEY_USAGE,
         node::NODE_USAGE,
@@ -108,6 +110,7 @@ pub fn help_for(argv: &[String]) -> Option<String> {
         "machine" => setup::machine::machine_usage(),
         "pair" => pair::PAIR_USAGE.to_owned(),
         "project" | "projects" => project::PROJECT_USAGE.to_owned(),
+        "navi" | "navis" => navi::NAVI_USAGE.to_owned(),
         "hub" => match rest.first().map(String::as_str) {
             Some("start" | "serve") => node::HUB_START_USAGE.to_owned(),
             Some("key") => hub_key::HUB_KEY_USAGE.to_owned(),
@@ -188,6 +191,8 @@ fn is_long_running(argv: &[String]) -> bool {
                 | "machine"
                 | "project"
                 | "projects"
+                | "navi"
+                | "navis"
                 | "node"
                 | "time"
                 | "metrics"
@@ -208,6 +213,7 @@ async fn run_long_running(argv: &[String]) -> u8 {
         "init" | "doctor" | "uninstall" => setup::setup_command(&argv[0], rest).await,
         "machine" => setup::machine::machine_command(rest).await,
         "project" | "projects" => project::project_command(rest).await,
+        "navi" | "navis" => navi::navi_command(rest).await,
         "node" => node::node_command(rest).await,
         "time" => time::time_command(rest).await,
         "metrics" => metrics::metrics_command(rest).await,

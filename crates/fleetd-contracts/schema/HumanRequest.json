@@ -373,12 +373,19 @@
     "ToolPermission": {
       "description": "An approval raised by a session's tool permission prompt instead of a gated command: answering it answers the prompt\non the project's node. Its machine is the request's project's.",
       "properties": {
+        "input": {
+          "description": "The tool's input exactly as the session asked (at most 64 KiB of JSON): approved, the tool runs with exactly\nthis. Absent when the node didn't send it; the tool then runs with what the session asked."
+        },
         "preview": {
           "$ref": "#/$defs/ToolPreview",
           "description": "An integration's asking tool (`hub/integrations`): exactly who it reaches and what it says, or what it changes,\nread from the input it runs with once approved. Boxed: it is large beside the prompt's other fields."
         },
         "requestId": {
           "minLength": 1,
+          "type": "string"
+        },
+        "site": {
+          "description": "A Navi's first fetch or browser visit to this site (its host, such as `example.com`): approved, the Navi may\nfetch and open it without asking from then on, until a person revokes it (`navi_site_revoke`).",
           "type": "string"
         },
         "summary": {

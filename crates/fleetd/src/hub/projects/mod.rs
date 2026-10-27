@@ -1,5 +1,5 @@
-//! Adding a project, the one path MCP, the app and the CLI share: discover repos, inspect one, add a path or clone
-//! a GitHub repository with progress events, and remove. The node does the filesystem and git work on its machine;
+//! Adding a project, the one path MCP, the app and the CLI share: discover repos, inspect one, add a path (a git
+//! checkout or a plain folder) or clone a GitHub repository with progress events, and remove. The node does the filesystem and git work on its machine;
 //! gh runs on the hub machine, and `gh repo list` falls back to the target worker when the hub has no gh login.
 pub mod inspect;
 pub mod order_env;
@@ -166,7 +166,7 @@ pub fn best_worker(hub: &Hub) -> Option<MachineId> {
     inspect::best_worker(&workers(hub))
 }
 
-fn target_machine(hub: &Hub, given: Option<&MachineId>) -> Result<MachineId, ToolError> {
+pub(crate) fn target_machine(hub: &Hub, given: Option<&MachineId>) -> Result<MachineId, ToolError> {
     let m = match given {
         Some(m) => m.clone(),
         None => best_worker(hub).ok_or_else(|| {
@@ -277,8 +277,12 @@ async fn read_github(
     Ok(inspect::build(Some(repo), &answers, local, notes, gh_ok))
 }
 
-/// A checkout's inspect: GitHub's view when its remote is on GitHub, else what the checkout itself shows.
+/// A checkout's inspect: GitHub's view when its remote is on GitHub, else what the checkout itself shows; a plain
+/// folder's says so.
 async fn inspect_checkout(facts: &RepoFacts) -> Result<ProjectInspect, ToolError> {
+    if !facts.is_git {
+        return Ok(inspect::folder());
+    }
     match remote_repo(facts) {
         Some(repo) => read_github(&repo, Some(facts)).await,
         None => Ok(inspect::build(
@@ -291,7 +295,7 @@ async fn inspect_checkout(facts: &RepoFacts) -> Result<ProjectInspect, ToolError
     }
 }
 
-/// The checkout at `path` on `m`, or why it can't be a project.
+/// The directory at `path` on `m` (a git checkout, or a plain folder), or why it can't be a project.
 async fn checkout(hub: &Hub, m: &MachineId, path: &str) -> Result<RepoFacts, ToolError> {
     repo_node(hub, m).map_err(|p| problem_error(&p))?;
     let facts = hub
@@ -306,13 +310,6 @@ async fn checkout(hub: &Hub, m: &MachineId, path: &str) -> Result<RepoFacts, Too
             format!(
                 "Check the path on {m}, or clone the repo there by giving its GitHub URL instead"
             ),
-        )));
-    }
-    if !facts.is_git {
-        return Err(problem_error(&problem(
-            ProjectProblemCode::NotAGitRepo,
-            format!("{path} on {m} is not a git repository"),
-            "Give the repository's root directory, or run `git init` there first",
         )));
     }
     Ok(facts)
@@ -520,12 +517,14 @@ async fn register(
             .map_err(crate::hub::executor::tools::from_executor)?;
     }
     bind_scope(hub, m, &project_id, facts);
-    // `checkout` let only a git repo through: the project's directory is its own repo, with a remote or without.
+    // A git checkout is the project's own repo, with a remote or without; a plain folder holds none.
     let project = ProjectRef {
         machine_id: m.clone(),
         project_id: project_id.clone(),
     };
-    if let Err(error) = hub.repos.ensure_own(&project, Some(path)) {
+    if facts.is_git
+        && let Err(error) = hub.repos.ensure_own(&project, Some(path))
+    {
         tracing::warn!(%error, "the project's own repo was not recorded");
     }
     let summary = format!("{title} added on {m}: {}", inspect.lead_needs);

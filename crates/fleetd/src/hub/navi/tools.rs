@@ -1,10 +1,15 @@
-//! navi_asks: the app's read of what a Navi asked other projects for (`project_message`), with each order opened for it
-//! and its state. Read-only; the app calls it on a hub that names the `navi_asks` feature.
+//! navi_create, navi_list, navi_rename, navi_archive, navi_sites and navi_site_revoke: thin over the Navi service. And
+//! navi_asks: the app's read of what a Navi asked other projects for (`project_message`), with each order opened for
+//! it and its state. Read-only; the app calls it on a hub that names the `navi_asks` feature.
 use std::sync::Arc;
 
 use fleetd_contracts::auth::Role;
 use fleetd_contracts::ids::Timestamp;
-use fleetd_contracts::mcp::{ErrorCode, NaviAsksInput, NaviAsksOutput};
+use fleetd_contracts::mcp::{
+    ErrorCode, NaviArchiveInput, NaviArchiveOutput, NaviAsksInput, NaviAsksOutput, NaviCreateInput,
+    NaviCreateOutput, NaviListInput, NaviListOutput, NaviRenameInput, NaviRenameOutput,
+    NaviSiteRevokeInput, NaviSiteRevokeOutput, NaviSitesInput, NaviSitesOutput,
+};
 use fleetd_contracts::navi::{NAVI_ASKS_MAX, NaviAsk, NaviAskOrder};
 use fleetd_contracts::prim::List;
 
@@ -13,6 +18,12 @@ use crate::hub::api::{Caller, Hub, Registry, ToolError, readable, require, unkno
 use crate::hub::store::iso_ms;
 
 pub fn register(tools: &mut Registry) {
+    tools.add("navi_create", create);
+    tools.add("navi_list", list);
+    tools.add("navi_rename", rename);
+    tools.add("navi_archive", archive);
+    tools.add("navi_sites", sites);
+    tools.add("navi_site_revoke", revoke_site);
     tools.add("navi_asks", navi_asks);
 }
 
@@ -82,4 +93,52 @@ async fn navi_asks(
         next,
         truncated,
     })
+}
+
+async fn create(
+    hub: Arc<Hub>,
+    caller: Caller,
+    input: NaviCreateInput,
+) -> Result<NaviCreateOutput, ToolError> {
+    super::create(&hub, &caller, input).await
+}
+
+async fn list(
+    hub: Arc<Hub>,
+    caller: Caller,
+    input: NaviListInput,
+) -> Result<NaviListOutput, ToolError> {
+    super::list(&hub, &caller, input)
+}
+
+async fn rename(
+    hub: Arc<Hub>,
+    caller: Caller,
+    input: NaviRenameInput,
+) -> Result<NaviRenameOutput, ToolError> {
+    super::rename(&hub, &caller, input).await
+}
+
+async fn archive(
+    hub: Arc<Hub>,
+    caller: Caller,
+    input: NaviArchiveInput,
+) -> Result<NaviArchiveOutput, ToolError> {
+    super::archive(&hub, &caller, input).await
+}
+
+async fn sites(
+    hub: Arc<Hub>,
+    caller: Caller,
+    input: NaviSitesInput,
+) -> Result<NaviSitesOutput, ToolError> {
+    super::sites(&hub, &caller, input)
+}
+
+async fn revoke_site(
+    hub: Arc<Hub>,
+    caller: Caller,
+    input: NaviSiteRevokeInput,
+) -> Result<NaviSiteRevokeOutput, ToolError> {
+    super::revoke_site(&hub, &caller, input)
 }

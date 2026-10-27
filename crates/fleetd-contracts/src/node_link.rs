@@ -132,6 +132,9 @@ pub const CAP_SESSION_HOST: &str = "session_host";
 /// `previews`: the node runs previews (preview.rs): it takes `preview_run` and `preview_stop`.
 pub const CAP_PREVIEWS: &str = "previews";
 
+/// `SessionRole::Assistant` (a Navi's lead) and a relative `project_upsert` root under the node's home (its folder).
+pub const CAP_ASSISTANT: &str = "assistant";
+
 /// The node seals its agents' session secrets and relay key to the machine that will host a session, and opens what
 /// is sealed to it: the hub places sessions across machines only between nodes that list it.
 pub const CAP_SESSION_SEAL: &str = "session_seal";

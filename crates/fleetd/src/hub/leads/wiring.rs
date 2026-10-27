@@ -7,7 +7,8 @@ use fleetd_contracts::lead_calls::{LeadCall, LeadCallResult};
 use fleetd_contracts::ledger::{
     Decision, DecisionScope, HumanRequest, RequestState, WorkstreamId, WorkstreamState,
 };
-use fleetd_contracts::mcp::McpToolError;
+use fleetd_contracts::mcp::{ErrorCode, McpToolError};
+use fleetd_contracts::sessions::SessionRole;
 
 use super::Area;
 use super::error::LeadError;
@@ -55,6 +56,7 @@ fn from_executor(error: ExecutorError) -> LeadError {
 
 pub struct HubPorts {
     pub executors: Arc<Executors>,
+    pub link: Arc<crate::hub::link::NodeLinkServer>,
     pub queue: Arc<WriteQueue>,
     pub requests: Arc<Requests>,
     pub decisions: Arc<Decisions>,
@@ -65,17 +67,32 @@ impl LeadPorts for HubPorts {
         &self,
         machine_id: &MachineId,
         input: LaunchInput,
+        role: SessionRole,
     ) -> BoxFuture<Result<ThreadId, LeadError>> {
         let executors = Arc::clone(&self.executors);
         let machine_id = machine_id.clone();
+        // An older node can't decode the assistant role and would drop its link on the launch.
+        let too_old = role == SessionRole::Assistant
+            && !self
+                .link
+                .node_can(&machine_id, fleetd_contracts::node_link::CAP_ASSISTANT);
         Box::pin(async move {
+            if too_old {
+                return Err(LeadError::new(
+                    ErrorCode::Invalid,
+                    format!("{machine_id}'s node is too old to run a Navi."),
+                    format!(
+                        "Run fleetd update on {machine_id}; the Navi's message waits until then."
+                    ),
+                ));
+            }
             executors
                 .launch(
                     &machine_id,
                     &input,
                     LaunchOptions {
                         workspace: None,
-                        role: fleetd_contracts::sessions::SessionRole::Lead,
+                        role,
                         mcp_role: Some(fleetd_contracts::mcp_servers::McpAgentRole::Lead),
                         ..Default::default()
                     },
@@ -187,6 +204,7 @@ impl LeadCallHandler for Calls {
 
 pub struct Links<'a> {
     pub executors: &'a Arc<Executors>,
+    pub link: &'a Arc<crate::hub::link::NodeLinkServer>,
     pub queue: &'a Arc<WriteQueue>,
     pub requests: &'a Arc<Requests>,
     pub decisions: &'a Arc<Decisions>,
@@ -238,6 +256,7 @@ pub fn wire_area(area: &Arc<Area>, links: Links<'_>) {
         }));
     area.ctx.set_ports(Arc::new(HubPorts {
         executors: Arc::clone(links.executors),
+        link: Arc::clone(links.link),
         queue: Arc::clone(links.queue),
         requests: Arc::clone(links.requests),
         decisions: Arc::clone(links.decisions),

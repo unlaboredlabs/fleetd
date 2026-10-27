@@ -6,9 +6,12 @@ use crate::hub::approvals::{
     ApprovalHub, ApprovalNodes, GatedOutcome, NodeCommandError, OrderEnvSaved, SecretOutcome,
     parse_secret_sink, shown_argv,
 };
+use crate::hub::executor::ExecutorError;
 use crate::hub::link::commands::NodeCommandErrorReason;
 use crate::hub::usage::time::clip;
+use fleetd_contracts::ids::ThreadRef;
 use fleetd_contracts::ledger::{HumanRequest, RequestState};
+use fleetd_contracts::sessions::{PendingPermission, PermissionDecision};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
@@ -96,6 +99,51 @@ impl ApprovalNodes for OpsPorts {
         let m: Option<fleetd_contracts::ids::MachineId> = convert(&m);
         Box::pin(async move { m.is_some_and(|m| self.hub().executors.is_connected(&m)) })
     }
+
+    fn answer_permission(
+        &self,
+        m: &str,
+        t: &str,
+        request_id: &str,
+        decision: PermissionDecision,
+        by: Option<fleetd_contracts::time::DecidedBy>,
+    ) -> BoxFut<'_, Result<(), NodeCommandError>> {
+        let (r, request_id) = (thread_ref(m, t), request_id.to_owned());
+        Box::pin(async move {
+            let r = r.ok_or_else(|| NodeCommandError {
+                reason: "invalid".into(),
+                message: "not a machine and thread id".into(),
+                fix: None,
+            })?;
+            self.hub()
+                .executors
+                .answer(&r, &request_id, decision, by)
+                .await
+                .map_err(executor_error)
+        })
+    }
+
+    fn pending_permission(&self, m: &str, t: &str) -> BoxFut<'_, Option<PendingPermission>> {
+        let r = thread_ref(m, t);
+        Box::pin(async move { self.hub().executors.pending_permission(&r?) })
+    }
+}
+
+fn thread_ref(m: &str, t: &str) -> Option<ThreadRef> {
+    convert(&serde_json::json!({ "machineId": m, "threadId": t }))
+}
+
+fn executor_error(e: ExecutorError) -> NodeCommandError {
+    let (reason, fix) = match &e {
+        ExecutorError::MachineNotConnected { .. } => ("offline", None),
+        ExecutorError::ThreadNotFound { .. } => ("not_found", None),
+        ExecutorError::NodeRequestFailed { fix, .. } => ("failed", fix.clone()),
+    };
+    NodeCommandError {
+        reason: reason.into(),
+        message: e.to_string(),
+        fix,
+    }
 }
 
 impl ApprovalHub for OpsPorts {
@@ -132,6 +180,77 @@ impl ApprovalHub for OpsPorts {
                     text,
                 },
             );
+        })
+    }
+
+    fn mcp_servers(
+        &self,
+        project: &ports::ProjectRef,
+    ) -> BoxFut<'_, Vec<fleetd_contracts::mcp_servers::McpServer>> {
+        let r: Option<fleetd_contracts::ids::ProjectRef> = convert(project);
+        Box::pin(async move {
+            let Some(r) = r else {
+                return Vec::new();
+            };
+            self.hub()
+                .db
+                .mcp_servers()
+                .servers_for(&r)
+                .unwrap_or_else(|error| {
+                    tracing::warn!(%error, "approvals: the project's MCP servers were not read");
+                    Vec::new()
+                })
+        })
+    }
+
+    fn navi_lead(&self, project: &ports::ProjectRef, thread_id: &str) -> BoxFut<'_, bool> {
+        let r: Option<fleetd_contracts::ids::ProjectRef> = convert(project);
+        let thread_id = thread_id.to_owned();
+        Box::pin(async move {
+            let Some(r) = r else {
+                return false;
+            };
+            let hub = self.hub();
+            matches!(crate::hub::navi::of(&hub.db, &r), Ok(Some(_)))
+                && matches!(hub.leads.records.lead_get(&r), Ok(Some(lead)) if lead.thread_id.as_str() == thread_id)
+        })
+    }
+
+    fn navi_site(
+        &self,
+        project: &ports::ProjectRef,
+        site: Option<&str>,
+    ) -> BoxFut<'_, Option<bool>> {
+        let r: Option<fleetd_contracts::ids::ProjectRef> = convert(project);
+        let site = site.map(str::to_owned);
+        Box::pin(async move {
+            let r = r?;
+            let db = &self.hub().db;
+            crate::hub::navi::of(db, &r).ok().flatten()?;
+            let Some(site) = site else {
+                return Some(false);
+            };
+            db.with(|c| Ok(crate::hub::navi::store::site_allowed(c, &r, &site)?))
+                .ok()
+                .or(Some(false))
+        })
+    }
+
+    fn navi_site_allow(&self, project: &ports::ProjectRef, site: &str, by: &str) -> BoxFut<'_, ()> {
+        let r: Option<fleetd_contracts::ids::ProjectRef> = convert(project);
+        let (site, by) = (site.to_owned(), by.to_owned());
+        Box::pin(async move {
+            let Some(r) = r else {
+                return;
+            };
+            let hub = self.hub();
+            let at = crate::hub::store::now_ms(hub.clock.as_ref());
+            if let Err(error) = hub
+                .db
+                .with(|c| Ok(crate::hub::navi::store::allow_site(c, &r, &site, &by, at)?))
+            {
+                tracing::warn!(%error, "approvals: a Navi's allowed site was not saved");
+            }
         })
     }
 
