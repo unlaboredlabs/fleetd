@@ -136,8 +136,9 @@ impl PairCodes {
         })
     }
 
-    /// An invite for `person`, valid for 7 days: the device that redeems it gets a key of theirs, with what their
-    /// role allows on every machine.
+    /// An invite for `person`, valid for 7 days: the device that redeems it gets a key of theirs with admin on every
+    /// machine, which their role caps each time the key is verified (`Auth::verify`). So a member's device operates,
+    /// and making them an admin later takes effect on it at once, with no new device.
     pub fn create_invite(
         &self,
         person: &Person,
@@ -151,7 +152,7 @@ impl PairCodes {
             "inv_{}",
             crate::hub::auth::base32(&rand::random::<[u8; 5]>())
         );
-        let role = crate::hub::people::role_cap(person.role);
+        let role = Role::Admin;
         let invite = self.db.with(|conn| {
             conn.prepare_cached(
                 "INSERT INTO pair_codes (hash, name, expires_ms, role, created_ms, person_id, invite_id, created_by) \
@@ -199,15 +200,17 @@ impl PairCodes {
         self.db.with(|conn| invite_on(conn, id.as_str(), now))
     }
 
-    /// Takes an open invite back; a used one stays used. None when there is no such invite.
-    pub fn revoke_invite(&self, id: &InviteId) -> Result<Option<Invite>, StoreError> {
+    /// Takes an open invite back; a used or revoked one stays as it was. The invite, and whether this call revoked it;
+    /// None when there is no such invite.
+    pub fn revoke_invite(&self, id: &InviteId) -> Result<Option<(Invite, bool)>, StoreError> {
         let now = now_ms(self.clock.as_ref());
         self.db.with(|conn| {
-            conn.prepare_cached(
-                "UPDATE pair_codes SET revoked_ms = ?2 WHERE invite_id = ?1 AND used_ms IS NULL AND revoked_ms IS NULL",
-            )?
-            .execute(params![id.as_str(), now])?;
-            invite_on(conn, id.as_str(), now)
+            let changed = conn
+                .prepare_cached(
+                    "UPDATE pair_codes SET revoked_ms = ?2 WHERE invite_id = ?1 AND used_ms IS NULL AND revoked_ms IS NULL",
+                )?
+                .execute(params![id.as_str(), now])?;
+            Ok(invite_on(conn, id.as_str(), now)?.map(|invite| (invite, changed > 0)))
         })
     }
 

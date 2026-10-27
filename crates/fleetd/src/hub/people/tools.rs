@@ -9,9 +9,7 @@ use fleetd_contracts::mcp::{
     InviteRevokeInput, InviteRevokeOutput, PeopleListInput, PeopleListOutput, PersonRemoveInput,
     PersonRemoveOutput, PersonSetInput, PersonSetOutput,
 };
-use fleetd_contracts::people::{
-    HubRole, InviteState, PeopleChange, PeopleChangedData, Person, PersonRef,
-};
+use fleetd_contracts::people::{HubRole, PeopleChange, PeopleChangedData, Person, PersonRef};
 use fleetd_contracts::prim::{Count, List};
 
 use super::People;
@@ -228,14 +226,15 @@ async fn invite_revoke(
 ) -> Result<InviteRevokeOutput, ToolError> {
     let by = require_administrator(&hub, &caller)?;
     let codes = PairCodes::new(hub.db.clone(), hub.clock.clone());
-    let invite = codes.revoke_invite(&input.invite_id)?.ok_or_else(|| {
+    let (invite, revoked) = codes.revoke_invite(&input.invite_id)?.ok_or_else(|| {
         error(
             ErrorCode::NotFound,
             format!("No invite {}.", input.invite_id),
             "Call people_list to see the open invites.",
         )
     })?;
-    if invite.state == InviteState::Revoked {
+    // Revoking it again changes nothing and says nothing.
+    if revoked {
         // Someone invited by it who never joined goes with it.
         let store = people(&hub);
         let joined =
@@ -410,6 +409,22 @@ async fn device_revoke(
     let admin = administrator(&hub, &caller)?;
     if !own && admin.is_none() {
         return Err(not_found());
+    }
+    // As with changing or removing an owner: only an owner signs out an owner's device.
+    if !own && admin.as_ref().is_some_and(|a| a.role != HubRole::Owner) {
+        let owners = match &device.person {
+            Some(person) => people(&hub)
+                .get(&person.person_id)?
+                .is_some_and(|p| p.role == HubRole::Owner),
+            None => false,
+        };
+        if owners {
+            return Err(error(
+                ErrorCode::Forbidden,
+                "Only an owner signs out an owner's device.",
+                "Ask an owner.",
+            ));
+        }
     }
     hub.auth.revoke(device.key_id.as_str()).map_err(|e| {
         tracing::error!(error = %e, "device revoke");

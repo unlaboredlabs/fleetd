@@ -198,12 +198,12 @@ fn list_invites(o: &Open) -> Result<String, String> {
 
 fn revoke_invite(o: &Open, id: &str) -> Result<String, String> {
     let id = InviteId::new(id).map_err(|_| format!("'{id}' is not an invite id (inv_…)"))?;
-    let invite = o
+    let (invite, revoked) = o
         .codes()
         .revoke_invite(&id)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("no invite {id}; `fleetd invite list` lists the open ones"))?;
-    if invite.state != fleetd_contracts::people::InviteState::Revoked {
+    if !revoked {
         return Ok(format!(
             "Invite {id} is {}: nothing to revoke.\n",
             serde_json::to_value(invite.state)
