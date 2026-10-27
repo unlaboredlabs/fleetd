@@ -18,6 +18,7 @@ import {
   type ChatSend,
 } from "./chat";
 import type { AttachmentRef, ChatHistoryOutput, ChatReplyTo, ChatSendInput, ChatStopInput, ChatStopOutput } from "./chat-contract";
+import { lacksTool } from "./errors";
 import { chatOf, type DataState, type DataStore, type ProjectKey } from "./store";
 
 /** "sent": the hub has it. "pending": queued or cut off, it goes when the link is back. "failed": the hub refused
@@ -60,8 +61,6 @@ export interface ChatActions {
   stop(key: ProjectKey): Promise<StopOutcome>;
 }
 
-/** The hub's answer to a tool it doesn't have (hub/app_ws: "No tool <name>."). A fixture without an answer says not_found too. */
-const lacksTool = (e: HubError) => e.code === "not_found";
 const TRANSIENT = new Set(["timeout", "offline", "disconnected"]);
 
 export const refOf = (key: ProjectKey) => {
