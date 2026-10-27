@@ -64,7 +64,8 @@ async fn hub_update(
         Refused::HubMovedOn(running) => ToolError::new(
             ErrorCode::Failed,
             format!(
-                "The hub runs {running} now, not the build that update went to, so retrying it would put this machine behind the hub."
+                "The hub runs {} now, not the build that update went to, so retrying it would put this machine behind the hub.",
+                crate::version_label(&running)
             ),
         )
         .with_fix("Press Update to bring every machine to the hub's build."),
