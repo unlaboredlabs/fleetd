@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
-// Settings → Agents → Machines: each machine's number and where it comes from, the slider that sets it and the way
-// back to auto; and a project's slider past its machine's cap, which says the machine holds it and raises it in a click.
+// Administration's machine caps: each machine's number and where it comes from, the slider that sets it and the way
+// back to auto; and Settings → Agents' project slider past its machine's cap, which says the machine holds it, with the
+// way to Administration for an owner or admin and nothing more for anyone else.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -9,7 +10,7 @@ import type { HubFrame } from "../../../shared/hub";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { UiProvider } from "../../ui";
-import { AgentsSettings } from "./Agents";
+import { AgentsSettings, HubCaps } from "./Agents";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 // Settings search reads the platform when it loads, before any test runs.
@@ -82,8 +83,8 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-/** `admin`: what hub_info says of the key; undefined, a hub from before it said. */
-const render = async (admin?: boolean) => {
+/** `page`: Administration's caps, or Settings → Agents. `admin`: what hub_info says of the key. */
+const render = async (page: "hub" | "settings" = "hub", admin?: boolean) => {
   let listener: (frame: HubFrame) => void = () => undefined;
   let now = slots;
   const hub: HubApi = {
@@ -106,7 +107,7 @@ const render = async (admin?: boolean) => {
     root.render(
       <UiProvider>
         <DataProvider layer={createDataLayer(hub)}>
-          <AgentsSettings />
+          {page === "hub" ? <HubCaps /> : <AgentsSettings />}
         </DataProvider>
       </UiProvider>,
     );
@@ -171,44 +172,25 @@ it("sets a machine with its slider, and Undo goes back to auto", async () => {
   expect(calls[1]).toEqual({ tool: "cap_set", input: { machine: { machineId: "devbox", auto: true } } });
 });
 
-it("takes a project's slider to the fleet cap, says when its machine holds it, and raises the machine in a click", async () => {
-  await render();
+it("takes a project's slider to the fleet cap and says when its machine holds it, with no machine control in Settings", async () => {
+  await render("settings", false);
+  await act(async () => new Promise((r) => setTimeout(r, 0)));
   const project = section("storefront");
   const thumb = project.querySelector("[role='slider']");
   expect(thumb?.getAttribute("aria-valuenow")).toBe("30");
   expect(thumb?.getAttribute("aria-valuemax")).toBe("50");
-  expect(project.textContent).toContain("devbox runs at most 22 agents at once, so this project runs 22 until you raise devbox.");
-
-  await click(button(project, "Raise devbox to 30"));
-  expect(calls).toEqual([{ tool: "cap_set", input: { machine: { machineId: "devbox", maxAgents: 30 } } }]);
-  expect(section("storefront").textContent).not.toContain("runs at most");
-  expect(section("devbox").querySelector("[role='slider']")?.getAttribute("aria-valuenow")).toBe("30");
+  expect(project.textContent).toContain("devbox runs at most 22 agents at once, so this project runs 22 until an admin raises devbox.");
+  // A member sees the line only: no raise, no fleet or machine caps, nothing about admin keys.
+  expect([...project.querySelectorAll("button")].map((b) => b.textContent.trim())).not.toContain("Machine caps in Administration");
+  expect(host.querySelector("section[aria-labelledby='agents-fleet-label']")).toBeNull();
+  expect(host.querySelector("section[aria-labelledby='agents-machines']")).toBeNull();
+  expect(host.textContent).not.toContain("admin key");
+  expect(calls).toEqual([]);
 });
 
-it("greys out the fleet and machine caps, and the machine's raise, for a key without Admin", async () => {
-  await render(false);
-  // Its answer lands after the snapshot.
+it("gives an owner or admin the way to the machine caps on Administration", async () => {
+  await render("settings", true);
   await act(async () => new Promise((r) => setTimeout(r, 0)));
-  const disabled = (el: Element | null | undefined) => el?.getAttribute("data-disabled") !== null && el?.getAttribute("data-disabled") !== undefined;
-  const fleet = host.querySelector("section[aria-labelledby='agents-fleet-label']");
-  expect(disabled(fleet?.querySelector("[role='slider']"))).toBe(true);
-  expect(fleet?.textContent).toContain("This key can't change it: that needs an admin key.");
-  expect(disabled(section("devbox").querySelector("[role='slider']"))).toBe(true);
-  expect(button(section("builder"), "Use auto").disabled).toBe(true);
-  const project = section("storefront");
-  expect(button(project, "Raise devbox to 30").disabled).toBe(true);
-  expect(project.textContent).toContain("This key can't change it: that needs an admin key.");
-  // The project's own max is an operator's to change.
-  expect(disabled(project.querySelector("[role='slider']"))).toBe(false);
-});
-
-it("keeps them on for an admin key, and for a hub from before it said", async () => {
-  for (const admin of [true, undefined]) {
-    await render(admin);
-    await act(async () => new Promise((r) => setTimeout(r, 0)));
-    expect(button(section("storefront"), "Raise devbox to 30").disabled).toBe(false);
-    expect(host.textContent).not.toContain("This key can't change it");
-    act(() => root.unmount());
-    root = createRoot(host);
-  }
+  await click(button(section("storefront"), "Machine caps in Administration"));
+  expect(window.location.hash).toBe("#/admin/hub");
 });

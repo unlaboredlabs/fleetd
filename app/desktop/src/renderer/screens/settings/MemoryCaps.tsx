@@ -1,11 +1,21 @@
-// Settings → Memory's caps: how long each memory file may grow, hub-wide (memory_caps_set, an admin's write). The lead's
-// `remember` and the editors above are held to what is set here.
+// Memory caps: how long each memory file may grow, hub-wide (memory_caps_set, an admin's write), on Administration's
+// hub settings. The lead's `remember` and Settings → Memory's editors are held to what is set here.
 import { useState } from "react";
 import type { MemoryCaps as Caps } from "../../../shared/contracts";
 import { Button, Field, Input, Text } from "../../ui";
-import { errorText, useHubCall, useRefetch } from "./hub";
+import { useToolQuery } from "../../src/data/react";
+import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import { CAP_FIELDS, draftOf, parseCaps, type CapsDraft } from "./memoryCapsModel";
 import s from "./settings.module.css";
+
+const noInput = {};
+
+/** The caps as the hub has them now, read on their own: Administration has no memory page around them. */
+export function HubMemoryCaps() {
+  const live = useLive();
+  const read = useToolQuery("memory_get", noInput, { enabled: live });
+  return <MemoryCaps caps={read.data?.caps} />;
+}
 
 export function MemoryCaps({ caps }: { caps: Caps | undefined }) {
   const hubCall = useHubCall();
@@ -42,7 +52,7 @@ export function MemoryCaps({ caps }: { caps: Caps | undefined }) {
   return (
     <div className={s.stack}>
       <div className={s.settingLabel}>
-        <Text strong>Caps</Text>
+        <Text strong>Memory caps</Text>
         <Text size="xs" tone="quiet">
           The most characters each file holds, on this hub. A write past a cap is refused, so the lead merges entries instead.
         </Text>

@@ -71,6 +71,7 @@ beforeEach(() => {
             hub={{ phase: "live", hub: "http://devbox:4790", protocol: 1 }}
             jumpHints={false}
             factory={false}
+            admin={false}
             go={(s) => went.push(s)}
           />
         </TooltipProvider>

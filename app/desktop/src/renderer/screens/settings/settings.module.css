@@ -401,7 +401,7 @@
 .secretValue {
   -webkit-text-security: disc;
 }
-/* Settings → Machines: a machine a row, rows apart by space and a hairline (DESIGN.md), no cards. */
+/* Administration's machine roles: a machine a row, rows apart by space and a hairline (DESIGN.md), no cards. */
 .machineList {
   display: flex;
   flex-direction: column;

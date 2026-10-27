@@ -7,6 +7,7 @@ import { ChatScreen } from "../chat";
 // screen it shows, not all of them (startup time and idle memory, perf/budgets.ts).
 const OnboardingScreen = lazy(() => import("../onboarding/OnboardingScreen").then((m) => ({ default: m.OnboardingScreen })));
 const SettingsScreen = lazy(() => import("../settings/SettingsScreen").then((m) => ({ default: m.SettingsScreen })));
+const AdminScreen = lazy(() => import("../admin/AdminScreen").then((m) => ({ default: m.AdminScreen })));
 const AddProjectScreen = lazy(() => import("../projects/AddProjectScreen").then((m) => ({ default: m.AddProjectScreen })));
 const MachinesScreen = lazy(() => import("../projects/MachinesScreen").then((m) => ({ default: m.MachinesScreen })));
 const StatusScreen = lazy(() => import("../status/StatusScreen").then((m) => ({ default: m.StatusScreen })));
@@ -29,6 +30,8 @@ export const screenPart = (screen: Screen): { key: string; words: string } => {
       return { key: "time", words: "Time" };
     case "settings":
       return { key: "settings", words: "Settings" };
+    case "admin":
+      return { key: "admin", words: "Administration" };
     case "machines":
       return { key: "machines", words: "Machines" };
     case "projects.add":
@@ -74,6 +77,8 @@ function screenFor(screen: Screen): ReactNode {
       return <AddProjectScreen />;
     case "settings":
       return <SettingsScreen />;
+    case "admin":
+      return <AdminScreen />;
     case "onboarding":
       return <OnboardingScreen hub={screen.hub ?? undefined} code={screen.code ?? undefined} />;
   }

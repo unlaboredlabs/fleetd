@@ -1,5 +1,5 @@
-//! The model and effort behind each task profile (Settings › Agents, and each project's settings): `profiles_get`,
-//! `profiles_set`, and the `profile_settings` rows they keep, one per scope and profile. The fleet's row has an empty
+//! The model and effort behind each task profile (Administration › Hub settings, and each project's settings):
+//! `profiles_get`, `profiles_set`, and the `profile_settings` rows they keep, one per scope and profile. The fleet's row has an empty
 //! machine and project; a project's overrides it field by field. What no row sets runs on the runner's own.
 //!
 //! The executor reads [`ProfileStore::chosen`] at each launch. When claude refuses a chosen model, the node runs the
