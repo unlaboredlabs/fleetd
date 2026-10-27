@@ -317,7 +317,7 @@ function ConnectGoogle(props: { projectRef: Ref; onClose: () => void; onDone: (t
           </Step>
           <Step>For Drive, Docs and Sheets, add the Google Workspace connection in xaq: Connections, then Add connection.</Step>
           <Step>
-            In xaq, Agents, New agent: name it Navi. Give it read, draft, send, organize and trash on your account, calendar.read and calendar.write, and the Google Workspace connection. Set its send mode to Direct and its tool list to All tools: fleetd asks you before every send, so xaq doesn&apos;t need to.
+            In xaq, Agents, New agent: name it Navi. Give it read, draft, send, organize and trash on your account, calendar.read and calendar.write, and the Google Workspace connection. Keep its send mode on Approval, so xaq asks once more after fleetd&apos;s card, and set its tool list to All tools.
           </Step>
           <Step>Copy the agent&apos;s key (it starts with aib_) and paste it below.</Step>
         </Steps>
