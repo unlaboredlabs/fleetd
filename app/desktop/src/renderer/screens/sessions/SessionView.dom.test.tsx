@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
-// One screen in the panel: live, its page the full width with no Steps beside it; ended, its recording the full width,
-// its steps behind Steps, closed until opened, and closed again by it.
+// One screen in the panel: live, its page the full width with no Steps beside it (a phone's, standing up, as tall as
+// fits); ended, its recording the full width, its steps behind Steps, closed until opened, and closed again by it.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -116,4 +116,18 @@ it("plays an ended screen's recording the full width, its steps behind Steps, cl
   act(() => stepsToggle()?.click());
   expect(stepsToggle()?.getAttribute("aria-pressed")).toBe("false");
   expect(stepsList()).toBeNull();
+});
+
+it("keeps a phone's screen, standing up, to the view's height, and a browser's page the full width", async () => {
+  await mount("bs-live");
+  const frame = (width: number, height: number) =>
+    act(() => send({ t: "browser_frame", frame: { sessionId: "bs-live", seq: width, jpegB64: "", width, height, control: "agent" } }));
+  frame(480, 1039);
+  await settle();
+  const shown = host.querySelector<HTMLElement>("[data-control='agent']");
+  expect(shown?.dataset["shape"]).toBe("portrait");
+  expect(shown?.style.getPropertyValue("--aspect")).toBe(String(480 / 1039));
+  frame(960, 600);
+  await settle();
+  expect(host.querySelector<HTMLElement>("[data-control='agent']")?.dataset["shape"]).toBeUndefined();
 });
