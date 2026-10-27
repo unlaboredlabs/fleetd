@@ -338,6 +338,52 @@
       },
       "type": "object"
     },
+    "AgentKeyInfo": {
+      "properties": {
+        "createdAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "grants": {
+          "items": {
+            "$ref": "#/$defs/Grant"
+          },
+          "type": "array"
+        },
+        "keyId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/KeyKind",
+          "description": "Absent means \"agent\"."
+        },
+        "lastUsedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "name": {
+          "type": "string"
+        },
+        "person": {
+          "$ref": "#/$defs/PersonRef",
+          "description": "The person a human key belongs to. Absent for an agent key, and from a hub before people."
+        },
+        "prefix": {
+          "pattern": "^fld_[a-z2-7]{6}$",
+          "type": "string"
+        },
+        "revokedAt": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "keyId",
+        "name",
+        "prefix",
+        "grants",
+        "createdAt"
+      ],
+      "type": "object"
+    },
     "AgentLane": {
       "description": "One agent of an order: a task, or the project's lead.",
       "properties": {
@@ -2659,6 +2705,10 @@
           "minItems": 1,
           "type": "array"
         },
+        "person": {
+          "$ref": "#/$defs/PersonRef",
+          "description": "A human message: the person who wrote it. Absent from a hub before people."
+        },
         "previewSuggestion": {
           "$ref": "#/$defs/PreviewSuggestion",
           "description": "An agent's suggestion to try a PR (preview_suggest), posted once per PR with `text` in its words: the app\nshows it as one line with Try it. Nothing runs from it."
@@ -2938,6 +2988,54 @@
         }
       },
       "required": [
+        "items"
+      ],
+      "type": "object"
+    },
+    "ChecklistEditInput": {
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/TodoEdit"
+          },
+          "maxItems": 50,
+          "minItems": 1,
+          "type": "array"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        }
+      },
+      "required": [
+        "projectRef",
+        "items"
+      ],
+      "type": "object"
+    },
+    "ChecklistEditOutput": {
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/TodoItem"
+          },
+          "maxItems": 50,
+          "type": "array"
+        },
+        "next": {
+          "type": "string"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "updatedAt": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "projectRef",
         "items"
       ],
       "type": "object"
@@ -3693,6 +3791,10 @@
         "key": {
           "$ref": "#/$defs/DecisionKey"
         },
+        "person": {
+          "$ref": "#/$defs/PersonRef",
+          "description": "The person who recorded it, for a human key's decision. Absent from a hub before people."
+        },
         "retired": {
           "$ref": "#/$defs/DecisionRetired",
           "description": "Who took it back, when a person revoked it (`decisions_overturn` without a value)."
@@ -3765,6 +3867,10 @@
         },
         "by": {
           "type": "string"
+        },
+        "person": {
+          "$ref": "#/$defs/PersonRef",
+          "description": "The person who took it back. Absent from a hub before people."
         },
         "why": {
           "maxLength": 2000,
@@ -4048,6 +4154,35 @@
           "type": "string"
         }
       ]
+    },
+    "DeviceRevokeInput": {
+      "properties": {
+        "keyId": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "keyId"
+      ],
+      "type": "object"
+    },
+    "DeviceRevokeOutput": {
+      "properties": {
+        "device": {
+          "$ref": "#/$defs/AgentKeyInfo"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "device"
+      ],
+      "type": "object"
     },
     "DiffBlock": {
       "description": "Changes to show: the files with their hunks, or a PR whose diff the client reads. Exactly one of the two.",
@@ -4827,6 +4962,34 @@
       ],
       "type": "object"
     },
+    "Grant": {
+      "properties": {
+        "machines": {
+          "$ref": "#/$defs/GrantMachines"
+        },
+        "role": {
+          "$ref": "#/$defs/Role"
+        }
+      },
+      "required": [
+        "role",
+        "machines"
+      ],
+      "type": "object"
+    },
+    "GrantMachines": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Star"
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/MachineId"
+          },
+          "type": "array"
+        }
+      ]
+    },
     "HostCheck": {
       "description": "Whether a machine can host one kind of session, and why, in plain words: \"Chrome 131 at /usr/bin/google-chrome\",\n\"Android SDK at ~/Android/Sdk, but no /dev/kvm\".",
       "properties": {
@@ -5152,7 +5315,7 @@
         },
         {
           "const": "key.paired",
-          "description": "A device redeemed a pairing code from `fleetd pair` and got a human key; `data.keyId`, `data.deviceName`.",
+          "description": "A device redeemed a pairing code from `fleetd pair` or an invite and got a human key; `data.keyId`,\n`data.deviceName`, `data.personId` (absent from a hub before people), `data.inviteId` (an invite's).",
           "type": "string"
         },
         {
@@ -5289,6 +5452,11 @@
           "const": "preview.state",
           "description": "A preview started, moved a step, became ready, ended or failed; `data` is `preview::PreviewEventData`.\npreviews_list reads the rest.",
           "type": "string"
+        },
+        {
+          "const": "people.changed",
+          "description": "A person was invited, joined, renamed, given another role or removed, an invite was revoked, or a device signed\nout; `data` is `people::PeopleChangedData`. people_list reads the rest.",
+          "type": "string"
         }
       ],
       "x-open": true
@@ -5320,8 +5488,18 @@
           "$ref": "#/$defs/HubChannel",
           "description": "Absent for a local build."
         },
+        "me": {
+          "$ref": "#/$defs/Person",
+          "description": "The person the caller's human key belongs to. Absent for an agent key, and from a hub before people."
+        },
         "next": {
           "type": "string"
+        },
+        "people": {
+          "description": "How many people the hub has, removed ones left out. Absent from a hub before people.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
         },
         "protocol": {
           "maximum": 9007199254740991,
@@ -5345,6 +5523,16 @@
         "busy"
       ],
       "type": "object"
+    },
+    "HubRole": {
+      "description": "What a person may do on the hub. Owners and admins invite people, change roles and change hub-wide settings;\nmembers work in projects. Each device is still capped by its own grants.",
+      "enum": [
+        "owner",
+        "admin",
+        "member"
+      ],
+      "type": "string",
+      "x-open": true
     },
     "HubUpdateInput": {
       "properties": {
@@ -5382,6 +5570,10 @@
         "answeredBy": {
           "description": "\"human:<device>\".",
           "type": "string"
+        },
+        "answeredByPerson": {
+          "$ref": "#/$defs/PersonRef",
+          "description": "The person who answered it: approved or denied it, or entered the secret. Absent from a hub before people."
         },
         "createdAt": {
           "$ref": "#/$defs/Timestamp"
@@ -5730,6 +5922,155 @@
           "type": "object"
         }
       ]
+    },
+    "Invite": {
+      "description": "A single-use pairing code bound to a person, valid for 7 days. The code itself is shown once, at creation.",
+      "properties": {
+        "createdAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "createdBy": {
+          "$ref": "#/$defs/PersonRef",
+          "description": "Who created it; absent for `fleetd invite` on the hub machine."
+        },
+        "expiresAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "inviteId": {
+          "$ref": "#/$defs/InviteId"
+        },
+        "person": {
+          "$ref": "#/$defs/PersonRef",
+          "description": "Whom the device that redeems it belongs to."
+        },
+        "revokedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "state": {
+          "$ref": "#/$defs/InviteState"
+        },
+        "usedAt": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "inviteId",
+        "person",
+        "state",
+        "createdAt",
+        "expiresAt"
+      ],
+      "type": "object"
+    },
+    "InviteCreateInput": {
+      "properties": {
+        "name": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "personId": {
+          "$ref": "#/$defs/PersonId"
+        },
+        "role": {
+          "$ref": "#/$defs/HubRole"
+        }
+      },
+      "type": "object"
+    },
+    "InviteCreateOutput": {
+      "properties": {
+        "code": {
+          "description": "`XXXX-XXXX`: entered in the app's pairing screen with the hub address.",
+          "type": "string"
+        },
+        "hubUrl": {
+          "type": "string"
+        },
+        "invite": {
+          "$ref": "#/$defs/Invite"
+        },
+        "link": {
+          "description": "`fleetd://pair?hub=…&code=…`.",
+          "type": "string"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "invite",
+        "code",
+        "link",
+        "hubUrl"
+      ],
+      "type": "object"
+    },
+    "InviteId": {
+      "pattern": "^inv_[a-z2-7]{8}$",
+      "type": "string"
+    },
+    "InviteRevokeInput": {
+      "properties": {
+        "inviteId": {
+          "$ref": "#/$defs/InviteId"
+        }
+      },
+      "required": [
+        "inviteId"
+      ],
+      "type": "object"
+    },
+    "InviteRevokeOutput": {
+      "properties": {
+        "invite": {
+          "$ref": "#/$defs/Invite"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "invite"
+      ],
+      "type": "object"
+    },
+    "InviteState": {
+      "oneOf": [
+        {
+          "enum": [
+            "expired",
+            "revoked"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "open",
+          "description": "Not redeemed yet, and not expired.",
+          "type": "string"
+        },
+        {
+          "const": "used",
+          "description": "A device redeemed it.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
+    "KeyKind": {
+      "description": "\"human\": a person's device, such as the desktop app. What it answers is recorded as the human's.",
+      "enum": [
+        "agent",
+        "human"
+      ],
+      "type": "string"
     },
     "KindTotal": {
       "properties": {
@@ -6832,6 +7173,12 @@
         "chat_stop.output": {
           "$ref": "#/$defs/ChatStopOutput"
         },
+        "checklist_edit.input": {
+          "$ref": "#/$defs/ChecklistEditInput"
+        },
+        "checklist_edit.output": {
+          "$ref": "#/$defs/ChecklistEditOutput"
+        },
         "checklist_get.input": {
           "$ref": "#/$defs/ChecklistGetInput"
         },
@@ -6867,6 +7214,12 @@
         },
         "decisions_search.output": {
           "$ref": "#/$defs/DecisionsSearchOutput"
+        },
+        "device_revoke.input": {
+          "$ref": "#/$defs/DeviceRevokeInput"
+        },
+        "device_revoke.output": {
+          "$ref": "#/$defs/DeviceRevokeOutput"
         },
         "doctor_fix.input": {
           "$ref": "#/$defs/DoctorFixInput"
@@ -6915,6 +7268,18 @@
         },
         "hub_update_status.output": {
           "$ref": "#/$defs/HubUpdateOutput"
+        },
+        "invite_create.input": {
+          "$ref": "#/$defs/InviteCreateInput"
+        },
+        "invite_create.output": {
+          "$ref": "#/$defs/InviteCreateOutput"
+        },
+        "invite_revoke.input": {
+          "$ref": "#/$defs/InviteRevokeInput"
+        },
+        "invite_revoke.output": {
+          "$ref": "#/$defs/InviteRevokeOutput"
         },
         "lead_start.input": {
           "$ref": "#/$defs/LeadStartInput"
@@ -7011,6 +7376,24 @@
         },
         "orders_board.output": {
           "$ref": "#/$defs/OrdersBoardOutput"
+        },
+        "people_list.input": {
+          "$ref": "#/$defs/PeopleListInput"
+        },
+        "people_list.output": {
+          "$ref": "#/$defs/PeopleListOutput"
+        },
+        "person_remove.input": {
+          "$ref": "#/$defs/PersonRemoveInput"
+        },
+        "person_remove.output": {
+          "$ref": "#/$defs/PersonRemoveOutput"
+        },
+        "person_set.input": {
+          "$ref": "#/$defs/PersonSetInput"
+        },
+        "person_set.output": {
+          "$ref": "#/$defs/PersonSetOutput"
         },
         "pr_diff.input": {
           "$ref": "#/$defs/PrDiffInput"
@@ -7356,6 +7739,8 @@
         "chat_send.output",
         "chat_stop.input",
         "chat_stop.output",
+        "checklist_edit.input",
+        "checklist_edit.output",
         "checklist_get.input",
         "checklist_get.output",
         "checklist_remove.input",
@@ -7368,6 +7753,8 @@
         "decisions_record.output",
         "decisions_search.input",
         "decisions_search.output",
+        "device_revoke.input",
+        "device_revoke.output",
         "doctor_fix.input",
         "doctor_fix.output",
         "doctor_list.input",
@@ -7384,6 +7771,10 @@
         "hub_update.output",
         "hub_update_status.input",
         "hub_update_status.output",
+        "invite_create.input",
+        "invite_create.output",
+        "invite_revoke.input",
+        "invite_revoke.output",
         "lead_start.input",
         "lead_start.output",
         "machine_roles.input",
@@ -7416,6 +7807,12 @@
         "order_get.output",
         "orders_board.input",
         "orders_board.output",
+        "people_list.input",
+        "people_list.output",
+        "person_remove.input",
+        "person_remove.output",
+        "person_set.input",
+        "person_set.output",
         "pr_diff.input",
         "pr_diff.output",
         "pr_files.input",
@@ -8915,6 +9312,58 @@
       ],
       "type": "object"
     },
+    "PeopleListInput": {
+      "properties": {
+        "includeRemoved": {
+          "description": "Removed people too.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "PeopleListOutput": {
+      "properties": {
+        "devices": {
+          "description": "Human keys, each with its person, oldest first; revoked ones left out.",
+          "items": {
+            "$ref": "#/$defs/AgentKeyInfo"
+          },
+          "maxItems": 2000,
+          "type": "array"
+        },
+        "invites": {
+          "description": "Open invites, newest first.",
+          "items": {
+            "$ref": "#/$defs/Invite"
+          },
+          "maxItems": 500,
+          "type": "array"
+        },
+        "me": {
+          "$ref": "#/$defs/PersonId",
+          "description": "The caller's person; absent for an agent key."
+        },
+        "next": {
+          "type": "string"
+        },
+        "people": {
+          "items": {
+            "$ref": "#/$defs/Person"
+          },
+          "maxItems": 500,
+          "type": "array"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "people",
+        "devices",
+        "invites"
+      ],
+      "type": "object"
+    },
     "Period": {
       "properties": {
         "since": {
@@ -8963,6 +9412,131 @@
         "wallMs",
         "agentMs",
         "byCategory"
+      ],
+      "type": "object"
+    },
+    "Person": {
+      "properties": {
+        "createdAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "name": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "personId": {
+          "$ref": "#/$defs/PersonId"
+        },
+        "removedAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "Removed people keep their id and name, so what they did still names them; their devices are revoked."
+        },
+        "role": {
+          "$ref": "#/$defs/HubRole"
+        }
+      },
+      "required": [
+        "personId",
+        "name",
+        "role",
+        "createdAt"
+      ],
+      "type": "object"
+    },
+    "PersonId": {
+      "pattern": "^p_[a-z2-7]{8}$",
+      "type": "string"
+    },
+    "PersonRef": {
+      "description": "Who did something, with their name at the time: on chat messages, approvals, secrets, decisions and checklist\nchanges.",
+      "properties": {
+        "name": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "personId": {
+          "$ref": "#/$defs/PersonId"
+        }
+      },
+      "required": [
+        "personId",
+        "name"
+      ],
+      "type": "object"
+    },
+    "PersonRemoveInput": {
+      "properties": {
+        "personId": {
+          "$ref": "#/$defs/PersonId"
+        }
+      },
+      "required": [
+        "personId"
+      ],
+      "type": "object"
+    },
+    "PersonRemoveOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "person": {
+          "$ref": "#/$defs/Person"
+        },
+        "revoked": {
+          "description": "Devices revoked.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "person",
+        "revoked"
+      ],
+      "type": "object"
+    },
+    "PersonSetInput": {
+      "properties": {
+        "name": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "personId": {
+          "$ref": "#/$defs/PersonId"
+        },
+        "role": {
+          "$ref": "#/$defs/HubRole"
+        }
+      },
+      "required": [
+        "personId"
+      ],
+      "type": "object"
+    },
+    "PersonSetOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "person": {
+          "$ref": "#/$defs/Person"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "person"
       ],
       "type": "object"
     },
@@ -12128,6 +12702,14 @@
       "type": "string",
       "x-open": true
     },
+    "Role": {
+      "enum": [
+        "read",
+        "operate",
+        "admin"
+      ],
+      "type": "string"
+    },
     "RouteCounts": {
       "description": "Landed changes per route.",
       "properties": {
@@ -13634,6 +14216,13 @@
         "conflicts"
       ],
       "type": "object"
+    },
+    "Star": {
+      "description": "`\"*\"`: every machine.",
+      "enum": [
+        "*"
+      ],
+      "type": "string"
     },
     "StatusCounts": {
       "description": "A project's items per group. Complete: the rows' `items` may stop at a cap; these never do.",
@@ -15440,6 +16029,33 @@
       "format": "date-time",
       "type": "string"
     },
+    "TodoEdit": {
+      "description": "One change to the list: without `id` it adds an item (text required, state todo unless given); with `id` it sets\nthat item's text, state or link, or with `remove` takes it off.",
+      "properties": {
+        "id": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "link": {
+          "$ref": "#/$defs/TodoLink",
+          "description": "Replaces the item's link; `{}` clears it."
+        },
+        "remove": {
+          "type": "boolean"
+        },
+        "state": {
+          "$ref": "#/$defs/TodoState"
+        },
+        "text": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "TodoItem": {
       "properties": {
         "id": {
@@ -15450,6 +16066,10 @@
         },
         "link": {
           "$ref": "#/$defs/TodoLink"
+        },
+        "person": {
+          "$ref": "#/$defs/PersonRef",
+          "description": "The person who last ticked or changed it (`checklist_edit`); absent when the lead did."
         },
         "state": {
           "$ref": "#/$defs/TodoState"
@@ -16910,6 +17530,10 @@
         },
         "source": {
           "$ref": "#/$defs/WorkstreamSource"
+        },
+        "startedBy": {
+          "$ref": "#/$defs/PersonRef",
+          "description": "The person whose message started it: the writer of the human message the lead was answering when it opened the\norder, or the person who sent it as an order. Absent for an automation's, a train fix's or an agent's order, and\nfrom a hub before people."
         },
         "state": {
           "$ref": "#/$defs/WorkstreamState"

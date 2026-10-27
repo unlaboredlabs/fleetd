@@ -142,6 +142,20 @@ export type AgentBlock = {
   threadRef?: ThreadRef;
 };
 
+export type AgentKeyInfo = {
+  createdAt: Timestamp;
+  grants: Grant[];
+  keyId: string;
+  /** Absent means "agent". */
+  kind?: KeyKind;
+  lastUsedAt?: Timestamp;
+  name: string;
+  /** The person a human key belongs to. Absent for an agent key, and from a hub before people. */
+  person?: PersonRef;
+  prefix: string;
+  revokedAt?: Timestamp;
+};
+
 /** One agent of an order: a task, or the project's lead. */
 export type AgentLane = {
   branch?: string;
@@ -1051,6 +1065,8 @@ export type ChatMessage = {
    * bubble (and while a message streams).
    */
   parts?: ChatPart[];
+  /** A human message: the person who wrote it. Absent from a hub before people. */
+  person?: PersonRef;
   /**
    * An agent's suggestion to try a PR (preview_suggest), posted once per PR with `text` in its words: the app
    * shows it as one line with Try it. Nothing runs from it.
@@ -1183,8 +1199,23 @@ export type ChecklistChangedData = {
   /** The lead (`lead:<machine>/<project>`) or a person (`human:<key name>`). */
   by: string;
   done: number;
+  /** The person who changed it (`checklist_edit`), removals included; absent when the lead did. */
+  person?: PersonRef;
   projectRef: ProjectRef;
   total: number;
+};
+
+export type ChecklistEditInput = {
+  items: TodoEdit[];
+  projectRef: ProjectRef;
+};
+
+export type ChecklistEditOutput = {
+  items: TodoItem[];
+  next?: string;
+  projectRef: ProjectRef;
+  truncated?: boolean;
+  updatedAt?: Timestamp;
 };
 
 export type ChecklistGetInput = {
@@ -1438,6 +1469,8 @@ export type Decision = {
   by?: string;
   decisionId: DecisionId;
   key: DecisionKey;
+  /** The person who recorded it, for a human key's decision. Absent from a hub before people. */
+  person?: PersonRef;
   /** Who took it back, when a person revoked it (`decisions_overturn` without a value). */
   retired?: DecisionRetired;
   scope: DecisionScope;
@@ -1463,6 +1496,8 @@ export type DecisionOrder = {
 export type DecisionRetired = {
   at: Timestamp;
   by: string;
+  /** The person who took it back. Absent from a hub before people. */
+  person?: PersonRef;
   why?: string;
 };
 
@@ -1563,6 +1598,16 @@ export type DesktopHealth = {
 export type KnownDesktopState = "ready" | "preparing" | "unavailable";
 /** KnownDesktopState, or a value from a newer hub. */
 export type DesktopState = KnownDesktopState | (string & {});
+
+export type DeviceRevokeInput = {
+  keyId: string;
+};
+
+export type DeviceRevokeOutput = {
+  device: AgentKeyInfo;
+  next?: string;
+  truncated?: boolean;
+};
 
 /** Changes to show: the files with their hunks, or a PR whose diff the client reads. Exactly one of the two. */
 export type DiffBlock = {
@@ -1830,6 +1875,13 @@ export type GitHubRepos = {
   repos: GitHubCandidate[];
 };
 
+export type Grant = {
+  machines: GrantMachines;
+  role: Role;
+};
+
+export type GrantMachines = Star | MachineId[];
+
 /**
  * Whether a machine can host one kind of session, and why, in plain words: "Chrome 131 at /usr/bin/google-chrome",
  * "Android SDK at ~/Android/Sdk, but no /dev/kvm".
@@ -1955,7 +2007,8 @@ export type KnownHubEventType =
   | "checklist.changed"
   | "skills.changed"
   | "browser.session"
-  | "preview.state";
+  | "preview.state"
+  | "people.changed";
 /** KnownHubEventType, or a value from a newer hub. */
 export type HubEventType = KnownHubEventType | (string & {});
 
@@ -1974,13 +2027,25 @@ export type HubInfoOutput = {
   busy: HubBusyItem[];
   /** Absent for a local build. */
   channel?: HubChannel;
+  /** The person the caller's human key belongs to. Absent for an agent key, and from a hub before people. */
+  me?: Person;
   next?: string;
+  /** How many people the hub has, removed ones left out. Absent from a hub before people. */
+  people?: number;
   protocol: number;
   startedAt?: Timestamp;
   truncated?: boolean;
   /** The hub's fleetd version, as `fleetd --version` prints it. "0.0.0" for a local build. */
   version: string;
 };
+
+/**
+ * What a person may do on the hub. Owners and admins invite people, change roles and change hub-wide settings;
+ * members work in projects. Each device is still capped by its own grants.
+ */
+export type KnownHubRole = "owner" | "admin" | "member";
+/** KnownHubRole, or a value from a newer hub. */
+export type HubRole = KnownHubRole | (string & {});
 
 export type HubUpdateInput = {
   /** Absent: the channel the hub's build came from. */
@@ -2001,6 +2066,8 @@ export type HumanRequest = {
   answeredAt?: Timestamp;
   /** "human:<device>". */
   answeredBy?: string;
+  /** The person who answered it: approved or denied it, or entered the secret. Absent from a hub before people. */
+  answeredByPerson?: PersonRef;
   createdAt: Timestamp;
   /**
    * What happened, in one line: "fingerprint ab12cd34", "exit 0 on devbox, approved by human:desk", or why it did
@@ -2108,6 +2175,53 @@ export type IntakeRef = {
   url: GitHubPrUrl;
 };
 
+/** A single-use pairing code bound to a person, valid for 7 days. The code itself is shown once, at creation. */
+export type Invite = {
+  createdAt: Timestamp;
+  /** Who created it; absent for `fleetd invite` on the hub machine. */
+  createdBy?: PersonRef;
+  expiresAt: Timestamp;
+  inviteId: InviteId;
+  /** Whom the device that redeems it belongs to. */
+  person: PersonRef;
+  revokedAt?: Timestamp;
+  state: InviteState;
+  usedAt?: Timestamp;
+};
+
+export type InviteCreateInput = {
+  name?: string;
+  personId?: PersonId;
+  role?: HubRole;
+};
+
+export type InviteCreateOutput = {
+  /** `XXXX-XXXX`: entered in the app's pairing screen with the hub address. */
+  code: string;
+  hubUrl: string;
+  invite: Invite;
+  /** `fleetd://pair?hub=…&code=…`. */
+  link: string;
+  next?: string;
+  truncated?: boolean;
+};
+
+export type InviteId = string;
+
+export type InviteRevokeInput = {
+  inviteId: InviteId;
+};
+
+export type InviteRevokeOutput = {
+  invite: Invite;
+  next?: string;
+  truncated?: boolean;
+};
+
+export type KnownInviteState = "expired" | "revoked" | "open" | "used";
+/** KnownInviteState, or a value from a newer hub. */
+export type InviteState = KnownInviteState | (string & {});
+
 export type IosHealth = {
   /** The command a person runs to fix it, when there is one. */
   fix?: string;
@@ -2122,6 +2236,9 @@ export type KnownIosState = "ready" | "wanted" | "preparing" | "unavailable";
 export type IosState = KnownIosState | (string & {});
 
 export type KeyAction = "down" | "up";
+
+/** "human": a person's device, such as the desktop app. What it answers is recorded as the human's. */
+export type KeyKind = "agent" | "human";
 
 export type KindTotal = {
   kind: SpanKind;
@@ -3008,6 +3125,38 @@ export type PathSegment = {
   startMs: number;
 };
 
+export type KnownPeopleChange = "invited" | "joined" | "invite_revoked" | "renamed" | "role_changed" | "removed" | "device_revoked";
+/** KnownPeopleChange, or a value from a newer hub. */
+export type PeopleChange = KnownPeopleChange | (string & {});
+
+/** `people.changed`. */
+export type PeopleChangedData = {
+  /** Who made the change; absent for the hub machine's own CLI and for a device joining. */
+  by?: PersonRef;
+  change: PeopleChange;
+  inviteId?: InviteId;
+  keyId?: string;
+  /** Whom it is about. */
+  person: PersonRef;
+};
+
+export type PeopleListInput = {
+  /** Removed people too. */
+  includeRemoved?: boolean;
+};
+
+export type PeopleListOutput = {
+  /** Human keys, each with its person, oldest first; revoked ones left out. */
+  devices: AgentKeyInfo[];
+  /** Open invites, newest first. */
+  invites: Invite[];
+  /** The caller's person; absent for an agent key. */
+  me?: PersonId;
+  next?: string;
+  people: Person[];
+  truncated?: boolean;
+};
+
 export type Period = {
   since: Timestamp;
   until: Timestamp;
@@ -3020,6 +3169,50 @@ export type PeriodBreakdown = {
   since: Timestamp;
   until: Timestamp;
   wallMs: number;
+};
+
+export type Person = {
+  createdAt: Timestamp;
+  name: string;
+  personId: PersonId;
+  /** Removed people keep their id and name, so what they did still names them; their devices are revoked. */
+  removedAt?: Timestamp;
+  role: HubRole;
+};
+
+export type PersonId = string;
+
+/**
+ * Who did something, with their name at the time: on chat messages, approvals, secrets, decisions and checklist
+ * changes.
+ */
+export type PersonRef = {
+  name: string;
+  personId: PersonId;
+};
+
+export type PersonRemoveInput = {
+  personId: PersonId;
+};
+
+export type PersonRemoveOutput = {
+  next?: string;
+  person: Person;
+  /** Devices revoked. */
+  revoked: number;
+  truncated?: boolean;
+};
+
+export type PersonSetInput = {
+  name?: string;
+  personId: PersonId;
+  role?: HubRole;
+};
+
+export type PersonSetOutput = {
+  next?: string;
+  person: Person;
+  truncated?: boolean;
 };
 
 /** A `{{name}}` the code fills in. A required one missing from an edit gets a warning. */
@@ -4207,6 +4400,8 @@ export type KnownReviewVerdictKind = "approved" | "changes_requested" | "comment
 /** KnownReviewVerdictKind, or a value from a newer hub. */
 export type ReviewVerdictKind = KnownReviewVerdictKind | (string & {});
 
+export type Role = "read" | "operate" | "admin";
+
 /** Landed changes per route. */
 export type RouteCounts = {
   direct: number;
@@ -4735,6 +4930,9 @@ export type StalePrompt = {
   scope: PromptScope;
   yours: PromptVersion;
 };
+
+/** `"*"`: every machine. */
+export type Star = "*";
 
 /** A project's items per group. Complete: the rows' `items` may stop at a cap; these never do. */
 export type StatusCounts = {
@@ -5330,10 +5528,25 @@ export type TimeZone = string;
 
 export type Timestamp = string;
 
+/**
+ * One change to the list: without `id` it adds an item (text required, state todo unless given); with `id` it sets
+ * that item's text, state or link, or with `remove` takes it off.
+ */
+export type TodoEdit = {
+  id?: number;
+  /** Replaces the item's link; `{}` clears it. */
+  link?: TodoLink;
+  remove?: boolean;
+  state?: TodoState;
+  text?: string;
+};
+
 export type TodoItem = {
   /** Unique in its project, never reused. */
   id: number;
   link?: TodoLink;
+  /** The person who last ticked or changed it (`checklist_edit`); absent when the lead did. */
+  person?: PersonRef;
   state: TodoState;
   text: string;
   updatedAt: Timestamp;
@@ -5898,6 +6111,12 @@ export type Workstream = {
   headlineAt?: Timestamp;
   projectRef: ProjectRef;
   source: WorkstreamSource;
+  /**
+   * The person whose message started it: the writer of the human message the lead was answering when it opened the
+   * order, or the person who sent it as an order. Absent for an automation's, a train fix's or an agent's order, and
+   * from a hub before people.
+   */
+  startedBy?: PersonRef;
   state: WorkstreamState;
   title: string;
   updatedAt: Timestamp;
@@ -6007,12 +6226,14 @@ export interface ToolMap {
   chat_history: { input: ChatHistoryInput; output: ChatHistoryOutput };
   chat_send: { input: ChatSendInput; output: ChatSendOutput };
   chat_stop: { input: ChatStopInput; output: ChatStopOutput };
+  checklist_edit: { input: ChecklistEditInput; output: ChecklistEditOutput };
   checklist_get: { input: ChecklistGetInput; output: ChecklistGetOutput };
   checklist_remove: { input: ChecklistRemoveInput; output: ChecklistRemoveOutput };
   decisions_list: { input: DecisionsListInput; output: DecisionsListOutput };
   decisions_overturn: { input: DecisionsOverturnInput; output: DecisionsOverturnOutput };
   decisions_record: { input: DecisionsRecordInput; output: DecisionsRecordOutput };
   decisions_search: { input: DecisionsSearchInput; output: DecisionsSearchOutput };
+  device_revoke: { input: DeviceRevokeInput; output: DeviceRevokeOutput };
   doctor_fix: { input: DoctorFixInput; output: DoctorFixOutput };
   doctor_list: { input: DoctorListInput; output: DoctorListOutput };
   events_list: { input: EventsListInput; output: EventsListOutput };
@@ -6021,6 +6242,8 @@ export interface ToolMap {
   hub_info: { input: HubInfoInput; output: HubInfoOutput };
   hub_update: { input: HubUpdateInput; output: HubUpdateOutput };
   hub_update_status: { input: HubUpdateStatusInput; output: HubUpdateOutput };
+  invite_create: { input: InviteCreateInput; output: InviteCreateOutput };
+  invite_revoke: { input: InviteRevokeInput; output: InviteRevokeOutput };
   lead_start: { input: LeadStartInput; output: LeadStartOutput };
   machine_roles: { input: MachineRolesInput; output: MachineRolesOutput };
   machine_roles_set: { input: MachineRolesSetInput; output: MachineRolesSetOutput };
@@ -6037,6 +6260,9 @@ export interface ToolMap {
   metrics_retention_set: { input: MetricsRetentionSetInput; output: MetricsRetentionSetOutput };
   order_get: { input: OrderGetInput; output: OrderGetOutput };
   orders_board: { input: OrdersBoardInput; output: OrdersBoardOutput };
+  people_list: { input: PeopleListInput; output: PeopleListOutput };
+  person_remove: { input: PersonRemoveInput; output: PersonRemoveOutput };
+  person_set: { input: PersonSetInput; output: PersonSetOutput };
   pr_diff: { input: PrDiffInput; output: PrDiffOutput };
   pr_files: { input: PrFilesInput; output: PrFilesOutput };
   pr_get: { input: PrGetInput; output: PrGetOutput };
@@ -6106,6 +6332,7 @@ export interface HubEventDataMap {
   "machine.guard": MachineGuardData;
   "machine.recovery_paused": RecoveryPausedData;
   "machine.slept": MachineSleptData;
+  "people.changed": PeopleChangedData;
   "pr.merged": TrainEventData;
   "pr.merged_outside": TrainEventData;
   "preview.state": PreviewEventData;

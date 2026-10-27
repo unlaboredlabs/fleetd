@@ -151,6 +151,7 @@ fn grants_rank_read_operate_admin_and_scope_by_machine() {
         created_at: "1970-01-01T00:00:00.000Z".into(),
         last_used_at: None,
         revoked_at: None,
+        person: None,
     };
     let key = info(vec![
         Grant {

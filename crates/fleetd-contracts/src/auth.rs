@@ -62,4 +62,6 @@ pub struct AgentKeyInfo {
     pub created_at: Timestamp,
     pub last_used_at: Option<Timestamp>,
     pub revoked_at: Option<Timestamp>,
+    /// The person a human key belongs to. Absent for an agent key, and from a hub before people.
+    pub person: Option<crate::people::PersonRef>,
 }

@@ -29,6 +29,7 @@ pub mod model;
 pub mod navi;
 pub mod node_link;
 pub mod pair;
+pub mod people;
 pub mod preview;
 pub mod project_settings;
 pub mod projects;

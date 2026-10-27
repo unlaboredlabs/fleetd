@@ -15,3 +15,5 @@ wins.
   sends marked-up feedback to its agents, and can make their sign-off part of what lets a PR merge.
 - [multi-repo.md](multi-repo.md): a project is a lead and its own directory holding zero or more repos; how repos are
   stored, and the stages that let one lead work across several repos.
+- [teams.md](teams.md): team-ready fleetd: people, invites, hub and project roles, a project as a group chat, private
+  Navis, and the steps that get there.

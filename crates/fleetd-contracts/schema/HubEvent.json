@@ -242,7 +242,7 @@
         },
         {
           "const": "key.paired",
-          "description": "A device redeemed a pairing code from `fleetd pair` and got a human key; `data.keyId`, `data.deviceName`.",
+          "description": "A device redeemed a pairing code from `fleetd pair` or an invite and got a human key; `data.keyId`,\n`data.deviceName`, `data.personId` (absent from a hub before people), `data.inviteId` (an invite's).",
           "type": "string"
         },
         {
@@ -378,6 +378,11 @@
         {
           "const": "preview.state",
           "description": "A preview started, moved a step, became ready, ended or failed; `data` is `preview::PreviewEventData`.\npreviews_list reads the rest.",
+          "type": "string"
+        },
+        {
+          "const": "people.changed",
+          "description": "A person was invited, joined, renamed, given another role or removed, an invite was revoked, or a device signed\nout; `data` is `people::PeopleChangedData`. people_list reads the rest.",
           "type": "string"
         }
       ],

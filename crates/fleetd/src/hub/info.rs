@@ -62,6 +62,8 @@ async fn hub_info(
         busy: List::new(busy)
             .map_err(|e| ToolError::new(fleetd_contracts::mcp::ErrorCode::Failed, e))?,
         admin: Some(allows_everywhere(&caller, Role::Admin)),
+        me: None,
+        people: None,
         next: Some(next.to_owned()),
         truncated,
     })

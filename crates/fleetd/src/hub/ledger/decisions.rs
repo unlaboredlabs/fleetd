@@ -130,6 +130,7 @@ impl Decisions {
             let Some(value) = value else {
                 let retired = DecisionRetired {
                     by: actor.by.clone(),
+                    person: None,
                     at: Timestamp(iso_ms(now)),
                     why: Some(super::text(why)),
                 };

@@ -167,6 +167,7 @@ impl KeyRow {
             created_at: iso_ms(self.created_ms).into(),
             last_used_at: self.last_used_ms.map(|ms| iso_ms(ms).into()),
             revoked_at: self.revoked_ms.map(|ms| iso_ms(ms).into()),
+            person: None,
         })
     }
 }
