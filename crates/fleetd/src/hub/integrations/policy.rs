@@ -3,7 +3,7 @@
 //! [`super::notion`], or a custom server's tools the person marked as reading); anything else asks, with an action
 //! guessed from its name. An asking tool whose input looks like it holds a credential is blocked too.
 use fleetd_contracts::integrations::{
-    IntegrationKind, McpToolName, PREVIEW_BODY_MAX, PREVIEW_INPUT_MAX, ToolAction, ToolPolicy,
+    IntegrationKind, McpToolName, PREVIEW_INPUT_MAX, PreviewAttachment, ToolAction, ToolPolicy,
     ToolPreview,
 };
 use fleetd_contracts::mcp_servers::{FLEETD_SERVER, McpServer, McpServerName};
@@ -90,6 +90,43 @@ pub struct Draft {
     pub body: Option<String>,
     pub target: Option<String>,
     pub when: Option<String>,
+    pub attachments: Vec<Attachment>,
+}
+
+/// A file a tool attaches: its name, its size when its bytes are in the input, where it comes from otherwise.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Attachment {
+    pub name: String,
+    pub bytes: Option<u64>,
+    pub from: Option<String>,
+}
+
+/// The bytes a base64 string holds.
+pub fn base64_bytes(text: &str) -> u64 {
+    let text = text.trim_end();
+    let pad = text.chars().rev().take_while(|c| *c == '=').count() as u64;
+    (text.len() as u64 * 3 / 4).saturating_sub(pad)
+}
+
+/// `input` as the card shows it: each file's bytes (`content_base64`) said by their size, which no one reads.
+pub fn shown_input(input: &Value) -> Value {
+    match input {
+        Value::Object(o) => Value::Object(
+            o.iter()
+                .map(|(k, v)| {
+                    let v = match (k.as_str(), v) {
+                        ("content_base64", Value::String(b)) => {
+                            Value::String(format!("[the file's {} bytes]", base64_bytes(b)))
+                        }
+                        _ => shown_input(v),
+                    };
+                    (k.clone(), v)
+                })
+                .collect(),
+        ),
+        Value::Array(items) => Value::Array(items.iter().map(shown_input).collect()),
+        other => other.clone(),
+    }
 }
 
 /// A tool name's words, lower case: `create_account`, `createAccount` and `API-create-account` are all
@@ -258,10 +295,11 @@ pub fn verdict(tool_name: &str, input: &Value, servers: &[McpServer]) -> Option<
         Rule::Read => Verdict::Allow,
         Rule::Blocked(n) => Verdict::Block(n.why()),
         Rule::Ask(action) => {
-            if holds_credential(input) {
+            let shown = shown_input(input);
+            if holds_credential(&shown) {
                 return Some(Verdict::Block(Never::Credential.why()));
             }
-            if js_len(&serde_json::to_string_pretty(input).unwrap_or_default()) > PREVIEW_INPUT_MAX
+            if js_len(&serde_json::to_string_pretty(&shown).unwrap_or_default()) > PREVIEW_INPUT_MAX
             {
                 return Some(Verdict::Block(TOO_LARGE));
             }
@@ -350,16 +388,6 @@ fn lines<const MAX: usize>(list: &[String]) -> Vec<Line<1, MAX>> {
     list.iter().filter_map(|a| line(a)).collect()
 }
 
-fn verb(action: ToolAction) -> &'static str {
-    match action {
-        ToolAction::Send => "Send with",
-        ToolAction::Write => "Change with",
-        ToolAction::Delete => "Delete with",
-        ToolAction::Share => "Share with",
-        ToolAction::Spend => "Spend money with",
-    }
-}
-
 /// The card for an asking call, every field read from `input`.
 pub fn preview(
     kind: IntegrationKind,
@@ -376,15 +404,8 @@ pub fn preview(
     let title = d
         .title
         .clone()
-        .unwrap_or_else(|| format!("{} {tool} on {server}", verb(action)));
-    let (body, body_cut) = match &d.body {
-        Some(b) => {
-            let (b, cut) = clip_utf16(b, PREVIEW_BODY_MAX);
-            (Some(Text::unchecked(b)), cut)
-        }
-        None => (None, false),
-    };
-    let pretty = serde_json::to_string_pretty(input).unwrap_or_default();
+        .unwrap_or_else(|| format!("Use {tool} on {server}"));
+    let pretty = serde_json::to_string_pretty(&shown_input(input)).unwrap_or_default();
     Some(ToolPreview {
         integration: kind,
         server: McpServerName::new(server).ok()?,
@@ -400,8 +421,19 @@ pub fn preview(
             .subject
             .as_deref()
             .map(|s| Text::unchecked(clip_utf16(s, 1000).0)),
-        body,
-        body_cut,
+        // Whole, as the input is.
+        body: d.body.and_then(|b| Text::new(b).ok()),
+        attachments: d
+            .attachments
+            .iter()
+            .filter_map(|a| {
+                Some(PreviewAttachment {
+                    name: line(&a.name)?,
+                    bytes: a.bytes,
+                    from: a.from.as_deref().and_then(line),
+                })
+            })
+            .collect(),
         target: d
             .target
             .as_deref()

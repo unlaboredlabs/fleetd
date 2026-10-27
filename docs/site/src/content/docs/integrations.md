@@ -31,18 +31,21 @@ it is a summary the Navi wrote.
 
 | Row | Shows |
 |---|---|
-| Heading | What it does and where: **Sends · Google**, **Deletes · Notion**. **Reaches other people**, **Can't be undone** or **Costs money** on the right. |
+| Heading | What it does and where, **Sends · Google** or **Deletes · Notion**, then who asks: "Ada wants to send an email". A share, delete or spend says **Gives access**, **Can't be undone** or **Costs money** on the right; a send lets its recipients speak. |
 | From | The account it acts as. |
-| To, Cc, Bcc | Every recipient, as the tool gets them. An event's guests are its To. |
+| To, Cc, Bcc | Every recipient, as the tool gets them. An address outside the From account's domain says "outside example.com" after it; Bcc says "hidden from the others". An event's guests are its To. |
 | Reaches | Who gets it when the tool picks them, as a reply does: "That message's sender", or "Everyone on that message". |
 | Subject or Title | The email's subject, the event's or the page's title. |
 | When | An event's start and end. |
+| Attached | Each file, with its size when its bytes are in the call, or where it comes from: a message, Drive, a file on xaq's machine. |
 | On | The message, event, page or file it acts on. |
-| Body | The whole text that goes out or goes in, under a hairline. A body over 20,000 characters is cut here, saying so. |
-| Everything it sends | The tool's whole input as JSON, behind a disclosure, so nothing is hidden behind the rows. |
+| Body | The whole text that goes out or goes in, under a hairline. A long one folds, with **Show all** in place. |
+| Everything it sends | The tool's whole input as JSON, closed until you open it, so nothing is hidden behind the rows. A file's bytes are said by their size. A call too large to show whole is refused, never asked about. |
 
-**Approve** runs exactly that input. **Deny**, or <kbd>Esc</kbd>, tells the Navi no. A delete or a spend asks once
-more in the card before it runs.
+The buttons name the act: **Send it** and **Don't send**, **Share it**, **Delete it**, **Pay**. Either runs exactly that
+input, or tells the Navi no; <kbd>Enter</kbd> and <kbd>Esc</kbd> do the same. A delete or a spend asks once more in the
+card before it runs. Once answered, the card folds to one line: "Sent to ana@example.com and 2 more · you approved at
+09:12".
 
 ## Google: Gmail, Calendar and Drive {#google}
 

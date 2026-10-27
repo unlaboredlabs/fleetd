@@ -11902,6 +11902,35 @@
       ],
       "type": "object"
     },
+    "PreviewAttachment": {
+      "description": "A file an asking tool attaches, as its input names it.",
+      "properties": {
+        "bytes": {
+          "description": "Its size, when its bytes are in the input.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "from": {
+          "description": "Where it comes from, when not from the input: \"from Drive\", \"from message 18c2\", \"a file on xaq's machine\".",
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "name": {
+          "description": "The name the recipient sees: \"tenant-form.pdf\", or what the file is when the tool names it by id.",
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
     "PreviewConfig": {
       "description": "A project's preview setting (Settings › Projects › Try it, or `project_settings_set {preview}`). Nothing runs\nbecause of it: it says how to run a preview someone asks for.",
       "properties": {
@@ -18168,6 +18197,13 @@
         "action": {
           "$ref": "#/$defs/ToolAction"
         },
+        "attachments": {
+          "description": "Every file it attaches.",
+          "items": {
+            "$ref": "#/$defs/PreviewAttachment"
+          },
+          "type": "array"
+        },
         "audience": {
           "description": "Who it reaches when the tool decides that itself, such as a reply to a message's sender: said in words, since\nthe card can't list them.",
           "maxLength": 300,
@@ -18186,12 +18222,8 @@
         },
         "body": {
           "description": "The text that goes out or goes in: the email's body, the event's notes, the page's new content.",
-          "maxLength": 20000,
+          "maxLength": 100000,
           "type": "string"
-        },
-        "bodyCut": {
-          "description": "The body was longer and is cut here.",
-          "type": "boolean"
         },
         "cc": {
           "items": {
@@ -18224,7 +18256,7 @@
           "type": "string"
         },
         "title": {
-          "description": "One line: \"Send an email\", \"Reply to a message\", \"Delete a Notion block\".",
+          "description": "What it does, as a verb phrase the app puts after \"<the Navi> wants to\": \"Send an email\", \"Reply to an email\".",
           "maxLength": 200,
           "minLength": 1,
           "pattern": "^[^\\r\\n]*$",

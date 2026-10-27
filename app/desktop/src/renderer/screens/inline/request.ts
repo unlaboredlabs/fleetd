@@ -3,7 +3,7 @@
 import type { ChatItem, CommandApprovalItem, GatedClass, GatedRunSpec, HumanRequest, Machine, SecretRequestItem } from "../../../shared/contracts";
 import type { HubError } from "../../../shared/hub";
 import { shortElapsed } from "../chat/format";
-import { previewNeedsConfirm, previewTitle } from "./toolPreview";
+import { answeredWords, previewNeedsConfirm, previewOutcome } from "./toolPreview";
 
 /**
  * The item as the hub's request says it is now. A request's changes arrive as request.updated events (and a fresh
@@ -102,6 +102,7 @@ const took = (item: CommandApprovalItem): string | undefined => {
 /** The one line an answered approval folds to, or undefined while it waits for Approve / Deny. */
 export const approvalOutcome = (item: CommandApprovalItem): Outcome | undefined => {
   if (item.previewConfig !== undefined) return configOutcome(item);
+  if (item.permission?.preview !== undefined) return previewOutcome(item.permission.preview, item);
   const time = took(item);
   switch (item.state) {
     case "open":
@@ -165,7 +166,7 @@ export const approvalTitle = (item: CommandApprovalItem): string =>
           (item.permission === undefined
             ? "An agent's request"
             : item.permission.preview !== undefined
-              ? previewTitle(item.permission.preview)
+              ? `· ${answeredWords(item)}`
               : `An agent wanted to use ${item.permission.toolName}`)),
   );
 
