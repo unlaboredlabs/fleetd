@@ -1589,7 +1589,11 @@ async fn a_session_whose_recording_folder_went_still_ends_on_the_hub() {
     let deadline = Instant::now() + Duration::from_secs(30);
     loop {
         let listed = sessions(&rig.hub).await;
-        let state = listed["sessions"][0]["state"].as_str().unwrap().to_owned();
+        // Reported in the background: on a loaded run the hub may not have it yet.
+        let state = listed["sessions"][0]["state"]
+            .as_str()
+            .unwrap_or("not reported yet")
+            .to_owned();
         if state == "recorded" {
             assert!(listed["sessions"][0]["endedAt"].is_string(), "{listed}");
             break;

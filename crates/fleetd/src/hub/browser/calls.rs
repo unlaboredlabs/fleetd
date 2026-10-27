@@ -8,13 +8,14 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
 use fleetd_contracts::browser::{
     BrowserControl, BrowserRecordingPartCall, BrowserRecordingPartResult, BrowserSession,
-    BrowserSessionCall, BrowserSessionResult, BrowserSessionState, BrowserTakeoverCall,
-    RECORDING_PART_BYTES,
+    BrowserSessionCall, BrowserSessionId, BrowserSessionResult, BrowserSessionState,
+    BrowserTakeoverCall, RECORDING_PART_BYTES, RecordingFile,
 };
 use fleetd_contracts::lead_calls::{LeadCall, LeadCallResult};
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
+use fleetd_contracts::prim::Count;
 
-use super::{announce, count, dir, file_path, get, put_on, stored_bytes};
+use super::{announce, count, dir, file_path, get, get_on, put_on, stored_bytes};
 use crate::hub::api::Hub;
 use crate::hub::link::lead_calls::{CallerAgent, LeadCallFuture, op_of};
 use crate::hub::link::{LeadCaller, LeadCalls};
@@ -99,34 +100,8 @@ fn session(
     call: BrowserSessionCall,
 ) -> Result<LeadCallResult, McpToolError> {
     let stored = own(hub, caller, call.session_id.as_str())?;
-    if let Some(s) = &stored
-        && matches!(
-            s.state,
-            BrowserSessionState::Recorded | BrowserSessionState::Expired
-        )
-    {
-        // Final: a late or repeated report changes nothing.
-        return Ok(LeadCallResult::BrowserSession(BrowserSessionResult {
-            session_id: s.session_id.clone(),
-            state: s.state,
-        }));
-    }
     if call.state == BrowserSessionState::Expired {
         return Err(invalid("Only the hub expires a recording."));
-    }
-    if call.state == BrowserSessionState::Recorded {
-        for entry in call.files.iter() {
-            let held = stored_bytes(hub, &call.session_id, entry.file);
-            if held != entry.bytes.get() as u64 {
-                return Err(invalid(format!(
-                    "The hub holds {held} bytes of {}'s {}, not {}.",
-                    call.session_id,
-                    entry.file.as_str(),
-                    entry.bytes
-                ))
-                .with_fix("upload the file again from offset 0"));
-            }
-        }
     }
     let started_ms = parse_ms(call.started_at.as_str())
         .ok_or_else(|| invalid("startedAt is not an ISO time."))?;
@@ -156,18 +131,65 @@ fn session(
         credentials_filled: call.credentials_filled,
         note: call.note,
     };
-    if next.state == BrowserSessionState::Lost {
-        // What arrived of a recording that can't be finished is no use to anyone.
-        let _ = std::fs::remove_dir_all(dir(hub, &next.session_id));
-    }
-    let changed = stored.as_ref().is_none_or(|s| {
-        s.state != next.state
-            || s.control != next.control
-            || s.credentials_filled != next.credentials_filled
-    });
-    hub.db
-        .transaction(|c| put_on(c, &next, started_ms))
+    // Read, checked and written in one transaction: the node's reports race (its end report and its upload's), and one
+    // that read the row before another made it final must not undo it. A lost recording's files are only moved aside
+    // there, so a late `recorded` finds them gone, and deleted once the hub's connection is free again.
+    let written = hub
+        .db
+        .transaction(|c| {
+            let now = get_on(c, &next.session_id)?;
+            if let Some(s) = now.as_ref().filter(|s| {
+                matches!(
+                    s.state,
+                    BrowserSessionState::Recorded | BrowserSessionState::Expired
+                )
+            }) {
+                // Final: a late or repeated report changes nothing.
+                return Ok(Written::Final(s.state));
+            }
+            if next.state == BrowserSessionState::Recorded {
+                for entry in next.files.iter() {
+                    let held = stored_bytes(hub, &next.session_id, entry.file);
+                    if held != entry.bytes.get() as u64 {
+                        return Ok(Written::Short(entry.file, held, entry.bytes));
+                    }
+                }
+            }
+            put_on(c, &next, started_ms)?;
+            // What arrived of a recording that can't be finished is no use to anyone.
+            let aside = (next.state == BrowserSessionState::Lost)
+                .then(|| set_aside(hub, &next.session_id))
+                .flatten();
+            let changed = now.as_ref().is_none_or(|s| {
+                s.state != next.state
+                    || s.control != next.control
+                    || s.credentials_filled != next.credentials_filled
+            });
+            Ok(Written::Done { changed, aside })
+        })
         .map_err(failed)?;
+    let changed = match written {
+        Written::Final(state) => {
+            return Ok(LeadCallResult::BrowserSession(BrowserSessionResult {
+                session_id: next.session_id,
+                state,
+            }));
+        }
+        Written::Short(file, held, bytes) => {
+            return Err(invalid(format!(
+                "The hub holds {held} bytes of {}'s {}, not {bytes}.",
+                next.session_id,
+                file.as_str(),
+            ))
+            .with_fix("upload the file again from offset 0"));
+        }
+        Written::Done { changed, aside } => {
+            if let Some(aside) = aside {
+                let _ = std::fs::remove_dir_all(aside);
+            }
+            changed
+        }
+    };
     hub.link
         .browser_live
         .control_reported(&next.session_id, next.control);
@@ -178,6 +200,36 @@ fn session(
         session_id: next.session_id,
         state: next.state,
     }))
+}
+
+/// What a session report's transaction did.
+enum Written {
+    /// Nothing: the session was already final, in this state.
+    Final(BrowserSessionState),
+    /// Nothing: a `recorded` report names more or fewer bytes of a file than the hub holds.
+    Short(RecordingFile, u64, Count),
+    /// Written; `changed` when the app is told (state, control or fills differ from the row it replaced), and a lost
+    /// recording's files moved to `aside`, to delete.
+    Done {
+        changed: bool,
+        aside: Option<std::path::PathBuf>,
+    },
+}
+
+/// Moves a session's recording out of its place (a rename, however large it is), for deleting later. None when it has
+/// none.
+fn set_aside(hub: &Hub, id: &BrowserSessionId) -> Option<std::path::PathBuf> {
+    let from = dir(hub, id);
+    let to = from.with_file_name(format!(".{id}.lost-{}", now_ms(hub.clock.as_ref())));
+    match std::fs::rename(&from, &to) {
+        Ok(()) => Some(to),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => {
+            tracing::warn!(session = %id, error = %e, "lost recording not moved aside; deleting it in place");
+            let _ = std::fs::remove_dir_all(&from);
+            None
+        }
+    }
 }
 
 async fn part(
