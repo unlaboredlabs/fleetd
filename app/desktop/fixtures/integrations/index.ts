@@ -1,5 +1,5 @@
-// A Navi's Integrations (Settings → Projects → the Navi). navi-integrations-empty: the typical hub's first project
-// marked as a Navi (kind assistant), nothing connected yet. navi-integrations: Notion and a custom server
+// A Navi's Integrations (Settings → Projects → the Navi). integrations-none: the typical hub's first project
+// marked as a Navi (kind assistant), nothing connected yet. integrations-connected: Notion and a custom server
 // connected, each key sealed on devbox, and Test connection answering with each tool by the hub's policy. The approval
 // cards an integration raises are in inline-items (an email to send, a Notion page to trash).
 import { Fixture } from "../kit/fixture.ts";
@@ -64,14 +64,14 @@ const NOTION_TOOLS = tools(
 );
 
 const empty = (base: Fixture): Fixture => {
-  const f = Fixture.from(base, "navi-integrations-empty", "A Navi's Integrations with nothing connected yet: Notion, and Add an MCP server.");
+  const f = Fixture.from(base, "integrations-none", "A Navi's Integrations with nothing connected yet: Notion, and Add an MCP server.");
   const ref = navi(f);
   f.answer("mcp_servers_get", { project: ref }, { global: [], project: [], userServers: true });
   return f;
 };
 
 const connected = (base: Fixture): Fixture => {
-  const f = Fixture.from(base, "navi-integrations", "A Navi with Notion and a custom server connected, each key sealed on its machine; Test connection lists each tool by policy.");
+  const f = Fixture.from(base, "integrations-connected", "A Navi with Notion and a custom server connected, each key sealed on its machine; Test connection lists each tool by policy.");
   const ref = navi(f);
   f.answer("mcp_servers_get", { project: ref }, { global: [], project: [notion(ref), custom(ref)], userServers: true });
   const scope = { kind: "project", ...ref };
