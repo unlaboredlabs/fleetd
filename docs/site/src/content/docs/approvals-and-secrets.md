@@ -10,6 +10,7 @@ project's chat, because plain chat text can't carry them safely.
 |---|---|---|
 | [Secret](#secrets) | A masked field naming the machine and where the value goes | Type the value |
 | [Approval](#approve) | The exact command, the reason, and where it runs | Approve or Deny |
+| [Tool approval](#tool-approvals) | A Navi's tool call: the tool and exactly what it would get | Approve or Deny |
 
 Only a person's device can act on them, using a [human key](/docs/glossary#human-key) that the desktop app holds. An
 agent key can't, so no agent can approve itself.
@@ -91,9 +92,17 @@ it is never sent.
 From an MCP client, a secret is entered with `secret_submit` and an item is answered with `approval_answer`. Both
 take only a human key. `requests_list` lists every secret and approval request with its state.
 
+## Approve a Navi's tool call {#tool-approvals}
+
+A [Navi](/docs/navi)'s lead runs with claude's permission prompts on: any tool off its short allow-list (a command, an
+email send, another MCP server's write, its first visit to a site) asks first. fleetd shows the ask in the Navi's chat as an approval with
+the tool and its input, such as an email's recipients and full text. Approve runs the tool with exactly that input;
+Deny tells the Navi you said no, with your reason if you type one. There is no "always allow". If the Navi's run
+ends before you answer, the approval closes by itself.
+
 ## Tool permission rules {#tool-rules}
 
-Leads and tasks run with claude's permission prompts off. A project can deny tools for every session, with rules in
+Leads and tasks run with claude's permission prompts off; a Navi's lead is the one exception (above). A project can deny tools for every session, with rules in
 claude's own syntax in `.fleetd/policy.yaml`:
 
 ```yaml

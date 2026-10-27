@@ -380,6 +380,7 @@ async fn run_link_once(
             fleetd_contracts::node_link::CAP_UPDATE_FETCH.to_owned(),
             fleetd_contracts::node_link::CAP_CLAUDE_INSTALL.to_owned(),
             fleetd_contracts::node_link::CAP_SESSION_SEAL.to_owned(),
+            fleetd_contracts::node_link::CAP_ASSISTANT.to_owned(),
         ]
         .into_iter()
         .chain(

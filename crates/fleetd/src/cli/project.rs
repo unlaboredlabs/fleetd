@@ -19,8 +19,8 @@ use super::setup::state::read_setup;
 pub const PROJECT_USAGE: &str =
     "  project add [<path|github-url>] [--machine <id>] [--title <t>] [--dest <dir>]
          [--use-existing] [--yes] [--home <dir>] [--hub <url>]
-             add a project: a checkout on a machine (this one by default), or a GitHub
-             repo cloned onto one (the least busy worker by default), with progress;
+             add a project: a checkout or a plain folder on a machine (this one by default),
+             or a GitHub repo cloned onto one (the least busy worker by default), with progress;
              then its CI, merge rules and what the lead will need. No argument: pick one
   project list [--machine <id>] [--home <dir>] [--hub <url>]
   project stop <machine>/<project> --key-file <human key> [--yes] [--home <dir>] [--hub <url>]
@@ -101,7 +101,7 @@ fn usage(message: &str) -> u8 {
 }
 
 /// What went wrong, the fix, and the exit code: 1 failed, 3 refused, 4 the hub or machine is unreachable.
-struct Stop(u8, String, Option<String>);
+pub(super) struct Stop(pub(super) u8, pub(super) String, pub(super) Option<String>);
 
 impl Stop {
     fn from_body(body: &Value) -> Self {
@@ -119,26 +119,26 @@ impl Stop {
     }
 }
 
-struct Out {
-    tty: bool,
+pub(super) struct Out {
+    pub(super) tty: bool,
 }
 
 impl Out {
-    fn info(&self, text: &str) {
+    pub(super) fn info(&self, text: &str) {
         if self.tty {
             let _ = cliclack::log::info(text);
         } else {
             println!("{text}");
         }
     }
-    fn success(&self, text: &str) {
+    pub(super) fn success(&self, text: &str) {
         if self.tty {
             let _ = cliclack::log::success(text);
         } else {
             println!("✓ {text}");
         }
     }
-    fn fail(&self, stop: &Stop) -> u8 {
+    pub(super) fn fail(&self, stop: &Stop) -> u8 {
         let fix = stop
             .2
             .as_deref()
@@ -153,7 +153,7 @@ impl Out {
     }
 }
 
-async fn call(client: &mut McpClient, tool: &str, input: Value) -> Result<Value, Stop> {
+pub(super) async fn call(client: &mut McpClient, tool: &str, input: Value) -> Result<Value, Stop> {
     let result = client
         .call_tool(tool, input, CALL)
         .await
@@ -200,13 +200,13 @@ fn local_machine(home: &Path) -> String {
         .unwrap_or_else(|| machine_id_from_host(&local_host_name()))
 }
 
-fn s<'a>(v: &'a Value, pointer: &str) -> &'a str {
+pub(super) fn s<'a>(v: &'a Value, pointer: &str) -> &'a str {
     v.pointer(pointer)
         .and_then(Value::as_str)
         .unwrap_or_default()
 }
 
-fn tilde(path: &str) -> String {
+pub(super) fn tilde(path: &str) -> String {
     let home = super::home_dir();
     match Path::new(path).strip_prefix(&home) {
         Ok(rest) => format!("~/{}", rest.display()),
@@ -231,6 +231,10 @@ fn describe(inspect: &Value) -> String {
             .filter(|t| !t.is_empty())
     };
     let mut lines = vec![format!("Lead needs: {}", s(inspect, "/leadNeeds"))];
+    // A plain folder has no repo: no branch, CI or merge rules to show.
+    if s(inspect, "/leadNeeds") == crate::hub::projects::inspect::FOLDER_NEEDS {
+        return lines.join("\n");
+    }
     if let Some(b) = inspect.get("defaultBranch").and_then(Value::as_str) {
         lines.push(format!("Default branch: {b}"));
     }

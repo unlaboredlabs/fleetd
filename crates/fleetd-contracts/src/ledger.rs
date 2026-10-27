@@ -346,6 +346,12 @@ pub struct ToolPermission {
     /// An integration's asking tool (`hub/integrations`): exactly who it reaches and what it says, or what it changes,
     /// read from the input it runs with once approved. Boxed: it is large beside the prompt's other fields.
     pub preview: Option<Box<crate::integrations::ToolPreview>>,
+    /// The tool's input exactly as the session asked (at most 64 KiB of JSON): approved, the tool runs with exactly
+    /// this. Absent when the node didn't send it; the tool then runs with what the session asked.
+    pub input: Option<serde_json::Value>,
+    /// A Navi's first fetch or browser visit to this site (its host, such as `example.com`): approved, the Navi may
+    /// fetch and open it without asking from then on, until a person revokes it (`navi_site_revoke`).
+    pub site: Option<String>,
 }
 
 /// What a lead needs a person for that chat can't carry safely: a secret value (entered in a masked field and sealed to
