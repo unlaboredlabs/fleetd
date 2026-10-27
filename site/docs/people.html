@@ -197,8 +197,19 @@ for the reset. Everyone else’s carries on. <code dir="auto">usage_status</code
 <li>An agent keeps the account it started on for its whole life. A change applies to agents started after it.</li>
 <li>Removing a person forgets their subscription on every machine.</li>
 </ul>
-<p>The app’s screens for this (your settings, and Claude on the Administration page) come in a later release. The
-hub’s tools are <code dir="auto">claude_accounts_get</code>, <code dir="auto">claude_hub_api_set</code>, <code dir="auto">claude_hub_api_remove</code>, <code dir="auto">claude_settings_set</code>,
+<p>In the app:</p>
+<ul>
+<li><strong>Settings › Claude</strong> is each person’s own. <em>In use</em> says what your orders and your Navi run on now, or “Connect
+your Claude to start orders” with what to do. <em>Runs on</em> picks your subscription or the hub’s API key; the hub’s key
+is offered only when you may use it. <em>Your subscription</em> takes the token: paste it and press Connect and test. The
+app seals it on your computer to every machine and never shows it again. Test, Replace and Disconnect are beside it.</li>
+<li><strong>Administration › Claude</strong> is for owners and admins. <em>Hub API key</em> takes the key and an optional endpoint
+(Save and test), then shows the machines that hold it, its last Test, and Test, Change and Remove. A change to the
+endpoint alone keeps the saved key. <em>Members</em> is the switch. <em>Leads and unrequested work</em> says what they run on, and
+whether the hub owner’s subscription, their fallback, is connected. <em>Everyone’s account</em> lists each person’s way,
+with any usage pause on their account.</li>
+</ul>
+<p>The hub’s tools are <code dir="auto">claude_accounts_get</code>, <code dir="auto">claude_hub_api_set</code>, <code dir="auto">claude_hub_api_remove</code>, <code dir="auto">claude_settings_set</code>,
 <code dir="auto">claude_subscription_set</code>, <code dir="auto">claude_subscription_remove</code>, <code dir="auto">claude_choice_set</code> and <code dir="auto">claude_account_test</code>. See
 <a href="/docs/security#claude">Security</a> for how keys and tokens are kept.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="attribution">Who did what</h2><a class="sl-anchor-link" href="#attribution"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Who did what”</span></a></div>
