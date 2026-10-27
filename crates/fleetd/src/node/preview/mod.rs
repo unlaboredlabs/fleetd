@@ -74,6 +74,46 @@ impl Default for Timing {
     }
 }
 
+/// The browser sessions a person holds from the start, for showing a preview in the app (the broker's
+/// [`crate::node::browser::Broker::open_held`]).
+pub trait HeldSessions: Send + Sync {
+    fn open<'a>(
+        &'a self,
+        holder: &'a str,
+        cwd: &'a str,
+        purpose: &'a str,
+        url: &'a str,
+        secrets: crate::node::mask::Secrets,
+    ) -> proxy::BoxFuture<'a, Result<fleetd_contracts::browser::BrowserSessionId, String>>;
+    /// How long since the person last used it; None when it is gone.
+    fn idle_for(&self, holder: &str) -> Option<Duration>;
+    fn end<'a>(&'a self, holder: &'a str) -> proxy::BoxFuture<'a, ()>;
+}
+
+/// The node's browser broker as [`HeldSessions`].
+pub struct BrokerHeld(pub Arc<crate::node::browser::Broker>);
+
+impl HeldSessions for BrokerHeld {
+    fn open<'a>(
+        &'a self,
+        holder: &'a str,
+        cwd: &'a str,
+        purpose: &'a str,
+        url: &'a str,
+        secrets: crate::node::mask::Secrets,
+    ) -> proxy::BoxFuture<'a, Result<fleetd_contracts::browser::BrowserSessionId, String>> {
+        Box::pin(self.0.open_held(holder, cwd, purpose, url, secrets))
+    }
+
+    fn idle_for(&self, holder: &str) -> Option<Duration> {
+        self.0.live(holder).map(|s| s.idle_for())
+    }
+
+    fn end<'a>(&'a self, holder: &'a str) -> proxy::BoxFuture<'a, ()> {
+        Box::pin(self.0.end_held(holder))
+    }
+}
+
 /// Finds this machine on its tailnet, for the proxy, with the login whose devices it lets in (the hub owner's, when
 /// the hub names one).
 pub type DetectTailnet = Arc<
@@ -100,6 +140,8 @@ pub struct Previews {
     slots_per_project: usize,
     root_of: ProjectRoot,
     detect: DetectTailnet,
+    /// Where the app shows a preview; none on a machine without browser sessions.
+    held: Option<Arc<dyn HeldSessions>>,
     timing: Timing,
     slots: Arc<slots::Slots>,
     runs: Mutex<HashMap<String, Live>>,
@@ -115,6 +157,7 @@ impl Previews {
         config: &PreviewNodeConfig,
         root_of: ProjectRoot,
         detect: DetectTailnet,
+        held: Option<Arc<dyn HeldSessions>>,
         timing: Timing,
     ) -> Arc<Self> {
         reap_all(home);
@@ -123,6 +166,7 @@ impl Previews {
             slots_per_project: config.slots.unwrap_or(SLOTS_DEFAULT).max(1),
             root_of,
             detect,
+            held,
             timing,
             slots: Arc::default(),
             runs: Mutex::default(),
@@ -131,12 +175,19 @@ impl Previews {
         })
     }
 
-    /// The real service: projects from the node's store, the tailnet from tailscaled.
-    pub fn for_node(home: &Path, config: &PreviewNodeConfig, root_of: ProjectRoot) -> Arc<Self> {
+    /// The real service: projects from the node's store, the tailnet from tailscaled, the app's view from the
+    /// browser broker when this machine has one.
+    pub fn for_node(
+        home: &Path,
+        config: &PreviewNodeConfig,
+        root_of: ProjectRoot,
+        broker: Option<Arc<crate::node::browser::Broker>>,
+    ) -> Arc<Self> {
         let detect: DetectTailnet = Arc::new(|owner| {
             Box::pin(async move { proxy::Config::detect(owner.as_deref()).await })
         });
-        Self::new(home, config, root_of, detect, Timing::default())
+        let held = broker.map(|b| Arc::new(BrokerHeld(b)) as Arc<dyn HeldSessions>);
+        Self::new(home, config, root_of, detect, held, Timing::default())
     }
 
     /// Sends reports on `tx` from now on, starting with the newest of each preview (a new link may have missed them).
