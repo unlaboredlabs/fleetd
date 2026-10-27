@@ -90,7 +90,8 @@ impl ProfileStore<'_> {
         })
     }
 
-    /// Replaces one profile's setting at a scope, its refusal cleared; an empty one deletes the row.
+    /// Replaces one profile's setting at a scope; an empty one deletes the row. Its refusal stays only when `setting`
+    /// passes it back as read, with the same model (an effort changed alone); setting the model again clears it.
     pub fn set(
         &self,
         r: Option<&ProjectRef>,
@@ -98,6 +99,11 @@ impl ProfileStore<'_> {
         setting: &ProfileSetting,
         at: &str,
     ) -> Result<(), StoreError> {
+        let stored = self.get(r)?.get(profile).clone();
+        let kept = setting
+            .refused
+            .as_ref()
+            .filter(|_| stored.refused == setting.refused && stored.model == setting.model);
         let (machine, project) = key(r);
         self.db.with(|c| {
             if setting.is_empty() {
@@ -109,13 +115,14 @@ impl ProfileStore<'_> {
                 c.execute(
                     "INSERT OR REPLACE INTO profile_settings
                        (machine_id, project_id, profile, model, effort, refused, set_at)
-                     VALUES (?, ?, ?, ?, ?, NULL, ?)",
+                     VALUES (?, ?, ?, ?, ?, ?, ?)",
                     params![
                         machine,
                         project,
                         profile.as_str(),
                         setting.model.as_ref().map(ModelName::as_str),
                         setting.effort.map(Effort::as_str),
+                        kept,
                         at,
                     ],
                 )?;

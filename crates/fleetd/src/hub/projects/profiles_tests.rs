@@ -377,7 +377,64 @@ async fn a_model_claude_refused_is_flagged_and_new_agents_run_the_profile_s_own(
         .await
         .unwrap();
     assert_eq!(got["fleet"]["high"].get("refused"), None);
-    // The hub sets refused, never a caller.
+    // A refusal no caller can make up: one the hub never flagged is dropped.
     let input = json!({ "high": { "model": "claude-sonnet-5-5", "refused": "x" } });
-    assert!(call(&hub, &admin(), "profiles_set", input).await.is_err());
+    let set = call(&hub, &admin(), "profiles_set", input).await.unwrap();
+    assert_eq!(set["fleet"]["high"].get("refused"), None);
+}
+
+#[tokio::test]
+async fn changing_only_the_effort_keeps_a_refusal_and_setting_the_model_clears_it() {
+    let (hub, _home) = hub();
+    let _launches = node(&hub).await;
+    let bad = json!({ "high": { "model": "claude-does-not-exist-9", "effort": "max" } });
+    call(&hub, &admin(), "profiles_set", bad.clone())
+        .await
+        .unwrap();
+    refused_session(&hub, 2, "claude-does-not-exist-9", LATER);
+    let got = call(&hub, &admin(), "profiles_get", json!({}))
+        .await
+        .unwrap();
+    let flagged = got["fleet"]["high"].clone();
+    assert!(flagged["refused"].is_string());
+    // The effort changed alone, the flag passed back as read (as `fleetd project set --high-effort` does): it stays,
+    // and new agents still leave the model out.
+    let mut effort_only = flagged.clone();
+    effort_only["effort"] = json!("low");
+    let set = call(
+        &hub,
+        &admin(),
+        "profiles_set",
+        json!({ "high": effort_only }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(set["fleet"]["high"]["refused"], flagged["refused"]);
+    assert_eq!(
+        set["runs"]["high"],
+        json!({ "model": "claude-opus-5-5", "effort": "low" })
+    );
+    // The flag passed back with another model: that model is set, unflagged.
+    let mut other = flagged.clone();
+    other["model"] = json!("claude-sonnet-5-5");
+    let set = call(&hub, &admin(), "profiles_set", json!({ "high": other }))
+        .await
+        .unwrap();
+    assert_eq!(set["fleet"]["high"].get("refused"), None);
+    // Back on the refused model, then set again without the flag: cleared.
+    call(&hub, &admin(), "profiles_set", bad.clone())
+        .await
+        .unwrap();
+    refused_session(
+        &hub,
+        3,
+        "claude-does-not-exist-9",
+        "2026-10-28T10:00:00.000Z",
+    );
+    let got = call(&hub, &admin(), "profiles_get", json!({}))
+        .await
+        .unwrap();
+    assert!(got["fleet"]["high"]["refused"].is_string());
+    let set = call(&hub, &admin(), "profiles_set", bad).await.unwrap();
+    assert_eq!(set["fleet"]["high"].get("refused"), None);
 }

@@ -3659,8 +3659,9 @@ export type ProfileSetting = {
   effort?: Effort;
   model?: ModelName;
   /**
-   * Set by the hub, never taken as input: claude refused `model`, so agents run as if it were unset until a
-   * person sets the profile again. What claude said, and where.
+   * Set by the hub: claude refused `model`, so agents run as if it were unset until a person sets the model again.
+   * What claude said, and where. As input it only keeps the hub's own flag, passed back as read with the same
+   * model; anything else clears it.
    */
   refused?: string;
 };
@@ -3707,7 +3708,10 @@ export type ProfilesGetOutput = {
 };
 
 export type ProfilesSetInput = {
-  /** Replaces the profile's setting at that scope; `{}` unsets it, and setting a model again clears its refusal. */
+  /**
+   * Replaces the profile's setting at that scope; `{}` unsets it. A refusal goes once the model is set again:
+   * to keep it while changing only the effort, pass back the `refused` profiles_get read with the same model.
+   */
   high?: ProfileSetting;
   medium?: ProfileSetting;
   /** A project's override. Absent: the fleet's, which needs an admin key. */

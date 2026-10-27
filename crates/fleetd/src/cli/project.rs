@@ -461,7 +461,8 @@ const PROFILE_FLAGS: [(&str, &str, &str); 4] = [
 ];
 
 /// profiles_set's input: the scope's current settings (`current`, as profiles_get reads them) with the flags given
-/// applied, `default` unsetting a field. None when no flag is given.
+/// applied, `default` unsetting a field. A profile's refusal is passed back as read, so the hub keeps it, unless its
+/// model flag is given: setting the model again (or unsetting it) clears it. None when no flag is given.
 pub fn profiles_input(
     current: &Value,
     flags: &[(&str, &str)],
@@ -479,11 +480,12 @@ pub fn profiles_input(
             continue;
         };
         if input.get(profile).is_none() {
-            let mut setting = current.get(profile).cloned().unwrap_or_else(|| json!({}));
-            if let Some(o) = setting.as_object_mut() {
-                o.remove("refused");
-            }
-            input[profile] = setting;
+            input[profile] = current.get(profile).cloned().unwrap_or_else(|| json!({}));
+        }
+        if *field == "model"
+            && let Some(o) = input[profile].as_object_mut()
+        {
+            o.remove("refused");
         }
         if *value == "default" {
             if let Some(o) = input[profile].as_object_mut() {
@@ -1186,13 +1188,14 @@ mod tests {
             "medium": {},
         });
         assert_eq!(profiles_input(&current, &[], None), Ok(None));
-        // The effort stays, the refusal is the hub's.
+        // Setting the model clears its refusal; the effort stays.
         assert_eq!(
             profiles_input(&current, &[("high-model", "claude-fable-5-1")], None),
             Ok(Some(
                 json!({ "high": { "model": "claude-fable-5-1", "effort": "max" } })
             ))
         );
+        // Changing only the effort passes the refusal back as read, so the hub keeps it.
         let r = json!({ "machineId": "devbox", "projectId": "p1" });
         assert_eq!(
             profiles_input(
@@ -1202,9 +1205,18 @@ mod tests {
             ),
             Ok(Some(json!({
                 "projectRef": r,
-                "high": { "model": "claude-sonnet-5-5" },
+                "high": { "model": "claude-sonnet-5-5", "refused": "claude on devbox refused it" },
                 "medium": { "effort": "low" },
             })))
+        );
+        // Unsetting the model clears it too, whatever order the flags come in.
+        assert_eq!(
+            profiles_input(
+                &current,
+                &[("high-effort", "low"), ("high-model", "default")],
+                None
+            ),
+            Ok(Some(json!({ "high": { "effort": "low" } })))
         );
         assert!(profiles_input(&current, &[("medium-effort", "xhigh")], None).is_err());
     }

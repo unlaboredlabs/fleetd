@@ -6,7 +6,7 @@ import type { ProfileSetting, ProfilesGetOutput, ProjectRef, TaskProfile } from 
 import { useToolQuery } from "../../src/data/react";
 import { Button, Field, Input, Segmented, Text } from "../../ui";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
-import { changed, draftOf, EFFORTS, follows, PROFILES, runLine, settingFrom, type ProfileDraft } from "./profilesModel";
+import { changed, draftOf, EFFORTS, follows, PROFILES, runLine, settingFrom, toSave, type ProfileDraft } from "./profilesModel";
 import s from "./settings.module.css";
 
 /** Both profiles at one scope: the fleet's without `projectRef`. `blocked` says why this key can't change it. */
@@ -59,7 +59,7 @@ function ProfileRow(props: { view: ProfilesGetOutput; profile: TaskProfile; proj
     if (!next.ok) return;
     setBusy(true);
     setEcho(null);
-    hubCall("profiles_set", { ...(projectRef === undefined ? {} : { projectRef }), [profile]: next.setting }).then(
+    hubCall("profiles_set", { ...(projectRef === undefined ? {} : { projectRef }), [profile]: toSave(next.setting, saved) }).then(
       (out) => {
         setBusy(false);
         setEcho({ ok: true, text: `Saved. ${out.next ?? ""}`.trim() });

@@ -34,6 +34,11 @@ export const settingFrom = (d: ProfileDraft): { ok: true; setting: ProfileSettin
   return { ok: true, setting: { ...(model === "" ? {} : { model }), ...(d.effort === "default" ? {} : { effort: d.effort }) } };
 };
 
+/** What a save sends: a refused model kept as it was (only the effort changed) keeps its flag; the hub clears it once
+ * the model is set again. */
+export const toSave = (setting: ProfileSetting, saved: ProfileSetting | undefined): ProfileSetting =>
+  saved?.refused !== undefined && setting.model === saved.model ? { ...setting, refused: saved.refused } : setting;
+
 export const changed = (d: ProfileDraft, s: ProfileSetting | undefined) => {
   const saved = draftOf(s);
   return d.model.trim() !== saved.model || d.effort !== saved.effort;

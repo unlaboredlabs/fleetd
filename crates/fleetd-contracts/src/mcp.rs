@@ -286,7 +286,8 @@ input!(
     ProfilesSetInput {
         /// A project's override. Absent: the fleet's, which needs an admin key.
         project_ref: Option<ProjectRef>,
-        /// Replaces the profile's setting at that scope; `{}` unsets it, and setting a model again clears its refusal.
+        /// Replaces the profile's setting at that scope; `{}` unsets it. A refusal goes once the model is set again:
+        /// to keep it while changing only the effort, pass back the `refused` profiles_get read with the same model.
         high: Option<ProfileSetting>,
         medium: Option<ProfileSetting>,
     }
@@ -294,13 +295,6 @@ input!(
 checked!(ProfilesSetInput, |input| {
     if input.high.is_none() && input.medium.is_none() {
         return Err("expected high, medium or both".into());
-    }
-    if [&input.high, &input.medium]
-        .into_iter()
-        .flatten()
-        .any(|s| s.refused.is_some())
-    {
-        return Err("refused is the hub's to set".into());
     }
     Ok(())
 });

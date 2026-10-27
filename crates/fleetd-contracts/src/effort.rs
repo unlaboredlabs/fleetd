@@ -67,8 +67,9 @@ brand!(
 pub struct ProfileSetting {
     pub model: Option<ModelName>,
     pub effort: Option<Effort>,
-    /// Set by the hub, never taken as input: claude refused `model`, so agents run as if it were unset until a
-    /// person sets the profile again. What claude said, and where.
+    /// Set by the hub: claude refused `model`, so agents run as if it were unset until a person sets the model again.
+    /// What claude said, and where. As input it only keeps the hub's own flag, passed back as read with the same
+    /// model; anything else clears it.
     pub refused: Option<String>,
 }
 

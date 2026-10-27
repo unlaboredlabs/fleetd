@@ -1,7 +1,7 @@
 // The task profiles' settings as Settings edits them: what a draft sends, and what an empty field follows.
 import { describe, expect, it } from "vitest";
 import type { ProfilesGetOutput } from "../../../shared/contracts";
-import { changed, draftOf, follows, runLine, settingFrom } from "./profilesModel";
+import { changed, draftOf, follows, runLine, settingFrom, toSave } from "./profilesModel";
 
 const view: ProfilesGetOutput = {
   fleet: { high: { model: "claude-sonnet-5-5", effort: "max" }, medium: { model: "claude-nope", refused: "claude on devbox refused claude-nope" } },
@@ -25,6 +25,14 @@ describe("profile settings", () => {
     expect(changed({ model: "claude-nope", effort: "default" }, saved)).toBe(false);
     expect(changed({ model: "claude-nope", effort: "max" }, saved)).toBe(true);
     expect(changed({ model: "", effort: "default" }, undefined)).toBe(false);
+  });
+
+  it("keep a refusal through an effort change, never through a model change", () => {
+    const saved = view.fleet.medium;
+    expect(toSave({ model: "claude-nope", effort: "max" }, saved)).toEqual({ model: "claude-nope", effort: "max", refused: saved?.refused });
+    expect(toSave({ model: "claude-sonnet-5-5" }, saved)).toEqual({ model: "claude-sonnet-5-5" });
+    expect(toSave({ effort: "low" }, saved)).toEqual({ effort: "low" });
+    expect(toSave({ model: "claude-x" }, undefined)).toEqual({ model: "claude-x" });
   });
 
   it("follow the fleet's from a project, the own from the fleet, never a refused model", () => {

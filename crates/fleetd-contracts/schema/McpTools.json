@@ -10913,7 +10913,7 @@
           "$ref": "#/$defs/ModelName"
         },
         "refused": {
-          "description": "Set by the hub, never taken as input: claude refused `model`, so agents run as if it were unset until a\nperson sets the profile again. What claude said, and where.",
+          "description": "Set by the hub: claude refused `model`, so agents run as if it were unset until a person sets the model again.\nWhat claude said, and where. As input it only keeps the hub's own flag, passed back as read with the same\nmodel; anything else clears it.",
           "type": "string"
         }
       },
@@ -11011,7 +11011,7 @@
       "properties": {
         "high": {
           "$ref": "#/$defs/ProfileSetting",
-          "description": "Replaces the profile's setting at that scope; `{}` unsets it, and setting a model again clears its refusal."
+          "description": "Replaces the profile's setting at that scope; `{}` unsets it. A refusal goes once the model is set again:\nto keep it while changing only the effort, pass back the `refused` profiles_get read with the same model."
         },
         "medium": {
           "$ref": "#/$defs/ProfileSetting"
