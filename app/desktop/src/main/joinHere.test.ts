@@ -17,7 +17,7 @@ afterEach(() => {
 });
 
 /** A temp fleetd dir, a hub that answers machine_join, release files and a CLI that does what `exit` says. */
-function ports(over: { sums?: string; exit?: number; join?: CallOutcome; version?: string; nightlyIs?: string } = {}) {
+function ports(over: { sums?: string; exit?: number; join?: CallOutcome; version?: string; nightlyIs?: string; info?: CallOutcome; hubFingerprint?: string } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fleetd-join-"));
   homes.push(dir);
   const ran: Array<{ file: string; args: ReadonlyArray<string> }> = [];
@@ -30,7 +30,7 @@ function ports(over: { sums?: string; exit?: number; join?: CallOutcome; version
               ok: true,
               output: { machineId: "laptop", hubUrl: "http://devbox.example.ts.net:4790", code: CODE, expiresAt: "x", gitIdentity: "ada <1+ada@users.noreply.github.com>", line: "" },
             })
-          : { ok: true, output: { version: over.version ?? "0.9.0-nightly.20261020" } },
+          : (over.info ?? { ok: true, output: { version: over.version ?? "0.9.0-nightly.20261020", machineFingerprint: over.hubFingerprint ?? "e".repeat(64) } }),
       ),
     download: (url) => {
       fetched.push(url);
@@ -42,6 +42,7 @@ function ports(over: { sums?: string; exit?: number; join?: CallOutcome; version
       return Promise.resolve({ code: over.exit ?? 0, output: over.exit ? "joining http://devbox.example.ts.net:4790\nerror: claude is not installed\n" : "joined\n" });
     },
     fleetdDir: dir,
+    fingerprint: () => Promise.resolve("f".repeat(64)),
     baseOverride: undefined,
     platform: "linux",
     arch: "x64",
@@ -130,12 +131,35 @@ describe("joining this computer", () => {
       expect(end.state).toBe("failed");
       expect(end.message).toContain(says);
       expect(end.steps.map((s) => s.state)).toEqual(["failed", "planned", "planned", "planned", "planned", "planned"]);
-      expect(calls).toEqual([]);
+      expect(calls).toEqual(["hub_info"]);
       expect(fetched).toEqual([]);
       expect(ran).toEqual([]);
       expect(fs.readFileSync(path.join(dir, "bin", "fleetd"), "utf8")).toBe("the hub's own build");
     });
   }
+
+  it("never joins the hub's own computer, whatever its fleetd dir holds", async () => {
+    // The hub keeps its data in a folder of its own (FLEETD_HOME, --home): this computer's fleetd dir looks empty.
+    const { p, dir, fetched, ran } = ports({ hubFingerprint: "f".repeat(64) });
+    const calls: string[] = [];
+    const call = p.call.bind(p);
+    const end = await joinHere({ ...p, call: (tool, input) => (calls.push(tool), call(tool, input)) }, "laptop", () => undefined);
+    expect(end.state).toBe("failed");
+    expect(end.message).toContain("This computer runs the hub");
+    expect(calls).toEqual(["hub_info"]);
+    expect(fetched).toEqual([]);
+    expect(ran).toEqual([]);
+    expect(fs.existsSync(path.join(dir, "bin", "fleetd"))).toBe(false);
+  });
+
+  it("joins nothing while the hub can't say which computer it runs on", async () => {
+    const { p, fetched, ran } = ports({ info: { ok: false, error: { code: "timeout", message: "The hub didn't answer." } } });
+    const end = await joinHere(p, "laptop", () => undefined);
+    expect(end.state).toBe("failed");
+    expect(end.message).toContain("Couldn't ask the hub which computer it runs on");
+    expect(fetched).toEqual([]);
+    expect(ran).toEqual([]);
+  });
 
   it("reads what this computer's fleetd dir holds", async () => {
     const { dir } = ports();

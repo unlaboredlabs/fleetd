@@ -78,8 +78,8 @@ type ScreenOf =
   | { readonly id: "projects.add" }
   /** A tab; `prompt`, `for` ("<machine>/<project>") and `view` link one prompt, a project's texts or a prompt's update. */
   | { readonly id: "settings"; readonly tab: SettingsTab; readonly prompt?: string; readonly for?: string; readonly view?: SettingsView }
-  /** Administration: people, invites, hub-wide settings and setup. */
-  | { readonly id: "admin"; readonly section: AdminSection }
+  /** Administration: people, invites, machines (one machine's page with `machine`), hub-wide settings and setup. */
+  | { readonly id: "admin"; readonly section: AdminSection; readonly machine?: string }
   /** A fleetd://pair link prefills the hub and code; the screen still asks before it pairs. */
   | { readonly id: "onboarding"; readonly hub: string | null; readonly code: string | null }
   /** The hub admin's setup (a design prototype, docs/design/setup.md): the welcome, one step open, or the end. */
@@ -168,7 +168,7 @@ const screenOf = (parts: ReadonlyArray<string>, query: URLSearchParams): ScreenO
       };
     }
     case "admin":
-      return { id: "admin", section: isAdminSection(a) ? a : "people" };
+      return a === "machines" && b !== undefined ? { id: "admin", section: a, machine: b } : { id: "admin", section: isAdminSection(a) ? a : "people" };
     case "onboarding":
       return { id: "onboarding", hub: query.get("hub") || null, code: query.get("code") || null };
     case "setup":
@@ -218,7 +218,7 @@ const path = (screen: Screen): Array<string> => {
     case "settings":
       return ["settings", screen.tab];
     case "admin":
-      return ["admin", screen.section];
+      return screen.machine === undefined ? ["admin", screen.section] : ["admin", screen.section, screen.machine];
     case "setup":
       return screen.view === null ? ["setup"] : ["setup", screen.view];
     case "session":

@@ -6,20 +6,21 @@ description: Add workers to the hub, log in their Claude, remove them, and check
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 
 You'll add [workers](/docs/glossary#worker), the machines that run agents, and keep them healthy. The hub's owners
-and admins add them in the app; the CLI does the same from a terminal on the hub.
+and admins add, repair and remove them in the app, and log in their Claude from it too. The [CLI](#cli) does the same
+from a terminal on the hub.
 
 A worker needs the `claude` CLI, and Linux on x64 or macOS (Apple silicon or Intel). fleetd has no Linux ARM build
 yet.
 
 ## Add a machine in the app {#app}
 
-Open **Administration › Machines** and press **Add machine**. It offers three ways:
+Open **Administration › Machines**. **Add machine** at the top offers three ways:
 
 | The machine is | Pick | What happens |
 |---|---|---|
 | The computer the app runs on | **This computer** | One click. The app downloads the release of the fleetd version the hub runs, built for this computer, checks it against that release's `SHA256SUMS`, and joins the hub with a one-time code that never shows on screen. The node runs as a user service. An Edge hub asks to be updated first once the edge release has moved past it. On the machine that runs the hub you're connected to, the hub sets it up with its own fleetd instead. A computer that runs another hub, or whose node already belongs to a hub, is left as it is. |
 | Reachable from the hub over SSH | **A machine the hub can reach** | Pick it from the hosts the hub sees (its `~/.ssh/config` and its tailnet), and read the plan: the machine's OS and CPU, each step with its command, and notes such as linger. Press **Add**, and watch each step run. |
-| Behind NAT, or with no SSH from the hub (a laptop) | **Any other machine** | For now, use [`fleetd pair --worker`](#join) on the hub. |
+| Behind NAT, or with no SSH from the hub (a laptop) | **Any other machine** | Give it a name and press **Make the line**. Copy the one line it shows and run it in a terminal on that machine: it installs fleetd and joins with a one-time code. The code works once, for 15 minutes. Under the line, "Waiting for laptop…" turns into "laptop joined." once its node connects; **Open laptop** shows its [checklist](#checklist). |
 
 Adding a machine the hub can reach runs [`fleetd machine add`](#ssh) in the hub, step by step. A failed step shows
 its output and what to fix; **Retry** runs it again and skips the steps that finished. The run goes on in the hub if
@@ -31,6 +32,45 @@ A machine id belongs to one computer. The hub knows each computer by a hash of t
 (`/etc/machine-id` on Linux, `IOPlatformUUID` on macOS), so it never enrolls a second computer under an id that is
 already another's, whatever the computer is called. To give an id to another computer, [remove](#remove) the machine
 first. The app knows the hub's own computer the same way, wherever the hub keeps its data.
+
+### Repair or remove a machine {#app-repair}
+
+Under Add machine, **This hub's machines** lists every machine with its state, each with **Repair** and **Remove**.
+
+- **Repair** on a machine the hub reaches over SSH (one it set up, its own, or one in its `~/.ssh/config` or tailnet)
+  opens its plan in Add machine: adding it again repairs it and skips what is in place. On a machine that joined by
+  itself, Repair makes a line that enrolls it again (`--rejoin`): run it on that machine.
+- **Remove** asks first, then does what [`fleetd machine remove`](#remove) does: on a machine the hub set up, it stops
+  and removes the node's service and revokes its key; on one that joined by itself, it only revokes the key, so stop
+  its node there by hand.
+
+### A machine's checklist {#checklist}
+
+A machine's name opens its page, with what it needs to run agents, as the hub's own checks last found it. **Check
+again** runs them now.
+
+| Item | Done when |
+|---|---|
+| Claude | `claude` is installed at the version fleetd was tested with, and logged in. |
+| Git identity | The node's commits carry the hub's identity. |
+| GitHub access | git could fetch each project's remote at the last agent start there. It waits until an agent has started in one of its projects. |
+| Capabilities | What screens it hosts besides browsers: Android, iOS, Linux desktop. Each one that's set up but not ready says why. |
+
+An item that wants a look shows its fix: a command to copy, or for Claude's login, **Log in…**.
+
+### Log in Claude from the app {#app-claude}
+
+**Log in…** on the Claude item has the machine's node run `claude auth login`, with the same environment as its
+sessions, so the login lands where they read it.
+
+1. Press **Open**, or copy the page's address, and sign in with the Claude account the machine should use. Any device
+   works.
+2. Paste the code the page shows, and press **Log in**.
+
+Only that code passes through the hub, once, to the node. `claude` keeps the login it gets on the machine; the token
+never reaches the hub, the app or any agent's transcript. A login nobody finishes ends after 10 minutes. A wrong or
+used code ends it too: press **Try again** for a new page. The machine needs a fleetd recent enough to do this; with an
+older one, log in on it [by hand](#claude).
 
 ## Add a machine from the CLI {#cli}
 
@@ -117,7 +157,7 @@ To repair the worker later, run the same command again. `--rejoin` enrolls it ag
 Sessions use the worker's own claude setup in `~/.claude`. If `claude` works in your shell there, it works for
 fleetd: your login, a proxy in `~/.claude/settings.json`, and your MCP servers.
 
-If it isn't logged in, log in on the worker as you normally do:
+If it isn't logged in, log it in [from the app](#app-claude), or on the worker as you normally do:
 
 ```sh
 claude auth login
@@ -141,6 +181,8 @@ version (see [Update](/docs/updating-and-uninstall#everything)), and nothing mov
   (`brew upgrade claude-code`, say), not as a failure.
 
 ## Remove a machine {#remove}
+
+In the app, press **Remove** beside it in [Administration › Machines](#app-repair). From the CLI:
 
 ```sh
 fleetd machine remove builder-1
