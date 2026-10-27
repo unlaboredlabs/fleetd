@@ -7106,6 +7106,51 @@
       ],
       "type": "object"
     },
+    "MachineClaudeLoginInput": {
+      "properties": {
+        "code": {
+          "description": "Absent: start the login, which answers its sign-in URL. The code the sign-in page showed: finish it.",
+          "type": "string"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        }
+      },
+      "required": [
+        "machineId"
+      ],
+      "type": "object"
+    },
+    "MachineClaudeLoginOutput": {
+      "properties": {
+        "loggedIn": {
+          "description": "A login that finished: claude on the machine is logged in now.",
+          "type": "boolean"
+        },
+        "loginUrl": {
+          "description": "A login that started: where to sign in.",
+          "type": "string"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "message": {
+          "description": "The node's words: what happened, or why not.",
+          "type": "string"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "machineId",
+        "message"
+      ],
+      "type": "object"
+    },
     "MachineHost": {
       "description": "A host the hub can reach to add as a machine.",
       "properties": {
@@ -8266,6 +8311,12 @@
         "machine_add_status.output": {
           "$ref": "#/$defs/MachineAddStatusOutput"
         },
+        "machine_claude_login.input": {
+          "$ref": "#/$defs/MachineClaudeLoginInput"
+        },
+        "machine_claude_login.output": {
+          "$ref": "#/$defs/MachineClaudeLoginOutput"
+        },
         "machine_hosts.input": {
           "$ref": "#/$defs/MachineHostsInput"
         },
@@ -8864,6 +8915,8 @@
         "machine_add_plan.output",
         "machine_add_status.input",
         "machine_add_status.output",
+        "machine_claude_login.input",
+        "machine_claude_login.output",
         "machine_hosts.input",
         "machine_hosts.output",
         "machine_join.input",
