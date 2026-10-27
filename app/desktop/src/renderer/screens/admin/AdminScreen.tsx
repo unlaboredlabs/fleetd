@@ -1,9 +1,10 @@
 // Administration (#/admin/<section>): the hub's owners' and admins' page, apart from Settings so nobody else ever sees
 // an admin control. People, Invites, Machines (Add machine, the machines with Repair and Remove, and each one's page
 // with its checklist), Hub settings (everything hub-wide that used to sit in
-// Settings: the fleet and machine caps, machine roles, task profiles and memory caps), Skills (the hub-wide ones) and Setup. The shell shows AdminSidebar in the sidebar's
+// Settings: the fleet and machine caps, machine roles, task profiles and memory caps), Skills (the hub-wide ones), Google
+// (the hub's OAuth client for Navis, google/AdminGoogle.tsx) and Setup. The shell shows AdminSidebar in the sidebar's
 // place while it is open, as it does Settings'.
-import { ArrowLeft, ListChecks, Server, SlidersHorizontal, Sparkles, UserPlus, Users } from "lucide-react";
+import { ArrowLeft, KeyRound, ListChecks, Server, SlidersHorizontal, Sparkles, UserPlus, Users } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Button, Separator, Sidebar, SidebarItem, SidebarSection, Text } from "../../ui";
 import { AddMachine, type View } from "../addMachine";
@@ -12,6 +13,7 @@ import { MachineRoles } from "../settings/MachineRoles";
 import { HubMemoryCaps } from "../settings/MemoryCaps";
 import { PageHead } from "../settings/parts";
 import { HubSkills } from "../settings/Skills";
+import { AdminGoogle } from "../google/AdminGoogle";
 import { useRoute } from "../shell/navigation";
 import { toHash, type AdminSection } from "../shell/routes";
 import { Invites } from "./Invites";
@@ -27,6 +29,7 @@ const SECTIONS: ReadonlyArray<{ section: AdminSection; label: string; icon: Reac
   { section: "machines", label: "Machines", icon: <Server /> },
   { section: "hub", label: "Hub settings", icon: <SlidersHorizontal /> },
   { section: "skills", label: "Skills", icon: <Sparkles /> },
+  { section: "google", label: "Google", icon: <KeyRound /> },
   { section: "setup", label: "Setup", icon: <ListChecks /> },
 ];
 
@@ -100,6 +103,8 @@ function page(section: AdminSection, machine: string | undefined, { administers,
       return <HubSettings />;
     case "skills":
       return <HubSkills />;
+    case "google":
+      return <AdminGoogle />;
     case "setup":
       return <Setup />;
   }

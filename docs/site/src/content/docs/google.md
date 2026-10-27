@@ -74,10 +74,20 @@ that should own the app.
 
 6. **Make the client.** Under **Google Auth Platform › Clients**, press **Create client** and choose the **Desktop app**
    type. Name it fleetd. Copy its **Client ID** and **Client secret**.
-7. **Save it in fleetd** with `google_client_set`: the client ID, and the secret sealed to each machine that runs Navis.
-   Each machine keeps it in its home, and the hub keeps only a fingerprint.
-8. **Test it** with `google_client_test`. A machine holding the client asks Google's token endpoint to redeem a code
-   that can't work. Google's answer shows whether it knows the client and its secret.
+7. **Save it in fleetd**, in the app's **Administration › Google**. Paste the Client ID and Client secret and press
+   **Save and test**. The app seals the secret on your computer to each machine's key, so only their nodes can open it.
+   Each machine keeps it in its home, and the hub keeps only a fingerprint. The secret is never shown again and is
+   never in a chat or transcript.
+8. **Test** runs at once, and again whenever you press it. A machine holding the client asks Google's token endpoint to
+   redeem a code that can't work. Google answers `invalid_grant` for a client it knows, which Test reports as
+   "Google knows this client and its secret", and `invalid_client` for one it doesn't.
+
+Administration › Google shows these steps with the values to copy: the project and app names for your hub, each scope,
+the **Desktop app** type and the redirect URI. Once a client is saved, the page shows its ID, the machines holding its
+secret and Test, and folds the steps away under **Save the client again, or replace it**. A machine that was offline
+when you saved, or was added since, is named there: save the client again while it's online, so its Navis can connect.
+
+Under the hood the app calls `google_client_set` and `google_client_test` ([hub tools](#hub-tools)).
 
 There is no redirect URI to register. A Desktop app client takes `http://127.0.0.1` on any port. When someone connects,
 the app listens on such a port on their own computer, and Google sends them back there. This works whatever address your
@@ -113,13 +123,29 @@ with no `pubsub` turns it off, and the machine forgets the key.
 
 ## Connect a Google account {#connect}
 
-A person connects their own account from their own computer:
+A person connects their own account from their own computer, in the app: open the Navi's settings (Settings ›
+Projects, the Navi), then **Integrations › Google**.
 
-1. The client there (the app) opens Google's consent page with the hub's client ID, the scopes `google_get` lists, a
-   PKCE challenge and a redirect to `http://127.0.0.1:<port>` on a port it listens on.
-2. The person chooses the account and leaves every box ticked. A Navi without one of them says what it can't do.
-3. Google sends the browser back to that port with a code, and the client calls `google_connect` with the code, its
-   PKCE verifier and that redirect.
+1. Press **Connect**. The dialog lists what Google will ask you to allow, and what to do about the warnings Google's
+   own page can show. Press **Continue in browser**.
+2. The app opens Google's consent page in your browser with the hub's client ID, the scopes `google_get` lists, a PKCE
+   challenge, offline access and a redirect to `http://127.0.0.1:<port>`, a port it listens on.
+3. Choose the account and leave every box ticked. A Navi without one of them says what it can't do.
+4. Google sends the browser back to that port with the code. The page there says "Google is connected", and you can
+   close the tab. The app itself calls `google_connect` with the code, its PKCE verifier and that redirect, so neither
+   reaches the app's page or a chat. The dialog waits until then; **Cancel** stops it.
+
+The row then shows the account, the day it connected and the scopes Google granted. A scope you unticked is named,
+with **Reconnect** to grant it.
+
+What the row says when Google can't be connected yet:
+
+| The row says | Why | The fix |
+|---|---|---|
+| Ask an admin to set up Google | The hub has no OAuth client. | An admin saves one in Administration › Google. An admin sees **Set up Google**, which opens it. |
+| *machine* doesn't hold the hub's Google client | The Navi's machine was offline when the client was saved. | An admin saves the client again while that machine is online. |
+| Needs reconnecting | Google stopped taking the connection ([below](#lapsed)). | **Reconnect** signs in again. |
+| An error and its fix | The hub refused, or the Navi's machine is offline. | What the line says. |
 
 The code and its verifier go through the hub to the Navi's machine. That machine redeems them with the client secret it holds and keeps the tokens. The hub
 keeps the address and the scopes granted, never a token. The Navi gets its Google tools from its next start, after your
@@ -128,7 +154,8 @@ next message.
 Google revokes access per account and client, every token of it at once. So fleetd revokes only what no other Navi on
 the hub still uses:
 
-- `google_disconnect` deletes the Navi's tokens from its machine and revokes its access at Google. When another Navi uses
+- **Disconnect** on the Navi's Google row (`google_disconnect`) deletes the Navi's tokens from its machine and revokes
+  its access at Google. The row then says what happened, such as Google not confirming the revoke. When another Navi uses
   the same account, the access stays, for that Navi. Disconnecting needs the machine online, because the tokens are there.
 - Connecting again replaces the tokens. When it's to another account, the access to the old one is revoked, unless
   another Navi uses it.
@@ -136,8 +163,9 @@ the hub still uses:
 ### When Google stops taking the connection {#lapsed}
 
 If you revoke access in your Google account, a Testing app's 7 days run out, or the admin saves a different client, the
-next refresh fails. `google_get` then gives the Navi's account a `lapsed` reason, and the person connects again. The Navi
-is told plainly to ask you to connect again, and nothing is sent.
+next refresh fails. `google_get` then gives the Navi's account a `lapsed` reason, and the Navi's Google row says
+**Needs reconnecting** with that reason and **Reconnect**. The Navi is told plainly to ask you to connect again, and
+nothing is sent.
 
 A client secret saved wrong lapses nothing: the Navi is told the hub's client was refused. The first refresh after the
 admin saves the right secret works again.

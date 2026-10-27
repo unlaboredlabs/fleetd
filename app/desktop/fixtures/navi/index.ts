@@ -3,7 +3,7 @@
 // send an email (the approval card, with its preview) and has asked storefront and billing for work (Asked work,
 // navi_asks). navi-old-hub: the same on a hub that doesn't serve
 // Asked work to the app yet. navi-links: Ada's Linked hubs and Sam's links to this hub (hubLinks/); navi-links-none:
-// neither yet.
+// neither yet. navi-google-*: Google on Ada's Integrations, one fixture a state (google/NaviGoogle.tsx).
 import { writeChat, type Ref } from "../kit/chat.ts";
 import { Fixture } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
@@ -222,13 +222,87 @@ const linksNone = (from: Fixture): Fixture => {
   return f;
 };
 
+/**
+ * Google on Ada's Integrations (google/NaviGoogle.tsx), one fixture a state: no client yet as a member and as an
+ * admin; ready to connect; connected (and Home without Drive); lapsed at Google; and devbox not holding the client.
+ */
+const GOOGLE_SCOPES = [
+  "openid",
+  "email",
+  "https://www.googleapis.com/auth/gmail.readonly",
+  "https://www.googleapis.com/auth/gmail.compose",
+  "https://www.googleapis.com/auth/calendar.events",
+  "https://www.googleapis.com/auth/drive",
+];
+const GOOGLE_CLIENT = "418559210337-q8fj2v0c6m1k3s5t7u9w.apps.googleusercontent.com";
+const SAM_GOOGLE = "sam@example.com";
+
+const googleClient = (f: Fixture, machines: ReadonlyArray<string>): JsonObject => ({
+  clientId: GOOGLE_CLIENT,
+  sealedOn: machines.map((machineId) => ({ machineId, fingerprint: "9c41e0b2" })),
+  updatedAt: at(f.now, -2 * 86_400_000),
+});
+
+const googleAccount = (f: Fixture, ref: Ref, scopes: ReadonlyArray<string>, lapsed?: string): JsonObject => ({
+  projectRef: { ...ref },
+  email: SAM_GOOGLE,
+  // Google names `email` as userinfo.email in what it grants.
+  scopes: scopes.map((x) => (x === "email" ? "https://www.googleapis.com/auth/userinfo.email" : x)),
+  connectedAt: at(f.now, -86_400_000),
+  ...(lapsed === undefined ? {} : { lapsed }),
+});
+
+const googleNavi = (from: Fixture, name: string, note: string, opts: { admin: boolean; client?: JsonObject; ada?: JsonObject; home?: JsonObject }): Fixture => {
+  const f = Fixture.from(from, name, note);
+  adaSettings(f);
+  if (f.snapshot !== undefined) f.snapshot["machines"] = arr(f.snapshot["machines"]).map((m) => (isObject(m) ? { ...m, boxPubKey: BOX } : m));
+  const role = opts.admin ? "owner" : "member";
+  f.answer("hub_info", undefined, { version: "0.9.0", protocol: 1, busy: [], admin: opts.admin, me: { ...SAM, role, createdAt: at(f.now, -30 * 86_400_000) } });
+  const get = (account?: JsonObject): JsonObject => ({
+    ...(opts.client === undefined ? {} : { client: opts.client }),
+    ...(account === undefined ? {} : { account }),
+    scopes: GOOGLE_SCOPES,
+    redirect: "http://127.0.0.1",
+    mailMode: "polling",
+  });
+  f.answer("google_get", { project: { ...HOME } }, get(opts.home));
+  f.answer("google_get", { project: { ...ADA } }, get(opts.ada));
+  for (const input of [{ navi: { ...ADA } }, undefined]) f.answer("hub_links_get", input, { boxPubKey: BOX, links: [], issued: [] });
+  f.answer("google_disconnect", undefined, { revoked: true, next: "Google revoked the Navi's access. It goes without its Google tools from its next start." });
+  return f;
+};
+
+const google = (from: Fixture): Fixture[] => {
+  const client = googleClient(from, ["devbox", "buildbox"]);
+  return [
+    googleNavi(from, "navi-google-none", "Google on a hub with no OAuth client yet, seen by a member: ask an admin.", { admin: false }),
+    googleNavi(from, "navi-google-setup", "Google on a hub with no OAuth client yet, seen by its owner: a link to Administration › Google.", { admin: true }),
+    googleNavi(from, "navi-google-ready", "The hub has a Google client; Ada isn't connected yet.", { admin: false, client }),
+    googleNavi(from, "navi-google-connected", "Ada is connected to sam@example.com with every scope; Home without Drive.", {
+      admin: false,
+      client,
+      ada: googleAccount(from, ADA, GOOGLE_SCOPES),
+      home: googleAccount(from, HOME, GOOGLE_SCOPES.filter((x) => !x.endsWith("/drive"))),
+    }),
+    googleNavi(from, "navi-google-lapsed", "Google stopped taking Ada's connection: Reconnect.", {
+      admin: false,
+      client,
+      ada: googleAccount(from, ADA, GOOGLE_SCOPES, "Google refused the refresh: the access was revoked, or a Testing app's 7 days ran out"),
+    }),
+    googleNavi(from, "navi-google-not-held", "devbox was offline when the admin saved the Google client: it can't connect until it's saved again.", {
+      admin: false,
+      client: googleClient(from, ["buildbox"]),
+    }),
+  ];
+};
+
 const none = (base: Fixture): Fixture => Fixture.from(base, "navi-none", "Navi: projects and no Navi yet, so the sidebar offers to meet it and #/navi is its first run.");
 
 export default defineGroup({
   fixtures: (base) => {
     const made = two(base("chat-waiting"));
     const linked = links(made);
-    return [none(base("chat-waiting")), made, oldHub(made), linked, linksNone(linked)];
+    return [none(base("chat-waiting")), made, oldHub(made), linked, linksNone(linked), ...google(made)];
   },
 });
 

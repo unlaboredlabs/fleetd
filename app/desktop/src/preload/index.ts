@@ -67,6 +67,11 @@ const api: FleetdApi = {
     projectEnv: (hub, request) => ipcRenderer.invoke(IPC.projectEnvSubmit, hub, request) as Promise<CallOutcome>,
     mcpServer: (hub, request) => ipcRenderer.invoke(IPC.mcpServerSubmit, hub, request) as Promise<CallOutcome>,
     hubLink: (hub, request) => ipcRenderer.invoke(IPC.hubLinkSubmit, hub, request) as Promise<CallOutcome>,
+    googleClient: (hub, request) => ipcRenderer.invoke(IPC.googleClientSubmit, hub, request) as Promise<CallOutcome>,
+  },
+  google: {
+    connect: (hub, request) => ipcRenderer.invoke(IPC.googleConnect, hub, request) as Promise<CallOutcome>,
+    cancel: () => ipcRenderer.invoke(IPC.googleCancel) as Promise<void>,
   },
   openExternal: (url) => ipcRenderer.invoke(IPC.openExternal, url) as Promise<OpenOutcome>,
   hubs: {

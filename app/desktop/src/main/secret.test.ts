@@ -4,7 +4,7 @@ import rust from "./secret.rust-seal.json";
 import { SECRET_MAX_BYTES } from "../shared/contracts";
 import { IPC } from "../shared/channels";
 import { parseRequest } from "../shared/ipc";
-import { seal, submitHubLink, submitMcpServer, submitProjectEnv, submitSecret } from "./secret";
+import { seal, submitGoogleClient, submitHubLink, submitMcpServer, submitProjectEnv, submitSecret } from "./secret";
 
 const bytes = (b64: string) => new Uint8Array(Buffer.from(b64, "base64"));
 
@@ -204,6 +204,40 @@ describe("a pasted hub link key", () => {
     const wrong = await submitHubLink({ ...request, key: "fld_not_a_link_key" }, call);
     expect(wrong.ok).toBe(false);
     if (!wrong.ok) expect(wrong.error.fix).toContain("flk_");
+    expect(sent).toEqual([]);
+  });
+
+  it("seals the hub's Google client secret to every machine, and sends the hub only the id and the boxes", async () => {
+    await sodium.ready;
+    const [pk, sk] = [bytes(rust.publicKey), bytes(rust.secretKey)];
+    const sent: Array<{ tool: string; input: unknown }> = [];
+    const call = (tool: string, input: unknown) => {
+      sent.push({ tool, input });
+      return Promise.resolve({ ok: true as const, output: {} });
+    };
+    const secret = "GOCSPX-never_in_a_hub_call_0123";
+    const clientId = "418559210337-q8fj2v0c.apps.googleusercontent.com";
+    const boxes = [
+      { machineId: "devbox", boxPubKey: rust.publicKey },
+      { machineId: "buildbox", boxPubKey: rust.publicKey },
+    ];
+    const request = { clientId, secret, boxes };
+    expect(parseRequest(IPC.googleClientSubmit, ["hub", request]).ok).toBe(true);
+    expect(parseRequest(IPC.googleClientSubmit, ["hub", { ...request, clientId: "not-a-client" }]).ok).toBe(false);
+    expect(parseRequest(IPC.googleClientSubmit, ["hub", { ...request, boxes: [] }]).ok).toBe(false);
+    expect((await submitGoogleClient(request, call)).ok).toBe(true);
+    const [only] = sent;
+    expect(only?.tool).toBe("google_client_set");
+    expect(JSON.stringify(only?.input)).not.toContain(secret);
+    const input = only?.input as { clientId: string; sealed: Array<{ machineId: string; sealed: string }> };
+    expect(input.clientId).toBe(clientId);
+    expect(input.sealed.map((x) => x.machineId)).toEqual(["devbox", "buildbox"]);
+    for (const x of input.sealed) expect(sodium.to_string(sodium.crypto_box_seal_open(bytes(x.sealed), pk, sk))).toBe(secret);
+
+    sent.length = 0;
+    const spaced = await submitGoogleClient({ ...request, secret: "GOCSPX-a b" }, call);
+    expect(spaced.ok).toBe(false);
+    if (!spaced.ok) expect(spaced.error.fix).toBeTruthy();
     expect(sent).toEqual([]);
   });
 });
