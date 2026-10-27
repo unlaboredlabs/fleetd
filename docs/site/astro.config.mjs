@@ -70,6 +70,7 @@ export default defineConfig({
             "steering",
             "automations",
             "approvals-and-secrets",
+            "people",
             "desktop-app",
             "status",
             "time-inspector",

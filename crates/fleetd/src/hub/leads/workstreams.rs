@@ -178,10 +178,19 @@ impl Workstreams {
         let r = &w.project_ref;
         let now = now_ms(self.ctx.clock.as_ref());
         let human = match self.records.lead_get(r)? {
-            Some(lead) => requested::run_human_ms(&self.ctx.db, r, &lead.thread_id, now)?,
+            Some(lead) => requested::run_human(&self.ctx.db, r, &lead.thread_id, now)?,
             None => None,
         };
-        let stamp = match human {
+        // Who started it: the writer of the message the lead was answering. Their GitHub account opens its PRs once
+        // people connect their own (docs/design/teams.md, step 8).
+        if let Some((_, Some(person))) = &human {
+            let started = Workstream {
+                started_by: Some(person.clone()),
+                ..w.clone()
+            };
+            self.records.workstream_put(&started)?;
+        }
+        let stamp = match human.map(|(at, _)| at) {
             Some(at_ms) => Requested {
                 at_ms,
                 basis: RequestedBasis::Chat,

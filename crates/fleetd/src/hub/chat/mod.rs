@@ -47,6 +47,8 @@ pub struct NewMessage {
     /// A human message's `$name` skills.
     pub skills: Vec<fleetd_contracts::skills::SkillName>,
     pub by: Option<String>,
+    /// A human message's person.
+    pub person: Option<fleetd_contracts::people::PersonRef>,
     pub client: Option<ChatClient>,
     pub reply_to: Option<fleetd_contracts::chat::ChatReplyTo>,
     pub delivery: Option<ChatDelivery>,
@@ -306,7 +308,7 @@ impl Chat {
                     .and_then(|r| fleetd_contracts::prim::NonEmpty::new(r).ok()),
                 delivery: new.delivery,
                 by: new.by.as_deref().and_then(line),
-                person: None,
+                person: new.person,
                 client: new.client,
                 reply_to: new.reply_to,
                 item: new.item,

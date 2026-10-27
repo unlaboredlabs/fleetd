@@ -57,11 +57,13 @@ fn actor_of(caller: &Caller) -> Actor {
         Actor {
             source: DecisionSource::Human,
             by: format!("human:{}", caller.name),
+            person: caller.person.clone(),
         }
     } else {
         Actor {
             source: DecisionSource::Agent,
             by: caller.name.to_string(),
+            person: None,
         }
     }
 }
@@ -326,6 +328,7 @@ pub fn lead_call(
                 &Actor {
                     source: DecisionSource::Lead,
                     by: by.to_string(),
+                    person: None,
                 },
             )?;
             Ok(LeadCallResult::Decide(DecideResult {

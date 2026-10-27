@@ -12,7 +12,7 @@ What fleetd trusts and why. fleetd is built for one person or a small team runni
 | The hub is never public by default | `fleetd init` listens on your tailnet address, or on `127.0.0.1` without Tailscale. |
 | Plain HTTP only on loopback or a tailnet | Tailscale's tunnel is encrypted. Anywhere else, put HTTPS in front: see [the HTTPS check](/docs/troubleshooting#hub). |
 | Nodes connect out | A worker's node connects to the hub and proves itself with its own key pair. No worker opens a port beyond loopback: the [browser proxy](/docs/browser-sessions#isolation) listens on `127.0.0.1` only, with a token per agent session. |
-| Codes are one-time | Enrollment tokens and pairing codes work once and expire after 15 minutes. |
+| Codes are one-time | Enrollment tokens and pairing codes work once and expire after 15 minutes; an [invite](/docs/people#invite) works once, for 7 days. |
 
 ## Keys {#keys}
 
@@ -51,6 +51,18 @@ A process that deliberately leaves its session's process tree (for example with 
 is treated as you. Any process of the node's OS user can do what that user can. Run agents you don't trust as a
 different OS user.
 :::
+
+## People {#people}
+
+Every human key belongs to a [person](/docs/people) with a hub role: owner, admin or member. A device never holds
+more than its person's role allows: a member's device operates, even one paired with `admin`. Only owners and admins
+invite people, change roles and change hub-wide settings, and the hub always keeps an owner. Removing a person
+revokes all their devices at once.
+
+Chat messages, approvals, secrets, decisions and checklist changes record the person, next to the device as
+before. All projects are open to everyone on the hub, so give a hub only to people you trust with every project on
+it. The hub's operator, and any agent on the hub machine, can read the hub's database: fleetd records who did what,
+but it keeps nothing private from them.
 
 ## Secrets and commands {#secrets}
 

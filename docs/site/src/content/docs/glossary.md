@@ -57,7 +57,13 @@ The coordinator of a fleet. It runs on one always-on machine and stores all stat
 ## Human key {#human-key}
 
 A key that belongs to a person's device, such as the desktop app. Only a human key writes to a lead as you, approves
-commands, enters secrets or steers: what it sends counts as yours.
+commands, enters secrets or steers: what it sends counts as yours. Every human key belongs to a
+[person](#person).
+
+## Invite {#invite}
+
+A [pairing code](#pairing-code) bound to a new person, or to another device of someone on the hub, from
+`fleetd invite`. It works once, for 7 days. See [People & invites](/docs/people#invite).
 
 ## Lead {#lead}
 
@@ -87,6 +93,11 @@ The fleetd process on a worker. It connects out to the hub and starts the Claude
 
 A one-time code, such as `K4QW-7RNP`, that connects the desktop app or a new worker to the hub. It lasts 15 minutes.
 The app's code grants the role it was printed with (`fleetd pair --role`, default `admin`).
+
+## Person {#person}
+
+Someone on the hub, with a name and a role (owner, admin or member), who owns their devices. What they do is recorded
+under their name. See [People & invites](/docs/people).
 
 ## Policy file {#policy-file}
 

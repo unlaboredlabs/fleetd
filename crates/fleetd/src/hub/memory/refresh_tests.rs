@@ -98,6 +98,7 @@ fn global(hub: &Hub, key: &str, value: &str) {
             &Actor {
                 source: DecisionSource::Human,
                 by: "human:desk".into(),
+                person: None,
             },
         )
         .unwrap();

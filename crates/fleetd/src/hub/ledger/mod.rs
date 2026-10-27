@@ -32,6 +32,8 @@ pub struct Actor {
     pub source: DecisionSource,
     /// "human:<device>", the agent key name, or "lead:<machineId>/<projectId>".
     pub by: String,
+    /// A human key's person.
+    pub person: Option<fleetd_contracts::people::PersonRef>,
 }
 
 /// Where a lookup starts: the workstream (when known), then its project, then global.

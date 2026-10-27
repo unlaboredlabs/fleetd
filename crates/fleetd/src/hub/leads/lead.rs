@@ -378,6 +378,7 @@ impl Leads {
             medium,
             &digest,
             &self.ctx.db.memory().injected(r, true),
+            &crate::hub::people::lead_people(&self.ctx.db),
         );
         if let Some(repos) = super::prompt::repos_block(r, &project.repos) {
             prompt = format!("{}\n\n{repos}", prompt.trim_end());

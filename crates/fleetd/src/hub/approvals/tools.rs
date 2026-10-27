@@ -43,6 +43,7 @@ async fn secret_submit(
     let who = ApprovalCaller {
         human: is_human(&caller),
         name: &caller.name,
+        person: caller.person.as_ref(),
         allows_operate: &allows_operate,
     };
     hub.approvals
@@ -60,6 +61,7 @@ async fn approval_answer(
     let who = ApprovalCaller {
         human: is_human(&caller),
         name: &caller.name,
+        person: caller.person.as_ref(),
         allows_operate: &allows_operate,
     };
     let approve = input.decision == fleetd_contracts::chat::ApprovalDecision::Approve;
