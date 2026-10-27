@@ -284,25 +284,44 @@ jobs:
     # boot times, the live view's screenshot loop, recordVideo's MP4; idb's stream where idb is installed, which the
     # runner's Homebrew refuses: facebook/fb is an untrusted tap), then a session end to end
     # with the hub in process. Only where rust-macos runs, and only when node/device or this workflow changed: making
-    # the golden simulator (a settling boot and an xcodebuild of agent-device's runner) takes minutes.
+    # the golden simulator (a settling boot and an xcodebuild of agent-device's runner) takes minutes. On main, only the
+    # newest push runs it: a push cancels the job in main's older push runs, and Scope compares with the last push run
+    # whose job wasn't cancelled (.github/main-base.sh), so no change goes untested. The hub ignores cancelled checks
+    # when it looks for red on main (hub/train/watch.rs).
     name: ios sessions
     if: >-
       github.event_name != 'pull_request' || endsWith(github.head_ref, 'train/batch')
       || contains(github.event.pull_request.labels.*.name, 'fleetd:next')
       || contains(github.event.pull_request.labels.*.name, 'macos')
+    concurrency:
+      group: >-
+        ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'ios-sessions-main'
+        || format('ios-sessions-{0}', github.run_id) }}
+      cancel-in-progress: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     runs-on: macos-latest
     timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: ${{ github.event_name == 'workflow_dispatch' && '0' || '2' }}
       - name: Scope
         id: scope
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           run=true
           base=$(git rev-parse -q --verify HEAD^1 || true)
           if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$GITHUB_REF" != refs/heads/main ]; then
             base=$(git merge-base origin/main HEAD || true)
+          fi
+          if [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_REF" = refs/heads/main ]; then
+            last=$(.github/main-base.sh ci.yml "ios sessions")
+            if [ -n "$last" ] && git fetch -q --depth=1 origin "$last"; then base=$last; fi
+            echo "Comparing with $base."
           fi
           if [ -n "$base" ] &&
             git diff --quiet "$base" HEAD -- crates/fleetd/src/node/device .github/workflows/ci.yml; then
