@@ -366,7 +366,7 @@ pub fn runners(hub: &Hub) -> Result<Vec<(Runner, Roles, String)>, StoreError> {
     // own turn below, which these reads would wait on.
     let mut agents = Vec::with_capacity(machines.len());
     for m in &machines {
-        let leads = hub.store.projects_list(Some(&m.machine_id), None)?.len() as i64;
+        let leads = hub.store.projects_shown(Some(&m.machine_id), None)?.len() as i64;
         agents.push(hub.slots.machine_cap(&m.machine_id) + leads);
     }
     hub.db.with(|c| {

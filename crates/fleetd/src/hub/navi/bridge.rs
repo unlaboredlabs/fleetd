@@ -135,7 +135,7 @@ pub fn is_navi(db: &HubDb, r: &ProjectRef, archived: bool) -> Result<bool, Store
 /// The project `name` names, by project id or title, other than the caller's own. One person owns every project on a
 /// hub today, so any other project is the caller's to message; company Navi brings owners.
 fn target(hub: &Hub, from: &ProjectRef, name: &str) -> Result<ProjectSummary, McpToolError> {
-    let all = hub.store.projects_list(None, None).map_err(failed)?;
+    let all = hub.store.projects_shown(None, None).map_err(failed)?;
     let by_id: Vec<_> = all
         .iter()
         .filter(|p| p.project_id.as_str() == name)

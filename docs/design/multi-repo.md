@@ -1,6 +1,6 @@
 # W79 design: projects that hold zero or more repos
 
-Status: design, partly built (stages 1, 4 and 5). This records intent when written; the code is the source of
+Status: design, partly built (stages 1, 2, 4 and 5). This records intent when written; the code is the source of
 truth.
 Check `git log` for what has landed.
 
@@ -125,3 +125,36 @@ downstream PR as a failure. Anything else holds it as waiting. With no Change, G
 Change waits in line with `lastError` "held: waiting on owner/name#n: why", which the app shows as held. GitHub's answer for an upstream with no open Change is
 kept for 10 seconds, so a pass reads it once. Each pass tells the lead once about each failure that holds a Change. That note is kept in memory, so after a restart the lead
 may be told again. An upstream merge kicks the trains of the PRs waiting on it.
+
+## Stage 2: adding and removing repos
+
+`project_repo_add`, `project_repo_list` and `project_repo_remove` (`hub/projects/repos.rs`), `fleetd project repo
+add|list|remove`, and Add repo / Remove in Settings › Projects › Repos.
+
+- **Add** takes a path or a GitHub URL on the project's machine, through `project_add`'s checkout and clone code. A
+  directory that isn't a node project yet is registered as one (the checkout). The repo row is inserted with its name and
+  with its key and base from the checkout's work binding. The event is `project.added`, on the project.
+- **Attached checkouts are hidden.** `projects_shown` (the projects list, the status rows, the chats, the leads started
+  for waiting orders) leaves out a node project that another project holds as a repo. `projects_list` keeps every node
+  project, for the hub's own bookkeeping: pruning, binding, finding a session's project.
+- **Archiving** is derived, not stored. A checkout that was a project of its own is archived while another project holds
+  it. Attaching stops its lead's session. From then on its lead is refused at every start, resume and wake
+  (`leads::lead::refuse_archived`), its spawns are refused, and `chat_send`, `project_repo_add` and
+  `project_repo_remove` refuse it. Its records stay. Attaching refuses while its agents run. A project that holds repos
+  of its own can't be attached.
+- **Remove** deletes the row. `leads::removals` then cancels every live task whose `repoId` no row has. It runs again
+  at hub start and after each `project.removed`, so losing a checkout's node project ends only that repo's tasks. The
+  checkout stays on disk. It is a project of its own again once no project holds it. The own repo can't be removed.
+  The hub emits `project.settings` (`data.repoRemoved`), which makes the app resync.
+- **Env, MCP servers and skills reach every checkout.** `project_env_set` writes the project's checkouts too. A new
+  checkout gets the project's variables through the node's `project_env_copy` (`CAP_PROJECT_ENV_COPY`), which copies
+  secrets on the node, never through the hub. A session in a checkout gets the MCP servers and hub-kept skills of the
+  projects holding it, ahead of its own (`mcp_servers::session_config`, `skills::bundles_in`). A checkout in several
+  projects is shared as the repo is. Each project's `project_env_set` writes the checkout, so the last write of a
+  name wins. A session there gets every holder's servers and skills: on a name clash, the holder that added the checkout
+  first wins. Access is per machine, so this grants nothing new. Per-project values in
+  one checkout wait for agents per repo (stage 3), which know their task's project.
+- **The lead's first message** lists the repos (`leads::prompt::repos_block`) when the project holds any besides its
+  own directory.
+- `ProjectRepo.path` is the checkout's directory, read from the node's row, so a hidden checkout still shows where it
+  is.

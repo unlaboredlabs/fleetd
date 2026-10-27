@@ -127,7 +127,7 @@
         },
         {
           "const": "project.settings",
-          "description": "A project's settings changed (`project_set`): `data.mediumAllowed`.",
+          "description": "A project's settings changed (`project_set`): `data.mediumAllowed`; or a repo was removed from it\n(`project_repo_remove`): `data.repoRemoved`, its name.",
           "type": "string"
         },
         {

@@ -4092,9 +4092,65 @@ export type ProjectRepo = {
    */
   checkout: ProjectRef;
   name: RepoName;
+  /** The checkout's directory on its machine; absent before its node reported it. */
+  path?: string;
   repoId: RepoId;
   /** Its origin remote, shortened; absent for a repo with no remote, or before fleetd has read it. */
   repoKey?: RepoKey;
+};
+
+export type ProjectRepoAddInput = {
+  /** With `url`: clone here instead of `<cloneRoot>/<name>`. */
+  dest?: string;
+  machineId: MachineId;
+  /** Absent: from its remote or folder, e.g. `api`, made unique in the project. */
+  name?: RepoName;
+  /** A git checkout on the project's machine. */
+  path?: string;
+  projectId: ProjectId;
+  /** A GitHub URL, `git@github.com:o/r.git`, or `owner/repo`, cloned onto the project's machine. */
+  url?: string;
+  /** With `url`: when the destination is already a checkout of the same repository, add it instead of failing. */
+  useExisting?: boolean;
+};
+
+export type ProjectRepoAddOutput = {
+  /** A clone was started: its `project.clone_progress`, `project.added` and `project.add_failed` events carry it. */
+  addId?: string;
+  /** The project the checkout was until now, archived read-only. */
+  archived?: ProjectRef;
+  next?: string;
+  /** The checkout's directory (the clone's destination for a url). */
+  path: string;
+  /** The repo, once added; absent while a clone runs. */
+  repo?: ProjectRepo;
+  truncated?: boolean;
+};
+
+export type ProjectRepoListInput = {
+  machineId: MachineId;
+  projectId: ProjectId;
+};
+
+export type ProjectRepoListOutput = {
+  next?: string;
+  /** Oldest first, its own repo first; none for a plain folder. */
+  repos: ProjectRepo[];
+  truncated?: boolean;
+};
+
+export type ProjectRepoRemoveInput = {
+  machineId: MachineId;
+  name: RepoName;
+  projectId: ProjectId;
+};
+
+export type ProjectRepoRemoveOutput = {
+  /** The repo's live tasks, cancelled. */
+  cancelled: TaskId[];
+  next?: string;
+  removed: ProjectRepo;
+  truncated?: boolean;
 };
 
 /** What a project is doing, in one word. */
@@ -6473,6 +6529,9 @@ export interface ToolMap {
   project_files: { input: ProjectFilesInput; output: ProjectFilesOutput };
   project_get: { input: ProjectGetInput; output: ProjectGetOutput };
   project_remove: { input: ProjectRemoveInput; output: ProjectRemoveOutput };
+  project_repo_add: { input: ProjectRepoAddInput; output: ProjectRepoAddOutput };
+  project_repo_list: { input: ProjectRepoListInput; output: ProjectRepoListOutput };
+  project_repo_remove: { input: ProjectRepoRemoveInput; output: ProjectRepoRemoveOutput };
   project_set: { input: ProjectSetInput; output: ProjectSetOutput };
   project_settings_get: { input: ProjectSettingsGetInput; output: ProjectSettingsGetOutput };
   project_settings_set: { input: ProjectSettingsSetInput; output: ProjectSettingsSetOutput };

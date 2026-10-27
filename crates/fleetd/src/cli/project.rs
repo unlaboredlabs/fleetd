@@ -1,6 +1,7 @@
-//! `fleetd project add|list|stop|remove|set|profiles`: the hub's add-a-project service (project_discover and
-//! project_add) from a terminal, one question at a time like `fleetd init`, or flags only without one, and a project's
-//! or the fleet's settings. Also `fleetd machine set`, the machine's max agents, beside the project's.
+//! `fleetd project add|list|stop|remove|set|profiles|repo`: the hub's add-a-project service (project_discover and
+//! project_add) from a terminal, one question at a time like `fleetd init`, or flags only without one, a project's or
+//! the fleet's settings, and a project's repos. Also `fleetd machine set`, the machine's max agents, beside the
+//! project's.
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -27,6 +28,14 @@ pub const PROJECT_USAGE: &str =
              and the chat says what stopped
   project remove <machine>/<project> [--yes] [--home <dir>] [--hub <url>]
              stop its agents and forget it; its files, branches and worktrees stay
+  project repo list <machine>/<project> [--home <dir>] [--hub <url>]
+  project repo add <machine>/<project> <path|github-url> [--name <n>] [--dest <dir>]
+         [--use-existing] [--home <dir>] [--hub <url>]
+             add a repo to the project: a checkout on its machine, or a GitHub repo
+             cloned there, with progress. A checkout that is a project of its own is
+             archived: its chat stays, its lead stops running
+  project repo remove <machine>/<project> <name> [--yes] [--home <dir>] [--hub <url>]
+             take the repo out of the project and end its agents; its files stay
   project set <machine>/<project> --max-agents <n>|default [--pause-extras] [--home <dir>] [--hub <url>]
   project set --fleet-cap <n> [--home <dir>] [--hub <url>]
              the most agents the project runs at once (its lead not counted), or the
@@ -77,6 +86,7 @@ const SPEC: Spec = Spec {
         ("medium-effort", Kind::Str),
         ("fast-check", Kind::Multi),
         ("after-merge", Kind::Multi),
+        ("name", Kind::Str),
     ],
     positionals: true,
 };
@@ -294,6 +304,7 @@ pub async fn project_command(argv: &[String]) -> u8 {
         "stop" => stop(&mut client, &out, &v).await,
         "set" => set(&mut client, &out, &v).await,
         "profiles" => profiles(&mut client, &v).await,
+        "repo" => repo(&mut client, &out, &v).await,
         other => return usage(&format!("unknown project command '{other}'")),
     };
     match result {
@@ -360,7 +371,14 @@ async fn stop(client: &mut McpClient, out: &Out, v: &args::Parsed) -> Result<(),
 
 /// The project a `<machine>/<project id or title>` argument names.
 async fn find(client: &mut McpClient, v: &args::Parsed) -> Result<(String, Value), Stop> {
-    let Some(target) = v.positionals.first() else {
+    find_target(client, v.positionals.first()).await
+}
+
+async fn find_target(
+    client: &mut McpClient,
+    target: Option<&String>,
+) -> Result<(String, Value), Stop> {
+    let Some(target) = target else {
         return Err(Stop(
             2,
             "give the project as <machine>/<project id or title>".into(),
@@ -428,6 +446,124 @@ async fn remove(client: &mut McpClient, out: &Out, v: &args::Parsed) -> Result<(
         "{title} removed from {machine}; its files, branches and worktrees stay"
     ));
     Ok(())
+}
+
+/// `fleetd project repo add|list|remove <machine>/<project> …`: project_repo_add, project_repo_list and
+/// project_repo_remove.
+async fn repo(client: &mut McpClient, out: &Out, v: &args::Parsed) -> Result<(), Stop> {
+    let sub = v.positionals.first().map(String::as_str);
+    let (machine, project) = match sub {
+        Some("add" | "list" | "remove") => find_target(client, v.positionals.get(1)).await?,
+        _ => {
+            return Err(Stop(
+                2,
+                "give project repo add, list or remove".into(),
+                None,
+            ));
+        }
+    };
+    let title = s(&project, "/title").to_owned();
+    let at = json!({ "machineId": machine, "projectId": s(&project, "/projectId") });
+    let arg = v.positionals.get(2);
+    match sub {
+        Some("list") => {
+            let body = call(client, "project_repo_list", at).await?;
+            let repos = body
+                .get("repos")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default();
+            if repos.is_empty() {
+                println!(
+                    "{title} holds no repo, a plain folder: fleetd project repo add {machine}/{title} <path|github-url>"
+                );
+            }
+            for r in &repos {
+                let lands = match (s(r, "/repoKey"), s(r, "/base")) {
+                    ("", _) => "no remote".to_owned(),
+                    (key, "") => key.to_owned(),
+                    (key, base) => format!("{key} on {base}"),
+                };
+                println!("{}  {}  {lands}", s(r, "/name"), tilde(s(r, "/path")));
+            }
+            Ok(())
+        }
+        Some("add") => {
+            let Some(text) = arg else {
+                return Err(Stop(
+                    2,
+                    "give the repo as a path or a GitHub URL".into(),
+                    None,
+                ));
+            };
+            let mut input = at;
+            input["name"] = json!(v.str("name"));
+            match add_source(text) {
+                Some(AddSource::Path(p)) => {
+                    let cwd = std::env::current_dir().unwrap_or_else(|_| super::home_dir());
+                    let path = resolve_path(&p, &cwd, &super::home_dir());
+                    input["path"] = json!(path.to_string_lossy());
+                }
+                Some(AddSource::GitHub(_)) => {
+                    input["url"] = json!(text);
+                    input["dest"] = json!(v.str("dest"));
+                    if v.flag("use-existing") {
+                        input["useExisting"] = json!(true);
+                    }
+                }
+                None => {
+                    return Err(Stop(
+                        2,
+                        format!(
+                            "'{text}' is neither a path (/…, ~/…, ./…) nor a GitHub repo (https://github.com/owner/repo)"
+                        ),
+                        None,
+                    ));
+                }
+            }
+            // The cursor before the add, so no progress event is missed.
+            let head = call(client, "events_wait", json!({ "timeoutSec": 0 })).await?;
+            let cursor = head.get("cursor").cloned().unwrap_or(json!(0));
+            let added = call(client, "project_repo_add", input).await?;
+            if let Some(add_id) = added.get("addId").and_then(Value::as_str) {
+                let path = s(&added, "/path").to_owned();
+                follow_clone(client, out, &machine, &path, add_id, cursor).await?;
+                out.success(&format!("added to {title}"));
+                return Ok(());
+            }
+            out.success(&format!("{} added to {title}", s(&added, "/repo/name")));
+            if added.get("archived").is_some() {
+                out.info(s(&added, "/next"));
+            }
+            Ok(())
+        }
+        _ => {
+            let Some(name) = arg else {
+                return Err(Stop(
+                    2,
+                    "give the repo's name (fleetd project repo list shows them)".into(),
+                    None,
+                ));
+            };
+            if out.tty {
+                let sure = cliclack::confirm(format!(
+                    "Remove {name} from {title}? Its agents stop; its files stay."
+                ))
+                .initial_value(false)
+                .interact()
+                .unwrap_or(false);
+                if !sure {
+                    return Ok(());
+                }
+            }
+            let mut input = at;
+            input["name"] = json!(name);
+            let body = call(client, "project_repo_remove", input).await?;
+            out.success(&format!("{name} removed from {title}"));
+            out.info(s(&body, "/next"));
+            Ok(())
+        }
+    }
 }
 
 fn count_of(v: &args::Parsed, name: &str) -> Result<Option<u32>, Stop> {
@@ -1060,7 +1196,7 @@ async fn add(client: &mut McpClient, out: &Out, v: &args::Parsed, home: &Path) -
     }
     // The cursor before the add, so no progress event is missed.
     let head = call(client, "events_wait", json!({ "timeoutSec": 0 })).await?;
-    let mut cursor = head.get("cursor").cloned().unwrap_or(json!(0));
+    let cursor = head.get("cursor").cloned().unwrap_or(json!(0));
     let added = call(client, "project_add", input).await?;
     let machine = s(&added, "/machineId").to_owned();
     let path = s(&added, "/path").to_owned();
@@ -1078,9 +1214,25 @@ async fn add(client: &mut McpClient, out: &Out, v: &args::Parsed, home: &Path) -
         out.info(&describe(added.get("inspect").unwrap_or(&Value::Null)));
         return finish(out);
     };
+    let added = follow_clone(client, out, &machine, &path, &add_id, cursor).await?;
+    out.info(&describe(
+        added.pointer("/data/inspect").unwrap_or(&Value::Null),
+    ));
+    finish(out)
+}
+
+/// Follows a clone's events to its `project.added`, with a progress bar in a terminal; its `project.add_failed` stops.
+async fn follow_clone(
+    client: &mut McpClient,
+    out: &Out,
+    machine: &str,
+    path: &str,
+    add_id: &str,
+    mut cursor: Value,
+) -> Result<Value, Stop> {
     let bar = out.tty.then(|| {
         let bar = cliclack::progress_bar(100);
-        bar.start(format!("Cloning into {} on {machine}", tilde(&path)));
+        bar.start(format!("Cloning into {} on {machine}", tilde(path)));
         bar
     });
     if !out.tty {
@@ -1142,15 +1294,12 @@ async fn add(client: &mut McpClient, out: &Out, v: &args::Parsed, home: &Path) -
                     last_phase = phase;
                 }
                 "project.added" => {
-                    let done = format!("{} cloned and added on {machine}", tilde(&path));
+                    let done = format!("{} cloned and added on {machine}", tilde(path));
                     match &bar {
                         Some(bar) => bar.stop(&done),
                         None => println!("✓ {done}"),
                     }
-                    out.info(&describe(
-                        e.pointer("/data/inspect").unwrap_or(&Value::Null),
-                    ));
-                    return finish(out);
+                    return Ok(e.clone());
                 }
                 _ => {
                     if let Some(bar) = &bar {

@@ -81,6 +81,9 @@ pub const CAP_LANDED_LOG: &str = "landed_log";
 /// `project_env`, `project_worktrees`, and `project_remove` with `removeWorktrees` (a project's settings).
 pub const CAP_PROJECT_SETTINGS: &str = "project_settings";
 
+/// `project_env_copy`: a project's variables copied to a repo checkout it holds (W79).
+pub const CAP_PROJECT_ENV_COPY: &str = "project_env_copy";
+
 /// The node takes `mcp_secrets` and `mcp_test`, and a launch's and a send's MCP servers.
 pub const CAP_MCP_SERVERS: &str = "mcp_servers";
 
