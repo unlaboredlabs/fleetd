@@ -197,21 +197,25 @@ no longer holds stops misleading the agents:
 - **When:** around 04:00 in your time zone: the global decision `policy.tz` (the one quiet hours use), else the hub
   machine's zone. The global decision `policy.memory_refresh_at` moves it, as `HH:MM`. A project whose refresh can't
   start within 3 hours of that (the hub was down, the lead was busy all that time, the login was out of usage) waits
-  for the next night. Projects start a minute apart.
+  for the next night. On the night the clocks go forward past that hour, it starts when they land. Projects start
+  a minute apart.
 - **Which projects:** each one with the refresh on (the default; turn it off in its
   [settings](/docs/projects#settings)) and with chat from you or the lead, or a changed order, since its last refresh.
   A quiet project costs nothing.
 - **What it reads:** the chat since the last refresh (your messages and the lead's, newest kept, up to about 40,000
   characters), the active decisions and every memory file of the project, plus `user.md`.
 - **What it may do:** it is a lead session of its own, the `lead.memory` prompt, that opens no order and never
-  writes in the chat. It starts with none of Claude's own tools (no shell, files or web) and none of your MCP
-  servers, and fleetd takes only `memory_read`, `remember` and `forget` from it. It adds what the chat taught,
-  merges entries that overlap and removes what no longer holds, held to the caps like any write. It only adds to
-  `user.md`: it never replaces or removes an entry there. A session still running after an hour, or one that
+  writes in the chat. It may use `memory_read`, `remember` and `forget` and nothing else: it starts with none of
+  Claude's own tools (no shell, files or web) and none of your MCP servers, its machine refuses any other tool it
+  asks for (fleetd's other tools, or any tool added later), and the hub takes only those three calls from it. A
+  machine whose fleetd is too old to hold it to those gets no refresh until it is updated; each night it's skipped,
+  the chat says "Memory refresh skipped: update devbox to let it run" once. It adds what the chat taught, merges
+  entries that overlap and removes what no longer holds, held to the caps like any write. It only adds to `user.md`:
+  it never replaces or removes an entry there. A session still running after an hour, or one that
   failed, is stopped; what it changed until then is still listed, and the next night reads the same chat again.
 - **What you see:** one line in the chat when it's done, such as "Memory refreshed: +2 ~1 −3" (added, changed,
   removed), with each change below it, each with Undo, and Undo all. A line lists at most 200 changes and says how
-  many more there were; Undo all takes those back too. A night that changed nothing shows nothing. In Settings →
+  many more there were; Undo all takes those back too, and stays while any of them is left. A night that changed nothing shows nothing. In Settings →
   Memory, an entry the refresh wrote links to its line.
 
 ## The checklist {#checklist}

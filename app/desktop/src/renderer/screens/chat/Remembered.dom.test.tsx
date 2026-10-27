@@ -127,4 +127,28 @@ describe("a Memory refreshed line with more changes than it lists", () => {
     await click(nth("Undo all", 0));
     expect(calls).toEqual([{ tool: "memory_undo", input: { projectRef: project, messageId: "m9" } }]);
   });
+
+  it("keeps Undo all while a change it doesn't list is left, after each listed one was undone", async () => {
+    const shown = (line: MemoryRefreshed) =>
+      act(async () => {
+        root.render(
+          <UiProvider>
+            <DataProvider layer={createDataLayer({ call: () => Promise.resolve({ ok: true, output: { ok: true } }), subscribe: () => () => undefined, resync: () => Promise.resolve(), focus: () => Promise.resolve(), chat: () => Promise.resolve() })}>
+              <RefreshedChanges project={project} message={{ ...message, memoryRefreshed: line }} refreshed={line} />
+            </DataProvider>
+          </UiProvider>,
+        );
+        await Promise.resolve();
+      });
+    // Its one listed change undone on its own: the 204 past it are still there.
+    await shown({ items: [{ scope: "project", text: "Rule 0.", undone: true }], total: 205, undone: 1 });
+    expect(buttons("Undo")).toHaveLength(0);
+    expect(buttons("Undo all")).toHaveLength(1);
+    // One of those left.
+    await shown({ items: [{ scope: "project", text: "Rule 0.", undone: true }], total: 205, undone: 204 });
+    expect(buttons("Undo all")).toHaveLength(1);
+    // All of them undone.
+    await shown({ items: [{ scope: "project", text: "Rule 0.", undone: true }], total: 205, undone: 205 });
+    expect(buttons("Undo all")).toHaveLength(0);
+  });
 });

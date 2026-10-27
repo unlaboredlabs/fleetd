@@ -177,6 +177,16 @@ impl NodeLinkServer {
         }
     }
 
+    /// Whether the machine's node is linked and doesn't list `capability`: a node too old for it.
+    pub fn node_lacks(&self, machine_id: &MachineId, capability: &str) -> bool {
+        self.state
+            .lock()
+            .unwrap()
+            .capabilities
+            .get(machine_id)
+            .is_some_and(|caps| !caps.iter().any(|c| c == capability))
+    }
+
     /// As a hello listing `capabilities` leaves it.
     #[cfg(test)]
     pub fn set_capabilities(&self, machine_id: &MachineId, capabilities: &[&str]) {
@@ -664,19 +674,21 @@ impl NodeLinkServer {
                 "signature does not verify against the hello's key",
             );
         }
+        let fingerprint = hello.machine_fingerprint.as_deref();
         if let Some(token) = &hello.enroll_token {
-            return match self.deps.auth.consume_enroll_token(
+            return match self.deps.auth.enroll_node(
                 token.as_str(),
                 &machine_id,
                 hello.pub_key.as_str(),
+                fingerprint,
             ) {
                 Ok(()) => Ok(hello),
                 Err(AuthError::Unauthorized(e)) => refuse(
                     close::UNAUTHORIZED,
-                    format!(
-                        "{}: run fleetd pair --worker {machine_id} on the hub",
-                        e.message
-                    ),
+                    match e.fix {
+                        Some(fix) => format!("{}. Fix: {fix}", e.message),
+                        None => e.message,
+                    },
                 ),
                 Err(e) => {
                     tracing::error!(error = %e, "node link: enroll token check failed");
@@ -698,7 +710,19 @@ impl NodeLinkServer {
                 close::UNAUTHORIZED,
                 format!("key does not match the key enrolled for {machine_id}"),
             ),
-            Ok(Some(_)) => Ok(hello),
+            Ok(Some(_)) => {
+                // A node enrolled before fingerprints: its first hello since records its computer.
+                if let Some(fingerprint) = fingerprint
+                    && matches!(self.deps.auth.node_fingerprint(&machine_id), Ok(None))
+                    && let Err(e) = self
+                        .deps
+                        .auth
+                        .set_node_fingerprint(&machine_id, fingerprint)
+                {
+                    tracing::warn!(error = %e, "node link: could not record {machine_id}'s fingerprint");
+                }
+                Ok(hello)
+            }
             Err(e) => {
                 tracing::error!(error = %e, "node link: node key read failed");
                 refuse(

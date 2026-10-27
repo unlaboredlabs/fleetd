@@ -2073,6 +2073,11 @@ export type HubInfoOutput = {
   busy: HubBusyItem[];
   /** Absent for a local build. */
   channel?: HubChannel;
+  /**
+   * A hash of the OS's id for the hub's computer, as nodes give theirs: the app on that computer knows it runs the
+   * hub. Absent where the OS gives none, and from older hubs.
+   */
+  machineFingerprint?: string;
   /** The person the caller's human key belongs to. Absent for an agent key, and from a hub before people. */
   me?: Person;
   next?: string;
@@ -2083,6 +2088,95 @@ export type HubInfoOutput = {
   truncated?: boolean;
   /** The hub's fleetd version, as `fleetd --version` prints it. "0.0.0" for a local build. */
   version: string;
+};
+
+/** A link this hub keeps for one of its Navis. The key stays sealed in the hub; nothing returns it. */
+export type HubLink = {
+  checkedAt?: Timestamp;
+  createdAt: Timestamp;
+  /** Why it is unreachable or revoked, in the words the person reads. */
+  error?: string;
+  label: string;
+  linkId: HubLinkId;
+  navi: ProjectRef;
+  state: HubLinkState;
+  /** The other hub's URL: https, or http over a tailnet or this machine. */
+  url: string;
+};
+
+export type HubLinkAddInput = {
+  label: string;
+  navi: ProjectRef;
+  /** The link key sealed to this hub's boxPubKey. */
+  sealed: SealedSecret;
+  /** The other hub's URL, as the app pairs with it: https, or http over a tailnet. */
+  url: string;
+};
+
+export type HubLinkAddOutput = {
+  link: HubLink;
+  next?: string;
+  /** What the Navi reaches there. */
+  projects: LinkProject[];
+  truncated?: boolean;
+};
+
+export type HubLinkId = string;
+
+export type HubLinkMintInput = {
+  /** What the person calls the hub the link is for. */
+  label: string;
+  /** The projects it reaches, each one the caller may operate; absent: every project the caller reaches. */
+  projects?: ProjectRef[];
+};
+
+export type HubLinkMintOutput = {
+  /** "flk_…": shown once, never stored; paste it into the other hub's Navi, which seals it. */
+  key: string;
+  link: IssuedLink;
+  next?: string;
+  truncated?: boolean;
+};
+
+export type HubLinkRemoveInput = {
+  linkId: HubLinkId;
+};
+
+export type HubLinkRemoveOutput = {
+  next?: string;
+  /** Whether the other hub revoked the key too; false when it couldn't be reached (the key is gone here anyway). */
+  revokedThere: boolean;
+  truncated?: boolean;
+};
+
+export type HubLinkRevokeInput = {
+  linkId: HubLinkId;
+};
+
+export type HubLinkRevokeOutput = {
+  link: IssuedLink;
+  next?: string;
+  truncated?: boolean;
+};
+
+export type KnownHubLinkState = "ok" | "unreachable" | "revoked";
+/** KnownHubLinkState, or a value from a newer hub. */
+export type HubLinkState = KnownHubLinkState | (string & {});
+
+export type HubLinksGetInput = {
+  /** A Navi: the links this hub keeps for it. Absent: none. */
+  navi?: ProjectRef;
+};
+
+export type HubLinksGetOutput = {
+  /** This hub's X25519 key, standard base64: what a link key is sealed to (`crypto_box_seal`) for hub_link_add. */
+  boxPubKey: string;
+  /** Links minted on this hub: the caller's own, or every one for an admin. */
+  issued: IssuedLink[];
+  /** The navi's links to other hubs. */
+  links: HubLink[];
+  next?: string;
+  truncated?: boolean;
 };
 
 /**
@@ -2291,6 +2385,25 @@ export type KnownIosState = "ready" | "wanted" | "preparing" | "unavailable";
 /** KnownIosState, or a value from a newer hub. */
 export type IosState = KnownIosState | (string & {});
 
+/** A link minted on this hub, as its person and the hub's admins see it. The key itself is shown once, at minting. */
+export type IssuedLink = {
+  createdAt: Timestamp;
+  device: string;
+  /** The device that minted it: the link acts at its grants and dies with it. */
+  keyId: string;
+  /** What the person called the hub it is for; requests through it read "asked via <label> Navi". */
+  label: string;
+  lastUsedAt?: Timestamp;
+  linkId: HubLinkId;
+  /** Its person, on a hub with people. */
+  person?: PersonRef;
+  /** "flk_" plus the first 6 characters of the key's body. */
+  prefix: string;
+  /** The projects it reaches; absent: every project its person reaches. */
+  projects?: ProjectRef[];
+  revokedAt?: Timestamp;
+};
+
 export type KeyAction = "down" | "up";
 
 /** "human": a person's device, such as the desktop app. What it answers is recorded as the human's. */
@@ -2363,6 +2476,12 @@ export type LeadStartOutput = {
 };
 
 export type LeadState = "starting" | "idle" | "working" | "stalled" | "stopped";
+
+/** One project a link reaches. */
+export type LinkProject = {
+  projectRef: ProjectRef;
+  title: string;
+};
 
 /**
  * Hub -> app on the live subscription. Board lanes at most 1/s, focus lanes and text at most 4/s; machines at most
@@ -2981,6 +3100,8 @@ export type MemoryRefreshed = {
   items: RememberedItem[];
   /** Every change it made, when that is more than `items` lists. Undo all takes them all back. */
   total?: number;
+  /** How many of all its changes are undone, when any is: those past `items` too, which the line doesn't show. */
+  undone?: number;
 };
 
 export type MemoryScope = "user" | "project";
@@ -6727,6 +6848,11 @@ export interface ToolMap {
   events_wait: { input: EventsWaitInput; output: EventsWaitOutput };
   fleetd_status: { input: FleetdStatusInput; output: FleetdStatusOutput };
   hub_info: { input: HubInfoInput; output: HubInfoOutput };
+  hub_link_add: { input: HubLinkAddInput; output: HubLinkAddOutput };
+  hub_link_mint: { input: HubLinkMintInput; output: HubLinkMintOutput };
+  hub_link_remove: { input: HubLinkRemoveInput; output: HubLinkRemoveOutput };
+  hub_link_revoke: { input: HubLinkRevokeInput; output: HubLinkRevokeOutput };
+  hub_links_get: { input: HubLinksGetInput; output: HubLinksGetOutput };
   hub_update: { input: HubUpdateInput; output: HubUpdateOutput };
   hub_update_status: { input: HubUpdateStatusInput; output: HubUpdateOutput };
   invite_create: { input: InviteCreateInput; output: InviteCreateOutput };

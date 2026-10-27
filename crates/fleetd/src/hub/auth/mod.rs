@@ -88,11 +88,11 @@ pub(crate) fn base32(bytes: &[u8]) -> String {
     out
 }
 
-fn secret(prefix: &str) -> String {
+pub(crate) fn secret(prefix: &str) -> String {
     format!("{prefix}{}", base32(&rand::random::<[u8; 32]>()))
 }
 
-fn sha256(s: &str) -> String {
+pub(crate) fn sha256(s: &str) -> String {
     Sha256::digest(s.as_bytes())
         .iter()
         .map(|b| format!("{b:02x}"))
@@ -106,7 +106,7 @@ fn is_agent_key(key: &str) -> bool {
 }
 
 /// Drops a leading `Bearer ` (any case, any whitespace run), then trims.
-fn strip_bearer(bearer: &str) -> &str {
+pub(crate) fn strip_bearer(bearer: &str) -> &str {
     let rest = match bearer.get(..6) {
         Some(scheme) if scheme.eq_ignore_ascii_case("bearer") => {
             let after = &bearer[6..];
@@ -416,6 +416,19 @@ impl Auth {
         Ok(revoked)
     }
 
+    /// One key by its id, revoked or not.
+    pub fn get(&self, key_id: &str) -> Result<Option<AgentKeyInfo>, StoreError> {
+        let row = self.db.with(|conn| {
+            Ok(conn
+                .prepare_cached(&format!(
+                    "SELECT {KEY_COLUMNS} FROM {KEY_FROM} WHERE k.key_id = ?"
+                ))?
+                .query_row([key_id], KeyRow::read)
+                .optional()?)
+        })?;
+        row.as_ref().map(KeyRow::info).transpose()
+    }
+
     pub fn list(&self) -> Result<Vec<AgentKeyInfo>, StoreError> {
         let rows = self.db.with(|conn| {
             let mut stmt = conn.prepare_cached(&format!(
@@ -508,6 +521,61 @@ impl Auth {
                 .prepare_cached("SELECT pub_key FROM node_keys WHERE machine_id = ?")?
                 .query_row([&machine_id.as_str()], |row| row.get(0))
                 .optional()?)
+        })
+    }
+
+    /// Enrolls `machine_id`'s node from the computer `fingerprint` names: refused when that id is already another
+    /// computer's (whatever its name, its code or its folders), else the token is burned and the node's key and
+    /// computer recorded. A node with no fingerprint (an older one) is held to its token only.
+    pub fn enroll_node(
+        &self,
+        token: &str,
+        machine_id: &MachineId,
+        pub_key: &str,
+        fingerprint: Option<&str>,
+    ) -> Result<(), AuthError> {
+        let m = machine_id.as_str();
+        if let Some(theirs) = fingerprint
+            && let Some(ours) = self.node_fingerprint(machine_id)?
+            && theirs != ours
+        {
+            return Err(Unauthorized {
+                code: ErrorCode::Forbidden,
+                message: format!("{m} is another computer's machine id"),
+                fix: Some(format!(
+                    "join this computer under a machine id of its own, or remove {m} first (fleetd machine remove {m})"
+                )),
+            }
+            .into());
+        }
+        self.consume_enroll_token(token, machine_id, pub_key)?;
+        if let Some(fingerprint) = fingerprint {
+            self.set_node_fingerprint(machine_id, fingerprint)?;
+        }
+        Ok(())
+    }
+
+    /// The fingerprint of the computer the machine's node runs on, as its hellos gave it.
+    pub fn node_fingerprint(&self, machine_id: &MachineId) -> Result<Option<String>, StoreError> {
+        self.db.with(|conn| {
+            Ok(conn
+                .prepare_cached("SELECT fingerprint FROM node_keys WHERE machine_id = ?")?
+                .query_row([&machine_id.as_str()], |row| row.get(0))
+                .optional()?
+                .flatten())
+        })
+    }
+
+    /// Records the computer the machine's enrolled node runs on.
+    pub fn set_node_fingerprint(
+        &self,
+        machine_id: &MachineId,
+        fingerprint: &str,
+    ) -> Result<(), StoreError> {
+        self.db.with(|conn| {
+            conn.prepare_cached("UPDATE node_keys SET fingerprint = ? WHERE machine_id = ?")?
+                .execute(params![fingerprint, machine_id.as_str()])?;
+            Ok(())
         })
     }
 

@@ -6,30 +6,40 @@ import type { MachineAddRun, MachineHost, SetupStep } from "../../../shared/cont
 import { machineIdFromHost } from "../projects/source";
 
 /**
- * "This computer": the hub's own machine (the hub adds it with its own fleetd, no download), one whose node is
- * enrolled already (nothing to add: its fleetd is that node's), or another one, which main joins with a one-time
- * code. Decided by what this computer's fleetd dir holds (main reads it), never by its name alone: a hub machine
- * added under another id, or renamed since, still holds the hub.
+ * "This computer": the machine of the hub the app is connected to (that hub adds it with its own fleetd, no
+ * download), one that runs a different hub (nothing to add from here), one whose node is enrolled already (nothing
+ * to add: its fleetd is that node's), or another one, which main joins with a one-time code. Decided by what this
+ * computer's fingerprint (a hash of its OS's id for it) and what its fleetd dir holds, never by its name or folders:
+ * the connected hub's own computer is the one whose fingerprint hub_info gives, whatever it is called now, wherever
+ * that hub keeps its data.
  */
 export type Here =
   | { readonly kind: "hub"; readonly machineId: string; readonly joined: boolean }
+  | { readonly kind: "other-hub" }
   | { readonly kind: "node"; readonly machineId: string; readonly hub: string; readonly ours: boolean }
   | { readonly kind: "app"; readonly machineId: string; readonly joined: boolean };
 
-export const hereOf = (hosts: ReadonlyArray<MachineHost>, hostName: string, here: ThisComputer, joinedIds: ReadonlySet<string>): Here | undefined => {
+export const hereOf = (
+  hosts: ReadonlyArray<MachineHost>,
+  hubFingerprint: string | undefined,
+  hostName: string,
+  here: ThisComputer,
+  joinedIds: ReadonlySet<string>,
+): Here | undefined => {
   const hub = hosts.find((h) => h.source === "hub");
-  if (here.kind === "hub") return { kind: "hub", machineId: hub?.machineId ?? machineIdFromHost(hostName), joined: hub?.joined ?? false };
+  if (hub !== undefined && hubFingerprint !== undefined && here.fingerprint === hubFingerprint) {
+    return { kind: "hub", machineId: hub.machineId, joined: hub.joined };
+  }
+  if (here.kind === "hub") return { kind: "other-hub" };
   if (here.kind === "node") return { kind: "node", machineId: here.machineId, hub: here.hub, ours: joinedIds.has(here.machineId) };
   const machineId = machineIdFromHost(hostName);
-  if (machineId === "") return undefined;
-  // A hub in a fleetd dir of its own (FLEETD_HOME) on this computer: the hub's own path still never downloads.
-  if (hub?.machineId === machineId) return { kind: "hub", machineId, joined: hub.joined };
-  return { kind: "app", machineId, joined: joinedIds.has(machineId) };
+  return machineId === "" ? undefined : { kind: "app", machineId, joined: joinedIds.has(machineId) };
 };
 
 /** "This computer"'s line under its name. */
 export const hereLine = (here: Here | undefined): string => {
   if (here === undefined) return "Looking at this computer…";
+  if (here.kind === "other-hub") return "This computer runs a different hub, so it can't be one of this hub's machines.";
   if (here.kind === "node") {
     return here.ours
       ? `This computer is already part of the hub as ${here.machineId}.`
