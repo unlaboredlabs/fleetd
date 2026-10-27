@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, type ElementType, type KeyboardEvent, type MouseEvent } from "react";
+import { memo, useLayoutEffect, useRef, useState, type ElementType, type KeyboardEvent, type MouseEvent } from "react";
 import { Copy } from "lucide-react";
 import { copyText } from "../lib/clipboard";
 import { cx } from "../lib/cx";
@@ -27,9 +27,10 @@ export interface TruncateProps extends TextStyleProps {
 /**
  * A single-line (or clamped) slot. When the text does not fit it ends in an ellipsis, the full text shows in a
  * tooltip on hover, and the text becomes a focusable button whose click or Enter expands or copies it. When it
- * fits, it is plain text with no affordances.
+ * fits, it is plain text with no affordances. Memoized: its props are a string and a few flags, and each one is a
+ * tooltip and a popover, so a row or a list that renders again leaves its truncated text alone.
  */
-export function Truncate({ children, as: As = "span", lines = 1, expand = "popover", inline, className, ...style }: TruncateProps) {
+export const Truncate = memo(function Truncate({ children, as: As = "span", lines = 1, expand = "popover", inline, className, ...style }: TruncateProps) {
   // The element lives in state (a callback ref), so the observer follows it when React swaps the node.
   const [el, setEl] = useState<HTMLElement | null>(null);
   const [cut, setCut] = useState(false);
@@ -143,7 +144,7 @@ export function Truncate({ children, as: As = "span", lines = 1, expand = "popov
       </PopoverContent>
     </Popover>
   );
-}
+});
 
 function FullText({ text, style }: { text: string; style: TextStyleProps }) {
   const [copied, setCopied] = useState(false);
