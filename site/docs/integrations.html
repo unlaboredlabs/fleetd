@@ -166,8 +166,8 @@ it is a summary the Navi wrote.</p>
 </table>
 <p>The buttons name the act: <strong>Send it</strong> and <strong>Don’t send</strong>, <strong>Share it</strong>, <strong>Delete it</strong>, <strong>Pay</strong>. Either runs exactly that
 input, or tells the Navi no; <kbd>Enter</kbd> and <kbd>Esc</kbd> do the same. A delete or a spend asks once more in the
-card before it runs. Once answered, the card folds to one line: “Sent to <a href="mailto:ana@example.com">ana@example.com</a> and 2 more · you approved at
-09:12”.</p>
+card before it runs. Once answered, the card folds to what you decided: “Approved: send an email to <a href="mailto:ana@example.com">ana@example.com</a> and 2
+more · you approved at 09:12”. xaq may still ask on its own approve page; what the send did is in the Navi’s chat.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="google">Google: Gmail, Calendar and Drive</h2><a class="sl-anchor-link" href="#google"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Google: Gmail, Calendar and Drive”</span></a></div>
 <p>Google comes through <a href="https://www.npmjs.com/package/xaq-cli">xaq</a>, a small self-hosted broker that holds your Google sign-in
 and gives the Navi one MCP endpoint and one key. fleetd uses xaq rather than its own Google code for three reasons:</p>
