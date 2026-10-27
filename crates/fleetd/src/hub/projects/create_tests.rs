@@ -355,3 +355,72 @@ async fn create_takes_a_name_or_a_folder_and_nothing_of_a_clone() {
         );
     }
 }
+
+#[tokio::test]
+async fn an_empty_folder_that_is_already_a_project_is_refused_not_renamed() {
+    let (hub, _home) = hub();
+    let mut calls = node(&hub, &[CAP_REPOS, CAP_FOLDER_MAKE]).await;
+    let first = ok(
+        &hub,
+        "project_add",
+        json!({ "machineId": "devbox", "create": true, "title": "Notes" }),
+    )
+    .await;
+    drain(&mut calls);
+    // The same folder again, still empty, under another name, and in a dry run.
+    for dry in [false, true] {
+        let Err(CallError::Tool(e)) = call(
+            &hub,
+            "project_add",
+            json!({ "machineId": "devbox", "create": true, "title": "Diary", "path": format!("{ROOT}/notes"), "dryRun": dry }),
+        )
+        .await
+        else {
+            panic!("took over the project Notes")
+        };
+        assert_eq!(
+            e.message,
+            format!("{ROOT}/notes on devbox is already the project Notes")
+        );
+        assert!(e.fix.unwrap().starts_with("Open that project"));
+    }
+    let (_, upserts) = drain(&mut calls);
+    assert!(upserts.is_empty(), "renamed: {upserts:?}");
+    assert_eq!(
+        hub.store
+            .project_get(&project(&first))
+            .unwrap()
+            .unwrap()
+            .title,
+        "Notes"
+    );
+}
+
+#[test]
+fn a_dropped_link_gets_the_machines_fix_not_another_folder() {
+    let e = crate::hub::executor::ExecutorError::NodeRequestFailed {
+        machine_id: devbox(),
+        operation: crate::hub::executor::NodeOperation::Project,
+        message: "the node link dropped before the node answered".into(),
+        fix: None,
+    };
+    let refused = super::folder_refused(&devbox(), &format!("{ROOT}/notes"), e);
+    assert!(
+        refused
+            .fix
+            .as_deref()
+            .unwrap_or_default()
+            .contains("devbox"),
+        "{refused:?}"
+    );
+    assert!(!refused.fix.unwrap_or_default().contains("another folder"));
+    // The node's own words about the folder keep the folder's fix.
+    let e = crate::hub::executor::ExecutorError::NodeRequestFailed {
+        machine_id: devbox(),
+        operation: crate::hub::executor::NodeOperation::Project,
+        message: format!("{ROOT}/notes was not made: Permission denied"),
+        fix: None,
+    };
+    let refused = super::folder_refused(&devbox(), &format!("{ROOT}/notes"), e);
+    assert!(refused.fix.unwrap_or_default().contains("another folder"));
+}

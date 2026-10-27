@@ -273,6 +273,18 @@ const answer = (s: AddState, c: Call, outcome: Outcome, names: Names): Step_ => 
   }
 };
 
+/**
+ * A new project refused because its folder is already a project (the hub says so): the failure offers to open that
+ * project, found in the hub's list by its machine and folder.
+ */
+export const offerOpen = (s: AddState, r: Request | undefined, projects: Readonly<Record<string, ProjectSummary>>): AddState => {
+  if (r?.kind !== "new" || s.phase.kind !== "failed" || s.phase.failure.action !== undefined) return s;
+  const p = Object.values(projects).find((x) => x.machineId === r.machineId && x.workspaceRoot.replace(/(.)\/+$/u, "$1") === r.path);
+  if (p === undefined) return s;
+  const action = { kind: "open", project: { machineId: p.machineId, projectId: p.projectId } } as const;
+  return { ...s, phase: { ...s.phase, failure: { ...s.phase.failure, action } } };
+};
+
 export type { ProjectKey };
 
 /** What the add flow reads of the data layer's store (E1): the connection, freshness, the projects and recent events. */

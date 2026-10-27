@@ -689,7 +689,8 @@ fn cant_make(m: &MachineId) -> ToolError {
     ))
 }
 
-/// Why the node didn't make the folder at `path`: it holds files already, or it can't be made there.
+/// Why the node didn't make the folder at `path`: it holds files already, or it can't be made there. The node names the
+/// folder in each of its own refusals; anything else (a dropped link, no answer) is the machine's problem.
 fn folder_refused(m: &MachineId, path: &str, e: ExecutorError) -> ToolError {
     match &e {
         ExecutorError::NodeRequestFailed { message, .. }
@@ -701,15 +702,11 @@ fn folder_refused(m: &MachineId, path: &str, e: ExecutorError) -> ToolError {
                 "Pick another folder for the new project, or add that one as it is by typing its path",
             ))
         }
-        ExecutorError::NodeRequestFailed { message, .. }
-            if !message.starts_with("no answer within") =>
-        {
-            error(
-                ErrorCode::Invalid,
-                message.clone(),
-                "Pick another folder for the new project",
-            )
-        }
+        ExecutorError::NodeRequestFailed { message, .. } if message.contains(path) => error(
+            ErrorCode::Invalid,
+            message.clone(),
+            "Pick another folder for the new project",
+        ),
         _ => problem_error(&node_problem(m, &e)),
     }
 }
@@ -753,6 +750,21 @@ async fn create(
         .folder_make(m, &path, git_init, dry_run)
         .await
         .map_err(|e| folder_refused(m, &path, e))?;
+    // An empty folder that is already a project is that project, never a new one under another name.
+    if let Some(id) = hub.executors.project_at(m, &path) {
+        let title = hub
+            .store
+            .project_get(&ProjectRef {
+                machine_id: m.clone(),
+                project_id: id.clone(),
+            })?
+            .map_or_else(|| id.to_string(), |p| p.title);
+        return Err(problem_error(&problem(
+            ProjectProblemCode::DestExists,
+            format!("{path} on {m} is already the project {title}"),
+            "Open that project, or pick another folder for the new one",
+        )));
+    }
     if dry_run {
         return Ok(ProjectAddOutput {
             next: Some(format!(
