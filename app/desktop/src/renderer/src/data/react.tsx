@@ -26,6 +26,7 @@ export const HubScope = ({ hub, children }: { hub: HubView; children: ReactNode 
 
 /** Every hub's layer, started by the set; the board each hub's sidebar marks need is read whatever is open. */
 export const HubsProvider = ({ hubs, children }: { hubs: HubSetStore; children: ReactNode }) => {
+  useEffect(() => hubs.start(), [hubs]);
   const list = useStore(hubs, (s) => s.hubs);
   return (
     <HubsContext.Provider value={hubs}>
@@ -42,7 +43,10 @@ export const HubsProvider = ({ hubs, children }: { hubs: HubSetStore; children: 
 /** One layer as the app's only hub: what a test, or a window with one hub, needs. */
 export const DataProvider = ({ layer, children }: { layer: DataLayer; children: ReactNode }) => {
   useEffect(() => layer.start(), [layer]);
-  const hubs = useMemo(() => createStore<HubSet>()(() => ({ hubs: [{ id: layer.hub, label: "", layer }] })), [layer]);
+  const hubs = useMemo(
+    (): HubSetStore => Object.assign(createStore<HubSet>()(() => ({ hubs: [{ id: layer.hub, label: "", layer }] })), { start: () => () => undefined }),
+    [layer],
+  );
   const hub = hubs.getState().hubs[0];
   if (hub === undefined) return null;
   return (
