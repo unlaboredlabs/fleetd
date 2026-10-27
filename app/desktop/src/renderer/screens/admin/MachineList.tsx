@@ -10,7 +10,7 @@ import { Button, Dialog, Text, toast } from "../../ui";
 import { machineOrder } from "../projects/machineText";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
 import { toHash } from "../shell/routes";
-import { removeLine, repairOf, type Repair } from "./machines";
+import { MACHINE_WAIT_MS, removeLine, repairOf, type Repair } from "./machines";
 import a from "./admin.module.css";
 
 const noInput = {};
@@ -88,7 +88,7 @@ function RemoveDialog(props: { machine: Machine; line: string; onClose: () => vo
   const remove = () => {
     setBusy(true);
     setError(undefined);
-    call("machine_remove", { machineId: m.machineId })
+    call("machine_remove", { machineId: m.machineId }, { timeoutMs: MACHINE_WAIT_MS })
       .then(
         (out) => {
           props.onRemoved(m.machineId);

@@ -14,12 +14,12 @@ export const errorText = (e: unknown): string => {
 /** Whether the app is connected to its hub right now. */
 export const useLive = (): boolean => useData((s) => s.hub.phase === "live");
 
-/** A call that resolves to its output or throws the hub's error. */
+/** A call that resolves to its output or throws the hub's error; `timeoutMs` for one the hub takes longer over. */
 export function useHubCall() {
   const layer = useDataLayer();
   return useCallback(
-    async <T extends ToolName>(tool: T, input: ToolInput<T>): Promise<ToolOutput<T>> => {
-      const outcome = await layer.call(tool, input);
+    async <T extends ToolName>(tool: T, input: ToolInput<T>, options?: { readonly timeoutMs: number }): Promise<ToolOutput<T>> => {
+      const outcome = await layer.call(tool, input, options);
       if (!outcome.ok) throw new CallError(outcome.error);
       return outcome.output;
     },
