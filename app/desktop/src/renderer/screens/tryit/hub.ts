@@ -2,6 +2,7 @@
 // (previews_list, read again on each preview.state event), and the person's acts on them: Try it (preview_start, only
 // when none runs), End (preview_end) and feedback (attachment_put for the screenshot, then preview_feedback). A hub
 // without previews_list shows no Try it at all. A refusal says why in plain words.
+import type { QueryKey } from "@tanstack/react-query";
 import { useSyncExternalStore } from "react";
 import type { Preview, PreviewOf, PreviewsListOutput, PreviewSuggestion } from "../../../shared/contracts";
 import type { HubError } from "../../../shared/hub";
@@ -84,9 +85,17 @@ export const refusalWords = (error: HubError): string => {
   return error.fix === undefined || error.fix === "" ? error.message : `${error.message} ${error.fix}`;
 };
 
-/** Puts the hub's answer in every previews_list read at once (its preview.state event reads them again anyway). */
+/** The previews_list reads of `preview`'s project: callKey's ["call", tool, input], its input naming the project. */
+export const isProjectsList = (key: QueryKey, preview: Pick<Preview, "projectRef">): boolean => {
+  const input = key[2];
+  if (key[0] !== "call" || key[1] !== "previews_list" || typeof input !== "object" || input === null || !("projectRef" in input)) return false;
+  const ref = input.projectRef as Partial<Preview["projectRef"]> | undefined;
+  return ref?.machineId === preview.projectRef.machineId && ref.projectId === preview.projectRef.projectId;
+};
+
+/** Puts the hub's answer in its project's previews_list reads at once (its preview.state event reads them anyway). */
 const put = (layer: DataLayer, preview: Preview): void => {
-  layer.queryClient.setQueriesData<PreviewsListOutput>({ queryKey: ["call", "previews_list"] }, (old) => {
+  layer.queryClient.setQueriesData<PreviewsListOutput>({ predicate: (q) => isProjectsList(q.queryKey, preview) }, (old) => {
     if (old === undefined) return old;
     const rest = old.previews.filter((p) => p.previewId !== preview.previewId);
     return { ...old, previews: [preview, ...rest], suggestions: old.suggestions.filter((x) => !sameOf(x.of, preview.of)) };

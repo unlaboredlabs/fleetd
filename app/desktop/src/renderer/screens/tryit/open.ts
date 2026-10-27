@@ -1,6 +1,6 @@
 // Opening a PR's Try it from anywhere (its overview, the merge line, the chat): the panel goes to the PR, and the PR's
-// view takes its Try it tab once it shows (panel/panes.tsx asks with isWanted, then says so with shownTry). The tab isn't part of the route, as a
-// PR's Changes tab isn't.
+// view takes its Try it tab once it shows (panel/panes.tsx asks with isWanted, then says so with shownTry). The tab
+// isn't part of the route, as a PR's Changes tab isn't.
 import { useSyncExternalStore } from "react";
 import { panelRoute, toHash, type ProjectKey } from "../shell/routes";
 

@@ -1,6 +1,7 @@
-// Try it outside its own view: the button on a PR and on the merge line, which reopens a preview that is starting or
-// ready and starts one only when none is; and an agent's suggestion to try a PR, one plain line with that button, in
-// the PR's overview and in the chat. Nothing starts from a suggestion: only the person's press does (D161).
+// Try it outside its own view: the button on a PR, which reopens a preview that is starting or ready and starts one
+// only when none is, and on the merge line, where it only reopens one (the design starts none there in phase 1); and
+// an agent's suggestion to try a PR, one plain line with that button, in the PR's overview and in the chat. Nothing
+// starts from a suggestion: only the person's press does (D161).
 import { Play } from "lucide-react";
 import type { PreviewSuggestion } from "../../../shared/contracts";
 import { useDataLayer } from "../../src/data/react";
@@ -10,12 +11,29 @@ import { tryIt, useTryIt } from "./hub";
 import { ofPr } from "./model";
 import s from "./tryit.module.css";
 
-/** Try it for PR `repo#number`; nothing for a hub without previews, or a key that may only open running ones. */
-export function TryItButton({ project, repo, number, variant = "secondary", label }: { project: ProjectKey; repo: string; number: number; variant?: ButtonVariant; label?: string }) {
+/**
+ * Try it for PR `repo#number`; nothing for a hub without previews, or a key that may only open running ones.
+ * `reopenOnly`: shown only while a preview of it is starting or ready, as on the merge line, where phase 1 starts none.
+ */
+export function TryItButton({
+  project,
+  repo,
+  number,
+  variant = "secondary",
+  label,
+  reopenOnly = false,
+}: {
+  project: ProjectKey;
+  repo: string;
+  number: number;
+  variant?: ButtonVariant;
+  label?: string;
+  reopenOnly?: boolean;
+}) {
   const layer = useDataLayer();
   const of = ofPr(repo, number);
   const t = useTryIt(project, of);
-  if (!t.on || t.action === "none") return null;
+  if (!t.on || t.action === "none" || (reopenOnly && t.action !== "open")) return null;
   const word = t.preview?.state === "ready" ? "ready" : t.preview?.state === "starting" || t.asking ? "starting" : undefined;
   return (
     <Button

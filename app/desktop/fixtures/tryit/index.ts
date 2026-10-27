@@ -3,7 +3,8 @@
 // preview_feedback, and sends preview.state as a preview moves. `tryit-fresh` starts with nothing running: #14's writer
 // suggests trying it (in its overview and the chat), the lead proposes how the project runs previews (an approval
 // card), and Try it plays a start through its steps to a ready page the person drives (pages.ts, media/). The others
-// hold one state: starting, ready, failed, ended, and a key that may only open running previews (D162).
+// hold one state: starting, ready, failed, ended, and a key that may only open running previews (D162), with none
+// running and with #14's.
 import fs from "node:fs";
 import path from "node:path";
 import { Fixture } from "../kit/fixture.ts";
@@ -223,12 +224,16 @@ const fresh = (base: Fixture): Fixture => {
   return f;
 };
 
-/** Ready: the Dutch checkout in the frame, its address for the person's devices, feedback to send. */
-const readyNow = (base: Fixture): Fixture => {
-  const f = base14(base, "tryit-ready", "Try it yourself: #14 ready on the web, the Dutch checkout in the frame, its pay button wrapping.");
+/**
+ * Ready: the Dutch checkout in the frame, its address for the person's devices, feedback to send. #9, in the merge
+ * line, has a preview ready too, so the line's Try it reopens it.
+ */
+const readyNow = (base: Fixture, name = "tryit-ready", note = "Try it yourself: #14 ready on the web, the Dutch checkout in the frame, its pay button wrapping.", canStart = true): Fixture => {
+  const f = base14(base, name, note);
   const on = ready(f);
   const off = ended(f, "ended");
-  answerPreviews(f, [on, off], { hidden: [off], canStart: true });
+  const nine = { ...ready(f, 20 * 60_000), previewId: `P${"9a1d".repeat(8)}`, of: { kind: "pr", repo: REPO, number: 9 }, sessionId: `B${"9a1d".repeat(8)}`, url: "http://devbox:8415", head: "9b1c0de" };
+  answerPreviews(f, [on, nine, off], { hidden: [off], canStart });
   f.later(0, "browser_frame", frame(1, "nl"));
   answerEnd(f, on, off);
   return f;
@@ -244,6 +249,7 @@ export default defineGroup({
   fixtures: (base) => [
     fresh(base("typical")),
     readyNow(base("typical")),
+    readyNow(base("typical"), "tryit-read-ready", "Try it yourself from a read key: #14 ready, which it can use, but not mark up, send feedback on or end.", false),
     held(base("typical"), "tryit-starting", "Try it yourself: #14 starting on devbox, at its build.", (f) => starting(f, 2)),
     held(base("typical"), "tryit-failed", "Try it yourself: #14's build failed, with the end of its output.", failed),
     held(base("typical"), "tryit-ended", "Try it yourself: #14's preview ended after no one used it for its idle time.", (f) => ended(f, "idle")),
