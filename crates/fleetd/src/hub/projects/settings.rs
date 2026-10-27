@@ -4,6 +4,10 @@
 //! (the checks the merge train waits for, and those it leaves for after the merge), `project_settings.preview` (how a
 //! preview someone asks for runs, W58) and the `project_env` rows.
 //!
+//! A repo of the project (W79) can have its own `setup` and `preview` (`repos.setup`, `repos.preview`): a call that
+//! names the repo reads and writes those, and an empty one is the project's. A task's launch and a preview read their
+//! repo's, for now always the project's own repo (none for a plain directory). Everything else is the project's.
+//!
 //! A variable is set on the project's node first, which keeps the value and adds it to every claude it starts for
 //! the project; only then does the hub record it. The hub's row holds a plain variable's value and a secret's
 //! fingerprint: a secret reaches the hub sealed to the node's box key, is relayed in the same call and is never
@@ -26,7 +30,7 @@ use fleetd_contracts::project_settings::{
     EnvValue, EnvVarKind, EnvVarName, EnvVarSet, PROJECT_ENV_MAX, ProjectEnvVar, TrainSettings,
     WorktreeSetup,
 };
-use fleetd_contracts::repos::RepoName;
+use fleetd_contracts::repos::{ProjectRepo, RepoId, RepoName};
 use fleetd_contracts::secrets::{Base64Alphabet, SEAL_OVERHEAD, SecretFingerprint, base64_bytes};
 use rusqlite::{OptionalExtension, params};
 
@@ -174,6 +178,107 @@ impl ProjectSettingsStore<'_> {
         })
     }
 
+    /// The setup commands a new worktree of `repo` runs: the repo's own, else the project's; `repo` none (the project's
+    /// own directory, or a plain directory): the project's.
+    pub fn setup_in(
+        &self,
+        r: &ProjectRef,
+        repo: Option<&RepoId>,
+    ) -> Result<Option<WorktreeSetup>, StoreError> {
+        if let Some(repo) = repo
+            && let Some(setup) = self
+                .repo_json(repo, "setup")?
+                .and_then(|json| serde_json::from_str::<WorktreeSetup>(&json).ok())
+                .filter(|s| !s.is_empty())
+        {
+            return Ok(Some(setup));
+        }
+        self.setup(r)
+    }
+
+    /// Replaces `repo`'s setup commands; none gives it the project's. `repo` none: the project's, as `set_setup`.
+    pub fn set_setup_in(
+        &self,
+        r: &ProjectRef,
+        repo: Option<&RepoId>,
+        setup: &WorktreeSetup,
+    ) -> Result<(), StoreError> {
+        let Some(repo) = repo else {
+            return self.set_setup(r, setup);
+        };
+        let json = (!setup.is_empty())
+            .then(|| serde_json::to_string(setup))
+            .transpose()?;
+        self.set_repo_json(repo, "setup", json)
+    }
+
+    /// How a preview of `repo` runs: the repo's own setting, else the project's; `repo` none: the project's.
+    pub fn preview_in(
+        &self,
+        r: &ProjectRef,
+        repo: Option<&RepoId>,
+    ) -> Result<Option<PreviewConfig>, StoreError> {
+        if let Some(repo) = repo
+            && let Some(preview) = self
+                .repo_json(repo, "preview")?
+                .and_then(|json| serde_json::from_str(&json).ok())
+        {
+            return Ok(Some(preview));
+        }
+        self.preview(r)
+    }
+
+    /// Replaces how a preview of `repo` runs; one with no target gives it the project's. `repo` none: the project's, as
+    /// `set_preview`.
+    pub fn set_preview_in(
+        &self,
+        r: &ProjectRef,
+        repo: Option<&RepoId>,
+        preview: &PreviewConfig,
+    ) -> Result<(), StoreError> {
+        let Some(repo) = repo else {
+            return self.set_preview(r, preview);
+        };
+        let json = (!preview.targets().is_empty())
+            .then(|| serde_json::to_string(preview))
+            .transpose()?;
+        self.set_repo_json(repo, "preview", json)
+    }
+
+    /// A repo's own `setup` or `preview`, as JSON; none when it takes the project's.
+    fn repo_json(&self, repo: &RepoId, column: &'static str) -> Result<Option<String>, StoreError> {
+        let Some(n) = crate::hub::repos::store::number(repo) else {
+            return Ok(None);
+        };
+        let saved: Option<Option<String>> = self.db.with(|c| {
+            Ok(c.query_row(
+                &format!("SELECT {column} FROM repos WHERE n = ?"),
+                [n],
+                |row| row.get(0),
+            )
+            .optional()?)
+        })?;
+        Ok(saved.flatten())
+    }
+
+    fn set_repo_json(
+        &self,
+        repo: &RepoId,
+        column: &'static str,
+        json: Option<String>,
+    ) -> Result<(), StoreError> {
+        let Some(n) = crate::hub::repos::store::number(repo) else {
+            return Ok(());
+        };
+        self.db.with(|c| {
+            c.execute(
+                &format!("UPDATE repos SET {column} = ? WHERE n = ?"),
+                params![json, n],
+            )?;
+            Ok(())
+        })
+    }
+
     /// Replaces the train settings; the defaults clear them.
     pub fn set_train(&self, r: &ProjectRef, train: &TrainSettings) -> Result<(), StoreError> {
         let json = (*train != TrainSettings::default())
@@ -270,6 +375,20 @@ impl ProjectSettingsStore<'_> {
     }
 }
 
+/// The setup commands a new task's worktree runs: its repo's, else the project's. A task's repo is, for now, the
+/// project's own (none for a plain directory).
+pub fn task_setup(hub: &Hub, r: &ProjectRef) -> Result<Option<WorktreeSetup>, StoreError> {
+    let repo = hub.repos.own(r)?.map(|repo| repo.repo_id);
+    hub.db.project_settings().setup_in(r, repo.as_ref())
+}
+
+/// How a preview of the project runs: its repo's setting, else the project's. A preview's repo is, for now, the
+/// project's own (none for a plain directory).
+pub fn preview_config(hub: &Hub, r: &ProjectRef) -> Result<Option<PreviewConfig>, StoreError> {
+    let repo = hub.repos.own(r)?.map(|repo| repo.repo_id);
+    hub.db.project_settings().preview_in(r, repo.as_ref())
+}
+
 fn project_ref(machine_id: &MachineId, project_id: &ProjectId) -> ProjectRef {
     ProjectRef {
         machine_id: machine_id.clone(),
@@ -299,25 +418,51 @@ pub fn too_old(m: &MachineId) -> ToolError {
     .with_fix(format!("Update fleetd on {m} and restart its node."))
 }
 
-/// A project's settings are its own directory's until projects hold repos of their own: a named repo is refused
-/// rather than read or set as the project's.
-fn no_repo(r: &ProjectRef, repo: Option<&RepoName>) -> Result<(), ToolError> {
-    let Some(repo) = repo else { return Ok(()) };
+/// The repo named in a call, `None` when none is; an unknown one is refused, with the project's repos to pick from.
+fn repo_named(
+    hub: &Hub,
+    r: &ProjectRef,
+    name: Option<&RepoName>,
+) -> Result<Option<ProjectRepo>, ToolError> {
+    let Some(name) = name else { return Ok(None) };
+    if let Some(repo) = hub.repos.repo_by_name(r, name)? {
+        return Ok(Some(repo));
+    }
+    let names: Vec<String> = hub
+        .repos
+        .repos_of(r)?
+        .into_iter()
+        .map(|repo| repo.name.into_inner())
+        .collect();
+    let fix = if names.is_empty() {
+        "It has no repos: leave repo out for the project's own settings.".to_owned()
+    } else {
+        format!(
+            "Name one of its repos ({}), or leave repo out for the project's own settings.",
+            names.join(", ")
+        )
+    };
     Err(ToolError::new(
         ErrorCode::NotFound,
         format!(
-            "Project {} on {} has no repo {repo}.",
+            "Project {} on {} has no repo {name}.",
             r.project_id, r.machine_id
         ),
     )
-    .with_fix("Leave repo out: the settings are the project's own directory's."))
+    .with_fix(fix))
 }
 
-async fn settings_of(hub: &Hub, r: &ProjectRef) -> Result<ProjectSettings, ToolError> {
+/// The project's settings, with `setup` and `preview` those of `repo` when one is given.
+async fn settings_of(
+    hub: &Hub,
+    r: &ProjectRef,
+    repo: Option<&ProjectRepo>,
+) -> Result<ProjectSettings, ToolError> {
     let Some(project) = hub.store.project_get(r)? else {
         return Err(unknown_project(r));
     };
     let store = hub.db.project_settings();
+    let repo_id = repo.map(|repo| &repo.repo_id);
     let m = &r.machine_id;
     let (worktrees, worktrees_unknown) = if !hub.executors.is_connected(m) {
         (None, Some(format!("{m} is offline.")))
@@ -339,12 +484,12 @@ async fn settings_of(hub: &Hub, r: &ProjectRef) -> Result<ProjectSettings, ToolE
         project_id: r.project_id.clone(),
         title: project.title,
         workspace_root: project.workspace_root,
-        repo: None,
+        repo: repo.map(|repo| repo.name.clone()),
         keep_worktrees: store.keep_worktrees(r)?,
         env: store.env(r)?,
-        setup: store.setup(r)?.unwrap_or_default(),
+        setup: store.setup_in(r, repo_id)?.unwrap_or_default(),
         train: store.train(r)?,
-        preview: store.preview(r)?,
+        preview: store.preview_in(r, repo_id)?,
         worktrees,
         worktrees_unknown,
     })
@@ -357,9 +502,12 @@ async fn get(
 ) -> Result<ProjectSettingsGetOutput, ToolError> {
     require(&caller, Role::Read, Some(&input.machine_id))?;
     let r = project_ref(&input.machine_id, &input.project_id);
-    no_repo(&r, input.repo.as_ref())?;
+    if hub.store.project_get(&r)?.is_none() {
+        return Err(unknown_project(&r));
+    }
+    let repo = repo_named(&hub, &r, input.repo.as_ref())?;
     Ok(ProjectSettingsGetOutput {
-        settings: settings_of(&hub, &r).await?,
+        settings: settings_of(&hub, &r, repo.as_ref()).await?,
         next: None,
         truncated: None,
     })
@@ -376,7 +524,8 @@ async fn set(
     let Some(project) = hub.store.project_get(&r)? else {
         return Err(unknown_project(&r));
     };
-    no_repo(&r, input.repo.as_ref())?;
+    let repo = repo_named(&hub, &r, input.repo.as_ref())?;
+    let repo_id = repo.as_ref().map(|repo| &repo.repo_id);
     // The name lives on the node, which renames it in place: the machine stream then brings it back to every cache.
     if let Some(title) = &input.title
         && title.as_str() != project.title
@@ -393,15 +542,17 @@ async fn set(
         hub.db.project_settings().set_keep_worktrees(&r, keep)?;
     }
     if let Some(setup) = &input.setup {
-        hub.db.project_settings().set_setup(&r, setup)?;
+        hub.db.project_settings().set_setup_in(&r, repo_id, setup)?;
     }
     if let Some(train) = &input.train {
         hub.db.project_settings().set_train(&r, train)?;
     }
     if let Some(preview) = &input.preview {
-        hub.db.project_settings().set_preview(&r, preview)?;
+        hub.db
+            .project_settings()
+            .set_preview_in(&r, repo_id, preview)?;
     }
-    let mut settings = settings_of(&hub, &r).await?;
+    let mut settings = settings_of(&hub, &r, repo.as_ref()).await?;
     if let Some(title) = input.title {
         // Until the node's project event lands in the cache.
         settings.title = title.to_string();

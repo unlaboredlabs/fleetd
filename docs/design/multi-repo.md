@@ -50,6 +50,18 @@ it, so a node's refresh can't wipe it.
 
 **Removal.** Removing a project removes its repos and every repo whose checkout it was.
 
+## Settings per repo (1c)
+
+A repo can have its own `setup` and `preview`; an empty one is the project's (`project_settings`, whose columns stay
+so a hub rolled back still has its data). `project_settings_get`/`set` take a `repo` by name: they read the repo's
+(else the project's) and write the repo's row, and the response names the repo in `settings.repo`. Without `repo`
+they read and write the project's, as before. An unknown repo is `not_found`, with the project's repos in the fix.
+`keepWorktrees`, the title, env, the medium profile and `train` stay the project's either way.
+
+A task's launch (`tasks/wire.rs`) and a preview (`preview/mod.rs`) read their repo's setting, for now always the
+project's own repo (none for a plain directory, which reads the project's): `projects::settings::task_setup` and
+`preview_config`. An agent's approved `preview_config_propose` still writes the project's.
+
 ## Stages
 
 1. The data model, with no change in behaviour: 1a contracts, 1b tables and store, then in parallel 1c settings per
