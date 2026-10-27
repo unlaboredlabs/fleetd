@@ -594,19 +594,17 @@ async fn an_agent_opens_settings_on_an_ios_session_and_its_recording_is_on_the_h
         "one session at a time: {refused}"
     );
 
-    // A small CI machine can't boot the pool's next clone and start agent-device's runner at once (its own xcrun
-    // calls time out at 15 s): let the refill finish first, as long as it takes there (a minute and a half or more).
+    // The pool refills behind the session. On a small CI machine that has to finish first anyway: it can't boot the
+    // next clone and start agent-device's runner at once (agent-device's own xcrun calls time out at 15 s).
     let t = Instant::now();
-    while simulators.warm() == 0 && t.elapsed() < Duration::from_secs(360) {
+    while simulators.warm() == 0 {
+        assert!(
+            t.elapsed() < Duration::from_secs(360),
+            "the pool didn't refill in 6 minutes"
+        );
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
-    match simulators.warm() {
-        0 => eprintln!(
-            "the pool had not refilled after {} ms; going on",
-            ms(t.elapsed())
-        ),
-        _ => eprintln!("the pool refilled behind it: {} ms", ms(t.elapsed())),
-    }
+    eprintln!("the pool refilled behind it: {} ms", ms(t.elapsed()));
 
     // The agent opens Settings and taps a row, with agent-device pointed at the session's clone.
     let t = Instant::now();

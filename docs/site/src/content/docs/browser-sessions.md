@@ -237,8 +237,10 @@ storage work as for a browser session.
   its XCTest runner for it, and shuts it down. Each session gets a clone of the golden (`simctl clone`), which is
   deleted at `session_end` along with everything done in it.
 - **Starts from a warm pool.** The node keeps one clone booted for the next session and clones and boots another
-  behind it, so `session_start` doesn't wait for a boot. An agent-device command takes longer the first time in a
-  session, while its runner starts on the clone.
+  behind it, so `session_start` doesn't wait for a boot. With no clone ready, `session_start` answers at once that
+  one is starting and about how long it takes, rather than wait out the boot. When boots keep failing, the pool waits
+  before the next one: a minute, doubling up to half an hour, and back to normal after a boot that works. An
+  agent-device command takes longer the first time in a session, while its runner starts on the clone.
 - **Recorded by the simulator.** The video is `simctl io recordVideo`'s H.264 MP4 (`video_mp4`), at the screen's full
   size. The action log is the same as an Android session's, and there's no `dom` file.
 - **Live view and takeover.** `simctl` can't stream, so a person watching gets screenshots in a loop, which runs only

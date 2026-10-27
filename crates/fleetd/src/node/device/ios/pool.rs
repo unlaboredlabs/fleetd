@@ -30,6 +30,15 @@ const SETTLED_CPU: f64 = 25.0;
 /// ...this many samples running, taken this far apart.
 const SETTLED_SAMPLES: usize = 3;
 const SAMPLE_EVERY: Duration = Duration::from_secs(5);
+/// After a boot fails, the pool waits this long before the next, doubling with each failure in a row up to
+/// [`BACKOFF_MAX`]; a boot that works starts it over. A Mac that can't boot doesn't clone and boot over and over beside
+/// a live session.
+const BACKOFF_FIRST: Duration = Duration::from_secs(60);
+const BACKOFF_MAX: Duration = Duration::from_secs(30 * 60);
+/// What a boot is guessed to take before one has been timed.
+const BOOT_GUESS: Duration = Duration::from_secs(30);
+/// The shortest wait a session_start is told.
+const WAIT_MIN: Duration = Duration::from_secs(5);
 
 pub const GOLDEN_NAME: &str = "fleetd-golden";
 
@@ -247,6 +256,85 @@ pub async fn clear(simctl: &Simctl, keep: Option<&str>) -> usize {
     cleared
 }
 
+/// How the pool's boots have gone: whether one is under way, how long the last one that worked took, and the failures in
+/// a row with the backoff they set.
+#[derive(Debug)]
+pub struct Refill {
+    booting_since: Option<Instant>,
+    last_boot: Duration,
+    failures: u32,
+    retry_at: Option<Instant>,
+    last_error: Option<String>,
+}
+
+impl Default for Refill {
+    fn default() -> Self {
+        Self {
+            booting_since: None,
+            last_boot: BOOT_GUESS,
+            failures: 0,
+            retry_at: None,
+            last_error: None,
+        }
+    }
+}
+
+/// Why a session_start has no clone now, and about how long until it has one.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Waiting {
+    pub secs: u64,
+    /// The last boot's error, while boots keep failing.
+    pub failing: Option<String>,
+}
+
+/// The wait after `failures` boots in a row failed.
+pub fn backoff(failures: u32) -> Duration {
+    let doublings = failures.saturating_sub(1).min(16);
+    BACKOFF_FIRST
+        .saturating_mul(1 << doublings)
+        .min(BACKOFF_MAX)
+}
+
+impl Refill {
+    /// Whether a boot may start now: none under way, and no backoff running.
+    pub fn may_boot(&self, now: Instant) -> bool {
+        self.booting_since.is_none() && self.retry_at.is_none_or(|at| now >= at)
+    }
+
+    pub fn started(&mut self, now: Instant) {
+        self.booting_since = Some(now);
+    }
+
+    pub fn succeeded(&mut self, now: Instant) {
+        if let Some(since) = self.booting_since.take() {
+            self.last_boot = now.duration_since(since);
+        }
+        self.failures = 0;
+        self.retry_at = None;
+        self.last_error = None;
+    }
+
+    pub fn failed(&mut self, now: Instant, why: String) {
+        self.booting_since = None;
+        self.failures += 1;
+        self.retry_at = Some(now + backoff(self.failures));
+        self.last_error = Some(why);
+    }
+
+    /// About how long until a clone is ready, with none warm.
+    pub fn wait(&self, now: Instant) -> Waiting {
+        let left = match (self.booting_since, self.retry_at) {
+            (Some(since), _) => self.last_boot.saturating_sub(now.duration_since(since)),
+            (None, Some(at)) if at > now => (at - now) + self.last_boot,
+            _ => self.last_boot,
+        };
+        Waiting {
+            secs: left.max(WAIT_MIN).as_secs(),
+            failing: (self.failures > 0).then(|| self.last_error.clone().unwrap_or_default()),
+        }
+    }
+}
+
 /// Booted clones waiting for a session: taking one costs no boot, and the pool clones and boots another behind it.
 pub struct Pool {
     simctl: Simctl,
@@ -256,6 +344,7 @@ pub struct Pool {
     filling: tokio::sync::Mutex<()>,
     /// Drained (the node stops): a boot still under way deletes its clone instead of keeping it.
     closed: AtomicBool,
+    refill: Mutex<Refill>,
 }
 
 /// A clone, from the moment simctl made it: shut down and deleted when dropped, so one whose boot failed, whose
@@ -289,6 +378,7 @@ impl Pool {
             warm: Mutex::default(),
             filling: tokio::sync::Mutex::new(()),
             closed: AtomicBool::new(false),
+            refill: Mutex::default(),
         })
     }
 
@@ -307,15 +397,13 @@ impl Pool {
         Ok(lent)
     }
 
-    /// A booted clone, or one cloned and booted now when none waits; the pool refills behind it.
-    pub async fn take(self: &Arc<Self>) -> Result<Lent, String> {
+    /// A booted clone; the pool refills behind it. With none warm, a boot starts (unless one is under way or the
+    /// pool is backing off), and the answer says about how long it takes: a boot can outlast the agent's wait for its
+    /// tool call, so session_start doesn't wait for it.
+    pub fn take(self: &Arc<Self>) -> Result<Lent, Waiting> {
         let warm = lock(&self.warm).pop_front();
-        let lent = match warm {
-            Some(lent) => lent,
-            None => self.boot().await?,
-        };
         self.refill();
-        Ok(lent)
+        warm.ok_or_else(|| lock(&self.refill).wait(Instant::now()))
     }
 
     /// Clones and boots in the background until the pool holds its size.
@@ -329,12 +417,25 @@ impl Pool {
                 if pool.closed.load(Ordering::Relaxed) {
                     return;
                 }
-                match pool.boot().await {
+                {
+                    let mut refill = lock(&pool.refill);
+                    if !refill.may_boot(Instant::now()) {
+                        return;
+                    }
+                    refill.started(Instant::now());
+                }
+                let booted = pool.boot().await;
+                match &booted {
+                    Ok(_) => lock(&pool.refill).succeeded(Instant::now()),
+                    Err(e) => lock(&pool.refill).failed(Instant::now(), e.clone()),
+                }
+                match booted {
                     // Dropped: deleted.
                     Ok(_) if pool.closed.load(Ordering::Relaxed) => {}
                     Ok(lent) => lock(&pool.warm).push_back(lent),
                     Err(e) => {
-                        tracing::warn!(error = %e, "iOS simulator pool not refilled");
+                        let wait = backoff(lock(&pool.refill).failures);
+                        tracing::warn!(error = %e, retry_in_secs = wait.as_secs(), "iOS simulator pool not refilled");
                         return;
                     }
                 }
@@ -370,6 +471,72 @@ mod tests {
         assert_eq!(device_cpu(ps, "AAAA-1"), 100.0);
         assert_eq!(device_cpu(ps, "BBBB-2"), 93.0);
         assert_eq!(device_cpu(ps, "CCCC-3"), 0.0, "not booted");
+    }
+
+    #[test]
+    fn failed_boots_back_off_doubling_to_half_an_hour_and_a_good_one_starts_over() {
+        assert_eq!(backoff(1), Duration::from_secs(60));
+        assert_eq!(backoff(2), Duration::from_secs(120));
+        assert_eq!(backoff(5), Duration::from_secs(960));
+        assert_eq!(backoff(6), BACKOFF_MAX);
+        assert_eq!(backoff(1000), BACKOFF_MAX);
+
+        let t0 = Instant::now();
+        let mut refill = Refill::default();
+        assert!(refill.may_boot(t0));
+        refill.started(t0);
+        assert!(!refill.may_boot(t0), "one boot at a time");
+        refill.failed(t0, "simctl boot failed".into());
+        refill.started(t0 + Duration::from_secs(60));
+        refill.failed(t0 + Duration::from_secs(60), "simctl boot failed".into());
+        let after = t0 + Duration::from_secs(60);
+        assert!(
+            !refill.may_boot(after + Duration::from_secs(119)),
+            "backing off"
+        );
+        assert!(refill.may_boot(after + Duration::from_secs(120)));
+        refill.started(after + Duration::from_secs(120));
+        refill.succeeded(after + Duration::from_secs(160));
+        assert_eq!(refill.failures, 0);
+        assert_eq!(refill.last_boot, Duration::from_secs(40), "timed");
+        assert!(refill.may_boot(after + Duration::from_secs(160)));
+    }
+
+    #[test]
+    fn with_no_warm_clone_a_start_hears_about_how_long() {
+        let t0 = Instant::now();
+        let mut refill = Refill::default();
+        assert_eq!(
+            refill.wait(t0),
+            Waiting {
+                secs: 30,
+                failing: None
+            },
+            "a guess before any boot was timed"
+        );
+        refill.started(t0);
+        refill.succeeded(t0 + Duration::from_secs(80));
+        refill.started(t0 + Duration::from_secs(100));
+        assert_eq!(
+            refill.wait(t0 + Duration::from_secs(130)).secs,
+            50,
+            "a boot under way"
+        );
+        assert_eq!(
+            refill.wait(t0 + Duration::from_secs(300)).secs,
+            5,
+            "at least a few seconds"
+        );
+        refill.failed(
+            t0 + Duration::from_secs(300),
+            "simctl boot did not finish".into(),
+        );
+        let failing = refill.wait(t0 + Duration::from_secs(300));
+        assert_eq!(failing.secs, 60 + 80, "the backoff, then a boot");
+        assert_eq!(
+            failing.failing.as_deref(),
+            Some("simctl boot did not finish")
+        );
     }
 
     #[test]
