@@ -5363,6 +5363,10 @@
           "$ref": "#/$defs/ToolPermission",
           "description": "approval of a session's tool prompt, instead of a gated run."
         },
+        "previewConfig": {
+          "$ref": "#/$defs/PreviewConfigProposeCall",
+          "description": "approval of an agent's proposed preview setting (preview_config_propose), instead of a gated run: approving it\nsaves it as the project's `preview`."
+        },
         "projectRef": {
           "$ref": "#/$defs/ProjectRef"
         },

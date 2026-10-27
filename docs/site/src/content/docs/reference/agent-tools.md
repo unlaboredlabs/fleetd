@@ -32,7 +32,7 @@ The hub checks these on every fleetd call a session makes, through its MCP tools
 | Agents running at once, per project | The project's max agents, which a person sets (`cap_set`, the chat's Max agents); unset, its machine's cap within the fleet cap. A spawn over it queues and starts by itself; a review goes ahead of queued writers. The lead is not an agent and doesn't count. |
 | Agents running at once, per machine | The machine's max agents, which a person may set up to the fleet cap (`cap_set`, `fleetd machine set`, Settings > Agents). Unset: what the machine fits, one per CPU less one in eight, and 2 GB of memory each after a quarter (4 to 16 GB) is left for the system, at most 64. Either way new agents pause while memory in use runs short, and wait for 5 GB of disk each above the free-space floor. |
 | Agents running at once, fleet-wide | The machines' caps added up, unless a person set a fleet cap. |
-| Calls a task's agent may make | `report`, `ask_lead`, `brief_read`, `decisions_search`, `review_read`. Every other call is refused. |
+| Calls a task's agent may make | `report`, `ask_lead`, `brief_read`, `decisions_search`, `review_read`, `preview_suggest`, `preview_config_propose`. Every other call is refused. |
 | Gated commands (`gated_run`) | Classes `irreversible`, `money`, `credential`. Run only after a human approves; at most 14400 s. |
 
 These limits cover calls to fleetd, not what the agent's own shell can do. A task runs with full Bash, so `gated_run` is not the only way it could run a command. A process that leaves its session's process tree (for example with `setsid`) and scrubs its environment counts as you, with no limits: see "Known limit" on the Security page. Run agents you don't trust as a different OS user.
@@ -68,6 +68,9 @@ Every lead gets these.
 | [`usage_resume`](#usage_resume) | Lift the usage pause on your project's machine now and send every agent parked there "continue": only once you know its login has capacity again (the human says so, or a turn of yours just went through). | No |
 | [`change_enqueue`](#change_enqueue) | Put a PR no task's result put there on its repo's merge train; only the train merges. | No |
 | [`review_read`](#review_read) | Read every finding of the latest reviews of your PRs, blocking and non-blocking, in full, each with path:line. | No |
+| [`preview_suggest`](#preview_suggest) | Suggest the person try a PR themselves, where a human test clearly matters (a UI change, copy in several languages, a mobile build): one line with a Try it button in the chat and the PR, once per PR. | No |
+| [`preview_config_propose`](#preview_config_propose) | Propose how Try it runs this project's web app, once you know: setup commands (install), build, a start command that serves on 127.0.0.1:$PORT, the ready path and the lockfiles setup depends on. | A person approves the proposed setting in chat before it is saved. |
+| [`preview_start`](#preview_start) | Start a preview of a PR (or an order's PRs merged together) for the person to try: only when the person asked for it in the message you are answering, never on your own (use preview_suggest for that). | No |
 | [`session_start`](#session_start) | Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end. | No |
 | [`session_end`](#session_end) | Close your browser session: the browser and its profile are thrown away, and its recording goes to the hub. | No |
 | [`request_takeover`](#request_takeover) | Ask a person to take your browser over, for what only they can do: a captcha, a login confirmation only they can give, a judgement call. | No |
@@ -672,6 +675,90 @@ Read every finding of the latest reviews of your PRs, blocking and non-blocking,
 }
 ```
 
+### preview_suggest
+
+Suggest the person try a PR themselves, where a human test clearly matters (a UI change, copy in several languages, a mobile build): one line with a Try it button in the chat and the PR, once per PR. why says what to look at, in plain words. Nothing starts from it: only the person starts a preview.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `prUrl` | string | yes | Like `https://github.com/<owner>/<name>/pull/<n>`. |
+| `why` | string | yes | One line. At most 300 characters. |
+
+**Who may call:** a lead, a task's agent, checked by the hub. **Needs a human:** no.
+
+```json
+{
+  "name": "preview_suggest",
+  "arguments": {
+    "prUrl": "https://github.com/acme/storefront/pull/7",
+    "why": "The checkout's buttons read differently in German and Dutch"
+  }
+}
+```
+
+### preview_config_propose
+
+Propose how Try it runs this project's web app, once you know: setup commands (install), build, a start command that serves on 127.0.0.1:$PORT, the ready path and the lockfiles setup depends on. The person sees it as an approval card; nothing is saved until they approve, and the outcome arrives in a wake.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `config` | object | yes | A project's preview setting (Settings › Projects › Try it, or `project_settings_set {preview}`). Nothing runs because of it: it says how to run a preview someone asks for. |
+| `config.idleMinutes` | integer | no | A preview no one used for this many minutes ends. 5 to 240. Default `30`. |
+| `config.web` | object | no | How a project's web app is built and run for a preview, each command with `sh -c` in the preview's worktree and the project's variables, as setup commands run (#501). |
+| `config.web.build` | string | no | Builds the app; none for an app the start command builds itself. At most 2000 characters. |
+| `config.web.inputs` | string[] | no | Files whose contents decide what setup makes, such as lockfiles. At most 20 items. |
+| `config.web.ready` | string | no | Asked until it answers, for at most 2 minutes after the start. Default `"/"`. |
+| `config.web.setup` | string[] | no | Run first, in order: install dependencies, generate code. Skipped when `inputs` haven't changed since a preview of this project last ran them on this machine. At most 20 items. |
+| `config.web.start` | string | yes | Serves the app on `127.0.0.1:$PORT`; it runs until the preview ends. At most 2000 characters. |
+| `why` | string | yes | One line. At most 300 characters. |
+
+**Who may call:** a lead, a task's agent, checked by the hub. **Needs a human:** A person approves the proposed setting in chat before it is saved.
+
+```json
+{
+  "name": "preview_config_propose",
+  "arguments": {
+    "config": {
+      "web": {
+        "build": "pnpm build",
+        "inputs": [
+          "pnpm-lock.yaml"
+        ],
+        "setup": [
+          "pnpm install --frozen-lockfile"
+        ],
+        "start": "pnpm preview --port $PORT --host 127.0.0.1"
+      }
+    },
+    "why": "The storefront is a Vite app"
+  }
+}
+```
+
+### preview_start
+
+Start a preview of a PR (or an order's PRs merged together) for the person to try: only when the person asked for it in the message you are answering, never on your own (use preview_suggest for that). It runs on a machine that can host it and opens in the app; previews_list in the app shows it.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `of` | object | yes | What a preview is of: one PR, or an order's PRs merged together onto their base on a scratch branch (D162). One of these shapes: {kind, number, repo}; {kind, workstreamId}. |
+| `target` | string | no | What a preview runs: phase 1 is the web; Android, iOS and the desktop follow (docs/design/try-it.md, Phases). One of `web`. Default `"web"`. |
+
+**Who may call:** a lead, checked by the hub. **Needs a human:** no.
+
+```json
+{
+  "name": "preview_start",
+  "arguments": {
+    "of": {
+      "kind": "pr",
+      "number": 7,
+      "repo": "acme/storefront"
+    }
+  }
+}
+```
+
 ### session_start
 
 Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end. It is recorded (video, the page after each step, a line per agent-browser command) for the person to replay. Drive it with the agent-browser CLI in Bash, which is already pointed at it: pass no --cdp and launch no browser of your own. purpose: one line on what for. kind android instead opens a fresh Android emulator (Android 15), driven with the agent-device CLI, which is already pointed at it: pass no --serial or --platform.
@@ -759,6 +846,8 @@ Every task's agent gets these: implementers, readers, reviewers and QA.
 | [`ask_lead`](#ask_lead) | Ask your lead a question. | No |
 | [`brief_read`](#brief_read) | Read your workstream's brief, whole: its goal, why, pointers, constraints and done-when. | No |
 | [`review_read`](#review_read-task) | Read every finding of the latest reviews of your PRs, blocking and non-blocking, in full, each with path:line. | No |
+| [`preview_suggest`](#preview_suggest-task) | Suggest the person try a PR themselves, where a human test clearly matters (a UI change, copy in several languages, a mobile build): one line with a Try it button in the chat and the PR, once per PR. | No |
+| [`preview_config_propose`](#preview_config_propose-task) | Propose how Try it runs this project's web app, once you know: setup commands (install), build, a start command that serves on 127.0.0.1:$PORT, the ready path and the lockfiles setup depends on. | A person approves the proposed setting in chat before it is saved. |
 | [`session_start`](#session_start-task) | Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end. | No |
 | [`session_end`](#session_end-task) | Close your browser session: the browser and its profile are thrown away, and its recording goes to the hub. | No |
 | [`request_takeover`](#request_takeover-task) | Ask a person to take your browser over, for what only they can do: a captcha, a login confirmation only they can give, a judgement call. | No |
@@ -855,6 +944,66 @@ Read every finding of the latest reviews of your PRs, blocking and non-blocking,
   "name": "review_read",
   "arguments": {
     "pr": "https://github.com/acme/storefront/pull/7"
+  }
+}
+```
+
+### preview_suggest (task)
+
+Suggest the person try a PR themselves, where a human test clearly matters (a UI change, copy in several languages, a mobile build): one line with a Try it button in the chat and the PR, once per PR. why says what to look at, in plain words. Nothing starts from it: only the person starts a preview.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `prUrl` | string | yes | Like `https://github.com/<owner>/<name>/pull/<n>`. |
+| `why` | string | yes | One line. At most 300 characters. |
+
+**Who may call:** a lead, a task's agent, checked by the hub. **Needs a human:** no.
+
+```json
+{
+  "name": "preview_suggest",
+  "arguments": {
+    "prUrl": "https://github.com/acme/storefront/pull/7",
+    "why": "The checkout's buttons read differently in German and Dutch"
+  }
+}
+```
+
+### preview_config_propose (task)
+
+Propose how Try it runs this project's web app, once you know: setup commands (install), build, a start command that serves on 127.0.0.1:$PORT, the ready path and the lockfiles setup depends on. The person sees it as an approval card; nothing is saved until they approve, and the outcome arrives in a wake.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `config` | object | yes | A project's preview setting (Settings › Projects › Try it, or `project_settings_set {preview}`). Nothing runs because of it: it says how to run a preview someone asks for. |
+| `config.idleMinutes` | integer | no | A preview no one used for this many minutes ends. 5 to 240. Default `30`. |
+| `config.web` | object | no | How a project's web app is built and run for a preview, each command with `sh -c` in the preview's worktree and the project's variables, as setup commands run (#501). |
+| `config.web.build` | string | no | Builds the app; none for an app the start command builds itself. At most 2000 characters. |
+| `config.web.inputs` | string[] | no | Files whose contents decide what setup makes, such as lockfiles. At most 20 items. |
+| `config.web.ready` | string | no | Asked until it answers, for at most 2 minutes after the start. Default `"/"`. |
+| `config.web.setup` | string[] | no | Run first, in order: install dependencies, generate code. Skipped when `inputs` haven't changed since a preview of this project last ran them on this machine. At most 20 items. |
+| `config.web.start` | string | yes | Serves the app on `127.0.0.1:$PORT`; it runs until the preview ends. At most 2000 characters. |
+| `why` | string | yes | One line. At most 300 characters. |
+
+**Who may call:** a lead, a task's agent, checked by the hub. **Needs a human:** A person approves the proposed setting in chat before it is saved.
+
+```json
+{
+  "name": "preview_config_propose",
+  "arguments": {
+    "config": {
+      "web": {
+        "build": "pnpm build",
+        "inputs": [
+          "pnpm-lock.yaml"
+        ],
+        "setup": [
+          "pnpm install --frozen-lockfile"
+        ],
+        "start": "pnpm preview --port $PORT --host 127.0.0.1"
+      }
+    },
+    "why": "The storefront is a Vite app"
   }
 }
 ```
