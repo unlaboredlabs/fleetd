@@ -1,7 +1,7 @@
 //! A task's agent reads its workstream's brief and its project's decisions itself, over a real hub with a fake node:
 //! `brief_read` and `decisions_search` answer in full, another project's decisions are refused, and the first prompt
 //! carries the whole brief and the decisions it names by id or key. `review_read` gives an author, and its lead, every
-//! finding of its PRs' latest reviews in full, and refuses another project's.
+//! finding of its PRs' latest reviews in full, a reviewer those of the PR it reviews, and refuses another project's.
 use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef};
 use fleetd_contracts::lead_calls::{LeadCall, LeadCallResult};
 use fleetd_contracts::ledger::{Brief, DecisionKey, DecisionScope, DecisionSource, IntakeChannel};
@@ -302,22 +302,51 @@ async fn an_author_reads_every_finding_of_its_prs_latest_reviews_but_no_other_pr
         assert!(!format!("{refused:?}").contains("p2's own"));
     }
 
-    // A reviewer of the PR never reads the earlier reviews of it: it judges the PR alone.
+    // A reviewer reads the earlier reviews of the PR it reviews, to check its blocking findings were fixed, and
+    // no other PR's: not another of this project's, nor another project's.
     insert(
         &hub,
         json!({ "taskId": "T2", "title": "review it", "kind": "review", "state": "running", "startedAt": AT, "pr": mine }),
     );
-    let reviewer = as_agent(
+    let reviewer = CallerAgent::Task(TaskId::unchecked("T2"));
+    for call in [
+        json!({ "op": "review_read" }),
+        json!({ "op": "review_read", "pr": "#7" }),
+    ] {
+        let Ok(LeadCallResult::ReviewRead(earlier)) = as_agent(&hub, reviewer.clone(), call) else {
+            panic!("review_read was not answered for the reviewer")
+        };
+        assert_eq!(earlier.prs, read.prs);
+    }
+    let sibling = "https://github.com/acme/app/pull/9";
+    insert(
         &hub,
-        CallerAgent::Task(TaskId::unchecked("T2")),
-        json!({ "op": "review_read", "pr": mine }),
-    )
-    .unwrap_err();
-    assert_eq!(reviewer.code, ErrorCode::Forbidden);
-    assert!(
-        reviewer.message.contains("is a review task"),
-        "{}",
-        reviewer.message
+        json!({ "taskId": "T3", "title": "write another", "kind": "write", "state": "running", "startedAt": AT, "pr": sibling }),
     );
-    assert!(!format!("{reviewer:?}").contains("src/a.rs:3"));
+    verdict(
+        &hub,
+        "T11",
+        sibling,
+        'd',
+        1,
+        "src/d.rs:4 not the reviewer's",
+    );
+    for other in [sibling, theirs] {
+        let refused = as_agent(
+            &hub,
+            reviewer.clone(),
+            json!({ "op": "review_read", "pr": other }),
+        )
+        .unwrap_err();
+        assert_eq!(refused.code, ErrorCode::Forbidden);
+        assert!(
+            refused.message.contains("is not one of T2's PRs"),
+            "{}",
+            refused.message
+        );
+        assert!(
+            !format!("{refused:?}").contains("src/d.rs:4")
+                && !format!("{refused:?}").contains("p2's own")
+        );
+    }
 }
