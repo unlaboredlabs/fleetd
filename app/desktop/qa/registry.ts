@@ -64,6 +64,10 @@ export const fixtures = [
   "machines-add",
   "machines-running",
   "machines-failed",
+  // ...any other machine's line with laptop's node online a moment later, and laptop's page: its checklist, claude
+  // logged out.
+  "machines-joined",
+  "machines-checklist",
   // F2: the lead chat's live strip with 0, 3 and 20 agents at work (fixtures/live).
   "live-0",
   "live-3",
@@ -1855,6 +1859,56 @@ export const screens: readonly Screen[] = [
       await page.getByRole("button", { name: "Choose…" }).click();
       await page.getByRole("button", { name: "Plan…" }).first().click();
       await page.getByRole("button", { name: "Add builder-1" }).waitFor();
+    },
+  },
+  // Any other machine: its name, then the line with Copy and "Waiting for laptop…", which turns into Joined.
+  {
+    id: "admin.machines",
+    route: "#/admin/machines",
+    fixtures: ["machines-add"],
+    variant: "line",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Get the line…" }).click();
+      await page.getByRole("textbox", { name: "Name" }).fill("laptop");
+      await page.getByRole("button", { name: "Make the line" }).click();
+      await page.getByText("Waiting for laptop…").waitFor();
+    },
+  },
+  {
+    id: "admin.machines",
+    route: "#/admin/machines",
+    fixtures: ["machines-joined"],
+    variant: "joined",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Get the line…" }).click();
+      await page.getByRole("textbox", { name: "Name" }).fill("laptop");
+      await page.getByRole("button", { name: "Make the line" }).click();
+      await page.getByText("laptop joined.").waitFor();
+    },
+  },
+  // The machine list's Remove asks first.
+  {
+    id: "admin.machines",
+    route: "#/admin/machines",
+    fixtures: ["machines-add"],
+    variant: "remove",
+    open: async (page) => {
+      const list = page.getByRole("list", { name: "Machines" });
+      await list.scrollIntoViewIfNeeded();
+      await list.getByRole("button", { name: "Remove" }).first().click();
+      await page.getByRole("dialog").waitFor();
+    },
+  },
+  // A machine's page: its checklist, and Claude's login from the app with the page to sign in at and the code field.
+  { id: "admin.machine", route: "#/admin/machines/laptop", fixtures: ["machines-checklist"] },
+  {
+    id: "admin.machine",
+    route: "#/admin/machines/laptop",
+    fixtures: ["machines-checklist"],
+    variant: "login",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Log in…" }).click();
+      await page.getByRole("form", { name: "Sign in" }).waitFor();
     },
   },
   { id: "admin.hub", route: "#/admin/hub", fixtures: ["admin-owner", "settings-agents", "admin-old-hub"] },
