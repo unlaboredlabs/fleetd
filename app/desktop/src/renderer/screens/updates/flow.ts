@@ -1,8 +1,11 @@
 // The Update button's run: the hub updates itself and then its nodes (hub_update, followed with hub_update_status
-// through the hub's own restart), then, when every part came through, this app installs its update and relaunches. A tiny external store, so the
-// sidebar line and the sheet show the same run; the steps take their effects as deps, so they are unit-tested.
+// through the hub's own restart), then, when every part came through, this app installs its update and relaunches.
+// Retry updates one machine of the last run again (hub_update with its machine). The hub downloads the channel's
+// newest build ahead and says so (`ready`), read on connect and every few minutes. A tiny external store, so the
+// sidebar line, the notice and the sheet show the same run; the steps take their effects as deps, so they are
+// unit-tested.
 import { useSyncExternalStore } from "react";
-import type { Call, UpdateRun } from "../../../shared/contracts";
+import type { Call, UpdatePart, UpdateRun } from "../../../shared/contracts";
 import type { UpdatesState } from "../../../shared/updates";
 
 export type Flow =
@@ -14,7 +17,8 @@ export type Flow =
   | { readonly phase: "following"; readonly reconnecting: boolean }
   /** The hub and its nodes are done: this app downloads its update, then restarts. */
   | { readonly phase: "app" }
-  | { readonly phase: "finished" }
+  /** `updated`: every machine came through and this app had nothing to install, so the sheet closes itself. */
+  | { readonly phase: "finished"; readonly updated: boolean }
   /** The hub wouldn't start it: its words, and its fix. */
   | { readonly phase: "refused"; readonly message: string };
 
@@ -33,6 +37,8 @@ export interface FlowDeps {
 /** How often the run is read while it goes on: each part settles within a second or so of the last, and a read is one
  * small call on the open socket. */
 export const FOLLOW_EVERY_MS = 500;
+/** How often the hub is asked whether it has a newer build ready: it looks every 10 minutes. */
+export const READY_EVERY_MS = 10 * 60_000;
 /** How long the end of a run waits for this app's own check, so an update it is about to find isn't missed. */
 export const APP_CHECK_WAIT_MS = 60_000;
 const APP_CHECK_EVERY_MS = 1_000;
@@ -43,11 +49,13 @@ export const BEFORE_UPDATE =
 
 let flow: Flow = { phase: "idle" };
 let run: UpdateRun | null = null;
+let ready: string | null = null;
 const listeners = new Set<() => void>();
 
-const set = (next: { flow?: Flow; run?: UpdateRun | null }) => {
+const set = (next: { flow?: Flow; run?: UpdateRun | null; ready?: string | null }) => {
   if (next.flow !== undefined) flow = next.flow;
   if (next.run !== undefined) run = next.run;
+  if (next.ready !== undefined) ready = next.ready;
   for (const listener of listeners) listener();
 };
 
@@ -58,10 +66,13 @@ const subscribe = (listener: () => void) => {
 
 export const useFlow = (): Flow => useSyncExternalStore(subscribe, () => flow);
 export const useRun = (): UpdateRun | null => useSyncExternalStore(subscribe, () => run);
+/** The channel's newest build when the hub has it downloaded and checked, ready to swap in; else null. */
+export const useReady = (): string | null => useSyncExternalStore(subscribe, () => ready);
 export const currentFlow = (): Flow => flow;
+export const currentReady = (): string | null => ready;
 
 /** For tests: back to a window where nothing was pressed. */
-export const resetFlow = (): void => set({ flow: { phase: "idle" }, run: null });
+export const resetFlow = (): void => set({ flow: { phase: "idle" }, run: null, ready: null });
 
 const going = (f: Flow): boolean => f.phase === "starting" || f.phase === "following" || f.phase === "app";
 
@@ -71,13 +82,21 @@ export const hubUpdated = (r: UpdateRun): boolean => {
   return hub?.state === "done" || hub?.state === "current";
 };
 
-/** The last run the hub knows, for a sheet opened mid-run or after one; a run going on is followed. */
+/** A machine whose update didn't come through: a part failed, was put back or skipped. Claude Code left as it is
+ * (installed another way) is a calm note, not one of them. */
+const leftOut = (p: UpdatePart): boolean =>
+  p.state === "failed" || p.state === "rolled_back" || (p.state === "skipped" && p.part !== "claude");
+
+/** The last run the hub knows and the build it has ready, on connect, every few minutes, and for a sheet opened
+ * mid-run or after one; a run going on is followed. */
 export const loadRun = async (deps: FlowDeps): Promise<void> => {
   if (going(flow)) return;
   const out = await deps.call("hub_update_status", {});
   if (!out.ok || going(flow)) return;
-  set({ run: out.output.run ?? null });
-  if (out.output.run !== undefined && out.output.run.finishedAt === undefined) await follow(deps);
+  set({ run: out.output.run ?? null, ready: out.output.ready ?? null });
+  // Followed, never ended with this app's restart: only Update pressed in this window, or Restart to update, restarts
+  // it. A run can go on for hours while a busy machine waits; this app's update then waits for a click.
+  if (out.output.run !== undefined && out.output.run.finishedAt === undefined) await follow(deps, false);
 };
 
 /** The Update button. Never waits for work: the hub restarts at once, and what runs carries on by itself. */
@@ -94,11 +113,25 @@ export const startUpdate = async (deps: FlowDeps): Promise<void> => {
     set({ flow: { phase: "refused", message: before ? BEFORE_UPDATE : said } });
     return;
   }
-  set({ run: out.output.run ?? null });
+  set({ run: out.output.run ?? null, ready: null });
   await follow(deps);
 };
 
-const follow = async (deps: FlowDeps): Promise<void> => {
+/** Retry: the hub updates this machine of the last run again, its fleetd then its Claude Code; the rest stays. */
+export const retryMachine = async (deps: FlowDeps, machineId: string): Promise<void> => {
+  if (going(flow)) return;
+  set({ flow: { phase: "starting" } });
+  const out = await deps.call("hub_update", { machine: machineId });
+  if (!out.ok) {
+    set({ flow: { phase: "refused", message: out.error.fix === undefined ? out.error.message : `${out.error.message} ${out.error.fix}` } });
+    return;
+  }
+  set({ run: out.output.run ?? null });
+  await follow(deps, false);
+};
+
+/** `withApp`: this app installs its update at the end, when every part came through. */
+const follow = async (deps: FlowDeps, withApp = true): Promise<void> => {
   set({ flow: { phase: "following", reconnecting: false } });
   while (run !== null && run.finishedAt === undefined) {
     await deps.sleep(FOLLOW_EVERY_MS);
@@ -114,7 +147,12 @@ const follow = async (deps: FlowDeps): Promise<void> => {
   // A part that failed or was put back stays on screen: restarting this app now would take its words away. This app's
   // own update is still there to install by hand.
   if (run === null || !hubUpdated(run) || run.parts.some((p) => p.state === "failed" || p.state === "rolled_back")) {
-    set({ flow: { phase: "finished" } });
+    set({ flow: { phase: "finished", updated: false } });
+    return;
+  }
+  const updated = !run.parts.some(leftOut);
+  if (!withApp) {
+    set({ flow: { phase: "finished", updated } });
     return;
   }
   // This app's own check may still be on its way when the run ends at once (everything else already current).
@@ -130,5 +168,5 @@ const follow = async (deps: FlowDeps): Promise<void> => {
     deps.app.install();
     return;
   }
-  set({ flow: { phase: "finished" } });
+  set({ flow: { phase: "finished", updated } });
 };

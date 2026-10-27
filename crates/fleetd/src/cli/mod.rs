@@ -275,6 +275,10 @@ pub fn main() -> ExitCode {
     {
         return crate::update::finish::run(std::path::Path::new(plan));
     }
+    // `fleetd update` runs it from the binary it just installed, which knows the Claude Code it was tested with.
+    if argv.first().map(String::as_str) == Some("update-claude") {
+        return update::run_claude();
+    }
     if is_long_running(&argv) {
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .enable_all()

@@ -490,6 +490,8 @@ pub fn start_loops(hub: &Arc<Hub>, tools: &Arc<Registry>) -> Vec<JoinHandle<()>>
     loops.extend(hub.leads.run());
     // An update the previous hub process started: the watcher's verdict, then the nodes.
     loops.push(tokio::spawn(hub.updates.clone().resume()));
+    // The channel's newest build, downloaded ahead so that Update only swaps and restarts.
+    loops.push(tokio::spawn(hub.updates.clone().prefetch_loop()));
     loops.push(hub.automations.start());
     loops.extend(hub.time.start(hub));
     loops.extend(crate::hub::metrics::start(hub));

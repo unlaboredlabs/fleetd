@@ -1702,21 +1702,28 @@ pub struct HubBusyItem {
 }
 
 // hub_update: updates the hub to the newest build of its channel, then every connected node, without waiting for work
-// to finish: what a restart cuts off carries on by itself. Admin on every machine, a human key only. Answers at once
-// with the run; hub_update_status follows it. A run already going is returned, not started again.
+// to finish: what a restart cuts off carries on by itself, and a machine running what can't (a live session, a preview)
+// updates once it's idle. Admin on every machine, a human key only. Answers at once with the run; hub_update_status
+// follows it. A run already going is returned, not started again. With `machine`, updates that machine of the last run
+// again (Retry).
 input!(HubUpdateInput {
     /// Absent: the channel the hub's build came from.
     channel: Option<HubChannel>,
+    /// Retry this machine of the last run, whose hub updated: its node, then its Claude Code.
+    machine: Option<MachineId>,
 });
 output!(HubUpdateOutput {
     /// The update going now or the last one; absent when the hub never updated itself.
     run: Option<UpdateRun>,
+    /// The channel's newest build, already downloaded and checked on the hub (and fetched by its nodes), so an update
+    /// only swaps and restarts: what "fleetd <version> is ready" names. Absent when there is none newer.
+    ready: Option<Text<1, 200>>,
 });
 // hub_update_status: the update going now, or the last one.
 input!(HubUpdateStatusInput {});
 
-/// Updates past this many machines are not followed part by part.
-pub const UPDATE_PARTS_MAX: usize = 201;
+/// Updates past this many parts (the hub, then a node and Claude Code per machine) are not followed part by part.
+pub const UPDATE_PARTS_MAX: usize = 401;
 
 /// One hub update, from its start to the last node's result.
 #[skip_serializing_none]
@@ -1730,11 +1737,11 @@ pub struct UpdateRun {
     pub started_at: Timestamp,
     /// Set once every part has its result.
     pub finished_at: Option<Timestamp>,
-    /// The hub first, then one per machine, by name.
+    /// The hub first, then per machine, by name, its node and its Claude Code.
     pub parts: List<UpdatePart, 1, UPDATE_PARTS_MAX>,
 }
 
-/// The hub or one machine's node in an update.
+/// The hub, or one machine's node or Claude Code, in an update.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -1746,6 +1753,8 @@ pub struct UpdatePart {
     pub name: Text<1, 200>,
     /// The version it ran when the update started.
     pub from: Text<0, 200>,
+    /// The version it goes to when not the run's `to`: Claude Code's, the one the new fleetd was tested with.
+    pub to: Option<Text<1, 200>>,
     pub state: UpdateState,
     /// Where it failed or was put back.
     pub stage: Option<UpdateStage>,
@@ -1759,6 +1768,9 @@ pub struct UpdatePart {
 pub enum UpdatePartKind {
     Hub,
     Node,
+    /// Claude Code on a machine, brought to the version the new fleetd was tested with once its node runs it.
+    /// Sessions already running finish on the version they started with; new ones start on the new one.
+    Claude,
     /// A part this build doesn't know (a newer hub). Never sent.
     #[serde(other)]
     #[schemars(skip)]
