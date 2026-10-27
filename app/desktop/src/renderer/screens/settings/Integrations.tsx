@@ -8,7 +8,7 @@ import { Button, Checkbox, Dialog, Field, InlineCode, Input, Radio, RadioGroup, 
 import type { IntegrationKind, McpServer, McpTestResult } from "../../../shared/contracts";
 import type { McpServerRequest } from "../../../shared/ipc";
 import { CallError } from "../../src/data/queries";
-import { useData, useToolQuery } from "../../src/data/react";
+import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import { byPolicy, connectionsOf, customRequest, DOCS, emptyNote, notionRequest, policyLine, suggestedReads, testProblem } from "./integrationsModel";
 import { emptyDraft, nameProblem, type Draft } from "./mcpModel";
@@ -30,10 +30,11 @@ function useMachine(ref: Ref): { name: string; boxes: McpServerRequest["boxes"] 
 
 /** Saves through main (which seals the secrets) and tests at once; the saved server's name, or why not. */
 function useConnect() {
+  const { hub } = useDataLayer();
   const hubCall = useHubCall();
   const refetch = useRefetch();
   return async (request: McpServerRequest): Promise<{ ok: true; tested: Tested } | { ok: false; problem: string }> => {
-    const out = await window.fleetd.secret.mcpServer(request).catch((e: unknown) => ({ ok: false as const, problem: errorText(e) }));
+    const out = await window.fleetd.secret.mcpServer(hub, request).catch((e: unknown) => ({ ok: false as const, problem: errorText(e) }));
     if (!out.ok) return { ok: false, problem: "problem" in out ? out.problem : errorText(new CallError(out.error)) };
     refetch(["mcp_servers_get"]);
     const tested = await hubCall("mcp_server_test", { scope: request.scope, name: request.name }).then(

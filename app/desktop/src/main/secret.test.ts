@@ -171,8 +171,8 @@ describe("sealing a secret ask's value", () => {
       boxes: [{ machineId: "devbox", boxPubKey: rust.publicKey }],
       integration: { kind: "notion" as const },
     };
-    expect(parseRequest(IPC.mcpServerSubmit, [request]).ok).toBe(true);
-    expect(parseRequest(IPC.mcpServerSubmit, [{ ...request, integration: { kind: "gmail" } }]).ok).toBe(false);
+    expect(parseRequest(IPC.mcpServerSubmit, ["hub", request]).ok).toBe(true);
+    expect(parseRequest(IPC.mcpServerSubmit, ["hub", { ...request, integration: { kind: "gmail" } }]).ok).toBe(false);
     expect((await submitMcpServer(request, call)).ok).toBe(true);
     const input = sent[1] as { integration?: unknown };
     expect(input.integration).toEqual({ kind: "notion" });

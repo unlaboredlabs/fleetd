@@ -70,7 +70,7 @@ beforeEach(() => {
     platform: "linux",
     openExternal: () => Promise.resolve({ ok: true }),
     secret: {
-      mcpServer: (request: McpServerRequest): Promise<CallOutcome> => {
+      mcpServer: (_hub: string, request: McpServerRequest): Promise<CallOutcome> => {
         saved.push(request);
         project = [request.name === "notion" ? notion : { ...notion, name: request.name, integration: { kind: request.integration?.kind ?? "custom" } }];
         return Promise.resolve({ ok: true, output: { server: project[0] } });
