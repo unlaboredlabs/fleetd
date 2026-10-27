@@ -369,7 +369,11 @@ fn attachments_are_listed_and_their_bytes_said_by_size() {
         names,
         [
             ("tenant-form.pdf", Some(300_000), None),
-            ("report.pdf", None, None),
+            (
+                "report.pdf",
+                None,
+                Some("from /home/dev/Documents/report.pdf")
+            ),
             ("Attachment a7", None, Some("from message 18c2")),
             ("Drive file 1AbC", None, Some("from Drive")),
         ]
@@ -594,4 +598,27 @@ fn a_binary_file_is_never_refused_but_a_text_file_or_plain_text_holding_a_key_is
         ),
         Never::Credential.why()
     );
+}
+
+#[test]
+fn a_short_key_can_t_go_out_as_a_tiny_file_and_both_sizes_agree() {
+    use super::policy::file_bytes;
+    let attach = |content: &str| {
+        json!({ "to": "a@example.com", "subject": "s", "body": "b",
+            "attachments": [{ "content_base64": content, "filename": "a.bin" }] })
+    };
+    // An AWS key id is valid base64 for 15 bytes of binary: a tiny file, so its own text is searched too, and refused.
+    let key = "AKIAQQQQQQQQQQQQQQQQ";
+    assert!(file_bytes(key).is_some());
+    assert_eq!(
+        blocked("mcp__google__send_message", attach(key)),
+        Never::Credential.why()
+    );
+    // The row and the JSON say the same size: decoded bytes when the value decodes, its own length when it doesn't.
+    let p = ask("mcp__google__send_message", attach("QUJDREVG"));
+    assert_eq!(p.attachments[0].bytes, Some(6));
+    assert!(p.input.contains("[the file's 6 bytes]"));
+    let q = ask("mcp__google__send_message", attach("not base64!"));
+    assert_eq!(q.attachments[0].bytes, Some(11));
+    assert!(q.input.contains("\"not base64!\""));
 }

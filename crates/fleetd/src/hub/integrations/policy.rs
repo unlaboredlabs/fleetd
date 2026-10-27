@@ -120,12 +120,15 @@ pub(super) fn file_bytes(text: &str) -> Option<Vec<u8>> {
         .find_map(|e| e.decode(&text).ok())
 }
 
-/// The bytes a base64 string holds, wrapped or not, for a file whose bytes don't decode here.
-pub fn base64_bytes(text: &str) -> u64 {
-    let text = compact(text);
-    let pad = text.chars().rev().take_while(|c| *c == '=').count() as u64;
-    (text.len() as u64 * 3 / 4).saturating_sub(pad)
+/// The size an attachment's `content_base64` gives, the same on its card's row and in its JSON: the decoded bytes when
+/// it decodes, its own length otherwise.
+pub fn attachment_size(text: &str) -> u64 {
+    file_bytes(text).map_or(text.len(), |b| b.len()) as u64
 }
+
+/// Below this many characters an attachment's value is too short to be a real file: its text is also searched for a
+/// key's shape as it is, so a key can't go out as a tiny binary file.
+const SHORT_VALUE: usize = 256;
 
 /// Whether a file's bytes read as text: valid UTF-8 with almost no control characters. Only such a file is searched for
 /// a key; a binary one is shown by its name and size, and the person's approval decides.
@@ -175,17 +178,20 @@ pub fn shown_input(kind: IntegrationKind, input: &Value) -> Value {
 }
 
 /// Whether a call would send or store what looks like a credential: in its text, and inside the files a Google tool
-/// attaches that read as text. A file's base64 is never searched as it is: its random letters spell key shapes by
-/// chance, and refusing real mail for that would be worse than the key it might hide. A value that doesn't decode
-/// isn't a file, and is searched as text.
+/// attaches that read as text. A real file's base64 is never searched as it is: its random letters spell key shapes by
+/// chance, and refusing real mail for that would be worse than the key it might hide. A value under [`SHORT_VALUE`]
+/// characters is searched as it is too, and a value that doesn't decode isn't a file, and is searched as text.
 fn sends_credential(kind: IntegrationKind, input: &Value) -> bool {
     let mut files: Vec<Vec<u8>> = Vec::new();
+    let mut short_key = false;
     let text = with_files(kind, input, |b| {
         let bytes = file_bytes(b)?;
+        short_key |= compact(b).len() < SHORT_VALUE && crate::hub::redact::redact(b) != b;
         files.push(bytes);
         Some(Value::String("[file]".into()))
     });
-    holds_credential(&text)
+    short_key
+        || holds_credential(&text)
         || files.iter().filter(|f| is_text(f)).any(|f| {
             let t = String::from_utf8_lossy(f);
             crate::hub::redact::redact(&t) != t
