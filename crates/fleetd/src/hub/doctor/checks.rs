@@ -1023,15 +1023,18 @@ mod tests {
     fn android_sessions_fail_with_the_fix_a_person_runs() {
         let health = |state, fix: Option<&str>| AndroidHealth {
             state,
-            message: fleetd_contracts::prim::Text::unchecked("wynn may not use /dev/kvm."),
+            message: fleetd_contracts::prim::Text::unchecked("devuser may not use /dev/kvm."),
             fix: fix.map(fleetd_contracts::prim::Text::unchecked),
         };
-        let broken = health(AndroidState::Unavailable, Some("sudo usermod -aG kvm wynn"));
+        let broken = health(
+            AndroidState::Unavailable,
+            Some("sudo usermod -aG kvm devuser"),
+        );
         let entry = android_sessions("devbox", false, Some(&broken)).unwrap();
         assert_eq!(entry.check.id, "devbox/android");
         assert_eq!(entry.check.status, Fail);
         let fix = entry.check.fix.unwrap();
-        assert_eq!(fix.command.as_deref(), Some("sudo usermod -aG kvm wynn"));
+        assert_eq!(fix.command.as_deref(), Some("sudo usermod -aG kvm devuser"));
         let ready = health(AndroidState::Ready, None);
         let entry = android_sessions("devbox", false, Some(&ready)).unwrap();
         assert_eq!((entry.check.status, entry.check.fix), (Pass, None));
