@@ -163,6 +163,9 @@ pub enum Refused {
     NotWired,
     /// A retry with no finished run whose hub updated, or of a machine it didn't have.
     NothingToRetry,
+    /// A retry after the hub moved on from that run's build (`fleetd update` on its machine, say): it would put the
+    /// machine behind the hub. The build the hub runs now.
+    HubMovedOn(String),
 }
 
 impl Updates {
@@ -264,8 +267,8 @@ impl Updates {
         *self.ready.lock().unwrap() = Some(to);
     }
 
-    /// Updates one machine of the last run again (a node that failed, was put back or skipped), when the hub runs that
-    /// run's build. A run going on is returned as it is.
+    /// Updates one machine of the last run again (a node that failed, was put back or skipped), when the hub still runs
+    /// that run's build; refused once it runs another. A run going on is returned as it is.
     pub fn retry(self: &Arc<Self>, machine_id: &MachineId) -> Result<UpdateRun, Refused> {
         let ports = self.ports().ok_or(Refused::NotWired)?;
         let mut held = self.run.lock().unwrap();
@@ -282,6 +285,11 @@ impl Updates {
         else {
             return Err(Refused::NothingToRetry);
         };
+        // Never a build older than the hub's: the machine follows the hub, as in an update.
+        let running = ports.running();
+        if to.as_str() != running {
+            return Err(Refused::HubMovedOn(running));
+        }
         let mut parts = run.parts.to_vec();
         for p in parts.iter_mut().filter(|p| ours(p)) {
             p.state = UpdateState::Waiting;

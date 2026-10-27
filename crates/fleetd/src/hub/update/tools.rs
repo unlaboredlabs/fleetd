@@ -61,6 +61,13 @@ async fn hub_update(
             "There is nothing to retry: the last update didn't update the hub, or didn't have that machine.",
         )
         .with_fix("Press Update to update everything."),
+        Refused::HubMovedOn(running) => ToolError::new(
+            ErrorCode::Failed,
+            format!(
+                "The hub runs {running} now, not the build that update went to, so retrying it would put this machine behind the hub."
+            ),
+        )
+        .with_fix("Press Update to bring every machine to the hub's build."),
     })?;
     Ok(HubUpdateOutput {
         next: Some(next(Some(&run))),
