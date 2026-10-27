@@ -145,3 +145,18 @@ it("shows what a reconnect reads back still", async () => {
   await settle();
   expect(shown().at(-1)).toEqual(["message 4", true]);
 });
+
+it("keeps your send's bubble as the hub confirms it: the same element, in place, its entrance not played again", async () => {
+  const { send, layer } = await mount([[msg(1), msg(2)]]);
+  act(() => void layer.chat.send(KEY, { text: "hello" }, "c1"));
+  await settle();
+  const mine = () => host.querySelector<HTMLElement>("[data-author=human] [data-bubble]")?.parentElement;
+  const sent = mine();
+  const entrance = sent?.style.getPropertyValue("--enter-since");
+  expect(entrance).not.toBe("");
+  send(messageEvent(10, msg(3, { author: "human", text: "hello", clientRequestId: "c1", delivery: "turn" })));
+  await settle();
+  expect(host.querySelectorAll("[data-author=human]")).toHaveLength(1);
+  expect(mine()).toBe(sent);
+  expect(mine()?.style.getPropertyValue("--enter-since")).toBe(entrance);
+});

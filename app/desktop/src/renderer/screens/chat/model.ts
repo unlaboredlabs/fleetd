@@ -118,6 +118,12 @@ export interface RowsInput {
   readonly timeZone?: string;
 }
 
+/**
+ * A message's row, the same from your send to the hub's copy of it: by the clientRequestId it went under, else its
+ * id. Under a new key the row would mount again, and the list measure it again from a guess: a jump as it confirms.
+ */
+export const rowKeyOf = (item: ChatItem): string => item.clientRequestId ?? item.id;
+
 /** From before the chat existed: the layer shows these as one-liners, this view as the conversation they were. */
 const isHistory = (item: ChatItem): boolean => item.message?.history !== undefined;
 
@@ -158,7 +164,7 @@ export function chatRows(i: RowsInput): Row[] {
     day(item.at);
     const clock = shortClock(item.at, i.timeZone);
     if (before !== undefined && clock !== "" && lastDay === dayKey(before.at, i.nowMs, i.timeZone) && msOf(item.at, i.nowMs) - msOf(before.at, i.nowMs) > PAUSE_MS) {
-      out.push({ kind: "time", key: `time:${item.id}`, label: clock });
+      out.push({ kind: "time", key: `time:${rowKeyOf(item)}`, label: clock });
       prev = undefined;
     }
     if (n === unseen) {
@@ -173,7 +179,7 @@ export function chatRows(i: RowsInput): Row[] {
     else {
       const run =
         prev === undefined || prev.kind !== "message" || authorLabel(prev) !== authorLabel(item) || Date.parse(item.at) - Date.parse(prev.at) > GROUP_MS;
-      out.push({ kind: "message", key: item.id, item, run, end: true, head: run && item.author !== "human", history: false, ...extras(i.items, n) });
+      out.push({ kind: "message", key: rowKeyOf(item), item, run, end: true, head: run && item.author !== "human", history: false, ...extras(i.items, n) });
     }
     prev = item;
     if ((activity && n === i.items.length - 1) || (worked && n === reply)) out.push({ kind: "activity", key: "activity" });
@@ -247,7 +253,7 @@ export interface Arrival {
 export interface Arrivals {
   readonly items: readonly ChatItem[];
   readonly live: boolean;
-  /** Every message shown so far, by id, and by `id~` while it streamed. */
+  /** Every message shown so far, by row key (rowKeyOf), and by `key~` while it streamed. */
   readonly known: ReadonlySet<string>;
   /** The newest hub seq shown so far: an unknown message older than it is from an older page. */
   readonly newest: number;
@@ -256,7 +262,7 @@ export interface Arrivals {
 }
 
 /** A message streaming is a different shape from the one it ends as: the typing dots, then its bubbles. */
-const phaseKey = (i: ChatItem): string => (i.state === "streaming" ? `${i.id}~` : i.id);
+const phaseKey = (i: ChatItem): string => (i.state === "streaming" ? `${rowKeyOf(i)}~` : rowKeyOf(i));
 const enters = (i: ChatItem): boolean => i.kind !== "event" && !isHistory(i);
 
 export function arrivalsOf(prev: Arrivals | undefined, items: readonly ChatItem[], live: boolean, nowMs: number): Arrivals {
@@ -267,14 +273,11 @@ export function arrivalsOf(prev: Arrivals | undefined, items: readonly ChatItem[
   let newest = prev?.newest ?? -Infinity;
   let step = 0;
   for (const i of items) {
+    // Your send, once the hub echoes it, is the bubble already shown: the same key.
     const key = phaseKey(i);
     const seq = i.message?.seq;
-    // Your send, once the hub echoes it, is the bubble already shown under a new id.
-    const seen = known.has(key) || (i.clientRequestId !== undefined && known.has(i.clientRequestId));
-    const newer = seq === undefined || seq > (prev?.newest ?? -Infinity) || known.has(`${i.id}~`);
-    const sent = i.clientRequestId === undefined ? undefined : entering.get(i.clientRequestId);
-    if (sent !== undefined && i.id !== i.clientRequestId) entering.set(i.id, sent);
-    else if (!still && !seen && newer && enters(i)) entering.set(i.id, { at: nowMs, step: step++ });
+    const newer = seq === undefined || seq > (prev?.newest ?? -Infinity) || known.has(`${rowKeyOf(i)}~`);
+    if (!still && !known.has(key) && newer && enters(i)) entering.set(rowKeyOf(i), { at: nowMs, step: step++ });
     known.add(key);
     if (seq !== undefined && seq > newest) newest = seq;
   }
