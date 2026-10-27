@@ -2,7 +2,9 @@
 //! devbox's node routes its agent's session tools as the lead socket does, and mac1's node hosts the session in a
 //! real Chrome. Both nodes' lead calls and hosted frames go through the hub's own handlers; only the node links'
 //! sockets are stand-ins. The agent's driver connects to devbox's proxy, as agent-browser does, and reaches mac1's
-//! browser through the hub's relay. Needs a Chrome, as the browser tests do, and says so and passes without one.
+//! browser through the hub's relay. devbox seals the session's secrets and relay key to mac1 first, so mac1 scrubs the
+//! recording with them and the two nodes encrypt the relay: a secret the agent types never reaches the hub in the
+//! clear. Needs a Chrome, as the browser tests do (on CI it fails without one).
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -11,22 +13,60 @@ use fleetd_contracts::browser::{BrowserCallFrame, RecordingFile};
 use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef, ThreadId, Timestamp};
 use fleetd_contracts::lead_calls::{LeadCall, LeadCallFrame};
 use fleetd_contracts::machine_roles::{HostCheck, SessionHost};
-use fleetd_contracts::node_link::{CAP_SESSION_HOST, HUB_CAP_SESSION_ROUTE, HubToNode, NodeToHub};
+use fleetd_contracts::node_link::{
+    CAP_SESSION_HOST, CAP_SESSION_SEAL, HUB_CAP_SESSION_ROUTE, HubToNode, NodeToHub,
+};
 use fleetd_contracts::prim::{Line, List, NonEmpty};
 use fleetd_contracts::tasks::AbsolutePath;
 use serde_json::{Value, json};
 use tokio::sync::mpsc;
 
-use super::browser::tests::{Driver, chrome, command_item, site};
+use super::browser::tests::{Driver, chrome_or_skip, command_item, site};
 use super::browser::upload::{HubCalls, HubFuture};
 use super::browser::{Broker, BrowserConfig, SessionHooks};
+use super::identity::NodeBoxKey;
 use super::lead::LeadRelay;
 use super::mask::{Masker, Secrets};
-use super::session_route::{Router, host, routed};
+use super::session_route::{Hosted, Router, host, routed};
 use crate::hub::api::{Hub, HubConfig, Listen};
 use crate::hub::store::HubDb;
 
 const AGENT: &str = "th-agent-1";
+/// A secret of the agent's session on devbox, which it types into the page on mac1.
+const SECRET: &str = "hunter2Zq9sealed";
+/// A login in devbox's 1Password, which the agent fills into the page on mac1.
+const FILL: &str = "opFilled7Kq2value";
+const FILL_REF: &str = "op://Team/Shop/username";
+const TOKEN: &str = "ops_test_service_account_token";
+
+/// devbox's 1Password: one login for the test site, for the session's token.
+struct OnePassword {
+    urls: Vec<String>,
+}
+
+impl super::browser::onepassword::Vault for OnePassword {
+    fn resolve(&self, reference: &str) -> super::browser::onepassword::CredFuture {
+        let (urls, reference) = (self.urls.clone(), reference.to_owned());
+        Box::pin(async move {
+            assert_eq!(reference, FILL_REF);
+            Ok(super::browser::onepassword::Credential {
+                value: zeroize::Zeroizing::new(FILL.to_owned()),
+                urls,
+            })
+        })
+    }
+}
+
+/// The agent session's secrets on devbox: its project's, and its 1Password token.
+fn secrets() -> Vec<(String, String)> {
+    vec![
+        ("SHOP_PASSWORD".to_owned(), SECRET.to_owned()),
+        (
+            super::browser::onepassword::TOKEN_ENV.to_owned(),
+            TOKEN.to_owned(),
+        ),
+    ]
+}
 
 fn mid(m: &str) -> MachineId {
     MachineId::unchecked(m)
@@ -67,15 +107,16 @@ impl HubCalls for NodeCalls {
 
 /// The hub on a local port, with devbox (agents only) and mac1 (sessions, Chrome) online and storefront's lead on
 /// devbox as the agent.
-async fn hub(home: &std::path::Path) -> (Arc<Hub>, String) {
+async fn hub(home: &std::path::Path, mac1_key: &str) -> (Arc<Hub>, String) {
     let config = HubConfig {
         home: home.to_path_buf(),
         listen: Listen::default(),
         url: None,
         queue_ttl_sec: None,
     };
+    // On disk, so the test can read every byte the hub stored.
     let hub = crate::hub::serve::build_on(
-        HubDb::open_memory().unwrap(),
+        HubDb::open(home).unwrap(),
         config,
         crate::hub::store::test_clock::ManualClock::at(1_792_000_000_000),
     )
@@ -84,10 +125,12 @@ async fn hub(home: &std::path::Path) -> (Arc<Hub>, String) {
     for m in ["devbox", "mac1"] {
         let machine = serde_json::from_value(json!({
             "machineId": m, "name": m, "tags": [], "status": "online", "lastSeenAt": at, "nodeVersion": "0.1.0",
+            "boxPubKey": mac1_key,
         }))
         .unwrap();
         hub.store.machine_upsert(&machine, None).unwrap();
-        hub.link.set_capabilities(&mid(m), &[CAP_SESSION_HOST]);
+        hub.link
+            .set_capabilities(&mid(m), &[CAP_SESSION_HOST, CAP_SESSION_SEAL]);
         let mut load = crate::hub::link::guard::tests::load(500, 1.0);
         load.hosts = Some(List::unchecked(vec![HostCheck {
             host: SessionHost::Browser,
@@ -119,10 +162,6 @@ async fn hub(home: &std::path::Path) -> (Arc<Hub>, String) {
             }))
             .unwrap()],
         )
-        .unwrap();
-    // Placing on other machines is off by default (hub/machine_roles `remote_on`).
-    hub.db
-        .transaction(|c| crate::hub::machine_roles::set_remote(c, true))
         .unwrap();
     hub.leads
         .records
@@ -192,15 +231,25 @@ fn mac1_link(
     hub: &Arc<Hub>,
     broker: &Arc<Broker>,
     url: &str,
+    hosted: &Hosted,
+    box_key: Arc<NodeBoxKey>,
 ) -> crate::hub::link::commands::AttachedLink {
     let (tx, mut rx) = mpsc::unbounded_channel::<HubToNode>();
     let linked = hub.node_commands.attach(&mid("mac1"), tx);
-    let (hub, broker, url) = (hub.clone(), broker.clone(), url.to_owned());
+    let (hub, broker, url, hosted) = (hub.clone(), broker.clone(), url.to_owned(), hosted.clone());
     tokio::spawn(async move {
         while let Some(frame) = rx.recv().await {
-            let (hub, broker, url) = (hub.clone(), broker.clone(), url.clone());
+            let (hub, broker, url, hosted, box_key) = (
+                hub.clone(),
+                broker.clone(),
+                url.clone(),
+                hosted.clone(),
+                box_key.clone(),
+            );
             tokio::spawn(async move {
-                if let Some(result) = host(Some(broker), None, &url, frame).await {
+                if let Some(result) =
+                    host(Some(broker), None, &url, frame, &hosted, Some(&box_key)).await
+                {
                     hub.node_commands
                         .resolve(&mid("mac1"), NodeToHub::SessionHostResult(result));
                 }
@@ -220,16 +269,18 @@ async fn tool(router: &Arc<Router>, call: Value) -> Value {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn an_agent_on_one_node_drives_a_browser_on_another_through_the_hub() {
-    let Some(chrome) = chrome() else {
-        eprintln!("skipped: no Chrome on this machine (set FLEETD_TEST_CHROME)");
+    let Some(chrome) = chrome_or_skip() else {
         return;
     };
+    let mac1_home = tempfile::tempdir().unwrap();
+    let mac1_key = Arc::new(super::identity::load_or_create_box_key(mac1_home.path()).unwrap());
     let hub_home = tempfile::tempdir().unwrap();
-    let (hub, url) = hub(hub_home.path()).await;
+    let (hub, url) = hub(hub_home.path(), &mac1_key.public_key()).await;
     let (site, _site) = site().await;
 
-    // mac1: a broker with a warm Chrome, reporting to the hub as mac1.
-    let mac1_home = tempfile::tempdir().unwrap();
+    // mac1: a broker with a warm Chrome, reporting to the hub as mac1, which reads a hosted session's secrets from
+    // what devbox sealed to it, as the node does.
+    let hosted = Hosted::default();
     let mac1 = Broker::open(
         mac1_home.path(),
         BrowserConfig::default(),
@@ -237,7 +288,9 @@ async fn an_agent_on_one_node_drives_a_browser_on_another_through_the_hub() {
             hub: hub.clone(),
             machine: mid("mac1"),
         }),
-        Arc::new(|_| Ok(Secrets(Vec::new()))),
+        hosted.secrets_for(Arc::new(|session| {
+            Err(format!("no session {session} on this machine"))
+        })),
     )
     .await;
     mac1.ready(chrome);
@@ -245,7 +298,7 @@ async fn an_agent_on_one_node_drives_a_browser_on_another_through_the_hub() {
     while mac1.warm() == 0 && Instant::now() < deadline {
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
-    let _mac1_link = mac1_link(&hub, &mac1, &url);
+    let _mac1_link = mac1_link(&hub, &mac1, &url, &hosted, mac1_key.clone());
 
     // devbox: a broker with no browser of its own (its role is agents only), and the agent's session tools.
     let devbox_home = tempfile::tempdir().unwrap();
@@ -256,7 +309,8 @@ async fn an_agent_on_one_node_drives_a_browser_on_another_through_the_hub() {
             hub: hub.clone(),
             machine: mid("devbox"),
         }),
-        Arc::new(|_| Ok(Secrets(Vec::new()))),
+        // The agent session's secrets on devbox: its project's, and its 1Password token.
+        Arc::new(|_| Ok(Secrets(secrets()))),
     )
     .await;
     // devbox never ran a session: the start makes sure its agent has agent-browser to drive the one on mac1 with.
@@ -267,8 +321,22 @@ async fn an_agent_on_one_node_drives_a_browser_on_another_through_the_hub() {
         devices: None,
         relay,
         hub: url.clone(),
-        mask_for: Arc::new(|_| Ok(Masker::new(&[]))),
+        secrets_for: Arc::new(|_| Ok(Secrets(secrets()))),
+        mask_for: Arc::new(|_| Ok(Masker::new(&secrets()))),
+        filled_elsewhere: super::session_route::FilledElsewhere::default(),
     });
+    // 1Password is devbox's alone: mac1 never gets the token, and never makes a vault.
+    devbox.set_vaults(Arc::new({
+        let urls = vec![format!("{site}/")];
+        move |token| {
+            assert_eq!(token.as_str(), TOKEN, "the session's token, on devbox");
+            Arc::new(OnePassword { urls: urls.clone() })
+                as Arc<dyn super::browser::onepassword::Vault>
+        }
+    }));
+    mac1.set_vaults(Arc::new(|_| {
+        panic!("mac1 read 1Password: it never holds the token")
+    }));
 
     let started = tool(
         &router,
@@ -282,9 +350,11 @@ async fn an_agent_on_one_node_drives_a_browser_on_another_through_the_hub() {
     assert!(devbox.live(AGENT).is_none(), "the browser is not on devbox");
     assert!(devbox.remote(AGENT).is_some(), "devbox relays its driver");
     assert!(super::browser::agent_browser::find(devbox_home.path()).is_some());
+    // The agent hears its own address for it, as its environment names it: never mac1's.
+    let cdp = devbox.cdp_url(AGENT).unwrap();
+    assert_eq!(started["result"]["cdp"], cdp.as_str());
 
     // The agent's driver, on devbox's proxy at the URL its environment names, reaches mac1's Chrome.
-    let cdp = devbox.cdp_url(AGENT).unwrap();
     let mut driver = Driver::connect(&cdp).await.unwrap();
     let page = driver.page().await;
     driver.ok(Some(&page), "Page.enable", json!({})).await;
@@ -305,19 +375,26 @@ async fn an_agent_on_one_node_drives_a_browser_on_another_through_the_hub() {
     driver
         .eval(&page, "document.querySelector('#user').focus()")
         .await;
+    // The agent types its session's secret: the page shows it back once signed in.
     driver
-        .ok(Some(&page), "Input.insertText", json!({ "text": "ada" }))
+        .ok(Some(&page), "Input.insertText", json!({ "text": SECRET }))
         .await;
     driver
         .eval(&page, "document.querySelector('#go').click()")
         .await;
     driver
-        .wait_for(&page, "document.body.innerText.includes('Welcome ada')")
+        .wait_for(
+            &page,
+            &format!("document.body.innerText.includes('Welcome {SECRET}')"),
+        )
         .await;
     SessionHooks::item(
         router.as_ref(),
         AGENT,
-        &command_item("agent-browser click @e3", "✓ Done"),
+        &command_item(
+            &format!("agent-browser fill @e1 {SECRET}"),
+            &format!("✓ Filled {SECRET}"),
+        ),
     );
     tokio::time::sleep(Duration::from_millis(800)).await;
 
@@ -334,6 +411,48 @@ async fn an_agent_on_one_node_drives_a_browser_on_another_through_the_hub() {
     );
     assert!(Driver::connect(&forged).await.is_err());
 
+    // A login filled from devbox's 1Password into the page on mac1: devbox reads it, mac1 fills it (the form submits),
+    // and devbox masks it in its agent's reports from now on.
+    driver
+        .ok(Some(&page), "Page.navigate", json!({ "url": site }))
+        .await;
+    driver
+        .wait_for(
+            &page,
+            "document.readyState === 'complete' && !!document.querySelector('#user')",
+        )
+        .await;
+    let filled = tool(
+        &router,
+        json!({ "op": "fill_credential", "ref": FILL_REF, "target": "#user" }),
+    )
+    .await;
+    let message = filled["result"]["message"]
+        .as_str()
+        .unwrap_or_else(|| panic!("filled: {filled}"));
+    assert!(
+        message.starts_with(&format!("Filled #user from {FILL_REF}")),
+        "{message}"
+    );
+    assert!(
+        !filled.to_string().contains(FILL),
+        "the agent never hears the value"
+    );
+    let masked = SessionHooks::filled_since(router.as_ref(), AGENT, 0).unwrap();
+    assert!(
+        masked.0.iter().any(|(_, v)| v == FILL),
+        "devbox masks it in its agent's reports"
+    );
+    tokio::time::sleep(Duration::from_millis(800)).await;
+    // The agent's next command records the page the submit loaded.
+    SessionHooks::item(
+        router.as_ref(),
+        AGENT,
+        &command_item("agent-browser get title", "Welcome"),
+    );
+    tokio::time::sleep(Duration::from_millis(1200)).await;
+
+    let relay_before_end = devbox.remote(AGENT).unwrap();
     let ended = tool(&router, json!({ "op": "session_end" })).await;
     assert!(ended["error"].is_null(), "{ended}");
     assert!(devbox.remote(AGENT).is_none());
@@ -351,24 +470,70 @@ async fn an_agent_on_one_node_drives_a_browser_on_another_through_the_hub() {
     };
     assert_eq!(session.project_ref, storefront());
     assert_eq!(session.thread_id.as_str(), AGENT);
-    let actions = std::fs::read_to_string(crate::hub::browser::file_path(
-        &hub,
-        &session_id,
-        RecordingFile::Actions,
-    ))
-    .unwrap();
+    let read = |file| {
+        std::fs::read_to_string(crate::hub::browser::file_path(&hub, &session_id, file)).unwrap()
+    };
+    let actions = read(RecordingFile::Actions);
     assert!(actions.contains("agent-browser open"), "{actions}");
-    assert!(actions.contains("agent-browser click @e3"), "{actions}");
-    let dom = std::fs::read_to_string(crate::hub::browser::file_path(
-        &hub,
-        &session_id,
-        RecordingFile::Dom,
-    ))
-    .unwrap();
     assert!(
-        dom.contains("Welcome ada"),
-        "the page after the steps is in the trace"
+        actions.contains("agent-browser fill @e1 ***SHOP_PASSWORD***"),
+        "{actions}"
     );
+    // mac1 scrubbed the trace with the secret devbox sealed to it: the page after the steps, masked.
+    let dom = read(RecordingFile::Dom);
+    assert!(
+        dom.contains(&format!("Welcome ***{FILL_REF}***")),
+        "the filled login, masked on mac1, is in the trace: {}",
+        dom.lines()
+            .last()
+            .unwrap_or_default()
+            .chars()
+            .take(600)
+            .collect::<String>()
+    );
+    assert!(
+        dom.contains("Welcome ***SHOP_PASSWORD***"),
+        "the masked page is in the trace"
+    );
+
+    // Nothing the hub relayed or stored holds the secret: the relay carried what the nodes encrypted, the recording
+    // was scrubbed on mac1, the steps on devbox, and the secrets went sealed to mac1.
+    let found = |bytes: &[u8]| {
+        [SECRET, FILL, TOKEN]
+            .iter()
+            .any(|s| bytes.windows(s.len()).any(|w| w == s.as_bytes()))
+    };
+    let piped = hub.relays.piped.lock().unwrap().clone();
+    assert!(!piped.is_empty(), "the relay carried the driver's messages");
+    assert!(!found(&piped), "the relay carried the secret in the clear");
+    for entry in walk(hub_home.path()) {
+        let bytes = std::fs::read(&entry).unwrap();
+        assert!(!found(&bytes), "{} holds the secret", entry.display());
+    }
+
+    // A relay devbox still holds for a session that ended elsewhere (idle, a person, a lost runner) is dropped on the
+    // driver's next connection, which hears to start a session.
+    devbox.set_remote(AGENT, Some(relay_before_end));
+    let _ = Driver::connect(&cdp).await;
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while devbox.remote(AGENT).is_some() {
+        assert!(Instant::now() < deadline, "the stale relay stayed");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}
+
+/// Every file under `dir`.
+fn walk(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut out = Vec::new();
+    for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            out.extend(walk(&path));
+        } else {
+            out.push(path);
+        }
+    }
+    out
 }
 
 /// A remote start makes sure the agent's machine has agent-browser; one that has it keeps it as it is.
@@ -380,7 +545,12 @@ async fn the_driver_is_installed_once() {
         home.path(),
         BrowserConfig::default(),
         Arc::new(NodeCalls {
-            hub: hub(tempfile::tempdir().unwrap().path()).await.0,
+            hub: {
+                let key = super::identity::load_or_create_box_key(home.path()).unwrap();
+                hub(tempfile::tempdir().unwrap().path(), &key.public_key())
+                    .await
+                    .0
+            },
             machine: mid("devbox"),
         }),
         Arc::new(|_| Ok(Secrets(Vec::new()))),

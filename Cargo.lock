@@ -757,6 +757,7 @@ dependencies = [
  "cliclack",
  "console",
  "crypto_box",
+ "crypto_secretbox",
  "diffy",
  "ed25519-dalek",
  "fleetd-contracts",

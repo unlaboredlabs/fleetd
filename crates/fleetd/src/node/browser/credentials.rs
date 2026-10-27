@@ -85,12 +85,20 @@ impl Broker {
 
     /// The session's vault: the one made at its first fill, or a new one with the token from its secrets.
     async fn vault(&self, session: &Session) -> Result<Arc<SessionVault>, McpToolError> {
-        let id = session.id.to_string();
+        self.vault_by(session.id.to_string(), session.thread.clone())
+            .await
+    }
+
+    /// A vault kept under `id`, with the token from agent session `thread`'s secrets.
+    async fn vault_by(
+        &self,
+        id: String,
+        thread: String,
+    ) -> Result<Arc<SessionVault>, McpToolError> {
         if let Some(vault) = lock(&self.credentials.sessions).get(&id) {
             return Ok(vault.clone());
         }
         let secrets_for = self.secrets_for.clone();
-        let thread = session.thread.clone();
         let token = tokio::task::spawn_blocking(move || {
             let secrets = secrets_for(&thread)?;
             Ok::<_, String>(
@@ -133,11 +141,68 @@ impl Broker {
     }
 }
 
+/// The vault key of an agent session whose browser runs on another machine.
+fn remote_vault(thread: &str) -> String {
+    format!("remote:{thread}")
+}
+
+impl Broker {
+    /// A reference read from this machine's 1Password, with the token from agent session `thread`'s secrets, for its
+    /// session whose browser runs on another machine: only the value goes there (sealed), never the token.
+    pub async fn resolve_credential(
+        &self,
+        thread: &str,
+        reference: &str,
+    ) -> Result<onepassword::Credential, McpToolError> {
+        let vault = self
+            .vault_by(remote_vault(thread), thread.to_owned())
+            .await?;
+        vault
+            .cache
+            .get(vault.vault.as_ref(), reference)
+            .await
+            .map_err(|e| unread(reference, e))
+    }
+
+    /// Lets go of the vault an agent session's remote browser filled from.
+    pub fn forget_remote_vault(&self, thread: &str) {
+        self.credentials.forget(&remote_vault(thread));
+    }
+}
+
+fn unread(reference: &str, e: onepassword::CredError) -> McpToolError {
+    let fix = if e.rate_limited {
+        "try again in a few minutes, once; don't retry in a loop: every machine shares the token's quota"
+    } else {
+        "check the reference (1Password's Copy Secret Reference gives it) and that the service account can read its \
+         vault; else ask your lead"
+    };
+    refuse(
+        ErrorCode::Failed,
+        format!(
+            "{reference} was not read: {}.",
+            e.message.trim_end_matches('.')
+        ),
+        fix,
+    )
+}
+
 /// An agent's `fill_credential` in its live session.
 pub async fn fill_credential(
     broker: &Arc<Broker>,
     thread: &str,
     call: FillCredentialCall,
+) -> Result<BrowserCallResult, McpToolError> {
+    fill_from(broker, thread, call, None).await
+}
+
+/// `fill_credential` with the value the agent's machine read from its 1Password (`given`) for a session hosted here,
+/// or else read here; either way only into the item's own sites, and sealed from the driver's reads after it.
+pub async fn fill_from(
+    broker: &Arc<Broker>,
+    thread: &str,
+    call: FillCredentialCall,
+    given: Option<onepassword::Credential>,
 ) -> Result<BrowserCallResult, McpToolError> {
     let started = Instant::now();
     let reference = call.reference.to_string();
@@ -169,24 +234,17 @@ pub async fn fill_credential(
         );
         error
     };
-    let vault = broker.vault(&session).await.map_err(failed)?;
-    let credential = vault
-        .cache
-        .get(vault.vault.as_ref(), &reference)
-        .await
-        .map_err(|e| {
-            let fix = if e.rate_limited {
-                "try again in a few minutes, once; don't retry in a loop: every machine shares the token's quota"
-            } else {
-                "check the reference (1Password's Copy Secret Reference gives it) and that the service account can \
-                 read its vault; else ask your lead"
-            };
-            failed(refuse(
-                ErrorCode::Failed,
-                format!("{reference} was not read: {}.", e.message.trim_end_matches('.')),
-                fix,
-            ))
-        })?;
+    let credential = match given {
+        Some(credential) => credential,
+        None => {
+            let vault = broker.vault(&session).await.map_err(failed)?;
+            vault
+                .cache
+                .get(vault.vault.as_ref(), &reference)
+                .await
+                .map_err(|e| failed(unread(&reference, e)))?
+        }
+    };
     let sites: Vec<String> = credential
         .urls
         .iter()

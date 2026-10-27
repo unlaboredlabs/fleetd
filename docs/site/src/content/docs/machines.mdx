@@ -199,9 +199,9 @@ fleetd machine set mac1 --roles sessions --max-sessions 2
 fleetd machine set devbox --roles agents,sessions --max-sessions auto
 ```
 
-- **Agents only.** The machine hosts no sessions, so its agents can't open one.
+- **Agents only.** The machine hosts no sessions. Its agents' sessions run on a machine that does.
 - **Sessions only.** The machine runs no agents: those running finish their work, and its projects' agents wait until
-  it runs agents again.
+  it runs agents again. It hosts sessions for agents on every machine.
 
 Session slots are counted apart from agent slots. A machine hosts at most its session cap at once: what it fits (one
 session per two CPUs and about 2 GB of memory each, at most 16, and never fewer than its agent slots and leads), or
@@ -216,11 +216,30 @@ Each node reports what it can host, in plain words, and Settings > Machines show
 | iOS simulator | macOS with Xcode and at least one iOS simulator runtime. |
 | Desktop | Linux with docker or Xvfb. |
 
-When an agent starts a session, the hub places it on the agent's own machine. It refuses, in one line that says
-why, when that machine has no sessions role, can't host that kind, or has all its session slots in use. A session on
-another machine waits for the hub to relay its page or screen to the agent, which isn't in this release yet, so a
-machine whose agents need a browser keeps the sessions role. The default cap is never lower than the machine's agent
-slots and leads together, one session each, as before session caps.
+When an agent starts a session, the hub places it: on the agent's own machine when it hosts sessions, can run that kind
+and has a free session slot; else on the online machine that can with the most free slots. When none can, the agent is
+told why in one line: none can host that kind, the ones that can are offline, or every one is full. The default cap is
+never lower than the machine's agent slots and leads together, one session each, as before session caps.
+
+A session on another machine works as one on the agent's own:
+
+- **Its secrets go sealed.** Before it starts, the agent's node seals the session's secrets (its project's, its
+  order's and its MCP servers') to the hosting machine's key, as the app seals a secret to a machine. The hub passes
+  the box on and can't open it. The hosting machine scrubs the session's action log and page snapshots with them,
+  as for a session of its own, and forgets them once the session has started.
+- **Its 1Password token stays home.** A `fill_credential` is read from 1Password on the agent's machine, with its
+  token, and only the value goes to the hosting machine, sealed to it. That machine fills it into the item's own sites
+  only, refuses reads of it as for a fill of its own, and wipes it. The agent's machine masks it in its agent's
+  reports.
+- **Its relay is encrypted end to end.** The agent's `agent-browser` reaches the browser through a relay on the hub.
+  The agent's node connects with a token only that node and the hub know (the hub keeps just its SHA-256). The two
+  nodes encrypt every message with a key sealed along with the secrets, so the hub carries only ciphertext, and it
+  logs none of it.
+- **Its steps are recorded there.** Each `agent-browser` command that drove it goes into the hosting machine's
+  recording, with the page after it, masked on the agent's machine first.
+
+Only machines whose fleetd seals and opens these boxes take part. An agent on a machine with browser sessions turned
+off can't start one anywhere: it has no proxy to drive it through.
 
 ## Check health {#health}
 

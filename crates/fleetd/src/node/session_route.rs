@@ -10,25 +10,39 @@
 //!
 //! The other side: a session the hub placed on this machine for an agent elsewhere comes in as `session_host` (the
 //! node link), answered by the broker under the key the hub gave it ([`host_masker`]).
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use fleetd_contracts::browser::{BrowserCall, BrowserCallFrame, BrowserResultFrame, SessionKind};
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD as B64;
+use serde::{Deserialize, Serialize};
+use zeroize::Zeroize;
+
+use fleetd_contracts::browser::{
+    BrowserCall, BrowserCallFrame, BrowserCallResult, BrowserResultFrame, SessionKind,
+};
 use fleetd_contracts::ids::ThreadId;
 use fleetd_contracts::lead_calls::{LeadCall, LeadCallFrame, LeadCallResult};
 use fleetd_contracts::machine_roles::SessionHostResult;
-use fleetd_contracts::machine_roles::{HostKey, SessionHost, SessionRouteCall, SessionStepCall};
+use fleetd_contracts::machine_roles::{
+    HostKey, SealedForRunner, SessionHost, SessionRouteCall, SessionRouteResult, SessionStepCall,
+};
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
 use fleetd_contracts::node_link::{HUB_CAP_SESSION_ROUTE, HubToNode};
-use fleetd_contracts::prim::NonEmpty;
+use fleetd_contracts::prim::{NonEmpty, Text};
+use fleetd_contracts::secrets::BoxPublicKey;
 use fleetd_contracts::sessions::{ItemKind, ItemStatus, ThreadItem};
 use serde_json::json;
 
-use super::browser::{Broker, BrowserHandler, SessionHooks, drives_browser};
+use super::browser::credentials;
+use super::browser::onepassword::{Credential, TOKEN_ENV};
+use super::browser::{Broker, BrowserHandler, SecretsFor, SessionHooks, drives_browser};
 use super::device::{self, Devices};
+use super::identity::NodeBoxKey;
 use super::lead::{LeadRelay, MaskFor};
-use super::mask::Masker;
-use super::relay::{self, relay_url};
+use super::mask::{Masker, Secrets};
+use super::relay::{self, Remote, relay_url};
 
 fn error_frame(id: &NonEmpty, error: McpToolError) -> BrowserResultFrame {
     serde_json::from_value(json!({ "id": id, "error": error })).expect("an error frame")
@@ -44,15 +58,17 @@ async fn local(router: &Router, thread: String, frame: BrowserCallFrame) -> Brow
 }
 
 /// What routing an agent's session tools needs: this node's broker (none where browser sessions are off) and its
-/// android sessions (none where they are off), its link to the hub, the hub's URL for relays, and the sessions'
-/// secrets to mask steps with.
+/// android sessions (none where they are off), its link to the hub, the hub's URL for relays, the sessions' secrets (to seal to the machine that hosts one elsewhere, and
+/// to mask its steps with), and the values this node read from 1Password for its agents' sessions hosted elsewhere.
 #[derive(Clone)]
 pub struct Router {
     pub broker: Option<Arc<Broker>>,
     pub devices: Option<Arc<Devices>>,
     pub relay: LeadRelay,
     pub hub: String,
+    pub secrets_for: SecretsFor,
     pub mask_for: MaskFor,
+    pub filled_elsewhere: FilledElsewhere,
 }
 
 impl Router {
@@ -75,97 +91,321 @@ fn host_of(frame: &BrowserCallFrame) -> SessionHost {
     }
 }
 
-async fn route(router: Arc<Router>, thread: String, frame: BrowserCallFrame) -> BrowserResultFrame {
-    let broker = router.broker.as_ref();
-    if router.here().live(&thread) || !router.relay.hub_can(HUB_CAP_SESSION_ROUTE) {
-        return local(&router, thread, frame).await;
+/// The values this node read from 1Password for its agents' sessions hosted on other machines (and sealed to the
+/// runner to fill), by agent session: they are masked in what the agent's session reports, as a fill here is, until
+/// its claude exits.
+#[derive(Clone, Default)]
+pub struct FilledElsewhere(Arc<Mutex<HashMap<String, Filled>>>);
+
+/// Each value filled, under the reference it came from.
+type Filled = Vec<(String, String)>;
+
+impl FilledElsewhere {
+    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, Filled>> {
+        self.0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
+
+    fn get(&self, thread: &str) -> Filled {
+        self.lock().get(thread).cloned().unwrap_or_default()
+    }
+}
+
+/// `plain`, sealed to `to` (a raw X25519 key), base64.
+fn seal_to(to: &[u8; 32], plain: &[u8]) -> Option<String> {
+    crypto_box::PublicKey::from(*to)
+        .seal(&mut crypto_box::aead::OsRng, plain)
+        .ok()
+        .map(|sealed| B64.encode(sealed))
+}
+
+/// What the agent's node seals to the machine that will host its session: the session's secrets, to scrub its
+/// recording with (never its 1Password token: the agent's node reads 1Password itself), and the key the two nodes
+/// encrypt its relay with.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Seal {
+    secrets: Vec<(String, String)>,
+    relay_key: String,
+}
+
+/// A value the agent's node read from its 1Password for a `fill_credential` of a session hosted elsewhere, sealed to
+/// the runner, which fills it into the item's own sites only and wipes it.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Fill {
+    value: String,
+    urls: Vec<String>,
+}
+
+impl Drop for Fill {
+    fn drop(&mut self) {
+        self.value.zeroize();
+    }
+}
+
+impl Drop for Seal {
+    fn drop(&mut self) {
+        for (_, value) in &mut self.secrets {
+            value.zeroize();
+        }
+        self.relay_key.zeroize();
+    }
+}
+
+/// The session's secrets and a new relay key, sealed to `to` (the runner's box key), base64.
+async fn seal_for(
+    router: &Router,
+    thread: &str,
+    to: &BoxPublicKey,
+    relay_key: &[u8; 32],
+) -> Result<String, String> {
+    let (secrets_for, session) = (router.secrets_for.clone(), thread.to_owned());
+    let secrets = tokio::task::spawn_blocking(move || secrets_for(&session))
+        .await
+        .map_err(|e| e.to_string())??;
+    let seal = Seal {
+        secrets: secrets
+            .0
+            .iter()
+            .filter(|(name, _)| name != TOKEN_ENV)
+            .cloned()
+            .collect(),
+        relay_key: B64.encode(relay_key),
+    };
+    let plain = zeroize::Zeroizing::new(serde_json::to_vec(&seal).map_err(|e| e.to_string())?);
+    let public: [u8; 32] = B64
+        .decode(to.as_str())
+        .ok()
+        .and_then(|b| b.try_into().ok())
+        .ok_or("the runner's key is not 32 bytes of base64")?;
+    let sealed = crypto_box::PublicKey::from(public)
+        .seal(&mut crypto_box::aead::OsRng, &plain)
+        .map_err(|e| e.to_string())?;
+    Ok(B64.encode(sealed))
+}
+
+/// One `session_route` call to the hub.
+async fn ask(
+    router: &Router,
+    thread: &str,
+    frame: &BrowserCallFrame,
+    sealed: Option<SealedForRunner>,
+) -> Result<SessionRouteResult, McpToolError> {
     let mut named = frame.clone();
-    named.thread_id = Some(ThreadId::unchecked(thread.clone()));
+    named.thread_id = Some(ThreadId::unchecked(thread));
     let call = LeadCallFrame {
         id: NonEmpty::unchecked("session_route"),
         cwd: frame.cwd.clone(),
         call: LeadCall::SessionRoute(SessionRouteCall {
-            host: host_of(&named),
             frame: named,
+            host: host_of(frame),
+            sealed,
         }),
-        thread_id: Some(ThreadId::unchecked(thread.clone())),
+        thread_id: Some(ThreadId::unchecked(thread)),
     };
-    let ending = matches!(frame.call, BrowserCall::SessionEnd(_));
     let answer = router.relay.call_within(call, ROUTE_WAIT).await;
     match (answer.result, answer.error) {
-        (Some(LeadCallResult::SessionRoute(routed)), _)
-            if !routed.here && host_of(&frame) == SessionHost::Android =>
-        {
-            // agent-device drives an emulator over adb, which doesn't cross the hub's relay yet: end it there.
-            let end: BrowserCallFrame = serde_json::from_value(json!({
-                "id": "android-elsewhere", "cwd": frame.cwd, "call": { "op": "session_end" },
-            }))
-            .expect("a session_end frame");
-            Box::pin(route(router.clone(), thread, end)).await;
-            error_frame(
-                &frame.id,
-                McpToolError::new(
-                    ErrorCode::Failed,
-                    "The hub placed this Android session on another machine, and agent-device can't drive an \
-                     emulator there from here yet.",
-                )
-                .with_fix("say so in your result: Android sessions run only on the agent's own machine for now"),
-            )
+        (Some(LeadCallResult::SessionRoute(routed)), _) => Ok(routed),
+        (_, Some(error)) => Err(error),
+        (Some(_), None) => Err(McpToolError::new(
+            ErrorCode::Failed,
+            "the hub answered session_route with another call's result",
+        )),
+        (None, None) => unreachable!("a result frame has a result or an error"),
+    }
+}
+
+async fn route(router: Arc<Router>, thread: String, frame: BrowserCallFrame) -> BrowserResultFrame {
+    if router.here().live(&thread) || !router.relay.hub_can(HUB_CAP_SESSION_ROUTE) {
+        return local(&router, thread, frame).await;
+    }
+    let android = host_of(&frame) == SessionHost::Android;
+    // Browser sessions off here: no proxy to drive one through, wherever it would run. An Android start goes to the
+    // hub, which may place it here.
+    let broker = match router.broker.as_ref() {
+        Some(broker) => broker,
+        None if android => return android_start(&router, thread, frame).await,
+        None => return local(&router, thread, frame).await,
+    };
+    if android {
+        return android_start(&router, thread, frame).await;
+    }
+    let ending = matches!(frame.call, BrowserCall::SessionEnd(_));
+    let starting = matches!(frame.call, BrowserCall::SessionStart(_));
+    // A fill of a session hosted elsewhere: read here, with this machine's token, and only the value goes, sealed.
+    let fill = match (&frame.call, broker.remote(&thread)) {
+        (BrowserCall::FillCredential(call), Some(remote)) => {
+            match sealed_fill(&router, broker, &thread, call.reference.as_str(), &remote).await {
+                Ok(sealed) => Some(sealed),
+                Err(error) => return error_frame(&frame.id, error),
+            }
         }
-        (Some(LeadCallResult::SessionRoute(routed)), _) if !routed.here => {
-            if ending {
-                if let Some(broker) = broker {
-                    broker.set_remote(&thread, None);
-                }
-            } else if let (Some(broker), Some(token)) = (broker, &routed.relay) {
-                // The agent's driver reaches the session through the hub's relay, from this node's proxy.
-                match relay_url(&router.hub, token.as_str()) {
-                    Ok(url) => broker.set_remote(&thread, Some(url)),
-                    Err(e) => tracing::warn!(error = %e, "session relay: no URL for it"),
-                }
-                // It drives it with agent-browser from here, which a machine that never ran a session lacks.
-                if let Err(why) = broker.ensure_driver().await {
-                    let end: BrowserCallFrame = serde_json::from_value(json!({
-                        "id": "no-driver", "cwd": frame.cwd, "call": { "op": "session_end" },
-                    }))
-                    .expect("a session_end frame");
-                    Box::pin(route(router.clone(), thread, end)).await;
+        _ => None,
+    };
+    let (routed, relay_key) = match ask(&router, &thread, &frame, fill).await {
+        // Placed on another machine, which needs the session's secrets and relay key first: sealed to it.
+        Ok(SessionRouteResult {
+            here: false,
+            answer: None,
+            seal_to: Some(to),
+            runner,
+            ..
+        }) => {
+            let key = super::relay::new_key();
+            let data = match seal_for(&router, &thread, &to, &key).await {
+                Ok(data) => data,
+                Err(why) => {
                     return error_frame(
                         &frame.id,
                         McpToolError::new(
                             ErrorCode::Failed,
-                            format!("This machine could not install agent-browser to drive the session: {why}."),
+                            format!("The node could not seal this session's secrets for {runner} ({why})."),
                         )
-                        .with_fix("say so in your result: a person must set up agent-browser on this machine (fleetd docs: Browser sessions)"),
+                        .with_fix("try again; if it keeps failing, check the node's log"),
                     );
                 }
-            }
-            match routed.answer {
-                Some(mut answer) => {
-                    answer.id = frame.id;
-                    answer
-                }
-                None => error_frame(
-                    &frame.id,
-                    McpToolError::new(
-                        ErrorCode::Failed,
-                        "the hub placed the session but sent no answer",
-                    )
-                    .with_fix("try again"),
-                ),
+            };
+            let sealed = SealedForRunner {
+                runner,
+                data_b64: NonEmpty::unchecked(data),
+            };
+            let runner_key: Option<[u8; 32]> =
+                B64.decode(to.as_str()).ok().and_then(|k| k.try_into().ok());
+            match ask(&router, &thread, &frame, Some(sealed.clone())).await {
+                Ok(routed) => (routed, runner_key.map(|r| (key, sealed.runner, r))),
+                Err(error) => return error_frame(&frame.id, error),
             }
         }
-        (Some(LeadCallResult::SessionRoute(_)), _) => local(&router, thread, frame).await,
-        (_, Some(error)) => error_frame(&frame.id, error),
-        (Some(_), None) => error_frame(
+        Ok(routed) => (routed, None),
+        Err(error) => return error_frame(&frame.id, error),
+    };
+    if routed.here {
+        return local(&router, thread, frame).await;
+    }
+    if ending {
+        broker.set_remote(&thread, None);
+        broker.forget_remote_vault(&thread);
+    } else if let (Some(token), Some((key, runner, runner_key))) = (&routed.relay, relay_key) {
+        // The agent's driver reaches the session through the hub's relay, from this node's proxy.
+        match relay_url(&router.hub, token.as_str()) {
+            Ok(url) => broker.set_remote(
+                &thread,
+                Some(Remote {
+                    url,
+                    key,
+                    runner,
+                    runner_key,
+                }),
+            ),
+            Err(e) => tracing::warn!(error = %e, "session relay: no URL for it"),
+        }
+        // It drives it with agent-browser from here, which a machine that never ran a session lacks.
+        if let Err(why) = broker.ensure_driver().await {
+            let end: BrowserCallFrame = serde_json::from_value(json!({
+                "id": "no-driver", "cwd": frame.cwd, "call": { "op": "session_end" },
+            }))
+            .expect("a session_end frame");
+            Box::pin(route(router.clone(), thread, end)).await;
+            return error_frame(
+                &frame.id,
+                McpToolError::new(
+                    ErrorCode::Failed,
+                    format!("This machine could not install agent-browser to drive the session: {why}."),
+                )
+                .with_fix("say so in your result: a person must set up agent-browser on this machine (fleetd docs: Browser sessions)"),
+            );
+        }
+    }
+    match routed.answer {
+        Some(mut answer) => {
+            answer.id = frame.id;
+            // The agent's own address for it, as its AGENT_BROWSER_CDP names it: never the runner's.
+            if starting
+                && let Some(BrowserCallResult::SessionStart(started)) = &mut answer.result
+                && let Some(cdp) = broker.cdp_url(&thread)
+            {
+                started.cdp = Some(Text::unchecked(cdp));
+            }
+            answer
+        }
+        None => error_frame(
             &frame.id,
             McpToolError::new(
                 ErrorCode::Failed,
-                "the hub answered session_route with another call's result",
-            ),
+                "the hub placed the session but sent no answer",
+            )
+            .with_fix("try again"),
         ),
-        (None, None) => unreachable!("a result frame has a result or an error"),
+    }
+}
+
+/// A `fill_credential` of a session hosted on `remote`'s runner: the reference read from this machine's 1Password and
+/// the value sealed to the runner alone. The value is masked in this agent's reports from now on, as a fill here is.
+async fn sealed_fill(
+    router: &Router,
+    broker: &Broker,
+    thread: &str,
+    reference: &str,
+    remote: &Remote,
+) -> Result<SealedForRunner, McpToolError> {
+    let credential = broker.resolve_credential(thread, reference).await?;
+    let fill = Fill {
+        value: credential.value.to_string(),
+        urls: credential.urls.clone(),
+    };
+    let plain = zeroize::Zeroizing::new(serde_json::to_vec(&fill).map_err(|e| {
+        McpToolError::new(ErrorCode::Failed, format!("the fill was not sealed: {e}"))
+    })?);
+    let data = seal_to(&remote.runner_key, &plain).ok_or_else(|| {
+        McpToolError::new(ErrorCode::Failed, "the fill was not sealed to its runner")
+    })?;
+    {
+        let mut filled = router.filled_elsewhere.lock();
+        let values = filled.entry(thread.to_owned()).or_default();
+        if !values.iter().any(|(_, v)| *v == fill.value) {
+            values.push((reference.to_owned(), fill.value.clone()));
+        }
+    }
+    Ok(SealedForRunner {
+        runner: remote.runner.clone(),
+        data_b64: NonEmpty::unchecked(data),
+    })
+}
+
+/// An Android `session_start`: on this machine when the hub places it here. agent-device drives an emulator over adb,
+/// which doesn't cross the hub's relay yet, so one the hub would place elsewhere is refused before anything starts
+/// there (nothing is sealed for it).
+async fn android_start(
+    router: &Arc<Router>,
+    thread: String,
+    frame: BrowserCallFrame,
+) -> BrowserResultFrame {
+    let elsewhere = |frame: &BrowserCallFrame| {
+        error_frame(
+            &frame.id,
+            McpToolError::new(
+                ErrorCode::Failed,
+                "The hub placed this Android session on another machine, and agent-device can't drive an emulator \
+                 there from here yet.",
+            )
+            .with_fix("say so in your result: Android sessions run only on the agent's own machine for now"),
+        )
+    };
+    match ask(router, &thread, &frame, None).await {
+        Ok(routed) if routed.here => local(router, thread, frame).await,
+        // Placed elsewhere and already started there (a hub that doesn't ask for a seal first): end it there.
+        Ok(routed) if routed.answer.is_some() => {
+            let end: BrowserCallFrame = serde_json::from_value(json!({
+                "id": "android-elsewhere", "cwd": frame.cwd, "call": { "op": "session_end" },
+            }))
+            .expect("a session_end frame");
+            let _ = ask(router, &thread, &end, None).await;
+            elsewhere(&frame)
+        }
+        Ok(_) => elsewhere(&frame),
+        Err(error) => error_frame(&frame.id, error),
     }
 }
 
@@ -189,23 +429,33 @@ impl SessionHooks for Router {
         self.here().plugin_dirs()
     }
 
-    /// What this node's broker filled into the agent's sessions here.
-    // TODO(T534, sealed secrets): a session hosted on another machine fills there, so its values aren't masked in
-    // this agent's reports yet. Remote placement is off by default (D163).
+    /// What this node's broker filled into the agent's sessions here, and what runners filled into its sessions hosted
+    /// there (sealed back to this node with their answers).
     fn filled_since(&self, thread: &str, known: usize) -> Option<crate::node::mask::Secrets> {
-        self.broker
+        let mut all = self
+            .broker
             .as_ref()
-            .and_then(|b| SessionHooks::filled_since(b.as_ref(), thread, known))
+            .and_then(|b| SessionHooks::filled_since(b.as_ref(), thread, 0))
+            .map(|s| s.0.clone())
+            .unwrap_or_default();
+        for (name, value) in self.filled_elsewhere.get(thread) {
+            if !all.iter().any(|(_, v)| *v == value) {
+                all.push((name, value));
+            }
+        }
+        (all.len() > known).then(|| crate::node::mask::Secrets(all))
     }
 
     /// The agent's claude exited: its session ends, here or on the machine hosting it.
     fn ended(&self, thread: &str) {
+        self.filled_elsewhere.lock().remove(thread);
         if let Some(devices) = &self.devices {
             devices.ended(thread);
         }
         let Some(broker) = &self.broker else {
             return;
         };
+        broker.forget_remote_vault(thread);
         if broker.remote(thread).is_none() {
             broker.ended(thread);
             return;
@@ -292,37 +542,160 @@ async fn masked_step(mask_for: &MaskFor, thread: &str, mut item: ThreadItem) -> 
     serde_json::from_value(value).ok()
 }
 
+/// The sessions this node hosts for agents on other machines: what each agent's node sealed to it. A session's
+/// secrets are kept only until its broker read them at the start (never a 1Password token: a fill comes with its value,
+/// read and sealed by the agent's node); its relay key until it ends.
+#[derive(Clone, Default)]
+pub struct Hosted(Arc<Mutex<HashMap<String, HostedSession>>>);
+
+struct HostedSession {
+    secrets: Option<Secrets>,
+    relay_key: zeroize::Zeroizing<[u8; 32]>,
+}
+
+impl Hosted {
+    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, HostedSession>> {
+        self.0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// The secrets a session's agent's node sealed to this node, for its broker to scrub its recording with.
+    pub fn secrets(&self, key: &str) -> Secrets {
+        Secrets(
+            self.lock()
+                .get(key)
+                .and_then(|h| h.secrets.as_ref())
+                .map(|s| s.0.clone())
+                .unwrap_or_default(),
+        )
+    }
+
+    /// `fallback` for this node's own sessions, and for a host key (a browser, an emulator or a desktop hosted here for
+    /// an agent on another machine) the secrets its agent's node sealed to this one.
+    pub fn secrets_for(&self, fallback: SecretsFor) -> SecretsFor {
+        let hosted = self.clone();
+        Arc::new(move |session| {
+            if self::hosted(session) {
+                return Ok(hosted.secrets(session));
+            }
+            fallback(session)
+        })
+    }
+
+    fn relay_key(&self, key: &str) -> Option<zeroize::Zeroizing<[u8; 32]>> {
+        self.lock().get(key).map(|h| h.relay_key.clone())
+    }
+}
+
 /// What the hub asks of this node for the sessions it hosts for agents on other machines, as the link hands it over:
-/// a session call to answer under its key, a relay channel to connect (for as long as it stays open), or a step for
-/// a session's recording. Only a session call has an answer to send back.
+/// a session call to answer under its key (a start opens what its agent's node sealed to this node first), a relay
+/// channel to connect (for as long as it stays open), or a step for a session's recording. Only a session call has an
+/// answer to send back.
 pub async fn host(
     broker: Option<Arc<Broker>>,
     sessions: Option<Arc<device::Router>>,
     hub: &str,
     frame: HubToNode,
+    hosted: &Hosted,
+    box_key: Option<&NodeBoxKey>,
 ) -> Option<SessionHostResult> {
+    let refuse = |id: &NonEmpty, message: &str| {
+        error_frame(id, McpToolError::new(ErrorCode::Invalid, message))
+    };
     match (frame, broker) {
-        // Either kind: the dispatch sends an android start to the emulators, the rest to the broker.
-        (HubToNode::SessionHost(host), _) if sessions.is_some() => Some(SessionHostResult {
-            id: host.id,
-            frame: sessions
-                .expect("checked")
-                .handle(host.host_key.to_string(), host.frame)
-                .await,
-        }),
-        (HubToNode::SessionHost(host), Some(broker)) => Some(SessionHostResult {
-            id: host.id,
-            frame: broker.handle(host.host_key.to_string(), host.frame).await,
-        }),
+        (HubToNode::SessionHost(host), broker) if broker.is_some() || sessions.is_some() => {
+            let key = host.host_key.to_string();
+            let call = host.frame.call.op();
+            if call == "session_start" {
+                let opened = host
+                    .sealed
+                    .as_ref()
+                    .and_then(|sealed| B64.decode(sealed.as_str()).ok())
+                    .and_then(|sealed| box_key?.open(&sealed))
+                    .and_then(|plain| serde_json::from_slice::<Seal>(&plain).ok());
+                let Some(seal) = opened else {
+                    return Some(SessionHostResult {
+                        id: host.id,
+                        frame: refuse(
+                            &host.frame.id,
+                            "this machine could not open the session's sealed secrets, so it hosts nothing it can't scrub",
+                        ),
+                    });
+                };
+                let relay_key: Option<[u8; 32]> = B64
+                    .decode(&seal.relay_key)
+                    .ok()
+                    .and_then(|k| k.try_into().ok());
+                let Some(relay_key) = relay_key else {
+                    return Some(SessionHostResult {
+                        id: host.id,
+                        frame: refuse(
+                            &host.frame.id,
+                            "the session's sealed relay key is not 32 bytes",
+                        ),
+                    });
+                };
+                hosted.lock().insert(
+                    key.clone(),
+                    HostedSession {
+                        secrets: Some(Secrets(seal.secrets.clone())),
+                        relay_key: zeroize::Zeroizing::new(relay_key),
+                    },
+                );
+            }
+            // A fill comes with the value the agent's node read, sealed to this node: filled under #552's checks (the
+            // item's own sites, reads sealed after it) and wiped.
+            let given = match &host.frame.call {
+                BrowserCall::FillCredential(_) => host
+                    .sealed
+                    .as_ref()
+                    .and_then(|sealed| B64.decode(sealed.as_str()).ok())
+                    .and_then(|sealed| box_key?.open(&sealed))
+                    .and_then(|plain| serde_json::from_slice::<Fill>(&plain).ok()),
+                _ => None,
+            };
+            let frame = match (host.frame.call.clone(), given, &broker) {
+                (BrowserCall::FillCredential(call), Some(fill), Some(broker)) => {
+                    let credential = Credential {
+                        value: zeroize::Zeroizing::new(fill.value.clone()),
+                        urls: fill.urls.clone(),
+                    };
+                    let id = host.frame.id.clone();
+                    match credentials::fill_from(broker, &key, call, Some(credential)).await {
+                        Ok(result) => serde_json::from_value(json!({ "id": id, "result": result }))
+                            .expect("a result frame"),
+                        Err(error) => error_frame(&id, error),
+                    }
+                }
+                // Either kind: the dispatch sends an android start to the emulators, the rest to the broker.
+                _ => match (&sessions, &broker) {
+                    (Some(sessions), _) => sessions.handle(key.clone(), host.frame).await,
+                    (None, Some(broker)) => broker.handle(key.clone(), host.frame).await,
+                    (None, None) => unreachable!("checked: one of them is here"),
+                },
+            };
+            match call {
+                // The broker read them at the start: they leave this node's memory now.
+                "session_start" if frame.result.is_some() => {
+                    if let Some(h) = hosted.lock().get_mut(&key) {
+                        h.secrets = None;
+                    }
+                }
+                "session_start" | "session_end" => {
+                    hosted.lock().remove(&key);
+                }
+                _ => {}
+            }
+            Some(SessionHostResult { id: host.id, frame })
+        }
         (HubToNode::SessionHost(host), None) => Some(SessionHostResult {
             id: host.id,
-            frame: error_frame(
-                &host.frame.id,
-                McpToolError::new(ErrorCode::Invalid, "this machine hosts no sessions"),
-            ),
+            frame: refuse(&host.frame.id, "this machine hosts no sessions"),
         }),
         (HubToNode::RelayDial(dial), Some(broker)) => {
-            relay::dial(hub, &broker, dial).await;
+            let key = hosted.relay_key(dial.host_key.as_str())?;
+            relay::dial(hub, &broker, dial, &key).await;
             None
         }
         (HubToNode::SessionStep(step), Some(broker)) => {
@@ -354,14 +727,35 @@ mod tests {
         assert!(ROUTE_WAIT >= START_WAIT + CANCEL_WAIT + Duration::from_secs(30));
     }
 
-    fn router(relay: LeadRelay) -> Arc<Router> {
+    struct NoHub;
+
+    impl super::super::browser::upload::HubCalls for NoHub {
+        fn call(&self, _: &str, _: &str, _: LeadCall) -> super::super::browser::upload::HubFuture {
+            Box::pin(async { Err(McpToolError::new(ErrorCode::MachineOffline, "no hub")) })
+        }
+    }
+
+    fn router(relay: LeadRelay, broker: Option<Arc<Broker>>) -> Arc<Router> {
         Arc::new(Router {
-            broker: None,
+            broker,
             devices: None,
             relay,
             hub: "http://devbox:4790".into(),
+            secrets_for: Arc::new(|_| Ok(Secrets(Vec::new()))),
             mask_for: Arc::new(|_| Ok(Masker::new(&[]))),
+            filled_elsewhere: FilledElsewhere::default(),
         })
+    }
+
+    /// A broker with no browser, as on a machine that never ran a session.
+    async fn broker(home: &std::path::Path) -> Arc<Broker> {
+        Broker::open(
+            home,
+            super::super::browser::BrowserConfig::default(),
+            Arc::new(NoHub),
+            Arc::new(|_| Ok(Secrets(Vec::new()))),
+        )
+        .await
     }
 
     fn start() -> BrowserCallFrame {
@@ -382,24 +776,81 @@ mod tests {
         assert_eq!(host_of(&start()), SessionHost::Browser);
     }
 
-    /// An older hub, which lists no `session_route`, never hears of it: the node answers as before.
+    /// Browser sessions off here: no proxy for the agent to drive one through, so the hub isn't even asked.
     #[tokio::test]
-    async fn an_older_hub_leaves_the_session_here() {
-        let answer = route(router(LeadRelay::new()), "th-1".into(), start()).await;
+    async fn a_machine_with_browser_sessions_off_refuses_before_asking_the_hub() {
+        let relay = LeadRelay::new();
+        relay.set_hub_caps(vec![HUB_CAP_SESSION_ROUTE.to_owned()]);
+        let answer = route(router(relay, None), "th-1".into(), start()).await;
         assert_eq!(
             answer.error.unwrap().message,
             "this machine runs no browser sessions"
         );
     }
 
+    /// An older hub, which lists no `session_route`, never hears of it: the node answers as before.
+    #[tokio::test]
+    async fn an_older_hub_leaves_the_session_here() {
+        let home = tempfile::tempdir().unwrap();
+        let answer = route(
+            router(LeadRelay::new(), Some(broker(home.path()).await)),
+            "th-1".into(),
+            start(),
+        )
+        .await;
+        let message = answer.error.unwrap().message;
+        assert!(
+            message.contains("browser"),
+            "the broker's own answer: {message}"
+        );
+    }
+
     /// A hub that places sessions has the last word: with no answer from it, no session starts here.
     #[tokio::test(start_paused = true)]
     async fn no_answer_from_a_hub_that_places_sessions_starts_nothing_here() {
+        let home = tempfile::tempdir().unwrap();
         let relay = LeadRelay::new();
         relay.set_hub_caps(vec![HUB_CAP_SESSION_ROUTE.to_owned()]);
-        let answer = route(router(relay), "th-1".into(), start()).await;
+        let answer = route(
+            router(relay, Some(broker(home.path()).await)),
+            "th-1".into(),
+            start(),
+        )
+        .await;
         let error = answer.error.unwrap();
         assert_eq!(error.code, ErrorCode::MachineOffline, "{}", error.message);
+    }
+
+    /// A host key reads what its agent's node sealed to this one, whatever the session is (a browser, an emulator, a
+    /// desktop); every other session reads its own.
+    #[test]
+    fn a_host_key_reads_the_secrets_sealed_to_this_node() {
+        let hosted = Hosted::default();
+        let key = "H0123456789abcdef0123456789abcdef";
+        hosted.lock().insert(
+            key.to_owned(),
+            HostedSession {
+                secrets: Some(Secrets(vec![("SHOP_PASSWORD".into(), "hunter2".into())])),
+                relay_key: zeroize::Zeroizing::new([7; 32]),
+            },
+        );
+        let secrets_for =
+            hosted.secrets_for(Arc::new(|_| Err("no session th-1 on this machine".into())));
+        assert_eq!(
+            secrets_for(key).unwrap().0,
+            vec![("SHOP_PASSWORD".to_owned(), "hunter2".to_owned())]
+        );
+        assert!(
+            secrets_for("th-1").is_err(),
+            "its own sessions read as before"
+        );
+        // A host key nothing was sealed for reads none, rather than failing the start.
+        assert!(
+            secrets_for("H00000000000000000000000000000000")
+                .unwrap()
+                .0
+                .is_empty()
+        );
     }
 
     #[test]

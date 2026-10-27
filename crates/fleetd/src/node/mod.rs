@@ -227,21 +227,22 @@ async fn run_node(
             None => sessions.call_masker(session),
         })
     };
+    // A session's secrets: its own here, or, for one this node hosts for an agent on another machine (a host key), what
+    // that agent's node sealed to it. Every kind of session reads them through this: a browser's broker, and an
+    // emulator's or a desktop's alike.
+    let hosted = session_route::Hosted::default();
+    let secrets_for: browser::SecretsFor = {
+        let sessions = node_sessions.clone();
+        hosted.secrets_for(Arc::new(move |session| sessions.call_secrets(session)))
+    };
     let browser_config = config.browser.clone().unwrap_or_default();
     let broker = match browser_config.enabled() {
         true => {
-            let sessions = node_sessions.clone();
             let broker = browser::Broker::start(
                 home,
                 browser_config,
                 Arc::new(browser::upload::RelayHub(relay.clone())),
-                Arc::new(move |session| {
-                    if session_route::hosted(session) {
-                        // Hosted for an agent on another machine: none of its secrets are here.
-                        return Ok(mask::Secrets(Vec::new()));
-                    }
-                    sessions.call_secrets(session)
-                }),
+                secrets_for.clone(),
             )
             .await;
             Some(broker)
@@ -255,16 +256,7 @@ async fn run_node(
                 home,
                 device_config,
                 Arc::new(browser::upload::RelayHub(relay.clone())),
-                {
-                    let sessions = node_sessions.clone();
-                    Arc::new(move |session| {
-                        if session_route::hosted(session) {
-                            // Hosted for an agent on another machine: none of its secrets are here.
-                            return Ok(mask::Secrets(Vec::new()));
-                        }
-                        sessions.call_secrets(session)
-                    })
-                },
+                secrets_for.clone(),
             )
             .await,
         ),
@@ -281,7 +273,9 @@ async fn run_node(
         devices,
         relay: relay.clone(),
         hub: config.hub.clone(),
+        secrets_for,
         mask_for: mask_for.clone(),
+        filled_elsewhere: session_route::FilledElsewhere::default(),
     });
     if sessions_router.is_some() {
         node_sessions.set_browser(router.clone());
@@ -349,6 +343,7 @@ async fn run_node(
         browser: broker.clone(),
         previews: previews.clone(),
         sessions: sessions_router.clone(),
+        hosted,
     };
     let enrolled = async {
         if !exit_when_enrolled || enrolled_rx.await.is_err() {

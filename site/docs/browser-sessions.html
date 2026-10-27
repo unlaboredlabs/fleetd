@@ -88,8 +88,8 @@ agent runs <code dir="auto">agent-browser skills get core</code> once for how to
 stopped or it went idle), or after 30 minutes without an <code dir="auto">agent-browser</code> command. When the agent needs a person (a
 captcha, a confirmation only you can give), it calls <strong><code dir="auto">request_takeover</code></strong> with what you should do. The tools are on
 the <a href="/docs/reference/agent-tools#session_start">Agent tools</a> page.
-A session runs on the agent’s own machine, and needs it to have the sessions <a href="/docs/machines#roles">role</a> and a free
-session slot.</p>
+The hub decides which machine a session runs on, by the machines’ <a href="/docs/machines#roles">roles</a>: the agent’s own when it
+hosts sessions and has a free session slot, else another that can, driven through the hub.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="takeover">Watch and take over</h2><a class="sl-anchor-link" href="#takeover"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Watch and take over”</span></a></div>
 <p>A live session streams its page, with its address, to the app as you watch it: the node sends its frames only while
 someone watches, and a slow connection skips frames rather than falling behind.

@@ -5,8 +5,8 @@
 //! on the agent's own machine when it hosts sessions, can run this kind and has a free session slot, else a plain
 //! refusal that says why. A session placed on its agent's machine runs there as before.
 //!
-//! With [`remote_on`], a session the agent's machine can't take goes to the online machine that can with the most free
-//! slots, and the agent drives it through the hub's relay (relay.rs). It is off by default for now: see there. That machine's node hosts it under a key the hub mints, the agent's later session calls go to
+//! A session the agent's machine can't take goes to the online machine that can with the most free slots ([`remote_on`]
+//! turns that off), and the agent drives it through the hub's relay (relay.rs). That machine's node hosts it under a key the hub mints, the agent's later session calls go to
 //! it through the hub, and the runner reports the session in the agent's name ([`HostedCallers`]).
 //!
 //! Session slots are separate from agent slots: a machine's live sessions are its own agents' (`browser_sessions`)
@@ -26,7 +26,7 @@ use fleetd_contracts::machine_roles::{
 };
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
 use fleetd_contracts::model::MachineStatus;
-use fleetd_contracts::node_link::{CAP_SESSION_HOST, NodeLoad};
+use fleetd_contracts::node_link::{CAP_SESSION_HOST, CAP_SESSION_SEAL, NodeLoad};
 use fleetd_contracts::prim::{Count, Int, Line, List};
 use fleetd_contracts::tasks::TaskId;
 use rusqlite::{Connection, OptionalExtension, params};
@@ -108,10 +108,9 @@ pub fn set_roles(c: &Connection, m: &MachineId, roles: &Roles) -> Result<(), Sto
     Ok(())
 }
 
-/// Whether the hub places sessions on other machines than their agents' (relay.rs carries what they stream). Off
-/// unless set on: the runner records a hosted session without the agent's secrets to scrub it with, so what the
-/// agent types or shows through the browser would reach its recording unmasked until the agent's node can hand them
-/// over sealed to the runner.
+/// Whether the hub places sessions on other machines than their agents': on unless set off. The agent's node seals
+/// the session's secrets and relay key to the runner first (calls.rs), so the runner scrubs its recording as for a
+/// session of its own, and the relay (relay.rs) carries only what the two nodes encrypted.
 pub fn remote_on(c: &Connection) -> Result<bool, StoreError> {
     let v: Option<i64> = c
         .query_row(
@@ -120,7 +119,7 @@ pub fn remote_on(c: &Connection) -> Result<bool, StoreError> {
             |r| r.get(0),
         )
         .optional()?;
-    Ok(v == Some(1))
+    Ok(v != Some(0))
 }
 
 pub fn set_remote(c: &Connection, on: bool) -> Result<(), StoreError> {
@@ -383,7 +382,10 @@ pub fn runners(hub: &Hub) -> Result<Vec<(Runner, Roles, String)>, StoreError> {
                     online: m.status != MachineStatus::Offline,
                     sessions: roles.sessions,
                     hosts: load.and_then(|l| l.hosts),
-                    hosts_others: hub.link.node_can(&m.machine_id, CAP_SESSION_HOST),
+                    // It opens what an agent's node seals to it, with the key it gave the hub.
+                    hosts_others: hub.link.node_can(&m.machine_id, CAP_SESSION_HOST)
+                        && hub.link.node_can(&m.machine_id, CAP_SESSION_SEAL)
+                        && m.box_pub_key.is_some(),
                     live: live_on(c, &m.machine_id, now)?,
                     max,
                     name: m.name,

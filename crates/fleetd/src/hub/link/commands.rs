@@ -405,9 +405,13 @@ impl NodeCommands {
         machine_id: &MachineId,
         host_key: &fleetd_contracts::machine_roles::HostKey,
         frame: &fleetd_contracts::browser::BrowserCallFrame,
+        sealed: Option<&fleetd_contracts::prim::NonEmpty>,
         wait: Duration,
     ) -> Result<fleetd_contracts::browser::BrowserResultFrame, NodeCommandError> {
-        let request = json!({ "t": "session_host", "hostKey": host_key, "frame": frame });
+        let mut request = json!({ "t": "session_host", "hostKey": host_key, "frame": frame });
+        if let Some(sealed) = sealed {
+            request["sealed"] = json!(sealed);
+        }
         match self
             .request(machine_id, request, "session_host_result", wait)
             .await?

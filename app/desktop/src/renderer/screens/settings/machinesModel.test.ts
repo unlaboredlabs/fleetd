@@ -46,11 +46,11 @@ describe("machine roles", () => {
     expect(hostName("ios")).toBe("iOS simulator");
   });
 
-  it("says why a machine shows nothing it can host", () => {
+  it("notes a machine that can't take others' sessions yet", () => {
     expect(hostsNote(devbox)).toBeNull();
     expect(hostsNote({ ...devbox, roles: ["agents"], hosts: [] })).toBeNull();
     expect(hostsNote({ ...devbox, hosts: [] })).toBe("Hasn't said what it can host yet.");
     expect(hostsNote({ ...devbox, hosts: [], online: false })).toBe("Offline: what it can host shows once it is back.");
-    expect(hostsNote({ ...devbox, hostsOthers: false })).toBeNull();
+    expect(hostsNote({ ...devbox, hostsOthers: false })).toContain("older");
   });
 });

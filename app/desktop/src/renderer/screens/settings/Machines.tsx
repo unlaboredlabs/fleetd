@@ -24,7 +24,7 @@ export function MachinesSettings() {
     <div className={s.scroll} data-screen="settings.machines">
       <div className={s.column}>
         <PageHead title="Machines">
-          What each machine is for. A browser or device session an agent starts runs on its own machine, so a machine that runs agents needs sessions too for them to have one.
+          What each machine is for. A browser or device session an agent starts runs on its own machine when it can host it, else on another that can, through the hub.
         </PageHead>
         <section ref={ref} className={s.machineList} aria-label="Machines" tabIndex={-1}>
           {!live ? (

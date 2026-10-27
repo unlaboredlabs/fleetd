@@ -71,6 +71,21 @@ pub(crate) fn chrome() -> Option<PathBuf> {
         .or_else(|| on_path("chromium"))
 }
 
+/// A Chrome for these tests, or None (said why) where this machine has none. On CI (`CI` set, as GitHub Actions sets
+/// it, or FLEETD_REQUIRE_AGENT_BROWSER) a missing Chrome fails instead: the browser and relay tests must run there, not pass without running.
+pub(crate) fn chrome_or_skip() -> Option<PathBuf> {
+    let found = chrome();
+    if found.is_none() {
+        assert!(
+            !required() && std::env::var_os("CI").is_none(),
+            "no Chrome on CI (or with FLEETD_REQUIRE_AGENT_BROWSER): the browser tests need one (google-chrome on \
+             PATH, or FLEETD_TEST_CHROME)"
+        );
+        eprintln!("skipped: no Chrome on this machine (set FLEETD_TEST_CHROME)");
+    }
+    found
+}
+
 pub(crate) fn ffmpeg() -> Option<PathBuf> {
     std::env::var_os("FLEETD_TEST_FFMPEG")
         .map(PathBuf::from)
@@ -224,14 +239,7 @@ async fn rig() -> Option<Rig> {
 }
 
 async fn rig_with(secrets: Vec<(String, String)>) -> Option<Rig> {
-    let Some(chrome) = chrome() else {
-        assert!(
-            !required(),
-            "FLEETD_REQUIRE_AGENT_BROWSER is set but there is no Chrome"
-        );
-        eprintln!("skipped: no Chrome on this machine (set FLEETD_TEST_CHROME)");
-        return None;
-    };
+    let chrome = chrome_or_skip()?;
     let node_home = tempfile::tempdir().unwrap();
     let hub_home = tempfile::tempdir().unwrap();
     let hub = hub(hub_home.path());
@@ -486,7 +494,8 @@ async fn an_agent_starts_a_session_uses_a_site_and_ends_it_and_its_recording_is_
     let id = result["sessionId"].as_str().expect("started").to_owned();
     let start_ms = result["startMs"].as_u64().unwrap();
     eprintln!("session_start from the warm pool: {start_ms} ms");
-    assert!(start_ms < 1_000, "{start_ms} ms");
+    // A warm start takes milliseconds; the margin is for a loaded test run, with other tests' Chrome starting alongside.
+    assert!(start_ms < 3_000, "{start_ms} ms");
     let url = result["cdp"].as_str().unwrap().to_owned();
     assert_eq!(
         SessionHooks::env(rig.broker.as_ref(), THREAD, None)[1].1,

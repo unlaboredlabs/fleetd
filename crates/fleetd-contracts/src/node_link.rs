@@ -114,6 +114,10 @@ pub const CAP_SESSION_HOST: &str = "session_host";
 /// `previews`: the node runs previews (preview.rs): it takes `preview_run` and `preview_stop`.
 pub const CAP_PREVIEWS: &str = "previews";
 
+/// The node seals its agents' session secrets and relay key to the machine that will host a session, and opens what
+/// is sealed to it: the hub places sessions across machines only between nodes that list it.
+pub const CAP_SESSION_SEAL: &str = "session_seal";
+
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
