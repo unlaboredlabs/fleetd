@@ -114,6 +114,16 @@ pub async fn run(args: UpdateArgs) -> Result<()> {
     if restart_due {
         restart(&services);
     }
+    // This machine runs agents: its Claude Code goes to the version the installed build was tested with, which only
+    // that build knows.
+    if cli_latest.is_some() && services.iter().any(|s| !s.hub()) {
+        let status = Command::new(&exe).arg("update-claude").status();
+        if !status.is_ok_and(|s| s.success()) {
+            eprintln!(
+                "Claude Code wasn't brought to the version fleetd is tested with; `fleetd doctor` says more"
+            );
+        }
+    }
     if let Some(app) = gpui {
         let bytes = crate::update::verified(&feed, app.asset()).await?;
         app.replace(&bytes)?;
@@ -121,6 +131,37 @@ pub async fn run(args: UpdateArgs) -> Result<()> {
         println!("if the earlier fleetd app is open, quit it and open the new one");
     }
     Ok(())
+}
+
+/// `fleetd update-claude`: brings this machine's Claude Code to the version this build was tested with, saying how it
+/// went. Sessions already running finish on the version they started with.
+pub fn run_claude() -> std::process::ExitCode {
+    use crate::node::runner::claude::install::{self, Installed};
+    let runtime = match tokio::runtime::Runtime::new() {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("fleetd update-claude: {e}");
+            return std::process::ExitCode::from(1);
+        }
+    };
+    let claude = install::Real {
+        binary: crate::node::claude_binary(),
+        env: std::env::vars().collect(),
+    };
+    let target = install::target();
+    match runtime.block_on(install::bring_to(&claude, target)) {
+        Ok(Installed::Current(v)) => {
+            println!("Claude Code {v} is the version fleetd is tested with")
+        }
+        Ok(Installed::Done { from, to }) => println!(
+            "Claude Code {from} -> {to}: new sessions start on {to}, running ones finish on {from}"
+        ),
+        Err(f) => {
+            eprintln!("{f}");
+            return std::process::ExitCode::from(1);
+        }
+    }
+    std::process::ExitCode::SUCCESS
 }
 
 fn home() -> PathBuf {

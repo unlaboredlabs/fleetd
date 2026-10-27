@@ -117,6 +117,9 @@ pub const CAP_SESSION_DESKTOP: &str = "session_linux_desktop";
 /// the frame, so the hub asks only nodes that list it.
 pub const CAP_SELF_UPDATE: &str = "self_update";
 
+/// `claude_install`: the node takes `node_action` `claude`, and brings its Claude Code to a version with `claude install`.
+pub const CAP_CLAUDE_INSTALL: &str = "claude_install";
+
 /// `update_fetch`: the node takes `node_action` `fetch`, and downloads the hub's next build while the hub updates.
 pub const CAP_UPDATE_FETCH: &str = "update_fetch";
 
@@ -409,6 +412,10 @@ pub enum NodeActionKind {
     /// that follows once the hub runs it; nothing is installed or restarted. Answered at once, before the download.
     /// Only for a node that lists [`CAP_UPDATE_FETCH`].
     Fetch,
+    /// Bring the machine's Claude Code to `claude` with `claude install`, and keep its own background update off.
+    /// Nothing restarts: sessions running keep the binary they started with, new ones start on the new one. A failed
+    /// install keeps the version there was. Answered once done. Only for a node that lists [`CAP_CLAUDE_INSTALL`].
+    Claude,
 }
 
 /// Hub -> node: M11 doctor's probe, and the hub's update of its nodes.
@@ -419,6 +426,8 @@ pub struct NodeAction {
     pub action: NodeActionKind,
     /// `update` and `fetch` only.
     pub update: Option<NodeUpdate>,
+    /// `claude` only: the Claude Code version to install, as `claude --version` prints its number.
+    pub claude: Option<Text<1, 40>>,
 }
 
 /// The build a node updates to: what its hub runs now.
