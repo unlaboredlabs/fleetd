@@ -13,6 +13,7 @@ const MachinesScreen = lazy(() => import("../projects/MachinesScreen").then((m) 
 const StatusScreen = lazy(() => import("../status/StatusScreen").then((m) => ({ default: m.StatusScreen })));
 const FactoryScreen = lazy(() => import("../factory/FactoryScreen").then((m) => ({ default: m.FactoryScreen })));
 const TimeScreen = lazy(() => import("../time/TimeScreen").then((m) => ({ default: m.TimeScreen })));
+const SetupScreen = lazy(() => import("../setup/SetupScreen").then((m) => ({ default: m.SetupScreen })));
 
 /** Holds a screen's place, busy (which the QA gate waits out), while its chunk loads. */
 const Loading = ({ children }: { children: ReactNode }) => <Suspense fallback={<div aria-busy="true" />}>{children}</Suspense>;
@@ -38,6 +39,8 @@ export const screenPart = (screen: Screen): { key: string; words: string } => {
       return { key: "projects.add", words: "Add project" };
     case "onboarding":
       return { key: "onboarding", words: "the connect screen" };
+    case "setup":
+      return { key: "setup", words: "Setup" };
     case "home":
       return { key: "home", words: "the home screen" };
     case "session":
@@ -81,5 +84,7 @@ function screenFor(screen: Screen): ReactNode {
       return <AdminScreen />;
     case "onboarding":
       return <OnboardingScreen hub={screen.hub ?? undefined} code={screen.code ?? undefined} />;
+    case "setup":
+      return <SetupScreen view={screen.view} />;
   }
 }
