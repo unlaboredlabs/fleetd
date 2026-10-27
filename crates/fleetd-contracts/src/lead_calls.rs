@@ -31,7 +31,7 @@ use crate::memory::{ForgetCall, MemoryReadCall, MemoryReadResult, RememberCall, 
 use crate::navi::{
     AskHandle, FactoryStatusCall, FactoryStatusResult, ProjectMessageCall, ProjectMessageResult,
 };
-use crate::prim::{Count, Line, List, NonEmpty, Text};
+use crate::prim::{Count, Line, List, NonEmpty, Text, UniqueList};
 use crate::secrets::SecretSink;
 use crate::skills::{SkillInstallCall, SkillInstallResult};
 use crate::steer::SteerId;
@@ -257,6 +257,9 @@ pub struct ChangeEnqueueCall {
     pub task_id: Option<TaskId>,
     pub pr_url: GitHubPrUrl,
     pub workstream_id: Option<WorkstreamId>,
+    /// PRs, in this repo or any other, that must merge first: the train holds this one until each has merged.
+    /// Enqueuing a PR already on the train adds these to it, unless it is already being merged.
+    pub after: Option<UniqueList<GitHubPrUrl, 0, 20>>,
 }
 
 /// A worker's question for its lead (the `ask_lead` MCP tool). The lead is woken with it and answers with

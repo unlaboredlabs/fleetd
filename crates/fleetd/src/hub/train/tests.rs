@@ -62,6 +62,8 @@ fn ws() -> WorkstreamId {
 }
 
 struct FakePull {
+    /// The repo it is in: `REPO` unless a test opens it in another (`open_pr_in`). Numbers stay unique across repos.
+    repo: String,
     branch: String,
     /// The branch it merges into: main unless a test opens it on another.
     base: String,
@@ -79,6 +81,7 @@ struct FakePull {
 impl FakePull {
     fn open(branch: &str, base: &str, body: &str) -> FakePull {
         FakePull {
+            repo: REPO.into(),
             branch: branch.into(),
             base: base.into(),
             title: format!("change {branch}"),
@@ -202,7 +205,7 @@ impl FakeGh {
         let labels: Vec<Value> = p.labels.iter().map(|l| json!({ "name": l })).collect();
         json!({
             "number": n, "title": p.title, "state": p.state, "merged": p.merged, "merge_commit_sha": p.merge_sha, "merged_at": p.merged_at, "body": p.body,
-            "head": { "ref": p.branch, "sha": self.head_of(&p.branch).unwrap_or_else(|| "0".repeat(40)), "repo": { "full_name": REPO } },
+            "head": { "ref": p.branch, "sha": self.head_of(&p.branch).unwrap_or_else(|| "0".repeat(40)), "repo": { "full_name": p.repo } },
             "base": { "ref": p.base }, "labels": labels, "draft": p.draft,
             "user": { "login": "ada-lovelace", "type": "User" }, "created_at": "2026-10-16T09:00:00Z",
             "merged_by": p.merged.then(|| json!({ "login": "ada-lovelace", "type": "User" })),
@@ -376,6 +379,9 @@ impl FakeGh {
         let (path, query) = target.split_once('?').unwrap_or((&target, ""));
         let parts: Vec<&str> = path.split('/').skip(3).collect();
         let number = |s: Option<&&str>| s.and_then(|s| s.parse::<i64>().ok()).unwrap_or(0);
+        // A list of PRs is the asked repo's.
+        let asked: Vec<&str> = path.split('/').skip(1).take(2).collect();
+        let in_repo = |p: &FakePull| p.repo.eq_ignore_ascii_case(&asked.join("/"));
         match (parts.as_slice(), method) {
             ([], "GET") => ok(json!({ "default_branch": "main" })),
             (["pulls"], "GET") if query.contains("state=open") && !query.contains("head=") => {
@@ -383,7 +389,7 @@ impl FakeGh {
                 ok(Value::Array(
                     pulls
                         .iter()
-                        .filter(|(_, p)| p.state == "open")
+                        .filter(|(_, p)| p.state == "open" && in_repo(p))
                         .map(|(n, p)| self.pull_json(*n, p))
                         .collect(),
                 ))
@@ -403,7 +409,7 @@ impl FakeGh {
                 let pulls = self.pulls.lock().unwrap();
                 let mut found: Vec<(&i64, &FakePull)> = pulls
                     .iter()
-                    .filter(|(_, p)| p.branch == head && p.state == state)
+                    .filter(|(_, p)| p.branch == head && p.state == state && in_repo(p))
                     .collect();
                 found.sort_by_key(|(n, _)| -**n);
                 ok(Value::Array(
@@ -495,7 +501,7 @@ impl FakeGh {
                 ok(Value::Array(
                     pulls
                         .iter()
-                        .filter(|(_, p)| p.state == "closed")
+                        .filter(|(_, p)| p.state == "closed" && in_repo(p))
                         .map(|(n, p)| self.pull_json(*n, p))
                         .collect(),
                 ))
@@ -908,6 +914,10 @@ struct FakeHost {
     watched: Mutex<HashSet<String>>,
     /// The project's train settings; None reads as unreadable.
     train: Mutex<Option<fleetd_contracts::project_settings::TrainSettings>>,
+    /// The checkouts whose train settings were read, in order.
+    train_read: Mutex<Vec<ProjectRef>>,
+    /// The project's GitHub repos and their checkouts: none known unless a test sets them.
+    repos: Mutex<Vec<(String, ProjectRef)>>,
     /// Orders opened through the host, in order: request id and text. Each is `W<100 + n>`, open until closed.
     orders: Mutex<Vec<(String, String)>>,
     closed_orders: Mutex<HashSet<String>>,
@@ -976,9 +986,13 @@ impl FakeHost {
 impl TrainHost for FakeHost {
     fn train_settings(
         &self,
-        _: &ProjectRef,
+        checkout: &ProjectRef,
     ) -> Option<fleetd_contracts::project_settings::TrainSettings> {
+        self.train_read.lock().unwrap().push(checkout.clone());
         self.train.lock().unwrap().clone()
+    }
+    fn github_repos(&self, _: &ProjectRef) -> Vec<(String, ProjectRef)> {
+        self.repos.lock().unwrap().clone()
     }
     fn landings_watched(&self, _repo: &str, base: &str) -> bool {
         self.watched.lock().unwrap().contains(base)
@@ -1297,6 +1311,8 @@ impl Kit {
             branches: Mutex::default(),
             watched: Mutex::default(),
             train: Mutex::new(Some(Default::default())),
+            train_read: Mutex::default(),
+            repos: Mutex::default(),
             orders: Mutex::default(),
             closed_orders: Mutex::default(),
         });
@@ -1420,6 +1436,20 @@ impl Kit {
         format!("https://github.com/{REPO}/pull/{number}")
     }
 
+    /// A PR in `repo` from `branch`, pushed with `files` on top of main. The fake keeps every repo's branches in one
+    /// origin, so each repo's train is its own lane while they all land on one main.
+    fn open_pr_in(
+        &self,
+        repo: &str,
+        number: i64,
+        branch: &str,
+        files: &[(&str, Option<&str>)],
+    ) -> String {
+        self.open_pr(number, branch, files);
+        self.gh.pulls.lock().unwrap().get_mut(&number).unwrap().repo = repo.into();
+        format!("https://github.com/{repo}/pull/{number}")
+    }
+
     /// A PR from `branch`, one commit with `files` on top of `parent`'s branch, into that branch: a stacked PR.
     fn stacked_pr(
         &self,
@@ -1488,6 +1518,7 @@ fn enqueue_call(pr_url: String) -> ChangeEnqueueCall {
         task_id: None,
         pr_url: GitHubPrUrl::unchecked(pr_url),
         workstream_id: Some(ws()),
+        after: None,
     }
 }
 
@@ -5866,3 +5897,5 @@ async fn an_overdue_re_review_waits_out_of_the_line_until_it_is_done() {
     assert_eq!(state_of(&kit, &change), ChangeState::Merged);
     assert_eq!(*kit.gh.merges.lock().unwrap(), [(7, tested)]);
 }
+
+mod repos;

@@ -38,6 +38,8 @@ use crate::hub::train::service::{ReviewGate, Train, Verdict, lock, short};
 
 /// Recorded as the spawner of review tasks and the sender of findings.
 pub const REVIEWS_BY: &str = "hub:reviews";
+/// The start of a Change's `lastError` while blocking findings on its patch hold it in review until a new head.
+pub const BLOCKED: &str = "waiting for a new head: ";
 
 /// New reviewers started for one patch after one ended without a verdict, before the gate stops and tells the lead.
 /// One: a reviewer that can't record (its fleetd tools server down) fails the same way again, and each costs a slot.
@@ -735,7 +737,7 @@ impl Reviews {
         if blocking > 0 && change.patch_id.as_deref() == Some(patch_id.as_str()) {
             let summary = self.findings_on(&change, &patch_id, &task_id, &sha);
             let waiting = format!(
-                "waiting for a new head: {task_id} found {blocking} blocking at {}",
+                "{BLOCKED}{task_id} found {blocking} blocking at {}",
                 short(&sha)
             );
             let Some(author) = &change.task_id else {

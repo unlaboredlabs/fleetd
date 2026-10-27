@@ -13,6 +13,7 @@ use super::contract::{Change, ChangeState};
 use super::github::{
     BATCH_MARKER, BranchMerge, CheckRun, CommitStatus, MergeOutcome, NEXT_LABEL, Pull, batch_heads,
 };
+use super::next::WAITING_ON;
 use super::records::DRAFT;
 use super::service::{CiOutcome, Fast, ReviewWait, Train, error_text, is_red, lock, short};
 
@@ -206,19 +207,19 @@ fn batch_body(base: &str, members: &[Candidate]) -> String {
 }
 
 impl Train {
-    /// `<prefix>train/<name>`: a scratch branch in the namespace of the project that owns the repo's train; None
-    /// while its policy can't be read, since guessing could write outside its namespace.
+    /// `<prefix>train/<name>`: a scratch branch in the namespace of the repo's checkout in the project that owns its
+    /// train; None while its policy can't be read, since guessing could write outside its namespace.
     pub(super) async fn scratch_branch(&self, change: &Change, name: &str) -> Option<String> {
-        let owner = self.train_project(&change.repo, &change.project_ref);
-        let prefix = self.host.branch_prefix(&owner).await?;
+        let checkout = self.train_checkout(&change.repo, &change.project_ref);
+        let prefix = self.host.branch_prefix(&checkout).await?;
         Some(format!("{prefix}train/{name}"))
     }
 
-    /// `<prefix>train/` of the project that owns the repo's train.
+    /// `<prefix>train/` of the repo's checkout in the project that owns its train.
     pub(super) async fn scratch_prefix(&self, repo: &str) -> Option<String> {
         let owner = self.records.train(repo)?.project_ref;
-        let owner = self.train_project(repo, &owner);
-        let prefix = self.host.branch_prefix(&owner).await?;
+        let checkout = self.train_checkout(repo, &owner);
+        let prefix = self.host.branch_prefix(&checkout).await?;
         Some(format!("{prefix}train/"))
     }
 
@@ -374,17 +375,21 @@ impl Train {
                 settled = true;
                 continue;
             }
+            let waiting = self.waiting_on(&change).await;
             let hold = if pull.draft {
                 Some(DRAFT)
             } else if pull.held() {
                 Some(HELD)
+            } else if let Some(waiting) = &waiting {
+                Some(waiting.note.as_str())
             } else {
                 // A read that failed is not "no CI": the head's checks decide, as for any repo.
                 matches!(self.has_ci(repo, &pull.base.ref_).await, Ok(false)).then_some(NO_CI)
             };
             let shown = change.last_error.as_deref();
             let ours = [Some(DRAFT), Some(HELD), Some(NO_CI)];
-            if hold != shown && (hold.is_some() || ours.contains(&shown)) {
+            let was_waiting = shown.is_some_and(|s| s.starts_with(WAITING_ON));
+            if hold != shown && (hold.is_some() || was_waiting || ours.contains(&shown)) {
                 self.update(&change.change_id, Some(&[ChangeState::Ready]), |mut c| {
                     c.last_error = hold.map(error_text);
                     c

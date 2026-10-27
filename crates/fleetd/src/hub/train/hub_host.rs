@@ -322,6 +322,25 @@ impl TrainHost for HubHost {
             .map(|p| p.workspace_root)
     }
 
+    fn github_repos(&self, project_ref: &ProjectRef) -> Vec<(String, ProjectRef)> {
+        let Some(hub) = self.hub() else {
+            return Vec::new();
+        };
+        match hub.repos.repos_of(project_ref) {
+            Ok(repos) => repos
+                .into_iter()
+                .filter_map(|r| {
+                    let name = r.repo_key?.as_str().strip_prefix("github.com/")?.to_owned();
+                    Some((name, r.checkout))
+                })
+                .collect(),
+            Err(error) => {
+                tracing::warn!(%error, "train: the project's repos not read");
+                Vec::new()
+            }
+        }
+    }
+
     fn landings_watched(&self, repo: &str, base: &str) -> bool {
         let Some(hub) = self.hub() else { return false };
         let scope = fleetd_contracts::work::RepoKey::of(&format!("github.com/{repo}"))

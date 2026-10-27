@@ -95,6 +95,12 @@ pub trait TrainHost: Send + Sync + 'static {
     ) -> BoxFut<'a, (Vec<EventView>, i64)>;
     /// The project's checkout (`workspaceRoot`) on its machine; None once the project is removed.
     fn project_root(&self, project_ref: &ProjectRef) -> Option<String>;
+    /// The project's repos on GitHub, each as `owner/name` lowercased, with the node checkout holding its files; empty
+    /// while the hub knows none with a GitHub remote (a plain directory, or a repo whose remote isn't read yet). A
+    /// project with two or more takes PRs only from them; any other takes a PR from any repo, as before.
+    fn github_repos(&self, _project_ref: &ProjectRef) -> Vec<(String, ProjectRef)> {
+        Vec::new()
+    }
     /// LeadWakes.trigger(ref, { kind: "train", line }).
     fn wake_lead<'a>(&'a self, project_ref: &'a ProjectRef, line: String) -> BoxFut<'a, ()>;
     /// The project's branch prefix (its policy's `branchPrefix`, default `fleetd/`); None when the policy can't be

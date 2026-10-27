@@ -867,6 +867,8 @@ export type CategoryTotal = {
 };
 
 export type Change = {
+  /** The PRs that merge before it (`change_enqueue`'s `after`): it waits in line until each has merged. */
+  after?: GitHubPrUrl[];
   /** The PR's head branch. */
   branch: string;
   changeId: ChangeId;
