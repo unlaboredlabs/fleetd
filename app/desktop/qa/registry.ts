@@ -79,6 +79,12 @@ export const fixtures = [
   // Group fixtures (fixtures/<group>/index.ts), named <group>-<what>.
   "projects-cloning",
   "projects-dropped",
+  // W100: the hub admin's setup, a design prototype (fixtures/setup).
+  "setup-fresh",
+  "setup-claude-logins",
+  "setup-github",
+  "setup-google",
+  "setup-done",
   // F10: the connect screen's states (fixtures/onboarding).
   "onboarding-first-run",
   "onboarding-code-refused",
@@ -1346,6 +1352,13 @@ export const screens: readonly Screen[] = [
   { id: "onboarding.connecting", route: "#/onboarding", fixtures: ["hub-unreachable", "onboarding-not-found"] },
   // A hub on another protocol, either way round.
   { id: "onboarding.mismatch", route: "#/onboarding", fixtures: ["onboarding-app-too-old", "onboarding-hub-too-old"] },
+  // W100: the hub admin's setup (a design prototype, docs/design/setup.md): the welcome, a step open beside the list
+  // (Claude to do, the GitHub App, the Google client), and the end.
+  { id: "setup.welcome", route: "#/setup/welcome", fixtures: ["setup-fresh"] },
+  { id: "setup", route: "#/setup/claude", fixtures: ["setup-fresh", "setup-claude-logins", "setup-github"] },
+  { id: "setup", route: "#/setup/github", fixtures: ["setup-github"] },
+  { id: "setup", route: "#/setup/google", fixtures: ["setup-google"] },
+  { id: "setup.done", route: "#/setup/done", fixtures: ["setup-done"] },
   // F8: Add project (the pick list, its empty and loading states, gh and machine problems) and Machines.
   { id: "projects.add", route: "#/projects/add", fixtures: ["typical", "empty", "long-text", "node-too-old", "hub-unreachable"] },
   // Opened from Machines, which subscribed first: the sheet must still find the live connection and list repos.
