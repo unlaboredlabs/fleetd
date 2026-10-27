@@ -438,3 +438,38 @@ describe("a request the hub reopens", () => {
     expect(button("Approve again").disabled).toBe(false);
   });
 });
+
+describe("an integration's approval", () => {
+  it("shows every recipient, the subject and the whole body, and everything it sends", async () => {
+    const hub = await render("Q12");
+    const text = host.textContent;
+    expect(text).toContain("Sends · Google");
+    expect(text).toContain("Reaches other people");
+    expect(text).toContain("Send an email");
+    expect(text).toContain("me@example.com");
+    expect(text).toContain("Ana Ruiz <ana@example.com>, bo@example.com");
+    expect(text).toContain("cy@example.com");
+    expect(text).toContain("Lunch on Tuesday");
+    expect(one("[data-tool=send_message]").textContent).toContain("Tuesday at 12:30 at the usual place? I'll book a table.");
+    // Labelled rows, in the order a person checks them.
+    expect([...host.querySelectorAll("dt")].map((d) => d.textContent)).toEqual(["From", "To", "Cc", "Subject"]);
+    expect(one("details summary").textContent).toBe("Everything it sends");
+    // No standing permission: the person answers this send, and only this one.
+    expect(text).not.toMatch(/always/iu);
+    await click(button("Approve"));
+    await settle();
+    expect(hub.answers).toEqual([{ requestId: "Q12", decision: "approve" }]);
+  });
+  it("asks once more before a delete, in the integration's words", async () => {
+    const hub = await render("Q13");
+    expect(host.textContent).toContain("Deletes · Notion");
+    expect(host.textContent).toContain("Can't be undone");
+    expect([...host.querySelectorAll("dt")].map((d) => d.textContent)).toEqual(["On"]);
+    await click(button("Approve"));
+    expect(hub.answers).toEqual([]);
+    expect(host.textContent).toContain("Delete it? It can't be undone.");
+    await click(button("Yes, delete it"));
+    await settle();
+    expect(hub.answers).toEqual([{ requestId: "Q13", decision: "approve" }]);
+  });
+});

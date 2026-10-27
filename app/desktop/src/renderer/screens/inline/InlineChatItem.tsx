@@ -5,13 +5,14 @@
 // Once answered, an item folds to one line that opens back up to the whole card.
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, type KeyboardEvent, type ReactNode, type RefObject } from "react";
-import type { ChatItem, CommandApprovalItem, Machine, SecretRequestItem } from "../../../shared/contracts";
+import type { ChatItem, CommandApprovalItem, Machine, SecretRequestItem, ToolPreview } from "../../../shared/contracts";
 import type { HubError } from "../../../shared/hub";
 import { Button, Code, cx, InlineCode, Input, Text, Truncate } from "../../ui";
 import { useData, useDataLayer, useReadOf, useToolQuery } from "../../src/data/react";
 import { configLines, configWords } from "../tryit/model";
 import { patchLocal, useLocal, type Failed } from "./local";
 import { prose } from "./prose";
+import { actionWarning, actionWords, confirmWords, integrationName, previewRows } from "./toolPreview";
 import {
   approvalOffline,
   approvalOutcome,
@@ -310,6 +311,54 @@ function SecretItem({ item, read }: { item: SecretRequestItem; read: number | un
 const fromControl = (e: KeyboardEvent<HTMLElement>): boolean =>
   e.target !== e.currentTarget && (e.target as HTMLElement).closest("button, input, textarea, select, a, [role=button]") !== null;
 
+/**
+ * An integration's ask, exactly as it would run: who it acts as and reaches, its subject, the whole body under a
+ * hairline, and everything the tool gets behind one disclosure, so nothing is hidden behind the fields.
+ */
+function PreviewDetail({ preview }: { preview: ToolPreview }) {
+  const rows = previewRows(preview);
+  return (
+    <div className={s.preview} data-tool={preview.tool}>
+      {rows.length === 0 ? null : (
+        <dl className={s.fields}>
+          {rows.map((row) => (
+            <div key={row.label} className={s.fieldRow}>
+              <dt>
+                <Text size="xs" tone="quiet">
+                  {row.label}
+                </Text>
+              </dt>
+              <dd>
+                <Text size="sm">{row.values.join(", ")}</Text>
+              </dd>
+            </div>
+          ))}
+        </dl>
+      )}
+      {preview.body === undefined || preview.body === "" ? null : (
+        <div className={s.body}>
+          <Text as="p" size="sm" className={cx(s.line)}>
+            {preview.body}
+          </Text>
+          {preview.bodyCut === true ? (
+            <Text size="xs" tone="quiet">
+              Cut here for the card; all of it is under Everything it sends.
+            </Text>
+          ) : null}
+        </div>
+      )}
+      <details className={s.everything}>
+        <summary>
+          <Text size="xs" tone="quiet">
+            Everything it sends
+          </Text>
+        </summary>
+        <Code code={preview.input} lang="json" bare />
+      </details>
+    </div>
+  );
+}
+
 function ApprovalItem({ item, read }: { item: CommandApprovalItem; read: number | undefined }) {
   const live = useLive();
   const machines = useMachines();
@@ -321,6 +370,8 @@ function ApprovalItem({ item, read }: { item: CommandApprovalItem; read: number 
   const outcome = approvalOutcome(shown);
   const offline = approvalOffline(shown.state, live);
   const { gated, permission, previewConfig } = item;
+  const preview = permission?.preview;
+  const warning = preview === undefined ? undefined : actionWarning(preview.action);
   const confirm = useRef<HTMLDivElement>(null);
   const approveButton = useRef<HTMLButtonElement>(null);
   const canAnswer = live && !busy && shown.state === "open";
@@ -373,13 +424,24 @@ function ApprovalItem({ item, read }: { item: CommandApprovalItem; read: number 
     }
   };
 
-  const destructive = gated?.class === "irreversible";
+  const destructive = gated?.class === "irreversible" || preview?.action === "delete" || preview?.action === "spend";
   return (
     <Shell ref={section} label={previewConfig === undefined ? "Command to approve" : "Try it setting to approve"} requestId={item.requestId} outcome={outcome} about={approvalTitle(item)} refocus={refocus} onFocused={focused} open={local.open} onToggle={() => patchLocal(key, { open: !local.open })} onKeyDown={onKeyDown}>
       <div className={s.head}>
         <Text size="xs" tone="quiet" strong>
-          {previewConfig !== undefined ? "Try it setting" : gated === undefined ? "Permission" : "Command"}
+          {previewConfig !== undefined
+            ? "Try it setting"
+            : preview !== undefined
+              ? `${actionWords(preview.action)} · ${integrationName(preview.integration)}`
+              : gated === undefined
+                ? "Permission"
+                : "Command"}
         </Text>
+        {warning === undefined ? null : (
+          <Text size="xs" tone={warning.tone} strong>
+            {warning.text}
+          </Text>
+        )}
         {gated === undefined ? null : (
           <Text size="xs" tone={gated.class === "credential" ? "warning" : "danger"} strong>
             {classWords(gated.class)}
@@ -391,15 +453,18 @@ function ApprovalItem({ item, read }: { item: CommandApprovalItem; read: number 
           ? prose(previewConfig.why)
           : gated !== undefined
             ? prose(gated.reason)
-            : permission !== undefined
-              ? `An agent wants to use ${permission.toolName}`
+            : preview !== undefined
+              ? preview.title
+              : permission !== undefined
+                ? `An agent wants to use ${permission.toolName}`
               : "An agent needs your OK"}
       </Text>
       <div className={s.detail}>
         {/* A proposed Try it setting: its commands as they would run, in order. */}
         {previewConfig !== undefined ? <Code code={configLines(previewConfig.config).join("\n")} lang="sh" bare /> : null}
         {gated !== undefined ? <Code code={shellLine(gated.argv)} lang="sh" bare /> : null}
-        {gated === undefined && previewConfig === undefined && permission !== undefined ? <Code code={permission.summary} bare /> : null}
+        {preview !== undefined ? <PreviewDetail preview={preview} /> : null}
+        {gated === undefined && previewConfig === undefined && permission !== undefined && preview === undefined ? <Code code={permission.summary} bare /> : null}
         {previewConfig !== undefined ? (
           <Text size="xs" tone="quiet">
             {`${configWords(previewConfig.config)} Approved, it is how this project runs Try it on ${machine}; nothing runs until someone asks.`}
@@ -438,11 +503,11 @@ function ApprovalItem({ item, read }: { item: CommandApprovalItem; read: number 
       {shown.state !== "open" ? null : confirming ? (
         <div ref={confirm} tabIndex={-1} role="group" aria-labelledby={`${item.requestId}-confirm`} className={s.confirm}>
           <Text as="p" id={`${item.requestId}-confirm`} size="sm" tone="danger" strong className={cx(s.line)}>
-            {`Run this on ${machine}? It can't be undone.`}
+            {preview === undefined ? `Run this on ${machine}? It can't be undone.` : confirmWords(preview).question}
           </Text>
           <div className={s.actions}>
             <Button variant="danger" disabled={!canAnswer} onClick={() => answer("approve")}>
-              Yes, run it
+              {preview === undefined ? "Yes, run it" : confirmWords(preview).yes}
             </Button>
             <Button variant="secondary" disabled={!canAnswer} onClick={cancel}>
               Cancel
