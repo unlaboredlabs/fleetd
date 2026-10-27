@@ -58,6 +58,11 @@ export const fixtures = [
   "admin-member",
   // ...and a hub from before people, whose People and Invites ask for an update.
   "admin-old-hub",
+  // Administration › Machines (fixtures/machines): Add machine's three ways in, a run at its install step, and one
+  // stopped at the node's service with its output and Retry.
+  "machines-add",
+  "machines-running",
+  "machines-failed",
   // F2: the lead chat's live strip with 0, 3 and 20 agents at work (fixtures/live).
   "live-0",
   "live-3",
@@ -1728,6 +1733,29 @@ export const screens: readonly Screen[] = [
       await page.getByLabel("Name").fill("Eve Park");
       await page.getByRole("button", { name: "Create invite link" }).click();
       await page.getByRole("region", { name: "Invite link for Eve Park" }).getByRole("button", { name: "Copy link" }).waitFor();
+    },
+  },
+  // Machines: Add machine's three ways in; a host the hub can reach and its plan; a run going; a failed step with Retry.
+  { id: "admin.machines", route: "#/admin/machines", fixtures: ["machines-add", "machines-running", "machines-failed"] },
+  {
+    id: "admin.machines",
+    route: "#/admin/machines",
+    fixtures: ["machines-add"],
+    variant: "hosts",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Choose…" }).click();
+      await page.getByRole("list", { name: "Hosts" }).waitFor();
+    },
+  },
+  {
+    id: "admin.machines",
+    route: "#/admin/machines",
+    fixtures: ["machines-add"],
+    variant: "plan",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Choose…" }).click();
+      await page.getByRole("button", { name: "Plan…" }).first().click();
+      await page.getByRole("button", { name: "Add builder-1" }).waitFor();
     },
   },
   { id: "admin.hub", route: "#/admin/hub", fixtures: ["admin-owner", "settings-agents", "admin-old-hub"] },
