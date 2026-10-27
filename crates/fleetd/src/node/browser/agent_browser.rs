@@ -33,15 +33,41 @@ fn platform_binary() -> Option<&'static str> {
     }
 }
 
-/// The installed binary, when it is the pinned version.
+/// The installed binary, when it is the pinned version. An install from before the node set its exec bit gets it
+/// here, as the node starts or a session needs it; one that can't be made executable is not found, so it is installed
+/// again.
 pub fn find(home: &Path) -> Option<PathBuf> {
     let bin = bin_dir(home).join("agent-browser");
     let version = std::fs::read_to_string(install_dir(home).join("VERSION")).ok()?;
-    (version.trim() == VERSION && bin.is_file()).then_some(bin)
+    if version.trim() != VERSION || !bin.is_file() {
+        return None;
+    }
+    match make_executable(&bin) {
+        Ok(()) => Some(bin),
+        Err(why) => {
+            tracing::warn!(error = %why, "agent-browser not executable");
+            None
+        }
+    }
+}
+
+/// Sets the native binary's exec bits (through the link): npm unpacks the package's binaries without them, and the
+/// package's own postinstall, which sets them, doesn't run (`--ignore-scripts`).
+fn make_executable(native: &Path) -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt;
+    let mode = std::fs::metadata(native)
+        .map_err(|e| format!("cannot read {}: {e}", native.display()))?
+        .permissions()
+        .mode();
+    if mode & 0o111 == 0o111 {
+        return Ok(());
+    }
+    std::fs::set_permissions(native, std::fs::Permissions::from_mode(mode | 0o111))
+        .map_err(|e| format!("cannot make {} executable: {e}", native.display()))
 }
 
 /// Installs the pinned release from npm, without running its install scripts: the package carries a native binary
-/// for each platform, and the node links the one for this machine. Blocking.
+/// for each platform, and the node makes the one for this machine executable and links it. Blocking.
 pub fn install(home: &Path) -> Result<PathBuf, String> {
     let dir = install_dir(home);
     let Some(name) = platform_binary() else {
@@ -77,10 +103,18 @@ pub fn install(home: &Path) -> Result<PathBuf, String> {
             .collect();
         return Err(format!("installing agent-browser failed: {tail}"));
     }
+    link(home, name)
+}
+
+/// Makes the installed package's native binary `name` executable and links it as the session's `agent-browser`,
+/// with its skill as a plugin.
+fn link(home: &Path, name: &str) -> Result<PathBuf, String> {
+    let dir = install_dir(home);
     let native = dir.join("node_modules/agent-browser/bin").join(name);
     if !native.is_file() {
         return Err(format!("the agent-browser package has no {name}"));
     }
+    make_executable(&native)?;
     let bin = bin_dir(home);
     std::fs::create_dir_all(&bin).map_err(|e| format!("cannot make {}: {e}", bin.display()))?;
     let link = bin.join("agent-browser");
@@ -227,6 +261,63 @@ mod tests {
         );
         // Not the pinned version: not found, so the node installs it again.
         assert_eq!(find(dir.path()), None);
+    }
+
+    /// A stand-in for the package's native binary, as npm leaves it: a script without its exec bit.
+    fn package_without_exec_bit(home: &Path) -> PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        let package = install_dir(home).join("node_modules/agent-browser");
+        let native = package.join("bin").join(platform_binary().unwrap());
+        std::fs::create_dir_all(native.parent().unwrap()).unwrap();
+        std::fs::write(&native, "#!/bin/sh\necho agent-browser $1\n").unwrap();
+        std::fs::set_permissions(&native, std::fs::Permissions::from_mode(0o644)).unwrap();
+        let skill = package.join("skills/agent-browser");
+        std::fs::create_dir_all(&skill).unwrap();
+        std::fs::write(skill.join("SKILL.md"), "---\nname: agent-browser\n---\n").unwrap();
+        native
+    }
+
+    /// Runs `agent-browser --version`, past ETXTBSY: another test's fork may still hold the script open for a moment.
+    fn run(bin: &Path) -> std::io::Result<std::process::Output> {
+        for _ in 0..50 {
+            match std::process::Command::new(bin).arg("--version").output() {
+                Err(e) if e.raw_os_error() == Some(26) => {
+                    std::thread::sleep(std::time::Duration::from_millis(20));
+                }
+                other => return other,
+            }
+        }
+        std::process::Command::new(bin).arg("--version").output()
+    }
+
+    #[test]
+    fn an_install_on_devbox_leaves_agent_browser_executable() {
+        let home = tempfile::tempdir().unwrap();
+        package_without_exec_bit(home.path());
+        let bin = link(home.path(), platform_binary().unwrap()).unwrap();
+        assert_eq!(find(home.path()), Some(bin.clone()));
+        let out = run(&bin).expect("agent-browser runs");
+        assert_eq!(
+            String::from_utf8_lossy(&out.stdout),
+            "agent-browser --version\n"
+        );
+    }
+
+    #[test]
+    fn an_existing_install_without_the_exec_bit_is_repaired_when_the_node_finds_it() {
+        let home = tempfile::tempdir().unwrap();
+        // devbox's install from before: linked and versioned, its binary as npm left it.
+        let native = package_without_exec_bit(home.path());
+        std::fs::create_dir_all(bin_dir(home.path())).unwrap();
+        let bin = bin_dir(home.path()).join("agent-browser");
+        std::os::unix::fs::symlink(&native, &bin).unwrap();
+        std::fs::write(install_dir(home.path()).join("VERSION"), VERSION).unwrap();
+        assert_eq!(find(home.path()), Some(bin.clone()));
+        let out = run(&bin).expect("agent-browser runs");
+        assert_eq!(
+            String::from_utf8_lossy(&out.stdout),
+            "agent-browser --version\n"
+        );
     }
 
     #[test]

@@ -88,6 +88,10 @@ enum Install {
     Missing(String),
 }
 
+/// How long a session's start waits for the browser's install in progress: with the browser's launch after it
+/// (chrome.rs), inside the agent's wait for the node's answer (cli/agent_mcp.rs, 60 s).
+pub(crate) const INSTALL_WAIT: Duration = Duration::from_secs(30);
+
 /// The secrets of an agent session, by its id (blocking: it reads them); `Err` is why they can't be read.
 pub type SecretsFor = Arc<dyn Fn(&str) -> Result<Secrets, String> + Send + Sync>;
 
@@ -117,6 +121,8 @@ pub struct Broker {
     home: PathBuf,
     config: BrowserConfig,
     install: Mutex<Install>,
+    /// Told when the install is done, ready or failed: for the starts waiting on it.
+    install_done: tokio::sync::watch::Sender<()>,
     ffmpeg: Mutex<Option<PathBuf>>,
     proxy: Mutex<Option<Arc<Proxy>>>,
     /// Live sessions by the agent session they belong to: one each.
@@ -260,6 +266,7 @@ impl Broker {
             me: me.clone(),
             home: home.to_owned(),
             install: Mutex::new(Install::Installing),
+            install_done: tokio::sync::watch::Sender::new(()),
             ffmpeg: Mutex::new(ffmpeg),
             proxy: Mutex::default(),
             sessions: Mutex::default(),
@@ -336,7 +343,7 @@ impl Broker {
             }
             Err(why) => {
                 tracing::warn!(error = %why, "browser not installed");
-                *lock(&self.install) = Install::Missing(why);
+                self.set_install(Install::Missing(why));
             }
         }
     }
@@ -354,24 +361,42 @@ impl Broker {
         // Profiles a node left behind when it stopped.
         let _ = std::fs::remove_dir_all(&pool.launch_settings().profiles);
         pool.refill();
-        *lock(&self.install) = Install::Ready(pool);
+        self.set_install(Install::Ready(pool));
     }
 
-    fn pool(self: &Arc<Self>) -> Result<Arc<Pool>, McpToolError> {
+    fn set_install(&self, install: Install) {
+        *lock(&self.install) = install;
+        self.install_done.send_replace(());
+    }
+
+    /// The pool, once the browser is installed: a start during the install waits for it, up to [`INSTALL_WAIT`].
+    async fn pool(self: &Arc<Self>) -> Result<Arc<Pool>, McpToolError> {
         self.begin_install();
-        match &*lock(&self.install) {
-            Install::Ready(pool) => Ok(pool.clone()),
-            Install::Wanted | Install::Installing => Err(refuse(
-                ErrorCode::Failed,
-                "This machine is still installing its browser.",
-                "try session_start again in a few minutes",
-            )),
-            Install::Missing(why) => Err(refuse(
-                ErrorCode::Failed,
-                format!("This machine has no browser for sessions: {why}."),
-                "say so in your result: a person must set up the browser on this machine (fleetd docs: Browser \
-                 sessions)",
-            )),
+        let mut done = self.install_done.subscribe();
+        let deadline = tokio::time::Instant::now() + INSTALL_WAIT;
+        loop {
+            match &*lock(&self.install) {
+                Install::Ready(pool) => return Ok(pool.clone()),
+                Install::Wanted | Install::Installing => {}
+                Install::Missing(why) => {
+                    return Err(refuse(
+                        ErrorCode::Failed,
+                        format!("This machine has no browser for sessions: {why}."),
+                        "say so in your result: a person must set up the browser on this machine (fleetd docs: \
+                         Browser sessions)",
+                    ));
+                }
+            }
+            if !matches!(
+                tokio::time::timeout_at(deadline, done.changed()).await,
+                Ok(Ok(()))
+            ) {
+                return Err(refuse(
+                    ErrorCode::Failed,
+                    "This machine is still installing its browser.",
+                    "try session_start again in a few minutes",
+                ));
+            }
         }
     }
 
@@ -496,7 +521,7 @@ impl Broker {
                 "say so in your result; the node's log says why",
             ));
         };
-        let pool = self.pool()?;
+        let pool = self.pool().await?;
         let secrets_for = self.secrets_for.clone();
         let secrets_thread = thread.clone();
         let secrets = tokio::task::spawn_blocking(move || secrets_for(&secrets_thread));
@@ -788,7 +813,7 @@ impl Broker {
             return Err(format!("{holder} has a browser session already"));
         }
         let _starting = Starting(self, holder.to_owned());
-        let browser = self.pool().map_err(|e| e.message)?.take().await?;
+        let browser = self.pool().await.map_err(|e| e.message)?.take().await?;
         let id = new_id();
         let ffmpeg = lock(&self.ffmpeg).clone();
         let dir = upload::recordings_dir(&self.home).join(id.as_str());

@@ -230,9 +230,9 @@ as soon as it starts, with <code dir="auto">"enabled": true</code>):</p>
 <code dir="auto">~/.fleetd/node/browser/ms-playwright</code>;</li>
 <li>agent-browser 0.39.4, the package’s native binary for the machine, under <code dir="auto">~/.fleetd/node/browser/agent-browser</code>.</li>
 </ul>
-<p>The versions are pinned: a node updates them only when a fleetd release changes the pin. Until the install finishes,
-<code dir="auto">session_start</code> says the browser is still being installed. On a machine without Node.js, <code dir="auto">session_start</code> explains why it
-can’t start one. A machine without an ffmpeg records screens without their video, and each screen’s note says so.</p>
+<p>The versions are pinned: a node updates them only when a fleetd release changes the pin. A <code dir="auto">session_start</code> during the
+install waits up to 30 seconds for it, then opens the session; if the install takes longer, it says the browser is still
+being installed. On a machine without Node.js, <code dir="auto">session_start</code> explains why it can’t start one. A machine without an ffmpeg records screens without their video, and each screen’s note says so.</p>
 <p>Settings go under <code dir="auto">browser</code> in <a href="/docs/config-and-files#node-json">node.json</a>:</p>
 <table>
 <thead>
