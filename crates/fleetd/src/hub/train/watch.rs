@@ -1,9 +1,11 @@
 //! The watch after a merge. The train waits only for its fast set, so the repo's other checks finish after it merged:
-//! it watches them on the commit it put on the base. A check there that fails opens a fix order for the project's lead
+//! it watches them on the commit it put on the base, and the checks a batch skips (`batch_skipped`), which never ran on
+//! the merged tree before. A check there that fails opens a fix order for the project's lead
 //! (channel `train`), plainly worded with the run's link, once per failure: the same check failing again on later
 //! merges, while its order is still open, is that order's, not a new one. A watch ends once every check on the commit
 //! has finished, and after `WATCH_MAX` at most. Same for every repo: nothing here knows a check by name.
 use super::github::{CheckRun, TRAIN_CONTEXT};
+use super::next::gated_name;
 use super::records::Watch;
 use super::service::{Train, is_red, short};
 
@@ -12,14 +14,20 @@ const WATCH_SETTLE_MS: i64 = 5 * 60_000;
 /// And at most this long: a check still running then is not waited for.
 const WATCH_MAX_MS: i64 = 6 * 60 * 60_000;
 
-/// The checks on a merged commit that failed outside its fast set: the ones a fix order is for. None for an empty fast
-/// set: the train then waited for every check before the merge.
-pub(super) fn failed_after(runs: &[CheckRun], fast: &super::service::Fast) -> Vec<CheckRun> {
-    if fast.set.is_empty() {
-        return Vec::new();
-    }
+/// The checks on a merged commit that failed outside its fast set, or that a batch skips (`batch`): the ones a fix
+/// order is for. Outside the checks a batch skips, none for an empty fast set: the train then waited for every check
+/// before the merge.
+pub(super) fn failed_after(
+    runs: &[CheckRun],
+    fast: &super::service::Fast,
+    batch: &[String],
+) -> Vec<CheckRun> {
+    let skipped_by_batch = |r: &CheckRun| batch.iter().any(|n| gated_name(n, &r.name));
     runs.iter()
-        .filter(|r| r.name != TRAIN_CONTEXT && !fast.holds(&r.name))
+        .filter(|r| {
+            skipped_by_batch(r)
+                || (!fast.set.is_empty() && r.name != TRAIN_CONTEXT && !fast.holds(&r.name))
+        })
         .filter(|r| is_red(r) && r.conclusion.as_deref() != Some("cancelled"))
         .cloned()
         .collect()
@@ -34,7 +42,8 @@ pub(super) fn fix_order_text(w: &Watch, check: &CheckRun) -> String {
         .unwrap_or_default();
     format!(
         "Fix the check `{}` on {}: it failed after the merge train merged {} as {}.{link} The train doesn't wait for \
-         this check before merging, so it ran after the merge. Find why it fails on {} and make it pass again there.",
+         this check on what it merges, or its batches skip it, so it ran there only after the merge. Find why it fails \
+         on {} and make it pass again there.",
         check.name,
         w.base,
         w.pr_url,
@@ -72,6 +81,11 @@ impl Train {
             let Some(fast) = self.fast(repo, &w.base).await else {
                 continue;
             };
+            let batch = self
+                .workflows(repo, &w.base)
+                .await
+                .map(|wf| wf.batch)
+                .unwrap_or_default();
             let runs = match self.github.check_runs(repo, &w.sha).await {
                 Ok(runs) => runs,
                 Err(e) => {
@@ -79,7 +93,7 @@ impl Train {
                     continue;
                 }
             };
-            for check in failed_after(&runs, &fast) {
+            for check in failed_after(&runs, &fast, &batch) {
                 self.fix_order(&w, &check).await;
             }
             let done = runs.iter().all(|r| r.status == "completed");

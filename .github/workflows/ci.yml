@@ -6,23 +6,13 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
-    inputs:
-      pr:
-        # Set by macos-label.yml: the PR's dispatched runs share a concurrency group of their own.
-        description: The pull request this run is for
-        type: string
-        default: ""
 
-# A newer push to a PR cancels its running CI. A run macos-label.yml dispatches for it has a group of its own, so it
-# never cancels the PR's own run: GitHub's ruleset reads the required checks from that run, and one cancelled by a
-# dispatched run on the same head blocked the merge though the dispatched run passed (#510). A newer dispatch replaces
-# it, and macos-label.yml cancels it once a push moves the PR on. Runs on main and on the merge train's batch PR
-# (<prefix>train/batch) are never cancelled: each gets a group of its own.
+# A newer push to a PR cancels its running CI. Runs on main and on the merge train's batch PR (<prefix>train/batch) are
+# never cancelled: each gets a group of its own.
 concurrency:
   group: >-
     ${{ (github.ref == 'refs/heads/main' || endsWith(github.head_ref || github.ref, 'train/batch'))
     && format('{0}-{1}', github.workflow, github.run_id)
-    || github.event_name == 'workflow_dispatch' && inputs.pr && format('{0}-{1}-label', github.workflow, inputs.pr)
     || format('{0}-{1}', github.workflow, github.event.pull_request.number || github.ref) }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' && !endsWith(github.head_ref || github.ref, 'train/batch') }}
 
@@ -37,11 +27,11 @@ env:
 # Everything runs on GitHub-hosted runners, which are free for public repos. Rust caches are saved from main only:
 # the repo's 10 GB cache quota holds one copy per job, and pull requests restore main's.
 #
-# macOS runners are few, and GitHub doesn't start queued jobs in order, so the macOS jobs (rust-macos, desktop-macos)
-# run only where they decide a merge: on main, on workflow_dispatch, on the merge train's batch PR, and on a PR labelled
-# `fleetd:next` (the train puts it on the PR it merges alone, before it rebases it) or `macos` (by hand). Adding either
-# label runs this workflow on the PR's branch (macos-label.yml). Elsewhere they are skipped; a skipped job still
-# reports, so the required `rust (macos)` does too.
+# macOS runners are few (5 at once), so the macOS jobs (rust-macos, ios-sessions, desktop-macos) run on each PR's own
+# head, scoped by paths in their Scope step, and must pass there before the merge train lets the PR join a batch
+# (D204). The train's batch PR skips them (`!endsWith(github.head_ref, 'train/batch')`, which the train reads to know
+# them): its Linux checks finish in minutes, and it never waits for a macOS runner. A skipped job still reports, so the
+# required `rust (macos)` does too. Main runs them after each merge.
 
 jobs:
   rust-crates:
@@ -237,10 +227,7 @@ jobs:
   rust-macos:
     # rust (linux)'s sealed boxes on macOS, the node's power code (IOKit), and a Navi's sandbox-exec.
     name: rust (macos)
-    if: >-
-      github.event_name != 'pull_request' || endsWith(github.head_ref, 'train/batch')
-      || contains(github.event.pull_request.labels.*.name, 'fleetd:next')
-      || contains(github.event.pull_request.labels.*.name, 'macos')
+    if: ${{ !endsWith(github.head_ref, 'train/batch') }}
     runs-on: macos-latest
     timeout-minutes: 30
     steps:
@@ -306,10 +293,7 @@ jobs:
     # whose job wasn't cancelled (.github/main-base.sh), or runs in full without one, so no change goes untested. The
     # hub ignores cancelled checks when it looks for red on main (hub/train/watch.rs).
     name: ios sessions
-    if: >-
-      github.event_name != 'pull_request' || endsWith(github.head_ref, 'train/batch')
-      || contains(github.event.pull_request.labels.*.name, 'fleetd:next')
-      || contains(github.event.pull_request.labels.*.name, 'macos')
+    if: ${{ !endsWith(github.head_ref, 'train/batch') }}
     concurrency:
       group: >-
         ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'ios-sessions-main'
@@ -517,11 +501,8 @@ jobs:
   desktop-macos:
     # The edge build's macOS packaged smoke (build-release.yml, desktop-macos) on an ad-hoc signed arm64 test build, so
     # a change that breaks the packed mac app fails here rather than only in the edge build. Same scope as desktop, and
-    # skipped where rust-macos is.
-    if: >-
-      github.event_name != 'pull_request' || endsWith(github.head_ref, 'train/batch')
-      || contains(github.event.pull_request.labels.*.name, 'fleetd:next')
-      || contains(github.event.pull_request.labels.*.name, 'macos')
+    # skipped where rust-macos is: on the train's batch PR.
+    if: ${{ !endsWith(github.head_ref, 'train/batch') }}
     runs-on: macos-latest
     timeout-minutes: 15
     defaults:

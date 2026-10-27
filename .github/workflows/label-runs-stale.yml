@@ -1,8 +1,8 @@
 name: Stale label runs
 
 # A push to a PR cancels the runs macos-label.yml dispatched for its last head, as it does the PR's own runs: those have
-# a concurrency group of their own (ci.yml), so nothing else cancels them, and they would hold the scarce macOS runners
-# for a head nobody merges. A failed cancel leaves a run going, never a red check on the new head.
+# a concurrency group of their own (desktop-qa.yml), so nothing else cancels them, and they would hold the scarce macOS
+# runners for a head nobody merges. A failed cancel leaves a run going, never a red check on the new head.
 
 on:
   pull_request:
@@ -24,8 +24,6 @@ jobs:
           BRANCH: ${{ github.head_ref }}
           HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
-          for workflow in ci.yml desktop-qa.yml; do
-            gh run list --workflow "$workflow" --branch "$BRANCH" --event workflow_dispatch --json databaseId,headSha,status \
-              -q ".[] | select(.status != \"completed\" and .headSha != \"$HEAD\") | .databaseId" |
-              while read -r run; do gh run cancel "$run" || true; done
-          done
+          gh run list --workflow desktop-qa.yml --branch "$BRANCH" --event workflow_dispatch --json databaseId,headSha,status \
+            -q ".[] | select(.status != \"completed\" and .headSha != \"$HEAD\") | .databaseId" |
+            while read -r run; do gh run cancel "$run" || true; done

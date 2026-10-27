@@ -76,8 +76,16 @@ pub(super) fn upstreams(after: &[GitHubPrUrl]) -> Vec<GitHubPrUrl> {
     out
 }
 
-/// The checks the label runs in a repo's CI on one base, and when they were read.
-type GatedRead = (i64, Vec<String>);
+/// What the train reads from a repo's workflows on one base: the checks the label runs (`label_gated`) and those the
+/// batch PR skips (`batch_skipped`).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(super) struct Workflows {
+    pub label: Vec<String>,
+    pub batch: Vec<String>,
+}
+
+/// A repo's `Workflows` on one base, and when they were read.
+type GatedRead = (i64, Workflows);
 
 #[derive(Default)]
 pub(super) struct NextLabels {
@@ -87,7 +95,7 @@ pub(super) struct NextLabels {
     known: Mutex<HashSet<String>>,
     /// The repos whose labelling failure is logged; a success clears it, so the next failure is logged again.
     warned: Mutex<HashSet<String>>,
-    /// Per repo and base, the checks the label runs (`label_gated`), and when they were read.
+    /// Per repo and base, what its workflows say (`Workflows`), and when they were read.
     gated: Mutex<HashMap<(String, String), GatedRead>>,
 }
 
@@ -147,7 +155,7 @@ pub(super) fn unproven_skips<'a>(runs: &'a [CheckRun], lone: &Lone) -> Vec<&'a C
 }
 
 /// Whether the check `name` is the job `pattern` names; an expression in it (`qa (${{ matrix.os }})`) matches any text.
-fn gated_name(pattern: &str, name: &str) -> bool {
+pub(super) fn gated_name(pattern: &str, name: &str) -> bool {
     match pattern.split_once("${{") {
         None => pattern == name,
         Some((head, rest)) => {
@@ -173,12 +181,6 @@ pub(super) fn label_gated(files: &[(String, String)]) -> Vec<String> {
             ))
         })
         .collect();
-    let on = |doc: &Value| -> Option<Value> {
-        let map = doc.as_mapping()?;
-        map.get("on")
-            .or_else(|| map.get(Value::Bool(true)))
-            .cloned()
-    };
     let reacts = |doc: &Value, text: &str| {
         text.contains(NEXT_LABEL)
             && on(doc).is_some_and(|on| {
@@ -227,6 +229,70 @@ pub(super) fn label_gated(files: &[(String, String)]) -> Vec<String> {
                 .and_then(Value::as_str)
                 .or_else(|| id.as_str());
             if let Some(name) = name.filter(|_| gated)
+                && !names.iter().any(|n| n == name)
+            {
+                names.push(name.to_string());
+            }
+        }
+    }
+    names
+}
+
+/// A workflow's `on:` (YAML 1.1 reads the bare key as `true`).
+fn on(doc: &serde_yaml_ng::Value) -> Option<serde_yaml_ng::Value> {
+    let map = doc.as_mapping()?;
+    map.get("on")
+        .or_else(|| map.get(serde_yaml_ng::Value::Bool(true)))
+        .cloned()
+}
+
+/// How a job's `if:` skips it on the train's batch PR (`<prefix>train/batch`), spaces left out.
+const SKIPPED_ON_BATCH: &str = "!endsWith(github.head_ref,'train/batch')";
+
+/// The names of the checks the train's batch PR skips, from the repo's workflow files (path, text): in a workflow that
+/// runs on each push to a PR (`pull_request` with its default types, or with `opened` and `synchronize`), each job
+/// whose `if:` says `!endsWith(github.head_ref, 'train/batch')`. The batch never waits for them; each PR's own head
+/// must pass them, or skip them by its paths, before it joins a batch (`own_checks`).
+pub(super) fn batch_skipped(files: &[(String, String)]) -> Vec<String> {
+    use serde_yaml_ng::Value;
+    let runs_on_pushes = |doc: &Value| match on(doc) {
+        Some(Value::String(event)) => event == "pull_request",
+        Some(Value::Sequence(events)) => events.iter().any(|e| e.as_str() == Some("pull_request")),
+        Some(on) => on.get("pull_request").is_some_and(|pr| {
+            pr.get("types")
+                .and_then(Value::as_sequence)
+                .is_none_or(|types| {
+                    ["opened", "synchronize"]
+                        .iter()
+                        .all(|t| types.iter().any(|x| x.as_str() == Some(t)))
+                })
+        }),
+        None => false,
+    };
+    let mut names = Vec::new();
+    for (_, text) in files {
+        let Ok(doc) = serde_yaml_ng::from_str::<Value>(text) else {
+            continue;
+        };
+        if !runs_on_pushes(&doc) {
+            continue;
+        }
+        let Some(jobs) = doc.get("jobs").and_then(Value::as_mapping) else {
+            continue;
+        };
+        for (id, job) in jobs {
+            let skipped = job.get("if").and_then(Value::as_str).is_some_and(|cond| {
+                let cond: String = cond
+                    .split_whitespace()
+                    .collect::<String>()
+                    .replace('"', "'");
+                cond.contains(SKIPPED_ON_BATCH)
+            });
+            let name = job
+                .get("name")
+                .and_then(Value::as_str)
+                .or_else(|| id.as_str());
+            if let Some(name) = name.filter(|_| skipped)
                 && !names.iter().any(|n| n == name)
             {
                 names.push(name.to_string());
@@ -296,25 +362,35 @@ impl Train {
         }
     }
 
-    /// The checks the label runs in the repo's CI on `base`, read once per `USES_TTL_MS`. A failed read keeps the last
-    /// answer for the repo; with none yet, they are not known.
+    /// The checks the label runs in the repo's CI on `base` (`workflows`); not known while those can't be read.
     pub(super) async fn label_gate(&self, repo: &str, base: &str) -> Gate {
+        self.workflows(repo, base)
+            .await
+            .map_or(Gate::Unknown, |w| Gate::Checks(w.label))
+    }
+
+    /// What the repo's workflows on `base` say, read once per `USES_TTL_MS`. A failed read keeps the last answer for
+    /// the repo; with none yet, None.
+    pub(super) async fn workflows(&self, repo: &str, base: &str) -> Option<Workflows> {
         let key = (repo.to_string(), base.to_string());
         let now = self.now_ms();
         let known = lock(&self.next_labels.gated).get(&key).cloned();
-        if let Some((at, names)) = &known
+        if let Some((at, workflows)) = &known
             && now - at < USES_TTL_MS
         {
-            return Gate::Checks(names.clone());
+            return Some(workflows.clone());
         }
         match self.github.workflow_files(repo, base).await {
             Ok(files) => {
-                let names = label_gated(&files);
-                lock(&self.next_labels.gated).insert(key, (now, names.clone()));
-                Gate::Checks(names)
+                let workflows = Workflows {
+                    label: label_gated(&files),
+                    batch: batch_skipped(&files),
+                };
+                lock(&self.next_labels.gated).insert(key, (now, workflows.clone()));
+                Some(workflows)
             }
             Err(e) => {
-                tracing::warn!(repo, error = %e.message, "train: workflows not read for {NEXT_LABEL}");
+                tracing::warn!(repo, error = %e.message, "train: workflows not read");
                 let last = known.or_else(|| {
                     lock(&self.next_labels.gated)
                         .iter()
@@ -322,7 +398,7 @@ impl Train {
                         .max_by_key(|(_, (at, _))| *at)
                         .map(|(_, known)| known.clone())
                 });
-                last.map_or(Gate::Unknown, |(_, names)| Gate::Checks(names))
+                last.map(|(_, workflows)| workflows)
             }
         }
     }
@@ -651,10 +727,10 @@ mod tests {
         );
     }
 
-    /// fleetd's own workflows: the label runs macOS in CI (through macos-label.yml) and the dispatch job; the release
-    /// and edge jobs it never runs, so their skips are never the label's.
+    /// fleetd's own workflows (D204): no check waits for the label, and the batch PR skips the macOS jobs, which each
+    /// PR's own head runs. Nothing of the release or of the jobs that never run on a PR's push counts.
     #[test]
-    fn fleetds_workflows_gate_its_macos_jobs_and_nothing_of_the_release() {
+    fn fleetds_workflows_gate_nothing_on_the_label_and_skip_their_macos_jobs_on_a_batch() {
         let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../.github/workflows");
         let mut files: Vec<(String, String)> = std::fs::read_dir(dir)
             .unwrap()
@@ -669,12 +745,61 @@ mod tests {
             })
             .collect();
         files.sort();
-        let mut gated = label_gated(&files);
-        gated.sort();
-        assert_eq!(
-            gated,
-            ["desktop-macos", "dispatch", "ios sessions", "rust (macos)"]
-        );
+        assert!(label_gated(&files).is_empty());
+        let mut skipped = batch_skipped(&files);
+        skipped.sort();
+        assert_eq!(skipped, ["desktop-macos", "ios sessions", "rust (macos)"]);
+    }
+
+    /// Only a job that skips the batch's branch, in a workflow that runs on each push to a PR: not one a label or a
+    /// later push starts, nor one that runs only on the batch.
+    #[test]
+    fn the_batch_skips_the_jobs_of_a_prs_push_whose_if_skips_its_branch() {
+        let workflow = |on: &str, jobs: &str| format!("name: W\non:\n{on}\njobs:\n{jobs}");
+        let job =
+            |id: &str, cond: &str| format!("  {id}:\n    if: {cond}\n    runs-on: macos-latest\n");
+        let skips = "${{ !endsWith( github.head_ref , \"train/batch\") }}";
+        let files = vec![
+            (
+                "ci.yml".to_string(),
+                workflow(
+                    "  pull_request:\n  push:",
+                    &(job("mac", skips)
+                        + &job("batch-only", "endsWith(github.head_ref, 'train/batch')")
+                        + "  linux:\n    runs-on: ubuntu-latest\n"),
+                ),
+            ),
+            (
+                "typed.yml".to_string(),
+                workflow(
+                    "  pull_request:\n    types: [opened, synchronize, reopened]",
+                    &job("typed", skips),
+                ),
+            ),
+            (
+                "list.yml".to_string(),
+                workflow("  [push, pull_request]", &job("listed", skips)),
+            ),
+            (
+                "label.yml".to_string(),
+                workflow(
+                    "  pull_request:\n    types: [labeled]",
+                    &job("labelled", skips),
+                ),
+            ),
+            (
+                "stale.yml".to_string(),
+                workflow(
+                    "  pull_request:\n    types: [synchronize]",
+                    &job("stale", skips),
+                ),
+            ),
+            (
+                "main.yml".to_string(),
+                workflow("  push:", &job("main", skips)),
+            ),
+        ];
+        assert_eq!(batch_skipped(&files), ["mac", "typed", "listed"]);
     }
 
     #[test]
