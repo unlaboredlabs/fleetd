@@ -1452,6 +1452,20 @@ async fn a_person_watches_takes_over_and_types_and_the_agent_sees_it_after_the_h
     );
 }
 
+/// Once the hub lists the session live: the node reports it in the background, so a loaded run (CI) can call the hub
+/// before the report lands.
+async fn live_on_hub(hub: &TestHub) {
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        let listed = sessions(hub).await;
+        if listed["sessions"][0]["state"] == "live" {
+            return;
+        }
+        assert!(Instant::now() < deadline, "never live: {listed}");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}
+
 async fn recorded(hub: &TestHub) -> String {
     let deadline = Instant::now() + Duration::from_secs(30);
     loop {
@@ -1586,7 +1600,11 @@ async fn a_session_whose_recording_folder_went_still_ends_on_the_hub() {
         );
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
-    assert!(!dir.exists(), "the upload cleared what it remade");
+    // The node clears it once the hub has answered the upload's last report, a moment after the hub says recorded.
+    while dir.exists() {
+        assert!(Instant::now() < deadline, "the upload left what it remade");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
 }
 
 /// Its session file can't be written at all (its folder's name taken by a file): the upload has nothing to go on,
@@ -1627,6 +1645,7 @@ async fn the_hub_ends_a_browser_whose_task_ended() {
         json!({ "op": "session_start", "purpose": "Look" }),
     )
     .await;
+    live_on_hub(&rig.hub).await;
     let hub = rig.hub.hub.clone();
     let mut to_node = hub.link.test_link(
         &MachineId::unchecked("devbox"),
