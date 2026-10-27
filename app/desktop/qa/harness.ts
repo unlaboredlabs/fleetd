@@ -222,7 +222,8 @@ async function applyView(page: Page) {
 }
 
 // Waits until the page is at its set viewport and scale; if a late native resize knocked it off, applies the
-// override again once. Run before checking and before every screenshot, so both see the size that was asked for.
+// override again once and lets the layout settle at it (a virtual list moves its rewrapped rows a frame or more
+// later). Run before checking and before every screenshot, so both see the size that was asked for.
 async function holdView(page: Page) {
   const view = views.get(page);
   if (!view) return;
@@ -242,6 +243,25 @@ async function holdView(page: Page) {
   if (!(await at(3_000))) {
     const got = await page.evaluate(() => `${window.innerWidth}×${window.innerHeight} @${window.devicePixelRatio}`);
     throw new Error(`the page is ${got}, not the ${view.width}×${view.height} @${scale} it was set to`);
+  }
+  await settle(page);
+}
+
+// Whether the page is at its set viewport and scale now.
+async function atView(page: Page) {
+  const view = views.get(page);
+  if (!view) return true;
+  return page.evaluate((v) => window.innerWidth === v.width && window.innerHeight === v.height && window.devicePixelRatio === v.scale, { ...view, scale });
+}
+
+// The checks, at the size that was set. A late native resize (macOS) that lands while they run makes them measure a
+// layout caught mid-change, a virtual list's rows rewrapped at the other width but not yet moved: overlaps that no
+// screenshot shows. So the size is put back and they run again.
+async function checkAtView(page: Page, reserved: Box[]) {
+  for (let i = 0; ; i++) {
+    const findings = await check(page, reserved);
+    if (i === 2 || (await atView(page))) return findings;
+    await holdView(page);
   }
 }
 
@@ -412,7 +432,7 @@ export async function shoot(
   mkdirSync(path.join(resultsDir, "shots"), { recursive: true });
   await holdView(page);
   await opaqueSidebar(page);
-  const findings = await check(page, reserved);
+  const findings = await checkAtView(page, reserved);
   const png = path.join("png", `${name}.png`);
   await capture(page, png, []);
   const shot: Shot = { ...meta, scale, platform: process.platform, png, scrolled: [], findings };
@@ -429,7 +449,7 @@ export async function shoot(
     for (const [i, step] of steps.entries()) {
       await run(page, `scrollToStep(${JSON.stringify(step)})`);
       await settle(page);
-      const fresh = (await check(page, reserved)).filter((f) => !seen.has(key(f)));
+      const fresh = (await checkAtView(page, reserved)).filter((f) => !seen.has(key(f)));
       const at = step.top > 0 ? `${step.top}px down` : `${step.left}px across`;
       for (const f of fresh) {
         seen.add(key(f));
