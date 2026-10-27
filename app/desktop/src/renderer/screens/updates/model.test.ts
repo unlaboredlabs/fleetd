@@ -344,7 +344,8 @@ describe("the sheet's lines, the notice and the note", () => {
     expect(v.update?.note).toMatch(/^Downloaded and checked already/u);
     // The hub's build is older than changes.json reaches, so there is more.
     expect(v.update?.notes).toEqual({ lines: ["Status loads faster", "The hub says its version"], more: true });
-    expect(v.notice).toEqual({ version: NEXT, title: "fleetd Nightly · Oct 23, 10:30 UTC · def5678 is ready", notes: v.update?.notes });
+    // Without the build commit: the notice is also read aloud.
+    expect(v.notice).toEqual({ version: NEXT, title: "fleetd Nightly · Oct 23, 10:30 UTC is ready", notes: v.update?.notes });
     expect(says(v)).toEqual([
       ["The hub", "Update ready", "", ""],
       ["builder", "Update ready", "", ""],

@@ -368,6 +368,10 @@ const appLineOf = (state: UpdatesState, flow: Flow, runGoing: boolean): LineSay 
 /** The version an app update found, if any. */
 const foundVersion = (app: AppUpdate): string | null => (app.kind === "available" || app.kind === "ready" || app.kind === "manual" ? app.version : null);
 
+/** The notice's version, without a nightly's build commit: a toast is also read aloud, where a hash says nothing. The
+ * sheet names the build in full. */
+const noticeLabel = (version: string): string => versionLabel(version).replace(/ · [0-9a-f]{7,}$/u, "");
+
 /** What's new to the hub and to this app, together, the first few. */
 const whatsNew = (...of: readonly Notes[]): Notes => {
   const lines = [...new Set(of.flatMap((n) => n.lines))];
@@ -471,7 +475,7 @@ export const updatesView = ({ app, hub, machines = [], run = null, flow = { phas
   // Only once a build is downloaded and checked, the hub's or this app's own: never for one still to fetch.
   const readyVersion = hubReady ?? (app?.app.kind === "ready" ? app.app.version : null);
   const notice: Notice | null =
-    readyVersion === null || update === null || runGoing ? null : { version: readyVersion, title: `fleetd ${versionLabel(readyVersion)} is ready`, notes: update.notes };
+    readyVersion === null || update === null || runGoing ? null : { version: readyVersion, title: `fleetd ${noticeLabel(readyVersion)} is ready`, notes: update.notes };
 
   const lines: PartLine[] = [];
   if (hub.url !== null) {
