@@ -192,8 +192,10 @@ per file, up to 400,000 per project. Memory never holds a secret.
 Each project's lead keeps a checklist with its `checklist` tool: a few plain items per piece of work you approved,
 each to do, doing or done, linked to its pull request or agent. Its first message tells it to keep the list current,
 moving items along in the turn their news arrives; every wake shows it how many are done and the items still open.
-You see the list in the panel's [Checklist tab](/docs/desktop-app#checklist). Writers can't change it, and nothing
-is worked out from it: no figure, no estimate.
+You see the list in the panel's [Checklist tab](/docs/desktop-app#checklist), where you can delete items and clear
+the done ones. The lead's next wake names what you took off, its digest shows the list as it is now, and its first
+message tells it never to add those back unless you ask. Writers can't change the list, and nothing is worked out
+from it: no figure, no estimate.
 
 ## Skills {#skills}
 
@@ -291,6 +293,12 @@ A decision you changed or revoked goes out with the next wake too, with your why
 ```
 - the human revoked D12 db.engine (was "sqlite"): "we need read replicas"; it is open again, so ask before deciding it
 - the human replaced D14 payments.provider "stripe" with D19 "adyen": "the contract is signed"; follow D19 from now on
+```
+
+So do items you took off the checklist, by Delete or Clear done:
+
+```
+- the human took 2 items off the checklist: 1 "Receipts show the shop's local time", 6 "Search keeps its query on Back"; leave them off unless they ask again
 ```
 
 ### This machine {#this-machine}

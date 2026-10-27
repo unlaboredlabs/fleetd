@@ -3001,6 +3001,58 @@
       ],
       "type": "object"
     },
+    "ChecklistRemoveInput": {
+      "properties": {
+        "ids": {
+          "description": "The items to take off; one already gone is skipped.",
+          "items": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "maxItems": 50,
+          "minItems": 1,
+          "type": "array"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        }
+      },
+      "required": [
+        "projectRef",
+        "ids"
+      ],
+      "type": "object"
+    },
+    "ChecklistRemoveOutput": {
+      "properties": {
+        "items": {
+          "description": "The list after it, in the lead's order.",
+          "items": {
+            "$ref": "#/$defs/TodoItem"
+          },
+          "maxItems": 50,
+          "type": "array"
+        },
+        "next": {
+          "type": "string"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "updatedAt": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "projectRef",
+        "items"
+      ],
+      "type": "object"
+    },
     "Checkout": {
       "properties": {
         "machineId": {
@@ -6786,6 +6838,12 @@
         "checklist_get.output": {
           "$ref": "#/$defs/ChecklistGetOutput"
         },
+        "checklist_remove.input": {
+          "$ref": "#/$defs/ChecklistRemoveInput"
+        },
+        "checklist_remove.output": {
+          "$ref": "#/$defs/ChecklistRemoveOutput"
+        },
         "decisions_list.input": {
           "$ref": "#/$defs/DecisionsListInput"
         },
@@ -7300,6 +7358,8 @@
         "chat_stop.output",
         "checklist_get.input",
         "checklist_get.output",
+        "checklist_remove.input",
+        "checklist_remove.output",
         "decisions_list.input",
         "decisions_list.output",
         "decisions_overturn.input",

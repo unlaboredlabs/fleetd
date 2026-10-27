@@ -1180,6 +1180,7 @@ export type ChecklistBlock = {
 
 /** `checklist.changed`. The items are not in the event; checklist_get reads them. */
 export type ChecklistChangedData = {
+  /** The lead (`lead:<machine>/<project>`) or a person (`human:<key name>`). */
   by: string;
   done: number;
   projectRef: ProjectRef;
@@ -1203,6 +1204,21 @@ export type ChecklistGetOutput = {
 export type ChecklistItem = {
   done: boolean;
   text: string;
+};
+
+export type ChecklistRemoveInput = {
+  /** The items to take off; one already gone is skipped. */
+  ids: number[];
+  projectRef: ProjectRef;
+};
+
+export type ChecklistRemoveOutput = {
+  /** The list after it, in the lead's order. */
+  items: TodoItem[];
+  next?: string;
+  projectRef: ProjectRef;
+  truncated?: boolean;
+  updatedAt?: Timestamp;
 };
 
 export type Checkout = {
@@ -5992,6 +6008,7 @@ export interface ToolMap {
   chat_send: { input: ChatSendInput; output: ChatSendOutput };
   chat_stop: { input: ChatStopInput; output: ChatStopOutput };
   checklist_get: { input: ChecklistGetInput; output: ChecklistGetOutput };
+  checklist_remove: { input: ChecklistRemoveInput; output: ChecklistRemoveOutput };
   decisions_list: { input: DecisionsListInput; output: DecisionsListOutput };
   decisions_overturn: { input: DecisionsOverturnInput; output: DecisionsOverturnOutput };
   decisions_record: { input: DecisionsRecordInput; output: DecisionsRecordOutput };
