@@ -215,7 +215,7 @@ it("keeps a removal until the hub has it, so one the app quit within its Undo go
   window.localStorage.setItem("fleetd.checklistRemovals", JSON.stringify([{ projectRef: project, ids: [3] }]));
   act(() => root.unmount());
   root = createRoot(host);
-  const next = await mount(LIST, { offline: true, launch: sendKept });
+  const next = await mount(LIST, { offline: true, launch: (layer) => sendKept(() => layer) });
   await settle();
   expect(next.hub.removes).toEqual([]);
   await next.connect();
@@ -246,11 +246,11 @@ it("a session's window never sends a removal the app's window is still waiting o
   const layer = createDataLayer(other);
   const stop = layer.start();
   expect(layer.store.getState().fresh).toBe(true);
-  sendKept(layer, "#/session/devbox/storefront/B1");
+  sendKept(() => layer, "#/session/devbox/storefront/B1");
   await settle();
   expect(calls).toEqual([]);
   // The app's window sends it, as at the next launch.
-  sendKept(layer, "#/project/devbox/storefront");
+  sendKept(() => layer, "#/project/devbox/storefront");
   await settle();
   expect(calls).toEqual(["checklist_remove"]);
   stop();

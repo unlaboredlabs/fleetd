@@ -65,11 +65,12 @@ beforeEach(() => {
       <DataProvider layer={createDataLayer(hub)}>
         <TooltipProvider>
           <Sidebar
-            projects={[PROJECT]}
+            projects={[{ ...PROJECT, hub: "hub" }]}
             machinesDown={0}
-            screen={{ id: "status" }}
-            hub={{ phase: "live", hub: "http://devbox:4790", protocol: 1 }}
+            screen={{ id: "status", at: "hub" }}
             jumpHints={false}
+            collapsed={new Set()}
+            onToggleHub={() => undefined}
             factory={false}
             admin={false}
             go={(s) => went.push(s)}

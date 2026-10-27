@@ -38,12 +38,12 @@ describe("sealing a secret ask's value", () => {
   });
 
   it("takes a 64 KB value from the page to the hub, and refuses one byte more with why", async () => {
-    const fromPage = (value: string) => parseRequest(IPC.secretSubmit, [{ requestId: "Q7", boxPubKey: rust.publicKey, value }]);
+    const fromPage = (value: string) => parseRequest(IPC.secretSubmit, ["hub", { requestId: "Q7", boxPubKey: rust.publicKey, value }]);
     const submit = async (value: string) => {
       const parsed = fromPage(value);
       if (!parsed.ok) throw new Error("refused at the IPC boundary");
       let sealed = "";
-      const out = await submitSecret(parsed.args[0], (_tool, input) => {
+      const out = await submitSecret(parsed.args[1], (_tool, input) => {
         sealed = input.sealed;
         return Promise.resolve({ ok: true, output: { requestId: "Q7", fingerprint: "ab12cd34" } });
       });
@@ -136,8 +136,8 @@ describe("sealing a secret ask's value", () => {
         { machineId: "laptop", boxPubKey: otherKey },
       ],
     };
-    expect(parseRequest(IPC.mcpServerSubmit, [request]).ok).toBe(true);
-    expect(parseRequest(IPC.mcpServerSubmit, [{ ...request, name: "a b" }]).ok).toBe(false);
+    expect(parseRequest(IPC.mcpServerSubmit, ["hub", request]).ok).toBe(true);
+    expect(parseRequest(IPC.mcpServerSubmit, ["hub", { ...request, name: "a b" }]).ok).toBe(false);
     expect((await submitMcpServer(request, call)).ok).toBe(true);
     expect(sent[0]).toBe("mcp_server_set");
     const input = sent[1] as { headers: Array<{ kind: string; sealed?: Array<{ machineId: string; sealed: string }> }> };

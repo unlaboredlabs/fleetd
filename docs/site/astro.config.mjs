@@ -73,6 +73,7 @@ export default defineConfig({
             "approvals-and-secrets",
             "people",
             "desktop-app",
+            "several-hubs",
             "status",
             "time-inspector",
             "what-agents-are-told",

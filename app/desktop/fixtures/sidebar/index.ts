@@ -3,7 +3,7 @@
 // shows bold until you look.
 import { Fixture } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
-import { isObject, type JsonObject } from "../kit/json.ts";
+import { isObject, type JsonObject, type JsonValue } from "../kit/json.ts";
 import { arr, obj } from "../kit/stress.ts";
 
 const reasons = (base: Fixture): Fixture => {
@@ -51,6 +51,40 @@ const reasons = (base: Fixture): Fixture => {
   return f;
 };
 
+/** Every project's title in `f` renamed by `titles`, wherever a row names it beside its project. */
+const retitle = (f: Fixture, titles: Readonly<Record<string, string>>): void => {
+  const walk = (v: JsonValue | undefined): void => {
+    if (Array.isArray(v)) return v.forEach(walk);
+    if (!isObject(v)) return;
+    const title = v["title"];
+    if (typeof title === "string" && titles[title] !== undefined && ("projectId" in v || "projectRef" in v)) v["title"] = titles[title];
+    Object.values(v).forEach(walk);
+  };
+  walk(f.snapshot);
+  for (const c of f.calls) walk(c.output);
+};
+
+/**
+ * Two hubs under the names the person gave them (docs/design/hubs.md): Personal's few projects, then Acme's, with
+ * its leads waiting on you; `offline`, Acme can't be reached and Personal works on beside it.
+ */
+const hubs = (base: (name: "typical" | "status-rows") => Fixture, offline: boolean): Fixture => {
+  const f = Fixture.from(
+    base("typical"),
+    offline ? "sidebar-hubs-offline" : "sidebar-hubs",
+    offline ? "Two hubs, Personal and Acme; Acme can't be reached, Personal works on." : "Two hubs, Personal and Acme, each under its name in one sidebar.",
+  );
+  retitle(f, { storefront: "blog", billing: "garden-sensors", checkout: "recipes" });
+  f.label = "Personal";
+  f.color = "green";
+  const acme = reasons(base("status-rows"));
+  acme.state = offline
+    ? { phase: "retrying", hub: "https://hub.acme.example", reason: "The hub didn't answer: connection refused", fix: "Check you're on Acme's network or VPN.", retryAt: Date.parse(f.now) + 25_000 }
+    : { phase: "live", hub: "https://hub.acme.example", protocol: f.state.phase === "live" ? f.state.protocol : 1 };
+  f.hubs = [{ label: "Acme", color: "amber", fixture: acme }];
+  return f;
+};
+
 export default defineGroup({
-  fixtures: (base) => [reasons(base("status-rows"))],
+  fixtures: (base) => [reasons(base("status-rows")), hubs(base, false), hubs(base, true)],
 });

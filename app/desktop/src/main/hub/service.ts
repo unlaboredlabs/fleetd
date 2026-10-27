@@ -2,29 +2,38 @@ import type { WebContents } from "electron";
 import { IPC } from "../../shared/channels";
 import type { BrowserInput } from "../../shared/contracts";
 import type { CallOutcome, ConnectOutcome, HubFrame, HubState } from "../../shared/hub";
-import type { CallRequest, ChatScope, ConnectRequest, OrderFocus } from "../../shared/ipc";
+import type { HubId } from "../../shared/hubs";
+import type { CallRequest, ChatScope, OrderFocus } from "../../shared/ipc";
 import type { HubCacheFile } from "./cache";
 import { HubClient } from "./client";
-import { clearCredentials, fromEnv, loadCredentials, saveCredentials, type CredentialEnv } from "./credentials";
+import { clearCredentials, saveCredentials, type CredentialEnv, type Loaded } from "./credentials";
 import { FixtureSource, type FixtureFile } from "./fixture";
 import type { PresenceFrame } from "../presence";
 import { appUrl } from "./protocol";
 import type { HubSource } from "./source";
 import type { Transport } from "./transport";
 
+/** One hub of the app's (main/hub/hubs.ts loads its key). */
 export type HubMode =
   | {
       readonly kind: "hub";
+      readonly id: HubId;
       readonly credentials: CredentialEnv;
-      readonly vars: NodeJS.ProcessEnv;
+      /** Its key as the store gave it; `ephemeral` when it came from FLEETD_HUB_URL + FLEETD_AGENT_KEY. */
+      readonly loaded: Loaded;
+      readonly ephemeral: boolean;
       readonly transport: Transport;
       /** The renderer's offline cache (main/hub/cache.ts). */
       readonly cache: HubCacheFile;
     }
-  | { readonly kind: "fixture"; readonly fixture: FixtureFile };
+  | { readonly kind: "fixture"; readonly id: HubId; readonly fixture: FixtureFile };
 
-/** The hub as main offers it to windows: one source (a connection or a fixture), fanned out to every subscriber. */
+/**
+ * One hub as main offers it to windows: one source (a connection or a fixture), fanned out to every subscriber, each
+ * frame tagged with the hub's id.
+ */
 export class HubService {
+  readonly id: HubId;
   readonly #mode: HubMode;
   readonly #subscribers = new Set<WebContents>();
   /** Windows that subscribed and haven't had their snapshot yet: events and live diffs would mean nothing to them. */
@@ -41,17 +50,23 @@ export class HubService {
   #watching: string | null = null;
 
   constructor(mode: HubMode) {
+    this.id = mode.id;
     this.#mode = mode;
     if (mode.kind === "fixture") {
       this.#ephemeral = true;
       this.#source = new FixtureSource(mode.fixture, (frame) => this.#broadcast(frame));
       return;
     }
-    const scripted = fromEnv(mode.vars);
-    this.#ephemeral = scripted !== null;
-    const loaded = scripted === null ? loadCredentials(mode.credentials) : { saved: scripted };
+    this.#ephemeral = mode.ephemeral;
+    const { loaded } = mode;
     if (loaded.note !== undefined) this.#unpaired = { phase: "unpaired", note: loaded.note };
     if (loaded.saved !== null) this.#use(loaded.saved.url, loaded.saved.key);
+  }
+
+  /** The address it is paired with, or null. */
+  url(): string | null {
+    const state = this.state();
+    return state.phase === "unpaired" ? null : state.hub;
   }
 
   state(): HubState {
@@ -140,21 +155,16 @@ export class HubService {
   /** The disk cache for the hub this app is paired with; a fixture's own, which it never overwrites. */
   cacheRead(): string | null {
     if (this.#mode.kind === "fixture") return this.#mode.fixture.cache === undefined ? null : JSON.stringify(this.#mode.fixture.cache);
-    const hub = this.#hub();
+    const hub = this.url();
     return hub === null ? null : this.#mode.cache.read(hub);
   }
 
   cacheWrite(text: string): void {
     if (this.#mode.kind !== "hub") return;
-    const hub = this.#hub();
+    const hub = this.url();
     if (hub !== null) this.#mode.cache.write(text, hub);
   }
 
-  /** The paired hub's address as the state names it; null while unpaired. */
-  #hub(): string | null {
-    const state = this.state();
-    return state.phase === "unpaired" ? null : state.hub;
-  }
 
   windowFocused(): void {
     this.#source?.refreshLive();
@@ -164,14 +174,14 @@ export class HubService {
     this.#source?.reconnectNow();
   }
 
-  connect(request: ConnectRequest): ConnectOutcome {
+  connect(request: { readonly url: string; readonly key: string }): ConnectOutcome {
     if (this.#source instanceof FixtureSource) return this.#source.connectAnswer;
     if (this.#mode.kind !== "hub") return { ok: false, message: "Not available." };
     const url = appUrl(request.url);
     if (!url.ok) return { ok: false, message: url.message };
     if (!this.#ephemeral) {
       try {
-        saveCredentials(this.#mode.credentials, { url: request.url, key: request.key });
+        saveCredentials(this.#mode.credentials, { url: request.url, key: request.key }, this.id);
       } catch (error) {
         return { ok: false, message: `Couldn't save the key: ${String(error)}` };
       }
@@ -184,7 +194,7 @@ export class HubService {
     if (this.#mode.kind !== "hub") return;
     this.#source?.stop();
     this.#source = null;
-    if (!this.#ephemeral) clearCredentials(this.#mode.credentials);
+    if (!this.#ephemeral) clearCredentials(this.#mode.credentials, this.id);
     this.#mode.cache.clear();
     this.#unpaired = { phase: "unpaired" };
     this.#broadcast({ t: "state", state: this.#unpaired });
@@ -214,6 +224,6 @@ export class HubService {
   }
 
   #send(contents: WebContents, frame: HubFrame): void {
-    if (!contents.isDestroyed()) contents.send(IPC.hubFrame, frame);
+    if (!contents.isDestroyed()) contents.send(IPC.hubFrame, this.id, frame);
   }
 }

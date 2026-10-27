@@ -3,6 +3,7 @@
 // window that opened later asks. The main window then shows that session there instead of in its own panel.
 import { useSyncExternalStore } from "react";
 import type { ProjectKey } from "../shell/routes";
+import { FIRST_HUB } from "../../../shared/hubs";
 
 type Message = { readonly t: "open" | "closed"; readonly id: string } | { readonly t: "ask" };
 
@@ -50,6 +51,6 @@ const subscribe = (l: () => void) => {
 /** Whether session `id` is open in a window of its own (not this one). */
 export const useInItsWindow = (id: string): boolean => useSyncExternalStore(subscribe, () => open.has(id));
 
-/** Opens session `id` in a window of its own, or brings that window forward. */
-export const showWindow = (project: ProjectKey, id: string): void =>
-  void window.fleetd.app.sessionWindow({ machineId: project.machineId, projectId: project.projectId, session: id });
+/** Opens session `id` (on `hub`, the first when absent) in a window of its own, or brings that window forward. */
+export const showWindow = (project: ProjectKey, id: string, hub?: string): void =>
+  void window.fleetd.app.sessionWindow({ machineId: project.machineId, projectId: project.projectId, session: id, ...(hub === undefined || hub === FIRST_HUB ? {} : { hub }) });

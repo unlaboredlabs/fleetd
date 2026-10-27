@@ -255,6 +255,17 @@ describe("projects", () => {
     ]);
   });
 
+  it("with several hubs, says each project's hub beside its machine and opens it on that hub", () => {
+    const opened: string[] = [];
+    const [project] = projectItems(state([live(), snapshot(1)]), (hash) => opened.push(hash), { id: "a1b2", label: "Acme" });
+    expect([project?.id, project?.detail]).toEqual(["project:a1b2:devbox/storefront", "Chat with the lead · Acme · on devbox"]);
+    expect(rank("acme", project === undefined ? [] : [project]).matches.map((i) => i.title)).toEqual(["storefront"]);
+    project?.run();
+    project?.actions?.[1]?.run();
+    expect(opened).toEqual(["#/project/devbox/storefront?at=a1b2", "#/settings/instructions?for=devbox/storefront&at=a1b2"]);
+    expect(currentProjectItem("#/project/devbox/storefront?at=a1b2")).toBe("project:a1b2:devbox/storefront");
+  });
+
   it("knows the project on screen, so the palette opens on it", () => {
     expect(currentProjectItem("#/project/devbox/storefront")).toBe("project:devbox/storefront");
     expect(currentProjectItem("#/project/dev%20box/a%2Fb?message=m1")).toBe("project:dev box/a/b");

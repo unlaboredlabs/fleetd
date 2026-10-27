@@ -7,7 +7,7 @@ import { Button, Dialog, Field, Input, Radio, RadioGroup, Separator, Switch, Tex
 import type { ProjectEnvVar, ProjectSettings as Settings, ToolInput } from "../../../shared/contracts";
 import type { ProjectEnvRequest } from "../../../shared/ipc";
 import { CallError } from "../../src/data/queries";
-import { useData, useToolQuery } from "../../src/data/react";
+import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import { RemoveProjectDialog, type RemoveTarget } from "../projects/RemoveProjectDialog";
 import { parseScope, projectRefOf, scopeKey, type Scope } from "./editor";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
@@ -39,9 +39,10 @@ type Ref = { machineId: string; projectId: string };
 /** Hands the changes to main, which seals each secret and calls project_env_set; throws the hub's error. */
 function useEnvSubmit(ref: Ref) {
   const box = useData((d) => d.machines[ref.machineId]?.boxPubKey);
+  const { hub } = useDataLayer();
   const refetch = useRefetch();
   return async (set: ProjectEnvRequest["set"], remove: ProjectEnvRequest["remove"]) => {
-    const out = await window.fleetd.secret.projectEnv({ ...ref, ...(box === undefined ? {} : { boxPubKey: box }), set, remove });
+    const out = await window.fleetd.secret.projectEnv(hub, { ...ref, ...(box === undefined ? {} : { boxPubKey: box }), set, remove });
     if (!out.ok) throw new CallError(out.error);
     refetch(["project_settings_get"]);
   };

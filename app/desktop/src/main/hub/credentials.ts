@@ -12,6 +12,7 @@
 import { chmodSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
+import { FIRST_HUB, type HubId } from "../../shared/hubs";
 import type { KeyStore } from "../../shared/pairing";
 
 export interface Saved {
@@ -100,6 +101,9 @@ export const keyStoreOf = (no: NoOsStore | null, platform: NodeJS.Platform, dir:
 
 const ENCRYPTED = "desktop-hub.bin";
 const PLAIN = "desktop-hub.json";
+/** Each hub's files: the first keeps the names from before several hubs, each other one adds its id. */
+const files = (hub: HubId): { encrypted: string; plain: string } =>
+  hub === FIRST_HUB ? { encrypted: ENCRYPTED, plain: PLAIN } : { encrypted: `desktop-hub-${hub}.bin`, plain: `desktop-hub-${hub}.json` };
 const MIGRATED = "desktop-migrated";
 /** The GPUI app's file on ad-hoc Mac builds. */
 const GPUI_FILE = "hub.json";
@@ -135,7 +139,7 @@ const makeDir = (dir: string): void => {
 };
 
 /** 0600 from creation, renamed into place so a crash never leaves half a file. */
-const writePrivate = (dir: string, name: string, body: Buffer | string): void => {
+export const writePrivate = (dir: string, name: string, body: Buffer | string): void => {
   makeDir(dir);
   const tmp = join(dir, `${name}.tmp`);
   rmSync(tmp, { force: true });
@@ -150,8 +154,10 @@ export const fromEnv = (vars: NodeJS.ProcessEnv): Saved | null => {
   return url !== undefined && url !== "" && key !== undefined && key !== "" ? { url, key } : null;
 };
 
-export const loadCredentials = (env: CredentialEnv): Loaded => {
-  const encrypted = read(join(env.dir, ENCRYPTED));
+/** One hub's saved key; only the first hub ever moves the GPUI app's key over. */
+export const loadCredentials = (env: CredentialEnv, hub: HubId = FIRST_HUB): Loaded => {
+  const file = files(hub);
+  const encrypted = read(join(env.dir, file.encrypted));
   if (encrypted !== null && env.crypto !== null) {
     let text: string | null = null;
     try {
@@ -162,12 +168,12 @@ export const loadCredentials = (env: CredentialEnv): Loaded => {
     const saved = text === null ? null : parse(text);
     return saved === null ? { saved: null, note: "The saved key couldn't be read. Pair again to continue." } : { saved };
   }
-  const plain = read(join(env.dir, PLAIN));
+  const plain = read(join(env.dir, file.plain));
   if (plain !== null) {
     const saved = parse(plain.toString("utf8"));
     if (saved !== null) return { saved };
   }
-  return migrateOnce(env);
+  return hub === FIRST_HUB ? migrateOnce(env) : { saved: null };
 };
 
 const migrateOnce = (env: CredentialEnv): Loaded => {
@@ -216,21 +222,23 @@ const findGpuiKey = (env: CredentialEnv): Saved | null => {
 };
 
 /** Writes only when the value changed. A fresh pairing also settles the migration: it never runs after this. */
-export const saveCredentials = (env: CredentialEnv, saved: Saved): void => {
+export const saveCredentials = (env: CredentialEnv, saved: Saved, hub: HubId = FIRST_HUB): void => {
+  const file = files(hub);
   const text = JSON.stringify({ url: saved.url, key: saved.key });
-  const current = loadStored(env);
+  const current = loadStored(env, hub);
   if (current?.url === saved.url && current.key === saved.key) return;
   if (env.crypto === null) {
-    writePrivate(env.dir, PLAIN, text);
+    writePrivate(env.dir, file.plain, text);
   } else {
-    writePrivate(env.dir, ENCRYPTED, env.crypto.encrypt(text));
-    rmSync(join(env.dir, PLAIN), { force: true });
+    writePrivate(env.dir, file.encrypted, env.crypto.encrypt(text));
+    rmSync(join(env.dir, file.plain), { force: true });
   }
   if (read(join(env.dir, MIGRATED)) === null) writePrivate(env.dir, MIGRATED, "");
 };
 
-const loadStored = (env: CredentialEnv): Saved | null => {
-  const encrypted = read(join(env.dir, ENCRYPTED));
+const loadStored = (env: CredentialEnv, hub: HubId): Saved | null => {
+  const file = files(hub);
+  const encrypted = read(join(env.dir, file.encrypted));
   if (encrypted !== null && env.crypto !== null) {
     try {
       return parse(env.crypto.decrypt(encrypted));
@@ -238,12 +246,13 @@ const loadStored = (env: CredentialEnv): Saved | null => {
       return null;
     }
   }
-  const plain = read(join(env.dir, PLAIN));
+  const plain = read(join(env.dir, file.plain));
   return plain === null ? null : parse(plain.toString("utf8"));
 };
 
-/** Forgets this app's key. The GPUI app's store stays as it was. */
-export const clearCredentials = (env: CredentialEnv): void => {
-  rmSync(join(env.dir, ENCRYPTED), { force: true });
-  rmSync(join(env.dir, PLAIN), { force: true });
+/** Forgets one hub's key. The GPUI app's store stays as it was. */
+export const clearCredentials = (env: CredentialEnv, hub: HubId = FIRST_HUB): void => {
+  const file = files(hub);
+  rmSync(join(env.dir, file.encrypted), { force: true });
+  rmSync(join(env.dir, file.plain), { force: true });
 };

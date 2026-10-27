@@ -52,8 +52,9 @@ process.on("exit", () => fs.rmSync(STAGING, { recursive: true, force: true }));
 const names = new Set<string>();
 const problems: Array<string> = [];
 const written: Array<string> = [];
-const finish = (f: Fixture) => {
-  // Last, after the group made it: one count of agents per project, whatever shows it (kit/agents.ts).
+/** What every hub's answers get last, after the group made them. */
+const complete = (f: Fixture) => {
+  // One count of agents per project, whatever shows it (kit/agents.ts).
   syncAgents(f);
   syncProfiles(f);
   syncAgentsList(f);
@@ -72,7 +73,15 @@ const finish = (f: Fixture) => {
       if (f.output("prompt_get", input) === undefined) f.answer("prompt_get", input, one.output);
     }
   }
-
+};
+const finish = (f: Fixture) => {
+  complete(f);
+  // The hubs a fixture lists beside its own (docs/design/hubs.md) are completed and checked the same way; they are
+  // written inside its file, never as files of their own.
+  for (const { fixture } of f.hubs) {
+    complete(fixture);
+    problems.push(...validateFixture(fixture));
+  }
   if (names.has(f.name)) problems.push(`two fixtures are named ${f.name}`);
   names.add(f.name);
   const found = validateFixture(f);

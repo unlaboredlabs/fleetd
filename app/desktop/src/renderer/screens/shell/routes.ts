@@ -1,7 +1,8 @@
 // The app's hash routes (binding for every screen; the QA harness navigates by setting location.hash). A project's
 // lead chat is the main surface, with its agents and PRs in the panel beside it (`/agents`, `/prs` after the
 // project, and every other tab of panel/tabs.ts likewise); Status, Factory, Time and Settings are secondary.
-// notes/electron-routes.md has the table.
+// notes/electron-routes.md has the table. With several hubs, a route names its hub as `?at=<id>` (navigation.ts).
+import { HUB_ID, type HubId } from "../../../shared/hubs";
 import { isPanelTab, type PanelTab } from "../panel/tabs";
 
 export type { PanelTab } from "../panel/tabs";
@@ -43,7 +44,7 @@ export const listView = (tab: PanelTab): PanelView => {
 export const hasItem = (view: PanelView): boolean =>
   view.tab === "agents" ? view.agent !== null : view.tab === "prs" ? view.pr !== null : view.tab === "sessions" ? view.session !== null : false;
 
-export const SETTINGS_TABS = ["general", "notifications", "agents", "projects", "mcp", "prompts", "instructions", "memory", "automations", "skills"] as const;
+export const SETTINGS_TABS = ["general", "hubs", "notifications", "agents", "projects", "mcp", "prompts", "instructions", "memory", "automations", "skills"] as const;
 export type SettingsTab = (typeof SETTINGS_TABS)[number];
 export type SettingsView = "edit" | "compare" | "update";
 
@@ -51,7 +52,14 @@ export type SettingsView = "edit" | "compare" | "update";
 export const ADMIN_SECTIONS = ["people", "invites", "machines", "hub", "setup"] as const;
 export type AdminSection = (typeof ADMIN_SECTIONS)[number];
 
-export type Screen =
+
+/**
+ * `at`: which of the app's hubs the screen is on (`?at=<id>`); absent, the hub of the screen before it
+ * (navigation.ts). A single-hub app's routes never name it.
+ */
+export type Screen = ScreenOf & { readonly at?: HubId };
+
+type ScreenOf =
   /** `#/`: the last project opened, else the first; the frame resolves it once the projects have loaded. */
   | { readonly id: "home" }
   /**
@@ -123,7 +131,7 @@ const projectParam = (value: string | null): ProjectKey | null => {
   return { machineId: value.slice(0, at), projectId: value.slice(at + 1) };
 };
 
-const screenOf = (parts: ReadonlyArray<string>, query: URLSearchParams): Screen => {
+const screenOf = (parts: ReadonlyArray<string>, query: URLSearchParams): ScreenOf => {
   const [head, a, b] = parts;
   switch (head) {
     case "project": {
@@ -184,7 +192,9 @@ export const parseHash = (hash: string): Screen => {
     if (value === null) return HOME;
     parts.push(value);
   }
-  return screenOf(parts, query);
+  const screen = screenOf(parts, query);
+  const hub = query.get("at");
+  return hub !== null && HUB_ID.test(hub) ? { ...screen, at: hub } : screen;
 };
 
 const panelPath = (view: PanelView): Array<string> => {
@@ -235,6 +245,7 @@ export const toHash = (screen: Screen): string => {
     if (screen.for !== undefined) query.set("for", screen.for);
     if (screen.view !== undefined && screen.view !== "edit") query.set("view", screen.view);
   }
+  if (screen.at !== undefined) query.set("at", screen.at);
   // A project's "<machine>/<project>" reads as one in a copied link.
   const q = query.toString().replaceAll("%2F", "/");
   return `#/${path(screen).map(encodeURIComponent).join("/")}${q === "" ? "" : `?${q}`}`;
@@ -242,6 +253,15 @@ export const toHash = (screen: Screen): string => {
 
 /** A project's chat with the panel on `panel`. */
 export const panelRoute = (project: ProjectKey, panel: PanelView): Screen => ({ id: "project", project, message: null, panel });
+
+/** The same screen on hub `at`; none says the hub of the screen before. */
+export const onHub = (screen: Screen, at: HubId | undefined): Screen => {
+  if (at === undefined) {
+    const { at: _at, ...rest } = screen;
+    return rest;
+  }
+  return { ...screen, at };
+};
 
 export const sameProject = (a: ProjectKey | null, b: ProjectKey | null): boolean =>
   a === b || (a !== null && b !== null && a.machineId === b.machineId && a.projectId === b.projectId);

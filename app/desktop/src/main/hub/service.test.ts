@@ -28,7 +28,7 @@ describe("hub service", () => {
   it("keeps the offline cache for the paired hub only, and Forget deletes it", () => {
     const { file, cache } = cacheFile();
     const vars = { FLEETD_HUB_URL: "http://devbox:4790", FLEETD_AGENT_KEY: "k1" };
-    const service = new HubService({ kind: "hub", credentials: {} as CredentialEnv, vars, transport: noSocket, cache });
+    const service = new HubService({ kind: "hub", id: "hub", credentials: {} as CredentialEnv, loaded: { saved: { url: vars.FLEETD_HUB_URL, key: vars.FLEETD_AGENT_KEY } }, ephemeral: true, transport: noSocket, cache });
     // Another hub's cache is neither kept nor handed back.
     service.cacheWrite(cacheText("http://other:4790"));
     expect(service.cacheRead()).toBeNull();
@@ -51,7 +51,7 @@ describe("hub service", () => {
     };
     // Scripted credentials: nothing is read from or written to a store, so `credentials` is never used.
     const vars = { FLEETD_HUB_URL: "http://devbox:4790", FLEETD_AGENT_KEY: "k1" };
-    const service = new HubService({ kind: "hub", credentials: {} as CredentialEnv, vars, transport, cache: cacheFile().cache });
+    const service = new HubService({ kind: "hub", id: "hub", credentials: {} as CredentialEnv, loaded: { saved: { url: vars.FLEETD_HUB_URL, key: vars.FLEETD_AGENT_KEY } }, ephemeral: true, transport, cache: cacheFile().cache });
     service.focus("ws-1");
     service.forget();
     expect(service.connect({ url: "http://devbox:4790", key: "k2" })).toEqual({ ok: true });
@@ -73,9 +73,9 @@ describe("hub service", () => {
       frames: [{ t: "snapshot", snapshot: { cursor: 1 }, afterMs: 1200 }],
       calls: [],
     };
-    const service = new HubService({ kind: "fixture", fixture });
+    const service = new HubService({ kind: "fixture", id: "hub", fixture });
     const sent: string[] = [];
-    const contents = Object.assign(new EventEmitter(), { isDestroyed: () => false, send: (_channel: string, frame: { t: string }) => sent.push(frame.t) });
+    const contents = Object.assign(new EventEmitter(), { isDestroyed: () => false, send: (_channel: string, _hub: string, frame: { t: string }) => sent.push(frame.t) });
     const window = contents as unknown as WebContents;
     service.subscribe(window);
     expect(sent).toEqual(["state"]);
