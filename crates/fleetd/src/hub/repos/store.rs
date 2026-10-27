@@ -111,10 +111,10 @@ pub fn holding(
 }
 
 /// Makes sure the project has its own repo when its directory is a git repo, and that the repo's key and base (and
-/// those of every project's repo in this checkout) are the ones its work is bound to (`work_projects`). The directory is known to be a git repo when `git_root`, where the
-/// caller saw it, is given, or when the hub has the project cached and its work is bound (it has an origin). Otherwise
-/// the project stays as it is: a plain directory has no repo, and a removed project gets none back. Returns the own
-/// repo.
+/// those of every project's repo in this checkout) are the ones its work is bound to (`work_projects`). The directory
+/// is known to be a git repo when `git_root`, where the caller saw it, is given, or when the hub has the project cached
+/// and its work is bound (it has an origin). Otherwise the project stays as it is: a plain directory has no repo, and a
+/// removed project gets none back. Returns the own repo.
 pub fn ensure_own(
     db: &Connection,
     project: &ProjectRef,

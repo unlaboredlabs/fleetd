@@ -520,6 +520,10 @@ impl LeadWakes {
         r: &ProjectRef,
         triggers: Vec<Trigger>,
     ) -> Result<(), LeadError> {
+        if let Err(archived) = super::lead::refuse_archived(&self.ctx.db, r) {
+            tracing::info!(project = %key_of(r), reason = %archived.message, "lead wake dropped");
+            return Ok(());
+        }
         let Some(lead) = self.records.lead_get(r)? else {
             // No lead yet: its first message carries the digest, which shows the same state.
             tracing::info!(project = %key_of(r), triggers = triggers.len(), "lead wake dropped: project has no lead");

@@ -34,6 +34,18 @@ pub enum AutoStart {
 }
 
 /// The lead's state, read off its thread as the shell stream last reported it; stopped once the project was removed.
+/// An archived project, now a repo checkout of another (W79), keeps its chat and history but its lead takes no turn:
+/// refused at every start, resume and wake.
+pub fn refuse_archived(db: &HubDb, r: &ProjectRef) -> Result<(), LeadError> {
+    match crate::hub::repos::holder(db, r)? {
+        Some((holder, repo)) => {
+            let (message, fix) = crate::hub::repos::archived_note(&holder, &repo);
+            Err(LeadError::new(ErrorCode::Invalid, message, fix))
+        }
+        None => Ok(()),
+    }
+}
+
 pub fn lead_state(thread: Option<&ThreadSummary>, project_gone: bool) -> LeadState {
     if project_gone {
         return LeadState::Stopped;
@@ -76,6 +88,8 @@ impl Leads {
         first: Option<&str>,
     ) -> Result<(Lead, bool), LeadError> {
         let _guard = self.lock.lock().await;
+        // Its lead record stays with its history, but an archived project's lead is never handed out.
+        refuse_archived(&self.ctx.db, r)?;
         if let Some(existing) = self.records.lead_get(r)? {
             return Ok((self.with_state(existing)?, false));
         }
@@ -332,11 +346,7 @@ impl Leads {
         session_generation: i64,
         first: Option<&str>,
     ) -> Result<Lead, LeadError> {
-        // An archived project, now a repo checkout of another, keeps its chat and history but runs no lead.
-        if let Some((holder, repo)) = crate::hub::repos::holder(&self.ctx.db, r)? {
-            let (message, fix) = crate::hub::repos::archived_note(&holder, &repo);
-            return Err(LeadError::new(ErrorCode::Invalid, message, fix));
-        }
+        refuse_archived(&self.ctx.db, r)?;
         // M4 usage: no lead turn goes into a login fleetd knows is exhausted.
         if let Some(paused) = self
             .ctx
