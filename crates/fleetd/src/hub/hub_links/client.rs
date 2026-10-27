@@ -83,7 +83,8 @@ pub async fn call<T: DeserializeOwned>(
     }
     let refusal: LinkRefusal = serde_json::from_slice(&bytes).map_err(|_| {
         Failure::Unreachable(format!(
-            "it answered {status}: is the URL a fleetd hub of this version or newer?"
+            "it answered {status} without fleetd's own words (a proxy in the way, or no fleetd hub of this \
+             version or newer at that URL)"
         ))
     })?;
     // Only the hub's own word that the key is dead for good revokes the link here; any other 401 is a refusal.
@@ -426,13 +427,18 @@ pub async fn hello(label: &str, url: &str, key: &str) -> Result<LinkHello, McpTo
         .await
         .map_err(|f| match f {
             Failure::Unreachable(why) => unreachable(label, url, &why),
-            Failure::Dead(e) | Failure::Refused(e) => McpToolError::new(
+            Failure::Dead(e) => McpToolError::new(
                 ErrorCode::Forbidden,
                 format!("{label} refused the link key: {}", e.message),
             )
             .with_fix(format!(
                 "Copy the key again from {label} (it is shown once), or make a new link there."
             )),
+            // Not the key's fault: the other hub failed or refused this request, in its own words.
+            Failure::Refused(e) => McpToolError {
+                message: format!("{label}: {}", e.message),
+                ..e
+            },
         })
 }
 
