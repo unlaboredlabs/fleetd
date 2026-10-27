@@ -88,3 +88,11 @@ repo, or none for a plain directory, as every task still works in the project's 
 (every row an older hub stored, and a plain directory's) reads as the project's own repo when it has one
 (`hub/tasks/records.rs`), so absent keeps meaning the project's own directory. Nothing reads it yet apart from the task
 listings that serve it. Changes carry no repo id: a PR's project and GitHub repo name its repo.
+
+## Settings › Projects lists the repos (1f)
+
+A **Repos** section under the project's name (`app/desktop/.../settings/RepoSetting.tsx`) lists
+`ProjectSummary.repos`: each repo's name, remote, base branch and checkout (its machine and path), and the setup and
+preview it runs with, read with `project_settings_get` and `repo`. One the same as the project's, or one a hub before
+1c refuses to read, shows as "uses the project's". A plain folder says "No repo, a plain folder". Read-only: adding and
+removing repos is stage 2.

@@ -270,6 +270,48 @@ function machines(from: Fixture): Fixture {
   return f;
 }
 
+/**
+ * Settings → Projects → Repos: storefront holds two repos. Its own runs with the project's setup and preview; billing,
+ * checked out on another machine, has a setup and a preview of its own.
+ */
+function repos(from: Fixture): Fixture {
+  const f = Fixture.from(from, "settings-repos", "storefront holds two repos: its own on the project's setup, and billing with its own setup and preview");
+  const projects = isObject(f.snapshot) && Array.isArray(f.snapshot["projects"]) ? f.snapshot["projects"].filter(isObject) : [];
+  const [storefront, billing] = projects;
+  if (storefront === undefined || billing === undefined) return f;
+  const ref = (p: JsonObject): JsonObject => ({ machineId: asText(p["machineId"]), projectId: asText(p["projectId"]) });
+  storefront["repos"] = [
+    { repoId: "R1", name: "storefront", checkout: ref(storefront), repoKey: "github.com/acme/storefront", base: "main" },
+    { repoId: "R2", name: "billing", checkout: ref(billing), repoKey: "github.com/acme/billing", base: "main" },
+  ];
+  const settings: JsonObject = {
+    ...ref(storefront),
+    title: asText(storefront["title"]),
+    workspaceRoot: asText(storefront["workspaceRoot"]),
+    keepWorktrees: false,
+    env: [],
+    setup: { commands: ["pnpm install --frozen-lockfile"], timeoutSec: 600, runAnyway: false, inputs: ["pnpm-lock.yaml"] },
+    preview: { web: { start: "pnpm dev --port $PORT", ready: "/" } },
+    worktrees: { dir: `/home/dev/.fleetd/node/worktrees/${asText(storefront["projectId"])}`, baseBranch: "main", worktrees: [] },
+  };
+  // Main matches an answer's input as a subset, so the repo's own answer goes first; storefront's repo gets the project's.
+  f.answer(
+    "project_settings_get",
+    { ...ref(storefront), repo: "billing" },
+    {
+      settings: {
+        ...settings,
+        repo: "billing",
+        setup: { commands: ["pnpm install --frozen-lockfile", "pnpm db:migrate"], timeoutSec: 600, runAnyway: false, inputs: [] },
+        preview: { web: { start: "pnpm --filter billing dev --port $PORT", ready: "/health" } },
+      },
+    },
+  );
+  f.answer("project_settings_get", ref(storefront), { settings });
+  f.answer("mcp_servers_get", undefined, { global: [], project: [], userServers: true });
+  return f;
+}
+
 export default defineGroup({
   extend: {
     ...Object.fromEntries(SHARED.map((name) => [name, shared])),
@@ -308,6 +350,6 @@ export default defineGroup({
     const off = Fixture.from(withAgents, "settings-medium-off", "Max agents as in settings-agents, with storefront's medium switch off");
     const storefront = isObject(off.snapshot) && Array.isArray(off.snapshot["projects"]) ? off.snapshot["projects"].filter(isObject)[0] : undefined;
     projectSettings(off, new Set(storefront === undefined ? [] : [asText(storefront["projectId"])]));
-    return [f, withAgents, off, machines(base("typical"))];
+    return [f, withAgents, off, machines(base("typical")), repos(base("typical"))];
   },
 });

@@ -2,7 +2,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ProjectSettings as Settings } from "../../../shared/contracts";
+import type { ProjectRepo, ProjectSettings as Settings } from "../../../shared/contracts";
 import type { CallOutcome, HubFrame } from "../../../shared/hub";
 import type { ProjectEnvRequest } from "../../../shared/ipc";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
@@ -43,7 +43,7 @@ const settings: Settings = {
   },
 };
 
-const snapshot: HubFrame = {
+const snapshotWith = (repos: ProjectRepo[]): HubFrame => ({
   t: "snapshot",
   snapshot: {
     cursor: 1,
@@ -57,10 +57,11 @@ const snapshot: HubFrame = {
         workspaceRoot: "/home/w/src/storefront",
         threads: { running: 0, waiting: 0, idle: 0, failed: 0 },
         lastActivityAt: AT,
+        ...(repos.length > 0 ? { repos } : {}),
       },
     ],
   },
-};
+});
 
 let host: HTMLDivElement;
 let root: Root;
@@ -68,6 +69,10 @@ let calls: Array<{ tool: string; input: unknown }>;
 /** What project_settings_get answers, in turn; the last one again once they run out. */
 let answers: Settings[];
 let envRequests: ProjectEnvRequest[];
+/** The project's repos in the snapshot. */
+let repos: ProjectRepo[];
+/** What project_settings_get answers for a repo; a repo not here is refused, as a hub before per-repo settings does. */
+let repoAnswers: Record<string, Settings>;
 
 beforeEach(() => {
   host = document.createElement("div");
@@ -76,6 +81,8 @@ beforeEach(() => {
   calls = [];
   answers = [settings];
   envRequests = [];
+  repos = [];
+  repoAnswers = {};
   window.location.hash = "#/settings/projects?for=devbox/p1";
   vi.stubGlobal("fleetd", {
     platform: "linux",
@@ -101,6 +108,11 @@ const render = async () => {
   const hub: HubApi = {
     call: (tool, input) => {
       calls.push({ tool, input });
+      const repo = tool === "project_settings_get" ? (input as { repo?: string }).repo : undefined;
+      if (repo !== undefined) {
+        const own = repoAnswers[repo];
+        return Promise.resolve(own ? { ok: true, output: { settings: own } } : { ok: false, error: { code: "not_found", message: `Project p1 on devbox has no repo ${repo}.` } });
+      }
       const now = (tool === "project_settings_get" && answers.length > 1 ? answers.shift() : answers[0]) ?? settings;
       if (tool === "mcp_servers_get") return Promise.resolve({ ok: true, output: { global: [], project: [], userServers: true } });
       return Promise.resolve({ ok: true, output: tool === "project_settings_get" || tool === "project_settings_set" ? { settings: now } : { ok: true } });
@@ -123,7 +135,7 @@ const render = async () => {
   });
   await act(async () => {
     listener({ t: "state", state: { phase: "live", hub: "devbox:4710", protocol: 1 } });
-    listener(snapshot);
+    listener(snapshotWith(repos));
     await new Promise((r) => setTimeout(r, 0));
   });
   // project_settings_get's answer.
@@ -261,5 +273,66 @@ describe("Settings → Projects", () => {
     expect(document.querySelector('[role="dialog"]')).toBeNull();
     expect(document.body.textContent).toContain("devbox's node did not answer.");
     expect(calls.some((c) => c.tool === "project_remove")).toBe(false);
+  });
+});
+
+describe("Settings → Projects → Repos", () => {
+  const web: ProjectRepo = { repoId: "R1", name: "web", checkout: { machineId: "devbox", projectId: "p1" }, repoKey: "github.com/acme/web", base: "main" };
+  const api: ProjectRepo = { repoId: "R2", name: "api", checkout: { machineId: "devbox", projectId: "p9" }, repoKey: "gitlab.example.com/team/api" };
+  /** The page, then each repo's read, which starts once the project's settings are in. */
+  const renderRepos = async () => {
+    await render();
+    await settle();
+  };
+  const section = () => {
+    const el = document.querySelector<HTMLElement>('section[aria-label="Repos"]');
+    if (el === null) throw new Error("no repos section");
+    return el;
+  };
+  const row = (name: string) => {
+    const el = section().querySelector<HTMLElement>(`[role="listitem"][aria-label="${name}"]`);
+    if (el === null) throw new Error(`no repo ${name}`);
+    return el.textContent;
+  };
+
+  it("says a plain folder has no repo, in one line", async () => {
+    await renderRepos();
+    expect(section().textContent).toContain("No repo, a plain folder.");
+    expect(section().querySelector('[role="list"]')).toBeNull();
+    expect(calls.some((c) => c.tool === "project_settings_get" && (c.input as { repo?: string }).repo !== undefined)).toBe(false);
+  });
+
+  it("shows one repo's remote, base and checkout, and the project's setup on a hub that has none of its own", async () => {
+    repos = [web];
+    answers = [{ ...settings, setup: { ...settings.setup, commands: ["pnpm install"] } }];
+    await renderRepos();
+    const text = row("web");
+    expect(text).toContain("acme/web");
+    expect(text).not.toContain("github.com");
+    expect(text).toContain("main");
+    expect(text).toContain("/home/w/src/storefront on devbox");
+    expect(text).toContain("Uses the project's: pnpm install");
+    expect(text).toContain("Uses the project's: none");
+    expect(calls).toContainEqual({ tool: "project_settings_get", input: { machineId: "devbox", projectId: "p1", repo: "web" } });
+  });
+
+  it("shows two repos, each with the setup and preview that apply to it", async () => {
+    repos = [web, api];
+    answers = [{ ...settings, setup: { ...settings.setup, commands: ["pnpm install"] } }];
+    repoAnswers = {
+      web: answers[0] as Settings,
+      api: { ...settings, repo: "api", setup: { ...settings.setup, commands: ["go mod download", "make gen"] }, preview: { web: { start: "make serve" } } },
+    };
+    await renderRepos();
+    expect([...section().querySelectorAll('[role="listitem"]')].map((x) => x.getAttribute("aria-label"))).toEqual(["web", "api"]);
+    expect(row("web")).toContain("Uses the project's: pnpm install");
+    const text = row("api");
+    expect(text).toContain("team/api on gitlab.example.com");
+    expect(text).toContain("Not known yet");
+    // Its checkout isn't a listed project: shown by its id, on its machine.
+    expect(text).toContain("p9 on devbox");
+    expect(text).toContain("go mod download; make gen");
+    expect(text).toContain("make serve");
+    expect(text).not.toContain("Uses the project's");
   });
 });
