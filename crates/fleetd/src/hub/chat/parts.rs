@@ -230,7 +230,7 @@ mod tests {
 
     #[test]
     fn a_one_liner_is_one_bubble_and_blank_lines_split_the_rest() {
-        assert!(parts("merged, it's in tonight's nightly").is_none());
+        assert!(parts("merged, it's in the next Edge build").is_none());
         assert!(parts("line one\nline two").is_none());
         assert_eq!(
             texts(

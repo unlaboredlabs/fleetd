@@ -108,11 +108,16 @@ fleetd pins the `claude` version separately. See [Claude](/docs/troubleshooting#
 
 ## Channels {#channels}
 
-`fleetd update` stays on the channel you installed from. Releases are nightly builds for now.
+`fleetd update` stays on the channel you installed from. Releases are Edge builds for now: the newest build of main,
+published after each merge.
+
+Edge was called Nightly until it was renamed. A machine still on a Nightly build updates to Edge as before, and
+`--channel nightly` or `FLEETD_CHANNEL=nightly` mean Edge.
 
 | To | Run |
 |---|---|
 | Switch an install to stable | `fleetd update --channel stable` |
+| Switch an install to Edge | `fleetd update --channel edge` |
 | Install from stable | `curl -fsSL https://fleetd.sh \| FLEETD_CHANNEL=stable sh` |
 
 ## Remove a worker {#remove-worker}

@@ -225,7 +225,7 @@ pub struct Watch {
 
 fn feed(update: &NodeUpdate) -> Result<crate::update::HttpFeed, Failure> {
     let channel = match update.channel {
-        HubChannel::Nightly => Channel::Nightly,
+        HubChannel::Edge => Channel::Edge,
         HubChannel::Stable => Channel::Stable,
         HubChannel::Unknown => {
             return Err(Failure::new(
@@ -315,7 +315,7 @@ mod tests {
     use crate::update::tests::FakeFeed;
 
     const OLD: &str = "0.0.0-nightly.202610251000+aaaaaaa";
-    const NEW: &str = "0.0.0-nightly.202610261056+1b563d7";
+    const NEW: &str = "0.0.0-edge.202610261056+1b563d7";
 
     fn place(dir: &Path) -> Place {
         let exe = dir.join("bin/fleetd");
@@ -337,7 +337,7 @@ mod tests {
     fn to(version: &str) -> NodeUpdate {
         NodeUpdate {
             version: Text::unchecked(version.to_owned()),
-            channel: HubChannel::Nightly,
+            channel: HubChannel::Edge,
         }
     }
 
@@ -501,7 +501,7 @@ mod tests {
         let current = stage(&to(OLD), &place, &feed(b"new"), || Ok(b"old".to_vec())).await;
         assert_eq!(current, Ok(Staged::Current));
 
-        let newer = "0.0.0-nightly.202610261200+2222222";
+        let newer = "0.0.0-edge.202610261200+2222222";
         let moved = stage(&to(newer), &place, &feed(b"new"), || Ok(b"old".to_vec()))
             .await
             .unwrap_err();

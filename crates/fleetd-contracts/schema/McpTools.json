@@ -5205,13 +5205,17 @@
       "x-open": true
     },
     "HubChannel": {
-      "description": "The release channel a hub's build follows: nightly when its version contains \"-nightly.\", stable otherwise.",
+      "description": "The release channel a hub's build follows: edge when its version contains \"-edge.\" (or \"-nightly.\", edge's name\nuntil D203), stable otherwise.",
       "oneOf": [
         {
           "enum": [
-            "nightly",
             "stable"
           ],
+          "type": "string"
+        },
+        {
+          "const": "edge",
+          "description": "The newest build of main. Read from \"nightly\" too: an update run a hub saved, or a caller, from before D203.",
           "type": "string"
         }
       ],

@@ -1,14 +1,14 @@
-# Builds every release asset and publishes them. Called by nightly.yml (rolling `nightly` prerelease, every push to
-# main) and release.yml (`v*` tags). Asset names carry no version, so
-# releases/download/nightly/<name> and releases/latest/download/<name> stay stable for the installer and
-# `fleetd update`.
+# Builds every release asset and publishes them. Called by edge.yml (rolling `edge` prerelease, every push to main) and
+# release.yml (`v*` tags). Asset names carry no version, so releases/download/edge/<name> and
+# releases/latest/download/<name> stay stable for the installer and `fleetd update`. Edge was called nightly until
+# D203: publish.sh keeps the `nightly` release a copy of edge, for the builds from before that look there.
 name: Build release
 
 on:
   workflow_call:
     inputs:
       channel:
-        description: nightly or stable
+        description: edge or stable
         type: string
         required: true
       publish:
@@ -16,7 +16,7 @@ on:
         type: boolean
         default: true
       force-app:
-        description: build the app even when app/ is unchanged since the last nightly
+        description: build the app even when app/ is unchanged since the last edge build
         type: boolean
         default: false
 
@@ -48,17 +48,18 @@ jobs:
             base="${base#v}"
             # Valid semver that orders by build time, which the desktop app's updater compares: one numeric
             # minute stamp (no leading zero), and the commit as build metadata (a hash can start with 0).
-            version="${base:-0.0.0}-nightly.$(date -u +%Y%m%d%H%M)+${GITHUB_SHA::7}"
+            version="${base:-0.0.0}-edge.$(date -u +%Y%m%d%H%M)+${GITHUB_SHA::7}"
           fi
           # crates/fleetd lands during the Rust port; until then there is no CLI to build.
           has_cli=false
           if [ -f crates/fleetd/Cargo.toml ]; then has_cli=true; fi
-          # Nightly rebuilds the app only when it changed since the build the nightly release carries. Comparing
-          # with that build, not the previous push, means a cancelled run never drops an app change. app/ holds the
-          # app's lockfile and its generated contracts, so a dependency bump or a contract change counts.
+          # Edge rebuilds the app only when it changed since the build the edge release carries. Comparing with that
+          # build, not the previous push, means a cancelled run never drops an app change. app/ holds the app's
+          # lockfile and its generated contracts, so a dependency bump or a contract change counts. Before the first
+          # edge release there is nothing to compare with, so the app is built.
           build_app=true
-          if [ "$CHANNEL" = nightly ] && [ "$PUBLISH" = true ] && [ "$FORCE_APP" != true ]; then
-            prev="$(curl -fsSL "https://github.com/$GITHUB_REPOSITORY/releases/download/nightly/release.json" 2>/dev/null | jq -r '.appCommit // empty' || true)"
+          if [ "$CHANNEL" = edge ] && [ "$PUBLISH" = true ] && [ "$FORCE_APP" != true ]; then
+            prev="$(curl -fsSL "https://github.com/$GITHUB_REPOSITORY/releases/download/edge/release.json" 2>/dev/null | jq -r '.appCommit // empty' || true)"
             if [ -n "$prev" ] && git cat-file -e "$prev^{commit}" 2>/dev/null &&
               git diff --quiet "$prev" HEAD -- app; then
               build_app=false
@@ -72,12 +73,16 @@ jobs:
             echo "build-app=$build_app"
           } >> "$GITHUB_OUTPUT"
       - name: What's new (dry run)
-        # The changes.json publish.sh would upload now, from the live nightly's, checked for the shape the app reads.
+        # The changes.json publish.sh would upload now, from the live edge release's (until there is one, the last
+        # nightly's), checked for the shape the app reads.
         if: ${{ !inputs.publish }}
         run: |
           prev="$(mktemp -d)"
-          for name in release.json changes.json; do
-            curl -fsSL -o "$prev/$name" "https://github.com/$GITHUB_REPOSITORY/releases/download/nightly/$name" || rm -f "$prev/$name"
+          for tag in edge nightly; do
+            for name in release.json changes.json; do
+              curl -fsSL -o "$prev/$name" "https://github.com/$GITHUB_REPOSITORY/releases/download/$tag/$name" || rm -f "$prev/$name"
+            done
+            if [ -s "$prev/release.json" ]; then break; fi
           done
           .github/release/changes.sh "$prev" "$GITHUB_SHA" > "$RUNNER_TEMP/changes.json"
           jq -e '.changes | length > 0 and length <= 300 and all(.[];

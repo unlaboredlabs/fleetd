@@ -1956,8 +1956,11 @@ export type KnownHubBusyKind = "agent" | "lead" | "train" | "approval" | "clone"
 /** KnownHubBusyKind, or a value from a newer hub. */
 export type HubBusyKind = KnownHubBusyKind | (string & {});
 
-/** The release channel a hub's build follows: nightly when its version contains "-nightly.", stable otherwise. */
-export type KnownHubChannel = "nightly" | "stable";
+/**
+ * The release channel a hub's build follows: edge when its version contains "-edge." (or "-nightly.", edge's name
+ * until D203), stable otherwise.
+ */
+export type KnownHubChannel = "stable" | "edge";
 /** KnownHubChannel, or a value from a newer hub. */
 export type HubChannel = KnownHubChannel | (string & {});
 

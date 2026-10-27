@@ -3,7 +3,7 @@
 // failed one, and each part's steps behind Details. Pure, so every state is unit-tested; the components only lay it
 // out.
 import type { UpdatePart, UpdateRun } from "../../../shared/contracts";
-import { compareVersions } from "../../../shared/pairing";
+import { compareVersions, isEdge } from "../../../shared/pairing";
 import { DEB_INSTALL, knownVersion, notesSince, versionLabel, type AppUpdate, type Notes, type UpdatesState } from "../../../shared/updates";
 import { hubUpdated, type Flow } from "./flow";
 
@@ -63,7 +63,7 @@ export interface AppPart {
 export interface PartRow {
   readonly key: string;
   readonly name: string;
-  /** One line: "Up to date", "Nightly · … is available", "Restarting on …", "Failed while checking the download: …". */
+  /** One line: "Up to date", "Edge · … is available", "Restarting on …", "Failed while checking the download: …". */
   readonly status: string;
   readonly tone: Tone;
   /** Its raw version, to copy. */
@@ -99,7 +99,7 @@ export interface UpdatesView {
  * within it; a busy machine's wait can last hours. */
 export const STALE_MS = 10 * 60_000;
 
-const channelOf = (version: string): "nightly" | "stable" => (version.includes("-nightly.") ? "nightly" : "stable");
+const channelOf = (version: string): "edge" | "stable" => (isEdge(version) ? "edge" : "stable");
 
 const found = (app: AppUpdate): boolean => app.kind === "available" || app.kind === "ready" || app.kind === "manual";
 
@@ -374,7 +374,7 @@ const appLineOf = (state: UpdatesState, flow: Flow, runGoing: boolean): LineSay 
 /** The version an app update found, if any. */
 const foundVersion = (app: AppUpdate): string | null => (app.kind === "available" || app.kind === "ready" || app.kind === "manual" ? app.version : null);
 
-/** The notice's version, without a nightly's build commit: a toast is also read aloud, where a hash says nothing. The
+/** The notice's version, without an Edge build's commit: a toast is also read aloud, where a hash says nothing. The
  * sheet names the build in full. */
 const noticeLabel = (version: string): string => versionLabel(version).replace(/ · [0-9a-f]{7,}$/u, "");
 

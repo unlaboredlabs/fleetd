@@ -13,8 +13,8 @@
 # (cleared when a run starts, so it never holds an older one), and its path is the last line printed. The run's own copy,
 # the whole capture, the milestones and the stills stay in FLEETD_DEMO_DIR/recordings/<date-time>/.
 #
-# The fleetd it runs is the nightly release: the CLI and the desktop app (fleetd-desktop-macos-universal.zip) from
-# https://github.com/unlaboredlabs/fleetd/releases/download/nightly/, each checked against the release's SHA256SUMS
+# The fleetd it runs is the edge release: the CLI and the desktop app (fleetd-desktop-macos-universal.zip) from
+# https://github.com/unlaboredlabs/fleetd/releases/download/edge/, each checked against the release's SHA256SUMS
 # as site/install.sh does, and the lab driver (tests/lab) checked out at the commit release.json names, so the two
 # match. It prints that commit and its date. FLEETD_DEMO_BUILD=1, or running it from a checkout, builds from source
 # instead (cargo for the CLI, pnpm for the app).
@@ -34,7 +34,7 @@
 # Needs git, gh (logged in), claude and curl (and cargo and pnpm to build). Costs about 20 turns and 15 minutes.
 # Ctrl-C stops everything it started; then run it again. Environment:
 #   FLEETD_DEMO_DIR          the sandbox, and clip.mp4 in it (default ~/fleetd-demo)
-#   FLEETD_DEMO_BUILD=1      build from source instead of using the nightly
+#   FLEETD_DEMO_BUILD=1      build from source instead of using the edge release
 #   FLEETD_DEMO_REF          with FLEETD_DEMO_BUILD=1 and no checkout: the branch or tag to build (default main)
 #
 # It drives lab slot 9 (ports 4975 and up) against unlaboredlabs/fleetd-lab. Ctrl-C, or any exit, stops the
@@ -130,11 +130,11 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT TERM HUP
 
-# fetch <asset> <dest>: one nightly asset, checked against SHA256SUMS exactly as site/install.sh checks it.
-base="https://github.com/$REPO/releases/download/nightly"
+# fetch <asset> <dest>: one edge asset, checked against SHA256SUMS exactly as site/install.sh checks it.
+base="https://github.com/$REPO/releases/download/edge"
 fetch() {
-  expected="$(awk -v n="$1" '$2 == n || $2 == "*" n { print $1 }' "$nightly/SHA256SUMS")"
-  [ -n "$expected" ] || die "the nightly has no $1"
+  expected="$(awk -v n="$1" '$2 == n || $2 == "*" n { print $1 }' "$edge/SHA256SUMS")"
+  [ -n "$expected" ] || die "the edge release has no $1"
   curl -fsSL --retry 3 -o "$2" "$base/$1" || die "download failed: $base/$1"
   actual="$(shasum -a 256 "$2" | cut -d' ' -f1)"
   [ "$actual" = "$expected" ] || { rm -f "$2"; die "checksum mismatch for $1 (expected $expected, got $actual)"; }
@@ -169,31 +169,31 @@ if ! node_ok; then
   PATH="$dir/bin:$PATH"
 fi
 if [ "$build" = 0 ]; then
-  nightly="$SANDBOX/nightly"
-  rm -rf "$nightly" && mkdir -p "$nightly"
-  curl -fsSL --retry 3 -o "$nightly/SHA256SUMS" "$base/SHA256SUMS" || die "could not download $base/SHA256SUMS"
-  curl -fsSL --retry 3 -o "$nightly/release.json" "$base/release.json" || die "could not download $base/release.json"
-  field() { sed -n "s/.*\"$1\": *\"\([^\"]*\)\".*/\1/p" "$nightly/release.json" | head -1; }
-  # A nightly republishes the CLI and the app only when they changed, so each can come from an older commit than
+  edge="$SANDBOX/edge"
+  rm -rf "$edge" && mkdir -p "$edge"
+  curl -fsSL --retry 3 -o "$edge/SHA256SUMS" "$base/SHA256SUMS" || die "could not download $base/SHA256SUMS"
+  curl -fsSL --retry 3 -o "$edge/release.json" "$base/release.json" || die "could not download $base/release.json"
+  field() { sed -n "s/.*\"$1\": *\"\([^\"]*\)\".*/\1/p" "$edge/release.json" | head -1; }
+  # An edge build republishes the CLI and the app only when they changed, so each can come from an older commit than
   # the release's: the app's is appCommit, the CLI's the build metadata after the + in its version.
   cli_version="$(field cliVersion)"
   app_commit="$(field appCommit)"
   [ -n "$cli_version" ] && [ -n "$app_commit" ] || die "release.json names no cliVersion or appCommit"
-  case "$cli_version" in *+?*) ;; *) die "the nightly's CLI version ($cli_version) names no commit after a +" ;; esac
+  case "$cli_version" in *+?*) ;; *) die "the edge release's CLI version ($cli_version) names no commit after a +" ;; esac
   clone_at "$app_commit"
   cli_commit="$(git -C "$repo" rev-parse -q --verify "${cli_version##*+}^{commit}")" ||
-    die "can't find the commit of the nightly's CLI ($cli_version)"
+    die "can't find the commit of the edge release's CLI ($cli_version)"
   git -C "$repo" checkout -q --detach "$cli_commit"
-  say "Nightly published $(field date): CLI $cli_version (${cli_commit:0:7}), app $(field appVersion) (${app_commit:0:7})"
+  say "Edge published $(field date): CLI $cli_version (${cli_commit:0:7}), app $(field appVersion) (${app_commit:0:7})"
   case "$(uname -m)" in arm64) cli_asset=fleetd-darwin-arm64 ;; x86_64) cli_asset=fleetd-darwin-x64 ;; *) die "no fleetd for $(uname -m)" ;; esac
-  fetch "$cli_asset" "$nightly/fleetd"
-  chmod 755 "$nightly/fleetd"
-  fetch fleetd-desktop-macos-universal.zip "$nightly/app.zip"
-  rm -rf "$nightly/fleetd.app"
-  ditto -x -k "$nightly/app.zip" "$nightly" && rm -f "$nightly/app.zip"
-  app="$nightly/fleetd.app/Contents/MacOS/fleetd"
+  fetch "$cli_asset" "$edge/fleetd"
+  chmod 755 "$edge/fleetd"
+  fetch fleetd-desktop-macos-universal.zip "$edge/app.zip"
+  rm -rf "$edge/fleetd.app"
+  ditto -x -k "$edge/app.zip" "$edge" && rm -f "$edge/app.zip"
+  app="$edge/fleetd.app/Contents/MacOS/fleetd"
   [ -x "$app" ] || die "the app archive has no fleetd.app"
-  fleetd_bin="$nightly/fleetd"
+  fleetd_bin="$edge/fleetd"
 else
   if [ "$in_checkout" = 1 ]; then repo="$here"; else clone_at "${FLEETD_DEMO_REF:-main}"; fi
   cli_commit="$(git -C "$repo" rev-parse HEAD)"

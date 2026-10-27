@@ -14,8 +14,8 @@
 # With --join and --code (the command `fleetd pair --worker` prints) it runs `fleetd init --join` instead, which
 # makes this machine a worker of that hub without asking for its address or code, with or without a terminal.
 #
-# FLEETD_CHANNEL=nightly|stable picks the release (default nightly). FLEETD_BASE_URL points at another directory
-# of release assets.
+# FLEETD_CHANNEL=edge|stable picks the release (default edge, the newest build of main; nightly, its name until
+# D203, is edge too). FLEETD_BASE_URL points at another directory of release assets.
 #
 # Everything runs from main at the end, so a partly downloaded script does nothing.
 set -eu
@@ -41,7 +41,7 @@ Usage: curl -fsSL https://fleetd.sh | sh -s -- [options]
                 command fleetd pair --worker prints on the hub
   --uninstall   remove the CLI and the app (fleetd's data in ~/.fleetd stays)
 
-Environment: FLEETD_CHANNEL=nightly|stable (default nightly), FLEETD_BASE_URL=<asset directory>
+Environment: FLEETD_CHANNEL=edge|stable (default edge), FLEETD_BASE_URL=<asset directory>
 EOF
 }
 
@@ -269,11 +269,14 @@ main() {
     arch=arm64
   fi
 
-  channel="${FLEETD_CHANNEL:-nightly}"
+  channel="${FLEETD_CHANNEL:-edge}"
   case "$channel" in
-    nightly) default_base="https://github.com/$REPO/releases/download/nightly" ;;
+    edge | nightly)
+      channel=edge
+      default_base="https://github.com/$REPO/releases/download/edge"
+      ;;
     stable | latest) default_base="https://github.com/$REPO/releases/latest/download" ;;
-    *) die "FLEETD_CHANNEL must be nightly or stable, not $channel" ;;
+    *) die "FLEETD_CHANNEL must be edge or stable, not $channel" ;;
   esac
   base="${FLEETD_BASE_URL:-$default_base}"
 
@@ -290,8 +293,14 @@ An earlier fleetd app you have keeps working. To install or update only the CLI:
   tmp="$(mktemp -d 2>/dev/null || mktemp -d -t fleetd)"
   trap 'rm -rf "$tmp"' EXIT
   trap 'exit 1' INT TERM
-  curl -fsSL --retry 3 -o "$tmp/SHA256SUMS" "$base/SHA256SUMS" ||
-    die "could not download $base/SHA256SUMS (is there a $channel release yet?)"
+  if ! curl -fsSL --retry 3 -o "$tmp/SHA256SUMS" "$base/SHA256SUMS"; then
+    # Until the first edge build is out, the nightly release has the newest; from then on it is a copy of edge.
+    if [ "$base" = "https://github.com/$REPO/releases/download/edge" ]; then
+      base="https://github.com/$REPO/releases/download/nightly"
+    fi
+    curl -fsSL --retry 3 -o "$tmp/SHA256SUMS" "$base/SHA256SUMS" ||
+      die "could not download $base/SHA256SUMS (is there a $channel release yet?)"
+  fi
 
   # The install_* functions set installed=1. They are never called as an `if` condition, where `set -e` is off.
   installed=0

@@ -640,7 +640,7 @@ mod tests {
     }
 
     /// fleetd's own workflows: the label runs macOS in CI (through macos-label.yml) and the dispatch job; the release
-    /// and nightly jobs it never runs, so their skips are never the label's.
+    /// and edge jobs it never runs, so their skips are never the label's.
     #[test]
     fn fleetds_workflows_gate_its_macos_jobs_and_nothing_of_the_release() {
         let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../.github/workflows");

@@ -13,10 +13,10 @@ describe("the release files", () => {
   it("has none for a broken changes.json, and no CLI for a release.json without it", () => {
     expect(parseChanges({ changes: "not a list" })).toEqual([]);
     expect(parseChanges(null)).toEqual([]);
-    expect(parseCli({ channel: "nightly", version: "0.6.0" })).toBeNull();
-    expect(parseCli({ cliVersion: "0.6.0-nightly.202610221107+333368c" })).toBe("0.6.0-nightly.202610221107+333368c");
+    expect(parseCli({ channel: "edge", version: "0.6.0" })).toBeNull();
+    expect(parseCli({ cliVersion: "0.6.0-edge.202610221107+333368c" })).toBe("0.6.0-edge.202610221107+333368c");
     expect(parseApp({ cliVersion: "0.6.0" })).toBeNull();
-    expect(parseApp({ appVersion: "0.6.0-nightly.202610221021+7b6779f" })).toBe("0.6.0-nightly.202610221021+7b6779f");
+    expect(parseApp({ appVersion: "0.6.0-edge.202610221021+7b6779f" })).toBe("0.6.0-edge.202610221021+7b6779f");
   });
 
   it("reads both beside the feed, and never rejects when they can't be read", async () => {

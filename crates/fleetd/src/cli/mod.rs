@@ -94,7 +94,8 @@ running by hand:
 const UPDATE_USAGE: &str = "  update [--check] [--channel <c>]
              replace this fleetd with the latest release, then restart its hub and node at once:
              what they were running carries on by itself. The app's Update button does this for
-             the hub and every node; this is for a machine without the app
+             the hub and every node; this is for a machine without the app. --channel edge (the
+             newest build of main) or stable; default: the channel this build came from
 ";
 
 /// `fleetd <command> … --help` (or `-h`): that command's usage, for stdout and exit 0. After `--` they are arguments.
@@ -359,8 +360,12 @@ mod tests {
         assert_eq!(run(&argv(&["--version"])).stdout, version_line());
         assert_eq!(version_line_of("0.4.0"), "fleetd 0.4.0 (protocol 1)\n");
         assert_eq!(
+            version_line_of("0.0.0-edge.202610261056+1b563d7"),
+            "fleetd Edge · Oct 26, 10:56 UTC · 1b563d7 (0.0.0-edge.202610261056+1b563d7, protocol 1)\n"
+        );
+        assert_eq!(
             version_line_of("0.0.0-nightly.202610261056+1b563d7"),
-            "fleetd Nightly · Oct 26, 10:56 UTC · 1b563d7 (0.0.0-nightly.202610261056+1b563d7, protocol 1)\n"
+            "fleetd Edge · Oct 26, 10:56 UTC · 1b563d7 (0.0.0-nightly.202610261056+1b563d7, protocol 1)\n"
         );
         let unknown = run(&argv(&["frobnicate"]));
         assert_eq!(unknown.code, 2);

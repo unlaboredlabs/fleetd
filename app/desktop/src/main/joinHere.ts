@@ -3,8 +3,8 @@
 //   0. this computer's fleetd dir, read first: one that holds a hub, or a node already enrolled (under any id), is
 //      never touched, as its bin/fleetd is the one that hub or node runs (thisComputer);
 //   1. machine_join: a one-time code from the hub, asked by main, so the code never reaches the page;
-//   2. the build of the hub's own version for this OS and CPU (its v<version> release; a nightly hub, the nightly
-//      release only while that is its version), and SHA256SUMS;
+//   2. the build of the hub's own version for this OS and CPU (its v<version> release; an Edge hub, the edge release
+//      only while that is its version), and SHA256SUMS;
 //   3. the build checked against SHA256SUMS: a mismatch installs nothing;
 //   4. put in place as <fleetd dir>/bin/fleetd by renaming, never by writing into a running binary;
 //   5. `fleetd init --join <hub> --code <code> --machine-id <id>`: it enrolls the node and runs it as a user service.
@@ -17,6 +17,7 @@ import path from "node:path";
 import type { ToolInput } from "../shared/contracts";
 import type { CallOutcome } from "../shared/hub";
 import type { JoinHere, JoinStep, ThisComputer } from "../shared/joinHere";
+import { isEdge } from "../shared/pairing";
 import { feedUrl } from "./update-feed";
 import { parseCli } from "./update-release";
 
@@ -87,13 +88,13 @@ const TITLES = {
 const RELEASES = "https://github.com/unlaboredlabs/fleetd/releases/download";
 
 /**
- * Where the build of the hub's `version` is: its own `v<version>` release, or for a nightly hub the rolling nightly
- * release (whose release.json must still name that version). FLEETD_BASE_URL, when it is trusted, replaces both.
+ * Where the build of the hub's `version` is: its own `v<version>` release, or for an Edge hub the rolling edge release
+ * (whose release.json must still name that version). FLEETD_BASE_URL, when it is trusted, replaces both.
  */
-export const releaseFor = (version: string, override: string | undefined): { base: string; nightly: boolean } => {
-  if (override !== undefined && feedUrl(version, override) === override) return { base: override, nightly: false };
-  const nightly = version.includes("-nightly.");
-  return { base: nightly ? `${RELEASES}/nightly` : `${RELEASES}/v${version}`, nightly };
+export const releaseFor = (version: string, override: string | undefined): { base: string; edge: boolean } => {
+  if (override !== undefined && feedUrl(version, override) === override) return { base: override, edge: false };
+  const edge = isEdge(version);
+  return { base: edge ? `${RELEASES}/edge` : `${RELEASES}/v${version}`, edge };
 };
 
 const exists = (file: string): Promise<boolean> =>
@@ -214,16 +215,16 @@ export async function joinHere(ports: JoinPorts, machineId: string, report: (sta
   done();
 
   next();
-  const { base, nightly } = releaseFor(version, ports.baseOverride);
+  const { base, edge } = releaseFor(version, ports.baseOverride);
   let sums: string;
   let build: Uint8Array;
   try {
-    if (nightly) {
-      // The nightly release moves on; a node must run the hub's own build.
+    if (edge) {
+      // The edge release moves on; a node must run the hub's own build.
       const now = parseCli(JSON.parse(new TextDecoder().decode(await ports.download(`${base}/release.json`))));
       if (now !== version) {
         return fail(
-          `The hub runs ${version}, and the nightly release is now ${now ?? "another build"}. Update the hub first (Updates in the app, or fleetd update on the hub), then add this computer: both then run the same build.`,
+          `The hub runs ${version}, and the edge release is now ${now ?? "another build"}. Update the hub first (Updates in the app, or fleetd update on the hub), then add this computer: both then run the same build.`,
         );
       }
     }
@@ -231,7 +232,7 @@ export async function joinHere(ports: JoinPorts, machineId: string, report: (sta
       sums = new TextDecoder().decode(await ports.download(`${base}/SHA256SUMS`));
     } catch (error) {
       // A hub built from source runs a version no release was made for.
-      if (!nightly && base.startsWith(RELEASES) && String(error).includes("answered 404")) {
+      if (!edge && base.startsWith(RELEASES) && String(error).includes("answered 404")) {
         return fail(`There is no release for v${version}, the version the hub runs (a build from source?), so there is no build to match it. Run a released fleetd on the hub, then try again.`);
       }
       throw error;

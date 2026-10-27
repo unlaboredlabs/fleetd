@@ -111,7 +111,7 @@ export const notesSince = (changes: readonly Change[], mine: string, area: strin
 
 /**
  * A version that says what build it is: parses, and isn't the bare 0.0.0 of a local build or of a hub from before it
- * reported its version (an untagged nightly is 0.0.0-nightly.<stamp>, which is known). Anything else is unknown,
+ * reported its version (an untagged Edge build is 0.0.0-edge.<stamp>, which is known). Anything else is unknown,
  * and nothing is flagged on a guess.
  */
 export const knownVersion = (version: string | null | undefined): version is string =>
@@ -119,36 +119,38 @@ export const knownVersion = (version: string | null | undefined): version is str
 
 const withoutBuild = (version: string): string => version.trim().replace(/^v/u, "").split("+", 1)[0] ?? "";
 
-const NIGHTLY = /^\d+\.\d+\.\d+-nightly\.(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})$/u;
+/** An Edge build's version; `nightly` is Edge's name until D203, the same series. */
+const EDGE = /^\d+\.\d+\.\d+-(?:edge|nightly)\.(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})$/u;
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 /**
- * A version as people read it. A nightly by when it was built and from which commit, since its minute stamp is what
- * tells two nightlies apart: `0.0.0-nightly.202610261056+1b563d7` reads "Nightly · Oct 26, 10:56 UTC · 1b563d7".
+ * A version as people read it. An Edge build by when it was built and from which commit, since its minute stamp is
+ * what tells two apart: `0.0.0-edge.202610261056+1b563d7` reads "Edge · Oct 26, 10:56 UTC · 1b563d7", and so does
+ * `0.0.0-nightly.202610261056+1b563d7`, from before the rename.
  * Any other version is itself, without a build part. Only for showing: the updaters compare the raw version, and the
  * raw version is what gets copied. The CLI's twin is `crate::version_label` (crates/fleetd/src/lib.rs).
  */
 export const versionLabel = (version: string): string => {
   const bare = withoutBuild(version);
-  const nightly = NIGHTLY.exec(bare);
-  const month = MONTHS[Number(nightly?.[2]) - 1];
-  if (nightly === null || month === undefined) return bare;
-  const [, , , d, h, mi] = nightly;
+  const edge = EDGE.exec(bare);
+  const month = MONTHS[Number(edge?.[2]) - 1];
+  if (edge === null || month === undefined) return bare;
+  const [, , , d, h, mi] = edge;
   const sha = buildCommit(version);
-  return ["Nightly", `${month} ${String(Number(d))}, ${h ?? ""}:${mi ?? ""} UTC`, ...(sha === null ? [] : [sha.slice(0, 7)])].join(" · ");
+  return ["Edge", `${month} ${String(Number(d))}, ${h ?? ""}:${mi ?? ""} UTC`, ...(sha === null ? [] : [sha.slice(0, 7)])].join(" · ");
 };
 
-const LABEL_IN_TEXT = /(Nightly · [A-Z][a-z]{2} \d{1,2}, \d{2}:\d{2} UTC(?: · [0-9a-f]{7})?)/u;
+const LABEL_IN_TEXT = /(Edge · [A-Z][a-z]{2} \d{1,2}, \d{2}:\d{2} UTC(?: · [0-9a-f]{7})?)/u;
 
 /**
- * A line with nightly labels in it, cut around them: the odd parts are labels, so the page can mark them as version
+ * A line with Edge labels in it, cut around them: the odd parts are labels, so the page can mark them as version
  * text (`data-version`) while the words around them are held to the text rules.
  */
 export const splitLabels = (text: string): string[] => text.split(LABEL_IN_TEXT);
 
 /**
  * The About panel's version fields: the label, then the raw version to copy. Without them macOS shows Info.plist's,
- * which carry only the numeric 0.0.0 Apple accepts there (build-release.yml), so a nightly read "0.0.0 (0.0.0)".
+ * which carry only the numeric 0.0.0 Apple accepts there (build-release.yml), so an Edge build read "0.0.0 (0.0.0)".
  * macOS puts `version` in parentheses; Linux has only `applicationVersion` and gets both there.
  */
 export const aboutVersions = (version: string, mac: boolean): { applicationVersion: string; version?: string } => {

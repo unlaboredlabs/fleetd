@@ -453,7 +453,20 @@ pub struct NodeAction {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct NodeUpdate {
     pub version: Text<1, 200>,
+    /// Edge goes out as `nightly`, its name before D203: a node from then refuses a channel it doesn't know, and every
+    /// node reads `nightly` as edge. Its release, `nightly`, keeps the newest edge build for them.
+    #[serde(serialize_with = "edge_as_nightly")]
     pub channel: crate::mcp::HubChannel,
+}
+
+fn edge_as_nightly<S: serde::Serializer>(
+    channel: &crate::mcp::HubChannel,
+    to: S,
+) -> Result<S::Ok, S::Error> {
+    match channel {
+        crate::mcp::HubChannel::Edge => to.serialize_str("nightly"),
+        other => other.serialize(to),
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
@@ -589,6 +602,23 @@ mod tests {
         ] {
             assert!(serde_json::from_str::<NodeToHub>(bad).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn an_edge_update_reaches_a_node_from_before_edge_as_nightly() {
+        use crate::mcp::HubChannel;
+        let update = NodeUpdate {
+            version: Text::unchecked("0.0.0-edge.202610271703+bd87c55".to_owned()),
+            channel: HubChannel::Edge,
+        };
+        let sent = serde_json::to_value(&update).unwrap();
+        assert_eq!(sent["channel"], "nightly");
+        assert_eq!(serde_json::from_value::<NodeUpdate>(sent).unwrap(), update);
+        let stable = NodeUpdate {
+            channel: HubChannel::Stable,
+            ..update
+        };
+        assert_eq!(serde_json::to_value(&stable).unwrap()["channel"], "stable");
     }
 
     #[test]

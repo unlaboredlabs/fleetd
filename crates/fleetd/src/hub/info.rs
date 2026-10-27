@@ -23,10 +23,11 @@ pub fn register(tools: &mut Registry) {
     tools.add("hub_info", hub_info);
 }
 
-/// Nightly when the version says so, stable for any other release build, none for a local build.
+/// Edge when the version says so (or nightly, its name before D203), stable for any other release build, none for a
+/// local build.
 pub fn channel(version: &str, release_build: bool) -> Option<HubChannel> {
-    match (version.contains("-nightly."), release_build) {
-        (true, _) => Some(HubChannel::Nightly),
+    match (crate::edge_stamp(version).is_some(), release_build) {
+        (true, _) => Some(HubChannel::Edge),
         (false, true) => Some(HubChannel::Stable),
         (false, false) => None,
     }
