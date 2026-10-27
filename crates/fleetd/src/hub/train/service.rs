@@ -107,6 +107,11 @@ pub struct TrainOptions {
     /// How long a waiting Change's head may go without any check before its author and the lead hear of it
     /// (`CHECKS_START_WAIT`).
     pub checks_start_wait: Duration,
+    /// How many batch PRs may be in CI at once, each extending the one ahead of it (`batch`); 1 turns overlapping off.
+    pub pipeline_depth: usize,
+    /// How long a green batch waits for the batch behind it to finish before it lands alone; None: as long as its own
+    /// CI took.
+    pub follower_wait: Option<Duration>,
     /// Run each repo's loop in the background; tests drive `step` themselves.
     pub auto_run: bool,
     /// The status view's freshness registry: every GitHub answer and every pass keeps a repo's sources live.
@@ -124,11 +129,16 @@ impl Default for TrainOptions {
             merge_attempts: 3,
             review_wait: REVIEW_WAIT,
             checks_start_wait: CHECKS_START_WAIT,
+            pipeline_depth: PIPELINE_DEPTH,
+            follower_wait: None,
             auto_run: true,
             fresh: Arc::default(),
         }
     }
 }
+
+/// Batch PRs in CI at once: the one that lands next, and one behind it.
+pub const PIPELINE_DEPTH: usize = 2;
 
 /// How long a Change whose CI passed is held for its re-review: a review takes about as long as CI, and started with it.
 pub const REVIEW_WAIT: Duration = Duration::from_secs(15 * 60);
@@ -391,6 +401,9 @@ pub(super) enum ReviewWait {
     Waiting,
 }
 
+/// What a wait on CI does between its reads of the checks.
+pub(super) type Between<'a> = dyn Fn() -> BoxFut<'a, ()> + Send + Sync + 'a;
+
 pub(super) enum CiOutcome {
     Green,
     Red(Vec<CheckRun>),
@@ -449,7 +462,7 @@ type RepoLocks = Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>;
 pub struct Train {
     pub(super) me: Weak<Train>,
     pub(super) host: Arc<dyn TrainHost>,
-    clock: Arc<dyn Clock>,
+    pub(super) clock: Arc<dyn Clock>,
     pub(super) records: ChangeRecords,
     pub(super) github: TrainGitHub,
     gate: Arc<dyn ReviewGate>,
@@ -1153,9 +1166,38 @@ impl Train {
         lone: Option<super::next::Lone>,
         noted: &[ChangeId],
     ) -> CiOutcome {
+        self.watch_ci(change, repo, sha, base, lone, noted, None, None)
+            .await
+            .unwrap_or(CiOutcome::Timeout(Stall::Running))
+    }
+
+    /// `wait_ci`, given up once `until` passes with its checks not finished (None then), and running `between`
+    /// between reads.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) async fn watch_ci(
+        &self,
+        change: &Change,
+        repo: &str,
+        sha: &str,
+        base: &str,
+        lone: Option<super::next::Lone>,
+        noted: &[ChangeId],
+        until: Option<i64>,
+        between: Option<&Between<'_>>,
+    ) -> Option<CiOutcome> {
         let mut earlier = HashMap::new();
         let outcome = self
-            .poll_ci(change, repo, sha, base, lone, noted, &mut earlier)
+            .poll_ci(
+                change,
+                repo,
+                sha,
+                base,
+                lone,
+                noted,
+                &mut earlier,
+                until,
+                between,
+            )
             .await;
         self.runner_note(noted, None, &mut earlier);
         outcome
@@ -1171,7 +1213,9 @@ impl Train {
         mut lone: Option<super::next::Lone>,
         noted: &[ChangeId],
         earlier: &mut HashMap<ChangeId, Option<String>>,
-    ) -> CiOutcome {
+        until: Option<i64>,
+        between: Option<&Between<'_>>,
+    ) -> Option<CiOutcome> {
         use super::next::{Gate, LABEL_HOLD_MS, Labelled, RUNNER_WAIT_MS, WAITING_FOR_RUNNERS};
         let mut start = self.now_ms();
         let mut last: Vec<CheckRun> = Vec::new();
@@ -1226,7 +1270,7 @@ impl Train {
                         .superseded(change, repo, sha, &red, &mut cancel_read)
                         .await
                     {
-                        return CiOutcome::Moved;
+                        return Some(CiOutcome::Moved);
                     }
                     if let Some(true) = self.rerun_cancelled(change, repo, &red, &mut reruns).await
                     {
@@ -1235,7 +1279,7 @@ impl Train {
                 }
                 Checks::Red(red) => {
                     self.check_spans(change, sha, &runs);
-                    return CiOutcome::Red(red);
+                    return Some(CiOutcome::Red(red));
                 }
                 Checks::Green
                     if let Some(lone) = lone.as_mut()
@@ -1292,19 +1336,19 @@ impl Train {
                     match reported {
                         Checks::Red(red) => {
                             self.check_spans(change, sha, &runs);
-                            return CiOutcome::Red(red);
+                            return Some(CiOutcome::Red(red));
                         }
                         Checks::Green => {
                             let cancelled = cancelled_required(&all, required.as_deref());
                             if cancelled.is_empty() {
                                 self.check_spans(change, sha, &runs);
-                                return CiOutcome::Green;
+                                return Some(CiOutcome::Green);
                             }
                             if self
                                 .superseded(change, repo, sha, &cancelled, &mut cancel_read)
                                 .await
                             {
-                                return CiOutcome::Moved;
+                                return Some(CiOutcome::Moved);
                             }
                             // Re-runs spent, it waits for the timeout: cancelled is no failure (D191).
                             if let Some(true) = self
@@ -1320,6 +1364,9 @@ impl Train {
                 }
                 Checks::None | Checks::Pending => {}
             }
+            if until.is_some_and(|until| self.now_ms() >= until) {
+                return None;
+            }
             if let Some(stall) = self.stalled(&last, start) {
                 self.check_spans(change, sha, &last);
                 // Every run finished: it is the required checks that never came, not CI that ran long.
@@ -1331,12 +1378,15 @@ impl Train {
                     }
                     stall => stall,
                 };
-                return CiOutcome::Timeout(stall);
+                return Some(CiOutcome::Timeout(stall));
             }
             // A pass waiting on CI is the train running: keep its source live and main CI read.
             self.options.fresh.touch(&fresh::train(repo), self.now_ms());
             if let Some(train) = self.records.train(repo) {
                 self.main_ci_pass(repo, &train.project_ref).await;
+            }
+            if let Some(between) = between {
+                between().await;
             }
             self.clock.sleep(self.busy_wait(start, CI_FIRST_WAIT)).await;
         }
@@ -1793,20 +1843,29 @@ impl Train {
         }) else {
             return Ok(());
         };
+        let base = pull.base.ref_.as_str();
+        // Already tested on the base as it is now: no label, no rebase, and no second CI run on the same tree.
+        let tested = self.tested_alone(change, &pull).await;
         // Before the rebase: the push it makes then starts a CI run that already sees the label.
-        let label = self
-            .label(
+        let label = if tested {
+            tracing::info!(change_id = %change.change_id, "train: its own CI already passed on the current base");
+            super::next::Labelled::Before
+        } else {
+            self.label(
                 repo,
                 change.pr_number.get(),
                 pull.labelled(super::github::NEXT_LABEL),
             )
-            .await;
-        let base = pull.base.ref_.as_str();
-        let rebased = match self
-            .github
-            .update_branch(repo, change.pr_number.get())
-            .await?
-        {
+            .await
+        };
+        let update = if tested {
+            BranchUpdate::Current
+        } else {
+            self.github
+                .update_branch(repo, change.pr_number.get())
+                .await?
+        };
+        let rebased = match update {
             BranchUpdate::Conflict => {
                 let why = format!("conflicts with {base}");
                 if self.conflicted(&rebasing, &pull, &why).await == Conflict::Regenerating {
@@ -1872,6 +1931,40 @@ impl Train {
             in_ci
         };
         self.ci_and_merge(&in_ci, &rebased, base, label).await
+    }
+
+    /// Whether the Change's own head may merge as it is, with no rebase and no label: its base's head is already in it,
+    /// and its fast set already passed there, every check of it reported, with no skipped check the label runs (but on
+    /// a PR that has the label). Its CI then ran on exactly the tree that lands; `ci_and_merge` still reads it all.
+    pub(super) async fn tested_alone(&self, change: &Change, pull: &Pull) -> bool {
+        use super::next::{Lone, unproven_skips};
+        let (repo, base, head) = (
+            change.repo.as_str(),
+            pull.base.ref_.as_str(),
+            change.head_sha.as_str(),
+        );
+        if pull.head.sha.to_lowercase() != head {
+            return false;
+        }
+        let Ok(base_sha) = self.github.branch_sha(repo, base).await else {
+            return false;
+        };
+        match self.github.range(repo, &base_sha, head).await {
+            Ok(Some((merge_base, _))) if merge_base == base_sha => {}
+            _ => return false,
+        }
+        if self.own_ci(repo, change, base).await.is_some() {
+            return false;
+        }
+        let Ok(runs) = self.github.check_runs(repo, head).await else {
+            return false;
+        };
+        let has = pull.labelled(super::github::NEXT_LABEL);
+        let lone = Lone {
+            label: self.labelled(repo, change.pr_number.get(), has),
+            gate: self.label_gate(repo, base).await,
+        };
+        unproven_skips(&runs, &lone).is_empty()
     }
 
     /// From CI on the Change's head, in `ci`, to merged: waits for its fast set, posts `fleetd/train` and merges
@@ -2418,15 +2511,17 @@ impl Train {
             return false;
         }
         // A batch member's head is in CI on the batch's PR, not its own.
-        if let Some(branch) = self.scratch_branch(change, "batch").await
-            && let Ok(open) = self.github.pulls_for(&change.repo, &branch, "open").await
-            && open.iter().any(|b| {
-                batch_heads(b.body.as_deref().unwrap_or_default())
-                    .iter()
-                    .any(|(n, _)| *n == change.pr_number.get())
-            })
-        {
-            return false;
+        for name in super::batch::batch_names(self.options.pipeline_depth) {
+            if let Some(branch) = self.scratch_branch(change, &name).await
+                && let Ok(open) = self.github.pulls_for(&change.repo, &branch, "open").await
+                && open.iter().any(|b| {
+                    batch_heads(b.body.as_deref().unwrap_or_default())
+                        .iter()
+                        .any(|(n, _)| *n == change.pr_number.get())
+                })
+            {
+                return false;
+            }
         }
         tracing::info!(change_id = %change.change_id, "train: the hub restarted; watching its CI again");
         self.guard_base(&change.repo, &pull.base.ref_);
