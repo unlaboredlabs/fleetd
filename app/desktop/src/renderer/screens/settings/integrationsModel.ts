@@ -12,7 +12,7 @@ export const NAVI_KIND = "assistant";
 export const isNavi = (p: ProjectSummary | undefined): boolean => (p as { kind?: unknown } | undefined)?.kind === NAVI_KIND;
 
 export const DOCS = "https://fleetd.sh/docs/integrations/";
-export const XAQ_DOCS = "https://github.com/wynn-dev/xaq#readme";
+export const XAQ_DOCS = "https://www.npmjs.com/package/xaq-cli";
 
 /** xaq's own address on the machine it runs on, by default. */
 export const XAQ_DEFAULT = "http://127.0.0.1:8425";
