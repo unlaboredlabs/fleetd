@@ -187,26 +187,42 @@ Open Machines from the sidebar or the command palette. The title shows how many 
 Each machine is one row: its name, its state (online, degraded, or offline and when it was last seen), how many agents
 run there and how many projects it has. On the right, anything that wants a look: a recent sleep, Claude usage near
 its limit, a setup check that failed. A degraded machine says why under its name. Click a row to open it: load, memory,
-Claude usage, its fleetd version and tags, its projects (each with Open, Settings and Remove) and Roles and screens,
-which goes to [Settings › Machines](#settings).
+Claude usage, its fleetd version and tags, its projects (each with Open, Settings and Remove) and, for an owner or
+admin, Roles and screens, which goes to [Administration › Hub settings](#administration).
 
 Under the machines, the [setup checks](/docs/machines#health) the hub ran: the ones that failed or warned, each with
 its fix (a command to copy, or Fix), then the rest a click away. Re-run runs them again.
 
 ## Settings {#settings}
 
-Open Settings with ⌘,. It takes the sidebar's place; Back returns to where you were. Type in "Search settings" to find
+Open Settings with ⌘,. It is everyone's: nothing hub-wide is in it (that is [Administration](#administration)'s). It
+takes the sidebar's place; Back returns to where you were. Type in "Search settings" to find
 an option or a prompt by name, and press Enter to open the first match.
 
 | Section | Has |
 |---|---|
 | General | Appearance (light, dark, match system) and the hub connection. |
 | Notifications | Which alerts show (the lead asks you something, a command or secret waits, the lead finishes what you asked, a machine problem, anything else), whether they play a sound, the Dock badge, and a test. There is never an alert for the chat in front of you, and in quiet hours only urgent ones show. Clicking one opens what it's about. |
-| Agents | [Max agents](/docs/projects#max-agents) for each project, each machine and the whole fleet. A machine says where its number comes from ("Auto: memory 60 GB, about 2 GB an agent", or set by you), and "Use auto" goes back. Each slider applies when you let go, with Undo. A project says whether its max is its own or follows the default, and "Use the default" goes back. Below them, the two [task profiles](/docs/projects#models), with the model and effort behind each for the whole fleet, and each project's Medium allowed switch. |
+| Agents | [Max agents](/docs/projects#max-agents) for each project. Each slider applies when you let go, with Undo. A project says whether its max is its own or follows the default, and "Use the default" goes back. Under each, the project's Medium allowed switch. |
 | Projects | One project's name, its worktrees, its agents' environment variables (plain and secret), its own MCP servers, its setup commands, the merge train's checks, its task profiles' model and effort, and deleting it. See [Project settings](/docs/projects#settings). |
 | MCP servers | The MCP servers every project's agents get, each with Test connection, and whether agents also get your own. See [MCP servers](/docs/mcp-servers). |
 | Instructions | Your own text, added to every agent's first message. |
 | Prompts | The prompts fleetd sends agents, listed under Prompts in the sidebar, to read and edit, and any of your edits that no longer apply. See [What agents are told](/docs/what-agents-are-told). |
+
+## Administration {#administration}
+
+Owners and admins of the hub see **Administration** in the sidebar, above Settings, and in the command palette. Nobody
+else sees it, and Settings and the other screens carry no admin controls. It takes the sidebar's place like Settings;
+Back returns to where you were.
+
+| Section | Has |
+|---|---|
+| People | Everyone on the hub, with their role and devices. Change a role in place, or remove someone: their devices are signed out at once, and what they did keeps their name. An admin can't change or remove an owner, and nobody changes their own role here. |
+| Invites | Create an invite link with a name and a role (member or admin). The link is shown once, with Copy: send it, and their fleetd app opens it and joins as them. It works once, within 7 days. Below, the invites still waiting, each with Revoke. |
+| Hub settings | What reaches every project and machine: the whole fleet's and each machine's [max agents](/docs/projects#max-agents), the two [task profiles](/docs/projects#models) with the model and effort behind each for the whole fleet, [machine roles](/docs/machines#roles) and the [memory caps](/docs/what-agents-are-told#memory). |
+| Setup | Where the hub's one guided setup will go: the same steps as `fleetd init`. Until then, it opens the [setup checks](/docs/machines#health). |
+
+A hub from before people treats a key with admin on every machine as an admin.
 
 ## Shortcuts {#shortcuts}
 

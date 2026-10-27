@@ -67,7 +67,7 @@ describe("machines", () => {
     // Under a fleet cap below devbox's, the fleet holds them.
     const fleet20: SlotState = { ...fleet, cap: 20, fleetCap: 20, perProject: [{ projectRef: storefront, maxAgents: 19, own: true, running: 20, queued: 8 }] };
     expect(changeLine(projectAgents(fleet20, storefront), 20)).toBe("Up to 20 at once, but the whole fleet runs 20 at most: the 8 queued wait for it.");
-    expect(machineHolds(a, 30, "devbox")).toBe("devbox runs at most 22 agents at once, so this project runs 22 until you raise devbox.");
+    expect(machineHolds(a, 30, "devbox")).toBe("devbox runs at most 22 agents at once, so this project runs 22 until an admin raises devbox.");
     // A busy project on the default: its row says the fleet's number, and it follows its machine's.
     const busy = { projectRef: billing, maxAgents: 50, own: false, running: 2, queued: 0 };
     expect(projectAgents({ ...fleet, perProject: [busy] }, billing)).toMatchObject({ max: 22, cap: 22, limit: 22, own: false });

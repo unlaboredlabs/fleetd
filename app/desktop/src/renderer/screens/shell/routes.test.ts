@@ -29,6 +29,8 @@ describe("routes", () => {
       { id: "time", orderId: "W14" },
       { id: "projects.add" },
       { id: "settings", tab: "prompts" },
+      { id: "admin", section: "people" },
+      { id: "admin", section: "hub" },
       { id: "onboarding", hub: "http://100.64.0.1:4790", code: "ABCD-2345" },
       { id: "onboarding", hub: null, code: null },
     ];
@@ -45,6 +47,13 @@ describe("routes", () => {
     expect(toHash(panelRoute(storefront, { tab: "prs", pr: { repo: "acme/storefront", number: 11 } }))).toBe("#/project/devbox/storefront/prs/acme/storefront/11");
     expect(toHash(panelRoute(storefront, { tab: "prs", pr: { repo: null, number: 11 } }))).toBe("#/project/devbox/storefront/prs/11");
     expect(toHash(panelRoute(storefront, { tab: "agents", agent: "T1" }))).toBe("#/project/devbox/storefront/agents/T1");
+  });
+
+  it("opens Administration on People, and an older Settings › Machines link on its hub settings", () => {
+    expect(toHash({ id: "admin", section: "invites" })).toBe("#/admin/invites");
+    expect(parseHash("#/admin")).toEqual({ id: "admin", section: "people" });
+    expect(parseHash("#/admin/nope")).toEqual({ id: "admin", section: "people" });
+    expect(parseHash("#/settings/machines")).toEqual({ id: "admin", section: "hub" });
   });
 
   it("opens the Factory on the project a Status row links it to, else on every project", () => {

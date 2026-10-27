@@ -51,6 +51,11 @@ export const fixtures = [
   "settings-medium-off",
   // A machine past its memory estimate, and a project set past its machine (fixtures/settings).
   "settings-machines",
+  // Administration (fixtures/admin): an owner's hub with three people and an invite waiting, as its owner, an admin and
+  // a member.
+  "admin-owner",
+  "admin-admin",
+  "admin-member",
   // F2: the lead chat's live strip with 0, 3 and 20 agents at work (fixtures/live).
   "live-0",
   "live-3",
@@ -581,6 +586,8 @@ export const screens: readonly Screen[] = [
   // UX-1 [5]: each row says why it wants you (reply, approve · 2, secret, blocked), and docs' reply that arrives
   // after the app opened is bold.
   { id: "shell", route: "#/status", fixtures: ["sidebar-reasons"], variant: "sidebar" },
+  // Administration's entry in the sidebar: there for the hub's owner, and not for a member.
+  { id: "shell", route: "#/status", fixtures: ["admin-owner", "admin-member"], variant: "admin-entry" },
   // Hidden with its toggle in a wide window: the top row runs the full width, after the traffic lights.
   {
     id: "shell",
@@ -1702,13 +1709,30 @@ export const screens: readonly Screen[] = [
   // keys and titles; settings-prompts is the real registry with edits. Compare and Update are deep links.
   // Max agents: the fleet cap and each project's slider.
   { id: "settings.agents", route: "#/settings/agents", fixtures: ["settings-agents", "long-text", "empty", "hub-unreachable"] },
-  // Machines: one machine for agents and sessions, one for sessions only (macOS, iOS simulators), and what each can host.
-  { id: "settings.machines", route: "#/settings/machines", fixtures: ["settings-agents", "empty", "hub-unreachable"] },
-  // Machines: devbox's auto 22 and where it comes from, a machine set to 40 with the way back to auto; storefront set to
-  // 30 on devbox, which holds it at 22 and offers to raise it.
+  // Administration: People as the owner (every row changeable but their own) and as an admin (the owner out of
+  // reach); Invites with Dana's waiting, and a new one just made with its link; Hub settings (the fleet and machine
+  // caps, task profiles, machine roles, memory caps); Setup's placeholder; and a member who follows a link there.
+  { id: "admin.people", route: "#/admin/people", fixtures: ["admin-owner", "admin-admin"] },
+  { id: "admin.invites", route: "#/admin/invites", fixtures: ["admin-owner"] },
   {
-    id: "settings.agents",
-    route: "#/settings/agents",
+    id: "admin.invites",
+    route: "#/admin/invites",
+    fixtures: ["admin-owner"],
+    variant: "created",
+    open: async (page) => {
+      await page.getByLabel("Name").fill("Eve Park");
+      await page.getByRole("button", { name: "Create invite link" }).click();
+      await page.getByRole("region", { name: "Invite link for Eve Park" }).getByRole("button", { name: "Copy link" }).waitFor();
+    },
+  },
+  { id: "admin.hub", route: "#/admin/hub", fixtures: ["admin-owner", "settings-agents"] },
+  { id: "admin.setup", route: "#/admin/setup", fixtures: ["admin-owner"] },
+  { id: "admin.denied", route: "#/admin/people", fixtures: ["admin-member", "empty"] },
+  // Machines on Administration: devbox's auto 22 and where it comes from, a machine set to 40 with the way back to
+  // auto.
+  {
+    id: "admin.hub",
+    route: "#/admin/hub",
     fixtures: ["settings-machines"],
     variant: "machines",
     open: async (page) => {
@@ -1718,6 +1742,7 @@ export const screens: readonly Screen[] = [
       await machines.getByRole("button", { name: "Use auto" }).waitFor();
     },
   },
+  // storefront set to 30 on devbox, which holds it at 22: the line, and for an admin the way to Administration.
   {
     id: "settings.agents",
     route: "#/settings/agents",
@@ -1726,33 +1751,28 @@ export const screens: readonly Screen[] = [
     open: async (page) => {
       const storefront = page.getByRole("region", { name: "storefront" });
       await storefront.scrollIntoViewIfNeeded();
-      await storefront.getByRole("button", { name: /^Raise devbox to 30$/u }).waitFor();
+      await storefront.getByRole("button", { name: "Machine caps in Administration" }).waitFor();
     },
   },
+  // The two task profiles on Administration, with the fleet's model and effort behind each; and each project's medium
+  // switch in Settings: storefront's off in settings-medium-off.
   {
-    id: "settings.agents",
-    route: "#/settings/agents",
-    fixtures: ["settings-machines"],
-    variant: "machine-raised",
-    open: async (page) => {
-      const storefront = page.getByRole("region", { name: "storefront" });
-      await storefront.getByRole("button", { name: /^Raise devbox to 30$/u }).click();
-      await page.getByRole("region", { name: "devbox" }).getByText("Set by you. Auto would be 22: memory 60 GB, about 2 GB an agent.").waitFor();
-    },
-  },
-  // The two task profiles with the fleet's model and effort behind each, and each project's medium switch:
-  // storefront's off in settings-medium-off.
-  {
-    id: "settings.agents",
-    route: "#/settings/agents",
-    fixtures: ["settings-agents", "settings-medium-off"],
+    id: "admin.hub",
+    route: "#/admin/hub",
+    fixtures: ["settings-agents"],
     variant: "profiles",
     open: async (page) => {
       const profiles = page.getByRole("region", { name: "Task profiles" });
       await profiles.scrollIntoViewIfNeeded();
       await profiles.getByText("New agents run on claude-sonnet-5-5 at medium effort.").waitFor();
-      await page.getByRole("region", { name: "storefront" }).getByRole("switch", { name: /Medium allowed/u }).waitFor();
     },
+  },
+  {
+    id: "settings.agents",
+    route: "#/settings/agents",
+    fixtures: ["settings-agents", "settings-medium-off"],
+    variant: "medium",
+    open: (page) => page.getByRole("region", { name: "storefront" }).getByRole("switch", { name: /Medium allowed/u }).waitFor(),
   },
   // The palette's "Max agents for this project": that project's slider scrolled to and focused.
   {
@@ -1791,8 +1811,8 @@ export const screens: readonly Screen[] = [
     },
   },
   {
-    id: "settings.agents",
-    route: "#/settings/agents",
+    id: "admin.hub",
+    route: "#/admin/hub",
     fixtures: ["settings-agents"],
     variant: "fleet-below",
     open: async (page) => {
