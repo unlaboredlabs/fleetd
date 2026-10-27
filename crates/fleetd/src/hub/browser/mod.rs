@@ -91,12 +91,17 @@ pub fn get(db: &HubDb, id: &BrowserSessionId) -> Result<Option<BrowserSession>, 
     db.with(|c| get_on(c, id))
 }
 
-pub fn put_on(c: &Connection, s: &BrowserSession, started_ms: i64) -> Result<(), StoreError> {
+/// Writes a session, unless its row is already final: nothing replaces an expired one, and only its expiry replaces a
+/// recorded one. The check is the write's own, so a report that read the row before another made it final (the
+/// node's end report racing its upload's `recorded`) can't undo it. Whether it wrote.
+pub fn put_on(c: &Connection, s: &BrowserSession, started_ms: i64) -> Result<bool, StoreError> {
     let bytes: i64 = s.files.iter().map(|f| f.bytes.get()).sum();
-    c.execute(
+    let written = c.execute(
         "INSERT INTO browser_sessions (session_id, machine_id, project_id, started_ms, state, bytes, data)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
-         ON CONFLICT (session_id) DO UPDATE SET state = excluded.state, bytes = excluded.bytes, data = excluded.data",
+         ON CONFLICT (session_id) DO UPDATE SET state = excluded.state, bytes = excluded.bytes, data = excluded.data
+         WHERE browser_sessions.state NOT IN ('recorded', 'expired')
+           OR (browser_sessions.state = 'recorded' AND excluded.state = 'expired')",
         params![
             s.session_id.as_str(),
             s.project_ref.machine_id.as_str(),
@@ -107,14 +112,16 @@ pub fn put_on(c: &Connection, s: &BrowserSession, started_ms: i64) -> Result<(),
             serde_json::to_string(s)?
         ],
     )?;
-    Ok(())
+    Ok(written > 0)
 }
 
-/// Writes a stored session back after a change, and tells the app.
+/// Writes a stored session back after a change, and tells the app; nothing when it became final meanwhile.
 pub fn save(hub: &Hub, s: &BrowserSession) -> Result<(), StoreError> {
     let started_ms = crate::hub::store::parse_ms(s.started_at.as_str()).unwrap_or_default();
-    hub.db.transaction(|c| put_on(c, s, started_ms))?;
-    announce(hub, s, now_ms(hub.clock.as_ref()))
+    if hub.db.transaction(|c| put_on(c, s, started_ms))? {
+        announce(hub, s, now_ms(hub.clock.as_ref()))?;
+    }
+    Ok(())
 }
 
 /// A project's live sessions whose agent asked for a person (`request_takeover`) and has no one yet.
@@ -249,8 +256,10 @@ fn expire(hub: &Hub, mut s: BrowserSession, started_ms: i64, now: i64) -> Result
     s.state = BrowserSessionState::Expired;
     s.files = List::unchecked(Vec::new());
     s.note = None;
-    hub.db.transaction(|c| put_on(c, &s, started_ms))?;
-    announce(hub, &s, now)
+    if hub.db.transaction(|c| put_on(c, &s, started_ms))? {
+        announce(hub, &s, now)?;
+    }
+    Ok(())
 }
 
 /// A session still live or uploading this long after it started is a partial upload its node never finished (it

@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
+use fleetd_contracts::browser::BrowserSessionId;
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef};
 use fleetd_contracts::lead_calls::{LeadCall, LeadCallResult};
@@ -778,4 +779,80 @@ async fn a_browser_control_whose_send_failed_or_that_was_dropped_leaves_no_wait(
         0,
         "a dropped call leaves no wait"
     );
+}
+
+/// A recorded session is final: a write that read the row before it became so (the node's end report, racing its
+/// upload's `recorded`) changes nothing, and only its expiry replaces it. Nothing replaces an expired one.
+#[test]
+fn a_final_session_is_never_written_back() {
+    let (hub, _clock, _home) = hub();
+    let r = project("storefront");
+    let s = |state: &str| -> fleetd_contracts::browser::BrowserSession {
+        serde_json::from_value(json!({
+            "sessionId": S1, "projectRef": r, "threadId": "th-1", "purpose": "p", "state": state,
+            "control": "agent", "startedAt": AT, "files": [],
+        }))
+        .unwrap()
+    };
+    let put = |state: &str| {
+        hub.db
+            .transaction(|c| super::put_on(c, &s(state), NOW_MS as i64))
+            .unwrap()
+    };
+    let state = || {
+        super::get(&hub.db, &BrowserSessionId::unchecked(S1))
+            .unwrap()
+            .unwrap()
+            .state
+            .as_str()
+    };
+    assert!(put("live") && put("uploading") && put("recorded"));
+    for late in ["uploading", "live", "lost", "recorded"] {
+        assert!(!put(late), "{late} over recorded");
+        assert_eq!(state(), "recorded");
+    }
+    assert!(put("expired"));
+    for late in ["uploading", "lost", "recorded", "expired"] {
+        assert!(!put(late), "{late} over expired");
+        assert_eq!(state(), "expired");
+    }
+}
+
+/// The devbox's CI flake: a node reports a session's end (`uploading`) as it closes it, while its upload reports
+/// `uploading` and then `recorded` at the same time. However they interleave, the session ends recorded, its
+/// recording kept, and a `lost` racing them never deletes what was recorded.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn racing_reports_never_undo_a_recorded_session() {
+    let (hub, _clock, home) = hub();
+    let r = project("storefront");
+    for round in 0..50 {
+        let id = format!("B{round:032x}");
+        node_call(&hub, &r, report(&id, "live", json!([])), "browser_session")
+            .await
+            .unwrap();
+        part(&hub, &r, &id, "actions", 0, b"{}\n").await.unwrap();
+        let mut calls = Vec::new();
+        for state in ["uploading", "uploading", "lost", "uploading"] {
+            let (hub, r, id) = (hub.clone(), r.clone(), id.clone());
+            calls.push(tokio::spawn(async move {
+                let _ = node_call(&hub, &r, report(&id, state, json!([])), "browser_session").await;
+            }));
+        }
+        let recorded = report(&id, "recorded", json!([{ "file": "actions", "bytes": 3 }]));
+        let wrote = node_call(&hub, &r, recorded, "browser_session").await;
+        for call in calls {
+            call.await.unwrap();
+        }
+        let s = super::get(&hub.db, &BrowserSessionId::unchecked(&id))
+            .unwrap()
+            .unwrap();
+        // A `lost` that landed first can still lose the recording (its part is gone): then nothing was recorded.
+        if wrote.is_ok_and(|w| w["state"] == "recorded") {
+            assert_eq!(s.state.as_str(), "recorded", "round {round}");
+            assert!(
+                home.path().join("browser").join(&id).exists(),
+                "round {round}"
+            );
+        }
+    }
 }
