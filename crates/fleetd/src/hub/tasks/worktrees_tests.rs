@@ -1,8 +1,10 @@
 //! Cleanup over a real hub with a fake node: the nightly sweep removes the worktrees of tasks that ended over 3 days
-//! ago, keeps one holding work only there and tells the person once, and tries a failed removal again; closing an
-//! order stops its leftover agents but not the train's reviewers.
+//! ago, keeps one holding work only there and tells the person once, tries a failed removal again and gives up after a
+//! week, and skips one already removed at its task's end; closing an order stops its leftover agents but not the
+//! train's reviewers, and the sweep cancels tasks left queued under orders closed before that.
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use fleetd_contracts::chat::ChatAuthor;
 use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef};
@@ -13,9 +15,10 @@ use fleetd_contracts::tasks::{Task, TaskId, TaskState};
 use serde_json::{Value, json};
 use tokio::sync::mpsc;
 
-use super::TaskRecords;
 use super::cap_tests::{AT, Node, hub_on, running};
 use super::race_tests::reply;
+use super::worktrees::MAX_TRIES;
+use super::{TaskCaller, TaskRecords};
 use crate::hub::api::Hub;
 use crate::hub::leads::records::NewWorkstream;
 use crate::hub::store::iso_ms;
@@ -67,18 +70,58 @@ fn serve(
     removals
 }
 
+fn open_order(hub: &Hub, title: &str) -> WorkstreamId {
+    hub.leads
+        .records
+        .workstream_create(NewWorkstream {
+            project_ref: project(),
+            title: title.into(),
+            text: title.into(),
+            channel: IntakeChannel::App,
+            by: "human".into(),
+            at: AT.into(),
+            client_request_id: None,
+        })
+        .unwrap()
+        .0
+        .workstream_id
+}
+
+/// Task T`n` of order `w`, waiting for a slot.
+fn queued(hub: &Hub, n: u32, w: &WorkstreamId) {
+    let mut task = running(hub, n);
+    task.state = TaskState::Queued;
+    task.workstream_id = w.clone();
+    hub.db
+        .with(|c| {
+            Ok(TaskRecords::put(
+                c,
+                &super::StoredTask {
+                    task,
+                    pending_message: None,
+                },
+            )?)
+        })
+        .unwrap();
+}
+
 fn refused(code: &str, message: &str) -> Value {
     json!({ "err": { "code": code, "message": message } })
 }
 
 /// A finished writer T`n` on session t`n` that ended `days_ago`.
 fn ended(hub: &Hub, n: u32, days_ago: i64) -> Task {
+    ended_on(hub, "lab-a", n, days_ago)
+}
+
+/// The same, in project p1 of `machine`.
+fn ended_on(hub: &Hub, machine: &str, n: u32, days_ago: i64) -> Task {
     let task: Task = serde_json::from_value(json!({
-        "taskId": format!("T{n}"), "projectRef": { "machineId": "lab-a", "projectId": "p1" }, "workstreamId": "W1",
+        "taskId": format!("T{n}"), "projectRef": { "machineId": machine, "projectId": "p1" }, "workstreamId": "W1",
         "title": format!("slice {n}"), "kind": "write", "prompt": "do it", "branch": format!("fleetd/T{n}-slice"),
         "state": "done", "attempt": 1, "createdAt": AT, "startedAt": AT,
         "endedAt": iso_ms(NOW - days_ago * DAY),
-        "threadRef": { "machineId": "lab-a", "threadId": format!("t{n}") },
+        "threadRef": { "machineId": machine, "threadId": format!("t{n}") },
     }))
     .unwrap();
     hub.db.with(|c| Ok(TaskRecords::create(c, task)?)).unwrap()
@@ -94,7 +137,11 @@ fn drain(removals: &mut mpsc::UnboundedReceiver<String>) -> Vec<String> {
 }
 
 fn system_lines(hub: &Hub) -> Vec<String> {
-    let (messages, _, _) = hub.chat.page(&project(), None, None, 100).unwrap();
+    system_lines_in(hub, &project())
+}
+
+fn system_lines_in(hub: &Hub, r: &ProjectRef) -> Vec<String> {
+    let (messages, _, _) = hub.chat.page(r, None, None, 100).unwrap();
     messages
         .into_iter()
         .filter(|m| m.author == ChatAuthor::System)
@@ -262,4 +309,92 @@ async fn closing_an_order_stops_its_leftover_agents_but_not_the_trains_reviewers
         drain(&mut removals).is_empty(),
         "a stop at close keeps the worktree"
     );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_worktree_removed_at_its_tasks_end_is_not_asked_about_again() {
+    let clock = ManualClock::at(NOW as u64);
+    let (hub, _home) = hub_on(clock.clone());
+    let node = Node::link(&hub).await;
+    let mut removals = serve(&hub, node, HashMap::new());
+    running(&hub, 1);
+    let caller = TaskCaller {
+        project_ref: project(),
+        by: "lead:lab-a/p1".into(),
+    };
+    hub.tasks
+        .cancel(&caller, &TaskId::unchecked("T1"), None)
+        .await
+        .unwrap();
+    // A reader's worktree goes when it ends, and that is recorded.
+    assert_eq!(removals.recv().await.unwrap(), "t1");
+    for _ in 0..400 {
+        let seen: Option<String> = hub
+            .db
+            .with(|c| Ok(c.query_row("SELECT worktree FROM tasks WHERE n = 1", [], |r| r.get(0))?))
+            .unwrap();
+        if seen.as_deref() == Some("removed") {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    clock.advance(Duration::from_millis(4 * DAY as u64));
+    assert_eq!(hub.tasks.sweep_worktrees().await, Default::default());
+    assert!(drain(&mut removals).is_empty(), "nothing asked again");
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_worktree_whose_machine_never_answers_is_given_up_after_a_week_with_one_line() {
+    let (hub, _home) = hub_on(ManualClock::at(NOW as u64));
+    let gone = ProjectRef {
+        machine_id: MachineId::unchecked("lab-b"),
+        project_id: ProjectId::unchecked("p1"),
+    };
+    // lab-b's node never links: each removal finds it offline.
+    ended_on(&hub, "lab-b", 1, 10);
+    ended_on(&hub, "lab-b", 2, 10);
+    for night in 1..MAX_TRIES {
+        let swept = hub.tasks.sweep_worktrees().await;
+        assert_eq!(swept.failed, 2, "night {night}");
+        assert!(system_lines_in(&hub, &gone).is_empty(), "night {night}");
+    }
+    assert_eq!(hub.tasks.sweep_worktrees().await.failed, 2);
+    let lines = system_lines_in(&hub, &gone);
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    assert!(
+        lines[0].contains("T1 on lab-b, T2 on lab-b after 7 nightly tries"),
+        "{}",
+        lines[0]
+    );
+    // Given up: not tried, nor told, again.
+    assert_eq!(hub.tasks.sweep_worktrees().await, Default::default());
+    assert_eq!(system_lines_in(&hub, &gone).len(), 1);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_task_left_queued_under_an_order_closed_earlier_is_cancelled() {
+    let (hub, _home) = hub_on(ManualClock::at(NOW as u64));
+    let node = Node::link(&hub).await;
+    let _removals = serve(&hub, node, HashMap::new());
+    let closed = open_order(&hub, "Ship the API");
+    let open = open_order(&hub, "Add dark mode");
+    queued(&hub, 1, &closed);
+    queued(&hub, 2, &open);
+    // Closed before `close` stopped its agents: T1 stayed queued.
+    let mut order = hub.leads.records.workstream_get(&closed).unwrap().unwrap();
+    order.state = fleetd_contracts::ledger::WorkstreamState::Done;
+    hub.leads.records.workstream_put(&order).unwrap();
+
+    assert_eq!(hub.tasks.cancel_closed_queued().await, 1);
+    let state = |n: u32| {
+        hub.tasks
+            .get(&TaskId::unchecked(format!("T{n}")))
+            .unwrap()
+            .unwrap()
+            .state
+    };
+    assert_eq!(state(1), TaskState::Cancelled);
+    // T1's freed place started T2 (the fake node refuses its launch): its order is open.
+    assert_ne!(state(2), TaskState::Cancelled);
+    assert_eq!(hub.tasks.cancel_closed_queued().await, 0);
 }

@@ -291,7 +291,8 @@ those of agents that finished more than 3 days ago. No model runs for it.</p>
 already in the base. Its branch stays unless it merged, so every commit stays reachable.</li>
 <li>A worktree holding work that exists only there is kept, and the project’s chat says so once, with its path. Push or
 delete that work, and the next night’s cleanup removes it.</li>
-<li>One its machine couldn’t remove (offline, a git error) is tried again the next night.</li>
+<li>One its machine couldn’t remove (offline, a git error) is tried again the next night. After a week of failed tries
+the cleanup gives it up and says so once in the chat: delete it by hand if that machine is still in use.</li>
 <li>A project with <strong>Keep finished worktrees</strong> on is left alone.</li>
 </ul>
 <p>The hour is 04:00 in the zone of the global decision <code dir="auto">policy.tz</code>, else the hub machine’s. To keep worktrees longer or

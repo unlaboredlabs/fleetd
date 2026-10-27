@@ -61,7 +61,9 @@ impl TaskRecords {
         // A task that runs again may have its worktree back: the sweep looks at it afresh once it ends again.
         db.prepare_cached(
             "UPDATE tasks SET state = ?1, thread_id = ?2, ended_at = ?3, pending_message = ?4, data = ?5,
-               worktree = CASE WHEN ?1 IN ('done', 'failed', 'cancelled') THEN worktree END WHERE n = ?6",
+               worktree = CASE WHEN ?1 IN ('done', 'failed', 'cancelled') THEN worktree END,
+               worktree_tries = CASE WHEN ?1 IN ('done', 'failed', 'cancelled') THEN worktree_tries ELSE 0 END
+             WHERE n = ?6",
         )?
         .execute(params![
             state_str(t.state),
@@ -218,8 +220,8 @@ impl TaskRecords {
         .collect()
     }
 
-    /// Ended tasks with a thread that ended before `before` (an ISO time) and whose worktree the sweep hasn't seen
-    /// removed, oldest first; with whether the person was already told it is kept.
+    /// Ended tasks with a thread that ended before `before` (an ISO time) whose worktree the sweep hasn't seen removed
+    /// or given up on, oldest first; with whether the person was already told it is kept.
     pub fn unswept(db: &Connection, before: &str) -> rusqlite::Result<Vec<(Task, bool)>> {
         db.prepare_cached(
             "SELECT data, worktree FROM tasks WHERE state IN ('done', 'failed', 'cancelled') AND thread_id IS NOT NULL
@@ -234,13 +236,22 @@ impl TaskRecords {
         .collect()
     }
 
-    /// What the sweep found of an ended task's worktree: `removed` or `flagged`. A task running again keeps NULL.
+    /// What the sweep found of an ended task's worktree: `removed`, `flagged` or `given_up`. A task running again
+    /// keeps NULL.
     pub fn set_worktree(db: &Connection, task_id: &TaskId, seen: &str) -> rusqlite::Result<()> {
         db.prepare_cached(
             "UPDATE tasks SET worktree = ? WHERE n = ? AND state IN ('done', 'failed', 'cancelled')",
         )?
         .execute(params![seen, number_of(task_id)])?;
         Ok(())
+    }
+
+    /// Counts a failed try at removing an ended task's worktree; returns the tries so far.
+    pub fn worktree_failed(db: &Connection, task_id: &TaskId) -> rusqlite::Result<i64> {
+        db.prepare_cached(
+            "UPDATE tasks SET worktree_tries = worktree_tries + 1 WHERE n = ? RETURNING worktree_tries",
+        )?
+        .query_row([number_of(task_id)], |r| r.get(0))
     }
 
     /// The running tasks on a machine, oldest first.

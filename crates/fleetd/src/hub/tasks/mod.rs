@@ -2629,7 +2629,7 @@ impl Tasks {
     }
 
     /// Has the node stop a task's agent and delete its worktree, and the build output in it, off the lock. A node that
-    /// can't (offline, a git error, or a writer's work that exists only there) leaves it, logged. A project that keeps
+    /// can't (offline, a git error, or a writer's work that exists only there) leaves it, logged, for the nightly sweep. A project that keeps
     /// its finished worktrees (`keep_worktrees`) keeps this one; its idle agent ends on the node's idle reap.
     fn remove_worktree(self: &Arc<Self>, task: &Task) {
         let Some(thread) = task.thread_ref.clone() else {
@@ -2650,8 +2650,18 @@ impl Tasks {
         }
         let (tasks, task_id) = (self.clone(), task.task_id.clone());
         tokio::spawn(async move {
-            if let Err(error) = tasks.d.ports.remove_worktree(&thread).await {
-                tracing::warn!(task_id = task_id.as_str(), ?error, "worktree not removed");
+            match tasks.d.ports.remove_worktree(&thread).await {
+                // The nightly sweep (`worktrees`) has nothing left to do for it.
+                Ok(()) => {
+                    if let Err(error) =
+                        tasks.db(|c| TaskRecords::set_worktree(c, &task_id, "removed"))
+                    {
+                        tracing::warn!(task_id = task_id.as_str(), %error, "worktree removal not recorded");
+                    }
+                }
+                Err(error) => {
+                    tracing::warn!(task_id = task_id.as_str(), ?error, "worktree not removed")
+                }
             }
         });
     }
