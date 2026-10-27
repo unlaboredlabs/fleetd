@@ -446,7 +446,7 @@ pub fn too_old(m: &MachineId) -> ToolError {
 }
 
 /// The repo named in a call, `None` when none is; an unknown one is refused, with the project's repos to pick from.
-fn repo_named(
+pub(super) fn repo_named(
     hub: &Hub,
     r: &ProjectRef,
     name: Option<&RepoName>,
@@ -697,6 +697,17 @@ async fn env_set(
         .project_env(m, &r.project_id, set.clone(), remove.clone())
         .await
         .map_err(from_executor)?;
+    // Every checkout of the project's repos gets them too, sealed to the same machine (W79).
+    let mut missed = Vec::new();
+    for checkout in super::repos::other_checkouts(&hub, &r)? {
+        if let Err(error) = hub
+            .executors
+            .project_env(m, &checkout.project_id, set.clone(), remove.clone())
+            .await
+        {
+            missed.push(format!("{} ({error})", checkout.project_id));
+        }
+    }
     let mut rows = Vec::with_capacity(set.len());
     for v in set {
         rows.push(match v {
@@ -728,11 +739,16 @@ async fn env_set(
     store.env_apply(&r, &rows, &remove, &at)?;
     Ok(ProjectEnvSetOutput {
         env: store.env(&r)?,
-        next: Some(
+        next: Some(if missed.is_empty() {
             "Every claude the node starts for the project from now on gets them; running sessions get them at their \
              next start."
-                .into(),
-        ),
+                .into()
+        } else {
+            format!(
+                "The project has them, but these repo checkouts don't: {}. Set them again to retry.",
+                missed.join(", ")
+            )
+        }),
         truncated: None,
     })
 }

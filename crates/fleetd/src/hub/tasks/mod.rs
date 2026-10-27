@@ -2202,6 +2202,13 @@ impl Tasks {
         input: SpawnInput,
     ) -> Result<Spawned, TaskError> {
         let r = &caller.project_ref;
+        // An archived project (W79) starts nothing: its directory is another project's repo now.
+        if let Some((holder, repo)) =
+            crate::hub::repos::holder(&self.d.db, r).map_err(store_error)?
+        {
+            let (message, fix) = crate::hub::repos::archived_note(&holder, &repo);
+            return Err(lead_error(ErrorCode::Invalid, message, Some(&fix)));
+        }
         // Binding may ask the node, and so does each writer's changed paths: both happen before the lock, the paths
         // within `OBSERVE_TIMEOUT`, so a slow node never holds up other task calls. Under the lock the check reads
         // the store only.

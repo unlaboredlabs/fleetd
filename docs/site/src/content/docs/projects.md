@@ -59,6 +59,32 @@ fleetd project remove devbox/storefront
 `list` prints each project as `<machineId>/<projectId>`, its title and its folder. `remove` stops the project's agents and forgets it. Its files, branches and worktrees stay.
 To also remove the worktrees its agents worked in, delete it from the app instead: see [Delete a project](#delete).
 
+### Repos {#repos}
+
+A project is a lead and its own folder, holding zero or more git repos. A project added from a checkout holds that
+checkout; add more to keep one lead across several repos.
+
+```sh
+fleetd project repo add devbox/storefront ~/src/api
+fleetd project repo add devbox/storefront https://github.com/acme/web --name web
+fleetd project repo list devbox/storefront
+fleetd project repo remove devbox/storefront api
+```
+
+- **Add** takes a checkout on the project's machine, or a GitHub repo to clone there (with `--dest` and
+  `--use-existing`, as for `project add`). The name comes from the remote or folder unless you pass `--name`.
+- **The checkout stops showing as a project** while a project holds it. A checkout that was a project of its own is
+  archived: its chat and history stay, and its lead no longer runs. fleetd refuses while its agents run.
+- **One repo can be in several projects.**
+- **The project's environment variables, MCP servers and skills** go to every one of its checkouts.
+- **The lead's first message** lists the project's repos.
+- **Remove** cancels that repo's running agents. The project's other work goes on. Nothing is deleted: the checkout stays
+  on its machine and, once no project holds it, shows as a project of its own again. A project's own folder can't be
+  removed this way; remove the project instead.
+
+The same actions are in Settings → Projects → Repos, and agents have `project_repo_add`, `project_repo_list` and
+`project_repo_remove`.
+
 ## Project settings {#settings}
 
 Open a project's settings in the desktop app: Settings → Projects, then pick the project. Machines → a project's
@@ -67,7 +93,7 @@ Open a project's settings in the desktop app: Settings → Projects, then pick t
 | Setting | Does |
 |---|---|
 | Name | How fleetd shows the project. Its folder keeps its own name. |
-| Repos | The git repos the project holds, each with its remote, base branch and checkout (machine and path), and the setup and preview it runs with: its own, or the project's. A plain folder holds none. Read-only for now. |
+| Repos | The git repos the project holds, each with its remote, base branch and checkout (machine and path), and the setup and preview it runs with: its own, or the project's. A plain folder holds none. **Add repo** and **Remove…**: see [Repos](#repos). |
 | Keep finished worktrees | Off (the default): a reader's worktree goes when its task finishes, and a writer's once its pull request merges; any left behind go in the [nightly cleanup](#cleanup). On: they stay on the machine. |
 | Refresh memory every night | On (the default): around 04:00, on a day with chat or orders, the lead tidies the project's memory and the chat shows one line of its changes, with Undo. Off: memory changes only as the lead and you write it. See [The nightly refresh](/docs/what-agents-are-told#memory-refresh). |
 | Environment variables | Variables every new agent of the project gets. See [Environment variables](#env). |

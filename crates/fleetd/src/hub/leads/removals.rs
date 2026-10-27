@@ -5,6 +5,9 @@
 //! The reaction is keyed on the cache, not the event: live work whose project the cache no longer has is ended. That
 //! makes it idempotent, so the hub runs it once at start for every such project, and a stop between the event and the
 //! reaction loses nothing.
+//!
+//! A repo goes the same way (W79): once `repos` no longer has it (`project_repo_remove`, or its checkout's project was
+//! removed), its live tasks are cancelled and the project's other work goes on.
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -12,6 +15,7 @@ use std::time::Duration;
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::ProjectRef;
 use fleetd_contracts::ledger::WorkstreamState;
+use fleetd_contracts::tasks::TaskId;
 
 use super::error::LeadError;
 use super::records::{LeadRecords, WorkstreamFilter};
@@ -19,6 +23,7 @@ use super::{Ctx, now_iso};
 use crate::hub::store::{NewEvent, WaitInput};
 
 pub const STOPPED_REASON: &str = "its project was removed";
+pub const REPO_REASON: &str = "its repo was removed from the project";
 const SCAN_LIMIT: usize = 10_000;
 
 pub struct ProjectRemovals {
@@ -73,6 +78,27 @@ impl ProjectRemovals {
         Ok(())
     }
 
+    /// Cancels the live tasks whose repo is no longer in `repos`; returns them.
+    pub async fn end_removed_repos(&self) -> Result<Vec<TaskId>, LeadError> {
+        let Some(tasks) = self.ctx.hooks.tasks.get() else {
+            return Ok(Vec::new());
+        };
+        let mut ended = Vec::new();
+        for (task_id, r, repo_id) in tasks.live_in_repos() {
+            let gone = self
+                .ctx
+                .db
+                .with(|c| Ok(crate::hub::repos::store::get(c, &repo_id)?.is_none()))?;
+            if gone {
+                tasks
+                    .cancel(&r, &task_id, &format!("Cancelled: {REPO_REASON}."))
+                    .await;
+                ended.push(task_id);
+            }
+        }
+        Ok(ended)
+    }
+
     /// Every project with live work, as the records name them.
     fn projects_with_live_work(&self) -> Result<Vec<ProjectRef>, LeadError> {
         let mut refs = BTreeMap::new();
@@ -108,6 +134,9 @@ impl ProjectRemovals {
             }
             Err(error) => tracing::warn!(%error, "project removal catch-up failed"),
         }
+        if let Err(error) = self.end_removed_repos().await {
+            tracing::warn!(%error, "repo removal catch-up failed");
+        }
         loop {
             let page = match events
                 .wait(WaitInput {
@@ -137,6 +166,9 @@ impl ProjectRemovals {
                 {
                     tracing::warn!(%error, "project removal failed");
                 }
+            }
+            if let Err(error) = self.end_removed_repos().await {
+                tracing::warn!(%error, "repo removal failed");
             }
         }
     }
