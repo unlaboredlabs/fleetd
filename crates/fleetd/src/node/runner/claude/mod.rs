@@ -301,9 +301,26 @@ pub fn screen_command(command: &str) -> bool {
     })
 }
 
-/// Files inside a Navi's folder its lead may read but never change: claude's own settings and MCP servers there, and
-/// fleetd's policy file, would let it give itself allow rules, hooks or tools.
-const ASSISTANT_KEPT: &[&str] = &[".claude", ".mcp.json", ".fleetd"];
+/// Files inside a Navi's folder its lead may read but never change: claude's own settings and MCP servers there,
+/// fleetd's policy file, and agent-browser's project config, would let it give itself allow rules, hooks, tools, or
+/// scripts, headers and a proxy on every page.
+const ASSISTANT_KEPT: &[&str] = &[".claude", ".mcp.json", ".fleetd", "agent-browser.json"];
+
+/// The config file a Navi's agent-browser reads instead of any other (`AGENT_BROWSER_CONFIG`), in its session's own
+/// directory: empty, so fleetd's environment alone decides how its browser runs.
+pub const ASSISTANT_BROWSER_CONFIG: &str = "agent-browser-config.json";
+
+/// The paths a plain `screenshot` command saves to: its words that aren't flags. None for any other command.
+fn screenshot_paths(command: &str) -> Option<Vec<String>> {
+    let words = plain_words(command.trim())?;
+    (words.get(1).map(|w| w.text.as_str()) == Some("screenshot")).then(|| {
+        words[2..]
+            .iter()
+            .filter(|w| !w.text.starts_with('-'))
+            .map(|w| w.text.clone())
+            .collect()
+    })
+}
 
 /// Where `path` (relative to `cwd`, or absolute) really is: its nearest part that exists with symlinks resolved, then
 /// the rest of it. None with a `..` in it.
@@ -356,10 +373,12 @@ fn kept(cwd: &Path, path: &str) -> bool {
         })
 }
 
-/// A Glob pattern (or Grep's file filter) that could reach outside the folder it searches: absolute, from home, or
-/// climbing with `..`.
+/// A Glob pattern (or Grep's file filter) that could reach outside the folder it searches: absolute, from home,
+/// climbing with `..`, or with braces, which can spell either.
 fn wide_pattern(pattern: &str) -> bool {
-    pattern.starts_with(['/', '~']) || pattern.split(['/', '\\']).any(|part| part == "..")
+    pattern.starts_with(['/', '~'])
+        || pattern.contains(['{', '}'])
+        || pattern.split(['/', '\\']).any(|part| part == "..")
 }
 
 /// How the node answers a file tool's prompt from a session of `role` in `cwd`, whoever would approve it: a Navi's lead
@@ -378,7 +397,12 @@ pub fn role_answer(
     if tool == "Bash" {
         // A plain screen command runs; any other command goes on to the hub, which asks.
         let command = input.get("command").and_then(|v| v.as_str())?;
-        return screen_command(command).then_some(PermissionDecision::Allow {
+        // A screenshot saves where it's told: only inside the folder, as a Write would, and never over its settings.
+        let saves_inside = screenshot_paths(command)
+            .unwrap_or_default()
+            .iter()
+            .all(|p| (inside(cwd, cwd, p) && !kept(cwd, p)) || inside(cwd, scratch, p));
+        return (screen_command(command) && saves_inside).then_some(PermissionDecision::Allow {
             updated_input: None,
         });
     }
@@ -1185,6 +1209,55 @@ mod tests {
             search("Grep", serde_json::json!({ "pattern": "/etc/passwd" })),
             Some(PermissionDecision::Allow { .. })
         ));
+    }
+
+    #[test]
+    fn a_navis_screenshot_saves_only_inside_its_folder_and_its_browser_config_stays_fleetds() {
+        let home = tempfile::tempdir().unwrap();
+        let folder = home.path().join("navi/ada");
+        std::fs::create_dir_all(folder.join("shots")).unwrap();
+        let scratch = home.path().join("tmp/ab12");
+        std::fs::create_dir_all(&scratch).unwrap();
+        let answer = |tool: &str, input: serde_json::Value| {
+            role_answer(SessionRole::Assistant, &folder, &scratch, tool, &input)
+        };
+        let bash = |c: &str| answer("Bash", serde_json::json!({ "command": c }));
+        let runs = |c: &str| matches!(bash(c), Some(PermissionDecision::Allow { .. }));
+        assert!(runs("agent-browser screenshot"));
+        assert!(runs("agent-browser screenshot --full shots/page.png"));
+        assert!(runs(&format!(
+            "agent-browser screenshot {}/a.png",
+            scratch.display()
+        )));
+        // Anywhere else, or over its settings, it asks: the hub decides.
+        for c in [
+            "agent-browser screenshot /home/me/.ssh/authorized_keys",
+            "agent-browser screenshot ../grace/x.png",
+            "agent-browser screenshot agent-browser.json",
+            "agent-browser screenshot .claude/settings.json",
+        ] {
+            assert!(bash(c).is_none(), "{c}");
+        }
+        // Its project config is one of the files it never writes, in any case.
+        let write = |p: &str| {
+            answer(
+                "Write",
+                serde_json::json!({ "file_path": p, "content": "{}" }),
+            )
+        };
+        for p in ["agent-browser.json", "Agent-Browser.JSON"] {
+            assert!(
+                matches!(write(p), Some(PermissionDecision::Deny { .. })),
+                "{p}"
+            );
+        }
+        // Braces in a pattern can spell `..` or an absolute path: refused.
+        for pattern in ["{..,x}/**", "**/*.{md,txt}"] {
+            assert!(matches!(
+                answer("Glob", serde_json::json!({ "pattern": pattern })),
+                Some(PermissionDecision::Deny { .. })
+            ));
+        }
     }
 
     #[test]

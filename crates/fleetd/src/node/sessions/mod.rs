@@ -2219,6 +2219,18 @@ impl SessionService {
             env.extend(browser_env);
             plugin_dirs.extend(browser.plugin_dirs());
         }
+        // A Navi's agent-browser reads only a config fleetd keeps, outside its folder: never `./agent-browser.json` in
+        // the folder it writes, nor `~/.agent-browser/config.json`, either of which could add scripts, headers or a proxy
+        // to every page.
+        if row.local.role == SessionRole::Assistant {
+            let config = dir.join(claude::ASSISTANT_BROWSER_CONFIG);
+            std::fs::write(&config, "{}\n")?;
+            env.retain(|(k, _)| k != "AGENT_BROWSER_CONFIG");
+            env.push((
+                "AGENT_BROWSER_CONFIG".to_owned(),
+                config.to_string_lossy().into_owned(),
+            ));
+        }
         let spec = SessionSpec {
             session_id: id.to_owned(),
             resume,
