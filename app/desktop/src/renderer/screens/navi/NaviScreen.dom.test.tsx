@@ -68,7 +68,7 @@ const mount = async (ui: React.ReactNode, projects: ProjectSummary[], answer: (t
       return Promise.resolve(answer(tool, input) ?? { ok: true, output: {} });
     },
     subscribe: (l) => ((send = l), () => undefined),
-    resync: () => Promise.resolve(),
+    resync: () => (calls.push({ tool: "resync", input: undefined }), Promise.resolve()),
     focus: () => Promise.resolve(),
     chat: () => Promise.resolve(),
   };
@@ -118,6 +118,25 @@ describe("Navi's first run", () => {
     expect(went).toEqual([{ id: "project", project: { machineId: "devbox", projectId: "navi" }, message: null }]);
   });
 
+  it("never stays on Creating…: it reads the projects again, then opens the Navi from the create call's reply", async () => {
+    const made = summary("Navi", { kind: "assistant", projectId: "navi" });
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const { calls } = await mount(<NaviScreen />, [STOREFRONT], (tool) => (tool === "navi_create" ? { ok: true, output: { navi: made } } : undefined));
+      act(() => button("Create your Navi").click());
+      await settle();
+      expect(button("Creating…").disabled).toBe(true);
+      // The hub's word that it added it never comes.
+      await act(() => vi.advanceTimersByTimeAsync(3_000));
+      expect(calls.filter((c) => c.tool === "resync")).toHaveLength(1);
+      expect(went).toEqual([]);
+      await act(() => vi.advanceTimersByTimeAsync(5_000));
+      expect(went).toEqual([{ id: "project", project: { machineId: "devbox", projectId: "navi" }, message: null }]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("shows the hub's reason when it can't make one", async () => {
     await mount(<NaviScreen />, [STOREFRONT], (tool) =>
       tool === "navi_create" ? { ok: false, error: { code: "unavailable", message: "No machine can hold a Navi yet.", fix: "Run `fleetd update` on devbox." } } : undefined,
@@ -126,7 +145,8 @@ describe("Navi's first run", () => {
     await settle();
     expect(host.querySelector("[role=alert]")?.textContent).toContain("No machine can hold a Navi yet.");
     expect(host.querySelector("[role=alert] code")?.textContent).toBe("fleetd update");
-    expect(button("Create your Navi").disabled).toBe(false);
+    // The one button tries again.
+    expect(button("Retry").disabled).toBe(false);
   });
 });
 

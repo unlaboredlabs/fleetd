@@ -62,7 +62,16 @@ export function NaviScreen() {
   );
 }
 
-/** The name box and the one button: an empty name makes a Navi called Navi. It opens once the hub has added it. */
+/** After a Navi is made, how long the app waits to hear of it before reading the project list again, and before it
+ * opens the Navi from the create call's own reply: the form never stays on "Creating…". */
+const REREAD_MS = 3_000;
+const OPEN_ANYWAY_MS = 8_000;
+
+/**
+ * The name box and the one button: an empty name makes a Navi called Navi. It opens once the hub has added it; if
+ * that word is slow, the project list is read again, and then it opens from the create call's reply. A create that
+ * failed says why, and the button tries again.
+ */
 function NewNavi({ first }: { first: boolean }) {
   const layer = useDataLayer();
   const [name, setName] = useState("");
@@ -71,8 +80,18 @@ function NewNavi({ first }: { first: boolean }) {
   const [made, setMade] = useState<ProjectSummary | null>(null);
   const arrived = useData((d) => made !== null && projectKey(made) in d.projects);
   useEffect(() => {
-    if (made !== null && arrived) open(made);
-  }, [made, arrived]);
+    if (made === null) return;
+    if (arrived) {
+      open(made);
+      return;
+    }
+    const reread = window.setTimeout(() => layer.resync(), REREAD_MS);
+    const anyway = window.setTimeout(() => open(made), OPEN_ANYWAY_MS);
+    return () => {
+      window.clearTimeout(reread);
+      window.clearTimeout(anyway);
+    };
+  }, [layer, made, arrived]);
   const problem = nameProblem(name);
   const create = async () => {
     if (busy || problem !== undefined) return;
@@ -86,7 +105,7 @@ function NewNavi({ first }: { first: boolean }) {
     }
     setMade(out.output.navi);
   };
-  const label = busy ? "Creating…" : first ? "Create your Navi" : "New Navi";
+  const label = busy ? "Creating…" : error !== null ? "Retry" : first ? "Create your Navi" : "New Navi";
   return (
     <form
       className={s.group}

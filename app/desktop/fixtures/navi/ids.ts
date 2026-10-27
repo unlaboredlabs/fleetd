@@ -5,3 +5,6 @@ export const TAXES = { machineId: "devbox", projectId: "daa6878e-1e3b-487d-8851-
 
 /** Ada's chat. */
 export const ADA_ROUTE = `#/project/${ADA.machineId}/${ADA.projectId}`;
+
+/** Taxes' chat: an archived Navi, still open. */
+export const TAXES_ROUTE = `#/project/${TAXES.machineId}/${TAXES.projectId}`;

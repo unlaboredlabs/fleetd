@@ -96,7 +96,8 @@ export function Shell() {
   const panel = useProjectPanel(screen);
   // A Navi's panel has its own views: the palette's Go to offers only those a panel for it shows.
   const panelKey = panelProject === null ? null : projectId(panelProject);
-  const panelNavi = projects?.find((p) => p.key === panelKey)?.project;
+  // From every project, archived Navis too: an archived Navi still open gets a Navi's views, never a code project's.
+  const panelNavi = useData((st) => (panelKey === null ? undefined : st.projects[panelKey]));
   const panelSections = sectionsFor(panelNavi !== undefined && isNavi(panelNavi), features);
   // The chat on screen is the one open, and the one that streams.
   const openKey = open === null ? null : projectId(open);

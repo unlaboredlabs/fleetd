@@ -21,7 +21,7 @@ import { STEER_WORDS } from "../fixtures/agents/steers.ts";
 import { SESSION } from "../fixtures/sessions/ids.ts";
 import { CHAT_SENDS } from "../fixtures/composer/sends.ts";
 import { OFFLINE_SENDS } from "../fixtures/offline/sends.ts";
-import { ADA_ROUTE } from "../fixtures/navi/ids.ts";
+import { ADA_ROUTE, TAXES_ROUTE } from "../fixtures/navi/ids.ts";
 
 /**
  * What the system answers when the app posts a notification: shown, or not supported. Nothing reaches the screen of
@@ -764,6 +764,20 @@ export const screens: readonly Screen[] = [
       const panel = page.getByRole("complementary", { name: "Project panel" });
       await panel.locator('[data-section="plan"][aria-selected="true"]').waitFor();
       await expect(panel.locator('[data-section="asked"]')).toHaveCount(0);
+    },
+  },
+  // An archived Navi still open: the palette offers its own views, never a code project's.
+  {
+    id: "palette",
+    route: TAXES_ROUTE,
+    fixtures: ["navi-two"],
+    variant: "archived-navi",
+    open: async (page) => {
+      await page.keyboard.press("ControlOrMeta+K");
+      await page.getByRole("combobox", { name: "Search" }).fill("Pull requests");
+      await expect(page.getByRole("option", { name: /Pull requests/u })).toHaveCount(0);
+      await page.getByRole("combobox", { name: "Search" }).fill("Checklist");
+      await expect(page.getByRole("option", { name: /Checklist/u }).first()).toBeVisible();
     },
   },
   // Resized from its edge with the keyboard: at its widest, and at its narrowest, where the tabs fold to icons.

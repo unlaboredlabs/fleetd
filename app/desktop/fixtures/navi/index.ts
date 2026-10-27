@@ -88,6 +88,12 @@ const two = (base: Fixture): Fixture => {
     { author: "human", text: "Remind me to renew the car insurance before the 14th." },
     { author: "lead", text: "Done: a reminder on the 10th at 09:00, and I'll check the renewal email when it comes." },
   ]);
+  // Taxes, archived: its chat stays, and it asked nobody for anything.
+  writeChat(f, TAXES, [
+    { author: "human", text: "File the quarterly estimate before the 15th." },
+    { author: "lead", text: "Paid on the 12th; the receipt is in my folder." },
+  ]);
+  f.answer("navi_asks", { navi: { ...TAXES } }, { navi: { ...TAXES }, asks: [], next: "This Navi has asked no other project for anything yet." });
   // Ada's to-do list, its panel's Plan.
   f.answer("checklist_get", { projectRef: { ...ADA } }, {
     projectRef: { ...ADA },
@@ -132,6 +138,7 @@ const oldHub = (base: Fixture): Fixture => {
   const f = Fixture.from(base, "navi-old-hub", "Navi: navi-two on a hub that doesn't share a Navi's asks with the app yet.");
   if (f.state.phase === "live") f.state = { ...f.state, features: (f.state.features ?? []).filter((x) => x !== "navi_asks") };
   f.drop("navi_asks", { navi: { ...ADA } });
+  f.drop("navi_asks", { navi: { ...TAXES } });
   return f;
 };
 
