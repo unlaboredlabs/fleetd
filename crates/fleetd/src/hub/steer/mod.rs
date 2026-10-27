@@ -102,6 +102,11 @@ fn resolve(hub: &Hub, by: &By, target: &SteerTarget) -> Result<Resolved, ToolErr
                 ))
                 .with_fix("Tell the project's lead in its chat (chat_send)."));
             }
+            // An archived project's lead takes no turn (W79); the send would be refused anyway, this says why first.
+            if let Some((holder, repo)) = crate::hub::repos::holder(&hub.db, r)? {
+                let (message, fix) = crate::hub::repos::archived_note(&holder, &repo);
+                return Err(invalid(message).with_fix(fix));
+            }
             let lead = hub.leads.records.lead_get(r)?.ok_or_else(|| {
                 invalid(format!(
                     "{workstream_id}'s project has no lead running yet."
