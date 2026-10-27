@@ -45,7 +45,11 @@ impl PortError {
 /// A task's thread launch (runtime mode full-access).
 #[derive(Clone, Debug)]
 pub struct LaunchRequest {
+    /// The node checkout it runs in: the project's own directory, or its repo's (W79).
     pub project_id: ProjectId,
+    /// The task's project and repo, whose setup commands a new worktree runs.
+    pub project_ref: ProjectRef,
+    pub repo_id: Option<fleetd_contracts::repos::RepoId>,
     pub prompt: String,
     pub profile: TaskProfile,
     pub title: String,
