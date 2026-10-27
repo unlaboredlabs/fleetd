@@ -101,44 +101,91 @@ pub struct Attachment {
     pub from: Option<String>,
 }
 
-/// The bytes a base64 string holds.
+/// `text` without the line breaks and spaces a wrapped base64 holds.
+fn compact(text: &str) -> String {
+    text.chars().filter(|c| !c.is_ascii_whitespace()).collect()
+}
+
+/// The bytes a base64 string holds, wrapped or not.
 pub fn base64_bytes(text: &str) -> u64 {
-    let text = text.trim_end();
+    let text = compact(text);
     let pad = text.chars().rev().take_while(|c| *c == '=').count() as u64;
     (text.len() as u64 * 3 / 4).saturating_sub(pad)
 }
 
-/// Whether `text` reads as base64, standard or url-safe: nothing else is a file's bytes.
+/// Whether `text` reads as base64, standard or url-safe, wrapped in lines or not: nothing else is a file's bytes.
 fn is_base64(text: &str) -> bool {
+    let text = compact(text);
     !text.is_empty()
         && text
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'+' | b'/' | b'-' | b'_' | b'='))
 }
 
-/// `input` as the card shows it: the bytes of each file xaq attaches (an `attachments` item with a `filename` and
-/// base64 `content_base64`) said by their size, which no one reads. Nothing else is changed, on any server.
-pub fn shown_input(kind: IntegrationKind, input: &Value) -> Value {
-    let mut shown = input.clone();
-    if kind != IntegrationKind::Google {
-        return shown;
+/// A value this long that decodes is a file's bytes; anything shorter, a key included, is read as text.
+const FILE_MIN: usize = 256;
+
+/// A real file's bytes, decoded: at least [`FILE_MIN`] characters of base64 in any of its four spellings.
+fn file_bytes(text: &str) -> Option<Vec<u8>> {
+    use base64::Engine;
+    use base64::engine::general_purpose::{STANDARD, STANDARD_NO_PAD, URL_SAFE, URL_SAFE_NO_PAD};
+    let text = compact(text);
+    if text.len() < FILE_MIN {
+        return None;
     }
-    let Some(items) = shown.get_mut("attachments").and_then(Value::as_array_mut) else {
-        return shown;
+    [STANDARD, STANDARD_NO_PAD, URL_SAFE, URL_SAFE_NO_PAD]
+        .iter()
+        .find_map(|e| e.decode(&text).ok())
+}
+
+/// `input` with the `content_base64` of each file xaq attaches (an `attachments` item with a `filename`) replaced by
+/// what `swap` returns for it; nothing else is changed, on any server.
+fn with_files(
+    kind: IntegrationKind,
+    input: &Value,
+    mut swap: impl FnMut(&str) -> Option<Value>,
+) -> Value {
+    let mut out = input.clone();
+    if kind != IntegrationKind::Google {
+        return out;
+    }
+    let Some(items) = out.get_mut("attachments").and_then(Value::as_array_mut) else {
+        return out;
     };
     for item in items.iter_mut().filter_map(Value::as_object_mut) {
-        let bytes = match item.get("content_base64") {
-            Some(Value::String(b)) if item.contains_key("filename") && is_base64(b) => {
-                base64_bytes(b)
-            }
-            _ => continue,
+        let swapped = match item.get("content_base64") {
+            Some(Value::String(b)) if item.contains_key("filename") => swap(b),
+            _ => None,
         };
-        item.insert(
-            "content_base64".into(),
-            Value::String(format!("[the file's {bytes} bytes]")),
-        );
+        if let Some(v) = swapped {
+            item.insert("content_base64".into(), v);
+        }
     }
-    shown
+    out
+}
+
+/// `input` as the card shows it: the bytes of each file xaq attaches said by their size, which no one reads.
+pub fn shown_input(kind: IntegrationKind, input: &Value) -> Value {
+    with_files(kind, input, |b| {
+        is_base64(b).then(|| Value::String(format!("[the file's {} bytes]", base64_bytes(b))))
+    })
+}
+
+/// Whether a call would send or store what looks like a credential: in its text, and in the decoded contents of the
+/// files xaq attaches. A file's bytes are read decoded, never as base64 text, whose random letters could pass for a
+/// key's shape; a short value is read as text, so a key put where bytes go is still found.
+fn sends_credential(kind: IntegrationKind, input: &Value) -> bool {
+    let mut files: Vec<Vec<u8>> = Vec::new();
+    let text = with_files(kind, input, |b| {
+        let bytes = file_bytes(b)?;
+        files.push(bytes);
+        Some(Value::String("[file]".into()))
+    });
+    holds_credential(&text)
+        || files.iter().any(|f| {
+            let t = String::from_utf8_lossy(f);
+            crate::hub::redact::redact(&t) != t
+        })
 }
 
 /// A tool name's words, lower case: `create_account`, `createAccount` and `API-create-account` are all
@@ -307,8 +354,7 @@ pub fn verdict(tool_name: &str, input: &Value, servers: &[McpServer]) -> Option<
         Rule::Read => Verdict::Allow,
         Rule::Blocked(n) => Verdict::Block(n.why()),
         Rule::Ask(action) => {
-            // On the raw input: a file's real bytes match no credential's shape, and nothing else is spared.
-            if holds_credential(input) {
+            if sends_credential(kind, input) {
                 return Some(Verdict::Block(Never::Credential.why()));
             }
             let shown = shown_input(kind, input);

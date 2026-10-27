@@ -480,3 +480,54 @@ fn only_xaq_s_file_bytes_are_said_by_size_and_a_credential_anywhere_is_still_ref
     );
     assert!(q.input.contains("\"QUJD\""));
 }
+
+#[test]
+fn wrapped_and_large_attachments_are_files_and_a_key_inside_one_is_still_found() {
+    use base64::Engine;
+    let b64 = |bytes: &[u8]| base64::engine::general_purpose::STANDARD.encode(bytes);
+    // A large file whose base64 happens to hold a key's shape (an AWS key id between two `+`): a file, read decoded,
+    // so it asks rather than being refused as a credential.
+    let lookalike = format!(
+        "{}+AKIAQQQQQQQQQQQQQQQQ+AA{}",
+        b64(&[7u8; 600]),
+        b64(&[9u8; 600])
+    );
+    assert_ne!(crate::hub::redact::redact(&lookalike), lookalike);
+    assert_eq!(
+        ask(
+            "mcp__google__send_message",
+            json!({ "to": "a@example.com", "subject": "s", "body": "b",
+                "attachments": [{ "content_base64": lookalike, "filename": "photo.jpg" }] }),
+        )
+        .attachments
+        .len(),
+        1
+    );
+    // Wrapped at 76 characters, as mail tools write it: still a file, said by its size.
+    let wrapped = b64(&[2u8; 1200])
+        .as_bytes()
+        .chunks(76)
+        .map(|c| std::str::from_utf8(c).unwrap())
+        .collect::<Vec<_>>()
+        .join("\r\n");
+    let p = ask(
+        "mcp__google__send_message",
+        json!({ "to": "a@example.com", "subject": "s", "body": "b",
+            "attachments": [{ "content_base64": wrapped, "filename": "scan.pdf" }] }),
+    );
+    assert!(p.input.contains("[the file's 1200 bytes]"), "{}", p.input);
+    // A text file that holds a key: found in its decoded contents, and refused.
+    let key_file = b64(format!(
+        "notes\n{}\ntoken = ghp_abcdefghijklmnopqrstuvwxyz0123\n",
+        "x".repeat(400)
+    )
+    .as_bytes());
+    assert_eq!(
+        blocked(
+            "mcp__google__send_message",
+            json!({ "to": "a@example.com", "subject": "s", "body": "b",
+                "attachments": [{ "content_base64": key_file, "filename": "notes.txt" }] })
+        ),
+        Never::Credential.why()
+    );
+}
