@@ -94,11 +94,11 @@ it("says why it is offline and what to do about it", () => {
   expect(document.querySelector("[aria-label='Hub'][role='dialog'] code")?.textContent).toBe("fleetd doctor");
 });
 
-it("switches hub from Settings' Hub section, never #/onboarding, which a connected app leaves at once", () => {
+it("changes hubs from Settings › Hubs, never #/onboarding, which a connected app leaves at once", () => {
   const buttons = () => [...document.querySelectorAll<HTMLButtonElement>("[aria-label='Hub'][role='dialog'] button")];
   open({ phase: "live", hub: HUB, protocol: 1 });
   act(() => buttons().find((b) => b.textContent === "Hub settings")?.click());
-  expect(parseHash(window.location.hash)).toMatchObject({ id: "settings", tab: "general" });
+  expect(parseHash(window.location.hash)).toMatchObject({ id: "settings", tab: "hubs" });
 
   open({ phase: "unpaired" });
   act(() => buttons().find((b) => b.textContent === "Pair with a hub")?.click());

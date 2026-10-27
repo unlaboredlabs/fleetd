@@ -150,6 +150,9 @@ export const fixtures = [
   "prs-heavy",
   // UX-1: the sidebar's reasons and a new reply (fixtures/sidebar); one agent's live work (fixtures/agents).
   "sidebar-reasons",
+  // Several hubs (docs/design/hubs.md): Personal and Acme in one sidebar, and Acme unreachable beside Personal.
+  "sidebar-hubs",
+  "sidebar-hubs-offline",
   "agents-work",
   // ...with its steers that ended otherwise: never replied to, withdrawn, failed (fixtures/agents).
   "agents-steers",
@@ -611,6 +614,28 @@ export const screens: readonly Screen[] = [
   { id: "shell", route: "#/status", fixtures: ["sidebar-reasons"], variant: "sidebar" },
   // Administration's entry in the sidebar: there for the hub's owner, and not for a member.
   { id: "shell", route: "#/status", fixtures: ["admin-owner", "admin-member"], variant: "admin-entry" },
+  // Several hubs: each hub's projects under its name, Status a section per hub, and each hub's connection on its own
+  // row; Acme offline waits on its own while Personal works on.
+  { id: "status.fleet", route: "#/status", fixtures: ["sidebar-hubs", "sidebar-hubs-offline"], variant: "hubs" },
+  {
+    id: "shell",
+    route: "#/status",
+    fixtures: ["sidebar-hubs"],
+    variant: "hub-collapsed",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Acme", exact: true }).click();
+      // Collapsed, its name says how many of its projects need you.
+      await expect(page.getByRole("button", { name: /^Acme\b.*need you$/u, expanded: false })).toBeVisible();
+    },
+  },
+  {
+    id: "chat",
+    route: "#/project/buildbox/558dc655-fbca-48f0-abf1-6977a0709ea9?at=h2",
+    fixtures: ["sidebar-hubs"],
+    variant: "other-hub",
+  },
+  { id: "settings.hubs", route: "#/settings/hubs", fixtures: ["sidebar-hubs", "sidebar-hubs-offline", "typical"] },
+  { id: "onboarding", route: "#/onboarding?add", fixtures: ["sidebar-hubs"], variant: "add-hub" },
   // Hidden with its toggle in a wide window: the top row runs the full width, after the traffic lights.
   {
     id: "shell",

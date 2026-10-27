@@ -2,7 +2,7 @@
 // (what a lead waits on you for), Status's rows (what is blocked, what is red on main) and what you last saw in each chat. Offline, the
 // projects held from before, with their marks as last known (the open requests the store keeps).
 import { useEffect, useMemo } from "react";
-import { useData, useToolQuery } from "../../src/data/react";
+import { hubKey, useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import { markSeen, useSeen } from "../../src/data/seen";
 import { selectMachines, selectShownProjects } from "../../src/data/selectors";
 import { sidebarOrder } from "../navi/model";
@@ -19,7 +19,13 @@ export const useSidebarProjects = (open: ProjectKey | null): ReadonlyArray<Sideb
   const held = useData((s) => (s.fresh ? undefined : s.openRequests));
   const requests = read ?? held;
   const status = useToolQuery("status_get", ALL).data?.rows;
-  const seen = useSeen();
+  const { hub } = useDataLayer();
+  const allSeen = useSeen();
+  // This hub's marks, by project key: another hub's are kept under its id (hubKey).
+  const seen = useMemo(
+    () => Object.fromEntries((rows ?? []).flatMap((r) => (allSeen[hubKey(hub, r.key)] === undefined ? [] : [[r.key, allSeen[hubKey(hub, r.key)] ?? 0]]))),
+    [rows, allSeen, hub],
+  );
   const blocked = useMemo(
     () => (status === undefined ? undefined : new Map(status.filter((r) => r.state === "blocked").map((r) => [projectId(r.projectRef), r.blockedReason]))),
     [status],
@@ -35,10 +41,10 @@ export const useSidebarProjects = (open: ProjectKey | null): ReadonlyArray<Sideb
     const marks: Record<string, number> = {};
     for (const r of rows) {
       if (r.lastSeq === undefined) continue;
-      if (r.key === openKey || seen[r.key] === undefined) marks[r.key] = r.lastSeq;
+      if (r.key === openKey || seen[r.key] === undefined) marks[hubKey(hub, r.key)] = r.lastSeq;
     }
     markSeen(marks);
-  }, [rows, openKey, seen]);
+  }, [rows, openKey, seen, hub]);
   return useMemo(() => {
     const shown = toSidebar(rows, { requests, blocked, warnings, seen, open });
     return shown === undefined ? undefined : sidebarOrder(shown);

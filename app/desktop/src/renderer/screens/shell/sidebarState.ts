@@ -3,6 +3,8 @@
 // as you last left it.
 import { useCallback, useEffect, useState } from "react";
 import { isPanelTab, type PanelTab } from "../panel/tabs";
+import type { ProjectSummary } from "../../../shared/contracts";
+import { isNavi } from "../navi/model";
 
 export const NARROW_PX = 1000;
 
@@ -97,3 +99,42 @@ export function usePanel(): PanelState {
   );
   return { hidden: sidebarHidden(state), tab, toggle, show };
 }
+
+const COLLAPSED = "fleetd.collapsedHubs";
+
+const readCollapsed = (): ReadonlySet<string> => {
+  try {
+    const raw: unknown = JSON.parse(window.localStorage.getItem(COLLAPSED) ?? "[]");
+    return new Set(Array.isArray(raw) ? raw.filter((x): x is string => typeof x === "string") : []);
+  } catch {
+    return new Set();
+  }
+};
+
+/** The sidebar's hub groups you collapsed, by hub id, kept across launches. */
+export function useCollapsedHubs(): readonly [ReadonlySet<string>, (hub: string) => void] {
+  const [collapsed, setCollapsed] = useState(readCollapsed);
+  const toggle = useCallback((hub: string) => {
+    setCollapsed((was) => {
+      const next = new Set(was);
+      if (!next.delete(hub)) next.add(hub);
+      try {
+        window.localStorage.setItem(COLLAPSED, JSON.stringify([...next]));
+      } catch {
+        // Kept for this window only.
+      }
+      return next;
+    });
+  }, []);
+  return [collapsed, toggle] as const;
+}
+
+/**
+ * The sidebar's rows on show, in order: with several hubs, a collapsed group's projects are hidden (its Navis stay, in
+ * the Navi section above the groups). ⌘1–9 count these, in the sidebar's numbers and in the commands alike.
+ */
+export const shownRows = <P extends { readonly hub: string; readonly project: Pick<ProjectSummary, "kind"> }>(
+  rows: ReadonlyArray<P>,
+  collapsed: ReadonlySet<string>,
+  several: boolean,
+): ReadonlyArray<P> => (several ? rows.filter((p) => isNavi(p.project) || !collapsed.has(p.hub)) : rows);

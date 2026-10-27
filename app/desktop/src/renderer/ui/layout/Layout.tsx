@@ -148,12 +148,13 @@ export function Sidebar({
 }
 
 /** A titled group of sidebar rows, with an optional action (a + button) on the title line. */
-export function SidebarSection(props: { title?: string; action?: ReactNode; children: ReactNode }) {
+/** `head` stands in for the title when it is more than words (a group that collapses); `label` names the section. */
+export function SidebarSection(props: { title?: string; head?: ReactNode; label?: string; action?: ReactNode; children: ReactNode }) {
   return (
-    <section className={s.sidebarSection}>
-      {props.title || props.action ? (
+    <section className={s.sidebarSection} aria-label={props.label}>
+      {props.title || props.head || props.action ? (
         <div className={s.sidebarSectionHead}>
-          <span className={s.sidebarSectionTitle}>{props.title ? <Truncate size="xs" tone="quiet">{props.title}</Truncate> : null}</span>
+          <span className={s.sidebarSectionTitle}>{props.head ?? (props.title ? <Truncate size="xs" tone="quiet">{props.title}</Truncate> : null)}</span>
           {props.action}
         </div>
       ) : null}

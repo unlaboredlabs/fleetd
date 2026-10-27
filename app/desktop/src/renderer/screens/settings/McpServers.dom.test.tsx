@@ -60,7 +60,7 @@ beforeEach(() => {
   vi.stubGlobal("fleetd", {
     platform: "linux",
     secret: {
-      mcpServer: (request: McpServerRequest): Promise<CallOutcome> => {
+      mcpServer: (_hub: string, request: McpServerRequest): Promise<CallOutcome> => {
         saved.push(request);
         return Promise.resolve({ ok: true, output: { server: github, missingOn: ["laptop"] } });
       },

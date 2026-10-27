@@ -155,7 +155,7 @@ function Live({ session: x, windowed }: { session: BrowserSession; windowed: boo
   );
   const popOut = () => {
     if (!yours) control("human");
-    showWindow(x.projectRef, x.id);
+    showWindow(x.projectRef, x.id, layer.hub);
   };
   const popOutButton = windowed ? null : (
     <Tooltip content="Take over in its own window">
@@ -204,7 +204,7 @@ function Live({ session: x, windowed }: { session: BrowserSession; windowed: boo
             </span>
           </span>
           {away ? (
-            <Button variant="secondary" size="sm" icon={<AppWindow aria-hidden />} onClick={() => showWindow(x.projectRef, x.id)}>
+            <Button variant="secondary" size="sm" icon={<AppWindow aria-hidden />} onClick={() => showWindow(x.projectRef, x.id, layer.hub)}>
               Show its window
             </Button>
           ) : yours ? (

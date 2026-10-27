@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { type FixtureFile, FixtureSource, fixtureRequest } from "./fixture";
+import { HUB_COLORS } from "../../shared/hubs";
+import { FIXTURE_HUB_COLORS, type FixtureFile, FixtureSource, fixtureRequest } from "./fixture";
 
 describe("fixtureRequest", () => {
   it("takes FLEETD_FIXTURE in a development build", () => {
@@ -81,5 +82,11 @@ describe("FixtureSource chat_send", () => {
     );
     const out = await source.call({ tool: "chat_send", input: { text: "hi", clientRequestId: "c-1" } });
     expect(out).toEqual({ ok: true, output: { message: { ...message, clientRequestId: "key_fx7qa2m4:c-1" } } });
+  });
+});
+
+describe("several hubs in a fixture", () => {
+  it("knows the colours the app does", () => {
+    expect(FIXTURE_HUB_COLORS).toEqual(HUB_COLORS);
   });
 });

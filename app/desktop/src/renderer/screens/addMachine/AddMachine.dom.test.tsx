@@ -26,10 +26,10 @@ Object.assign(window, {
     platform: "linux",
     system: { hostName: () => Promise.resolve(hostName) },
     machines: {
-      joinHere: (id: string) => joinHere(id),
+      joinHere: (_hub: string, id: string) => joinHere(id),
       joinHereState: () => Promise.resolve(null),
       thisComputer: () => Promise.resolve(computer),
-      onJoinHere: (l: (j: JoinHere) => void) => (joinListeners.add(l), () => joinListeners.delete(l)),
+      onJoinHere: (_hub: string, l: (j: JoinHere) => void) => (joinListeners.add(l), () => joinListeners.delete(l)),
     },
   },
 });

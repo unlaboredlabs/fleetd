@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo } from "react";
 import { Boundary } from "../../src/Boundary";
-import { useDataLayer } from "../../src/data/react";
+import { useHubSet } from "../../src/data/react";
 import { useTheme } from "../../ui";
 import { defaultCommands, themeCommands } from "./defaults";
 import { installKeymap } from "./keymap";
@@ -15,8 +15,8 @@ import { ShortcutsSheet } from "./ShortcutsSheet";
 
 export function PaletteHost() {
   const overlay = useOverlay();
-  const { store } = useDataLayer();
-  useSource(useMemo(() => projectSource(store), [store]));
+  const hubs = useHubSet();
+  useSource(useMemo(() => (hubs === undefined ? null : projectSource(hubs)), [hubs]));
   const { mode, setMode } = useTheme();
   useCommands(themeCommands(mode, setMode), []);
 

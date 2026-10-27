@@ -9,7 +9,7 @@ import { Settings } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BubbleActionsContext, type BubbleActions, type ReplyTarget } from "./actions";
 import { Button, FrameTitle, IdChip, StatusChip, Text } from "../../ui";
-import { useData, useDataLayer } from "../../src/data/react";
+import { hubKey, useData, useDataLayer } from "../../src/data/react";
 import { selectNeedsYou } from "../../src/data/selectors";
 import { seenOf } from "../../src/data/seen";
 import { projectKey } from "../../src/data/store";
@@ -50,7 +50,8 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
   // and its newest seq once known: only messages already there then are new, never those arriving while it's open.
   const key = projectKey(project);
   const lastSeq = useData((d) => d.chatStates[key]?.lastSeq);
-  const [opened, setOpened] = useState(() => ({ seen: seenOf(key), last: lastSeq }));
+  const { hub } = useDataLayer();
+  const [opened, setOpened] = useState(() => ({ seen: seenOf(hubKey(hub, key)), last: lastSeq }));
   if (opened.last === undefined && lastSeq !== undefined) setOpened({ ...opened, last: lastSeq });
   const seenSeq = opened.seen !== undefined && opened.last !== undefined && opened.last > opened.seen ? opened.seen : undefined;
   // What comes in from here on enters with motion; what the chat opens with, and what a reconnect reads back, doesn't.

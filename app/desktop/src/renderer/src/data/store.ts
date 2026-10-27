@@ -65,6 +65,8 @@ export interface LiveState {
 }
 
 export interface DataState {
+  /** Which store this state is of, kept by every change: selectors memoize per store (selectors.ts). */
+  readonly owner?: object;
   readonly hub: HubState;
   /**
    * What newer the paired hub serves, as its last live state said: kept while the link retries, so a view it serves
@@ -127,6 +129,7 @@ const TEXT_TAIL = 2000;
 const emptyLive: LiveState = { lanes: {}, ended: {}, text: {}, machines: {}, stale: true };
 
 export const initialState = (): DataState => ({
+  owner: {},
   hub: { phase: "connecting", hub: "", attempt: 0 },
   features: [],
   fresh: false,
