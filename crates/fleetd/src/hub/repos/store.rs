@@ -41,12 +41,17 @@ pub fn of(db: &Connection, project: &ProjectRef) -> rusqlite::Result<Vec<Project
     .collect()
 }
 
+/// The repo's `n`: `R12` → 12.
+pub fn number(repo_id: &RepoId) -> Option<i64> {
+    repo_id.as_str()[1..].parse().ok()
+}
+
 /// The repo and the project it is in.
 pub fn get(
     db: &Connection,
     repo_id: &RepoId,
 ) -> rusqlite::Result<Option<(ProjectRef, ProjectRepo)>> {
-    let Ok(n) = repo_id.as_str()[1..].parse::<i64>() else {
+    let Some(n) = number(repo_id) else {
         return Ok(None);
     };
     db.prepare_cached(&format!("SELECT {COLUMNS} FROM repos WHERE n = ?"))?
