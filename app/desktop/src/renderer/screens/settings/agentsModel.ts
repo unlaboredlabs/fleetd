@@ -56,9 +56,6 @@ export function sourceLine(slots: SlotState, a: ProjectAgents): string {
   return fleet ? "Follows the default: the whole fleet's cap." : "Follows the default: its machine's cap, within the whole fleet's.";
 }
 
-/** The header control's words: "agents 6 / 12", and "· 2 queued" when some wait their turn. */
-export const agentsLabel = (a: ProjectAgents): string => `agents ${a.running} / ${a.limit}${a.queued > 0 ? ` · ${a.queued} queued` : ""}`;
-
 /**
  * Said under a project's slider moved past its machine's cap: the machine holds it there. Null within it. `machineId`
  * names the machine.

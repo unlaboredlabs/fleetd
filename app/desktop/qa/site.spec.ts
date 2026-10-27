@@ -7,8 +7,9 @@ import { siteShots } from "./site.ts";
 
 const repo = path.resolve(desktopDir, "../..");
 
-const hideByClass = async (page: Page, selector: string, text: string, how: "display: none" | "visibility: hidden") => {
+const hideByClass = async (page: Page, selector: string, text: string, how: "display: none" | "visibility: hidden", optional = false) => {
   const target = page.locator(selector, { hasText: text }).first();
+  if (optional && (await target.count()) === 0) return;
   await target.waitFor({ state: "attached", timeout: 10_000 });
   const rule = await target.evaluate((el) => [...el.classList].map((c) => `.${CSS.escape(c)}`).join(""));
   if (rule === "") throw new Error(`"${text}" has no class to hide it by`);
@@ -31,9 +32,9 @@ for (const shot of siteShots.filter((s) => only === undefined || only.includes(s
       // for a live hub inside the app; on the site the caption says what the picture is. Hidden by a stylesheet rule on
       // each one's class, so a re-render can't bring it back; found by CSS, since an open sheet hides the page from the
       // accessibility tree.
-      // The banner takes its row with it; the sidebar chip keeps its place.
+      // The banner takes its row with it; the sidebar chip keeps its place (Settings' own sidebar has none).
       await hideByClass(page, '[role="status"]', "Sample data, not connected", "display: none");
-      await hideByClass(page, "[data-hub-status]", "Sample data", "visibility: hidden");
+      await hideByClass(page, "[data-hub-status]", "Sample data", "visibility: hidden", shot.screen.startsWith("settings"));
       await settle(page);
       await page.screenshot({ path: path.join(repo, shot.file), animations: "disabled", caret: "hide" });
     } finally {

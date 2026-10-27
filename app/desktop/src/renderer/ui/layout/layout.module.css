@@ -17,17 +17,18 @@
     "top"
     "main";
 }
-/* A panel on the right: the top row runs over it too. */
+/* A panel on the right, from the window's top as the sidebar is: the top row stops at its edge, and the panel's own
+   first row (its tabs) sits beside it, so the right side has one header row, not two. */
 .withAside {
   grid-template-columns: var(--sidebar-w) minmax(0, 1fr) auto;
   grid-template-areas:
-    "side top top"
+    "side top aside"
     "side main aside";
 }
 .noSidebar.withAside {
   grid-template-columns: minmax(0, 1fr) auto;
   grid-template-areas:
-    "top top"
+    "top aside"
     "main aside";
 }
 .frame > .topBar {

@@ -90,6 +90,8 @@ export const fixtures = [
   "status-rows",
   "status-stale",
   "status-skeleton",
+  // status-rows with search blocked by a usage pause on buildbox: the top bar's reason with Resume (fixtures/topbar).
+  "topbar-paused",
   // E3b's shared stress fixture; the time inspector fills it with a ~15k-span order (fixtures/time).
   "time-heavy",
   // The Factory (fixtures/factory): a repo whose reads fail beside one on a plain git host, and a range with no merges.
@@ -449,7 +451,7 @@ export const screens: readonly Screen[] = [
       await expect(page.getByRole("button", { name: "Approve", exact: true })).toBeInViewport();
     },
   },
-  // A red main is a warning above the box, in the hub's words, not a block (checkout's `ios sessions`).
+  // A red main is a warning in the top bar, in the hub's words, not a block (checkout's `ios sessions`).
   {
     id: "chat",
     route: "#/project/devbox/6e8e753c-fe9a-4b79-aec3-5812d498c197",
@@ -458,6 +460,18 @@ export const screens: readonly Screen[] = [
     open: async (page) => {
       await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
       await expect(page.locator('[data-attention="warning"]')).toHaveText("ios sessions is red on main, fix in progress");
+    },
+  },
+  // A project blocked by its machine's usage pause: the reason in the top bar, with Resume (search, on buildbox).
+  {
+    id: "chat",
+    route: "#/project/buildbox/558dc655-fbca-48f0-abf1-6977a0709ea9",
+    fixtures: ["topbar-paused"],
+    variant: "usage-paused",
+    open: async (page) => {
+      const line = page.locator("header").locator('[data-attention="blocked"]');
+      await expect(line).toContainText("Blocked: paused until Sun 23:40 UTC");
+      await expect(line.getByRole("button", { name: /^Resume/u })).toBeVisible();
     },
   },
   // An empty chat's starter fills the box (never sends) and gives it the cursor.
@@ -973,42 +987,38 @@ export const screens: readonly Screen[] = [
     fixtures: ["chat-secret", "chat-gated", "long-text"],
     variant: "inline-chat",
   },
-  // A9 (F9): Max agents in the chat header, at the cap with work queued (Settings has it under settings.agents).
+  // A9 (F9): Max agents beside the panel's working count ("6 working · max 12"), a link to the project's slider in
+  // Settings, which it opens focused (Settings has the slider itself under settings.agents).
   {
-    id: "chat",
-    route: CHAT,
-    fixtures: ["settings-agents", "long-text"],
-    // The header control's accessible name is "Max agents: <running> running of <max>[, <n> waiting]".
-    open: (page) => page.getByRole("button", { name: /^Max agents: \d+ running of \d+/u }).click(),
-    variant: "max-agents",
-  },
-  // The header's state word and its agents control on one line: the same height, and their text on one baseline.
-  {
-    id: "chat",
-    route: CHAT,
+    id: "settings.agents",
+    route: `${CHAT}/agents`,
     fixtures: ["settings-agents"],
-    variant: "header-line",
+    variant: "from-panel",
     open: async (page) => {
-      const control = page.getByRole("button", { name: /^Max agents: \d+ running of \d+/u });
-      await control.waitFor();
-      const line = await control.evaluate((button) => {
-        const state = button.previousElementSibling;
-        if (state === null) return null;
-        // An empty inline-block sits on the baseline of the text it is put in.
-        const baseline = (el: Element) => {
-          const text = [...el.querySelectorAll("*")].reverse().find((x) => [...x.childNodes].some((n) => n.nodeType === Node.TEXT_NODE)) ?? el;
-          const probe = document.createElement("span");
-          probe.style.cssText = "display:inline-block;width:0;height:0";
-          text.append(probe);
-          const y = probe.getBoundingClientRect().top;
-          probe.remove();
-          return y;
-        };
-        const box = (el: Element) => ({ top: el.getBoundingClientRect().top, height: el.getBoundingClientRect().height, baseline: baseline(el) });
-        return { state: box(state), control: box(button) };
+      await page.getByRole("link", { name: /^Max agents: \d+$/u }).click();
+      await expect(page.getByRole("slider", { name: "storefront" })).toBeFocused();
+    },
+  },
+  // W89: one header row. The panel runs from the window's top, its tabs beside the chat's title: the two rows share a
+  // top and a height, and the bar carries no state word and no agents counter.
+  {
+    id: "chat",
+    route: `${CHAT}/agents`,
+    fixtures: ["typical"],
+    variant: "one-header-row",
+    open: async (page) => {
+      const tabs = page.locator("#project-panel").getByRole("tablist").first();
+      await tabs.waitFor();
+      const rows = await tabs.evaluate((list) => {
+        const bar = document.querySelector("header");
+        const head = list.parentElement;
+        if (bar === null || head === null) return null;
+        const box = (el: Element) => ({ top: el.getBoundingClientRect().top, height: el.getBoundingClientRect().height });
+        return { bar: box(bar), panel: box(head) };
       });
-      expect(line).not.toBeNull();
-      expect(line?.state).toEqual(line?.control);
+      expect(rows).not.toBeNull();
+      expect(rows?.panel).toEqual(rows?.bar);
+      await expect(page.getByRole("button", { name: /^Max agents/u })).toHaveCount(0);
     },
   },
   // C1 and W38: updates. The sidebar's line above the connection for each state that has one, and the sheet the
@@ -1199,19 +1209,6 @@ export const screens: readonly Screen[] = [
     },
   },
   { id: "prs.detail", route: PR(13), fixtures: ["prs-heavy"], variant: "changes", open: openChanges },
-  // ...lowered from the header, applied once the keys rest, with Undo.
-  {
-    id: "chat",
-    route: CHAT,
-    fixtures: ["settings-agents"],
-    variant: "max-agents-applied",
-    open: async (page) => {
-      await page.getByRole("button", { name: /^Max agents: \d+ running of \d+/u }).click();
-      await page.getByRole("slider").focus();
-      for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowLeft");
-      await page.getByRole("button", { name: "Undo" }).waitFor();
-    },
-  },
   // F1: the frame (top bar, sidebar of projects) around #/, which opens the last project's chat (the first one on a
   // fresh install), and the connection states it shows. With no projects, #/ offers to add one (home.empty).
   {

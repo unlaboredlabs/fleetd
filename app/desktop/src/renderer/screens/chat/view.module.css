@@ -606,17 +606,24 @@
   margin-top: var(--space-1);
 }
 
-/* The line above the box while the lead waits on you. */
+/* What needs you, in the top bar after the title: one row, its words giving way before Show or Resume. */
 .attention {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: var(--space-2);
+  flex: 0 1000 auto;
   min-width: 0;
-  padding: 0 var(--space-1) var(--space-1-5);
+  margin-inline-start: var(--space-2);
 }
-.attention > :first-child {
+.attention > * {
   flex: none;
-  align-self: center;
+}
+.attention > .attentionWords {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 /* An empty chat: what to ask, just above the box. */

@@ -4,7 +4,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { AgentRow } from "../../../shared/contracts";
+import type { AgentRow, SlotState } from "../../../shared/contracts";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { AT, card, live, project, snapshot } from "../../src/data/fixtures.test-util";
@@ -105,7 +105,7 @@ function Harness() {
   );
 }
 
-const mount = async () => {
+const mount = async (slots?: SlotState) => {
   let send: Parameters<HubApi["subscribe"]>[0] = () => undefined;
   const hub: HubApi = {
     call: (tool) => Promise.resolve({ ok: true, output: answer(tool) }),
@@ -126,7 +126,8 @@ const mount = async () => {
   act(render);
   act(() => {
     send(live());
-    send(snapshot(1));
+    const snap = snapshot(1);
+    send(slots === undefined || snap.t !== "snapshot" ? snap : { ...snap, snapshot: { ...snap.snapshot, slots } });
   });
   await settle();
   return async (hash: string) => {
@@ -148,6 +149,13 @@ it("lists the project's agents under their orders' titles, the order waiting on 
   expect(list?.textContent).toContain("#12 · in CI");
   expect(list?.textContent).toContain("1 needs you");
   expect(list?.querySelector("[role='img'][aria-label='needs you']")).not.toBeNull();
+});
+
+it("says the project's Max agents beside its working count, a link to its slider in Settings", async () => {
+  await mount({ cap: 20, used: 2, queued: 0, perProject: [{ projectRef: project, maxAgents: 6, own: true, running: 2, queued: 0 }] });
+  const max = host.querySelector<HTMLAnchorElement>("[data-screen='agents'] a[aria-label^='Max agents']");
+  expect(max?.parentElement?.textContent).toBe("2 working · max 6");
+  expect(max?.getAttribute("href")).toBe("#/settings/agents?for=devbox/storefront");
 });
 
 it("shows no internal ids in its rows: a writer's branch by its slug, the full branch in its tooltip", async () => {
