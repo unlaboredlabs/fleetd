@@ -14,12 +14,12 @@ import { projectKey } from "../../src/data/store";
 import { Boundary } from "../../src/Boundary";
 import { LiveStrip, useNow } from "../live";
 import { AttentionLine } from "./Attention";
-import { lookingAt, waitingOn, type LookAt } from "./attentionModel";
+import { lookingAt, sameLooks, waitingOn, type LookAt } from "./attentionModel";
 import { leadTurnSince, leadTurnUntil } from "./activity";
 import { ChatList } from "./ChatList";
 import { useChatData } from "./data";
 import { EmptyChat } from "./EmptyChat";
-import { arrivalsOf, chatRows, heldLabel, rowIndexOf, type Arrivals } from "./model";
+import { arrivalsOf, chatRows, heldLabel, keepRows, rowIndexOf, type Arrivals, type Row } from "./model";
 import { ChatComposer } from "./Composer";
 import type { ProjectRef } from "./slots";
 import { useAsOfWords } from "../shell/offline";
@@ -57,7 +57,7 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
     // eslint-disable-next-line react-hooks/purity
     setArrived(arrivalsOf(arrived, view.items, live, Date.now()));
   }
-  const rows = useMemo(
+  const built = useMemo(
     () =>
       view === undefined
         ? undefined
@@ -76,6 +76,11 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
           }),
     [view, data.leadWorking, workedSince, seenSeq],
   );
+  // Rows that say what they said keep their object, so a streamed word draws its own row and not the whole list.
+  const [kept, setKept] = useState<{ from?: readonly Row[] | undefined; rows?: readonly Row[] | undefined }>({});
+  const next = kept.from === built ? kept : { from: built, rows: built === undefined ? undefined : keepRows(kept.rows, built) };
+  if (next !== kept) setKept(next);
+  const rows = next.rows;
   const items = view?.items;
   const older = view?.hasOlder === true;
   const openItems = useData((d) => d.chatStates[key]?.openItems);
@@ -126,7 +131,11 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
   // Asked of the hub once each: a message in view says it is seen on every observer step until it re-renders.
   const asked = useRef(new Set<string>());
   const minute = useNow(nudges !== undefined, 60_000);
-  const looks = useMemo(() => lookingAt(nudges, items, cleared, minute), [nudges, items, cleared, minute]);
+  const read = useMemo(() => lookingAt(nudges, items, cleared, minute), [nudges, items, cleared, minute]);
+  // The same list while it says the same: a streamed word changes `items`, and a new list would make new bubble
+  // actions and draw every bubble again, on every word.
+  const [looks, setLooks] = useState(read);
+  if (looks !== read && !sameLooks(looks, read)) setLooks(read);
   const lookAt = useMemo(() => new Set(looks.map((l) => l.id)), [looks]);
   // By the flag's key, not its message: one the lead flags again after you saw it shows again.
   const clear = useCallback(

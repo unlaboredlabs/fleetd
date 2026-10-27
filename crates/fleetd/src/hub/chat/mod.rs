@@ -563,6 +563,36 @@ impl Chat {
         })
     }
 
+    /// Changes the stored message `id` where it is, read and written in one transaction, so what another writer put
+    /// there meanwhile (streamed text, a nudge) isn't overwritten by an older copy. `f` says whether it changed
+    /// anything; the message as written when it did, else None (and when there is no such message).
+    pub(super) fn update(
+        &self,
+        id: &ChatMessageId,
+        f: impl FnOnce(&mut ChatMessage) -> bool,
+    ) -> Result<Option<ChatMessage>, StoreError> {
+        let n: i64 = id.as_str()[1..].parse().unwrap_or(0);
+        self.db.transaction(|c| {
+            let data: Option<String> = c
+                .query_row("SELECT data FROM chat_messages WHERE n = ?1", [n], |row| {
+                    row.get(0)
+                })
+                .optional()?;
+            let Some(data) = data else {
+                return Ok(None);
+            };
+            let mut message: ChatMessage = serde_json::from_str(&data)?;
+            if !f(&mut message) {
+                return Ok(None);
+            }
+            c.execute(
+                "UPDATE chat_messages SET data = ?1 WHERE n = ?2",
+                params![serde_json::to_string(&message)?, n],
+            )?;
+            Ok(Some(message))
+        })
+    }
+
     pub fn put(&self, message: &ChatMessage) -> Result<(), StoreError> {
         let n: i64 = message.message_id.as_str()[1..].parse().unwrap_or(0);
         self.db.with(|c| {
@@ -610,14 +640,21 @@ impl Chat {
             return Ok(());
         }
         // The turn may have ended (and the message been finished) since the caller read it.
-        match self.by_id(message.message_id.as_str())? {
-            Some(now) if now.state == ChatMessageState::Streaming => *message = now,
-            _ => return Ok(()),
-        }
-        let offset = js_len(message.text.as_str());
-        message.text = text_of(&format!("{}{append}", message.text.as_str()));
-        message.updated_at = Some(self.now_ts());
-        self.put(message)?;
+        let now = self.now_ts();
+        let mut offset = 0;
+        let appended = self.update(&message.message_id, |m| {
+            if m.state != ChatMessageState::Streaming {
+                return false;
+            }
+            offset = js_len(m.text.as_str());
+            m.text = text_of(&format!("{}{append}", m.text.as_str()));
+            m.updated_at = Some(now);
+            true
+        })?;
+        let Some(appended) = appended else {
+            return Ok(());
+        };
+        *message = appended;
         let mut rest = append;
         let mut at = offset;
         // Frames carry at most 4000 UTF-16 units.
@@ -641,14 +678,26 @@ impl Chat {
     }
 
     /// A streamed message is complete: its final text, announced.
+    /// Written onto the stored message, so a nudge set since the caller read it stays.
     pub fn finish(&self, message: &mut ChatMessage, text: &str) -> Result<(), StoreError> {
-        message.text = text_of(text);
-        message.state = ChatMessageState::Final;
-        if message.author == ChatAuthor::Lead {
-            message.parts = parts::parts(&message.text);
+        let text = text_of(text);
+        let now = self.now_ts();
+        let done = |m: &mut ChatMessage| {
+            if m.author == ChatAuthor::Lead {
+                m.parts = parts::parts(&text);
+            }
+            m.text = text.clone();
+            m.state = ChatMessageState::Final;
+            m.updated_at = Some(now.clone());
+            true
+        };
+        match self.update(&message.message_id, done)? {
+            Some(m) => *message = m,
+            None => {
+                done(message);
+                self.put(message)?;
+            }
         }
-        message.updated_at = Some(self.now_ts());
-        self.put(message)?;
         self.announce(message)
     }
 

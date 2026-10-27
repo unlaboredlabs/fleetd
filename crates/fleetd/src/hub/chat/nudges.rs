@@ -26,6 +26,13 @@ use crate::hub::store::{StoreError, iso_ms, parse_ms};
 /// How long a nudge for a reply not yet in the chat waits for it to land.
 const PENDING_MS: i64 = 10 * 60_000;
 
+/// The project's messages whose nudge waits, by the condition of the partial index `chat_nudges_waiting` (store
+/// migrations), so a chat state read finds them without reading the rest of the chat.
+pub(super) const WAITING: &str =
+    "SELECT data FROM chat_messages WHERE machine_id = ?1 AND project_id = ?2
+     AND json_extract(data, '$.nudge') IS NOT NULL
+     AND json_extract(data, '$.nudge.cleared') IS NULL ORDER BY seq";
+
 /// A reason as a nudge holds it: one line, cut to fit.
 pub fn reason_of(text: &str) -> Option<Line<1, 200>> {
     let line = text.split_whitespace().collect::<Vec<_>>().join(" ");
@@ -50,11 +57,7 @@ impl Chat {
         let now = self.now();
         let open: Vec<ChatMessage> = self.db.with(|c| {
             let rows: Vec<String> = c
-                .prepare_cached(
-                    "SELECT data FROM chat_messages WHERE machine_id = ?1 AND project_id = ?2
-                     AND json_extract(data, '$.nudge') IS NOT NULL
-                     AND json_extract(data, '$.nudge.cleared') IS NULL ORDER BY seq",
-                )?
+                .prepare_cached(WAITING)?
                 .query_map(
                     params![r.machine_id.as_str(), r.project_id.as_str()],
                     |row| row.get(0),
@@ -68,11 +71,14 @@ impl Chat {
         let (mut open, faded): (Vec<ChatMessage>, Vec<ChatMessage>) = open
             .into_iter()
             .partition(|m| m.nudge.as_ref().is_some_and(|n| waiting(n, now)));
-        for mut m in faded {
-            if let Some(n) = m.nudge.as_mut() {
+        for m in faded {
+            self.update(&m.message_id, |m| {
+                let Some(n) = m.nudge.as_mut().filter(|n| n.cleared.is_none()) else {
+                    return false;
+                };
                 n.cleared = Some(ChatNudgeCleared::Expired);
-                self.put(&m)?;
-            }
+                true
+            })?;
         }
         open.sort_by_key(|m| {
             let at = m.nudge.as_ref().and_then(|n| parse_ms(n.at.as_str()));
@@ -100,19 +106,32 @@ impl Chat {
 
     /// Flags `message` for the person's look, announced; on one already flagged, its reason and time are new, and one
     /// seen or dismissed waits again. Past the cap, the oldest waiting nudge of its kind is replaced.
+    /// Set on the stored message, so streamed text written since the caller read it stays.
     pub fn nudge(
         &self,
-        mut message: ChatMessage,
+        message: ChatMessage,
         reason: Line<1, 200>,
     ) -> Result<ChatMessage, StoreError> {
-        self.flag(&mut message, reason)?;
-        self.put(&message)?;
+        let nudge = self.make_room(&message, reason)?;
+        let now = self.now_ts();
+        let flagged = self.update(&message.message_id, |m| {
+            m.nudge = Some(nudge);
+            m.updated_at = Some(now);
+            true
+        })?;
+        let Some(message) = flagged else {
+            return Ok(message);
+        };
         self.announce(&message)?;
         Ok(message)
     }
 
-    /// Sets the nudge on `message`, not yet stored, and makes room for it.
-    fn flag(&self, message: &mut ChatMessage, reason: Line<1, 200>) -> Result<(), StoreError> {
+    /// The nudge for `message`, with room made for it: past its kind's cap, the oldest waiting one is replaced.
+    fn make_room(
+        &self,
+        message: &ChatMessage,
+        reason: Line<1, 200>,
+    ) -> Result<ChatNudge, StoreError> {
         let now = self.now();
         // Its kind's: a Try it suggestion counts against suggestions only, so they never push out the lead's flags.
         let suggestion = message.preview_suggestion.is_some();
@@ -127,29 +146,32 @@ impl Chat {
         for old in others.into_iter().take(over) {
             self.clear_nudge(old, ChatNudgeCleared::Replaced)?;
         }
-        message.nudge = Some(ChatNudge {
+        Ok(ChatNudge {
             reason,
             at: iso_ms(now).into(),
             cleared: None,
-        });
-        message.updated_at = Some(self.now_ts());
-        Ok(())
+        })
     }
 
     /// The nudge no longer waits: seen, dismissed or replaced. False when it wasn't waiting.
     pub fn clear_nudge(
         &self,
-        mut message: ChatMessage,
+        message: ChatMessage,
         how: ChatNudgeCleared,
     ) -> Result<bool, StoreError> {
-        let Some(nudge) = message.nudge.as_mut().filter(|n| n.cleared.is_none()) else {
-            return Ok(false);
-        };
-        nudge.cleared = Some(how);
-        message.updated_at = Some(self.now_ts());
-        self.put(&message)?;
-        self.announce(&message)?;
-        Ok(true)
+        let now = self.now_ts();
+        let cleared = self.update(&message.message_id, |m| {
+            let Some(nudge) = m.nudge.as_mut().filter(|n| n.cleared.is_none()) else {
+                return false;
+            };
+            nudge.cleared = Some(how);
+            m.updated_at = Some(now);
+            true
+        })?;
+        match cleared {
+            Some(m) => self.announce(&m).map(|()| true),
+            None => Ok(false),
+        }
     }
 
     /// Flags the message `source` names once it lands, for a reply the lead nudged before the chat had it.
@@ -177,7 +199,8 @@ impl Chat {
         });
         match nudge.or(waited) {
             Some(reason) => {
-                self.flag(message, reason)?;
+                message.nudge = Some(self.make_room(message, reason)?);
+                message.updated_at = Some(self.now_ts());
                 self.put(message)
             }
             None => Ok(()),

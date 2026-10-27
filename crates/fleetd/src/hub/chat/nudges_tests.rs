@@ -371,6 +371,82 @@ fn try_it_suggestions_have_their_own_cap_and_never_push_out_the_leads_flags() {
 }
 
 #[test]
+fn a_chat_state_finds_waiting_nudges_by_their_index_not_the_whole_chat() {
+    let (hub, _clock, _home) = hub();
+    let plan: Vec<String> = hub
+        .db
+        .with(|c| {
+            let mut stmt = c.prepare(&format!("EXPLAIN QUERY PLAN {}", super::WAITING))?;
+            let rows = stmt
+                .query_map(rusqlite::params!["devbox", "app"], |row| {
+                    row.get::<_, String>(3)
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            Ok(rows)
+        })
+        .unwrap();
+    assert!(
+        plan.iter().any(|p| p.contains("chat_nudges_waiting")),
+        "{plan:?}"
+    );
+}
+
+/// A reply the lead flags while it still streams keeps both: the flag through the reply's finish, and the words
+/// streamed after the flag, though each writer read the message before the other wrote.
+#[test]
+fn a_flag_and_a_streaming_reply_never_overwrite_each_other() {
+    let (hub, _clock, _home) = hub();
+    let r = project();
+    let (mut streaming, _) = hub
+        .chat
+        .add(
+            &r,
+            NewMessage {
+                author: Some(ChatAuthor::Lead),
+                streaming: true,
+                source: Some(history::lead_source(THREAD, "a1")),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    // The streamer holds its copy; the lead's nudge reads its own, from before the next words.
+    let read_by_nudge = hub
+        .chat
+        .by_id(streaming.message_id.as_str())
+        .unwrap()
+        .unwrap();
+    hub.chat
+        .append(&mut streaming, "The new checkout ")
+        .unwrap();
+    hub.chat
+        .nudge(read_by_nudge, Line::new("the new checkout").unwrap())
+        .unwrap();
+    let stored = hub
+        .chat
+        .by_id(streaming.message_id.as_str())
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored.text.as_str(), "The new checkout ");
+    assert!(stored.nudge.is_some());
+
+    // The streamer finishes the copy it held from before the flag.
+    hub.chat
+        .finish(&mut streaming, "The new checkout is up.")
+        .unwrap();
+    let stored = hub
+        .chat
+        .by_id(streaming.message_id.as_str())
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored.text.as_str(), "The new checkout is up.");
+    assert_eq!(
+        stored.nudge.map(|n| n.reason.to_string()),
+        Some("the new checkout".to_owned())
+    );
+    assert_eq!(listed(&hub).len(), 1);
+}
+
+#[test]
 fn a_reason_is_one_line_cut_to_fit() {
     assert_eq!(
         super::reason_of("the new\n  checkout").unwrap().as_str(),

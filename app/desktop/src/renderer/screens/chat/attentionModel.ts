@@ -92,6 +92,10 @@ export const lookKey = (id: string, at: string): string => `${id} ${at}`;
 /** How long a nudge waits to be seen (contracts CHAT_NUDGE_MS); past it, it fades on its own. */
 export const NUDGE_MS = 24 * 60 * 60_000;
 
+/** Whether two lists say the same: the same flags, going to the same bubbles, for the same reasons. */
+export const sameLooks = (a: readonly LookAt[], b: readonly LookAt[]): boolean =>
+  a.length === b.length && a.every((l, i) => l.key === b[i]?.key && l.part === b[i].part && l.reason === b[i].reason);
+
 /**
  * What there is to look at, oldest first: the hub's waiting nudges, less those this app cleared since (seen or
  * dismissed, by their key), those a loaded message says no longer wait (that same flag of it), and those a day old.

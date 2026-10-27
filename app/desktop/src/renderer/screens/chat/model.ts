@@ -193,6 +193,29 @@ export function chatRows(i: RowsInput): Row[] {
   return out;
 }
 
+/** The same values, key by key; one level of plain objects (a row's item, reply or answers) compared the same way. */
+const same = (a: unknown, b: unknown, depth = 1): boolean => {
+  if (Object.is(a, b)) return true;
+  if (depth === 0 || typeof a !== "object" || typeof b !== "object" || a === null || b === null || Array.isArray(a) || Array.isArray(b)) return false;
+  const ka = Object.keys(a);
+  const kb = Object.keys(b);
+  return ka.length === kb.length && ka.every((k) => same((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k], depth - 1));
+};
+
+/**
+ * `next`, with each row that says what it said in `prev` kept as that same object. The chat's items are made anew
+ * on every streamed word, so without this each row would be new, and every bubble in the list drawn again for one
+ * word of the reply streaming at its end.
+ */
+export function keepRows(prev: readonly Row[] | undefined, next: readonly Row[]): readonly Row[] {
+  if (prev === undefined) return next;
+  const before = new Map(prev.map((r) => [r.key, r]));
+  return next.map((r) => {
+    const old = before.get(r.key);
+    return old !== undefined && same(old, r, 2) ? old : r;
+  });
+}
+
 /** A message's reply (yours) or answered asks (the lead's). */
 function extras(items: readonly ChatItem[], n: number): Pick<Extract<Row, { kind: "message" }>, "reply" | "answered"> {
   const item = items[n];
