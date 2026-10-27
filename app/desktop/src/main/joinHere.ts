@@ -1,7 +1,8 @@
 // "This computer" in Add machine: main makes the computer the app runs on a machine of its hub, as the installer's
 // join line (site/install.sh --join) does, with the CLI's own join (`fleetd init --join`) doing the rest:
-//   0. this computer's fleetd dir, read first: one that holds a hub, or a node already enrolled (under any id), is
-//      never touched, as its bin/fleetd is the one that hub or node runs (thisComputer);
+//   0. hub_info and this computer first: the hub's own computer (its fingerprint the hub's), a fleetd dir that holds
+//      a hub, or a node already enrolled (under any id) is never touched, as its bin/fleetd is the one that hub or
+//      node runs and the hub sets up its own machine itself (thisComputer);
 //   1. machine_join: a one-time code from the hub, asked by main, so the code never reaches the page;
 //   2. the build of the hub's own version for this OS and CPU (its v<version> release; an Edge hub, the edge release
 //      only while that is its version), and SHA256SUMS;
@@ -30,6 +31,8 @@ export interface JoinPorts {
   run(file: string, args: ReadonlyArray<string>): Promise<{ code: number; output: string }>;
   /** The fleetd dir: FLEETD_HOME, else ~/.fleetd, as the CLI has it. */
   fleetdDir: string;
+  /** This computer's fingerprint (machineFingerprint). */
+  fingerprint(): Promise<string | undefined>;
   /** FLEETD_BASE_URL, for a lab's own release files. */
   baseOverride: string | undefined;
   platform: NodeJS.Platform;
@@ -71,6 +74,7 @@ export const realPorts = (call: JoinPorts["call"]): JoinPorts => ({
       child.once("close", (code) => done({ code: code ?? 1, output }));
     }),
   fleetdDir: fleetdDir(),
+  fingerprint: () => machineFingerprint(),
   baseOverride: process.env["FLEETD_BASE_URL"],
   platform: process.platform,
   arch: process.arch,
@@ -198,19 +202,26 @@ export async function joinHere(ports: JoinPorts, machineId: string, report: (sta
 
   next();
   if (asset === undefined) return fail(`fleetd has no build for ${ports.platform} on ${ports.arch}: it runs on macOS and Linux, x64 or arm64.`);
+  // The hub's own computer is set up by the hub, never joined a second time: asked before anything else, and a hub
+  // that can't be asked joins nothing.
+  const [info, fingerprint] = await Promise.all([ports.call("hub_info", {}), ports.fingerprint()]);
+  if (!info.ok) return fail(`Couldn't ask the hub which computer it runs on: ${info.error.message} Try again once it answers.`);
+  if (fingerprint !== undefined && str(info.output, "machineFingerprint") === fingerprint) {
+    return fail("This computer runs the hub, so the hub sets up its node itself, with its own fleetd; nothing was changed here.");
+  }
   // Its bin/fleetd is what a hub or a node here runs: never replaced, and never enrolled a second time.
-  const why = refusal(await thisComputer(ports.fleetdDir));
+  const why = refusal(await thisComputer(ports.fleetdDir, fingerprint));
   if (why !== undefined) return fail(why);
   done();
 
   next();
-  const [joined, info] = await Promise.all([ports.call("machine_join", { machineId }), ports.call("hub_info", {})]);
+  const joined = await ports.call("machine_join", { machineId });
   if (!joined.ok) return fail(joined.error.fix ? `${joined.error.message} ${joined.error.fix}` : joined.error.message);
   const hub = str(joined.output, "hubUrl");
   const code = str(joined.output, "code");
   if (hub === undefined || code === undefined) return fail("The hub's answer had no address or code. Update the hub, then try again.");
   const identity = str(joined.output, "gitIdentity");
-  const version = info.ok ? str(info.output, "version") : undefined;
+  const version = str(info.output, "version");
   if (version === undefined) return fail("The hub didn't say which fleetd it runs, so there is no build to match it. Try again once it answers.");
   done();
 

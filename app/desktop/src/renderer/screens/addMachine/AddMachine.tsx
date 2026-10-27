@@ -87,7 +87,9 @@ export function AddMachine() {
   const hostName = useHostName();
   const join = useJoinHere();
   const ended = status.data?.runs.find((r) => r.state !== "running")?.runId ?? "";
-  const hubFingerprint = useToolQuery("hub_info", noInput).data?.machineFingerprint;
+  // Nothing about this computer is decided before the hub has said which computer it runs on.
+  const info = useToolQuery("hub_info", noInput);
+  const hubFingerprint = info.data?.machineFingerprint;
   const computer = useThisComputer(`${join?.state ?? ""}|${ended}`);
   const machines = useData((d) => d.machines);
   const [view, setView] = useState<View>();
@@ -106,7 +108,7 @@ export function AddMachine() {
         })());
 
   const here =
-    hosts.data && hostName !== undefined && computer !== undefined ? hereOf(hosts.data.hosts, hubFingerprint, hostName, computer, new Set(Object.keys(machines))) : undefined;
+    hosts.data && hostName !== undefined && computer !== undefined && !info.isPending ? hereOf(hosts.data.hosts, hubFingerprint, hostName, computer, new Set(Object.keys(machines))) : undefined;
 
   const add = (target: { host: string } | { local: true }) => {
     setBusy(true);
