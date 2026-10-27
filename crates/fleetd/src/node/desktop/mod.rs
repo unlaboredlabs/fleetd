@@ -141,10 +141,36 @@ fn health_of(
     }
 }
 
-/// Whether desktop sessions can run here, and in what, for the doctor (each heartbeat): what the node last found
-/// when it prepared them, else what is on the PATH. None where node.json turns them off, and where the machine has
-/// neither and node.json doesn't ask for them.
+/// How long the node trusts its last `docker info` (or podman's).
+const RUNTIME_CHECK_FRESH: Duration = Duration::from_secs(300);
+
+/// Whether the container runtime answers: the last check while it's fresh, else a new one when `block` allows it
+/// (`docker info`, up to 15 s), else None.
+fn runtime_answers(runtime: &Runtime, block: bool) -> Option<Result<(), String>> {
+    type Checked = Option<(Instant, PathBuf, Result<(), String>)>;
+    static LAST: Mutex<Checked> = Mutex::new(None);
+    if let Some((at, bin, answer)) = &*lock(&LAST)
+        && *bin == runtime.bin
+        && at.elapsed() < RUNTIME_CHECK_FRESH
+    {
+        return Some(answer.clone());
+    }
+    if !block {
+        return None;
+    }
+    let answer = runtime.usable();
+    *lock(&LAST) = Some((Instant::now(), runtime.bin.clone(), answer.clone()));
+    Some(answer)
+}
+
+/// Whether desktop sessions can run here, and in what, for the doctor (each heartbeat; blocking): what the node last
+/// found when it prepared them, else what it finds now, a container runtime counting only if it answers. None where
+/// node.json turns them off, and where nothing works and node.json doesn't ask for them.
 pub fn health(home: &Path, config: &DesktopConfig) -> Option<DesktopHealth> {
+    health_with(home, config, true)
+}
+
+fn health_with(home: &Path, config: &DesktopConfig, block: bool) -> Option<DesktopHealth> {
     if !config.enabled() {
         return None;
     }
@@ -154,8 +180,10 @@ pub fn health(home: &Path, config: &DesktopConfig) -> Option<DesktopHealth> {
     {
         return Some(found);
     }
-    Some(match choose(config, home) {
-        (Some(runtime), _) => health_of(
+    let (runtime, xvfb) = choose(config, home);
+    let answers = runtime.as_ref().and_then(|r| runtime_answers(r, block));
+    Some(match (runtime, answers, xvfb) {
+        (Some(runtime), Some(Ok(())), _) => health_of(
             DesktopState::Ready,
             Some(DesktopBackend::Container),
             format!(
@@ -164,37 +192,71 @@ pub fn health(home: &Path, config: &DesktopConfig) -> Option<DesktopHealth> {
             ),
             None,
         ),
-        (None, Some(xvfb)) => health_of(
+        (runtime, answers, Some(xvfb)) => health_of(
             DesktopState::Ready,
             Some(DesktopBackend::Xvfb),
             format!(
-                "Desktop sessions run on Xvfb ({}) with a fresh home each; no docker or podman for containers.",
-                xvfb.display()
+                "Desktop sessions run on Xvfb ({}) with a fresh home each{}.",
+                xvfb.display(),
+                match (runtime, answers) {
+                    (Some(_), Some(Err(why))) => format!("; not in containers: {why}"),
+                    (Some(_), _) => String::new(),
+                    (None, _) => "; no docker or podman for containers".to_owned(),
+                }
             ),
             None,
         ),
-        (None, None) if config.enabled != Some(true) => return None,
-        (None, None) => health_of(
+        _ if config.enabled != Some(true) => return None,
+        (Some(runtime), Some(Err(why)), None) => health_of(
+            DesktopState::Unavailable,
+            Some(DesktopBackend::Container),
+            format!("Desktop sessions can't run here: {why}, and there's no Xvfb.",),
+            Some(&format!(
+                "sudo usermod -aG docker $USER (then log in again), or sudo apt install xvfb; {} must answer `{} info`",
+                runtime.bin.display(),
+                runtime.name()
+            )),
+        ),
+        _ => health_of(
             DesktopState::Unavailable,
             None,
-            "Desktop sessions need docker or podman, or Xvfb; this machine has none.".into(),
+            "Desktop sessions need docker or podman, or Xvfb; this machine has none that works."
+                .into(),
             Some(INSTALL_FIX),
         ),
     })
 }
 
-/// What the node lists at its link's hello for desktop sessions.
+/// What the node lists at its link's hello for desktop sessions. Never blocks: a container runtime not checked yet
+/// counts only once a heartbeat has asked it.
 pub fn capabilities(home: &Path) -> Vec<String> {
     let config = super::config::read_config(home)
         .ok()
         .flatten()
         .and_then(|c| c.desktop)
         .unwrap_or_default();
-    match health(home, &config) {
+    match health_with(home, &config, false) {
         Some(h) if h.state == DesktopState::Ready => vec![CAP_SESSION_DESKTOP.to_owned()],
         _ => Vec::new(),
     }
 }
+
+/// The folder a container session's apps see, read-only: the agent's working directory when it is a folder of this
+/// machine's. A session hosted for an agent elsewhere sees none (its cwd names a folder on the agent's machine), nor
+/// does an Xvfb session, whose apps run on this machine already.
+pub(super) fn worktree_mount(backend: DesktopBackend, thread: &str, cwd: &str) -> Option<PathBuf> {
+    if backend != DesktopBackend::Container || crate::node::session_route::hosted(thread) {
+        return None;
+    }
+    let cwd = Path::new(cwd);
+    let home = crate::node::util::home_dir();
+    let broad = cwd.parent().is_none() || cwd == home || home.starts_with(cwd);
+    (cwd.is_absolute() && !broad && cwd.is_dir()).then(|| cwd.to_owned())
+}
+
+/// How long a `session_start` waits for the node to prepare desktop sessions (Xvfb, or an image already built takes
+/// about a second) before it says to come back.
+const PREPARE_WAIT: Duration = Duration::from_secs(30);
 
 enum Prep {
     /// Nobody asked for a session yet: the first `session_start` prepares them.
@@ -216,6 +278,8 @@ pub struct Desktops {
     hub: Arc<dyn HubCalls>,
     secrets_for: SecretsFor,
     uploading: Mutex<HashSet<PathBuf>>,
+    /// Woken when preparing ends, either way.
+    prepared: tokio::sync::Notify,
     _loop: Mutex<Option<AbortOnDrop>>,
 }
 
@@ -258,11 +322,15 @@ impl Desktops {
             hub,
             secrets_for,
             uploading: Mutex::default(),
+            prepared: tokio::sync::Notify::new(),
             _loop: Mutex::default(),
             config,
         });
         if desktops.config.enabled == Some(true) {
             desktops.begin_prepare();
+        } else if let (Some(runtime), _) = choose(&desktops.config, home) {
+            // Ask the runtime now, so the next link's hello knows whether containers work.
+            tokio::task::spawn_blocking(move || runtime_answers(&runtime, true));
         }
         let weak = Arc::downgrade(&desktops);
         *lock(&desktops._loop) = Some(AbortOnDrop(tokio::spawn(housekeeping(weak))));
@@ -310,6 +378,7 @@ impl Desktops {
                         Some(INSTALL_FIX),
                     ));
                     *lock(&desktops.prep) = Prep::Unavailable(why);
+                    desktops.prepared.notify_waiters();
                 }
             }
         });
@@ -334,14 +403,30 @@ impl Desktops {
             None,
         ));
         *lock(&self.prep) = Prep::Ready(pool);
+        self.prepared.notify_waiters();
     }
 
-    fn pool(self: &Arc<Self>) -> Result<Arc<Pool>, McpToolError> {
+    /// The pool, once prepared: a start that finds preparing under way waits for it (up to [`PREPARE_WAIT`]), so the
+    /// first session after a node starts isn't turned away while Xvfb or a built image takes its second.
+    async fn pool(self: &Arc<Self>) -> Result<Arc<Pool>, McpToolError> {
         if matches!(*lock(&self.prep), Prep::Unavailable(_)) {
             // What failed is tried again by the next session that asks: a person may have fixed it.
             *lock(&self.prep) = Prep::Wanted;
         }
-        self.begin_prepare();
+        let deadline = tokio::time::Instant::now() + PREPARE_WAIT;
+        loop {
+            let woken = self.prepared.notified();
+            tokio::pin!(woken);
+            // Registered before the state is read: an end of preparing in between still wakes it.
+            woken.as_mut().enable();
+            self.begin_prepare();
+            if !matches!(*lock(&self.prep), Prep::Preparing) {
+                break;
+            }
+            if tokio::time::timeout_at(deadline, woken).await.is_err() {
+                break;
+            }
+        }
         match &*lock(&self.prep) {
             Prep::Ready(pool) => Ok(pool.clone()),
             Prep::Wanted | Prep::Preparing => Err(refuse(
@@ -402,33 +487,47 @@ impl Desktops {
                 "use it, or end it with session_end before starting another",
             ));
         }
-        let pool = self.pool()?;
+        let pool = self.pool().await?;
+        let mount = worktree_mount(pool.backend(), &thread, &cwd);
         let secrets_for = self.secrets_for.clone();
         let secrets_thread = thread.clone();
         let secrets = tokio::task::spawn_blocking(move || secrets_for(&secrets_thread));
-        let display = pool.take().await.map_err(|why| {
+        let didnt_start = |why: String| {
             refuse(
                 ErrorCode::Failed,
                 format!("The desktop did not start: {why}."),
                 "try session_start again",
             )
-        })?;
-        let secrets = secrets
-            .await
-            .map_err(|e| e.to_string())
-            .and_then(|m| m)
-            .map_err(|why| {
-                refuse(
+        };
+        let display = pool.take(mount.as_deref()).await.map_err(didnt_start)?;
+        // Connecting, and throwing away a display that can't be used, wait on its X server and runtime.
+        let (display, x) = tokio::task::spawn_blocking(move || {
+            let x = display.connect();
+            x.map(|x| (display, x))
+        })
+        .await
+        .map_err(|e| e.to_string())
+        .and_then(|c| c)
+        .map_err(didnt_start)?;
+        let secrets = match secrets.await.map_err(|e| e.to_string()).and_then(|m| m) {
+            Ok(secrets) => secrets,
+            Err(why) => {
+                let _ = tokio::task::spawn_blocking(move || drop(display)).await;
+                return Err(refuse(
                     ErrorCode::Failed,
-                    format!("The node could not read this session's secrets to scrub its recording ({why})."),
+                    format!(
+                        "The node could not read this session's secrets to scrub its recording ({why})."
+                    ),
                     "try again; if it keeps failing, check the node's log",
-                )
-            })?;
+                ));
+            }
+        };
         let id = new_id();
         let backend = display.backend;
         let dir = recordings_dir(&self.home).join(id.as_str());
         let session = Session::open(
             display,
+            x,
             Opened {
                 dir: dir.clone(),
                 id,
@@ -450,7 +549,10 @@ impl Desktops {
         lock(&self.sessions).insert(thread.clone(), session.clone());
         session.step(
             "session_start",
-            json!({ "purpose": purpose, "kind": "linux_desktop", "backend": backend.as_str() }),
+            json!({
+                "purpose": purpose, "kind": "linux_desktop", "backend": backend.as_str(),
+                "worktree": mount.as_ref().map(|m| m.to_string_lossy()),
+            }),
             true,
             None,
             0,
@@ -462,6 +564,7 @@ impl Desktops {
             serial: None,
             udid: None,
             desktop: Some(backend),
+            worktree: mount.map(|m| Text::unchecked(m.to_string_lossy().into_owned())),
             start_ms: started.elapsed().as_millis() as u64,
         }))
     }
@@ -685,9 +788,11 @@ impl Desktops {
         for session in all {
             session.close().await;
         }
-        if let Prep::Ready(pool) = &*lock(&self.prep) {
-            pool.drain();
-        }
+        let drained = match &*lock(&self.prep) {
+            Prep::Ready(pool) => pool.drain(),
+            _ => Vec::new(),
+        };
+        let _ = tokio::task::spawn_blocking(move || drop(drained)).await;
     }
 }
 
@@ -719,7 +824,6 @@ fn prepare(
     }
     crate::node::config::mkdir_private(&root)
         .map_err(|e| format!("cannot make {}: {e}", root.display()))?;
-    let mounts = vec![home.join("worktrees")];
     match (runtime, xvfb) {
         (Some(runtime), xvfb) => {
             let image = config.image.clone().unwrap_or_else(container::image);
@@ -734,7 +838,21 @@ fn prepare(
                     None,
                 ));
                 let log = desktop_dir(home).join("build.log");
-                runtime.build(&image, &desktop_dir(home), &log)?;
+                if let Err(why) = runtime.build(&image, &desktop_dir(home), &log) {
+                    // No image (no network, a slow snapshot server): Xvfb still serves, and the next start of the
+                    // node tries the build again.
+                    let Some(xvfb) = xvfb.filter(|_| config.backend.is_none()) else {
+                        return Err(why);
+                    };
+                    tracing::warn!(error = %why, "desktop sessions use Xvfb: the container image didn't build");
+                    return Ok(Settings {
+                        backend: DesktopBackend::Xvfb,
+                        runtime: None,
+                        image: String::new(),
+                        xvfb: Some(xvfb),
+                        root,
+                    });
+                }
             }
             Ok(Settings {
                 backend: DesktopBackend::Container,
@@ -742,7 +860,6 @@ fn prepare(
                 image,
                 xvfb,
                 root,
-                mounts,
             })
         }
         (None, Some(xvfb)) => Ok(Settings {
@@ -751,7 +868,6 @@ fn prepare(
             image: String::new(),
             xvfb: Some(xvfb),
             root,
-            mounts,
         }),
         (None, None) => Err("this machine has neither docker or podman nor Xvfb".into()),
     }

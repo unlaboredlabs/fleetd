@@ -478,9 +478,16 @@ pub fn browser_result(answer: &Value) -> Value {
              session_end when done.",
             result["sessionId"].as_str().unwrap_or_default(),
             result["startMs"],
-            match result["desktop"].as_str() {
-                Some("container") => "in a container of its own; your worktree is there read-only",
-                _ => "on a display of its own, with a fresh home directory",
+            match (result["desktop"].as_str(), result["worktree"].as_str()) {
+                (Some("container"), Some(worktree)) => format!(
+                    "in a container of its own; your worktree {worktree} is in it read-only, so build on your \
+                     machine and launch from there; write in /home/desktop or /tmp, which go with the container"
+                ),
+                (Some("container"), None) =>
+                    "in a container of its own, without your worktree; write in \
+                                              /home/desktop or /tmp, which go with the container"
+                        .to_owned(),
+                _ => "on a display of its own, with a fresh home directory".to_owned(),
             }
         ),
         Some("desktop") => {
@@ -1124,5 +1131,15 @@ mod tests {
             "{text}"
         );
         assert!(text.contains("desktop tool"), "{text}");
+        let contained = browser_result(&json!({ "result": {
+            "op": "session_start", "sessionId": "B1", "desktop": "container", "worktree": "/work/app",
+            "startMs": 900,
+        } }));
+        let text = contained["content"][0]["text"].as_str().unwrap();
+        assert!(
+            text.contains("your worktree /work/app is in it read-only"),
+            "{text}"
+        );
+        assert!(text.contains("write in /home/desktop or /tmp"), "{text}");
     }
 }

@@ -3,6 +3,7 @@
 //! recording is on the hub with the session's secret scrubbed from it. They run on an Xvfb with xterm on the machine
 //! (`FLEETD_TEST_XVFB` names one off the PATH), or in containers with `FLEETD_TEST_DESKTOP_BACKEND=container`, which
 //! builds the pinned image first (minutes, from the network). Without either they say so and pass.
+use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -90,12 +91,23 @@ fn a_runtime_that_does_not_answer_is_why_sessions_cant_run() {
         runtime: Some("/nonexistent/docker".into()),
         ..DesktopConfig::default()
     };
-    let health = super::health(home.path(), &broken).unwrap();
+    // A docker that doesn't answer isn't counted: no check where nobody asked for desktop sessions, and where
+    // node.json does, a failing one with the fix.
+    assert!(super::health(home.path(), &broken).is_none(), "{broken:?}");
+    let asked = DesktopConfig {
+        enabled: Some(true),
+        ..broken.clone()
+    };
+    let health = super::health(home.path(), &asked).unwrap();
     assert_eq!(
-        health.backend,
-        Some(DesktopBackend::Container),
-        "what it would use"
+        health.state,
+        fleetd_contracts::node_link::DesktopState::Unavailable
     );
+    assert!(
+        health.message.as_str().contains("`docker info` failed"),
+        "{health:?}"
+    );
+    assert!(health.fix.unwrap().as_str().contains("usermod -aG docker"));
     let why = super::prepare(home.path(), &broken, &|_| {}).err().unwrap();
     assert!(why.contains("`docker info` failed"), "{why}");
     let xvfb = DesktopConfig {
@@ -108,6 +120,109 @@ fn a_runtime_that_does_not_answer_is_why_sessions_cant_run() {
         (settings.backend, settings.xvfb.as_deref()),
         (DesktopBackend::Xvfb, Some(Path::new("/opt/x/Xvfb")))
     );
+}
+
+#[test]
+fn a_container_sees_only_the_sessions_own_worktree_read_only() {
+    let work = tempfile::tempdir().unwrap();
+    let worktree = work.path().join("app");
+    std::fs::create_dir(&worktree).unwrap();
+    let cwd = worktree.to_str().unwrap();
+    let mount = super::worktree_mount(DesktopBackend::Container, THREAD, cwd);
+    assert_eq!(mount.as_deref(), Some(worktree.as_path()));
+    // Not for an Xvfb session (its apps are on this machine already), a session hosted for an agent elsewhere (its
+    // cwd is on the agent's machine), a folder that isn't here, or one as broad as / or the home directory.
+    assert!(super::worktree_mount(DesktopBackend::Xvfb, THREAD, cwd).is_none());
+    let hosted = "H0123456789abcdef0123456789abcdef";
+    assert!(super::worktree_mount(DesktopBackend::Container, hosted, cwd).is_none());
+    assert!(super::worktree_mount(DesktopBackend::Container, THREAD, "/nonexistent/app").is_none());
+    assert!(super::worktree_mount(DesktopBackend::Container, THREAD, "/").is_none());
+    let home = crate::node::util::home_dir();
+    assert!(
+        super::worktree_mount(DesktopBackend::Container, THREAD, home.to_str().unwrap()).is_none()
+    );
+
+    // The container's run mounts that folder alone, read-only at the same path, beside its X socket and cookie.
+    let runtime = super::container::Runtime::find(Some("/usr/bin/docker"), work.path()).unwrap();
+    let args = runtime.run_args(
+        "fleetd-desktop-1",
+        "localhost/fleetd-desktop:x",
+        Path::new("/n/displays/1/x11"),
+        Path::new("/n/displays/1/xauth"),
+        mount.as_deref(),
+    );
+    let volumes: Vec<&str> = args
+        .iter()
+        .zip(args.iter().skip(1))
+        .filter(|(flag, _)| *flag == "-v")
+        .map(|(_, v)| v.as_str())
+        .collect();
+    assert_eq!(
+        volumes,
+        [
+            "/n/displays/1/x11:/tmp/.X11-unix",
+            "/n/displays/1/xauth:/fleetd/xauth:ro",
+            &format!("{cwd}:{cwd}:ro"),
+        ]
+    );
+    let bare = runtime.run_args("n", "i", Path::new("/s"), Path::new("/a"), None);
+    assert_eq!(bare.iter().filter(|a| *a == "-v").count(), 2, "{bare:?}");
+}
+
+#[test]
+fn cleanup_never_kills_a_process_that_took_a_dead_xvfbs_pid() {
+    let root = tempfile::tempdir().unwrap();
+    // A process of the user's own that has the pid a stale file names, as after a reboot: not an Xvfb.
+    let mut other = std::process::Command::new("sleep")
+        .arg("30")
+        .process_group(0)
+        .spawn()
+        .unwrap();
+    let pid = other.id() as i32;
+    for (name, recorded) in [("a", format!("{pid} 1")), ("b", format!("{pid}"))] {
+        let dir = root.path().join(name);
+        std::fs::create_dir(&dir).unwrap();
+        std::fs::write(dir.join("xvfb.pid"), recorded).unwrap();
+    }
+    assert!(!super::display::is_our_xvfb(pid, 1));
+    assert_eq!(super::display::clear_leftovers(root.path(), None), 0);
+    assert!(other.try_wait().unwrap().is_none(), "still running");
+    assert_eq!(
+        std::fs::read_dir(root.path()).unwrap().count(),
+        0,
+        "the folders go"
+    );
+    let _ = other.kill();
+    let _ = other.wait();
+}
+
+#[test]
+fn an_image_that_doesnt_build_falls_back_to_xvfb() {
+    let home = tempfile::tempdir().unwrap();
+    // A docker that answers, has no image, and can't build one (no network).
+    let docker = home.path().join("docker");
+    std::fs::write(
+        &docker,
+        "#!/bin/sh\ncase \"$1\" in info) exit 0;; image) exit 1;; build) echo 'no network' >&2; exit 1;; esac\nexit 1\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&docker, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    let config = DesktopConfig {
+        runtime: Some(docker.to_string_lossy().into_owned()),
+        xvfb: Some("/opt/x/Xvfb".into()),
+        ..DesktopConfig::default()
+    };
+    let settings = super::prepare(home.path(), &config, &|_| {}).unwrap();
+    assert_eq!(settings.backend, DesktopBackend::Xvfb);
+    // Asked for containers only, the build's failure is the answer.
+    let containers = DesktopConfig {
+        backend: Some(DesktopBackend::Container),
+        ..config
+    };
+    let why = super::prepare(home.path(), &containers, &|_| {})
+        .err()
+        .unwrap();
+    assert!(why.contains("no network"), "{why}");
 }
 
 /// The hub in process, answering the node's calls as a task's session in project storefront.
@@ -553,5 +668,44 @@ async fn an_agent_types_into_xterm_on_a_desktop_session_a_person_takes_over_and_
         assert!(video.len() > 1000, "a video of {} bytes", video.len());
         assert_eq!(&video[..4], &[0x1a, 0x45, 0xdf, 0xa3], "WebM");
     }
+    desktops.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_first_desktop_start_after_the_node_starts_waits_for_it_to_prepare() {
+    let Some(config) = test_config() else { return };
+    // As node.json leaves it: nothing prepared until the first session asks.
+    let config = DesktopConfig {
+        enabled: None,
+        ..config
+    };
+    let node_home = tempfile::tempdir().unwrap();
+    let hub_home = tempfile::tempdir().unwrap();
+    let hub = hub(hub_home.path());
+    let desktops = Desktops::start(
+        node_home.path(),
+        config,
+        hub.clone(),
+        Arc::new(|_| Ok(crate::node::mask::Secrets(Vec::new()))),
+    )
+    .await;
+    assert!(!desktops.ready_now(), "nothing prepared yet");
+    let router = Router {
+        browser: None,
+        devices: None,
+        desktops: Some(desktops.clone()),
+    };
+    let started = call(
+        &router,
+        json!({ "op": "session_start", "purpose": "First", "kind": "linux_desktop" }),
+    )
+    .await;
+    assert!(started["result"]["sessionId"].is_string(), "{started}");
+    eprintln!(
+        "first desktop start took {} ms",
+        started["result"]["startMs"]
+    );
+    let ended = call(&router, json!({ "op": "session_end" })).await;
+    assert!(ended["result"].is_object(), "{ended}");
     desktops.shutdown().await;
 }

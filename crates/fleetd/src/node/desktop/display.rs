@@ -60,8 +60,6 @@ pub struct Settings {
     pub xvfb: Option<PathBuf>,
     /// Where each display keeps its folder: cookie, sockets, home, logs.
     pub root: PathBuf,
-    /// Folders of the host apps in a container see, read-only, at the same path: the node's worktrees.
-    pub mounts: Vec<PathBuf>,
 }
 
 pub struct Display {
@@ -142,8 +140,9 @@ fn free_number() -> Option<u32> {
 }
 
 impl Display {
-    /// Starts a display now (blocking: a second or so for a container, less for Xvfb).
-    pub fn start(settings: &Settings) -> Result<Self, String> {
+    /// Starts a display now (blocking: a second or so for a container, less for Xvfb). A container sees `mount`, a
+    /// folder of the host, read-only at the same path.
+    pub fn start(settings: &Settings, mount: Option<&Path>) -> Result<Self, String> {
         let mut cookie = [0u8; 16];
         rand::thread_rng().fill_bytes(&mut cookie);
         let mut tag = [0u8; 6];
@@ -153,7 +152,9 @@ impl Display {
             .map_err(|e| format!("cannot make {}: {e}", dir.display()))?;
         let made = match settings.backend {
             DesktopBackend::Xvfb => Self::start_xvfb(settings, &dir, cookie),
-            DesktopBackend::Container => Self::start_container(settings, &dir, cookie, &hex(&tag)),
+            DesktopBackend::Container => {
+                Self::start_container(settings, &dir, cookie, &hex(&tag), mount)
+            }
         };
         if made.is_err() {
             let _ = std::fs::remove_dir_all(&dir);
@@ -189,7 +190,12 @@ impl Display {
                 .process_group(0)
                 .spawn()
                 .map_err(|e| format!("cannot run {}: {e}", xvfb.display()))?;
-            let _ = std::fs::write(dir.join("xvfb.pid"), child.id().to_string());
+            // With its start time: a cleanup after a reboot kills only this process, never one that took its pid.
+            let pid = child.id() as i32;
+            let _ = std::fs::write(
+                dir.join("xvfb.pid"),
+                format!("{pid} {}", start_time(pid).unwrap_or_default()),
+            );
             let socket = Path::new(X11_UNIX).join(format!("X{number}"));
             let ready = wait_x(&socket, &cookie, || match child.try_wait() {
                 Ok(Some(status)) => Err(format!("Xvfb exited ({status}): {}", tail(&log, 600))),
@@ -228,6 +234,7 @@ impl Display {
         dir: &Path,
         cookie: [u8; 16],
         tag: &str,
+        mount: Option<&Path>,
     ) -> Result<Self, String> {
         let runtime = settings
             .runtime
@@ -247,7 +254,7 @@ impl Display {
         std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o711))
             .map_err(|e| e.to_string())?;
         let name = format!("{}{tag}", super::container::NAME_PREFIX);
-        runtime.run(&name, &settings.image, &sockets, &auth, &settings.mounts)?;
+        runtime.run(&name, &settings.image, &sockets, &auth, mount)?;
         let socket = sockets.join("X0");
         let ready = wait_x(&socket, &cookie, || runtime.running(&name));
         if let Err(why) = ready {
@@ -380,15 +387,44 @@ impl Drop for Display {
     }
 }
 
+/// When a process started, in clock ticks since boot (`/proc/<pid>/stat`'s 22nd field); None where there's no
+/// such process.
+fn start_time(pid: i32) -> Option<u64> {
+    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    // After the command's name in parentheses, which may hold spaces: state is field 3, start time field 22.
+    let rest = &stat[stat.rfind(')')? + 1..];
+    rest.split_whitespace().nth(19)?.parse().ok()
+}
+
+/// Whether `pid` is still the Xvfb a node started at `started`: the same start time, and an Xvfb by its command
+/// line. A pid reused after a reboot, by anything, fails one or the other.
+pub(super) fn is_our_xvfb(pid: i32, started: u64) -> bool {
+    if pid <= 1 || start_time(pid) != Some(started) {
+        return false;
+    }
+    std::fs::read(format!("/proc/{pid}/cmdline"))
+        .ok()
+        .and_then(|c| {
+            let program = c.split(|b| *b == 0).next()?.to_vec();
+            Some(String::from_utf8_lossy(&program).into_owned())
+        })
+        .is_some_and(|program| {
+            Path::new(&program)
+                .file_name()
+                .is_some_and(|n| n.to_string_lossy().contains("Xvfb"))
+        })
+}
+
 /// Kills what a node that died left behind: Xvfbs by the pid files in their folders, the folders, and containers by
 /// their label.
 pub fn clear_leftovers(root: &Path, runtime: Option<&Runtime>) -> usize {
     let mut cleared = 0;
     for entry in std::fs::read_dir(root).into_iter().flatten().flatten() {
-        let pid = std::fs::read_to_string(entry.path().join("xvfb.pid"))
-            .ok()
-            .and_then(|p| p.trim().parse::<i32>().ok());
-        if let Some(pid) = pid
+        let recorded = std::fs::read_to_string(entry.path().join("xvfb.pid")).unwrap_or_default();
+        let mut fields = recorded.split_whitespace().map(str::parse::<u64>);
+        if let (Some(Ok(pid)), Some(Ok(started))) = (fields.next(), fields.next())
+            && let Ok(pid) = i32::try_from(pid)
+            && is_our_xvfb(pid, started)
             && killpg(Pid::from_raw(pid), Signal::SIGKILL).is_ok()
         {
             cleared += 1;
@@ -426,27 +462,34 @@ impl Pool {
         self.settings.backend
     }
 
-    async fn make(&self) -> Result<Display, String> {
+    async fn make(&self, mount: Option<PathBuf>) -> Result<Display, String> {
         let settings = self.settings.clone();
-        tokio::task::spawn_blocking(move || Display::start(&settings))
+        tokio::task::spawn_blocking(move || Display::start(&settings, mount.as_deref()))
             .await
             .map_err(|e| e.to_string())?
     }
 
-    /// A started display, or one started now when none waits; the pool refills behind it.
-    pub async fn take(self: &Arc<Self>) -> Result<Display, String> {
+    /// A display for a session. A container that must see `mount` (the session's worktree) is started now, since a
+    /// running container takes no new folder; any other comes started from the pool, which refills behind it.
+    pub async fn take(self: &Arc<Self>, mount: Option<&Path>) -> Result<Display, String> {
+        if let (DesktopBackend::Container, Some(mount)) = (self.settings.backend, mount) {
+            return self.make(Some(mount.to_owned())).await;
+        }
         let warm = loop {
-            let next = lock(&self.warm).pop_front();
-            match next {
-                Some(display) if display.alive() => break Some(display),
-                // One that died while it waited goes (dropped); try the next.
-                Some(_) => continue,
-                None => break None,
+            let Some(display) = lock(&self.warm).pop_front() else {
+                break None;
+            };
+            // Asking a container's runtime takes a moment, and dropping a dead one removes it: off the async threads.
+            let alive = tokio::task::spawn_blocking(move || display.alive().then_some(display))
+                .await
+                .map_err(|e| e.to_string())?;
+            if alive.is_some() {
+                break alive;
             }
         };
         let display = match warm {
             Some(display) => display,
-            None => self.make().await?,
+            None => self.make(None).await?,
         };
         self.refill();
         Ok(display)
@@ -463,8 +506,10 @@ impl Pool {
                 if pool.closed.load(Ordering::Relaxed) {
                     return;
                 }
-                match pool.make().await {
-                    Ok(display) if pool.closed.load(Ordering::Relaxed) => drop(display),
+                match pool.make(None).await {
+                    Ok(display) if pool.closed.load(Ordering::Relaxed) => {
+                        let _ = tokio::task::spawn_blocking(move || drop(display)).await;
+                    }
                     Ok(display) => lock(&pool.warm).push_back(display),
                     Err(e) => {
                         tracing::warn!(error = %e, "desktop pool not refilled");
@@ -479,11 +524,10 @@ impl Pool {
         lock(&self.warm).len()
     }
 
-    /// Throws every waiting display away.
-    pub fn drain(&self) {
+    /// Takes every waiting display out, for the caller to throw away off the async threads.
+    pub fn drain(&self) -> Vec<Display> {
         self.closed.store(true, Ordering::Relaxed);
-        let drained: Vec<Display> = lock(&self.warm).drain(..).collect();
-        drop(drained);
+        lock(&self.warm).drain(..).collect()
     }
 }
 

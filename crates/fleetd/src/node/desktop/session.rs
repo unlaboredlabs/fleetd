@@ -85,11 +85,11 @@ pub struct Opened {
 }
 
 impl Session {
-    /// Takes a lent display, connects to it, and starts reading its screen.
-    pub fn open(display: Display, opened: Opened) -> Result<Arc<Self>, String> {
+    /// Takes a lent display and the node's connection to it, and starts reading its screen.
+    pub fn open(display: Display, x: X, opened: Opened) -> Result<Arc<Self>, String> {
         std::fs::create_dir_all(&opened.dir)
             .map_err(|e| format!("cannot make {}: {e}", opened.dir.display()))?;
-        let x = Arc::new(display.connect()?);
+        let x = Arc::new(x);
         let (inputs, mut queued) = tokio::sync::mpsc::unbounded_channel::<BrowserInput>();
         let session = Arc::new(Self {
             id: opened.id,

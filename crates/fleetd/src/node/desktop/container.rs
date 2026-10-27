@@ -4,7 +4,7 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use sha2::{Digest, Sha256};
 
@@ -52,25 +52,29 @@ pub struct Runtime {
     pub label: String,
 }
 
-/// Runs a command to its end, killed at `timeout`.
+/// Runs a command to its end, killed at `timeout`. Its output is read as it comes, so a command that prints a lot
+/// never stalls on a full pipe.
 fn run(mut cmd: Command, timeout: Duration) -> Result<Output, String> {
-    let mut child = cmd
+    let child = cmd
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| e.to_string())?;
-    let deadline = Instant::now() + timeout;
-    loop {
-        match child.try_wait() {
-            Ok(Some(_)) => return child.wait_with_output().map_err(|e| e.to_string()),
-            Ok(None) if Instant::now() > deadline => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err(format!("it took over {} s", timeout.as_secs()));
-            }
-            Ok(None) => std::thread::sleep(Duration::from_millis(20)),
-            Err(e) => return Err(e.to_string()),
+    let pid = nix::unistd::Pid::from_raw(child.id() as i32);
+    let (done, waited) = std::sync::mpsc::channel();
+    let reader = std::thread::spawn(move || {
+        let _ = done.send(child.wait_with_output());
+    });
+    match waited.recv_timeout(timeout) {
+        Ok(out) => {
+            let _ = reader.join();
+            out.map_err(|e| e.to_string())
+        }
+        Err(_) => {
+            let _ = nix::sys::signal::kill(pid, nix::sys::signal::Signal::SIGKILL);
+            let _ = reader.join();
+            Err(format!("it took over {} s", timeout.as_secs()))
         }
     }
 }
@@ -161,6 +165,50 @@ impl Runtime {
         }
     }
 
+    /// The arguments of `run` for a display's container: its X socket folder and cookie, and at most one folder of
+    /// the host, read-only at the same path (the session's worktree).
+    pub fn run_args(
+        &self,
+        name: &str,
+        image: &str,
+        sockets: &Path,
+        auth: &Path,
+        mount: Option<&Path>,
+    ) -> Vec<String> {
+        let uid = nix::unistd::getuid();
+        let gid = nix::unistd::getgid();
+        let mut args: Vec<String> = ["run", "-d", "--rm", "--init", "--name", name]
+            .iter()
+            .map(|a| a.to_string())
+            .collect();
+        args.extend([
+            "--label".into(),
+            format!("{LABEL}={}", self.label),
+            "--user".into(),
+            format!("{uid}:{gid}"),
+            "--shm-size".into(),
+            "512m".into(),
+            "-e".into(),
+            format!(
+                "FLEETD_SCREEN={}x{}x24",
+                super::display::SIZE.0,
+                super::display::SIZE.1
+            ),
+            "-v".into(),
+            format!("{}:/tmp/.X11-unix", sockets.display()),
+            "-v".into(),
+            format!("{}:/fleetd/xauth:ro", auth.display()),
+        ]);
+        if self.podman {
+            args.push("--userns=keep-id".into());
+        }
+        if let Some(mount) = mount {
+            args.extend(["-v".into(), format!("{0}:{0}:ro", mount.display())]);
+        }
+        args.push(image.into());
+        args
+    }
+
     /// Starts a display's container, detached.
     pub fn run(
         &self,
@@ -168,34 +216,10 @@ impl Runtime {
         image: &str,
         sockets: &Path,
         auth: &Path,
-        mounts: &[PathBuf],
+        mount: Option<&Path>,
     ) -> Result<(), String> {
-        let uid = nix::unistd::getuid();
-        let gid = nix::unistd::getgid();
         let mut cmd = self.cmd();
-        cmd.args(["run", "-d", "--rm", "--init", "--name", name])
-            .arg("--label")
-            .arg(format!("{LABEL}={}", self.label))
-            .arg("--user")
-            .arg(format!("{uid}:{gid}"))
-            .args(["--shm-size", "512m"])
-            .arg("-e")
-            .arg(format!(
-                "FLEETD_SCREEN={}x{}x24",
-                super::display::SIZE.0,
-                super::display::SIZE.1
-            ))
-            .arg("-v")
-            .arg(format!("{}:/tmp/.X11-unix", sockets.display()))
-            .arg("-v")
-            .arg(format!("{}:/fleetd/xauth:ro", auth.display()));
-        if self.podman {
-            cmd.arg("--userns=keep-id");
-        }
-        for mount in mounts.iter().filter(|m| m.is_dir()) {
-            cmd.arg("-v").arg(format!("{0}:{0}:ro", mount.display()));
-        }
-        cmd.arg(image);
+        cmd.args(self.run_args(name, image, sockets, auth, mount));
         let out = run(cmd, Duration::from_secs(60))
             .map_err(|e| format!("`{} run` failed: {e}", self.name()))?;
         match out.status.success() {

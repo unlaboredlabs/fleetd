@@ -575,6 +575,7 @@ impl Broker {
             serial: None,
             udid: None,
             desktop: None,
+            worktree: None,
             start_ms: started.elapsed().as_millis() as u64,
         }))
     }

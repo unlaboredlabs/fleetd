@@ -474,6 +474,7 @@ impl Devices {
             serial: Some(Text::unchecked(serial)),
             udid: None,
             desktop: None,
+            worktree: None,
             start_ms: started.elapsed().as_millis() as u64,
         }))
     }

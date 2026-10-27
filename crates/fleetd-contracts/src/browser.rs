@@ -560,6 +560,8 @@ pub struct SessionStarted {
     pub udid: Option<Text<1, 100>>,
     /// A desktop's: where its apps run.
     pub desktop: Option<DesktopBackend>,
+    /// A desktop container's: the agent's worktree, read-only at this path in it.
+    pub worktree: Option<Text<1, 4096>>,
     pub start_ms: u64,
 }
 

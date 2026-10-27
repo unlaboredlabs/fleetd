@@ -278,12 +278,15 @@ on the desktop (`xterm`, `./target/debug/app`). The session tools, the one-sessi
 action log, the hub's storage and its limits are the same as a browser session's.
 
 - **A fresh display per session.** Where the node has docker or podman, each session gets a fresh container of the
-  pinned image, which runs Xvfb, Openbox and xterm. Apps launched in it see none of the machine but the node's
-  worktrees, read-only. Without a container runtime, each session gets an Xvfb of its own on the machine, and its apps
-  run as the node's user with a fresh, empty home directory. Either way the display, and everything on it, is thrown
-  away at `session_end`.
+  pinned image, which runs Xvfb, Openbox and xterm. Apps launched in it see none of the machine but the agent's own
+  worktree, read-only at the same path; they write in `/home/desktop` or `/tmp`, which go with the container.
+  Without a container runtime, each session gets an Xvfb of its own on the machine, and its apps run as the node's
+  user with a fresh, empty home directory. Either way the display, and everything on it, is thrown away at
+  `session_end`.
 - **Starts from a warm pool.** The node keeps one display started for the next session and starts another behind it,
-  so `session_start` takes a few milliseconds.
+  so `session_start` takes a few milliseconds. A container that mounts the agent's worktree can't come from the pool
+  (a running container takes no new folder), so it starts then, in about a second. The first session after the node
+  starts waits while it prepares, about a second when there's no image to build.
 - **Only the node and the session's apps reach the display.** Each X server takes a random cookie, and with Xvfb it
   listens on its socket file alone. The node does the agent's actions itself over its own X11 connection: it reads the
   screen and types and clicks through XTEST, as xdotool does. So while you have control, the agent's `desktop` actions
@@ -301,9 +304,10 @@ Desktop sessions need docker or podman, or Xvfb (`sudo apt install xvfb`). The d
 machine uses, or what to install. A machine that can host them lists `session_linux_desktop` to the hub.
 
 Nothing starts until an agent first asks for a desktop session (or as soon as the node starts, with
-`"enabled": true`). Then, with a container runtime, the node builds the pinned image once (a few minutes) as
-`localhost/fleetd-desktop:<hash>`: Debian 13 pinned by digest, with its packages from snapshot.debian.org at a fixed
-date. The recording's video needs an ffmpeg: the browser sessions' or the Android sessions' one, or `ffmpeg` below.
+`"enabled": true`). Then, with a container runtime that answers `docker info` (or podman's), the node builds the
+pinned image once (a few minutes) as `localhost/fleetd-desktop:<hash>`: Debian 13 pinned by digest, with its packages
+from snapshot.debian.org at a fixed date. Sessions that ask meanwhile are told to come back. If the build fails, the
+node uses Xvfb where it has one, and tries the build again at its next start. The recording's video needs an ffmpeg: the browser sessions' or the Android sessions' one, or `ffmpeg` below.
 
 Settings go under `desktop` in [node.json](/docs/config-and-files#node-json):
 
