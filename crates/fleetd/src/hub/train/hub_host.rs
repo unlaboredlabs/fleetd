@@ -10,7 +10,7 @@ use fleetd_contracts::tasks::Task;
 use serde_json::{Value, json};
 
 use super::contract::{ProjectRef, TaskId, WorkstreamId};
-use super::host::{BoxFut, EventView, ReviewSpawn, TaskView, TrainHost, WorkstreamView};
+use super::host::{BoxFut, EventView, NodeRun, ReviewSpawn, TaskView, TrainHost, WorkstreamView};
 use crate::clock::Clock;
 use crate::hub::api::Hub;
 use crate::hub::store::{EventLog, HubStore, NewEvent, WaitInput, iso_ms, now_ms};
@@ -347,6 +347,51 @@ impl TrainHost for HubHost {
             .zip(fleetd_contracts::prim::Line::new(base).ok())
             .map(|(repo_key, base)| fleetd_contracts::work::WorkScope { repo_key, base });
         scope.is_some_and(|s| hub.work.watches(&s).unwrap_or(false))
+    }
+
+    fn node_run<'a>(
+        &'a self,
+        checkout: &'a ProjectRef,
+        cwd: &'a str,
+        argv: Vec<String>,
+        timeout_sec: u32,
+    ) -> BoxFut<'a, Result<NodeRun, String>> {
+        Box::pin(async move {
+            let hub = self.hub().ok_or_else(not_bound)?;
+            let m = &checkout.machine_id;
+            let name = hub
+                .store
+                .machine_get(m)
+                .ok()
+                .flatten()
+                .map_or_else(|| m.to_string(), |machine| machine.name);
+            if !hub.node_commands.linked(m) {
+                return Err(format!("{name}, where the repo's checkout is, is offline"));
+            }
+            let roles = hub
+                .db
+                .with(|c| crate::hub::machine_roles::roles_on(c, m))
+                .map_err(|e| e.to_string())?;
+            if !roles.agents {
+                return Err(format!(
+                    "{name}, where the repo's checkout is, takes no agent work"
+                ));
+            }
+            let input = crate::hub::link::commands::CommandInput {
+                cwd: cwd.to_owned(),
+                argv,
+                timeout_sec: Some(timeout_sec),
+            };
+            let out = hub
+                .node_commands
+                .run(m, input)
+                .await
+                .map_err(|e| e.message)?;
+            Ok(NodeRun {
+                exit_code: out.exit_code.map(|c| c.get()),
+                output_tail: out.output_tail.to_string(),
+            })
+        })
     }
 
     fn wake_lead<'a>(&'a self, project_ref: &'a ProjectRef, line: String) -> BoxFut<'a, ()> {

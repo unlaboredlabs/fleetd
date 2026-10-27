@@ -53,6 +53,14 @@ pub struct ReviewSpawn {
     pub pr: String,
 }
 
+/// How a command the train ran on a node ended: its exit code (None when it timed out or could not run) and the tail
+/// of its output.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NodeRun {
+    pub exit_code: Option<i64>,
+    pub output_tail: String,
+}
+
 pub trait TrainHost: Send + Sync + 'static {
     fn task(&self, task_id: &TaskId) -> Option<TaskView>;
     /// The project's write tasks that are running or done, with their branches, whose ready PRs the train takes as
@@ -100,6 +108,18 @@ pub trait TrainHost: Send + Sync + 'static {
     /// project with two or more takes PRs only from them; any other takes a PR from any repo, as before.
     fn github_repos(&self, _project_ref: &ProjectRef) -> Vec<(String, ProjectRef)> {
         Vec::new()
+    }
+    /// Runs `argv` (never through a shell) in `cwd` on the machine of `checkout`, the repo's checkout, for at most
+    /// `timeout_sec`: only on a linked node whose role takes agents, as agent and review work runs, never on the hub's
+    /// own machine for that. The error says why it can't run there now.
+    fn node_run<'a>(
+        &'a self,
+        _checkout: &'a ProjectRef,
+        _cwd: &'a str,
+        _argv: Vec<String>,
+        _timeout_sec: u32,
+    ) -> BoxFut<'a, Result<NodeRun, String>> {
+        Box::pin(async { Err("this hub runs nothing on its nodes for the train".to_string()) })
     }
     /// LeadWakes.trigger(ref, { kind: "train", line }).
     fn wake_lead<'a>(&'a self, project_ref: &'a ProjectRef, line: String) -> BoxFut<'a, ()>;
