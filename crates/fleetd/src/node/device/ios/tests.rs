@@ -180,6 +180,31 @@ fn the_hub_sends_a_mac_opted_in_its_session_while_the_golden_is_made_or_after_it
 }
 
 #[test]
+fn a_start_with_no_warm_clone_says_whether_a_boot_runs_or_when_the_next_one_does() {
+    let words = |failing: Option<&str>, retry_in| {
+        super::waiting_words(&super::pool::Waiting {
+            secs: 70,
+            failing: failing.map(str::to_owned),
+            retry_in,
+        })
+        .0
+    };
+    assert_eq!(
+        words(None, None),
+        "Starting a simulator for you; it is ready in about 70 s."
+    );
+    assert_eq!(
+        words(Some("boot timed out"), None),
+        "This Mac's last iOS simulator boot failed (boot timed out); another is booting now, ready in about 70 s if \
+         it works."
+    );
+    assert_eq!(
+        words(Some("boot timed out"), Some(45)),
+        "This Mac's iOS simulators keep failing to boot (boot timed out); it tries again in about 45 s."
+    );
+}
+
+#[test]
 fn ios_sessions_run_only_on_macos_and_only_ready_ones_are_advertised() {
     let home = tempfile::tempdir().unwrap();
     assert_eq!(IosConfig::default().enabled(), cfg!(target_os = "macos"));

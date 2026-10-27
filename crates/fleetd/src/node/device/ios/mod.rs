@@ -342,6 +342,31 @@ fn health_from(
     )
 }
 
+/// What session_start says with no warm clone, and what the agent does next.
+pub fn waiting_words(waiting: &pool::Waiting) -> (String, String) {
+    let secs = waiting.secs;
+    match (&waiting.failing, waiting.retry_in) {
+        (None, _) => (
+            format!("Starting a simulator for you; it is ready in about {secs} s."),
+            format!("try session_start again in about {secs} s"),
+        ),
+        (Some(why), None) => (
+            format!(
+                "This Mac's last iOS simulator boot failed ({why}); another is booting now, ready in about {secs} s \
+                 if it works."
+            ),
+            format!("try session_start again in about {secs} s, or carry on without it"),
+        ),
+        (Some(why), Some(retry)) => (
+            format!(
+                "This Mac's iOS simulators keep failing to boot ({why}); it tries again in about {retry} s."
+            ),
+            "carry on without it and say so in your result, or try session_start again later"
+                .to_owned(),
+        ),
+    }
+}
+
 /// What the node lists at its link's hello for iOS sessions: `session_ios` once the golden is made (the doctor's
 /// check passes), on a Mac where they aren't off.
 pub fn capabilities(home: &Path) -> Vec<String> {
@@ -563,23 +588,9 @@ impl Simulators {
         let secrets_for = self.secrets_for.clone();
         let secrets_thread = thread.clone();
         let secrets = tokio::task::spawn_blocking(move || secrets_for(&secrets_thread));
-        let lent = pool.take().map_err(|waiting| match waiting.failing {
-            None => refuse(
-                ErrorCode::Failed,
-                format!(
-                    "Starting a simulator for you; it is ready in about {} s.",
-                    waiting.secs
-                ),
-                &format!("try session_start again in about {} s", waiting.secs),
-            ),
-            Some(why) => refuse(
-                ErrorCode::Failed,
-                format!(
-                    "This Mac's iOS simulators keep failing to boot ({why}); it tries again in about {} s.",
-                    waiting.secs
-                ),
-                "carry on without it and say so in your result, or try session_start again later",
-            ),
+        let lent = pool.take().map_err(|waiting| {
+            let (message, fix) = waiting_words(&waiting);
+            refuse(ErrorCode::Failed, message, &fix)
         })?;
         let secrets = secrets
             .await
