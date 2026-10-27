@@ -115,7 +115,7 @@ pair again with the new code.</p>
 </tr>
 <tr>
 <td>The top row</td>
-<td>The page’s title and its controls, then Commands. In a chat: the project’s name, its state word and its <a href="/docs/projects#max-agents">Max agents</a> control, and the panel’s toggle.</td>
+<td>The page’s title and its controls, then the command palette (⌘K) and the panel’s toggle. In a chat: the project’s name, then only <a href="#chat">what needs you</a>, if anything. The panel starts at the window’s top, so its tabs share this row.</td>
 </tr>
 <tr>
 <td>The chat</td>
@@ -161,10 +161,6 @@ on a chat attach to your message. See <a href="/docs/projects#add-a-project">Add
 <td>Your message (“Message the lead”), ready to type as soon as a chat opens. Enter sends; Shift+Enter adds a line; ↑ in an empty box brings back your last message; the clip or ⌘⇧A attaches a file. While the lead works, a message steers it, and Stop beside Send ends its turn now. Unsent words stay, even after you quit.</td>
 </tr>
 <tr>
-<td>The line above the box</td>
-<td>While the lead waits on you, what for (“2 questions, asked at 09:02”, “1 command to approve”). Show scrolls to it.</td>
-</tr>
-<tr>
 <td>An empty chat</td>
 <td>Asks what the lead should do, with a few starters that fill the box for you to edit.</td>
 </tr>
@@ -182,7 +178,7 @@ on a chat attach to your message. See <a href="/docs/projects#add-a-project">Add
 </tr>
 <tr>
 <td>The top row</td>
-<td>The project, its state word (as in <a href="#status">Status</a>), and its <a href="/docs/projects#max-agents">Max agents</a> control (“agents 6 / 12”).</td>
+<td>The project’s name, then what needs you, and nothing when nothing does. While the lead waits on you, what for (“Waiting on you: 2 questions, asked at 09:02”) and Show, which scrolls to it. Otherwise why the project is blocked, with Resume when its machine’s usage pause is why, or a check red on main, which blocks nothing.</td>
 </tr>
 </tbody>
 </table>
@@ -204,6 +200,8 @@ first message and prompts it started with; <strong>All agents</strong> or Esc go
 <p><strong>All projects</strong>, above the list, lists every project’s agents instead, each project under its name, those with an
 agent waiting on you first. Click an agent of another project to open its work beside that project’s chat.
 <strong>This project</strong> goes back. The panel remembers which you chose.</p>
+<p>Beside the count of agents working, <strong>max</strong> is the project’s <a href="/docs/projects#max-agents">Max agents</a> (“4 working · max
+20”). Click it to change it in Settings › Agents.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="train">Train</h2><a class="sl-anchor-link" href="#train"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Train”</span></a></div>
 <p>The Train tab shows the project’s merge train: the pull request merging now and its stage (rebasing onto the base,
 running CI, merging) with the checks it waits on, then the pull requests in line, in the order they’ll merge. Each

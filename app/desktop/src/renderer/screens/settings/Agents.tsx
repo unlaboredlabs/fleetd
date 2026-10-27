@@ -1,14 +1,13 @@
-// Max agents in the app: the chat header's "agents 6 / 12" control (it opens the slider in place), the same slider
-// per project in Settings → Agents, each machine's, and the fleet-wide cap above them. Reads the hub's slot state from the data
+// Max agents in the app: the slider per project in Settings → Agents (the panel's Agents tab links to it, "4 working
+// · max 20"), each machine's, and the fleet-wide cap above them. Reads the hub's slot state from the data
 // layer's store; a slider applies when you let go (a cap_set call through the layer), with Undo, and the hub's next
 // slot state confirms it.
 import { Slider } from "radix-ui";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { ProjectRef, SlotState } from "../../../shared/contracts";
 import { useData, useToolQuery } from "../../src/data/react";
-import { Button, cx, PROFILE_LINE, Popover, PopoverContent, PopoverTrigger, Separator, Switch, Text, textClass } from "../../ui";
+import { Button, PROFILE_LINE, Separator, Switch, Text, textClass } from "../../ui";
 import {
-  agentsLabel,
   appliedLine,
   changeLine,
   clampMax,
@@ -45,28 +44,6 @@ export const NOT_ADMIN = "This key can't change it: that needs an admin key.";
 
 /** The hub's slot state for this connection; undefined until it is fresh (never the last connection's numbers). */
 const useSlots = (): SlotState | undefined => useData((st) => (st.fresh ? (st.live.slots ?? st.slots) : undefined));
-
-/** "agents 6 / 12" in the project's chat header; a click opens the Max agents slider in place. */
-export function AgentsCapControl({ projectRef }: { projectRef: ProjectRef }) {
-  const slots = useSlots();
-  const [open, setOpen] = useState(false);
-  if (!slots) return null;
-  const a = projectAgents(slots, projectRef);
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button size="sm" variant="ghost" aria-label={`Max agents: ${a.running} running of ${a.limit}${a.queued > 0 ? `, ${a.queued} queued` : ""}`}>
-          <span className={cx(textClass({ size: "xs", tabular: true }), s.agentsLabel)}>{agentsLabel(a)}</span>
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent align="end">
-        <div className={s.agentsPopover}>
-          <AgentsPanel projectRef={projectRef} slots={slots} title="Max agents for this project" scale />
-        </div>
-      </PopoverContent>
-    </Popover>
-  );
-}
 
 /**
  * A change applied: from what, to what, and how many agents it paused. `follow`: it went back to the default;
@@ -232,7 +209,7 @@ function ResultLine(props: { id: string; state: SliderState; idle: string; done:
 }
 
 /** One project's Max agents: the slider, which applies when you let go, and what the change does. */
-export function AgentsPanel(props: { projectRef: ProjectRef; slots: SlotState; title?: string; scale?: boolean }) {
+export function AgentsPanel(props: { projectRef: ProjectRef; slots: SlotState; title?: string }) {
   const live = useLive();
   const call = useHubCall();
   const a = projectAgents(props.slots, props.projectRef);
@@ -264,16 +241,6 @@ export function AgentsPanel(props: { projectRef: ProjectRef; slots: SlotState; t
         ) : null}
       </div>
       <CapSlider id={id} max={a.top} disabled={!live || a.top <= 1} state={state} />
-      {props.scale ? (
-        <div className={s.agentsScale}>
-          <Text size="xs" tone="quiet" tabular>
-            1
-          </Text>
-          <Text size="xs" tone="quiet" tabular>
-            {props.slots.fleetCap === undefined ? `${a.top}` : `${a.top}, the whole fleet's cap`}
-          </Text>
-        </div>
-      ) : null}
       <MachineHolds machineId={props.projectRef.machineId} note={machineHolds(a, value, props.projectRef.machineId)} to={value} busy={state.busy} />
       <ResultLine
         id={id}
