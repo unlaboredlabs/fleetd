@@ -2,6 +2,10 @@
 //! same, with the CLI's own pieces (`crate::update`). It never waits for work to finish: a restart cuts off what runs,
 //! and that carries on by itself afterwards (`crate::update`'s doc says how).
 //!
+//! Ahead of any update, every 10 minutes, the hub downloads the channel's newest build and checks it ([`Updates::
+//! prefetch`]), and asks its nodes to do the same, so that pressing Update only swaps and restarts; the app says
+//! "fleetd <version> is ready" then ([`Updates::ready`]).
+//!
 //! The hub downloads the build and checks it against the release's SHA256SUMS (a failure changes nothing), while
 //! every online node that can downloads it too (`node_action` `fetch`, nothing installed), then keeps the running
 //! binary, puts the new one in place and starts the watcher (`update::finish`) from the kept binary, outside
@@ -55,6 +59,9 @@ pub struct NodeFacts {
     pub claude: Option<String>,
     /// Its node lists `claude_install`.
     pub can_install_claude: bool,
+    /// What runs on it that can't carry on through its node's restart (live sessions, previews), in words; None when
+    /// nothing does. Agents' runs aren't in it: they carry on by themselves.
+    pub busy: Option<String>,
 }
 
 /// What the update does to the hub's machine and its nodes; tests stand in fakes.
@@ -117,6 +124,11 @@ pub struct Timing {
     pub node_back: Duration,
     /// For the restart this process handed to the watcher: past it, the restart never happened.
     pub restart: Duration,
+    /// How often the channel's newest build is downloaded ahead of an update.
+    pub prefetch_every: Duration,
+    /// How often a busy machine is looked at again, and for how long it is waited for before it is skipped.
+    pub idle_poll: Duration,
+    pub idle: Duration,
 }
 
 impl Default for Timing {
@@ -128,6 +140,9 @@ impl Default for Timing {
             node_back: Duration::from_secs(HEALTH_WAIT_SECS * 3),
             // The new build's 90 s and the previous build's 90 s once put back, with room to spare.
             restart: Duration::from_secs(HEALTH_WAIT_SECS * 3),
+            prefetch_every: Duration::from_secs(600),
+            idle_poll: Duration::from_secs(5),
+            idle: Duration::from_secs(4 * 3600),
         }
     }
 }
@@ -138,12 +153,16 @@ pub struct Updates {
     timing: Timing,
     run: Mutex<Option<UpdateRun>>,
     ports: RwLock<Option<Arc<dyn UpdatePorts>>>,
+    /// The channel's newest build, downloaded and checked ahead ([`Self::prefetch`]).
+    ready: Mutex<Option<String>>,
 }
 
 /// Why `start` didn't start one.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Refused {
     NotWired,
+    /// A retry with no finished run whose hub updated, or of a machine it didn't have.
+    NothingToRetry,
 }
 
 impl Updates {
@@ -159,6 +178,7 @@ impl Updates {
             timing,
             run: Mutex::new(run),
             ports: RwLock::default(),
+            ready: Mutex::default(),
         })
     }
 
@@ -174,6 +194,120 @@ impl Updates {
     /// The update going now, or the last one.
     pub fn status(&self) -> Option<UpdateRun> {
         self.run.lock().unwrap().clone()
+    }
+
+    /// The channel's newest build when it is downloaded and checked here, ready to install.
+    pub fn ready(&self) -> Option<String> {
+        self.ready.lock().unwrap().clone()
+    }
+
+    fn kept(&self) -> PathBuf {
+        self.dir.join("fleetd.next")
+    }
+
+    /// Runs [`Self::prefetch`] now and every [`Timing::prefetch_every`]. Runs until the hub stops.
+    pub async fn prefetch_loop(self: Arc<Self>) {
+        loop {
+            self.prefetch().await;
+            self.clock.sleep(self.timing.prefetch_every).await;
+        }
+    }
+
+    /// Downloads the channel's newest build when the hub doesn't run it, checks it against the release's SHA256SUMS
+    /// and keeps it for the update, and asks every online node that can to do the same. Nothing is installed. Quiet
+    /// on a failure: the update downloads it then, and says why if it can't.
+    pub async fn prefetch(&self) {
+        let Some(ports) = self.ports() else { return };
+        if self.status().is_some_and(|r| r.finished_at.is_none()) || !ports.release_build() {
+            return;
+        }
+        let running = ports.running();
+        let channel = Channel::of(&running, true);
+        let feed = ports.feed(channel);
+        let Ok(Some(to)) = crate::update::release(&*feed).await.map(|r| r.cli_version) else {
+            return;
+        };
+        if to == running {
+            *self.ready.lock().unwrap() = None;
+            return;
+        }
+        let (Ok(asset), Ok(sums)) = (ports.asset(), crate::update::sums(&*feed).await) else {
+            return;
+        };
+        let have = fs::read(self.kept())
+            .ok()
+            .is_some_and(|b| sums.get(&asset) == Some(&crate::update::sha256_hex(&b)));
+        if !have {
+            let kept = match crate::update::checked(&*feed, &sums, &asset).await {
+                Ok(bytes) => fs::create_dir_all(&self.dir)
+                    .and_then(|()| crate::update::replace_file(&self.kept(), &bytes))
+                    .map_err(|e| e.to_string()),
+                Err(f) => Err(f.message),
+            };
+            if let Err(e) = kept {
+                tracing::info!("update: couldn't download {to} ahead: {e}");
+                return;
+            }
+        }
+        let update = NodeUpdate {
+            version: text(&to),
+            channel: match channel {
+                Channel::Stable => HubChannel::Stable,
+                Channel::Nightly => HubChannel::Nightly,
+            },
+        };
+        for node in ports.nodes() {
+            if node.live_since.is_some() && node.can_fetch && node.version != to {
+                ports.fetch_on_node(&node.machine_id, &update);
+            }
+        }
+        *self.ready.lock().unwrap() = Some(to);
+    }
+
+    /// Updates one machine of the last run again (a node that failed, was put back or skipped), when the hub runs that
+    /// run's build. A run going on is returned as it is.
+    pub fn retry(self: &Arc<Self>, machine_id: &MachineId) -> Result<UpdateRun, Refused> {
+        let ports = self.ports().ok_or(Refused::NotWired)?;
+        let mut held = self.run.lock().unwrap();
+        let run = held.as_mut().ok_or(Refused::NothingToRetry)?;
+        if run.finished_at.is_none() {
+            return Ok(run.clone());
+        }
+        let hub_updated = run.parts.iter().any(|p| {
+            p.part == UpdatePartKind::Hub
+                && matches!(p.state, UpdateState::Done | UpdateState::Current)
+        });
+        let ours = |p: &UpdatePart| p.machine_id.as_ref() == Some(machine_id);
+        let (Some(to), true, true) = (run.to.clone(), hub_updated, run.parts.iter().any(ours))
+        else {
+            return Err(Refused::NothingToRetry);
+        };
+        let mut parts = run.parts.to_vec();
+        for p in parts.iter_mut().filter(|p| ours(p)) {
+            p.state = UpdateState::Waiting;
+            p.stage = None;
+            p.message = None;
+        }
+        run.parts = List::new(parts).expect("same parts");
+        run.finished_at = None;
+        let run = run.clone();
+        self.save(&run);
+        drop(held);
+        let this = Arc::clone(self);
+        let machine_id = machine_id.clone();
+        tokio::spawn(async move {
+            let update = NodeUpdate {
+                version: to,
+                channel: this.status().map_or(HubChannel::Nightly, |r| r.channel),
+            };
+            this.update_node(&*ports, &machine_id, &update).await;
+            this.update_claude(&*ports, &machine_id).await;
+            this.settle_nodes(
+                UpdateState::Failed,
+                "the update of this node stopped without a result",
+            );
+        });
+        Ok(run)
     }
 
     fn now(&self) -> String {
@@ -493,7 +627,19 @@ impl Updates {
             .asset()
             .map_err(|e| Failure::new(UpdateStage::Download, e))?;
         self.fetch_ahead(ports, &to);
-        let bytes = crate::update::verified(&*feed, &asset).await?;
+        // Downloaded ahead: checked against the sums again, else downloaded now.
+        let bytes = match fs::read(self.kept()) {
+            Ok(kept) => {
+                let sums = crate::update::sums(&*feed).await?;
+                match sums.get(&asset) == Some(&crate::update::sha256_hex(&kept)) {
+                    true => kept,
+                    false => crate::update::checked(&*feed, &sums, &asset).await?,
+                }
+            }
+            Err(_) => crate::update::verified(&*feed, &asset).await?,
+        };
+        let _ = fs::remove_file(self.kept());
+        *self.ready.lock().unwrap() = None;
         let previous = ports.previous().map_err(|e| {
             Failure::new(
                 UpdateStage::Install,
@@ -735,6 +881,33 @@ impl Updates {
                     node.name
                 ),
             );
+        }
+        // What can't carry on through a restart (a live session, a preview) is waited out: the machine updates once
+        // it's idle, and says so meanwhile.
+        let idle_by = now_ms(self.clock.as_ref()) + ms(self.timing.idle);
+        let mut said = None;
+        while let Some(busy) = facts(ports).and_then(|n| n.busy) {
+            if now_ms(self.clock.as_ref()) >= idle_by {
+                return self.set_part(
+                    Some(machine_id),
+                    UpdateState::Skipped,
+                    None,
+                    format!(
+                        "still busy after {} h ({busy}): press Update again once it's idle",
+                        self.timing.idle.as_secs() / 3600
+                    ),
+                );
+            }
+            if said.as_ref() != Some(&busy) {
+                self.set_part(
+                    Some(machine_id),
+                    UpdateState::Waiting,
+                    None,
+                    format!("waits until it's idle: {busy} can't carry on through a restart"),
+                );
+                said = Some(busy);
+            }
+            self.clock.sleep(self.timing.idle_poll).await;
         }
         self.set_part(
             Some(machine_id),
