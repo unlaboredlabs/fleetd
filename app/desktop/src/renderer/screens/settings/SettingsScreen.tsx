@@ -1,11 +1,11 @@
-// Settings (⌘, or the app menu): General, Notifications, Agents (Max agents), Machines (roles and sessions), Projects, MCP servers, Instructions, Memory, Skills and Prompts. The route picks the page
+// Settings (⌘, or the app menu): General, Notifications, Agents (Max agents per project), Projects, MCP servers,
+// Instructions, Memory, Skills and Prompts: everyone's, with nothing hub-wide (that is Administration's). The route picks the page
 // (#/settings/<tab>); see route.ts for the links into one prompt. The shell shows SettingsSidebar in the sidebar's
 // place while Settings is open.
 import { Automations } from "../automations";
 import { AgentsSettings } from "./Agents";
 import { General } from "./General";
 import { Instructions } from "./Instructions";
-import { MachinesSettings } from "./Machines";
 import { McpSettings } from "./McpServers";
 import { Memory } from "./Memory";
 import { Notifications } from "./Notifications";
@@ -27,8 +27,6 @@ export function SettingsScreen() {
         <Notifications />
       ) : route.tab === "agents" ? (
         <AgentsSettings />
-      ) : route.tab === "machines" ? (
-        <MachinesSettings />
       ) : route.tab === "projects" ? (
         <ProjectSettings route={route} />
       ) : route.tab === "mcp" ? (

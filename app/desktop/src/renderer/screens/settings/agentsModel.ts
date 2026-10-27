@@ -62,7 +62,7 @@ export function sourceLine(slots: SlotState, a: ProjectAgents): string {
  */
 export function machineHolds(a: ProjectAgents, value: number, machineId: string): string | null {
   if (value <= a.machineCap) return null;
-  return `${machineId} runs at most ${a.machineCap} agents at once, so this project runs ${a.machineCap} until you raise ${machineId}.`;
+  return `${machineId} runs at most ${a.machineCap} agents at once, so this project runs ${a.machineCap} until an admin raises ${machineId}.`;
 }
 
 /** One machine as Settings shows it. */
