@@ -256,7 +256,9 @@ default types, or with `opened` and `synchronize`). For each one:
 
 - A PR joins a batch only once that check passed on its own commit, or skipped for want of work (below). Until then it
   stays out and says why: "its own head's `macos` still running", "… failed", or "its own head hasn't reported `macos`
-  yet". A cancelled run counts as failed, since no later CI decides it.
+  yet". Nothing else would run a cancelled one again, so when that check, or a job it needs, reads cancelled, the train
+  re-runs the cancelled jobs of that workflow run once and says so: "its own head's `macos` was cancelled; the train
+  re-ran it". Cancelled again, it says to push again or re-run it by hand.
 - On the batch PR it reads skipped, which counts as passing, so the batch never waits for it. A skipped job still
   reports, so it can stay a required check.
 - `main` still runs it after each merge, where a failure opens a fix order like any [check after the merge](#after-merge).

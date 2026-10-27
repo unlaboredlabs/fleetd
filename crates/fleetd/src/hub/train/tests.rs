@@ -5611,7 +5611,8 @@ async fn a_pr_left_out_of_a_batch_says_why() {
 /// D204: CI that skips its macOS jobs on the batch PR (`!endsWith(github.head_ref, 'train/batch')`). A PR joins a batch
 /// only once its own head passed them, or skipped them for want of work: `desktop-macos` needs `macos scope`, whose run
 /// passed on that head and said "no work for desktop-macos". One still running, failed or not reported stays out and
-/// says which, and so does a skip whose scope was cancelled (the run cancelled before the check started). The batch
+/// says which, and so does a skip whose scope was cancelled (the run cancelled before the check started), which the
+/// train re-runs. The batch
 /// never waits for them: they read skipped on its head, `rust (macos)` too, which main requires, and it merges on its
 /// first read.
 #[tokio::test(flavor = "multi_thread")]
@@ -5721,13 +5722,123 @@ async fn a_pr_joins_a_batch_only_once_its_own_head_passed_the_checks_the_batch_s
         why(&prs[2]).as_deref(),
         Some("not in this batch: its own head's `desktop-macos` failed")
     );
-    // Never ran, cancelled before it started, or skipped by a scope that never said it had no work.
-    for pr in [&prs[3], &prs[5], &prs[6]] {
+    // Never ran, or skipped by a scope that never said it had no work.
+    for pr in [&prs[3], &prs[6]] {
         assert_eq!(
             why(pr).as_deref(),
             Some("not in this batch: its own head hasn't reported `desktop-macos` yet")
         );
     }
+    // Cancelled before it started: the train runs it again.
+    assert_eq!(
+        why(&prs[5]).as_deref(),
+        Some("not in this batch: its own head's `macos scope` was cancelled; the train re-ran it")
+    );
+}
+
+/// A cancelled check the batch skips, or a cancelled `macos scope`, on a ready PR's own head: nothing would run it
+/// again, so the PR would wait forever. The train re-runs that workflow run once and says so on the PR's line;
+/// cancelled again, it says to push or re-run it, and re-runs nothing more. What it read of a head goes once the head
+/// leaves the line.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_cancelled_check_the_batch_skips_is_re_run_once_and_the_pr_says_so() {
+    let kit = kit_on(&RepoCi {
+        required: &["build"],
+        fast: &[],
+        runs: || {
+            vec![
+                run(1, "build", Some("success")),
+                run(3, "desktop-macos", Some("skipped")),
+            ]
+        },
+    });
+    kit.gh.workflow_files.lock().unwrap().push((
+        "ci.yml",
+        "name: CI\non:\n  pull_request:\njobs:\n  build:\n    runs-on: ubuntu-latest\n  macos-scope:\n    \
+         name: macos scope\n    runs-on: ubuntu-latest\n  desktop-macos:\n    needs: macos-scope\n    \
+         if: ${{ !cancelled() && !endsWith(github.head_ref, 'train/batch') }}\n    runs-on: macos-latest\n",
+    ));
+    let own =
+        |desktop: Value, scope: Value| json!([run(1, "build", Some("success")), desktop, scope]);
+    let mut prs = Vec::new();
+    for (n, branch, file, desktop, scope) in [
+        (
+            7,
+            "a",
+            "a.txt",
+            run(3, "desktop-macos", Some("success")),
+            run(39, "macos scope", Some("success")),
+        ),
+        (
+            8,
+            "b",
+            "b.txt",
+            run(3, "desktop-macos", Some("success")),
+            run(39, "macos scope", Some("success")),
+        ),
+        (
+            9,
+            "cut",
+            "cut.txt",
+            run(60, "desktop-macos", Some("cancelled")),
+            run(39, "macos scope", Some("success")),
+        ),
+        (
+            10,
+            "scope",
+            "scope.txt",
+            run(3, "desktop-macos", Some("skipped")),
+            run(61, "macos scope", Some("cancelled")),
+        ),
+    ] {
+        let change = kit
+            .enqueue(kit.open_pr(n, branch, &[add(file, "x\n")]))
+            .await;
+        kit.gh
+            .head_runs
+            .lock()
+            .unwrap()
+            .insert(kit.head_of(branch), own(desktop, scope));
+        prs.push(change);
+    }
+    let merged = [kit.head_of("a"), kit.head_of("b")];
+    let why = |c: &Change| kit.get(&c.change_id).last_error;
+
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(members_of_batch(&kit), [7, 8]);
+    assert_eq!(*kit.gh.reruns.lock().unwrap(), [60, 61]);
+    assert_eq!(
+        why(&prs[2]).as_deref(),
+        Some(
+            "not in this batch: its own head's `desktop-macos` was cancelled; the train re-ran it"
+        )
+    );
+    assert_eq!(
+        why(&prs[3]).as_deref(),
+        Some("not in this batch: its own head's `macos scope` was cancelled; the train re-ran it")
+    );
+
+    // Still cancelled on the next pass: no second re-run, and the PR says what to do.
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(kit.gh.reruns.lock().unwrap().len(), 2);
+    assert_eq!(
+        why(&prs[3]).as_deref(),
+        Some(
+            "not in this batch: its own head's `macos scope` was cancelled again after the train re-ran it: push \
+             again or re-run it"
+        )
+    );
+    let heads: Vec<String> = kit
+        .train
+        .next_labels
+        .heads
+        .lock()
+        .unwrap()
+        .keys()
+        .map(|(_, sha)| sha.clone())
+        .collect();
+    assert!(heads.contains(&kit.head_of("scope")), "{heads:?}");
+    assert!(!heads.iter().any(|h| merged.contains(h)), "{heads:?}");
 }
 
 /// D204: a check the batch skips never ran on the merged tree before the merge, so main's run of it is watched, even one

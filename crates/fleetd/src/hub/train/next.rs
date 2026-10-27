@@ -13,7 +13,7 @@ use std::sync::Mutex;
 
 use super::contract::{Change, ChangeId, ChangeState, GitHubPrUrl, parse_pr_url};
 use super::github::{CheckRun, NEXT_LABEL};
-use super::records::QUEUED_STATES;
+use super::records::{HEAD_STATES, QUEUED_STATES};
 use super::service::{Train, lock, timed_out};
 use crate::hub::leads::events::Event;
 use crate::hub::reviews::service::BLOCKED;
@@ -117,8 +117,18 @@ pub(super) struct NextLabels {
     warned: Mutex<HashSet<String>>,
     /// Per repo and base, what its workflows say (`Workflows`), and when they were read.
     gated: Mutex<HashMap<(String, String), GatedRead>>,
-    /// The annotation messages of finished check runs, by run id: they never change.
-    notes: Mutex<HashMap<u64, Vec<String>>>,
+    /// Per repo and head in the line, what the train read of its checks the batch skips and did about them
+    /// (`HeadSkips`); dropped once the head leaves the line (`prune_heads`).
+    pub(super) heads: Mutex<HashMap<(String, String), HeadSkips>>,
+}
+
+/// What the train knows of one head's checks the batch skips.
+#[derive(Default)]
+pub(super) struct HeadSkips {
+    /// The annotation messages of its finished check runs, by run id: they never change.
+    notes: HashMap<u64, Vec<String>>,
+    /// The workflow runs on it the train re-ran for a cancelled check (`rerun_cancelled_skips`): once each.
+    reran: HashSet<u64>,
 }
 
 /// What putting the label on a PR came to.
@@ -490,15 +500,17 @@ impl Train {
         at.map_or(Labelled::Before, Labelled::At)
     }
 
-    /// `runs` without the checks the batch skips whose skip on this head nothing proves (`unproven_batch_skips`): to
-    /// `own_checks` they have not reported. The notes of the passed runs they need are read once per run; one that
-    /// can't be read proves nothing.
+    /// `runs` (of head `sha`) without the checks the batch skips whose skip on this head nothing proves
+    /// (`unproven_batch_skips`): to `own_checks` they have not reported. The notes of the passed runs they need are
+    /// read once per run; one that can't be read proves nothing.
     pub(super) async fn proven_runs(
         &self,
         repo: &str,
+        sha: &str,
         runs: Vec<CheckRun>,
         batch: &[BatchSkip],
     ) -> Vec<CheckRun> {
+        let key = (repo.to_string(), sha.to_string());
         let needed: Vec<&CheckRun> = runs
             .iter()
             .filter(|r| r.conclusion.as_deref() == Some("success"))
@@ -511,28 +523,126 @@ impl Train {
             .collect();
         for r in needed {
             let id = r.id as u64;
-            if lock(&self.next_labels.notes).contains_key(&id) {
+            let read = lock(&self.next_labels.heads)
+                .get(&key)
+                .is_some_and(|h| h.notes.contains_key(&id));
+            if read {
                 continue;
             }
             match self.github.annotations(repo, id).await {
                 Ok(notes) => {
-                    lock(&self.next_labels.notes).insert(id, notes);
+                    lock(&self.next_labels.heads)
+                        .entry(key.clone())
+                        .or_default()
+                        .notes
+                        .insert(id, notes);
                 }
                 Err(e) => {
                     tracing::warn!(repo, run = id, error = %e.message, "train: a check run's notes not read")
                 }
             }
         }
-        let notes = lock(&self.next_labels.notes);
-        let read = |r: &CheckRun| notes.get(&(r.id as u64)).cloned();
+        let heads = lock(&self.next_labels.heads);
+        let read = |r: &CheckRun| {
+            heads
+                .get(&key)
+                .and_then(|h| h.notes.get(&(r.id as u64)))
+                .cloned()
+        };
         let unproven: Vec<String> = unproven_batch_skips(&runs, batch, &read)
             .iter()
             .map(|r| r.name.clone())
             .collect();
-        drop(notes);
+        drop(heads);
         runs.into_iter()
             .filter(|r| !unproven.contains(&r.name))
             .collect()
+    }
+
+    /// A cancelled check the batch skips, or a cancelled job one of them needs, on head `sha` (`runs`, the newest of
+    /// each check): nothing re-runs it by itself, so the PR would never join a batch. The train re-runs the failed and
+    /// cancelled jobs of its workflow run once (the jobs that need them run again too), and says so; cancelled again
+    /// after that, it says the run needs a push or a re-run by hand. None when none is cancelled.
+    pub(super) async fn rerun_cancelled_skips(
+        &self,
+        repo: &str,
+        sha: &str,
+        runs: &[CheckRun],
+        batch: &[BatchSkip],
+    ) -> Option<String> {
+        let watched = |name: &str| {
+            batch
+                .iter()
+                .any(|b| gated_name(&b.name, name) || b.needs.iter().any(|n| gated_name(n, name)))
+        };
+        let cancelled: Vec<&CheckRun> = runs
+            .iter()
+            .filter(|r| r.conclusion.as_deref() == Some("cancelled") && watched(&r.name))
+            .collect();
+        if cancelled.is_empty() {
+            return None;
+        }
+        let key = (repo.to_string(), sha.to_string());
+        let names = cancelled
+            .iter()
+            .map(|r| format!("`{}`", r.name))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let mut again = false;
+        let mut re_ran = false;
+        let mut seen: Vec<u64> = Vec::new();
+        for run in cancelled.iter().filter_map(|r| r.workflow_run()) {
+            if seen.contains(&run) {
+                continue;
+            }
+            seen.push(run);
+            let done = lock(&self.next_labels.heads)
+                .get(&key)
+                .is_some_and(|h| h.reran.contains(&run));
+            if done {
+                again = true;
+                continue;
+            }
+            match self.github.rerun_failed_jobs(repo, run).await {
+                Ok(()) => {
+                    tracing::info!(
+                        repo,
+                        sha,
+                        run,
+                        "train: re-ran a PR's cancelled checks the batch skips"
+                    );
+                    lock(&self.next_labels.heads)
+                        .entry(key.clone())
+                        .or_default()
+                        .reran
+                        .insert(run);
+                    re_ran = true;
+                }
+                Err(e) => {
+                    tracing::warn!(repo, sha, run, error = %e.message, "train: cancelled checks not re-run");
+                }
+            }
+        }
+        Some(if re_ran {
+            format!("its own head's {names} was cancelled; the train re-ran it")
+        } else if again {
+            format!(
+                "its own head's {names} was cancelled again after the train re-ran it: push again or re-run it"
+            )
+        } else {
+            format!("its own head's {names} was cancelled, and the train could not re-run it")
+        })
+    }
+
+    /// Forgets what it knew of the heads of `repo` no longer in its line, nor in the train's hands.
+    pub(super) fn prune_heads(&self, repo: &str) {
+        let line: HashSet<String> = self
+            .records
+            .in_train(repo, &[QUEUED_STATES, HEAD_STATES].concat())
+            .into_iter()
+            .map(|c| c.head_sha.as_str().to_string())
+            .collect();
+        lock(&self.next_labels.heads).retain(|(r, sha), _| r != repo || line.contains(sha));
     }
 
     /// Puts the label on PR `n` unless it `has` it.

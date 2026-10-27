@@ -335,6 +335,7 @@ impl Train {
             .filter(|c| c.state == ChangeState::Ready || self.rereviewing(c))
             .collect();
         let (candidates, settled) = self.candidates(repo, ready).await;
+        self.prune_heads(repo);
         let Some(head) = candidates.first() else {
             self.relabel(repo, &[], &[]).await;
             return settled;
@@ -535,7 +536,14 @@ impl Train {
         let Some(workflows) = self.workflows(repo, base).await else {
             return Some("its workflows could not be read for the checks a batch skips".into());
         };
-        let runs = self.proven_runs(repo, runs, &workflows.batch).await;
+        let sha = change.head_sha.as_str();
+        if let Some(why) = self
+            .rerun_cancelled_skips(repo, sha, &runs, &workflows.batch)
+            .await
+        {
+            return Some(why);
+        }
+        let runs = self.proven_runs(repo, sha, runs, &workflows.batch).await;
         let batch = workflows.batch_names();
         let unrun = fast
             .as_ref()
