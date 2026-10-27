@@ -14,12 +14,16 @@ The product questions (§10) are answered, and these decisions override anything
 3. **Accounts:**
    - **Claude:** the hub can be configured with a **Claude API key and an optional custom endpoint**, and each person
      can **connect their own Claude subscription**.
-   - **GitHub:** **every person connects their own GitHub account by OAuth**, through a bring-your-own OAuth app the
-     hub admin configures (fleetd runs no shared OAuth app).
-   - **PRs open under the GitHub account of the person whose message started the order**, with their own
-     OAuth-connected GitHub. Commits are authored by them, with `Co-Authored-By` the agent; anyone else in the order
-     is added as a co-author.
-   - **Automations and train-opened fixes use the hub's own GitHub account**, and so do merging and the train's checks.
+   - **GitHub: one GitHub App per hub** (D190). The admin creates it during setup through GitHub's app-manifest link,
+     so there is nothing to paste, and fleetd runs no shared app. No separate OAuth app.
+     - Its **installation token** does the hub's own work: the train, merges, CI reads, webhooks, and PRs no person
+       asked for.
+     - **Each person connects their GitHub account through the same App's user sign-in** (a user-to-server token,
+       refreshed as it expires).
+   - **PRs open under the GitHub account of the person whose message started the order**, with their user-to-server
+     token. Commits are authored by them, with `Co-Authored-By` the agent; anyone else in the order is added as a
+     co-author.
+   - **Automations and train-opened fixes use the App's installation token**, and so do merging and the train's checks.
    - A person without GitHub connected is **asked to connect before their first PR**. fleetd never silently uses
      someone else's account.
    - Each order records **which person started it** (`Workstream.startedBy`, from step 1), so this needs no migration.
@@ -144,7 +148,8 @@ project           + visibility: open | private;  an assistant project is private
 - It keeps "who is in" a decision of the hub's admin, as Linear, Slack and Tailscale invites all do. Network
   reachability alone never grants membership.
 - Tailscale gives the convenient second-device flow, and the team's MFA, wherever it is available.
-- GitHub can come later as a **link on the profile**, not a sign-in, for PR attribution (§6).
+- GitHub comes later as a **connection on the profile** through the hub's GitHub App, not a sign-in to fleetd, so
+  PRs open as the person (Decided, 3).
 - Passkeys fit later, once hubs commonly serve HTTPS on a stable name.
 
 ---
@@ -309,11 +314,11 @@ Settings › People and on the Navi page. For strict privacy, run your Navi on *
 - **Accounts the agents use** (Decided, 3; a later step):
   - **Claude:** a hub-wide Claude API key with an optional custom endpoint, or a person's own connected Claude
     subscription.
-  - **GitHub:** each person's own GitHub, connected by OAuth through the admin's own OAuth app. An order's PRs open
-    under the account of the person who started it (`startedBy`), its commits authored by them with `Co-Authored-By`
-    the agent and anyone else in the order. Automations, train fixes, merges and the train's checks use the hub's own
-    GitHub account. Someone with no GitHub connected is asked to connect before their first PR; no one's account is
-    used for anyone else.
+  - **GitHub:** the hub's one GitHub App (D190). Each person connects their account through its user sign-in. An
+    order's PRs open with the user-to-server token of the person who started it (`startedBy`), its commits authored
+    by them with `Co-Authored-By` the agent and anyone else in the order. Automations, train fixes, merges, CI reads
+    and the train's checks use the App's installation token. Someone with no GitHub connected is asked to connect
+    before their first PR; no one's account is used for anyone else.
 
 **Who approves what:** the table in §3, enforced in `Approvals::answer` and `submit_secret`.
 - `Money` and `Irreversible` commands need a project maintainer; the rest need any project member, or the addressee.
@@ -434,9 +439,10 @@ This builds on the Navi plan's first version.
 **Step 8: Accounts (m).** (Decided, 3.)
 - Hub-wide Claude API key and optional custom endpoint, on the Administration page; a person connects their own
   Claude subscription.
-- GitHub by OAuth for every person, through the admin's own OAuth app, set up with a guided, sealed flow.
+- One GitHub App per hub, created by the admin through GitHub's app-manifest link: its installation token for the
+  hub's own work, and its user sign-in (user-to-server tokens, refreshed) for each person.
 - PRs under the account of the order's `startedBy`, commits authored by them with `Co-Authored-By` the agent and the
-  order's other people; the hub's own account for automations, train fixes, merges and checks; asked to connect
+  order's other people; the installation token for automations, train fixes, merges and checks; asked to connect
   before a first PR.
 
 **Later, if asked:**
