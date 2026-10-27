@@ -78,8 +78,8 @@
 against the release’s <code dir="auto">SHA256SUMS</code> and keeps it, and its machines fetch it too. Nothing is installed yet. The app then
 shows one quiet notice, <strong>fleetd <em>version</em> is ready</strong>, with a few lines on what’s new and an <strong>Update</strong> button. It shows
 once per version and never again for it; the sidebar keeps a small <strong>Update</strong> until you do.</p>
-<p>Click <strong>Update</strong>, in the notice or the sidebar. Since the build is already downloaded and checked, an update only swaps it
-in and restarts, in order:</p>
+<p>Click <strong>Update</strong>, in the notice or the sidebar. Since the build is already downloaded and checked, an update only swaps
+it in and restarts, in order:</p>
 <ol>
 <li><strong>The hub</strong> checks the kept build against <code dir="auto">SHA256SUMS</code> again, keeps the binary it runs, and restarts on the new one.
 If the new build doesn’t come up healthy within 90 seconds, the previous one is put back and restarted. If the
@@ -114,8 +114,8 @@ the sidebar says <strong>Updated</strong>; hover it for the version.</p>
 </ul>
 <p>A failed or skipped machine has <strong>Retry</strong> on its line, which updates just that machine (its fleetd, then its Claude
 Code) to the build the hub runs. If the hub has moved to another build since (with <code dir="auto">fleetd update</code> on its machine,
-say), Retry says so instead, and <strong>Update</strong> brings every machine to the hub’s build. After a part failed, the app doesn’t restart by itself, so the result stays on screen: its line has <strong>Update</strong>
-instead.</p>
+say), Retry says so instead, and <strong>Update</strong> brings every machine to the hub’s build. After a part failed, the app
+doesn’t restart by itself, so the result stays on screen: its line has <strong>Update</strong> instead.</p>
 <p>Updating needs a key with Admin on every machine, as <code dir="auto">fleetd pair</code> gives the app. The first time, a hub from before
 the Update button can’t do this yet: the app says so, and <code dir="auto">fleetd update</code> on the hub’s machine once (see below) brings it
 in. Machines that were online when you pressed Update get a while to reconnect after the hub restarts; one that was

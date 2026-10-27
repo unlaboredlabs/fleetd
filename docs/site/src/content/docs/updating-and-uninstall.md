@@ -14,8 +14,8 @@ against the release's `SHA256SUMS` and keeps it, and its machines fetch it too. 
 shows one quiet notice, **fleetd *version* is ready**, with a few lines on what's new and an **Update** button. It shows
 once per version and never again for it; the sidebar keeps a small **Update** until you do.
 
-Click **Update**, in the notice or the sidebar. Since the build is already downloaded and checked, an update only swaps it
-in and restarts, in order:
+Click **Update**, in the notice or the sidebar. Since the build is already downloaded and checked, an update only swaps
+it in and restarts, in order:
 
 1. **The hub** checks the kept build against `SHA256SUMS` again, keeps the binary it runs, and restarts on the new one.
    If the new build doesn't come up healthy within 90 seconds, the previous one is put back and restarted. If the
@@ -52,8 +52,8 @@ When a part fails, the others still finish:
 
 A failed or skipped machine has **Retry** on its line, which updates just that machine (its fleetd, then its Claude
 Code) to the build the hub runs. If the hub has moved to another build since (with `fleetd update` on its machine,
-say), Retry says so instead, and **Update** brings every machine to the hub's build. After a part failed, the app doesn't restart by itself, so the result stays on screen: its line has **Update**
-instead.
+say), Retry says so instead, and **Update** brings every machine to the hub's build. After a part failed, the app
+doesn't restart by itself, so the result stays on screen: its line has **Update** instead.
 
 Updating needs a key with Admin on every machine, as `fleetd pair` gives the app. The first time, a hub from before
 the Update button can't do this yet: the app says so, and `fleetd update` on the hub's machine once (see below) brings it
