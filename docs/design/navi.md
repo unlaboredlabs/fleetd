@@ -6,8 +6,8 @@ Navi works with the other projects on its hub through three things: a message to
 whole factory, and a wake when what it asked for changes. The code is `crates/fleetd/src/hub/navi/bridge.rs`; the
 contracts are `crates/fleetd-contracts/src/navi.rs`.
 
-**Who may use it.** Only a Navi's lead: a project marked `kind: "assistant"`. Any other lead is refused
-(`bridge::may_use`), and a task never makes the calls (`hub/tasks/policy.rs`). A Navi can't message its own project or
+**Who may use it.** Only a Navi's lead: a project the hub keeps in `assistants`, not archived. Any other lead is
+refused (`bridge::may_use`), and a task never makes the calls (`hub/tasks/policy.rs`). A Navi can't message its own project or
 one the hub doesn't have. One person owns every project on a hub today, so there is no owner check yet: owners arrive
 with company Navi (one Navi per person on a shared hub), and the check goes in the same function.
 

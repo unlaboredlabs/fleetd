@@ -39,8 +39,6 @@ mod tests;
 pub const OPS: [&str; 2] = ["project_message", "factory_status"];
 /// The event log cursor [`run`] keeps in `time_cursors`.
 const CURSOR: &str = "navi.bridge";
-/// The project kind a Navi has (`ProjectSummary.kind`).
-pub const ASSISTANT: &str = "assistant";
 /// Asks per project `factory_status` lists, newest first.
 const ASKS_SHOWN: usize = 5;
 const TYPES: [HubEventType; 4] = [
@@ -96,20 +94,29 @@ async fn answer(
     }
 }
 
-/// Only a Navi, a project of kind `assistant`, works with other projects: a coding project's lead keeps to its own.
+/// Only a Navi works with other projects: a project the hub keeps in `assistants` (Navi core), not archived. A coding
+/// project's lead keeps to its own. A hub without that table yet has no Navi.
 pub fn may_use(db: &HubDb, r: &ProjectRef) -> Result<(), McpToolError> {
-    let kind: Option<String> = db
+    let navi = db
         .with(|c| {
-            Ok(c.query_row(
-                "SELECT json_extract(data, '$.kind') FROM projects WHERE machine_id = ? AND project_id = ?",
-                params![r.machine_id.as_str(), r.project_id.as_str()],
+            let table: bool = c.query_row(
+                "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'assistants')",
+                [],
                 |row| row.get(0),
+            )?;
+            if !table {
+                return Ok(false);
+            }
+            Ok(c.query_row(
+                "SELECT 1 FROM assistants WHERE machine_id = ? AND project_id = ? AND archived_ms IS NULL",
+                params![r.machine_id.as_str(), r.project_id.as_str()],
+                |_| Ok(()),
             )
             .optional()?
-            .flatten())
+            .is_some())
         })
         .map_err(failed)?;
-    if kind.as_deref() == Some(ASSISTANT) {
+    if navi {
         return Ok(());
     }
     Err(McpToolError::new(
