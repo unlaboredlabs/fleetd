@@ -176,4 +176,21 @@ describe("the Update button's run", () => {
     await retryMachine(d, "mac");
     expect(currentFlow()).toEqual({ phase: "refused", message: "There is nothing to retry. Press Update to update everything." });
   });
+
+  it("never restarts this app at the end of a run this window didn't start, however long it ran", async () => {
+    const { d } = deps(
+      { ok: true },
+      [{ ok: true, run: runOf("restarting", false) }, { ok: true, run: runOf("done", false) }, { ok: true, run: runOf("done", true) }],
+      { kind: "ready", version: NEXT },
+    );
+    await loadRun(d);
+    expect(d.app.install).not.toHaveBeenCalled();
+    expect(currentFlow()).toEqual({ phase: "finished", updated: true });
+
+    // Update pressed here afterwards still ends with the restart.
+    resetFlow();
+    const pressed = deps({ ok: true, run: runOf("current", true) }, [], { kind: "ready", version: NEXT });
+    await startUpdate(pressed.d);
+    expect(pressed.d.app.install).toHaveBeenCalledOnce();
+  });
 });

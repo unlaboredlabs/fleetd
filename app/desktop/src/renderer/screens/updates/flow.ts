@@ -94,7 +94,9 @@ export const loadRun = async (deps: FlowDeps): Promise<void> => {
   const out = await deps.call("hub_update_status", {});
   if (!out.ok || going(flow)) return;
   set({ run: out.output.run ?? null, ready: out.output.ready ?? null });
-  if (out.output.run !== undefined && out.output.run.finishedAt === undefined) await follow(deps);
+  // Followed, never ended with this app's restart: only Update pressed in this window, or Restart to update, restarts
+  // it. A run can go on for hours while a busy machine waits; this app's update then waits for a click.
+  if (out.output.run !== undefined && out.output.run.finishedAt === undefined) await follow(deps, false);
 };
 
 /** The Update button. Never waits for work: the hub restarts at once, and what runs carries on by itself. */
