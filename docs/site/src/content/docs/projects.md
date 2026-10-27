@@ -77,7 +77,8 @@ fleetd project repo remove devbox/storefront api
   archived: its chat and history stay, and its lead no longer runs. fleetd refuses while its agents run.
 - **One repo can be in several projects.**
 - **The project's environment variables, MCP servers and skills** go to every one of its checkouts.
-- **The lead's first message** lists the project's repos.
+- **The lead's first message** lists the project's repos, and each agent works in the one the lead names: see
+  [Agents in a project's repos](#agents-in-repos).
 - **Remove** cancels that repo's running agents. The project's other work goes on. Nothing is deleted: the checkout stays
   on its machine and, once no project holds it, shows as a project of its own again. A project's own folder can't be
   removed this way; remove the project instead.
@@ -238,6 +239,18 @@ If the lead can't start, your message waits and the chat says why. Common causes
 | The worker is offline | See [Machines](/docs/troubleshooting#machines) |
 
 Once the worker is back with a working `claude`, the lead starts and reads every waiting message.
+
+### Agents in a project's repos {#agents-in-repos}
+
+A project that holds [repos](#repos) lists them in its lead's first message, and the lead names the repo each agent
+works in (`spawn_agent`'s `repo`). The agent's worktree and branch come from that repo's checkout, its new worktree
+runs the repo's setup commands (or the project's, when the repo has none), and its policy file and the repo's own
+skills are read from that checkout. Its pull request is on that repo. Without a `repo`, an agent given a PR, such as a
+review, works in that PR's repo, and any other in the project's own repo, or its folder for a project with none. A
+repo the project doesn't have is refused, with the project's repos.
+
+A writer is checked for duplicates against the work in flight on its own repo only. The lead's `agents` list names
+the project's repos (`Repos: R1 api, R2 web.`), and each agent's `repoId` says which one it works in.
 
 ## Max agents {#max-agents}
 
