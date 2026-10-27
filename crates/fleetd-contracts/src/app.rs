@@ -22,7 +22,8 @@ pub type AppCallId = Text<1, 64>;
 ///   hub relays `browser_frame`s, and the `browser_sessions`, `browser_recording_get` and `browser_control` tools and
 ///   the `browser.session` event exist. A machine whose node is older answers a watch or a takeover with
 ///   `machine_offline`.
-pub const APP_FEATURES: [&str; 2] = ["presence", "browser_sessions"];
+/// - `navi_asks`: the `navi_asks` tool, a Navi's asks of other projects and the orders opened for them.
+pub const APP_FEATURES: [&str; 3] = ["presence", "browser_sessions", "navi_asks"];
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "t", rename_all = "snake_case", rename_all_fields = "camelCase")]
