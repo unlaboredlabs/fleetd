@@ -32,6 +32,9 @@ const RESULT_CHARS: usize = 500;
 const DOM_MAX_BYTES: usize = 2 << 20;
 /// The longest the proxy holds the driver's click or keystroke to read the element it acts on.
 const TARGET_WAIT: Duration = Duration::from_millis(250);
+/// What Chrome answers `Page.startScreencast` on a page between renderers, and the longest a page's start waits it out.
+const NO_ACTIVE_PAGE: &str = "Not attached to an active page";
+const SCREENCAST_START: Duration = Duration::from_secs(10);
 /// What the agent's driver hears while a person has control.
 pub const PAUSED: &str = "A person has control of the browser now. Wait for them to hand it back (carry on with other \
                           work meanwhile); your next command after that sees the page as they left it.";
@@ -879,14 +882,25 @@ async fn follow(session: &Session, page: Option<(String, String)>) {
             .await;
     }
     let _ = session.cdp.call(Some(&now), "Page.enable", json!({})).await;
-    let started = session
-        .cdp
-        .call(
-            Some(&now),
-            "Page.startScreencast",
-            json!({ "format": "jpeg", "quality": 70, "maxWidth": WIDTH, "maxHeight": HEIGHT }),
-        )
-        .await;
+    // A page swapping renderers (its first navigation, as a session's often comes at once) has none to screencast
+    // for a moment, and Chrome refuses: start again once it has one, or the page never sends a frame.
+    let deadline = Instant::now() + SCREENCAST_START;
+    let started = loop {
+        let started = session
+            .cdp
+            .call(
+                Some(&now),
+                "Page.startScreencast",
+                json!({ "format": "jpeg", "quality": 70, "maxWidth": WIDTH, "maxHeight": HEIGHT }),
+            )
+            .await;
+        match started {
+            Err(e) if e.contains(NO_ACTIVE_PAGE) && Instant::now() < deadline => {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+            started => break started,
+        }
+    };
     if let Err(e) = started {
         tracing::warn!(session = %session.id, error = %e, "screencast not started");
     }
