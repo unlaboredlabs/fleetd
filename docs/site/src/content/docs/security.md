@@ -78,11 +78,13 @@ into a team hub. You make it on the hub it reaches and add it to the Navi on the
 
 | Rule | Detail |
 |---|---|
-| It acts as you | A link key (`flk_…`) acts as you, at the access of the device that made it, limited to the projects you pick or not. Revoking that device revokes the link. |
+| It acts as you | A link key (`flk_…`) acts as you, at the lesser of your [role](/docs/people) on that hub and the grants of the device you made it on, never above operate, limited to the projects you pick or not. A read-only device can't make one. Removing you from the hub stops it. |
+| Revoking a device leaves its links | By design, revoking a lost device doesn't stop the links made on it: they act as you, not as the device, and never gain rights it lacked. Revoke them too, with `hub_link_revoke` on that hub. |
 | It does five things | List the projects it reaches, ask a project's lead for work, read their status, follow its own asks, revoke itself. It can't use `/mcp` or the app's connection, so it reads no chat and answers no approval, question or secret. |
 | Its messages are never your answer | They go into the project's chat as "*you* via *label* Navi", an agent's input, like any Navi message. Approvals, secrets and merges still need you there. |
 | The other hub sees only the requests | Not the Navi, its chat or its title. |
 | The key stays sealed | The app seals it to the Navi's hub, which opens it only to call the other hub. Nothing shows it again. |
+| A person names the host it calls | `hub_link_add` makes the Navi's hub contact the URL that a person with operate gives it. Only the Navi's owner or an admin adds or removes a Navi's links. |
 | Only the Navi's hub calls out | It must reach the other hub over HTTPS or a tailnet; plain HTTP elsewhere is refused. When it can't reach it, the Navi and the link say "Can't reach *label*" with the reason. |
 | Revoke from either side | Removing it on the Navi's hub deletes the key at once and revokes it on the other hub when that answers. Revoking it on the other hub refuses its next call. A link unused for 90 days expires. |
 
