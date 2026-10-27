@@ -36,6 +36,59 @@
   flex: 1 1 14em;
   min-width: 0;
 }
+/* An integration's ask: labelled rows, then the body under a hairline, then the whole input on request. */
+.preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.fields {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  column-gap: var(--space-3);
+  row-gap: var(--space-1);
+  margin: 0;
+}
+.fieldRow {
+  display: contents;
+}
+.fieldRow dd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--space-1);
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--hairline);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* One recipient or file, its quiet note right after it. */
+.value {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1);
+  margin-right: var(--space-1);
+}
+.showAll {
+  align-self: flex-start;
+}
+.everything summary {
+  cursor: pointer;
+  list-style-position: inside;
+}
+.everything[open] summary {
+  margin-bottom: var(--space-1);
+}
 .actions,
 .failure {
   display: flex;

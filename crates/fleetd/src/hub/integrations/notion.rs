@@ -1,7 +1,7 @@
 //! Notion: its official MCP server (`npx -y @notionhq/notion-mcp-server`, tools named after Notion's API:
 //! `API-post-search`, `API-patch-page`, …) with the person's own internal integration token in `NOTION_TOKEN`, sealed
 //! to Navi's machine. It reaches only the pages the person shares with that integration. The hosted server's names
-//! (`notion-search`, `notion-update-page`, …), which xaq's Notion connection passes through, read the same way here.
+//! (`notion-search`, `notion-update-page`, …), read the same way here.
 use serde_json::Value;
 
 use super::policy::{Draft, Rule, text_of};
@@ -151,7 +151,7 @@ pub fn draft(tool: &str, input: &Value) -> Draft {
     let heading = if op == "patch-page" && trashes(input) {
         "Move a Notion page to the trash".to_owned()
     } else {
-        format!("Notion: {}", op.replace('-', " "))
+        format!("Use Notion's {}", op.replace('-', " "))
     };
     Draft {
         title: Some(heading),
