@@ -162,6 +162,8 @@ struct FakeGh {
     fail_labels: Mutex<bool>,
     /// GitHub fails every read of the workflow files.
     fail_workflows: Mutex<bool>,
+    /// Compares list only some of their commits, as GitHub's do past 250: a rebase's review can't be told apart.
+    partial_ranges: Mutex<bool>,
     /// `FakeCi::Macos`: the heads pushed while their PR had the label, and the reads of each head since the label
     /// started a run on it.
     labelled_pushes: Mutex<HashSet<String>>,
@@ -519,8 +521,9 @@ impl FakeGh {
                     &["rev-list", "--reverse", &format!("{base}..{head}")],
                 );
                 let commits: Vec<Value> = commits.lines().map(|c| json!({ "sha": c })).collect();
+                let total = commits.len() + usize::from(*self.partial_ranges.lock().unwrap());
                 ok(
-                    json!({ "merge_base_commit": { "sha": base }, "total_commits": commits.len(), "commits": commits }),
+                    json!({ "merge_base_commit": { "sha": base }, "total_commits": total, "commits": commits }),
                 )
             }
             (["compare", range], "GET") => {
@@ -1294,6 +1297,7 @@ impl Kit {
             repo_labels: Mutex::default(),
             fail_labels: Mutex::default(),
             fail_workflows: Mutex::default(),
+            partial_ranges: Mutex::default(),
             labelled_pushes: Mutex::default(),
             label_runs: Mutex::default(),
             batch_polls: Mutex::default(),
@@ -5765,7 +5769,9 @@ async fn a_re_review_after_a_rebase_runs_while_ci_runs_and_the_merge_waits_for_b
             "T50",
         )
         .await;
-    // main edits a line in the PR hunk's context: the rebase is clean, but the patch differs.
+    // main edits a line in the PR hunk's context: the rebase is clean, but the patch differs, and GitHub lists only
+    // some of the commits, so it can't be told from a changed patch.
+    *kit.gh.partial_ranges.lock().unwrap() = true;
     kit.commit(
         "main",
         &[("a.txt", Some(&a_with(&[(4, "main line 4")])))],
@@ -5816,6 +5822,7 @@ async fn a_re_review_after_a_rebase_runs_while_ci_runs_and_the_merge_waits_for_b
             "T50",
         )
         .await;
+    *kit.gh.partial_ranges.lock().unwrap() = true;
     kit.commit(
         "main",
         &[("a.txt", Some(&a_with(&[(4, "main line 4")])))],
@@ -6199,6 +6206,8 @@ async fn an_overdue_re_review_waits_out_of_the_line_until_it_is_done() {
             "T50",
         )
         .await;
+    // GitHub lists only some of the commits: the rebase can't be told from a changed patch, so it is reviewed again.
+    *kit.gh.partial_ranges.lock().unwrap() = true;
     kit.commit(
         "main",
         &[("a.txt", Some(&a_with(&[(4, "main line 4")])))],
@@ -6248,3 +6257,4 @@ async fn an_overdue_re_review_waits_out_of_the_line_until_it_is_done() {
 }
 
 mod repos;
+mod rereviews;

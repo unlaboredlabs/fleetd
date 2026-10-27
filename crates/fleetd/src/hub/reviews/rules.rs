@@ -78,6 +78,37 @@ pub fn review_prompt(set: &PromptSet, change: &Change, reviewed: Option<&str>) -
     }
 }
 
+/// A rebase's conflict resolution to review: the approved head and its base, the new head's base, and the files whose
+/// hunks changed.
+pub struct Conflicts<'a> {
+    pub reviewed_sha: &'a str,
+    pub reviewed_base: &'a str,
+    pub base: &'a str,
+    pub files: &'a [String],
+}
+
+/// The short reviewer's prompt for a rebase that only resolved conflicts with the base: those files' hunks and their
+/// resolution against both sides, nothing else of the PR.
+pub fn conflicts_prompt(set: &PromptSet, change: &Change, c: &Conflicts<'_>) -> String {
+    let files = c
+        .files
+        .iter()
+        .map(|f| format!("`{f}`"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    set.render(
+        "review.conflicts",
+        &[
+            ("prUrl", &change.pr_url),
+            ("headSha", &change.head_sha),
+            ("reviewedSha", &c.reviewed_sha),
+            ("reviewedBase", &c.reviewed_base),
+            ("base", &c.base),
+            ("files", &files),
+        ],
+    )
+}
+
 /// The start of a Change's `lastError` while its reviewer's fleetd tools failed, followed by what it said and when the
 /// next one starts.
 pub const TOOLS_FAILED: &str = "review tools failed";

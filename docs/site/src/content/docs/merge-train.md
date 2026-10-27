@@ -110,14 +110,30 @@ straight to the branch.
 ## Review {#review}
 
 Every PR gets one fresh reviewer, which reports blocking findings only. Its verdict is bound to the PR's current
-patch: a rebase that keeps the patch keeps the review, and a new commit gets a new reviewer, who starts from what
-changed. Blocking findings go to the agent that wrote the PR, and the PR waits for its next commit.
+patch. Blocking findings go to the agent that wrote the PR, and the PR waits for its next commit.
 
-A PR already approved at an earlier patch isn't sent back to wait for its new review. When a rebase or a push changes
-its patch, the new review runs while its CI runs, alone or in a batch, and the merge waits for both. If the review
-finds a blocker, the PR leaves the train for its author, and a batch it was in forms again without it, so its code
-never lands. If CI is green and the review is still at work after 15 minutes, the PR waits in review out of the
-train's way, and merges once the review is clean. Re-reviews are never skipped.
+### Re-reviews {#re-reviews}
+
+When an approved PR gets a new head, the train compares the PR's own changes with the approved head's: each run of
+removed and added lines, and where it sits. A run is unchanged when it has the same lines in the place main's added
+and removed lines move it to, and main changed nothing right next to it. Context lines don't count, so main editing a
+line near the PR's changes, with an unchanged line between, is no change. The same lines moved elsewhere are.
+
+| What changed | Review |
+| --- | --- |
+| Nothing: the same patch id, or the same changed lines in the same places after a clean rebase | None. The approval carries over, recorded with the head and reviewer it came from. |
+| Only lines next to main's changes: the author resolved conflicts in a rebase | A short review of just those files: the PR's side, main's side and the resolution. |
+| Anything else: new commits, or a changed hunk main never touched | A full review, which starts from what changed. |
+
+An approval carries over only from the last reviewed head, and only when that head has no blocking findings open.
+If the reviewer whose approval carried over later records blocking findings on its head, every head it carried to is
+blocked too. A rebase past commits that landed on main as a squash keeps the approval only with the same patch id.
+When the train can't read the commits it compares, the PR gets a full review.
+
+A PR already approved at an earlier patch isn't sent back to wait for its new review. The new review runs while its
+CI runs, alone or in a batch, and the merge waits for both. If the review finds a blocker, the PR leaves the train for
+its author, and a batch it was in forms again without it, so its code never lands. If CI is green and the review is
+still at work after 15 minutes, the PR waits in review out of the train's way, and merges once the review is clean.
 
 A reviewer that couldn't use fleetd's tools, so it couldn't record its verdict, is caught as soon as it ends. Its
 queue entry and the train's line say "review tools failed", and the lead hears once. A new reviewer starts by itself
@@ -241,7 +257,7 @@ its turn. To hold every PR of a repo, label each one.
 
 Batches only save waiting.
 
-- Every PR in a batch is reviewed at its current patch.
+- Every PR in a batch is reviewed at its current patch, or carries an approval of the same changed lines.
 - The batch's fast set must pass, and it always includes the checks the base requires.
 - `fleetd/train` is posted only on a commit whose CI passed.
 - GitHub's rules on the base decide every merge.
