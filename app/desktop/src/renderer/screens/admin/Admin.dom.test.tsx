@@ -270,3 +270,28 @@ it("lets a hub with no hub_info at all reach Administration, whose Hub settings 
   await render(null, "page", true);
   expect(host.querySelector("[data-screen='admin.hub']")).not.toBeNull();
 });
+
+it("says to connect a hub, not Loading… for ever, with no hub and nothing kept from one", async () => {
+  window.location.hash = "#/admin/people";
+  const hub: HubApi = {
+    call: (tool, input) => (calls.push({ tool, input }), new Promise(() => undefined)),
+    subscribe: () => () => undefined,
+    resync: () => Promise.resolve(),
+    focus: () => Promise.resolve(),
+    chat: () => Promise.resolve(),
+  };
+  await act(async () => {
+    root.render(
+      <UiProvider>
+        <DataProvider layer={createDataLayer(hub)}>
+          <AdminScreen />
+        </DataProvider>
+      </UiProvider>,
+    );
+    await Promise.resolve();
+  });
+  await settle();
+  expect(host.querySelector("[data-screen='admin.offline']")).not.toBeNull();
+  expect(host.textContent).toContain("Connect to a hub to see and change this.");
+  expect(host.textContent).not.toContain("Loading…");
+});

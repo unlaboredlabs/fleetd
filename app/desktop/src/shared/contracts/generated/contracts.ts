@@ -2436,7 +2436,7 @@ export type MachineRepos = {
 /** What a machine is for. */
 export type MachineRole = "agents" | "sessions";
 
-/** A machine as Settings > Machines shows it: its roles, its session slots and what it can host. */
+/** A machine as Administration › Hub settings shows it: its roles, its session slots and what it can host. */
 export type MachineRolesEntry = {
   /** What it can host, as its node last reported; empty until it reports. */
   hosts?: HostCheck[];

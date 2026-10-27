@@ -54,14 +54,19 @@ export function AdminScreen() {
   return <div className={s.frame}>{page(section, role)}</div>;
 }
 
-function page(section: AdminSection, { administers, me, pending }: HubRoleView): ReactNode {
+function page(section: AdminSection, { administers, me, pending, offline }: HubRoleView): ReactNode {
   if (!administers) {
-    // A member who follows a link here sees why, and nothing else.
+    // A member who follows a link here sees why, and nothing else; with no hub, there is no one to ask yet.
+    const [screen, text] = offline
+      ? ["admin.offline", "Connect to a hub to see and change this."]
+      : pending
+        ? ["admin.loading", "Loading…"]
+        : ["admin.denied", "Administration is for the hub's owners and admins. Ask one of them for what you need."];
     return (
-      <div className={s.scroll} data-screen={pending ? "admin.loading" : "admin.denied"}>
+      <div className={s.scroll} data-screen={screen}>
         <div className={s.column}>
           <PageHead title="Administration" />
-          <Text tone="quiet">{pending ? "Loading…" : "Administration is for the hub's owners and admins. Ask one of them for what you need."}</Text>
+          <Text tone="quiet">{text}</Text>
         </div>
       </div>
     );

@@ -1455,7 +1455,8 @@ output!(BrowserRetentionSetOutput {
     retention: crate::browser::BrowserRetention,
 });
 
-// machine_roles: every machine's roles (agents, sessions), its session slots and what it can host (Settings > Machines).
+// machine_roles: every machine's roles (agents, sessions), its session slots and what it can host (Administration ›
+// Hub settings).
 input!(MachineRolesInput {});
 output!(MachineRolesOutput {
     machines: List<crate::machine_roles::MachineRolesEntry, 0, 1000>,

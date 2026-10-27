@@ -79,12 +79,14 @@ function oldHub(from: Fixture): Fixture {
   return f;
 }
 
+// Each is built on chat-empty (three projects, two machines, their slots and roles; a few hundred KB), not on typical:
+// every fixture stays in memory until the build writes them all, and typical's chats are megabytes a copy.
 export default defineGroup({
   fixtures: (base) => [
-    oldHub(base("typical")),
-    hub(base("typical"), "admin-owner", "Sam owns the hub: Alice is an admin, Bob a member, and Dana's invite waits", sam, true),
-    hub(base("typical"), "admin-admin", "The same hub as Alice, an admin: Sam the owner is out of her reach", alice, true),
+    oldHub(base("chat-empty")),
+    hub(base("chat-empty"), "admin-owner", "Sam owns the hub: Alice is an admin, Bob a member, and Dana's invite waits", sam, true),
+    hub(base("chat-empty"), "admin-admin", "The same hub as Alice, an admin: Sam the owner is out of her reach", alice, true),
     // Bob's device holds admin on every machine, as every paired device did before people: his role alone hides it.
-    hub(base("typical"), "admin-member", "The same hub as Bob, a member: no Administration anywhere", bob, true),
+    hub(base("chat-empty"), "admin-member", "The same hub as Bob, a member: no Administration anywhere", bob, true),
   ],
 });

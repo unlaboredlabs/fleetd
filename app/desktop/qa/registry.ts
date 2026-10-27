@@ -1730,6 +1730,8 @@ export const screens: readonly Screen[] = [
   { id: "admin.hub", route: "#/admin/hub", fixtures: ["admin-owner", "settings-agents", "admin-old-hub"] },
   { id: "admin.setup", route: "#/admin/setup", fixtures: ["admin-owner"] },
   { id: "admin.denied", route: "#/admin/people", fixtures: ["admin-member"] },
+  // No hub and nothing kept from one: connect first, never Loading… for ever.
+  { id: "admin.offline", route: "#/admin/people", fixtures: ["hub-unreachable"] },
   // Machines on Administration: devbox's auto 22 and where it comes from, a machine set to 40 with the way back to
   // auto.
   {
