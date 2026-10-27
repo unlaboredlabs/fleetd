@@ -577,7 +577,9 @@ async fn an_agent_opens_settings_on_an_ios_session_and_its_recording_is_on_the_h
     let id = result["sessionId"].as_str().expect("started").to_owned();
     let start_ms = result["startMs"].as_u64().unwrap();
     eprintln!("ios session_start from the warm pool: {start_ms} ms");
-    assert!(start_ms < 2_000, "{start_ms} ms");
+    // No boot: well under a second on a Mac, but GitHub's 3-vCPU VM, running two simulators, measured 139, 1640 and
+    // 3011 ms.
+    assert!(start_ms < 10_000, "{start_ms} ms");
     let udid = result["udid"].as_str().unwrap().to_owned();
     let live = sessions(&hub).await;
     assert_eq!(live["sessions"][0]["kind"], "ios", "{live}");
