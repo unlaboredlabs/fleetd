@@ -167,6 +167,16 @@ export const McpServerRequest = z.strictObject({
   env: z.array(McpValueRequest).max(50),
   headers: z.array(McpValueRequest).max(50),
   boxes: z.array(z.strictObject({ machineId: z.string().min(1).max(64), boxPubKey: z.string().regex(/^[A-Za-z0-9+/]{43}=$/u) })).max(500),
+  /** A Navi's integration: what the hub's tool policy reads its tools as. */
+  integration: z
+    .strictObject({
+      kind: z.enum(["google", "notion", "custom"]),
+      readTools: z
+        .array(z.string().regex(/^[A-Za-z0-9_.:/-]{1,128}$/u))
+        .max(200)
+        .optional(),
+    })
+    .optional(),
 });
 export type McpServerRequest = z.infer<typeof McpServerRequest>;
 /** An error the page caught, for the app log: what failed, the error's own text and the route. Main scrubs it. */
