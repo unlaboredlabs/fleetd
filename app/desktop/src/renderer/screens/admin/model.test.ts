@@ -39,10 +39,10 @@ describe("who sees Administration", () => {
     expect(administers({ me: alice, admin: false })).toBe(false);
   });
 
-  it("falls back to the key's own admin grant on a hub from before people, and to no until hub_info answers", () => {
+  it("falls back to the key's own admin grant on a hub from before people, to yes on one too old to say, and to no until hub_info answers", () => {
     expect(administers({ admin: true })).toBe(true);
     expect(administers({ admin: false })).toBe(false);
-    expect(administers({})).toBe(false);
+    expect(administers({})).toBe(true);
     expect(administers(undefined)).toBe(false);
   });
 });

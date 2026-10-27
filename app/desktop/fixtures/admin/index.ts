@@ -69,10 +69,22 @@ function hub(from: Fixture, name: string, note: string, me: JsonObject, admin: b
   return f;
 }
 
+/** A hub from before people: an admin key, and no people tools, which it says as it says of any unknown tool. */
+function oldHub(from: Fixture): Fixture {
+  const f = Fixture.from(from, "admin-old-hub", "A hub from before people: its admin key reaches Hub settings, and People and Invites ask for an update");
+  f.answer("hub_info", undefined, { version: "0.8.0", protocol: 1, busy: [], admin: true });
+  for (const tool of ["people_list", "invite_create", "invite_revoke", "person_set", "person_remove"]) {
+    f.fail(tool, undefined, { code: "not_found", message: `No tool ${tool}.`, fix: "Use a tool name from the hub's MCP tool list." });
+  }
+  return f;
+}
+
 export default defineGroup({
   fixtures: (base) => [
+    oldHub(base("typical")),
     hub(base("typical"), "admin-owner", "Sam owns the hub: Alice is an admin, Bob a member, and Dana's invite waits", sam, true),
     hub(base("typical"), "admin-admin", "The same hub as Alice, an admin: Sam the owner is out of her reach", alice, true),
-    hub(base("typical"), "admin-member", "The same hub as Bob, a member: no Administration anywhere", bob, false),
+    // Bob's device holds admin on every machine, as every paired device did before people: his role alone hides it.
+    hub(base("typical"), "admin-member", "The same hub as Bob, a member: no Administration anywhere", bob, true),
   ],
 });

@@ -7,7 +7,7 @@ import { Button, copyText, Field, Input, Radio, RadioGroup, Text, Truncate } fro
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
 import { PageHead } from "../settings/parts";
 import { expiresLine, nameProblem, openInvites, ROLE_HELP, roleWord } from "./model";
-import { usePeople } from "./People";
+import { lacksPeople, NeedsUpdate, usePeople } from "./People";
 import s from "../settings/settings.module.css";
 import a from "./admin.module.css";
 
@@ -28,6 +28,8 @@ export function Invites({ me }: { me: Person | undefined }) {
         <PageHead title="Invites">A link someone opens in the fleetd app to join this hub as themselves. It works once, within 7 days.</PageHead>
         {!live ? (
           <Text tone="quiet">Connect to a hub to see and change this.</Text>
+        ) : lacksPeople(read.error) ? (
+          <NeedsUpdate />
         ) : (
           <>
             <InviteForm onCreated={setCreated} />

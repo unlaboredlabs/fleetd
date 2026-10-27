@@ -80,11 +80,13 @@ function Entry() {
   );
 }
 
-const render = async (info: Partial<HubInfoOutput>, what: "page" | "sidebar" = "page") => {
+/** `old`: a hub from before people, which has none of the people tools. */
+const render = async (info: Partial<HubInfoOutput>, what: "page" | "sidebar" = "page", old = false) => {
   let listener: (frame: HubFrame) => void = () => undefined;
   const hub: HubApi = {
     call: (tool, input) => {
       calls.push({ tool, input });
+      if (old && tool !== "hub_info") return Promise.resolve({ ok: false, error: { code: "not_found", message: `No tool ${tool}.` } });
       const output =
         tool === "hub_info"
           ? { version: "0.0.0", protocol: 1, busy: [], ...info }
@@ -154,7 +156,8 @@ it("shows Administration in the sidebar to an owner or admin, and to nobody else
     [{ me: alice, admin: true }, true],
     [{ me: bob, admin: false }, false],
     [{ admin: true }, true],
-    [{}, false],
+    // A hub from before hub_info said: the app tries, as Settings did.
+    [{}, true],
   ] as const) {
     await render(info, "sidebar");
     expect(buttons().some((b) => b.textContent.includes("Administration"))).toBe(shown);
@@ -243,4 +246,17 @@ it("creates an invite with a name and role, copies its link, and revokes an open
 
   await click(button("Revoke", row("Dana Ito")));
   expect(sent("invite_revoke")).toEqual([{ inviteId: "inv_aaaaaaaa" }]);
+});
+
+it("asks for a hub update on a hub from before people, in place of a raw error", async () => {
+  for (const page of ["people", "invites"]) {
+    window.location.hash = `#/admin/${page}`;
+    await render({ admin: true }, "page", true);
+    expect(host.textContent).toContain("This hub needs updating to manage people.");
+    expect(host.textContent).not.toContain("No tool");
+    expect(button("Update the hub")).toBeDefined();
+    expect(host.querySelector("form")).toBeNull();
+    act(() => root.unmount());
+    root = createRoot(host);
+  }
 });

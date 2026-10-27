@@ -56,6 +56,8 @@ export const fixtures = [
   "admin-owner",
   "admin-admin",
   "admin-member",
+  // ...and a hub from before people, whose People and Invites ask for an update.
+  "admin-old-hub",
   // F2: the lead chat's live strip with 0, 3 and 20 agents at work (fixtures/live).
   "live-0",
   "live-3",
@@ -1712,8 +1714,8 @@ export const screens: readonly Screen[] = [
   // Administration: People as the owner (every row changeable but their own) and as an admin (the owner out of
   // reach); Invites with Dana's waiting, and a new one just made with its link; Hub settings (the fleet and machine
   // caps, task profiles, machine roles, memory caps); Setup's placeholder; and a member who follows a link there.
-  { id: "admin.people", route: "#/admin/people", fixtures: ["admin-owner", "admin-admin"] },
-  { id: "admin.invites", route: "#/admin/invites", fixtures: ["admin-owner"] },
+  { id: "admin.people", route: "#/admin/people", fixtures: ["admin-owner", "admin-admin", "admin-old-hub"] },
+  { id: "admin.invites", route: "#/admin/invites", fixtures: ["admin-owner", "admin-old-hub"] },
   {
     id: "admin.invites",
     route: "#/admin/invites",
@@ -1725,7 +1727,7 @@ export const screens: readonly Screen[] = [
       await page.getByRole("region", { name: "Invite link for Eve Park" }).getByRole("button", { name: "Copy link" }).waitFor();
     },
   },
-  { id: "admin.hub", route: "#/admin/hub", fixtures: ["admin-owner", "settings-agents"] },
+  { id: "admin.hub", route: "#/admin/hub", fixtures: ["admin-owner", "settings-agents", "admin-old-hub"] },
   { id: "admin.setup", route: "#/admin/setup", fixtures: ["admin-owner"] },
   { id: "admin.denied", route: "#/admin/people", fixtures: ["admin-member", "empty"] },
   // Machines on Administration: devbox's auto 22 and where it comes from, a machine set to 40 with the way back to
