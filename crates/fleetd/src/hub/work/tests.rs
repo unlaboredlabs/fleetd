@@ -432,6 +432,73 @@ async fn a_project_is_bound_to_one_repo_and_base() {
     );
 }
 
+/// What a node reports of its project at `root`.
+fn node_reports(hub: &Hub, project: &ProjectRef, root: &str) {
+    let summary = serde_json::from_value(json!({
+        "machineId": project.machine_id, "projectId": project.project_id, "title": "app", "workspaceRoot": root,
+        "threads": { "running": 0, "waiting": 0, "idle": 0, "failed": 0 }, "lastActivityAt": AT,
+    }))
+    .unwrap();
+    hub.store
+        .projects_upsert_many(&project.machine_id, &[summary])
+        .unwrap();
+}
+
+/// A one-repo project's scope is its own repo's, the same as before repos; a plain directory and an unknown repo
+/// have none; a project the hub hasn't cached keeps its scope with no repo.
+#[tokio::test]
+async fn a_projects_scope_is_its_own_repos() {
+    let (hub, _clock, _home) = hub();
+    let shop = scope("git@gitlab.example.com:acme/shop.git", "main");
+    let app = project("devbox", "app");
+    node_reports(&hub, &app, "/srv/app");
+    hub.work.bind_project(&app, &shop).unwrap();
+    assert_eq!(hub.work.scope_of(&app).unwrap(), Some(shop.clone()));
+    let [(_, own)] = hub.repos.checkout_owners(&app).unwrap().try_into().unwrap();
+    assert_eq!(hub.work.scope_of_repo(&own).unwrap(), Some(shop.clone()));
+    let trunk = scope("git@gitlab.example.com:acme/shop.git", "trunk");
+    hub.work.bind_project(&app, &trunk).unwrap();
+    assert_eq!(hub.work.scope_of(&app).unwrap(), Some(trunk.clone()));
+    assert_eq!(hub.work.scope_of_repo(&own).unwrap(), Some(trunk));
+    assert_eq!(
+        hub.work
+            .scope_of_repo(&fleetd_contracts::repos::RepoId::new("R9").unwrap())
+            .unwrap(),
+        None
+    );
+
+    let notes = project("devbox", "notes");
+    node_reports(&hub, &notes, "/srv/notes");
+    assert_eq!(hub.work.scope_of(&notes).unwrap(), None);
+    assert_eq!(hub.repos.repos_of(&notes).unwrap(), []);
+
+    let web = project("laptop", "web");
+    hub.work.bind_project(&web, &shop).unwrap();
+    assert_eq!(hub.work.scope_of(&web).unwrap(), Some(shop.clone()));
+    assert_eq!(hub.repos.checkout_owners(&web).unwrap(), []);
+
+    hub.work.unbind_project(&app).unwrap();
+    assert_eq!(hub.work.scope_of(&app).unwrap(), None);
+    assert_eq!(hub.work.scope_of_repo(&own).unwrap(), None);
+}
+
+/// `project_add` binds the project's work before it records the checkout: its own repo is made with that scope.
+#[tokio::test]
+async fn an_added_project_gets_its_own_repo_with_its_scope() {
+    let (hub, _clock, _home) = hub();
+    let shop = scope("https://github.com/acme/shop", "main");
+    let app = project("devbox", "app");
+    hub.work.bind_project(&app, &shop).unwrap();
+    let own = hub
+        .repos
+        .ensure_own(&app, Some("/srv/app"))
+        .unwrap()
+        .unwrap();
+    assert_eq!(own.repo_key, Some(shop.repo_key.clone()));
+    assert_eq!(own.base, Some(shop.base.clone()));
+    assert_eq!(hub.work.scope_of_repo(&own.repo_id).unwrap(), Some(shop));
+}
+
 /// Two projects on two machines share acme/shop's main; a third works on another base, a fourth on another repo.
 fn shared_repo(hub: &Hub) -> (WorkScope, ProjectRef, ProjectRef) {
     let shop = scope("git@github.com:acme/shop.git", "main");

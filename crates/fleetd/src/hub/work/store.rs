@@ -1,8 +1,10 @@
 //! Work rows: `work_claims` (the Claim as JSON in `data`, plus the columns queries filter on), `work_projects`
 //! (the repo and base each project's work lands on), `landings` (each commit on a watched base, as JSON) and
-//! `landing_watch` (how far each watched base has been read).
+//! `landing_watch` (how far each watched base has been read). A project's own repo (`repos`) carries the same repo and
+//! base: binding writes both, and `work_projects` stays so a rolled-back hub still reads it.
 use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef};
 use fleetd_contracts::prim::Line;
+use fleetd_contracts::repos::RepoId;
 use fleetd_contracts::tasks::Task;
 use fleetd_contracts::work::{Claim, ClaimId, ClaimState, LandingRoute, RepoKey, WorkScope};
 use rusqlite::{Connection, OptionalExtension, Row, params};
@@ -150,6 +152,7 @@ pub fn unbind(db: &Connection, project: &ProjectRef) -> rusqlite::Result<()> {
     Ok(())
 }
 
+/// The repo and base the project's work lands on: its own repo's.
 pub fn scope_of(db: &Connection, project: &ProjectRef) -> rusqlite::Result<Option<WorkScope>> {
     db.prepare_cached(
         "SELECT repo_key, base FROM work_projects WHERE machine_id = ? AND project_id = ?",
@@ -165,6 +168,18 @@ pub fn scope_of(db: &Connection, project: &ProjectRef) -> rusqlite::Result<Optio
             base: Line::unchecked(base),
         })
     })
+}
+
+/// The repo and base the repo's work lands on; `None` for an unknown repo or one with no remote.
+pub fn scope_of_repo(db: &Connection, repo_id: &RepoId) -> rusqlite::Result<Option<WorkScope>> {
+    Ok(
+        crate::hub::repos::store::get(db, repo_id)?.and_then(|(_, repo)| {
+            Some(WorkScope {
+                repo_key: repo.repo_key?,
+                base: repo.base?,
+            })
+        }),
+    )
 }
 
 /// Every project whose work lands on the scope, in a stable order.
