@@ -117,10 +117,25 @@ export function McpSection({ projectRef }: { projectRef: Ref }) {
   }
   const data = read.data;
   if (!data) return null;
-  const own = data.project ?? [];
-  const globals = globalsFor(data.global, own);
+  // A Navi's integrations are kept on its Integrations section, where saving keeps what each is to the tool policy.
+  const all = data.project ?? [];
+  const own = all.filter((x) => x.integration === undefined);
+  const integrations = all.length - own.length;
+  const globals = globalsFor(data.global, all);
   return (
-    <ServersSetting reveal="projects.mcp" label="MCP servers" help="This project's own, for the roles you pick; one replaces a global server of the same name here." scope={projectRef} servers={own}>
+    <ServersSetting
+      reveal="projects.mcp"
+      label="MCP servers"
+      help="This project's own, for the roles you pick; one replaces a global server of the same name here."
+      scope={projectRef}
+      servers={own}
+      taken={all.map((x) => x.name)}
+    >
+      {integrations > 0 ? (
+        <Text size="xs" tone="quiet">
+          {integrations === 1 ? "1 more is" : `${String(integrations)} more are`} under Integrations above.
+        </Text>
+      ) : null}
       {globals.length > 0 ? (
         <div className={s.stack}>
           <Text size="xs" tone="quiet">
@@ -142,7 +157,7 @@ export function McpSection({ projectRef }: { projectRef: Ref }) {
 
 type Editing = { kind: "new" } | { kind: "edit"; server: McpServer } | { kind: "remove"; server: McpServer };
 
-function ServersSetting(props: { reveal: string; label: string; help: string; scope: Ref | null; servers: ReadonlyArray<McpServer>; children?: React.ReactNode }) {
+function ServersSetting(props: { reveal: string; label: string; help: string; scope: Ref | null; servers: ReadonlyArray<McpServer>; taken?: ReadonlyArray<string>; children?: React.ReactNode }) {
   const [editing, setEditing] = useState<Editing | null>(null);
   const [echo, setEcho] = useState<{ ok: boolean; text: string } | null>(null);
   const machines = useMachineIds();
@@ -173,7 +188,7 @@ function ServersSetting(props: { reveal: string; label: string; help: string; sc
         <ServerEditor
           scope={props.scope}
           editing={editing.kind === "edit" ? editing.server : null}
-          taken={props.servers.map((x) => x.name)}
+          taken={props.taken ?? props.servers.map((x) => x.name)}
           onClose={() => setEditing(null)}
           onSaved={(name, missing) =>
             done(`Saved ${name}. ${TAKES_EFFECT}${missing.length > 0 ? ` Its secrets aren't on ${missing.join(", ")} yet: save it again while they're online.` : ""}`)
