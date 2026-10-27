@@ -99,3 +99,38 @@
   align-items: center;
   gap: var(--space-2);
 }
+
+.lineForm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-width: 360px;
+}
+
+/* The line to paste: the machine voice between hairlines, wrapping where it must, with Copy beside it. */
+.line {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--hairline);
+}
+.lineText {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--text);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+/* Waiting, joined or expired: a still glyph and a line, never a pulse. */
+.wait {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}

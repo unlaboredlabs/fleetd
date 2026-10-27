@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MachineAddRun, MachineHost } from "../../../shared/contracts";
-import { hereLine, hereOf, hostLine, joinSteps, pickable, resumable, shortOutput } from "./model";
+import { hereLine, hereOf, hostLine, joinSteps, lineState, lineWords, machineIdProblem, pickable, resumable, shortOutput } from "./model";
 
 const hub: MachineHost = { machineId: "devbox", source: "hub", joined: true };
 const builder: MachineHost = { machineId: "builder-1", host: "builder-1", source: "ssh_config", joined: false };
@@ -72,5 +72,21 @@ describe("Add machine's model", () => {
     expect(joinSteps(join, false).at(-1)).toEqual({ title: "wait until laptop is online", state: "running" });
     expect(joinSteps(join, true).at(-1)?.state).toBe("done");
     expect(joinSteps({ ...join, state: "running" }, false).at(-1)?.state).toBe("planned");
+  });
+
+  it("names a machine as the hub will, and follows its line from waiting to joined", () => {
+    expect(machineIdProblem("")).toContain("Give it a name");
+    expect(machineIdProblem("Ada's laptop")).toContain("Lower-case letters");
+    expect(machineIdProblem("x".repeat(33))).toContain("up to 32");
+    expect(machineIdProblem(" laptop-2 ")).toBeUndefined();
+    const at = Date.parse("2026-10-27T10:00:00.000Z");
+    const line = { expiresAt: "2026-10-27T10:15:00.000Z", onlineAtStart: false };
+    expect(lineState(line, false, at)).toBe("waiting");
+    expect(lineState(line, true, at)).toBe("joined");
+    expect(lineState(line, false, at + 15 * 60_000)).toBe("expired");
+    // Online already when the repair's line was made: nothing to wait for.
+    expect(lineState({ ...line, onlineAtStart: true }, true, at)).toBe("online");
+    expect(lineWords("waiting", "laptop")).toBe("Waiting for laptop…");
+    expect(lineWords("joined", "laptop")).toBe("laptop joined.");
   });
 });
