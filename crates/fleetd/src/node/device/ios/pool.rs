@@ -282,9 +282,12 @@ impl Default for Refill {
 /// Why a session_start has no clone now, and about how long until it has one.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Waiting {
+    /// Until a clone is ready.
     pub secs: u64,
     /// The last boot's error, while boots keep failing.
     pub failing: Option<String>,
+    /// Until the next boot starts, while the pool backs off; None while one is booting.
+    pub retry_in: Option<u64>,
 }
 
 /// The wait after `failures` boots in a row failed.
@@ -323,14 +326,68 @@ impl Refill {
 
     /// About how long until a clone is ready, with none warm.
     pub fn wait(&self, now: Instant) -> Waiting {
-        let left = match (self.booting_since, self.retry_at) {
-            (Some(since), _) => self.last_boot.saturating_sub(now.duration_since(since)),
-            (None, Some(at)) if at > now => (at - now) + self.last_boot,
-            _ => self.last_boot,
+        let retry_in = match (self.booting_since, self.retry_at) {
+            (None, Some(at)) if at > now => Some(at - now),
+            _ => None,
+        };
+        let left = match self.booting_since {
+            Some(since) => self.last_boot.saturating_sub(now.duration_since(since)),
+            None => retry_in.unwrap_or_default() + self.last_boot,
         };
         Waiting {
             secs: left.max(WAIT_MIN).as_secs(),
             failing: (self.failures > 0).then(|| self.last_error.clone().unwrap_or_default()),
+            retry_in: retry_in.map(|r| r.max(WAIT_MIN).as_secs()),
+        }
+    }
+
+    /// A boot that ended without an outcome (its task cancelled, or it panicked): the slot is free again, and nothing
+    /// counts as a failure.
+    pub fn released(&mut self) {
+        self.booting_since = None;
+    }
+}
+
+/// The pool's one boot slot, held while a boot runs: [`BootSlot::take`] claims it, and dropped without
+/// [`BootSlot::succeeded`] or [`BootSlot::failed`] (the boot's task was cancelled, or panicked) it frees it, so the pool
+/// keeps refilling.
+pub struct BootSlot<'a> {
+    refill: &'a Mutex<Refill>,
+    done: bool,
+}
+
+impl<'a> BootSlot<'a> {
+    /// The slot, unless a boot runs or the pool backs off.
+    pub fn take(refill: &'a Mutex<Refill>, now: Instant) -> Option<Self> {
+        let mut held = lock(refill);
+        if !held.may_boot(now) {
+            return None;
+        }
+        held.started(now);
+        Some(Self {
+            refill,
+            done: false,
+        })
+    }
+
+    pub fn succeeded(mut self, now: Instant) {
+        self.done = true;
+        lock(self.refill).succeeded(now);
+    }
+
+    /// Records the failure; returns the backoff it set.
+    pub fn failed(mut self, now: Instant, why: String) -> Duration {
+        self.done = true;
+        let mut refill = lock(self.refill);
+        refill.failed(now, why);
+        backoff(refill.failures)
+    }
+}
+
+impl Drop for BootSlot<'_> {
+    fn drop(&mut self) {
+        if !self.done {
+            lock(self.refill).released();
         }
     }
 }
@@ -417,24 +474,18 @@ impl Pool {
                 if pool.closed.load(Ordering::Relaxed) {
                     return;
                 }
-                {
-                    let mut refill = lock(&pool.refill);
-                    if !refill.may_boot(Instant::now()) {
-                        return;
-                    }
-                    refill.started(Instant::now());
-                }
-                let booted = pool.boot().await;
-                match &booted {
-                    Ok(_) => lock(&pool.refill).succeeded(Instant::now()),
-                    Err(e) => lock(&pool.refill).failed(Instant::now(), e.clone()),
-                }
-                match booted {
+                let Some(slot) = BootSlot::take(&pool.refill, Instant::now()) else {
+                    return;
+                };
+                match pool.boot().await {
                     // Dropped: deleted.
-                    Ok(_) if pool.closed.load(Ordering::Relaxed) => {}
-                    Ok(lent) => lock(&pool.warm).push_back(lent),
+                    Ok(_) if pool.closed.load(Ordering::Relaxed) => slot.succeeded(Instant::now()),
+                    Ok(lent) => {
+                        slot.succeeded(Instant::now());
+                        lock(&pool.warm).push_back(lent);
+                    }
                     Err(e) => {
-                        let wait = backoff(lock(&pool.refill).failures);
+                        let wait = slot.failed(Instant::now(), e.clone());
                         tracing::warn!(error = %e, retry_in_secs = wait.as_secs(), "iOS simulator pool not refilled");
                         return;
                     }
@@ -502,6 +553,50 @@ mod tests {
         assert!(refill.may_boot(after + Duration::from_secs(160)));
     }
 
+    #[tokio::test]
+    async fn a_boot_cancelled_or_panicking_frees_the_slot_and_counts_no_failure() {
+        let refill = Arc::new(Mutex::new(Refill::default()));
+        let slot = BootSlot::take(&refill, Instant::now()).unwrap();
+        assert!(
+            BootSlot::take(&refill, Instant::now()).is_none(),
+            "one boot at a time"
+        );
+        drop(slot);
+        assert!(lock(&refill).may_boot(Instant::now()), "dropped: free");
+
+        // Cancelled mid-boot, as a drained pool's task or a stopped node's is.
+        let held = refill.clone();
+        let (booting, started) = tokio::sync::oneshot::channel();
+        let task = tokio::spawn(async move {
+            let _slot = BootSlot::take(&held, Instant::now()).unwrap();
+            let _ = booting.send(());
+            std::future::pending::<()>().await;
+        });
+        started.await.unwrap();
+        assert!(!lock(&refill).may_boot(Instant::now()), "booting");
+        task.abort();
+        let _ = task.await;
+        assert!(lock(&refill).may_boot(Instant::now()), "cancelled: free");
+
+        // A boot that panics.
+        let held = refill.clone();
+        let panicked = tokio::spawn(async move {
+            let _slot = BootSlot::take(&held, Instant::now()).unwrap();
+            panic!("a boot that panics");
+        })
+        .await;
+        assert!(panicked.unwrap_err().is_panic());
+        assert!(lock(&refill).may_boot(Instant::now()), "panicked: free");
+        assert_eq!(lock(&refill).failures, 0, "neither is a failure");
+
+        let slot = BootSlot::take(&refill, Instant::now()).unwrap();
+        assert_eq!(slot.failed(Instant::now(), "x".into()), BACKOFF_FIRST);
+        assert!(
+            !lock(&refill).may_boot(Instant::now()),
+            "a failure backs off"
+        );
+    }
+
     #[test]
     fn with_no_warm_clone_a_start_hears_about_how_long() {
         let t0 = Instant::now();
@@ -510,7 +605,8 @@ mod tests {
             refill.wait(t0),
             Waiting {
                 secs: 30,
-                failing: None
+                failing: None,
+                retry_in: None,
             },
             "a guess before any boot was timed"
         );
@@ -533,6 +629,15 @@ mod tests {
         );
         let failing = refill.wait(t0 + Duration::from_secs(300));
         assert_eq!(failing.secs, 60 + 80, "the backoff, then a boot");
+        assert_eq!(failing.retry_in, Some(60));
+        refill.started(t0 + Duration::from_secs(360));
+        let retrying = refill.wait(t0 + Duration::from_secs(370));
+        assert_eq!(
+            (retrying.secs, retrying.retry_in),
+            (70, None),
+            "booting again: no backoff to wait out"
+        );
+        assert!(retrying.failing.is_some(), "the last one failed");
         assert_eq!(
             failing.failing.as_deref(),
             Some("simctl boot did not finish")
