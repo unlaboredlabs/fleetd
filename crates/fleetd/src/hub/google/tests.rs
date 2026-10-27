@@ -962,3 +962,45 @@ async fn a_node_too_old_for_mail_is_not_asked() {
     assert!(super::mail::tick(&hub).await.unwrap().is_empty());
     assert!(drain(&mut calls).is_empty());
 }
+
+/// A reconnect while Gmail answers the old connection's watch: the answer isn't noted on the new connection, which
+/// watches on the next minute.
+#[tokio::test]
+async fn a_watch_answered_after_a_reconnect_leaves_the_new_connection_unwatched() {
+    let (hub, _home) = hub();
+    let mut calls = node(
+        &hub,
+        Answers {
+            during_watch: Some(|hub, project_id| {
+                if project_id.as_str() != "ana" {
+                    return;
+                }
+                let r = navi();
+                let mut a = hub.db.google().account(&r).unwrap().unwrap();
+                // Only the first watch races the reconnect, whose connection this test gives no scopes.
+                if a.scopes.is_empty() {
+                    return;
+                }
+                // Connected again: a new connected_at, and no watch yet.
+                a.connected_at = serde_json::from_value(json!("2026-10-20T10:00:00.000Z")).unwrap();
+                a.scopes = Vec::new();
+                a.mail.watch_expires_ms = None;
+                hub.db.google().put_account(&a).unwrap();
+            }),
+            ..Answers::default()
+        },
+    )
+    .await;
+    two_navis(&hub, &mut calls).await;
+    with_pubsub(&hub, &mut calls).await;
+    super::mail::pull_once(&hub).await.unwrap();
+    drain(&mut calls);
+
+    super::mail::tick(&hub).await.unwrap();
+    let ana = hub.db.google().account(&navi()).unwrap().unwrap();
+    assert_eq!(ana.mail.watch_expires_ms, None);
+    // The next minute watches the new connection.
+    super::mail::tick(&hub).await.unwrap();
+    let ana = hub.db.google().account(&navi()).unwrap().unwrap();
+    assert_eq!(ana.mail.watch_expires_ms, Some(WATCH_ENDS));
+}

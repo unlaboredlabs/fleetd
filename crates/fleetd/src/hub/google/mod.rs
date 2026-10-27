@@ -107,9 +107,16 @@ impl GoogleStore<'_> {
         })
     }
 
-    /// Notes when the Navi's watch of its inbox ends, on the account as it is now: a watch answered after a disconnect
-    /// brings no account back, and one answered after a rule change keeps the new rule. False: no account.
-    pub fn set_watch_expires(&self, r: &ProjectRef, expires_ms: i64) -> Result<bool, StoreError> {
+    /// Notes when the watch asked for `watched` ends, on the account as it is now, and only while it is the same
+    /// connection (address and connected_at): a watch answered after a disconnect brings no account back, one answered
+    /// after a reconnect leaves the new connection to watch for itself, and one answered after a rule change keeps the
+    /// new rule. False: that connection is gone.
+    pub fn set_watch_expires(
+        &self,
+        watched: &GoogleAccount,
+        expires_ms: i64,
+    ) -> Result<bool, StoreError> {
+        let r = &watched.project_ref;
         self.db.transaction(|c| {
             let data: Option<String> = c
                 .query_row(
@@ -118,8 +125,9 @@ impl GoogleStore<'_> {
                     |row| row.get(0),
                 )
                 .optional()?;
-            let Some(mut account) =
-                data.and_then(|d| serde_json::from_str::<GoogleAccount>(&d).ok())
+            let Some(mut account) = data
+                .and_then(|d| serde_json::from_str::<GoogleAccount>(&d).ok())
+                .filter(|a| a.email == watched.email && a.connected_at == watched.connected_at)
             else {
                 return Ok(false);
             };

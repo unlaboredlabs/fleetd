@@ -240,8 +240,9 @@ pub async fn tick(hub: &Hub) -> Result<Vec<Woken>, StoreError> {
             };
             match hub.executors.google(&a.project_ref.machine_id, call).await {
                 Ok(GoogleAnswer::Watching { expires_ms }) => {
-                    // Disconnected while Gmail answered: nothing to note, nothing to check.
-                    if !store.set_watch_expires(&a.project_ref, expires_ms)? {
+                    // Disconnected or reconnected while Gmail answered: nothing to note, nothing to check. A new
+                    // connection watches on the next minute.
+                    if !store.set_watch_expires(&a, expires_ms)? {
                         continue;
                     }
                     a.mail.watch_expires_ms = Some(expires_ms);
