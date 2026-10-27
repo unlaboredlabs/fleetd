@@ -1004,3 +1004,60 @@ fn plans_go_and_a_claim_keeps_its_other_keys() {
         .unwrap();
     assert_eq!(left, 0);
 }
+
+/// The 86 migrations from before one file each are, in order, the very SQL that older hubs ran, so an older hub's
+/// `user_version` still counts the same steps.
+#[test]
+fn the_shipped_migrations_are_the_list_older_hubs_ran() {
+    use super::migrations::MIGRATIONS;
+    use sha2::{Digest, Sha256};
+    // SHA-256 of each entry of the old list in migrations.rs, trimmed and followed by a NUL, as it stood at 0086.
+    const SHIPPED: &str = "7948ebdf1a1def611f5c748b928842a60ffdf9312536c401fc721881ebeca6ca";
+    let mut hash = Sha256::new();
+    for m in &MIGRATIONS[..86] {
+        // A file starts with its comment, which the old list kept in Rust.
+        let sql: Vec<&str> = m.lines().skip_while(|l| l.starts_with("--")).collect();
+        hash.update(sql.join("\n").trim());
+        hash.update([0]);
+    }
+    let hex: String = hash.finalize().iter().map(|b| format!("{b:02x}")).collect();
+    assert_eq!(hex, SHIPPED);
+}
+
+/// A hub that ran every migration of the old list opens with nothing run twice and ends with a fresh hub's schema.
+#[test]
+fn a_hub_at_the_old_lists_end_upgrades_to_a_fresh_hubs_schema() {
+    use super::migrations::MIGRATIONS;
+    fn schema(conn: &rusqlite::Connection) -> Vec<(String, String, Option<String>)> {
+        conn.prepare("SELECT type, name, sql FROM sqlite_master ORDER BY type, name")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap()
+    }
+    let home = tempfile::tempdir().unwrap();
+    {
+        let conn = rusqlite::Connection::open(home.path().join("hub.sqlite")).unwrap();
+        for m in &MIGRATIONS[..86] {
+            conn.execute_batch(m).unwrap();
+        }
+        conn.pragma_update(None, "user_version", 86).unwrap();
+        // A row the old schema holds stays: no migration ran again over it.
+        conn.execute_batch("INSERT INTO machines VALUES ('devbox', '{}')")
+            .unwrap();
+    }
+    let upgraded = HubDb::open(home.path()).unwrap();
+    assert_eq!(upgraded.user_version().unwrap(), MIGRATIONS.len() as i64);
+    let fresh = HubDb::open_memory().unwrap();
+    let (upgraded_schema, machines) = upgraded
+        .with(|c| {
+            Ok((
+                schema(c),
+                c.query_row("SELECT count(*) FROM machines", [], |r| r.get::<_, i64>(0))?,
+            ))
+        })
+        .unwrap();
+    assert_eq!(upgraded_schema, fresh.with(|c| Ok(schema(c))).unwrap());
+    assert_eq!(machines, 1);
+}

@@ -115,6 +115,14 @@ PR (see `site/README.md`); `node tests/lab/site-capture.ts --docs` recaptures on
 that removes something the site mentions adds it to `site/.stale-terms`, which CI checks the page and the docs'
 sources against. A new or renamed command shows up in the docs' CLI reference by itself.
 
+## Hub migrations
+
+Each change to the hub's database is one new SQL file in `crates/fleetd/src/hub/store/migrations/`, named for the
+current UTC time: `YYYYMMDDHHMM_snake_case_name.sql` (`date -u +%Y%m%d%H%M`), opening with `--` comment lines on
+what it does. The build runs them in prefix order and fails on two with one prefix; a hub's `user_version` counts how
+many it ran. Never edit, rename or remove a file that is on main: CI checks that a PR only adds files, each sorting
+after every one on main, so after a rebase onto a newer migration, rename yours to a later time.
+
 ## Conventions
 
 - Rust edition 2024, no `unsafe`.

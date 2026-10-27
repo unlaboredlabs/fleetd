@@ -67,6 +67,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+      - name: Hub migrations only add new files, after the base's
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch --quiet --depth=1 origin "$GITHUB_BASE_REF"
+          node .github/migrations-check.mjs FETCH_HEAD
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
