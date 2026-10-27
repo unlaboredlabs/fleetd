@@ -1,18 +1,18 @@
 {
   "light": {
-    "ask": 0.9,
-    "plan": 5.4,
-    "build": 8.2,
-    "review": 12,
-    "merge": 16.8,
-    "end": 23.9
+    "ask": 0,
+    "plan": 2,
+    "build": 3.2,
+    "screens": 7.4,
+    "merge": 23.4,
+    "end": 28.8
   },
   "dark": {
-    "ask": 0.9,
-    "plan": 5.3,
-    "build": 8.1,
-    "review": 11.9,
-    "merge": 16.7,
-    "end": 23.9
+    "ask": 0,
+    "plan": 2.1,
+    "build": 3.3,
+    "screens": 7.5,
+    "merge": 23.5,
+    "end": 28.9
   }
 }

@@ -228,9 +228,9 @@ function Live({ session: x, windowed }: { session: BrowserSession; windowed: boo
 }
 
 /**
- * The page in a frame, at the page's own shape: its address and who drives it on a bar above. Yours, the bar turns over
- * (the page's words on the text colour) and the page takes your clicks, keys and pastes (`input`); the agent's, it only
- * shows.
+ * The page in a frame, at the page's own shape (a phone's, standing up, as tall as fits the view): its address and who
+ * drives it on a bar above. Yours, the bar turns over (the page's words on the text colour) and the page takes your
+ * clicks, keys and pastes (`input`); the agent's, it only shows.
  */
 function Frame({
   image,
@@ -263,8 +263,15 @@ function Frame({
 }) {
   const takes = input !== undefined;
   const url = image?.url ?? given;
+  // A phone's screen, standing up: as tall as fits the view, not as wide as the panel.
+  const tall = image !== undefined && image.height > image.width ? image.width / image.height : undefined;
   return (
-    <div className={cx(s.frame, yours && s.yours)} data-control={yours ? "you" : "agent"}>
+    <div
+      className={cx(s.frame, yours && s.yours)}
+      data-control={yours ? "you" : "agent"}
+      data-shape={tall === undefined ? undefined : "portrait"}
+      style={tall === undefined ? undefined : ({ "--aspect": String(tall) } as CSSProperties)}
+    >
       <div className={s.bar}>
         <span className={s.url}>{url === undefined ? <span /> : <MiddleCut text={url} />}</span>
         <Text size="xs" tone="inherit" strong={yours} tabular>
