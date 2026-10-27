@@ -1,27 +1,26 @@
-/* The docs in the landing page's language (site/home.html): IBM Plex Sans for prose and Lilex for machine text, the
-   app's own faces; its paper, ink and greys; separation by spacing, type and hairlines, with no coloured edges and no
-   boxes where a rule will do. The fonts are the landing page's files at fleetd.sh/fonts, outside the docs' base, so
-   `npm run dev` falls back to system faces. */
+/* Plain, dense product docs after capy.ai's: neutral greys, a 15 px body, a small heading scale, tight rhythm, a
+   compact sidebar, and framed tables, code and callouts. No coloured edges; hairlines and fills do the separating.
+   The faces are the landing page's sans and mono (IBM Plex Sans, Lilex) at fleetd.sh/fonts, outside the docs' base,
+   so `npm run dev` falls back to system faces. */
 @font-face{font-family:"Plex";src:url(/fonts/plex-sans-Regular.woff2) format("woff2");font-weight:400;font-display:swap}
 @font-face{font-family:"Plex";src:url(/fonts/plex-sans-Medium.woff2) format("woff2");font-weight:500;font-display:swap}
 @font-face{font-family:"Plex";src:url(/fonts/plex-sans-SemiBold.woff2) format("woff2");font-weight:600 700;font-display:swap}
 @font-face{font-family:"Lilex";src:url(/fonts/lilex-Regular.woff2) format("woff2");font-weight:400;font-display:swap}
 @font-face{font-family:"Lilex";src:url(/fonts/lilex-Medium.woff2) format("woff2");font-weight:500 700;font-display:swap}
 
-/* Dark: the landing page's dark greys. Starlight's scale runs from --sl-color-white (headings) to --sl-color-black
-   (the page). */
+/* Dark. Starlight's scale runs from --sl-color-white (headings) to --sl-color-black (the page). */
 :root {
-  --sl-color-white: #ececea;
-  --sl-color-gray-1: #dededb;
-  --sl-color-gray-2: #c9c9c6;
-  --sl-color-gray-3: #a4a5a7;
-  --sl-color-gray-4: #7c7e81;
-  --sl-color-gray-5: #313133;
-  --sl-color-gray-6: #1d1d1d;
-  --sl-color-black: #121212;
-  --sl-color-accent-low: #3a2216;
-  --sl-color-accent: #f0884e;
-  --sl-color-accent-high: #f6b48c;
+  --sl-color-white: #ededed;
+  --sl-color-gray-1: #e2e2e2;
+  --sl-color-gray-2: #d0d0d0;
+  --sl-color-gray-3: #a1a1a1;
+  --sl-color-gray-4: #787878;
+  --sl-color-gray-5: #2c2c2c;
+  --sl-color-gray-6: #1c1c1c;
+  --sl-color-black: #111111;
+  --sl-color-accent-low: #172440;
+  --sl-color-accent: #7aa5ff;
+  --sl-color-accent-high: #a9c4ff;
 
   --sl-color-bg-nav: var(--sl-color-black);
   --sl-color-bg-sidebar: var(--sl-color-black);
@@ -30,82 +29,85 @@
   --sl-color-hairline-shade: var(--sl-color-gray-5);
   --sl-color-backdrop-overlay: rgba(0, 0, 0, 0.55);
 
-  /* What the scale lacks: a fill a step off the page for code and the current page, and the landing page's mark. */
-  --fd-fill: #1b1b1b;
-  --fd-pick: #232325;
-  --fd-mark: #f0884e;
+  /* What the scale lacks: a fill a step off the page for code and table heads, a second one for the current page and
+     inline code, the link colour, and a caution's colour. */
+  --fd-fill: #161616;
+  --fd-pick: #222222;
+  --fd-link: #8fb3ff;
+  --fd-warn: #f0a050;
 
   --sl-font: "Plex";
   --sl-font-mono: "Lilex";
-  --sl-text-h1: 2.125rem;
-  --sl-text-h2: 1.5rem;
-  --sl-text-h3: 1.1875rem;
-  --sl-text-h4: 1.0625rem;
-  --sl-text-h5: 1rem;
-  --sl-text-code: 0.84375rem;
-  --sl-line-height: 1.7;
-  --sl-line-height-headings: 1.25;
-  --sl-content-width: 44rem;
-  --sl-sidebar-width: 17rem;
-  --sl-nav-height: 3.5rem;
+  --sl-text-body: 0.9375rem;
+  --sl-text-h1: 1.75rem;
+  --sl-text-h2: 1.3125rem;
+  --sl-text-h3: 1.0625rem;
+  --sl-text-h4: 0.9375rem;
+  --sl-text-h5: 0.9375rem;
+  --sl-text-code: 0.8125rem;
+  --sl-line-height: 1.6;
+  --sl-line-height-headings: 1.3;
+  --sl-content-width: 46rem;
+  --sl-sidebar-width: 16rem;
+  --sl-nav-height: 3.25rem;
 }
 
 :root[data-theme="light"] {
-  --sl-color-white: #18191b;
-  --sl-color-gray-1: #222326;
-  --sl-color-gray-2: #2c2d30;
-  --sl-color-gray-3: #5d5f63;
-  --sl-color-gray-4: #86888b;
-  --sl-color-gray-5: #cfcfca;
-  --sl-color-gray-6: #e9e9e5;
-  --sl-color-gray-7: #eeeeea;
-  --sl-color-black: #f2f2ef;
-  --sl-color-accent-low: #f6dccd;
-  --sl-color-accent: #c2410c;
-  --sl-color-accent-high: #9a3412;
+  --sl-color-white: #171717;
+  --sl-color-gray-1: #232323;
+  --sl-color-gray-2: #2e2e2e;
+  --sl-color-gray-3: #626262;
+  --sl-color-gray-4: #8f8f8f;
+  --sl-color-gray-5: #e4e4e4;
+  --sl-color-gray-6: #f2f2f2;
+  --sl-color-gray-7: #f7f7f7;
+  --sl-color-black: #ffffff;
+  --sl-color-accent-low: #e3ecff;
+  --sl-color-accent: #2357c6;
+  --sl-color-accent-high: #1a3f8f;
 
-  --fd-fill: #f7f7f5;
-  --fd-pick: #e6e6e1;
-  --fd-mark: #c2410c;
+  --fd-fill: #fafafa;
+  --fd-pick: #f0f0f0;
+  --fd-link: #2357c6;
+  --fd-warn: #a8500a;
 }
 
 ::selection {
-  background-color: color-mix(in srgb, var(--fd-mark) 24%, transparent);
+  background-color: color-mix(in srgb, var(--fd-link) 22%, transparent);
 }
 :focus-visible {
-  outline: 2px solid var(--fd-mark);
+  outline: 2px solid var(--fd-link);
   outline-offset: 2px;
 }
 body {
-  font-kerning: normal;
   -webkit-font-smoothing: antialiased;
 }
 
-/* Header: the page's own paper under one hairline. */
+/* Header */
 .header {
   border-bottom-color: var(--sl-color-hairline);
 }
 .site-title {
-  gap: 0.625rem;
+  gap: 0.5rem;
   color: var(--sl-color-white);
-  font-size: 1.0625rem;
+  font-size: 0.9375rem;
   font-weight: 600;
-  letter-spacing: -0.01em;
 }
 .site-title img {
-  height: 1.5rem;
+  height: 1.25rem;
 }
 button[data-open-modal] {
   font-family: var(--__sl-font);
 }
 @media (min-width: 50rem) {
   button[data-open-modal] {
-    height: 2.125rem;
-    max-width: 20rem;
+    height: 2rem;
+    max-width: 18rem;
     border-color: var(--sl-color-hairline);
     border-radius: 6px;
     background-color: var(--fd-fill);
     color: var(--sl-color-gray-3);
+    font-size: 0.8125rem;
   }
   button[data-open-modal]:hover {
     border-color: var(--sl-color-gray-4);
@@ -115,7 +117,7 @@ button[data-open-modal] {
 button[data-open-modal] > kbd {
   background-color: transparent;
   color: var(--sl-color-gray-3);
-  font-size: 0.75rem;
+  font-size: 0.6875rem;
 }
 .social-icons a {
   color: var(--sl-color-gray-3);
@@ -129,31 +131,40 @@ button[data-open-modal] > kbd {
 }
 starlight-theme-select select {
   color: var(--sl-color-gray-3);
-  font-size: var(--sl-text-sm);
+  font-size: 0.8125rem;
 }
 
-/* Sidebar: grey items, the current page in ink on a quiet fill, groups named in small grey type. */
+/* The phone's menu button: a quiet square, not a bright disc. */
+button.sl-menu-button,
+:root[data-theme="light"] button.sl-menu-button {
+  border: 1px solid var(--sl-color-hairline);
+  border-radius: 6px;
+  background-color: var(--sl-color-black);
+  color: var(--sl-color-white);
+  box-shadow: none;
+}
+
+/* Sidebar: compact grey items, the current page in ink on a fill, groups named in small grey type. */
 .sidebar-pane {
   border-inline-end-color: var(--sl-color-hairline);
 }
 .sidebar-content {
-  padding-top: 1.25rem;
+  padding-top: 0.75rem;
 }
 .sidebar-content .top-level > li + li {
-  margin-top: 1.25rem;
+  margin-top: 0.75rem;
 }
 .sidebar-content summary {
-  padding-block: 0 0.25rem;
+  padding-block: 0.125rem;
 }
 .sidebar-content .large {
   color: var(--sl-color-gray-3);
-  font-size: var(--sl-text-xs);
+  font-size: 0.75rem;
   font-weight: 500;
-  letter-spacing: 0.01em;
 }
 .sidebar-content .caret {
   color: var(--sl-color-gray-4);
-  font-size: 1rem;
+  font-size: 0.875rem;
 }
 .sidebar-content ul ul li {
   margin-inline-start: 0;
@@ -161,10 +172,11 @@ starlight-theme-select select {
   padding-inline-start: 0;
 }
 .sidebar-content a {
-  border-radius: 6px;
-  padding-block: 0.3125rem;
+  border-radius: 5px;
+  padding-block: 0.25rem;
   color: var(--sl-color-gray-3);
-  font-size: 0.90625rem;
+  font-size: 0.8125rem;
+  line-height: 1.35;
 }
 .sidebar-content a:hover {
   color: var(--sl-color-white);
@@ -177,23 +189,23 @@ starlight-theme-select select {
   font-weight: 500;
 }
 
-/* On this page: a short grey list; the section in view is ink. */
+/* On this page */
 .right-sidebar {
   border-inline-start-color: transparent;
 }
 .right-sidebar-panel {
-  padding-top: 2.5rem;
+  padding-top: 1.75rem;
 }
 .right-sidebar-panel h2 {
   color: var(--sl-color-gray-3);
-  font-size: var(--sl-text-xs);
+  font-size: 0.75rem;
   font-weight: 500;
-  margin-bottom: 0.625rem;
+  margin-bottom: 0.375rem;
 }
 .right-sidebar-panel nav a {
-  padding-block: 0.3125rem;
+  padding-block: 0.1875rem;
   color: var(--sl-color-gray-3);
-  font-size: 0.84375rem;
+  font-size: 0.8125rem;
   line-height: 1.35;
 }
 .right-sidebar-panel nav a:hover {
@@ -207,12 +219,12 @@ mobile-starlight-toc nav {
   border-bottom-color: var(--sl-color-hairline);
 }
 
-/* The page header: the title and the page share one plane, with no rule between them. */
+/* The page header: the title sits on the page, with no rule under it. */
 .content-panel {
-  padding-block: 1.25rem;
+  padding-block: 0.75rem;
 }
 .content-panel:first-of-type {
-  padding-top: 2.75rem;
+  padding-top: 1.75rem;
 }
 .content-panel + .content-panel {
   border-top: 0;
@@ -220,36 +232,38 @@ mobile-starlight-toc nav {
 .content-panel h1 {
   margin-top: 0;
   font-size: var(--sl-text-h1);
-  font-weight: 500;
-  letter-spacing: -0.022em;
-  text-wrap: balance;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.sl-container > * + * {
+  margin-top: 1rem;
 }
 
-/* Prose */
+/* Prose: a tight rhythm, headings a little above the body. */
 .sl-markdown-content {
   color: var(--sl-color-gray-2);
+  font-size: var(--sl-text-body);
+}
+.sl-markdown-content > * + *:not(:where(.not-content *)) {
+  margin-top: 0.75rem;
 }
 .sl-markdown-content :is(h1, h2, h3, h4, h5, h6):not(:where(.not-content *)) {
-  font-weight: 500;
-  text-wrap: balance;
-}
-.sl-markdown-content h2:not(:where(.not-content *)) {
-  letter-spacing: -0.012em;
-}
-.sl-markdown-content :is(h4, h5, h6):not(:where(.not-content *)) {
   font-weight: 600;
 }
 .sl-markdown-content :not(h1, h2, h3, h4, h5, h6, .sl-heading-wrapper) + .sl-heading-wrapper.level-h2 {
-  margin-top: 3rem;
+  margin-top: 2rem;
 }
 .sl-markdown-content :not(h1, h2, h3, h4, h5, h6, .sl-heading-wrapper) + .sl-heading-wrapper:is(.level-h3, .level-h4) {
-  margin-top: 2.25rem;
+  margin-top: 1.5rem;
 }
-.sl-markdown-content .sl-heading-wrapper + :not(.sl-heading-wrapper) {
-  margin-top: 0.75rem;
+.sl-markdown-content .sl-heading-wrapper + * {
+  margin-top: 0.5rem;
 }
-.sl-markdown-content .sl-heading-wrapper.level-h2 + .sl-heading-wrapper.level-h3 {
-  margin-top: 1.25rem;
+.sl-markdown-content li + li:not(:where(.not-content *)) {
+  margin-top: 0.25rem;
+}
+.sl-markdown-content :is(ul, ol) {
+  padding-inline-start: 1.25rem;
 }
 .sl-markdown-content .sl-anchor-link {
   color: var(--sl-color-gray-4);
@@ -259,13 +273,12 @@ mobile-starlight-toc nav {
   font-weight: 600;
 }
 
-/* Links are ink with a light underline that darkens on hover, as on the landing page. */
 .sl-markdown-content a:not(:where(.not-content *)) {
-  color: var(--sl-color-white);
+  color: var(--fd-link);
   text-decoration-line: underline;
   text-decoration-thickness: 1px;
   text-underline-offset: 0.2em;
-  text-decoration-color: var(--sl-color-gray-4);
+  text-decoration-color: color-mix(in srgb, var(--fd-link) 35%, transparent);
 }
 .sl-markdown-content a:not(:where(.not-content *)):hover {
   text-decoration-color: currentColor;
@@ -274,47 +287,52 @@ mobile-starlight-toc nav {
   color: inherit;
 }
 
-/* Machine text inline: Lilex on a quiet fill, no outline. */
 .sl-markdown-content :not(pre) > code {
-  border: 0;
+  border: 1px solid var(--sl-color-hairline);
   border-radius: 4px;
-  padding: 0.125em 0.375em;
-  background-color: var(--fd-pick);
+  padding: 0.0625em 0.3125em;
+  background-color: var(--fd-fill);
   color: var(--sl-color-white);
-  font-size: 0.875em;
+  font-size: 0.86em;
   font-variant-ligatures: none;
 }
 
-/* Tables: small grey heads over an ink rule, hairlines between rows. */
+/* Tables: framed in a hairline, a filled head row, compact cells. */
 .sl-markdown-content table:not(:where(.not-content *)) {
-  font-size: 0.9375rem;
-  line-height: 1.6;
+  border: 1px solid var(--sl-color-hairline);
+  border-radius: 8px;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.84375rem;
+  line-height: 1.5;
 }
-/* A table spans the column, so its rules line up with the code and callouts around it; narrow screens keep
-   Starlight's scrolling block. */
 @media (min-width: 50rem) {
   .sl-markdown-content table:not(:where(.not-content *)) {
     display: table;
     width: 100%;
+    overflow: hidden;
   }
   .sl-markdown-content td:not(:where(.not-content *)) {
     overflow-wrap: anywhere;
   }
 }
+.sl-markdown-content :is(th, td):not(:where(.not-content *)),
+.sl-markdown-content :is(th:first-child, td:first-child):not(:where(.not-content *)),
+.sl-markdown-content :is(th:last-child, td:last-child):not(:where(.not-content *)) {
+  padding: 0.4375rem 0.75rem;
+}
 .sl-markdown-content th:not(:where(.not-content *)) {
-  border-bottom: 1px solid var(--sl-color-white);
-  padding-block: 0 0.5rem;
-  color: var(--sl-color-gray-3);
-  font-size: var(--sl-text-xs);
+  border-bottom: 1px solid var(--sl-color-hairline);
+  background-color: var(--fd-fill);
+  color: var(--sl-color-white);
   font-weight: 500;
   text-align: start;
 }
 .sl-markdown-content td:not(:where(.not-content *)) {
-  border-bottom-color: var(--sl-color-hairline);
-  padding-block: 0.625rem;
+  border-bottom: 1px solid var(--sl-color-hairline);
 }
-.sl-markdown-content :is(th, td):not(:where(.not-content *)) {
-  padding-inline-end: 1.5rem;
+.sl-markdown-content tr:last-child td:not(:where(.not-content *)) {
+  border-bottom: 0;
 }
 
 .sl-markdown-content hr:not(:where(.not-content *)) {
@@ -326,86 +344,87 @@ mobile-starlight-toc nav {
   color: var(--sl-color-gray-3);
 }
 
-/* Callouts: the landing page's command row, an ink rule over a hairline, with the kind named in small type. Only a
-   caution or danger takes colour, and only in its name. */
+/* Callouts: a hairline box on the code fill, its kind named in small type. No coloured edge; a caution's colour is in
+   its name only. */
 .starlight-aside {
-  border: 0;
-  border-top: 1px solid var(--sl-color-white);
-  border-bottom: 1px solid var(--sl-color-hairline);
-  padding: 0.875rem 0 1rem;
-  background: none;
+  border: 1px solid var(--sl-color-hairline);
+  border-radius: 8px;
+  padding: 0.625rem 0.875rem;
+  background-color: var(--fd-fill);
   color: var(--sl-color-gray-2);
+  font-size: 0.875rem;
   --sl-color-asides-text-accent: var(--sl-color-white);
 }
 .starlight-aside--caution,
 .starlight-aside--danger {
-  --sl-color-asides-text-accent: var(--fd-mark);
+  --sl-color-asides-text-accent: var(--fd-warn);
 }
 .starlight-aside__title {
   gap: 0.375rem;
-  font-size: var(--sl-text-sm);
+  font-size: 0.8125rem;
   font-weight: 600;
 }
 .starlight-aside__icon {
-  font-size: 1.125em;
+  font-size: 1.0625em;
 }
 .starlight-aside__title + .starlight-aside__content {
-  margin-top: 0.375rem;
+  margin-top: 0.25rem;
 }
 .starlight-aside__content a {
-  color: var(--sl-color-white);
+  color: var(--fd-link);
 }
 
-/* Tabs: grey names over a hairline; the open one is ink, underlined in ink. */
+/* Tabs */
 starlight-tabs [role="tablist"] {
   border-bottom: 1px solid var(--sl-color-hairline);
 }
 starlight-tabs .tab > [role="tab"] {
   --sl-tab-color-border: transparent;
   box-shadow: 0 1px 0 var(--sl-tab-color-border);
-  padding: 0.375rem 0;
-  margin-inline-end: 1.5rem;
-  font-size: var(--sl-text-sm);
+  padding: 0.3125rem 0;
+  margin-inline-end: 1.25rem;
+  font-size: 0.8125rem;
   font-weight: 500;
 }
 starlight-tabs .tab [role="tab"][aria-selected="true"] {
   --sl-tab-color-border: var(--sl-color-white);
   font-weight: 500;
 }
+.tablist-wrapper ~ [role="tabpanel"] {
+  margin-top: 0.75rem;
+}
 
-/* Previous and next: a hairline and two names, no boxes. */
+/* Previous and next */
 .pagination-links {
-  margin-top: 1rem;
+  margin-top: 0.5rem;
   border-top: 1px solid var(--sl-color-hairline);
-  padding-top: 1.25rem;
+  padding-top: 1rem;
 }
 .pagination-links a {
   border: 0;
   padding: 0;
   box-shadow: none;
   color: var(--sl-color-gray-3);
-  font-size: var(--sl-text-sm);
+  font-size: 0.75rem;
 }
 .pagination-links a svg {
   display: none;
 }
 .pagination-links .link-title {
-  margin-top: 0.125rem;
   display: inline-block;
   color: var(--sl-color-white);
-  font-size: 1.0625rem;
+  font-size: 0.9375rem;
   font-weight: 500;
 }
 .pagination-links a:hover .link-title {
-  text-decoration: underline;
-  text-decoration-thickness: 1px;
-  text-underline-offset: 0.2em;
+  color: var(--fd-link);
 }
 footer .meta {
-  font-size: var(--sl-text-xs);
+  margin-top: 2rem;
+  font-size: 0.75rem;
 }
 
-/* Search: the landing page's paper and hairlines; a result is ink on a quiet fill when picked. */
+/* Search */
 #starlight__search {
   --pagefind-ui-primary: var(--sl-color-white);
   --pagefind-ui-text: var(--sl-color-gray-2);
@@ -413,7 +432,7 @@ footer .meta {
   --pagefind-ui-border: var(--sl-color-hairline);
   --pagefind-ui-tag: var(--fd-pick);
   --pagefind-ui-border-radius: 6px;
-  --pagefind-ui-scale: 0.85;
+  --pagefind-ui-scale: 0.8;
 }
 site-search dialog {
   border-color: var(--sl-color-hairline);
@@ -421,10 +440,9 @@ site-search dialog {
   background-color: var(--sl-color-black);
 }
 #starlight__search input:focus {
-  --pagefind-ui-border: var(--sl-color-white);
+  --pagefind-ui-border: var(--sl-color-gray-4);
   outline: 0;
 }
-#starlight__search .pagefind-ui__search-clear::before,
 site-search button[data-close-modal] {
   color: var(--sl-color-gray-3);
 }
@@ -450,4 +468,18 @@ site-search button[data-close-modal] {
   background-color: transparent;
   color: var(--sl-color-white);
   font-weight: 600;
+}
+
+/* Expressive Code's copy button, sized for compact blocks. */
+.expressive-code .copy {
+  inset-block-start: 0.3125rem;
+  inset-inline-end: 0.3125rem;
+}
+.expressive-code .copy button {
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 5px;
+}
+.expressive-code .copy button::after {
+  margin: 0.375rem;
 }

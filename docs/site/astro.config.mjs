@@ -29,15 +29,15 @@ export default defineConfig({
         { tag: "link", attrs: { rel: "preload", href: "/fonts/plex-sans-Regular.woff2", as: "font", type: "font/woff2", crossorigin: "" } },
         { tag: "link", attrs: { rel: "preload", href: "/fonts/plex-sans-Medium.woff2", as: "font", type: "font/woff2", crossorigin: "" } },
       ],
-      // Code sits on the page as a quiet panel in Lilex: no window chrome (a terminal frame's three dots), no shadow, a
-      // copy button that shows on hover. Muted themes, so a block reads as text before it reads as colour.
+      // Code is a compact hairline panel in Lilex: no window chrome (a terminal frame's three dots), no shadow, a copy
+      // button that shows on hover. Muted themes, so a block reads as text before it reads as colour.
       expressiveCode: {
         themes: ["vitesse-dark", "vitesse-light"],
         defaultProps: { frame: "code" },
         // A console block's output in the page's grey, under the command in ink, rather than the theme's blue.
         customizeTheme(theme) {
           for (const rule of theme.settings) {
-            if (rule.scope?.includes("meta.output")) rule.settings.foreground = theme.type === "dark" ? "#a4a5a7" : "#5d5f63";
+            if (rule.scope?.includes("meta.output")) rule.settings.foreground = theme.type === "dark" ? "#a1a1a1" : "#626262";
           }
         },
         styleOverrides: {
@@ -45,10 +45,10 @@ export default defineConfig({
           borderColor: "var(--sl-color-hairline)",
           codeBackground: "var(--fd-fill)",
           codeFontFamily: "var(--__sl-font-mono)",
-          codeFontSize: "var(--sl-text-code)",
-          codeLineHeight: "1.65",
-          codePaddingBlock: "0.875rem",
-          codePaddingInline: "1.125rem",
+          codeFontSize: "0.8125rem",
+          codeLineHeight: "1.55",
+          codePaddingBlock: "0.625rem",
+          codePaddingInline: "0.875rem",
           uiFontFamily: "var(--__sl-font)",
           frames: {
             frameBoxShadowCssValue: "none",
