@@ -454,6 +454,10 @@ pub struct Train {
     /// The upstream failures the lead was told of, each Change's with its hold: once each, in memory, so a restart
     /// may tell one again.
     pub(super) after_told: Mutex<HashSet<(ChangeId, String)>>,
+    /// Held by an enqueue with `after` from its loop check until its Change records them.
+    after_lock: tokio::sync::Mutex<()>,
+    /// GitHub's answer for an upstream PR with no open Change, by URL, and when it was read (`next::UPSTREAM_TTL_MS`).
+    pub(super) upstream_reads: Mutex<HashMap<String, (i64, super::next::UpstreamPull)>>,
     /// The train's last push per change: the head it pushed and when, for `ci.queue` spans.
     pub(super) pushed: Mutex<HashMap<ChangeId, (String, i64)>>,
     /// Each repo and base branch's CI config and when it was read.
@@ -505,6 +509,8 @@ impl Train {
             verdicts: Notify::new(),
             overdue: Mutex::default(),
             after_told: Mutex::default(),
+            after_lock: tokio::sync::Mutex::new(()),
+            upstream_reads: Mutex::default(),
             pushed: Mutex::default(),
             ci_configs: Mutex::default(),
             next_labels: Default::default(),
@@ -2544,7 +2550,9 @@ impl Train {
         let (repo, pr_number) = (parsed.repo.to_lowercase(), parsed.pr_number);
         let pr_url = format!("https://github.com/{repo}/pull/{pr_number}");
         let repos = self.host.github_repos(project_ref);
-        if !repos.is_empty() && !repos.iter().any(|(r, _)| *r == repo) {
+        // Only a project with several repos (stage 2) is held to them: a one-repo project's lead has always enqueued PRs
+        // of other repos too, such as a fork's upstream.
+        if repos.len() >= 2 && !repos.iter().any(|(r, _)| *r == repo) {
             let names: Vec<&str> = repos.iter().map(|(r, _)| r.as_str()).collect();
             let refusal = Refusal::new(
                 format!(
@@ -2560,6 +2568,13 @@ impl Train {
             let refusal = Refusal::new("It names itself in `after`.", "drop it from `after`");
             return Err(self.refuse(project_ref, &pr_url, refusal, None).await);
         }
+        // One enqueue with `after` at a time, from the loop check until its Change records them, so two at once can't
+        // each wait on the other.
+        let _order = if after.is_empty() {
+            None
+        } else {
+            Some(self.after_lock.lock().await)
+        };
         if let Some(upstream) = self.loops_back(&pr_url, &after) {
             let refusal = Refusal::new(
                 format!("{upstream} already waits on it, so neither could merge."),
@@ -2580,6 +2595,16 @@ impl Train {
         let enqueue_lock = repo_lock(&self.enqueue_locks, &format!("{repo}#{pr_number}"));
         let held = enqueue_lock.lock().await;
         if let Some(existing) = self.records.open_for(&repo, pr_number) {
+            if HEAD_STATES.contains(&existing.state)
+                && after.iter().any(|u| !existing.after.contains(u))
+            {
+                drop(held);
+                let refusal = Refusal::new(
+                    "It is already being merged (rebasing, in CI or merging), so it can't wait on another PR now.",
+                    "to keep it from landing first, add the `hold` label to it, and remove the label once the other PR merges",
+                );
+                return Err(self.refuse(project_ref, &pr_url, refusal, None).await);
+            }
             let existing = self.add_after(existing, &after);
             self.kick(&repo);
             return Ok(self.one(existing));

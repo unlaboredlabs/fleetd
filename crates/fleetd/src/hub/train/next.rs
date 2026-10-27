@@ -36,6 +36,19 @@ pub const WAITING_FOR_RUNNERS: &str = "waiting for CI runners";
 /// it hasn't.
 pub const WAITING_ON: &str = "held: waiting on ";
 
+/// How long GitHub's answer for an upstream PR with no open Change is trusted: a pass reads it for the hold and for the
+/// lead's line, and each held Change asks.
+const UPSTREAM_TTL_MS: i64 = 10_000;
+
+/// GitHub's answer for an upstream PR: merged, open, closed unmerged, or the read's error.
+#[derive(Clone)]
+pub(super) enum UpstreamPull {
+    Merged,
+    Open,
+    Closed,
+    Unread(String),
+}
+
 /// The first of a Change's `after` PRs that hasn't merged.
 pub(super) struct Waiting {
     /// The Change's hold: `WAITING_ON`, the PR and why it hasn't merged.
@@ -448,20 +461,17 @@ impl Train {
                 ("its review found blocking issues".to_string(), true)
             }
             Some((_, ChangeState::Refused | ChangeState::Abandoned)) | None => {
-                match self.github.pull(&repo, n).await {
-                    Ok(pull) if pull.merged => return None,
-                    Ok(pull) if pull.state != "open" => {
-                        ("it was closed without merging".to_string(), true)
-                    }
-                    Ok(_) => match latest.map(|c| c.state) {
+                match self.upstream_pull(url.as_str(), &repo, n).await {
+                    UpstreamPull::Merged => return None,
+                    UpstreamPull::Closed => ("it was closed without merging".to_string(), true),
+                    UpstreamPull::Open => match latest.map(|c| c.state) {
                         Some(ChangeState::Refused) => ("the train refused it".to_string(), true),
                         Some(_) => ("it left the train unmerged".to_string(), true),
                         None => ("it is not on the train yet".to_string(), false),
                     },
-                    Err(e) => (
-                        format!("it could not be read: GitHub: {}", e.message),
-                        false,
-                    ),
+                    UpstreamPull::Unread(message) => {
+                        (format!("it could not be read: GitHub: {message}"), false)
+                    }
                 }
             }
             Some(_) => ("it hasn't merged yet".to_string(), false),
@@ -470,6 +480,26 @@ impl Train {
             note: format!("{WAITING_ON}{repo}#{n}: {why}"),
             failed,
         })
+    }
+
+    /// The upstream PR as GitHub has it, read at most every `UPSTREAM_TTL_MS`.
+    async fn upstream_pull(&self, url: &str, repo: &str, n: i64) -> UpstreamPull {
+        let now = self.now_ms();
+        if let Some((at, read)) = lock(&self.upstream_reads).get(url)
+            && now - at < UPSTREAM_TTL_MS
+        {
+            return read.clone();
+        }
+        let read = match self.github.pull(repo, n).await {
+            Ok(pull) if pull.merged => UpstreamPull::Merged,
+            Ok(pull) if pull.state != "open" => UpstreamPull::Closed,
+            Ok(_) => UpstreamPull::Open,
+            Err(e) => UpstreamPull::Unread(e.message),
+        };
+        let mut reads = lock(&self.upstream_reads);
+        reads.retain(|_, (at, _)| now - *at < UPSTREAM_TTL_MS);
+        reads.insert(url.to_string(), (now, read.clone()));
+        read
     }
 
     /// Each pass: the lead hears once of each upstream failure that holds one of the repo's Changes in line.

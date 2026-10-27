@@ -257,8 +257,8 @@ pub struct ChangeEnqueueCall {
     pub task_id: Option<TaskId>,
     pub pr_url: GitHubPrUrl,
     pub workstream_id: Option<WorkstreamId>,
-    /// PRs, in this repo or another of the project's, that must merge first: the train holds this one until each has
-    /// merged. Enqueuing a PR already on the train adds these to it.
+    /// PRs, in this repo or any other, that must merge first: the train holds this one until each has merged.
+    /// Enqueuing a PR already on the train adds these to it, unless it is already being merged.
     pub after: Option<UniqueList<GitHubPrUrl, 0, 20>>,
 }
 

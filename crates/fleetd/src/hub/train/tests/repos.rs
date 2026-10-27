@@ -168,3 +168,64 @@ async fn an_upstream_failure_keeps_the_downstream_held_and_tells_the_lead_once()
     assert_eq!(told.len(), 1, "{told:?}");
     assert!(told[0].starts_with("- PR #7 (X2): "), "{}", told[0]);
 }
+
+/// A one-repo project is held to nothing: its lead may enqueue another repo's PR, such as a fork's upstream, as before.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_one_repo_project_still_takes_a_pr_from_another_repo() {
+    let kit = Kit::new();
+    *kit.host.repos.lock().unwrap() = vec![(REPO.into(), project())];
+    let upstream = kit.open_pr_in(
+        "upstream/storefront",
+        9,
+        "fleetd/T3-up",
+        &[add("u.txt", "u\n")],
+    );
+    let change = kit.enqueue(upstream).await;
+    assert_eq!(change.repo.as_str(), "upstream/storefront");
+}
+
+/// `after` can't stop a PR the train is already merging: adding it then is refused, with the `hold` label as the fix.
+#[tokio::test(flavor = "multi_thread")]
+async fn after_is_refused_for_a_pr_already_being_merged() {
+    let kit = two_repos();
+    let api_url = kit.open_pr_in(API, 8, "fleetd/T2-api", &[add("api.txt", "api\n")]);
+    let web_url = kit.open_pr(7, "fleetd/T1-web", &[add("web.txt", "web\n")]);
+    let web = kit.enqueue(web_url.clone()).await;
+    let mut in_ci = kit.get(&web.change_id);
+    in_ci.state = ChangeState::Ci;
+    kit.train.records().put(&in_ci);
+    let refused = kit
+        .train
+        .enqueue(&project(), after(enqueue_call(web_url), &api_url))
+        .await
+        .unwrap_err();
+    assert!(
+        refused.message.contains("already being merged"),
+        "{}",
+        refused.message
+    );
+    assert!(refused.fix.as_deref().is_some_and(|f| f.contains("`hold`")));
+    assert!(kit.get(&web.change_id).after.is_empty());
+}
+
+/// Two enqueues at once, each after the other: one goes, the other is refused, so neither waits forever.
+#[tokio::test(flavor = "multi_thread")]
+async fn two_enqueues_at_once_after_each_other_cannot_both_go() {
+    let kit = two_repos();
+    let api_url = kit.open_pr_in(API, 8, "fleetd/T2-api", &[add("api.txt", "api\n")]);
+    let web_url = kit.open_pr(7, "fleetd/T1-web", &[add("web.txt", "web\n")]);
+    let r = project();
+    let (a, b) = tokio::join!(
+        kit.train
+            .enqueue(&r, after(enqueue_call(web_url.clone()), &api_url)),
+        kit.train
+            .enqueue(&r, after(enqueue_call(api_url.clone()), &web_url)),
+    );
+    assert!(a.is_ok() != b.is_ok(), "{a:?} {b:?}");
+    let refused = a.err().or(b.err()).unwrap();
+    assert!(
+        refused.message.contains("already waits on it"),
+        "{}",
+        refused.message
+    );
+}

@@ -200,9 +200,9 @@ A project can hold several repos. Each repo has its own train, so its PRs line u
 the other repos' PRs. The train for a repo reads its rules and its branch prefix from that repo's checkout. If two
 projects share a repo, they share its train and its rules.
 
-The train takes only PRs from the project's repos. A PR from any other repo is refused, and the refusal lists the
-project's repos. A project whose repos have no GitHub remote yet takes PRs from any repo, as it did before projects
-had repos.
+A project with two or more repos takes only PRs from its repos. A PR from any other repo is refused, and the refusal
+lists the project's repos. A project with one repo, or none, takes PRs from any repo, as before, such as a fork's
+upstream.
 
 ## Merge order {#order}
 
@@ -212,9 +212,9 @@ When one PR needs another merged first, such as a client that needs a new API, t
 { "prUrl": "https://github.com/acme/web/pull/12", "after": ["https://github.com/acme/api/pull/40"] }
 ```
 
-The PRs can be in the same repo or in different repos of the project. Enqueuing a PR that is already on the train adds
-the new `after` PRs to the ones it has. The train refuses an order that loops back, where the upstream PR already
-waits on this one.
+The PRs can be in the same repo or any other. Enqueuing a PR that is already in line adds the new `after` PRs to the
+ones it has. Once the train is merging it (rebasing, in CI or merging), that is refused: add the `hold` label to keep it
+from landing first. The train also refuses an order that loops back, where the upstream PR already waits on this one.
 
 The downstream PR is reviewed and checked as usual. Once it is ready, it stays in line, held with
 "waiting on acme/api#40" and the reason. When the upstream PR merges, the downstream PR's train takes it on its next

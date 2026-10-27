@@ -106,8 +106,9 @@ PRs. The train now reads that repo's branch prefix (policy) and its rules (`proj
 checkout in that project (`Train::train_checkout`, through `TrainHost::github_repos`), not from the project's own
 directory. For a one-repo project, that checkout is the project itself, so nothing changes.
 
-`change_enqueue` refuses a PR whose GitHub repo isn't one of the project's repos (`repos.repo_key`). A project whose
-repos have no GitHub remote yet (a plain directory, or a remote not read yet) takes any repo, as before. The order
+`change_enqueue` refuses a PR whose GitHub repo isn't one of the project's repos (`repos.repo_key`), once the project
+has two or more (stage 2). A project with one repo or none takes any repo, as before: its lead may enqueue another
+repo's PR, such as a fork's upstream. The order
 board and the Train tab already group by repo (`hub/orders` `trains()`, `TrainPane`), one train per repo. A task's PR
 lookup still reads the project's own remote. Stage 3 moves it to the task's repo checkout, along with the launch, in
 `hub/tasks`.
@@ -115,10 +116,12 @@ lookup still reads the project's own remote. Stage 3 moves it to the task's repo
 ## Merge order across repos (5)
 
 `change_enqueue` takes `after: [prUrl]`, and the Change records it (`Change.after`, absent when empty). Enqueuing a PR
-already on the train adds the new `after` PRs to it. The train refuses a PR listed in its own `after`, or an order that
-loops back. `train/next.rs` decides where each upstream PR stands. Its newest Change decides: merged lets the
+still in line adds the new `after` PRs to it; one already rebasing, in CI or merging is refused. `after` may name any
+GitHub PR. The train refuses a PR listed in its own `after`, or an order that loops back; enqueues with `after` take one
+lock from that check until their Change records them, so two at once can't wait on each other. `train/next.rs`
+decides where each upstream PR stands. Its newest Change decides: merged lets the
 downstream PR go; failed CI, blocking review findings, or refused (unless GitHub shows the PR merged) hold the
 downstream PR as a failure. Anything else holds it as waiting. With no Change, GitHub decides. A ready downstream
-Change waits in line with `lastError` "held: waiting on owner/name#n: why", which the app shows as held. Each pass
-tells the lead once about each failure that holds a Change. That note is kept in memory, so after a restart the lead
+Change waits in line with `lastError` "held: waiting on owner/name#n: why", which the app shows as held. GitHub's answer for an upstream with no open Change is
+kept for 10 seconds, so a pass reads it once. Each pass tells the lead once about each failure that holds a Change. That note is kept in memory, so after a restart the lead
 may be told again. An upstream merge kicks the trains of the PRs waiting on it.
