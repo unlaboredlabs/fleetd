@@ -116,8 +116,8 @@ const reached = (p: ToolPreview): string => {
 
 /**
  * The line an answered card folds to: what the person decided ("Approved: send an email to ana@example.com and 2 more"),
- * or undefined while it waits. Never "Sent": the hub knows the answer, not the tool's result, and xaq may still ask on
- * its own approve page, refuse or fail. What happened then is in the Navi's chat.
+ * or undefined while it waits. Never "Sent": the hub knows the answer, not the tool's result, and the tool may still
+ * refuse or fail. What happened then is in the Navi's chat.
  */
 export const previewOutcome = (p: ToolPreview, item: CommandApprovalItem): Outcome | undefined => {
   const what = `${p.title.charAt(0).toLowerCase()}${p.title.slice(1)}${reached(p)}`;

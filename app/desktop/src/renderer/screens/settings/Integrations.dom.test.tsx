@@ -17,18 +17,17 @@ vi.hoisted(() => {
 
 const AT = "2026-10-27T10:00:00.000Z";
 const BOX = "Az+6kf/abi0V7SO+sn4h++sIgyPoNDAneLBDFaJf3TA=";
-const XAQ_KEY = "aib_never_in_a_hub_call_0123";
 const NOTION_KEY = "ntn_never_in_a_hub_call_0123";
 const ref = { machineId: "devbox", projectId: "navi" };
 
-const google: McpServer = {
+const notion: McpServer = {
   scope: { kind: "project", ...ref },
-  name: "google",
+  name: "notion",
   enabled: true,
   roles: { lead: true, writers: false, reviewers: false },
-  transport: { type: "http", url: "http://127.0.0.1:8425/mcp" },
-  headers: [{ name: "Authorization", kind: "secret", sealedOn: [{ machineId: "devbox", fingerprint: "5ec2e7a1" }] }],
-  integration: { kind: "google" },
+  transport: { type: "stdio", command: "npx", args: ["-y", "@notionhq/notion-mcp-server"] },
+  env: [{ name: "NOTION_TOKEN", kind: "secret", sealedOn: [{ machineId: "devbox", fingerprint: "5ec2e7a1" }] }],
+  integration: { kind: "notion" },
   updatedAt: AT,
 };
 
@@ -59,11 +58,11 @@ beforeEach(() => {
   tested = {
     machineId: "devbox",
     result: {
-      server: "xaq 2.4.0",
+      server: "Notion API 2.0.0",
       tools: [
-        { name: "search_threads", policy: "read" },
-        { name: "get_thread", policy: "read" },
-        { name: "send_message", policy: "ask" },
+        { name: "API-post-search", policy: "read" },
+        { name: "API-retrieve-a-page", policy: "read" },
+        { name: "API-patch-page", policy: "ask" },
       ],
     },
   };
@@ -73,7 +72,7 @@ beforeEach(() => {
     secret: {
       mcpServer: (request: McpServerRequest): Promise<CallOutcome> => {
         saved.push(request);
-        project = [request.name === "google" ? google : { ...google, name: request.name, integration: { kind: request.integration?.kind ?? "custom" } }];
+        project = [request.name === "notion" ? notion : { ...notion, name: request.name, integration: { kind: request.integration?.kind ?? "custom" } }];
         return Promise.resolve({ ok: true, output: { server: project[0] } });
       },
     },
@@ -159,62 +158,26 @@ const row = (name: string) => {
 const hubCalls = () => JSON.stringify(calls);
 
 describe("a Navi's integrations", () => {
-  it("lists Google and Notion to connect, and a custom server to add", async () => {
+  it("lists Notion to connect and a custom server to add", async () => {
     await render();
-    expect(row("Google").textContent).toContain("Gmail, Calendar and Drive, through your own xaq.");
-    expect(row("Notion").textContent).toContain("Connect");
+    expect(row("Notion").textContent).toContain("The pages you share with your own Notion integration.");
     expect(document.body.textContent).toContain("Add an MCP server");
     expect(document.body.textContent).toContain("Moving money, trading and creating accounts are never allowed.");
+    expect(document.body.textContent).not.toMatch(/xaq/iu);
   });
 
-  it("connects Google through xaq: the steps with the exact redirect URI, the key sealed in main, then a test by policy", async () => {
+  it("shows a connected Notion: its secret sealed on Navi's machine, and a test by policy", async () => {
+    project = [notion];
     await render();
-    await click(button("Connect", row("Google")));
-    const steps = dialog().textContent;
-    expect(steps).toContain("npx xaq-cli");
-    expect(steps).toContain("http://localhost:8425/oauth/callback");
-    // xaq's own approval stays on as a second layer.
-    expect(steps).toContain("send mode on Approval");
-    expect(steps).not.toContain("Direct");
-    // The redirect URI follows the address typed.
-    await type(field("xaq's address"), "https://mail.example.com/");
-    expect(dialog().textContent).toContain("https://mail.example.com/oauth/callback");
-    expect(button("Connect and test", dialog()).disabled).toBe(true);
-    await type(field("Agent key"), "nope");
-    expect(dialog().textContent).toContain("An xaq agent key starts with aib_");
-    await type(field("xaq's address"), "127.0.0.1:8425");
-    await type(field("Agent key"), XAQ_KEY);
-    await click(button("Connect and test", dialog()));
-
-    expect(saved).toHaveLength(1);
-    const request = saved[0];
-    expect(request?.integration).toEqual({ kind: "google" });
-    expect(request?.transport).toEqual({ type: "http", url: "http://127.0.0.1:8425/mcp" });
-    expect(request?.roles).toEqual({ lead: true, writers: false, reviewers: false });
-    expect(request?.headers).toEqual([{ kind: "secret", name: "Authorization", value: `Bearer ${XAQ_KEY}` }]);
-    expect(request?.boxes).toEqual([{ machineId: "devbox", boxPubKey: BOX }]);
-    // The key goes to main to be sealed, never in a hub call, and never shows again.
-    expect(hubCalls()).not.toContain(XAQ_KEY);
-    expect(document.body.textContent).not.toContain(XAQ_KEY);
-
-    // Connected: the test's tools by what fleetd does with them.
-    const google = row("Google").textContent;
-    expect(google).toContain("Connected");
-    expect(google).toContain("Agent key sealed on devbox. Navi never sees it.");
-    expect(google).toContain("Works on devbox (xaq 2.4.0): 2 tools read freely · 1 asks you each time.");
-    expect(google).toContain("search_threads, get_thread");
-    expect(google).toContain("send_message");
-  });
-
-  it("says xaq isn't running when the test can't reach it, and that a key without grants lists nothing", async () => {
-    project = [google];
-    tested = { machineId: "devbox", result: { error: "connection refused (os error 111)" } };
-    await render();
-    await click(button("Test connection", row("Google")));
-    expect(row("Google").querySelector('[role="alert"]')?.textContent).toContain("xaq isn't answering at http://127.0.0.1:8425/mcp from devbox. Start it there with npx xaq-cli");
-    tested = { machineId: "devbox", result: { server: "xaq 2.4.0", tools: [] } };
-    await click(button("Test connection", row("Google")));
-    expect(row("Google").textContent).toContain("give Navi's agent a grant on your Gmail account");
+    await click(button("Test connection", row("Notion")));
+    const text = row("Notion").textContent;
+    expect(text).toContain("Connected");
+    expect(text).toContain("Integration secret sealed on devbox. Navi never sees it.");
+    expect(text).toContain("Works on devbox (Notion API 2.0.0): 2 tools read freely · 1 asks you each time.");
+    expect(text).toContain("API-post-search, API-retrieve-a-page");
+    tested = { machineId: "devbox", result: { error: "HTTP 401 Unauthorized" } };
+    await click(button("Test connection", row("Notion")));
+    expect(row("Notion").querySelector('[role="alert"]')?.textContent).toContain("Notion refused the token.");
   });
 
   it("connects Notion with its own token as a sealed NOTION_TOKEN for its official server", async () => {
@@ -260,14 +223,14 @@ describe("a Navi's integrations", () => {
   });
 
   it("disconnects: the server goes, and the key is erased from Navi's machine", async () => {
-    project = [google];
+    project = [notion];
     await render();
-    await click(button("Disconnect", row("Google")));
+    await click(button("Disconnect", row("Notion")));
     expect(dialog().textContent).toContain("the key is erased from devbox");
-    expect(dialog().textContent).toContain("delete Navi's agent in xaq");
+    expect(dialog().textContent).toContain("delete the integration in Notion");
     await click(button("Disconnect", dialog()));
-    expect(calls.find((c) => c.tool === "mcp_server_remove")?.input).toEqual({ scope: google.scope, name: "google" });
+    expect(calls.find((c) => c.tool === "mcp_server_remove")?.input).toEqual({ scope: notion.scope, name: "notion" });
     await settle();
-    expect(button("Connect", row("Google"))).toBeDefined();
+    expect(button("Connect", row("Notion"))).toBeDefined();
   });
 });
