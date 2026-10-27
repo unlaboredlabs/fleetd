@@ -138,7 +138,7 @@ fn file_bytes(text: &str) -> Option<Vec<u8>> {
         .find_map(|e| e.decode(&text).ok())
 }
 
-/// `input` with the `content_base64` of each file xaq attaches (an `attachments` item with a `filename`) replaced by
+/// `input` with the `content_base64` of each file a Google tool attaches (an `attachments` item with a `filename`) replaced by
 /// what `swap` returns for it; nothing else is changed, on any server.
 fn with_files(
     kind: IntegrationKind,
@@ -164,7 +164,7 @@ fn with_files(
     out
 }
 
-/// `input` as the card shows it: the bytes of each file xaq attaches said by their size, which no one reads.
+/// `input` as the card shows it: the bytes of each file a Google tool attaches said by their size, which no one reads.
 pub fn shown_input(kind: IntegrationKind, input: &Value) -> Value {
     with_files(kind, input, |b| {
         is_base64(b).then(|| Value::String(format!("[the file's {} bytes]", base64_bytes(b))))
@@ -172,7 +172,7 @@ pub fn shown_input(kind: IntegrationKind, input: &Value) -> Value {
 }
 
 /// Whether a call would send or store what looks like a credential: in its text, and in the decoded contents of the
-/// files xaq attaches. A file's bytes are read decoded, never as base64 text, whose random letters could pass for a
+/// files a Google tool attaches. A file's bytes are read decoded, never as base64 text, whose random letters could pass for a
 /// key's shape; a short value is read as text, so a key put where bytes go is still found.
 fn sends_credential(kind: IntegrationKind, input: &Value) -> bool {
     let mut files: Vec<Vec<u8>> = Vec::new();

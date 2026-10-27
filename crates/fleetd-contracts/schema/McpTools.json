@@ -6345,7 +6345,7 @@
       "oneOf": [
         {
           "const": "google",
-          "description": "Gmail, Google Calendar and Google Drive through xaq (npm `xaq-cli`), which holds the Google sign-in: fleetd\nkeeps only xaq's address and an agent key.",
+          "description": "Gmail, Google Calendar and Google Drive: fleetd's own Google tools, read by the names and fields in\n`hub/integrations/google.rs`.",
           "type": "string"
         },
         {
@@ -11904,7 +11904,7 @@
           "type": "integer"
         },
         "from": {
-          "description": "Where it comes from, when not from the input: \"from Drive\", \"from message 18c2\", \"a file on xaq's machine\".",
+          "description": "Where it comes from, when not from the input: \"from Drive\", \"from message 18c2\", \"a file on the Navi's machine\".",
           "maxLength": 200,
           "minLength": 1,
           "pattern": "^[^\\r\\n]*$",
@@ -18180,7 +18180,7 @@
       "description": "What an approval card shows for an asking tool: who it reaches and what it says, or what it changes. Every field is\nread from the exact input the tool runs with once approved; nothing is a summary the agent wrote.",
       "properties": {
         "account": {
-          "description": "The account it acts as, when the tool names one (an xaq account's address).",
+          "description": "The account it acts as, when the tool names one (the connected Google account's address).",
           "maxLength": 320,
           "minLength": 1,
           "pattern": "^[^\\r\\n]*$",
