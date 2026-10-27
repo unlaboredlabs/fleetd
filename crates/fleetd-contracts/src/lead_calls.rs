@@ -171,7 +171,7 @@ fn default_task_kind() -> TaskKind {
 }
 
 /// `fleetd task spawn --workstream W1 --title t --prompt p [--kind write|read|review]
-/// [--profile high|medium] [--pr <url>] [--qa]`. The profile defaults to high; a review task, and
+/// [--profile high|medium] [--pr <url>] [--qa] [--repo <name>]`. The profile defaults to high; a review task, and
 /// every task of a project with medium off, runs high whatever it says. A review task needs `--pr`; `--qa` marks a
 /// review task as a QA run.
 #[skip_serializing_none]
@@ -186,6 +186,9 @@ pub struct TaskSpawnCall {
     pub profile: Option<TaskProfile>,
     pub pr: Option<PrUrl>,
     pub qa: Option<bool>,
+    /// The project's repo it works in, by name: its worktree, branch, setup and PR are that repo's. Absent: the
+    /// repo of `pr` when the project has it, else the project's own repo, or its plain directory.
+    pub repo: Option<crate::repos::RepoName>,
     /// The files a writer will change, repo-relative (`app/theme.ts`, `app/settings/**`): matched against the work
     /// in flight.
     pub paths: Option<List<WorkPath, 1, SPAWN_PATHS_MAX>>,
