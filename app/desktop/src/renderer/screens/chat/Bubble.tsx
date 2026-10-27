@@ -76,8 +76,8 @@ const MAX_STEP = 5;
 
 /**
  * A line that came in while the chat was open (arrivalsOf) enters as it mounts, `step` places into its message. One
- * remounted soon after (the list remeasuring, your send under its hub id) picks the motion up where it was; one
- * mounted later (scrolled back to) is still.
+ * remounted soon after (the list dropping and remounting it) picks the motion up where it was; one mounted later
+ * (scrolled back to) is still. Your send keeps its row as the hub confirms it (rowKeyOf), so it enters once.
  */
 export function useEnter(arrival: Arrival | undefined, step = 0): { className?: string | undefined; style?: CSSProperties | undefined } {
   const [since] = useState(() => (arrival === undefined ? undefined : Date.now() - arrival.at));

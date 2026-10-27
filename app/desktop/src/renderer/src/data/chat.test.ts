@@ -135,8 +135,16 @@ describe("the person's sends", () => {
 
   it("the hub's echo settles its row, whichever comes first; a failed row never settles away", () => {
     const failed = row("c2", { state: { t: "failed", error: { code: "invalid", message: "x" } } });
-    const rows = settleSends([row("c1"), failed], [msg(9, { author: "human", clientRequestId: "c1" }), msg(10, { author: "human", clientRequestId: "c2" })]);
+    // The hub keeps a clientRequestId after the key that sent it.
+    const echoes = [msg(9, { author: "human", clientRequestId: "key_7f3qa2m4:c1" }), msg(10, { author: "human", clientRequestId: "key_7f3qa2m4:c2" })];
+    const rows = settleSends([row("c1"), failed], echoes);
     expect(rows.map((r) => r.clientRequestId)).toEqual(["c2"]);
+    // The hub's copy is your send under the id it went with; the failed row it also has isn't a second one.
+    const both = chatItems(mergeMessages(emptyChat, echoes), rows);
+    expect(both.map((i) => [i.id, i.clientRequestId])).toEqual([
+      ["m9", "c1"],
+      ["m10", "c2"],
+    ]);
     const items = chatItems(emptyChat, [row("c3", { state: { t: "reconnecting" } }), failed]);
     expect(items.map((i) => [i.id, i.author, i.state])).toEqual([
       ["c3", "human", "reconnecting"],
