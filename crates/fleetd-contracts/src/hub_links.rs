@@ -7,8 +7,8 @@ use serde_with::skip_serializing_none;
 
 use crate::brand;
 use crate::ids::{ProjectRef, Timestamp};
-use crate::mcp::McpToolError;
 use crate::ledger::IntakeText;
+use crate::mcp::McpToolError;
 use crate::navi::AskHandle;
 use crate::people::PersonRef;
 use crate::prim::Line;
