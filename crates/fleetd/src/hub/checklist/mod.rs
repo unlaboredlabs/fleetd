@@ -1,6 +1,6 @@
 //! Each project's checklist (table `checklists`): the lead's to-do list for the human, one row per project with its
-//! items as JSON in order. The lead changes it with `checklist` (calls.rs), the app reads it with `checklist_get`
-//! (tools.rs), and the lead's digest shows what is still open.
+//! items as JSON in order. The lead changes it with `checklist` (calls.rs), the app reads it with `checklist_get` and
+//! a person takes items off with `checklist_remove` (tools.rs), and the lead's digest shows what is still open.
 pub mod calls;
 pub mod tools;
 
@@ -150,25 +150,57 @@ pub fn apply(
         if next.items == list.items && list.updated_ms.is_some() {
             return Ok(Ok((list, false)));
         }
-        c.execute(
-            "INSERT INTO checklists (machine_id, project_id, next_id, items, updated_ms) VALUES (?, ?, ?, ?, ?)
-             ON CONFLICT (machine_id, project_id) DO UPDATE SET
-               next_id = excluded.next_id, items = excluded.items, updated_ms = excluded.updated_ms",
-            params![
-                r.machine_id.as_str(),
-                r.project_id.as_str(),
-                next.next_id,
-                serde_json::to_string(&next.items)?,
-                now_ms
-            ],
-        )?;
-        Ok(Ok((
-            Checklist {
-                updated_ms: Some(now_ms),
-                ..next
-            },
-            true,
-        )))
+        Ok(Ok((write_on(c, r, next, now_ms)?, true)))
+    })
+}
+
+/// A person's removal, in one transaction: the list after it, and the items it took off in the list's order (none
+/// when every id was already gone, and then nothing is written). Ids stay used, so the lead can't hand one out again.
+pub fn remove(
+    db: &HubDb,
+    r: &ProjectRef,
+    ids: &[Positive],
+    now_ms: i64,
+) -> Result<(Checklist, Vec<TodoItem>), StoreError> {
+    db.transaction(|c| {
+        let list = read_on(c, r)?;
+        let (removed, kept): (Vec<TodoItem>, Vec<TodoItem>) = list
+            .items
+            .iter()
+            .cloned()
+            .partition(|i| ids.contains(&i.id));
+        if removed.is_empty() {
+            return Ok((list, removed));
+        }
+        let next = Checklist {
+            items: kept,
+            ..list
+        };
+        Ok((write_on(c, r, next, now_ms)?, removed))
+    })
+}
+
+fn write_on(
+    c: &Connection,
+    r: &ProjectRef,
+    next: Checklist,
+    now_ms: i64,
+) -> Result<Checklist, StoreError> {
+    c.execute(
+        "INSERT INTO checklists (machine_id, project_id, next_id, items, updated_ms) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT (machine_id, project_id) DO UPDATE SET
+           next_id = excluded.next_id, items = excluded.items, updated_ms = excluded.updated_ms",
+        params![
+            r.machine_id.as_str(),
+            r.project_id.as_str(),
+            next.next_id,
+            serde_json::to_string(&next.items)?,
+            now_ms
+        ],
+    )?;
+    Ok(Checklist {
+        updated_ms: Some(now_ms),
+        ..next
     })
 }
 
