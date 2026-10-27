@@ -661,8 +661,19 @@ async fn an_agent_opens_settings_on_an_ios_session_and_its_recording_is_on_the_h
         THREAD,
         &command_item("agent-device open com.apple.Preferences", &opened, ok),
     );
+    // The press needs agent-device's XCTest runner, started from the golden's build. Its start gets 45 s, which isn't
+    // always enough on GitHub's runner: agent-device then takes the build for a bad one, cleans it and builds it again
+    // (wrapper.rs's runner_dir), which can outlast the command. The second press finds it built.
     let t = Instant::now();
-    let (ok, pressed) = agent_device(&router, &["press", "label=\"General\"", "--settle"]).await;
+    let press = ["press", "label=\"General\"", "--settle"];
+    let (mut ok, mut pressed) = agent_device(&router, &press).await;
+    if !ok {
+        eprintln!(
+            "agent-device press failed once after {} ms, trying again: {pressed}",
+            ms(t.elapsed())
+        );
+        (ok, pressed) = agent_device(&router, &press).await;
+    }
     assert!(ok, "{pressed}");
     eprintln!("agent-device press --settle: {} ms", ms(t.elapsed()));
     router.item(
