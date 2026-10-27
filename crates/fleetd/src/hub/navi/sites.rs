@@ -16,12 +16,32 @@ pub enum Visit {
 /// The browser commands that go to a URL.
 const OPENS: &[&str] = &["open", "goto", "navigate"];
 
-/// The site `url` is on: its host, lower case, without a leading `www.`; none for anything but http and https.
+/// The characters a URL the gate reads may hold: a plain URL's, so the shell passes it on unchanged and the browser
+/// reads the host the gate read. No `\` (a browser reads it as `/`, a shell drops it), quote, whitespace, control or
+/// shell character.
+fn plain(url: &str) -> bool {
+    !url.is_empty()
+        && url
+            .chars()
+            .all(|c| c.is_alphanumeric() || "-._~:/?#[]@!*+,=%".contains(c))
+}
+
+/// The site `url` is on: its host as the URL library reads it (lower case, IDN as punycode), without a leading
+/// `www.`; none for anything but a plain http or https URL with no user in it.
 pub fn site_of(url: &str) -> Option<String> {
-    let parsed = url::Url::parse(url)
-        .or_else(|_| url::Url::parse(&format!("https://{url}")))
-        .ok()?;
-    if !matches!(parsed.scheme(), "http" | "https") {
+    if !plain(url) {
+        return None;
+    }
+    let parsed = if url.contains("://") {
+        url::Url::parse(url)
+    } else {
+        url::Url::parse(&format!("https://{url}"))
+    }
+    .ok()?;
+    if !matches!(parsed.scheme(), "http" | "https")
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+    {
         return None;
     }
     let host = parsed
@@ -38,7 +58,7 @@ pub fn visit(tool: &str, input: &Value) -> Option<Visit> {
         "WebFetch" => input.get("url").and_then(Value::as_str).unwrap_or_default(),
         "Bash" => {
             let command = input.get("command").and_then(Value::as_str)?.trim();
-            let mut words = command.split_whitespace();
+            let mut words = command.split(' ').filter(|w| !w.is_empty());
             if words.next() != Some("agent-browser") {
                 return None;
             }
@@ -46,12 +66,14 @@ pub fn visit(tool: &str, input: &Value) -> Option<Visit> {
             if !words.next().is_some_and(|verb| OPENS.contains(&verb)) {
                 return None;
             }
-            // Anything a shell would read as more than one plain command is no single visit.
-            if command.contains(['&', '|', ';', '\n', '`', '>', '<', '$', '(', ')']) {
-                return Some(Visit::Unknown);
-            }
-            let url = words.next().unwrap_or_default().trim_matches(['"', '\'']);
-            if words.next().is_some() {
+            // One plain URL, maybe in one pair of quotes, and nothing else: anything a shell could read another way
+            // (a tab, a backslash, a second command) is no visit the gate can name.
+            let url = words.next().unwrap_or_default();
+            let url = ['"', '\'']
+                .iter()
+                .find_map(|q| url.strip_prefix(*q).and_then(|u| u.strip_suffix(*q)))
+                .unwrap_or(url);
+            if words.next().is_some() || !plain(url) {
                 return Some(Visit::Unknown);
             }
             url
@@ -93,6 +115,32 @@ mod tests {
         assert_eq!(
             bash("agent-browser open https://a.example $(cat x)"),
             Some(Visit::Unknown)
+        );
+        // A host the shell or the browser would read another way: asked each time, never remembered.
+        for tricky in [
+            "agent-browser open https://allowed.example\\@evil.example",
+            "agent-browser open http:\\\\evil.example",
+            "agent-browser open https://allowed.example%40evil.example",
+            "agent-browser open https://user@allowed.example",
+            "agent-browser open https://allowed.example\tevil.example",
+            "agent-browser open \"https://allowed.example\"evil.example",
+            "agent-browser open javascript:alert(1)",
+            "agent-browser open ftp://allowed.example",
+        ] {
+            assert_eq!(bash(tricky), Some(Visit::Unknown), "{tricky}");
+        }
+        assert_eq!(
+            fetch("https://allowed.example\\@evil.example"),
+            Some(Visit::Unknown)
+        );
+        // An IDN host is the punycode host the browser asks DNS for.
+        assert_eq!(
+            bash("agent-browser open https://bücher.example/"),
+            site("xn--bcher-kva.example")
+        );
+        assert_eq!(
+            fetch("https://xn--bcher-kva.example/"),
+            site("xn--bcher-kva.example")
         );
         // Not a visit: the relay's other rules decide.
         assert_eq!(bash("agent-browser click @e3"), None);
