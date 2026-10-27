@@ -7,6 +7,7 @@
 pub mod conformance;
 pub mod failure;
 pub mod guide;
+pub mod install;
 pub mod mapper;
 pub mod protocol;
 mod session;

@@ -20,6 +20,8 @@ pub const MAX_TIMEOUT_SEC: u32 = fleetd_contracts::ledger::GATED_MAX_TIMEOUT_SEC
 const REPLY_GRACE_SEC: u64 = 30;
 /// A node update downloads the new binary before it answers.
 const UPDATE_WAIT_SEC: u64 = 600;
+/// A node's `claude install`, which has 10 minutes of its own.
+const CLAUDE_WAIT_SEC: u64 = 660;
 /// How long the hub waits for a node to write a secret.
 const SECRET_REPLY_SEC: u64 = 30;
 
@@ -362,6 +364,7 @@ impl NodeCommands {
     ) -> Result<NodeActionResult, NodeCommandError> {
         let wait = match action {
             NodeActionKind::Probe | NodeActionKind::Fetch => 30,
+            NodeActionKind::Claude => CLAUDE_WAIT_SEC,
             NodeActionKind::Update => UPDATE_WAIT_SEC,
         };
         let request = json!({ "t": "node_action", "action": action });
@@ -396,6 +399,18 @@ impl NodeCommands {
             NodeToHub::NodeActionResult(r) => Ok((r, refusal)),
             _ => unreachable!("resolve matches the reply tag"),
         }
+    }
+
+    /// A node's install of Claude Code `version`, answered once it is installed or failed (only for a node that lists
+    /// `CAP_CLAUDE_INSTALL`).
+    pub async fn install_claude(
+        &self,
+        machine_id: &MachineId,
+        version: &str,
+    ) -> Result<NodeActionResult, NodeCommandError> {
+        let request =
+            json!({ "t": "node_action", "action": NodeActionKind::Claude, "claude": version });
+        self.node_action(machine_id, request, CLAUDE_WAIT_SEC).await
     }
 
     /// A node's download of `update` ahead of its update, answered at once (only for a node that lists
