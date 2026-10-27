@@ -3,16 +3,15 @@
 // navi_asks for this Navi (#649, docs/design/navi.md), again whenever the order board changes, since the same events
 // move both. The tab shows only on a hub that serves it (the `navi_asks` feature); a link to it on another hub gets
 // a plain sentence, never a guess.
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
-import type { RawCall } from "../../../shared/contracts";
-import { CallError } from "../../src/data/queries";
-import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
+import { callKey } from "../../src/data/queries";
+import { useData, useToolQuery } from "../../src/data/react";
 import { Button, EmptyState, Text } from "../../ui";
 import { navigate } from "../shell/navigation";
 import type { ProjectKey } from "../shell/routes";
 import { when } from "../status/view";
-import { NOT_TAKEN, orderWords, type Ask, type AskedWorkRead } from "./model";
+import { NOT_TAKEN, orderWords, type Ask } from "./model";
 import s from "./asked.module.css";
 
 /** The hub feature that says it serves navi_asks. */
@@ -22,26 +21,15 @@ const BOARD = {} as const;
 
 /** This Navi's asks, once the hub serves them; `served` false otherwise. */
 export const useAskedWork = (navi: ProjectKey) => {
-  const layer = useDataLayer();
   const client = useQueryClient();
-  const fresh = useData((st) => st.fresh);
   const served = useData((st) => st.features.includes(ASKED_FEATURE));
   const input = useMemo(() => ({ navi: { machineId: navi.machineId, projectId: navi.projectId } }), [navi.machineId, navi.projectId]);
-  const queryKey = useMemo(() => ["call", "navi_asks", input] as const, [input]);
-  const query = useQuery({
-    queryKey,
-    // Not in the generated contracts until #649 lands on main: the untyped call, read as its shape.
-    queryFn: async (): Promise<AskedWorkRead> => {
-      const out = await (layer.call as unknown as RawCall)("navi_asks", input);
-      if (!out.ok) throw new CallError(out.error);
-      return out.output as AskedWorkRead;
-    },
-    enabled: fresh && served,
-  });
+  const query = useToolQuery("navi_asks", input, { enabled: served });
+  // An order opening, merging or closing moves the board and this read alike: read again when the board does.
   const board = useToolQuery("orders_board", BOARD).dataUpdatedAt;
   useEffect(() => {
-    if (served && board > 0) void client.invalidateQueries({ queryKey, exact: true });
-  }, [client, queryKey, served, board]);
+    if (served && board > 0) void client.invalidateQueries({ queryKey: callKey("navi_asks", input), exact: true });
+  }, [client, input, served, board]);
   return { served, query };
 };
 

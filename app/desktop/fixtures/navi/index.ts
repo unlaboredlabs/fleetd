@@ -1,7 +1,7 @@
 // Navi in the app (screens/navi). navi-none: a hub with projects and no Navi yet (the sidebar's Meet Navi, and
 // #/navi's first run). navi-two: two Navis, Ada and Home, pinned above the projects, and Taxes archived; Ada asks to
 // send an email (the approval card, with its preview) and has asked storefront and billing for work (Asked work,
-// navi_asks, whose contract is still on #649's branch). navi-old-hub: the same on a hub that doesn't serve
+// navi_asks). navi-old-hub: the same on a hub that doesn't serve
 // Asked work to the app yet.
 import { writeChat, type Ref } from "../kit/chat.ts";
 import { Fixture } from "../kit/fixture.ts";
@@ -103,7 +103,6 @@ const two = (base: Fixture): Fixture => {
   });
   // Asked work: the hub serves navi_asks to the app (#649).
   if (f.state.phase === "live") f.state = { ...f.state, features: [...(f.state.features ?? []), "navi_asks"] };
-  f.pendingContracts.set("navi_asks", "the app's read of a Navi's asks lands with #649");
   f.answer("navi_asks", { navi: { ...ADA } }, {
     navi: { ...ADA },
     asks: [
@@ -133,7 +132,6 @@ const oldHub = (base: Fixture): Fixture => {
   const f = Fixture.from(base, "navi-old-hub", "Navi: navi-two on a hub that doesn't share a Navi's asks with the app yet.");
   if (f.state.phase === "live") f.state = { ...f.state, features: (f.state.features ?? []).filter((x) => x !== "navi_asks") };
   f.drop("navi_asks", { navi: { ...ADA } });
-  f.pendingContracts.delete("navi_asks");
   return f;
 };
 

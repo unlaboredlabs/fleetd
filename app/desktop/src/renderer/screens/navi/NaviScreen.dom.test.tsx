@@ -5,14 +5,13 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { FleetStatus, ProjectSummary } from "../../../shared/contracts";
+import type { FleetStatus, NaviAsksOutput, ProjectSummary } from "../../../shared/contracts";
 import type { CallOutcome, HubFrame } from "../../../shared/hub";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { AT, live } from "../../src/data/fixtures.test-util";
 import { UiProvider } from "../../ui";
 import { AskedPane } from "./AskedPane";
-import type { AskedWorkRead } from "./model";
 import { NaviScreen } from "./NaviScreen";
 
 const went = vi.hoisted(() => [] as unknown[]);
@@ -145,7 +144,7 @@ describe("with Navis", () => {
   });
 });
 
-const READ: AskedWorkRead = {
+const READ: NaviAsksOutput = {
   navi: { machineId: "devbox", projectId: "ada" },
   asks: [
     {
