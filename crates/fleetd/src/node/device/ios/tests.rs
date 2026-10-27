@@ -210,6 +210,7 @@ async fn a_machine_without_ios_sessions_says_so() {
         devices: None,
         ios: None,
         live: Default::default(),
+        desktops: None,
     };
     let refused = call(
         &router,
@@ -243,6 +244,7 @@ async fn a_mac_not_set_up_refuses_and_gives_agents_nothing() {
         devices: None,
         ios: Some(simulators.clone()),
         live: Default::default(),
+        desktops: None,
     };
     assert!(!simulators.offered());
     assert_eq!(router.env(THREAD, Some("/usr/bin")), Vec::new());
@@ -567,6 +569,7 @@ async fn an_agent_opens_settings_on_an_ios_session_and_its_recording_is_on_the_h
         devices: None,
         ios: Some(simulators.clone()),
         live: Default::default(),
+        desktops: None,
     };
 
     let started = call(

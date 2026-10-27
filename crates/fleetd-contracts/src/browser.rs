@@ -29,10 +29,12 @@ brand!(
 
 /// What a session drives: a fresh Chrome with an empty profile (`browser`, driven with agent-browser), or a fresh
 /// `-read-only` copy of an Android emulator booted from its Quick Boot snapshot (`android`, driven with agent-device at
-/// the copy's serial), or a fresh clone of an iOS simulator from the node's settled golden device (`ios`, driven with
-/// agent-device at the clone's udid). Every kind shares the session tools, the action log, the video and the hub's
-/// storage; a device recording has no `dom` file, and an iOS one's video is `video_mp4`. A node hosts android sessions
-/// when it lists the `session_android` capability, and iOS ones when it lists `session_ios`.
+/// the copy's serial), a fresh clone of an iOS simulator from the node's settled golden device (`ios`, driven with
+/// agent-device at the clone's udid), or an X display of its own with a window manager (`linux_desktop`, driven with
+/// the agent's `desktop` tool), in a fresh container or else beside a fresh home directory. Every kind shares the
+/// session tools, the action log, the video and the hub's storage; only a browser recording has a `dom` file, and an
+/// iOS one's video is `video_mp4`. A node hosts android sessions when it lists the `session_android` capability, iOS
+/// ones when it lists `session_ios`, and desktop ones when it lists `session_linux_desktop`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 #[schemars(extend("x-open" = true))]
@@ -41,6 +43,7 @@ pub enum SessionKind {
     Browser,
     Android,
     Ios,
+    LinuxDesktop,
 }
 
 impl SessionKind {
@@ -49,6 +52,7 @@ impl SessionKind {
             Self::Browser => "browser",
             Self::Android => "android",
             Self::Ios => "ios",
+            Self::LinuxDesktop => "linux_desktop",
         }
     }
 }
@@ -366,6 +370,7 @@ pub enum BrowserCall {
     SessionEnd(SessionEndCall),
     FillCredential(FillCredentialCall),
     RequestTakeover(RequestTakeoverCall),
+    Desktop(DesktopCall),
 }
 
 impl BrowserCall {
@@ -375,6 +380,7 @@ impl BrowserCall {
             Self::SessionEnd(_) => "session_end",
             Self::FillCredential(_) => "fill_credential",
             Self::RequestTakeover(_) => "request_takeover",
+            Self::Desktop(_) => "desktop",
         }
     }
 }
@@ -386,8 +392,8 @@ impl BrowserCall {
 pub struct SessionStartCall {
     /// What you need the browser for, in one line; the person replaying it sees it.
     pub purpose: BrowserPurpose,
-    /// `android` for an Android emulator, `ios` for an iOS simulator, each driven with agent-device; absent for a
-    /// browser.
+    /// `android` for an Android emulator, `ios` for an iOS simulator, each driven with agent-device; `linux_desktop`
+    /// for a Linux desktop, driven with the `desktop` tool; absent for a browser.
     pub kind: Option<SessionKind>,
 }
 
@@ -426,6 +432,94 @@ pub struct RequestTakeoverCall {
     pub reason: Line<1, 500>,
 }
 
+/// `desktop`: one action on the agent's Linux desktop session, in the words of Anthropic's computer-use tool, plus
+/// `launch`. Coordinates are in the screenshot's pixels.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesktopCall {
+    pub action: DesktopAction,
+    /// `[x, y]`: where to click, move the mouse to, scroll at, or end a drag.
+    pub coordinate: Option<[Int<0, 8192>; 2]>,
+    /// `[x, y]`: where a `left_click_drag` starts.
+    pub start_coordinate: Option<[Int<0, 8192>; 2]>,
+    /// `type`: the text. `key`: keys as xdotool names them, `+` between those pressed together (`Return`,
+    /// `ctrl+s`, `alt+F4`). `launch`: a shell command started on the desktop (`xterm`, `./target/debug/app`).
+    pub text: Option<Text<1, 10_000>>,
+    pub scroll_direction: Option<ScrollDirection>,
+    /// Wheel clicks; absent: 3.
+    pub scroll_amount: Option<Int<1, 50>>,
+    /// `wait`: seconds; absent: 1.
+    pub duration: Option<Int<1, 30>>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DesktopAction {
+    Screenshot,
+    LeftClick,
+    RightClick,
+    MiddleClick,
+    DoubleClick,
+    TripleClick,
+    MouseMove,
+    LeftClickDrag,
+    Type,
+    Key,
+    Scroll,
+    Wait,
+    CursorPosition,
+    Launch,
+}
+
+impl DesktopAction {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Screenshot => "screenshot",
+            Self::LeftClick => "left_click",
+            Self::RightClick => "right_click",
+            Self::MiddleClick => "middle_click",
+            Self::DoubleClick => "double_click",
+            Self::TripleClick => "triple_click",
+            Self::MouseMove => "mouse_move",
+            Self::LeftClickDrag => "left_click_drag",
+            Self::Type => "type",
+            Self::Key => "key",
+            Self::Scroll => "scroll",
+            Self::Wait => "wait",
+            Self::CursorPosition => "cursor_position",
+            Self::Launch => "launch",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ScrollDirection {
+    Up,
+    Down,
+    Left,
+    Right,
+}
+
+/// Where a desktop session's apps run: in a fresh container of the node's pinned image (docker or podman), or as the
+/// node's user on an Xvfb display of their own with a fresh home directory.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(extend("x-open" = true))]
+pub enum DesktopBackend {
+    Container,
+    Xvfb,
+}
+
+impl DesktopBackend {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Container => "container",
+            Self::Xvfb => "xvfb",
+        }
+    }
+}
+
 /// The node's answer, on the socket. Exactly one of `result` and `error`.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -449,6 +543,7 @@ pub enum BrowserCallResult {
     SessionEnd(SessionEnded),
     FillCredential(Filled),
     RequestTakeover(TakeoverRequested),
+    Desktop(DesktopDone),
 }
 
 /// The session's browser, ready for the agent's `agent-browser`; or its emulator, ready for `agent-device`.
@@ -463,6 +558,10 @@ pub struct SessionStarted {
     pub serial: Option<Text<1, 100>>,
     /// A simulator's udid, which the session's agent-device config already names.
     pub udid: Option<Text<1, 100>>,
+    /// A desktop's: where its apps run.
+    pub desktop: Option<DesktopBackend>,
+    /// A desktop container's: the agent's worktree, read-only at this path in it.
+    pub worktree: Option<Text<1, 4096>>,
     pub start_ms: u64,
 }
 
@@ -483,6 +582,18 @@ pub struct SessionEnded {
 pub struct Filled {
     /// What was filled, never with the value: "Filled input[name=password] from op://Team/Shop/password."
     pub message: String,
+}
+
+/// A desktop action done: what happened, and for `screenshot` the screen.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DesktopDone {
+    pub message: String,
+    /// A JPEG, base64.
+    pub jpeg_b64: Option<String>,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]

@@ -266,6 +266,10 @@ pub fn read(limits: Vec<LoginLimit>, home: &Path) -> Option<NodeLoad> {
                 .as_ref()
                 .and_then(|c| c.ios.clone())
                 .unwrap_or_default(),
+            &config
+                .as_ref()
+                .and_then(|c| c.desktop.clone())
+                .unwrap_or_default(),
         )),
         android: super::device::health(
             home,
@@ -279,6 +283,13 @@ pub fn read(limits: Vec<LoginLimit>, home: &Path) -> Option<NodeLoad> {
             &config
                 .as_ref()
                 .and_then(|c| c.ios.clone())
+                .unwrap_or_default(),
+        ),
+        desktop: super::desktop::health(
+            home,
+            &config
+                .as_ref()
+                .and_then(|c| c.desktop.clone())
                 .unwrap_or_default(),
         ),
         // The session service's, added by the heartbeat.

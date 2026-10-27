@@ -630,6 +630,8 @@ impl Simulators {
             cdp: None,
             serial: None,
             udid: Some(Text::unchecked(udid)),
+            desktop: None,
+            worktree: None,
             start_ms: started.elapsed().as_millis() as u64,
         }))
     }

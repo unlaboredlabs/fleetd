@@ -3,17 +3,18 @@
 //! with KVM), iOS simulators (fleetd's own golden and its clones, node/device/ios, with Xcode on macOS) and a Linux
 //! desktop (docker or Xvfb). Each says why in plain words. Read at most every few minutes: `xcrun simctl` takes a
 //! second.
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use fleetd_contracts::machine_roles::{HostCheck, HostChecks, SessionHost};
 use fleetd_contracts::prim::{Line, List};
 
-use fleetd_contracts::node_link::AndroidState;
+use fleetd_contracts::node_link::{AndroidState, DesktopState};
 
 use super::browser::BrowserConfig;
 use super::browser::chrome;
+use super::desktop::{self, DesktopConfig};
 use super::device::ios::IosConfig;
 use super::device::{self, DeviceConfig};
 
@@ -34,14 +35,6 @@ fn check(host: SessionHost, ready: bool, detail: impl Into<String>) -> HostCheck
         ready,
         detail: Line::unchecked(detail),
     }
-}
-
-/// The first of `names` on PATH.
-fn on_path(names: &[&str]) -> Option<PathBuf> {
-    let path = std::env::var_os("PATH")?;
-    std::env::split_paths(&path)
-        .flat_map(|dir| names.iter().map(move |n| dir.join(n)))
-        .find(|p| p.is_file())
 }
 
 pub fn browser(home: &Path, config: &BrowserConfig) -> HostCheck {
@@ -123,7 +116,8 @@ pub fn ios(home: &Path, config: &IosConfig) -> HostCheck {
     }
 }
 
-fn desktop() -> HostCheck {
+/// The desktop sessions' own word (node/desktop): what preparing found, else what is on the PATH.
+fn desktop(home: &Path, config: &DesktopConfig) -> HostCheck {
     let host = SessionHost::Desktop;
     if !cfg!(target_os = "linux") {
         return check(
@@ -132,15 +126,16 @@ fn desktop() -> HostCheck {
             "desktop sessions run on Linux (docker or Xvfb)",
         );
     }
-    match (on_path(&["Xvfb"]), on_path(&["docker", "podman"])) {
-        (Some(x), Some(d)) => check(
+    if !config.enabled() {
+        return check(host, false, "desktop sessions are off in node.json");
+    }
+    match desktop::health(home, config) {
+        Some(health) => check(
             host,
-            true,
-            format!("Xvfb at {}, docker at {}", x.display(), d.display()),
+            health.state != DesktopState::Unavailable,
+            health.message.as_str(),
         ),
-        (Some(x), None) => check(host, true, format!("Xvfb at {}", x.display())),
-        (None, Some(d)) => check(host, true, format!("docker at {}", d.display())),
-        (None, None) => check(host, false, "no docker or Xvfb"),
+        None => check(host, false, "no docker, podman or Xvfb"),
     }
 }
 
@@ -150,6 +145,7 @@ pub fn checks(
     config: &BrowserConfig,
     device: &DeviceConfig,
     ios_config: &IosConfig,
+    desktop_config: &DesktopConfig,
 ) -> HostChecks {
     static LAST: Mutex<Option<(Instant, Vec<HostCheck>)>> = Mutex::new(None);
     let mut last = LAST
@@ -164,7 +160,7 @@ pub fn checks(
         browser(home, config),
         android(home, device),
         ios(home, ios_config),
-        desktop(),
+        desktop(home, desktop_config),
     ];
     *last = Some((Instant::now(), checks.clone()));
     List::unchecked(checks)

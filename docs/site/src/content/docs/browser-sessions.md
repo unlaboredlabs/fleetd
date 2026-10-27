@@ -1,6 +1,6 @@
 ---
 title: Browser sessions
-description: Agents open a fresh Chrome, Android emulator or iOS simulator of their own, drive it with agent-browser or agent-device, and leave a recording on the hub.
+description: Agents open a fresh Chrome, Android emulator, iOS simulator or Linux desktop of their own, drive it with agent-browser, agent-device or their desktop tool, and leave a recording on the hub.
 ---
 
 An agent that needs a web page (to check a signup form on staging, read a dashboard, reproduce a bug) opens a browser
@@ -265,3 +265,59 @@ Settings go under `ios` in [node.json](/docs/config-and-files#node-json):
 | `pool` | Clones kept booted for the next sessions. Absent: 1. Each takes 1–2 GB of memory. |
 | `idleMinutes` | End a session after this many minutes without an `agent-device` command. Absent: 30. |
 | `deviceType` | The simulator's device type by name, such as `iPhone 17 Pro`. Absent: the newest plain iPhone of the newest iOS runtime. A change takes effect when the golden is made again (delete `device/ios/golden.json`). |
+
+## Linux desktop sessions {#desktop}
+
+An agent that needs a desktop app (to check a GTK or Electron build, or anything with a window) opens a desktop
+session: **`session_start`** with `kind` `linux_desktop`. It gets a 1280×800 X display of its own with a window
+manager, drives it with its **`desktop`** tool, and ends it with **`session_end`**. The tool takes the actions of
+Anthropic's computer-use tool: `screenshot` (the screen comes back as an image), `left_click`, `right_click`,
+`middle_click`, `double_click`, `triple_click`, `mouse_move`, `left_click_drag`, `type`, `key` (xdotool names:
+`Return`, `ctrl+s`, `alt+F4`), `scroll`, `wait` and `cursor_position`, plus **`launch`**, which starts a shell command
+on the desktop (`xterm`, `./target/debug/app`). The session tools, the one-session-at-a-time rule, takeover, the
+action log, the hub's storage and its limits are the same as a browser session's.
+
+- **A fresh display per session.** Where the node has docker or podman, each session gets a fresh container of the
+  pinned image, which runs Xvfb, Openbox and xterm. Apps launched in it see none of the machine but the agent's own
+  worktree, read-only at the same path; they write in `/home/desktop` or `/tmp`, which go with the container.
+  Without a container runtime, each session gets an Xvfb of its own on the machine, and its apps run as the node's
+  user with a fresh, empty home directory. Either way the display, and everything on it, is thrown away at
+  `session_end`.
+- **Starts from a warm pool.** The node keeps one display started for the next session and starts another behind it,
+  so `session_start` takes a few milliseconds. A container that mounts the agent's worktree can't come from the pool
+  (a running container takes no new folder), so it starts then, in about a second. The first session after the node
+  starts waits while it prepares, about a second when there's no image to build.
+- **Only the node and the session's apps reach the display.** Each X server takes a random cookie, and with Xvfb it
+  listens on its socket file alone. The node does the agent's actions itself over its own X11 connection: it reads the
+  screen and types and clicks through XTEST, as xdotool does. So while you have control, the agent's `desktop` actions
+  answer that a person has control, and after you hand back, its next action takes control again.
+- **Recorded from the screen.** The node reads the screen ten times a second while anything on it changes. The
+  recording is an `actions` file as a browser session's (each `desktop` action with its arguments, scrubbed of the
+  session's secrets) and a `video` (a WebM, VP9, 1280×800). There's no `dom` file.
+
+Apps launched in a container run on its Debian, so a binary built on a newer machine may need the Xvfb backend
+(`"backend": "xvfb"`).
+
+### On each machine {#desktop-setup}
+
+Desktop sessions need docker or podman, or Xvfb (`sudo apt install xvfb`). The doctor's `desktop` check says which the
+machine uses, or what to install. A machine that can host them lists `session_linux_desktop` to the hub.
+
+Nothing starts until an agent first asks for a desktop session (or as soon as the node starts, with
+`"enabled": true`). Then, with a container runtime that answers `docker info` (or podman's), the node builds the
+pinned image once (a few minutes) as `localhost/fleetd-desktop:<hash>`: Debian 13 pinned by digest, with its packages
+from snapshot.debian.org at a fixed date. Sessions that ask meanwhile are told to come back. If the build fails, the
+node uses Xvfb where it has one, and tries the build again at its next start. The recording's video needs an ffmpeg: the browser sessions' or the Android sessions' one, or `ffmpeg` below.
+
+Settings go under `desktop` in [node.json](/docs/config-and-files#node-json):
+
+| Key | Means |
+|---|---|
+| `enabled` | `false` turns desktop sessions off on this machine. `true` prepares them (builds the image, fills the pool) when the node starts. Absent: on, prepared at the first session. |
+| `backend` | `container` or `xvfb` only. Absent: a container where docker or podman answers, else Xvfb. |
+| `runtime` | The docker or podman to use instead of the one on the `PATH`. |
+| `image` | An image to run instead of building the pinned one. It must start Xvfb on `:0` with `-auth /fleetd/xauth`. |
+| `xvfb` | The Xvfb to use instead of the one on the `PATH`. |
+| `ffmpeg` | An ffmpeg for the video. It needs MJPEG in and `libvpx-vp9` out. |
+| `pool` | Displays kept started for the next sessions. Absent: 1. |
+| `idleMinutes` | End a session after this many minutes without a `desktop` action. Absent: 30. |

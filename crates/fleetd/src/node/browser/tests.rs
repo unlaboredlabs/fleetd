@@ -1219,6 +1219,7 @@ fn bridge(rig: &Rig) {
         devices: None,
         ios: None,
         live: Default::default(),
+        desktops: None,
     });
     let slot = frames.clone();
     tokio::spawn(async move {

@@ -725,6 +725,10 @@ fn example(role: Role, tool: &str) -> Option<Value> {
             "ref": "op://Staging/Shop admin/password",
             "target": "input[name=password]",
         }),
+        (_, "desktop") => json!({
+            "action": "left_click",
+            "coordinate": [640, 412],
+        }),
         _ => return None,
     })
 }

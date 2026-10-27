@@ -550,6 +550,63 @@
       "type": "string",
       "x-open": true
     },
+    "DesktopBackend": {
+      "description": "Where a desktop session's apps run: in a fresh container of the node's pinned image (docker or podman), or as the\nnode's user on an Xvfb display of their own with a fresh home directory.",
+      "enum": [
+        "container",
+        "xvfb"
+      ],
+      "type": "string",
+      "x-open": true
+    },
+    "DesktopHealth": {
+      "properties": {
+        "backend": {
+          "$ref": "#/$defs/DesktopBackend",
+          "description": "What sessions run in: a container where the node has docker or podman, else Xvfb."
+        },
+        "fix": {
+          "description": "The command a person runs to fix it, when there is one.",
+          "maxLength": 500,
+          "type": "string"
+        },
+        "message": {
+          "description": "Plain words: what sessions use, or what is missing.",
+          "maxLength": 500,
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/DesktopState"
+        }
+      },
+      "required": [
+        "state",
+        "message"
+      ],
+      "type": "object"
+    },
+    "DesktopState": {
+      "description": "Where a node's Linux desktop sessions stand, for the doctor.",
+      "oneOf": [
+        {
+          "enum": [
+            "ready"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "preparing",
+          "description": "The container runtime is building the pinned image.",
+          "type": "string"
+        },
+        {
+          "const": "unavailable",
+          "description": "Neither a container runtime nor an Xvfb, or the image failed to build.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
     "ErrorCode": {
       "enum": [
         "machine_offline",
@@ -1357,6 +1414,10 @@
           "maximum": 4096,
           "minimum": 1,
           "type": "integer"
+        },
+        "desktop": {
+          "$ref": "#/$defs/DesktopHealth",
+          "description": "Whether the machine can host Linux desktop sessions, and in what; absent where node.json turns them off and\nfrom older nodes."
         },
         "disk": {
           "$ref": "#/$defs/NodeDisk",

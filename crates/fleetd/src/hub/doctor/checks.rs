@@ -9,7 +9,9 @@ use std::sync::LazyLock;
 
 use crate::hub::tasks::base;
 use crate::node::runner::{RunnerGuide, guide};
-use fleetd_contracts::node_link::{AndroidHealth, AndroidState, IosHealth, IosState, NodeDisk};
+use fleetd_contracts::node_link::{
+    AndroidHealth, AndroidState, DesktopHealth, DesktopState, IosHealth, IosState, NodeDisk,
+};
 use fleetd_contracts::sessions::{BaseErrorKind, LoginStatus, RunnerInfo, WorktreeBase};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -846,6 +848,33 @@ pub fn ios_sessions(machine_id: &str, offline: bool, health: Option<&IosHealth>)
     ))
 }
 
+/// Whether the machine can host Linux desktop sessions, and in what (a container or Xvfb), from its heartbeat; None
+/// where they are off (or the machine is offline, or its node is older).
+pub fn desktop_sessions(
+    machine_id: &str,
+    offline: bool,
+    health: Option<&DesktopHealth>,
+) -> Option<Entry> {
+    let health = health.filter(|_| !offline)?;
+    let status = match health.state {
+        DesktopState::Ready | DesktopState::Preparing => Pass,
+        DesktopState::Unavailable => Fail,
+    };
+    let fix = health.fix.as_ref().map(|command| {
+        manual(
+            &format!("On {machine_id}, then restart its node"),
+            Some(command.to_string()),
+        )
+    });
+    Some(machine_entry(
+        machine_id,
+        "desktop",
+        status,
+        health.message.as_str(),
+        fix,
+    ))
+}
+
 /// Whether git could fetch each project's remote at the last worktree started there. None until one has started.
 pub fn git_fetch(machine_id: &str, bases: &[(String, WorktreeBase)], now: &str) -> Option<Entry> {
     if bases.is_empty() {
@@ -1093,6 +1122,43 @@ mod tests {
         assert_eq!((ready.check.status, ready.check.fix), (Pass, None));
         assert!(ios_sessions("mac", true, Some(&health(IosState::Ready, None))).is_none());
         assert!(ios_sessions("mac", false, None).is_none());
+    }
+
+    #[test]
+    fn desktop_sessions_say_what_they_run_in_and_the_fix_where_they_cant() {
+        let health = |state, backend, fix: Option<&str>| DesktopHealth {
+            state,
+            backend,
+            message: fleetd_contracts::prim::Text::unchecked("Desktop sessions run on Xvfb."),
+            fix: fix.map(fleetd_contracts::prim::Text::unchecked),
+        };
+        let xvfb = health(
+            DesktopState::Ready,
+            Some(fleetd_contracts::browser::DesktopBackend::Xvfb),
+            None,
+        );
+        let entry = desktop_sessions("devbox", false, Some(&xvfb)).unwrap();
+        assert_eq!(entry.check.id, "devbox/desktop");
+        assert_eq!((entry.check.status, entry.check.fix), (Pass, None));
+        let none = health(
+            DesktopState::Unavailable,
+            None,
+            Some("sudo apt install xvfb"),
+        );
+        let entry = desktop_sessions("devbox", false, Some(&none)).unwrap();
+        assert_eq!(entry.check.status, Fail);
+        assert_eq!(
+            entry.check.fix.unwrap().command.as_deref(),
+            Some("sudo apt install xvfb")
+        );
+        assert!(
+            desktop_sessions("devbox", true, Some(&xvfb)).is_none(),
+            "offline"
+        );
+        assert!(
+            desktop_sessions("devbox", false, None).is_none(),
+            "off there"
+        );
     }
 
     #[test]

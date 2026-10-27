@@ -40,6 +40,7 @@ use super::browser::credentials;
 use super::browser::onepassword::{Credential, TOKEN_ENV};
 use super::browser::upload::{HubCalls, HubFuture};
 use super::browser::{Broker, BrowserHandler, SecretsFor, SessionHooks, drives_browser};
+use super::desktop::Desktops;
 use super::device::{self, Devices};
 use super::identity::NodeBoxKey;
 use super::lead::{LeadRelay, MaskFor};
@@ -59,14 +60,16 @@ async fn local(router: &Router, thread: String, frame: BrowserCallFrame) -> Brow
     router.here().handle(thread, frame).await
 }
 
-/// What routing an agent's session tools needs: this node's broker (none where browser sessions are off), its android
-/// and iOS sessions (none where they are off), its link to the hub, the hub's URL for relays, the sessions' secrets (to seal to the machine that hosts one elsewhere, and
-/// to mask its steps with), and the values this node read from 1Password for its agents' sessions hosted elsewhere.
+/// What routing an agent's session tools needs: this node's broker (none where browser sessions are off), its android,
+/// iOS and desktop sessions (none where they are off), its link to the hub, the hub's URL for relays, the sessions'
+/// secrets (to seal to the machine that hosts one elsewhere, and to mask its steps with), and the values this node read
+/// from 1Password for its agents' sessions hosted elsewhere.
 #[derive(Clone)]
 pub struct Router {
     pub broker: Option<Arc<Broker>>,
     pub devices: Option<Arc<Devices>>,
     pub ios: Option<Arc<device::ios::Simulators>>,
+    pub desktops: Option<Arc<Desktops>>,
     pub relay: LeadRelay,
     pub hub: String,
     pub secrets_for: SecretsFor,
@@ -81,22 +84,24 @@ impl Router {
             browser: self.broker.clone(),
             devices: self.devices.clone(),
             ios: self.ios.clone(),
+            desktops: self.desktops.clone(),
             // Session calls only; live view goes through the link's own router.
             live: Default::default(),
         }
     }
 }
 
-/// What a call's session runs on: an Android emulator for `session_start` with kind android, an iOS simulator for
-/// kind ios, else a browser.
+/// What a call's session runs on: an Android emulator, an iOS simulator or a Linux desktop for `session_start` of that
+/// kind or for the `desktop` tool, else a browser.
 fn host_of(frame: &BrowserCallFrame) -> SessionHost {
     match &frame.call {
-        BrowserCall::SessionStart(start) if start.kind == Some(SessionKind::Android) => {
-            SessionHost::Android
-        }
-        BrowserCall::SessionStart(start) if start.kind == Some(SessionKind::Ios) => {
-            SessionHost::Ios
-        }
+        BrowserCall::SessionStart(start) => match start.kind.unwrap_or_default() {
+            SessionKind::Android => SessionHost::Android,
+            SessionKind::Ios => SessionHost::Ios,
+            SessionKind::LinuxDesktop => SessionHost::Desktop,
+            SessionKind::Browser => SessionHost::Browser,
+        },
+        BrowserCall::Desktop(_) => SessionHost::Desktop,
         _ => SessionHost::Browser,
     }
 }
@@ -473,6 +478,9 @@ impl SessionHooks for Router {
         if let Some(ios) = &self.ios {
             ios.ended(thread);
         }
+        if let Some(desktops) = &self.desktops {
+            desktops.ended(thread);
+        }
         let Some(broker) = &self.broker else {
             return;
         };
@@ -797,6 +805,7 @@ mod tests {
             broker,
             devices: None,
             ios: None,
+            desktops: None,
             relay,
             hub: "http://devbox:4790".into(),
             secrets_for: Arc::new(|_| Ok(Secrets(Vec::new()))),
@@ -837,6 +846,11 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(host_of(&ios), SessionHost::Ios);
+        let mut desktop = start();
+        if let BrowserCall::SessionStart(call) = &mut desktop.call {
+            call.kind = Some(SessionKind::LinuxDesktop);
+        }
+        assert_eq!(host_of(&desktop), SessionHost::Desktop);
         assert_eq!(host_of(&start()), SessionHost::Browser);
     }
 

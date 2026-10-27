@@ -193,9 +193,17 @@ pub fn device_input(input: &BrowserInput, pressed: &mut bool) -> Option<Input> {
 }
 
 impl Router {
-    /// A frame from the hub for a session: to the browser broker for a browser session, to [`Devices`] for an Android
-    /// one, to [`Simulators`] for an iOS one. Never blocks the link's loop.
+    /// A frame from the hub for a session: to the desktop sessions for a desktop one, to the browser broker for a
+    /// browser session, to [`Devices`] for an Android one, to [`Simulators`] for an iOS one. Never blocks the link's
+    /// loop.
     pub fn from_hub(&self, frame: HubToNode, slot: &Arc<FrameSlot>) {
+        if self
+            .desktops
+            .as_ref()
+            .is_some_and(|d| d.from_hub(&frame, slot))
+        {
+            return;
+        }
         let session = match &frame {
             HubToNode::BrowserWatch(f) => f.session_id.clone(),
             HubToNode::BrowserInput(f) => f.session_id.clone(),

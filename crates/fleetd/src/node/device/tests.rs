@@ -265,6 +265,7 @@ async fn an_agent_opens_settings_on_an_android_session_and_its_recording_is_on_t
         browser: None,
         devices: Some(devices.clone()),
         ios: None,
+        desktops: None,
         live: Default::default(),
     };
 
@@ -451,6 +452,7 @@ async fn a_machine_without_android_sessions_says_so_and_one_session_kind_at_a_ti
         browser: None,
         devices: None,
         ios: None,
+        desktops: None,
         live: Default::default(),
     };
     let refused = call(
@@ -538,6 +540,7 @@ async fn a_machine_not_set_up_keeps_agents_sdk_and_path_and_installs_nothing() {
         browser: None,
         devices: Some(devices.clone()),
         ios: None,
+        desktops: None,
         live: Default::default(),
     };
     assert!(!devices.offered());

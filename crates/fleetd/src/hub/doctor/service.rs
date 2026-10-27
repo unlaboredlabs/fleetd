@@ -68,6 +68,10 @@ pub trait DoctorFleet: Send + Sync {
     fn ios(&self, _machine_id: &str) -> Option<fleetd_contracts::node_link::IosHealth> {
         None
     }
+    /// Whether the machine can host Linux desktop sessions, as its node's heartbeat last reported it.
+    fn desktop(&self, _machine_id: &str) -> Option<fleetd_contracts::node_link::DesktopHealth> {
+        None
+    }
     /// Where each of the machine's projects last started a worktree, by project title.
     fn bases(&self, _machine_id: &str) -> Vec<(String, WorktreeBase)> {
         Vec::new()
@@ -277,6 +281,11 @@ impl Doctor {
             fleet.android(id).as_ref(),
         ));
         out.extend(checks::ios_sessions(id, !online, fleet.ios(id).as_ref()));
+        out.extend(checks::desktop_sessions(
+            id,
+            !online,
+            fleet.desktop(id).as_ref(),
+        ));
         out.push(checks::usage_breaker(id, &usage.breaker));
         let bases = fleet.bases(id);
         let now = iso_ms(self.now_ms());

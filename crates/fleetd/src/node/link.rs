@@ -97,11 +97,10 @@ pub struct RunNodeOptions {
     /// Directories `cmd_check` and approved commands may run in (and below), and secret sinks may be written in.
     pub cmd_roots: Vec<String>,
     pub secrets: Option<NodeSecrets>,
-    /// Browser sessions' broker, when this machine runs them: live view and takeover reach it over the link.
-    pub browser: Option<Arc<crate::node::browser::Broker>>,
     /// Previews, when this machine runs them.
     pub previews: Option<Arc<crate::node::preview::Previews>>,
-    /// Both kinds of session, for one the hub places here for an agent elsewhere: a browser or an Android emulator.
+    /// The node's sessions (browser, android, desktop), when this machine runs any: its agents' own, and those the
+    /// hub places here for agents elsewhere. Live view and takeover reach them over the link.
     pub sessions: Option<Arc<crate::node::device::Router>>,
     /// What agents' nodes sealed to this one for the sessions it hosts for them.
     pub hosted: crate::node::session_route::Hosted,
@@ -116,7 +115,6 @@ struct Shared {
     lead_calls: LeadRelay,
     cmd_roots: Vec<String>,
     secrets: Option<NodeSecrets>,
-    browser: Option<Arc<crate::node::browser::Broker>>,
     previews: Option<Arc<crate::node::preview::Previews>>,
     sessions: Option<Arc<crate::node::device::Router>>,
     hosted: crate::node::session_route::Hosted,
@@ -146,7 +144,6 @@ pub async fn run_node(options: RunNodeOptions) -> LinkFatal {
         lead_calls: options.lead_calls,
         cmd_roots: options.cmd_roots,
         secrets: options.secrets,
-        browser: options.browser,
         previews: options.previews,
         sessions: options.sessions,
         hosted: options.hosted,
@@ -372,13 +369,15 @@ async fn run_link_once(
         ]
         .into_iter()
         .chain(
-            // Live view and takeover, for a browser's sessions or an emulator's.
-            (shared.browser.is_some() || shared.sessions.is_some())
-                .then(|| fleetd_contracts::node_link::CAP_BROWSER.to_owned()),
+            // Live view and takeover, for a browser's, an emulator's or a desktop's sessions.
+            shared
+                .sessions
+                .as_ref()
+                .map(|_| fleetd_contracts::node_link::CAP_BROWSER.to_owned()),
         )
         .chain(
             shared
-                .browser
+                .sessions
                 .as_ref()
                 .map(|_| fleetd_contracts::node_link::CAP_SESSION_HOST.to_owned()),
         )
@@ -392,6 +391,14 @@ async fn run_link_once(
         .chain(super::device::ios::capabilities(
             &shared.node_sessions.home(),
         ))
+        .chain(
+            shared
+                .sessions
+                .as_ref()
+                .filter(|s| s.desktops.is_some())
+                .map(|_| super::desktop::capabilities(&shared.node_sessions.home()))
+                .unwrap_or_default(),
+        )
         .collect(),
     }));
     let hub_id = match next_frame(&mut stream, HANDSHAKE_TIMEOUT, "welcome").await {
@@ -462,14 +469,12 @@ async fn run_link_once(
         };
         match frame {
             // Only to nodes listing CAP_BROWSER: a browser session's go to its broker, an Android session's to its
-            // device (node/device/live.rs).
+            // device (node/device/live.rs), a desktop's to the desktop sessions.
             frame @ (HubToNode::BrowserWatch(_)
             | HubToNode::BrowserInput(_)
             | HubToNode::BrowserControl(_)) => {
                 if let Some(router) = &shared.sessions {
                     router.from_hub(frame, &frames);
-                } else if let Some(broker) = &shared.browser {
-                    broker.from_hub(frame, &frames);
                 }
             }
             HubToNode::LeadResult(result) => shared.lead_calls.resolve(result),
@@ -529,7 +534,7 @@ async fn run_link_once(
                 tokio::spawn(async move {
                     let box_key = shared.secrets.as_ref().map(|s| &s.box_key);
                     let hosted = super::session_route::host(
-                        shared.browser.clone(),
+                        shared.sessions.as_ref().and_then(|s| s.browser.clone()),
                         shared.sessions.clone(),
                         &shared.settings.hub,
                         frame,
