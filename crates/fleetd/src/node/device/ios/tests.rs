@@ -362,30 +362,26 @@ async fn probes_what_ios_sessions_rest_on() {
     );
     probe_idb(&source).await;
 
-    // recordVideo stops on SIGINT to its group and leaves an MP4.
+    // recordVideo says when it has started, stops on SIGINT to its group after that, and leaves an MP4.
     let video = dir.path().join("video.mp4");
-    let mut recorder = simctl
-        .record(&source, &video)
-        .process_group(0)
-        .spawn()
-        .unwrap();
+    let t = Instant::now();
+    let mut recorder = super::session::Recorder::start(&simctl, &source, video.clone()).unwrap();
+    let started = recorder.started(Duration::from_secs(30)).await;
+    eprintln!(
+        "probe: recordVideo said it started: {started}, after {} ms",
+        ms(t.elapsed())
+    );
     tokio::time::sleep(Duration::from_secs(3)).await;
     let t = Instant::now();
-    let _ = nix::sys::signal::killpg(
-        nix::unistd::Pid::from_raw(recorder.id().unwrap() as i32),
-        nix::sys::signal::Signal::SIGINT,
-    );
-    let status = tokio::time::timeout(Duration::from_secs(20), recorder.wait())
-        .await
-        .expect("recordVideo finishes on SIGINT")
-        .unwrap();
+    let finished = recorder.finish().await;
     let mp4 = std::fs::read(&video).unwrap_or_default();
     eprintln!(
-        "probe: recordVideo: {status}, finished in {} ms, {} KB for 3 s, ftyp {}",
+        "probe: recordVideo: {finished:?}, finished in {} ms, {} KB for 3 s, ftyp {}",
         ms(t.elapsed()),
         mp4.len() / 1024,
         mp4.get(4..8) == Some(b"ftyp")
     );
+    assert!(started, "recordVideo never said it started");
     assert_eq!(mp4.get(4..8), Some(&b"ftyp"[..]), "an MP4");
 
     let t = Instant::now();
@@ -581,7 +577,9 @@ async fn an_agent_opens_settings_on_an_ios_session_and_its_recording_is_on_the_h
     let id = result["sessionId"].as_str().expect("started").to_owned();
     let start_ms = result["startMs"].as_u64().unwrap();
     eprintln!("ios session_start from the warm pool: {start_ms} ms");
-    assert!(start_ms < 2_000, "{start_ms} ms");
+    // No boot: well under a second on a Mac, but GitHub's 3-vCPU VM, running two simulators, measured 139, 1640 and
+    // 3011 ms.
+    assert!(start_ms < 10_000, "{start_ms} ms");
     let udid = result["udid"].as_str().unwrap().to_owned();
     let live = sessions(&hub).await;
     assert_eq!(live["sessions"][0]["kind"], "ios", "{live}");
@@ -594,19 +592,17 @@ async fn an_agent_opens_settings_on_an_ios_session_and_its_recording_is_on_the_h
         "one session at a time: {refused}"
     );
 
-    // A small CI machine can't boot the pool's next clone and start agent-device's runner at once (its own xcrun
-    // calls time out at 15 s): let the refill finish first, as long as it takes there (a minute and a half or more).
+    // The pool refills behind the session. On a small CI machine that has to finish first anyway: it can't boot the
+    // next clone and start agent-device's runner at once (agent-device's own xcrun calls time out at 15 s).
     let t = Instant::now();
-    while simulators.warm() == 0 && t.elapsed() < Duration::from_secs(360) {
+    while simulators.warm() == 0 {
+        assert!(
+            t.elapsed() < Duration::from_secs(360),
+            "the pool didn't refill in 6 minutes"
+        );
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
-    match simulators.warm() {
-        0 => eprintln!(
-            "the pool had not refilled after {} ms; going on",
-            ms(t.elapsed())
-        ),
-        _ => eprintln!("the pool refilled behind it: {} ms", ms(t.elapsed())),
-    }
+    eprintln!("the pool refilled behind it: {} ms", ms(t.elapsed()));
 
     // The agent opens Settings and taps a row, with agent-device pointed at the session's clone.
     let t = Instant::now();

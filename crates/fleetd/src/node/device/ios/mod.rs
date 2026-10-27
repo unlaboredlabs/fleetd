@@ -563,12 +563,23 @@ impl Simulators {
         let secrets_for = self.secrets_for.clone();
         let secrets_thread = thread.clone();
         let secrets = tokio::task::spawn_blocking(move || secrets_for(&secrets_thread));
-        let lent = pool.take().await.map_err(|why| {
-            refuse(
+        let lent = pool.take().map_err(|waiting| match waiting.failing {
+            None => refuse(
                 ErrorCode::Failed,
-                format!("The iOS simulator did not start: {why}."),
-                "try session_start again",
-            )
+                format!(
+                    "Starting a simulator for you; it is ready in about {} s.",
+                    waiting.secs
+                ),
+                &format!("try session_start again in about {} s", waiting.secs),
+            ),
+            Some(why) => refuse(
+                ErrorCode::Failed,
+                format!(
+                    "This Mac's iOS simulators keep failing to boot ({why}); it tries again in about {} s.",
+                    waiting.secs
+                ),
+                "carry on without it and say so in your result, or try session_start again later",
+            ),
         })?;
         let secrets = secrets
             .await
