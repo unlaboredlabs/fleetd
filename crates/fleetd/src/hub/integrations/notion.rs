@@ -1,7 +1,7 @@
 //! Notion: its official MCP server (`npx -y @notionhq/notion-mcp-server`, tools named after Notion's API:
 //! `API-post-search`, `API-patch-page`, …) with the person's own internal integration token in `NOTION_TOKEN`, sealed
 //! to Navi's machine. It reaches only the pages the person shares with that integration. The hosted server's names
-//! (`notion-search`, `notion-update-page`, …), which xaq's Notion connection passes through, read the same way here.
+//! (`notion-search`, `notion-update-page`, …), read the same way here.
 use serde_json::Value;
 
 use super::policy::{Draft, Rule, text_of};

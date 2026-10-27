@@ -3991,7 +3991,7 @@ export type PreviewAsker = {
 export type PreviewAttachment = {
   /** Its size, when its bytes are in the input. */
   bytes?: number;
-  /** Where it comes from, when not from the input: "from Drive", "from message 18c2", "a file on xaq's machine". */
+  /** Where it comes from, when not from the input: "from Drive", "from message 18c2", "a file on the Navi's machine". */
   from?: string;
   /** The name the recipient sees: "tenant-form.pdf", or what the file is when the tool names it by id. */
   name: string;
@@ -6311,7 +6311,7 @@ export type ToolPolicy = "read" | "ask" | "blocked";
  * read from the exact input the tool runs with once approved; nothing is a summary the agent wrote.
  */
 export type ToolPreview = {
-  /** The account it acts as, when the tool names one (an xaq account's address). */
+  /** The account it acts as, when the tool names one (the connected Google account's address). */
   account?: string;
   action: ToolAction;
   /** Every file it attaches. */

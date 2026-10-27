@@ -1,4 +1,4 @@
-//! A Navi's integrations: Google (Gmail, Calendar and Drive, through the person's own xaq), Notion (its official
+//! A Navi's integrations: Google (fleetd's own Gmail, Calendar and Drive tools), Notion (its official
 //! server with the person's own integration token) and any other MCP server. Each is one of the project's MCP servers
 //! (`mcp_servers.rs`) marked with what it is, so the hub knows its tools: a per-tool policy table (`hub/integrations`)
 //! says which read and run unasked, which ask the person every time, and which are blocked even if approved. An ask is
@@ -17,8 +17,8 @@ use crate::prim::{Line, List, Text};
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum IntegrationKind {
-    /// Gmail, Google Calendar and Google Drive through xaq (npm `xaq-cli`), which holds the Google sign-in: fleetd
-    /// keeps only xaq's address and an agent key.
+    /// Gmail, Google Calendar and Google Drive: fleetd's own Google tools, read by the names and fields in
+    /// `hub/integrations/google.rs`.
     Google,
     /// Notion's official MCP server (`@notionhq/notion-mcp-server`) with the person's internal integration token.
     Notion,
@@ -91,7 +91,7 @@ pub struct PreviewAttachment {
     pub name: Line<1, 300>,
     /// Its size, when its bytes are in the input.
     pub bytes: Option<u64>,
-    /// Where it comes from, when not from the input: "from Drive", "from message 18c2", "a file on xaq's machine".
+    /// Where it comes from, when not from the input: "from Drive", "from message 18c2", "a file on the Navi's machine".
     pub from: Option<Line<1, 200>>,
 }
 
@@ -108,7 +108,7 @@ pub struct ToolPreview {
     pub action: ToolAction,
     /// What it does, as a verb phrase the app puts after "<the Navi> wants to": "Send an email", "Reply to an email".
     pub title: Line<1, 200>,
-    /// The account it acts as, when the tool names one (an xaq account's address).
+    /// The account it acts as, when the tool names one (the connected Google account's address).
     pub account: Option<Line<1, 320>>,
     /// Every recipient, as the tool gets them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
