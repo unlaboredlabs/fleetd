@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { ProjectDiscoverOutput, ProjectInspect } from "./contracts";
-import { discovery, plan, progress, ready, rows, target } from "./discovery";
+import { discovery, newPath, plan, progress, ready, rows, target } from "./discovery";
 import { prefillMachine } from "./store";
-import { addSource, githubRepo, linkUrl, machineIdFromHost, otherHost, tilde } from "./source";
+import { addSource, folderName, githubRepo, linkUrl, machineIdFromHost, otherHost, tilde } from "./source";
 
 const names = (id: string) => `${id}-name`;
 
@@ -12,6 +12,7 @@ const out: ProjectDiscoverOutput = {
       machineId: "devbox",
       online: true,
       cloneRoot: "/home/me/src",
+      projectsRoot: "/home/me/fleetd/projects",
       repos: [
         { path: "/home/me/src/storefront", name: "storefront", remote: "github.com/acme/storefront", repo: "acme/storefront", projectId: "p1" },
         { path: "/home/me/code/notes", name: "notes" },
@@ -68,6 +69,49 @@ describe("discovery", () => {
     const typed = rows("led", d.found);
     expect(plan(typed.rows[typed.selected], d, target(d, null))).toEqual({ kind: "clone", repo: "acme/ledger" });
     expect(plan(rows("~/src/x", d.found).rows[0], d, target(d, null))).toMatchObject({ kind: "folder", path: "~/src/x", fixed: false });
+  });
+});
+
+describe("a new project", () => {
+  it("is ready as a plain folder: no repo facts, and its lead line is no warning", () => {
+    const r = ready({ machineId: "devbox", projectId: "p9" }, "Field notes", "devbox", "/home/me/fleetd/projects/field-notes", inspect({ leadNeeds: "a plain folder with no git" }));
+    expect(r.facts).toEqual([]);
+    expect(r.leadOk).toBe(true);
+    expect(r.leadLine).toBe("A plain folder with no git.");
+  });
+
+  it("is offered for a typed name, after what it matches, and alone it is the pick", () => {
+    const d = discovery(out, names);
+    const alone = rows("Field notes", d.found);
+    expect(alone.rows).toEqual([{ kind: "new", name: "Field notes" }]);
+    expect(plan(alone.rows[alone.selected], d, target(d, null))).toEqual({ kind: "new", name: "Field notes", machineId: "devbox" });
+    // A name that filters the list starts on what it found; the new project is last.
+    const matched = rows("notes", d.found);
+    expect(matched.rows.at(-1)).toEqual({ kind: "new", name: "notes" });
+    expect(matched.rows[matched.selected]?.kind).toBe("found");
+    // On the machine picked, even one not suggested.
+    expect(plan(alone.rows[0], d, target(d, null), "buildbox")).toMatchObject({ machineId: "buildbox" });
+  });
+
+  it("is never a URL, a path or a repo, and with nothing typed it waits for a name below what was found", () => {
+    const d = discovery(out, names);
+    for (const text of ["https://gitlab.com/acme/x", "acme/site", "/home/me/x", "~/x"]) {
+      expect(rows(text, d.found).rows.some((r) => r.kind === "new"), text).toBe(false);
+    }
+    const all = rows("", d.found);
+    expect(all.rows[0]).toEqual({ kind: "new", name: "" });
+    expect(all.rows[all.selected]?.kind).toBe("found");
+    // Nothing found: the empty state says to type a name.
+    expect(rows("", []).rows).toEqual([]);
+  });
+
+  it("goes to <projectsRoot>/<name as a folder>, named as the hub names it", () => {
+    const d = discovery(out, names);
+    expect(newPath(target(d, null) ?? undefined, "Field Notes!")).toBe("/home/me/fleetd/projects/field-notes");
+    expect(newPath(d.workers[1], "x")).toBeNull();
+    expect(folderName("  Home & Family!  ")).toBe("home-family");
+    expect(folderName("✨")).toBe("project");
+    expect(folderName("x".repeat(90))).toHaveLength(40);
   });
 });
 
