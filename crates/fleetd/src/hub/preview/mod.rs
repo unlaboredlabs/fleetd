@@ -53,24 +53,53 @@ pub const LIST_MAX: usize = 200;
 /// How long a node's new link has to report again the previews it runs before the hub stops the rest.
 pub const SETTLE_MS: i64 = 60_000;
 
-/// Which of its node's links each running preview was last heard of on, to settle the ones a node no longer has.
-#[derive(Default)]
+/// Looks up the hub owner's tailnet login: [`read_owner_login`], or a stand-in in tests.
+pub type OwnerLookup = Arc<
+    dyn Fn() -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<String>> + Send>>
+        + Send
+        + Sync,
+>;
+
+/// Which of its node's links each running preview was last heard of on, to settle the ones a node no longer has; and
+/// the hub owner's tailnet login.
 pub struct Previews {
     /// Each machine's link as the sweep first saw it: its number and when.
     links: Mutex<HashMap<MachineId, (u64, i64)>>,
     /// The link each preview was last heard of (or stopped) on.
     heard: Mutex<HashMap<PreviewId, u64>>,
-    /// The hub owner's tailnet login once found, and when it was last looked up while unknown.
-    owner: Mutex<(Option<String>, Option<i64>)>,
+    /// The hub owner's tailnet login once found. Held across a lookup, so a start that comes in meanwhile waits for it.
+    owner: tokio::sync::Mutex<Option<String>>,
+    lookup: Mutex<OwnerLookup>,
     /// When GitHub was last asked about each running preview's PR that the merge train doesn't track.
     asked: Mutex<HashMap<PreviewId, i64>>,
+}
+
+impl Default for Previews {
+    fn default() -> Self {
+        Self {
+            links: Mutex::default(),
+            heard: Mutex::default(),
+            owner: tokio::sync::Mutex::default(),
+            lookup: Mutex::new(Arc::new(|| Box::pin(read_owner_login()))),
+            asked: Mutex::default(),
+        }
+    }
+}
+
+impl Previews {
+    /// Replaces how the owner's login is looked up (tests).
+    pub fn set_owner_lookup(&self, lookup: OwnerLookup) {
+        *self.lookup.lock().unwrap() = lookup;
+    }
 }
 
 /// How often GitHub is asked whether a PR the train doesn't track, with a preview running, merged or closed.
 pub const UNTRACKED_EVERY_MS: i64 = 5 * 60_000;
 
-/// How often a hub that couldn't tell its owner's tailnet login asks again (tailscale may not have been up yet).
-pub const OWNER_RETRY_MS: i64 = 60_000;
+/// How long GitHub gets to say whether an untracked PR merged or closed.
+const GITHUB_WAIT: Duration = Duration::from_secs(10);
+/// How often untracked PRs with a preview running are looked at.
+const UNTRACKED_SWEEP_EVERY: Duration = Duration::from_secs(60);
 
 pub fn new_id() -> PreviewId {
     let bytes: [u8; 16] = rand::random();
@@ -340,6 +369,17 @@ pub async fn start(hub: &Hub, r: &ProjectRef, ask: Ask) -> Result<Preview, ToolE
     {
         return Ok(same);
     }
+    // Only the hub owner's own devices may open it; with no owner to name, it doesn't start at all.
+    let owner_login = owner_login(hub).await.ok_or_else(|| {
+        ToolError::new(
+            ErrorCode::Failed,
+            "fleetd can't tell whose tailnet this hub is on, so it can't keep a preview to your own devices.",
+        )
+        .with_fix(
+            "Make sure Tailscale runs and is logged in on the hub's machine (or set FLEETD_TAILNET_OWNER for the \
+             hub), then try again.",
+        )
+    })?;
     let Checkout {
         base,
         heads,
@@ -382,7 +422,7 @@ pub async fn start(hub: &Hub, r: &ProjectRef, ask: Ask) -> Result<Preview, ToolE
         web: config.web.clone(),
         idle_minutes: config.idle_minutes,
         order_id,
-        owner_login: owner_login(hub, read_owner_login).await,
+        owner_login: Some(owner_login),
     };
     let refused = match hub
         .node_commands
@@ -412,28 +452,18 @@ pub async fn start(hub: &Hub, r: &ProjectRef, ask: Ask) -> Result<Preview, ToolE
     Ok(get(hub, &preview.preview_id)?.unwrap_or(preview))
 }
 
-/// The tailnet login whose devices may open previews: the hub owner's, kept once `lookup` found it. A lookup that
-/// found none is never kept: it runs again at a start [`OWNER_RETRY_MS`] or more after the last. None: the node lets
-/// in its own tailnet user's devices.
-pub async fn owner_login<F, Fut>(hub: &Hub, lookup: F) -> Option<Line<1, 300>>
-where
-    F: FnOnce() -> Fut,
-    Fut: std::future::Future<Output = Option<String>>,
-{
-    let now = now_ms(hub.clock.as_ref());
-    {
-        let mut owner = hub.previews.owner.lock().unwrap();
-        if let Some(login) = &owner.0 {
-            return Line::new(login.clone()).ok();
-        }
-        if owner.1.is_some_and(|at| now - at < OWNER_RETRY_MS) {
-            return None;
-        }
-        owner.1 = Some(now);
+/// The tailnet login whose devices may open previews: the hub owner's, kept once found. Until then each start looks
+/// it up again, and a start that comes in while a lookup runs waits for that one. None: no one can say, and the
+/// preview doesn't start.
+pub async fn owner_login(hub: &Hub) -> Option<Line<1, 300>> {
+    let mut owner = hub.previews.owner.lock().await;
+    if owner.is_none() {
+        let lookup = hub.previews.lookup.lock().unwrap().clone();
+        *owner = lookup()
+            .await
+            .filter(|l| Line::<1, 300>::new(l.clone()).is_ok());
     }
-    let login = lookup().await?;
-    hub.previews.owner.lock().unwrap().0 = Some(login.clone());
-    Line::new(login).ok()
+    owner.as_ref().map(|l| Line::unchecked(l.clone()))
 }
 
 /// The hub machine's own `tailscale status --json` says whose it is; `FLEETD_TAILNET_OWNER` overrides it.
@@ -773,12 +803,22 @@ fn idle_ms(hub: &Hub, r: &ProjectRef) -> i64 {
 /// Ends a preview: marked ended at once, and its node told to throw it away. One already over stays as it is.
 pub fn end(
     hub: &Hub,
-    mut p: Preview,
+    p: Preview,
     reason: PreviewEndReason,
     note: Option<&str>,
 ) -> Result<Preview, StoreError> {
+    Ok(end_now(hub, p, reason, note)?.0)
+}
+
+/// [`end`], and whether this call ended it (false: it was over already).
+fn end_now(
+    hub: &Hub,
+    mut p: Preview,
+    reason: PreviewEndReason,
+    note: Option<&str>,
+) -> Result<(Preview, bool), StoreError> {
     if p.state.is_over() {
-        return Ok(p);
+        return Ok((p, false));
     }
     p.state = PreviewState::Ended;
     p.end_reason = Some(reason);
@@ -791,7 +831,7 @@ pub fn end(
     if ended_here && reason != PreviewEndReason::Lost {
         stop(hub, &p.machine_id, &p.preview_id, reason);
     }
-    Ok(p)
+    Ok((p, ended_here))
 }
 
 /// Writes a preview that is over now, and tells the app, unless it was over already: ended is final, and the stored
@@ -915,8 +955,9 @@ pub fn sweep(hub: &Hub) -> Result<usize, StoreError> {
         .retain(|id, _| live.contains(id));
     for p in &previews {
         if let Some((reason, note)) = due(hub, p, now) {
-            end(hub, p.clone(), reason, Some(&note))?;
-            ended += 1;
+            if end_now(hub, p.clone(), reason, Some(&note))?.1 {
+                ended += 1;
+            }
         } else if unaccounted(hub, p, now) {
             tracing::info!(preview = %p.preview_id, machine = %p.machine_id, "preview not reported again: stopped");
             stop(hub, &p.machine_id, &p.preview_id, PreviewEndReason::Lost);
@@ -934,10 +975,19 @@ pub async fn run_sweep(hub: Arc<Hub>) {
             Ok(n) => tracing::info!(n, "previews ended"),
             Err(e) => tracing::warn!(error = %e, "previews not swept"),
         }
+        hub.clock.sleep(SWEEP_EVERY).await;
+    }
+}
+
+/// Every [`UNTRACKED_SWEEP_EVERY`], apart from the sweep so a slow GitHub never holds it up: ends previews of PRs
+/// the train doesn't track that merged or closed. Each GitHub read gets [`GITHUB_WAIT`].
+pub async fn run_untracked(hub: Arc<Hub>) {
+    loop {
         let github = |repo: String, n: i64| {
             let hub = hub.clone();
             async move {
-                let pull = hub.train.github().pull(&repo, n).await.ok()?;
+                let read = hub.train.github().pull(&repo, n);
+                let pull = tokio::time::timeout(GITHUB_WAIT, read).await.ok()?.ok()?;
                 Some((pull.state, pull.merged || pull.merged_at.is_some()))
             }
         };
@@ -946,7 +996,7 @@ pub async fn run_sweep(hub: Arc<Hub>) {
             Ok(n) => tracing::info!(n, "previews of untracked PRs ended"),
             Err(e) => tracing::warn!(error = %e, "previews of untracked PRs not checked"),
         }
-        hub.clock.sleep(SWEEP_EVERY).await;
+        hub.clock.sleep(UNTRACKED_SWEEP_EVERY).await;
     }
 }
 
@@ -993,8 +1043,9 @@ where
             _ => continue,
         };
         // Read again: it may have ended while GitHub answered.
-        if let Some(p) = get(hub, &p.preview_id)?.filter(|p| !p.state.is_over()) {
-            end(hub, p, PreviewEndReason::Done, Some(&note))?;
+        if let Some(p) = get(hub, &p.preview_id)?
+            && end_now(hub, p, PreviewEndReason::Done, Some(&note))?.1
+        {
             ended += 1;
         }
     }

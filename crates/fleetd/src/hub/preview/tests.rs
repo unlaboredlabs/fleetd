@@ -60,6 +60,8 @@ fn config(home: &std::path::Path) -> HubConfig {
 /// shop's PR #14 (writer T14, order W12) in its merge queue.
 fn hub_on(db: Arc<HubDb>, home: &std::path::Path, clock: Arc<ManualClock>) -> Arc<Hub> {
     let hub = crate::hub::serve::build_on(db, config(home), clock).unwrap();
+    // The hub owner, as this machine's own tailscale would say (never asked in a test).
+    owner_is(&hub, Some("me@example.com"));
     for (m, caps) in [("devbox", vec![CAP_PREVIEWS]), ("mac1", vec![])] {
         let machine = serde_json::from_value(json!({
             "machineId": m, "name": m, "tags": [], "status": "online", "lastSeenAt": AT, "nodeVersion": "0.1.0",
@@ -1460,31 +1462,56 @@ async fn an_order_across_several_repos_is_refused_in_plain_words() {
     assert!(devbox.runs().is_empty());
 }
 
-/// The hub owner's login is kept once found; a lookup that found none is tried again a minute on, never kept.
-#[tokio::test]
-async fn an_owner_lookup_that_failed_is_tried_again() {
-    let (hub, clock, _home) = hub();
+/// The owner lookup answers `login`, and counts each time it is asked.
+fn owner_is(hub: &Hub, login: Option<&'static str>) -> Arc<Mutex<usize>> {
     let asked = Arc::new(Mutex::new(0));
-    let lookup = |found: Option<&'static str>| {
-        let asked = asked.clone();
-        move || async move {
-            *asked.lock().unwrap() += 1;
-            found.map(str::to_owned)
-        }
-    };
-    assert_eq!(super::owner_login(&hub, lookup(None)).await, None);
+    let count = asked.clone();
+    hub.previews.set_owner_lookup(Arc::new(move || {
+        let count = count.clone();
+        Box::pin(async move {
+            // A lookup takes a moment, as tailscale does.
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            *count.lock().unwrap() += 1;
+            login.map(str::to_owned)
+        })
+    }));
+    asked
+}
+
+/// A preview opens only on the hub owner's devices: with no owner to name, it doesn't start, and says why plainly.
+/// A lookup that found none is asked again at the next start, and the login is kept once found.
+#[tokio::test]
+async fn a_start_with_no_hub_owner_is_refused_and_the_next_asks_again() {
+    let (hub, _clock, _home) = hub();
+    let devbox = node(&hub, "devbox", None);
+    let asked = owner_is(&hub, None);
+    let (code, why) = refused(start(&hub, &person(), 14).await);
+    assert_eq!(code, "Failed");
     assert_eq!(
-        super::owner_login(&hub, lookup(Some("me@example.com"))).await,
-        None
+        why,
+        "fleetd can't tell whose tailnet this hub is on, so it can't keep a preview to your own devices."
     );
-    assert_eq!(*asked.lock().unwrap(), 1, "not again within the minute");
-    clock.advance(Duration::from_millis(super::OWNER_RETRY_MS as u64));
-    let found = super::owner_login(&hub, lookup(Some("me@example.com"))).await;
-    assert_eq!(found.as_deref(), Some("me@example.com"));
-    clock.advance(Duration::from_millis(super::OWNER_RETRY_MS as u64));
-    let kept = super::owner_login(&hub, lookup(None)).await;
-    assert_eq!(kept.as_deref(), Some("me@example.com"));
-    assert_eq!(*asked.lock().unwrap(), 2);
+    assert!(devbox.runs().is_empty() && super::running(&hub).unwrap().is_empty());
+    refused(start(&hub, &person(), 14).await);
+    assert_eq!(*asked.lock().unwrap(), 2, "asked again at each start");
+
+    let asked = owner_is(&hub, Some("me@example.com"));
+    start(&hub, &person(), 14).await.unwrap();
+    start(&hub, &person(), 15).await.ok();
+    assert_eq!(*asked.lock().unwrap(), 1, "kept once found");
+    let runs = devbox.runs();
+    assert_eq!(runs[0].owner_login.as_deref(), Some("me@example.com"));
+}
+
+/// Starts that come in while the owner is being looked up wait for that lookup: none goes out without the owner.
+#[tokio::test(start_paused = true)]
+async fn starts_during_an_owner_lookup_wait_for_it() {
+    let (hub, _clock, _home) = hub();
+    let asked = owner_is(&hub, Some("me@example.com"));
+    let (a, b) = tokio::join!(super::owner_login(&hub), super::owner_login(&hub));
+    assert_eq!(a.as_deref(), Some("me@example.com"));
+    assert_eq!(b.as_deref(), Some("me@example.com"));
+    assert_eq!(*asked.lock().unwrap(), 1);
 }
 
 /// A preview of a PR the merge train never queued ends once GitHub says the PR merged or closed; GitHub is asked about
