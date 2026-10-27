@@ -29,6 +29,29 @@
       "type": "string",
       "x-open": true
     },
+    "ChatOpenNudge": {
+      "description": "A nudge still waiting, in a chat state: its message, and what to look at.",
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "messageId": {
+          "$ref": "#/$defs/ChatMessageId"
+        },
+        "reason": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "messageId",
+        "reason",
+        "at"
+      ],
+      "type": "object"
+    },
     "MachineId": {
       "description": "Machine slug, [a-z0-9-]{1,32}",
       "pattern": "^[a-z0-9-]{1,32}$",
@@ -53,6 +76,15 @@
         "needsYou": {
           "description": "The lead's last message waits for a human reply, or an inline item is open.",
           "type": "boolean"
+        },
+        "nudges": {
+          "description": "The nudges still waiting to be seen, oldest first: what the app shows as \"N to look at\". Absent when none is.",
+          "items": {
+            "$ref": "#/$defs/ChatOpenNudge"
+          },
+          "maxItems": 6,
+          "minItems": 1,
+          "type": "array"
         },
         "openItems": {
           "description": "The inline items still open, oldest first, however far back: the chat may not have their page loaded. Absent\nwhen none is (and from older hubs).",

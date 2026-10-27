@@ -662,6 +662,7 @@ fn example(role: Role, tool: &str) -> Option<Value> {
             "reason": "The freeze ended with the launch.",
         }),
         (Role::Lead, "memory_read") => json!({ "topic": "deploys" }),
+        (Role::Lead, "nudge") => json!({ "reason": "the new checkout page" }),
         (Role::Lead, "automation_create") => json!({
             "name": "Weekly dependency check",
             "prompt": "Check the dependencies for updates and open one PR with the safe ones.",

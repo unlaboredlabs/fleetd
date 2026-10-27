@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import type { ChatItem } from "../../src/data/chat";
 import type { ChatMessage } from "../../../shared/contracts";
-import { countQuestions, waitingOn } from "./attentionModel";
+import { countQuestions, lookingAt, lookKey, NUDGE_MS, waitingOn } from "./attentionModel";
 
 const at = (d: number, h: number, m = 0) => new Date(Date.UTC(2026, 9, d, h, m)).toISOString();
 const NOW = Date.parse(at(19, 18));
@@ -95,5 +95,41 @@ describe("what the lead waits on", () => {
     expect(countQuestions("1. one\n2) two\n   3. three\nnot 4. this")).toBe(3);
     expect(countQuestions("We shipped 2. Next?")).toBe(1);
     expect(countQuestions("All merged.")).toBe(0);
+  });
+});
+
+describe("what there is to look at", () => {
+  const nudge = (id: string, reason: string, time = at(19, 9)) => ({ messageId: id, reason, at: time });
+  const flagged = (id: string, cleared?: "seen" | "dismissed") =>
+    item(id, "lead", "The Machines page redesign is up.", at(19, 9), { message: { nudge: { reason: "x", at: at(19, 9), cleared } } as unknown as ChatMessage });
+
+  it("lists the hub's waiting nudges oldest first, Show going to a loaded message's first bubble", () => {
+    const looks = lookingAt([nudge("m1", "the Machines page"), nudge("m2", "Try #14: German copy")], [flagged("m1")], new Set(), NOW);
+    expect(looks).toEqual([
+      { id: "m1", part: "0", reason: "the Machines page", key: lookKey("m1", at(19, 9)) },
+      { id: "m2", part: undefined, reason: "Try #14: German copy", key: lookKey("m2", at(19, 9)) },
+    ]);
+  });
+
+  it("drops one cleared here, or that a loaded message says no longer waits", () => {
+    const nudges = [nudge("m1", "one"), nudge("m2", "two"), nudge("m3", "three")];
+    const looks = lookingAt(nudges, [flagged("m2", "dismissed")], new Set([lookKey("m1", at(19, 9))]), NOW);
+    expect(looks.map((l) => l.id)).toEqual(["m3"]);
+  });
+
+  it("shows one flagged again after it was seen: a new flag of it, not the one cleared", () => {
+    const again = [nudge("m1", "look again", at(19, 11))];
+    expect(lookingAt(again, [flagged("m1", "seen")], new Set([lookKey("m1", at(19, 9))]), NOW).map((l) => l.reason)).toEqual(["look again"]);
+  });
+
+  it("fades one a day old on its own", () => {
+    const flaggedAt = Date.parse(at(19, 9));
+    const nudges = [nudge("m1", "one")];
+    expect(lookingAt(nudges, [], new Set(), flaggedAt + NUDGE_MS - 60_000)).toHaveLength(1);
+    expect(lookingAt(nudges, [], new Set(), flaggedAt + NUDGE_MS)).toEqual([]);
+  });
+
+  it("is nothing while the hub lists none", () => {
+    expect(lookingAt(undefined, [flagged("m1")], new Set(), NOW)).toEqual([]);
   });
 });

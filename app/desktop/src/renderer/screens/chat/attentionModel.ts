@@ -1,7 +1,8 @@
 // What the lead is waiting on you for, in a few words, for the quiet line above the composer: an open approval or
 // secret first (the lead can't go on without it), loaded or not, else the questions of its newest message since you last wrote that
-// asks any; nothing when it asks nothing. Pure.
-import type { ChatOpenItem } from "../../../shared/contracts";
+// asks any; nothing when it asks nothing. Below all of that, what there is to look at: the messages the lead nudged
+// you about (a showcase, something to try, a risk) and agents' Try it suggestions, until seen. Pure.
+import type { ChatOpenItem, ChatOpenNudge } from "../../../shared/contracts";
 import type { ChatItem } from "../../src/data/chat";
 import { bubblesOf } from "./bubbles";
 import { plural, shortClock } from "./format";
@@ -76,4 +77,40 @@ export function waitingOn(items: readonly ChatItem[], { older, open: away = [] }
   }
   // A plain status line asks nothing; only a page not loaded can hold the wait, and only if you haven't written since.
   return older && since === 0 ? { what: "a reply", targets: [] } : undefined;
+}
+
+/** A message worth a look, still waiting: where Show goes, and what to look at there. */
+export interface LookAt extends WaitTarget {
+  readonly reason: string;
+  /** This flag of it (`id` and when it was flagged): one flagged again after it was seen is a new one. */
+  readonly key: string;
+}
+
+/** A flag's key: its message, and when it was flagged. */
+export const lookKey = (id: string, at: string): string => `${id} ${at}`;
+
+/** How long a nudge waits to be seen (contracts CHAT_NUDGE_MS); past it, it fades on its own. */
+export const NUDGE_MS = 24 * 60 * 60_000;
+
+/** Whether two lists say the same: the same flags, going to the same bubbles, for the same reasons. */
+export const sameLooks = (a: readonly LookAt[], b: readonly LookAt[]): boolean =>
+  a.length === b.length && a.every((l, i) => l.key === b[i]?.key && l.part === b[i].part && l.reason === b[i].reason);
+
+/**
+ * What there is to look at, oldest first: the hub's waiting nudges, less those this app cleared since (seen or
+ * dismissed, by their key), those a loaded message says no longer wait (that same flag of it), and those a day old.
+ * Show goes to a lead message's first bubble, and to a Try it line as it is.
+ */
+export function lookingAt(nudges: readonly ChatOpenNudge[] | undefined, items: readonly ChatItem[] | undefined, cleared: ReadonlySet<string>, nowMs: number): readonly LookAt[] {
+  if (nudges === undefined) return [];
+  const loaded = new Map((items ?? []).map((i) => [i.id, i]));
+  return nudges.flatMap((n) => {
+    const item = loaded.get(n.messageId);
+    const key = lookKey(n.messageId, n.at);
+    const flag = item?.message?.nudge;
+    const done = cleared.has(key) || (flag?.at === n.at && flag.cleared !== undefined) || nowMs - Date.parse(n.at) >= NUDGE_MS;
+    if (done) return [];
+    const part = item?.kind === "message" ? bubblesOf(item)[0]?.key : undefined;
+    return [{ id: n.messageId, part, reason: n.reason, key }];
+  });
 }

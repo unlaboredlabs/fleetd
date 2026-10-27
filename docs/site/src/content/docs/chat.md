@@ -96,6 +96,16 @@ Click Show to scroll to it. When nothing waits on you but the project is blocked
 blocks nothing, so the bar warns instead, naming the check and whether a fix is under way: "`rust (macos)` is red on
 main, fix in progress". When nothing needs you, the bar is just the project's name.
 
+### Things to look at {#look-at}
+
+The lead can flag one of its messages for your look: something to see, something to try, or a risk. An agent's
+suggestion to try a PR comes flagged the same way, with its Try it button. When nothing waits on you, the top bar
+counts them and names the oldest: "1 to look at: the Machines page redesign". Show scrolls to that message
+and rings it briefly; Dismiss drops it. A flag clears once you have seen its message (it stayed on screen a moment,
+or you used Show), and fades on its own after a day. A project keeps at most 3 from the lead and 3 Try it suggestions; a newer
+one replaces the oldest of its kind. Flags never notify you: they are only in the app, below questions, approvals,
+secrets and a blocked project, which always come first. A check red on main still shows after them.
+
 ## How the lead writes {#voice}
 
 The lead texts like a teammate: short messages, split into bubbles, with PR numbers, commands and errors exact. When

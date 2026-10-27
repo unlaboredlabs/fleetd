@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ChatItem } from "../../src/data/chat";
 import type { ChatMessage } from "../../src/data/chat-contract";
-import { arrivalsOf, authorLabel, chatRows, ENTER_MS, dayLabel, heldLabel, latestLabel, newestKey, rowIndexOf, type Row } from "./model";
+import { arrivalsOf, authorLabel, chatRows, ENTER_MS, dayLabel, heldLabel, keepRows, latestLabel, newestKey, rowIndexOf, type Row } from "./model";
 
 const at = (d: number, h: number, m = 0) => new Date(Date.UTC(2026, 9, d, h, m)).toISOString();
 const NOW = Date.parse(at(19, 18));
@@ -199,6 +199,25 @@ describe("the chat's rows", () => {
     expect(dayLabel(at(18, 1), NOW, "UTC")).toBe("Yesterday");
     expect(dayLabel(at(12, 1), NOW, "UTC")).toBe("Mon 12 Oct");
     expect(dayLabel(new Date(Date.UTC(2025, 2, 3)).toISOString(), NOW, "UTC")).toBe("Mon 3 Mar 2025");
+  });
+});
+
+describe("rows kept across a streamed word", () => {
+  it("keeps each row that says the same as the same object, and only the streaming one is new", () => {
+    // As the store makes them: items anew each time, the files of each the same list.
+    const none: ChatItem["attachments"] = [];
+    const items = (reply: string) => [
+      item("a", "human", at(19, 9), { attachments: none }),
+      item("b", "lead", at(19, 9, 1), { attachments: none }),
+      item("c", "lead", at(19, 9, 2), { attachments: none, text: reply, state: "streaming" }),
+    ];
+    const before = rows(items("Reading the"));
+    const after = keepRows(before, rows(items("Reading the proposal")));
+    const message = (r: readonly Row[], key: string) => r.find((x) => x.key === key);
+    expect(message(after, "a")).toBe(message(before, "a"));
+    expect(message(after, "b")).toBe(message(before, "b"));
+    expect(message(after, "c")).not.toBe(message(before, "c"));
+    expect(after.map((r) => r.key)).toEqual(before.map((r) => r.key));
   });
 });
 

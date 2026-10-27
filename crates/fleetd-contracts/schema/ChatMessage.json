@@ -492,6 +492,10 @@
         "messageId": {
           "$ref": "#/$defs/ChatMessageId"
         },
+        "nudge": {
+          "$ref": "#/$defs/ChatNudge",
+          "description": "The lead flagged it for the person's look (`nudge`), or it is an agent's Try it suggestion."
+        },
         "parts": {
           "description": "A final lead message of more than one bubble, or with a block: its bubbles in order. Absent: `text` is one\nbubble (and while a message streams).",
           "items": {
@@ -574,6 +578,56 @@
         {
           "const": "streaming",
           "description": "The lead is still writing it: `chat_delta` frames append to its text until it is `final`.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
+    "ChatNudge": {
+      "description": "A message worth the person's look: a showcase, something to try, a risk. It waits, below what the lead waits on\nyou for, until the person has seen the message or dismissed it, and for a day at most. In the app only: it sends\nno notification.",
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "cleared": {
+          "$ref": "#/$defs/ChatNudgeCleared",
+          "description": "Why it no longer waits; absent while it does (or once a day has passed)."
+        },
+        "reason": {
+          "description": "What to look at, in a few words: \"the Machines page redesign\".",
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "reason",
+        "at"
+      ],
+      "type": "object"
+    },
+    "ChatNudgeCleared": {
+      "oneOf": [
+        {
+          "enum": [
+            "dismissed"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "seen",
+          "description": "The person has seen the message: scrolled into view, or opened with Show.",
+          "type": "string"
+        },
+        {
+          "const": "replaced",
+          "description": "A newer nudge of its kind took its place past [`CHAT_NUDGES_MAX`].",
+          "type": "string"
+        },
+        {
+          "const": "expired",
+          "description": "A day passed unseen.",
           "type": "string"
         }
       ],

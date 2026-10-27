@@ -57,6 +57,7 @@ Every lead gets these.
 | [`remember`](#remember) | Keep one entry in memory, in plain words, for every later session: scope user for how the human works everywhere (tone, taste, standing rules), project for this project (MEMORY.md, or a topic file for detail). | No |
 | [`forget`](#forget) | Remove one entry from memory: entry quotes words of exactly one entry, as it reads now; scope and topic as for remember. | No |
 | [`memory_read`](#memory_read) | Read one of this project's memory topic files (MEMORY.md lists them). | No |
+| [`nudge`](#nudge) | Flag the chat message you just wrote for the human's look, with reason in a few words ("the Machines page redesign"): the app shows it as something to look at, below your questions, until they have seen it, for a day at most. | No |
 | [`automation_create`](#automation_create) | Make an automation for this project: a name, the prompt each run gives you as a new order, and optionally a schedule (5-field cron and an IANA tz, such as 0 9 \* \* 1-5 in Europe/Berlin). | No |
 | [`automation_list`](#automation_list) | This project's automations with their schedule, next run, paused state and last run. | No |
 | [`automation_update`](#automation_update) | Change an automation's name, prompt or schedule (removeSchedule: true takes it off); fields left out stay. | No |
@@ -71,7 +72,7 @@ Every lead gets these.
 | [`usage_resume`](#usage_resume) | Lift the usage pause on your project's machine now and send every agent parked there "continue": only once you know its login has capacity again (the human says so, or a turn of yours just went through). | No |
 | [`change_enqueue`](#change_enqueue) | Put a PR no task's result put there on its repo's merge train; only the train merges. | No |
 | [`review_read`](#review_read) | Read every finding of the latest reviews of your PRs, blocking and non-blocking, in full, each with path:line. | No |
-| [`preview_suggest`](#preview_suggest) | Suggest the person try a PR themselves, where a human test clearly matters (a UI change, copy in several languages, a mobile build): one line with a Try it button in the chat and the PR, once per PR. | No |
+| [`preview_suggest`](#preview_suggest) | Suggest the person try a PR themselves, where a human test clearly matters (a UI change, copy in several languages, a mobile build): one line with a Try it button in the chat and the PR, once per PR, which the app also shows as something to look at until the person has seen it. | No |
 | [`preview_config_propose`](#preview_config_propose) | Propose how Try it runs this project's web app, once you know: setup commands (install), build, a start command that serves on 127.0.0.1:$PORT, the ready path and the lockfiles setup depends on. | A person approves the proposed setting in chat before it is saved. |
 | [`preview_start`](#preview_start) | Start a preview of a PR (or an order's PRs merged together) for the person to try: only when the person asked for it in the message you are answering, never on your own (use preview_suggest for that). | No |
 | [`session_start`](#session_start) | Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end. | No |
@@ -427,6 +428,25 @@ Read one of this project's memory topic files (MEMORY.md lists them).
 }
 ```
 
+### nudge
+
+Flag the chat message you just wrote for the human's look, with reason in a few words ("the Machines page redesign"): the app shows it as something to look at, below your questions, until they have seen it, for a day at most. Only for a showcase, something to try or a risk, never routine news; a project keeps only a few, a newer one clearing the oldest. Write the message first, then call it. No notification goes out.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `reason` | string | yes | What to look at, in a few words: "the Machines page redesign". At most 200 characters. |
+
+**Who may call:** a lead, checked by the hub. **Needs a human:** no.
+
+```json
+{
+  "name": "nudge",
+  "arguments": {
+    "reason": "the new checkout page"
+  }
+}
+```
+
 ### automation_create
 
 Make an automation for this project: a name, the prompt each run gives you as a new order, and optionally a schedule (5-field cron and an IANA tz, such as 0 9 \* \* 1-5 in Europe/Berlin). Runs start work on their own; reviews, the train and approvals still apply. Only a person adds a webhook, in the app.
@@ -747,7 +767,7 @@ Read every finding of the latest reviews of your PRs, blocking and non-blocking,
 
 ### preview_suggest
 
-Suggest the person try a PR themselves, where a human test clearly matters (a UI change, copy in several languages, a mobile build): one line with a Try it button in the chat and the PR, once per PR. why says what to look at, in plain words. Nothing starts from it: only the person starts a preview.
+Suggest the person try a PR themselves, where a human test clearly matters (a UI change, copy in several languages, a mobile build): one line with a Try it button in the chat and the PR, once per PR, which the app also shows as something to look at until the person has seen it. why says what to look at, in plain words. Nothing starts from it: only the person starts a preview.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -945,7 +965,7 @@ Every task's agent gets these: implementers, readers, reviewers and QA.
 | [`ask_lead`](#ask_lead) | Ask your lead a question. | No |
 | [`brief_read`](#brief_read) | Read your workstream's brief, whole: its goal, why, pointers, constraints and done-when. | No |
 | [`review_read`](#review_read-task) | Read every finding of the latest reviews of your PRs, blocking and non-blocking, in full, each with path:line. | No |
-| [`preview_suggest`](#preview_suggest-task) | Suggest the person try a PR themselves, where a human test clearly matters (a UI change, copy in several languages, a mobile build): one line with a Try it button in the chat and the PR, once per PR. | No |
+| [`preview_suggest`](#preview_suggest-task) | Suggest the person try a PR themselves, where a human test clearly matters (a UI change, copy in several languages, a mobile build): one line with a Try it button in the chat and the PR, once per PR, which the app also shows as something to look at until the person has seen it. | No |
 | [`preview_config_propose`](#preview_config_propose-task) | Propose how Try it runs this project's web app, once you know: setup commands (install), build, a start command that serves on 127.0.0.1:$PORT, the ready path and the lockfiles setup depends on. | A person approves the proposed setting in chat before it is saved. |
 | [`session_start`](#session_start-task) | Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end. | No |
 | [`desktop`](#desktop-task) | Act on your Linux desktop session (session_start kind linux_desktop), with computer-use actions plus launch. | No |
@@ -1050,7 +1070,7 @@ Read every finding of the latest reviews of your PRs, blocking and non-blocking,
 
 ### preview_suggest (task)
 
-Suggest the person try a PR themselves, where a human test clearly matters (a UI change, copy in several languages, a mobile build): one line with a Try it button in the chat and the PR, once per PR. why says what to look at, in plain words. Nothing starts from it: only the person starts a preview.
+Suggest the person try a PR themselves, where a human test clearly matters (a UI change, copy in several languages, a mobile build): one line with a Try it button in the chat and the PR, once per PR, which the app also shows as something to look at until the person has seen it. why says what to look at, in plain words. Nothing starts from it: only the person starts a preview.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
