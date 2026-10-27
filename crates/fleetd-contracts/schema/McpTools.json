@@ -5652,6 +5652,10 @@
         "truncated": {
           "type": "boolean"
         },
+        "url": {
+          "description": "The address another hub reaches this one at, for a hub link: its URL when that is https, or http over a\ntailnet, and not this machine's loopback. Absent when it has no such address, and from older hubs.",
+          "type": "string"
+        },
         "version": {
           "description": "The hub's fleetd version, as `fleetd --version` prints it. \"0.0.0\" for a local build.",
           "type": "string"

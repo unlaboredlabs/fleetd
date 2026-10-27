@@ -163,7 +163,7 @@ const links = (from: Fixture): Fixture => {
   const f = Fixture.from(from, "navi-links", "Hub links: Ada's Linked hubs (working, can't reach, revoked there), and Sam's links to this hub.");
   adaSettings(f);
   const storefront = refOf(f, "storefront");
-  f.answer("hub_info", undefined, { version: "0.9.0", protocol: 1, busy: [], admin: false, me: { ...SAM, role: "member", createdAt: at(f.now, -30 * 86_400_000) } });
+  f.answer("hub_info", undefined, { version: "0.9.0", protocol: 1, busy: [], admin: false, url: "https://hub.devbox.example", me: { ...SAM, role: "member", createdAt: at(f.now, -30 * 86_400_000) } });
   const kept = (label: string, url: string, extra: JsonObject): JsonObject => ({
     linkId: `hl_${label.replace(/[^a-z]/gu, "").slice(0, 4).padEnd(8, "a")}`,
     navi: { ...ADA },

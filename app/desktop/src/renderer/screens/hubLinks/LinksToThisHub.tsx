@@ -1,7 +1,8 @@
 // Links to this hub (Settings › Hubs, under each hub): a person makes a link key that lets their Navi on another hub open and
 // follow work here, as them, optionally limited to chosen projects (hub_link_mint). The key is shown once, with this
-// hub's address, to paste into that Navi's Linked hubs. Below, the links made as them, each with Revoke. Even for an
-// admin this lists only their own: everyone's is on Administration › People.
+// hub's address another hub reaches (hub_info's url; typed here when the hub has none), to paste into that Navi's Linked
+// hubs. Below, the links made as them, each with Revoke. Even for an admin this lists only their own, and nothing until
+// hub_info says who they are: everyone's is on Administration › People.
 import { useMemo, useState } from "react";
 import type { HubLinkMintOutput, ProjectRef } from "../../../shared/contracts";
 import { useData, useToolQuery } from "../../src/data/react";
@@ -14,7 +15,7 @@ import { isNavi } from "../navi/model";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
 import { Setting } from "../settings/parts";
 import { IssuedRow, lacksLinks, LinksNeedUpdate } from "./parts";
-import { labelProblem, mine, pasteText, sortIssued } from "./model";
+import { labelProblem, mine, pasteText, sortIssued, urlProblem } from "./model";
 import s from "../settings/settings.module.css";
 import a from "../admin/admin.module.css";
 
@@ -34,7 +35,7 @@ export function LinksToThisHub() {
 
 function LinksBody() {
   const live = useLive();
-  const { me } = useHubRole();
+  const { me, pending } = useHubRole();
   const read = useToolQuery("hub_links_get", noInput, { enabled: live });
   const [making, setMaking] = useState(false);
   const [made, setMade] = useState<HubLinkMintOutput | null>(null);
@@ -43,7 +44,8 @@ function LinksBody() {
   if (!live) return <Text tone="quiet">Connect to a hub to see and change this.</Text>;
   if (lacksLinks(read.error)) return <LinksNeedUpdate />;
   if (read.error) return <Text tone="danger">{`Couldn’t read your links: ${errorText(read.error)}`}</Text>;
-  if (read.data === undefined) return <Text tone="quiet">Loading…</Text>;
+  // Until hub_info names this person, nothing: for an admin, hub_links_get holds everyone's links.
+  if (read.data === undefined || pending) return <Text tone="quiet">Loading…</Text>;
   const links = sortIssued(mine(read.data.issued, me?.personId));
   const start = () => {
     setMade(null);
@@ -164,11 +166,18 @@ function MintForm({ onCancel, onMade }: { onCancel: () => void; onMade: (out: Hu
   );
 }
 
-/** The key just made, shown this once with this hub's address: the hub keeps only its hash. */
+/**
+ * The key just made, shown this once: the hub keeps only its hash. Copy takes it with the address another hub reaches
+ * this one at (hub_info's url), never the app's own, which may be this machine's. Without one, the person types it.
+ */
 function MadeKey({ made }: { made: HubLinkMintOutput }) {
-  const hubUrl = useData((d) => ("hub" in d.hub ? d.hub.hub : ""));
+  const info = useToolQuery("hub_info", noInput);
+  const known = info.data?.url;
+  const [typed, setTyped] = useState("");
   const [copied, setCopied] = useState<boolean | null>(null);
-  const text = hubUrl === "" ? made.key : pasteText(hubUrl, made.key);
+  const typedBad = urlProblem(typed);
+  const address = known ?? (typed.trim() !== "" && typedBad === undefined ? typed.trim().replace(/\/+$/u, "") : undefined);
+  const text = address === undefined ? made.key : pasteText(address, made.key);
   return (
     <section className={a.created} aria-label={`Link key for ${made.link.label}`}>
       <Text strong>{`Link key for ${made.link.label}`}</Text>
@@ -180,8 +189,17 @@ function MadeKey({ made }: { made: HubLinkMintOutput }) {
           {copied === true ? "Copied" : "Copy"}
         </Button>
       </div>
+      {known === undefined && info.data !== undefined ? (
+        <Field
+          label="This hub’s address, as the other hub reaches it"
+          description="This hub has no address another hub can reach set: it may listen on this machine only. Type its HTTPS or tailnet address, and Copy takes it too."
+          error={typedBad}
+        >
+          <Input value={typed} placeholder="https://hub.example.com" autoComplete="off" spellCheck={false} onChange={(e) => setTyped(e.target.value)} />
+        </Field>
+      ) : null}
       <Text size="xs" tone="quiet">
-        {`Shown only now. On ${made.link.label}, open your Navi’s settings, Linked hubs, and paste it${hubUrl === "" ? "" : ` with this hub’s address, ${hubUrl}, which Copy takes too`}. It acts as you here; revoke it below at any time.`}
+        {`Shown only now. On ${made.link.label}, open your Navi’s settings, Linked hubs, and paste it${address === undefined ? ", with the address that hub reaches this one at" : ` with this hub’s address, ${address}, which Copy takes too`}. It acts as you here; revoke it below at any time.`}
       </Text>
       {copied === false ? (
         <Text size="xs" tone="danger">

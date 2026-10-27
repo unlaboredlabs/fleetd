@@ -166,8 +166,8 @@ describe("a pasted hub link key", () => {
     };
     const key = `flk_${"a".repeat(52)}`;
     const request = { navi: { machineId: "devbox", projectId: "ada" }, label: "acme", url: "https://acme.example", boxPubKey: rust.publicKey, key };
-    expect(parseRequest(IPC.hubLinkSubmit, [request]).ok).toBe(true);
-    expect(parseRequest(IPC.hubLinkSubmit, [{ ...request, label: "x".repeat(41) }]).ok).toBe(false);
+    expect(parseRequest(IPC.hubLinkSubmit, ["hub", request]).ok).toBe(true);
+    expect(parseRequest(IPC.hubLinkSubmit, ["hub", { ...request, label: "x".repeat(41) }]).ok).toBe(false);
     expect((await submitHubLink(request, call)).ok).toBe(true);
     expect(sent[0]).toBe("hub_link_add");
     const input = sent[1] as { sealed: string; label: string; url: string };

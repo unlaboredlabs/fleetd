@@ -58,6 +58,10 @@ let sealed: HubLinkRequest[];
 let copied: string[];
 let answer: HubLinksGetOutput;
 let old: boolean;
+/** hub_info's address for this hub; undefined: it has none another hub reaches. */
+let reachable: string | undefined;
+/** Holds hub_info's answer until released. */
+let info: Promise<void>;
 
 beforeEach(() => {
   host = document.createElement("div");
@@ -67,6 +71,8 @@ beforeEach(() => {
   sealed = [];
   copied = [];
   old = false;
+  reachable = "https://hub.devbox.example";
+  info = Promise.resolve();
   answer = { links: [], issued: [], boxPubKey: BOX };
   vi.stubGlobal("fleetd", {
     platform: "linux",
@@ -74,7 +80,7 @@ beforeEach(() => {
     copy: (text: string) => (copied.push(text), Promise.resolve()),
     updates: { subscribe: () => () => undefined, state: () => new Promise(() => undefined) },
     secret: {
-      hubLink: (request: HubLinkRequest): Promise<CallOutcome> => {
+      hubLink: (_hub: string, request: HubLinkRequest): Promise<CallOutcome> => {
         sealed.push(request);
         const link = kept(request.label, { url: request.url, who: "Alex" });
         answer = { ...answer, links: [...answer.links, link] };
@@ -98,12 +104,14 @@ const render = async (page: React.ReactNode) => {
     call: (tool, input) => {
       calls.push({ tool, input });
       if (old && tool.startsWith("hub_link")) return Promise.resolve({ ok: false, error: { code: "not_found", message: `No tool ${tool}.` } });
+      if (tool === "hub_info") {
+        const me = { ...ALEX, role: "admin", createdAt: AT };
+        return info.then(() => ({ ok: true, output: { version: "0.0.0", protocol: 1, busy: [], admin: true, me, ...(reachable === undefined ? {} : { url: reachable }) } }));
+      }
       const output =
         tool === "hub_links_get"
           ? answer
-          : tool === "hub_info"
-            ? { version: "0.0.0", protocol: 1, busy: [], admin: true, me: { ...ALEX, role: "admin", createdAt: AT } }
-            : tool === "hub_link_mint"
+          : tool === "hub_link_mint"
               ? { key: KEY, link: issued("hl_newnewne", { label: "home", ...(input as object) }) }
               : tool === "hub_link_remove"
                 ? { revokedThere: false, next: "acme didn't answer, so the link still shows there until someone revokes it; it can't be used." }
@@ -251,7 +259,7 @@ describe("Links to this hub, in a person's settings", () => {
     expect(button("Make a link key")).toBeTruthy();
   });
 
-  it("makes a key for chosen projects, shows it once and copies it with this hub's address", async () => {
+  it("makes a key for chosen projects, shows it once and copies it with the address another hub reaches", async () => {
     await render(<LinksToThisHub />);
     await click(button("Make a link key"));
     const label = document.querySelector<HTMLInputElement>("form input");
@@ -269,7 +277,42 @@ describe("Links to this hub, in a person's settings", () => {
     expect(text()).toContain(KEY);
     expect(text()).toContain("Shown only now");
     await click(button("Copy"));
-    expect(copied).toEqual([`${HUB}\n${KEY}`]);
+    // The hub's own reachable address, never the one this app connects to.
+    expect(copied).toEqual([`https://hub.devbox.example\n${KEY}`]);
+    expect(text()).not.toContain(HUB);
+  });
+
+  it("asks for the address when the hub has none another hub reaches, and copies the key alone until then", async () => {
+    reachable = undefined;
+    await render(<LinksToThisHub />);
+    await click(button("Make a link key"));
+    await type(document.querySelector<HTMLInputElement>("form input") as HTMLInputElement, "home");
+    await click(button("Make link key"));
+    expect(text()).toContain("This hub has no address another hub can reach set");
+    await click(button("Copy"));
+    expect(copied).toEqual([KEY]);
+    const address = document.querySelector<HTMLInputElement>('[aria-label="Link key for home"] input');
+    await type(address as HTMLInputElement, "https://hub.home.example/");
+    await click(button("Copied"));
+    expect(copied[1]).toBe(`https://hub.home.example\n${KEY}`);
+  });
+
+  it("shows no one's links until the hub says who you are", async () => {
+    let release: () => void = () => undefined;
+    info = new Promise((r) => {
+      release = r;
+    });
+    answer = { ...answer, issued: [issued("hl_samsaaaa", { label: "work", person: SAM })] };
+    await render(<LinksToThisHub />);
+    expect(document.querySelector('[role="listitem"]')).toBeNull();
+    expect(text()).not.toContain("For work");
+    await act(async () => {
+      release();
+      await Promise.resolve();
+    });
+    for (let i = 0; i < 3; i++) await settle();
+    expect(document.querySelector('[role="listitem"]')).toBeNull();
+    expect(text()).toContain("No links to this hub yet.");
   });
 
   it("lists only the person's own links, even for an admin, and revokes one", async () => {

@@ -2089,6 +2089,11 @@ export type HubInfoOutput = {
   protocol: number;
   startedAt?: Timestamp;
   truncated?: boolean;
+  /**
+   * The address another hub reaches this one at, for a hub link: its URL when that is https, or http over a
+   * tailnet, and not this machine's loopback. Absent when it has no such address, and from older hubs.
+   */
+  url?: string;
   /** The hub's fleetd version, as `fleetd --version` prints it. "0.0.0" for a local build. */
   version: string;
 };

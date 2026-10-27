@@ -97,6 +97,9 @@ export const sortIssued = (links: ReadonlyArray<IssuedLink>): IssuedLink[] =>
     return (b.revokedAt ?? b.createdAt).localeCompare(a.revokedAt ?? a.createdAt);
   });
 
-/** The links made as this person: theirs by person, or (on a hub from before people) everything the hub returned. */
+/**
+ * The links made as this person. None until the hub has said who they are: an admin's hub_links_get holds everyone's,
+ * and Settings never shows another person's (D186).
+ */
 export const mine = (links: ReadonlyArray<IssuedLink>, personId: string | undefined): IssuedLink[] =>
-  personId === undefined ? [...links] : links.filter((l) => l.person?.personId === personId);
+  personId === undefined ? [] : links.filter((l) => l.person?.personId === personId);

@@ -114,7 +114,8 @@ revoke it. [Security](/docs/security#hub-links) has the rules.
 1. Name the other hub as you think of it, such as *home*. Requests through the link read "*you* via home Navi"
    there.
 2. Leave **Every project you can reach**, or pick **Only some projects** and tick them.
-3. **Make link key** shows the key (`flk_…`) once. **Copy** takes it with this hub's address.
+3. **Make link key** shows the key (`flk_…`) once. **Copy** takes it with the address other hubs reach this hub
+   at: its HTTPS or tailnet URL. When the hub has no such address set, type it in the box that appears.
 
 The list below shows the links made as you: what each is for, its projects, when it was last used, and **Revoke**.
 An admin sees everyone's on **Administration › People**, under **Hub links**, each with the person it acts as.

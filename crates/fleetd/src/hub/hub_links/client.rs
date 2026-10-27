@@ -422,10 +422,13 @@ pub async fn refresh(hub: &Hub, link_id: &str) {
     }
 }
 
-/// Follows one kept link until it is removed here, dead there, its Navi archived, or the hub stops. It reads the
-/// link's hello first, so a hub that restarts shows its links' people and projects as the other hub has them now.
-pub async fn follow(hub: Arc<Hub>, link_id: String) {
-    refresh(&hub, &link_id).await;
+/// Follows one kept link until it is removed here, dead there, its Navi archived, or the hub stops. With `hello`, it
+/// reads the link's hello first, so a hub that restarts shows its links' people and projects as the other hub has
+/// them now; a link just added has read it already.
+pub async fn follow(hub: Arc<Hub>, link_id: String, hello: bool) {
+    if hello {
+        refresh(&hub, &link_id).await;
+    }
     loop {
         if hub.shutdown.is_triggered() {
             return;
@@ -451,7 +454,7 @@ pub async fn follow(hub: Arc<Hub>, link_id: String) {
 pub async fn run(hub: Arc<Hub>) {
     for link in kept(&hub.db, None).unwrap_or_default() {
         if link.state != HubLinkState::Revoked {
-            tokio::spawn(follow(hub.clone(), link.link_id));
+            tokio::spawn(follow(hub.clone(), link.link_id, true));
         }
     }
 }
