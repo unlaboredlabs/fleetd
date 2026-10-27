@@ -124,6 +124,20 @@ pub fn claim_on(c: &Connection, p: &Preview) -> Result<Option<Preview>, StoreErr
     Ok(None)
 }
 
+/// How long after a preview ends its held session may still report and upload: the node uploads the recording once
+/// the session closes, after the end, and tries for as long as this (node/browser/upload.rs's `GIVE_UP`).
+pub const HELD_UPLOAD_MS: i64 = 7 * 24 * 3600 * 1000;
+
+/// Whether a preview's held browser session may still report itself and upload its recording: while the preview
+/// runs, and for [`HELD_UPLOAD_MS`] after it ended.
+pub fn takes_session_calls(p: &Preview, now: i64) -> bool {
+    !p.state.is_over()
+        || p.ended_at
+            .as_ref()
+            .and_then(|t| parse_ms(t.as_str()))
+            .is_some_and(|ended| now - ended < HELD_UPLOAD_MS)
+}
+
 fn state_text(state: PreviewState) -> &'static str {
     match state {
         PreviewState::Starting => "starting",
