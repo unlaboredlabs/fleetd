@@ -167,18 +167,24 @@ impl McpServerStore<'_> {
 
     /// What a session of the project gets: its enabled servers, and the enabled global ones it has no server of the
     /// same name for (a project's server replaces a global one even while it is off, which turns that one off there).
-    /// A server none of whose roles is on, or whose secrets aren't all on the project's machine, is left out.
+    /// A session in a repo checkout another project holds gets that project's servers too, over the checkout's own
+    /// (W79). A server none of whose roles is on, or whose secrets aren't all on the project's machine, is left out.
     pub fn session_config(&self, r: &ProjectRef) -> Result<McpSessionConfig, StoreError> {
-        let project = self.list(&McpScope::Project {
-            machine_id: r.machine_id.clone(),
-            project_id: r.project_id.clone(),
-        })?;
+        let holders = self
+            .db
+            .with(|c| Ok(crate::hub::repos::store::holders(c, r)?))?;
         let mut by_name: BTreeMap<String, McpServer> = self
             .list(&McpScope::Global)?
             .into_iter()
             .map(|s| (s.name.to_string(), s))
             .collect();
-        by_name.extend(project.into_iter().map(|s| (s.name.to_string(), s)));
+        for project in std::iter::once(r).chain(holders.iter().map(|(p, _)| p)) {
+            let servers = self.list(&McpScope::Project {
+                machine_id: project.machine_id.clone(),
+                project_id: project.project_id.clone(),
+            })?;
+            by_name.extend(servers.into_iter().map(|s| (s.name.to_string(), s)));
+        }
         let servers = by_name
             .values()
             .filter(|s| s.enabled && s.roles.any())

@@ -6,6 +6,7 @@ use std::sync::{Arc, OnceLock};
 
 use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadRef, Timestamp};
 use fleetd_contracts::ledger::WorkstreamId;
+use fleetd_contracts::repos::RepoId;
 use fleetd_contracts::tasks::TaskId;
 use fleetd_contracts::usage::UsageParked;
 
@@ -36,6 +37,10 @@ pub trait TasksHook: Send + Sync {
     fn agents(&self, project_ref: &ProjectRef) -> super::events::AgentsLine;
     /// Live (queued, running, idle) tasks, in one project or all.
     fn live(&self, project_ref: Option<&ProjectRef>) -> Vec<(TaskId, ProjectRef)>;
+    /// Live tasks that work in a repo, each with it: for ending a removed repo's.
+    fn live_in_repos(&self) -> Vec<(TaskId, ProjectRef, RepoId)> {
+        Vec::new()
+    }
     /// `Tasks.cancel({projectRef, by: "hub"}, taskId, reason)`, errors ignored.
     fn cancel(&self, project_ref: &ProjectRef, task_id: &TaskId, reason: &str) -> BoxFuture<()>;
     /// The workstream's tasks still queued, running or idle, other than the reviewers the merge train spawned for its

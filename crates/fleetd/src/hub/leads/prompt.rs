@@ -1,6 +1,8 @@
 //! The lead's first message: the `lead.start` prompt, `lead.voice`, `lead.profiles` while the project allows medium,
-//! the digest, the human's custom instructions, then the memory (`user.md` and the project's `MEMORY.md`).
+//! the digest, the human's custom instructions, then the memory (`user.md` and the project's `MEMORY.md`). A project
+//! with repos besides its own directory has them listed after that (`repos_block`).
 use fleetd_contracts::ids::ProjectRef;
+use fleetd_contracts::repos::ProjectRepo;
 
 use crate::hub::prompts::PromptSet;
 
@@ -47,6 +49,36 @@ pub fn render_lead_start(
     }
 }
 
+/// The project's repos for the lead's first message, by name, each with its checkout and where its work lands; none
+/// for a project that is only its own repo, or a plain folder with none, whose message is as before.
+pub fn repos_block(project_ref: &ProjectRef, repos: &[ProjectRepo]) -> Option<String> {
+    if repos.iter().all(|r| &r.checkout == project_ref) {
+        return None;
+    }
+    let lines: Vec<String> = repos
+        .iter()
+        .map(|r| {
+            let path = r.path.as_deref().unwrap_or(r.checkout.project_id.as_str());
+            let lands = match (&r.repo_key, &r.base) {
+                (Some(key), Some(base)) => format!(", {key} on {base}"),
+                (Some(key), None) => format!(", {key}"),
+                _ => ", no remote".to_owned(),
+            };
+            let own = if &r.checkout == project_ref {
+                " (the project's own directory)"
+            } else {
+                ""
+            };
+            format!("- `{}`: {path}{lands}{own}", r.name)
+        })
+        .collect();
+    Some(format!(
+        "## Repos\nThis project holds these repos, each a checkout on {}:\n{}",
+        project_ref.machine_id,
+        lines.join("\n")
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use fleetd_contracts::ids::{MachineId, ProjectId};
@@ -74,6 +106,35 @@ mod tests {
         assert!(
             off.find("spawn_agent").unwrap() < voice
                 && voice < off.find("```fleetd-block").unwrap()
+        );
+    }
+    /// A project that is only its own repo, or a plain folder, starts as before; one with more lists them all.
+    #[test]
+    fn the_repos_are_listed_only_beside_the_projects_own() {
+        let r = ProjectRef {
+            machine_id: MachineId::unchecked("devbox"),
+            project_id: ProjectId::unchecked("p1"),
+        };
+        let repo = |n: &str, of: &str, key: Option<&str>| ProjectRepo {
+            repo_id: fleetd_contracts::repos::RepoId::unchecked(format!("R{}", n.len())),
+            name: fleetd_contracts::repos::RepoName::unchecked(n),
+            checkout: ProjectRef {
+                project_id: ProjectId::unchecked(of),
+                ..r.clone()
+            },
+            path: Some(format!("/work/{n}")),
+            repo_key: key.map(fleetd_contracts::work::RepoKey::unchecked),
+            base: key.map(|_| fleetd_contracts::prim::Line::unchecked("main")),
+        };
+        let own = repo("app", "p1", Some("github.com/acme/app"));
+        assert_eq!(repos_block(&r, &[]), None);
+        assert_eq!(repos_block(&r, std::slice::from_ref(&own)), None);
+        let block = repos_block(&r, &[own, repo("notes", "p2", None)]).unwrap();
+        assert_eq!(
+            block,
+            "## Repos\nThis project holds these repos, each a checkout on devbox:\n\
+             - `app`: /work/app, github.com/acme/app on main (the project's own directory)\n\
+             - `notes`: /work/notes, no remote"
         );
     }
 }

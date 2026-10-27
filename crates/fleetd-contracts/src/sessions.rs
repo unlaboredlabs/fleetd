@@ -182,6 +182,14 @@ pub enum SessionCall {
         set: Vec<crate::project_settings::EnvVarSet>,
         remove: Vec<crate::project_settings::EnvVarName>,
     },
+    /// Copy the project `from`'s environment variables into project `to`'s, replacing any of the same name: a
+    /// project's for a repo checkout it holds. Secrets are copied on the node, never sent. Only nodes listing
+    /// [`crate::node_link::CAP_PROJECT_ENV_COPY`] get it.
+    #[serde(rename_all = "camelCase")]
+    ProjectEnvCopy {
+        from: ProjectId,
+        to: ProjectId,
+    },
     /// Replace the secrets the node keeps for one MCP server: afterwards it holds those in `set` (each opened with
     /// the node's box key) and those in `keep` it already had, and no other. Empty both to forget the server. The reply
     /// has each saved secret's fingerprint. All or nothing. Only nodes listing [`crate::node_link::CAP_MCP_SERVERS`]

@@ -175,11 +175,31 @@ impl HubStore {
         })
     }
 
-    /// Newest activity first. `query` matches title or workspace root, case-insensitively.
+    /// Every project the nodes reported, attached checkouts too, newest activity first. `query` matches title or
+    /// workspace root, case-insensitively.
     pub fn projects_list(
         &self,
         machine_id: Option<&MachineId>,
         query: Option<&str>,
+    ) -> Result<Vec<ProjectSummary>, StoreError> {
+        self.projects(machine_id, query, false)
+    }
+
+    /// [`Self::projects_list`] as people and leads see it: a checkout another project holds as one of its repos is
+    /// that project's, not a project of its own, so it is left out (`project_get` still reads it).
+    pub fn projects_shown(
+        &self,
+        machine_id: Option<&MachineId>,
+        query: Option<&str>,
+    ) -> Result<Vec<ProjectSummary>, StoreError> {
+        self.projects(machine_id, query, true)
+    }
+
+    fn projects(
+        &self,
+        machine_id: Option<&MachineId>,
+        query: Option<&str>,
+        shown: bool,
     ) -> Result<Vec<ProjectSummary>, StoreError> {
         let query = query
             .filter(|q| !q.is_empty())
@@ -189,8 +209,13 @@ impl HubStore {
                 conn,
                 r"SELECT data FROM projects
        WHERE ($machine IS NULL OR machine_id = $machine) AND ($query IS NULL OR search LIKE $query ESCAPE '\')
+         AND NOT ($shown AND EXISTS (SELECT 1 FROM repos r WHERE r.checkout_machine_id = projects.machine_id
+           AND r.checkout_project_id = projects.project_id
+           AND NOT (r.machine_id = projects.machine_id AND r.project_id = projects.project_id)))
        ORDER BY last_activity_at DESC",
-                named_params! { "$machine": machine_id.map(MachineId::as_str), "$query": query },
+                named_params! {
+                    "$machine": machine_id.map(MachineId::as_str), "$query": query, "$shown": shown
+                },
             )?
             .into_iter()
             .map(|p| with_repos(conn, p))

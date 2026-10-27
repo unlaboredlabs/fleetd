@@ -612,16 +612,30 @@ impl Executors {
         let _ = self.skills.set(db);
     }
 
-    fn skill_bundles(
+    /// The hub skills a launch in the node project carries.
+    pub(crate) fn skill_bundles(
         &self,
         machine_id: &MachineId,
         project_id: &ProjectId,
     ) -> Vec<fleetd_contracts::skills::SkillBundle> {
         self.skills.get().map_or_else(Vec::new, |db| {
-            db.skills().bundles(&ProjectRef {
+            let r = ProjectRef {
                 machine_id: machine_id.clone(),
                 project_id: project_id.clone(),
-            })
+            };
+            // A repo checkout carries the skills of the projects holding it first (W79).
+            let holders = db
+                .with(|c| Ok(crate::hub::repos::store::holders(c, &r)?))
+                .unwrap_or_else(|error| {
+                    tracing::warn!(%error, "skills: the checkout's projects not read");
+                    Vec::new()
+                });
+            let projects: Vec<&ProjectRef> = holders
+                .iter()
+                .map(|(p, _)| p)
+                .chain(std::iter::once(&r))
+                .collect();
+            db.skills().bundles_in(&projects)
         })
     }
 
@@ -2203,6 +2217,23 @@ impl Executors {
                 "the node sent no answer to project_env",
             )),
         }
+    }
+
+    /// Copies project `from`'s environment variables into `to`'s on their node, secrets included. Only to a node
+    /// listing `CAP_PROJECT_ENV_COPY`.
+    pub async fn project_env_copy(
+        &self,
+        machine_id: &MachineId,
+        from: &ProjectId,
+        to: &ProjectId,
+    ) -> Result<(), ExecutorError> {
+        let call = SessionCall::ProjectEnvCopy {
+            from: from.clone(),
+            to: to.clone(),
+        };
+        self.call(machine_id, NodeOperation::Project, call, READ_TIMEOUT)
+            .await?;
+        Ok(())
     }
 
     /// Has the node forget the variables delivered for a closed order, or only `name` while it still holds the value

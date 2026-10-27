@@ -269,7 +269,7 @@ pub fn read(hub: &Hub, fresh: &Fresh, now: i64) -> anyhow::Result<Vec<ProjectSta
     let machines = hub.store.machines_list()?;
     let mut projects: Vec<(String, String)> = hub
         .store
-        .projects_list(None, None)?
+        .projects_shown(None, None)?
         .into_iter()
         .map(|p| (format!("{}/{}", p.machine_id, p.project_id), p.title))
         .collect();
