@@ -248,11 +248,17 @@ impl NodeLinkServer {
     }
 }
 
+/// What the hub does with a node's word on one of its previews.
+pub type PreviewReports =
+    dyn Fn(&MachineId, fleetd_contracts::preview::PreviewReport) + Send + Sync;
+
 pub struct NodeLinkServer {
     deps: LinkDeps,
     state: Mutex<State>,
     /// Browser sessions' live view: who watches which, and their frames.
     pub browser_live: Arc<crate::hub::browser::live::Live>,
+    /// Takes each node's `preview_report` (hub/preview), once the area is wired.
+    pub preview_reports: std::sync::OnceLock<Arc<PreviewReports>>,
     heartbeat_every: Duration,
     silence_timeout: Duration,
     hello_timeout: Duration,
@@ -343,6 +349,7 @@ impl NodeLinkServer {
             deps,
             state: Mutex::default(),
             browser_live: Arc::default(),
+            preview_reports: std::sync::OnceLock::new(),
             heartbeat_every,
             silence_timeout,
             hello_timeout,
@@ -924,19 +931,20 @@ impl NodeLinkServer {
                 | NodeToHub::SecretResult(_)
                 | NodeToHub::GatedResult(_)
                 | NodeToHub::NodeActionResult(_)
-                | NodeToHub::SessionHostResult(_)) => {
-                    self.deps.commands.resolve(&machine_id, reply)
-                }
+                | NodeToHub::SessionHostResult(_)
+                | NodeToHub::PreviewRunResult(_)) => self.deps.commands.resolve(&machine_id, reply),
                 frame @ (NodeToHub::SessionReply(_)
                 | NodeToHub::MachineEvent(_)
                 | NodeToHub::ThreadEvent(_)
                 | NodeToHub::CloneProgress(_)) => {
                     self.deps.executors.handle_frame(&machine_id, frame)
                 }
-                // Previews (W58): the hub asks no node for one until its preview tools land.
-                NodeToHub::PreviewRunResult(_) | NodeToHub::PreviewReport(_) => {
-                    tracing::debug!(machine = %machine_id, "node link: preview frame before this hub runs previews");
-                }
+                NodeToHub::PreviewReport(report) => match self.preview_reports.get() {
+                    Some(reports) => reports(&machine_id, report),
+                    None => {
+                        tracing::debug!(machine = %machine_id, "node link: a preview report before previews are wired")
+                    }
+                },
                 NodeToHub::Slept(span) => self.slept(&machine_id, span),
                 NodeToHub::Spans(frame) => {
                     let tx = tx.clone();
