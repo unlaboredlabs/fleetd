@@ -11,7 +11,7 @@ use std::io;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::ops::RangeInclusive;
 use std::pin::Pin;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
 
 use serde_json::Value;
@@ -289,6 +289,8 @@ pub struct Proxy {
     pub addr: SocketAddr,
     url: String,
     activity: Arc<Mutex<Activity>>,
+    /// The accept task owns the listener; this is gone once the port is closed.
+    listener: Weak<TcpListener>,
     accept: Option<JoinHandle<()>>,
 }
 
@@ -301,8 +303,9 @@ impl Proxy {
                 format!("{} is not a tailnet address", config.addr),
             ));
         }
-        let listener = bind(config).await?;
+        let listener = Arc::new(bind(config).await?);
         let addr = listener.local_addr()?;
+        let watched = Arc::downgrade(&listener);
         let url = match &config.host {
             Some(host) => format!("http://{host}:{}", addr.port()),
             None => format!("http://{addr}"),
@@ -341,6 +344,7 @@ impl Proxy {
             addr,
             url,
             activity,
+            listener: watched,
             accept: Some(accept),
         })
     }
@@ -355,6 +359,11 @@ impl Proxy {
     pub fn idle_since(&self) -> Option<Instant> {
         let activity = lock(&self.activity);
         (activity.open == 0).then_some(activity.last)
+    }
+
+    /// Whether the port is open: false only once its listener is closed.
+    pub fn listening(&self) -> bool {
+        self.listener.strong_count() > 0
     }
 
     /// Closes the port and every connection through it. The port is free once this returns.
@@ -677,6 +686,7 @@ mod tests {
         let target = upstream.local_addr().unwrap().port();
         let proxy = Proxy::start(&config, target).await.unwrap();
         let addr = proxy.addr;
+        assert!(proxy.listening());
         let busy = TcpListener::bind(addr).await.err().unwrap();
         assert_eq!(busy.kind(), io::ErrorKind::AddrInUse);
 
@@ -690,8 +700,11 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
 
+        // Checked through the proxy's own listener, never by rebinding or connecting to the released port: another
+        // test or test process may take that number the moment it is free.
+        let listener = proxy.listener.clone();
         proxy.stop().await;
-        TcpListener::bind(addr).await.unwrap();
+        assert!(listener.upgrade().is_none(), "the listener outlived stop");
         let mut buf = [0u8; 16];
         let read = tokio::time::timeout(Duration::from_secs(5), client.read(&mut buf))
             .await
