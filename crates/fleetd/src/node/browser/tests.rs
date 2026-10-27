@@ -840,6 +840,57 @@ fn installed_agent_browser(home: &Path) -> Result<PathBuf, String> {
     Ok(link)
 }
 
+/// agent-browser's install on devbox as it boots, before the network is up: it fails the first time only.
+fn agent_browser_offline_at_boot(home: &Path) -> Result<PathBuf, String> {
+    static TRIES: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    match TRIES.fetch_add(1, std::sync::atomic::Ordering::SeqCst) {
+        0 => Err("installing agent-browser failed: npm ERR! network ENOTFOUND".to_owned()),
+        _ => installed_agent_browser(home),
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_install_that_failed_as_the_node_started_is_tried_again_by_the_first_session() {
+    let Some(chrome) = chrome_or_skip() else {
+        return;
+    };
+    let node_home = tempfile::tempdir().unwrap();
+    let hub_home = tempfile::tempdir().unwrap();
+    let config = BrowserConfig {
+        chrome: Some(chrome.to_string_lossy().into_owned()),
+        ffmpeg: ffmpeg().map(|p| p.to_string_lossy().into_owned()),
+        ..BrowserConfig::default()
+    };
+    let broker = Broker::start_with(
+        node_home.path(),
+        config,
+        hub(hub_home.path()),
+        Arc::new(|_| Ok(crate::node::mask::Secrets(Vec::new()))),
+        super::Installer {
+            agent_browser: agent_browser_offline_at_boot,
+            chrome: |_| Err("Chrome is set in node.json".to_owned()),
+        },
+    )
+    .await;
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !matches!(*super::lock(&broker.install), super::Install::Missing(_))
+        && Instant::now() < deadline
+    {
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert!(
+        matches!(*super::lock(&broker.install), super::Install::Missing(_)),
+        "the install as the node started failed"
+    );
+    let started = call(
+        &broker,
+        json!({ "op": "session_start", "purpose": "First" }),
+    )
+    .await;
+    assert!(started["result"]["sessionId"].is_string(), "{started}");
+    call(&broker, json!({ "op": "session_end" })).await;
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_node_installs_the_browser_as_it_starts_so_the_first_session_finds_it_ready() {
     let Some(chrome) = chrome_or_skip() else {

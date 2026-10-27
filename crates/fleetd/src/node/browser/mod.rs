@@ -85,6 +85,7 @@ enum Install {
     /// Not installed, and the install not started yet.
     Wanted,
     Installing(Progress),
+    /// The install failed, for this reason: the next session's start tries again.
     Missing(String),
 }
 
@@ -281,11 +282,12 @@ impl Broker {
         broker
     }
 
-    /// Starts installing what is missing, once.
+    /// Starts installing what is missing, unless an install is running or done. One that failed (an install as the
+    /// node starts at boot, before the network is up) is tried again, by the next session's start.
     fn begin_install(self: &Arc<Self>) {
         {
             let mut install = lock(&self.install);
-            if !matches!(*install, Install::Wanted) {
+            if !matches!(*install, Install::Wanted | Install::Missing(_)) {
                 return;
             }
             *install = Install::Installing(Progress::new("starting"));

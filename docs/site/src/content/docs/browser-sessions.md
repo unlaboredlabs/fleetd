@@ -165,9 +165,10 @@ by the time an agent asks for a screen:
 
 The versions are pinned: a node updates them only when a fleetd release changes the pin. A `session_start` during the
 install waits up to 30 seconds for it, then opens the screen; if the install takes longer, it says which step the
-install is on and how long it has run, and a retry once it is done opens the screen. On a machine without Node.js,
-`session_start` explains why it can't start one. A machine without an ffmpeg records screens without their video, and
-each screen's note says so.
+install is on and how long it has run, and a retry once it is done opens the screen. An install that failed (say, as
+the node started before the network was up) is tried again by the next `session_start`, which answers with its error if
+it fails again. On a machine without Node.js, `session_start` explains why it can't start one. A machine without an
+ffmpeg records screens without their video, and each screen's note says so.
 
 Settings go under `browser` in [node.json](/docs/config-and-files#node-json):
 
