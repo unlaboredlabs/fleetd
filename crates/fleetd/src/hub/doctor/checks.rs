@@ -9,7 +9,7 @@ use std::sync::LazyLock;
 
 use crate::hub::tasks::base;
 use crate::node::runner::{RunnerGuide, guide};
-use fleetd_contracts::node_link::NodeDisk;
+use fleetd_contracts::node_link::{AndroidHealth, AndroidState, NodeDisk};
 use fleetd_contracts::sessions::{BaseErrorKind, LoginStatus, RunnerInfo, WorktreeBase};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -796,6 +796,33 @@ pub fn disk_space(
     machine_entry(machine_id, "disk", Warn, &message, None)
 }
 
+/// Whether the machine can host android sessions, from its heartbeat; None where they are off (or the machine is
+/// offline, or its node is older).
+pub fn android_sessions(
+    machine_id: &str,
+    offline: bool,
+    health: Option<&AndroidHealth>,
+) -> Option<Entry> {
+    let health = health.filter(|_| !offline)?;
+    let status = match health.state {
+        AndroidState::Ready | AndroidState::Wanted | AndroidState::Installing => Pass,
+        AndroidState::Unavailable => Fail,
+    };
+    let fix = health.fix.as_ref().map(|command| {
+        manual(
+            &format!("On {machine_id}, then restart its node"),
+            Some(command.to_string()),
+        )
+    });
+    Some(machine_entry(
+        machine_id,
+        "android",
+        status,
+        health.message.as_str(),
+        fix,
+    ))
+}
+
 /// Whether git could fetch each project's remote at the last worktree started there. None until one has started.
 pub fn git_fetch(machine_id: &str, bases: &[(String, WorktreeBase)], now: &str) -> Option<Entry> {
     if bases.is_empty() {
@@ -990,6 +1017,35 @@ mod tests {
             check.message
         );
         assert_eq!(check.fix.unwrap().command.as_deref(), Some("gh auth login"));
+    }
+
+    #[test]
+    fn android_sessions_fail_with_the_fix_a_person_runs() {
+        let health = |state, fix: Option<&str>| AndroidHealth {
+            state,
+            message: fleetd_contracts::prim::Text::unchecked("devuser may not use /dev/kvm."),
+            fix: fix.map(fleetd_contracts::prim::Text::unchecked),
+        };
+        let broken = health(
+            AndroidState::Unavailable,
+            Some("sudo usermod -aG kvm devuser"),
+        );
+        let entry = android_sessions("devbox", false, Some(&broken)).unwrap();
+        assert_eq!(entry.check.id, "devbox/android");
+        assert_eq!(entry.check.status, Fail);
+        let fix = entry.check.fix.unwrap();
+        assert_eq!(fix.command.as_deref(), Some("sudo usermod -aG kvm devuser"));
+        let ready = health(AndroidState::Ready, None);
+        let entry = android_sessions("devbox", false, Some(&ready)).unwrap();
+        assert_eq!((entry.check.status, entry.check.fix), (Pass, None));
+        assert!(
+            android_sessions("devbox", true, Some(&ready)).is_none(),
+            "offline"
+        );
+        assert!(
+            android_sessions("devbox", false, None).is_none(),
+            "off there"
+        );
     }
 
     #[test]

@@ -13,7 +13,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use fleetd_contracts::browser::{BrowserCall, BrowserCallFrame, BrowserResultFrame};
+use fleetd_contracts::browser::{BrowserCall, BrowserCallFrame, BrowserResultFrame, SessionKind};
 use fleetd_contracts::ids::ThreadId;
 use fleetd_contracts::lead_calls::{LeadCall, LeadCallFrame, LeadCallResult};
 use fleetd_contracts::machine_roles::SessionHostResult;
@@ -25,6 +25,7 @@ use fleetd_contracts::sessions::{ItemKind, ItemStatus, ThreadItem};
 use serde_json::json;
 
 use super::browser::{Broker, BrowserHandler, SessionHooks, drives_browser};
+use super::device::{self, Devices};
 use super::lead::{LeadRelay, MaskFor};
 use super::mask::Masker;
 use super::relay::{self, relay_url};
@@ -37,37 +38,47 @@ fn error_frame(id: &NonEmpty, error: McpToolError) -> BrowserResultFrame {
 /// cancel of one that didn't answer (hub/machine_roles/calls.rs), so the hub always answers first.
 pub const ROUTE_WAIT: Duration = Duration::from_secs(150);
 
-async fn local(
-    broker: Option<&Arc<Broker>>,
-    thread: String,
-    frame: BrowserCallFrame,
-) -> BrowserResultFrame {
-    match broker {
-        Some(broker) => broker.handle(thread, frame).await,
-        None => error_frame(
-            &frame.id,
-            McpToolError::new(ErrorCode::Invalid, "this machine runs no browser sessions")
-                .with_fix("do without a browser and say so in your result"),
-        ),
-    }
+/// A call for a session on this machine, of either kind (node/device's dispatch).
+async fn local(router: &Router, thread: String, frame: BrowserCallFrame) -> BrowserResultFrame {
+    router.here().handle(thread, frame).await
 }
 
-/// What routing an agent's session tools needs: this node's broker (none where browser sessions are off), its link
-/// to the hub, the hub's URL for relays, and the sessions' secrets to mask steps with.
+/// What routing an agent's session tools needs: this node's broker (none where browser sessions are off) and its
+/// android sessions (none where they are off), its link to the hub, the hub's URL for relays, and the sessions'
+/// secrets to mask steps with.
 #[derive(Clone)]
 pub struct Router {
     pub broker: Option<Arc<Broker>>,
+    pub devices: Option<Arc<Devices>>,
     pub relay: LeadRelay,
     pub hub: String,
     pub mask_for: MaskFor,
 }
 
+impl Router {
+    /// The sessions on this machine, both kinds.
+    fn here(&self) -> device::Router {
+        device::Router {
+            browser: self.broker.clone(),
+            devices: self.devices.clone(),
+        }
+    }
+}
+
+/// What a call's session runs on: an Android emulator for `session_start` with kind android, else a browser.
+fn host_of(frame: &BrowserCallFrame) -> SessionHost {
+    match &frame.call {
+        BrowserCall::SessionStart(start) if start.kind == Some(SessionKind::Android) => {
+            SessionHost::Android
+        }
+        _ => SessionHost::Browser,
+    }
+}
+
 async fn route(router: Arc<Router>, thread: String, frame: BrowserCallFrame) -> BrowserResultFrame {
     let broker = router.broker.as_ref();
-    if broker.is_some_and(|b| b.live(&thread).is_some())
-        || !router.relay.hub_can(HUB_CAP_SESSION_ROUTE)
-    {
-        return local(broker, thread, frame).await;
+    if router.here().live(&thread) || !router.relay.hub_can(HUB_CAP_SESSION_ROUTE) {
+        return local(&router, thread, frame).await;
     }
     let mut named = frame.clone();
     named.thread_id = Some(ThreadId::unchecked(thread.clone()));
@@ -75,14 +86,33 @@ async fn route(router: Arc<Router>, thread: String, frame: BrowserCallFrame) -> 
         id: NonEmpty::unchecked("session_route"),
         cwd: frame.cwd.clone(),
         call: LeadCall::SessionRoute(SessionRouteCall {
+            host: host_of(&named),
             frame: named,
-            host: SessionHost::Browser,
         }),
         thread_id: Some(ThreadId::unchecked(thread.clone())),
     };
     let ending = matches!(frame.call, BrowserCall::SessionEnd(_));
     let answer = router.relay.call_within(call, ROUTE_WAIT).await;
     match (answer.result, answer.error) {
+        (Some(LeadCallResult::SessionRoute(routed)), _)
+            if !routed.here && host_of(&frame) == SessionHost::Android =>
+        {
+            // agent-device drives an emulator over adb, which doesn't cross the hub's relay yet: end it there.
+            let end: BrowserCallFrame = serde_json::from_value(json!({
+                "id": "android-elsewhere", "cwd": frame.cwd, "call": { "op": "session_end" },
+            }))
+            .expect("a session_end frame");
+            Box::pin(route(router.clone(), thread, end)).await;
+            error_frame(
+                &frame.id,
+                McpToolError::new(
+                    ErrorCode::Failed,
+                    "The hub placed this Android session on another machine, and agent-device can't drive an \
+                     emulator there from here yet.",
+                )
+                .with_fix("say so in your result: Android sessions run only on the agent's own machine for now"),
+            )
+        }
         (Some(LeadCallResult::SessionRoute(routed)), _) if !routed.here => {
             if ending {
                 if let Some(broker) = broker {
@@ -126,7 +156,7 @@ async fn route(router: Arc<Router>, thread: String, frame: BrowserCallFrame) -> 
                 ),
             }
         }
-        (Some(LeadCallResult::SessionRoute(_)), _) => local(broker, thread, frame).await,
+        (Some(LeadCallResult::SessionRoute(_)), _) => local(&router, thread, frame).await,
         (_, Some(error)) => error_frame(&frame.id, error),
         (Some(_), None) => error_frame(
             &frame.id,
@@ -150,14 +180,13 @@ const STEP_OUTPUT: usize = 64 * 1024;
 /// The broker's session hooks, and a step of a session hosted on another machine handed to the hub for that machine's
 /// recording: a line in its action log and the page after it in its trace, as a session here records them.
 impl SessionHooks for Router {
+    /// agent-browser's and agent-device's (node/device).
     fn env(&self, thread: &str, path: Option<&str>) -> Vec<(String, String)> {
-        self.broker
-            .as_ref()
-            .map_or_else(Vec::new, |b| b.env(thread, path))
+        self.here().env(thread, path)
     }
 
-    fn plugin_dir(&self) -> Option<std::path::PathBuf> {
-        self.broker.as_ref().and_then(|b| b.plugin_dir())
+    fn plugin_dirs(&self) -> Vec<std::path::PathBuf> {
+        self.here().plugin_dirs()
     }
 
     /// What this node's broker filled into the agent's sessions here.
@@ -171,6 +200,9 @@ impl SessionHooks for Router {
 
     /// The agent's claude exited: its session ends, here or on the machine hosting it.
     fn ended(&self, thread: &str) {
+        if let Some(devices) = &self.devices {
+            devices.ended(thread);
+        }
         let Some(broker) = &self.broker else {
             return;
         };
@@ -191,6 +223,9 @@ impl SessionHooks for Router {
     }
 
     fn item(&self, thread: &str, item: &ThreadItem) {
+        if let Some(devices) = &self.devices {
+            devices.item(thread, item);
+        }
         let Some(broker) = &self.broker else {
             return;
         };
@@ -262,10 +297,19 @@ async fn masked_step(mask_for: &MaskFor, thread: &str, mut item: ThreadItem) -> 
 /// a session's recording. Only a session call has an answer to send back.
 pub async fn host(
     broker: Option<Arc<Broker>>,
+    sessions: Option<Arc<device::Router>>,
     hub: &str,
     frame: HubToNode,
 ) -> Option<SessionHostResult> {
     match (frame, broker) {
+        // Either kind: the dispatch sends an android start to the emulators, the rest to the broker.
+        (HubToNode::SessionHost(host), _) if sessions.is_some() => Some(SessionHostResult {
+            id: host.id,
+            frame: sessions
+                .expect("checked")
+                .handle(host.host_key.to_string(), host.frame)
+                .await,
+        }),
         (HubToNode::SessionHost(host), Some(broker)) => Some(SessionHostResult {
             id: host.id,
             frame: broker.handle(host.host_key.to_string(), host.frame).await,
@@ -313,6 +357,7 @@ mod tests {
     fn router(relay: LeadRelay) -> Arc<Router> {
         Arc::new(Router {
             broker: None,
+            devices: None,
             relay,
             hub: "http://devbox:4790".into(),
             mask_for: Arc::new(|_| Ok(Masker::new(&[]))),
@@ -324,6 +369,17 @@ mod tests {
             "id": "1", "cwd": "/work/app", "call": { "op": "session_start", "purpose": "Check the form" },
         }))
         .unwrap()
+    }
+
+    #[test]
+    fn an_android_start_asks_the_hub_for_an_android_host() {
+        let android: BrowserCallFrame = serde_json::from_value(json!({
+            "id": "1", "cwd": "/work/app",
+            "call": { "op": "session_start", "purpose": "Settings", "kind": "android" },
+        }))
+        .unwrap();
+        assert_eq!(host_of(&android), SessionHost::Android);
+        assert_eq!(host_of(&start()), SessionHost::Browser);
     }
 
     /// An older hub, which lists no `session_route`, never hears of it: the node answers as before.

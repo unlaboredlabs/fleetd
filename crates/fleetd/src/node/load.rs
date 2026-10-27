@@ -258,7 +258,18 @@ pub fn read(limits: Vec<LoginLimit>, home: &Path) -> Option<NodeLoad> {
                 .as_ref()
                 .and_then(|c| c.browser.clone())
                 .unwrap_or_default(),
+            &config
+                .as_ref()
+                .and_then(|c| c.device.clone())
+                .unwrap_or_default(),
         )),
+        android: super::device::health(
+            home,
+            &config
+                .as_ref()
+                .and_then(|c| c.device.clone())
+                .unwrap_or_default(),
+        ),
         // The session service's, added by the heartbeat.
     })
 }
