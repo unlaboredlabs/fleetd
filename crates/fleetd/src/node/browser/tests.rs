@@ -785,9 +785,10 @@ async fn a_session_start_waiting_for_an_install_that_fails_gets_its_real_error()
     });
     tokio::time::sleep(Duration::from_millis(300)).await;
     assert!(!start.is_finished(), "{}", start.await.unwrap());
-    broker.set_install(super::Install::Missing(
-        "installing agent-browser failed: npm ERR! network".to_owned(),
-    ));
+    broker.set_install(super::Install::Missing {
+        why: "installing agent-browser failed: npm ERR! network".to_owned(),
+        owed: true,
+    });
     let refused = start.await.unwrap();
     let why = refused["error"]["message"].as_str().unwrap();
     assert!(why.contains("npm ERR! network"), "{why}");
@@ -820,6 +821,109 @@ async fn a_session_start_waits_for_an_install_only_so_long_and_says_how_far_it_i
     assert!(
         fix.contains("again") && fix.contains("opens the session"),
         "{fix}"
+    );
+}
+
+/// Installs of agent-browser so far by [`agent_browser_slow_then_failing`], and whether the slow one may end.
+static SLOW_TRIES: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+static SLOW_ENDS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// An install of agent-browser on devbox that runs past a start's wait, then fails, as does every one after it.
+fn agent_browser_slow_then_failing(_home: &Path) -> Result<PathBuf, String> {
+    use std::sync::atomic::Ordering::SeqCst;
+    let n = SLOW_TRIES.fetch_add(1, SeqCst) + 1;
+    while !SLOW_ENDS.load(SeqCst) {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    Err(format!(
+        "installing agent-browser failed: npm ERR! ECONNRESET (try {n})"
+    ))
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_install_that_fails_after_the_wait_gives_its_error_to_the_next_start_before_another_download()
+ {
+    use std::sync::atomic::Ordering::SeqCst;
+    let node_home = tempfile::tempdir().unwrap();
+    let hub_home = tempfile::tempdir().unwrap();
+    let config = BrowserConfig {
+        chrome: Some("/opt/devbox/chrome".to_owned()),
+        ..BrowserConfig::default()
+    };
+    let broker = Broker::open_with(
+        node_home.path(),
+        config,
+        hub(hub_home.path()),
+        Arc::new(|_| Ok(crate::node::mask::Secrets(Vec::new()))),
+        super::Installer {
+            agent_browser: agent_browser_slow_then_failing,
+            chrome: |_| Err("Chrome is set in node.json".to_owned()),
+        },
+    )
+    .await;
+    // devbox's install as the node started failed: the first start installs again.
+    broker.set_install(super::Install::Missing {
+        why: "installing agent-browser failed: npm ERR! network ENOTFOUND".to_owned(),
+        owed: false,
+    });
+    let start = || {
+        call(
+            &broker,
+            json!({ "op": "session_start", "purpose": "First" }),
+        )
+    };
+    let first = tokio::spawn({
+        let broker = broker.clone();
+        async move {
+            call(
+                &broker,
+                json!({ "op": "session_start", "purpose": "First" }),
+            )
+            .await
+        }
+    });
+    while SLOW_TRIES.load(SeqCst) == 0 {
+        std::thread::sleep(Duration::from_millis(1));
+        tokio::task::yield_now().await;
+    }
+    // The clock doesn't move by itself while the install runs on a blocking thread.
+    tokio::time::advance(super::INSTALL_WAIT).await;
+    let waited = first.await.unwrap();
+    assert!(
+        waited["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("still installing its browser"),
+        "{waited}"
+    );
+    assert_eq!(SLOW_TRIES.load(SeqCst), 1);
+    // The install fails after that start stopped waiting.
+    SLOW_ENDS.store(true, SeqCst);
+    for _ in 0..5000 {
+        if matches!(
+            *super::lock(&broker.install),
+            super::Install::Missing { .. }
+        ) {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(1));
+        tokio::task::yield_now().await;
+    }
+    let told = start().await;
+    let why = told["error"]["message"].as_str().unwrap();
+    assert!(why.contains("npm ERR! ECONNRESET (try 1)"), "{why}");
+    assert_eq!(
+        SLOW_TRIES.load(SeqCst),
+        1,
+        "its error, not another download"
+    );
+    let again = start().await;
+    let why = again["error"]["message"].as_str().unwrap();
+    assert!(why.contains("npm ERR! ECONNRESET (try 2)"), "{why}");
+    assert_eq!(
+        SLOW_TRIES.load(SeqCst),
+        2,
+        "the start after it installs again"
     );
 }
 
@@ -873,13 +977,18 @@ async fn an_install_that_failed_as_the_node_started_is_tried_again_by_the_first_
     )
     .await;
     let deadline = Instant::now() + Duration::from_secs(10);
-    while !matches!(*super::lock(&broker.install), super::Install::Missing(_))
-        && Instant::now() < deadline
+    while !matches!(
+        *super::lock(&broker.install),
+        super::Install::Missing { .. }
+    ) && Instant::now() < deadline
     {
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
     assert!(
-        matches!(*super::lock(&broker.install), super::Install::Missing(_)),
+        matches!(
+            *super::lock(&broker.install),
+            super::Install::Missing { .. }
+        ),
         "the install as the node started failed"
     );
     let started = call(

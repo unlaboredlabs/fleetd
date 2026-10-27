@@ -85,8 +85,22 @@ enum Install {
     /// Not installed, and the install not started yet.
     Wanted,
     Installing(Progress),
-    /// The install failed, for this reason: the next session's start tries again.
-    Missing(String),
+    /// The install failed, for this reason. `owed`: a session's start began it, and no start has answered with this
+    /// error yet (it failed after the start stopped waiting), so the next one does. Otherwise the next start installs
+    /// again.
+    Missing {
+        why: String,
+        owed: bool,
+    },
+}
+
+fn no_browser(why: &str) -> McpToolError {
+    refuse(
+        ErrorCode::Failed,
+        format!("This machine has no browser for sessions: {why}."),
+        "session_start again tries the install again; if that fails too, say so in your result: a person must set up \
+         the browser on this machine (fleetd docs: Browser sessions)",
+    )
 }
 
 /// How far an install in progress is.
@@ -276,18 +290,18 @@ impl Broker {
             Some(chrome) if agent_browser::find(home).is_some() => broker.ready(chrome),
             _ => {
                 *lock(&broker.install) = Install::Wanted;
-                broker.begin_install();
+                broker.begin_install(false);
             }
         }
         broker
     }
 
-    /// Starts installing what is missing, unless an install is running or done. One that failed (an install as the
-    /// node starts at boot, before the network is up) is tried again, by the next session's start.
-    fn begin_install(self: &Arc<Self>) {
+    /// Starts installing what is missing, for a session's start or not, unless an install is running or done. One that
+    /// failed (an install as the node starts at boot, before the network is up) is tried again.
+    fn begin_install(self: &Arc<Self>, for_session: bool) {
         {
             let mut install = lock(&self.install);
-            if !matches!(*install, Install::Wanted | Install::Missing(_)) {
+            if !matches!(*install, Install::Wanted | Install::Missing { .. }) {
                 return;
             }
             *install = Install::Installing(Progress::new("starting"));
@@ -296,7 +310,7 @@ impl Broker {
         let chrome = self.config.chrome.is_none() && chrome::find_chrome(&root).is_none();
         let agent_browser = agent_browser::find(&self.home).is_none();
         let installing = self.clone();
-        tokio::spawn(async move { installing.install(chrome, agent_browser).await });
+        tokio::spawn(async move { installing.install(chrome, agent_browser, for_session).await });
     }
 
     /// The broker with its proxy and housekeeping running, but no browser yet ([`Broker::ready`] gives it one).
@@ -370,7 +384,7 @@ impl Broker {
     }
 
     /// Installs what is missing (blocking work, off the async threads), step by step, then makes the pool.
-    async fn install(&self, chrome: bool, agent_browser: bool) {
+    async fn install(&self, chrome: bool, agent_browser: bool, for_session: bool) {
         type Step = Box<dyn FnOnce() -> Result<(), String> + Send>;
         let _one = self.driver_install.lock().await;
         let mut steps: Vec<(String, Step)> = Vec::new();
@@ -420,7 +434,10 @@ impl Broker {
             }
             Err(why) => {
                 tracing::warn!(error = %why, "browser not installed");
-                self.set_install(Install::Missing(why));
+                self.set_install(Install::Missing {
+                    why,
+                    owed: for_session,
+                });
             }
         }
     }
@@ -446,22 +463,25 @@ impl Broker {
         self.install_done.send_replace(());
     }
 
-    /// The pool, once the browser is installed: a start during the install waits for it, up to [`INSTALL_WAIT`].
+    /// The pool, once the browser is installed: a start during the install waits for it, up to [`INSTALL_WAIT`]. A
+    /// failed install's error goes to one start, the next after it failed, and the start after that installs again.
     async fn pool(self: &Arc<Self>) -> Result<Arc<Pool>, McpToolError> {
-        self.begin_install();
+        if let Install::Missing { why, owed } = &mut *lock(&self.install)
+            && *owed
+        {
+            *owed = false;
+            return Err(no_browser(why));
+        }
+        self.begin_install(true);
         let mut done = self.install_done.subscribe();
         let deadline = tokio::time::Instant::now() + INSTALL_WAIT;
         loop {
-            match &*lock(&self.install) {
+            match &mut *lock(&self.install) {
                 Install::Ready(pool) => return Ok(pool.clone()),
                 Install::Wanted | Install::Installing(_) => {}
-                Install::Missing(why) => {
-                    return Err(refuse(
-                        ErrorCode::Failed,
-                        format!("This machine has no browser for sessions: {why}."),
-                        "say so in your result: a person must set up the browser on this machine (fleetd docs: \
-                         Browser sessions)",
-                    ));
+                Install::Missing { why, owed } => {
+                    *owed = false;
+                    return Err(no_browser(why));
                 }
             }
             if !matches!(
