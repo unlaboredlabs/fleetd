@@ -620,6 +620,30 @@ export const screens: readonly Screen[] = [
       await expect(panel.getByRole("button", { name: /^Done/u })).toHaveAttribute("aria-expanded", "true");
     },
   },
+  // Pointing at an item shows its Delete; Clear done takes the done ones off at once, with Undo in its toast.
+  {
+    id: "shell",
+    route: `${CHAT}/checklist`,
+    fixtures: ["checklist-listed"],
+    variant: "panel-checklist-hover",
+    open: async (page) => {
+      const panel = page.getByRole("complementary", { name: "Project panel" });
+      await panel.locator('[data-item="4"]').hover();
+      await expect(panel.getByRole("button", { name: "Delete “Gift cards apply before tax”" })).toBeVisible();
+    },
+  },
+  {
+    id: "shell",
+    route: `${CHAT}/checklist`,
+    fixtures: ["checklist-listed"],
+    variant: "panel-checklist-cleared",
+    open: async (page) => {
+      const panel = page.getByRole("complementary", { name: "Project panel" });
+      await panel.getByRole("button", { name: "Clear done" }).click();
+      await expect(panel.getByRole("button", { name: "Clear done" })).toHaveCount(0);
+      await page.getByRole("button", { name: "Undo" }).waitFor();
+    },
+  },
   {
     id: "shell",
     route: `${CHAT}/checklist`,

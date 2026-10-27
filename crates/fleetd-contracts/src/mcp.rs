@@ -1308,6 +1308,20 @@ output!(ChecklistGetOutput {
     updated_at: Option<Timestamp>,
 });
 
+// checklist_remove: a person takes items off a project's checklist, one item or every done one (the Checklist tab's
+// Delete and Clear done). Human keys only (the handler checks); the lead hears of it at its next wake.
+input!(ChecklistRemoveInput {
+    project_ref: ProjectRef,
+    /// The items to take off; one already gone is skipped.
+    ids: List<Positive, 1, CHECKLIST_MAX>,
+});
+output!(ChecklistRemoveOutput {
+    project_ref: ProjectRef,
+    /// The list after it, in the lead's order.
+    items: List<TodoItem, 0, CHECKLIST_MAX>,
+    updated_at: Option<Timestamp>,
+});
+
 // browser_sessions: a project's browser sessions, newest first, or one by sessionId (the Sessions view).
 input!(BrowserSessionsInput {
     project_ref: ProjectRef,
@@ -2165,6 +2179,8 @@ tools! {
     automation_run => AutomationRun, Operate, AutomationRunInput, AutomationRunOutput;
     automation_runs => AutomationRuns, Read, AutomationRunsInput, AutomationRunsOutput;
     checklist_get => ChecklistGet, Read, ChecklistGetInput, ChecklistGetOutput;
+    // Human keys only (the handler checks).
+    checklist_remove => ChecklistRemove, Operate, ChecklistRemoveInput, ChecklistRemoveOutput;
     browser_sessions => BrowserSessions, Read, BrowserSessionsInput, BrowserSessionsOutput;
     browser_recording_get => BrowserRecordingGet, Read, BrowserRecordingGetInput, BrowserRecordingGetOutput;
     // Human keys only (the handler checks).
