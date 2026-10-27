@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { HubEvent, ProjectSummary } from "./contracts";
 import type { Request } from "./discovery";
-import { hubMessages, initialAdd, step, type AddMsg, type AddState, type Call } from "./flow";
+import { hubMessages, initialAdd, offerOpen, step, type AddMsg, type AddState, type Call } from "./flow";
+import { keepsFolder } from "./store";
 
 const names = (id: string) => `${id}-name`;
 const AT = "2026-10-18T10:00:00.000Z";
@@ -174,6 +175,22 @@ describe("a new project", () => {
     expect(s.phase).toMatchObject({ kind: "ready", ready: { title: "Field notes", project: { machineId: "devbox", projectId: "p9" }, path: folder } });
     [, calls] = run(live(), { t: "start", request: newReq(true), path: folder });
     expect(only(calls, "add").input).toMatchObject({ create: true, gitInit: true });
+  });
+
+  it("offers to open the project its folder already is, and only that", () => {
+    const [started, calls] = run(live(), { t: "start", request: newReq(), path: folder });
+    const [s] = run(started, err(only(calls, "add"), "invalid", `${folder} on devbox is already the project Notes`));
+    const listed = { "devbox/p3": { ...project(`${folder}/`), projectId: "p3" } };
+    expect(offerOpen(s, newReq(), listed).phase).toMatchObject({ kind: "failed", failure: { action: { kind: "open", project: { machineId: "devbox", projectId: "p3" } } } });
+    expect(offerOpen(s, newReq(), {})).toBe(s);
+    expect(offerOpen(s, cloneReq, listed)).toBe(s);
+  });
+
+  it("keeps an edited folder across machines only outside any home folder", () => {
+    expect(keepsFolder("/srv/notes")).toBe(true);
+    expect(keepsFolder("/home/me/notes")).toBe(false);
+    expect(keepsFolder("/Users/me/notes")).toBe(false);
+    expect(keepsFolder("notes")).toBe(false);
   });
 
   it("says why a folder holding files was refused, and asks nothing more", () => {

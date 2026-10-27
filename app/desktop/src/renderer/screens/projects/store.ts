@@ -9,8 +9,8 @@ import { toast } from "../../ui";
 import type { Machine } from "./contracts";
 import type { Ready, Request } from "./discovery";
 import { toHash } from "../shell/routes";
-import { hubMessages, initialAdd, step, type AddMsg, type AddState, type Call, type HubView } from "./flow";
-import { machineIdFromHost, omit } from "./source";
+import { hubMessages, initialAdd, offerOpen, step, type AddMsg, type AddState, type Call, type HubView } from "./flow";
+import { machineIdFromHost, omit, tilde } from "./source";
 
 export const ADD_ROUTE = "#/projects/add";
 
@@ -59,7 +59,8 @@ export const machineName = (id: string): string => hubState()?.machines[id]?.nam
 const dispatch = (msg: AddMsg) => {
   const before = ui.add.phase.kind;
   const request = ui.add.request;
-  const [next, calls] = step(ui.add, msg, machineName);
+  const [stepped, calls] = step(ui.add, msg, machineName);
+  const next = offerOpen(stepped, request, hubState()?.projects ?? {});
   set({ ...ui, add: next });
   if (before === "working" && next.phase.kind === "ready" && request?.kind === "new") {
     toOpen = { ready: next.phase.ready, gitInit: request.gitInit };
@@ -196,7 +197,17 @@ export const setText = (text: string): void => {
   set({ ...rest, text });
 };
 
-export const pickMachine = (machine: string): void => set({ ...ui, machine });
+/**
+ * A folder edited for one machine follows the next machine's default once another is picked, since a home folder
+ * differs per machine; a full path outside any home folder (/srv/notes) is kept.
+ */
+export const pickMachine = (machine: string): void => {
+  const keep = machine === ui.machine || (ui.folder !== undefined && keepsFolder(ui.folder));
+  set({ ...(keep ? ui : omit(ui, "folder")), machine });
+};
+
+/** A folder that means the same on every machine: a full path not under /home or /Users. */
+export const keepsFolder = (folder: string): boolean => folder.trim().startsWith("/") && tilde(folder.trim()) === folder.trim();
 
 export const setFolder = (folder: string): void => set({ ...ui, folder });
 
