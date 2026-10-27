@@ -1270,7 +1270,6 @@ fleetd also blocks any tool like these that a newer Claude Code adds: a session 
 | `WebSearch` | A search sends only its query, to the search provider. |
 | `Skill` | Loads a skill's instructions; runs nothing. |
 | `mcp__fleetd` | fleetd's own tools, which the hub checks on every call. |
-| `Bash(agent-browser snapshot:*)`, `Bash(agent-browser screenshot:*)`, `Bash(agent-browser click:*)`, `Bash(agent-browser dblclick:*)`, `Bash(agent-browser fill:*)`, `Bash(agent-browser type:*)`, `Bash(agent-browser press:*)`, `Bash(agent-browser hover:*)`, `Bash(agent-browser focus:*)`, `Bash(agent-browser check:*)`, `Bash(agent-browser uncheck:*)`, `Bash(agent-browser select:*)`, `Bash(agent-browser scroll:*)`, `Bash(agent-browser scrollintoview:*)`, `Bash(agent-browser get:*)`, `Bash(agent-browser is:*)`, `Bash(agent-browser find:*)`, `Bash(agent-browser wait:*)`, `Bash(agent-browser back:*)`, `Bash(agent-browser forward:*)`, `Bash(agent-browser reload:*)`, `Bash(agent-browser close:*)`, `Bash(agent-browser skills:*)` | Works the page that is open. Opening a site asks the first time (the hub's site gate), and a final Send or Pay click is the person's, through request_takeover. |
 | `Bash(agent-device *)` | Screens work as they do for every lead; a final Send or Pay click is the person's, through request_takeover. |
 
 | Always asked | Why |
