@@ -36,6 +36,7 @@ use std::time::Duration;
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{ProjectRef, ThreadRef, Timestamp};
 use fleetd_contracts::prim::{Line, List};
+use fleetd_contracts::repos::RepoId;
 use fleetd_contracts::tasks::{TaskId, TaskKind};
 use fleetd_contracts::train::Change;
 use fleetd_contracts::verification::CommitSha;
@@ -309,8 +310,14 @@ impl Work {
         })
     }
 
+    /// The repo and base the project's work lands on: its own repo's.
     pub fn scope_of(&self, project: &ProjectRef) -> Result<Option<WorkScope>, StoreError> {
         self.db.with(|c| Ok(store::scope_of(c, project)?))
+    }
+
+    /// The repo and base the repo's work lands on; `None` for an unknown repo or one with no remote.
+    pub fn scope_of_repo(&self, repo_id: &RepoId) -> Result<Option<WorkScope>, StoreError> {
+        self.db.with(|c| Ok(store::scope_of_repo(c, repo_id)?))
     }
 
     pub fn get(&self, claim_id: &ClaimId) -> Result<Option<Claim>, StoreError> {

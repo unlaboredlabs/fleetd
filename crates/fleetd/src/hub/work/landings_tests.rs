@@ -874,6 +874,15 @@ async fn a_project_is_bound_from_its_root_on_any_host_and_not_without_a_remote()
         bind_with(&hub, &git, &shop, &root).await.unwrap(),
         Some(scope(GITLAB))
     );
+    // Its own repo, read as stored, carries the same repo and base.
+    let [(owner, own)] = hub
+        .repos
+        .checkout_owners(&shop)
+        .unwrap()
+        .try_into()
+        .unwrap();
+    assert_eq!(owner, shop);
+    assert_eq!(hub.work.scope_of_repo(&own).unwrap(), Some(scope(GITLAB)));
 
     // Without origin/HEAD the remote's own HEAD names the base.
     repo.run(
@@ -897,7 +906,8 @@ async fn a_project_is_bound_from_its_root_on_any_host_and_not_without_a_remote()
     );
     let bound = bind_with(&hub, &git, &shop, &root).await.unwrap().unwrap();
     assert_eq!(bound.base.as_str(), "slot/3/main");
-    assert_eq!(hub.work.scope_of(&shop).unwrap(), Some(bound));
+    assert_eq!(hub.work.scope_of(&shop).unwrap(), Some(bound.clone()));
+    assert_eq!(hub.work.scope_of_repo(&own).unwrap(), Some(bound));
 
     // Offline: what was recorded.
     git.offline.lock().unwrap().insert("devbox".into());
@@ -926,6 +936,11 @@ async fn a_project_is_bound_from_its_root_on_any_host_and_not_without_a_remote()
     repo.run(Path::new(&root), &["remote", "remove", "origin"], None);
     assert_eq!(bind_with(&hub, &git, &shop, &root).await.unwrap(), None);
     assert_eq!(hub.work.scope_of(&shop).unwrap(), None);
+    assert_eq!(hub.work.scope_of_repo(&own).unwrap(), None);
+    assert!(
+        hub.repos.repo(&own).unwrap().is_some(),
+        "its own repo stays"
+    );
 }
 
 #[tokio::test]
