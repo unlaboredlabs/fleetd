@@ -10,7 +10,7 @@
 //   5. `fleetd init --join <hub> --code <code> --machine-id <id>`: it enrolls the node and runs it as a user service.
 // The page then waits for the machine to come online, from the hub's own events.
 import { createHash } from "node:crypto";
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -102,25 +102,47 @@ const exists = (file: string): Promise<boolean> =>
     () => false,
   );
 
+/** The fingerprint of an OS machine id, as the CLI makes it (crates/fleetd/src/fingerprint.rs `of`). */
+export const fingerprintOf = (osId: string): string => createHash("sha256").update(`fleetd machine ${osId.trim()}`).digest("hex");
+
+/** `"IOPlatformUUID" = "…"` in `ioreg -rd1 -c IOPlatformExpertDevice`. */
+export const platformUuid = (ioreg: string): string | undefined => /"IOPlatformUUID"\s*=\s*"([^"]+)"/u.exec(ioreg)?.[1];
+
+/** This computer's fingerprint: from /etc/machine-id on Linux, IOPlatformUUID on macOS; undefined where there is none. */
+export const machineFingerprint = async (platform: NodeJS.Platform = process.platform): Promise<string | undefined> => {
+  let id: string | undefined;
+  if (platform === "darwin") {
+    id = await new Promise<string | undefined>((done) => {
+      execFile("ioreg", ["-rd1", "-c", "IOPlatformExpertDevice"], (error, stdout) => done(error === null ? platformUuid(stdout) : undefined));
+    });
+  } else {
+    for (const file of ["/etc/machine-id", "/var/lib/dbus/machine-id"]) {
+      id = await fs.readFile(file, "utf8").catch(() => undefined);
+      if (id !== undefined) break;
+    }
+  }
+  const trimmed = id?.trim();
+  return trimmed ? fingerprintOf(trimmed) : undefined;
+};
+
 /**
  * What this computer's fleetd dir holds: a hub's home (`hub/hub.sqlite` or `fleetd init`'s `hub/setup.json`), a node
- * enrolled with a hub (`node/node.json`, under whatever id), or neither. Read before anything is downloaded.
+ * enrolled with a hub (`node/node.json`, under whatever id), or neither, with this computer's `fingerprint`. Read
+ * before anything is downloaded.
  */
-export const thisComputer = async (fleetdDir: string): Promise<ThisComputer> => {
+export const thisComputer = async (fleetdDir: string, fingerprint?: string): Promise<ThisComputer> => {
   const hubHome = path.join(fleetdDir, "hub");
-  if ((await exists(path.join(hubHome, "hub.sqlite"))) || (await exists(path.join(hubHome, "setup.json")))) {
-    const id = (await fs.readFile(path.join(hubHome, "hub-id"), "utf8").catch(() => "")).trim();
-    return /^[0-9a-f]{64}$/u.test(id) ? { kind: "hub", hubId: id } : { kind: "hub" };
-  }
+  const fp = fingerprint === undefined ? {} : { fingerprint };
+  if ((await exists(path.join(hubHome, "hub.sqlite"))) || (await exists(path.join(hubHome, "setup.json")))) return { kind: "hub", ...fp };
   let node: unknown;
   try {
     node = JSON.parse(await fs.readFile(path.join(fleetdDir, "node", "node.json"), "utf8"));
   } catch {
-    return { kind: "none" };
+    return { kind: "none", ...fp };
   }
   const enrolled = typeof node === "object" && node !== null && (node as Record<string, unknown>)["enrolled"] === true;
   const machineId = str(node, "machineId");
-  return enrolled && machineId !== undefined ? { kind: "node", machineId, hub: str(node, "hub") ?? "" } : { kind: "none" };
+  return enrolled && machineId !== undefined ? { kind: "node", machineId, hub: str(node, "hub") ?? "", ...fp } : { kind: "none", ...fp };
 };
 
 /** Why `here` is never joined from the app. */

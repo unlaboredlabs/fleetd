@@ -495,7 +495,7 @@ async fn only_an_admins_device_adds_or_removes() {
 
 #[tokio::test]
 async fn hosts_list_this_machine_ssh_config_and_the_tailnet_once_each() {
-    let (hub, _machine, home) = hub();
+    let (hub, _machine, _home) = hub();
     let m = serde_json::from_value(json!({
         "machineId": "mac-mini", "name": "mac-mini", "tags": [], "status": "offline", "lastSeenAt": AT,
         "nodeVersion": "0.1.0",
@@ -504,19 +504,6 @@ async fn hosts_list_this_machine_ssh_config_and_the_tailnet_once_each() {
     hub.store.machine_upsert(&m, None).unwrap();
     let out = call(&hub, "machine_hosts", json!({})).await;
     let hosts = out["hosts"].as_array().unwrap();
-    // The hub's id, made once in its home and the same on every call.
-    let id = out["hubId"].as_str().unwrap().to_owned();
-    assert_eq!(id.len(), 64);
-    assert_eq!(
-        std::fs::read_to_string(home.path().join("hub-id"))
-            .unwrap()
-            .trim(),
-        id
-    );
-    assert_eq!(
-        call(&hub, "machine_hosts", json!({})).await["hubId"],
-        id.as_str()
-    );
     assert_eq!(hosts[0]["source"], "hub");
     assert!(hosts[0].get("host").is_none());
     let rest: Vec<_> = hosts[1..]

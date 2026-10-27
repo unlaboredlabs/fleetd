@@ -5,7 +5,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { CallOutcome } from "../shared/hub";
 import type { JoinHere } from "../shared/joinHere";
-import { assetFor, expectedSum, fleetdDir, joinHere, thisComputer, type JoinPorts } from "./joinHere";
+import { assetFor, expectedSum, fingerprintOf, fleetdDir, joinHere, machineFingerprint, platformUuid, thisComputer, type JoinPorts } from "./joinHere";
 
 const BUILD = new TextEncoder().encode("#!/bin/sh\necho fleetd\n");
 const SUM = createHash("sha256").update(BUILD).digest("hex");
@@ -146,8 +146,20 @@ describe("joining this computer", () => {
     expect(await thisComputer(dir)).toEqual({ kind: "node", machineId: "hubbox", hub: "http://devbox:4790" });
     occupied(dir, { "hub/hub.sqlite": "" });
     expect(await thisComputer(dir)).toEqual({ kind: "hub" });
-    occupied(dir, { "hub/hub-id": `${"c".repeat(64)}\n` });
-    expect(await thisComputer(dir)).toEqual({ kind: "hub", hubId: "c".repeat(64) });
+    expect(await thisComputer(dir, "c".repeat(64))).toEqual({ kind: "hub", fingerprint: "c".repeat(64) });
+  });
+
+  it("fingerprints this computer as the CLI does", async () => {
+    // crates/fleetd/src/fingerprint.rs hashes the same text.
+    expect(fingerprintOf("0123456789abcdef0123456789abcdef\n")).toBe(
+      createHash("sha256").update("fleetd machine 0123456789abcdef0123456789abcdef").digest("hex"),
+    );
+    expect(platformUuid('    "IOPlatformSerialNumber" = "C02X"\n    "IOPlatformUUID" = "4C4C4544-0042-3510-8058-B4C04F4D3532"\n')).toBe(
+      "4C4C4544-0042-3510-8058-B4C04F4D3532",
+    );
+    expect(platformUuid("nothing")).toBeUndefined();
+    const here = await machineFingerprint("linux");
+    if (fs.existsSync("/etc/machine-id")) expect(here).toBe(fingerprintOf(fs.readFileSync("/etc/machine-id", "utf8")));
   });
 
   it("finds the fleetd dir as the CLI does", () => {

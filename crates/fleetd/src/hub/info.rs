@@ -70,6 +70,7 @@ async fn hub_info(
         admin: Some(allows_everywhere(&caller, Role::Admin)),
         me,
         people: Some(count),
+        machine_fingerprint: crate::fingerprint::machine(),
         next: Some(next.to_owned()),
         truncated,
     })

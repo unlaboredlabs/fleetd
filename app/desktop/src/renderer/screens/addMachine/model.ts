@@ -9,8 +9,9 @@ import { machineIdFromHost } from "../projects/source";
  * "This computer": the machine of the hub the app is connected to (that hub adds it with its own fleetd, no
  * download), one that runs a different hub (nothing to add from here), one whose node is enrolled already (nothing
  * to add: its fleetd is that node's), or another one, which main joins with a one-time code. Decided by what this
- * computer's fleetd dir holds (main reads it), never by its name: a hub machine added under another id, or renamed
- * since, still holds its hub, and the hub there is this app's only when its id (`hub-id`) is the connected hub's.
+ * computer's fingerprint (a hash of its OS's id for it) and what its fleetd dir holds, never by its name or folders:
+ * the connected hub's own computer is the one whose fingerprint hub_info gives, whatever it is called now, wherever
+ * that hub keeps its data.
  */
 export type Here =
   | { readonly kind: "hub"; readonly machineId: string; readonly joined: boolean }
@@ -20,17 +21,16 @@ export type Here =
 
 export const hereOf = (
   hosts: ReadonlyArray<MachineHost>,
-  hubId: string,
+  hubFingerprint: string | undefined,
   hostName: string,
   here: ThisComputer,
   joinedIds: ReadonlySet<string>,
 ): Here | undefined => {
-  if (here.kind === "hub") {
-    const hub = hosts.find((h) => h.source === "hub");
-    return here.hubId !== undefined && here.hubId === hubId && hub !== undefined
-      ? { kind: "hub", machineId: hub.machineId, joined: hub.joined }
-      : { kind: "other-hub" };
+  const hub = hosts.find((h) => h.source === "hub");
+  if (hub !== undefined && hubFingerprint !== undefined && here.fingerprint === hubFingerprint) {
+    return { kind: "hub", machineId: hub.machineId, joined: hub.joined };
   }
+  if (here.kind === "hub") return { kind: "other-hub" };
   if (here.kind === "node") return { kind: "node", machineId: here.machineId, hub: here.hub, ours: joinedIds.has(here.machineId) };
   const machineId = machineIdFromHost(hostName);
   return machineId === "" ? undefined : { kind: "app", machineId, joined: joinedIds.has(machineId) };

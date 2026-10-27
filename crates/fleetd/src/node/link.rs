@@ -366,6 +366,7 @@ async fn run_link_once(
             .secrets
             .as_ref()
             .map(|s| fleetd_contracts::secrets::BoxPublicKey::unchecked(s.box_key.public_key())),
+        machine_fingerprint: crate::fingerprint::machine(),
         capabilities: vec![
             fleetd_contracts::node_link::CAP_REPOS.to_owned(),
             fleetd_contracts::node_link::CAP_DETACHED.to_owned(),

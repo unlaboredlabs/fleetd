@@ -43,7 +43,7 @@ const useHostName = (): string | undefined => {
 
 /**
  * What this computer's fleetd dir holds, as main read it: a hub, an enrolled node, or neither. Read again whenever
- * `again` changes (a join or an add ended, the hub's id arrived), so a computer that has just joined never shows a
+ * `again` changes (a join or an add ended), so a computer that has just joined never shows a
  * stale Repair.
  */
 const useThisComputer = (again: string): ThisComputer | undefined => {
@@ -85,7 +85,8 @@ export function AddMachine() {
   const hostName = useHostName();
   const join = useJoinHere();
   const ended = status.data?.runs.find((r) => r.state !== "running")?.runId ?? "";
-  const computer = useThisComputer(`${hosts.data?.hubId ?? ""}|${join?.state ?? ""}|${ended}`);
+  const hubFingerprint = useToolQuery("hub_info", noInput).data?.machineFingerprint;
+  const computer = useThisComputer(`${join?.state ?? ""}|${ended}`);
   const machines = useData((d) => d.machines);
   const [view, setView] = useState<View>();
   const [busy, setBusy] = useState(false);
@@ -103,7 +104,7 @@ export function AddMachine() {
         })());
 
   const here =
-    hosts.data && hostName !== undefined && computer !== undefined ? hereOf(hosts.data.hosts, hosts.data.hubId, hostName, computer, new Set(Object.keys(machines))) : undefined;
+    hosts.data && hostName !== undefined && computer !== undefined ? hereOf(hosts.data.hosts, hubFingerprint, hostName, computer, new Set(Object.keys(machines))) : undefined;
 
   const add = (target: { host: string } | { local: true }) => {
     setBusy(true);

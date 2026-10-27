@@ -2073,6 +2073,11 @@ export type HubInfoOutput = {
   busy: HubBusyItem[];
   /** Absent for a local build. */
   channel?: HubChannel;
+  /**
+   * A hash of the OS's id for the hub's computer, as nodes give theirs: the app on that computer knows it runs the
+   * hub. Absent where the OS gives none, and from older hubs.
+   */
+  machineFingerprint?: string;
   /** The person the caller's human key belongs to. Absent for an agent key, and from a hub before people. */
   me?: Person;
   next?: string;
@@ -2550,11 +2555,6 @@ export type MachineHostsInput = { [key: string]: unknown };
 
 export type MachineHostsOutput = {
   hosts: MachineHost[];
-  /**
-   * This hub's id (64 hex digits, in `<hub home>/hub-id`): a computer whose fleetd dir holds the same id runs
-   * this hub.
-   */
-  hubId: string;
   next?: string;
   truncated?: boolean;
 };

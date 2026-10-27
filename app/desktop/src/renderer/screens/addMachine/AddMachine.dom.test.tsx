@@ -35,8 +35,8 @@ Object.assign(window, {
 });
 
 const AT = "2026-10-26T10:00:00.000Z";
-/** The connected hub's id; this computer holds it in hub/hub-id when it runs that hub. */
-const HUB_ID = "a".repeat(64);
+/** The fingerprint hub_info gives for the hub's own computer. */
+const HUB_FP = "a".repeat(64);
 const HOSTS: MachineHost[] = [
   { machineId: "devbox", source: "hub", joined: true },
   { machineId: "mac-mini", host: "mac-mini.tail1234.ts.net", source: "tailnet", joined: true },
@@ -107,8 +107,10 @@ const render = async () => {
     call: (tool, input) => {
       calls.push({ tool, input });
       const output =
-        tool === "machine_hosts"
-          ? { hosts: HOSTS, hubId: HUB_ID }
+        tool === "hub_info"
+          ? { version: "0.9.0", protocol: 1, busy: [], admin: true, machineFingerprint: HUB_FP }
+          : tool === "machine_hosts"
+          ? { hosts: HOSTS }
           : tool === "machine_add_status"
             ? { runs }
             : tool === "machine_add_plan"
@@ -206,7 +208,7 @@ it("shows a failed step's output and retries the same host", async () => {
 
 it("adds the hub's own machine through the hub, and any other computer through main", async () => {
   hostName = "devbox";
-  computer = { kind: "hub", hubId: HUB_ID };
+  computer = { kind: "hub", fingerprint: HUB_FP };
   await render();
   expect(host.textContent).toContain("devbox is a machine of this hub already");
   await click("Repair");
@@ -249,7 +251,7 @@ it("adds the hub's own machine through the hub, and any other computer through m
 it("adds the hub's machine through the hub even when its name doesn't match, and never joins an enrolled node", async () => {
   // The hub's machine, added as devbox, now named studio-2: its fleetd dir holds this very hub.
   hostName = "studio-2";
-  computer = { kind: "hub", hubId: HUB_ID };
+  computer = { kind: "hub", fingerprint: HUB_FP };
   await render();
   expect(host.textContent).toContain("devbox is a machine of this hub already");
   await click("Repair");
@@ -269,7 +271,7 @@ it("adds the hub's machine through the hub even when its name doesn't match, and
 });
 
 it("adds nothing on a computer that runs a different hub", async () => {
-  computer = { kind: "hub", hubId: "b".repeat(64) };
+  computer = { kind: "hub", fingerprint: "b".repeat(64) };
   await render();
   expect(host.textContent).toContain("This computer runs a different hub, so it can't be one of this hub's machines.");
   expect(button("Add this computer")).toBeUndefined();

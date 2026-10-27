@@ -26,6 +26,11 @@ you leave the page, and Add machine shows it when you come back.
 
 Only a person with Admin on every machine sees Administration. Agents' keys can't add or remove machines.
 
+A machine id belongs to one computer. The hub knows each computer by a hash of the id its OS gives it
+(`/etc/machine-id` on Linux, `IOPlatformUUID` on macOS), so it never enrolls a second computer under an id that is
+already another's, whatever the computer is called. To give an id to another computer, [remove](#remove) the machine
+first. The app knows the hub's own computer the same way, wherever the hub keeps its data.
+
 ## Add a machine from the CLI {#cli}
 
 Run these on the hub unless it says otherwise.

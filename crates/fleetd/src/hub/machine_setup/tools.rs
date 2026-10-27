@@ -258,11 +258,8 @@ async fn machine_hosts(
             },
         });
     }
-    let hub_id = super::hub_home_id(&hub.config.home)
-        .map_err(|message| ToolError::new(ErrorCode::Failed, message))?;
     Ok(MachineHostsOutput {
         hosts,
-        hub_id,
         next: Some(
             "machine_add_plan shows what adding one runs; a machine the hub can't reach joins with machine_join's line."
                 .into(),
