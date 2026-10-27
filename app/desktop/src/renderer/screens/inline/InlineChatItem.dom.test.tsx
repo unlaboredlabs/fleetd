@@ -3,6 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import data from "../../../../fixtures/inline/items.json";
+import integrations from "../../../../fixtures/inline/integrations.json";
 import type { ChatItem } from "../../../shared/contracts";
 import type { CallOutcome, HubFrame, SecretOutcome } from "../../../shared/hub";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
@@ -12,7 +13,7 @@ import { InlineChatItem } from "./InlineChatItem";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const items = data.items as unknown as ChatItem[];
+const items = [...data.items, ...integrations.items] as unknown as ChatItem[];
 const item = (id: string): ChatItem => {
   const it = items.find((x) => x.requestId === id);
   if (it === undefined) throw new Error(`no item ${id}`);
