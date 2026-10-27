@@ -266,6 +266,7 @@ async fn run_node(
         Arc::new(device::Router {
             browser: broker.clone(),
             devices: devices.clone(),
+            live: Default::default(),
         })
     });
     let router = Arc::new(session_route::Router {
