@@ -286,8 +286,8 @@ jobs:
     # with the hub in process. Only where rust-macos runs, and only when node/device or this workflow changed: making
     # the golden simulator (a settling boot and an xcodebuild of agent-device's runner) takes minutes. On main, only the
     # newest push runs it: a push cancels the job in main's older push runs, and Scope compares with the last push run
-    # whose job wasn't cancelled (.github/main-base.sh), so no change goes untested. The hub ignores cancelled checks
-    # when it looks for red on main (hub/train/watch.rs).
+    # whose job wasn't cancelled (.github/main-base.sh), or runs in full without one, so no change goes untested. The
+    # hub ignores cancelled checks when it looks for red on main (hub/train/watch.rs).
     name: ios sessions
     if: >-
       github.event_name != 'pull_request' || endsWith(github.head_ref, 'train/batch')
@@ -320,8 +320,8 @@ jobs:
           fi
           if [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_REF" = refs/heads/main ]; then
             last=$(.github/main-base.sh ci.yml "ios sessions")
-            if [ -n "$last" ] && git fetch -q --depth=1 origin "$last"; then base=$last; fi
-            echo "Comparing with $base."
+            if [ -n "$last" ] && git fetch -q --depth=1 origin "$last"; then base=$last; else base=; fi
+            echo "Comparing with ${base:-nothing: no earlier finished run found, so it runs in full}."
           fi
           if [ -n "$base" ] &&
             git diff --quiet "$base" HEAD -- crates/fleetd/src/node/device .github/workflows/ci.yml; then
