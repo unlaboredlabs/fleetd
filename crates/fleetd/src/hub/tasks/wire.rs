@@ -505,14 +505,16 @@ impl AgentDirectory for Directory {
                 .map_err(|e| failed(e.to_string()))?
                 .filter(|p| p.machine_id == thread.machine_id);
             return match preview {
-                // Its recording uploads once the session closes, after the preview ended.
+                Some(p) if !p.state.is_over() => Ok((CallerAgent::Preview(id), p.project_ref)),
+                // Its recording uploads once the session closes, after the preview ended: only that, and its
+                // closing report (policy::check_call).
                 Some(p)
-                    if crate::hub::preview::takes_session_calls(
+                    if crate::hub::preview::uploads_after_end(
                         &p,
                         crate::hub::store::now_ms(hub.clock.as_ref()),
                     ) =>
                 {
-                    Ok((CallerAgent::Preview(id), p.project_ref))
+                    Ok((CallerAgent::EndedPreview(id), p.project_ref))
                 }
                 Some(_) => Err(McpToolError::new(
                     ErrorCode::Forbidden,

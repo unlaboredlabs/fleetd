@@ -60,7 +60,17 @@ pub struct Previews {
     links: Mutex<HashMap<MachineId, (u64, i64)>>,
     /// The link each preview was last heard of (or stopped) on.
     heard: Mutex<HashMap<PreviewId, u64>>,
+    /// The hub owner's tailnet login once found, and when it was last looked up while unknown.
+    owner: Mutex<(Option<String>, Option<i64>)>,
+    /// When GitHub was last asked about each running preview's PR that the merge train doesn't track.
+    asked: Mutex<HashMap<PreviewId, i64>>,
 }
+
+/// How often GitHub is asked whether a PR the train doesn't track, with a preview running, merged or closed.
+pub const UNTRACKED_EVERY_MS: i64 = 5 * 60_000;
+
+/// How often a hub that couldn't tell its owner's tailnet login asks again (tailscale may not have been up yet).
+pub const OWNER_RETRY_MS: i64 = 60_000;
 
 pub fn new_id() -> PreviewId {
     let bytes: [u8; 16] = rand::random();
@@ -116,7 +126,7 @@ pub fn claim_on(c: &Connection, p: &Preview) -> Result<Option<Preview>, StoreErr
     )?;
     if let Some(same) = running
         .into_iter()
-        .find(|q| q.of == p.of && q.target == p.target)
+        .find(|q| same_of(&q.of, &p.of) && q.target == p.target)
     {
         return Ok(Some(same));
     }
@@ -124,18 +134,37 @@ pub fn claim_on(c: &Connection, p: &Preview) -> Result<Option<Preview>, StoreErr
     Ok(None)
 }
 
-/// How long after a preview ends its held session may still report and upload: the node uploads the recording once
-/// the session closes, after the end, and tries for as long as this (node/browser/upload.rs's `GIVE_UP`).
-pub const HELD_UPLOAD_MS: i64 = 7 * 24 * 3600 * 1000;
+/// How long after a preview ends its held session may still upload and report itself closing: the node uploads the
+/// recording once the session closes, after the end, and tries for as long as its uploads do.
+pub const HELD_UPLOAD_MS: i64 = crate::node::browser::upload::GIVE_UP.as_millis() as i64;
 
-/// Whether a preview's held browser session may still report itself and upload its recording: while the preview
-/// runs, and for [`HELD_UPLOAD_MS`] after it ended.
-pub fn takes_session_calls(p: &Preview, now: i64) -> bool {
-    !p.state.is_over()
-        || p.ended_at
-            .as_ref()
-            .and_then(|t| parse_ms(t.as_str()))
-            .is_some_and(|ended| now - ended < HELD_UPLOAD_MS)
+/// Whether an ended preview's held browser session may still upload its recording and report itself closing: for
+/// [`HELD_UPLOAD_MS`] after it ended.
+pub fn uploads_after_end(p: &Preview, now: i64) -> bool {
+    p.ended_at
+        .as_ref()
+        .and_then(|t| parse_ms(t.as_str()))
+        .is_some_and(|ended| now - ended < HELD_UPLOAD_MS)
+}
+
+/// Whether two previews are of the same PR or order. GitHub's repo names ignore case: acme/Shop#14 is acme/shop#14.
+pub fn same_of(a: &PreviewOf, b: &PreviewOf) -> bool {
+    match (a, b) {
+        (
+            PreviewOf::Pr { repo, number },
+            PreviewOf::Pr {
+                repo: other,
+                number: n,
+            },
+        ) => number == n && repo.as_str().eq_ignore_ascii_case(other.as_str()),
+        (
+            PreviewOf::Order { workstream_id },
+            PreviewOf::Order {
+                workstream_id: other,
+            },
+        ) => workstream_id == other,
+        _ => false,
+    }
 }
 
 fn state_text(state: PreviewState) -> &'static str {
@@ -204,12 +233,6 @@ pub fn running(hub: &Hub) -> Result<Vec<Preview>, StoreError> {
             [],
         )
     })
-}
-
-/// Writes a preview after a change, and tells the app.
-pub fn save(hub: &Hub, p: &Preview) -> Result<(), StoreError> {
-    hub.db.transaction(|c| put_on(c, p))?;
-    announce(hub, p)
 }
 
 /// `preview.state`, which tells the app to read the project's previews again.
@@ -313,7 +336,7 @@ pub async fn start(hub: &Hub, r: &ProjectRef, ask: Ask) -> Result<Preview, ToolE
     };
     if let Some(same) = list(hub, r)?
         .into_iter()
-        .find(|p| !p.state.is_over() && p.of == ask.of && p.target == ask.target)
+        .find(|p| !p.state.is_over() && same_of(&p.of, &ask.of) && p.target == ask.target)
     {
         return Ok(same);
     }
@@ -359,7 +382,7 @@ pub async fn start(hub: &Hub, r: &ProjectRef, ask: Ask) -> Result<Preview, ToolE
         web: config.web.clone(),
         idle_minutes: config.idle_minutes,
         order_id,
-        owner_login: owner_login().await,
+        owner_login: owner_login(hub, read_owner_login).await,
     };
     let refused = match hub
         .node_commands
@@ -367,13 +390,18 @@ pub async fn start(hub: &Hub, r: &ProjectRef, ask: Ask) -> Result<Preview, ToolE
         .await
     {
         Ok(answer) => answer.error.map(|e| e.message),
-        Err(e) => Some(e.message),
+        Err(e) => {
+            // No answer in time, or the link dropped: the node may have taken it all the same, so nothing of it may
+            // keep running there.
+            stop(hub, &runner, &preview.preview_id, PreviewEndReason::Lost);
+            Some(e.message)
+        }
     };
     if let Some(why) = refused {
         preview.state = PreviewState::Failed;
         preview.ended_at = Some(now_ts(hub));
         preview.note = Some(line(&format!("{runner} didn't start it: {why}")));
-        save(hub, &preview)?;
+        finish(hub, preview)?;
         return Err(ToolError::new(
             ErrorCode::Failed,
             format!("{runner} didn't start the preview: {why}"),
@@ -384,29 +412,45 @@ pub async fn start(hub: &Hub, r: &ProjectRef, ask: Ask) -> Result<Preview, ToolE
     Ok(get(hub, &preview.preview_id)?.unwrap_or(preview))
 }
 
-/// The tailnet login whose devices may open previews: the hub owner's, read once from the hub machine's own
-/// `tailscale status --json` (`FLEETD_TAILNET_OWNER` overrides it). None: the node lets in its own tailnet user's
-/// devices.
-async fn owner_login() -> Option<Line<1, 300>> {
-    static OWNER: tokio::sync::OnceCell<Option<String>> = tokio::sync::OnceCell::const_new();
-    let login = OWNER
-        .get_or_init(|| async {
-            if let Ok(login) = std::env::var("FLEETD_TAILNET_OWNER") {
-                return Some(login.trim().to_owned()).filter(|l| !l.is_empty());
-            }
-            let status = tokio::process::Command::new("tailscale")
-                .args(["status", "--json"])
-                .kill_on_drop(true)
-                .output();
-            match tokio::time::timeout(Duration::from_secs(5), status).await {
-                Ok(Ok(out)) if out.status.success() => {
-                    login_of_status(&String::from_utf8_lossy(&out.stdout))
-                }
-                _ => None,
-            }
-        })
-        .await;
-    login.as_deref().and_then(|l| Line::new(l).ok())
+/// The tailnet login whose devices may open previews: the hub owner's, kept once `lookup` found it. A lookup that
+/// found none is never kept: it runs again at a start [`OWNER_RETRY_MS`] or more after the last. None: the node lets
+/// in its own tailnet user's devices.
+pub async fn owner_login<F, Fut>(hub: &Hub, lookup: F) -> Option<Line<1, 300>>
+where
+    F: FnOnce() -> Fut,
+    Fut: std::future::Future<Output = Option<String>>,
+{
+    let now = now_ms(hub.clock.as_ref());
+    {
+        let mut owner = hub.previews.owner.lock().unwrap();
+        if let Some(login) = &owner.0 {
+            return Line::new(login.clone()).ok();
+        }
+        if owner.1.is_some_and(|at| now - at < OWNER_RETRY_MS) {
+            return None;
+        }
+        owner.1 = Some(now);
+    }
+    let login = lookup().await?;
+    hub.previews.owner.lock().unwrap().0 = Some(login.clone());
+    Line::new(login).ok()
+}
+
+/// The hub machine's own `tailscale status --json` says whose it is; `FLEETD_TAILNET_OWNER` overrides it.
+async fn read_owner_login() -> Option<String> {
+    if let Ok(login) = std::env::var("FLEETD_TAILNET_OWNER") {
+        return Some(login.trim().to_owned()).filter(|l| !l.is_empty());
+    }
+    let status = tokio::process::Command::new("tailscale")
+        .args(["status", "--json"])
+        .kill_on_drop(true)
+        .output();
+    match tokio::time::timeout(Duration::from_secs(5), status).await {
+        Ok(Ok(out)) if out.status.success() => {
+            login_of_status(&String::from_utf8_lossy(&out.stdout))
+        }
+        _ => None,
+    }
 }
 
 /// The login of the user who owns this machine, from `tailscale status --json`.
@@ -533,8 +577,23 @@ async fn heads(hub: &Hub, r: &ProjectRef, of: &PreviewOf) -> Result<Checkout, To
                     order_id: Some(workstream_id.clone()),
                 });
             }
-            // Several PRs are merged together onto their base, which only GitHub knows.
+            // Several PRs are merged together onto their base, which only GitHub knows. They run as one app only
+            // from one repo.
             let first = &changes[0];
+            let mut repos: Vec<String> = changes.iter().map(|c| c.repo.to_lowercase()).collect();
+            repos.sort();
+            repos.dedup();
+            if repos.len() > 1 {
+                return Err(ToolError::new(
+                    ErrorCode::Invalid,
+                    format!(
+                        "{workstream_id}'s PRs are in {} repos ({}), so they can't run together as one app.",
+                        repos.len(),
+                        repos.join(", ")
+                    ),
+                )
+                .with_fix("Try each of its PRs on its own."));
+            }
             let pull = hub
                 .train
                 .github()
@@ -608,7 +667,7 @@ pub fn place(hub: &Hub, r: &ProjectRef) -> Result<MachineId, ToolError> {
 /// as it ended.
 pub fn on_report(hub: &Hub, machine: &MachineId, report: PreviewReport) {
     let result = (|| -> Result<(), StoreError> {
-        let Some(mut p) = get(hub, &report.preview_id)? else {
+        let Some(p) = get(hub, &report.preview_id)? else {
             // One the hub doesn't hold (a row lost, or another hub's): its node throws it away.
             if !report.state.is_over() {
                 stop(hub, machine, &report.preview_id, PreviewEndReason::Lost);
@@ -622,62 +681,79 @@ pub fn on_report(hub: &Hub, machine: &MachineId, report: PreviewReport) {
         heard(hub, machine, &p.preview_id);
         if p.state.is_over() {
             // Ended here while its node was away: the node is told again.
-            if !report.state.is_over() {
-                let reason = p.end_reason.unwrap_or(PreviewEndReason::Lost);
-                stop(hub, machine, &p.preview_id, reason);
-            }
+            stop_again(hub, machine, &p, report.state);
             return Ok(());
         }
-        let before = (p.state, p.steps.len(), p.url.clone(), p.session_id.clone());
-        let now = now_ms(hub.clock.as_ref());
-        p.state = report.state;
-        if report.head.is_some() {
-            p.head = report.head;
-        }
-        if !report.steps.is_empty() {
-            p.steps = report.steps;
-        }
-        if report.url.is_some() {
-            p.url = report.url;
-        }
-        if report.session_id.is_some() {
-            p.session_id = report.session_id;
-        }
-        if report.note.is_some() {
-            p.note = report.note;
-        }
-        if p.state == PreviewState::Ready && p.ready_at.is_none() {
-            p.ready_at = Some(iso_ms(now).into());
-        }
-        if p.state.is_over() {
-            p.ended_at = Some(iso_ms(now).into());
-            p.idle_until = None;
-            p.end_reason = report.end_reason.or(match p.state {
-                PreviewState::Ended => Some(PreviewEndReason::Ended),
-                _ => None,
-            });
-        } else if report.idle_until.is_some() {
-            p.idle_until = report.idle_until;
-        } else if p.state == PreviewState::Ready && p.idle_until.is_none() {
-            p.idle_until = Some(iso_ms(now + idle_ms(hub, &p.project_ref)).into());
-        }
-        let after = (p.state, p.steps.len(), p.url.clone(), p.session_id.clone());
-        if !hub.db.transaction(|c| put_running_on(c, &p))? {
-            // It ended here after the read above: ended stays ended, and the node is told again.
-            if !report.state.is_over() {
-                stop(hub, machine, &p.preview_id, PreviewEndReason::Ended);
-            }
-            return Ok(());
-        }
-        // A "used" report only pushes idleUntil: the app needs no event for it.
-        if before != after || report.end_reason.is_some() {
-            announce(hub, &p)?;
-        }
-        Ok(())
+        apply(hub, machine, p, report)
     })();
     if let Err(e) = result {
         tracing::warn!(error = %e, "preview report not kept");
     }
+}
+
+/// An ended preview's node, still reporting it running, is told again to stop, with the reason it ended for.
+fn stop_again(hub: &Hub, machine: &MachineId, ended: &Preview, reported: PreviewState) {
+    if !reported.is_over() {
+        let reason = ended.end_reason.unwrap_or(PreviewEndReason::Lost);
+        stop(hub, machine, &ended.preview_id, reason);
+    }
+}
+
+/// Moves `p`, as the hub read it, by its node's report. Written only while it still runs: if it ended since the
+/// read, it stays as it ended.
+pub fn apply(
+    hub: &Hub,
+    machine: &MachineId,
+    mut p: Preview,
+    report: PreviewReport,
+) -> Result<(), StoreError> {
+    let before = (p.state, p.steps.len(), p.url.clone(), p.session_id.clone());
+    let now = now_ms(hub.clock.as_ref());
+    p.state = report.state;
+    if report.head.is_some() {
+        p.head = report.head;
+    }
+    if !report.steps.is_empty() {
+        p.steps = report.steps;
+    }
+    if report.url.is_some() {
+        p.url = report.url;
+    }
+    if report.session_id.is_some() {
+        p.session_id = report.session_id;
+    }
+    if report.note.is_some() {
+        p.note = report.note;
+    }
+    if p.state == PreviewState::Ready && p.ready_at.is_none() {
+        p.ready_at = Some(iso_ms(now).into());
+    }
+    if p.state.is_over() {
+        p.ended_at = Some(iso_ms(now).into());
+        p.idle_until = None;
+        p.end_reason = report.end_reason.or(match p.state {
+            PreviewState::Ended => Some(PreviewEndReason::Ended),
+            _ => None,
+        });
+    } else if report.idle_until.is_some() {
+        p.idle_until = report.idle_until;
+    } else if p.state == PreviewState::Ready && p.idle_until.is_none() {
+        p.idle_until = Some(iso_ms(now + idle_ms(hub, &p.project_ref)).into());
+    }
+    let after = (p.state, p.steps.len(), p.url.clone(), p.session_id.clone());
+    let (ended_since, reported) = (report.end_reason.is_some(), report.state);
+    if !hub.db.transaction(|c| put_running_on(c, &p))? {
+        // It ended here after the read above: ended stays ended, and the node is told again why.
+        if let Some(ended) = get(hub, &p.preview_id)? {
+            stop_again(hub, machine, &ended, reported);
+        }
+        return Ok(());
+    }
+    // A "used" report only pushes idleUntil: the app needs no event for it.
+    if before != after || ended_since {
+        announce(hub, &p)?;
+    }
+    Ok(())
 }
 
 /// The project's idle time, in ms.
@@ -711,11 +787,22 @@ pub fn end(
     if let Some(note) = note {
         p.note = Some(line(note));
     }
-    save(hub, &p)?;
-    if reason != PreviewEndReason::Lost {
+    let (p, ended_here) = finish(hub, p)?;
+    if ended_here && reason != PreviewEndReason::Lost {
         stop(hub, &p.machine_id, &p.preview_id, reason);
     }
     Ok(p)
+}
+
+/// Writes a preview that is over now, and tells the app, unless it was over already: ended is final, and the stored
+/// one stands. Returns what is stored, and whether this write ended it.
+fn finish(hub: &Hub, p: Preview) -> Result<(Preview, bool), StoreError> {
+    if hub.db.transaction(|c| put_running_on(c, &p))? {
+        announce(hub, &p)?;
+        return Ok((p, true));
+    }
+    let stored = get(hub, &p.preview_id)?.unwrap_or(p);
+    Ok((stored, false))
 }
 
 /// `preview_stop` to a node that runs previews; nothing to one that doesn't, or isn't there.
@@ -847,8 +934,71 @@ pub async fn run_sweep(hub: Arc<Hub>) {
             Ok(n) => tracing::info!(n, "previews ended"),
             Err(e) => tracing::warn!(error = %e, "previews not swept"),
         }
+        let github = |repo: String, n: i64| {
+            let hub = hub.clone();
+            async move {
+                let pull = hub.train.github().pull(&repo, n).await.ok()?;
+                Some((pull.state, pull.merged || pull.merged_at.is_some()))
+            }
+        };
+        match end_untracked(&hub, github).await {
+            Ok(0) => {}
+            Ok(n) => tracing::info!(n, "previews of untracked PRs ended"),
+            Err(e) => tracing::warn!(error = %e, "previews of untracked PRs not checked"),
+        }
         hub.clock.sleep(SWEEP_EVERY).await;
     }
+}
+
+/// Ends each running preview of a PR the merge train doesn't track (one fleetd never queued) once `pull` says it
+/// merged or closed: its state (`open` or `closed`) and whether it merged, or none when GitHub didn't say. Each PR is
+/// asked about at most every [`UNTRACKED_EVERY_MS`]. Returns how many it ended.
+pub async fn end_untracked<F, Fut>(hub: &Hub, pull: F) -> Result<usize, StoreError>
+where
+    F: Fn(String, i64) -> Fut,
+    Fut: std::future::Future<Output = Option<(String, bool)>>,
+{
+    let now = now_ms(hub.clock.as_ref());
+    let previews = running(hub)?;
+    {
+        let live: HashSet<&PreviewId> = previews.iter().map(|p| &p.preview_id).collect();
+        hub.previews
+            .asked
+            .lock()
+            .unwrap()
+            .retain(|id, _| live.contains(id));
+    }
+    let mut ended = 0;
+    for p in previews {
+        let PreviewOf::Pr { repo, number } = &p.of else {
+            continue;
+        };
+        let n = number.get();
+        if hub.train.records().latest_for(repo.as_str(), n).is_some() {
+            continue;
+        }
+        {
+            let mut asked = hub.previews.asked.lock().unwrap();
+            if asked
+                .get(&p.preview_id)
+                .is_some_and(|at| now - at < UNTRACKED_EVERY_MS)
+            {
+                continue;
+            }
+            asked.insert(p.preview_id.clone(), now);
+        }
+        let note = match pull(repo.to_string(), n).await {
+            Some((_, true)) => format!("#{n} merged"),
+            Some((state, false)) if state != "open" => format!("#{n} closed"),
+            _ => continue,
+        };
+        // Read again: it may have ended while GitHub answered.
+        if let Some(p) = get(hub, &p.preview_id)?.filter(|p| !p.state.is_over()) {
+            end(hub, p, PreviewEndReason::Done, Some(&note))?;
+            ended += 1;
+        }
+    }
+    Ok(ended)
 }
 
 /// Takes the nodes' reports and registers the lead calls.

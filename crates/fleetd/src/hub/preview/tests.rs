@@ -1075,8 +1075,9 @@ async fn a_run_names_the_order_whose_variables_it_gets() {
 }
 
 /// A preview's in-app view is a browser session the person holds, with no agent behind it: its node reports it and
-/// uploads its recording under the preview's id (#578), which the hub takes while the preview runs and for a week after
-/// it ends, as the recording uploads once the session closes; an unknown preview's id is refused.
+/// uploads its recording under the preview's id (#578), which the hub takes while the preview runs. Ended, it takes
+/// only the recording's upload and the closing report, for as long as the node tries (the upload starts once the
+/// session closes, after the end); an unknown preview's id is refused.
 #[tokio::test]
 async fn a_held_sessions_report_and_upload_go_under_its_preview_until_a_week_after_it_ends() {
     let (hub, clock, _home) = hub();
@@ -1108,10 +1109,10 @@ async fn a_held_sessions_report_and_upload_go_under_its_preview_until_a_week_aft
                 .lead_calls
                 .agent_of(Some(&thread), &project)
                 .map_err(|e| e.message)?;
-            crate::hub::tasks::policy::check(&agent, &op).map_err(|e| e.message)?;
             let mut call = call;
             call["op"] = op.as_str().into();
             let call: LeadCall = serde_json::from_value(call).unwrap();
+            crate::hub::tasks::policy::check_call(&agent, &call).map_err(|e| e.message)?;
             let caller = LeadCaller {
                 project_ref: shop(),
                 by: crate::hub::link::lead_calls::lead_by(&shop()),
@@ -1157,10 +1158,22 @@ async fn a_held_sessions_report_and_upload_go_under_its_preview_until_a_week_aft
         .await
         .unwrap_err();
     assert!(why.contains("holds no preview"), "{why}");
-    // Ended, the session closes and its recording uploads: still taken, as its final report is.
+    // Ended, the session closes and its recording uploads: only that and its closing report are taken.
     tool(&hub, &person(), "preview_end", json!({ "previewId": id }))
         .await
         .unwrap();
+    let why = as_node(&id, "browser_session", live.clone())
+        .await
+        .unwrap_err();
+    assert!(why.contains("can't be live"), "{why}");
+    let why = as_node(
+        &id,
+        "browser_takeover",
+        json!({ "sessionId": session, "reason": "a captcha" }),
+    )
+    .await
+    .unwrap_err();
+    assert!(why.contains("only uploads its recording"), "{why}");
     let rest = json!({ "sessionId": session, "file": "video", "offset": 3, "dataB64": "AAAA" });
     as_node(&id, "browser_recording_part", rest).await.unwrap();
     let mut recorded = live.clone();
@@ -1252,4 +1265,275 @@ async fn a_late_report_never_moves_an_ended_preview_back() {
     assert_eq!((still.state, still.url), (PreviewState::Ended, None));
     tokio::time::sleep(Duration::from_millis(20)).await;
     assert_eq!(devbox.stops().len(), 2, "told to stop, then told again");
+}
+
+/// A report read before the preview ended and written after it: the preview stays as it ended, and its node is told
+/// again to stop, with the reason it ended for.
+#[tokio::test]
+async fn a_report_that_lost_the_race_tells_the_node_why_it_ended() {
+    let (hub, _clock, _home) = hub();
+    let devbox = node(&hub, "devbox", None);
+    let id = started(start(&hub, &person(), 14).await.unwrap());
+    super::on_report(&hub, &mid("devbox"), report(&id, "ready", json!({})));
+    let read = stored(&hub, &id);
+    super::end(&hub, read.clone(), PreviewEndReason::Cap, None).unwrap();
+    super::apply(
+        &hub,
+        &mid("devbox"),
+        read,
+        report(&id, "ready", json!({ "url": "http://devbox:8414" })),
+    )
+    .unwrap();
+    let ended = stored(&hub, &id);
+    assert_eq!(
+        (ended.state, ended.end_reason, ended.url),
+        (PreviewState::Ended, Some(PreviewEndReason::Cap), None)
+    );
+    tokio::time::sleep(Duration::from_millis(20)).await;
+    assert_eq!(
+        devbox.stops(),
+        [
+            (id.clone(), PreviewEndReason::Cap),
+            (id, PreviewEndReason::Cap)
+        ]
+    );
+}
+
+/// Ended is final for the hub's own writes too: End on a copy read before the node said it ended, and a refusal
+/// that arrives after the node's ended report, both leave it as the node ended it.
+#[tokio::test]
+async fn neither_end_nor_a_refused_start_overwrites_a_finished_preview() {
+    let (hub, _clock, _home) = hub();
+    let devbox = node(&hub, "devbox", None);
+    let id = started(start(&hub, &person(), 14).await.unwrap());
+    let read = stored(&hub, &id);
+    super::on_report(
+        &hub,
+        &mid("devbox"),
+        report(&id, "ended", json!({ "endReason": "idle" })),
+    );
+    let kept = super::end(&hub, read, PreviewEndReason::Ended, Some("ended by hand")).unwrap();
+    assert_eq!(
+        (kept.state, kept.end_reason, kept.note),
+        (PreviewState::Ended, Some(PreviewEndReason::Idle), None)
+    );
+    tokio::time::sleep(Duration::from_millis(20)).await;
+    assert!(devbox.stops().is_empty(), "nothing left to stop");
+    drop(devbox);
+
+    // A node that reports the run lost, then refuses it.
+    let (tx, mut rx) = mpsc::unbounded_channel::<HubToNode>();
+    let _link = hub.node_commands.attach(&mid("devbox"), tx);
+    let (node_hub, commands) = (hub.clone(), hub.node_commands.clone());
+    tokio::spawn(async move {
+        while let Some(frame) = rx.recv().await {
+            if let HubToNode::PreviewRun(run) = &frame {
+                super::on_report(
+                    &node_hub,
+                    &mid("devbox"),
+                    report(
+                        run.preview_id.as_str(),
+                        "ended",
+                        json!({ "endReason": "lost" }),
+                    ),
+                );
+                answer(&commands, &mid("devbox"), run, Some("the worktree is gone"));
+            }
+        }
+    });
+    let (_, why) = refused(start(&hub, &person(), 14).await);
+    assert!(why.contains("the worktree is gone"), "{why}");
+    let latest = super::list(&hub, &shop())
+        .unwrap()
+        .into_iter()
+        .find(|p| p.preview_id.as_str() != id)
+        .unwrap();
+    assert_eq!(
+        (latest.state, latest.end_reason),
+        (PreviewState::Ended, Some(PreviewEndReason::Lost))
+    );
+}
+
+/// GitHub's repo names ignore case: a preview of acme/shop#14 is the one of Acme/Shop#14.
+#[tokio::test]
+async fn a_pr_is_the_same_whatever_its_repo_names_case() {
+    let (hub, _clock, _home) = hub();
+    let devbox = node(&hub, "devbox", None);
+    let id = started(start(&hub, &person(), 14).await.unwrap());
+    let upper = json!({ "kind": "pr", "repo": "Acme/Shop", "number": 14 });
+    let again = tool(
+        &hub,
+        &person(),
+        "preview_start",
+        json!({ "projectRef": shop(), "of": upper }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(again["preview"]["previewId"], id.as_str());
+    assert_eq!(devbox.runs().len(), 1);
+    let listed = tool(
+        &hub,
+        &person(),
+        "previews_list",
+        json!({ "projectRef": shop(), "of": upper }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(listed["previews"][0]["previewId"], id.as_str());
+    let mut other = stored(&hub, &id);
+    other.of = serde_json::from_value(upper).unwrap();
+    other.preview_id = super::new_id();
+    assert!(
+        hub.db
+            .transaction(|c| super::claim_on(c, &other))
+            .unwrap()
+            .is_some()
+    );
+}
+
+/// A node that never answers the run may have taken it all the same: the hub gives up, marks it failed and tells the
+/// node to stop, so nothing of it keeps running there.
+#[tokio::test(start_paused = true)]
+async fn a_start_the_node_never_answers_is_stopped_there() {
+    let (hub, _clock, _home) = hub();
+    let (tx, mut rx) = mpsc::unbounded_channel::<HubToNode>();
+    let _link = hub.node_commands.attach(&mid("devbox"), tx);
+    let (_, why) = refused(start(&hub, &person(), 14).await);
+    assert!(why.contains("did not answer"), "{why}");
+    let failed = super::running(&hub).unwrap();
+    assert!(failed.is_empty(), "nothing is left running");
+    let mut stops = Vec::new();
+    while let Ok(frame) = rx.try_recv() {
+        if let HubToNode::PreviewStop(stop) = frame {
+            stops.push(stop.reason);
+        }
+    }
+    assert_eq!(stops, [PreviewEndReason::Lost]);
+}
+
+/// An order's PRs run together only from one repo: across several, Try it says so plainly and asks GitHub nothing.
+#[tokio::test]
+async fn an_order_across_several_repos_is_refused_in_plain_words() {
+    use crate::hub::leads::records::NewWorkstream;
+    use fleetd_contracts::ledger::IntakeChannel;
+    let (hub, _clock, _home) = hub();
+    let devbox = node(&hub, "devbox", None);
+    let (order, _) = hub
+        .leads
+        .records
+        .workstream_create(NewWorkstream {
+            project_ref: shop(),
+            title: "Checkout in Dutch".into(),
+            text: "Checkout in Dutch".into(),
+            channel: IntakeChannel::App,
+            by: "human".into(),
+            at: AT.into(),
+            client_request_id: None,
+        })
+        .unwrap();
+    let w = order.workstream_id.to_string();
+    pr(&hub, 16, "reviewing", "T16", &w);
+    hub.train.records().create(
+        serde_json::from_value(json!({
+            "changeId": "X1", "projectRef": shop(), "repo": "acme/admin", "prNumber": 3,
+            "prUrl": "https://github.com/acme/admin/pull/3", "branch": "fleetd/T17-admin", "taskId": "T17",
+            "workstreamId": w, "headSha": SHA, "state": "reviewing", "reviews": [], "createdAt": AT, "updatedAt": AT,
+        }))
+        .unwrap(),
+    );
+    let (code, why) = refused(
+        tool(
+            &hub,
+            &person(),
+            "preview_start",
+            json!({ "projectRef": shop(), "of": { "kind": "order", "workstreamId": w } }),
+        )
+        .await,
+    );
+    assert_eq!(code, "Invalid");
+    assert_eq!(
+        why,
+        format!(
+            "{w}'s PRs are in 2 repos (acme/admin, acme/shop), so they can't run together as one app."
+        )
+    );
+    assert!(devbox.runs().is_empty());
+}
+
+/// The hub owner's login is kept once found; a lookup that found none is tried again a minute on, never kept.
+#[tokio::test]
+async fn an_owner_lookup_that_failed_is_tried_again() {
+    let (hub, clock, _home) = hub();
+    let asked = Arc::new(Mutex::new(0));
+    let lookup = |found: Option<&'static str>| {
+        let asked = asked.clone();
+        move || async move {
+            *asked.lock().unwrap() += 1;
+            found.map(str::to_owned)
+        }
+    };
+    assert_eq!(super::owner_login(&hub, lookup(None)).await, None);
+    assert_eq!(
+        super::owner_login(&hub, lookup(Some("me@example.com"))).await,
+        None
+    );
+    assert_eq!(*asked.lock().unwrap(), 1, "not again within the minute");
+    clock.advance(Duration::from_millis(super::OWNER_RETRY_MS as u64));
+    let found = super::owner_login(&hub, lookup(Some("me@example.com"))).await;
+    assert_eq!(found.as_deref(), Some("me@example.com"));
+    clock.advance(Duration::from_millis(super::OWNER_RETRY_MS as u64));
+    let kept = super::owner_login(&hub, lookup(None)).await;
+    assert_eq!(kept.as_deref(), Some("me@example.com"));
+    assert_eq!(*asked.lock().unwrap(), 2);
+}
+
+/// A preview of a PR the merge train never queued ends once GitHub says the PR merged or closed; GitHub is asked about
+/// it every few minutes, and never about a PR the train tracks.
+#[tokio::test]
+async fn a_preview_of_an_untracked_pr_ends_when_it_merges_or_closes() {
+    let (hub, clock, _home) = hub();
+    let _devbox = node(&hub, "devbox", None);
+    let tracked = started(start(&hub, &person(), 14).await.unwrap());
+    let untracked = |n: i64| {
+        let mut p = stored(&hub, &tracked);
+        p.preview_id = super::new_id();
+        p.of = serde_json::from_value(of_pr(n)).unwrap();
+        assert!(
+            hub.db
+                .transaction(|c| super::claim_on(c, &p))
+                .unwrap()
+                .is_none()
+        );
+        p.preview_id.to_string()
+    };
+    let (merged, closed) = (untracked(30), untracked(31));
+    let asked = Arc::new(Mutex::new(Vec::new()));
+    let github = |answer: fn(i64) -> Option<(String, bool)>| {
+        let asked = asked.clone();
+        move |repo: String, n: i64| {
+            asked.lock().unwrap().push(format!("{repo}#{n}"));
+            async move { answer(n) }
+        }
+    };
+    let open = github(|_| Some(("open".to_owned(), false)));
+    assert_eq!(super::end_untracked(&hub, &open).await.unwrap(), 0);
+    assert_eq!(super::end_untracked(&hub, &open).await.unwrap(), 0);
+    assert_eq!(*asked.lock().unwrap(), ["acme/shop#30", "acme/shop#31"]);
+
+    clock.advance(Duration::from_millis(super::UNTRACKED_EVERY_MS as u64));
+    let done = github(|n| Some(("closed".to_owned(), n == 30)));
+    assert_eq!(super::end_untracked(&hub, &done).await.unwrap(), 2);
+    for (id, note) in [(&merged, "#30 merged"), (&closed, "#31 closed")] {
+        let p = stored(&hub, id);
+        assert_eq!(
+            (p.state, p.end_reason, p.note.as_deref()),
+            (
+                PreviewState::Ended,
+                Some(PreviewEndReason::Done),
+                Some(note)
+            )
+        );
+    }
+    assert_eq!(stored(&hub, &tracked).state, PreviewState::Starting);
+    assert_eq!(asked.lock().unwrap().len(), 4);
 }
