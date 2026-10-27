@@ -216,6 +216,16 @@ async fn linked(projects: Option<Value>) -> Linked {
     let url = serve(&acme).await;
     let you_acme = person(&acme, "Alex", "laptop", Role::Operate);
     let you_home = person(&home, "Alex", "laptop", Role::Operate);
+    // The Navi is Alex's.
+    home.db
+        .with(|c| {
+            c.execute(
+                "UPDATE assistants SET created_by_key = ?",
+                [you_home.key_id.as_str()],
+            )?;
+            Ok(())
+        })
+        .unwrap();
     let mut mint = json!({ "label": "home" });
     if let Some(p) = projects {
         mint["projects"] = p;
@@ -467,7 +477,8 @@ async fn a_project_outside_the_links_limits_is_refused() {
         .collect();
     assert_eq!(titles, ["Storefront"]);
 
-    // A link reaches only what its person may: a read-only device's link opens no order.
+    // A link reaches only what it may: one from before people acts at its device, and a read-only device's opens no
+    // order. (A person's link acts at their role, and every role operates.)
     let reader = l
         .acme
         .auth
@@ -495,6 +506,24 @@ async fn a_project_outside_the_links_limits_is_refused() {
     )
     .await
     .unwrap();
+    let (link, key) = (
+        minted["link"]["linkId"].as_str().unwrap().to_owned(),
+        reader.key_id.to_string(),
+    );
+    l.acme
+        .db
+        .with(|c| {
+            c.execute(
+                "UPDATE hub_links_issued SET person = NULL WHERE link_id = ?",
+                [&link],
+            )?;
+            c.execute(
+                "UPDATE agent_keys SET person_id = NULL WHERE key_id = ?",
+                [&key],
+            )?;
+            Ok(())
+        })
+        .unwrap();
     let sealed = sealed(&l.home, &l.you_home, minted["key"].as_str().unwrap()).await;
     let url = crate::hub::hub_links::kept_get(&l.home.db, &l.link_here)
         .unwrap()
@@ -593,9 +622,206 @@ async fn revoking_on_the_other_hub_stops_the_link_at_once() {
         follow_once(&l.home, &l.link_here, 0).await.unwrap(),
         Followed::Stop
     );
+}
 
-    // Revoking the device that made a link kills the link too.
+#[tokio::test]
+async fn a_link_acts_as_its_person_whatever_their_device_and_stops_when_they_leave() {
     let l = linked(None).await;
+    let navi = project("navi");
+    let shop = project("storefront");
+    let ask = |text: &str| json!({ "op": "project_message", "hub": "acme", "project": "storefront", "text": text });
+    // The device it was made on is revoked: the link still acts as Alex, at Alex's role.
+    l.acme.auth.revoke(l.you_acme.key_id.as_str()).unwrap();
+    lead(&l.home, &navi, ask("Gift cards.")).await.unwrap();
+    assert_eq!(agent_posts(&l.acme, &shop)[0].0, "Alex via home Navi");
+    // A new name shows on the next ask.
+    let people = crate::hub::people::People::new(l.acme.db.clone(), l.acme.clock.clone());
+    let alex = l.you_acme.person.clone().unwrap();
+    people
+        .set(
+            &alex.person_id,
+            Some(&fleetd_contracts::people::PersonName::unchecked("Alex K")),
+            None,
+        )
+        .unwrap();
+    lead(&l.home, &navi, ask("Dark mode.")).await.unwrap();
+    assert_eq!(agent_posts(&l.acme, &shop)[1].0, "Alex K via home Navi");
+    // Alex leaves acme: the link stops at once, and home marks it revoked.
+    people.remove(&alex.person_id).unwrap().unwrap();
+    let (code, why) = lead(&l.home, &navi, ask("Receipts.")).await.unwrap_err();
+    assert_eq!(code, ErrorCode::Forbidden);
+    assert!(why.contains("person who made link"), "{why}");
+    assert_eq!(agent_posts(&l.acme, &shop).len(), 2);
+    let state = super::kept_get(&l.home.db, &l.link_here)
+        .unwrap()
+        .unwrap()
+        .state;
+    assert_eq!(state, fleetd_contracts::hub_links::HubLinkState::Revoked);
+}
+
+#[tokio::test]
+async fn a_link_never_holds_more_than_the_device_that_made_it() {
+    let l = linked(None).await;
+    let navi = project("navi");
+    let ask =
+        json!({ "op": "project_message", "hub": "acme", "project": "storefront", "text": "Hi." });
+    // Alex is still on acme, but this device of theirs only reads: it mints nothing, with projects or without.
+    let tablet = person(&l.acme, "Alex", "tablet", Role::Read);
+    for mint in [
+        json!({ "label": "home" }),
+        json!({ "label": "home", "projects": [project("storefront")] }),
+    ] {
+        let (code, why) = tool(&l.acme, &tablet, "hub_link_mint", mint)
+            .await
+            .unwrap_err();
+        assert_eq!(code, ErrorCode::Forbidden);
+        assert!(why.contains("lacks the operate role"), "{why}");
+    }
+    // A link holding a read-only device's grants (made before minting checked) reads but never asks, though Alex
+    // operates: it acts at the lesser of the two.
+    l.acme
+        .db
+        .with(|c| {
+            c.execute(
+                "UPDATE hub_links_issued SET grants = ?",
+                [serde_json::to_string(&[Grant {
+                    role: Role::Read,
+                    machines: GrantMachines::All(Star::Value),
+                }])
+                .unwrap()],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    let (code, why) = lead(&l.home, &navi, ask.clone()).await.unwrap_err();
+    assert_eq!(code, ErrorCode::Forbidden, "{why}");
+    assert!(agent_posts(&l.acme, &project("storefront")).is_empty());
+    let status = lead(
+        &l.home,
+        &navi,
+        json!({ "op": "factory_status", "hub": "acme" }),
+    )
+    .await
+    .unwrap();
+    assert!(status.to_string().contains("Storefront"), "{status}");
+    // Its device revoked, the link still acts as Alex, and still only reads.
+    l.acme.auth.revoke(l.you_acme.key_id.as_str()).unwrap();
+    let (code, _) = lead(&l.home, &navi, ask).await.unwrap_err();
+    assert_eq!(code, ErrorCode::Forbidden);
+    // An admin's link is never more than operate.
+    let got = super::verify(&l.acme, &l.key).unwrap();
+    assert!(got.grants.iter().all(|g| g.role == Role::Read));
+    assert!(
+        super::link_grants(
+            &[Grant {
+                role: Role::Admin,
+                machines: GrantMachines::All(Star::Value),
+            }],
+            Role::Admin
+        )
+        .iter()
+        .all(|g| g.role == Role::Operate)
+    );
+}
+
+#[tokio::test]
+async fn only_the_navis_owner_or_an_admin_changes_its_links() {
+    let l = linked(None).await;
+    let blake = person(&l.home, "Blake", "desk", Role::Operate);
+    let sealed = sealed(&l.home, &blake, &l.key).await;
+    let add = json!({ "navi": project("navi"), "label": "acme2", "url": &l.url, "sealed": sealed });
+    let (code, why) = tool(&l.home, &blake, "hub_link_add", add.clone())
+        .await
+        .unwrap_err();
+    assert_eq!(code, ErrorCode::Forbidden);
+    assert!(why.contains("Navi's owner"), "{why}");
+    let (code, _) = tool(
+        &l.home,
+        &blake,
+        "hub_link_remove",
+        json!({ "linkId": l.link_here }),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(code, ErrorCode::Forbidden);
+    // Another device of Alex's may, and so may an admin.
+    let phone = person(&l.home, "Alex", "phone", Role::Operate);
+    tool(&l.home, &phone, "hub_link_add", add).await.unwrap();
+    let admin = person(&l.home, "Sam", "desk", Role::Admin);
+    tool(
+        &l.home,
+        &admin,
+        "hub_link_remove",
+        json!({ "linkId": l.link_here }),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn a_removed_link_or_an_archived_navi_wakes_no_one() {
+    let l = linked(None).await;
+    let navi = project("navi");
+    lead(
+        &l.home,
+        &navi,
+        json!({ "op": "project_message", "hub": "acme", "project": "storefront", "text": "Gift cards." }),
+    )
+    .await
+    .unwrap();
+    // Removed here while a read waits there: the news it brings back goes nowhere.
+    let home = l.home.clone();
+    let link = l.link_here.clone();
+    let waiting = tokio::spawn(async move { follow_once(&home, &link, 10).await.unwrap() });
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    super::forget(&l.home.db, &l.link_here).unwrap();
+    lead(
+        &l.acme,
+        &project("storefront"),
+        json!({ "op": "brief_create", "text": "Gift cards", "brief": brief(), "asked": "N1" }),
+    )
+    .await
+    .unwrap();
+    let got = tokio::time::timeout(std::time::Duration::from_secs(5), waiting)
+        .await
+        .expect("answered as the news came")
+        .unwrap();
+    assert_eq!(got, Followed::Stop);
+    // An archived Navi's links are no longer followed.
+    let l = linked(None).await;
+    l.home
+        .db
+        .with(|c| {
+            c.execute_batch("UPDATE assistants SET archived_ms = 1792000000000")?;
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(
+        follow_once(&l.home, &l.link_here, 0).await.unwrap(),
+        Followed::Stop
+    );
+}
+
+#[tokio::test]
+async fn a_link_from_before_people_acts_at_its_device_and_dies_with_it() {
+    let l = linked(None).await;
+    let navi = project("navi");
+    let ask =
+        json!({ "op": "project_message", "hub": "acme", "project": "storefront", "text": "Hi." });
+    l.acme
+        .db
+        .with(|c| {
+            c.execute_batch(
+                "UPDATE hub_links_issued SET person = NULL; UPDATE agent_keys SET person_id = NULL;",
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    lead(&l.home, &navi, ask.clone()).await.unwrap();
+    assert_eq!(
+        agent_posts(&l.acme, &project("storefront"))[0].0,
+        "laptop via home Navi"
+    );
     l.acme.auth.revoke(l.you_acme.key_id.as_str()).unwrap();
     let (code, why) = lead(&l.home, &navi, ask).await.unwrap_err();
     assert_eq!(code, ErrorCode::Forbidden);
@@ -1022,7 +1248,7 @@ async fn only_the_other_hubs_word_that_the_key_is_dead_revokes_the_link() {
         let sql = format!("ALTER TABLE {from} RENAME TO {to}");
         l.acme.db.with(|c| Ok(c.execute_batch(&sql)?)).unwrap();
     };
-    rename("agent_keys", "agent_keys_away");
+    rename("people", "people_away");
     let (code, why) = lead(&l.home, &navi, status.clone()).await.unwrap_err();
     assert_eq!(code, ErrorCode::Failed, "{why}");
     assert_eq!(state(&l), fleetd_contracts::hub_links::HubLinkState::Ok);
@@ -1030,7 +1256,7 @@ async fn only_the_other_hubs_word_that_the_key_is_dead_revokes_the_link() {
         follow_once(&l.home, &l.link_here, 0).await.is_err(),
         "the follower retries"
     );
-    rename("agent_keys_away", "agent_keys");
+    rename("people_away", "people");
     lead(&l.home, &navi, status.clone()).await.unwrap();
 
     // A 401 without `dead`, as a proxy in front of the hub might answer, is a refusal, not a revoke.

@@ -8,7 +8,7 @@
 //! - `POST revoke`: the link revokes itself, when the hub with the Navi removes it.
 //!
 //! A refusal is an `McpToolError` as JSON: 401 with `dead: true` (`LinkRefusal`) when the link is dead for good
-//! (unknown, revoked, expired, or its device revoked), else 403, 404, 400 or 500 by its code.
+//! (unknown, revoked, expired, or its person removed), else 403, 404, 400 or 500 by its code.
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;

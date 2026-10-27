@@ -5,15 +5,18 @@ use std::sync::Arc;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 use fleetd_contracts::auth::Role;
+use fleetd_contracts::ids::ProjectRef;
 use fleetd_contracts::mcp::{
     ErrorCode, HubLinkAddInput, HubLinkAddOutput, HubLinkMintInput, HubLinkMintOutput,
     HubLinkRemoveInput, HubLinkRemoveOutput, HubLinkRevokeInput, HubLinkRevokeOutput,
     HubLinksGetInput, HubLinksGetOutput,
 };
+use fleetd_contracts::people::PersonRef;
+use rusqlite::OptionalExtension;
 
 use super::{box_key, check_url, client, issued, issued_get, keep, kept, kept_get, mint};
 use crate::hub::api::{
-    Caller, Hub, Registry, ToolError, allows, allows_everywhere, is_human, require, unknown_project,
+    Caller, Hub, Registry, ToolError, allows_everywhere, is_human, require, unknown_project,
 };
 
 pub fn register(tools: &mut Registry) {
@@ -33,6 +36,48 @@ fn person_only(caller: &Caller) -> Result<(), ToolError> {
         "Only a person links hubs: a link acts as them on the other hub.",
     )
     .with_fix("Do it in the desktop app."))
+}
+
+/// Only the Navi's owner, whoever made it (its person, or its device on a hub without people), or an admin changes
+/// the Navi's links: a link acts as someone on another hub, and a Navi is its owner's.
+fn may_manage(hub: &Hub, caller: &Caller, navi: &ProjectRef) -> Result<(), ToolError> {
+    require(caller, Role::Operate, Some(&navi.machine_id))?;
+    if allows_everywhere(caller, Role::Admin) {
+        return Ok(());
+    }
+    let maker: Option<String> = hub.db.with(|c| {
+        let table: bool = c.query_row(
+            "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'assistants')",
+            [],
+            |row| row.get(0),
+        )?;
+        if !table {
+            return Ok(None);
+        }
+        Ok(c.query_row(
+            "SELECT created_by_key FROM assistants WHERE machine_id = ? AND project_id = ?",
+            [navi.machine_id.as_str(), navi.project_id.as_str()],
+            |row| row.get(0),
+        )
+        .optional()?)
+    })?;
+    let own = match maker {
+        Some(key) if key == caller.key_id.as_str() => true,
+        Some(key) => {
+            let person = |p: Option<PersonRef>| p.map(|p| p.person_id);
+            let theirs = person(hub.auth.get(&key)?.and_then(|d| d.person));
+            theirs.is_some() && theirs == person(caller.person.clone())
+        }
+        None => false,
+    };
+    if own {
+        return Ok(());
+    }
+    Err(ToolError::new(
+        ErrorCode::Forbidden,
+        "Only the Navi's owner, or an admin, changes its linked hubs.",
+    )
+    .with_fix("Ask the person whose Navi it is."))
 }
 
 fn box_failed(e: std::io::Error) -> ToolError {
@@ -72,6 +117,7 @@ async fn mint_link(
     caller: Caller,
     input: HubLinkMintInput,
 ) -> Result<HubLinkMintOutput, ToolError> {
+    // The registry already refused a device that operates nowhere: a link never holds more than its device.
     person_only(&caller)?;
     if let Some(projects) = &input.projects {
         if projects.is_empty() {
@@ -93,8 +139,8 @@ async fn mint_link(
         link,
         key,
         next: Some(
-            "Shown once: paste it into the other hub's Navi, Linked hubs. It acts as you there, at this device's \
-             grants; revoke it here at any time."
+            "Shown once: paste it into the other hub's Navi, Linked hubs. It acts as you on this hub, at the \
+             lesser of your role here and this device's grants, never above operate; revoke it here at any time."
                 .into(),
         ),
         truncated: None,
@@ -143,6 +189,7 @@ async fn add(
         return Err(unknown_project(navi));
     }
     crate::hub::navi::bridge::may_use(&hub.db, navi)?;
+    may_manage(&hub, &caller, navi)?;
     let url = check_url(input.url.as_str())?;
     let url = url.as_str().trim_end_matches('/').to_owned();
     let sealed = STANDARD
@@ -200,12 +247,7 @@ async fn remove(
         )
         .with_fix("hub_links_get with the Navi lists its links."));
     };
-    if !allows(&caller, Role::Operate, Some(&link.navi.machine_id)) {
-        return Err(crate::hub::api::forbidden(
-            Role::Operate,
-            Some(&link.navi.machine_id),
-        ));
-    }
+    may_manage(&hub, &caller, &link.navi)?;
     // The key goes first, so nothing more goes through it; then the other hub is asked to revoke it too.
     super::forget(&hub.db, &link.link_id)?;
     let revoked_there = client::revoke_there(&hub, &link).await;

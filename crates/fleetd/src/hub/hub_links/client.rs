@@ -20,7 +20,7 @@ use zeroize::Zeroizing;
 use super::{Kept, box_key, failed, kept, kept_get, set_cursor, set_state};
 use crate::hub::api::Hub;
 use crate::hub::leads::wakes::{LineKind, Trigger};
-use crate::hub::navi::bridge::{Woken, ask_sent, record_sent};
+use crate::hub::navi::bridge::{Woken, ask_sent, is_navi, record_sent};
 use crate::hub::store::now_ms;
 
 /// How long a follower waits before calling a hub that didn't answer again.
@@ -328,12 +328,9 @@ pub enum Followed {
 /// One feed read for a kept link, waiting up to `wait` seconds there: wakes its Navi's lead with each piece of news
 /// about its asks, and once when the other hub says the link is dead.
 pub async fn follow_once(hub: &Hub, link_id: &str, wait: u64) -> Result<Followed, McpToolError> {
-    let Some(link) = kept_get(&hub.db, link_id).map_err(failed)? else {
+    let Some(link) = followed(hub, link_id)? else {
         return Ok(Followed::Stop);
     };
-    if link.state == HubLinkState::Revoked {
-        return Ok(Followed::Stop);
-    }
     let key = open_key(hub, &link)?;
     let wait = wait.min(FEED_WAIT_MAX_SEC);
     let path = format!("feed?after={}&wait={wait}", link.cursor);
@@ -349,17 +346,24 @@ pub async fn follow_once(hub: &Hub, link_id: &str, wait: u64) -> Result<Followed
     let feed = match read {
         Ok(feed) => feed,
         Err(e) => {
-            let dead = kept_get(&hub.db, link_id)
-                .map_err(failed)?
-                .is_some_and(|k| k.state == HubLinkState::Revoked);
-            if !dead {
+            let Some(now) = kept_get(&hub.db, link_id).map_err(failed)? else {
+                return Ok(Followed::Stop);
+            };
+            if now.state != HubLinkState::Revoked {
                 return Err(e);
+            }
+            if !is_navi(&hub.db, &link.navi, false).map_err(failed)? {
+                return Ok(Followed::Stop);
             }
             let line = format!("- {} Asks through it are no longer followed.", e.message);
             wake(hub, &link.navi, &line);
             return Ok(Followed::Stop);
         }
     };
+    // Removed here, or its Navi archived, while the read waited there: its news goes nowhere.
+    if followed(hub, link_id)?.is_none() {
+        return Ok(Followed::Stop);
+    }
     let mut sent = Vec::new();
     for item in feed.items {
         let Some(asked) = ask_sent(&hub.db, &link.link_id, item.handle.as_str()).map_err(failed)?
@@ -379,6 +383,19 @@ pub async fn follow_once(hub: &Hub, link_id: &str, wait: u64) -> Result<Followed
     Ok(Followed::Read(sent))
 }
 
+/// The link while it is still followed: kept here, not dead there, and its Navi not archived.
+fn followed(hub: &Hub, link_id: &str) -> Result<Option<Kept>, McpToolError> {
+    let Some(link) = kept_get(&hub.db, link_id).map_err(failed)? else {
+        return Ok(None);
+    };
+    if link.state == HubLinkState::Revoked
+        || !is_navi(&hub.db, &link.navi, false).map_err(failed)?
+    {
+        return Ok(None);
+    }
+    Ok(Some(link))
+}
+
 fn wake(hub: &Hub, navi: &ProjectRef, line: &str) {
     hub.leads.wakes.trigger(
         navi,
@@ -389,7 +406,7 @@ fn wake(hub: &Hub, navi: &ProjectRef, line: &str) {
     );
 }
 
-/// Follows one kept link until it is removed here, dead there, or the hub stops.
+/// Follows one kept link until it is removed here, dead there, its Navi archived, or the hub stops.
 pub async fn follow(hub: Arc<Hub>, link_id: String) {
     loop {
         if hub.shutdown.is_triggered() {

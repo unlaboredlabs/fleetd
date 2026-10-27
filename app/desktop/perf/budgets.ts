@@ -19,7 +19,7 @@ export interface Results {
   readonly idleRssMb: number;
   /** Frames per second while wheel-scrolling back through the chat-long fixture's chat. */
   readonly scrollFps: number;
-  /** p95, ms from a key press (its OS timestamp) to the presentation of the frame that shows it: Chromium's EventLatency. */
+  /** p95, ms from a key press (its OS timestamp) to the presentation of the frame that shows it: Chromium's EventLatency. The median of a few rounds' p95s. */
   readonly keyP95Ms: number;
 }
 
@@ -44,7 +44,7 @@ export const RULES: Record<Metric, Rule> = {
   idleRssMb: { label: "(summed RSS)", unit: "MB", higher: false },
   // 60 fps, allowing 5% of frames to rAF jitter: below 57 means frames were dropped.
   scrollFps: { label: "chat scroll", unit: "fps", higher: true, limit: 57, regress: { ratio: 0.1, slack: 3 } },
-  // A p95 over ~160 keys still moves with a few slow ones on a shared runner, hence the wide slack.
+  // A p95 over ~160 keys still moves with a few slow ones on a shared runner, hence the wide slack and perf/run.ts's median of five rounds.
   keyP95Ms: { label: "keypress to screen", unit: "ms", higher: false, limit: 16, regress: { ratio: 0.5, slack: 8 } },
 };
 
