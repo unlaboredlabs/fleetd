@@ -1969,10 +1969,17 @@ export type HubInfoOutput = {
 export type HubUpdateInput = {
   /** Absent: the channel the hub's build came from. */
   channel?: HubChannel;
+  /** Retry this machine of the last run, whose hub updated: its node, then its Claude Code. */
+  machine?: MachineId;
 };
 
 export type HubUpdateOutput = {
   next?: string;
+  /**
+   * The channel's newest build, already downloaded and checked on the hub (and fetched by its nodes), so an update
+   * only swaps and restarts: what "fleetd <version> is ready" names. Absent when there is none newer.
+   */
+  ready?: string;
   /** The update going now or the last one; absent when the hub never updated itself. */
   run?: UpdateRun;
   truncated?: boolean;
@@ -5422,7 +5429,7 @@ export type TrainState = {
   repo: GitHubRepo;
 };
 
-/** The hub or one machine's node in an update. */
+/** The hub, or one machine's node or Claude Code, in an update. */
 export type UpdatePart = {
   /** The version it ran when the update started. */
   from: string;
@@ -5436,9 +5443,11 @@ export type UpdatePart = {
   /** Where it failed or was put back. */
   stage?: UpdateStage;
   state: UpdateState;
+  /** The version it goes to when not the run's `to`: Claude Code's, the one the new fleetd was tested with. */
+  to?: string;
 };
 
-export type KnownUpdatePartKind = "hub" | "node";
+export type KnownUpdatePartKind = "hub" | "node" | "claude";
 /** KnownUpdatePartKind, or a value from a newer hub. */
 export type UpdatePartKind = KnownUpdatePartKind | (string & {});
 
@@ -5448,7 +5457,7 @@ export type UpdateRun = {
   /** Set once every part has its result. */
   finishedAt?: Timestamp;
   id: string;
-  /** The hub first, then one per machine, by name. */
+  /** The hub first, then per machine, by name, its node and its Claude Code. */
   parts: UpdatePart[];
   startedAt: Timestamp;
   /** The build it updates to: the channel's newest fleetd. Absent until the hub read the channel. */

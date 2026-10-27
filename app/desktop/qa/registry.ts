@@ -201,6 +201,8 @@ export const fixtures = [
   "updates-run-hub-failed",
   "updates-run-hub-rolled-back",
   "updates-run-nodes-mixed",
+  "updates-hub-ready",
+  "updates-run-updated",
   "updates-refused",
   // fleetd.sh's showcase: one request played from send to merge, recorded by showcase.spec.ts (fixtures/showcase).
   "showcase-order",
@@ -1063,6 +1065,7 @@ export const screens: readonly Screen[] = [
       "updates-hub-behind",
       "updates-node-behind",
       "updates-everything",
+      "updates-hub-ready",
       "updates-run-hub",
       "updates-run-nodes",
     ],
@@ -1073,7 +1076,7 @@ export const screens: readonly Screen[] = [
   {
     id: "updates",
     route: "#/",
-    fixtures: ["updates-run-done", "updates-run-hub-failed", "updates-run-hub-rolled-back", "updates-run-nodes-mixed", "updates-refused"],
+    fixtures: ["updates-run-done", "updates-run-hub-failed", "updates-run-hub-rolled-back", "updates-run-nodes-mixed", "updates-hub-ready", "updates-refused"],
     variant: "pressed",
     open: async (page) => {
       await openUpdates(page);

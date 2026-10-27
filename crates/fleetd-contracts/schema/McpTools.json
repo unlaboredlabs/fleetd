@@ -5299,6 +5299,10 @@
         "channel": {
           "$ref": "#/$defs/HubChannel",
           "description": "Absent: the channel the hub's build came from."
+        },
+        "machine": {
+          "$ref": "#/$defs/MachineId",
+          "description": "Retry this machine of the last run, whose hub updated: its node, then its Claude Code."
         }
       },
       "type": "object"
@@ -5306,6 +5310,12 @@
     "HubUpdateOutput": {
       "properties": {
         "next": {
+          "type": "string"
+        },
+        "ready": {
+          "description": "The channel's newest build, already downloaded and checked on the hub (and fetched by its nodes), so an update\nonly swaps and restarts: what \"fleetd <version> is ready\" names. Absent when there is none newer.",
+          "maxLength": 200,
+          "minLength": 1,
           "type": "string"
         },
         "run": {
@@ -15576,7 +15586,7 @@
       "type": "object"
     },
     "UpdatePart": {
-      "description": "The hub or one machine's node in an update.",
+      "description": "The hub, or one machine's node or Claude Code, in an update.",
       "properties": {
         "from": {
           "description": "The version it ran when the update started.",
@@ -15607,6 +15617,12 @@
         },
         "state": {
           "$ref": "#/$defs/UpdateState"
+        },
+        "to": {
+          "description": "The version it goes to when not the run's `to`: Claude Code's, the one the new fleetd was tested with.",
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
         }
       },
       "required": [
@@ -15624,6 +15640,11 @@
             "hub",
             "node"
           ],
+          "type": "string"
+        },
+        {
+          "const": "claude",
+          "description": "Claude Code on a machine, brought to the version the new fleetd was tested with once its node runs it.\nSessions already running finish on the version they started with; new ones start on the new one.",
           "type": "string"
         }
       ],
@@ -15645,11 +15666,11 @@
           "type": "string"
         },
         "parts": {
-          "description": "The hub first, then one per machine, by name.",
+          "description": "The hub first, then per machine, by name, its node and its Claude Code.",
           "items": {
             "$ref": "#/$defs/UpdatePart"
           },
-          "maxItems": 201,
+          "maxItems": 401,
           "minItems": 1,
           "type": "array"
         },

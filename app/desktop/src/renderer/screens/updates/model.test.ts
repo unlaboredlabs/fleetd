@@ -156,6 +156,70 @@ describe("an update of everything", () => {
     expect(n.progress?.text).toBe("Updating the machines: 1 of 2 done");
   });
 
+  it("shows each machine's Claude Code under it, from its version to the tested one, and names one that failed", () => {
+    const run = runOf(
+      [
+        p({ part: "hub", name: "the hub", state: "done" }),
+        p({ machineId: "builder", name: "builder", state: "done" }),
+        p({ part: "claude", machineId: "builder", name: "builder", from: "2.1.310", to: "2.1.302", state: "done" }),
+        p({ machineId: "mac", name: "mac", state: "done" }),
+        p({
+          part: "claude",
+          machineId: "mac",
+          name: "mac",
+          from: "2.1.310",
+          to: "2.1.302",
+          state: "failed",
+          stage: "install",
+          message: "`claude install 2.1.302` failed (404), so 2.1.310 stays",
+        }),
+      ],
+      true,
+    );
+    const v = during(run, { phase: "finished", updated: false });
+    expect(v.nodes.map((n) => [n.name, n.status])).toEqual([
+      ["builder", "Updated to Nightly · Oct 23, 10:30 UTC · def5678"],
+      ["builder: Claude Code", "Claude Code 2.1.310 → 2.1.302: new sessions start on 2.1.302"],
+      ["mac", "Updated to Nightly · Oct 23, 10:30 UTC · def5678"],
+      ["mac: Claude Code", "Claude Code 2.1.310 → 2.1.302 failed: `claude install 2.1.302` failed (404), so 2.1.310 stays"],
+    ]);
+    expect(v.progress?.text).toBe("Update failed: mac's Claude Code. The rest updated; Retry tries it again.");
+  });
+
+  it("names a skipped machine once, leaves a Claude Code installed another way calm, and counts Claude Code in done", () => {
+    const run = runOf(
+      [
+        p({ part: "hub", name: "the hub", state: "done" }),
+        p({ machineId: "builder", name: "builder", state: "done" }),
+        p({
+          part: "claude",
+          machineId: "builder",
+          name: "builder",
+          from: "2.1.310",
+          to: "2.1.302",
+          state: "skipped",
+          message: "Claude Code is managed by Homebrew: run `brew upgrade claude-code` to update it (it runs 2.1.310)",
+        }),
+        p({ machineId: "mac", name: "mac", state: "skipped", message: "offline: press Update again once it's online" }),
+        p({ part: "claude", machineId: "mac", name: "mac", state: "skipped", message: "offline: press Update again once it's online" }),
+      ],
+      true,
+    );
+    const v = during(run, { phase: "finished", updated: false });
+    expect(v.nodes.find((n) => n.key === "claude:builder")).toMatchObject({
+      status: "Claude Code is managed by Homebrew: run `brew upgrade claude-code` to update it (it runs 2.1.310)",
+      tone: "quiet",
+    });
+    expect(v.progress).toEqual({ tone: "warning", text: "Updated, except mac: each says why; Retry tries it again." });
+
+    const going = runOf([
+      p({ part: "hub", name: "the hub", state: "done" }),
+      p({ machineId: "builder", name: "builder", state: "done" }),
+      p({ part: "claude", machineId: "builder", name: "builder", state: "downloading" }),
+    ]);
+    expect(during(going, { phase: "following", reconnecting: false }).progress?.text).toBe("Updating the machines: 0 of 1 done");
+  });
+
   it("says which part failed and how, and that nothing else changed when the hub did", () => {
     const run = runOf(
       [
@@ -165,7 +229,7 @@ describe("an update of everything", () => {
       ],
       true,
     );
-    const v = during(run, { phase: "finished" });
+    const v = during(run, { phase: "finished", updated: false });
     expect(v.hub).toMatchObject({ status: "Failed while checking the download: fleetd-linux-x64: checksum mismatch; nothing was changed", tone: "danger" });
     expect(v.nodes[0]).toMatchObject({ tone: "warning" });
     expect(v.progress).toEqual({ tone: "danger", text: "Update failed: the hub. Nothing else was changed." });
@@ -183,9 +247,9 @@ describe("an update of everything", () => {
       ],
       true,
     );
-    const v = during(run, { phase: "finished" });
+    const v = during(run, { phase: "finished", updated: false });
     expect(v.nodes[1]).toMatchObject({ status: "Put back: it didn't come up healthy, so the old build was put back and runs again", tone: "danger" });
-    expect(v.progress?.text).toBe("Update failed: mac. The rest updated; this app updates with its own button.");
+    expect(v.progress?.text).toBe("Update failed: mac. The rest updated; Retry tries it again.");
   });
 
   it("says plainly that a machine's restart was refused, not that it didn't come back", () => {
@@ -199,9 +263,9 @@ describe("an update of everything", () => {
       ],
       true,
     );
-    const v = during(run, { phase: "finished" });
+    const v = during(run, { phase: "finished", updated: false });
     expect(v.nodes[1]).toMatchObject({ status: `Didn't restart: ${refused}`, tone: "danger" });
-    expect(v.progress?.text).toBe("Update failed: mac. The rest updated; this app updates with its own button.");
+    expect(v.progress?.text).toBe("Update failed: mac. The rest updated; Retry tries it again.");
   });
 
   it("says everything is updated only when nothing was skipped, and names what was", () => {
@@ -209,7 +273,7 @@ describe("an update of everything", () => {
       [p({ part: "hub", name: "the hub", state: "done" }), p({ machineId: "builder", name: "builder", state: "done" }), p({ machineId: "mac", name: "mac", state: "current" })],
       true,
     );
-    expect(during(all, { phase: "finished" }).progress).toEqual({ tone: "quiet", text: "Everything is updated." });
+    expect(during(all, { phase: "finished", updated: false }).progress).toEqual({ tone: "quiet", text: "Updated to Nightly · Oct 23, 10:30 UTC · def5678" });
     const left = runOf(
       [
         p({ part: "hub", name: "the hub", state: "done" }),
@@ -218,7 +282,7 @@ describe("an update of everything", () => {
       ],
       true,
     );
-    expect(during(left, { phase: "finished" }).progress).toEqual({ tone: "warning", text: "Updated, except builder, mac: each says why, and how to update it." });
+    expect(during(left, { phase: "finished", updated: false }).progress).toEqual({ tone: "warning", text: "Updated, except builder, mac: each says why; Retry tries it again." });
   });
 
   it("says this app updates last, and when its download failed", () => {
@@ -247,5 +311,148 @@ describe("an update of everything", () => {
     const later = at(finished + 60 * 60_000);
     expect(later.progress).toBeNull();
     expect(later.hub?.tone).toBe("accent");
+  });
+});
+
+describe("the sheet's lines, the notice and the note", () => {
+  const p = (over: Partial<UpdatePart>): UpdatePart => ({ part: "node", name: "builder", from: OLDER, state: "waiting", ...over });
+  const runOf = (parts: UpdatePart[], finished = false): UpdateRun => ({
+    id: "U1",
+    channel: "nightly",
+    to: NEXT,
+    startedAt: "2026-10-26T10:00:00.000Z",
+    ...(finished ? { finishedAt: "2026-10-26T10:03:00.000Z" } : {}),
+    parts,
+  });
+  const machines = [machine("builder", OLDER), machine("mac", OLDER)];
+  const at = Date.parse("2026-10-26T10:04:00.000Z");
+  const of = (input: { run?: UpdateRun; flow?: Flow; ready?: string | null; app?: AppUpdate }) =>
+    updatesView({
+      app: { current: MINE, app: input.app ?? { kind: "current" }, release: { ...release, cli: NEXT } },
+      hub: hubOf({ version: OLDER }),
+      machines,
+      run: input.run ?? null,
+      flow: input.flow ?? { phase: "idle" },
+      ready: input.ready ?? null,
+      now: at,
+    });
+  const says = (v: ReturnType<typeof of>) => v.lines.map((l) => [l.name, l.state, l.reason ?? "", l.retry === undefined ? "" : (l.label ?? "Retry")]);
+
+  it("names the build the hub has ready, with what's new in a few lines, and one notice for it", () => {
+    const v = of({ ready: NEXT });
+    expect(v.update).toMatchObject({ title: "fleetd Nightly · Oct 23, 10:30 UTC · def5678 is ready", label: "Update" });
+    expect(v.update?.note).toMatch(/^Downloaded and checked already/u);
+    // The hub's build is older than changes.json reaches, so there is more.
+    expect(v.update?.notes).toEqual({ lines: ["Status loads faster", "The hub says its version"], more: true });
+    expect(v.notice).toEqual({ version: NEXT, title: "fleetd Nightly · Oct 23, 10:30 UTC · def5678 is ready", notes: v.update?.notes });
+    expect(says(v)).toEqual([
+      ["The hub", "Update ready", "", ""],
+      ["builder", "Update ready", "", ""],
+      ["mac", "Update ready", "", ""],
+      ["This app", "Up to date", "", ""],
+    ]);
+  });
+
+  it("shows no notice for a build still to download, nor while an update runs", () => {
+    expect(of({}).notice).toBeNull();
+    expect(of({}).update?.title).toBe("fleetd Nightly · Oct 23, 10:30 UTC · def5678 is available");
+    const going = runOf([p({ part: "hub", name: "the hub", state: "downloading" })]);
+    expect(of({ ready: NEXT, run: going, flow: { phase: "following", reconnecting: false } }).notice).toBeNull();
+    // This app's own download, once in, is ready too.
+    expect(of({ app: { kind: "ready", version: NEXT } }).notice?.version).toBe(NEXT);
+  });
+
+  it("gives each part one line while a run goes: waiting, updating, done, and why a busy machine waits", () => {
+    const run = runOf([
+      p({ part: "hub", name: "the hub", state: "done" }),
+      p({ machineId: "builder", name: "builder", state: "restarting" }),
+      p({ part: "claude", machineId: "builder", name: "builder", state: "waiting" }),
+      p({ machineId: "mac", name: "mac", state: "waiting", message: "waits until it's idle: 1 live session can't carry on through a restart" }),
+    ]);
+    const v = of({ run, flow: { phase: "following", reconnecting: false }, app: { kind: "available", version: NEXT, percent: null, restart: false } });
+    expect(says(v)).toEqual([
+      ["The hub", "Done", "", ""],
+      ["builder", "Updating…", "", ""],
+      ["mac", "Waiting", "Waits until it's idle", ""],
+      ["Claude Code", "Waiting", "", ""],
+      ["This app", "Waiting", "", ""],
+    ]);
+  });
+
+  it("says why a machine failed in one line, with Retry for it, while the others finish", () => {
+    const run = runOf(
+      [
+        p({ part: "hub", name: "the hub", state: "done" }),
+        p({ machineId: "builder", name: "builder", state: "rolled_back", stage: "health", message: "it didn't come up healthy within 90 s, so the old build was put back" }),
+        p({ machineId: "mac", name: "mac", state: "done" }),
+        p({ part: "claude", machineId: "mac", name: "mac", from: "2.1.310", to: "2.1.302", state: "done" }),
+      ],
+      true,
+    );
+    const v = of({ run, flow: { phase: "finished", updated: false }, app: { kind: "ready", version: NEXT } });
+    expect(says(v)).toEqual([
+      ["The hub", "Done", "", ""],
+      ["builder", "Failed", "Didn't start, so it was put back", "Retry"],
+      ["mac", "Done", "", ""],
+      ["Claude Code", "Done", "New sessions start on 2.1.302", ""],
+      // Not restarted at the end of a run that didn't all come through: it updates here.
+      ["This app", "Update ready", "Downloaded; it restarts when you update", "Update"],
+    ]);
+    expect(v.lines.find((l) => l.key === "builder")?.retry).toEqual({ kind: "machine", machineId: "builder" });
+    expect(v.lines.find((l) => l.key === "app")?.retry).toEqual({ kind: "app", run: "install" });
+    // Retry on the lines, not the whole update again.
+    expect(v.update).toBeNull();
+    // The hub's words stay behind Details.
+    expect(v.nodes.find((n) => n.key === "builder")?.status).toBe("Put back: it didn't come up healthy within 90 s, so the old build was put back");
+  });
+
+  it("offers Retry for a skipped machine and a failed Claude Code, but not while a run goes or when the hub didn't update", () => {
+    const run = runOf(
+      [
+        p({ part: "hub", name: "the hub", state: "done" }),
+        p({ machineId: "builder", name: "builder", state: "done" }),
+        p({ part: "claude", machineId: "builder", name: "builder", from: "2.1.310", to: "2.1.302", state: "failed", stage: "install", message: "`claude install 2.1.302` failed (404), so 2.1.310 stays" }),
+        p({ machineId: "mac", name: "mac", state: "skipped", message: "offline: press Update again once it's online" }),
+      ],
+      true,
+    );
+    const v = of({ run, flow: { phase: "finished", updated: false } });
+    expect(says(v).slice(1, 4)).toEqual([
+      ["builder", "Done", "", ""],
+      ["mac", "Skipped", "Offline", "Retry"],
+      ["Claude Code", "Failed", "builder: `claude install 2.1.302` failed (404), so 2.1.310 stays", "Retry"],
+    ]);
+    expect(of({ run, flow: { phase: "starting" } }).lines.some((l) => l.retry !== undefined)).toBe(false);
+
+    const hubFailed = runOf(
+      [
+        p({ part: "hub", name: "the hub", state: "failed", stage: "checksum", message: "checksum mismatch" }),
+        p({ machineId: "builder", name: "builder", state: "skipped", message: "not asked: the hub didn't update" }),
+      ],
+      true,
+    );
+    const h = of({ run: hubFailed, flow: { phase: "finished", updated: false } });
+    expect(says(h).slice(0, 2)).toEqual([
+      ["The hub", "Failed", "The download didn't match its checksum; nothing changed", ""],
+      ["builder", "Skipped", "Not asked", ""],
+    ]);
+    // The whole update is tried again with the one button.
+    expect(h.update?.label).toBe("Update");
+  });
+
+  it("leaves a small Updated to note in the sidebar once everything came through", () => {
+    const run = runOf([p({ part: "hub", name: "the hub", state: "done" }), p({ machineId: "builder", name: "builder", state: "done" }), p({ machineId: "mac", name: "mac", state: "current" })], true);
+    const v = updatesView({ app: { current: NEXT, app: { kind: "current" }, release }, hub: hubOf({ version: NEXT }), machines: [machine("builder", NEXT), machine("mac", NEXT)], run, now: at });
+    expect(v.progress).toEqual({ tone: "quiet", text: "Updated to Nightly · Oct 23, 10:30 UTC · def5678" });
+    expect(v.line).toEqual({ tone: "quiet", text: "Updated to Nightly · Oct 23, 10:30 UTC · def5678", done: true });
+    expect(v.notice).toBeNull();
+  });
+
+  it("says why this app's update failed, with Retry, and shows its download while it updates last", () => {
+    const failed = of({ app: { kind: "failed", during: "download", reason: "The download stopped." } });
+    expect(says(failed).at(-1)).toEqual(["This app", "Failed", "The download stopped.", "Retry"]);
+    const done = runOf([p({ part: "hub", name: "the hub", state: "done" })], true);
+    const updating = of({ run: done, flow: { phase: "app" }, app: { kind: "available", version: NEXT, percent: 40, restart: true } });
+    expect(says(updating).at(-1)).toEqual(["This app", "Updating…", "Downloading 40%", ""]);
   });
 });

@@ -118,6 +118,7 @@ impl Runner for FakeRunner {
                 proxy: None,
                 proxy_source: None,
                 config_dir: None,
+                self_update: None,
             }
         })
     }

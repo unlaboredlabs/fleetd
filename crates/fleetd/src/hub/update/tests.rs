@@ -8,7 +8,9 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use fleetd_contracts::ids::MachineId;
-use fleetd_contracts::mcp::{HubChannel, HubUpdateOutput, UpdateRun, UpdateStage, UpdateState};
+use fleetd_contracts::mcp::{
+    HubChannel, HubUpdateOutput, UpdatePart, UpdatePartKind, UpdateRun, UpdateStage, UpdateState,
+};
 use fleetd_contracts::node_link::{NodeActionResult, NodeUpdate};
 use fleetd_contracts::prim::Text;
 use serde_json::json;
@@ -57,6 +59,9 @@ struct Fake {
     fetched: Mutex<Vec<String>>,
     /// Bumped when a test moves a node's link.
     links: tokio::sync::watch::Sender<u64>,
+    /// How a node's Claude Code install goes, by machine: its answer's words, or its failure's. Absent: installed.
+    claude: HashMap<String, Result<&'static str, &'static str>>,
+    claude_asked: Mutex<Vec<String>>,
 }
 
 impl Fake {
@@ -81,6 +86,8 @@ impl Fake {
             asked: Mutex::default(),
             fetched: Mutex::default(),
             links: tokio::sync::watch::channel(0).0,
+            claude: HashMap::new(),
+            claude_asked: Mutex::default(),
         }
     }
 
@@ -99,6 +106,9 @@ impl Fake {
             live_since: online.then_some(1),
             can_update,
             can_fetch: can_update,
+            claude: Some("2.1.310 (Claude Code)".into()),
+            can_install_claude: can_update,
+            busy: None,
         });
         if let Some(answer) = answer {
             self.answers.insert(name.into(), answer);
@@ -142,6 +152,26 @@ impl UpdatePorts for Fake {
     fn fetch_on_node(&self, machine_id: &MachineId, update: &NodeUpdate) {
         assert_eq!(update.version.as_str(), NEW);
         self.fetched.lock().unwrap().push(machine_id.to_string());
+    }
+    fn claude_target(&self) -> String {
+        "2.1.302".into()
+    }
+    fn install_claude<'a>(
+        &'a self,
+        machine_id: &'a MachineId,
+        version: &'a str,
+    ) -> BoxFuture<'a, Result<NodeActionResult, String>> {
+        assert_eq!(version, "2.1.302");
+        self.claude_asked
+            .lock()
+            .unwrap()
+            .push(machine_id.to_string());
+        let answer = match self.claude.get(machine_id.as_str()) {
+            None => result(true, None, "Claude Code 2.1.310 -> 2.1.302"),
+            Some(Ok(said)) => result(true, None, said),
+            Some(Err(why)) => result(false, Some(UpdateStage::Install), why),
+        };
+        Box::pin(async move { Ok(answer) })
     }
     fn node_changed(&self, _: &MachineId) -> BoxFuture<'static, ()> {
         let mut links = self.links.subscribe();
@@ -203,6 +233,9 @@ fn fast() -> Timing {
         node_back: Duration::from_millis(300),
         // Longer than any test: the old process's own deadline never cuts in, but where a test says.
         restart: Duration::from_secs(60),
+        prefetch_every: Duration::from_secs(600),
+        idle_poll: Duration::from_millis(5),
+        idle: Duration::from_secs(60),
     }
 }
 
@@ -227,6 +260,17 @@ fn state(run: &UpdateRun, machine: Option<&str>) -> (UpdateState, Option<UpdateS
     let parts = by_machine(run);
     let p = &parts[&machine.map(MachineId::unchecked)];
     (p.state, p.stage)
+}
+
+/// A machine's Claude Code part.
+fn claude(run: &UpdateRun, machine: &str) -> UpdatePart {
+    run.parts
+        .iter()
+        .find(|p| {
+            p.part == UpdatePartKind::Claude && p.machine_id == Some(MachineId::unchecked(machine))
+        })
+        .unwrap()
+        .clone()
 }
 
 fn hub_state(run: &UpdateRun) -> UpdateState {
@@ -504,6 +548,238 @@ async fn a_node_is_followed_by_its_link_not_a_timer() {
         "{:?}",
         back.elapsed()
     );
+}
+
+/// Once a machine's node runs the new build, its Claude Code goes to the version that build was tested with, as a
+/// part of its own. One whose install fails keeps its version and says why; the others still finish, and a machine
+/// whose fleetd didn't update isn't asked.
+#[tokio::test]
+async fn each_machines_claude_follows_its_node_and_a_failed_install_stops_nothing_else() {
+    let home = tempfile::tempdir().unwrap();
+    let mut fake = Fake::new(home.path(), b"new")
+        .node("brewbox", OLD, true, true, Some(Answer::BackOn(NEW)))
+        .node("builder", OLD, true, true, Some(Answer::BackOn(NEW)))
+        .node("laptop", OLD, true, true, Some(Answer::BackOn(OLD)))
+        .node("mac", OLD, true, true, Some(Answer::BackOn(NEW)))
+        .node("nas", OLD, false, true, None)
+        .node("pi", NEW, true, true, None);
+    fake.claude.insert(
+        "brewbox".into(),
+        Ok("Claude Code is managed by Homebrew: run `brew upgrade claude-code` to update it (it runs 2.1.310)"),
+    );
+    fake.claude.insert(
+        "mac".into(),
+        Err("`claude install 2.1.302` failed (Could not download: 404), so 2.1.310 stays"),
+    );
+    fake.claude
+        .insert("pi".into(), Ok("already runs Claude Code 2.1.302"));
+    let fake = Arc::new(fake);
+    let updates = area(home.path(), &fake);
+    let started = updates.start(None).unwrap();
+    assert_eq!(
+        started.parts.len(),
+        1 + 2 * 6,
+        "the hub, then a node and Claude Code per machine"
+    );
+    until(&updates, |r| hub_state(r) == UpdateState::Restarting).await;
+    assert!(
+        fake.claude_asked.lock().unwrap().is_empty(),
+        "nothing before the hub runs the new build"
+    );
+    *fake.running.lock().unwrap() = NEW.into();
+    let verdict = fake.plans.lock().unwrap()[0].verdict.clone();
+    fs::write(
+        &verdict,
+        json!({ "state": "done", "message": "runs it" }).to_string(),
+    )
+    .unwrap();
+    let after = Updates::new(home.path(), Arc::new(SystemClock), fast());
+    after.set_ports(fake.clone());
+    tokio::spawn(after.clone().resume());
+    let run = until(&after, |r| r.finished_at.is_some()).await;
+
+    let builder = claude(&run, "builder");
+    assert_eq!(builder.state, UpdateState::Done);
+    assert_eq!(builder.from.as_str(), "2.1.310");
+    assert_eq!(builder.to.as_ref().map(|t| t.as_str()), Some("2.1.302"));
+    let mac = claude(&run, "mac");
+    assert_eq!(
+        (mac.state, mac.stage),
+        (UpdateState::Failed, Some(UpdateStage::Install))
+    );
+    assert!(
+        mac.message
+            .as_ref()
+            .unwrap()
+            .as_str()
+            .ends_with("so 2.1.310 stays")
+    );
+    assert_eq!(
+        state(&run, Some("mac")).0,
+        UpdateState::Done,
+        "its fleetd updated all the same"
+    );
+    assert_eq!(claude(&run, "pi").state, UpdateState::Current);
+    let laptop = claude(&run, "laptop");
+    assert_eq!(laptop.state, UpdateState::Skipped);
+    assert_eq!(
+        laptop.message.as_ref().unwrap().as_str(),
+        "not asked: its fleetd didn't update"
+    );
+    assert_eq!(claude(&run, "nas").state, UpdateState::Skipped);
+    // Claude Code that Homebrew manages is left as it is, calmly: a skip with its command, not a failure.
+    let brew = claude(&run, "brewbox");
+    assert_eq!((brew.state, brew.stage), (UpdateState::Skipped, None));
+    assert!(
+        brew.message
+            .as_ref()
+            .unwrap()
+            .as_str()
+            .contains("`brew upgrade claude-code`")
+    );
+    let mut asked = fake.claude_asked.lock().unwrap().clone();
+    asked.sort();
+    assert_eq!(asked, ["brewbox", "builder", "mac", "pi"]);
+}
+
+/// Ahead of any update the hub downloads the newest build, checks it and keeps it, and asks its nodes to fetch it; the
+/// update then installs what it kept without downloading it again. A download that doesn't match the sums isn't kept.
+#[tokio::test]
+async fn the_newest_build_is_downloaded_ahead_and_update_only_swaps_it_in() {
+    let home = tempfile::tempdir().unwrap();
+    let fake = Arc::new(
+        Fake::new(home.path(), b"new")
+            .node("builder", OLD, true, true, Some(Answer::BackOn(NEW)))
+            .node("nas", OLD, false, true, None)
+            .node("pi", NEW, true, true, None),
+    );
+    let updates = area(home.path(), &fake);
+    assert_eq!(updates.ready(), None);
+    updates.prefetch().await;
+    assert_eq!(updates.ready().as_deref(), Some(NEW));
+    assert_eq!(
+        fs::read(home.path().join("update/fleetd.next")).unwrap(),
+        b"new"
+    );
+    assert_eq!(
+        *fake.fetched.lock().unwrap(),
+        ["builder"],
+        "online, able, and not on it yet"
+    );
+    assert_eq!(fs::read(&fake.exe).unwrap(), b"old", "nothing installed");
+
+    // The feed goes away: Update installs the build it kept, checked against the sums again.
+    fake.feed.files.lock().unwrap().remove(ASSET);
+    updates.start(None).unwrap();
+    until(&updates, |r| hub_state(r) == UpdateState::Restarting).await;
+    assert_eq!(fs::read(&fake.exe).unwrap(), b"new");
+    assert_eq!(updates.ready(), None);
+
+    let home = tempfile::tempdir().unwrap();
+    let tampered = Fake::new(home.path(), b"new").node("builder", OLD, true, true, None);
+    tampered
+        .feed
+        .files
+        .lock()
+        .unwrap()
+        .insert(ASSET.into(), b"evil".to_vec());
+    let tampered = Arc::new(tampered);
+    let updates = area(home.path(), &tampered);
+    updates.prefetch().await;
+    assert_eq!(updates.ready(), None);
+    assert!(!home.path().join("update/fleetd.next").exists());
+    assert!(tampered.fetched.lock().unwrap().is_empty());
+}
+
+/// A machine running what a restart would end (a live session, a preview) is updated once it is idle, and says so
+/// meanwhile; agents' runs don't hold it.
+#[tokio::test]
+async fn a_busy_machine_waits_until_its_idle_and_says_so() {
+    let home = tempfile::tempdir().unwrap();
+    let fake = Arc::new(Fake::new(home.path(), b"new").node(
+        "builder",
+        OLD,
+        true,
+        true,
+        Some(Answer::BackOn(NEW)),
+    ));
+    fake.nodes.lock().unwrap()[0].busy = Some("1 live session".into());
+    let updates = area(home.path(), &fake);
+    updates.start(None).unwrap();
+    until(&updates, |r| hub_state(r) == UpdateState::Restarting).await;
+    *fake.running.lock().unwrap() = NEW.into();
+    let verdict = fake.plans.lock().unwrap()[0].verdict.clone();
+    fs::write(
+        &verdict,
+        json!({ "state": "done", "message": "runs it" }).to_string(),
+    )
+    .unwrap();
+    let after = area(home.path(), &fake);
+    tokio::spawn(after.clone().resume());
+    let run = until(&after, |r| {
+        by_machine(r)[&Some(MachineId::unchecked("builder"))]
+            .message
+            .is_some()
+    })
+    .await;
+    let part = &by_machine(&run)[&Some(MachineId::unchecked("builder"))];
+    assert_eq!(part.state, UpdateState::Waiting);
+    assert_eq!(
+        part.message.as_ref().unwrap().as_str(),
+        "waits until it's idle: 1 live session can't carry on through a restart"
+    );
+    tokio::time::sleep(Duration::from_millis(30)).await;
+    assert!(fake.asked.lock().unwrap().is_empty(), "not while it's busy");
+
+    fake.nodes.lock().unwrap()[0].busy = None;
+    let run = until(&after, |r| r.finished_at.is_some()).await;
+    assert_eq!(state(&run, Some("builder")).0, UpdateState::Done);
+}
+
+/// Retry updates one machine of the last run again (here one that didn't come back in time); the rest stays as it was.
+/// Nothing to retry for a machine the run didn't have.
+#[tokio::test]
+async fn retry_updates_one_machine_again() {
+    let home = tempfile::tempdir().unwrap();
+    let fake = Arc::new(
+        Fake::new(home.path(), b"new")
+            .node("builder", OLD, true, true, Some(Answer::BackOn(NEW)))
+            .node("mac", OLD, true, true, Some(Answer::BackOn(NEW))),
+    );
+    let updates = area(home.path(), &fake);
+    updates.start(None).unwrap();
+    until(&updates, |r| hub_state(r) == UpdateState::Restarting).await;
+    // mac stays away after the hub's restart.
+    fake.nodes.lock().unwrap()[1].live_since = None;
+    *fake.running.lock().unwrap() = NEW.into();
+    let verdict = fake.plans.lock().unwrap()[0].verdict.clone();
+    fs::write(
+        &verdict,
+        json!({ "state": "done", "message": "runs it" }).to_string(),
+    )
+    .unwrap();
+    let after = area(home.path(), &fake);
+    tokio::spawn(after.clone().resume());
+    let run = until(&after, |r| r.finished_at.is_some()).await;
+    assert_eq!(state(&run, Some("builder")).0, UpdateState::Done);
+    assert_eq!(state(&run, Some("mac")).0, UpdateState::Skipped);
+    assert_eq!(
+        after.retry(&MachineId::unchecked("nowhere")),
+        Err(super::Refused::NothingToRetry)
+    );
+
+    fake.nodes.lock().unwrap()[1].live_since = Some(1);
+    let again = after.retry(&MachineId::unchecked("mac")).unwrap();
+    assert!(again.finished_at.is_none());
+    assert_eq!(state(&again, Some("mac")).0, UpdateState::Waiting);
+    assert_eq!(
+        state(&again, Some("builder")).0,
+        UpdateState::Done,
+        "the rest stays"
+    );
+    let run = until(&after, |r| r.finished_at.is_some()).await;
+    assert_eq!(state(&run, Some("mac")).0, UpdateState::Done);
+    assert_eq!(claude(&run, "mac").state, UpdateState::Done);
 }
 
 /// The watcher never restarted the hub (it died, or the service manager refused): the hub still running ends the

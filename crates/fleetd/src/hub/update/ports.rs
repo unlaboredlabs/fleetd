@@ -4,7 +4,7 @@ use std::sync::{Arc, Weak};
 
 use fleetd_contracts::ids::MachineId;
 use fleetd_contracts::node_link::{
-    CAP_SELF_UPDATE, CAP_UPDATE_FETCH, NodeActionResult, NodeUpdate,
+    CAP_CLAUDE_INSTALL, CAP_SELF_UPDATE, CAP_UPDATE_FETCH, NodeActionResult, NodeUpdate,
 };
 
 use super::{NodeAnswer, NodeFacts, Refusal, UpdatePorts};
@@ -83,6 +83,12 @@ impl UpdatePorts for HubPorts {
                 live_since: hub.executors.live_since(&m.machine_id),
                 can_update: hub.link.node_can(&m.machine_id, CAP_SELF_UPDATE),
                 can_fetch: hub.link.node_can(&m.machine_id, CAP_UPDATE_FETCH),
+                can_install_claude: hub.link.node_can(&m.machine_id, CAP_CLAUDE_INSTALL),
+                claude: hub
+                    .executors
+                    .cached_runner(&m.machine_id)
+                    .and_then(|r| r.version),
+                busy: busy(&hub, &m.machine_id),
                 machine_id: m.machine_id,
                 name: m.name,
                 version: m.node_version,
@@ -98,6 +104,24 @@ impl UpdatePorts for HubPorts {
                 tracing::info!(%machine_id, "update: the node didn't take the fetch: {}", e.message);
             }
         });
+    }
+
+    fn claude_target(&self) -> String {
+        crate::node::runner::claude::install::target().to_owned()
+    }
+
+    fn install_claude<'a>(
+        &'a self,
+        machine_id: &'a MachineId,
+        version: &'a str,
+    ) -> BoxFuture<'a, Result<NodeActionResult, String>> {
+        Box::pin(async move {
+            let hub = self.hub().ok_or("the hub is stopping")?;
+            hub.node_commands
+                .install_claude(machine_id, version)
+                .await
+                .map_err(|e| e.message)
+        })
     }
 
     fn node_changed(&self, machine_id: &MachineId) -> BoxFuture<'static, ()> {
@@ -127,6 +151,38 @@ impl UpdatePorts for HubPorts {
             Ok((result, Box::new(refusal) as Box<dyn Refusal>))
         })
     }
+}
+
+/// What runs on the machine that its node's restart would end: live sessions (a browser, a device, a desktop) and
+/// previews. Agents' runs carry on by themselves, so they aren't in it.
+fn busy(hub: &Hub, machine_id: &MachineId) -> Option<String> {
+    let now = crate::hub::store::now_ms(hub.clock.as_ref());
+    let sessions = hub
+        .db
+        .with(|c| crate::hub::machine_roles::live_on(c, machine_id, now))
+        .unwrap_or(0);
+    let previews = crate::hub::preview::running(hub)
+        .unwrap_or_default()
+        .iter()
+        .filter(|p| &p.machine_id == machine_id)
+        .count();
+    let count = |n: usize, one: &str, many: &str| match n {
+        0 => None,
+        1 => Some(format!("1 {one}")),
+        n => Some(format!("{n} {many}")),
+    };
+    let words: Vec<String> = [
+        count(
+            usize::try_from(sessions).unwrap_or(0),
+            "live session",
+            "live sessions",
+        ),
+        count(previews, "preview", "previews"),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    (!words.is_empty()).then(|| words.join(" and "))
 }
 
 impl Refusal for crate::hub::link::commands::Refusal {
