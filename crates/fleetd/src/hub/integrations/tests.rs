@@ -375,3 +375,38 @@ fn names_split_into_words() {
     assert_eq!(words("sign_up"), ["sign", "up"]);
     assert_eq!(words("getHTTPStatus"), ["get", "httpstatus"]);
 }
+
+#[test]
+fn review_follow_ups_a_share_reads_as_a_share_a_changed_event_reaches_its_guests_and_an_encoded_key_is_found()
+ {
+    assert_eq!(
+        ask(
+            "mcp__google__workspace__drive_share",
+            json!({ "fileId": "f1" })
+        )
+        .action,
+        ToolAction::Share
+    );
+    let changed = ask(
+        "mcp__google__update_calendar_event",
+        json!({ "event_id": "e1", "start": "2026-11-03T10:00:00Z", "end": "2026-11-03T11:00:00Z" }),
+    );
+    assert_eq!(changed.action, ToolAction::Send);
+    assert!(
+        changed
+            .audience
+            .as_deref()
+            .unwrap()
+            .contains("Google emails them")
+    );
+    let quiet = ask(
+        "mcp__google__update_calendar_event",
+        json!({ "event_id": "e1", "summary": "Focus", "notify_attendees": false }),
+    );
+    assert_eq!(quiet.action, ToolAction::Write);
+    let encoded = json!({ "block_id": "b1", "children": "[{\"paragraph\":{\"text\":\"api_key = abcd1234efgh5678\"}}]" });
+    assert_eq!(
+        blocked("mcp__notion__API-patch-block-children", encoded),
+        Never::Credential.why()
+    );
+}
