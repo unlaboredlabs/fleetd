@@ -1,8 +1,14 @@
-// fleetd.sh's showcase: the app on fixtures/showcase, recorded while it plays one request from the message to the
-// merge, in the light and the dark theme. `pnpm fixtures && pnpm qa:build && pnpm site:showcase` writes
-// site/showcase-<theme>.webm, its H.264 twin site/showcase-<theme>.mp4 and its poster, site/showcase-<theme>.jpg (the
-// end: the merge landed), each with a -small twin for small screens, over the files in the repo, and each
-// step's start in the video, in seconds, to site/showcase.json: the page marks the step that is playing.
+// fleetd.sh's showcase: the app on fixtures/showcase, recorded while a busy storefront takes one request from the
+// message to the merge, in the light and the dark theme. `pnpm fixtures && pnpm qa:build && pnpm site:showcase` writes
+// site/showcase-<theme>.webm, its H.264 twin site/showcase-<theme>.mp4 and its poster, site/showcase-<theme>.jpg (a
+// busy moment: the phone's screen yours, its code typed), each with a -small twin for small screens, over the files in
+// the repo, and each step's start in the video, in seconds, to site/showcase.json: the page marks the step that is
+// playing.
+//
+// It runs at a person's pace with nothing idle: QA types the request at once, then moves through the views as the
+// story goes (Screens, the browser, the phone, Take over and the code, Hand back, the merge line, back to Agents).
+// The video loops: its last moments fade into its first, which the encode then leaves out, so the end runs into the
+// start without a cut.
 //
 // The frames are the window's own (CDP's screencast), with motion on: the app's beat, its entrances and the typing.
 // They are spaced out to a steady 25 fps, then encoded as VP9 by the ffmpeg Playwright installs for its own videos
@@ -12,19 +18,36 @@ import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { type Page, test } from "@playwright/test";
-import { REQUEST, STEPS } from "../fixtures/showcase/index.ts";
+import { CODE } from "../fixtures/showcase/pages.ts";
+import { DIGIT_MS, REQUEST, STEPS } from "../fixtures/showcase/index.ts";
 import { appMain, desktopDir, fixtureMeta, fixturesDir, launch, settle, setView, show } from "./harness.ts";
 
 const repo = path.resolve(desktopDir, "../..");
 const CHAT = "#/project/devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22";
 const FPS = 25;
-// When QA moves the panel along, in ms after the send: to the PRs once the first one is up, to the merge line once its
-// review passed.
-const TO_PRS = STEPS.opened + 1400;
-const TO_LINE = STEPS.ci + 300;
+/** The loop's fade, in frames: the last ones fade into the first ones, which the video then starts after. */
+const FADE = 15;
+// When QA moves, in ms after the send: to Screens once the two screens are up, into the browser's, back out and into
+// the phone's once it has booted, Take over once the lead asks, Hand back once the code is in, out again as the
+// browser's recording lands, to the merge line as the batch starts, and back to Agents once it merged.
+const QA = {
+  screens: STEPS.screens + 600,
+  web: STEPS.screens + 1200,
+  allScreens: 9600,
+  phone: 10_200,
+  takeOver: STEPS.phoneAsks + 1200,
+  handBack: STEPS.phoneAsks + 3400,
+  back: STEPS.pr232 + 500,
+  shipping: STEPS.batch - 400,
+  line: STEPS.batch,
+  agents: STEPS.merged + 1600,
+} as const;
+/** The poster's moment: the phone yours, its code typed, the rest of the floor still at work. */
+const POSTER = QA.takeOver + DIGIT_MS.first + CODE.length * DIGIT_MS.every + 200;
 
-/** A person's pace, as the app's own demo typing (src/main/instrument/recordConfig.ts): about 50 ms a key, uneven. */
-const keyDelayMs = (index: number, ch: string): number => 30 + ((index * 7919) % 40) + (ch === " " ? 40 : ch === "." || ch === "," ? 180 : 0);
+/** The request a few keys at a time, as a quick typist's keys land on the frames: about 1.2 s for the whole of it. */
+const BURST = 3;
+const BURST_MS = 45;
 
 const ffmpeg = (): string => {
   if (process.env["FFMPEG"]) return process.env["FFMPEG"];
@@ -185,6 +208,62 @@ const hideByClass = async (page: Page, selector: string, text: string, how: "dis
 
 const sleepUntil = (at: number) => new Promise((done) => setTimeout(done, Math.max(0, at - Date.now())));
 
+/**
+ * The frames as the video plays them: from `first` on, the last FADE fading into the FADE before `first`, so its end
+ * runs into its start. Blended in the app window's canvas, as JPEGs like the screencast's.
+ */
+async function looped(page: Page, ticks: readonly Buffer[], first: number): Promise<Buffer[]> {
+  const out = ticks.slice(first);
+  for (let j = 0; j < FADE; j++) {
+    const k = out.length - FADE + j;
+    const from = out[k];
+    const to = ticks[first - FADE + j];
+    if (from === undefined || to === undefined) continue;
+    const jpeg = await page.evaluate(
+      async ({ a, b, t }) => {
+        const bitmap = (s: string) => createImageBitmap(new Blob([Uint8Array.from(atob(s), (c) => c.charCodeAt(0))], { type: "image/jpeg" }));
+        const [x, y] = await Promise.all([bitmap(a), bitmap(b)]);
+        const canvas = new OffscreenCanvas(x.width, x.height);
+        const ctx = canvas.getContext("2d") as OffscreenCanvasRenderingContext2D;
+        ctx.drawImage(x, 0, 0);
+        ctx.globalAlpha = t;
+        ctx.drawImage(y, 0, 0, x.width, x.height);
+        const bytes = new Uint8Array(await (await canvas.convertToBlob({ type: "image/jpeg", quality: 0.92 })).arrayBuffer());
+        let s = "";
+        for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+        return btoa(s);
+      },
+      { a: from.toString("base64"), b: to.toString("base64"), t: (j + 1) / (FADE + 1) },
+    );
+    out[k] = Buffer.from(jpeg, "base64");
+  }
+  return out;
+}
+
+/** A screencast frame as the page's poster: a JPEG at `quality`, at `scale` of its size. */
+async function poster(page: Page, jpeg: Buffer, scale: number, quality: number, file: string) {
+  const out = await page.evaluate(
+    async ({ src, scale, quality }) => {
+      const bitmap = await createImageBitmap(new Blob([Uint8Array.from(atob(src), (c) => c.charCodeAt(0))], { type: "image/jpeg" }));
+      const canvas = new OffscreenCanvas(Math.round(bitmap.width * scale), Math.round(bitmap.height * scale));
+      (canvas.getContext("2d") as OffscreenCanvasRenderingContext2D).drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      const bytes = new Uint8Array(await (await canvas.convertToBlob({ type: "image/jpeg", quality })).arrayBuffer());
+      let s = "";
+      for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+      return btoa(s);
+    },
+    { src: jpeg.toString("base64"), scale, quality },
+  );
+  writeFileSync(file, Buffer.from(out, "base64"));
+}
+
+/** Clicks what `target` finds, then leaves no hover or focus ring behind. */
+async function press(page: Page, target: ReturnType<Page["locator"]>) {
+  await target.first().click();
+  await page.mouse.move(2, 2);
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+}
+
 for (const theme of ["light", "dark"] as const) {
   test(`showcase ${theme}`, async () => {
     test.setTimeout(180_000);
@@ -196,7 +275,7 @@ for (const theme of ["light", "dark"] as const) {
       await page.clock.install({ time: new Date(now ?? Date.now()) });
       await page.reload();
       await setView(app, page, "medium", theme);
-      await show(page, "chat", CHAT);
+      await show(page, "chat", `${CHAT}/agents`);
       await settled();
       // As on the site's shots (site.spec.ts): no sample-data banner or chip.
       await hideByClass(page, '[role="status"]', "Sample data, not connected", "display: none");
@@ -212,34 +291,52 @@ for (const theme of ["light", "dark"] as const) {
       });
       await cdp.send("Page.startScreencast", { format: "jpeg", quality: 92, everyNthFrame: 1 });
       const start = Date.now();
-      await sleepUntil(start + 900);
+      // The fade's frames come first; the video starts after them, on the first frame with a key typed.
+      await sleepUntil(start + (FADE * 1000) / FPS);
 
-      const typing = Date.now();
       const composer = page.locator("[data-composer] textarea");
-      await composer.focus();
-      let i = 0;
-      for (const ch of REQUEST) {
-        await page.keyboard.type(ch);
-        await sleepUntil(Date.now() + keyDelayMs(i++, ch));
+      await composer.click();
+      let typing = 0;
+      for (let i = 0; i < REQUEST.length; i += BURST) {
+        const next = Date.now() + BURST_MS;
+        await page.keyboard.insertText(REQUEST.slice(i, i + BURST));
+        if (typing === 0) typing = Date.now();
+        await sleepUntil(next);
       }
-      await sleepUntil(Date.now() + 500);
+      await sleepUntil(Date.now() + 150);
       await page.keyboard.press("Enter");
       const sent = Date.now();
+      const tab = (name: RegExp) => page.getByRole("tab", { name }).or(page.getByRole("radio", { name }));
 
-      await sleepUntil(sent + TO_PRS);
-      await page.getByRole("tab", { name: /^Shipping/u }).click();
-      await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
-      await sleepUntil(sent + TO_LINE);
-      await page.getByRole("tab", { name: /^Merge line/u }).or(page.getByRole("radio", { name: /^Merge line/u })).first().click();
-      // Off the button and out of focus, so no ring is left in the last frames.
-      await page.mouse.move(2, 2);
-      await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+      await sleepUntil(sent + QA.screens);
+      await press(page, tab(/^Screens/u));
+      await sleepUntil(sent + QA.web);
+      await press(page, page.getByRole("link", { name: /signed-in shopper/u }));
+      await sleepUntil(sent + QA.allScreens);
+      await press(page, page.getByText("All screens"));
+      await sleepUntil(sent + QA.phone);
+      await press(page, page.getByRole("link", { name: /iPhone app/u }));
+      await sleepUntil(sent + QA.takeOver);
+      await press(page, page.getByRole("button", { name: "Take over", exact: true }));
+      // The keys go to the page, a digit as each shows.
+      for (const [k, digit] of Array.from(CODE).entries()) {
+        await sleepUntil(sent + QA.takeOver + DIGIT_MS.first + k * DIGIT_MS.every - 120);
+        await page.keyboard.type(digit);
+      }
+      await sleepUntil(sent + QA.handBack);
+      await press(page, page.getByRole("button", { name: /^Hand back/u }));
+      await sleepUntil(sent + QA.back);
+      await press(page, page.getByText("All screens"));
+      await sleepUntil(sent + QA.shipping);
+      await press(page, tab(/^Shipping/u));
+      await sleepUntil(sent + QA.line);
+      await press(page, tab(/^Merge line/u));
+      // Agents, and in it its agents rather than the Screens it showed last: the floor as the video starts.
+      await sleepUntil(sent + QA.agents);
+      await press(page, tab(/^Agents/u));
+      await sleepUntil(sent + QA.agents + 300);
+      await press(page, tab(/^Agents/u).last());
       await sleepUntil(sent + STEPS.end);
-      const out = path.join(repo, "site", `showcase-${theme}`);
-      // The poster, lighter than a screencast frame: the page shows it until the video plays, and instead of it with
-      // reduced motion.
-      await page.screenshot({ path: `${out}.jpg`, type: "jpeg", quality: 78, caret: "hide" });
-      await page.screenshot({ path: `${out}-small.jpg`, type: "jpeg", quality: 80, caret: "hide", scale: "css" });
       await cdp.send("Page.stopScreencast");
       const end = Date.now();
       if (frames.length < 10) throw new Error(`the screencast sent ${frames.length} frames`);
@@ -250,24 +347,34 @@ for (const theme of ["light", "dark"] as const) {
         const frame = frames.findLast((x) => x.at <= t) ?? frames[0];
         if (frame) ticks.push(frame.jpeg);
       }
-      const at = (ms: number) => Math.round((ms - start) / 100) / 10;
+      const first = frames.find((x) => x.at > typing)?.at ?? typing;
+      const video = await looped(page, ticks, Math.max(FADE, Math.ceil(((first - start) * FPS) / 1000)));
+      const out = path.join(repo, "site", `showcase-${theme}`);
+      // The poster, lighter than a screencast frame: the page shows it until the video plays, and instead of it with
+      // reduced motion.
+      const still = frames.findLast((x) => x.at <= sent + POSTER)?.jpeg;
+      if (still === undefined) throw new Error("no frame for the poster");
+      await poster(page, still, 1, 0.78, `${out}.jpg`);
+      await poster(page, still, 0.5, 0.8, `${out}-small.jpg`);
+      // Seconds into the video, which starts as the typing shows.
+      const at = (ms: number) => Math.max(0, Math.round((ms - first) / 100) / 10);
       const chapters = path.join(repo, "site", "showcase.json");
       const all = existsSync(chapters) ? (JSON.parse(readFileSync(chapters, "utf8")) as Record<string, unknown>) : {};
-      all[theme] = { ask: at(typing), plan: at(sent), build: at(sent + STEPS.writers), review: at(sent + STEPS.opened), merge: at(sent + STEPS.ci), end: at(end) };
+      all[theme] = { ask: at(typing), plan: at(sent + STEPS.reply - 500), build: at(sent + STEPS.split + 600), screens: at(sent + QA.web), merge: at(sent + QA.shipping), end: Math.round((video.length / FPS) * 10) / 10 };
       writeFileSync(chapters, `${JSON.stringify(all, null, 2)}\n`);
       // Two sizes: 1440 px tall for a wide screen at 2x, 720 for a small screen's (the page picks by the frame's pixels).
       for (const [height, file] of [[1440, `${out}.webm`], [720, `${out}-small.webm`]] as const) {
         const run = spawnSync(
           ffmpeg(),
           ["-y", "-loglevel", "error", "-f", "image2pipe", "-framerate", String(FPS), "-c:v", "mjpeg", "-i", "pipe:0", "-vf", `scale=-2:${String(height)}:flags=lanczos`, "-c:v", "libvpx-vp9", "-pix_fmt", "yuv420p", "-crf", height === 720 ? "34" : "38", "-b:v", "0", "-row-mt", "1", "-deadline", "good", "-cpu-used", "2", "-an", file],
-          { input: Buffer.concat(ticks), maxBuffer: 1 << 30 },
+          { input: Buffer.concat(video), maxBuffer: 1 << 30 },
         );
         if (run.status !== 0) throw new Error(`ffmpeg failed: ${String(run.stderr)}`);
       }
       // And as H.264, for Safari on an older iPhone or Mac.
       // H.264 level 4.2 holds at most 8,704 macroblocks a frame: 1792x1152 (8,064) is the widest 14:9 under it.
-      await mp4(page, ticks, { width: 1792, height: 1152 }, "avc1.64002A", 42, 1_400_000, `${out}.mp4`);
-      await mp4(page, ticks, { width: 1120, height: 720 }, "avc1.64001F", 31, 700_000, `${out}-small.mp4`);
+      await mp4(page, video, { width: 1792, height: 1152 }, "avc1.64002A", 42, 1_400_000, `${out}.mp4`);
+      await mp4(page, video, { width: 1120, height: 720 }, "avc1.64001F", 31, 700_000, `${out}-small.mp4`);
     } finally {
       await close();
     }

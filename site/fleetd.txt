@@ -18,25 +18,38 @@ Docs:   https://fleetd.sh/docs
 GitHub: https://github.com/unlaboredlabs/fleetd
 
 
-ONE REQUEST, FROM MESSAGE TO MERGED PULL REQUEST
+A BUSY STOREFRONT TAKES ONE MORE REQUEST, FROM THE MESSAGE TO A MERGED BATCH
 A recording of the fleetd app on sample data, with the waits cut short: a real
 change takes minutes to hours, and you can close the app meanwhile.
 Video: showcase-light.webm, showcase-dark.webm (H.264: showcase-light.mp4,
 showcase-dark.mp4). Still: showcase-light.jpg
 
   1  You ask             Say what you want in the project's chat.
-  2  The lead plans      It splits the work and starts agents.
-  3  Agents build        In parallel, each on its own branch.
-  4  A reviewer checks   Every pull request, before it merges.
-  5  The train merges    Rebased onto main, merged on green CI.
+  2  The lead splits it  Into parts, each with its own agent.
+  3  Agents build        In parallel, beside the other orders.
+  4  Screens test it     A browser and an iPhone, live; take over any time.
+  5  The train merges    Reviewed PRs, in batches, on green CI.
 
-  You:   Let shoppers save their cart and pick it up on any device.
-  Lead:  On it, in two parts: one writer saves the cart for signed-in shoppers,
-         one brings it back at sign-in. Each PR gets its own reviewer before it
-         merges.
-  Lead:  #231 is up: carts are stored per shopper. A reviewer is on it.
-  Lead:  #231 is merged. The second PR, bringing the cart back at sign-in,
-         opens next.
+  Seven agents are already at work on storefront's other orders.
+  You:   Let shoppers save their cart and pick it up on the web or the iPhone
+         app.
+  Lead:  On it, in three parts, each with its own writer: carts saved per
+         shopper, the web cart, and the iPhone app's cart. Each PR gets a
+         reviewer, and the web and iPhone parts are tested on a screen first.
+  Lead:  #231 is up: carts are saved per shopper. A reviewer is on it.
+         (The web writer signs in to the shop in a live browser screen and
+         adds a shirt; the cart is saved to the account. The iPhone writer
+         boots a simulator, opens the app and taps through to its sign-in.)
+  Lead:  The iPhone app's sign-in texts a code to a test number, so its agent
+         can't go on alone. Take over its screen, enter the code, then hand
+         back.
+         (You take over, type the code and hand back: the app shows the cart
+         saved on the web.)
+  Lead:  #232 is up: the web cart, with its screen's recording on the PR as
+         proof: a shopper signs in, adds a shirt, and the cart is saved to
+         their account.
+  Lead:  #230 to #233 merged as one batch. Saved carts now follow shoppers
+         between the web and the iPhone app.
 
 
 THE WHOLE LINE, NOT ONE MORE CHAT WINDOW
@@ -115,17 +128,6 @@ computer; fleetd never shows it again. Image: chat-secret.png
   It is saved as STRIPE_TEST_KEY in /home/dev/src/storefront/.env.test on devbox.
   [Paste or type the value]  [Save secret]
   Sealed on this computer to devbox's key, so only devbox can open it. fleetd never shows it again. To skip it, say so in the chat.
-
-
-87
-Pull requests fleetd's agents wrote and its merge train merged into fleetd's own
-repository, from 20 October 2026 00:00 to 26 October 18:11, UTC. fleetd is
-built with fleetd: the lead plans, agents write and review, the train merges,
-and the people behind it answer the lead's questions.
-
-Counted by `fleetd metrics --days 7` on the hub that builds fleetd. Merges people
-made themselves that week aren't in it. The 87, each with its pull request on
-GitHub: https://fleetd.sh/train-week.txt
 
 
 ALSO IN THE BOX
