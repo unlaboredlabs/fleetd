@@ -170,6 +170,12 @@
   gap: var(--space-2);
 }
 
+/* A value is code (data-text="code"): copied exactly, so it wraps rather than scrolls, and a space at a line's end
+   wraps too (break-spaces), where pre-wrap would hang it past the box. */
+.copyable .value {
+  white-space: break-spaces;
+}
+
 .value {
   min-width: 0;
 }

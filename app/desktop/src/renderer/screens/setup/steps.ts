@@ -299,9 +299,9 @@ export const guides = (hub: string): ReadonlyArray<Guide> => {
             {
               label: "Subscriber on the subscription",
               value: `${GMAIL_READER}@${project}.iam.gserviceaccount.com`,
-              note: `Subscriptions › ${GMAIL_SUBSCRIPTION} › Permissions › Add principal, role Pub/Sub Subscriber.`,
+              note: "Subscriptions › the subscription above › Permissions › Add principal, role Pub/Sub Subscriber.",
             },
-            { label: "Key", value: `Service accounts › ${GMAIL_READER} › Keys › Add key › Create new key › JSON. Paste the downloaded file below, then delete it.`, plain: true },
+            { label: "Key", value: "Service accounts › the account above › Keys › Add key › Create new key › JSON. Paste the downloaded file below, then delete it.", plain: true },
             {
               label: "Or in Cloud Shell",
               value: [

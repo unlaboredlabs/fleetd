@@ -241,12 +241,12 @@ function Values({ values }: { values: ReadonlyArray<PasteValue> }) {
             {v.plain === true ? (
               <Text size="sm">{v.value}</Text>
             ) : v.filled === true ? (
-              <Text size="sm" mono className={s.value}>
+              <Text size="sm" mono className={s.value} data-text="code">
                 {v.value}
               </Text>
             ) : (
               <span className={s.copyable}>
-                <Text size="sm" mono preserveLines className={s.value}>
+                <Text size="sm" mono preserveLines className={s.value} data-text="code">
                   {v.value}
                 </Text>
                 <Button
