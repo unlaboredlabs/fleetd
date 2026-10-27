@@ -1,5 +1,6 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import { sendKept } from "../screens/checklist/removal";
 import { registerSettingsCommands } from "../screens/settings/commands";
 import { applyTheme, storedMode, UiProvider, type ThemeMode } from "../ui";
 import { App } from "./App";
@@ -23,6 +24,8 @@ window.addEventListener("unhandledrejection", (e) => reportError("Unhandled reje
 
 const data = createDataLayer(window.fleetd.hub);
 registerSettingsCommands(data);
+// Checklist removals the last run quit before sending.
+sendKept(data);
 
 const root = document.getElementById("root");
 if (root === null) throw new Error("index.html has no #root");
