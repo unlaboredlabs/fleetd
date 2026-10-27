@@ -65,10 +65,12 @@ input. **Deny** tells the Navi you said no, with your reason if you give one. A 
 run ended) closes its approval. Moving money, trading and creating accounts through an integration are blocked even
 if approved.
 
-**What screens can still do.** Inside a page it already opened, a Navi clicks, types and fills unasked. That's how
-screens work. A click that follows a link to another site isn't asked, and neither is the final Send or Pay button
-on a site you allowed. The Navi is told to hand that last click to you with a takeover, but that's its prompt, not
-fleetd's rules. Only allow sites where that's fine, such as your bank's when you mean to watch.
+**What screens can still do.** The site gate covers opening a site; it doesn't follow a page after that. Inside a
+page it already opened, a Navi clicks, types and fills unasked, which is how screens work, so a click or a form that
+leads to another site isn't asked. Its Android, iOS and desktop screens (`agent-device`) don't ask per site at all.
+Nor is the final Send or Pay button on a site you allowed. The Navi is told to hand that last click to you with a
+takeover, but that's its prompt, not fleetd's rules. Only allow sites where that's fine, such as your bank's when you
+mean to watch.
 
 ## Memory
 
