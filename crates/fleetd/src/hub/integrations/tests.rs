@@ -183,7 +183,7 @@ fn writes_and_deletes_ask_too() {
     assert_eq!(doc.action, ToolAction::Write);
     assert_eq!(doc.target.as_deref(), Some("d1"));
     assert_eq!(doc.body.as_deref(), Some("## Notes"));
-    // A tool xaq adds later, unknown here, asks.
+    // A Google tool added later, unknown here, asks.
     assert_eq!(
         ask("mcp__google__snooze_thread", json!({})).action,
         ToolAction::Write
@@ -369,7 +369,7 @@ fn attachments_are_listed_and_their_bytes_said_by_size() {
         names,
         [
             ("tenant-form.pdf", Some(300_000), None),
-            ("report.pdf", None, Some("a file on xaq's machine")),
+            ("report.pdf", None, None),
             ("Attachment a7", None, Some("from message 18c2")),
             ("Drive file 1AbC", None, Some("from Drive")),
         ]
@@ -451,8 +451,9 @@ fn review_follow_ups_a_share_reads_as_a_share_a_changed_event_reaches_its_guests
 }
 
 #[test]
-fn only_xaq_s_file_bytes_are_said_by_size_and_a_credential_anywhere_is_still_refused() {
-    // A key in a field that is called content_base64 but isn't a file's bytes: refused, on any server.
+fn only_a_google_tool_s_file_bytes_are_said_by_size_and_a_credential_anywhere_is_still_refused() {
+    // A key in a field called content_base64 that doesn't decode as base64 isn't a file: read as text and refused, on
+    // any server.
     for (tool, input) in [
         (
             "mcp__google__send_message",
@@ -472,7 +473,7 @@ fn only_xaq_s_file_bytes_are_said_by_size_and_a_credential_anywhere_is_still_ref
         json!({ "content_base64": "QUJD" }),
     );
     assert!(p.input.contains("\"QUJD\""));
-    // xaq's attachment without a filename isn't the shape xaq takes bytes in: shown as it is too.
+    // An attachment without a filename isn't the shape file bytes come in: shown as it is too.
     let q = ask(
         "mcp__google__create_draft",
         json!({ "to": "a@example.com", "subject": "s", "body": "b",
@@ -533,12 +534,23 @@ fn wrapped_and_large_attachments_are_files_and_a_key_inside_one_is_still_found()
     );
 }
 
+/// `len` bytes that look random: no file of real mail could be refused for what they spell.
+fn noise(len: usize, mut seed: u64) -> Vec<u8> {
+    (0..len)
+        .map(|_| {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed as u8
+        })
+        .collect()
+}
+
 #[test]
-fn a_key_padded_out_to_look_like_a_file_is_still_refused() {
-    use super::policy::file_bytes;
+fn a_binary_file_is_never_refused_but_a_text_file_or_plain_text_holding_a_key_is() {
     use base64::Engine;
-    let b64 = |bytes: &[u8]| base64::engine::general_purpose::STANDARD.encode(bytes);
-    let send = |content: &str| {
+    use base64::engine::general_purpose::{STANDARD, URL_SAFE};
+    let send = |content: String| {
         verdict(
             "mcp__google__send_message",
             &json!({ "to": "a@example.com", "subject": "s", "body": "b",
@@ -546,44 +558,40 @@ fn a_key_padded_out_to_look_like_a_file_is_still_refused() {
             &navi(),
         )
     };
-    let refused = Some(Verdict::Block(Never::Credential.why()));
-    // `key` between `sep`s, padded with base64 letters past 256 characters to a length that decodes: a file's shape.
-    let padded = |key: &str, sep: char| {
-        let mut out = format!("{}{sep}{key}{sep}", "A".repeat(300));
-        while out.len() % 4 != 0 {
-            out.push('A');
+    // Random 1 MB files, in both alphabets, wrapped or not: never refused, whatever their letters spell.
+    for seed in 1..=8u64 {
+        let bytes = noise(1_000_000, seed.wrapping_mul(0x9E37_79B9_7F4A_7C15));
+        for content in [
+            STANDARD.encode(&bytes),
+            URL_SAFE.encode(&bytes),
+            URL_SAFE
+                .encode(&bytes)
+                .as_bytes()
+                .chunks(76)
+                .map(|c| std::str::from_utf8(c).unwrap())
+                .collect::<Vec<_>>()
+                .join("\r\n"),
+        ] {
+            assert!(
+                matches!(send(content), Some(Verdict::Ask(_))),
+                "random file {seed} was refused"
+            );
         }
-        out + &"A".repeat(300)
-    };
-    for (key, sep) in [
-        ("sk-ant-abcdefghijklmnop0123", '-'),
-        ("sk-proj-abcdefghijklmnopqrstuvwx", '-'),
-        ("ghp_abcdefghijklmnopqrstuvwxyz0123", '-'),
-        ("github_pat_abcdefghijklmnopqrstuvwxyz0123", '-'),
-        ("xoxb-1234567890-abcdefghij", '-'),
-        ("AKIAQQQQQQQQQQQQQQQQ", '+'),
-    ] {
-        let content = padded(key, sep);
-        assert!(
-            file_bytes(&content).is_some(),
-            "{key} isn't padded to a file's shape"
-        );
-        assert_eq!(send(&content), refused, "{key}");
     }
-    // A private key's armour, wrapped among base64 lines.
-    let pem = format!(
-        "{}\n-----BEGIN PRIVATE KEY-----\n{}\n-----END PRIVATE KEY-----",
-        b64(&[3u8; 300]),
-        "MIIE"
+    // A text file holding a key, in either alphabet: refused.
+    let notes = format!(
+        "notes\n{}\ntoken = ghp_abcdefghijklmnopqrstuvwxyz0123\n",
+        "x".repeat(40)
     );
-    assert_eq!(send(&pem), refused);
-    // A real file whose standard base64 happens to spell a Google API key's shape is a file: it asks.
-    let chance = format!(
-        "{}/AIza{}{}",
-        b64(&[5u8; 300]),
-        "Q".repeat(35),
-        b64(&[6u8; 300])
+    for content in [STANDARD.encode(&notes), URL_SAFE.encode(&notes)] {
+        assert_eq!(send(content), Some(Verdict::Block(Never::Credential.why())));
+    }
+    // A key in plain text, in the body: refused.
+    assert_eq!(
+        blocked(
+            "mcp__google__send_message",
+            json!({ "to": "a@example.com", "subject": "s", "body": "here: sk-ant-abcdefghijklmnop0123" })
+        ),
+        Never::Credential.why()
     );
-    assert!(file_bytes(&chance).is_some());
-    assert!(matches!(send(&chance), Some(Verdict::Ask(_))));
 }

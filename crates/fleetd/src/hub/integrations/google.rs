@@ -1,19 +1,18 @@
-//! Google through xaq (npm `xaq-cli`): the person's own xaq holds the Google sign-in, made with their own Google Cloud
-//! OAuth client in xaq's setup, and gives Navi one MCP endpoint (`<xaq>/mcp`) and an agent key (`aib_…`), which the app
-//! seals to Navi's machine as the `Authorization` header. This file is the whole adapter: xaq's tool names, which of
-//! them read, and how each asking one reads on a card. A fleetd-native Google connection would replace it.
+//! Google: the Gmail, Calendar and Drive tools of a server marked `integration: google`, by their names, which of them
+//! read, and how each asking one reads on a card. The rule shapes here (names, and the input fields each card reads)
+//! are what fleetd's own Google tools are read by; a tool it doesn't know asks, as its name says.
 //!
-//! Gmail and Calendar are xaq's own tools (`search_threads`, `send_message`, `create_calendar_event`, …). Drive, Docs,
-//! Sheets and Slides come from xaq's Google Workspace extension, which xaq lists as `<connection>__<tool>`
-//! (`workspace__drive_search`). xaq's own guardrails (grants, recipient allowlists, send caps) still apply behind it.
+//! Gmail and Calendar tools are named plainly (`search_threads`, `send_message`, `create_calendar_event`, …). Drive,
+//! Docs, Sheets and Slides tools may come under a connection's prefix, `<connection>__<tool>`
+//! (`workspace__drive_search`), and are read by the part after it.
 use serde_json::Value;
 
 use super::notion;
 use super::policy::{Attachment, Draft, Rule, addresses, base64_bytes, text_of};
 use fleetd_contracts::integrations::ToolAction::{self, Delete, Send, Write};
 
-/// xaq's tools that only read: Gmail, Calendar, its broker's call status, and the Workspace extension's reads under its
-/// default connection name.
+/// The tools that only read: Gmail, Calendar, a call's status, and Drive, Docs, Sheets and Slides reads under their
+/// default prefix.
 pub const READS: &[&str] = &[
     "list_accounts",
     "list_labels",
@@ -43,7 +42,7 @@ pub const READS: &[&str] = &[
     "workspace__slides_read",
 ];
 
-/// xaq's tools that ask, and what each does.
+/// The tools that ask, and what each does.
 const ASKS: &[(&str, ToolAction)] = &[
     ("send_message", Send),
     ("reply", Send),
@@ -60,7 +59,8 @@ const ASKS: &[(&str, ToolAction)] = &[
     ("delete_calendar_event", Delete),
 ];
 
-/// The Workspace extension's tools that remove something; its other writes change files the person can restore.
+/// The Drive, Docs, Sheets and Slides tools that remove something; their other writes change files the person can
+/// restore.
 const WORKSPACE_DELETES: &[&str] = &[
     "drive_trash",
     "docs_overwrite",
@@ -87,7 +87,7 @@ pub fn rule(tool: &str, input: &Value) -> Option<Rule> {
             && reaches_guests(tool, input);
         return Some(Rule::Ask(if send { Send } else { *action }));
     }
-    // A broker connection's tool: the Workspace extension's under any connection name, or xaq's Notion connection's.
+    // A tool under a connection's prefix: Drive, Docs, Sheets or Slides under any prefix, or Notion's hosted tools.
     let (_, inner) = tool.rsplit_once("__")?;
     if READS.contains(&format!("workspace__{inner}").as_str()) {
         return Some(Rule::Read);
@@ -271,8 +271,8 @@ pub fn draft(tool: &str, input: &Value) -> Draft {
     d
 }
 
-/// The files a send, draft, reply or forward attaches, from each of xaq's sources: bytes in the call, a path on xaq's
-/// machine, another message's attachment, a Drive file.
+/// The files a send, draft, reply or forward attaches, from each source: bytes in the call, a path, another message's
+/// attachment, a Drive file. A path's file is shown by its name.
 fn attachments(v: &Value) -> Vec<Attachment> {
     let Some(items) = v.as_array() else {
         return Vec::new();
@@ -296,7 +296,7 @@ fn attachments(v: &Value) -> Vec<Attachment> {
                 name,
                 bytes: a["content_base64"].as_str().map(base64_bytes),
                 from: if path.is_some() {
-                    Some("a file on xaq's machine".to_owned())
+                    None
                 } else if let Some(m) = message {
                     Some(format!("from message {m}"))
                 } else {
@@ -307,7 +307,7 @@ fn attachments(v: &Value) -> Vec<Attachment> {
         .collect()
 }
 
-/// A Workspace extension tool's card: the file it acts on and what goes in.
+/// A Drive, Docs, Sheets or Slides tool's card: the file it acts on and what goes in.
 fn workspace(tool: &str, input: &Value) -> Draft {
     let Some((_, inner)) = tool.rsplit_once("__") else {
         return Draft::default();

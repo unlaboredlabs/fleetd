@@ -3991,7 +3991,7 @@ export type PreviewAsker = {
 export type PreviewAttachment = {
   /** Its size, when its bytes are in the input. */
   bytes?: number;
-  /** Where it comes from, when not from the input: "from Drive", "from message 18c2", "a file on the Navi's machine". */
+  /** Where it comes from, when not from the input: "from Drive", "from message 18c2". */
   from?: string;
   /** The name the recipient sees: "tenant-form.pdf", or what the file is when the tool names it by id. */
   name: string;
