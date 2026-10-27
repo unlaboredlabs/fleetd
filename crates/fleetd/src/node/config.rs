@@ -41,6 +41,9 @@ pub struct NodeConfig {
     /// Previews of PRs the person asked to try (node/preview): on unless `enabled` is false.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub preview: Option<super::preview::PreviewNodeConfig>,
+    /// Android sessions for agents (node/device): on where opted in (`enabled` true) or installed already, and KVM opens.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub device: Option<super::device::DeviceConfig>,
 }
 
 fn config_file(home: &Path) -> PathBuf {

@@ -60,6 +60,10 @@ pub trait DoctorFleet: Send + Sync {
     fn guard(&self, _machine_id: &str) -> (Option<NodeDisk>, Option<String>) {
         (None, None)
     }
+    /// Whether the machine can host android sessions, as its node's heartbeat last reported it.
+    fn android(&self, _machine_id: &str) -> Option<fleetd_contracts::node_link::AndroidHealth> {
+        None
+    }
     /// Where each of the machine's projects last started a worktree, by project title.
     fn bases(&self, _machine_id: &str) -> Vec<(String, WorktreeBase)> {
         Vec::new()
@@ -262,6 +266,11 @@ impl Doctor {
             !online,
             disk.as_ref(),
             paused.as_deref(),
+        ));
+        out.extend(checks::android_sessions(
+            id,
+            !online,
+            fleet.android(id).as_ref(),
         ));
         out.push(checks::usage_breaker(id, &usage.breaker));
         let bases = fleet.bases(id);

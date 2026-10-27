@@ -137,6 +137,7 @@ fn session(
     let next = BrowserSession {
         session_id: call.session_id.clone(),
         project_ref: caller.project_ref.clone(),
+        kind: call.kind,
         thread_id: call.thread_id,
         task_id,
         purpose: call.purpose,

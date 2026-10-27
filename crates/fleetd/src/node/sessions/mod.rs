@@ -2121,7 +2121,7 @@ impl SessionService {
             let browser_env = browser.env(id, path.as_deref());
             env.retain(|(k, _)| !browser_env.iter().any(|(b, _)| b == k));
             env.extend(browser_env);
-            plugin_dirs.extend(browser.plugin_dir());
+            plugin_dirs.extend(browser.plugin_dirs());
         }
         let spec = SessionSpec {
             session_id: id.to_owned(),
