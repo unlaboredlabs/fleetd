@@ -9,7 +9,7 @@ import { toRequest, type Draft } from "./mcpModel";
 /** The project kind of a Navi: only a Navi's settings offer integrations, and the hub refuses them anywhere else. */
 export const NAVI_KIND = "assistant";
 
-export const isNavi = (p: ProjectSummary | undefined): boolean => (p as { kind?: unknown } | undefined)?.kind === NAVI_KIND;
+export const isNavi = (p: ProjectSummary | undefined): boolean => p?.kind === NAVI_KIND;
 
 export const DOCS = "https://fleetd.sh/docs/integrations/";
 
