@@ -191,29 +191,19 @@ pub fn issued(
 ) -> Result<Vec<IssuedLink>, StoreError> {
     let rows = db.with(|c| {
         let mut stmt = c.prepare_cached(&format!(
-            "SELECT {ISSUED_COLUMNS} FROM hub_links_issued ORDER BY created_ms DESC, link_id LIMIT 500"
+            "SELECT {ISSUED_COLUMNS} FROM hub_links_issued
+             WHERE ?1 OR key_id = ?2 OR (?3 IS NOT NULL AND json_extract(person, '$.personId') = ?3)
+             ORDER BY created_ms DESC, link_id LIMIT 500"
         ))?;
+        let (all, key_id, person) = match mine {
+            None => (true, "", None),
+            Some((key_id, person)) => (false, key_id, person.map(|p| p.person_id.as_str())),
+        };
         Ok(stmt
-            .query_map([], IssuedRow::read)?
+            .query_map(params![all, key_id, person], IssuedRow::read)?
             .collect::<rusqlite::Result<Vec<_>>>()?)
     })?;
-    let mut out = Vec::new();
-    for row in rows {
-        let link = row.info()?;
-        let keep = match mine {
-            None => true,
-            Some((key_id, person)) => {
-                link.key_id == key_id
-                    || person.is_some_and(|p| {
-                        link.person.as_ref().map(|q| &q.person_id) == Some(&p.person_id)
-                    })
-            }
-        };
-        if keep {
-            out.push(link);
-        }
-    }
-    Ok(out)
+    rows.iter().map(IssuedRow::info).collect()
 }
 
 pub fn issued_get(db: &HubDb, link_id: &str) -> Result<Option<IssuedLink>, StoreError> {
