@@ -72,6 +72,7 @@ async fn hub_info(
         me,
         people: Some(count),
         machine_fingerprint: crate::fingerprint::machine(),
+        url: crate::hub::hub_links::reachable_url(&hub.config.url()),
         next: Some(next.to_owned()),
         truncated,
     })

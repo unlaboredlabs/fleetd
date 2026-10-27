@@ -22,7 +22,7 @@ use std::net::IpAddr;
 
 use fleetd_contracts::auth::{AgentKeyInfo, Grant, GrantMachines, Role};
 use fleetd_contracts::hub_links::{
-    HubLabel, HubLink, HubLinkId, HubLinkState, IssuedLink, LINK_KEY_PREFIX, LinkedHub,
+    HubLabel, HubLink, HubLinkId, HubLinkState, IssuedLink, LINK_KEY_PREFIX, LinkHello, LinkedHub,
 };
 use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef, Timestamp};
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
@@ -378,9 +378,12 @@ pub struct Kept {
     pub error: Option<String>,
     pub checked_ms: Option<i64>,
     pub created_ms: i64,
+    /// What the other hub's last hello said: the person it acts as, and the projects it is limited to (JSON).
+    pub who: Option<String>,
+    pub projects: Option<String>,
 }
 
-const KEPT_COLUMNS: &str = "link_id, machine_id, project_id, label, url, sealed, cursor, state, error, checked_ms, created_ms";
+const KEPT_COLUMNS: &str = "link_id, machine_id, project_id, label, url, sealed, cursor, state, error, checked_ms, created_ms, who, projects";
 
 fn state_str(s: HubLinkState) -> &'static str {
     match s {
@@ -411,6 +414,8 @@ impl Kept {
             error: row.get(8)?,
             checked_ms: row.get(9)?,
             created_ms: row.get(10)?,
+            who: row.get(11)?,
+            projects: row.get(12)?,
         })
     }
 
@@ -424,8 +429,29 @@ impl Kept {
             error: self.error.clone(),
             checked_at: self.checked_ms.map(|ms| Timestamp(iso_ms(ms))),
             created_at: Timestamp(iso_ms(self.created_ms)),
+            who: self.who.clone(),
+            // Written by `set_hello` only; a row that doesn't read reads as not limited.
+            projects: self
+                .projects
+                .as_deref()
+                .and_then(|p| serde_json::from_str(p).ok()),
         }
     }
+}
+
+/// Keeps what the other hub's hello said of a kept link: its person, and its projects when it is limited to them.
+pub fn set_hello(db: &HubDb, link_id: &str, hello: &LinkHello) -> Result<(), StoreError> {
+    let projects = match hello.limited {
+        Some(true) => Some(serde_json::to_string(&hello.projects)?),
+        _ => None,
+    };
+    db.with(|c| {
+        c.execute(
+            "UPDATE hub_links SET who = ?, projects = ? WHERE link_id = ?",
+            params![hello.who, projects, link_id],
+        )?;
+        Ok(())
+    })
 }
 
 /// The links a Navi keeps, by label; every Navi's without one.
@@ -575,6 +601,18 @@ pub fn check_url(url: &str) -> Result<url::Url, McpToolError> {
         ))),
         other => Err(bad(format!("{other}: is not http or https."))),
     }
+}
+
+/// The address another hub can reach this one at, from its own URL: https, or http over a tailnet, but never this
+/// machine's loopback or an unspecified address, which only the hub's own machine could use.
+pub fn reachable_url(url: &str) -> Option<String> {
+    let parsed = check_url(url).ok()?;
+    let local = match parsed.host()? {
+        url::Host::Domain(d) => d.eq_ignore_ascii_case("localhost"),
+        url::Host::Ipv4(ip) => ip.is_loopback() || ip.is_unspecified(),
+        url::Host::Ipv6(ip) => ip.is_loopback() || ip.is_unspecified(),
+    };
+    (!local).then(|| url.trim().trim_end_matches('/').to_owned())
 }
 
 enum Host {

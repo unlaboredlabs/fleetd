@@ -1,5 +1,5 @@
 // Settings → Projects (#/settings/projects?for=<machine>/<project>): one project's name, its repos (RepoSetting.tsx), its worktrees, its agents'
-// environment variables, its setup commands (SetupSetting.tsx), the merge train's checks (TrainSetting.tsx), and deleting it. Reads project_settings_get; writes project_settings_set, project_env_set
+// environment variables, a Navi's linked hubs (hubLinks/LinkedHubs.tsx), its setup commands (SetupSetting.tsx), the merge train's checks (TrainSetting.tsx), and deleting it. Reads project_settings_get; writes project_settings_set, project_env_set
 // (through main, which seals each secret to the project machine's key) and project_remove. A secret's value is
 // write-only: typed here once, sealed in main, and only its fingerprint ever comes back.
 import { useEffect, useState } from "react";
@@ -11,6 +11,9 @@ import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import { RemoveProjectDialog, type RemoveTarget } from "../projects/RemoveProjectDialog";
 import { parseScope, projectRefOf, scopeKey, type Scope } from "./editor";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
+import { projectKey } from "../../src/data/store";
+import { LinkedHubs } from "../hubLinks/LinkedHubs";
+import { isNavi } from "../navi/model";
 import { McpSection } from "./McpServers";
 import { PageHead, ScopeSelect, Setting, useProjects } from "./parts";
 import {
@@ -109,6 +112,10 @@ function ProjectPage({ settings, refresh, onDeleted }: { settings: Settings; ref
   const [deleting, setDeleting] = useState<RemoveTarget | null>(null);
   const [checking, setChecking] = useState(false);
   const [blocked, setBlocked] = useState<string | null>(null);
+  const navi = useData((d) => {
+    const p = d.projects[projectKey(ref)];
+    return p !== undefined && isNavi(p);
+  });
   const unknown = settings.worktrees === undefined ? (settings.worktreesUnknown ?? "its machine hasn't listed its worktrees.") : null;
   const open = async () => {
     setChecking(true);
@@ -140,6 +147,12 @@ function ProjectPage({ settings, refresh, onDeleted }: { settings: Settings; ref
       <Separator />
       <McpSection projectRef={ref} />
       <Separator />
+      {navi ? (
+        <>
+          <LinkedHubs navi={ref} />
+          <Separator />
+        </>
+      ) : null}
       <SetupSetting settings={settings} />
       <Separator />
       <TrainSetting settings={settings} />

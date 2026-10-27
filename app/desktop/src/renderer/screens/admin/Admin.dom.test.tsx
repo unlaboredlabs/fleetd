@@ -105,7 +105,9 @@ const render = async (info: Partial<HubInfoOutput> | null, what: "page" | "sideb
                   ? { person: { ...bob, role: "admin" } }
                   : tool === "person_remove"
                     ? { person: { ...bob, removedAt: AT }, revoked: 1 }
-                    : {};
+                    : tool === "hub_links_get"
+                      ? { links: [], issued: [], boxPubKey: "Az+6kf/abi0V7SO+sn4h++sIgyPoNDAneLBDFaJf3TA=" }
+                      : {};
       return Promise.resolve({ ok: true, output });
     },
     subscribe: (l) => ((listener = l), () => undefined),

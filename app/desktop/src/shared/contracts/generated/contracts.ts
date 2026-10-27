@@ -2092,6 +2092,11 @@ export type HubInfoOutput = {
   protocol: number;
   startedAt?: Timestamp;
   truncated?: boolean;
+  /**
+   * The address another hub reaches this one at, for a hub link: its URL when that is https, or http over a
+   * tailnet, and not this machine's loopback. Absent when it has no such address, and from older hubs.
+   */
+  url?: string;
   /** The hub's fleetd version, as `fleetd --version` prints it. "0.0.0" for a local build. */
   version: string;
 };
@@ -2105,9 +2110,13 @@ export type HubLink = {
   label: string;
   linkId: HubLinkId;
   navi: ProjectRef;
+  /** The projects it is limited to there, as the other hub last said; absent: every project its person reaches. */
+  projects?: LinkProject[];
   state: HubLinkState;
   /** The other hub's URL: https, or http over a tailnet or this machine. */
   url: string;
+  /** The person it acts as there, as the other hub last said; absent until a hub that says has answered. */
+  who?: string;
 };
 
 export type HubLinkAddInput = {
