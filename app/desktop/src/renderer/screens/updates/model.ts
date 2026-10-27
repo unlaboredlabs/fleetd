@@ -407,11 +407,15 @@ export interface UpdatesInput {
  * with a newer build.
  */
 export const updatesView = ({ app, hub, machines = [], run = null, flow = { phase: "idle" }, ready = null, now = Date.now() }: UpdatesInput): UpdatesView => {
-  const live = shown(run, flow, now);
+  const of = hub.url === null ? null : target(hub, app);
+  // A finished run behind a newer build (ready on the hub, or on the channel) is history, whatever the flow: the sheet
+  // and the notice offer that build, not Retry of the old one.
+  const last = shown(run, flow, now);
+  const newer = (v: string | null) => v !== null && last?.to !== undefined && compareVersions(v, last.to) === 1;
+  const live = last?.finishedAt !== undefined && (newer(hub.url === null ? null : ready) || newer(of)) ? null : last;
   const to = live?.to === undefined ? null : live.to;
   const toLabel = to === null ? "the new build" : versionLabel(to);
   const reconnecting = flow.phase === "following" && flow.reconnecting;
-  const of = hub.url === null ? null : target(hub, app);
   const parts = new Map((live?.parts ?? []).map((p) => [p.part === "hub" ? "hub" : `${p.part}:${p.machineId ?? p.name}`, p]));
 
   let hubPart: HubPart | null = null;

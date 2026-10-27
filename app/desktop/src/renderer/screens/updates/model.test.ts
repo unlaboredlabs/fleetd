@@ -455,4 +455,37 @@ describe("the sheet's lines, the notice and the note", () => {
     const updating = of({ run: done, flow: { phase: "app" }, app: { kind: "available", version: NEXT, percent: 40, restart: true } });
     expect(says(updating).at(-1)).toEqual(["This app", "Updating…", "Downloading 40%", ""]);
   });
+
+  it("offers Update and the notice for a newer build once ready, after a run that left a machine out", () => {
+    const NEWER = "0.0.0-nightly.202610241030+fff9999";
+    const run = runOf(
+      [
+        p({ part: "hub", name: "the hub", state: "done" }),
+        p({ machineId: "builder", name: "builder", state: "done" }),
+        p({ machineId: "mac", name: "mac", state: "skipped", message: "offline: press Update again once it's online" }),
+      ],
+      true,
+    );
+    // Followed in this window: the flow stays finished.
+    const flow: Flow = { phase: "finished", updated: false };
+    const before = of({ run, flow });
+    expect(before.update).toBeNull();
+    expect(before.lines.find((l) => l.key === "mac")?.retry).toEqual({ kind: "machine", machineId: "mac" });
+
+    const v = of({ run, flow, ready: NEWER });
+    expect(v.update?.title).toBe("fleetd Nightly · Oct 24, 10:30 UTC · fff9999 is ready");
+    expect(v.notice?.version).toBe(NEWER);
+    expect(v.progress).toBeNull();
+    expect(v.lines.some((l) => l.retry !== undefined)).toBe(false);
+    // A newer build on the channel, not downloaded yet, also ends the old run's Retry.
+    const channel = updatesView({
+      app: { current: MINE, app: { kind: "current" }, release: { ...release, cli: NEWER } },
+      hub: hubOf({ version: NEXT }),
+      machines,
+      run,
+      flow,
+      now: at,
+    });
+    expect(channel.update?.title).toBe("fleetd Nightly · Oct 24, 10:30 UTC · fff9999 is available");
+  });
 });
