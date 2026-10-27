@@ -101,7 +101,7 @@ impl Leads {
 
     /// Starts the lead of each project on `machine_id` that has orders waiting as drafts and no lead.
     pub async fn start_waiting(&self, machine_id: &MachineId) -> Result<(), LeadError> {
-        for project in self.ctx.store.projects_list(Some(machine_id), None)? {
+        for project in self.ctx.store.projects_shown(Some(machine_id), None)? {
             let r = ProjectRef {
                 machine_id: project.machine_id.clone(),
                 project_id: project.project_id.clone(),
@@ -332,6 +332,11 @@ impl Leads {
         session_generation: i64,
         first: Option<&str>,
     ) -> Result<Lead, LeadError> {
+        // An archived project, now a repo checkout of another, keeps its chat and history but runs no lead.
+        if let Some((holder, repo)) = crate::hub::repos::holder(&self.ctx.db, r)? {
+            let (message, fix) = crate::hub::repos::archived_note(&holder, &repo);
+            return Err(LeadError::new(ErrorCode::Invalid, message, fix));
+        }
         // M4 usage: no lead turn goes into a login fleetd knows is exhausted.
         if let Some(paused) = self
             .ctx
@@ -360,6 +365,9 @@ impl Leads {
             &digest,
             &self.ctx.db.memory().injected(r, true),
         );
+        if let Some(repos) = super::prompt::repos_block(r, &project.repos) {
+            prompt = format!("{}\n\n{repos}", prompt.trim_end());
+        }
         if let Some(waiting) = self.waiting_orders(r)? {
             prompt = format!("{}\n\n{waiting}", prompt.trim_end());
         }

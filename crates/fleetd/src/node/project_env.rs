@@ -125,6 +125,36 @@ pub fn apply(
         };
         env.vars.insert(name.to_string(), entry);
     }
+    write(home, project_id, &env)?;
+    Ok(saved)
+}
+
+/// Copies the variables of `from` into `to`'s, replacing any of the same name: a project's for a repo checkout it
+/// holds (W79), secrets and all, without their values leaving the node.
+pub fn copy(home: &Path, from: &str, to: &str) -> Result<(), String> {
+    let _writing = WRITING
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let theirs = read_file(home, from)
+        .map_err(|e| format!("cannot read {DIR}/{from}.json: {}", io_why(&e)))?;
+    let mut env =
+        read_file(home, to).map_err(|e| format!("cannot read {DIR}/{to}.json: {}", io_why(&e)))?;
+    if theirs.vars.is_empty() {
+        return Ok(());
+    }
+    for (name, entry) in &theirs.vars {
+        let entry = Entry {
+            value: entry.value.clone(),
+            secret: entry.secret,
+        };
+        env.vars.insert(name.clone(), entry);
+    }
+    write(home, to, &env)
+}
+
+/// Writes the project's file, once its variables fit; no variables removes it.
+fn write(home: &Path, project_id: &str, env: &EnvFile) -> Result<(), String> {
+    let shown = format!("{DIR}/{project_id}.json");
     if env.vars.len() > PROJECT_ENV_MAX {
         return Err(format!(
             "a project takes at most {PROJECT_ENV_MAX} variables; this would make {}",
@@ -150,12 +180,11 @@ pub fn apply(
             Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
                 Err(format!("cannot remove {shown}: {}", io_why(&e)))
             }
-            _ => Ok(saved),
+            _ => Ok(()),
         };
     }
-    let bytes = Zeroizing::new(serde_json::to_vec(&env).map_err(|e| e.to_string())?);
-    write_atomic(&path, &bytes).map_err(|e| format!("cannot write {shown}: {}", io_why(&e)))?;
-    Ok(saved)
+    let bytes = Zeroizing::new(serde_json::to_vec(env).map_err(|e| e.to_string())?);
+    write_atomic(&path, &bytes).map_err(|e| format!("cannot write {shown}: {}", io_why(&e)))
 }
 
 /// `(name, value)` pairs.
@@ -282,6 +311,55 @@ pub(crate) mod tests {
         assert_eq!(super::vars(home.path(), "p1").len(), 1);
         apply(home.path(), "p1", &[], &[name("STRIPE_KEY")], Some(&key)).unwrap();
         assert!(!path.exists());
+    }
+
+    /// A project's variables reach a repo checkout it holds, secrets too, over the checkout's own of the same name.
+    #[test]
+    fn a_copy_brings_the_projects_variables_to_a_checkout() {
+        let home = tempfile::tempdir().unwrap();
+        let key = load_or_create_box_key(home.path()).unwrap();
+        let plain = |n: &str, v: &str| EnvVarSet::Plain {
+            name: name(n),
+            value: EnvValue::new(v).unwrap(),
+        };
+        let secret = EnvVarSet::Secret {
+            name: name("STRIPE_KEY"),
+            sealed: seal(home.path(), "sk_test_42"),
+        };
+        apply(
+            home.path(),
+            "app",
+            &[plain("API_URL", "https://staging.example"), secret],
+            &[],
+            Some(&key),
+        )
+        .unwrap();
+        apply(
+            home.path(),
+            "api",
+            &[plain("API_URL", "old"), plain("PORT", "8080")],
+            &[],
+            Some(&key),
+        )
+        .unwrap();
+        copy(home.path(), "app", "api").unwrap();
+        let mut vars = vars(home.path(), "api");
+        vars.sort();
+        assert_eq!(
+            vars,
+            [
+                ("API_URL".to_owned(), "https://staging.example".to_owned()),
+                ("PORT".to_owned(), "8080".to_owned()),
+                ("STRIPE_KEY".to_owned(), "sk_test_42".to_owned()),
+            ]
+        );
+        assert_eq!(
+            secrets(home.path(), "api"),
+            [("STRIPE_KEY".to_owned(), "sk_test_42".to_owned())]
+        );
+        // A project with none changes nothing.
+        copy(home.path(), "notes", "api").unwrap();
+        assert_eq!(super::vars(home.path(), "api").len(), 3);
     }
 
     #[test]

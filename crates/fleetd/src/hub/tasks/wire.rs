@@ -629,6 +629,16 @@ impl TasksHook for TasksForLeads {
     fn live(&self, project_ref: Option<&ProjectRef>) -> Vec<(TaskId, ProjectRef)> {
         self.0.live(project_ref)
     }
+    fn live_in_repos(&self) -> Vec<(TaskId, ProjectRef, fleetd_contracts::repos::RepoId)> {
+        self.0
+            .live(None)
+            .into_iter()
+            .filter_map(|(task_id, r)| {
+                let repo_id = self.0.get(&task_id).ok().flatten()?.repo_id?;
+                Some((task_id, r, repo_id))
+            })
+            .collect()
+    }
     fn cancel(&self, project_ref: &ProjectRef, task_id: &TaskId, reason: &str) -> BoxFuture<()> {
         let (tasks, r, t, reason) = (
             Arc::clone(&self.0),

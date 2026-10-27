@@ -69,6 +69,9 @@ let calls: Array<{ tool: string; input: unknown }>;
 /** What project_settings_get answers, in turn; the last one again once they run out. */
 let answers: Settings[];
 let envRequests: ProjectEnvRequest[];
+const web: ProjectRepo = { repoId: "R1", name: "web", checkout: { machineId: "devbox", projectId: "p1" }, repoKey: "github.com/acme/web", base: "main" };
+const api: ProjectRepo = { repoId: "R2", name: "api", checkout: { machineId: "devbox", projectId: "p9" }, repoKey: "gitlab.example.com/team/api" };
+
 /** The project's repos in the snapshot. */
 let repos: ProjectRepo[];
 /** What project_settings_get answers for a repo; a repo not here is refused, as a hub before per-repo settings does. */
@@ -115,6 +118,16 @@ const render = async () => {
       }
       const now = (tool === "project_settings_get" && answers.length > 1 ? answers.shift() : answers[0]) ?? settings;
       if (tool === "mcp_servers_get") return Promise.resolve({ ok: true, output: { global: [], project: [], userServers: true } });
+      if (tool === "project_repo_add") {
+        const url = (input as { url?: string }).url;
+        return Promise.resolve({
+          ok: true,
+          output: url ? { path: "/home/w/src/web", addId: "a1" } : { path: "/home/w/src/api", next: "api is a repo of the project now, at /home/w/src/api on devbox." },
+        });
+      }
+      if (tool === "project_repo_remove") {
+        return Promise.resolve({ ok: true, output: { removed: api, cancelled: [], next: "Its checkout stays at /home/w/src/api on devbox, files and all." } });
+      }
       return Promise.resolve({ ok: true, output: tool === "project_settings_get" || tool === "project_settings_set" ? { settings: now } : { ok: true } });
     },
     subscribe: (l) => ((listener = l), () => undefined),
@@ -287,8 +300,6 @@ describe("Settings → Projects", () => {
 });
 
 describe("Settings → Projects → Repos", () => {
-  const web: ProjectRepo = { repoId: "R1", name: "web", checkout: { machineId: "devbox", projectId: "p1" }, repoKey: "github.com/acme/web", base: "main" };
-  const api: ProjectRepo = { repoId: "R2", name: "api", checkout: { machineId: "devbox", projectId: "p9" }, repoKey: "gitlab.example.com/team/api" };
   /** The page, then each repo's read, which starts once the project's settings are in. */
   const renderRepos = async () => {
     await render();
@@ -344,5 +355,42 @@ describe("Settings → Projects → Repos", () => {
     expect(text).toContain("go mod download; make gen");
     expect(text).toContain("make serve");
     expect(text).not.toContain("Uses the project's");
+  });
+
+  it("adds a repo by its path on the machine, or clones one from GitHub", async () => {
+    await renderRepos();
+    const field = section().querySelector<HTMLInputElement>('input[aria-label="Repo to add"]');
+    const name = section().querySelector<HTMLInputElement>('input[aria-label="Repo name"]');
+    if (field === null || name === null) throw new Error("no add form");
+    expect(button("Add repo").disabled).toBe(true);
+    await type(field, " /home/w/src/api ");
+    await click(button("Add repo"));
+    await settle();
+    expect(calls).toContainEqual({ tool: "project_repo_add", input: { machineId: "devbox", projectId: "p1", path: "/home/w/src/api" } });
+    expect(section().textContent).toContain("api is a repo of the project now");
+    await type(field, "acme/web");
+    await type(name, "front");
+    await click(button("Add repo"));
+    await settle();
+    expect(calls).toContainEqual({ tool: "project_repo_add", input: { machineId: "devbox", projectId: "p1", name: "front", url: "acme/web" } });
+    expect(section().textContent).toContain("Cloning into /home/w/src/web on devbox");
+    // A name that isn't a repo name adds nothing.
+    await type(name, "Front End");
+    expect(button("Add repo").disabled).toBe(true);
+  });
+
+  it("removes a repo once asked, never the project's own directory", async () => {
+    repos = [web, api];
+    await renderRepos();
+    const removeIn = (n: string) => section().querySelector(`[role="listitem"][aria-label="${n}"] button`);
+    expect(removeIn("web")).toBeNull();
+    await click(removeIn("api") as HTMLElement);
+    expect(dialog().textContent).toContain("Remove api from storefront?");
+    expect(dialog().textContent).toContain("Its checkout stays at p9, files and all.");
+    expect(calls.some((c) => c.tool === "project_repo_remove")).toBe(false);
+    await click(button("Remove repo"));
+    await settle();
+    expect(calls).toContainEqual({ tool: "project_repo_remove", input: { machineId: "devbox", projectId: "p1", name: "api" } });
+    expect(section().textContent).toContain("api removed. Its checkout stays at /home/w/src/api on devbox");
   });
 });

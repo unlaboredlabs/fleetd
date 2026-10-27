@@ -961,6 +961,73 @@ input!(ProjectRemoveInput {
 });
 output!(ProjectRemoveOutput { ok: True });
 
+// project_repo_add, project_repo_list, project_repo_remove: the repos a project holds (W79). A repo is added from a
+// directory on the project's machine (`path`) or by cloning a GitHub repository there (`url`), as project_add adds a
+// project; a clone answers with `addId` and streams `project.clone_progress`, then `project.added` (with the project's
+// id) or `project.add_failed`. A directory that is already a project of its own is archived read-only and becomes the
+// repo's checkout; it stops showing as a project while any other project holds it.
+input!(
+    #[serde(remote = "Self")]
+    ProjectRepoAddInput {
+        machine_id: MachineId,
+        project_id: ProjectId,
+        /// Absent: from its remote or folder, e.g. `api`, made unique in the project.
+        name: Option<crate::repos::RepoName>,
+        /// A git checkout on the project's machine.
+        path: Option<WorkspacePath>,
+        /// A GitHub URL, `git@github.com:o/r.git`, or `owner/repo`, cloned onto the project's machine.
+        url: Option<Text<1, 300>>,
+        /// With `url`: clone here instead of `<cloneRoot>/<name>`.
+        dest: Option<WorkspacePath>,
+        /// With `url`: when the destination is already a checkout of the same repository, add it instead of failing.
+        use_existing: Option<bool>,
+    }
+);
+checked!(ProjectRepoAddInput, |input| {
+    match (&input.path, &input.url) {
+        (Some(_), Some(_)) => return Err("give path or url, not both".into()),
+        (None, None) => {
+            return Err(
+                "give path (a checkout on the project's machine) or url (a GitHub repository)"
+                    .into(),
+            );
+        }
+        (Some(_), None) if input.dest.is_some() || input.use_existing.is_some() => {
+            return Err("dest and useExisting go with url only".into());
+        }
+        _ => {}
+    }
+    Ok(())
+});
+output!(ProjectRepoAddOutput {
+    /// The checkout's directory (the clone's destination for a url).
+    path: String,
+    /// The repo, once added; absent while a clone runs.
+    repo: Option<crate::repos::ProjectRepo>,
+    /// A clone was started: its `project.clone_progress`, `project.added` and `project.add_failed` events carry it.
+    add_id: Option<AddId>,
+    /// The project the checkout was until now, archived read-only.
+    archived: Option<ProjectRef>,
+});
+input!(ProjectRepoListInput {
+    machine_id: MachineId,
+    project_id: ProjectId,
+});
+output!(ProjectRepoListOutput {
+    /// Oldest first, its own repo first; none for a plain folder.
+    repos: Vec<crate::repos::ProjectRepo>,
+});
+input!(ProjectRepoRemoveInput {
+    machine_id: MachineId,
+    project_id: ProjectId,
+    name: crate::repos::RepoName,
+});
+output!(ProjectRepoRemoveOutput {
+    removed: crate::repos::ProjectRepo,
+    /// The repo's live tasks, cancelled.
+    cancelled: Vec<TaskId>,
+});
+
 // project_settings_get, project_settings_set, project_env_set: a project's own settings (Settings › Projects).
 input!(ProjectSettingsGetInput {
     machine_id: MachineId,
@@ -2285,6 +2352,9 @@ tools! {
     project_discover => ProjectDiscover, Read, ProjectDiscoverInput, ProjectDiscoverOutput;
     project_add => ProjectAdd, Operate, ProjectAddInput, ProjectAddOutput;
     project_remove => ProjectRemove, Operate, ProjectRemoveInput, ProjectRemoveOutput;
+    project_repo_add => ProjectRepoAdd, Operate, ProjectRepoAddInput, ProjectRepoAddOutput;
+    project_repo_list => ProjectRepoList, Read, ProjectRepoListInput, ProjectRepoListOutput;
+    project_repo_remove => ProjectRepoRemove, Operate, ProjectRepoRemoveInput, ProjectRepoRemoveOutput;
     project_settings_get => ProjectSettingsGet, Read, ProjectSettingsGetInput, ProjectSettingsGetOutput;
     project_settings_set => ProjectSettingsSet, Operate, ProjectSettingsSetInput, ProjectSettingsSetOutput;
     // Human keys only (the handler checks): a person sets a project's environment.

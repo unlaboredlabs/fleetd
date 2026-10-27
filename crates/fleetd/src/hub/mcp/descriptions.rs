@@ -53,6 +53,18 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
         "Stop the project's agent processes and forget it. Its files, branches and worktrees stay on the machine; project_add brings it back. removeWorktrees also force-removes the fleetd worktrees its agents worked in (uncommitted changes in them are lost), once its agents have stopped; its checkout and every branch stay as they are.",
     ),
     (
+        "project_repo_add",
+        "Add a repo to a project, which then holds it beside its own directory. path: a git checkout on the project's machine, added at once. url: a GitHub repo cloned onto that machine (dest defaults to <cloneRoot>/<name>); answers with addId, then events project.clone_progress and project.added (or project.add_failed with a fix) carry data.addId. When the destination already holds the same repo, pass useExisting. name defaults to the remote's or folder's last part. A directory that is already a project of its own is archived read-only (its chat and history stay, its lead no longer runs; refused while its agents run) and stops showing as a project while any project holds it. A repo may be in several projects. The project's environment variables, MCP servers and skills go to every one of its checkouts.",
+    ),
+    (
+        "project_repo_list",
+        "A project's repos, its own first: each with its name, the checkout holding its files (path on its machine), and the remote and base branch its work lands on. A plain folder has none.",
+    ),
+    (
+        "project_repo_remove",
+        "Remove a repo from a project by name: the repo's live tasks are cancelled, the project's other tasks go on. Nothing is deleted on disk: the checkout stays on its machine, and once no project holds it, it shows as a project of its own again (project_remove forgets it). A project's own repo can't be removed: project_remove removes the project.",
+    ),
+    (
         "project_settings_get",
         "One project's settings: its title and checkout, keepWorktrees, memoryRefresh, its environment variables (a plain one's value, a secret's fingerprint only), its setup commands, its merge train's checks (train), and from its node, while online, where its worktrees live, the branch new ones start from and the worktrees there now, each marked when it has uncommitted changes.",
     ),

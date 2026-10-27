@@ -109,7 +109,8 @@ export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unk
   if (type === "decision.recorded" || type === "decision.retired") out.push({ tool: "fleetd_status" }, { tool: "decisions_list" });
 
   const newMachine = type.startsWith("machine.") && (event.machineId === undefined || !(event.machineId in machines));
-  const resync = newMachine || type === "project.added" || type === "project.removed";
+  // A repo removed from a project (project.settings) can bring its checkout back as a project of its own.
+  const resync = newMachine || type === "project.added" || type === "project.removed" || type === "project.settings";
   // Add project's list marks which repos are already projects.
   if (type === "project.added" || type === "project.removed") out.push({ tool: "project_discover" });
   return { invalidate: out, resync };

@@ -166,6 +166,29 @@ fleetd project remove <machine>/<project> [--yes] [--home <dir>] [--hub <url>]
 
 stop its agents and forget it; its files, branches and worktrees stay
 
+### fleetd project repo list {#project-repo-list}
+
+```text
+fleetd project repo list <machine>/<project> [--home <dir>] [--hub <url>]
+```
+
+### fleetd project repo add {#project-repo-add}
+
+```text
+fleetd project repo add <machine>/<project> <path|github-url> [--name <n>] [--dest <dir>]
+    [--use-existing] [--home <dir>] [--hub <url>]
+```
+
+add a repo to the project: a checkout on its machine, or a GitHub repo cloned there, with progress. A checkout that is a project of its own is archived: its chat stays, its lead stops running
+
+### fleetd project repo remove {#project-repo-remove}
+
+```text
+fleetd project repo remove <machine>/<project> <name> [--yes] [--home <dir>] [--hub <url>]
+```
+
+take the repo out of the project and end its agents; its files stay
+
 ### fleetd project set {#project-set}
 
 ```text

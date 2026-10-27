@@ -222,6 +222,10 @@ pub async fn send(
         )
         .with_fix("Pick a project from fleetd_status."));
     }
+    if let Some((holder, repo)) = crate::hub::repos::holder(&hub.db, &r).map_err(store_error)? {
+        let (message, fix) = crate::hub::repos::archived_note(&holder, &repo);
+        return Err(ToolError::new(ErrorCode::Invalid, message).with_fix(fix));
+    }
     let writer = writer(hub, caller, &input)?;
     let now = input.now == Some(true);
     if now && writer.author != ChatAuthor::Human {
@@ -1293,7 +1297,7 @@ pub async fn run(hub: Arc<Hub>) {
 
 /// For the snapshot and fleetd_status: every project's chat state.
 pub fn states(hub: &Hub) -> Vec<ProjectChatState> {
-    let Ok(projects) = hub.store.projects_list(None, None) else {
+    let Ok(projects) = hub.store.projects_shown(None, None) else {
         return Vec::new();
     };
     projects

@@ -371,9 +371,19 @@ impl Skills<'_> {
     /// What a launch in project `r` carries: the project's skills, then the global ones of other names, their text
     /// files only, within the launch's cap.
     pub fn bundles(&self, r: &ProjectRef) -> Vec<SkillBundle> {
+        self.bundles_in(&[r])
+    }
+
+    /// [`Self::bundles`] for a launch in a checkout several projects' skills reach (W79): each project's in order, a
+    /// skill of the first one with its name winning, then the global ones of other names.
+    pub fn bundles_in(&self, projects: &[&ProjectRef]) -> Vec<SkillBundle> {
         let mut out: Vec<SkillBundle> = Vec::new();
         let mut bytes = 0usize;
-        for (scope, project) in [(SkillScope::Project, Some(r)), (SkillScope::Global, None)] {
+        let scopes = projects
+            .iter()
+            .map(|r| (SkillScope::Project, Some(*r)))
+            .chain([(SkillScope::Global, None)]);
+        for (scope, project) in scopes {
             for kept in self.list(scope, project) {
                 if out.iter().any(|b| b.name == kept.name) {
                     continue;
