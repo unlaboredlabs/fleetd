@@ -11,6 +11,7 @@ use fleetd_contracts::browser::{
 };
 use fleetd_contracts::ids::Timestamp;
 use serde_json::Value;
+use tokio::io::{AsyncBufReadExt, AsyncRead, BufReader};
 use tokio::sync::watch;
 
 use super::pool::Lent;
@@ -25,29 +26,67 @@ use crate::node::mask::Secrets;
 const RESULT_CHARS: usize = 500;
 /// recordVideo finishes its file within moments of SIGINT; this allows a loaded machine.
 const FINISH_VIDEO: Duration = Duration::from_secs(20);
+/// recordVideo says it started within a second or two; a session that ends sooner waits this long for it at most.
+const START_VIDEO: Duration = Duration::from_secs(15);
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
-/// `simctl io recordVideo`, in a process group of its own so SIGINT reaches simctl through xcrun.
-struct Recorder {
+/// `simctl io recordVideo`, in a process group of its own so SIGINT reaches simctl through xcrun. It is stopped only
+/// once it has said it started: a SIGINT before then kills it with no file (seen on a loaded CI machine).
+pub struct Recorder {
     child: tokio::process::Child,
     path: PathBuf,
+    started: watch::Receiver<bool>,
 }
 
 impl Recorder {
-    fn start(simctl: &Simctl, udid: &str, path: PathBuf) -> Result<Self, String> {
-        let child = simctl
+    pub fn start(simctl: &Simctl, udid: &str, path: PathBuf) -> Result<Self, String> {
+        let mut child = simctl
             .record(udid, &path)
             .process_group(0)
             .spawn()
             .map_err(|e| format!("cannot start simctl's recording: {e}"))?;
-        Ok(Self { child, path })
+        let (tx, started) = watch::channel(false);
+        let tx = Arc::new(tx);
+        let stdout = child
+            .stdout
+            .take()
+            .map(|o| Box::new(o) as Box<dyn AsyncRead + Send + Unpin>);
+        let stderr = child
+            .stderr
+            .take()
+            .map(|e| Box::new(e) as Box<dyn AsyncRead + Send + Unpin>);
+        for out in [stdout, stderr].into_iter().flatten() {
+            let tx = tx.clone();
+            // Reads to the end, so the pipe never fills while it records.
+            tokio::spawn(async move {
+                let mut lines = BufReader::new(out).lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    if super::simctl::recording_started(&line) {
+                        tx.send_replace(true);
+                    }
+                }
+            });
+        }
+        Ok(Self {
+            child,
+            path,
+            started,
+        })
     }
 
-    /// Stops it and waits for the file to be finished.
-    async fn finish(mut self) -> Result<(), String> {
+    /// Waits until it has started, at most `within`; true if it has.
+    pub async fn started(&mut self, within: Duration) -> bool {
+        tokio::time::timeout(within, self.started.wait_for(|s| *s))
+            .await
+            .is_ok_and(|r| r.is_ok())
+    }
+
+    /// Stops it, once it has started (or [`START_VIDEO`] passed), and waits for the file to be finished.
+    pub async fn finish(mut self) -> Result<(), String> {
+        let started = self.started(START_VIDEO).await;
         if let Some(pid) = self.child.id() {
             let _ = nix::sys::signal::killpg(
                 nix::unistd::Pid::from_raw(pid as i32),
@@ -65,6 +104,7 @@ impl Recorder {
         }
         match std::fs::metadata(&self.path) {
             Ok(m) if m.len() > 0 => Ok(()),
+            _ if !started => Err("simctl's recording never started".to_owned()),
             _ => Err("simctl wrote no video".to_owned()),
         }
     }

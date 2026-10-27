@@ -242,14 +242,19 @@ impl Simctl {
         .map(drop)
     }
 
-    /// The command that records the screen to `to` (H.264 in MP4) until it gets SIGINT.
+    /// The command that records the screen to `to` (H.264 in MP4) until it gets SIGINT. What it says is piped: it says
+    /// when it has started (see [`recording_started`]), and its reader drains the rest so the pipe never fills.
     pub fn record(&self, udid: &str, to: &Path) -> tokio::process::Command {
         let to = to.to_string_lossy();
         let mut cmd = self.command(&["io", udid, "recordVideo", "--codec=h264", "--force", &to]);
-        // Nothing reads what it says while it records: a pipe left full would stall it.
-        cmd.stdout(Stdio::null()).stderr(Stdio::null());
+        cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
         cmd
     }
+}
+
+/// Whether a line of `recordVideo`'s says it has started recording. A SIGINT before then kills it with no file.
+pub fn recording_started(line: &str) -> bool {
+    line.to_ascii_lowercase().contains("recording started")
 }
 
 /// The screen's scale (3 on today's iPhones) from a device type's profile, which converts the screenshot's pixels to
@@ -345,6 +350,13 @@ mod tests {
             Some("8A1B2C3D-0000-4000-8000-000000000002")
         );
         assert_eq!(udid_of("Invalid device type: iPhone 99"), None);
+    }
+
+    #[test]
+    fn record_video_says_when_it_has_started() {
+        assert!(recording_started("Recording started"));
+        assert!(recording_started("2026-10-27 02:08:15 Recording started."));
+        assert!(!recording_started("Recording to /r/video.mp4"));
     }
 
     #[test]

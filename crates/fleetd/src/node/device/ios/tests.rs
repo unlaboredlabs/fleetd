@@ -362,30 +362,26 @@ async fn probes_what_ios_sessions_rest_on() {
     );
     probe_idb(&source).await;
 
-    // recordVideo stops on SIGINT to its group and leaves an MP4.
+    // recordVideo says when it has started, stops on SIGINT to its group after that, and leaves an MP4.
     let video = dir.path().join("video.mp4");
-    let mut recorder = simctl
-        .record(&source, &video)
-        .process_group(0)
-        .spawn()
-        .unwrap();
+    let t = Instant::now();
+    let mut recorder = super::session::Recorder::start(&simctl, &source, video.clone()).unwrap();
+    let started = recorder.started(Duration::from_secs(30)).await;
+    eprintln!(
+        "probe: recordVideo said it started: {started}, after {} ms",
+        ms(t.elapsed())
+    );
     tokio::time::sleep(Duration::from_secs(3)).await;
     let t = Instant::now();
-    let _ = nix::sys::signal::killpg(
-        nix::unistd::Pid::from_raw(recorder.id().unwrap() as i32),
-        nix::sys::signal::Signal::SIGINT,
-    );
-    let status = tokio::time::timeout(Duration::from_secs(20), recorder.wait())
-        .await
-        .expect("recordVideo finishes on SIGINT")
-        .unwrap();
+    let finished = recorder.finish().await;
     let mp4 = std::fs::read(&video).unwrap_or_default();
     eprintln!(
-        "probe: recordVideo: {status}, finished in {} ms, {} KB for 3 s, ftyp {}",
+        "probe: recordVideo: {finished:?}, finished in {} ms, {} KB for 3 s, ftyp {}",
         ms(t.elapsed()),
         mp4.len() / 1024,
         mp4.get(4..8) == Some(b"ftyp")
     );
+    assert!(started, "recordVideo never said it started");
     assert_eq!(mp4.get(4..8), Some(&b"ftyp"[..]), "an MP4");
 
     let t = Instant::now();
