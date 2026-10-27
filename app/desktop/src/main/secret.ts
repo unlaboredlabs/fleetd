@@ -115,5 +115,8 @@ export const submitMcpServer = async (
     transport,
     env: env.set,
     headers: headers.set,
+    ...(request.integration === undefined
+      ? {}
+      : { integration: { kind: request.integration.kind, ...(request.integration.readTools === undefined ? {} : { readTools: request.integration.readTools }) } }),
   });
 };
