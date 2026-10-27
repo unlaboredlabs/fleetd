@@ -4,8 +4,8 @@
 // Show through the chat.showWaiting command. Otherwise, while the project is blocked, why: the hub's reason, so you
 // know before sending into it, and Resume when its machine's usage pause is the reason. Otherwise what there is to
 // look at, which the lead flagged (a showcase, something to try, a risk) or an agent suggested trying: how many, the
-// oldest one's reason, Show, which goes to it and counts as seeing it, and Dismiss. Otherwise the hub's warning, which
-// stops nothing (a check red on main). One row with no dot: the words truncate, and Show, Dismiss or Resume stays.
+// oldest one's reason, Show, which goes to it and counts as seeing it, and Dismiss, then the hub's warning if any.
+// Otherwise the hub's warning, which stops nothing (a check red on main). One row with no dot: the words truncate, and Show, Dismiss or Resume stays.
 import { Button, Text } from "../../ui";
 import { useCommands } from "../palette";
 import { HubText } from "../projects/HubText";
@@ -63,6 +63,17 @@ export function AttentionLine({
         <Button variant="link" onClick={onDismiss} aria-label={`Dismiss: ${look.reason}`}>
           Dismiss
         </Button>
+        {/* A red main stays in view after it: the look ranks first, and both truncate before their buttons do. */}
+        {warning === undefined ? null : (
+          <>
+            <Text size="xs" tone="quiet" aria-hidden>
+              ·
+            </Text>
+            <Text size="xs" tone="warning" className={s.attentionWords} data-warning>
+              <HubText>{warning}</HubText>
+            </Text>
+          </>
+        )}
       </div>
     );
   }

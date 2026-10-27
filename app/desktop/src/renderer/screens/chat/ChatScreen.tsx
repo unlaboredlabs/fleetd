@@ -14,7 +14,7 @@ import { projectKey } from "../../src/data/store";
 import { Boundary } from "../../src/Boundary";
 import { LiveStrip, useNow } from "../live";
 import { AttentionLine } from "./Attention";
-import { lookingAt, waitingOn } from "./attentionModel";
+import { lookingAt, waitingOn, type LookAt } from "./attentionModel";
 import { leadTurnSince, leadTurnUntil } from "./activity";
 import { ChatList } from "./ChatList";
 import { useChatData } from "./data";
@@ -128,36 +128,44 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
   const minute = useNow(nudges !== undefined, 60_000);
   const looks = useMemo(() => lookingAt(nudges, items, cleared, minute), [nudges, items, cleared, minute]);
   const lookAt = useMemo(() => new Set(looks.map((l) => l.id)), [looks]);
+  // By the flag's key, not its message: one the lead flags again after you saw it shows again.
   const clear = useCallback(
-    (id: string, dismissed: boolean) => {
-      if (asked.current.has(id)) return;
-      asked.current.add(id);
-      setCleared((c) => new Set(c).add(id));
-      void layer.call("chat_nudge_clear", { projectRef: project, messageId: id, ...(dismissed ? { dismissed } : {}) }).then((out) => {
+    (look: LookAt, dismissed: boolean) => {
+      const key = look.key;
+      if (asked.current.has(key)) return;
+      asked.current.add(key);
+      setCleared((c) => new Set(c).add(key));
+      void layer.call("chat_nudge_clear", { projectRef: project, messageId: look.id, ...(dismissed ? { dismissed } : {}) }).then((out) => {
         // Still waiting on the hub: it shows again.
         if (out.ok) return;
-        asked.current.delete(id);
+        asked.current.delete(key);
         setCleared((c) => {
           const left = new Set(c);
-          left.delete(id);
+          left.delete(key);
           return left;
         });
       });
     },
     [layer, project],
   );
-  const seen = useCallback((id: string) => clear(id, false), [clear]);
+  const seen = useCallback(
+    (id: string) => {
+      const look = looks.find((l) => l.id === id);
+      if (look !== undefined) clear(look, false);
+    },
+    [looks, clear],
+  );
   // Show goes to the oldest and marks it; going there is seeing it.
   const showLook = () => {
     const next = looks[0];
     if (next === undefined) return;
     const at = Date.now();
     setShown((p) => ({ id: next.id, part: next.part, n: (p?.n ?? 0) + 1, at }));
-    clear(next.id, false);
+    clear(next, false);
   };
   const dismissLook = () => {
     const next = looks[0];
-    if (next !== undefined) clear(next.id, true);
+    if (next !== undefined) clear(next, true);
   };
   const actions = useMemo(
     (): BubbleActions => ({

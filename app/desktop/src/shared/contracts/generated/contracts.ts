@@ -1135,7 +1135,7 @@ export type ChatNudgeClearOutput = {
   truncated?: boolean;
 };
 
-export type KnownChatNudgeCleared = "dismissed" | "seen" | "replaced";
+export type KnownChatNudgeCleared = "dismissed" | "seen" | "replaced" | "expired";
 /** KnownChatNudgeCleared, or a value from a newer hub. */
 export type ChatNudgeCleared = KnownChatNudgeCleared | (string & {});
 

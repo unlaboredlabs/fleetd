@@ -1,13 +1,14 @@
 //! Nudges: a message worth the person's look, a showcase, something to try or a risk. The lead flags the message it
 //! just wrote with `nudge`; an agent's Try it suggestion comes flagged. One waits, below what the lead waits on you
 //! for, until the person has seen its message or dismissed it (`chat_nudge_clear`), and fades on its own after a
-//! day; a project keeps [`CHAT_NUDGES_MAX`] waiting, a newer one past that clearing the oldest. In the app only: it
-//! sends no notification.
+//! day, marked expired the next time the project's nudges are read; a project keeps [`CHAT_NUDGES_MAX`] waiting of
+//! each kind (the lead's, and Try it suggestions), a newer one past that clearing the oldest of its kind. In the app
+//! only: it sends no notification.
 use std::sync::{Arc, Weak};
 
 use fleetd_contracts::chat::{
-    CHAT_NUDGE_MS, CHAT_NUDGES_MAX, ChatAuthor, ChatMessage, ChatMessageState, ChatNudge,
-    ChatNudgeCleared, ChatOpenNudge, NudgeCall, NudgeResult,
+    CHAT_NUDGE_MS, CHAT_NUDGES_MAX, CHAT_OPEN_NUDGES_MAX, ChatAuthor, ChatMessage,
+    ChatMessageState, ChatNudge, ChatNudgeCleared, ChatOpenNudge, NudgeCall, NudgeResult,
 };
 use fleetd_contracts::ids::{ProjectRef, ThreadRef};
 use fleetd_contracts::lead_calls::{LeadCall, LeadCallResult};
@@ -43,10 +44,11 @@ pub fn waiting(nudge: &ChatNudge, now: i64) -> bool {
 }
 
 impl Chat {
-    /// The project's nudges still waiting, oldest first.
+    /// The project's nudges still waiting, oldest first. Those a day old are marked expired as they are found, quietly
+    /// (the app lets them fade on its own clock), so they are not read again.
     pub fn open_nudges(&self, r: &ProjectRef) -> Result<Vec<ChatMessage>, StoreError> {
         let now = self.now();
-        let mut open: Vec<ChatMessage> = self.db.with(|c| {
+        let open: Vec<ChatMessage> = self.db.with(|c| {
             let rows: Vec<String> = c
                 .prepare_cached(
                     "SELECT data FROM chat_messages WHERE machine_id = ?1 AND project_id = ?2
@@ -63,7 +65,15 @@ impl Chat {
                 .filter_map(|d| serde_json::from_str::<ChatMessage>(&d).ok())
                 .collect())
         })?;
-        open.retain(|m| m.nudge.as_ref().is_some_and(|n| waiting(n, now)));
+        let (mut open, faded): (Vec<ChatMessage>, Vec<ChatMessage>) = open
+            .into_iter()
+            .partition(|m| m.nudge.as_ref().is_some_and(|n| waiting(n, now)));
+        for mut m in faded {
+            if let Some(n) = m.nudge.as_mut() {
+                n.cleared = Some(ChatNudgeCleared::Expired);
+                self.put(&m)?;
+            }
+        }
         open.sort_by_key(|m| {
             let at = m.nudge.as_ref().and_then(|n| parse_ms(n.at.as_str()));
             (at, m.seq.get())
@@ -84,12 +94,12 @@ impl Chat {
                     at: n.at,
                 })
             })
-            .take(CHAT_NUDGES_MAX)
+            .take(CHAT_OPEN_NUDGES_MAX)
             .collect())
     }
 
-    /// Flags `message` for the person's look, announced; on one already flagged, its reason and time are new. Past
-    /// the cap, the oldest waiting nudge is replaced.
+    /// Flags `message` for the person's look, announced; on one already flagged, its reason and time are new, and one
+    /// seen or dismissed waits again. Past the cap, the oldest waiting nudge of its kind is replaced.
     pub fn nudge(
         &self,
         mut message: ChatMessage,
@@ -104,10 +114,14 @@ impl Chat {
     /// Sets the nudge on `message`, not yet stored, and makes room for it.
     fn flag(&self, message: &mut ChatMessage, reason: Line<1, 200>) -> Result<(), StoreError> {
         let now = self.now();
+        // Its kind's: a Try it suggestion counts against suggestions only, so they never push out the lead's flags.
+        let suggestion = message.preview_suggestion.is_some();
         let others: Vec<ChatMessage> = self
             .open_nudges(&message.project_ref)?
             .into_iter()
-            .filter(|m| m.message_id != message.message_id)
+            .filter(|m| {
+                m.message_id != message.message_id && m.preview_suggestion.is_some() == suggestion
+            })
             .collect();
         let over = (others.len() + 1).saturating_sub(CHAT_NUDGES_MAX);
         for old in others.into_iter().take(over) {

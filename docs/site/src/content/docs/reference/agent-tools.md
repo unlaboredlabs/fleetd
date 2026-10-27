@@ -405,7 +405,7 @@ Read one of this project's memory topic files (MEMORY.md lists them).
 
 ### nudge
 
-Flag the chat message you just wrote for the human's look, with reason in a few words ("the Machines page redesign"): the app shows it as something to look at, below your questions, until they have seen it, for a day at most. Only for a showcase, something to try or a risk, never routine news; a project keeps 3, a newer one clearing the oldest. Write the message first, then call it. No notification goes out.
+Flag the chat message you just wrote for the human's look, with reason in a few words ("the Machines page redesign"): the app shows it as something to look at, below your questions, until they have seen it, for a day at most. Only for a showcase, something to try or a risk, never routine news; a project keeps only a few, a newer one clearing the oldest. Write the message first, then call it. No notification goes out.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|

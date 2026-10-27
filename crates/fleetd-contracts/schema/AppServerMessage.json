@@ -1568,7 +1568,7 @@
           "items": {
             "$ref": "#/$defs/ChatOpenNudge"
           },
-          "maxItems": 3,
+          "maxItems": 6,
           "minItems": 1,
           "type": "array"
         },
