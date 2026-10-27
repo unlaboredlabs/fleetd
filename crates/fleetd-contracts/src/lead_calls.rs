@@ -28,6 +28,9 @@ use crate::ledger::{
 };
 use crate::mcp::McpToolError;
 use crate::memory::{MemoryReadCall, MemoryReadResult, RememberCall, RememberResult};
+use crate::navi::{
+    AskHandle, FactoryStatusCall, FactoryStatusResult, ProjectMessageCall, ProjectMessageResult,
+};
 use crate::prim::{Count, Line, List, NonEmpty, Text};
 use crate::secrets::SecretSink;
 use crate::skills::{SkillInstallCall, SkillInstallResult};
@@ -53,6 +56,8 @@ pub struct BriefCreateCall {
     /// The order in the human's words, when this opens the workstream.
     pub text: Option<IntakeText>,
     pub brief: Brief,
+    /// The Navi message (`project_message`) this order is opened for, so that Navi hears when it lands.
+    pub asked: Option<AskHandle>,
 }
 checked!(BriefCreateCall, |call| {
     match (&call.workstream_id, &call.text) {
@@ -60,6 +65,9 @@ checked!(BriefCreateCall, |call| {
             Err("give workstreamId to brief an open workstream, or text to open one".into())
         }
         (Some(_), Some(_)) => Err("text opens a workstream; leave it out with workstreamId".into()),
+        (Some(_), None) if call.asked.is_some() => {
+            Err("asked names the Navi message an order is opened for; give it with text".into())
+        }
         _ => Ok(()),
     }
 });
@@ -313,6 +321,9 @@ pub enum LeadCall {
     PreviewConfigPropose(crate::preview::PreviewConfigProposeCall),
     PreviewStart(crate::preview::PreviewStartCall),
     SessionStep(crate::machine_roles::SessionStepCall),
+    /// Navi's factory bridge (navi.rs): only a Navi's lead makes them.
+    ProjectMessage(ProjectMessageCall),
+    FactoryStatus(FactoryStatusCall),
 }
 
 /// The call's `op` tag, as on the wire.
@@ -500,6 +511,8 @@ pub enum LeadCallResult {
     PreviewConfigPropose(RequestResult),
     PreviewStart(crate::preview::PreviewStartResult),
     SessionStep(crate::machine_roles::SessionStepResult),
+    ProjectMessage(ProjectMessageResult),
+    FactoryStatus(FactoryStatusResult),
 }
 
 /// CLI -> node on the local socket, and node -> hub on the link.
