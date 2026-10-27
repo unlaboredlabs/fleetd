@@ -1,6 +1,6 @@
-// The model and effort behind each task profile: fleet-wide in Settings → Agents (an admin's write), or a project's
-// override in its settings. Reads profiles_get, writes profiles_set one profile at a time. A model claude refused shows
-// as an alert under its profile: agents run on the profile's own until it is set again.
+// The model and effort behind each task profile: fleet-wide on Administration's hub settings (an admin's write), or
+// a project's override in its settings. Reads profiles_get, writes profiles_set one profile at a time. A model claude
+// refused shows as an alert under its profile: agents run on the profile's own until it is set again.
 import { useState } from "react";
 import type { ProfileSetting, ProfilesGetOutput, ProjectRef, TaskProfile } from "../../../shared/contracts";
 import { useToolQuery } from "../../src/data/react";
