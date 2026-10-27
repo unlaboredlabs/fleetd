@@ -50,8 +50,9 @@ writes drafts and notes in its folder, remembers and forgets, keeps its checklis
 - **Sites:** the first time it fetches a page or opens a site in its browser, you're asked in its chat, with the site
   named. Approve once and it fetches and opens that site unasked from then on, with a plain URL: one with `?` or
   `&`, quotes or other shell characters in a browser command asks each time. `www.` is the same site, a subdomain is
-  another. The MCP tools `navi_sites` and `navi_site_revoke` list a Navi's sites and take one back; a revoked site asks
-  again.
+  another, and `localhost` is a site per port (`localhost:3000`). Only `http` and `https` name a site: `file:`,
+  `data:`, `about:` and other schemes ask every time. The MCP tools `navi_sites` and `navi_site_revoke` list a
+  Navi's sites and take one back; a revoked site asks again.
 
 Anything hard to undo, or that someone else sees, waits for you every time: sending an email or message, accepting
 an invite, spending, posting publicly, deleting, signing or accepting terms, changing a password. There is no

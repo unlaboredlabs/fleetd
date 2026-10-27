@@ -397,11 +397,15 @@ pub fn role_answer(
     if tool == "Bash" {
         // A plain screen command runs; any other command goes on to the hub, which asks.
         let command = input.get("command").and_then(|v| v.as_str())?;
-        // A screenshot saves where it's told: only inside the folder, as a Write would, and never over its settings.
+        // A screenshot saves where it's told: only inside the folder, as a Write would, and never over its settings. The
+        // path must be absolute: agent-browser's daemon, not this session, resolves a relative one, from its own folder.
         let saves_inside = screenshot_paths(command)
             .unwrap_or_default()
             .iter()
-            .all(|p| (inside(cwd, cwd, p) && !kept(cwd, p)) || inside(cwd, scratch, p));
+            .all(|p| {
+                Path::new(p).is_absolute()
+                    && ((inside(cwd, cwd, p) && !kept(cwd, p)) || inside(cwd, scratch, p))
+            });
         return (screen_command(command) && saves_inside).then_some(PermissionDecision::Allow {
             updated_input: None,
         });
@@ -1224,7 +1228,10 @@ mod tests {
         let bash = |c: &str| answer("Bash", serde_json::json!({ "command": c }));
         let runs = |c: &str| matches!(bash(c), Some(PermissionDecision::Allow { .. }));
         assert!(runs("agent-browser screenshot"));
-        assert!(runs("agent-browser screenshot --full shots/page.png"));
+        assert!(runs(&format!(
+            "agent-browser screenshot --full {}/shots/page.png",
+            folder.display()
+        )));
         assert!(runs(&format!(
             "agent-browser screenshot {}/a.png",
             scratch.display()
@@ -1235,6 +1242,8 @@ mod tests {
             "agent-browser screenshot ../grace/x.png",
             "agent-browser screenshot agent-browser.json",
             "agent-browser screenshot .claude/settings.json",
+            // A relative path is the daemon's to resolve, wherever it runs.
+            "agent-browser screenshot shots/page.png",
         ] {
             assert!(bash(c).is_none(), "{c}");
         }

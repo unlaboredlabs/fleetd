@@ -383,7 +383,8 @@ bridge (`hub/navi/bridge`) and the integrations (`hub/integrations`) are separat
 - On the node (`node/runner/claude/mod.rs`):
   - Its agent-browser reads only an empty config fleetd writes in the session's directory (`AGENT_BROWSER_CONFIG`),
     never `./agent-browser.json` or `~/.agent-browser/config.json`. A `screenshot` saves unasked only inside the
-    folder or its scratch directory, checked as a Write is.
+    folder or its scratch directory, to an absolute path (agent-browser's daemon resolves a relative one), checked as a
+    Write is.
   - The role keeps a lead's fleetd tools (`agent-mcp --role lead`), and `Edit`, `Write`, `WebFetch` and `WebSearch`.
   - `role_allowed` adds `ASSISTANT_ALLOWED` to `--allowedTools`: `WebSearch`, `Skill`, `mcp__fleetd`, `agent-device`,
     and agent-browser's commands that work the open page (`click`, `fill`, `snapshot`, …). Not `open`, `eval` or `tab`.
@@ -404,7 +405,8 @@ bridge (`hub/navi/bridge`) and the integrations (`hub/integrations`) are separat
     `permission.site`, and approving it allows the site.
   - A command that does more than open one plain URL asks every time, with no site: a second word, a quote inside
     it, a backslash, whitespace, a user in the authority, or a scheme other than http(s). The host compared is the
-    URL library's, after IDN to punycode.
+    URL library's, after IDN to punycode. Only http(s) names a site (`file:`, `data:`,
+    `javascript:`, `about:` ask each time), and a loopback host is a site per port (`localhost:3000`).
   - `navi_sites {machineId, projectId}` lists the sites; `navi_site_revoke {…, site}` takes one back, and it asks
     again.
   - Not covered: a click that follows a link to another site, and a final Send or Pay click on an allowed site. The
