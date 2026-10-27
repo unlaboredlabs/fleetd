@@ -69,8 +69,8 @@ least busy worker.
 ## What it does on its own, and what it asks first
 
 A Navi searches the web freely, and reads your connected mail, calendar and files and the factory's status. It also
-writes drafts and notes in its folder, remembers and forgets, keeps its checklist, works screens and logs in with
-1Password.
+writes drafts and notes in its folder, saves [Gmail drafts](/docs/google#tools) that only you send, remembers and
+forgets, keeps its checklist, works screens and logs in with 1Password.
 
 - **Files:** it reads and writes only inside its own folder. A read or an edit anywhere else is refused, whoever
   approves it, so your keys, its MCP servers' tokens and other projects stay out of its reach. It can't change its own
@@ -84,7 +84,7 @@ writes drafts and notes in its folder, remembers and forgets, keeps its checklis
   Navi's sites and take one back; a revoked site asks again.
 
 Anything hard to undo, or that someone else sees, waits for you every time: sending an email or message, accepting
-an invite, spending, posting publicly, deleting, signing or accepting terms, changing a password. There is no
+an invite, making or changing a calendar event, uploading or sharing a file, spending, posting publicly, deleting, signing or accepting terms, changing a password. There is no
 "always allow".
 
 This is enforced outside the model. A Navi's lead runs in Claude Code's `manual` permission mode with a short

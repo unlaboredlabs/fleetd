@@ -6,7 +6,7 @@ description: Connect a Navi to Notion and any MCP server, with your own credenti
 A Navi can reach your notes and any service with an MCP server. You connect each one yourself in the Navi's settings,
 with credentials you make: fleetd is open source and has no shared app. Your keys are sealed on the Navi's machine, and
 the Navi never sees them. The same rules and the same approval card cover every integration, Gmail, Calendar and Drive
-included.
+([Google for Navi](/docs/google)) included.
 
 Integrations connect only to a Navi. A coding project's lead runs with full access, so it would send unasked; the hub
 refuses an integration on any other project.
@@ -17,10 +17,10 @@ The hub decides from a table of every tool, not the Navi. The model can't talk i
 
 | | Examples | What happens |
 |---|---|---|
-| **Reads** | Search and read mail, list events, check free/busy, search Drive, read a doc, search Notion, read a page | Runs without asking. |
-| **Writes, sends, deletes, shares** | Send, reply or forward an email; save a draft; label, archive or trash mail; create, change or delete an event; answer an invitation; change a doc, sheet or Notion page; trash a file | Asks you in the chat, **every time**, with exactly what it would do. There is no "always allow". |
+| **Reads** | Search and read mail, list events, search Drive, read a file, search Notion, read a page; save a Gmail draft, which sends nothing (decision `navi.google-drafts-unasked`, D201) | Runs without asking. |
+| **Writes, sends, deletes, shares** | Send or reply to an email; create or change an event; upload or share a Drive file; change or trash a Notion page | Asks you in the chat, **every time**, with exactly what it would do. There is no "always allow". |
 | **Spending** | A custom server's `pay`, `purchase` or `checkout` tool | Asks you, marked **Costs money**, and asks once more before it runs. |
-| **Never** | Moving money between accounts (`transfer`, `send_money`, `send_transaction`), trading (`buy_stock`, `sell`, and any `place_order` or `submit_order`, a shop's or a restaurant's too), creating accounts in your name; sending or storing what looks like a password, key or token, in the call's text or inside an attached text file (a binary file is shown by name and size, and you decide); a call too large to show on the card in full | Refused, even if you would approve it. The Navi is told to leave it to you. Place orders yourself, or through a screen you take over. |
+| **Never** | Moving money between accounts (`transfer`, `send_money`, `send_transaction`), trading (`buy_stock`, `sell`, and any `place_order` or `submit_order`, a shop's or a restaurant's too), creating accounts in your name; sending or storing what looks like a password, key or token; a call too large to show on the card in full; an email with attachments, which [Google for Navi](/docs/google) doesn't support yet | Refused, even if you would approve it. The Navi is told to leave it to you. Place orders yourself, or through a screen you take over. |
 
 A tool the table doesn't know asks. That covers a tool added to an integration later, a custom server's tools and the MCP
 servers in your own claude setup.
@@ -38,10 +38,9 @@ it is a summary the Navi wrote.
 | Reaches | Who gets it when the tool picks them, as a reply does: "That message's sender", or "Everyone on that message". |
 | Subject or Title | The email's subject, the event's or the page's title. |
 | When | An event's start and end. |
-| Attached | Each file, with its size when its bytes are in the call, or where it comes from: a message or Drive. |
 | On | The message, event, page or file it acts on. |
 | Body | The whole text that goes out or goes in, under a hairline. A long one folds, with **Show all** in place. |
-| Everything it sends | The tool's whole input as JSON, closed until you open it, so nothing is hidden behind the rows. A file's bytes are said by their size. A call too large to show whole is refused, never asked about. |
+| Everything it sends | The tool's whole input as JSON, closed until you open it, so nothing is hidden behind the rows. A call too large to show whole is refused, never asked about. |
 
 The buttons name the act: **Send it** and **Don't send**, **Share it**, **Delete it**, **Pay**. Either runs exactly that
 input, or tells the Navi no; <kbd>Enter</kbd> and <kbd>Esc</kbd> do the same. A delete or a spend asks once more in the

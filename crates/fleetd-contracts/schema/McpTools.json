@@ -5093,6 +5093,282 @@
       ],
       "type": "object"
     },
+    "GoogleAccount": {
+      "description": "One Navi's Google account.",
+      "properties": {
+        "connectedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "email": {
+          "description": "The account's address, as Gmail names it.",
+          "maxLength": 320,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "lapsed": {
+          "description": "Google stopped taking the connection (revoked, or a testing app's 7 days ran out): why, as the Navi's node last\nsaw it. The app offers Reconnect.",
+          "type": "string"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "scopes": {
+          "description": "What the person granted: Google lets them untick some.",
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "pattern": "^[^\\r\\n]*$",
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "projectRef",
+        "email",
+        "scopes",
+        "connectedAt"
+      ],
+      "type": "object"
+    },
+    "GoogleClient": {
+      "description": "The hub's admin's OAuth client, as the hub keeps it: no secret.",
+      "properties": {
+        "clientId": {
+          "$ref": "#/$defs/GoogleClientId"
+        },
+        "sealedOn": {
+          "default": [],
+          "description": "Each machine whose node holds its secret, with that node's fingerprint of it.",
+          "items": {
+            "$ref": "#/$defs/McpSealedOn"
+          },
+          "type": "array"
+        },
+        "updatedAt": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "clientId",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "GoogleClientCheck": {
+      "description": "Test: whether Google takes the client's id and secret, asked with a code that can't work. Google answers\n`invalid_grant` for a client it knows and `invalid_client` for one it doesn't.",
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "problem": {
+          "description": "What's wrong, in a line a person can act on.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "type": "object"
+    },
+    "GoogleClientId": {
+      "pattern": "^[A-Za-z0-9._-]{1,200}\\.apps\\.googleusercontent\\.com$",
+      "type": "string"
+    },
+    "GoogleClientSetInput": {
+      "properties": {
+        "clientId": {
+          "$ref": "#/$defs/GoogleClientId"
+        },
+        "sealed": {
+          "description": "The client secret sealed to each machine that runs a Navi.",
+          "items": {
+            "$ref": "#/$defs/McpSeal"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "clientId",
+        "sealed"
+      ],
+      "type": "object"
+    },
+    "GoogleClientSetOutput": {
+      "properties": {
+        "client": {
+          "$ref": "#/$defs/GoogleClient"
+        },
+        "missingOn": {
+          "description": "Machines that were offline: their Navis can't connect until the client is saved again while they are online.",
+          "items": {
+            "$ref": "#/$defs/MachineId"
+          },
+          "type": "array"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "client"
+      ],
+      "type": "object"
+    },
+    "GoogleClientTestInput": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId",
+          "description": "Where to test; default: the first machine online that holds the client."
+        }
+      },
+      "type": "object"
+    },
+    "GoogleClientTestOutput": {
+      "properties": {
+        "check": {
+          "$ref": "#/$defs/GoogleClientCheck"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "machineId",
+        "check"
+      ],
+      "type": "object"
+    },
+    "GoogleCode": {
+      "pattern": "^[A-Za-z0-9/._~+-]{1,2048}$",
+      "type": "string"
+    },
+    "GoogleConnectInput": {
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/GoogleCode",
+          "description": "From Google's redirect."
+        },
+        "codeVerifier": {
+          "$ref": "#/$defs/PkceVerifier",
+          "description": "The PKCE verifier whose challenge the consent page was opened with."
+        },
+        "project": {
+          "$ref": "#/$defs/ProjectRef",
+          "description": "The Navi."
+        },
+        "redirectUri": {
+          "$ref": "#/$defs/LoopbackUri",
+          "description": "The loopback address the code was sent to."
+        }
+      },
+      "required": [
+        "project",
+        "code",
+        "codeVerifier",
+        "redirectUri"
+      ],
+      "type": "object"
+    },
+    "GoogleConnectOutput": {
+      "properties": {
+        "account": {
+          "$ref": "#/$defs/GoogleAccount"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "account"
+      ],
+      "type": "object"
+    },
+    "GoogleDisconnectInput": {
+      "properties": {
+        "project": {
+          "$ref": "#/$defs/ProjectRef"
+        }
+      },
+      "required": [
+        "project"
+      ],
+      "type": "object"
+    },
+    "GoogleDisconnectOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "revoked": {
+          "description": "Whether Google confirmed the revoke; the tokens are gone from the machine either way.",
+          "type": "boolean"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "revoked"
+      ],
+      "type": "object"
+    },
+    "GoogleGetInput": {
+      "properties": {
+        "project": {
+          "$ref": "#/$defs/ProjectRef",
+          "description": "Also this Navi's account."
+        }
+      },
+      "type": "object"
+    },
+    "GoogleGetOutput": {
+      "properties": {
+        "account": {
+          "$ref": "#/$defs/GoogleAccount",
+          "description": "The asked Navi's account, when it has one."
+        },
+        "client": {
+          "$ref": "#/$defs/GoogleClient",
+          "description": "The admin's OAuth client; none until one is saved."
+        },
+        "next": {
+          "type": "string"
+        },
+        "redirect": {
+          "description": "Where the consent page sends the person back: a loopback address, any port.",
+          "type": "string"
+        },
+        "scopes": {
+          "description": "What connecting asks Google for.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "scopes",
+        "redirect"
+      ],
+      "type": "object"
+    },
     "Grant": {
       "properties": {
         "machines": {
@@ -6357,7 +6633,7 @@
       "oneOf": [
         {
           "const": "google",
-          "description": "Gmail, Google Calendar and Google Drive: fleetd's own Google tools, read by the names and fields in\n`hub/integrations/google.rs`.",
+          "description": "Gmail, Google Calendar and Google Drive through fleetd's own `google` server, with the person's own account\n(`crate::google`).",
           "type": "string"
         },
         {
@@ -6870,6 +7146,10 @@
         "ms"
       ],
       "type": "object"
+    },
+    "LoopbackUri": {
+      "pattern": "^http://127\\.0\\.0\\.1:[1-9][0-9]{0,4}(/[A-Za-z0-9/._-]*)?$",
+      "type": "string"
     },
     "Machine": {
       "properties": {
@@ -7568,7 +7848,7 @@
           "$ref": "#/$defs/IntegrationKind"
         },
         "readTools": {
-          "description": "A custom server's tools that only read, as the person marked them when connecting it. Ignored for Google and\nNotion, whose tools the hub's table knows. A tool the policy blocks stays blocked even when listed here.",
+          "description": "A custom server's tools that only read, as the person marked them when connecting it. Ignored for Notion and\nfleetd's own Google server, whose tools the hub's table knows. A tool the policy blocks stays blocked even when listed here.",
           "items": {
             "$ref": "#/$defs/McpToolName"
           },
@@ -8231,6 +8511,36 @@
         "fleetd_status.output": {
           "$ref": "#/$defs/FleetdStatusOutput"
         },
+        "google_client_set.input": {
+          "$ref": "#/$defs/GoogleClientSetInput"
+        },
+        "google_client_set.output": {
+          "$ref": "#/$defs/GoogleClientSetOutput"
+        },
+        "google_client_test.input": {
+          "$ref": "#/$defs/GoogleClientTestInput"
+        },
+        "google_client_test.output": {
+          "$ref": "#/$defs/GoogleClientTestOutput"
+        },
+        "google_connect.input": {
+          "$ref": "#/$defs/GoogleConnectInput"
+        },
+        "google_connect.output": {
+          "$ref": "#/$defs/GoogleConnectOutput"
+        },
+        "google_disconnect.input": {
+          "$ref": "#/$defs/GoogleDisconnectInput"
+        },
+        "google_disconnect.output": {
+          "$ref": "#/$defs/GoogleDisconnectOutput"
+        },
+        "google_get.input": {
+          "$ref": "#/$defs/GoogleGetInput"
+        },
+        "google_get.output": {
+          "$ref": "#/$defs/GoogleGetOutput"
+        },
         "hub_info.input": {
           "$ref": "#/$defs/HubInfoInput"
         },
@@ -8891,6 +9201,16 @@
         "events_wait.output",
         "fleetd_status.input",
         "fleetd_status.output",
+        "google_client_set.input",
+        "google_client_set.output",
+        "google_client_test.input",
+        "google_client_test.output",
+        "google_connect.input",
+        "google_connect.output",
+        "google_disconnect.input",
+        "google_disconnect.output",
+        "google_get.input",
+        "google_get.output",
         "hub_info.input",
         "hub_info.output",
         "hub_link_add.input",
@@ -11097,6 +11417,10 @@
         "person"
       ],
       "type": "object"
+    },
+    "PkceVerifier": {
+      "pattern": "^[A-Za-z0-9._~-]{43,128}$",
+      "type": "string"
     },
     "Placeholder": {
       "description": "A `{{name}}` the code fills in. A required one missing from an edit gets a warning.",

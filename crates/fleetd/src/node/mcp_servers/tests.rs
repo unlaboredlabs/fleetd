@@ -280,3 +280,45 @@ fn a_sessions_servers_are_kept_for_its_next_start_and_masked() {
     };
     assert!(roles.has(McpAgentRole::Reviewer));
 }
+
+/// fleetd's own Google server, as the hub gives it to a Navi with an account: the node runs its own binary with its home
+/// and the project, and the config holds no token; without tokens on the node it is left out.
+#[test]
+fn a_navi_lead_gets_the_native_google_server_with_no_token_in_its_config() {
+    let home = tempfile::tempdir().unwrap();
+    let kept = Kept {
+        role: McpAgentRole::Lead,
+        config: serde_json::from_value(json!({
+            "userServers": false,
+            "servers": [{ "name": "google", "secrets": { "kind": "project", "projectId": "p1" },
+                "roles": { "lead": true, "writers": false, "reviewers": false },
+                "transport": { "type": "stdio", "command": "fleetd", "args": ["google-mcp"] } }]
+        }))
+        .unwrap(),
+    };
+    let none = session_config(home.path(), Some(&kept), None, "s1");
+    let config: Value = serde_json::from_str(&none.json).unwrap();
+    assert_eq!(config["mcpServers"], json!({}));
+
+    let tokens = crate::node::google::account_path(home.path(), "p1");
+    std::fs::create_dir_all(tokens.parent().unwrap()).unwrap();
+    std::fs::write(&tokens, r#"{"refreshToken":"1//never-in-config"}"#).unwrap();
+    let mcp = session_config(home.path(), Some(&kept), None, "s1");
+    assert!(!mcp.json.contains("never-in-config"));
+    assert!(mcp.secrets.is_empty());
+    let config: Value = serde_json::from_str(&mcp.json).unwrap();
+    let google = &config["mcpServers"]["google"];
+    assert_eq!(google["type"], "stdio");
+    assert_ne!(google["command"], "fleetd");
+    assert_eq!(
+        google["args"],
+        json!([
+            "google-mcp",
+            "--home",
+            home.path().to_string_lossy(),
+            "--project",
+            "p1"
+        ])
+    );
+    assert_eq!(google["env"], json!({}));
+}

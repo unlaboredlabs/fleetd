@@ -1923,6 +1923,115 @@ export type GitHubRepos = {
   repos: GitHubCandidate[];
 };
 
+/** One Navi's Google account. */
+export type GoogleAccount = {
+  connectedAt: Timestamp;
+  /** The account's address, as Gmail names it. */
+  email: string;
+  /**
+   * Google stopped taking the connection (revoked, or a testing app's 7 days ran out): why, as the Navi's node last
+   * saw it. The app offers Reconnect.
+   */
+  lapsed?: string;
+  projectRef: ProjectRef;
+  /** What the person granted: Google lets them untick some. */
+  scopes: string[];
+};
+
+/** The hub's admin's OAuth client, as the hub keeps it: no secret. */
+export type GoogleClient = {
+  clientId: GoogleClientId;
+  /** Each machine whose node holds its secret, with that node's fingerprint of it. */
+  sealedOn?: McpSealedOn[];
+  updatedAt: Timestamp;
+};
+
+/**
+ * Test: whether Google takes the client's id and secret, asked with a code that can't work. Google answers
+ * `invalid_grant` for a client it knows and `invalid_client` for one it doesn't.
+ */
+export type GoogleClientCheck = {
+  ok: boolean;
+  /** What's wrong, in a line a person can act on. */
+  problem?: string;
+};
+
+export type GoogleClientId = string;
+
+export type GoogleClientSetInput = {
+  clientId: GoogleClientId;
+  /** The client secret sealed to each machine that runs a Navi. */
+  sealed: McpSeal[];
+};
+
+export type GoogleClientSetOutput = {
+  client: GoogleClient;
+  /** Machines that were offline: their Navis can't connect until the client is saved again while they are online. */
+  missingOn?: MachineId[];
+  next?: string;
+  truncated?: boolean;
+};
+
+export type GoogleClientTestInput = {
+  /** Where to test; default: the first machine online that holds the client. */
+  machineId?: MachineId;
+};
+
+export type GoogleClientTestOutput = {
+  check: GoogleClientCheck;
+  machineId: MachineId;
+  next?: string;
+  truncated?: boolean;
+};
+
+export type GoogleCode = string;
+
+export type GoogleConnectInput = {
+  /** From Google's redirect. */
+  code: GoogleCode;
+  /** The PKCE verifier whose challenge the consent page was opened with. */
+  codeVerifier: PkceVerifier;
+  /** The Navi. */
+  project: ProjectRef;
+  /** The loopback address the code was sent to. */
+  redirectUri: LoopbackUri;
+};
+
+export type GoogleConnectOutput = {
+  account: GoogleAccount;
+  next?: string;
+  truncated?: boolean;
+};
+
+export type GoogleDisconnectInput = {
+  project: ProjectRef;
+};
+
+export type GoogleDisconnectOutput = {
+  next?: string;
+  /** Whether Google confirmed the revoke; the tokens are gone from the machine either way. */
+  revoked: boolean;
+  truncated?: boolean;
+};
+
+export type GoogleGetInput = {
+  /** Also this Navi's account. */
+  project?: ProjectRef;
+};
+
+export type GoogleGetOutput = {
+  /** The asked Navi's account, when it has one. */
+  account?: GoogleAccount;
+  /** The admin's OAuth client; none until one is saved. */
+  client?: GoogleClient;
+  next?: string;
+  /** Where the consent page sends the person back: a loopback address, any port. */
+  redirect: string;
+  /** What connecting asks Google for. */
+  scopes: string[];
+  truncated?: boolean;
+};
+
 export type Grant = {
   machines: GrantMachines;
   role: Role;
@@ -2567,6 +2676,8 @@ export type LongestWait = {
   spanId: number;
 };
 
+export type LoopbackUri = string;
+
 export type Machine = {
   /**
    * M8: the node's X25519 key from its hello; clients seal this machine's secrets to it. Absent: it takes no
@@ -2853,8 +2964,8 @@ export type McpArg = string;
 export type McpIntegration = {
   kind: IntegrationKind;
   /**
-   * A custom server's tools that only read, as the person marked them when connecting it. Ignored for Google and
-   * Notion, whose tools the hub's table knows. A tool the policy blocks stays blocked even when listed here.
+   * A custom server's tools that only read, as the person marked them when connecting it. Ignored for Notion and
+   * fleetd's own Google server, whose tools the hub's table knows. A tool the policy blocks stays blocked even when listed here.
    */
   readTools?: McpToolName[];
 };
@@ -3739,6 +3850,8 @@ export type PersonSetOutput = {
   person: Person;
   truncated?: boolean;
 };
+
+export type PkceVerifier = string;
 
 /** A `{{name}}` the code fills in. A required one missing from an edit gets a warning. */
 export type Placeholder = {
@@ -7026,6 +7139,11 @@ export interface ToolMap {
   events_list: { input: EventsListInput; output: EventsListOutput };
   events_wait: { input: EventsWaitInput; output: EventsWaitOutput };
   fleetd_status: { input: FleetdStatusInput; output: FleetdStatusOutput };
+  google_client_set: { input: GoogleClientSetInput; output: GoogleClientSetOutput };
+  google_client_test: { input: GoogleClientTestInput; output: GoogleClientTestOutput };
+  google_connect: { input: GoogleConnectInput; output: GoogleConnectOutput };
+  google_disconnect: { input: GoogleDisconnectInput; output: GoogleDisconnectOutput };
+  google_get: { input: GoogleGetInput; output: GoogleGetOutput };
   hub_info: { input: HubInfoInput; output: HubInfoOutput };
   hub_link_add: { input: HubLinkAddInput; output: HubLinkAddOutput };
   hub_link_mint: { input: HubLinkMintInput; output: HubLinkMintOutput };

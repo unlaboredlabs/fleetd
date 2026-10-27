@@ -222,6 +222,11 @@ pub enum SessionCall {
         project_id: Option<ProjectId>,
         server: crate::mcp_servers::McpSessionServer,
     },
+    /// A Navi's Google connection (`crate::google`): the admin's client, and an account's tokens, kept on the node.
+    /// Only nodes listing [`crate::node_link::CAP_GOOGLE`] get it.
+    Google {
+        call: crate::google::GoogleCall,
+    },
     /// The order closed: forget the variables delivered for it, or only `name` (one the hub could not record), and
     /// then only while its value is still the one `fingerprint` names, so a value delivered since stays. Its sessions
     /// run on without them from their next turn. Only nodes listing [`crate::node_link::CAP_ORDER_ENV`] get it.
@@ -644,6 +649,10 @@ pub enum SessionOutput {
     },
     /// Answer to `mcp_test`.
     McpTested(crate::mcp_servers::McpTestResult),
+    /// Answer to `google`.
+    Google {
+        answer: crate::google::GoogleAnswer,
+    },
     /// Answer to `skills_list`.
     Skills {
         skills: Vec<crate::skills::RepoSkill>,
