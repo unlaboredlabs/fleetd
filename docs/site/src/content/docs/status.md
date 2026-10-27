@@ -11,7 +11,7 @@ Status has one row per project:
 
 | Column | Shows |
 |---|---|
-| State | `waiting on you`, `blocked`, `working` or `idle`. |
+| State | `waiting on you`, `blocked`, `working` or `idle`. Blocked means something outside the work stops it: its machine is offline, at its usage limit, or short of disk or CPU for new agents. |
 | Work | How many pieces of work are in each group: "1 waiting on you · 2 working · 1 landing · 9 done". |
 | Agents | How many agents are running. |
 | Last merged | When the latest pull request merged, with its day: "today 09:46", "yesterday 16:40", "Fri 15:12", "Oct 7". |
@@ -20,6 +20,14 @@ Under each row, its work is listed group by group, newest first. Click an item t
 in the panel beside the project's chat. Click a row to open that project's chat, or PRs at its end for the project's
 pull requests. Rows needing you come first, then blocked, working and idle. An MCP client reads the same rows with
 `status_get`. Open Status with ⌘. (Ctrl+. on Linux), or from the sidebar.
+
+## A check red on main {#red-main}
+
+A check that fails on the base branch doesn't block the project: the [merge train](/docs/merge-train) keeps merging,
+since it waits only for each pull request's own checks. Status shows it as a warning instead, **CI red** beside the
+project's name, and says which check and whether a fix is under way: "`ios sessions` is red on main, fix in
+progress" while the [fix order](/docs/merge-train#after-merge) for it is open, "no fix under way" otherwise. The
+sidebar and the line above the chat's message box say the same. A project with more than one repo names the repo.
 
 ## The groups {#groups}
 
@@ -44,8 +52,9 @@ Idle and done work drops off after 7 days. Status never scores the work or shows
 $ fleetd status
 Status at 14:02:07
 
-billing: blocked: main CI is red on acme/billing
+billing: idle
   1 idle · 3 done · 0 agents · merged Invoice export #96 Thu 16:40
+  warning: `ios sessions` is red on main, fix in progress
   idle: fleetd/T19-retry (#204, CI failed)
 
 storefront: working

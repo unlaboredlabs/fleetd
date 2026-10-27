@@ -7,7 +7,7 @@ use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef, Timestamp};
 use fleetd_contracts::model::{Machine, MachineStatus};
 use fleetd_contracts::prim::{Count, Line, List, NonNegative, Text};
-use fleetd_contracts::status::{CiState, LastMerged, ProjectRowState, ProjectStatusRow, StaleMark};
+use fleetd_contracts::status::{LastMerged, ProjectRowState, ProjectStatusRow, StaleMark};
 use rusqlite::Connection;
 use serde_json::Value;
 
@@ -303,10 +303,14 @@ pub fn read(hub: &Hub, fresh: &Fresh, now: i64) -> anyhow::Result<Vec<ProjectSta
             .link
             .load(&r.machine_id)
             .is_some_and(|l| l.limits.iter().any(|x| x.status.as_str() == "rejected"));
-        let red = repos.iter().find(|repo| {
-            hub.train
-                .main_ci(repo)
-                .is_some_and(|m| m.state == CiState::Red)
+        // A red main stops nothing (the train keeps merging): a warning, never a block.
+        let warning = repos.iter().find_map(|repo| {
+            let note = hub.train.main_ci_note(repo)?;
+            Some(if repos.len() > 1 {
+                format!("{note} in {repo}")
+            } else {
+                note
+            })
         });
         let blocked = match machine.map(|m| m.status) {
             Some(MachineStatus::Offline) => Some(format!("{mname} is offline")),
@@ -318,10 +322,7 @@ pub fn read(hub: &Hub, fresh: &Fresh, now: i64) -> anyhow::Result<Vec<ProjectSta
             }
             _ if usage_paused.is_some() => usage_paused.clone(),
             _ if usage_hit => Some(format!("usage limit reached on {mname}")),
-            _ => hub
-                .link
-                .paused(&r.machine_id)
-                .or_else(|| red.map(|repo| format!("main CI is red on {repo}"))),
+            _ => hub.link.paused(&r.machine_id),
         };
         // The lead chat's own rule, so the row and the chat's needs-you dot never disagree; the side-effect-free
         // read, since a status read must not announce chat state.
@@ -364,6 +365,7 @@ pub fn read(hub: &Hub, fresh: &Fresh, now: i64) -> anyhow::Result<Vec<ProjectSta
                 .filter(|_| usage_paused_on.is_some())
                 .map(line),
             usage_paused_on,
+            warning: warning.as_deref().map(line),
             counts,
             items: List::unchecked(items),
             agents_running: Count::unchecked(facts.agents.max(0)),

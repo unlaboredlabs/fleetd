@@ -90,12 +90,12 @@
   gap: var(--space-2);
   min-width: 0;
 }
-/* The mark stays whole; the title gives way to it. */
-.stale {
+/* The marks (out of date, CI red) stay whole; the title gives way to them. */
+.mark {
   flex: none;
   white-space: nowrap;
 }
-.stale,
+.mark,
 .word,
 .work,
 .merged {

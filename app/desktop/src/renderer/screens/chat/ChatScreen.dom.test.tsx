@@ -79,8 +79,19 @@ const mount = async (row: Partial<ProjectStatusRow>, lead?: ReturnType<typeof li
 const line = () => host.querySelector("[data-attention]")?.textContent ?? null;
 
 it("says why the project is blocked above the box, in the hub's words", async () => {
-  await mount({ state: "blocked", blockedReason: "main CI is red: rust (macos)" });
-  expect(line()).toBe("Blocked: main CI is red: rust (macos)");
+  await mount({ state: "blocked", blockedReason: "devbox is offline" });
+  expect(line()).toBe("Blocked: devbox is offline");
+});
+
+it("says a red main as a warning, not a block, and a block or the lead's question before it", async () => {
+  const warning = "`rust (macos)` is red on main, fix in progress";
+  await mount({ state: "working", warning });
+  // The check's name is set as code, its backticks not shown.
+  expect(host.querySelector('[data-attention="warning"]')?.textContent).toBe("rust (macos) is red on main, fix in progress");
+  expect(host.querySelector('[data-attention="warning"] code')?.textContent).toBe("rust (macos)");
+  act(() => root?.unmount());
+  await mount({ state: "blocked", blockedReason: "devbox is offline", warning });
+  expect(line()).toBe("Blocked: devbox is offline");
 });
 
 it("offers Resume on the blocked line when its machine's usage pause is why, and Resume calls usage_resume", async () => {
@@ -94,7 +105,7 @@ it("offers Resume on the blocked line when its machine's usage pause is why, and
   expect(calls.filter(([tool]) => tool === "usage_resume")).toEqual([["usage_resume", { machineId: project.machineId }]]);
   // Another reason offers none.
   act(() => root?.unmount());
-  await mount({ state: "blocked", blockedReason: "main CI is red: rust (macos)" });
+  await mount({ state: "blocked", blockedReason: "devbox is offline" });
   expect(host.querySelector("[data-attention] button")).toBeNull();
 });
 

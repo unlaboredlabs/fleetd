@@ -5737,6 +5737,60 @@ async fn a_check_that_fails_after_the_merge_opens_one_fix_order() {
     }
 }
 
+/// W78: a check red on main holds no merge, and the status view's note names it and says whether its fix order is
+/// open; it is a warning, not a block.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_check_red_on_main_holds_nothing_and_its_note_says_whether_a_fix_is_under_way() {
+    let clock = Arc::new(Dial::default());
+    let kit = Kit::build(FakeCi::Actions, |_| {}, false, clock.clone());
+    *kit.gh.required.lock().unwrap() = Some(vec!["unit".into()]);
+    *kit.host.train.lock().unwrap() = Some(train_settings(&[], &[]));
+    let failed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let now = failed.clone();
+    answer_checks(&kit, move || {
+        let done = now.load(std::sync::atomic::Ordering::SeqCst);
+        vec![
+            run(1, "unit", Some("success")),
+            run(50, "ios sessions", done.then_some("failure")),
+        ]
+    });
+    let a = kit
+        .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
+        .await;
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(state_of(&kit, &a), ChangeState::Merged);
+    assert_eq!(kit.train.main_ci_note(REPO), None, "main isn't red");
+
+    // `ios sessions` fails on the merged commit: main reads red, and the watch opens its fix order.
+    failed.store(true, std::sync::atomic::Ordering::SeqCst);
+    clock.turn(Duration::from_secs(61));
+    kit.train.step(REPO).await;
+    assert_eq!(kit.host.orders.lock().unwrap().len(), 1);
+    assert_eq!(
+        kit.train.main_ci_note(REPO).as_deref(),
+        Some("`ios sessions` is red on main, fix in progress")
+    );
+
+    // The next PR merges while main is red: the train waits only for its own checks.
+    let b = kit
+        .enqueue(kit.open_pr(8, "b", &[add("b1.txt", "b\n")]))
+        .await;
+    failed.store(false, std::sync::atomic::Ordering::SeqCst);
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(state_of(&kit, &b), ChangeState::Merged);
+    assert_eq!(
+        kit.train.main_ci(REPO).unwrap().state,
+        fleetd_contracts::status::CiState::Red
+    );
+
+    // Its order closed and main still red: no fix under way.
+    kit.host.closed_orders.lock().unwrap().insert("W100".into());
+    assert_eq!(
+        kit.train.main_ci_note(REPO).as_deref(),
+        Some("`ios sessions` is red on main, no fix under way")
+    );
+}
+
 /// With nothing required and nothing added, the train waited for every check before merging: nothing is watched after.
 #[tokio::test(flavor = "multi_thread")]
 async fn with_an_empty_fast_set_nothing_fails_after_the_merge() {

@@ -7,7 +7,7 @@ import { isObject, type JsonObject } from "../kit/json.ts";
 import { arr, obj } from "../kit/stress.ts";
 
 const reasons = (base: Fixture): Fixture => {
-  const f = Fixture.from(base, "sidebar-reasons", "Sidebar: reply, approve · 2, secret, blocked, working, and a new reply in docs.");
+  const f = Fixture.from(base, "sidebar-reasons", "Sidebar: reply, approve · 2, secret, blocked, CI red, working, and a new reply in docs.");
   const projects = arr(f.snapshot?.["projects"]).filter(isObject);
   const ref = (title: string): JsonObject => {
     const p = projects.find((x) => x["title"] === title);

@@ -79,6 +79,7 @@
       "type": "string"
     },
     "ProjectRef": {
+      "description": "A project: a workspace with a lead and its own directory, on its home machine, where the lead runs. Its\n`projectId` is the node's id for that directory, so the ref also addresses the files; the directory may be a git\nrepo or a plain folder. A project holds zero or more repos (`ProjectRepo`), each in a node directory of its\nown or in the project's.",
       "properties": {
         "machineId": {
           "$ref": "#/$defs/MachineId"

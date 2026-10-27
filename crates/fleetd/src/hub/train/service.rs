@@ -2404,6 +2404,69 @@ impl Train {
         self.sync.main_ci(&repo.to_lowercase())
     }
 
+    /// A train on `repo` for `project_ref` whose main CI last read red with `failing`, each check with a fix order
+    /// `fix` when given, as `main_ci_pass` and `watch` would leave it.
+    #[cfg(test)]
+    pub(crate) fn main_red_for_test(
+        &self,
+        repo: &str,
+        project_ref: &ProjectRef,
+        failing: &[&str],
+        fix: Option<&WorkstreamId>,
+    ) {
+        let now = self.now_ms();
+        self.records.ensure_train(repo, project_ref, now);
+        self.sync.set_base(repo, "main".into());
+        let failing: Vec<String> = failing.iter().map(|f| f.to_string()).collect();
+        if let Some(order) = fix {
+            for check in &failing {
+                self.records.put_fix_order(repo, check, "a1", order, now);
+            }
+        }
+        self.sync
+            .record(repo, "a1".into(), CiState::Red, failing, now);
+    }
+
+    /// While main-branch CI is red, a note for the status view: which checks, and whether a fix is under way (an open
+    /// fix order for the check, `watch`). The train doesn't hold merges for it, so it is a warning, not a block.
+    pub fn main_ci_note(&self, repo: &str) -> Option<String> {
+        let repo = repo.to_lowercase();
+        let ci = self
+            .sync
+            .main_ci(&repo)
+            .filter(|m| m.state == CiState::Red)?;
+        let base = self.sync.base(&repo).unwrap_or_else(|| "main".into());
+        let fixing: Vec<&String> = ci
+            .failing
+            .iter()
+            .filter(|name| {
+                self.records
+                    .fix_order(&repo, name)
+                    .and_then(|(_, order)| self.host.workstream(&order))
+                    .is_some_and(|o| o.open)
+            })
+            .collect();
+        let quoted = |names: &mut dyn Iterator<Item = &String>| {
+            names
+                .map(|n| format!("`{n}`"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        let what = match ci.failing.len() {
+            0 => format!("CI is red on {base}"),
+            1 => format!("{} is red on {base}", quoted(&mut ci.failing.iter())),
+            _ => format!("{} are red on {base}", quoted(&mut ci.failing.iter())),
+        };
+        let fix = if fixing.is_empty() {
+            "no fix under way".to_string()
+        } else if fixing.len() == ci.failing.len() {
+            "fix in progress".to_string()
+        } else {
+            format!("fix in progress for {}", quoted(&mut fixing.into_iter()))
+        };
+        Some(format!("{what}, {fix}"))
+    }
+
     /// Every repo with a train, and the project it belongs to.
     pub fn repos(&self) -> Vec<(String, ProjectRef)> {
         self.records

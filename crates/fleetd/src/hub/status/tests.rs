@@ -455,3 +455,39 @@ async fn a_usage_pause_blocks_the_row_and_names_itself_beside_a_degraded_machine
         Some(paused)
     );
 }
+
+/// W78: a check red on main holds no merge, so the row isn't blocked: it carries a warning that names the check and
+/// whether its fix order is open.
+#[tokio::test]
+async fn a_red_main_is_a_warning_on_the_row_not_a_block() {
+    let clock = ManualClock::at(T0);
+    let (hub, _home) = hub(clock);
+    hub.train
+        .main_red_for_test("acme/storefront", &project(), &["ios sessions"], None);
+    announce(&hub, fleetd_contracts::events::HubEventType::CiMain);
+    let r = row(&hub);
+    assert_eq!(
+        (r.state, r.blocked_reason.is_none()),
+        (ProjectRowState::Idle, true)
+    );
+    assert_eq!(
+        r.warning.as_ref().map(|l| l.as_str()),
+        Some("`ios sessions` is red on main, no fix under way")
+    );
+
+    // Its fix order (an open workstream) is under way.
+    let order = fleetd_contracts::ledger::WorkstreamId::unchecked("W1");
+    hub.train.main_red_for_test(
+        "acme/storefront",
+        &project(),
+        &["ios sessions"],
+        Some(&order),
+    );
+    announce(&hub, fleetd_contracts::events::HubEventType::CiMain);
+    let r = row(&hub);
+    assert_eq!(r.state, ProjectRowState::Idle);
+    assert_eq!(
+        r.warning.as_ref().map(|l| l.as_str()),
+        Some("`ios sessions` is red on main, fix in progress")
+    );
+}

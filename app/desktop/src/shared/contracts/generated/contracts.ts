@@ -3667,6 +3667,12 @@ export type ProjectProblemCode =
   | "clone_failed"
   | "node_too_old";
 
+/**
+ * A project: a workspace with a lead and its own directory, on its home machine, where the lead runs. Its
+ * `projectId` is the node's id for that directory, so the ref also addresses the files; the directory may be a git
+ * repo or a plain folder. A project holds zero or more repos (`ProjectRepo`), each in a node directory of its
+ * own or in the project's.
+ */
 export type ProjectRef = {
   machineId: MachineId;
   projectId: ProjectId;
@@ -3686,6 +3692,20 @@ export type ProjectRemoveOutput = {
   next?: string;
   ok: true;
   truncated?: boolean;
+};
+
+export type ProjectRepo = {
+  /** The branch its work lands on; absent until fleetd knows it. */
+  base?: string;
+  /**
+   * The node's directory holding its files: the project's own `ProjectRef` when the project's directory is this
+   * repo.
+   */
+  checkout: ProjectRef;
+  name: RepoName;
+  repoId: RepoId;
+  /** Its origin remote, shortened; absent for a repo with no remote, or before fleetd has read it. */
+  repoKey?: RepoKey;
 };
 
 /** What a project is doing, in one word. */
@@ -3717,6 +3737,8 @@ export type ProjectSettings = {
   /** How to run a preview someone asks for (Try it); absent when none is set, and from older hubs. */
   preview?: PreviewConfig;
   projectId: ProjectId;
+  /** The repo `setup`, `train` and `preview` are for; absent for the project's own directory, and from older hubs. */
+  repo?: RepoName;
   /** What runs in each new worktree before its agent starts; no commands when none are set. */
   setup: WorktreeSetup;
   title: string;
@@ -3732,6 +3754,8 @@ export type ProjectSettings = {
 export type ProjectSettingsGetInput = {
   machineId: MachineId;
   projectId: ProjectId;
+  /** The repo whose setup, train and preview to read; absent: the project's own directory. */
+  repo?: RepoName;
 };
 
 export type ProjectSettingsGetOutput = {
@@ -3746,6 +3770,11 @@ export type ProjectSettingsSetInput = {
   /** Replaces how a preview runs; one with no target turns Try it off for the project. */
   preview?: PreviewConfig;
   projectId: ProjectId;
+  /**
+   * The repo whose setup, train and preview to set; absent: the project's own directory. Title and
+   * keepWorktrees are the project's either way.
+   */
+  repo?: RepoName;
   /** Replaces the project's setup commands and their settings; no commands turns setup off. */
   setup?: WorktreeSetup;
   /** The project's name in fleetd; its folder keeps its own. */
@@ -3793,6 +3822,11 @@ export type ProjectStatusRow = {
    * login)"), which `blocked_reason` may not be when the machine is also degraded.
    */
   usagePausedReason?: string;
+  /**
+   * Worth knowing, but it stops nothing: a check red on main, and whether a fix is under way ("`ios sessions` is
+   * red on main, fix in progress"). Any state.
+   */
+  warning?: string;
 };
 
 export type ProjectStopInput = {
@@ -3815,6 +3849,8 @@ export type ProjectSummary = {
   lastActivityAt: Timestamp;
   machineId: MachineId;
   projectId: ProjectId;
+  /** The git repos it holds, from the hub; none for a plain directory, from a node, and from an older hub. */
+  repos?: ProjectRepo[];
   threads: ThreadCounts;
   title: string;
   workspaceRoot: string;
@@ -4064,7 +4100,12 @@ export type RepoCoverage = {
   unknown?: string[];
 };
 
+export type RepoId = string;
+
 export type RepoKey = string;
+
+/** Repo name, [a-z0-9-]{1,32} */
+export type RepoName = string;
 
 /** A repo whose reads are failing: its figures stop at `since`, never a silent zero. */
 export type RepoStale = {
@@ -4938,6 +4979,8 @@ export type Task = {
   queuedReason?: string;
   /** Set once a run of it died (its node stopped, its process was killed, a stall) and fleetd resumed it or will. */
   recovery?: TaskRecovery;
+  /** The project's repo it works in; absent for the project's own directory, and on rows an older hub stored. */
+  repoId?: RepoId;
   result?: TaskResult;
   startedAt?: Timestamp;
   state: TaskState;

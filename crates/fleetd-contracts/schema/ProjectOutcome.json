@@ -269,6 +269,7 @@
       "type": "object"
     },
     "ProjectRef": {
+      "description": "A project: a workspace with a lead and its own directory, on its home machine, where the lead runs. Its\n`projectId` is the node's id for that directory, so the ref also addresses the files; the directory may be a git\nrepo or a plain folder. A project holds zero or more repos (`ProjectRepo`), each in a node directory of its\nown or in the project's.",
       "properties": {
         "machineId": {
           "$ref": "#/$defs/MachineId"
@@ -283,6 +284,37 @@
       ],
       "type": "object"
     },
+    "ProjectRepo": {
+      "properties": {
+        "base": {
+          "description": "The branch its work lands on; absent until fleetd knows it.",
+          "maxLength": 250,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "checkout": {
+          "$ref": "#/$defs/ProjectRef",
+          "description": "The node's directory holding its files: the project's own `ProjectRef` when the project's directory is this\nrepo."
+        },
+        "name": {
+          "$ref": "#/$defs/RepoName"
+        },
+        "repoId": {
+          "$ref": "#/$defs/RepoId"
+        },
+        "repoKey": {
+          "$ref": "#/$defs/RepoKey",
+          "description": "Its origin remote, shortened; absent for a repo with no remote, or before fleetd has read it."
+        }
+      },
+      "required": [
+        "repoId",
+        "name",
+        "checkout"
+      ],
+      "type": "object"
+    },
     "ProjectSummary": {
       "properties": {
         "lastActivityAt": {
@@ -293,6 +325,13 @@
         },
         "projectId": {
           "$ref": "#/$defs/ProjectId"
+        },
+        "repos": {
+          "description": "The git repos it holds, from the hub; none for a plain directory, from a node, and from an older hub.",
+          "items": {
+            "$ref": "#/$defs/ProjectRepo"
+          },
+          "type": "array"
         },
         "threads": {
           "$ref": "#/$defs/ThreadCounts"
@@ -333,6 +372,18 @@
           "type": "string"
         }
       ]
+    },
+    "RepoId": {
+      "pattern": "^R[1-9][0-9]*$",
+      "type": "string"
+    },
+    "RepoKey": {
+      "type": "string"
+    },
+    "RepoName": {
+      "description": "Repo name, [a-z0-9-]{1,32}",
+      "pattern": "^[a-z0-9-]{1,32}$",
+      "type": "string"
     },
     "RunEnd": {
       "description": "Why a run ended, so a node going away reads apart from a person stopping it. Set once the run is no longer active.",
@@ -474,6 +525,10 @@
         "recovery": {
           "$ref": "#/$defs/TaskRecovery",
           "description": "Set once a run of it died (its node stopped, its process was killed, a stall) and fleetd resumed it or will."
+        },
+        "repoId": {
+          "$ref": "#/$defs/RepoId",
+          "description": "The project's repo it works in; absent for the project's own directory, and on rows an older hub stored."
         },
         "result": {
           "$ref": "#/$defs/TaskResult"

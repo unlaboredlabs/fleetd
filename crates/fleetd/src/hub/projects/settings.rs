@@ -26,6 +26,7 @@ use fleetd_contracts::project_settings::{
     EnvValue, EnvVarKind, EnvVarName, EnvVarSet, PROJECT_ENV_MAX, ProjectEnvVar, TrainSettings,
     WorktreeSetup,
 };
+use fleetd_contracts::repos::RepoName;
 use fleetd_contracts::secrets::{Base64Alphabet, SEAL_OVERHEAD, SecretFingerprint, base64_bytes};
 use rusqlite::{OptionalExtension, params};
 
@@ -298,6 +299,20 @@ pub fn too_old(m: &MachineId) -> ToolError {
     .with_fix(format!("Update fleetd on {m} and restart its node."))
 }
 
+/// A project's settings are its own directory's until projects hold repos of their own: a named repo is refused
+/// rather than read or set as the project's.
+fn no_repo(r: &ProjectRef, repo: Option<&RepoName>) -> Result<(), ToolError> {
+    let Some(repo) = repo else { return Ok(()) };
+    Err(ToolError::new(
+        ErrorCode::NotFound,
+        format!(
+            "Project {} on {} has no repo {repo}.",
+            r.project_id, r.machine_id
+        ),
+    )
+    .with_fix("Leave repo out: the settings are the project's own directory's."))
+}
+
 async fn settings_of(hub: &Hub, r: &ProjectRef) -> Result<ProjectSettings, ToolError> {
     let Some(project) = hub.store.project_get(r)? else {
         return Err(unknown_project(r));
@@ -324,6 +339,7 @@ async fn settings_of(hub: &Hub, r: &ProjectRef) -> Result<ProjectSettings, ToolE
         project_id: r.project_id.clone(),
         title: project.title,
         workspace_root: project.workspace_root,
+        repo: None,
         keep_worktrees: store.keep_worktrees(r)?,
         env: store.env(r)?,
         setup: store.setup(r)?.unwrap_or_default(),
@@ -341,6 +357,7 @@ async fn get(
 ) -> Result<ProjectSettingsGetOutput, ToolError> {
     require(&caller, Role::Read, Some(&input.machine_id))?;
     let r = project_ref(&input.machine_id, &input.project_id);
+    no_repo(&r, input.repo.as_ref())?;
     Ok(ProjectSettingsGetOutput {
         settings: settings_of(&hub, &r).await?,
         next: None,
@@ -359,6 +376,7 @@ async fn set(
     let Some(project) = hub.store.project_get(&r)? else {
         return Err(unknown_project(&r));
     };
+    no_repo(&r, input.repo.as_ref())?;
     // The name lives on the node, which renames it in place: the machine stream then brings it back to every cache.
     if let Some(title) = &input.title
         && title.as_str() != project.title

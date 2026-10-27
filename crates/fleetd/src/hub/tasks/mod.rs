@@ -2256,6 +2256,7 @@ impl Tasks {
         let task = Task {
             task_id: TaskId::unchecked("T0"),
             project_ref: r.clone(),
+            repo_id: None,
             workstream_id: input.workstream_id.clone(),
             title: input.title.clone(),
             kind: input.kind,

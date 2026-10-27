@@ -114,6 +114,9 @@ pub struct ProjectSummary {
     pub workspace_root: String,
     pub threads: ThreadCounts,
     pub last_activity_at: Timestamp,
+    /// The git repos it holds, from the hub; none for a plain directory, from a node, and from an older hub.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub repos: Vec<crate::repos::ProjectRepo>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]

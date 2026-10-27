@@ -2,7 +2,7 @@
 // on you, in review, working, landing, idle, done), agents running, last merged; under it, the items of each group,
 // each opening its agent or PR in the project's panel. A row opens the project's chat; its PRs link opens the
 // project's PR list, and its 7-day count opens the project's Factory numbers. A row its machine's usage pause blocks
-// says so under it, with Resume. Nothing is scored or estimated.
+// says so under it, with Resume; a red main is a warning beside its title, not a block. Nothing is scored or estimated.
 // It cannot be stale: the rows come from the data layer (status_get, refetched on events), which drops every
 // answer on a reconnect, so the view is a skeleton until this connection has answered; a row whose source went
 // quiet says so.
@@ -17,6 +17,7 @@ import { Button, cx, Dot, FrameTitle, Text, Tooltip, Truncate } from "../../ui";
 import { toHash } from "../shell/routes";
 import { countsLine, GROUP_WORDS, groupsOf, itemHref, itemRefs, orderRows, STATE_WORDS, type StateWord } from "./rows";
 import { fullWhen, staleWords, weekLine, when } from "./view";
+import { HubText } from "../projects/HubText";
 import { ResumeButton } from "./Resume";
 import s from "./status.module.css";
 
@@ -102,6 +103,7 @@ function Row({ row, state, now }: { row: ProjectStatusRow; state: StateWord; now
   const label = [
     `${row.title}: ${STATE_WORDS[state]}`,
     ...(row.stale ? [staleWords(row.stale, now)] : []),
+    ...(row.warning === undefined ? [] : [row.warning]),
     counts === "" ? NO_WORK : counts,
     row.agentsRunning === 1 ? "1 agent running" : `${row.agentsRunning} agents running`,
     merged === undefined ? "nothing merged yet" : `last merged ${mergedAt}`,
@@ -120,13 +122,22 @@ function Row({ row, state, now }: { row: ProjectStatusRow; state: StateWord; now
           </Truncate>
           {row.stale ? (
             <Tooltip content={staleWords(row.stale, now)}>
-              <span className={cx(s.stale)} tabIndex={0}>
+              <span className={cx(s.mark)} tabIndex={0}>
                 <Text size="xs" strong tone="warning">
                   out of date
                 </Text>
               </span>
             </Tooltip>
           ) : null}
+          {row.warning === undefined ? null : (
+            <Tooltip content={<HubText>{row.warning}</HubText>}>
+              <span className={cx(s.mark)} tabIndex={0} data-warning>
+                <Text size="xs" tone="warning">
+                  CI red
+                </Text>
+              </span>
+            </Tooltip>
+          )}
         </span>
         {row.blockedReason !== undefined && state === "blocked" ? (
           <Tooltip content={row.blockedReason}>

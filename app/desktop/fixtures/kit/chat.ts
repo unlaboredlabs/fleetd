@@ -291,11 +291,12 @@ const workOf = (f: Fixture, state: RowState, agents: number): JsonObject => {
   };
 };
 
-export const statusRow = (f: Fixture, ref: Ref, title: string, state: RowState, extra: { agents?: number; blocked?: string; merged?: string; mergedAgoMs?: number; stale?: string } = {}): JsonObject => ({
+export const statusRow = (f: Fixture, ref: Ref, title: string, state: RowState, extra: { agents?: number; blocked?: string; warning?: string; merged?: string; mergedAgoMs?: number; stale?: string } = {}): JsonObject => ({
   projectRef: { ...ref },
   title,
   state,
   ...(extra.blocked === undefined ? {} : { blockedReason: extra.blocked }),
+  ...(extra.warning === undefined ? {} : { warning: extra.warning }),
   ...workOf(f, state, extra.agents ?? 0),
   agentsRunning: extra.agents ?? 0,
   ...(extra.merged === undefined ? {} : { lastMerged: { title: extra.merged, prNumber: 214, prUrl: "https://github.com/acme/storefront/pull/214", at: at(f.now, -(extra.mergedAgoMs ?? 2_700_000)) } }),
