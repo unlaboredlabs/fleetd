@@ -7,6 +7,7 @@ import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { AT, live, liveLane, project, snapshot } from "../../src/data/fixtures.test-util";
 import { TooltipProvider } from "../../ui/primitives/Tooltip";
+import { AppFrame, TopBar } from "../../ui/layout/Layout";
 import { leadLaneId } from "../../src/data/selectors";
 import { projectKey } from "../../src/data/store";
 import { ChatScreen } from "./ChatScreen";
@@ -63,7 +64,10 @@ const mount = async (row: Partial<ProjectStatusRow>, lead?: ReturnType<typeof li
     root?.render(
       <DataProvider layer={layer}>
         <TooltipProvider>
-          <ChatScreen project={project} />
+          {/* The frame's top row, where the chat's title and what needs you show. */}
+          <AppFrame topBar={<TopBar />}>
+            <ChatScreen project={project} />
+          </AppFrame>
         </TooltipProvider>
       </DataProvider>,
     );
@@ -78,9 +82,15 @@ const mount = async (row: Partial<ProjectStatusRow>, lead?: ReturnType<typeof li
 
 const line = () => host.querySelector("[data-attention]")?.textContent ?? null;
 
-it("says why the project is blocked above the box, in the hub's words", async () => {
+it("says why the project is blocked in the top bar after its title, in the hub's words", async () => {
   await mount({ state: "blocked", blockedReason: "devbox is offline" });
   expect(line()).toBe("Blocked: devbox is offline");
+  expect(host.querySelector("header h1 ~ [data-attention]")).not.toBeNull();
+});
+
+it("leaves the top bar to the title when nothing needs you: no state word, no agents counter", async () => {
+  await mount({ state: "working", agentsRunning: 3 });
+  expect(host.querySelector("header")?.textContent).toBe("storefront");
 });
 
 it("says a red main as a warning, not a block, and a block or the lead's question before it", async () => {
