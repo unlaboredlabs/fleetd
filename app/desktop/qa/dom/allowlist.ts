@@ -19,7 +19,7 @@ export const allowlist: readonly Allowance[] = [
   {
     check: "raw-text",
     selector: "[data-version]",
-    why: "A nightly is named by its build commit (\"Nightly · Oct 26, 10:56 UTC · 1b563d7\"), and a raw version is there to copy.",
+    why: "An Edge build is named by its build commit (\"Edge · Oct 26, 10:56 UTC · 1b563d7\"), and a raw version is there to copy.",
   },
   {
     check: "overflow",

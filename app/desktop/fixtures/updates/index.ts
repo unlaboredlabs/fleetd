@@ -8,9 +8,9 @@ import { Fixture } from "../kit/fixture.ts";
 import { asText, isObject, type JsonObject } from "../kit/json.ts";
 import { arr } from "../kit/stress.ts";
 
-const MINE = "0.6.0-nightly.202610221030+4f1c2ab";
-const NEXT = "0.6.0-nightly.202610231030+9e07d31";
-const OLDER = "0.6.0-nightly.202610201030+1c0ffee";
+const MINE = "0.6.0-edge.202610221030+4f1c2ab";
+const NEXT = "0.6.0-edge.202610231030+9e07d31";
+const OLDER = "0.6.0-edge.202610201030+1c0ffee";
 const AT = "2026-10-19T10:00:00.000Z";
 
 const change = (commit: string, subject: string, areas: string[]) => ({ commit, date: AT, subject, areas });
@@ -55,7 +55,7 @@ interface PartSay {
  */
 const runOf = (f: Fixture, hub: PartSay, nodes: readonly PartSay[], rest: PartSay, finished: boolean, claude: readonly PartSay[] = []): JsonObject => ({
   id: "U1792000000000",
-  channel: "nightly",
+  channel: "edge",
   to: NEXT,
   startedAt: AT,
   ...(finished ? { finishedAt: "2026-10-19T10:03:00.000Z" } : {}),
@@ -109,7 +109,7 @@ export default defineGroup({
       withHub("hub-current", "The hub and its machines run this app's build, the newest on the channel.", MINE),
       withHub("hub-unknown", "The hub reports 0.0.0 (a local build): its version is unknown, and nothing is flagged.", "0.0.0"),
       withHub("hub-available", "The channel has a newer build than the hub and its machines run: Update.", MINE, { release: { ...RELEASE, cli: NEXT } }),
-      withHub("hub-behind", "The hub and its machines run an older nightly than this app: Update.", OLDER),
+      withHub("hub-behind", "The hub and its machines run an older Edge build than this app: Update.", OLDER),
       withHub("node-behind", "One machine's node is behind the hub: Update.", MINE, { nodes: OLDER }),
       // The one Update button's run, part by part (W38).
       everything("everything", "The hub, its machines and this app all have a newer build: the one Update button.", (f) => runOf(f, { state: "downloading" }, [], waiting, false)),
@@ -149,7 +149,7 @@ export default defineGroup({
       everything(
         "run-hub-rolled-back",
         "The hub's new build didn't come up healthy: the previous one was put back, and its machines weren't asked.",
-        (f) => runOf(f, { state: "rolled_back", stage: "health", message: `Nightly · Oct 23, 10:30 UTC · 9e07d31 didn't come up healthy within 90 s, so Nightly · Oct 20, 10:30 UTC · 1c0ffee was put back and runs again` }, [], { state: "skipped", message: "not asked: the hub kept its build, and nodes follow the hub" }, true),
+        (f) => runOf(f, { state: "rolled_back", stage: "health", message: `Edge · Oct 23, 10:30 UTC · 9e07d31 didn't come up healthy within 90 s, so Edge · Oct 20, 10:30 UTC · 1c0ffee was put back and runs again` }, [], { state: "skipped", message: "not asked: the hub kept its build, and nodes follow the hub" }, true),
       ),
       everything(
         "run-nodes-mixed",
@@ -159,7 +159,7 @@ export default defineGroup({
             f,
             done,
             [
-              { state: "rolled_back", stage: "health", message: "Nightly · Oct 23, 10:30 UTC · 9e07d31 didn't come up healthy, so Nightly · Oct 20, 10:30 UTC · 1c0ffee was put back and runs again" },
+              { state: "rolled_back", stage: "health", message: "Edge · Oct 23, 10:30 UTC · 9e07d31 didn't come up healthy, so Edge · Oct 20, 10:30 UTC · 1c0ffee was put back and runs again" },
               { state: "failed", stage: "download", message: "couldn't download `fleetd-darwin-arm64`: GET `https://github.com/…/fleetd-darwin-arm64`: 503 Service Unavailable" },
               { state: "skipped", message: "offline: press Update again once it's online, or run `fleetd update` on it" },
             ],
@@ -181,7 +181,7 @@ export default defineGroup({
       make("checking", "A check someone asked for, under way.", { kind: "checking" }, null),
       make("unsupported", "A development or test build, which doesn't update itself.", { kind: "unsupported" }, null),
       make("current", "This app is up to date (the sheet after Check for Updates).", { kind: "current" }),
-      make("available", "A newer nightly found and downloading in the background: Update and restart, with what's new.", {
+      make("available", "A newer Edge build found and downloading in the background: Update and restart, with what's new.", {
         kind: "available",
         version: NEXT,
         percent: 18,

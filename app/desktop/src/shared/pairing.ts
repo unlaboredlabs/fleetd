@@ -137,10 +137,14 @@ export type ProtocolFit = "ok" | "hub-older" | "app-older";
 export const protocolFit = (hubProtocol: number): ProtocolFit =>
   hubProtocol === PROTOCOL_VERSION ? "ok" : hubProtocol < PROTOCOL_VERSION ? "hub-older" : "app-older";
 
+/** An Edge build: `-edge.<stamp>`, or `-nightly.<stamp>`, Edge's name until D203. */
+export const isEdge = (version: string): boolean => /-(?:edge|nightly)\./u.test(version);
+
 /**
  * Orders versions as semver does: dotted numbers (`0.10.0` after `0.9.3`), a pre-release before its release, and
- * pre-releases by their dot-separated parts, numbers numerically, so a later nightly (`-nightly.202610221030`) is
- * newer. Build metadata (`+abc1234`) doesn't count. Null when either isn't a version, so nothing is flagged on a guess.
+ * pre-releases by their dot-separated parts, numbers numerically, so a later Edge build (`-edge.202610221030`) is
+ * newer. A nightly build is an Edge build from before the rename, ordered with them by its stamp alone. Build metadata
+ * (`+abc1234`) doesn't count. Null when either isn't a version, so nothing is flagged on a guess.
  */
 export const compareVersions = (a: string, b: string): number | null => {
   const parse = (v: string) => /^v?(\d+)\.(\d+)\.(\d+)(?:-([\w.-]+))?(?:\+[\w.-]*)?$/u.exec(v.trim());
@@ -151,7 +155,8 @@ export const compareVersions = (a: string, b: string): number | null => {
     const d = Number(x[i]) - Number(y[i]);
     if (d !== 0) return Math.sign(d);
   }
-  const [px, py] = [x[4], y[4]];
+  const series = (pre: string | undefined) => pre?.replace(/^nightly(?=\.|$)/u, "edge");
+  const [px, py] = [series(x[4]), series(y[4])];
   if (px === py) return 0;
   if (px === undefined) return 1;
   if (py === undefined) return -1;

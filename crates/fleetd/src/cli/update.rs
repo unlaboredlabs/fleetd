@@ -1,4 +1,4 @@
-//! `fleetd update [--check] [--channel nightly|stable]`: replaces this binary with the latest build of a release
+//! `fleetd update [--check] [--channel edge|stable]`: replaces this binary with the latest build of a release
 //! channel, then restarts the hub and node services that run this binary, at once. A restart doesn't wait for work:
 //! what it cuts off carries on by itself afterwards (see `crate::update`). The desktop app's Update button does the
 //! same through the hub (`hub_update`), for the hub and every node; this is the way for a machine without the app.
@@ -22,7 +22,7 @@ pub struct UpdateArgs {
     /// Only report whether a newer build exists.
     #[arg(long)]
     pub check: bool,
-    /// nightly or stable. Default: the channel this build came from.
+    /// edge or stable (nightly, Edge's earlier name, is edge). Default: the channel this build came from.
     #[arg(long)]
     pub channel: Option<String>,
     /// Restart the hub and node now. Kept for scripts from before restarts stopped waiting for work: they always do.

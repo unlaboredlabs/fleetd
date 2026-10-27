@@ -73,13 +73,10 @@ async fn a_download_is_checked_against_the_releases_sums() {
 
 #[tokio::test]
 async fn reads_the_channels_newest_cli() {
-    let feed = FakeFeed::with(
-        &[],
-        r#"{"cliVersion":"0.6.0-nightly.202610261056+1b563d7"}"#,
-    );
+    let feed = FakeFeed::with(&[], r#"{"cliVersion":"0.6.0-edge.202610261056+1b563d7"}"#);
     assert_eq!(
         release(&feed).await.unwrap().cli_version.as_deref(),
-        Some("0.6.0-nightly.202610261056+1b563d7")
+        Some("0.6.0-edge.202610261056+1b563d7")
     );
     let broken = FakeFeed::with(&[], "not json");
     assert_eq!(
@@ -145,13 +142,26 @@ fn reads_sha256sum_output() {
 #[test]
 fn builds_follow_their_channel() {
     assert_eq!(
-        Channel::of("0.4.0-nightly.20261017.abc1234", true),
-        Channel::Nightly
+        Channel::of("0.4.0-edge.202610171030+abc1234", true),
+        Channel::Edge
     );
     assert_eq!(Channel::of("0.4.0", true), Channel::Stable);
-    assert_eq!(Channel::of("0.0.0", false), Channel::Nightly);
+    assert_eq!(Channel::of("0.0.0", false), Channel::Edge);
+    assert_eq!(Channel::parse("edge"), Ok(Channel::Edge));
     assert_eq!(Channel::parse("latest"), Ok(Channel::Stable));
     assert!(Channel::parse("beta").is_err());
+}
+
+/// Nightly is what Edge was called before D203: a build from then, and `--channel nightly` or
+/// `FLEETD_CHANNEL=nightly` in someone's script, all follow edge.
+#[test]
+fn nightly_is_edge() {
+    assert_eq!(
+        Channel::of("0.0.0-nightly.202610261056+1b563d7", true),
+        Channel::Edge
+    );
+    assert_eq!(Channel::parse("nightly"), Ok(Channel::Edge));
+    assert_eq!(Channel::Edge.as_str(), "edge");
 }
 
 /// The service manager and the restarted service, as a test scripts them: which version comes up healthy, and a
@@ -227,8 +237,9 @@ impl Ports for FakeRunner {
     }
 }
 
+/// A build from before Edge was called Edge: the same series.
 const OLD: &str = "0.0.0-nightly.202610251000+aaaaaaa";
-const NEW: &str = "0.0.0-nightly.202610261056+1b563d7";
+const NEW: &str = "0.0.0-edge.202610261056+1b563d7";
 
 fn plan(dir: &Path) -> Plan {
     let exe = dir.join("fleetd");
@@ -276,8 +287,8 @@ async fn a_new_build_that_doesnt_come_up_healthy_is_put_back() {
             state: UpdateState::RolledBack,
             stage: Some(UpdateStage::Health),
             message: format!(
-                "Nightly · Oct 26, 10:56 UTC · 1b563d7 ({NEW}) didn't come up healthy within 90 s, so \
-                 Nightly · Oct 25, 10:00 UTC · aaaaaaa ({OLD}) was put back and runs again"
+                "Edge · Oct 26, 10:56 UTC · 1b563d7 ({NEW}) didn't come up healthy within 90 s, so \
+                 Edge · Oct 25, 10:00 UTC · aaaaaaa ({OLD}) was put back and runs again"
             ),
         }
     );
@@ -354,7 +365,7 @@ async fn a_restart_that_fails_says_so_and_puts_the_previous_binary_back() {
             stage: Some(UpdateStage::Restart),
             message: format!(
                 "restarting fleetd-hub.service exited with exit status: 1, so it never restarted onto \
-                 Nightly · Oct 26, 10:56 UTC · 1b563d7 ({NEW}) and still runs Nightly · Oct 25, 10:00 UTC · aaaaaaa \
+                 Edge · Oct 26, 10:56 UTC · 1b563d7 ({NEW}) and still runs Edge · Oct 25, 10:00 UTC · aaaaaaa \
                  ({OLD}); its previous binary was put back"
             ),
         }

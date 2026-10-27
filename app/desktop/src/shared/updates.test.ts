@@ -13,15 +13,15 @@ describe("notesSince", () => {
   ];
 
   it("lists what came after this version's commit in one area, a line per PR, newest first", () => {
-    expect(notesSince(changes, "0.6.0-nightly.202610221030+bbb2222", "app")).toEqual({
+    expect(notesSince(changes, "0.6.0-edge.202610221030+bbb2222", "app")).toEqual({
       lines: ["Updates show in the app", "The chat keeps your draft", "The lead chat end to end"],
       more: false,
     });
-    expect(notesSince(changes, "0.6.0-nightly.202610221030+bbb2222", "hub")).toEqual({ lines: ["The hub reports its version"], more: false });
+    expect(notesSince(changes, "0.6.0-edge.202610221030+bbb2222", "hub")).toEqual({ lines: ["The hub reports its version"], more: false });
   });
 
   it("has nothing new for the newest commit", () => {
-    expect(notesSince(changes, "0.6.0-nightly.202610231030+aaa1111", "app")).toEqual({ lines: [], more: false });
+    expect(notesSince(changes, "0.6.0-edge.202610231030+aaa1111", "app")).toEqual({ lines: [], more: false });
   });
 
   it("gives the newest lines and says there is more for a version not in the list, or without a commit", () => {
@@ -42,46 +42,52 @@ describe("subjectLines", () => {
 
 describe("versions", () => {
   it("reads the build commit", () => {
-    expect(buildCommit("0.6.0-nightly.202610221030+ABC1234")).toBe("abc1234");
+    expect(buildCommit("0.6.0-edge.202610221030+ABC1234")).toBe("abc1234");
     expect(buildCommit("0.6.0")).toBeNull();
   });
 
   it("knows a released version, and not a local build's 0.0.0 or something that doesn't parse", () => {
-    expect(knownVersion("0.6.0-nightly.202610221030+abc1234")).toBe(true);
+    expect(knownVersion("0.6.0-edge.202610221030+abc1234")).toBe(true);
     expect(knownVersion("0.0.0")).toBe(false);
     expect(knownVersion("0.0.0+abc1234")).toBe(false);
-    expect(knownVersion("0.0.0-nightly.202610221030+abc1234")).toBe(true);
+    expect(knownVersion("0.0.0-edge.202610221030+abc1234")).toBe(true);
     expect(knownVersion("devel")).toBe(false);
     expect(knownVersion(undefined)).toBe(false);
   });
 
-  it("reads a nightly by when and from which commit it was built, and any other version as itself", () => {
-    expect(versionLabel("0.0.0-nightly.202610261056+1b563d7")).toBe("Nightly · Oct 26, 10:56 UTC · 1b563d7");
-    expect(versionLabel("0.6.0-nightly.202601020304+ABCDEF0123")).toBe("Nightly · Jan 2, 03:04 UTC · abcdef0");
-    expect(versionLabel("0.6.0-nightly.202610221030")).toBe("Nightly · Oct 22, 10:30 UTC");
+  it("reads an Edge build by when and from which commit it was built, and any other version as itself", () => {
+    expect(versionLabel("0.0.0-edge.202610261056+1b563d7")).toBe("Edge · Oct 26, 10:56 UTC · 1b563d7");
+    expect(versionLabel("0.6.0-edge.202601020304+ABCDEF0123")).toBe("Edge · Jan 2, 03:04 UTC · abcdef0");
+    expect(versionLabel("0.6.0-edge.202610221030")).toBe("Edge · Oct 22, 10:30 UTC");
     expect(versionLabel("v0.6.0")).toBe("0.6.0");
     expect(versionLabel("0.6.0+abc1234")).toBe("0.6.0");
     expect(versionLabel("0.6.0-rc.1+abc1234")).toBe("0.6.0-rc.1");
     // Not a real month: shown as it is, never as a made-up date.
-    expect(versionLabel("0.6.0-nightly.202613221030+abc1234")).toBe("0.6.0-nightly.202613221030");
+    expect(versionLabel("0.6.0-edge.202613221030+abc1234")).toBe("0.6.0-edge.202613221030");
   });
 
-  it("finds the nightly labels in a line, and only them", () => {
-    const line = `Put back: ${versionLabel("0.0.0-nightly.202610261056+1b563d7")} didn't come up healthy, so ${versionLabel("0.0.0-nightly.202610251000")} runs again`;
+  it("reads a nightly build, from before Edge had its name, as Edge", () => {
+    expect(versionLabel("0.0.0-nightly.202610261056+1b563d7")).toBe("Edge · Oct 26, 10:56 UTC · 1b563d7");
+    expect(splitLabels(`runs ${versionLabel("0.0.0-nightly.202610251000")}`)).toEqual(["runs ", "Edge · Oct 25, 10:00 UTC", ""]);
+    expect(knownVersion("0.0.0-nightly.202610221030+abc1234")).toBe(true);
+  });
+
+  it("finds the Edge labels in a line, and only them", () => {
+    const line = `Put back: ${versionLabel("0.0.0-edge.202610261056+1b563d7")} didn't come up healthy, so ${versionLabel("0.0.0-edge.202610251000")} runs again`;
     expect(splitLabels(line)).toEqual([
       "Put back: ",
-      "Nightly · Oct 26, 10:56 UTC · 1b563d7",
+      "Edge · Oct 26, 10:56 UTC · 1b563d7",
       " didn't come up healthy, so ",
-      "Nightly · Oct 25, 10:00 UTC",
+      "Edge · Oct 25, 10:00 UTC",
       " runs again",
     ]);
     expect(splitLabels("checksum mismatch (expected 9f2c1ab7, got 41ab0c9d)")).toEqual(["checksum mismatch (expected 9f2c1ab7, got 41ab0c9d)"]);
   });
 
   it("gives the About panel the label and the raw version to copy", () => {
-    const nightly = "0.0.0-nightly.202610231259+bdd3566";
-    expect(aboutVersions(nightly, true)).toEqual({ applicationVersion: "Nightly · Oct 23, 12:59 UTC · bdd3566", version: nightly });
-    expect(aboutVersions(nightly, false)).toEqual({ applicationVersion: `Nightly · Oct 23, 12:59 UTC · bdd3566 (${nightly})` });
+    const edge = "0.0.0-edge.202610231259+bdd3566";
+    expect(aboutVersions(edge, true)).toEqual({ applicationVersion: "Edge · Oct 23, 12:59 UTC · bdd3566", version: edge });
+    expect(aboutVersions(edge, false)).toEqual({ applicationVersion: `Edge · Oct 23, 12:59 UTC · bdd3566 (${edge})` });
     expect(aboutVersions("0.6.0", true)).toEqual({ applicationVersion: "0.6.0", version: "0.6.0" });
     expect(aboutVersions("0.6.0", false)).toEqual({ applicationVersion: "0.6.0" });
   });

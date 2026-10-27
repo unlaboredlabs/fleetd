@@ -309,7 +309,7 @@ impl Updates {
             version: text(&to),
             channel: match channel {
                 Channel::Stable => HubChannel::Stable,
-                Channel::Nightly => HubChannel::Nightly,
+                Channel::Edge => HubChannel::Edge,
             },
         };
         for node in ports.nodes() {
@@ -358,7 +358,7 @@ impl Updates {
         self.drive(&run.id, async move {
             let update = NodeUpdate {
                 version: to,
-                channel: this.status().map_or(HubChannel::Nightly, |r| r.channel),
+                channel: this.status().map_or(HubChannel::Edge, |r| r.channel),
             };
             this.update_node(&*ports, &machine_id, &update).await;
             this.update_claude(&*ports, &machine_id).await;
@@ -384,9 +384,9 @@ impl Updates {
         }
         let running = ports.running();
         let channel = match channel {
-            Some(c @ (HubChannel::Nightly | HubChannel::Stable)) => c,
+            Some(c @ (HubChannel::Edge | HubChannel::Stable)) => c,
             _ => match Channel::of(&running, ports.release_build()) {
-                Channel::Nightly => HubChannel::Nightly,
+                Channel::Edge => HubChannel::Edge,
                 Channel::Stable => HubChannel::Stable,
             },
         };
@@ -685,7 +685,7 @@ impl Updates {
     ) -> Result<Option<Plan>, Failure> {
         let channel = match channel {
             HubChannel::Stable => Channel::Stable,
-            _ => Channel::Nightly,
+            _ => Channel::Edge,
         };
         let feed = ports.feed(channel);
         let running = ports.running();

@@ -240,7 +240,7 @@ jobs:
         # Does the work only when the node's code, the dependency set or this workflow changed; otherwise it reports
         # success at once. HEAD^1 is the base for a PR's merge commit and the previous main for a (squash-merged)
         # push; a manual run from a branch compares with the branch's merge base on main. The rest of crates/fleetd's
-        # macOS code is cross-built and checked by darwin-deps and the nightly.
+        # macOS code is cross-built and checked by darwin-deps and the edge build.
         id: scope
         run: |
           run=true
@@ -403,7 +403,7 @@ jobs:
         run: pnpm debug-guard-check
 
   desktop-packaged:
-    # The test build of app/desktop, packed and run: the nightly's smoke, the recordings and the Linux budgets. Same
+    # The test build of app/desktop, packed and run: the edge build's smoke, the recordings and the Linux budgets. Same
     # scope as desktop.
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -450,8 +450,8 @@ jobs:
         if: steps.scope.outputs.run == 'true'
         run: pnpm fixtures
       - name: Packaged smoke (Linux)
-        # The nightly's smoke (build-release.yml) on that test build, packed as the nightly packs it: otherwise a PR
-        # that renames or removes a screen breaks only the nightly. Headless, so no virtual display.
+        # The edge build's smoke (build-release.yml) on that test build, packed as the edge build packs it: otherwise a
+        # PR that renames or removes a screen breaks only the edge build. Headless, so no virtual display.
         if: steps.scope.outputs.run == 'true'
         run: |
           pnpm exec electron-builder --linux --dir --publish never -c.directories.output=dist-test
@@ -479,8 +479,8 @@ jobs:
         run: xvfb-run -a -s "-screen 0 1920x1200x24" node perf/record-smoke.ts
 
   desktop-macos:
-    # The nightly's macOS packaged smoke (build-release.yml, desktop-macos) on an ad-hoc signed arm64 test build, so a
-    # change that breaks the packed mac app fails here rather than only in the nightly. Same scope as desktop, and
+    # The edge build's macOS packaged smoke (build-release.yml, desktop-macos) on an ad-hoc signed arm64 test build, so
+    # a change that breaks the packed mac app fails here rather than only in the edge build. Same scope as desktop, and
     # skipped where rust-macos is.
     if: >-
       github.event_name != 'pull_request' || endsWith(github.head_ref, 'train/batch')
@@ -531,7 +531,7 @@ jobs:
             -c.mac.identity=- -c.mac.hardenedRuntime=false
           node scripts/packaged-smoke.ts dist-test/mac-arm64/fleetd.app/Contents/MacOS/fleetd
       - name: Packaged recording (macOS)
-        # FLEETD_RECORD in the packed app (scripts/demo-mac.sh records the nightly this way): the recorder page loads
+        # FLEETD_RECORD in the packed app (scripts/demo-mac.sh records the edge build this way): the recorder page loads
         # from the asar, which the unpackaged Demo recording run can't catch.
         if: steps.scope.outputs.run == 'true'
         run: node scripts/packaged-smoke.ts --record dist-test/mac-arm64/fleetd.app/Contents/MacOS/fleetd

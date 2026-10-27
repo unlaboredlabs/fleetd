@@ -9,16 +9,17 @@ pub mod node;
 pub mod tiles;
 pub mod update;
 
-/// The version the release build baked in (`FLEETD_VERSION`, e.g. `0.4.0` or `0.4.0-nightly.202610221107+333368c`),
+/// The version the release build baked in (`FLEETD_VERSION`, e.g. `0.4.0` or `0.4.0-edge.202610221107+333368c`),
 /// or the crate version (`0.0.0`) for a local build. The CLI, the hub and the node all report this one.
 pub fn version() -> &'static str {
     option_env!("FLEETD_VERSION").unwrap_or(env!("CARGO_PKG_VERSION"))
 }
 
-/// A version as people read it. A nightly by when it was built and from which commit, since its minute stamp is what
-/// tells two nightlies apart: `0.0.0-nightly.202610261056+1b563d7` reads "Nightly · Oct 26, 10:56 UTC · 1b563d7".
-/// Any other version is itself, without a build part. Only for showing: updates compare the raw version, and output
-/// that names a version prints the raw one too, to copy. The app's twin is `versionLabel` (app/desktop/src/shared/updates.ts).
+/// A version as people read it. An Edge build by when it was built and from which commit, since its minute stamp is
+/// what tells two apart: `0.0.0-edge.202610261056+1b563d7` reads "Edge · Oct 26, 10:56 UTC · 1b563d7", and so does a
+/// build from before the rename, `0.0.0-nightly.202610261056+1b563d7` (the same series). Any other version is itself,
+/// without a build part. Only for showing: updates compare the raw version, and output that names a version prints the
+/// raw one too, to copy. The app's twin is `versionLabel` (app/desktop/src/shared/updates.ts).
 pub fn version_label(version: &str) -> String {
     const MONTHS: [&str; 12] = [
         "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
@@ -26,7 +27,7 @@ pub fn version_label(version: &str) -> String {
     let version = version.trim();
     let version = version.strip_prefix('v').unwrap_or(version);
     let (bare, build) = version.split_once('+').unwrap_or((version, ""));
-    let stamp = bare.split_once("-nightly.").and_then(|(base, stamp)| {
+    let stamp = edge_stamp(bare).and_then(|(base, stamp)| {
         let numeric = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
         let parts: Vec<&str> = base.split('.').collect();
         (parts.len() == 3
@@ -47,7 +48,7 @@ pub fn version_label(version: &str) -> String {
     };
     let day = stamp[6..8].trim_start_matches('0');
     let mut label = format!(
-        "Nightly · {month} {day}, {}:{} UTC",
+        "Edge · {month} {day}, {}:{} UTC",
         &stamp[8..10],
         &stamp[10..12]
     );
@@ -56,6 +57,14 @@ pub fn version_label(version: &str) -> String {
         label.push_str(&build[..7].to_ascii_lowercase());
     }
     label
+}
+
+/// An Edge build's version split around its channel: `(base, rest)` of `<base>-edge.<rest>`, or of
+/// `<base>-nightly.<rest>`, the name Edge had until D203. None for any other version.
+pub fn edge_stamp(version: &str) -> Option<(&str, &str)> {
+    version
+        .split_once("-edge.")
+        .or_else(|| version.split_once("-nightly."))
 }
 
 /// How output names a version: its label, and the raw version after it when they differ, to copy.
@@ -215,22 +224,35 @@ mod tests {
     }
 
     #[test]
-    fn a_nightly_reads_by_when_and_from_which_commit_it_was_built() {
+    fn an_edge_build_reads_by_when_and_from_which_commit_it_was_built() {
+        assert_eq!(
+            version_label("0.0.0-edge.202610261056+1b563d7"),
+            "Edge · Oct 26, 10:56 UTC · 1b563d7"
+        );
+        assert_eq!(
+            version_label("0.6.0-edge.202601020304+ABCDEF0123"),
+            "Edge · Jan 2, 03:04 UTC · abcdef0"
+        );
+        assert_eq!(
+            version_label("0.6.0-edge.202610221030"),
+            "Edge · Oct 22, 10:30 UTC"
+        );
+        assert_eq!(
+            version_shown("0.0.0-edge.202610261056+1b563d7"),
+            "Edge · Oct 26, 10:56 UTC · 1b563d7 (0.0.0-edge.202610261056+1b563d7)"
+        );
+    }
+
+    /// Builds from before the rename are the same series, and read as Edge too.
+    #[test]
+    fn a_nightly_build_reads_as_edge() {
         assert_eq!(
             version_label("0.0.0-nightly.202610261056+1b563d7"),
-            "Nightly · Oct 26, 10:56 UTC · 1b563d7"
-        );
-        assert_eq!(
-            version_label("0.6.0-nightly.202601020304+ABCDEF0123"),
-            "Nightly · Jan 2, 03:04 UTC · abcdef0"
-        );
-        assert_eq!(
-            version_label("0.6.0-nightly.202610221030"),
-            "Nightly · Oct 22, 10:30 UTC"
+            "Edge · Oct 26, 10:56 UTC · 1b563d7"
         );
         assert_eq!(
             version_shown("0.0.0-nightly.202610261056+1b563d7"),
-            "Nightly · Oct 26, 10:56 UTC · 1b563d7 (0.0.0-nightly.202610261056+1b563d7)"
+            "Edge · Oct 26, 10:56 UTC · 1b563d7 (0.0.0-nightly.202610261056+1b563d7)"
         );
     }
 

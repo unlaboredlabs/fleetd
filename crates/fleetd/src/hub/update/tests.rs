@@ -324,7 +324,7 @@ async fn a_hub_that_doesnt_come_up_healthy_is_put_back_and_its_nodes_are_not_ask
         Some(Answer::BackOn(NEW)),
     ));
     let updates = area(home.path(), &fake);
-    updates.start(Some(HubChannel::Nightly)).unwrap();
+    updates.start(Some(HubChannel::Edge)).unwrap();
     let run = until(&updates, |r| hub_state(r) == UpdateState::Restarting).await;
     assert_eq!(run.to.as_ref().map(|t| t.as_str()), Some(NEW));
     assert_eq!(fs::read(&fake.exe).unwrap(), b"new");
@@ -914,8 +914,8 @@ async fn a_second_update_while_one_runs_is_the_same_one() {
     assert_eq!(first.id, again.id);
 }
 
-/// A nightly newer than [`NEW`]: what a machine runs after `fleetd update` on it.
-const NEWER: &str = "0.0.0-nightly.202610271703+bd87c55";
+/// An Edge build newer than [`NEW`], a nightly (the same series): what a machine runs after `fleetd update` on it.
+const NEWER: &str = "0.0.0-edge.202610271703+bd87c55";
 
 /// A run another hub process left in `<home>/update/run.json`, unfinished, toward `to`: the hub's part done, then each
 /// machine's node part and Claude Code part in the state given.
@@ -936,7 +936,7 @@ fn left_run(home: &Path, to: &str, machines: &[(&str, UpdateState, Option<&str>)
     }
     let run = UpdateRun {
         id: Text::unchecked("U1793117222609".to_owned()),
-        channel: HubChannel::Nightly,
+        channel: HubChannel::Edge,
         to: Some(Text::unchecked(to.to_owned())),
         started_at: "2026-10-27T16:07:02.609Z".into(),
         finished_at: None,
@@ -993,7 +993,7 @@ async fn a_run_the_hub_moved_past_ends_at_its_start_and_moves_no_machine_back() 
     );
     assert_eq!(state(&run, Some("devbox")).0, UpdateState::Skipped);
     let moved_on =
-        "the hub moved on to Nightly · Oct 27, 17:03 UTC · bd87c55: press Update for the newest";
+        "the hub moved on to Edge · Oct 27, 17:03 UTC · bd87c55: press Update for the newest";
     assert_eq!(said(&run, "devbox"), moved_on);
     // Its Claude Code doesn't wait behind a run that ended either.
     assert_eq!(claude(&run, "devbox").state, UpdateState::Skipped);
@@ -1050,7 +1050,7 @@ async fn a_node_already_past_the_target_is_never_moved_back() {
     assert_eq!(state(&run, Some("builder")).0, UpdateState::Current);
     assert_eq!(
         said(&run, "builder"),
-        "already runs Nightly · Oct 27, 17:03 UTC · bd87c55"
+        "already runs Edge · Oct 27, 17:03 UTC · bd87c55"
     );
     assert_eq!(claude(&run, "builder").state, UpdateState::Skipped);
     assert!(
@@ -1058,7 +1058,7 @@ async fn a_node_already_past_the_target_is_never_moved_back() {
             .message
             .unwrap()
             .as_str()
-            .starts_with("left as it is: its fleetd runs Nightly"),
+            .starts_with("left as it is: its fleetd runs Edge"),
     );
     assert_eq!(state(&run, Some("mac")).0, UpdateState::Failed);
     assert_eq!(*fake.asked.lock().unwrap(), ["mac"]);
@@ -1314,4 +1314,25 @@ mod on_a_real_hub {
         .unwrap();
         assert_eq!(status.run.map(|r| r.id), Some(run.id));
     }
+}
+
+/// A hub from before D203 saved its run on the nightly channel: the hub that comes up reads it as edge, and writes edge
+/// from then on.
+#[test]
+fn a_run_saved_on_nightly_reads_as_edge() {
+    let home = tempfile::tempdir().unwrap();
+    let dir = home.path().join("update");
+    fs::create_dir_all(&dir).unwrap();
+    let saved = json!({
+        "id": "u1", "channel": "nightly", "to": NEW, "startedAt": "2026-10-26T10:56:00.000Z",
+        "parts": [{ "part": "hub", "name": "the hub", "from": OLD, "state": "restarting" }],
+    });
+    fs::write(dir.join("run.json"), saved.to_string()).unwrap();
+    let updates = Updates::new(home.path(), Arc::new(SystemClock), fast());
+    let run = updates.status().expect("the saved run");
+    assert_eq!(run.channel, HubChannel::Edge);
+    updates.save(&run);
+    let written: serde_json::Value =
+        serde_json::from_slice(&fs::read(dir.join("run.json")).unwrap()).unwrap();
+    assert_eq!(written["channel"], "edge");
 }

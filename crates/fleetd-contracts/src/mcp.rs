@@ -2119,12 +2119,15 @@ output!(DeviceRevokeOutput {
     device: AgentKeyInfo,
 });
 
-/// The release channel a hub's build follows: nightly when its version contains "-nightly.", stable otherwise.
+/// The release channel a hub's build follows: edge when its version contains "-edge." (or "-nightly.", edge's name
+/// until D203), stable otherwise.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 #[schemars(extend("x-open" = true))]
 pub enum HubChannel {
-    Nightly,
+    /// The newest build of main. Read from "nightly" too: an update run a hub saved, or a caller, from before D203.
+    #[serde(alias = "nightly")]
+    Edge,
     Stable,
     /// A channel this build doesn't know (a newer hub). Never sent.
     #[serde(other)]
@@ -2887,7 +2890,7 @@ mod tests {
     #[test]
     fn hub_info_round_trips_and_reads_a_newer_hubs_values() {
         let output = json!({
-            "version": "0.0.0-nightly.202610221107+333368c", "protocol": 1, "channel": "nightly",
+            "version": "0.0.0-edge.202610221107+333368c", "protocol": 1, "channel": "edge",
             "startedAt": "2026-10-22T11:07:00.000Z",
             "busy": [
                 { "kind": "agent", "text": "T19 writing app-main in fleetd (12 m)", "machineId": "devbox",
@@ -2909,6 +2912,11 @@ mod tests {
         .unwrap();
         assert_eq!(newer.channel, Some(HubChannel::Unknown));
         assert_eq!(newer.busy[0].kind, HubBusyKind::Unknown);
+        // A hub from before D203 says nightly, which is edge.
+        let nightly: HubInfoOutput =
+            decode(json!({ "version": "0.0.0", "protocol": 1, "channel": "nightly", "busy": [] }))
+                .unwrap();
+        assert_eq!(nightly.channel, Some(HubChannel::Edge));
         assert!(
             decode::<HubInfoInput>(json!({}))
                 .unwrap()

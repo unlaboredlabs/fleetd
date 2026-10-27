@@ -90,8 +90,8 @@ describe("HubClient", () => {
     const lives = () => frames.flatMap((f) => (f.t === "state" && f.state.phase === "live" ? [f.state] : []));
     client.start();
     hub.open();
-    hub.frame({ t: "ready", protocol: 1, version: "0.0.0-nightly.202610221107+333368c" });
-    expect(lives().at(-1)).toEqual({ phase: "live", hub: "http://devbox:4790", protocol: 1, version: "0.0.0-nightly.202610221107+333368c" });
+    hub.frame({ t: "ready", protocol: 1, version: "0.0.0-edge.202610221107+333368c" });
+    expect(lives().at(-1)).toEqual({ phase: "live", hub: "http://devbox:4790", protocol: 1, version: "0.0.0-edge.202610221107+333368c" });
     hub.close(1012);
     vi.advanceTimersByTime(60_000);
     hub.open();

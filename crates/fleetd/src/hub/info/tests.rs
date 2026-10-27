@@ -84,8 +84,12 @@ async fn info(hub: &Arc<Hub>, input: Value) -> HubInfoOutput {
 fn a_build_follows_the_channel_its_version_names() {
     use super::channel;
     assert_eq!(
+        channel("0.0.0-edge.202610221107+333368c", true),
+        Some(HubChannel::Edge)
+    );
+    assert_eq!(
         channel("0.0.0-nightly.202610221107+333368c", true),
-        Some(HubChannel::Nightly)
+        Some(HubChannel::Edge)
     );
     assert_eq!(channel("0.4.1", true), Some(HubChannel::Stable));
     assert_eq!(channel("0.0.0", false), None);

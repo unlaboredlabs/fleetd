@@ -1,16 +1,17 @@
-# Every push to main updates the rolling `nightly` prerelease. A newer push cancels a running nightly; the app
-# change check compares with what the release carries, so nothing a cancelled run would have shipped is lost.
+# Every push to main updates the rolling `edge` prerelease (and `nightly`, its copy for builds from before the rename,
+# D203). A newer push cancels a running edge build; the app change check compares with what the release carries, so
+# nothing a cancelled run would have shipped is lost.
 # Pull requests that change the release pipeline itself get a dry run on Linux (CLI and the app's Linux packages),
 # publishing nothing. The mac app job runs only for a main push that changed the app, a tag, or a manual dispatch
 # (from a branch: a dry run that publishes nothing).
-name: Nightly
+name: Edge
 
 on:
   push:
     branches: [main]
   pull_request:
     paths:
-      - .github/workflows/nightly.yml
+      - .github/workflows/edge.yml
       - .github/workflows/build-release.yml
       - .github/release/**
       - app/desktop/electron-builder.yml
@@ -23,14 +24,14 @@ on:
         default: false
 
 concurrency:
-  group: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && 'release-nightly' || format('release-dry-run-{0}', github.ref) }}
+  group: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && 'release-edge' || format('release-dry-run-{0}', github.ref) }}
   cancel-in-progress: true
 
 jobs:
-  nightly:
+  edge:
     uses: ./.github/workflows/build-release.yml
     with:
-      channel: nightly
+      channel: edge
       # Only main publishes. A dispatch from a branch is a dry run that also builds, signs and notarizes the mac app.
       publish: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
       force-app: ${{ inputs.force-app == true }}

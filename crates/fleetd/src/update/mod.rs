@@ -8,7 +8,7 @@
 //! back to the person as interrupted, never run again.
 //!
 //! Release assets (built by .github/workflows/build-release.yml) have version-less names next to `SHA256SUMS` and
-//! `release.json`, at `releases/download/nightly/` or `releases/latest/download/`. Those are CDN downloads, not the
+//! `release.json`, at `releases/download/edge/` or `releases/latest/download/`. Those are CDN downloads, not the
 //! GitHub API, so there is no token and no rate limit. `FLEETD_BASE_URL` points at another asset directory.
 use std::collections::HashMap;
 use std::fs;
@@ -33,23 +33,25 @@ pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Channel {
-    Nightly,
+    /// The newest build of main, published after each merge. Called nightly until D203: that name still works.
+    Edge,
     Stable,
 }
 
 impl Channel {
     pub fn parse(name: &str) -> Result<Self, String> {
         match name {
-            "nightly" => Ok(Self::Nightly),
+            "edge" | "nightly" => Ok(Self::Edge),
             "stable" | "latest" => Ok(Self::Stable),
-            other => Err(format!("unknown channel {other:?}: use nightly or stable")),
+            other => Err(format!("unknown channel {other:?}: use edge or stable")),
         }
     }
 
-    /// Nightly builds stay on nightly and tagged builds on stable. Until the first tag, local builds follow nightly.
+    /// Edge builds (and nightly ones, from before the rename) stay on edge and tagged builds on stable. Until the
+    /// first tag, local builds follow edge.
     pub fn of(version: &str, release_build: bool) -> Self {
-        if version.contains("-nightly.") || !release_build {
-            Self::Nightly
+        if crate::edge_stamp(version).is_some() || !release_build {
+            Self::Edge
         } else {
             Self::Stable
         }
@@ -57,7 +59,7 @@ impl Channel {
 
     pub fn as_str(self) -> &'static str {
         match self {
-            Self::Nightly => "nightly",
+            Self::Edge => "edge",
             Self::Stable => "stable",
         }
     }
@@ -65,7 +67,7 @@ impl Channel {
     /// Where the channel's assets are: `FLEETD_BASE_URL`, else its GitHub release download directory.
     pub fn base_url(self) -> String {
         std::env::var("FLEETD_BASE_URL").unwrap_or_else(|_| match self {
-            Self::Nightly => format!("https://github.com/{REPO}/releases/download/nightly"),
+            Self::Edge => format!("https://github.com/{REPO}/releases/download/edge"),
             Self::Stable => format!("https://github.com/{REPO}/releases/latest/download"),
         })
     }

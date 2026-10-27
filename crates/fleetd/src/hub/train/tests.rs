@@ -4887,7 +4887,7 @@ fn the_latest_run_of_a_check_is_one_that_ran_over_a_later_skip() {
     );
 }
 
-/// fleetd's own case: a PR touching `build-release.yml` and `nightly.yml`, whose release job every PR skips. That
+/// fleetd's own case: a PR touching `build-release.yml` and `edge.yml`, whose release job every PR skips. That
 /// skip is the release workflow's on purpose, not the label's, so it never parks the PR: it merges once the label's
 /// macOS run is green, and the lead hears nothing.
 #[tokio::test(flavor = "multi_thread")]
@@ -4905,7 +4905,7 @@ async fn a_skip_in_a_workflow_the_label_never_runs_never_parks_a_lone_pr() {
             "release",
             &[
                 add(".github/workflows/build-release.yml", "name: Release\n"),
-                add(".github/workflows/nightly.yml", "name: Nightly\n"),
+                add(".github/workflows/edge.yml", "name: Edge\n"),
             ],
         ))
         .await;
