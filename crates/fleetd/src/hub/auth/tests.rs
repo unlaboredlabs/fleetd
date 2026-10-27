@@ -279,3 +279,52 @@ fn retiring_revokes_the_owner_keys_and_deletes_their_file() {
     assert_eq!(auth.retire_owner_keys(home.path()).unwrap(), 0);
     assert!(auth.verify(&device.key).is_ok());
 }
+
+/// A machine id is one computer's: a second computer never enrolls under it, whatever code it has; the first one
+/// (re-enrolling, a repair) does, and once the machine is removed its id is free again.
+#[test]
+fn a_machine_id_belongs_to_one_computer() {
+    let (auth, _, _) = setup();
+    let code = |auth: &Auth| auth.create_enroll_token(&m("devbox")).unwrap().token;
+    auth.enroll_node(&code(&auth), &m("devbox"), "pub-hub", Some("fp-hub"))
+        .unwrap();
+    assert_eq!(
+        auth.node_fingerprint(&m("devbox")).unwrap().as_deref(),
+        Some("fp-hub")
+    );
+
+    let other = code(&auth);
+    let refused =
+        unauthorized(auth.enroll_node(&other, &m("devbox"), "pub-laptop", Some("fp-laptop")));
+    assert_eq!(refused.code, ErrorCode::Forbidden);
+    assert_eq!(refused.message, "devbox is another computer's machine id");
+    assert!(
+        refused
+            .fix
+            .unwrap()
+            .contains("fleetd machine remove devbox")
+    );
+    // Nothing changed: the hub's node keeps its key, and the code is not burned.
+    assert_eq!(
+        auth.node_pub_key(&m("devbox")).unwrap().as_deref(),
+        Some("pub-hub")
+    );
+    auth.enroll_node(&other, &m("devbox"), "pub-hub-2", Some("fp-hub"))
+        .unwrap();
+
+    // An older node, with no fingerprint, is held to its code only, and leaves the recorded computer as it is.
+    auth.enroll_node(&code(&auth), &m("devbox"), "pub-old", None)
+        .unwrap();
+    assert_eq!(
+        auth.node_fingerprint(&m("devbox")).unwrap().as_deref(),
+        Some("fp-hub")
+    );
+
+    auth.revoke_node(&m("devbox")).unwrap();
+    auth.enroll_node(&code(&auth), &m("devbox"), "pub-laptop", Some("fp-laptop"))
+        .unwrap();
+    assert_eq!(
+        auth.node_fingerprint(&m("devbox")).unwrap().as_deref(),
+        Some("fp-laptop")
+    );
+}

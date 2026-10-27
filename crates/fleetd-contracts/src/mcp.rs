@@ -1966,6 +1966,9 @@ output!(HubInfoOutput {
     me: Option<Person>,
     /// How many people the hub has, removed ones left out. Absent from a hub before people.
     people: Option<Count>,
+    /// A hash of the OS's id for the hub's computer, as nodes give theirs: the app on that computer knows it runs the
+    /// hub. Absent where the OS gives none, and from older hubs.
+    machine_fingerprint: Option<String>,
 });
 
 // people_list: the hub's people, oldest first, with the devices and invites the caller may see: an owner's or admin's

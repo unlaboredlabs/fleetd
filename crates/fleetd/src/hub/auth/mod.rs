@@ -524,6 +524,61 @@ impl Auth {
         })
     }
 
+    /// Enrolls `machine_id`'s node from the computer `fingerprint` names: refused when that id is already another
+    /// computer's (whatever its name, its code or its folders), else the token is burned and the node's key and
+    /// computer recorded. A node with no fingerprint (an older one) is held to its token only.
+    pub fn enroll_node(
+        &self,
+        token: &str,
+        machine_id: &MachineId,
+        pub_key: &str,
+        fingerprint: Option<&str>,
+    ) -> Result<(), AuthError> {
+        let m = machine_id.as_str();
+        if let Some(theirs) = fingerprint
+            && let Some(ours) = self.node_fingerprint(machine_id)?
+            && theirs != ours
+        {
+            return Err(Unauthorized {
+                code: ErrorCode::Forbidden,
+                message: format!("{m} is another computer's machine id"),
+                fix: Some(format!(
+                    "join this computer under a machine id of its own, or remove {m} first (fleetd machine remove {m})"
+                )),
+            }
+            .into());
+        }
+        self.consume_enroll_token(token, machine_id, pub_key)?;
+        if let Some(fingerprint) = fingerprint {
+            self.set_node_fingerprint(machine_id, fingerprint)?;
+        }
+        Ok(())
+    }
+
+    /// The fingerprint of the computer the machine's node runs on, as its hellos gave it.
+    pub fn node_fingerprint(&self, machine_id: &MachineId) -> Result<Option<String>, StoreError> {
+        self.db.with(|conn| {
+            Ok(conn
+                .prepare_cached("SELECT fingerprint FROM node_keys WHERE machine_id = ?")?
+                .query_row([&machine_id.as_str()], |row| row.get(0))
+                .optional()?
+                .flatten())
+        })
+    }
+
+    /// Records the computer the machine's enrolled node runs on.
+    pub fn set_node_fingerprint(
+        &self,
+        machine_id: &MachineId,
+        fingerprint: &str,
+    ) -> Result<(), StoreError> {
+        self.db.with(|conn| {
+            conn.prepare_cached("UPDATE node_keys SET fingerprint = ? WHERE machine_id = ?")?
+                .execute(params![fingerprint, machine_id.as_str()])?;
+            Ok(())
+        })
+    }
+
     /// Forgets the machine's node key, so its node is refused from its next link on; false if it had none.
     pub fn revoke_node(&self, machine_id: &MachineId) -> Result<bool, StoreError> {
         self.db.with(|conn| {

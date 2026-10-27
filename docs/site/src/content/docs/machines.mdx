@@ -17,7 +17,7 @@ Open **Administration › Machines** and press **Add machine**. It offers three 
 
 | The machine is | Pick | What happens |
 |---|---|---|
-| The computer the app runs on | **This computer** | One click. The app downloads the release of the fleetd version the hub runs, built for this computer, checks it against that release's `SHA256SUMS`, and joins the hub with a one-time code that never shows on screen. The node runs as a user service. A nightly hub asks to be updated first once the nightly release has moved past it. On the hub's own machine, the hub sets it up with its own fleetd instead; a computer whose node already belongs to a hub is left as it is. |
+| The computer the app runs on | **This computer** | One click. The app downloads the release of the fleetd version the hub runs, built for this computer, checks it against that release's `SHA256SUMS`, and joins the hub with a one-time code that never shows on screen. The node runs as a user service. A nightly hub asks to be updated first once the nightly release has moved past it. On the machine that runs the hub you're connected to, the hub sets it up with its own fleetd instead. A computer that runs another hub, or whose node already belongs to a hub, is left as it is. |
 | Reachable from the hub over SSH | **A machine the hub can reach** | Pick it from the hosts the hub sees (its `~/.ssh/config` and its tailnet), and read the plan: the machine's OS and CPU, each step with its command, and notes such as linger. Press **Add**, and watch each step run. |
 | Behind NAT, or with no SSH from the hub (a laptop) | **Any other machine** | For now, use [`fleetd pair --worker`](#join) on the hub. |
 
@@ -26,6 +26,11 @@ its output and what to fix; **Retry** runs it again and skips the steps that fin
 you leave the page, and Add machine shows it when you come back.
 
 Only a person with Admin on every machine sees Administration. Agents' keys can't add or remove machines.
+
+A machine id belongs to one computer. The hub knows each computer by a hash of the id its OS gives it
+(`/etc/machine-id` on Linux, `IOPlatformUUID` on macOS), so it never enrolls a second computer under an id that is
+already another's, whatever the computer is called. To give an id to another computer, [remove](#remove) the machine
+first. The app knows the hub's own computer the same way, wherever the hub keeps its data.
 
 ## Add a machine from the CLI {#cli}
 

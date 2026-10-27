@@ -5624,6 +5624,10 @@
           "$ref": "#/$defs/HubChannel",
           "description": "Absent for a local build."
         },
+        "machineFingerprint": {
+          "description": "A hash of the OS's id for the hub's computer, as nodes give theirs: the app on that computer knows it runs the\nhub. Absent where the OS gives none, and from older hubs.",
+          "type": "string"
+        },
         "me": {
           "$ref": "#/$defs/Person",
           "description": "The person the caller's human key belongs to. Absent for an agent key, and from a hub before people."

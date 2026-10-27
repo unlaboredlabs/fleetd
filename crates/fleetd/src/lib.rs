@@ -2,6 +2,7 @@
 //! `hub/mod.rs` for the hub's areas.
 pub mod cli;
 pub mod clock;
+pub mod fingerprint;
 pub mod home;
 pub mod hub;
 pub mod node;

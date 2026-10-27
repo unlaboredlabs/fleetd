@@ -67,6 +67,10 @@ pub struct NodeHello {
     /// frame it can't decode, so the hub sends newer calls only to nodes that list them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub capabilities: Vec<String>,
+    /// A hash of the OS's id for this computer (`/etc/machine-id`, `IOPlatformUUID`): the hub never enrolls a second
+    /// computer under a machine id that is already another's. Absent from older nodes and OSes without one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub machine_fingerprint: Option<String>,
 }
 
 /// `repo_scan`, `repo_inspect`, `repo_clone` and `gh_repo_list` (adding a project).

@@ -16,7 +16,7 @@ import type { Opener } from "./opener";
 import { hostName, pickFolder, readDrop } from "./projects";
 import { RELEASE_BUILD } from "./build";
 import { fixtureRequest } from "./hub/fixture";
-import { fleetdDir, joinHere, realPorts, thisComputer } from "./joinHere";
+import { fleetdDir, joinHere, machineFingerprint, realPorts, thisComputer } from "./joinHere";
 import type { JoinHere } from "../shared/joinHere";
 import { isOwnPage } from "./security";
 import type { SessionWindows } from "./sessionWindow";
@@ -78,7 +78,7 @@ export const registerIpc = (
   });
   handle(IPC.machinesJoinHereState, () => lastJoin);
   // Under a fixture, a computer that is neither, whatever this one holds.
-  handle(IPC.machinesThisComputer, () => (fixtureRequest(process.env, RELEASE_BUILD).kind === "fixture" ? { kind: "none" } : thisComputer(fleetdDir())));
+  handle(IPC.machinesThisComputer, () => (fixtureRequest(process.env, RELEASE_BUILD).kind === "fixture" ? { kind: "none" } : machineFingerprint().then((fp) => thisComputer(fleetdDir(), fp))));
   handle(IPC.projectsPickFolder, (event) => pickFolder(event.sender));
   handle(IPC.projectsReadDrop, (_event, path) => readDrop(path));
   handle(IPC.copy, (_event, text) => clipboard.writeText(text));

@@ -92,7 +92,7 @@ yet.</p>
 <tr>
 <td>The computer the app runs on</td>
 <td><strong>This computer</strong></td>
-<td>One click. The app downloads the release of the fleetd version the hub runs, built for this computer, checks it against that release’s <code dir="auto">SHA256SUMS</code>, and joins the hub with a one-time code that never shows on screen. The node runs as a user service. A nightly hub asks to be updated first once the nightly release has moved past it. On the hub’s own machine, the hub sets it up with its own fleetd instead; a computer whose node already belongs to a hub is left as it is.</td>
+<td>One click. The app downloads the release of the fleetd version the hub runs, built for this computer, checks it against that release’s <code dir="auto">SHA256SUMS</code>, and joins the hub with a one-time code that never shows on screen. The node runs as a user service. A nightly hub asks to be updated first once the nightly release has moved past it. On the machine that runs the hub you’re connected to, the hub sets it up with its own fleetd instead. A computer that runs another hub, or whose node already belongs to a hub, is left as it is.</td>
 </tr>
 <tr>
 <td>Reachable from the hub over SSH</td>
@@ -110,6 +110,10 @@ yet.</p>
 its output and what to fix; <strong>Retry</strong> runs it again and skips the steps that finished. The run goes on in the hub if
 you leave the page, and Add machine shows it when you come back.</p>
 <p>Only a person with Admin on every machine sees Administration. Agents’ keys can’t add or remove machines.</p>
+<p>A machine id belongs to one computer. The hub knows each computer by a hash of the id its OS gives it
+(<code dir="auto">/etc/machine-id</code> on Linux, <code dir="auto">IOPlatformUUID</code> on macOS), so it never enrolls a second computer under an id that is
+already another’s, whatever the computer is called. To give an id to another computer, <a href="#remove">remove</a> the machine
+first. The app knows the hub’s own computer the same way, wherever the hub keeps its data.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="cli">Add a machine from the CLI</h2><a class="sl-anchor-link" href="#cli"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Add a machine from the CLI”</span></a></div>
 <p>Run these on the hub unless it says otherwise.</p>
 <table>
