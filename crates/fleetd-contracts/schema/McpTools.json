@@ -2880,7 +2880,12 @@
         },
         {
           "const": "replaced",
-          "description": "A newer nudge took its place past [`CHAT_NUDGES_MAX`].",
+          "description": "A newer nudge of its kind took its place past [`CHAT_NUDGES_MAX`].",
+          "type": "string"
+        },
+        {
+          "const": "expired",
+          "description": "A day passed unseen.",
           "type": "string"
         }
       ],
@@ -11430,7 +11435,7 @@
           "items": {
             "$ref": "#/$defs/ChatOpenNudge"
           },
-          "maxItems": 3,
+          "maxItems": 6,
           "minItems": 1,
           "type": "array"
         },

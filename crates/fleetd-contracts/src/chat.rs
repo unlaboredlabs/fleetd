@@ -270,8 +270,11 @@ pub struct ChatMessage {
     pub nudge: Option<ChatNudge>,
 }
 
-/// The most nudges a project keeps open: a newer one past it clears the oldest.
+/// The most nudges a project keeps open of each kind, the lead's and agents' Try it suggestions: a newer one past it
+/// clears the oldest of its kind, so suggestions never push out what the lead flagged.
 pub const CHAT_NUDGES_MAX: usize = 3;
+/// The most a chat state lists: both kinds at their cap.
+pub const CHAT_OPEN_NUDGES_MAX: usize = 2 * CHAT_NUDGES_MAX;
 /// How long a nudge waits to be seen; past it, it fades on its own.
 pub const CHAT_NUDGE_MS: i64 = 24 * 60 * 60_000;
 
@@ -296,8 +299,10 @@ pub enum ChatNudgeCleared {
     /// The person has seen the message: scrolled into view, or opened with Show.
     Seen,
     Dismissed,
-    /// A newer nudge took its place past [`CHAT_NUDGES_MAX`].
+    /// A newer nudge of its kind took its place past [`CHAT_NUDGES_MAX`].
     Replaced,
+    /// A day passed unseen.
+    Expired,
 }
 
 /// A nudge still waiting, in a chat state: its message, and what to look at.
@@ -344,7 +349,7 @@ pub struct ProjectChatState {
     /// when none is (and from older hubs).
     pub open_items: Option<List<ChatOpenItem, 1, CHAT_OPEN_ITEMS_MAX>>,
     /// The nudges still waiting to be seen, oldest first: what the app shows as "N to look at". Absent when none is.
-    pub nudges: Option<List<ChatOpenNudge, 1, CHAT_NUDGES_MAX>>,
+    pub nudges: Option<List<ChatOpenNudge, 1, CHAT_OPEN_NUDGES_MAX>>,
 }
 
 /// The most open items a chat state lists.

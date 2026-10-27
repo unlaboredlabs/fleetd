@@ -82,24 +82,31 @@ export function waitingOn(items: readonly ChatItem[], { older, open: away = [] }
 /** A message worth a look, still waiting: where Show goes, and what to look at there. */
 export interface LookAt extends WaitTarget {
   readonly reason: string;
+  /** This flag of it (`id` and when it was flagged): one flagged again after it was seen is a new one. */
+  readonly key: string;
 }
+
+/** A flag's key: its message, and when it was flagged. */
+export const lookKey = (id: string, at: string): string => `${id} ${at}`;
 
 /** How long a nudge waits to be seen (contracts CHAT_NUDGE_MS); past it, it fades on its own. */
 export const NUDGE_MS = 24 * 60 * 60_000;
 
 /**
  * What there is to look at, oldest first: the hub's waiting nudges, less those this app cleared since (seen or
- * dismissed), those a loaded message says no longer wait, and those a day old. Show goes to a lead message's first
- * bubble, and to a Try it line as it is.
+ * dismissed, by their key), those a loaded message says no longer wait (that same flag of it), and those a day old.
+ * Show goes to a lead message's first bubble, and to a Try it line as it is.
  */
 export function lookingAt(nudges: readonly ChatOpenNudge[] | undefined, items: readonly ChatItem[] | undefined, cleared: ReadonlySet<string>, nowMs: number): readonly LookAt[] {
   if (nudges === undefined) return [];
   const loaded = new Map((items ?? []).map((i) => [i.id, i]));
   return nudges.flatMap((n) => {
     const item = loaded.get(n.messageId);
-    const done = cleared.has(n.messageId) || item?.message?.nudge?.cleared !== undefined || nowMs - Date.parse(n.at) >= NUDGE_MS;
+    const key = lookKey(n.messageId, n.at);
+    const flag = item?.message?.nudge;
+    const done = cleared.has(key) || (flag?.at === n.at && flag.cleared !== undefined) || nowMs - Date.parse(n.at) >= NUDGE_MS;
     if (done) return [];
     const part = item?.kind === "message" ? bubblesOf(item)[0]?.key : undefined;
-    return [{ id: n.messageId, part, reason: n.reason }];
+    return [{ id: n.messageId, part, reason: n.reason, key }];
   });
 }

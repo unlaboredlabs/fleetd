@@ -9,7 +9,7 @@ import { afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import type { ChatMessage, ProjectChatState } from "../../src/data/chat-contract";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
-import { AT, live, project, snapshot } from "../../src/data/fixtures.test-util";
+import { AT, event, live, project, snapshot } from "../../src/data/fixtures.test-util";
 import { TooltipProvider } from "../../ui/primitives/Tooltip";
 import { AppFrame, TopBar } from "../../ui/layout/Layout";
 import { ChatScreen } from "./ChatScreen";
@@ -84,14 +84,17 @@ const settle = async () => {
 /** What the chat asked the hub to clear: message id, and whether dismissed. */
 let clears: { messageId: string; dismissed?: boolean }[] = [];
 
-const mount = async (messages: ChatMessage[], state: Partial<ProjectChatState>) => {
+/** The chat with `messages` and chat state `state`, the project's Status row `row`; `say` tells it a new chat state. */
+const mount = async (messages: ChatMessage[], state: Partial<ProjectChatState>, row: Record<string, unknown> = {}) => {
   clears = [];
   let send: Parameters<HubApi["subscribe"]>[0] = () => undefined;
-  const page = { messages, moreBefore: false, moreAfter: false, state: { projectRef: project, needsYou: false, leadWorking: false, lastSeq: messages.at(-1)?.seq ?? 0, ...state } };
+  const base = { projectRef: project, needsYou: false, leadWorking: false, lastSeq: messages.at(-1)?.seq ?? 0 };
+  const page = { messages, moreBefore: false, moreAfter: false, state: { ...base, ...state } };
+  const rows = { rows: [{ projectRef: project, title: "storefront", asOf: AT, agentsRunning: 0, state: "idle", ...row }] };
   const hub: HubApi = {
     call: (tool, input) => {
       if (tool === "chat_nudge_clear") clears.push(input as (typeof clears)[number]);
-      const output = tool === "chat_history" ? page : tool === "status_get" ? { rows: [] } : tool === "requests_list" ? { requests: [] } : { ok: true };
+      const output = tool === "chat_history" ? page : tool === "status_get" ? rows : tool === "requests_list" ? { requests: [] } : { ok: true };
       return Promise.resolve({ ok: true, output });
     },
     subscribe: (l) => ((send = l), () => undefined),
@@ -120,6 +123,8 @@ const mount = async (messages: ChatMessage[], state: Partial<ProjectChatState>) 
   });
   await settle();
   await vi.waitFor(() => expect(host.querySelectorAll("[data-entry]").length).toBeGreaterThanOrEqual(messages.length));
+  let seq = 100;
+  return { say: (next: Partial<ProjectChatState>) => send(event(++seq, "chat.waiting", { ...base, ...next })) };
 };
 
 const line = () => host.querySelector("[data-attention]")?.textContent ?? null;
@@ -165,6 +170,22 @@ it("ranks below what the lead waits on you for", async () => {
   });
   expect(line()).toContain("Waiting on you: 1 question");
   expect(line()).not.toContain("to look at");
+});
+
+it("keeps a red main in view after it", async () => {
+  await mount([msg(1, { text: "The new checkout is up." })], { nudges: [nudge(1, "the new checkout")] }, { state: "working", warning: "`rust (macos)` is red on main" });
+  expect(line()).toMatch(/1 to look at: the new checkout.*Show.*Dismiss.*rust \(macos\) is red on main/);
+});
+
+it("shows one again when the lead flags it again after you saw it", async () => {
+  const layer = await mount([msg(1, { text: "The pricing page draft." }), msg(2, { text: "More." })], { nudges: [nudge(1, "the pricing page", 2 * HOUR)] });
+  await press("Show");
+  expect(cleared()).toEqual([["m1", "seen"]]);
+  expect(host.querySelector("[data-attention]")).toBeNull();
+  // The lead flags it again: the hub lists it with a new time.
+  act(() => layer.say({ nudges: [nudge(1, "the pricing page, now with prices")] }));
+  await settle();
+  expect(line()).toContain("1 to look at: the pricing page, now with prices");
 });
 
 it("counts every one waiting, names the oldest, and Dismiss clears that one", async () => {
