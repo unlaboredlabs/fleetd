@@ -90,7 +90,7 @@ fleetd machine add <ssh-host> | --local [--machine-id <id>] [--tags a,b] [--dry-
     [--claude-config-dir <dir>]
 ```
 
-set up a machine that runs agents, over SSH (`--local`: this machine): copies this fleetd there, checks its claude (installed, version \>=2.1.300, \<2.2.0, logged in), enrolls the node and runs it as a user service, then waits until the machine is online; prints every command first, `--dry-run` only prints (for a fresh machine, without connecting); `--no-service` enrolls the node but writes no service and prints how to run it; safe to run again
+set up a machine that runs agents, over SSH (`--local`: this machine): copies this fleetd there (for another OS or CPU, this version's release build for it, checked against its SHA256SUMS), checks its claude (installed, version \>=2.1.300, \<2.2.0, logged in), enrolls the node and runs it as a user service, then waits until the machine is online; prints every command first, `--dry-run` only prints (for a fresh machine, without connecting); `--no-service` enrolls the node but writes no service and prints how to run it; safe to run again
 
 ### fleetd machine remove {#machine-remove}
 

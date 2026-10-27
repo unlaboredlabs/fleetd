@@ -29,7 +29,8 @@ pub fn machine_usage() -> String {
             [--hub-url <url>] [--ssh-config <file>] [--home <hub home>] [--unit-suffix <s>]
             [--claude-config-dir <dir>]
              set up a machine that runs agents, over SSH (--local: this machine): copies this fleetd
-             there, checks its claude (installed, version {SUPPORTED}, logged in), enrolls the node and
+             there (for another OS or CPU, this version's release build for it, checked against
+             its SHA256SUMS), checks its claude (installed, version {SUPPORTED}, logged in), enrolls the node and
              runs it as a user service, then waits until the machine is online; prints every command
              first, --dry-run only prints (for a fresh machine, without connecting); --no-service
              enrolls the node but writes no service and prints how to run it; safe to run again
@@ -70,23 +71,22 @@ pub fn machine_id_from_host(host: &str) -> String {
     id.trim_matches('-').chars().take(32).collect()
 }
 
-fn describe_stdin(step: &Step, exe: &Path, exe_len: u64) -> Option<String> {
+/// `what`: the fleetd binary the machine gets, as the step names it (this one's path, or the release asset fetched for
+/// the machine's OS and CPU).
+fn describe_stdin(step: &Step, what: &str, len: u64) -> Option<String> {
     step.stdin.as_ref().map(|stdin| match stdin {
-        Stdin::Binary => format!(
-            "stdin: the fleetd binary {} ({exe_len} bytes)",
-            exe.display()
-        ),
+        Stdin::Binary => format!("stdin: the fleetd binary {what} ({len} bytes)"),
         Stdin::EnrollToken => "stdin: one-time enroll token (not shown)".into(),
         Stdin::Text { label, text } => format!("stdin: {label} ({} bytes)", text.len()),
     })
 }
 
-fn plan_step(index: usize, total: usize, step: &Step, exe: &Path, exe_len: u64) -> Begin {
+fn plan_step(index: usize, total: usize, step: &Step, what: &str, len: u64) -> Begin {
     Begin {
         stage: Stage::Step(index, total),
         title: step.title.clone(),
         command: Some(step.command.clone()),
-        stdin: describe_stdin(step, exe, exe_len),
+        stdin: describe_stdin(step, what, len),
     }
 }
 
@@ -122,6 +122,69 @@ impl Runner for Ssh {
         stdin: Option<&'a [u8]>,
     ) -> BoxFuture<'a, RunResult> {
         Box::pin(run_ssh(target, command, stdin))
+    }
+}
+
+/// The fleetd build for a machine of another OS or CPU than this fleetd's own: this very version's release asset.
+/// Tests stand in a fake.
+pub trait Builds: Send + Sync {
+    /// `asset` (`fleetd-<os>-<arch>`) of fleetd `version`, checked against its release's SHA256SUMS; or why not, with
+    /// `Fix:` and what to do.
+    fn build<'a>(
+        &'a self,
+        version: &'a str,
+        asset: &'a str,
+    ) -> BoxFuture<'a, Result<Vec<u8>, String>>;
+}
+
+/// The real one: the release of `version` (`v<version>`, or for a nightly build the nightly release while it is still
+/// that build), or the directory FLEETD_BASE_URL names.
+pub struct Releases;
+
+impl Builds for Releases {
+    fn build<'a>(
+        &'a self,
+        version: &'a str,
+        asset: &'a str,
+    ) -> BoxFuture<'a, Result<Vec<u8>, String>> {
+        use crate::update::{HttpFeed, release, verified};
+        Box::pin(async move {
+            let (base, nightly) =
+                release_of(version, std::env::var("FLEETD_BASE_URL").ok().as_deref());
+            let feed = HttpFeed::new(base);
+            if nightly {
+                let now = release(&feed).await.map_err(|f| f.message)?.cli_version;
+                if now.as_deref() != Some(version) {
+                    return Err(format!(
+                        "this hub runs fleetd {version}, and the nightly release is now {}, so it has no {asset} of this hub's build. Fix: update the hub (fleetd update)",
+                        now.as_deref().unwrap_or("another build")
+                    ));
+                }
+            }
+            verified(&feed, asset).await.map_err(|f| {
+                format!(
+                    "no {asset} of fleetd {version} to copy to the machine: {}. Fix: run a released fleetd on the hub, or a machine of the hub's own OS and CPU",
+                    f.message.trim_end_matches('.')
+                )
+            })
+        })
+    }
+}
+
+/// Where fleetd `version`'s release assets are, and whether that is the rolling nightly release (which holds it only
+/// while its release.json still names it): `override_` (FLEETD_BASE_URL) when set, else its own `v<version>` release.
+pub fn release_of(version: &str, override_: Option<&str>) -> (String, bool) {
+    let repo = crate::update::REPO;
+    match override_.filter(|b| !b.is_empty()) {
+        Some(base) => (base.to_owned(), false),
+        None if version.contains("-nightly.") => (
+            format!("https://github.com/{repo}/releases/download/nightly"),
+            true,
+        ),
+        None => (
+            format!("https://github.com/{repo}/releases/download/v{version}"),
+            false,
+        ),
     }
 }
 
@@ -588,7 +651,9 @@ pub async fn add(a: AddArgs) -> Result<Option<Added>, u8> {
         Some(open_hub(&r.home).map_err(|message| fail(&message))?)
     };
     let side = hub.as_ref().map(HubAccess::side);
-    let prepared = prepare(&r, side, &Ssh, &Print).await.map_err(Stop::print)?;
+    let prepared = prepare(&r, side, &Ssh, Some(&Releases), &Print)
+        .await
+        .map_err(Stop::print)?;
     execute(r, prepared, side, &Ssh, &Print)
         .await
         .map(Some)
@@ -619,6 +684,8 @@ pub struct Prepared {
     facts: Facts,
     pub plan: MachinePlan,
     input: MachineAddInput,
+    /// The release asset fetched for a machine of another OS or CPU, and its bytes; None: this fleetd's own.
+    fetched: Option<(String, Vec<u8>)>,
 }
 
 impl Prepared {
@@ -630,12 +697,21 @@ impl Prepared {
     /// The plan's steps as they will begin, numbered.
     pub fn steps(&self, r: &Resolved) -> Vec<Begin> {
         let total = self.plan.steps.len();
+        let (what, len) = self.binary(r);
         self.plan
             .steps
             .iter()
             .enumerate()
-            .map(|(i, step)| plan_step(i + 1, total, step, &r.exe, r.binary.len() as u64))
+            .map(|(i, step)| plan_step(i + 1, total, step, &what, len.len() as u64))
             .collect()
+    }
+
+    /// The fleetd the machine gets, named, and its bytes.
+    fn binary<'a>(&'a self, r: &'a Resolved) -> (String, &'a [u8]) {
+        match &self.fetched {
+            Some((asset, bytes)) => (format!("{asset} {}", crate::version()), bytes),
+            None => (r.exe.display().to_string(), &r.binary),
+        }
     }
 }
 
@@ -690,7 +766,7 @@ pub fn resolve(a: &AddArgs, exe: &Path) -> Result<Resolved, Stop> {
     else {
         return Err(Stop::usage("--hub-url is required to join a hub"));
     };
-    // The machine gets this very binary; for now only a machine that can run it.
+    // The machine gets this very binary, or for another OS or CPU this version's release build for it.
     let binary = std::fs::read(exe).map_err(|error| {
         Stop::fail(format!(
             "machine add copies the running fleetd to the machine, and {} is unreadable: {error}",
@@ -767,8 +843,9 @@ fn dry_run(r: &Resolved) -> Result<(), Stop> {
     ));
     say("[probe] read the machine's state (read-only)");
     let total = plan.steps.len();
+    let exe = r.exe.display().to_string();
     for (i, step) in plan.steps.iter().enumerate() {
-        Print.begin(plan_step(i + 1, total, step, &r.exe, r.binary.len() as u64));
+        Print.begin(plan_step(i + 1, total, step, &exe, r.binary.len() as u64));
     }
     say(&format!("[hub] wait until {} is online", r.machine_id));
     for note in &plan.notes {
@@ -779,10 +856,14 @@ fn dry_run(r: &Resolved) -> Result<(), Stop> {
 
 /// Reads the machine (read-only) and plans `machine add` there; changes nothing. `hub` says whether it already holds
 /// the node's key; a joining worker has none.
+///
+/// A machine of another OS or CPU gets this version's release build for it: `builds` fetches and checks it (a step of
+/// its own), or with None (a plan) the step is only listed.
 pub async fn prepare(
     r: &Resolved,
     hub: Option<HubSide<'_>>,
     runner: &dyn Runner,
+    builds: Option<&dyn Builds>,
     progress: &dyn Progress,
 ) -> Result<Prepared, Stop> {
     progress.say(&format!(
@@ -839,10 +920,49 @@ pub async fn prepare(
                 .node_pub_key(&r.machine)
                 .is_ok_and(|key| key.is_some())
         });
-    let input = MachineAddInput {
+    let mut input = MachineAddInput {
         hub_has_node_key: has_key,
         ..r.input.clone()
     };
+    // Another OS or CPU than this fleetd's: the same version, built for it.
+    let target = (facts.platform.clone(), facts.arch.clone());
+    let buildable = matches!(target.0.as_str(), "linux" | "darwin")
+        && matches!(target.1.as_str(), "x64" | "arm64");
+    let (mut fetched, mut listed) = (None, None);
+    if target != input.binary_target && buildable {
+        let asset = format!("fleetd-{}-{}", target.0, target.1);
+        let step = Begin {
+            stage: Stage::Hub,
+            title: format!(
+                "download fleetd {} for {}-{} (this hub's is a {}-{} build), checked against its release's SHA256SUMS",
+                crate::version(),
+                target.0,
+                target.1,
+                input.binary_target.0,
+                input.binary_target.1
+            ),
+            command: None,
+            stdin: None,
+        };
+        match builds {
+            None => listed = Some(step),
+            Some(builds) => {
+                progress.begin(step);
+                let bytes = builds
+                    .build(crate::version(), &asset)
+                    .await
+                    .map_err(|why| Stop::fail(format!("{why}, then run {}", r.again)))?;
+                progress.done("");
+                input.binary_digest = format!("{:x}", Sha256::digest(&bytes));
+                fetched = Some((asset, bytes));
+            }
+        }
+        if fetched.is_none() {
+            // Not fetched yet: whatever the machine has, the plan copies the build.
+            input.binary_digest = String::new();
+        }
+        input.binary_target = target;
+    }
     let plan = plan_machine_add(&facts, &input)
         .map_err(|message| Stop::fail(format!("{message}, then run {}", r.again)))?;
     // Never stop or re-enrol a joined node without a fresh code: that is what --join with --rejoin is for.
@@ -858,8 +978,14 @@ pub async fn prepare(
             id = r.machine_id
         )));
     }
-    let prepared = Prepared { facts, plan, input };
-    let mut steps = prepared.steps(r);
+    let prepared = Prepared {
+        facts,
+        plan,
+        input,
+        fetched,
+    };
+    let mut steps: Vec<Begin> = listed.into_iter().collect();
+    steps.extend(prepared.steps(r));
     if prepared.plan.run_by_hand.is_none() && hub.is_some() {
         steps.push(wait_step(&r.machine_id));
     }
@@ -885,7 +1011,11 @@ pub async fn execute(
     runner: &dyn Runner,
     progress: &dyn Progress,
 ) -> Result<Added, Stop> {
-    let Prepared { facts, plan, input } = p;
+    let (what, binary) = p.binary(&r);
+    let (what, binary) = (what, binary.to_vec());
+    let Prepared {
+        facts, plan, input, ..
+    } = p;
     let (machine_id, host) = (&r.machine_id, &r.host);
     // Recorded before anything changes, so `machine remove` can undo a run that stopped half way.
     if let Some(state) = &r.state {
@@ -910,11 +1040,11 @@ pub async fn execute(
     let mut steps_done = now_ms();
     let total = plan.steps.len();
     for (i, step) in plan.steps.iter().enumerate() {
-        progress.begin(plan_step(i + 1, total, step, &r.exe, r.binary.len() as u64));
+        progress.begin(plan_step(i + 1, total, step, &what, binary.len() as u64));
         let stdin: Option<Vec<u8>> = match &step.stdin {
             None => None,
             Some(Stdin::Text { text, .. }) => Some(text.clone().into_bytes()),
-            Some(Stdin::Binary) => Some(r.binary.clone()),
+            Some(Stdin::Binary) => Some(binary.clone()),
             Some(Stdin::EnrollToken) => match (&r.enroll, hub) {
                 (Enroll::Token(token), _) => Some(format!("{token}\n").into_bytes()),
                 (Enroll::Hub, Some(hub)) => match hub.auth.create_enroll_token(&r.machine) {
@@ -1128,7 +1258,7 @@ pub async fn remove(
             let begins: Vec<Begin> = steps
                 .iter()
                 .enumerate()
-                .map(|(i, step)| plan_step(i + 1, total, step, Path::new(""), 0))
+                .map(|(i, step)| plan_step(i + 1, total, step, "", 0))
                 .collect();
             progress.planned(&begins);
             for (i, begin) in begins.into_iter().enumerate() {
@@ -1233,6 +1363,28 @@ pub(super) fn logged_in(stdout: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_machine_of_another_os_or_cpu_gets_its_versions_release() {
+        assert_eq!(
+            release_of("0.9.2", None),
+            (
+                "https://github.com/unlaboredlabs/fleetd/releases/download/v0.9.2".into(),
+                false
+            )
+        );
+        assert_eq!(
+            release_of("0.9.2-nightly.202610271107+333368c", Some("")),
+            (
+                "https://github.com/unlaboredlabs/fleetd/releases/download/nightly".into(),
+                true
+            )
+        );
+        assert_eq!(
+            release_of("0.9.2", Some("http://127.0.0.1:8000/assets")),
+            ("http://127.0.0.1:8000/assets".into(), false)
+        );
+    }
 
     #[test]
     fn machine_id_from_an_ssh_host() {

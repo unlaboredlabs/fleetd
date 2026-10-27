@@ -147,7 +147,7 @@ async fn machine_add_plan(
     let r = resolve(&hub, input.host.as_ref(), input.machine_id.as_ref())?;
     let runner = hub.machine_setup.ports().runner();
     let collect = Collect::default();
-    let prepared = machine::prepare(&r, Some(side(&hub)), runner.as_ref(), &collect)
+    let prepared = machine::prepare(&r, Some(side(&hub)), runner.as_ref(), None, &collect)
         .await
         .map_err(stopped)?;
     let steps = collect.0.into_inner().unwrap().steps;

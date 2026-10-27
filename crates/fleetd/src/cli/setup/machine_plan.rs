@@ -209,7 +209,8 @@ pub struct MachineAddInput {
     pub git_identity: Option<GitIdentity>,
     /// sha256 of the fleetd binary this hub copies to the machine: the one running now.
     pub binary_digest: String,
-    /// `local_target()` of that binary; for now it only sets up machines it can run on.
+    /// The OS and CPU that binary is for: this fleetd's (`local_target()`), or the machine's when `machine add` fetched
+    /// this version's release build for it.
     pub binary_target: (String, String),
     pub version: String,
     /// The hub already holds a node key for this machine id.
@@ -320,7 +321,7 @@ pub fn plan_machine_add(facts: &Facts, input: &MachineAddInput) -> Result<Machin
     let (os, arch) = &input.binary_target;
     if facts.platform != *os || facts.arch != *arch {
         return Err(format!(
-            "the machine is {}-{} and this fleetd is a {os}-{arch} build: machine add copies the running fleetd to the machine, so for now it sets up machines of its own OS and architecture only",
+            "the machine is {}-{} and this fleetd is a {os}-{arch} build: fleetd has builds for Linux and macOS on x64 and arm64 only",
             facts.platform, facts.arch
         ));
     }
