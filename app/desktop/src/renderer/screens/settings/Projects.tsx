@@ -144,7 +144,7 @@ function ProjectPage({ settings, refresh, onDeleted }: { settings: Settings; ref
       <Setting
         reveal="projects.profiles"
         label="Task profiles"
-        help="The model and effort behind each profile for this project's agents. Each field left empty follows the fleet's, set in Settings → Agents."
+        help="The model and effort behind each profile for this project's agents. Each field left empty follows the fleet's, which the hub's admins set in Administration."
       >
         <ProfilesSetting projectRef={ref} />
       </Setting>
