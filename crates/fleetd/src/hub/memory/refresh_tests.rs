@@ -241,22 +241,40 @@ fn the_night_is_due_from_its_hour_for_three_hours_in_the_persons_zone() {
 }
 
 #[tokio::test]
-async fn a_node_that_cant_hold_the_session_to_its_memory_tools_gets_no_refresh_until_it_can() {
-    let (hub, _clock, _home) = hub();
+async fn a_node_that_cant_hold_the_session_to_its_memory_tools_gets_no_refresh_and_one_line_a_night()
+ {
+    let (hub, clock, _home) = hub();
     let r = project("shop");
     say(&hub, &r, ChatAuthor::Human, "Keep answers short.");
     // A node from before `allowed_only` would let claude read the project's files unasked.
     hub.link.set_capabilities(&r.machine_id, &[]);
     let node = Node::default();
-    refresh::tick(&hub, &node).await.unwrap();
+    let skipped = |hub: &Hub| {
+        lines(hub, &r)
+            .into_iter()
+            .filter(|m| m.text == "Memory refresh skipped: update devbox to let it run")
+            .count()
+    };
+    for _ in 0..3 {
+        refresh::tick(&hub, &node).await.unwrap();
+        clock.advance(Duration::from_secs(60));
+    }
     assert!(node.launches.lock().unwrap().is_empty());
-    // Updated within the night's window: it starts then.
+    assert_eq!(skipped(&hub), 1, "one line a night, not one a pass");
+    // The next night says it again.
+    clock.advance(DAY);
+    say(&hub, &r, ChatAuthor::Human, "Still short, please.");
+    refresh::tick(&hub, &node).await.unwrap();
+    refresh::tick(&hub, &node).await.unwrap();
+    assert_eq!(skipped(&hub), 2);
+    // Updated within the night's window: it starts then, with no more lines.
     hub.link.set_capabilities(
         &r.machine_id,
         &[fleetd_contracts::node_link::CAP_ALLOWED_ONLY],
     );
     refresh::tick(&hub, &node).await.unwrap();
     assert_eq!(node.launches.lock().unwrap().len(), 1);
+    assert_eq!(skipped(&hub), 2);
 }
 
 #[tokio::test]

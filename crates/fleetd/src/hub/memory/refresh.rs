@@ -153,12 +153,14 @@ pub struct Run {
     pub read_to: Option<i64>,
     /// What the running refresh changed so far.
     pub items: Vec<RememberedItem>,
+    /// The night last skipped for a node too old to run it, whose line is in the chat.
+    pub skipped_ms: Option<i64>,
 }
 
 fn get(db: &HubDb, r: &ProjectRef) -> Result<Run, StoreError> {
     let row = db.with(|c| {
         Ok(c.query_row(
-            "SELECT watermark, night_ms, thread_id, started_ms, read_to, items FROM memory_refreshes
+            "SELECT watermark, night_ms, thread_id, started_ms, read_to, items, skipped_ms FROM memory_refreshes
              WHERE machine_id = ? AND project_id = ?",
             params![r.machine_id.as_str(), r.project_id.as_str()],
             |row| {
@@ -169,12 +171,13 @@ fn get(db: &HubDb, r: &ProjectRef) -> Result<Run, StoreError> {
                     row.get::<_, Option<i64>>(3)?,
                     row.get::<_, Option<i64>>(4)?,
                     row.get::<_, String>(5)?,
+                    row.get::<_, Option<i64>>(6)?,
                 ))
             },
         )
         .optional()?)
     })?;
-    let Some((watermark, night_ms, thread_id, started_ms, read_to, items)) = row else {
+    let Some((watermark, night_ms, thread_id, started_ms, read_to, items, skipped_ms)) = row else {
         return Ok(Run::default());
     };
     Ok(Run {
@@ -184,6 +187,7 @@ fn get(db: &HubDb, r: &ProjectRef) -> Result<Run, StoreError> {
         started_ms,
         read_to,
         items: serde_json::from_str(&items).unwrap_or_default(),
+        skipped_ms,
     })
 }
 
@@ -191,11 +195,12 @@ fn put(db: &HubDb, r: &ProjectRef, run: &Run) -> Result<(), StoreError> {
     let items = serde_json::to_string(&run.items)?;
     db.with(|c| {
         c.execute(
-            "INSERT INTO memory_refreshes (machine_id, project_id, watermark, night_ms, thread_id, started_ms, read_to, items)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            "INSERT INTO memory_refreshes (machine_id, project_id, watermark, night_ms, thread_id, started_ms, read_to, items,
+               skipped_ms)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT (machine_id, project_id) DO UPDATE SET watermark = excluded.watermark,
                night_ms = excluded.night_ms, thread_id = excluded.thread_id, started_ms = excluded.started_ms,
-               read_to = excluded.read_to, items = excluded.items",
+               read_to = excluded.read_to, items = excluded.items, skipped_ms = excluded.skipped_ms",
             params![
                 r.machine_id.as_str(),
                 r.project_id.as_str(),
@@ -204,7 +209,8 @@ fn put(db: &HubDb, r: &ProjectRef, run: &Run) -> Result<(), StoreError> {
                 run.thread_id.as_ref().map(|t| t.as_str()),
                 run.started_ms,
                 run.read_to,
-                items
+                items,
+                run.skipped_ms
             ],
         )?;
         Ok(())
@@ -383,8 +389,24 @@ pub async fn tick(hub: &Arc<Hub>, launcher: &dyn Launcher) -> Result<(), StoreEr
             put(&hub.db, &r, &run)?;
             continue;
         }
-        // A lead mid-turn, a login out of usage, or a node that can't hold the session to its memory tools (one
-        // from before `allowed_only`, or none linked): tried again on the next pass, within the night's window.
+        // A node too old to hold the session to its memory tools: tried again on the next pass, within the night's
+        // window, and the chat says so once that night.
+        if hub.link.node_lacks(&r.machine_id, CAP_ALLOWED_ONLY) {
+            if run.skipped_ms != Some(night) {
+                hub.chat.system_line(
+                    &r,
+                    &format!(
+                        "Memory refresh skipped: update {} to let it run",
+                        r.machine_id
+                    ),
+                )?;
+                run.skipped_ms = Some(night);
+                put(&hub.db, &r, &run)?;
+            }
+            continue;
+        }
+        // A lead mid-turn, a login out of usage, or no node linked: tried again on the next pass, within the night's
+        // window.
         let busy = matches!(hub.leads.leads.get(&r), Ok(Some(l)) if l.state == LeadState::Working);
         if busy
             || hub.usage.gate(r.machine_id.as_str()).is_some()

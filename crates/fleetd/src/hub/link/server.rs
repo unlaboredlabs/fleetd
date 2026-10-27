@@ -177,6 +177,16 @@ impl NodeLinkServer {
         }
     }
 
+    /// Whether the machine's node is linked and doesn't list `capability`: a node too old for it.
+    pub fn node_lacks(&self, machine_id: &MachineId, capability: &str) -> bool {
+        self.state
+            .lock()
+            .unwrap()
+            .capabilities
+            .get(machine_id)
+            .is_some_and(|caps| !caps.iter().any(|c| c == capability))
+    }
+
     /// As a hello listing `capabilities` leaves it.
     #[cfg(test)]
     pub fn set_capabilities(&self, machine_id: &MachineId, capabilities: &[&str]) {

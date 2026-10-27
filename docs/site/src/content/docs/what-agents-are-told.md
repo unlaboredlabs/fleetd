@@ -208,9 +208,10 @@ no longer holds stops misleading the agents:
   writes in the chat. It may use `memory_read`, `remember` and `forget` and nothing else: it starts with none of
   Claude's own tools (no shell, files or web) and none of your MCP servers, its machine refuses any other tool it
   asks for (fleetd's other tools, or any tool added later), and the hub takes only those three calls from it. A
-  machine whose fleetd is too old to hold it to those gets no refresh until it is updated. It adds what the chat
-  taught, merges entries that overlap and removes what no longer holds, held to the caps like any write. It only adds
-  to `user.md`: it never replaces or removes an entry there. A session still running after an hour, or one that
+  machine whose fleetd is too old to hold it to those gets no refresh until it is updated; each night it's skipped,
+  the chat says "Memory refresh skipped: update devbox to let it run" once. It adds what the chat taught, merges
+  entries that overlap and removes what no longer holds, held to the caps like any write. It only adds to `user.md`:
+  it never replaces or removes an entry there. A session still running after an hour, or one that
   failed, is stopped; what it changed until then is still listed, and the next night reads the same chat again.
 - **What you see:** one line in the chat when it's done, such as "Memory refreshed: +2 ~1 −3" (added, changed,
   removed), with each change below it, each with Undo, and Undo all. A line lists at most 200 changes and says how
