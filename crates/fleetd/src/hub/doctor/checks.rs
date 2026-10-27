@@ -496,7 +496,47 @@ pub fn runner_checks(machine_id: &str, info: &RunnerInfo) -> Vec<Entry> {
             None,
         ),
     };
-    vec![version, login, conformance]
+    let mut checks = vec![version, login, conformance];
+    checks.extend(self_update_entry(machine_id, name, info));
+    checks
+}
+
+/// `<runner>_self_update`: the runner's own background update is off, so only fleetd's update moves its version (to
+/// the one it was tested with). None from a node that doesn't say.
+fn self_update_entry(machine_id: &str, name: &str, info: &RunnerInfo) -> Option<Entry> {
+    let check = format!("{name}_self_update");
+    Some(match info.self_update? {
+        false => machine_entry(
+            machine_id,
+            &check,
+            Pass,
+            &format!(
+                "{name} on {machine_id} doesn't update itself: fleetd's update brings it to the version it was tested with."
+            ),
+            None,
+        ),
+        true => {
+            let settings = info.config_dir.as_deref().map_or_else(
+                || "~/.claude/settings.json".to_owned(),
+                |d| format!("{d}/settings.json"),
+            );
+            machine_entry(
+                machine_id,
+                &check,
+                Warn,
+                &format!(
+                    "{name} on {machine_id} updates itself in the background, so its version can change under its agents: its node turns that off when it starts, and couldn't."
+                ),
+                Some(manual(
+                    &format!(
+                        "On {machine_id}, set \"DISABLE_AUTOUPDATER\": \"1\" in the \"env\" of {settings}, then \
+                         restart its node"
+                    ),
+                    None,
+                )),
+            )
+        }
+    })
 }
 
 /// The version verdict as a check: a warning outside the tested versions, which still run.
@@ -1233,6 +1273,7 @@ mod tests {
             proxy: proxy.map(str::to_owned),
             proxy_source: None,
             config_dir: None,
+            self_update: None,
         };
         let fix = |info: Option<RunnerInfo>| {
             let entry = machine_online(&degraded, None, info.as_ref());
@@ -1296,6 +1337,44 @@ mod tests {
         );
     }
 
+    /// Claude Code updating itself is a warning naming the setting; off is a pass; a node that doesn't say adds none.
+    #[test]
+    fn the_doctor_checks_claude_doesnt_update_itself() {
+        let info = |self_update| RunnerInfo {
+            runner: fleetd_contracts::sessions::RunnerKind::Claude,
+            version: Some("2.1.302 (Claude Code)".into()),
+            supported: ">=2.1.300, <2.2.0".into(),
+            version_ok: true,
+            login: LoginStatus::LoggedIn,
+            login_kind: None,
+            conformance_ok: Some(true),
+            problem: None,
+            login_label: None,
+            proxy: None,
+            proxy_source: None,
+            config_dir: Some("/home/u/.claude".into()),
+            self_update,
+        };
+        let last = |i: &RunnerInfo| runner_checks("mac", i).pop().unwrap().check;
+        let off = last(&info(Some(false)));
+        assert_eq!(
+            (off.id.as_str(), off.status),
+            ("mac/claude_self_update", Pass)
+        );
+        let on = last(&info(Some(true)));
+        assert_eq!(
+            (on.id.as_str(), on.status),
+            ("mac/claude_self_update", Warn)
+        );
+        let fix = on.fix.unwrap().label;
+        assert!(
+            fix.contains(r#""DISABLE_AUTOUPDATER": "1""#)
+                && fix.contains("/home/u/.claude/settings.json"),
+            "{fix}"
+        );
+        assert_eq!(runner_checks("mac", &info(None)).len(), 3);
+    }
+
     #[test]
     fn claude_checks_from_runner_info() {
         let info = |version: Option<&str>, login, conformance| RunnerInfo {
@@ -1311,6 +1390,7 @@ mod tests {
             proxy: None,
             proxy_source: None,
             config_dir: None,
+            self_update: None,
         };
         let statuses = |i: &RunnerInfo| {
             runner_checks("mac", i)

@@ -3333,6 +3333,22 @@ impl SessionService {
         self.inner.health.lock().unwrap_or_else(|p| p.into_inner())
     }
 
+    /// What every claude the node starts gets ([`SessionConfig::runner_env`]).
+    pub fn runner_env(&self) -> Vec<(String, String)> {
+        self.inner.config.runner_env()
+    }
+
+    /// Probes the runner now, whatever the last probe said: after Claude Code was installed.
+    pub async fn reprobe(&self) -> RunnerInfo {
+        let _probing = self.inner.probing.lock().await;
+        let started = Instant::now();
+        let env = self.inner.config.runner_env();
+        let info = self.inner.runner.probe(&env).await;
+        let shown = info.clone();
+        self.health_changed(|h| h.probed(info, started));
+        self.health().info().unwrap_or(shown)
+    }
+
     /// `runner_info`: the last probe, unless the next one is due ([`Health::next_probe_in`]).
     async fn runner_info(&self) -> RunnerInfo {
         let _probing = self.inner.probing.lock().await;

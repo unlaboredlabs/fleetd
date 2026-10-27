@@ -195,6 +195,30 @@ const runRow = (p: UpdatePart, to: string, reconnecting: boolean): Omit<PartRow,
   }
 };
 
+/** A machine's Claude Code in the run, in one line: "Claude Code 2.1.310 → 2.1.302: installing…". */
+const claudeRow = (p: UpdatePart): Omit<PartRow, "key" | "name" | "raw"> => {
+  const to = p.to ?? "the tested version";
+  const label = p.from === "" || p.from === to ? `Claude Code ${to}` : `Claude Code ${p.from} → ${to}`;
+  const said = p.message ?? "";
+  switch (p.state) {
+    case "waiting":
+      return { status: `${label}: waiting for its fleetd`, tone: "quiet" };
+    case "downloading":
+    case "restarting":
+      return { status: `${label}: installing…`, tone: "quiet" };
+    case "done":
+      return { status: `${label}: new sessions start on ${to}`, tone: "quiet" };
+    case "current":
+      return { status: `Claude Code ${to}: up to date`, tone: "quiet" };
+    case "failed":
+    case "rolled_back":
+      return { status: `${label} failed: ${said}`, tone: "danger" };
+    default:
+      // Left as it is (installed another way, not installed, or its machine skipped): a calm note, not a warning.
+      return { status: said.startsWith("Claude Code") ? said : `Claude Code: ${said}`, tone: "quiet" };
+  }
+};
+
 /** Where a part stands without a run: up to date, or a newer build for it. */
 const standing = (version: string | undefined, of: string | null): Omit<PartRow, "key" | "name" | "raw"> => {
   if (!knownVersion(version)) return { status: "Its version is unknown", tone: "quiet" };
@@ -214,7 +238,9 @@ const shown = (run: UpdateRun | null, flow: Flow, now: number): UpdateRun | null
 
 /** The parts whose update didn't go through, by name, for "Update failed: the hub". */
 const failures = (run: UpdateRun): string[] =>
-  run.parts.filter((p) => p.state === "failed" || p.state === "rolled_back").map((p) => (p.part === "hub" ? "the hub" : p.name));
+  run.parts
+    .filter((p) => p.state === "failed" || p.state === "rolled_back")
+    .map((p) => (p.part === "hub" ? "the hub" : p.part === "claude" ? `${p.name}'s Claude Code` : p.name));
 
 export interface UpdatesInput {
   readonly app: UpdatesState | null;
@@ -236,7 +262,7 @@ export const updatesView = ({ app, hub, machines = [], run = null, flow = { phas
   const toLabel = to === null ? "the new build" : versionLabel(to);
   const reconnecting = flow.phase === "following" && flow.reconnecting;
   const of = hub.url === null ? null : target(hub, app);
-  const parts = new Map((live?.parts ?? []).map((p) => [p.part === "hub" ? "hub" : `node:${p.machineId ?? p.name}`, p]));
+  const parts = new Map((live?.parts ?? []).map((p) => [p.part === "hub" ? "hub" : `${p.part}:${p.machineId ?? p.name}`, p]));
 
   let hubPart: HubPart | null = null;
   if (hub.url !== null) {
@@ -255,16 +281,20 @@ export const updatesView = ({ app, hub, machines = [], run = null, flow = { phas
       ? []
       : [...machines]
           .sort((a, b) => a.name.localeCompare(b.name))
-          .map((m) => {
+          .flatMap((m) => {
             const p = parts.get(`node:${m.machineId}`);
             const row = p !== undefined ? runRow(p, toLabel, reconnecting) : !m.online ? { status: "Offline", tone: "quiet" as const } : standing(m.nodeVersion, of);
-            return { key: m.machineId, name: m.name, ...row, ...(knownVersion(m.nodeVersion) ? { raw: m.nodeVersion } : {}) };
+            const node: PartRow = { key: m.machineId, name: m.name, ...row, ...(knownVersion(m.nodeVersion) ? { raw: m.nodeVersion } : {}) };
+            // Its Claude Code, once the run has a part for it: under the machine, in a line of its own.
+            const claude = parts.get(`claude:${m.machineId}`);
+            return claude === undefined ? [node] : [node, { key: `claude:${m.machineId}`, name: `${m.name}: Claude Code`, ...claudeRow(claude) }];
           });
 
   const appFound = app !== null && found(app.app);
   const outdated = appFound || (hubPart?.tone === "accent") || nodes.some((n) => n.tone === "accent");
   const going = flow.phase === "starting" || flow.phase === "following" || (flow.phase === "app" && app?.app.kind !== "failed");
-  const machinesWord = nodes.length === 1 ? "its machine" : `its ${String(nodes.length)} machines`;
+  const machineCount = nodes.filter((n) => !n.key.startsWith("claude:")).length;
+  const machinesWord = machineCount === 1 ? "its machine" : `its ${String(machineCount)} machines`;
   const update =
     going || hub.url === null || !outdated
       ? null
@@ -279,16 +309,20 @@ export const updatesView = ({ app, hub, machines = [], run = null, flow = { phas
   else if (live !== null && live.finishedAt === undefined) {
     const hubP = live.parts.find((p) => p.part === "hub");
     const nodeParts = live.parts.filter((p) => p.part === "node");
+    // A machine is done once its node and its Claude Code are.
+    const settledOn = (id: string | undefined) =>
+      live.parts.filter((p) => p.part !== "hub" && p.machineId === id).every((p) => !["waiting", "downloading", "restarting"].includes(p.state));
     progress =
       hubP !== undefined && !["done", "current", "failed", "rolled_back", "skipped"].includes(hubP.state)
         ? { tone: "quiet", text: "Updating the hub…" }
-        : { tone: "quiet", text: `Updating the machines: ${String(nodeParts.filter((p) => !["waiting", "downloading", "restarting"].includes(p.state)).length)} of ${String(nodeParts.length)} done` };
+        : { tone: "quiet", text: `Updating the machines: ${String(nodeParts.filter((p) => settledOn(p.machineId)).length)} of ${String(nodeParts.length)} done` };
   } else if (flow.phase === "app" && app?.app.kind === "failed") {
     progress = { tone: "danger", text: `Update failed: this app. ${app.app.reason} The hub and its machines updated.` };
   } else if (flow.phase === "app") progress = { tone: "quiet", text: "Updating this app; it restarts once the download is in" };
   else if (live !== null) {
     const failed = failures(live);
-    const skipped = live.parts.filter((p) => p.state === "skipped").map((p) => p.name);
+    // Each machine once; a Claude Code left as it is says so on its own line, calmly.
+    const skipped = [...new Set(live.parts.filter((p) => p.state === "skipped" && p.part !== "claude").map((p) => p.name))];
     progress =
       failed.length > 0
         ? {

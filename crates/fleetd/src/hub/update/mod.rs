@@ -10,7 +10,9 @@
 //! back, takes it from there: it reads the watcher's verdict, then updates the nodes, all at once, each with
 //! `node_action` `update`, and learns how each came back from the version it reconnects with (it wakes on each link
 //! that goes live or drops), or that it never restarted from the second answer a node sends when its service manager
-//! refused the restart.
+//! refused the restart. Each machine whose node runs the new build then brings its Claude Code to the version that
+//! build was tested with (`node_action` `claude`), its own part in the run: a failure there keeps the version it had,
+//! and changes nothing else.
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -26,6 +28,7 @@ use fleetd_contracts::prim::{List, Text};
 
 use crate::clock::Clock;
 use crate::hub::store::{iso_ms, now_ms};
+use crate::node::runner::claude::install;
 use crate::update::finish::{self, HEALTH_WAIT_SECS, Health, Plan, Verdict};
 use crate::update::service::Service;
 use crate::update::{BoxFuture, Channel, Failure, Feed};
@@ -48,6 +51,10 @@ pub struct NodeFacts {
     pub can_update: bool,
     /// Its node lists `update_fetch`.
     pub can_fetch: bool,
+    /// Its Claude Code, as `claude --version` printed it at the node's last probe.
+    pub claude: Option<String>,
+    /// Its node lists `claude_install`.
+    pub can_install_claude: bool,
 }
 
 /// What the update does to the hub's machine and its nodes; tests stand in fakes.
@@ -73,6 +80,14 @@ pub trait UpdatePorts: Send + Sync {
     /// Resolves once the machine's link goes live or drops after this call. Made before the facts it follows are
     /// read, so a change between the two isn't missed.
     fn node_changed(&self, machine_id: &MachineId) -> BoxFuture<'static, ()>;
+    /// The Claude Code version the running hub's build was tested with.
+    fn claude_target(&self) -> String;
+    /// The node's install of Claude Code `version`, answered once done.
+    fn install_claude<'a>(
+        &'a self,
+        machine_id: &'a MachineId,
+        version: &'a str,
+    ) -> BoxFuture<'a, Result<NodeActionResult, String>>;
     /// The node's answer, and the wait for its second, sent only when its restart was refused.
     fn update_node<'a>(
         &'a self,
@@ -192,21 +207,29 @@ impl Updates {
         parts.extend(
             nodes
                 .iter()
-                .take(fleetd_contracts::mcp::UPDATE_PARTS_MAX - 1)
-                .map(|n| {
-                    let mut p = part(
-                        UpdatePartKind::Node,
-                        Some(n.machine_id.clone()),
-                        &n.name,
-                        &n.version,
-                        UpdateState::Waiting,
-                    );
-                    // Offline now: not waited for. One online now is, through the hub's restart (`update_node`).
-                    if n.live_since.is_none() {
-                        p.state = UpdateState::Skipped;
-                        p.message = Some(text(OFFLINE));
-                    }
-                    p
+                .take((fleetd_contracts::mcp::UPDATE_PARTS_MAX - 1) / 2)
+                .flat_map(|n| {
+                    let claude = n.claude.as_deref().map(install::number).unwrap_or("");
+                    [
+                        (UpdatePartKind::Node, n.version.as_str()),
+                        (UpdatePartKind::Claude, claude),
+                    ]
+                    .map(|(kind, from)| {
+                        let mut p = part(
+                            kind,
+                            Some(n.machine_id.clone()),
+                            &n.name,
+                            from,
+                            UpdateState::Waiting,
+                        );
+                        // Offline now: not waited for. One online now is, through the hub's restart
+                        // (`update_node`).
+                        if n.live_since.is_none() {
+                            p.state = UpdateState::Skipped;
+                            p.message = Some(text(OFFLINE));
+                        }
+                        p
+                    })
                 }),
         );
         let at = now_ms(self.clock.as_ref());
@@ -239,6 +262,7 @@ impl Updates {
         }
     }
 
+    /// The hub's part (no machine), or a machine's node part.
     fn set_part(
         &self,
         machine_id: Option<&MachineId>,
@@ -251,7 +275,7 @@ impl Updates {
             let mut parts = run.parts.to_vec();
             if let Some(p) = parts
                 .iter_mut()
-                .find(|p| p.machine_id.as_ref() == machine_id)
+                .find(|p| p.machine_id.as_ref() == machine_id && p.part != UpdatePartKind::Claude)
             {
                 p.state = state;
                 p.stage = stage;
@@ -261,13 +285,39 @@ impl Updates {
         });
     }
 
-    /// Every node not yet settled gets `state` with `message`.
+    /// A machine's Claude Code part.
+    fn set_claude(
+        &self,
+        machine_id: &MachineId,
+        to: Option<&str>,
+        state: UpdateState,
+        stage: Option<UpdateStage>,
+        message: impl Into<String>,
+    ) {
+        let message = message.into();
+        self.change(|run| {
+            let mut parts = run.parts.to_vec();
+            if let Some(p) = parts.iter_mut().find(|p| {
+                p.machine_id.as_ref() == Some(machine_id) && p.part == UpdatePartKind::Claude
+            }) {
+                if let Some(to) = to {
+                    p.to = Some(text(to));
+                }
+                p.state = state;
+                p.stage = stage;
+                p.message = Some(text(&message));
+            }
+            run.parts = List::new(parts).expect("same parts");
+        });
+    }
+
+    /// Every machine's part (its node's, its Claude Code's) not yet settled gets `state` with `message`.
     fn settle_nodes(&self, state: UpdateState, message: &str) {
         self.change(|run| {
             let mut parts = run.parts.to_vec();
             for p in parts
                 .iter_mut()
-                .filter(|p| p.part == UpdatePartKind::Node && !p.state.settled())
+                .filter(|p| p.part != UpdatePartKind::Hub && !p.state.settled())
             {
                 p.state = state;
                 p.message = Some(text(message));
@@ -598,7 +648,10 @@ impl Updates {
             let this = Arc::clone(self);
             let ports = Arc::clone(&ports);
             let update = update.clone();
-            tokio::spawn(async move { this.update_node(&*ports, &machine_id, &update).await })
+            tokio::spawn(async move {
+                this.update_node(&*ports, &machine_id, &update).await;
+                this.update_claude(&*ports, &machine_id).await;
+            })
         });
         for job in jobs.collect::<Vec<_>>() {
             let _ = job.await;
@@ -764,6 +817,86 @@ impl Updates {
         }
     }
 
+    /// Brings the machine's Claude Code to the version the hub's build was tested with, once its node runs that build.
+    async fn update_claude(&self, ports: &dyn UpdatePorts, machine_id: &MachineId) {
+        let node = self.status().and_then(|r| {
+            r.parts
+                .iter()
+                .find(|p| {
+                    p.part == UpdatePartKind::Node && p.machine_id.as_ref() == Some(machine_id)
+                })
+                .cloned()
+        });
+        let Some(node) = node else { return };
+        if !matches!(node.state, UpdateState::Done | UpdateState::Current) {
+            let why = if node.state == UpdateState::Skipped {
+                node.message.as_ref().map_or("", |m| m.as_str()).to_owned()
+            } else {
+                "not asked: its fleetd didn't update".to_owned()
+            };
+            return self.set_claude(machine_id, None, UpdateState::Skipped, None, why);
+        }
+        let target = ports.claude_target();
+        let facts = ports
+            .nodes()
+            .into_iter()
+            .find(|n| &n.machine_id == machine_id);
+        if !facts.as_ref().is_some_and(|n| n.can_install_claude) {
+            return self.set_claude(
+                machine_id,
+                Some(&target),
+                UpdateState::Skipped,
+                None,
+                format!("its fleetd doesn't install Claude Code: install {target} on it by hand"),
+            );
+        }
+        self.set_claude(
+            machine_id,
+            Some(&target),
+            UpdateState::Downloading,
+            None,
+            format!("installing Claude Code {target}"),
+        );
+        match ports.install_claude(machine_id, &target).await {
+            // Installed another way, or not at all: left as it is, with how to update it. Not a failure.
+            Ok(r) if r.ok && r.message.as_str().starts_with(install::LEFT) => self.set_claude(
+                machine_id,
+                None,
+                UpdateState::Skipped,
+                None,
+                r.message.as_str(),
+            ),
+            Ok(r) if r.ok && r.message.as_str().starts_with(install::ALREADY) => self.set_claude(
+                machine_id,
+                None,
+                UpdateState::Current,
+                None,
+                r.message.as_str(),
+            ),
+            Ok(r) if r.ok => self.set_claude(
+                machine_id,
+                None,
+                UpdateState::Done,
+                None,
+                r.message.as_str(),
+            ),
+            Ok(r) => self.set_claude(
+                machine_id,
+                None,
+                UpdateState::Failed,
+                Some(r.stage.unwrap_or(UpdateStage::Install)),
+                r.message.as_str(),
+            ),
+            Err(e) => self.set_claude(
+                machine_id,
+                None,
+                UpdateState::Failed,
+                Some(UpdateStage::Install),
+                e,
+            ),
+        }
+    }
+
     /// Until the node's link changes, or [`Timing::node_poll`] at the most.
     async fn node_wait(&self, changed: BoxFuture<'static, ()>) {
         tokio::select! {
@@ -795,16 +928,18 @@ fn part(
         machine_id,
         name: text(if name.is_empty() { "a machine" } else { name }),
         from: text(from),
+        to: None,
         state,
         stage: None,
         message: None,
     }
 }
 
-/// The parts by machine, for a quick look in tests and the tool.
+/// The hub's and the nodes' parts by machine, for a quick look in tests and the tool.
 pub fn by_machine(run: &UpdateRun) -> HashMap<Option<MachineId>, UpdatePart> {
     run.parts
         .iter()
+        .filter(|p| p.part != UpdatePartKind::Claude)
         .map(|p| (p.machine_id.clone(), p.clone()))
         .collect()
 }
