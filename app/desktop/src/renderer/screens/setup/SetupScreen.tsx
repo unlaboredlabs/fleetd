@@ -145,7 +145,7 @@ function StepPane({ step, steps, hub }: { step: SetupStep; steps: ReadonlyArray<
       ) : null}
 
       {step.parts.map((part, i) => (
-        <Part key={part.title} n={i + 1} title={part.title}>
+        <Part key={part.title} n={i + 1} title={part.title} optional={part.optional === true}>
           {part.note === undefined ? null : (
             <Text as="p" size="sm" tone="quiet">
               {part.note}
@@ -237,7 +237,7 @@ function Values({ values }: { values: ReadonlyArray<PasteValue> }) {
               </Text>
             ) : (
               <span className={s.copyable}>
-                <Text size="sm" mono className={s.value}>
+                <Text size="sm" mono preserveLines className={s.value}>
                   {v.value}
                 </Text>
                 <Button
@@ -264,12 +264,17 @@ function Values({ values }: { values: ReadonlyArray<PasteValue> }) {
   );
 }
 
-function Part({ n, title, children }: { n: number; title: string; children: ReactNode }) {
+function Part({ n, title, optional = false, children }: { n: number; title: string; optional?: boolean; children: ReactNode }) {
   return (
     <section className={s.part}>
       <Text as="h3" size="sm" strong className={s.partHead}>
         <span className={s.partNumber}>{n}</span>
         {title}
+        {optional ? (
+          <Text size="xs" tone="faint">
+            Optional
+          </Text>
+        ) : null}
       </Text>
       <div className={s.partBody}>{children}</div>
     </section>

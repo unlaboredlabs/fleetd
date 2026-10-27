@@ -32,6 +32,8 @@ export interface Link {
 /** One numbered part of a step: what to open, then what to fill in there. */
 export interface Part {
   readonly title: string;
+  /** A part the step works without: said beside its title, and its fields are optional. */
+  readonly optional?: boolean;
   readonly note?: string;
   readonly links?: ReadonlyArray<Link>;
   readonly values?: ReadonlyArray<PasteValue>;
@@ -67,6 +69,11 @@ export interface SetupStep {
 }
 
 type Guide = Omit<SetupStep, "status" | "said">;
+
+/** Gmail in real time (D195): Gmail publishes to this topic, the hub pulls from this subscription. */
+const GMAIL_TOPIC = "fleetd-gmail";
+const GMAIL_SUBSCRIPTION = "fleetd-gmail-hub";
+const GMAIL_PUSH = "gmail-api-push@system.gserviceaccount.com";
 
 const GOOGLE_SCOPES = [
   { label: "Gmail", value: "https://www.googleapis.com/auth/gmail.modify" },
@@ -228,13 +235,40 @@ export const guides = (hub: string): ReadonlyArray<Guide> => {
               : []),
           ],
         },
+        {
+          title: "Gmail in real time",
+          optional: true,
+          note: "New mail reaches Navi in seconds. Gmail publishes to a Pub/Sub topic and the hub pulls from it, so no public address is needed. Without it, Navi checks Gmail about every minute.",
+          links: [
+            { label: "Enable Pub/Sub", url: "https://console.cloud.google.com/flows/enableapi?apiid=pubsub.googleapis.com" },
+            { label: "Create the topic", url: "https://console.cloud.google.com/cloudpubsub/topic/create" },
+            { label: "Create the subscription", url: "https://console.cloud.google.com/cloudpubsub/subscription/create" },
+          ],
+          values: [
+            { label: "Topic ID", value: GMAIL_TOPIC, note: "Untick \"Add a default subscription\"." },
+            { label: "Publisher on the topic", value: GMAIL_PUSH, note: "Topic › Permissions › Add principal, role Pub/Sub Publisher. Gmail publishes as this account." },
+            { label: "Subscription ID", value: GMAIL_SUBSCRIPTION, note: `Topic ${GMAIL_TOPIC}, delivery type Pull.` },
+            {
+              label: "Or in Cloud Shell",
+              value: [
+                `gcloud services enable pubsub.googleapis.com`,
+                `gcloud pubsub topics create ${GMAIL_TOPIC}`,
+                `gcloud pubsub topics add-iam-policy-binding ${GMAIL_TOPIC} --member=serviceAccount:${GMAIL_PUSH} --role=roles/pubsub.publisher`,
+                `gcloud pubsub subscriptions create ${GMAIL_SUBSCRIPTION} --topic=${GMAIL_TOPIC}`,
+              ].join(" &&\n"),
+              note: `The same, in one go, in project fleetd-${host}.`,
+            },
+          ],
+        },
       ],
       fields: [
         { name: "clientId", label: "Client ID", placeholder: "….apps.googleusercontent.com" },
         { name: "clientSecret", label: "Client secret", secret: true, placeholder: "GOCSPX-…" },
+        { name: "gmailSubscription", label: "Gmail subscription", optional: true, placeholder: `projects/fleetd-${host}/subscriptions/${GMAIL_SUBSCRIPTION}` },
       ],
-      fieldsNote: "Then each person connects their own Google account from their Navi; if a sign-in lapses, Navi offers Reconnect.",
-      test: "Ask Google whether it knows this client",
+      fieldsNote:
+        "Then each person connects their own Google account from their Navi; if a sign-in lapses, Navi offers Reconnect. How the hub signs in to pull, and the exact scopes, follow T805's PR.",
+      test: "Ask Google whether it knows this client, and pull once from the subscription if there is one",
       checks: ["hub/google"],
     },
     {

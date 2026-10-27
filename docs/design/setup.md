@@ -1,7 +1,7 @@
 # One setup for the hub admin
 
-Status: proposed (W100), revised for D189 (Google, native), D190 (one GitHub App per hub) and the answers to its open
-questions (§6). This is the design,
+Status: proposed (W100), revised for D189 (Google, native), D190 (one GitHub App per hub), D195 (Gmail in real time)
+and the answers to its open questions (§6). This is the design,
 with a prototype of the app's screens: `#/setup` in `app/desktop/src/renderer/screens/setup`, against
 `fixtures/setup`. The build waits for approval and for teams step 1 and the Navi integrations to land.
 
@@ -81,7 +81,7 @@ In order. **Need** says when it must be done; nothing blocks using fleetd before
 | Claude | Required | A hub API key and an optional endpoint, **or** nothing: each person connects their own subscription | Key name `fleetd on devbox` | Claude Console › API keys | API key (sealed), endpoint | `GET /v1/models` at the endpoint | per-machine `claude login` only; key and subscriptions are D186 |
 | GitHub App | Before the first PR | Nothing to paste: confirm the App GitHub shows, pick the repositories to install it on, connect your own account | The manifest: name, homepage, callback `<hub>/oauth/github/callback`, repository permissions, webhook | "Create on my account" or "in an organization", then GitHub's install page | none: GitHub hands the App's keys to the hub | Mint an installation token and list the repositories it reaches; the admin's own sign-in proves the callback | D190; today `gh auth` on the hub (`hub/gh_auth`) |
 | Invite people | Optional | A name, admin or not | The invite link | none | Name | The link opens | teams step 1, in flight |
-| Google | Optional | A Cloud project, the three APIs, the sign-in screen published In production, a Desktop app OAuth client | Project and app name, the Gmail, Calendar and Drive scopes; on an HTTPS hub, also a web redirect `<hub>/oauth/google/callback` | Cloud Console: new project, enable APIs, Auth Platform › Branding, › Clients | Client ID, client secret (sealed to the hub) | Exchange a dummy code: `invalid_grant` means Google knows the client; then each person connects from their Navi | D189; Navi integrations, in flight (#635) |
+| Google | Optional | A Cloud project, the three APIs, the sign-in screen published In production, a Desktop app OAuth client; optionally Gmail in real time (a Pub/Sub topic and pull subscription) | Project and app name, the Gmail, Calendar and Drive scopes; on an HTTPS hub, also a web redirect `<hub>/oauth/google/callback` | Cloud Console: new project, enable APIs, Auth Platform › Branding, › Clients | Client ID, client secret (sealed to the hub), the Gmail subscription (optional) | Exchange a dummy code: `invalid_grant` means Google knows the client; pull once from the subscription; then each person connects from their Navi | D189; Navi integrations, in flight (#635) |
 | Notion | Optional | An internal integration | Integration name | Notion › Integrations | Secret (sealed) | `mcp_server_test` (search) | Navi integrations, in flight |
 | 1Password | Optional | A service account for one vault | Account name | 1Password › Service accounts | Token (sealed) | List the vault's item titles | per project today (`OP_SERVICE_ACCOUNT_TOKEN`) |
 
@@ -237,13 +237,31 @@ person then connects their own Google account from their Navi.
      application client with `<hub>/oauth/google/callback` also works from a browser. The client ID and secret are
      pasted into the step, and the secret is sealed to the hub.
 
-  T805 (native Google) owns the exact client type and scope list. This step shows whatever it fixes.
+  5. **Gmail in real time** (optional, D195). Without it, Navis poll Gmail about every minute. With it, Gmail
+     publishes a notice to a Pub/Sub topic on each new message, and the hub **pulls** from a subscription, so no
+     public address is needed. The part has deep links:
+     - turn on Pub/Sub (`flows/enableapi?apiid=pubsub.googleapis.com`);
+     - create topic `fleetd-gmail`, without a default subscription;
+     - on the topic, grant `gmail-api-push@system.gserviceaccount.com` the **Pub/Sub Publisher** role
+       (`roles/pubsub.publisher`), the account Gmail publishes as;
+     - create subscription `fleetd-gmail-hub` on that topic, delivery type **Pull**.
+
+     The same is one copyable Cloud Shell line (`gcloud services enable …`, `gcloud pubsub topics create …`,
+     `add-iam-policy-binding …`, `subscriptions create …`). The admin pastes the subscription's full name,
+     `projects/fleetd-devbox/subscriptions/fleetd-gmail-hub`, into an optional field.
+
+  T805 (native Google) owns the exact credential choice and scopes, including how the hub signs in to pull from the
+  subscription. This step shows whatever its PR fixes.
 - **Test** exchanges a dummy code at Google's token endpoint. `invalid_grant` means Google knows the client and its
-  secret; `invalid_client` means it doesn't.
+  secret; `invalid_client` means it doesn't. With a subscription saved, Test also pulls from it once: an empty
+  answer is fine, and a refused one names the missing role or a wrong name.
 - **Each person** connects from their Navi:
   - The app opens Google's sign-in and catches the loopback redirect. The hub exchanges the code (`access_type=offline`)
     and keeps that person's refresh token in the hub sink.
   - When a token lapses or is revoked at Google, the Navi offers a one-click **Reconnect**.
+  - With real time on, the hub asks Gmail to watch that person's inbox (`users.watch` against the topic). It renews
+    the watch before Gmail's 7-day expiry, and reads what changed (`users.history.list`) on each notice. A missed
+    or lapsed watch falls back to polling, so mail is never lost.
   - Navi's Google tools use only the token of the person whose Navi it is.
   - Disconnecting, or the person being removed, revokes the token.
 
@@ -303,6 +321,11 @@ table with copy buttons, live checks after the paste, "progress is saved".
   - The Desktop app client with the loopback redirect the app catches (T805); `/oauth/google/callback` only on HTTPS
     hubs; the scopes as one constant.
   - Reconnect in the Navi when a token lapses.
+  - Gmail in real time (D195):
+    - the hub's pull from the saved subscription, and how it signs in to do so (T805's credential choice);
+    - each person's `users.watch`, renewed before its 7-day expiry;
+    - polling every minute when the step's real-time part isn't set up;
+    - the `hub/google` check pulling once.
   - A `hub/google` check (the dummy code exchange), and each person's connection state for their Navi.
   - The client secret and people's refresh tokens in the hub sink.
   - Navi's Google tools on the hub's own Google client, replacing the xaq adapter (`google.rs`).
@@ -329,6 +352,8 @@ None are open. Each answer below is already in the sections above.
    key; nothing is copied silently.
 4. **GitHub webhooks** are off by default, and the hub polls, as the train does. They are on only for hubs whose address
    is HTTPS.
+5. **Gmail in real time** is an optional part of the Google step (D195): a Pub/Sub topic, the Publisher role for
+   Gmail's push account, and a pull subscription the hub reads. Without it, Navis poll Gmail about every minute.
 
 ## 7. Build order, after approval
 

@@ -23,6 +23,12 @@ describe("setup steps", () => {
     expect(value("http://devbox:4790", "google", "Application type")?.value).toBe("Desktop app");
     expect(value("http://devbox:4790", "google", "Or, on this HTTPS hub")).toBeUndefined();
     expect(value("https://devbox.example.net", "google", "Or, on this HTTPS hub")?.value).toBe("https://devbox.example.net/oauth/google/callback");
+    // Gmail in real time is optional: a topic Gmail's push account may publish to, and a pull subscription.
+    const google = guides("http://devbox:4790").find((g) => g.id === "google");
+    expect(google?.parts.find((p) => p.title === "Gmail in real time")?.optional).toBe(true);
+    expect(value("http://devbox:4790", "google", "Publisher on the topic")?.value).toBe("gmail-api-push@system.gserviceaccount.com");
+    expect(value("http://devbox:4790", "google", "Or in Cloud Shell")?.value).toContain("--role=roles/pubsub.publisher");
+    expect(google?.fields.find((f) => f.name === "gmailSubscription")?.optional).toBe(true);
   });
 
   it("reads each status from its checks: none or unknown is to do, the worst failing one wants a look", () => {
