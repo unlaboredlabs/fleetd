@@ -255,7 +255,9 @@ async fn rig_with(secrets: Vec<(String, String)>) -> Option<Rig> {
     )
     .await;
     broker.ready(chrome);
-    let deadline = Instant::now() + Duration::from_secs(20);
+    // A cold runner's first Chromes can use a sandboxed launch's whole 20s LAUNCH_TIMEOUT and then the unsandboxed
+    // retry's: wait out both.
+    let deadline = Instant::now() + Duration::from_secs(60);
     while broker.warm() == 0 && Instant::now() < deadline {
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
