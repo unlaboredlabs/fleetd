@@ -378,6 +378,7 @@ pub fn build_on_with(
         clock.clone(),
         crate::hub::update::Timing::default(),
     );
+    let repos = crate::hub::repos::Repos::new(db.clone());
     let hub = Arc::new(Hub {
         config,
         clock,
@@ -412,6 +413,7 @@ pub fn build_on_with(
         chat,
         prs,
         work,
+        repos,
         metrics: crate::hub::metrics::Metrics::new(hosts),
         updates,
         relays: Arc::default(),
@@ -439,6 +441,7 @@ pub fn build_on_with(
     crate::hub::steer::wire(&hub);
     crate::hub::chat::tools::extend_status(&hub);
     crate::hub::work::register_sweep(&hub);
+    crate::hub::repos::backfill(&hub);
     Ok(hub)
 }
 

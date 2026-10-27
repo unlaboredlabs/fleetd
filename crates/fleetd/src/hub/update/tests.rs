@@ -53,6 +53,10 @@ struct Fake {
     nodes: Mutex<Vec<NodeFacts>>,
     answers: HashMap<String, Answer>,
     asked: Mutex<Vec<String>>,
+    /// The nodes asked to fetch the build ahead.
+    fetched: Mutex<Vec<String>>,
+    /// Bumped when a test moves a node's link.
+    links: tokio::sync::watch::Sender<u64>,
 }
 
 impl Fake {
@@ -75,6 +79,8 @@ impl Fake {
             nodes: Mutex::default(),
             answers: HashMap::new(),
             asked: Mutex::default(),
+            fetched: Mutex::default(),
+            links: tokio::sync::watch::channel(0).0,
         }
     }
 
@@ -92,6 +98,7 @@ impl Fake {
             version: version.into(),
             live_since: online.then_some(1),
             can_update,
+            can_fetch: can_update,
         });
         if let Some(answer) = answer {
             self.answers.insert(name.into(), answer);
@@ -131,6 +138,16 @@ impl UpdatePorts for Fake {
     }
     fn nodes(&self) -> Vec<NodeFacts> {
         self.nodes.lock().unwrap().clone()
+    }
+    fn fetch_on_node(&self, machine_id: &MachineId, update: &NodeUpdate) {
+        assert_eq!(update.version.as_str(), NEW);
+        self.fetched.lock().unwrap().push(machine_id.to_string());
+    }
+    fn node_changed(&self, _: &MachineId) -> BoxFuture<'static, ()> {
+        let mut links = self.links.subscribe();
+        Box::pin(async move {
+            let _ = links.changed().await;
+        })
     }
     fn update_node<'a>(
         &'a self,
@@ -181,6 +198,7 @@ fn result(ok: bool, stage: Option<UpdateStage>, message: &str) -> NodeActionResu
 fn fast() -> Timing {
     Timing {
         poll: Duration::from_millis(5),
+        node_poll: Duration::from_millis(5),
         verdict: Duration::from_millis(300),
         node_back: Duration::from_millis(300),
         // Longer than any test: the old process's own deadline never cuts in, but where a test says.
@@ -399,6 +417,92 @@ async fn after_the_hub_each_node_updates_and_says_how_it_went() {
         asked,
         ["builder", "laptop", "mac", "quiet"],
         "only online nodes that can, and need to"
+    );
+}
+
+/// While the hub downloads its build, each node it will update downloads it too (`fetch`): only those online that can
+/// and don't run it already. Nothing is installed on them, and none is asked to update before the hub runs it.
+#[tokio::test]
+async fn while_the_hub_downloads_the_nodes_it_will_update_fetch_the_build() {
+    let home = tempfile::tempdir().unwrap();
+    let fake = Arc::new(
+        Fake::new(home.path(), b"new")
+            .node("builder", OLD, true, true, Some(Answer::BackOn(NEW)))
+            .node("laptop", OLD, true, true, Some(Answer::BackOn(NEW)))
+            .node("nas", OLD, false, true, None)
+            .node("old-box", "0.4.0", true, false, None)
+            .node("pi", NEW, true, true, None),
+    );
+    let updates = area(home.path(), &fake);
+    updates.start(None).unwrap();
+    until(&updates, |r| hub_state(r) == UpdateState::Restarting).await;
+    let mut fetched = fake.fetched.lock().unwrap().clone();
+    fetched.sort();
+    assert_eq!(fetched, ["builder", "laptop"]);
+    assert!(fake.asked.lock().unwrap().is_empty(), "no node updates yet");
+
+    // A download that fails asks nothing more of them: the hub didn't update, so neither do they.
+    let home = tempfile::tempdir().unwrap();
+    let tampered = Fake::new(home.path(), b"new").node("builder", OLD, true, true, None);
+    tampered
+        .feed
+        .files
+        .lock()
+        .unwrap()
+        .insert(ASSET.into(), b"evil".to_vec());
+    let tampered = Arc::new(tampered);
+    let updates = area(home.path(), &tampered);
+    updates.start(None).unwrap();
+    let run = until(&updates, |r| r.finished_at.is_some()).await;
+    assert_eq!(state(&run, Some("builder")).0, UpdateState::Skipped);
+    assert!(tampered.asked.lock().unwrap().is_empty());
+}
+
+/// The new hub updates a node the moment its link is back, and sees it come back on the new build the moment it does:
+/// it wakes on the link, not on a timer (here one that would take a minute).
+#[tokio::test]
+async fn a_node_is_followed_by_its_link_not_a_timer() {
+    let home = tempfile::tempdir().unwrap();
+    let fake = Arc::new(Fake::new(home.path(), b"new").node(
+        "builder",
+        OLD,
+        true,
+        true,
+        Some(Answer::BackOn(NEW)),
+    ));
+    let updates = area(home.path(), &fake);
+    updates.start(None).unwrap();
+    until(&updates, |r| hub_state(r) == UpdateState::Restarting).await;
+    // The hub's restart drops the node's link; the new hub comes up and its watcher says so.
+    fake.nodes.lock().unwrap()[0].live_since = None;
+    *fake.running.lock().unwrap() = NEW.into();
+    let verdict = fake.plans.lock().unwrap()[0].verdict.clone();
+    fs::write(
+        &verdict,
+        json!({ "state": "done", "message": "runs it" }).to_string(),
+    )
+    .unwrap();
+    let slow = Timing {
+        node_poll: Duration::from_secs(60),
+        node_back: Duration::from_secs(600),
+        ..fast()
+    };
+    let after = Updates::new(home.path(), Arc::new(SystemClock), slow);
+    after.set_ports(fake.clone());
+    tokio::spawn(after.clone().resume());
+    until(&after, |r| hub_state(r) == UpdateState::Done).await;
+    tokio::time::sleep(Duration::from_millis(20)).await;
+    assert!(fake.asked.lock().unwrap().is_empty(), "not back yet");
+
+    let back = std::time::Instant::now();
+    fake.nodes.lock().unwrap()[0].live_since = Some(2);
+    fake.links.send_modify(|n| *n += 1);
+    let run = until(&after, |r| r.finished_at.is_some()).await;
+    assert_eq!(state(&run, Some("builder")).0, UpdateState::Done);
+    assert!(
+        back.elapsed() < Duration::from_secs(5),
+        "{:?}",
+        back.elapsed()
     );
 }
 

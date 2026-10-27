@@ -3,7 +3,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Weak};
 
 use fleetd_contracts::ids::MachineId;
-use fleetd_contracts::node_link::{CAP_SELF_UPDATE, NodeActionResult, NodeUpdate};
+use fleetd_contracts::node_link::{
+    CAP_SELF_UPDATE, CAP_UPDATE_FETCH, NodeActionResult, NodeUpdate,
+};
 
 use super::{NodeAnswer, NodeFacts, Refusal, UpdatePorts};
 use crate::hub::api::Hub;
@@ -80,11 +82,34 @@ impl UpdatePorts for HubPorts {
             .map(|m| NodeFacts {
                 live_since: hub.executors.live_since(&m.machine_id),
                 can_update: hub.link.node_can(&m.machine_id, CAP_SELF_UPDATE),
+                can_fetch: hub.link.node_can(&m.machine_id, CAP_UPDATE_FETCH),
                 machine_id: m.machine_id,
                 name: m.name,
                 version: m.node_version,
             })
             .collect()
+    }
+
+    fn fetch_on_node(&self, machine_id: &MachineId, update: &NodeUpdate) {
+        let Some(hub) = self.hub() else { return };
+        let (machine_id, update) = (machine_id.clone(), update.clone());
+        tokio::spawn(async move {
+            if let Err(e) = hub.node_commands.fetch_update(&machine_id, &update).await {
+                tracing::info!(%machine_id, "update: the node didn't take the fetch: {}", e.message);
+            }
+        });
+    }
+
+    fn node_changed(&self, machine_id: &MachineId) -> BoxFuture<'static, ()> {
+        let Some(hub) = self.hub() else {
+            return Box::pin(std::future::pending());
+        };
+        let mut live = hub.executors.live_watch(machine_id);
+        Box::pin(async move {
+            if live.changed().await.is_err() {
+                std::future::pending::<()>().await;
+            }
+        })
     }
 
     fn update_node<'a>(

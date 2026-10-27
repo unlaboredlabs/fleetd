@@ -361,7 +361,7 @@ impl NodeCommands {
         action: NodeActionKind,
     ) -> Result<NodeActionResult, NodeCommandError> {
         let wait = match action {
-            NodeActionKind::Probe => 30,
+            NodeActionKind::Probe | NodeActionKind::Fetch => 30,
             NodeActionKind::Update => UPDATE_WAIT_SEC,
         };
         let request = json!({ "t": "node_action", "action": action });
@@ -396,6 +396,18 @@ impl NodeCommands {
             NodeToHub::NodeActionResult(r) => Ok((r, refusal)),
             _ => unreachable!("resolve matches the reply tag"),
         }
+    }
+
+    /// A node's download of `update` ahead of its update, answered at once (only for a node that lists
+    /// `CAP_UPDATE_FETCH`).
+    pub async fn fetch_update(
+        &self,
+        machine_id: &MachineId,
+        update: &fleetd_contracts::node_link::NodeUpdate,
+    ) -> Result<NodeActionResult, NodeCommandError> {
+        let request =
+            json!({ "t": "node_action", "action": NodeActionKind::Fetch, "update": update });
+        self.node_action(machine_id, request, 30).await
     }
 
     /// `session_host` -> `session_host_result`: one of an agent's session calls, answered by the runner's node for a

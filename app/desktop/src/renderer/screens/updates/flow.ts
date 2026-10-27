@@ -30,8 +30,9 @@ export interface FlowDeps {
   };
 }
 
-/** How often the run is read while it goes on. */
-export const FOLLOW_EVERY_MS = 2_000;
+/** How often the run is read while it goes on: each part settles within a second or so of the last, and a read is one
+ * small call on the open socket. */
+export const FOLLOW_EVERY_MS = 500;
 /** How long the end of a run waits for this app's own check, so an update it is about to find isn't missed. */
 export const APP_CHECK_WAIT_MS = 60_000;
 const APP_CHECK_EVERY_MS = 1_000;

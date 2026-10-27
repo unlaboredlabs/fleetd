@@ -1,6 +1,6 @@
 //! The hub link: challenge, signed hello, welcome, then heartbeats and the hub's requests until the socket ends or the
-//! hub goes silent. Reconnects with backoff (1 s doubling to 30 s, ±20% jitter, reset by each welcome), and only gives
-//! up when the hub refuses the node.
+//! hub goes silent. Reconnects with backoff (250 ms doubling to 30 s, ±20% jitter, reset by each welcome: a hub that
+//! restarts, as its update does, is back within a second), and only gives up when the hub refuses the node.
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -171,13 +171,17 @@ pub async fn run_node(options: RunNodeOptions) -> LinkFatal {
             LinkEnd::Lost(why) => tracing::warn!(%why, "hub link lost"),
         }
         let jitter: f64 = rand::thread_rng().gen_range(0.8..1.2);
-        let delay = Duration::from_millis(
-            (30_000f64.min(1_000.0 * 2f64.powi(attempt as i32)) * jitter).round() as u64,
-        );
+        let delay = reconnect_delay(attempt, jitter);
         attempt = attempt.saturating_add(1);
         tracing::info!(in_ms = delay.as_millis() as u64, "reconnecting to hub");
         tokio::time::sleep(delay).await;
     }
+}
+
+/// The wait before reconnect `attempt` (0 first), `jitter` in 0.8..1.2.
+fn reconnect_delay(attempt: u32, jitter: f64) -> Duration {
+    let ms = 30_000f64.min(250.0 * 2f64.powi(attempt.min(16) as i32)) * jitter;
+    Duration::from_millis(ms.round() as u64)
 }
 
 fn tag(frame: &HubToNode) -> &'static str {
@@ -304,6 +308,8 @@ async fn run_link_once(
     };
     let (mut sink, mut stream) = ws.split();
     let (tx, mut rx) = mpsc::unbounded_channel::<String>();
+    // Answered once every frame queued before it is written: what an update's answer waits on before its restart.
+    let (flush, mut flushes) = mpsc::unbounded_channel::<tokio::sync::oneshot::Sender<()>>();
     // Browser sessions' screens wait in a slot of their own, newest only: they go when nothing else waits.
     let frames = Arc::new(crate::node::browser::FrameSlot::default());
     // Everything this link starts ends with it: a lost link kills its commands, and the hub fails its waits.
@@ -319,6 +325,11 @@ async fn run_link_once(
                         None => break,
                     },
                     () = frames.notify.notified() => frames.take(),
+                    // Only with no frame waiting (`biased`): every frame queued before it went out.
+                    Some(done) = flushes.recv() => {
+                        let _ = done.send(());
+                        continue;
+                    }
                 };
                 for frame in out {
                     if sink.send(Message::Text(frame.into())).await.is_err() {
@@ -365,6 +376,7 @@ async fn run_link_once(
             fleetd_contracts::node_link::CAP_ORDER_ENV.to_owned(),
             fleetd_contracts::node_link::CAP_WORKTREE_SETUP.to_owned(),
             fleetd_contracts::node_link::CAP_SELF_UPDATE.to_owned(),
+            fleetd_contracts::node_link::CAP_UPDATE_FETCH.to_owned(),
             fleetd_contracts::node_link::CAP_SESSION_SEAL.to_owned(),
         ]
         .into_iter()
@@ -501,14 +513,23 @@ async fn run_link_once(
             }
             HubToNode::NodeAction(action) => {
                 let tx = tx.clone();
+                let flush = flush.clone();
                 let home = shared.node_sessions.home();
                 tasks.spawn(async move {
-                    let (result, verdict) = run_node_action(action, &home).await;
+                    let (result, watch) = run_node_action(action, &home).await;
                     let id = result.id.clone();
                     let _ = tx.send(to_json(&NodeToHub::NodeActionResult(result)));
+                    let Some(watch) = watch else { return };
+                    // The answer is on the link: the watcher restarts this node now.
+                    let (done, written) = tokio::sync::oneshot::channel();
+                    if flush.send(done).is_ok() {
+                        let _ =
+                            tokio::time::timeout(crate::update::finish::ANSWER_WAIT, written).await;
+                    }
+                    crate::update::finish::mark_answered(&watch.answered);
                     // Still running once the watcher decided: the restart was refused, and the hub hears so now.
-                    if let Some(verdict) = verdict
-                        && let Some(f) = super::update::not_restarted(&verdict, RESTART_WATCH).await
+                    if let Some(f) =
+                        super::update::not_restarted(&watch.verdict, RESTART_WATCH).await
                     {
                         let refused = super::actions::failed(id, &f);
                         let _ = tx.send(to_json(&NodeToHub::NodeActionResult(refused)));
@@ -611,6 +632,22 @@ mod tests {
             panic!("the frame did not arrive whole")
         };
         assert_eq!(got.len(), sent);
+    }
+
+    /// A hub that restarts (its update) is dialled again within a quarter second, then less and less often.
+    #[test]
+    fn reconnects_start_fast_and_back_off_to_30_s() {
+        let waits: Vec<u64> = (0..10)
+            .map(|a| reconnect_delay(a, 1.0).as_millis() as u64)
+            .collect();
+        assert_eq!(
+            waits,
+            [
+                250, 500, 1_000, 2_000, 4_000, 8_000, 16_000, 30_000, 30_000, 30_000
+            ]
+        );
+        assert_eq!(reconnect_delay(u32::MAX, 1.2), Duration::from_secs(36));
+        assert_eq!(reconnect_delay(0, 0.8), Duration::from_millis(200));
     }
 
     /// Only a file transfer may use the room the socket has for one: any other frame over 16 MiB is ignored.
