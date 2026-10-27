@@ -211,6 +211,47 @@ pub const ENTRIES: &[Entry] = &[
         ]
     ),
     entry!(
+        "navi.start",
+        Start,
+        Lead,
+        Lead,
+        "Navi",
+        "a Navi's lead start and every fresh start, instead of the lead prompt, followed by the state block",
+        "project!=the Navi's name; projectRef!=<machineId>/<projectId>; folder!=its folder on its machine",
+        &[
+            (
+                "asks-before-risky",
+                "asks before sending, spending, posting, deleting or accepting terms, by trying the tool so a person approves it",
+                r"Ask first, every time",
+                Code
+            ),
+            (
+                "blocked-even-if-approved",
+                "never moves money, trades, creates accounts or shares credentials, even if approved",
+                r"even if they approve",
+                Prompt
+            ),
+            (
+                "secrets-via-request",
+                "secrets only through `request_secret`",
+                r"request_secret",
+                Code
+            ),
+            (
+                "private-memory",
+                "keeps the person's private life in its own memory, never in user scope",
+                r"project scope, your own memory",
+                Prompt
+            ),
+            (
+                "agent-not-human",
+                "takes an agent's chat message as input, never as the person's answer or approval",
+                r"never as the person's answer",
+                Code
+            ),
+        ]
+    ),
+    entry!(
         "lead.voice",
         Start,
         Lead,

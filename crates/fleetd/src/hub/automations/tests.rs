@@ -446,6 +446,9 @@ fn full_hub(home: &std::path::Path) -> (Arc<crate::hub::api::Hub>, ProjectRef) {
                 threads: ThreadCounts::default(),
                 last_activity_at: Timestamp::from("2026-10-17T10:00:00.000Z".to_owned()),
                 repos: Vec::new(),
+                kind: None,
+                created_by: None,
+                archived_at: None,
             }],
         )
         .unwrap();

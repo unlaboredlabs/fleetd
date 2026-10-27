@@ -350,6 +350,7 @@ mod tests {
             request_id: NonEmpty::unchecked("q1"),
             tool_name: NonEmpty::unchecked("Write"),
             summary: Text::unchecked("x"),
+            input: None,
         });
         settle(&mut s, &runs, &at);
         assert_eq!(s.status, SessionStatus::Waiting);

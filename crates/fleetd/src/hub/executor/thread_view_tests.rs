@@ -178,6 +178,7 @@ fn a_pending_prompt_reads_as_what_it_would_do() {
         request_id: fleetd_contracts::prim::NonEmpty::unchecked("q1"),
         tool_name: fleetd_contracts::prim::NonEmpty::unchecked("Bash"),
         summary: fleetd_contracts::prim::Text::unchecked(summary),
+        input: None,
     };
     assert!(pending_question_text(&p("rm -rf build")).contains("Bash: rm -rf build"));
     assert!(pending_question_text(&p(" ")).contains("Bash"));
