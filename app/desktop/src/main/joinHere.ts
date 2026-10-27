@@ -1,7 +1,10 @@
 // "This computer" in Add machine: main makes the computer the app runs on a machine of its hub, as the installer's
 // join line (site/install.sh --join) does, with the CLI's own join (`fleetd init --join`) doing the rest:
+//   0. this computer's fleetd dir, read first: one that holds a hub, or a node already enrolled (under any id), is
+//      never touched, as its bin/fleetd is the one that hub or node runs (thisComputer);
 //   1. machine_join: a one-time code from the hub, asked by main, so the code never reaches the page;
-//   2. the hub's release build for this OS and CPU (its channel, as `fleetd update` picks it), and SHA256SUMS;
+//   2. the build of the hub's own version for this OS and CPU (its v<version> release; a nightly hub, the nightly
+//      release only while that is its version), and SHA256SUMS;
 //   3. the build checked against SHA256SUMS: a mismatch installs nothing;
 //   4. put in place as <fleetd dir>/bin/fleetd by renaming, never by writing into a running binary;
 //   5. `fleetd init --join <hub> --code <code> --machine-id <id>`: it enrolls the node and runs it as a user service.
@@ -13,8 +16,9 @@ import os from "node:os";
 import path from "node:path";
 import type { ToolInput } from "../shared/contracts";
 import type { CallOutcome } from "../shared/hub";
-import type { JoinHere, JoinStep } from "../shared/joinHere";
+import type { JoinHere, JoinStep, ThisComputer } from "../shared/joinHere";
 import { feedUrl } from "./update-feed";
+import { parseCli } from "./update-release";
 
 export interface JoinPorts {
   /** A hub call, as the page's go through main. */
@@ -29,6 +33,14 @@ export interface JoinPorts {
   baseOverride: string | undefined;
   platform: NodeJS.Platform;
   arch: string;
+}
+
+/** The fleetd dir: FLEETD_HOME, else ~/.fleetd, as the CLI has it. */
+export const fleetdDir = (): string => process.env["FLEETD_HOME"] ?? path.join(os.homedir(), ".fleetd");
+
+function str(o: unknown, key: string): string | undefined {
+  const v = typeof o === "object" && o !== null ? (o as Record<string, unknown>)[key] : undefined;
+  return typeof v === "string" ? v : undefined;
 }
 
 export const realPorts = (call: JoinPorts["call"]): JoinPorts => ({
@@ -50,19 +62,64 @@ export const realPorts = (call: JoinPorts["call"]): JoinPorts => ({
       child.once("error", (error) => done({ code: 127, output: String(error) }));
       child.once("close", (code) => done({ code: code ?? 1, output }));
     }),
-  fleetdDir: process.env["FLEETD_HOME"] ?? path.join(os.homedir(), ".fleetd"),
+  fleetdDir: fleetdDir(),
   baseOverride: process.env["FLEETD_BASE_URL"],
   platform: process.platform,
   arch: process.arch,
 });
 
 const TITLES = {
+  look: "check that this computer isn't part of a hub yet",
   code: "get a one-time code from the hub",
   download: (asset: string) => `download ${asset}`,
   check: "check it against the release's SHA256SUMS",
   install: "put it in place",
   join: "enroll the node and start its service",
 } as const;
+
+const RELEASES = "https://github.com/unlaboredlabs/fleetd/releases/download";
+
+/**
+ * Where the build of the hub's `version` is: its own `v<version>` release, or for a nightly hub the rolling nightly
+ * release (whose release.json must still name that version). FLEETD_BASE_URL, when it is trusted, replaces both.
+ */
+export const releaseFor = (version: string, override: string | undefined): { base: string; nightly: boolean } => {
+  if (override !== undefined && feedUrl(version, override) === override) return { base: override, nightly: false };
+  const nightly = version.includes("-nightly.");
+  return { base: nightly ? `${RELEASES}/nightly` : `${RELEASES}/v${version}`, nightly };
+};
+
+const exists = (file: string): Promise<boolean> =>
+  fs.access(file).then(
+    () => true,
+    () => false,
+  );
+
+/**
+ * What this computer's fleetd dir holds: a hub's home (`hub/hub.sqlite` or `fleetd init`'s `hub/setup.json`), a node
+ * enrolled with a hub (`node/node.json`, under whatever id), or neither. Read before anything is downloaded.
+ */
+export const thisComputer = async (fleetdDir: string): Promise<ThisComputer> => {
+  const hubHome = path.join(fleetdDir, "hub");
+  if ((await exists(path.join(hubHome, "hub.sqlite"))) || (await exists(path.join(hubHome, "setup.json")))) return { kind: "hub" };
+  let node: unknown;
+  try {
+    node = JSON.parse(await fs.readFile(path.join(fleetdDir, "node", "node.json"), "utf8"));
+  } catch {
+    return { kind: "none" };
+  }
+  const enrolled = typeof node === "object" && node !== null && (node as Record<string, unknown>)["enrolled"] === true;
+  const machineId = str(node, "machineId");
+  return enrolled && machineId !== undefined ? { kind: "node", machineId, hub: str(node, "hub") ?? "" } : { kind: "none" };
+};
+
+/** Why `here` is never joined from the app. */
+export const refusal = (here: ThisComputer): string | undefined =>
+  here.kind === "hub"
+    ? "This computer runs the hub, so the hub sets up its node itself, with its own fleetd; nothing was changed here."
+    : here.kind === "node"
+      ? `This computer is already part of ${here.hub === "" ? "a hub" : `the hub at ${here.hub}`} as ${here.machineId}; nothing was changed.`
+      : undefined;
 
 /** The release asset for this computer, as the installer names it; undefined where fleetd has no build. */
 export const assetFor = (platform: NodeJS.Platform, arch: string): string | undefined => {
@@ -82,15 +139,10 @@ export const expectedSum = (sums: string, asset: string): string | undefined => 
 
 const lastLines = (text: string, n = 15): string => text.trim().split("\n").slice(-n).join("\n");
 
-const str = (o: unknown, key: string): string | undefined => {
-  const v = typeof o === "object" && o !== null ? (o as Record<string, unknown>)[key] : undefined;
-  return typeof v === "string" ? v : undefined;
-};
-
 /** Joins this computer to the hub as `machineId`, reporting every change; resolves with how it ended. Never rejects. */
 export async function joinHere(ports: JoinPorts, machineId: string, report: (state: JoinHere) => void): Promise<JoinHere> {
   const asset = assetFor(ports.platform, ports.arch);
-  const titles = [TITLES.code, TITLES.download(asset ?? "fleetd"), TITLES.check, TITLES.install, TITLES.join];
+  const titles = [TITLES.look, TITLES.code, TITLES.download(asset ?? "fleetd"), TITLES.check, TITLES.install, TITLES.join];
   let steps: JoinStep[] = titles.map((title) => ({ title, state: "planned" }));
   let at = -1;
   const send = (state: JoinHere["state"], message?: string): JoinHere => {
@@ -113,19 +165,36 @@ export async function joinHere(ports: JoinPorts, machineId: string, report: (sta
 
   next();
   if (asset === undefined) return fail(`fleetd has no build for ${ports.platform} on ${ports.arch}: it runs on macOS and Linux, x64 or arm64.`);
+  // Its bin/fleetd is what a hub or a node here runs: never replaced, and never enrolled a second time.
+  const why = refusal(await thisComputer(ports.fleetdDir));
+  if (why !== undefined) return fail(why);
+  done();
+
+  next();
   const [joined, info] = await Promise.all([ports.call("machine_join", { machineId }), ports.call("hub_info", {})]);
   if (!joined.ok) return fail(joined.error.fix ? `${joined.error.message} ${joined.error.fix}` : joined.error.message);
   const hub = str(joined.output, "hubUrl");
   const code = str(joined.output, "code");
   if (hub === undefined || code === undefined) return fail("The hub's answer had no address or code. Update the hub, then try again.");
   const identity = str(joined.output, "gitIdentity");
+  const version = info.ok ? str(info.output, "version") : undefined;
+  if (version === undefined) return fail("The hub didn't say which fleetd it runs, so there is no build to match it. Try again once it answers.");
   done();
 
   next();
-  const base = feedUrl((info.ok ? str(info.output, "version") : undefined) ?? "", ports.baseOverride);
+  const { base, nightly } = releaseFor(version, ports.baseOverride);
   let sums: string;
   let build: Uint8Array;
   try {
+    if (nightly) {
+      // The nightly release moves on; a node must run the hub's own build.
+      const now = parseCli(JSON.parse(new TextDecoder().decode(await ports.download(`${base}/release.json`))));
+      if (now !== version) {
+        return fail(
+          `The hub runs ${version}, and the nightly release is now ${now ?? "another build"}. Update the hub first (Updates in the app, or fleetd update on the hub), then add this computer: both then run the same build.`,
+        );
+      }
+    }
     sums = new TextDecoder().decode(await ports.download(`${base}/SHA256SUMS`));
     build = await ports.download(`${base}/${asset}`);
   } catch (error) {

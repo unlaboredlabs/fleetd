@@ -6,7 +6,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { MachineAddRun, MachineHost } from "../../../shared/contracts";
 import type { HubFrame } from "../../../shared/hub";
-import type { JoinHere } from "../../../shared/joinHere";
+import type { JoinHere, ThisComputer } from "../../../shared/joinHere";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { UiProvider } from "../../ui";
@@ -17,6 +17,7 @@ import { AddMachine } from "./AddMachine";
 const joinListeners = new Set<(j: JoinHere) => void>();
 const joinHere = vi.fn((_machineId: string) => Promise.resolve<JoinHere | null>(null));
 let hostName = "laptop";
+let computer: ThisComputer = { kind: "none" };
 vi.hoisted(() => {
   (globalThis as { fleetd?: unknown }).fleetd = { platform: "linux" };
 });
@@ -27,6 +28,7 @@ Object.assign(window, {
     machines: {
       joinHere: (id: string) => joinHere(id),
       joinHereState: () => Promise.resolve(null),
+      thisComputer: () => Promise.resolve(computer),
       onJoinHere: (l: (j: JoinHere) => void) => (joinListeners.add(l), () => joinListeners.delete(l)),
     },
   },
@@ -86,6 +88,7 @@ beforeEach(() => {
   calls = [];
   runs = [];
   hostName = "laptop";
+  computer = { kind: "none" };
   joinHere.mockClear();
 });
 afterEach(() => {
@@ -153,7 +156,7 @@ it("offers this computer, a machine the hub can reach, and any other machine", a
   await render();
   expect(state()).toBe("choose");
   expect(host.textContent).toContain("This computer");
-  expect(host.textContent).toContain("laptop: downloads fleetd for this computer");
+  expect(host.textContent).toContain("laptop: downloads the hub's fleetd for this computer");
   expect(host.textContent).toContain("A machine the hub can reach");
   expect(host.textContent).toContain("Any other machine");
   expect(button("Get the line")?.disabled).toBe(true);
@@ -237,4 +240,26 @@ it("adds the hub's own machine through the hub, and any other computer through m
   expect(steps().map((x) => x.split(" ")[0])).toEqual(["done", "done", "failed", "planned", "planned", "planned"]);
   await click("Retry");
   expect(joinHere).toHaveBeenCalledTimes(2);
+});
+
+it("adds the hub's machine through the hub even when its name doesn't match, and never joins an enrolled node", async () => {
+  // The hub's machine, added as devbox, now named studio-2: its fleetd dir holds the hub.
+  hostName = "studio-2";
+  computer = { kind: "hub" };
+  await render();
+  expect(host.textContent).toContain("devbox is a machine of this hub already");
+  await click("Repair");
+  expect(calls.find((c) => c.tool === "machine_add")?.input).toEqual({ local: true });
+  expect(joinHere).not.toHaveBeenCalled();
+
+  act(() => root.unmount());
+  root = createRoot(host);
+  calls = [];
+  runs = [];
+  computer = { kind: "node", machineId: "studio", hub: "http://devbox:4790" };
+  await render();
+  expect(host.textContent).toContain("This computer is already part of another hub (http://devbox:4790) as studio.");
+  expect(button("Add this computer")).toBeUndefined();
+  expect(button("Repair")).toBeUndefined();
+  expect(joinHere).not.toHaveBeenCalled();
 });

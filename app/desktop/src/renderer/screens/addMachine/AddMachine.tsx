@@ -1,6 +1,7 @@
 // Add machine (W105): an owner or admin makes a computer one of the hub's machines, without a terminal. Three ways:
-//   - This computer: one click. On the hub's own machine the hub adds it (machine_add local); on any other, main
-//     downloads the right fleetd, checks it, and joins with a one-time code (src/main/joinHere.ts).
+//   - This computer: one click. Main first reads this computer's fleetd dir: one holding the hub goes through the hub
+//     (machine_add local), one holding an enrolled node is a machine already; on any other, main downloads the hub's
+//     own fleetd build, checks it, and joins with a one-time code (src/main/joinHere.ts).
 //   - A machine the hub can reach: pick one of machine_hosts, see machine_add_plan's steps, Add, and watch each step;
 //     a failed step shows its output, the fix and Retry (finished steps are skipped).
 //   - Any other machine: a line to paste on it (next).
@@ -11,11 +12,11 @@
 // its Machines step) show the same flow. Mount it only where the person is an owner or admin.
 import { useEffect, useState, type ReactNode } from "react";
 import type { MachineAddRun, MachineHost, SetupStep } from "../../../shared/contracts";
-import type { JoinHere } from "../../../shared/joinHere";
+import type { JoinHere, ThisComputer } from "../../../shared/joinHere";
 import { useData, useToolQuery } from "../../src/data/react";
 import { Button, InlineCode, StateGlyph, Text } from "../../ui";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
-import { glyphOf, hereOf, hostLine, joinSteps, pickable, resumable, runLine, runTitle, sentence, shortOutput, stepTitle, type Here } from "./model";
+import { glyphOf, hereLine, hereOf, hostLine, joinSteps, pickable, resumable, runLine, runTitle, sentence, shortOutput, stepTitle, type Here } from "./model";
 import s from "./addMachine.module.css";
 
 type View =
@@ -38,6 +39,19 @@ const useHostName = (): string | undefined => {
     };
   }, []);
   return name;
+};
+
+/** What this computer's fleetd dir holds, as main read it: a hub, an enrolled node, or neither. */
+const useThisComputer = (): ThisComputer | undefined => {
+  const [here, setHere] = useState<ThisComputer>();
+  useEffect(() => {
+    let live = true;
+    void window.fleetd.machines.thisComputer().then((h) => live && setHere(h));
+    return () => {
+      live = false;
+    };
+  }, []);
+  return here;
 };
 
 /** The join of this computer main runs, as it reports it. */
@@ -65,6 +79,7 @@ export function AddMachine() {
   const status = useToolQuery("machine_add_status", noInput);
   const hosts = useToolQuery("machine_hosts", noInput);
   const hostName = useHostName();
+  const computer = useThisComputer();
   const join = useJoinHere();
   const machines = useData((d) => d.machines);
   const [view, setView] = useState<View>();
@@ -82,7 +97,8 @@ export function AddMachine() {
           return r === undefined ? { kind: "choose" } : { kind: "run", runId: r.runId };
         })());
 
-  const here = hosts.data && hostName !== undefined ? hereOf(hosts.data.hosts, hostName, new Set(Object.keys(machines))) : undefined;
+  const here =
+    hosts.data && hostName !== undefined && computer !== undefined ? hereOf(hosts.data.hosts, hostName, computer, new Set(Object.keys(machines))) : undefined;
 
   const add = (target: { host: string } | { local: true }) => {
     setBusy(true);
@@ -107,6 +123,7 @@ export function AddMachine() {
   const addHere = (h: Here) => {
     setProblem(undefined);
     if (h.kind === "hub") return add({ local: true });
+    if (h.kind === "node") return;
     setView({ kind: "here" });
     void window.fleetd.machines.joinHere(h.machineId);
   };
@@ -116,7 +133,7 @@ export function AddMachine() {
       {!live ? (
         <Text tone="quiet">Connect to the hub to add a machine.</Text>
       ) : shown.kind === "choose" ? (
-        <Choose here={here} hostName={hostName} busy={busy} onHere={addHere} onHosts={() => setView({ kind: "hosts" })} />
+        <Choose here={here} busy={busy} onHere={addHere} onHosts={() => setView({ kind: "hosts" })} />
       ) : shown.kind === "hosts" ? (
         <Hosts read={hosts} onPick={(host) => setView({ kind: "plan", host })} onBack={() => setView({ kind: "choose" })} />
       ) : shown.kind === "plan" ? (
@@ -150,16 +167,8 @@ function Head(props: { title: string; line?: ReactNode }) {
   );
 }
 
-function Choose(props: { here: Here | undefined; hostName: string | undefined; busy: boolean; onHere: (h: Here) => void; onHosts: () => void }) {
+function Choose(props: { here: Here | undefined; busy: boolean; onHere: (h: Here) => void; onHosts: () => void }) {
   const { here } = props;
-  const hereLine =
-    here === undefined
-      ? "Looking at this computer…"
-      : here.joined
-        ? `${here.machineId} is a machine of this hub already: adding it again repairs it.`
-        : here.kind === "hub"
-          ? `${here.machineId}, the hub's own machine: the hub sets up its node with its own fleetd.`
-          : `${here.machineId}: downloads fleetd for this computer, checks it and runs its node as a user service.`;
   return (
     <>
       <Head title="Add machine" line="A machine runs agents and their browsers and devices. It needs claude installed." />
@@ -168,12 +177,14 @@ function Choose(props: { here: Here | undefined; hostName: string | undefined; b
           <div className={s.rowText}>
             <Text>This computer</Text>
             <Text size="xs" tone="quiet">
-              {hereLine}
+              {hereLine(here)}
             </Text>
           </div>
-          <Button className={s.rowAction} disabled={here === undefined || props.busy} onClick={() => here && props.onHere(here)}>
-            {here?.joined ? "Repair" : "Add this computer"}
-          </Button>
+          {here?.kind === "node" ? null : (
+            <Button className={s.rowAction} disabled={here === undefined || props.busy} onClick={() => here && props.onHere(here)}>
+              {here?.joined ? "Repair" : "Add this computer"}
+            </Button>
+          )}
         </li>
         <li className={s.row}>
           <div className={s.rowText}>

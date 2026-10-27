@@ -250,6 +250,7 @@ export const REQUESTS = {
   [IPC.systemHostName]: none,
   [IPC.machinesJoinHere]: z.tuple([z.string().regex(/^[a-z0-9-]{1,32}$/u)]),
   [IPC.machinesJoinHereState]: none,
+  [IPC.machinesThisComputer]: none,
   [IPC.projectsPickFolder]: none,
   [IPC.projectsReadDrop]: z.tuple([DropPath]),
   [IPC.copy]: z.tuple([z.string().max(1_000_000)]),

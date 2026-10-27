@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from "ele
 import type { LinkHandlerStatus, OpenTarget } from "../shared/app";
 import { IPC } from "../shared/channels";
 import type { CallOutcome, ConnectOutcome, DropInfo, HubFrame, OpenOutcome, SecretOutcome } from "../shared/hub";
-import type { JoinHere } from "../shared/joinHere";
+import type { JoinHere, ThisComputer } from "../shared/joinHere";
 import type { KeyStore, PairOutcome, PairStart, Probe, SetupOutcome } from "../shared/pairing";
 import type { UpdatesState } from "../shared/updates";
 import type { FleetdApi } from "./api";
@@ -88,6 +88,7 @@ const api: FleetdApi = {
   machines: {
     joinHere: (machineId) => ipcRenderer.invoke(IPC.machinesJoinHere, machineId) as Promise<JoinHere>,
     joinHereState: () => ipcRenderer.invoke(IPC.machinesJoinHereState) as Promise<JoinHere | null>,
+    thisComputer: () => ipcRenderer.invoke(IPC.machinesThisComputer) as Promise<ThisComputer>,
     onJoinHere: (listener) => {
       joinListeners.add(listener);
       return () => joinListeners.delete(listener);

@@ -45,6 +45,8 @@ export const IPC = {
    * `machinesJoinHereChanged`. One at a time: a second call while one runs answers with the one running.
    */
   machinesJoinHere: "machines:join-here",
+  /** invoke() → ThisComputer. Whether this computer's fleetd dir holds a hub or an enrolled node, or neither. */
+  machinesThisComputer: "machines:this-computer",
   /** invoke() → JoinHere | null. The join running or last ended since the app started. */
   machinesJoinHereState: "machines:join-here-state",
   /** main → renderer: JoinHere, on every change. */

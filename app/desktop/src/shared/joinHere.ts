@@ -18,3 +18,12 @@ export interface JoinHere {
   /** Failed: what went wrong, in a sentence. */
   readonly message?: string;
 }
+
+/**
+ * What this computer's fleetd dir holds, read by main (src/main/joinHere.ts thisComputer): the hub's home, a node
+ * already enrolled with a hub (under whatever id), or neither. Only "none" is ever joined from the app.
+ */
+export type ThisComputer =
+  | { readonly kind: "hub" }
+  | { readonly kind: "node"; readonly machineId: string; readonly hub: string }
+  | { readonly kind: "none" };

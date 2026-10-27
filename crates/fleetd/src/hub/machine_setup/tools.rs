@@ -55,7 +55,23 @@ fn stopped(stop: Stop) -> ToolError {
     }
 }
 
-/// `machine add <host>` or `--local`, as the hub runs it: its own home, its own enrollment.
+/// The ssh_config file a machine at `host` was set up with (`machine add --ssh-config`), so a repair or a retry
+/// connects as the first run did, and its record keeps it.
+fn recorded_ssh_config(hub: &Hub, host: &str, machine_id: Option<&MachineId>) -> Option<String> {
+    let state = crate::cli::setup::state::read_setup(&hub.config.home)
+        .ok()
+        .flatten()?;
+    state
+        .machines
+        .iter()
+        .filter(|(id, r)| {
+            !r.local && r.ssh_host == host && machine_id.is_none_or(|m| m.as_str() == id.as_str())
+        })
+        .find_map(|(_, r)| r.ssh_config.clone())
+}
+
+/// `machine add <host>` or `--local`, as the hub runs it: its own home, its own enrollment, and the ssh_config the
+/// machine was set up with before.
 fn resolve(
     hub: &Hub,
     host: Option<&SshHost>,
@@ -72,7 +88,7 @@ fn resolve(
         tags: Vec::new(),
         dry_run: false,
         hub_url: None,
-        ssh_config: None,
+        ssh_config: host.and_then(|h| recorded_ssh_config(hub, h.as_str(), machine_id)),
         home: Some(hub.config.home.to_string_lossy().into_owned()),
         unit_suffix: None,
         enroll: Enroll::Hub,

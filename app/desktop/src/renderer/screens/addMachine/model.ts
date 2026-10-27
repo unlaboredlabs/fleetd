@@ -1,24 +1,44 @@
 // Add machine's words and decisions, apart from React: which way "This computer" goes, how each host and step reads,
 // and which run the panel follows.
 import type { GlyphState } from "../../ui";
-import type { JoinHere } from "../../../shared/joinHere";
+import type { JoinHere, ThisComputer } from "../../../shared/joinHere";
 import type { MachineAddRun, MachineHost, SetupStep } from "../../../shared/contracts";
 import { machineIdFromHost } from "../projects/source";
 
 /**
- * "This computer", given the hosts the hub sees and this computer's name: the hub's own machine (the hub adds it
- * with its own fleetd, no download), or another one, which main joins with a one-time code.
+ * "This computer": the hub's own machine (the hub adds it with its own fleetd, no download), one whose node is
+ * enrolled already (nothing to add: its fleetd is that node's), or another one, which main joins with a one-time
+ * code. Decided by what this computer's fleetd dir holds (main reads it), never by its name alone: a hub machine
+ * added under another id, or renamed since, still holds the hub.
  */
 export type Here =
   | { readonly kind: "hub"; readonly machineId: string; readonly joined: boolean }
+  | { readonly kind: "node"; readonly machineId: string; readonly hub: string; readonly ours: boolean }
   | { readonly kind: "app"; readonly machineId: string; readonly joined: boolean };
 
-export const hereOf = (hosts: ReadonlyArray<MachineHost>, hostName: string, joinedIds: ReadonlySet<string>): Here | undefined => {
+export const hereOf = (hosts: ReadonlyArray<MachineHost>, hostName: string, here: ThisComputer, joinedIds: ReadonlySet<string>): Here | undefined => {
+  const hub = hosts.find((h) => h.source === "hub");
+  if (here.kind === "hub") return { kind: "hub", machineId: hub?.machineId ?? machineIdFromHost(hostName), joined: hub?.joined ?? false };
+  if (here.kind === "node") return { kind: "node", machineId: here.machineId, hub: here.hub, ours: joinedIds.has(here.machineId) };
   const machineId = machineIdFromHost(hostName);
   if (machineId === "") return undefined;
-  const hub = hosts.find((h) => h.source === "hub");
+  // A hub in a fleetd dir of its own (FLEETD_HOME) on this computer: the hub's own path still never downloads.
   if (hub?.machineId === machineId) return { kind: "hub", machineId, joined: hub.joined };
   return { kind: "app", machineId, joined: joinedIds.has(machineId) };
+};
+
+/** "This computer"'s line under its name. */
+export const hereLine = (here: Here | undefined): string => {
+  if (here === undefined) return "Looking at this computer…";
+  if (here.kind === "node") {
+    return here.ours
+      ? `This computer is already part of the hub as ${here.machineId}.`
+      : `This computer is already part of ${here.hub === "" ? "another hub" : `another hub (${here.hub})`} as ${here.machineId}.`;
+  }
+  if (here.joined) return `${here.machineId} is a machine of this hub already: adding it again repairs it.`;
+  return here.kind === "hub"
+    ? `${here.machineId}, the hub's own machine: the hub sets up its node with its own fleetd.`
+    : `${here.machineId}: downloads the hub's fleetd for this computer, checks it and runs its node as a user service.`;
 };
 
 const SOURCE: Record<string, string> = {
