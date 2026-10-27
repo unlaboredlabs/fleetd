@@ -4,7 +4,7 @@
 
 import type { DoctorCheck } from "../../../shared/contracts";
 
-export type StepId = "address" | "machines" | "claude" | "github" | "hub-github" | "people" | "google" | "notion" | "onepassword";
+export type StepId = "address" | "machines" | "claude" | "github" | "people" | "google" | "notion" | "onepassword";
 
 /** Required: agents can't run without it. Before: needed before a feature's first use, never before. Optional. */
 export type Need = { readonly kind: "required" } | { readonly kind: "before"; readonly what: string } | { readonly kind: "optional" };
@@ -12,13 +12,29 @@ export type Need = { readonly kind: "required" } | { readonly kind: "before"; re
 /** done: its checks pass. todo: not set up. look: set up, but a check fails or warns. skipped: the admin said later. */
 export type StepStatus = "done" | "todo" | "look" | "skipped";
 
-/** A value to paste into the provider's form, computed for this hub. `note` is how to paste it. */
+/** A value for the provider's form, computed for this hub. `note` is how to paste it. */
 export interface PasteValue {
   readonly label: string;
   readonly value: string;
   readonly note?: string;
-  /** Not a value to copy: what to tick or leave alone. */
+  /** Words, not a value: what to pick, tick or leave alone. */
   readonly plain?: boolean;
+  /** Filled in by fleetd (a manifest, a link), shown to read and never copied. */
+  readonly filled?: boolean;
+}
+
+/** A provider's page, opened in the browser. */
+export interface Link {
+  readonly label: string;
+  readonly url: string;
+}
+
+/** One numbered part of a step: what to open, then what to fill in there. */
+export interface Part {
+  readonly title: string;
+  readonly note?: string;
+  readonly links?: ReadonlyArray<Link>;
+  readonly values?: ReadonlyArray<PasteValue>;
 }
 
 /** A field for what the provider gives back; `secret` ones are sealed in the app and never come back. */
@@ -38,12 +54,12 @@ export interface SetupStep {
   readonly why: string;
   readonly need: Need;
   readonly status: StepStatus;
-  /** What the checks say now: the first failing one's message, else the passing one's. */
+  /** What the checks say now: the worst one's message. */
   readonly said?: string;
-  /** The provider's page for this step, opened in the browser. */
-  readonly link?: { readonly site: string; readonly label: string; readonly url: string };
-  readonly values: ReadonlyArray<PasteValue>;
+  readonly parts: ReadonlyArray<Part>;
+  /** What comes back from the provider, the last part; `fieldsNote` says what happens after. */
   readonly fields: ReadonlyArray<ResultField>;
+  readonly fieldsNote?: string;
   /** What Test does, in a few words; absent where the checks are the test. */
   readonly test?: string;
   /** The doctor checks whose worst status is this step's: `hub/<name>`, or `*` for every machine's. */
@@ -52,10 +68,18 @@ export interface SetupStep {
 
 type Guide = Omit<SetupStep, "status" | "said">;
 
-/** Every step in order, its paste values computed for `hub` (the URL devices reach it at). */
+const GOOGLE_SCOPES = [
+  { label: "Gmail", value: "https://www.googleapis.com/auth/gmail.modify" },
+  { label: "Calendar", value: "https://www.googleapis.com/auth/calendar.events" },
+  { label: "Drive", value: "https://www.googleapis.com/auth/drive.readonly" },
+];
+
+/** Every step in order, its values computed for `hub` (the URL devices reach it at). */
 export const guides = (hub: string): ReadonlyArray<Guide> => {
   const base = hub.replace(/\/+$/u, "");
   const host = new URL(base).hostname.split(".")[0] ?? "hub";
+  const name = `fleetd on ${host}`;
+  const https = base.startsWith("https://");
   return [
     {
       id: "address",
@@ -63,8 +87,14 @@ export const guides = (hub: string): ReadonlyArray<Guide> => {
       title: "Where the hub listens",
       why: "Your devices and machines reach the hub at this address; a tailnet keeps it off the internet.",
       need: { kind: "required" },
-      link: { site: "Tailscale", label: "Tailscale admin", url: "https://login.tailscale.com/admin/machines" },
-      values: [{ label: "Hub address", value: base }],
+      parts: [
+        {
+          title: "Pick the address",
+          note: "Your tailnet, with HTTPS from Tailscale Serve, is the one that works everywhere: Google takes only HTTPS.",
+          links: [{ label: "Tailscale admin", url: "https://login.tailscale.com/admin/machines" }],
+          values: [{ label: "Hub address", value: base }],
+        },
+      ],
       fields: [],
       test: "Reach the hub from this device",
       checks: ["hub/reachable", "hub/https"],
@@ -75,7 +105,7 @@ export const guides = (hub: string): ReadonlyArray<Guide> => {
       title: "Machines that run agents",
       why: "Agents run on machines; the hub's own machine can be one.",
       need: { kind: "required" },
-      values: [{ label: "On the machine", value: "fleetd init --join", note: "or from the hub: fleetd machine add <ssh host>" }],
+      parts: [{ title: "Add a machine", values: [{ label: "On the machine", value: "fleetd init --join", note: "or from the hub: fleetd machine add <ssh host>" }] }],
       fields: [],
       checks: ["*/online"],
     },
@@ -85,10 +115,15 @@ export const guides = (hub: string): ReadonlyArray<Guide> => {
       title: "Claude",
       why: "Agents think with Claude: a hub API key for everyone, or each person's own subscription.",
       need: { kind: "required" },
-      link: { site: "the Claude Console", label: "Claude Console › API keys", url: "https://console.anthropic.com/settings/keys" },
-      values: [
-        { label: "Key name", value: `fleetd on ${host}` },
-        { label: "No key?", value: "Leave it empty: each person connects their own Claude subscription when they first start work.", plain: true },
+      parts: [
+        {
+          title: "Make a key in the Claude Console",
+          links: [{ label: "Claude Console › API keys", url: "https://console.anthropic.com/settings/keys" }],
+          values: [
+            { label: "Key name", value: name },
+            { label: "No key?", value: "Leave it empty: each person connects their own Claude subscription when they first start work.", plain: true },
+          ],
+        },
       ],
       fields: [
         { name: "apiKey", label: "API key", secret: true, optional: true, placeholder: "sk-ant-…" },
@@ -100,33 +135,39 @@ export const guides = (hub: string): ReadonlyArray<Guide> => {
     {
       id: "github",
       group: "Accounts",
-      title: "GitHub OAuth app",
-      why: "Each person connects their own GitHub through it, so PRs open as the person who asked.",
+      title: "GitHub App",
+      why: "One App does the hub's work (the train, merges, CI) and signs each person in, so their PRs open as them.",
       need: { kind: "before", what: "the first PR" },
-      link: { site: "GitHub", label: "Register a new OAuth app", url: "https://github.com/settings/applications/new" },
-      values: [
-        { label: "Application name", value: `fleetd on ${host}` },
-        { label: "Homepage URL", value: base },
-        { label: "Authorization callback URL", value: `${base}/oauth/github/callback`, note: "Exactly this, no trailing slash." },
-        { label: "Enable Device Flow", value: "Tick it: the terminal and other devices connect with a code.", plain: true },
+      parts: [
+        {
+          title: "Create it on GitHub",
+          note: "GitHub opens with all of this filled in. Check the name, press Create, and GitHub hands the App's keys straight back to the hub.",
+          links: [
+            { label: "Create on my account", url: `${base}/setup/github/new` },
+            { label: "Create in an organization…", url: `${base}/setup/github/new?owner=org` },
+          ],
+          values: [
+            { label: "App name", value: name, filled: true },
+            { label: "Homepage URL", value: base, filled: true },
+            { label: "Sign-in callback", value: `${base}/oauth/github/callback`, filled: true },
+            { label: "Repository access", value: "Contents, pull requests and workflows: write. Checks, actions, statuses: read.", plain: true },
+            { label: "Webhooks", value: "Off on a tailnet: the hub asks GitHub instead. On once GitHub can reach the hub.", plain: true },
+          ],
+        },
+        {
+          title: "Install it on your repositories",
+          note: "Pick the repositories fleetd works on; you can add more on GitHub at any time.",
+          links: [{ label: "Install the App", url: `https://github.com/apps/fleetd-on-${host}/installations/new` }],
+        },
+        {
+          title: "Connect your own GitHub",
+          note: "Your PRs open as you. Everyone else connects theirs the first time their work opens a PR.",
+          links: [{ label: "Connect my GitHub", url: `${base}/oauth/github/start` }],
+        },
       ],
-      fields: [
-        { name: "clientId", label: "Client ID", placeholder: "Ov23li…" },
-        { name: "clientSecret", label: "Client secret", secret: true, placeholder: "Generate a new client secret, then paste it" },
-      ],
-      test: "Ask GitHub whether it knows this app",
+      fields: [],
+      test: "Mint the App's token and list the repositories it reaches",
       checks: ["hub/github_app"],
-    },
-    {
-      id: "hub-github",
-      group: "Accounts",
-      title: "The hub's own GitHub login",
-      why: "The merge train and work nobody asked for (automations) use the hub's account, never a person's.",
-      need: { kind: "before", what: "the first merge" },
-      link: { site: "GitHub", label: "New fine-grained token", url: "https://github.com/settings/personal-access-tokens/new" },
-      values: [{ label: "On the hub", value: "gh auth login", note: "or a bot account's token below" }],
-      fields: [{ name: "token", label: "Token", secret: true, optional: true, placeholder: "github_pat_…" }],
-      checks: ["hub/gh_auth", "hub/commit_identity"],
     },
     {
       id: "people",
@@ -134,23 +175,59 @@ export const guides = (hub: string): ReadonlyArray<Guide> => {
       title: "Invite people",
       why: "Each person gets their own sign-in, chats and Navi; you choose who is an admin.",
       need: { kind: "optional" },
-      values: [],
+      parts: [],
       fields: [{ name: "handle", label: "Their name", placeholder: "alice" }],
       checks: ["hub/people"],
     },
     {
       id: "google",
       group: "Integrations",
-      title: "Google, through xaq",
-      why: "Navi reads and drafts mail and calendar through your own xaq server and Google Cloud app.",
+      title: "Google",
+      why: "Each person's Navi reads and drafts their mail, calendar and Drive, through a Google client you own.",
       need: { kind: "optional" },
-      link: { site: "xaq", label: "xaq's setup", url: "https://github.com/wynn-dev/xaq" },
-      values: [{ label: "Agent name in xaq", value: `fleetd on ${host}` }],
-      fields: [
-        { name: "url", label: "xaq MCP URL", placeholder: "https://xaq.your-tailnet.ts.net/mcp" },
-        { name: "token", label: "Agent token", secret: true },
+      parts: [
+        {
+          title: "Create a Google Cloud project",
+          links: [{ label: "New project", url: "https://console.cloud.google.com/projectcreate" }],
+          values: [{ label: "Project name", value: `fleetd-${host}` }],
+        },
+        {
+          title: "Turn on Gmail, Calendar and Drive",
+          links: [
+            {
+              label: "Enable the three APIs",
+              url: "https://console.cloud.google.com/flows/enableapi?apiid=gmail.googleapis.com,calendar-json.googleapis.com,drive.googleapis.com",
+            },
+          ],
+        },
+        {
+          title: "Set up the sign-in screen",
+          links: [{ label: "Google Auth Platform › Branding", url: "https://console.cloud.google.com/auth/branding" }],
+          values: [
+            { label: "App name", value: name },
+            { label: "Audience", value: "Internal if everyone is in your Google Workspace. Otherwise External, with each person added as a test user.", plain: true },
+            ...GOOGLE_SCOPES.map((s) => ({ ...s, label: `Scope: ${s.label}`, note: "Data access › Add or remove scopes" })),
+          ],
+        },
+        {
+          title: "Create the OAuth client",
+          links: [{ label: "Google Auth Platform › Clients", url: "https://console.cloud.google.com/auth/clients/create" }],
+          values: [
+            { label: "Application type", value: "Web application", plain: true },
+            { label: "Name", value: name },
+            https
+              ? { label: "Authorized redirect URI", value: `${base}/oauth/google/callback`, note: "Exactly this, no trailing slash." }
+              : { label: "Authorized redirect URI", value: "Google takes only HTTPS: give the hub an HTTPS address first (step 1).", plain: true },
+            { label: "JavaScript origins", value: "Leave empty.", plain: true },
+          ],
+        },
       ],
-      test: "List xaq's tools",
+      fields: [
+        { name: "clientId", label: "Client ID", placeholder: "….apps.googleusercontent.com" },
+        { name: "clientSecret", label: "Client secret", secret: true, placeholder: "GOCSPX-…" },
+      ],
+      fieldsNote: "Then each person connects their own Google account from their Navi.",
+      test: "Ask Google whether it knows this client",
       checks: ["hub/google"],
     },
     {
@@ -159,8 +236,13 @@ export const guides = (hub: string): ReadonlyArray<Guide> => {
       title: "Notion",
       why: "Navi and leads read and write the pages you share with your own Notion integration.",
       need: { kind: "optional" },
-      link: { site: "Notion", label: "Notion › Integrations", url: "https://www.notion.so/profile/integrations" },
-      values: [{ label: "Integration name", value: `fleetd on ${host}` }],
+      parts: [
+        {
+          title: "Make an internal integration",
+          links: [{ label: "Notion › Integrations", url: "https://www.notion.so/profile/integrations" }],
+          values: [{ label: "Integration name", value: name }],
+        },
+      ],
       fields: [{ name: "token", label: "Internal integration secret", secret: true, placeholder: "ntn_…" }],
       test: "Search the pages it can see",
       checks: ["hub/notion"],
@@ -171,8 +253,13 @@ export const guides = (hub: string): ReadonlyArray<Guide> => {
       title: "1Password",
       why: "Agents sign in to sites from a vault you choose, without ever seeing a password.",
       need: { kind: "optional" },
-      link: { site: "1Password", label: "1Password › Service accounts", url: "https://developer.1password.com/docs/service-accounts/get-started/" },
-      values: [{ label: "Service account name", value: `fleetd on ${host}` }],
+      parts: [
+        {
+          title: "Make a service account for one vault",
+          links: [{ label: "1Password › Service accounts", url: "https://developer.1password.com/docs/service-accounts/get-started/" }],
+          values: [{ label: "Service account name", value: name }],
+        },
+      ],
       fields: [{ name: "token", label: "Service account token", secret: true, placeholder: "ops_…" }],
       test: "Read the vault's item names",
       checks: ["hub/onepassword"],
