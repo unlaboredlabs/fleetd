@@ -485,11 +485,12 @@ fn only_xaq_s_file_bytes_are_said_by_size_and_a_credential_anywhere_is_still_ref
 fn wrapped_and_large_attachments_are_files_and_a_key_inside_one_is_still_found() {
     use base64::Engine;
     let b64 = |bytes: &[u8]| base64::engine::general_purpose::STANDARD.encode(bytes);
-    // A large file whose base64 happens to hold a key's shape (an AWS key id between two `+`): a file, read decoded,
-    // so it asks rather than being refused as a credential.
+    // A large file whose base64 happens to spell a Google API key's shape, the one shape random base64 can: a file,
+    // read decoded, so it asks rather than being refused as a credential.
     let lookalike = format!(
-        "{}+AKIAQQQQQQQQQQQQQQQQ+AA{}",
+        "{}+AIza{}{}",
         b64(&[7u8; 600]),
+        "Q".repeat(35),
         b64(&[9u8; 600])
     );
     assert_ne!(crate::hub::redact::redact(&lookalike), lookalike);
@@ -530,4 +531,59 @@ fn wrapped_and_large_attachments_are_files_and_a_key_inside_one_is_still_found()
         ),
         Never::Credential.why()
     );
+}
+
+#[test]
+fn a_key_padded_out_to_look_like_a_file_is_still_refused() {
+    use super::policy::file_bytes;
+    use base64::Engine;
+    let b64 = |bytes: &[u8]| base64::engine::general_purpose::STANDARD.encode(bytes);
+    let send = |content: &str| {
+        verdict(
+            "mcp__google__send_message",
+            &json!({ "to": "a@example.com", "subject": "s", "body": "b",
+                "attachments": [{ "content_base64": content, "filename": "photo.jpg" }] }),
+            &navi(),
+        )
+    };
+    let refused = Some(Verdict::Block(Never::Credential.why()));
+    // `key` between `sep`s, padded with base64 letters past 256 characters to a length that decodes: a file's shape.
+    let padded = |key: &str, sep: char| {
+        let mut out = format!("{}{sep}{key}{sep}", "A".repeat(300));
+        while out.len() % 4 != 0 {
+            out.push('A');
+        }
+        out + &"A".repeat(300)
+    };
+    for (key, sep) in [
+        ("sk-ant-abcdefghijklmnop0123", '-'),
+        ("sk-proj-abcdefghijklmnopqrstuvwx", '-'),
+        ("ghp_abcdefghijklmnopqrstuvwxyz0123", '-'),
+        ("github_pat_abcdefghijklmnopqrstuvwxyz0123", '-'),
+        ("xoxb-1234567890-abcdefghij", '-'),
+        ("AKIAQQQQQQQQQQQQQQQQ", '+'),
+    ] {
+        let content = padded(key, sep);
+        assert!(
+            file_bytes(&content).is_some(),
+            "{key} isn't padded to a file's shape"
+        );
+        assert_eq!(send(&content), refused, "{key}");
+    }
+    // A private key's armour, wrapped among base64 lines.
+    let pem = format!(
+        "{}\n-----BEGIN PRIVATE KEY-----\n{}\n-----END PRIVATE KEY-----",
+        b64(&[3u8; 300]),
+        "MIIE"
+    );
+    assert_eq!(send(&pem), refused);
+    // A real file whose standard base64 happens to spell a Google API key's shape is a file: it asks.
+    let chance = format!(
+        "{}/AIza{}{}",
+        b64(&[5u8; 300]),
+        "Q".repeat(35),
+        b64(&[6u8; 300])
+    );
+    assert!(file_bytes(&chance).is_some());
+    assert!(matches!(send(&chance), Some(Verdict::Ask(_))));
 }
