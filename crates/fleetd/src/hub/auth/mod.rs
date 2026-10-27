@@ -181,13 +181,20 @@ impl KeyRow {
             .map(|(_, _, role, _)| crate::hub::people::role_of(role))
     }
 
+    /// The key as the hub applies it: a device never holds more than its person's role allows, so a member's device
+    /// reads (and acts) as operate even where its own grant says admin.
     fn info(&self) -> Result<AgentKeyInfo, StoreError> {
+        let grants: Vec<Grant> = serde_json::from_str(&self.grants)?;
+        let grants = match self.role() {
+            Some(role) => crate::hub::people::capped(&grants, crate::hub::people::role_cap(role)),
+            None => grants,
+        };
         Ok(AgentKeyInfo {
             key_id: Text::unchecked(self.key_id.clone()),
             name: self.name.clone(),
             kind: (self.kind == "human").then_some(KeyKind::Human),
             prefix: AgentKeyPrefix::unchecked(self.prefix.clone()),
-            grants: serde_json::from_str(&self.grants)?,
+            grants,
             created_at: iso_ms(self.created_ms).into(),
             last_used_at: self.last_used_ms.map(|ms| iso_ms(ms).into()),
             revoked_at: self.revoked_ms.map(|ms| iso_ms(ms).into()),
@@ -357,13 +364,7 @@ impl Auth {
             })?;
             row.last_used_ms = Some(now);
         }
-        let mut info = row.info()?;
-        // A device never holds more than its person's role allows: a member's admin grant operates.
-        if let Some(role) = row.role() {
-            info.grants =
-                crate::hub::people::capped(&info.grants, crate::hub::people::role_cap(role));
-        }
-        Ok(info)
+        Ok(row.info()?)
     }
 
     /// Idempotent: revoking a revoked key keeps its first `revokedAt`.
