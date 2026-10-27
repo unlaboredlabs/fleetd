@@ -279,6 +279,11 @@ describe("Settings → Projects", () => {
 describe("Settings → Projects → Repos", () => {
   const web: ProjectRepo = { repoId: "R1", name: "web", checkout: { machineId: "devbox", projectId: "p1" }, repoKey: "github.com/acme/web", base: "main" };
   const api: ProjectRepo = { repoId: "R2", name: "api", checkout: { machineId: "devbox", projectId: "p9" }, repoKey: "gitlab.example.com/team/api" };
+  /** The page, then each repo's read, which starts once the project's settings are in. */
+  const renderRepos = async () => {
+    await render();
+    await settle();
+  };
   const section = () => {
     const el = document.querySelector<HTMLElement>('section[aria-label="Repos"]');
     if (el === null) throw new Error("no repos section");
@@ -291,7 +296,7 @@ describe("Settings → Projects → Repos", () => {
   };
 
   it("says a plain folder has no repo, in one line", async () => {
-    await render();
+    await renderRepos();
     expect(section().textContent).toContain("No repo, a plain folder.");
     expect(section().querySelector('[role="list"]')).toBeNull();
     expect(calls.some((c) => c.tool === "project_settings_get" && (c.input as { repo?: string }).repo !== undefined)).toBe(false);
@@ -300,7 +305,7 @@ describe("Settings → Projects → Repos", () => {
   it("shows one repo's remote, base and checkout, and the project's setup on a hub that has none of its own", async () => {
     repos = [web];
     answers = [{ ...settings, setup: { ...settings.setup, commands: ["pnpm install"] } }];
-    await render();
+    await renderRepos();
     const text = row("web");
     expect(text).toContain("acme/web");
     expect(text).not.toContain("github.com");
@@ -318,7 +323,7 @@ describe("Settings → Projects → Repos", () => {
       web: answers[0] as Settings,
       api: { ...settings, repo: "api", setup: { ...settings.setup, commands: ["go mod download", "make gen"] }, preview: { web: { start: "make serve" } } },
     };
-    await render();
+    await renderRepos();
     expect([...section().querySelectorAll('[role="listitem"]')].map((x) => x.getAttribute("aria-label"))).toEqual(["web", "api"]);
     expect(row("web")).toContain("Uses the project's: pnpm install");
     const text = row("api");
