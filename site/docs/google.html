@@ -345,24 +345,24 @@ admin saves the right secret works again.</p>
 </tr>
 <tr>
 <td><code dir="auto">all</code></td>
-<td>Each new message in the inbox.</td>
+<td>Each new message received.</td>
 </tr>
 <tr>
 <td><code dir="auto">query</code></td>
-<td>Only new inbox mail matching a Gmail search, such as <code dir="auto">from:boss@example.com OR is:important</code>.</td>
+<td>Only new mail matching a Gmail search, such as <code dir="auto">from:boss@example.com OR is:important</code>.</td>
 </tr>
 </tbody>
 </table>
 <p>How the hub hears of it:</p>
 <ul>
-<li><strong>Push</strong>, with <a href="#pubsub">real-time mail</a> set up. The Navi’s machine asks Gmail to watch the inbox (<code dir="auto">users.watch</code>) and
-tell the topic. A watch lasts 7 days, and the hub renews it a day before it ends. The machine holding the service
+<li><strong>Push</strong>, with <a href="#pubsub">real-time mail</a> set up. The Navi’s machine asks Gmail to watch for new mail (<code dir="auto">users.watch</code>)
+and tell the topic. A watch lasts 7 days, and the hub renews it a day before it ends. The machine holding the service
 account key reads the subscription and acknowledges each notice. A notice names an address, and the hub has the
-machine of each Navi connected to it check that Navi’s inbox.</li>
+machine of each Navi connected to it check that Navi’s mail.</li>
 <li><strong>Polling</strong>, without Pub/Sub, or while reading it fails or no read has worked for 2 minutes. The hub checks each such
-Navi’s inbox about every minute. It goes back to push with the next good read.</li>
+Navi’s mail about every minute. It goes back to push with the next good read.</li>
 </ul>
-<p>A check reads the inbox’s history since the last one, so nothing is missed or told twice when the hub moves between
+<p>A check reads the mailbox’s history since the last one, so nothing is missed or told twice when the hub moves between
 push and polling. The first check only marks where to start. Sent mail and drafts don’t wake anyone.</p>
 <p>The wake reaches the Navi’s lead as one event: for each message (up to 10, then a count), its sender, subject, start
 and thread. Above them is a line saying it’s from the mailbox and untrusted, whose instructions are its sender’s, not
