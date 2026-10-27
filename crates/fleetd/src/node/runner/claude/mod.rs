@@ -190,35 +190,61 @@ explained! {
 /// fleetd's policy file, would let it give itself allow rules, hooks or tools.
 const ASSISTANT_KEPT: &[&str] = &[".claude", ".mcp.json", ".fleetd"];
 
-/// `path` (relative to `cwd`, or absolute) is inside `root` once symlinks are resolved: through the path itself, or
-/// its nearest parent that exists.
-fn inside(cwd: &Path, root: &Path, path: &str) -> bool {
+/// Where `path` (relative to `cwd`, or absolute) really is: its nearest part that exists with symlinks resolved, then
+/// the rest of it. None with a `..` in it.
+fn resolve(cwd: &Path, path: &str) -> Option<PathBuf> {
     let joined = cwd.join(path);
     if joined
         .components()
         .any(|c| c == std::path::Component::ParentDir)
     {
-        return false;
+        return None;
     }
-    let root = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_owned());
     let mut base = joined.as_path();
     let mut rest = Vec::new();
-    let resolved = loop {
+    loop {
         if let Ok(real) = std::fs::canonicalize(base) {
-            break rest
-                .iter()
-                .rev()
-                .fold(real, |p: PathBuf, part| p.join(part));
+            return Some(
+                rest.iter()
+                    .rev()
+                    .fold(real, |p: PathBuf, part| p.join(part)),
+            );
         }
-        match (base.parent(), base.file_name()) {
-            (Some(parent), Some(name)) => {
-                rest.push(name.to_owned());
-                base = parent;
-            }
-            _ => return false,
-        }
+        rest.push(base.file_name()?.to_owned());
+        base = base.parent()?;
+    }
+}
+
+/// `dir` with symlinks resolved, as it is when it can't be.
+fn real(dir: &Path) -> PathBuf {
+    std::fs::canonicalize(dir).unwrap_or_else(|_| dir.to_owned())
+}
+
+/// `path` is inside `root` once both are resolved.
+fn inside(cwd: &Path, root: &Path, path: &str) -> bool {
+    resolve(cwd, path).is_some_and(|p| p.starts_with(real(root)))
+}
+
+/// `path` really is in one of [`ASSISTANT_KEPT`] in `cwd`, whatever case it is spelled in: a disk that ignores case
+/// (macOS's, by default) writes `.Claude` into `.claude`.
+fn kept(cwd: &Path, path: &str) -> bool {
+    let Some(resolved) = resolve(cwd, path) else {
+        return true;
     };
-    resolved.starts_with(root)
+    resolved
+        .strip_prefix(real(cwd))
+        .ok()
+        .and_then(|rel| rel.components().next())
+        .is_some_and(|first| {
+            let first = first.as_os_str().to_string_lossy().to_lowercase();
+            ASSISTANT_KEPT.contains(&first.as_str())
+        })
+}
+
+/// A Glob pattern (or Grep's file filter) that could reach outside the folder it searches: absolute, from home, or
+/// climbing with `..`.
+fn wide_pattern(pattern: &str) -> bool {
+    pattern.starts_with(['/', '~']) || pattern.split(['/', '\\']).any(|part| part == "..")
 }
 
 /// How the node answers a file tool's prompt from a session of `role` in `cwd`, whoever would approve it: a Navi's lead
@@ -256,6 +282,15 @@ pub fn role_answer(
         })
     };
     let folder = cwd.display();
+    let patterns = ["pattern", "glob"]
+        .iter()
+        .filter(|k| tool == "Glob" || **k == "glob")
+        .filter_map(|k| input.get(*k).and_then(|v| v.as_str()));
+    if patterns.into_iter().any(wide_pattern) {
+        return deny(format!(
+            "fleetd policy: a Navi reads only inside its own folder, {folder}"
+        ));
+    }
     if !path.is_empty() && !inside(cwd, cwd, path) && inside(cwd, scratch, path) {
         return Some(PermissionDecision::Allow {
             updated_input: None,
@@ -267,13 +302,7 @@ pub fn role_answer(
             "fleetd policy: a Navi {verb} only inside its own folder, {folder}"
         ));
     }
-    let kept = Path::new(path)
-        .strip_prefix(cwd)
-        .unwrap_or(Path::new(path))
-        .components()
-        .find(|c| !matches!(c, std::path::Component::CurDir))
-        .is_some_and(|first| ASSISTANT_KEPT.iter().any(|k| first.as_os_str() == *k));
-    if writes && kept {
+    if writes && kept(cwd, path) {
         return deny(format!(
             "fleetd policy: a Navi doesn't change its own settings, policy or MCP servers ({})",
             ASSISTANT_KEPT.join(", ")
@@ -848,6 +877,82 @@ mod tests {
         assert!(refused(
             "Read",
             file(&home.path().join("tmp/other/x").display().to_string())
+        ));
+    }
+
+    #[test]
+    fn a_navis_settings_stay_unwritable_however_the_path_is_spelled() {
+        // The folder as the node knows it goes through a symlinked ancestor, as /var is /private/var on macOS.
+        let home = tempfile::tempdir().unwrap();
+        let real_folder = home.path().join("private/var/navi/ada");
+        std::fs::create_dir_all(real_folder.join(".claude")).unwrap();
+        std::os::unix::fs::symlink(home.path().join("private/var"), home.path().join("var"))
+            .unwrap();
+        let folder = home.path().join("var/navi/ada");
+        let scratch = home.path().join("tmp/ab12");
+        let write = |p: &str| {
+            role_answer(
+                SessionRole::Assistant,
+                &folder,
+                &scratch,
+                "Write",
+                &serde_json::json!({ "file_path": p, "content": "{}" }),
+            )
+        };
+        let refused = |p: &str| matches!(write(p), Some(PermissionDecision::Deny { .. }));
+        let real = real_folder.display().to_string();
+        let linked = folder.display().to_string();
+        for path in [
+            // Case variants, which a disk that ignores case writes into the real files.
+            ".Claude/settings.local.json".to_owned(),
+            ".MCP.json".to_owned(),
+            ".FLEETD/policy.yaml".to_owned(),
+            // The folder spelled through its real path, and through the symlink.
+            format!("{real}/.claude/settings.json"),
+            format!("{linked}/.mcp.json"),
+            format!("{real}/.fleetd/policy.yaml"),
+        ] {
+            assert!(refused(&path), "{path}");
+        }
+        // Its own notes, however spelled, still write.
+        for path in [
+            format!("{real}/notes.md"),
+            format!("{linked}/notes.md"),
+            "Claude.md".to_owned(),
+        ] {
+            assert!(
+                matches!(write(&path), Some(PermissionDecision::Allow { .. })),
+                "{path}"
+            );
+        }
+        // A pattern that reaches outside the folder is refused, as a path would be.
+        let search = |tool: &str, input: serde_json::Value| {
+            role_answer(SessionRole::Assistant, &folder, &scratch, tool, &input)
+        };
+        for (tool, input) in [
+            ("Glob", serde_json::json!({ "pattern": "/home/**/.ssh/*" })),
+            ("Glob", serde_json::json!({ "pattern": "../../**" })),
+            ("Glob", serde_json::json!({ "pattern": "~/.config/**" })),
+            (
+                "Grep",
+                serde_json::json!({ "pattern": "token", "glob": "../**/*.json" }),
+            ),
+        ] {
+            assert!(
+                matches!(
+                    search(tool, input.clone()),
+                    Some(PermissionDecision::Deny { .. })
+                ),
+                "{input}"
+            );
+        }
+        assert!(matches!(
+            search("Glob", serde_json::json!({ "pattern": "notes/**/*.md" })),
+            Some(PermissionDecision::Allow { .. })
+        ));
+        assert!(matches!(
+            search("Grep", serde_json::json!({ "pattern": "/etc/passwd" })),
+            Some(PermissionDecision::Allow { .. })
         ));
     }
 

@@ -389,7 +389,9 @@ bridge (`hub/navi/bridge`) and the integrations (`hub/integrations`) are separat
     so each of these reaches the node's prompt.
   - `role_answer` answers a file tool there: inside the folder or the session's scratch directory (symlinks
     resolved, no `..`) it is allowed, except an
-    edit to `.claude/`, `.mcp.json` or `.fleetd/`. The hub also drops a policy file's allow rules from an assistant's
+    edit to `.claude/`, `.mcp.json` or `.fleetd/`, checked on the resolved path and whatever its case (a disk that
+    ignores case writes `.Claude` into `.claude`). A Glob pattern or Grep file filter that is absolute or climbs with
+    `..` is refused too. The hub also drops a policy file's allow rules from an assistant's
     launch (`hub/executor/mod.rs`), so nothing the Navi writes can widen its own rules. Outside it is refused, whoever would approve it. So the session's `mcp.json`
     (with its resolved tokens), the node's env files, `~/.ssh` and gh's login are out of the Navi's reach. A `Bash`
     command that reads them asks the person, showing the command.
@@ -397,7 +399,9 @@ bridge (`hub/navi/bridge`) and the integrations (`hub/integrations`) are separat
   <url>`, is a visit to its host, without `www.`.
   - A site the person allowed goes through unasked. Any other site asks, the approval naming it in
     `permission.site`, and approving it allows the site.
-  - A command that does more than open one page asks every time, with no site.
+  - A command that does more than open one plain URL asks every time, with no site: a second word, a quote inside
+    it, a backslash, whitespace, a user in the authority, or a scheme other than http(s). The host compared is the
+    URL library's, after IDN to punycode.
   - `navi_sites {machineId, projectId}` lists the sites; `navi_site_revoke {…, site}` takes one back, and it asks
     again.
   - Not covered: a click that follows a link to another site, and a final Send or Pay click on an allowed site. The
