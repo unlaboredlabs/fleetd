@@ -5,11 +5,12 @@ import type { AgentKeyInfo, HubInfoOutput, HubRole, Invite, PeopleListOutput, Pe
 
 /**
  * Whether this app's person administers the hub: an owner or admin whose device isn't capped below admin. A hub from
- * before people names no person; there it is the key's own admin grant, as Settings asked before.
+ * before people names no person; there it is the key's own admin grant, as Settings asked before: a hub too old to
+ * say leaves the app to try, and refuses a change it doesn't allow. False until hub_info answers.
  */
 export function administers(info: Pick<HubInfoOutput, "admin" | "me"> | undefined): boolean {
   if (info === undefined) return false;
-  if (info.me === undefined) return info.admin === true;
+  if (info.me === undefined) return info.admin !== false;
   return (info.me.role === "owner" || info.me.role === "admin") && info.admin !== false;
 }
 

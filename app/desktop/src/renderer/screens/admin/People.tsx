@@ -3,10 +3,12 @@
 // offers comes from model.ts; the hub checks it all again.
 import { useState } from "react";
 import type { HubRole, PeopleListOutput, Person } from "../../../shared/contracts";
+import { CallError } from "../../src/data/queries";
 import { useToolQuery } from "../../src/data/react";
 import { Button, Dialog, Select, Text } from "../../ui";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
 import { PageHead } from "../settings/parts";
+import { setUpdatesOpen } from "../updates/state";
 import { devicesLine, peopleRows, roleWord, type PersonRow } from "./model";
 import s from "../settings/settings.module.css";
 import a from "./admin.module.css";
@@ -19,6 +21,22 @@ export const usePeople = () => {
   return useToolQuery("people_list", noInput, { enabled: live });
 };
 
+/** A hub from before people answers that it has no such tool: it needs updating, not a retry. */
+export const lacksPeople = (error: unknown): boolean =>
+  error instanceof CallError && error.error.code === "not_found" && error.error.message.startsWith("No tool");
+
+/** In place of People and Invites on a hub from before people; Hub settings still works there. */
+export function NeedsUpdate() {
+  return (
+    <div className={s.stack}>
+      <Text tone="quiet">This hub needs updating to manage people. Hub settings work as they are.</Text>
+      <span>
+        <Button onClick={() => setUpdatesOpen(true)}>Update the hub</Button>
+      </span>
+    </div>
+  );
+}
+
 export function People({ me }: { me: Person | undefined }) {
   const live = useLive();
   const read = usePeople();
@@ -28,6 +46,8 @@ export function People({ me }: { me: Person | undefined }) {
         <PageHead title="People">Who is on this hub. Each person's devices act as them; removing someone signs all of them out.</PageHead>
         {!live ? (
           <Text tone="quiet">Connect to a hub to see and change this.</Text>
+        ) : lacksPeople(read.error) ? (
+          <NeedsUpdate />
         ) : read.error ? (
           <Text tone="danger">{`Couldn't read the people: ${errorText(read.error)}`}</Text>
         ) : read.data === undefined ? (
