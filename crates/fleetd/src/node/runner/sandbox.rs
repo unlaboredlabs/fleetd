@@ -15,6 +15,8 @@
 //! Only Navis are fenced; every other session runs as before.
 use std::path::{Path, PathBuf};
 
+use fleetd_contracts::sessions::{NaviSandbox, SandboxStatus};
+
 /// What a fenced session may touch. Everything else on the machine reads as it is and takes no writes.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Fence {
@@ -29,6 +31,10 @@ pub struct Fence {
     /// `(private, shared)`: the session's own `private` dir, read and written where `shared` is, so what it writes
     /// there reaches no other session. Linux only: on macOS `shared` is read-only.
     pub private: Vec<(PathBuf, PathBuf)>,
+    /// `(real, copy)`: claude's global config (`~/.claude.json`) and the session's sanitized copy of it
+    /// ([`sanitized_config`]), read and written in its place on Linux. On macOS, where nothing can stand in for a
+    /// path, the real one is hidden.
+    pub config_copy: Option<(PathBuf, PathBuf)>,
 }
 
 /// Why a fenced session can't start, and what a person does about it.
@@ -64,6 +70,12 @@ const HIDDEN_IN_HOME: &[&str] = &[
     ".Xauthority",
     // Other sessions' agent-browser daemons listen here; a Navi's own listens in its scratch dir.
     ".agent-browser",
+    "snap",
+    ".pgpass",
+    ".vault-token",
+    ".azure",
+    ".terraform.d",
+    ".local/share/fish/fish_history",
 ];
 
 /// In the user's home on macOS: `~/Library` whole, where browsers keep cookies, apps their tokens, and the keychains
@@ -104,6 +116,9 @@ const CLAUDE_HIDDEN: &[&str] = &[
     "file-history",
     "session-env",
     "sessions",
+    // IDE connections (their lock files hold an auth token), and backups of `~/.claude.json` with its MCP servers.
+    "ide",
+    "backups",
 ];
 
 /// Where a Navi's session runs, and what it needs.
@@ -121,6 +136,8 @@ pub struct NaviPaths<'a> {
     pub session_id: &'a str,
     /// claude's config dir: `~/.claude`, or `$CLAUDE_CONFIG_DIR`.
     pub claude_dir: &'a Path,
+    /// claude's global config: `~/.claude.json`, or `.claude.json` in `$CLAUDE_CONFIG_DIR`.
+    pub claude_json: &'a Path,
     /// The `fleetd` binary claude starts as fleetd's MCP server.
     pub exe: &'a Path,
     /// The node's socket that server speaks to.
@@ -205,12 +222,26 @@ pub fn navi_fence(p: &NaviPaths) -> Fence {
     // claude's config dir is read again where it is hidden (under `~/.config`), but for [`CLAUDE_HIDDEN`].
     let mut show = vec![real(p.session_dir), real(p.exe), real(p.socket), claude];
     show.extend(NODE_TOOLS.iter().map(|t| real(&p.node_home.join(t))));
+    // Its own copy of claude's global config, without other tools' secrets, where there is one to stand in for.
+    let claude_json = real(p.claude_json);
+    let config_copy = claude_json.is_file().then(|| {
+        (
+            claude_json,
+            real(&p.session_dir.join("claude").join(".claude.json")),
+        )
+    });
+    if cfg!(target_os = "macos")
+        && let Some((config, _)) = &config_copy
+    {
+        hide.push(config.clone());
+    }
     Fence {
         write,
         hide,
         show,
         keep,
         private,
+        config_copy,
     }
 }
 
@@ -233,8 +264,46 @@ impl Fence {
                 std::fs::create_dir_all(kept)?;
             }
         }
+        // Copied fresh at each start, so nothing the Navi left in its copy outlives the session it wrote it in.
+        if let Some((config, copy)) = &self.config_copy {
+            let text = std::fs::read_to_string(config).unwrap_or_default();
+            if let Some(dir) = copy.parent() {
+                std::fs::create_dir_all(dir)?;
+            }
+            crate::node::secrets::write_atomic(copy, sanitized_config(&text).as_bytes())?;
+        }
         Ok(())
     }
+}
+
+/// Top-level keys of claude's global config a Navi's copy leaves out: MCP servers (theirs carry tokens in their
+/// environment and headers) and every project's entry (each with its own servers and history).
+const CONFIG_DROPPED: &[&str] = &["mcpServers", "projects"];
+
+/// Words in a key's name that say it holds a secret: such a key is left out too, but for claude's own login
+/// (`primaryApiKey`), which the Navi's claude needs and can read in its login file anyway.
+const SECRET_WORDS: &[&str] = &[
+    "token",
+    "secret",
+    "password",
+    "credential",
+    "apikey",
+    "api_key",
+];
+
+/// claude's global config (`~/.claude.json`) as a Navi gets it: without [`CONFIG_DROPPED`] or any key named like a
+/// secret. Text that isn't a JSON object becomes `{}`.
+pub fn sanitized_config(text: &str) -> String {
+    let Ok(serde_json::Value::Object(mut config)) = serde_json::from_str(text) else {
+        return "{}\n".into();
+    };
+    config.retain(|key, _| {
+        let lower = key.to_lowercase();
+        key == "primaryApiKey"
+            || !(CONFIG_DROPPED.contains(&key.as_str())
+                || SECRET_WORDS.iter().any(|w| lower.contains(w)))
+    });
+    format!("{}\n", serde_json::Value::Object(config))
 }
 
 /// `program args` as it runs inside `fence`, in `cwd`: the sandbox's own program and arguments first. A sandbox that
@@ -282,7 +351,8 @@ pub fn wrap_with(
     }
     let own = own_args(fence, cwd);
     // Started once with nothing to run, so a sandbox that fails says why here, not as a session that ends at once.
-    let probe = std::process::Command::new(&tool)
+    let mut probe = std::process::Command::new(&tool);
+    probe
         .args(&own)
         .arg(if cfg!(target_os = "macos") {
             "/usr/bin/true"
@@ -290,8 +360,9 @@ pub fn wrap_with(
             "true"
         })
         .env_clear()
-        .stdin(std::process::Stdio::null())
-        .output();
+        .stdin(std::process::Stdio::null());
+    with_scope(&mut probe);
+    let probe = probe.output();
     match probe {
         Ok(out) if out.status.success() => {}
         Ok(out) => return Err(failed(&tool, &String::from_utf8_lossy(&out.stderr))),
@@ -301,6 +372,148 @@ pub fn wrap_with(
     all.push(program.to_string_lossy().into_owned());
     all.extend(args);
     Ok((tool, all))
+}
+
+/// Landlock's ABI that scopes abstract Unix sockets (Linux 6.12).
+const SCOPE_ABI: i64 = 6;
+
+/// The Landlock ABI this kernel speaks; 0 without Landlock, or off Linux.
+pub fn landlock_abi() -> i64 {
+    #[cfg(target_os = "linux")]
+    {
+        // SAFETY: LANDLOCK_CREATE_RULESET_VERSION with no attributes only asks for the version.
+        let abi = unsafe {
+            libc::syscall(
+                libc::SYS_landlock_create_ruleset,
+                std::ptr::null::<u8>(),
+                0usize,
+                1u32,
+            )
+        };
+        #[allow(clippy::needless_return)]
+        return abi.max(0);
+    }
+    #[cfg(not(target_os = "linux"))]
+    0
+}
+
+/// What runs in the sandbox's own process before it execs bubblewrap, where the kernel has it: a Landlock domain that
+/// handles no file access (so bubblewrap still mounts) and scopes abstract Unix sockets. Nothing inside can then
+/// connect to one made outside, such as an X server's `@/tmp/.X11-unix/X0` or a D-Bus bus, though the network is
+/// shared. Its own processes still reach each other's. None off Linux or below [`SCOPE_ABI`].
+pub fn scope_hook() -> Option<fn() -> std::io::Result<()>> {
+    #[cfg(target_os = "linux")]
+    if landlock_abi() >= SCOPE_ABI {
+        return Some(scope_sockets);
+    }
+    None
+}
+
+/// Runs between fork and exec, so only system calls: no allocation, no lock.
+#[cfg(target_os = "linux")]
+fn scope_sockets() -> std::io::Result<()> {
+    #[repr(C)]
+    struct Attr {
+        handled_access_fs: u64,
+        handled_access_net: u64,
+        scoped: u64,
+    }
+    const SCOPE_ABSTRACT_UNIX_SOCKET: u64 = 1;
+    let attr = Attr {
+        handled_access_fs: 0,
+        handled_access_net: 0,
+        scoped: SCOPE_ABSTRACT_UNIX_SOCKET,
+    };
+    // SAFETY: plain system calls on a ruleset this function owns and closes.
+    unsafe {
+        let fd = libc::syscall(
+            libc::SYS_landlock_create_ruleset,
+            &attr as *const Attr,
+            std::mem::size_of::<Attr>(),
+            0u32,
+        );
+        if fd < 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        let fd = fd as libc::c_int;
+        let restricted = if libc::prctl(libc::PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) == 0 {
+            libc::syscall(libc::SYS_landlock_restrict_self, fd, 0u32)
+        } else {
+            -1
+        };
+        let error = std::io::Error::last_os_error();
+        libc::close(fd);
+        if restricted != 0 {
+            return Err(error);
+        }
+    }
+    Ok(())
+}
+
+/// What a person reads about a Navi's sandbox on this machine (`RunnerInfo.sandbox`): which one, any gap, and the fix.
+/// None on a system fleetd has no sandbox for.
+pub fn describe() -> Option<NaviSandbox> {
+    if !cfg!(any(target_os = "linux", target_os = "macos")) {
+        return None;
+    }
+    let Some(tool) = tool() else {
+        let refused = missing();
+        return Some(NaviSandbox {
+            status: SandboxStatus::Missing,
+            line: refused.message,
+            fix: Some(refused.fix),
+        });
+    };
+    if cfg!(target_os = "macos") {
+        return Some(NaviSandbox {
+            status: SandboxStatus::Ready,
+            line: "Navis run in sandbox-exec.".into(),
+            fix: None,
+        });
+    }
+    let mut probe = std::process::Command::new(&tool);
+    probe
+        .args(["--ro-bind", "/", "/", "--unshare-all", "true"])
+        .env_clear()
+        .stdin(std::process::Stdio::null());
+    with_scope(&mut probe);
+    let why = match probe.output() {
+        Ok(out) if out.status.success() => None,
+        Ok(out) => Some(String::from_utf8_lossy(&out.stderr).into_owned()),
+        Err(e) => Some(e.to_string()),
+    };
+    Some(match why {
+        Some(why) => {
+            let refused = failed(&tool, &why);
+            NaviSandbox {
+                status: SandboxStatus::Missing,
+                line: refused.message,
+                fix: Some(refused.fix),
+            }
+        }
+        None if scope_hook().is_some() => NaviSandbox {
+            status: SandboxStatus::Ready,
+            line: "Navis run in bubblewrap, with abstract sockets scoped (Landlock).".into(),
+            fix: None,
+        },
+        None => NaviSandbox {
+            status: SandboxStatus::Gap,
+            line: "Navis run in bubblewrap, but this kernel can't scope abstract sockets (Landlock 6, Linux 6.12): a \
+                   Navi can reach an X server that takes local connections without a cookie."
+                .into(),
+            fix: Some("Update the kernel to Linux 6.12 or later.".into()),
+        },
+    })
+}
+
+/// `command` with [`scope_hook`] run before it execs, where the kernel has it.
+pub fn with_scope(command: &mut std::process::Command) {
+    if let Some(hook) = scope_hook() {
+        // SAFETY: the hook makes system calls only.
+        unsafe {
+            std::os::unix::process::CommandExt::pre_exec(command, hook);
+        }
+    }
 }
 
 /// The sandbox's own arguments, up to the command.
@@ -392,6 +605,12 @@ fn bwrap_args(fence: &Fence, cwd: &Path) -> Vec<String> {
             .private
             .iter()
             .map(|(from, to)| (to.as_path(), Op::Private(from))),
+    );
+    ops.extend(
+        fence
+            .config_copy
+            .iter()
+            .map(|(config, copy)| (config.as_path(), Op::Private(copy))),
     );
     ops.extend(fence.keep.iter().map(|p| (p.as_path(), Op::Show)));
     // Stable: at one depth, a hidden path goes first and the folder's kept paths last.

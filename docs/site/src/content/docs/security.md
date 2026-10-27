@@ -84,8 +84,13 @@ Code's config dir (or `$CLAUDE_CONFIG_DIR`).
 scratch dir, and Claude Code's files for its own session: its conversation in `~/.claude/projects/<its folder>`,
 `~/.claude/session-env/<session>`, `~/.claude/file-history/<session>`, and the login file
 `~/.claude/.credentials.json` when there is one. Claude Code saves a refreshed token there; one it couldn't save would
-log out every session on the machine. Everything else takes no writes, `~/.claude/settings.json` and
-`~/.claude.json` included, so it can't add hooks or MCP servers for other agents.
+log out every session on the machine. Everything else takes no writes, `~/.claude/settings.json` included, so it
+can't add hooks or MCP servers for other agents.
+
+**`~/.claude.json`** holds every MCP server's settings, with their tokens, and every project's history. On Linux a
+Navi gets its own copy in its place, made fresh at each start: without `mcpServers`, without `projects`, and without
+any key named like a secret but Claude Code's own login. What it writes there stays in its copy. On macOS, where
+nothing can stand in for a path, the real file is hidden.
 
 **Can't read**, on both:
 
@@ -94,11 +99,13 @@ log out every session on the machine. Everything else takes no writes, `~/.claud
   and the agent-browser and agent-device installs.
 - Other projects' checkouts on the machine.
 - Claude Code's record of other sessions: `~/.claude/projects` (but its own), `history.jsonl`, `file-history`,
-  `session-env` and `sessions`.
+  `session-env` and `sessions`; its IDE connections (`ide`, whose lock files hold a token) and its `backups`.
 - Logins and keys: `~/.config`, `~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.docker`, `~/.kube`, `~/.password-store`,
   `~/.local/share/keyrings`, `~/.netrc`, `~/.git-credentials`, `~/.npmrc`, `~/.pypirc`, `~/.cargo/credentials` and
-  `credentials.toml`, `~/.android/adbkey`, `~/.mozilla`.
-- Shell and REPL history: `~/.bash_history`, `~/.zsh_history`, `~/.python_history`, `~/.node_repl_history`.
+  `credentials.toml`, `~/.android/adbkey`, `~/.mozilla`, `~/.pgpass`, `~/.vault-token`, `~/.azure`, `~/.terraform.d`,
+  and `~/snap` (each snap's own data, logins included).
+- Shell and REPL history: `~/.bash_history`, `~/.zsh_history`, fish's `~/.local/share/fish/fish_history`,
+  `~/.python_history`, `~/.node_repl_history`.
 - The X server: `~/.Xauthority` and `/tmp/.X11-unix`. `DISPLAY` and `XAUTHORITY` are unset.
 - `~/.agent-browser`, where other sessions' browsers listen. Its own listens in its scratch dir.
 - The docker socket (`/run/docker.sock`, `/var/run/docker.sock`).
@@ -106,6 +113,7 @@ log out every session on the machine. Everything else takes no writes, `~/.claud
 | | Linux (bubblewrap) | macOS (`sandbox-exec`) |
 |---|---|---|
 | Also can't read | `$XDG_RUNTIME_DIR` (`/run/user/<uid>`): the user's D-Bus, systemd and SSH agent sockets, which would start commands outside. Their variables are unset. | `~/Library` whole: browser cookies, app tokens, keychain files. Claude Code reads its login through the keychain's daemon, not the files. |
+| Abstract sockets | Landlock scopes them (Linux 6.12 and later): nothing inside connects to one made outside, such as an X server's or a D-Bus bus's. On an older kernel they stay reachable, and the machine's Navi sandbox check says so. | Not used on macOS |
 | `/tmp` | Its own | The machine's, read-only. Its scratch dir is its `TMPDIR`. |
 | Processes | Its own (`/proc`, a pid namespace): no other process, so no way back to the disk through one | Others are visible, as for any program |
 | Claude Code's shared state | Shell snapshots, todos, tasks, plans, `statsig`, `debug` and the paste cache get a private copy per session | Read-only: `sandbox-exec` can't give a private copy. A Mac Navi's todo list, plan files and shell snapshot may not save. |
@@ -114,9 +122,12 @@ log out every session on the machine. Everything else takes no writes, `~/.claud
 
 - **No sandbox, no Navi.** When bubblewrap is missing or can't start, the Navi doesn't run, and its chat says how to
   fix it ([Navi](/docs/navi)). fleetd never runs a Navi unsandboxed.
-- **What it doesn't cover.** The network is shared, as the site gate needs, so abstract Unix sockets on Linux stay
-  reachable. That includes an X server that accepts local connections without a cookie (`xhost +si:localuser`):
-  fleetd's own screens don't listen there. Its folder, its session's MCP config (with its own servers' tokens) and
+- **Each machine says which it gets.** Machines › Setup checks shows a **Navi sandbox** line per machine: bubblewrap
+  with abstract sockets scoped; bubblewrap on a kernel too old to scope them (a warning, with the fix); or none, so
+  Navis can't run there (with how to install bubblewrap).
+- **What it doesn't cover.** The network is shared, as the site gate needs. On Linux before 6.12, abstract Unix
+  sockets stay reachable, including an X server that accepts local connections without a cookie
+  (`xhost +si:localuser`, the GNOME default). fleetd's own screens don't listen there. Its folder, its session's MCP config (with its own servers' tokens) and
   Claude Code's login are readable to it, since Claude Code needs them. Everything else on the machine is readable,
   without writes.
 

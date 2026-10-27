@@ -63,6 +63,13 @@ impl Machine {
             (m.claude.join("session-env/t1/env"), "export TOKEN=x"),
             (m.home.join(".Xauthority"), "cookie"),
             (m.home.join(".npmrc"), "//registry.npmjs.org/:_authToken=x"),
+            (m.home.join(".pgpass"), "db:5432:*:ada:hunter2"),
+            (m.claude.join("ide/1234.lock"), "{\"authToken\":\"x\"}"),
+            (
+                m.home.join(".claude.json"),
+                "{\"numStartups\":3,\"mcpServers\":{\"gh\":{\"env\":{\"GITHUB_TOKEN\":\"ghp_secret\"}}},\
+                 \"projects\":{\"/src/other\":{\"history\":[\"deploy the thing\"]}}}",
+            ),
             (
                 m.claude.join("shell-snapshots/snapshot-other.sh"),
                 "# another session's",
@@ -89,6 +96,7 @@ impl Machine {
             session_dir: &self.session,
             session_id: "s1",
             claude_dir: &self.claude,
+            claude_json: &self.home.join(".claude.json"),
             exe: &self.node.join("bin/fleetd-agent-1"),
             socket: &self.node.join("node.sock"),
             runtime_dir: None,
@@ -106,7 +114,9 @@ impl Machine {
             vec!["-c".into(), script.into()],
         )
         .unwrap();
-        let out = std::process::Command::new(program)
+        let mut command = std::process::Command::new(program);
+        with_scope(&mut command);
+        let out = command
             .args(args)
             .current_dir(&self.folder)
             .env_clear()
@@ -171,6 +181,16 @@ fn a_navis_fence_writes_its_folder_and_hides_fleetd_logins_and_other_projects() 
         assert!(fence.hide.contains(&m.claude.join(other)), "{other}");
     }
     assert!(fence.hide.contains(&m.home.join(".Xauthority")));
+    for other in ["ide", "backups"] {
+        assert!(fence.hide.contains(&m.claude.join(other)), "{other}");
+    }
+    assert_eq!(
+        fence.config_copy,
+        Some((
+            m.home.join(".claude.json"),
+            m.session.join("claude/.claude.json")
+        ))
+    );
     assert!(!fence.write.contains(&m.claude));
     assert!(fence.private.contains(&(
         m.session.join("claude/shell-snapshots"),
@@ -266,6 +286,8 @@ fn a_navi_cant_read_the_token_store_logins_or_other_projects() {
         m.claude.join("session-env/t1/env"),
         m.home.join(".Xauthority"),
         m.home.join(".npmrc"),
+        m.home.join(".pgpass"),
+        m.claude.join("ide/1234.lock"),
     ] {
         let (ok, out) = m.run(&tool, &format!("cat '{}'", secret.display()));
         assert!(!ok, "{} was read: {out}", secret.display());
@@ -424,6 +446,7 @@ fn macoss_profile_writes_only_the_fence_and_reads_no_hidden_path() {
         ],
         keep: vec!["/Users/ada/.fleetd/node/navi/ada/.claude".into()],
         private: vec![],
+        config_copy: None,
     };
     let profile = seatbelt(&fence);
     let line = |start: &str| {
@@ -455,4 +478,104 @@ fn macoss_profile_writes_only_the_fence_and_reads_no_hidden_path() {
     );
     read("deny", "/Users/ada/.ssh");
     assert_eq!(quoted(Path::new("/a \"b\"\\c")), "\"/a \\\"b\\\"\\\\c\"");
+}
+
+#[test]
+fn a_navis_claude_config_is_its_own_copy_without_other_tools_secrets() {
+    let config = sanitized_config(
+        r#"{"numStartups":3,"oauthAccount":{"emailAddress":"ada@example.com"},"primaryApiKey":"sk-ant-x",
+            "mcpServers":{"gh":{"env":{"GITHUB_TOKEN":"ghp_x"}}},"projects":{"/src/other":{}},
+            "customApiKeyResponses":{"approved":["x"]},"githubToken":"x","slackSecret":"x"}"#,
+    );
+    let config: serde_json::Value = serde_json::from_str(&config).unwrap();
+    assert_eq!(config["numStartups"], 3);
+    // claude's own login stays: the Navi's claude needs it, and can read the login file anyway.
+    assert_eq!(config["primaryApiKey"], "sk-ant-x");
+    assert!(config.get("oauthAccount").is_some());
+    for gone in [
+        "mcpServers",
+        "projects",
+        "customApiKeyResponses",
+        "githubToken",
+        "slackSecret",
+    ] {
+        assert!(config.get(gone).is_none(), "{gone}");
+    }
+    assert_eq!(sanitized_config("not json"), "{}\n");
+
+    let Some(tool) = sandbox_or_skip() else {
+        return;
+    };
+    let m = Machine::new();
+    let real = m.home.join(".claude.json");
+    let before = std::fs::read_to_string(&real).unwrap();
+    let (ok, out) = m.run(
+        &tool,
+        &format!(
+            "cat '{0}'; echo '{{\"numStartups\":4}}' > '{0}'",
+            real.display()
+        ),
+    );
+    if cfg!(target_os = "linux") {
+        assert!(ok, "{out}");
+        assert!(out.contains("numStartups"), "{out}");
+        assert!(
+            !out.contains("ghp_secret") && !out.contains("deploy the thing"),
+            "{out}"
+        );
+    } else {
+        assert!(!out.contains("ghp_secret"), "{out}");
+    }
+    // What it wrote stayed in its copy.
+    assert_eq!(std::fs::read_to_string(&real).unwrap(), before);
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn a_navi_reaches_no_abstract_socket_made_outside() {
+    use std::os::linux::net::SocketAddrExt;
+    let Some(tool) = sandbox_or_skip() else {
+        return;
+    };
+    if scope_hook().is_none() {
+        eprintln!(
+            "skipped: this kernel's Landlock (ABI {}) can't scope abstract sockets",
+            landlock_abi()
+        );
+        return;
+    }
+    if !Path::new("/usr/bin/python3").exists() {
+        eprintln!("skipped: no python3 to connect to an abstract socket with");
+        return;
+    }
+    // Like an X server's `@/tmp/.X11-unix/X0`, made outside the sandbox.
+    let name = format!("fleetd-sandbox-test-{}", std::process::id());
+    let addr = std::os::unix::net::SocketAddr::from_abstract_name(name.as_bytes()).unwrap();
+    let listener = std::os::unix::net::UnixListener::bind_addr(&addr).unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let connect = format!(
+        "python3 -c \"import socket; s = socket.socket(socket.AF_UNIX); s.connect('\\0{name}'); print('connected')\""
+    );
+    let m = Machine::new();
+    let (ok, out) = m.run(&tool, &connect);
+    // Refused by the scope, not missing: Landlock answers EPERM.
+    assert!(!ok && out.contains("Operation not permitted"), "{out}");
+    assert!(listener.accept().is_err(), "the sandbox reached the socket");
+    // Its own processes still reach each other's.
+    let own = "python3 -c \"
+import socket
+a = socket.socket(socket.AF_UNIX); a.bind('\\0navi-own'); a.listen(1)
+b = socket.socket(socket.AF_UNIX); b.connect('\\0navi-own'); print('own')\"";
+    let (ok, out) = m.run(&tool, own);
+    assert!(ok && out.contains("own"), "{out}");
+}
+
+#[test]
+fn the_machine_says_which_sandbox_a_navi_gets() {
+    let Some(_) = sandbox_or_skip() else {
+        return;
+    };
+    let said = describe().expect("a sandbox here");
+    assert_ne!(said.status, SandboxStatus::Missing, "{said:?}");
+    assert!(said.line.starts_with("Navis run in"), "{said:?}");
 }

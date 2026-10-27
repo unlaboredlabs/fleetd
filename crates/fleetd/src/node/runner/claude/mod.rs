@@ -839,6 +839,15 @@ impl Runner for ClaudeRunner {
                 .stderr(std::process::Stdio::piped())
                 .process_group(0)
                 .kill_on_drop(true);
+            // A Navi's sandbox reaches no abstract socket made outside it (an X server's), where the kernel can say so.
+            if spec.sandbox.is_some()
+                && let Some(hook) = super::sandbox::scope_hook()
+            {
+                // SAFETY: the hook makes system calls only.
+                unsafe {
+                    cmd.pre_exec(hook);
+                }
+            }
             cmd
         };
         // A Navi's claude starts inside its sandbox, or not at all.

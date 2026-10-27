@@ -182,8 +182,12 @@ Code’s config dir (or <code dir="auto">$CLAUDE_CONFIG_DIR</code>).</p>
 scratch dir, and Claude Code’s files for its own session: its conversation in <code dir="auto">~/.claude/projects/&lt;its folder&gt;</code>,
 <code dir="auto">~/.claude/session-env/&lt;session&gt;</code>, <code dir="auto">~/.claude/file-history/&lt;session&gt;</code>, and the login file
 <code dir="auto">~/.claude/.credentials.json</code> when there is one. Claude Code saves a refreshed token there; one it couldn’t save would
-log out every session on the machine. Everything else takes no writes, <code dir="auto">~/.claude/settings.json</code> and
-<code dir="auto">~/.claude.json</code> included, so it can’t add hooks or MCP servers for other agents.</p>
+log out every session on the machine. Everything else takes no writes, <code dir="auto">~/.claude/settings.json</code> included, so it
+can’t add hooks or MCP servers for other agents.</p>
+<p><strong><code dir="auto">~/.claude.json</code></strong> holds every MCP server’s settings, with their tokens, and every project’s history. On Linux a
+Navi gets its own copy in its place, made fresh at each start: without <code dir="auto">mcpServers</code>, without <code dir="auto">projects</code>, and without
+any key named like a secret but Claude Code’s own login. What it writes there stays in its copy. On macOS, where
+nothing can stand in for a path, the real file is hidden.</p>
 <p><strong>Can’t read</strong>, on both:</p>
 <ul>
 <li>fleetd’s directory: the hub, the node, worktrees, secrets and integration tokens, Chrome’s profiles. Only its own
@@ -191,11 +195,13 @@ session’s files are read again: its MCP config, settings and skills, the <code
 and the agent-browser and agent-device installs.</li>
 <li>Other projects’ checkouts on the machine.</li>
 <li>Claude Code’s record of other sessions: <code dir="auto">~/.claude/projects</code> (but its own), <code dir="auto">history.jsonl</code>, <code dir="auto">file-history</code>,
-<code dir="auto">session-env</code> and <code dir="auto">sessions</code>.</li>
+<code dir="auto">session-env</code> and <code dir="auto">sessions</code>; its IDE connections (<code dir="auto">ide</code>, whose lock files hold a token) and its <code dir="auto">backups</code>.</li>
 <li>Logins and keys: <code dir="auto">~/.config</code>, <code dir="auto">~/.ssh</code>, <code dir="auto">~/.gnupg</code>, <code dir="auto">~/.aws</code>, <code dir="auto">~/.docker</code>, <code dir="auto">~/.kube</code>, <code dir="auto">~/.password-store</code>,
 <code dir="auto">~/.local/share/keyrings</code>, <code dir="auto">~/.netrc</code>, <code dir="auto">~/.git-credentials</code>, <code dir="auto">~/.npmrc</code>, <code dir="auto">~/.pypirc</code>, <code dir="auto">~/.cargo/credentials</code> and
-<code dir="auto">credentials.toml</code>, <code dir="auto">~/.android/adbkey</code>, <code dir="auto">~/.mozilla</code>.</li>
-<li>Shell and REPL history: <code dir="auto">~/.bash_history</code>, <code dir="auto">~/.zsh_history</code>, <code dir="auto">~/.python_history</code>, <code dir="auto">~/.node_repl_history</code>.</li>
+<code dir="auto">credentials.toml</code>, <code dir="auto">~/.android/adbkey</code>, <code dir="auto">~/.mozilla</code>, <code dir="auto">~/.pgpass</code>, <code dir="auto">~/.vault-token</code>, <code dir="auto">~/.azure</code>, <code dir="auto">~/.terraform.d</code>,
+and <code dir="auto">~/snap</code> (each snap’s own data, logins included).</li>
+<li>Shell and REPL history: <code dir="auto">~/.bash_history</code>, <code dir="auto">~/.zsh_history</code>, fish’s <code dir="auto">~/.local/share/fish/fish_history</code>,
+<code dir="auto">~/.python_history</code>, <code dir="auto">~/.node_repl_history</code>.</li>
 <li>The X server: <code dir="auto">~/.Xauthority</code> and <code dir="auto">/tmp/.X11-unix</code>. <code dir="auto">DISPLAY</code> and <code dir="auto">XAUTHORITY</code> are unset.</li>
 <li><code dir="auto">~/.agent-browser</code>, where other sessions’ browsers listen. Its own listens in its scratch dir.</li>
 <li>The docker socket (<code dir="auto">/run/docker.sock</code>, <code dir="auto">/var/run/docker.sock</code>).</li>
@@ -213,6 +219,11 @@ and the agent-browser and agent-device installs.</li>
 <td>Also can’t read</td>
 <td><code dir="auto">$XDG_RUNTIME_DIR</code> (<code dir="auto">/run/user/&lt;uid&gt;</code>): the user’s D-Bus, systemd and SSH agent sockets, which would start commands outside. Their variables are unset.</td>
 <td><code dir="auto">~/Library</code> whole: browser cookies, app tokens, keychain files. Claude Code reads its login through the keychain’s daemon, not the files.</td>
+</tr>
+<tr>
+<td>Abstract sockets</td>
+<td>Landlock scopes them (Linux 6.12 and later): nothing inside connects to one made outside, such as an X server’s or a D-Bus bus’s. On an older kernel they stay reachable, and the machine’s Navi sandbox check says so.</td>
+<td>Not used on macOS</td>
 </tr>
 <tr>
 <td><code dir="auto">/tmp</code></td>
@@ -244,9 +255,12 @@ and the agent-browser and agent-device installs.</li>
 <ul>
 <li><strong>No sandbox, no Navi.</strong> When bubblewrap is missing or can’t start, the Navi doesn’t run, and its chat says how to
 fix it (<a href="/docs/navi">Navi</a>). fleetd never runs a Navi unsandboxed.</li>
-<li><strong>What it doesn’t cover.</strong> The network is shared, as the site gate needs, so abstract Unix sockets on Linux stay
-reachable. That includes an X server that accepts local connections without a cookie (<code dir="auto">xhost +si:localuser</code>):
-fleetd’s own screens don’t listen there. Its folder, its session’s MCP config (with its own servers’ tokens) and
+<li><strong>Each machine says which it gets.</strong> Machines › Setup checks shows a <strong>Navi sandbox</strong> line per machine: bubblewrap
+with abstract sockets scoped; bubblewrap on a kernel too old to scope them (a warning, with the fix); or none, so
+Navis can’t run there (with how to install bubblewrap).</li>
+<li><strong>What it doesn’t cover.</strong> The network is shared, as the site gate needs. On Linux before 6.12, abstract Unix
+sockets stay reachable, including an X server that accepts local connections without a cookie
+(<code dir="auto">xhost +si:localuser</code>, the GNOME default). fleetd’s own screens don’t listen there. Its folder, its session’s MCP config (with its own servers’ tokens) and
 Claude Code’s login are readable to it, since Claude Code needs them. Everything else on the machine is readable,
 without writes.</li>
 </ul>

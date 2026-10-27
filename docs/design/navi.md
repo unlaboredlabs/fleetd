@@ -433,16 +433,21 @@ is one). Every other session's spec has none.
   - *hide*: fleetd's dir and the node's home (worktrees, the hub, the node's secrets and tokens);
     `HIDDEN_IN_HOME` (`~/.config`, `~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.netrc`, `~/.git-credentials`, `~/.docker`,
     `~/.kube`, `~/.password-store`, `~/.local/share/keyrings`, `~/.npmrc`, `~/.pypirc`, cargo's credentials,
-    `~/.android/adbkey`, `~/.mozilla`, shell and REPL histories, `~/.Xauthority`, `~/.agent-browser`); `~/Library` on
+    `~/.android/adbkey`, `~/.mozilla`, `~/.pgpass`, `~/.vault-token`, `~/.azure`, `~/.terraform.d`, `~/snap`, shell
+    (fish's too) and REPL histories, `~/.Xauthority`, `~/.agent-browser`); `~/Library` on
     macOS; `$XDG_RUNTIME_DIR`; `/tmp/.X11-unix`; the docker socket; claude's record of other sessions
-    (`CLAUDE_HIDDEN`: `projects`, `history.jsonl`, `file-history`, `session-env`, `sessions`, with its own bound
-    back); and every other project's root the node knows, unless it holds the folder or the whole home.
+    (`CLAUDE_HIDDEN`: `projects`, `history.jsonl`, `file-history`, `session-env`, `sessions`, `ide`, `backups`, with
+    its own bound back); and every other project's root the node knows, unless it holds the folder or the whole home.
   - *show* again, read-only, shallower than what it hides inside: the session dir (its MCP config, settings overlay, skills, browser config), the
     `fleetd` binary its MCP server runs, the node's socket, claude's config dir, and the node's tools
     (`browser/agent-browser`, `device`). Chrome's profiles stay hidden.
   - *keep* read-only inside the folder: `ASSISTANT_KEPT` (`.claude` and `.fleetd` are made empty first, so they can't be
     made later).
-  - Everything else reads as it is and takes no writes, `~/.claude.json` and `~/.claude/settings.json` included.
+  - *config_copy*: claude's global config (`~/.claude.json`, or `.claude.json` in `$CLAUDE_CONFIG_DIR`) is bound
+    over with `<session dir>/claude/.claude.json`, written fresh by `prepare` at each start through `sanitized_config`:
+    no `mcpServers`, no `projects`, no key named like a secret (`token`, `secret`, `password`, `credential`, `apikey`)
+    but `primaryApiKey`, claude's own login. On macOS the real file is hidden instead.
+  - Everything else reads as it is and takes no writes, `~/.claude/settings.json` included.
 - **Linux: bubblewrap only** (decision `navi.sandbox-linux-requires-bwrap`). `--ro-bind / /`, then `--dev`, `--proc`
   with `--unshare-pid` (no other process, so no `/proc/<pid>/root` back to the real disk), `--unshare-ipc`, a tmpfs
   `/tmp`, then the fence's paths shallowest first: a hidden dir gets an empty tmpfs (remounted read-only at the end), a
@@ -450,8 +455,14 @@ is one). Every other session's spec has none.
   `NO_ENV` (`XDG_RUNTIME_DIR`, `DBUS_SESSION_BUS_ADDRESS`, `SSH_AUTH_SOCK`, `DISPLAY`, `XAUTHORITY`) is left out of a
   Navi's environment, and unset again inside: a D-Bus or systemd socket would start a command outside, and an X server
   takes keystrokes for a terminal outside. Landlock alone was not enough: it can't stop a connect to those
-  sockets by path. The network is shared, for the site gate, so abstract sockets stay reachable: an X server that
-  accepts local connections without a cookie is the known gap (fleetd's own Xvfb uses `-nolisten local`).
+  sockets by path. The network is shared, for the site gate. Abstract sockets (an X server's `@/tmp/.X11-unix/X0`,
+  reachable on default GNOME through `xhost +si:localuser`) are closed by Landlock instead: `scope_hook` runs in the
+  spawned process before it execs (systemd-run's or bwrap's) and restricts it to a domain that handles no file access,
+  so bubblewrap still mounts, and scopes abstract Unix sockets (ABI 6, Linux 6.12). Its processes still reach each
+  other's. Below ABI 6 it runs without, and says so.
+- **The machine says which** (`RunnerInfo.sandbox`, `NaviSandbox {status, line, fix}`, from `sandbox::describe` in the
+  node's probe): `ready`, `gap` (an old kernel) or `missing`. The doctor's `navi_sandbox` check shows it on Machines:
+  pass, warn, or unknown for missing (quiet, since only a Navi needs it and other agents run as before).
 - **macOS:** `sandbox-exec -p` with a generated profile: `(allow default)`, `(deny file-write*)` then allow the
   written paths and the usual devices, deny writes to the kept ones, then one `file-read-data` rule per hidden
   (deny) and shown or written (allow) path, shallowest first, so the deeper one wins as a bwrap mount does (metadata

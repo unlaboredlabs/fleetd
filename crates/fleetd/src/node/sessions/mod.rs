@@ -2319,6 +2319,16 @@ impl SessionService {
         let runtime_dir = std::env::var_os("XDG_RUNTIME_DIR")
             .map(PathBuf::from)
             .unwrap_or_else(|| format!("/run/user/{}", nix::unistd::getuid()).into());
+        let claude_dir = setup::config_dir(env);
+        // claude keeps its global config beside its config dir, or in the one a person chose.
+        let claude_json = if env
+            .iter()
+            .any(|(k, v)| k == "CLAUDE_CONFIG_DIR" && !v.is_empty())
+        {
+            claude_dir.join(".claude.json")
+        } else {
+            super::util::home_dir().join(".claude.json")
+        };
         sandbox::navi_fence(&sandbox::NaviPaths {
             user_home: &super::util::home_dir(),
             fleetd_dir: &crate::home::fleetd_dir(),
@@ -2327,7 +2337,8 @@ impl SessionService {
             scratch: &share::scratch_dir(home, id),
             session_dir: dir,
             session_id: id,
-            claude_dir: &setup::config_dir(env),
+            claude_dir: &claude_dir,
+            claude_json: &claude_json,
             exe: &exe,
             socket: &super::lead::lead_socket_path(home),
             runtime_dir: Some(&runtime_dir),
