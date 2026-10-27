@@ -1,4 +1,4 @@
-//! A Navi's integrations: Google (fleetd's own Gmail, Calendar and Drive tools), Notion (its official
+//! A Navi's integrations: Google (Gmail, Calendar and Drive, fleetd's own server, `crate::google`), Notion (its official
 //! server with the person's own integration token) and any other MCP server. Each is one of the project's MCP servers
 //! (`mcp_servers.rs`) marked with what it is, so the hub knows its tools: a per-tool policy table (`hub/integrations`)
 //! says which read and run unasked, which ask the person every time, and which are blocked even if approved. An ask is
@@ -17,8 +17,8 @@ use crate::prim::{Line, List, Text};
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum IntegrationKind {
-    /// Gmail, Google Calendar and Google Drive: fleetd's own Google tools, read by the names and fields in
-    /// `hub/integrations/google.rs`.
+    /// Gmail, Google Calendar and Google Drive through fleetd's own `google` server, with the person's own account
+    /// (`crate::google`).
     Google,
     /// Notion's official MCP server (`@notionhq/notion-mcp-server`) with the person's internal integration token.
     Notion,

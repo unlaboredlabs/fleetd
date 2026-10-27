@@ -1380,6 +1380,79 @@ output!(McpServerTestOutput {
     result: crate::mcp_servers::McpTestResult,
 });
 
+// google_get, google_client_set, google_client_test, google_connect, google_disconnect: a Navi's own Google
+// connection (crate::google).
+input!(GoogleGetInput {
+    /// Also this Navi's account.
+    project: Option<ProjectRef>,
+});
+output!(GoogleGetOutput {
+    /// The admin's OAuth client; none until one is saved.
+    client: Option<crate::google::GoogleClient>,
+    /// The asked Navi's account, when it has one.
+    account: Option<crate::google::GoogleAccount>,
+    /// What connecting asks Google for.
+    scopes: Vec<String>,
+    /// Where the consent page sends the person back: a loopback address, any port.
+    redirect: String,
+});
+input!(
+    #[serde(remote = "Self")]
+    GoogleClientSetInput {
+        client_id: crate::google::GoogleClientId,
+        /// The client secret sealed to each machine that runs a Navi.
+        sealed: Vec<crate::mcp_servers::McpSeal>,
+    }
+);
+checked!(GoogleClientSetInput, |input| {
+    if input.sealed.is_empty() {
+        return Err("the client secret is sealed to no machine".into());
+    }
+    let mut machines = std::collections::BTreeSet::new();
+    if !input
+        .sealed
+        .iter()
+        .all(|s| machines.insert(s.machine_id.as_str()))
+    {
+        return Err("the client secret is sealed to a machine twice".into());
+    }
+    Ok(())
+});
+output!(GoogleClientSetOutput {
+    client: crate::google::GoogleClient,
+    /// Machines that were offline: their Navis can't connect until the client is saved again while they are online.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    missing_on: Vec<MachineId>,
+});
+input!(GoogleClientTestInput {
+    /// Where to test; default: the first machine online that holds the client.
+    machine_id: Option<MachineId>,
+});
+output!(GoogleClientTestOutput {
+    machine_id: MachineId,
+    check: crate::google::GoogleClientCheck,
+});
+input!(GoogleConnectInput {
+    /// The Navi.
+    project: ProjectRef,
+    /// From Google's redirect.
+    code: crate::google::GoogleCode,
+    /// The PKCE verifier whose challenge the consent page was opened with.
+    code_verifier: crate::google::PkceVerifier,
+    /// The loopback address the code was sent to.
+    redirect_uri: crate::google::LoopbackUri,
+});
+output!(GoogleConnectOutput {
+    account: crate::google::GoogleAccount,
+});
+input!(GoogleDisconnectInput {
+    project: ProjectRef
+});
+output!(GoogleDisconnectOutput {
+    /// Whether Google confirmed the revoke; the tokens are gone from the machine either way.
+    revoked: bool,
+});
+
 // prompt_get, prompt_set, session_prompt_get: every prompt fleetd sends a model.
 input!(PromptGetInput {
     /// Absent: list every prompt.
@@ -2646,6 +2719,13 @@ tools! {
     mcp_server_remove => McpServerRemove, Operate, McpServerRemoveInput, McpServerRemoveOutput;
     mcp_settings_set => McpSettingsSet, Operate, McpSettingsSetInput, McpSettingsSetOutput;
     mcp_server_test => McpServerTest, Operate, McpServerTestInput, McpServerTestOutput;
+    google_get => GoogleGet, Read, GoogleGetInput, GoogleGetOutput;
+    // Human keys only (the handlers check): the client with operate on every machine, as a global MCP server; an
+    // account with operate on its Navi's machine.
+    google_client_set => GoogleClientSet, Operate, GoogleClientSetInput, GoogleClientSetOutput;
+    google_client_test => GoogleClientTest, Operate, GoogleClientTestInput, GoogleClientTestOutput;
+    google_connect => GoogleConnect, Operate, GoogleConnectInput, GoogleConnectOutput;
+    google_disconnect => GoogleDisconnect, Operate, GoogleDisconnectInput, GoogleDisconnectOutput;
     wake_set => WakeSet, Operate, WakeSetInput, WakeSetOutput;
     wake_list => WakeList, Read, WakeListInput, WakeListOutput;
     wake_cancel => WakeCancel, Operate, WakeCancelInput, WakeCancelOutput;

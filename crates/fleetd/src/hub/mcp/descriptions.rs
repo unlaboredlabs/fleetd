@@ -121,6 +121,26 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
         "Test connection: the node starts the server (stdio, in the project's checkout with its variables, or the home directory for a global one) or connects to it (http, sse) with its secrets resolved there, initializes it and lists its tools within 30 s. result has the server's name and tools, or error: what went wrong, a command's stderr tail with its secrets masked. A global server is tested on machineId, by default the first machine online.",
     ),
     (
+        "google_get",
+        "A Navi's own Google connection: the hub's OAuth client (clientId and the machines holding its secret, sealedOn; never the secret), with project that Navi's account (its address, the scopes granted, and lapsed: why Google stopped taking it, as its node says now), the scopes connecting asks for, and the redirect: a loopback address on any port, which a Desktop app client takes unregistered.",
+    ),
+    (
+        "google_client_set",
+        "Human keys only, operate on every machine. Save the hub's Google OAuth client, of the Desktop app type: clientId, and sealed, its secret sealed on the client with crypto_box_seal to each machine's boxPubKey that runs Navis. Each node keeps it in its home and answers with the fingerprint; the hub never keeps the secret. missingOn names machines that were offline.",
+    ),
+    (
+        "google_client_test",
+        "Ask Google whether it takes the client: the node holding it (machineId, by default the first online) trades a code that can't work, and Google's answer says whether it knows the client and its secret. check.ok, or check.problem in a line a person can act on.",
+    ),
+    (
+        "google_connect",
+        "Human keys only, operate on the Navi's machine. Connect a Google account to a Navi: the app opened Google's consent page with PKCE and caught the code on a loopback address; code, codeVerifier and that redirectUri go to the Navi's node, which trades them for tokens with the client's secret and keeps them in its home, outside the Navi's folder. Only a Navi takes one. The Navi's lead gets the google server's tools from its next start; reads and drafts run at once, a send, reply, invitation, upload or share asks the person.",
+    ),
+    (
+        "google_disconnect",
+        "Human keys only, operate on the Navi's machine. Disconnect a Navi's Google account: its node revokes the grant at Google and deletes its tokens; revoked says whether Google confirmed. Refused while the machine is offline, since the tokens are there.",
+    ),
+    (
         "thread_tail",
         "A thread's newest messages and actions, newest first (n defaults to 10, max 50; kinds filters to message or action), plus its summary.",
     ),

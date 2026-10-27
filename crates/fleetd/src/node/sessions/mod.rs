@@ -292,10 +292,7 @@ fn mcp_config(role: SessionRole, sock: &Path, session_id: &str) -> String {
 /// fleetd's own server's entry in a session's `mcpServers` (see [`mcp_config`]); none for a plain thread.
 fn fleetd_server(role: SessionRole, sock: &Path, session_id: &str) -> Option<serde_json::Value> {
     let role = role.cli_arg()?;
-    let exe = match super::self_exe::pinned() {
-        Some(pinned) => pinned.to_string_lossy().into_owned(),
-        None => agent_exe(std::env::current_exe(), std::process::id()),
-    };
+    let exe = self_command();
     Some(serde_json::json!({
         "type": "stdio",
         "command": exe,
@@ -306,6 +303,14 @@ fn fleetd_server(role: SessionRole, sock: &Path, session_id: &str) -> Option<ser
             "FLEETD_THREAD_ID": session_id,
         },
     }))
+}
+
+/// This binary as a session's claude starts it for fleetd's own servers (`agent-mcp`, `google-mcp`).
+pub fn self_command() -> String {
+    match super::self_exe::pinned() {
+        Some(pinned) => pinned.to_string_lossy().into_owned(),
+        None => agent_exe(std::env::current_exe(), std::process::id()),
+    }
 }
 
 /// The command for `fleetd agent-mcp` when the node couldn't pin its binary (self_exe.rs), which it otherwise uses on
@@ -978,6 +983,25 @@ impl SessionService {
                     },
                 };
                 Ok(SessionOutput::McpTested(result))
+            }
+            SessionCall::Google { call } => {
+                if let fleetd_contracts::google::GoogleCall::Connect { project_id, .. }
+                | fleetd_contracts::google::GoogleCall::Status { project_id }
+                | fleetd_contracts::google::GoogleCall::Disconnect { project_id, .. } = &call
+                {
+                    self.project_root(project_id)?;
+                }
+                let home = self.inner.config.home.clone();
+                let box_key = super::identity::load_or_create_box_key(&home).ok();
+                let answer = super::google::answer(
+                    &home,
+                    &super::google::Endpoints::default(),
+                    call,
+                    box_key.as_ref(),
+                )
+                .await
+                .map_err(invalid)?;
+                Ok(SessionOutput::Google { answer })
             }
             SessionCall::Launch(launch) => self.launch(launch).await,
             SessionCall::Send {
@@ -3394,6 +3418,7 @@ impl SessionService {
         blocking(move || {
             super::project_env::forget(&home, &id);
             super::mcp_servers::forget(&home, &id);
+            super::google::forget(&home, &id);
         })
         .await;
         self.st().machine(frame);

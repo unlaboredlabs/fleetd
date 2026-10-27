@@ -2418,6 +2418,21 @@ impl Executors {
         }
     }
 
+    /// A Navi's Google connection on the node: the admin's client, an account's tokens. Only to a node listing
+    /// `CAP_GOOGLE`.
+    pub async fn google(
+        &self,
+        machine_id: &MachineId,
+        call: fleetd_contracts::google::GoogleCall,
+    ) -> Result<fleetd_contracts::google::GoogleAnswer, ExecutorError> {
+        let op = NodeOperation::Project;
+        let call = SessionCall::Google { call };
+        match self.call(machine_id, op, call, MCP_TEST_TIMEOUT).await? {
+            SessionOutput::Google { answer } => Ok(answer),
+            _ => Err(failed(machine_id, op, "the node sent no answer to google")),
+        }
+    }
+
     // WorkspaceFiles, ThreadWorkspace (leads, tasks)
 
     fn project_for_root(

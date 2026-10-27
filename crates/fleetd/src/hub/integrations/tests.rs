@@ -62,8 +62,11 @@ fn reads_pass_unasked() {
         "mcp__google__search_threads",
         "mcp__google__get_thread",
         "mcp__google__list_calendar_events",
-        "mcp__google__workspace__drive_search",
-        "mcp__google__docs__docs_read",
+        "mcp__google__get_calendar_event",
+        "mcp__google__drive_search",
+        "mcp__google__drive_read",
+        // A draft sends nothing: the person finds it in Drafts.
+        "mcp__google__create_draft",
         "mcp__notion__API-post-search",
         "mcp__notion__API-retrieve-a-page",
         "mcp__notion__API-get-block-children",
@@ -82,7 +85,6 @@ fn an_email_asks_with_every_recipient_the_subject_and_the_whole_body() {
     let p = ask(
         "mcp__google__send_message",
         json!({
-            "account": "me@example.com",
             "to": "Ana <ana@example.com>, bo@example.com",
             "cc": ["cy@example.com"],
             "bcc": ["dee@example.com"],
@@ -93,7 +95,6 @@ fn an_email_asks_with_every_recipient_the_subject_and_the_whole_body() {
     assert_eq!(p.action, ToolAction::Send);
     assert_eq!(p.integration, IntegrationKind::Google);
     assert_eq!(p.title.as_str(), "Send an email");
-    assert_eq!(p.account.as_deref(), Some("me@example.com"));
     let all = |l: &[fleetd_contracts::prim::Line<1, 320>]| {
         l.iter().map(|a| a.as_str().to_owned()).collect::<Vec<_>>()
     };
@@ -106,28 +107,25 @@ fn an_email_asks_with_every_recipient_the_subject_and_the_whole_body() {
         Some("Hi Ana,\n\nTuesday at noon?\n\nNavi")
     );
     // Nothing is hidden: the whole input is on the card too.
-    assert!(p.input.contains("dee@example.com") && p.input.contains("\"account\""));
+    assert!(p.input.contains("dee@example.com") && p.input.contains("\"bcc\""));
 }
 
 #[test]
-fn a_reply_says_who_it_reaches_when_the_tool_picks_them() {
-    let one = ask(
+fn a_reply_shows_the_recipients_it_names() {
+    let p = ask(
         "mcp__google__reply",
-        json!({ "message_id": "18c2", "body": "Yes." }),
+        json!({ "message_id": "18c2", "to": ["bo@vendor.test"], "cc": ["cy@vendor.test"], "body": "Yes." }),
     );
-    assert_eq!(one.action, ToolAction::Send);
-    assert!(one.to.is_empty());
-    assert!(one.audience.as_deref().unwrap().contains("sender"));
-    assert_eq!(one.target.as_deref(), Some("Message 18c2"));
-    let all = ask(
-        "mcp__google__reply",
-        json!({ "message_id": "18c2", "body": "Yes.", "reply_all": true }),
-    );
-    assert!(all.audience.as_deref().unwrap().starts_with("Everyone"));
+    assert_eq!(p.action, ToolAction::Send);
+    assert_eq!(p.title.as_str(), "Reply to an email");
+    assert_eq!(p.to[0].as_str(), "bo@vendor.test");
+    assert_eq!(p.cc[0].as_str(), "cy@vendor.test");
+    assert_eq!(p.body.as_deref(), Some("Yes."));
+    assert_eq!(p.target.as_deref(), Some("Reply to message 18c2"));
 }
 
 #[test]
-fn an_event_with_guests_is_a_send_and_one_without_is_a_write() {
+fn an_event_shows_its_guests_and_whether_google_emails_them() {
     let invite = ask(
         "mcp__google__create_calendar_event",
         json!({
@@ -141,11 +139,22 @@ fn an_event_with_guests_is_a_send_and_one_without_is_a_write() {
     assert_eq!(invite.action, ToolAction::Send);
     assert_eq!(invite.to.len(), 2);
     assert_eq!(invite.subject.as_deref(), Some("Design review"));
+    assert_eq!(invite.body.as_deref(), Some("Agenda in the doc."));
     assert_eq!(
         invite.when.as_deref(),
         Some("2026-11-03T10:00:00+01:00 → 2026-11-03T11:00:00+01:00")
     );
-    assert_eq!(invite.audience.as_deref(), Some("Google emails each guest"));
+    assert_eq!(
+        invite.audience.as_deref(),
+        Some("Google emails each guest an invitation")
+    );
+    let quiet = ask(
+        "mcp__google__create_calendar_event",
+        json!({ "summary": "Sync", "start": "2026-11-03", "end": "2026-11-04",
+                "attendees": ["ana@example.com"], "notify_attendees": false }),
+    );
+    assert_eq!(quiet.action, ToolAction::Write);
+    assert!(quiet.audience.as_deref().unwrap().contains("doesn't email"));
     let alone = ask(
         "mcp__google__create_calendar_event",
         json!({ "summary": "Focus", "start": "2026-11-03T10:00:00Z", "end": "2026-11-03T12:00:00Z" }),
@@ -155,39 +164,70 @@ fn an_event_with_guests_is_a_send_and_one_without_is_a_write() {
 }
 
 #[test]
-fn writes_and_deletes_ask_too() {
+fn a_changed_event_lists_everyone_google_emails_the_removed_included() {
+    let silent = ask(
+        "mcp__google__update_calendar_event",
+        json!({ "event_id": "e3", "summary": "Moved" }),
+    );
+    assert_eq!(silent.action, ToolAction::Write);
+    assert_eq!(silent.target.as_deref(), Some("Event e3"));
+    let told = ask(
+        "mcp__google__update_calendar_event",
+        json!({ "event_id": "e3", "attendees": ["bo@vendor.test"], "removed_attendees": ["cy@vendor.test"],
+                "notify_attendees": true }),
+    );
+    assert_eq!(told.action, ToolAction::Send);
+    let to: Vec<&str> = told.to.iter().map(|a| a.as_str()).collect();
+    assert_eq!(to, ["bo@vendor.test", "cy@vendor.test"]);
     assert_eq!(
-        ask(
-            "mcp__google__create_draft",
-            json!({ "to": "a@example.com", "subject": "s", "body": "b" })
+        told.audience.as_deref(),
+        Some(
+            "Google emails each guest about the change, and a cancellation to the 1 removed: cy@vendor.test"
         )
-        .action,
-        ToolAction::Write
     );
+}
+
+#[test]
+fn an_upload_shows_the_file_and_a_share_whom_it_reaches() {
+    let up = ask(
+        "mcp__google__drive_upload",
+        json!({ "name": "notes.txt", "content": "line one\nline two", "folder_id": "fo1" }),
+    );
+    assert_eq!(up.action, ToolAction::Write);
+    assert_eq!(up.title.as_str(), "Upload notes.txt to Drive");
+    assert_eq!(up.subject.as_deref(), Some("notes.txt (17 bytes)"));
+    assert_eq!(up.body.as_deref(), Some("line one\nline two"));
+    assert_eq!(up.target.as_deref(), Some("Folder fo1"));
+
+    let share = ask(
+        "mcp__google__drive_share",
+        json!({ "file_id": "f1", "emails": ["bo@vendor.test", "cy@vendor.test"], "role": "writer",
+                "message": "Have a look" }),
+    );
+    assert_eq!(share.action, ToolAction::Share);
+    assert_eq!(share.title.as_str(), "Share a Drive file as writer");
+    assert_eq!(share.to.len(), 2);
+    assert_eq!(share.body.as_deref(), Some("Have a look"));
+    assert_eq!(share.target.as_deref(), Some("File f1"));
     assert_eq!(
-        ask("mcp__google__trash", json!({ "thread_id": "t1" })).action,
-        ToolAction::Delete
+        share.audience.as_deref(),
+        Some("Google emails each of them a link")
     );
-    assert_eq!(
-        ask(
-            "mcp__google__workspace__drive_trash",
-            json!({ "fileId": "f1" })
-        )
-        .action,
-        ToolAction::Delete
-    );
-    let doc = ask(
-        "mcp__google__workspace__docs_append",
-        json!({ "documentId": "d1", "markdown": "## Notes" }),
-    );
-    assert_eq!(doc.action, ToolAction::Write);
-    assert_eq!(doc.target.as_deref(), Some("d1"));
-    assert_eq!(doc.body.as_deref(), Some("## Notes"));
-    // A Google tool added later, unknown here, asks.
+    // A tool added later, unknown here, asks.
     assert_eq!(
         ask("mcp__google__snooze_thread", json!({})).action,
         ToolAction::Write
     );
+}
+
+/// The policy's reads are exactly the tools the server marks read-only.
+#[test]
+fn the_table_reads_what_the_server_marks_read_only() {
+    let mut served: Vec<&str> = crate::node::google::tools::reads().collect();
+    let mut table = super::google::READS.to_vec();
+    served.sort();
+    table.sort();
+    assert_eq!(served, table);
 }
 
 #[test]
@@ -390,7 +430,8 @@ fn launch_rules_allow_the_reads_of_the_lead_s_servers_only() {
     let rules = launch_rules(&servers);
     for r in [
         "mcp__google__search_threads",
-        "mcp__google__workspace__drive_search",
+        "mcp__google__drive_search",
+        "mcp__google__create_draft",
         "mcp__notion__API-post-search",
         "mcp__bank__get_balance",
     ] {

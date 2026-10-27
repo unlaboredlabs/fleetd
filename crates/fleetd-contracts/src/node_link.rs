@@ -91,6 +91,10 @@ pub const CAP_PROJECT_ENV_COPY: &str = "project_env_copy";
 /// The node takes `mcp_secrets` and `mcp_test`, and a launch's and a send's MCP servers.
 pub const CAP_MCP_SERVERS: &str = "mcp_servers";
 
+/// `google` (a Navi's own Google connection: the admin's OAuth client, an account's tokens) and the native
+/// `google-mcp` server in a Navi lead's MCP config.
+pub const CAP_GOOGLE: &str = "google";
+
 /// `skills_list` (a project's repo skills, for Settings → Skills). Hub-kept skills ride on `launch`, which an older
 /// node ignores.
 pub const CAP_SKILLS: &str = "skills";

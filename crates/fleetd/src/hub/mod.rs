@@ -12,6 +12,7 @@ pub mod checklist;
 pub mod checks;
 pub mod doctor;
 pub mod executor;
+pub mod google;
 pub mod http;
 pub mod hub_links;
 pub mod info;
