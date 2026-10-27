@@ -19,7 +19,7 @@ only tells the groups apart and carries no state.
 hub's URL and key go in the existing secure store (`main/hub/credentials.ts`: safeStorage, or a 0600 file and the
 reason why). The first hub keeps today's files (`desktop-hub.bin` or `.json`, id `hub`), so an upgraded app is
 already that first hub. Each further hub gets `desktop-hub-<id>.bin` or `.json`. Each hub also has its own offline
-cache, `hub-cache-<id>.json`.
+cache in Electron's userData: the first keeps `hub-cache.json`, and each further hub gets `hub-cache-<id>.json`.
 
 **Pairing.** The first hub pairs through onboarding as it does today. More hubs, renames, colours and removal are in
 **Settings › Hubs**. Add a hub asks for its address and a pairing code (or a key), a label and an optional colour.
@@ -30,8 +30,8 @@ only when no hub is paired.
 connection, retries, chat, focus and watched session. Every hub IPC channel takes the hub id first. Frames go to the
 page as `{hub, frame}`. Presence goes to each hub, and only the hub on screen hears which project it is.
 
-**Renderer.** Each hub has its own data layer: store, query cache and offline cache (`src/data/queries.ts`, unchanged
-inside). `HubScope` provides one hub's layer to whatever is inside it, so every screen talks to the right hub and none
+**Renderer.** Each hub has its own data layer: store, query cache and offline cache (`renderer/src/data/queries.ts`,
+unchanged inside). `HubScope` provides one hub's layer to whatever is inside it, so every screen talks to the right hub and none
 of them needs to know there are others. A route names its hub as `?hub=<id>`, which is left out for the first hub, so
 a single-hub app's links don't change. Navigating without a hub stays on the hub of the screen you're on. The app's
 own memory per project (chats seen, the last project opened) is keyed by hub plus project.
@@ -58,8 +58,8 @@ keep working. The offline banner shows only for the hub of the screen you're on.
 **Updates.** The updates sheet belongs to one hub. Its pill sits on that hub's status row, and Update updates that
 hub, its machines and this app.
 
-**Fixtures.** A fixture file may list more hubs (`hubs: [{label, color?, fixture}]`), and the first hub takes the
-file's own `label`. `pnpm fixtures` builds `sidebar-hubs` (two labelled hubs) and `sidebar-hubs-offline` (one of them
+**Fixtures.** The app PR adds three optional fields to a fixture file: `label` and `color` for the file's own hub, and
+`hubs: [{label, color?, fixture}]` for more hubs beside it. `pnpm fixtures` builds `sidebar-hubs` (two labelled hubs) and `sidebar-hubs-offline` (one of them
 offline) for `pnpm web:preview` and QA.
 
 ## Hub links
