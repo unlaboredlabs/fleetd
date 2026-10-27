@@ -77,7 +77,7 @@ brand!(
     pattern = r"^projects/[a-z][a-z0-9-]{4,28}[a-z0-9]/subscriptions/[A-Za-z][A-Za-z0-9._~+%-]{2,254}$"
 );
 
-/// The Gmail scope a service account reads its Pub/Sub subscription with.
+/// The scope a service account reads its Pub/Sub subscription with.
 pub const PUBSUB_SCOPE: &str = "https://www.googleapis.com/auth/pubsub";
 
 /// The hub's admin's OAuth client, as the hub keeps it: no secret.
@@ -231,7 +231,7 @@ pub enum GoogleCall {
         subscription: PubsubSubscription,
         sealed: Option<SealedSecret>,
     },
-    /// Read the subscription, waiting up to about 50 s for a notice, and acknowledge what came.
+    /// Read the subscription, waiting up to about 30 s for a notice, and acknowledge what came.
     MailPull,
     /// Ask Gmail to tell the topic of new inbox mail for the project's account, for 7 days.
     #[serde(rename_all = "camelCase")]
@@ -284,6 +284,8 @@ pub enum GoogleAnswer {
     },
     NewMail {
         mails: Vec<NewMail>,
+        /// New messages past those read, only counted.
+        more: Option<u32>,
     },
 }
 

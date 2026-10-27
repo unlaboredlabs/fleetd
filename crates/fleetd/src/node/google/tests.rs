@@ -277,6 +277,14 @@ fn answer(method: &axum::http::Method, path: &str, query: &[(String, String)]) -
         ("GET", "/gmail/v1/users/me/profile") => {
             json!({ "emailAddress": "ana@example.com", "historyId": "300" })
         }
+        // Nothing new since the last of it.
+        ("GET", "/gmail/v1/users/me/history")
+            if query
+                .iter()
+                .any(|(k, v)| k == "startHistoryId" && v == "210") =>
+        {
+            json!({ "historyId": "210" })
+        }
         ("GET", "/gmail/v1/users/me/history") => json!({ "historyId": "210", "history": [
             { "messagesAdded": [{ "message": { "id": "m2", "threadId": "t2", "labelIds": ["INBOX", "UNREAD"] } }] },
             { "messagesAdded": [{ "message": { "id": "m3", "threadId": "t3", "labelIds": ["INBOX", "IMPORTANT"] } }] },
@@ -1281,14 +1289,14 @@ async fn a_check_finds_new_inbox_mail_since_the_last_and_the_rule_filters_it() {
     let (home, _ep, fake, session) = signed_in().await;
     let state = mail::state_path(home.path(), "p1");
     // The first check only marks where the next starts.
-    assert!(mail::check(&session, None).await.unwrap().is_empty());
+    assert!(mail::check(&session, None).await.unwrap().mails.is_empty());
     assert_eq!(
         serde_json::from_slice::<Value>(&std::fs::read(&state).unwrap()).unwrap()["historyId"],
         300
     );
 
     std::fs::write(&state, r#"{"historyId":100}"#).unwrap();
-    let all = mail::check(&session, None).await.unwrap();
+    let all = mail::check(&session, None).await.unwrap().mails;
     let ids: Vec<&str> = all.iter().map(|m| m.message_id.as_str()).collect();
     // Sent mail isn't new mail.
     assert_eq!(ids, ["m2", "m3"]);
@@ -1303,7 +1311,8 @@ async fn a_check_finds_new_inbox_mail_since_the_last_and_the_rule_filters_it() {
     std::fs::write(&state, r#"{"historyId":100}"#).unwrap();
     let matched = mail::check(&session, Some("from:boss@example.com"))
         .await
-        .unwrap();
+        .unwrap()
+        .mails;
     assert_eq!(matched.len(), 1);
     assert_eq!(matched[0].message_id, "m3");
     let seen = fake.lock().unwrap().seen.clone();
@@ -1320,9 +1329,26 @@ async fn a_history_gmail_forgot_starts_again_from_now() {
     let state = mail::state_path(home.path(), "p1");
     std::fs::create_dir_all(state.parent().unwrap()).unwrap();
     std::fs::write(&state, r#"{"historyId":1}"#).unwrap();
-    assert!(mail::check(&session, None).await.unwrap().is_empty());
+    assert!(mail::check(&session, None).await.unwrap().mails.is_empty());
     assert_eq!(
         serde_json::from_slice::<Value>(&std::fs::read(&state).unwrap()).unwrap()["historyId"],
         300
     );
+}
+
+/// A push's check and a minute's meeting: the second starts where the first stopped, so each message is told once.
+#[tokio::test]
+async fn two_checks_at_once_tell_each_message_once() {
+    let (home, _ep, _fake, session) = signed_in().await;
+    let state = mail::state_path(home.path(), "p1");
+    std::fs::create_dir_all(state.parent().unwrap()).unwrap();
+    std::fs::write(&state, r#"{"historyId":100}"#).unwrap();
+    let (a, b) = tokio::join!(mail::check(&session, None), mail::check(&session, None));
+    let mut told: Vec<String> = [a.unwrap(), b.unwrap()]
+        .into_iter()
+        .flat_map(|c| c.mails)
+        .map(|m| m.message_id)
+        .collect();
+    told.sort();
+    assert_eq!(told, ["m2", "m3"]);
 }

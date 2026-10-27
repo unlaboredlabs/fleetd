@@ -15,7 +15,7 @@ use fleetd_contracts::mcp::{
     GoogleMailSetOutput, GooglePubsubSetInput, GooglePubsubSetOutput,
 };
 use fleetd_contracts::mcp_servers::McpSealedOn;
-use fleetd_contracts::node_link::CAP_GOOGLE;
+use fleetd_contracts::node_link::{CAP_GOOGLE, CAP_GOOGLE_MAIL};
 
 use crate::hub::api::{
     Caller, Hub, Registry, ToolError, allows, allows_everywhere, is_human, offline, require,
@@ -42,6 +42,19 @@ fn node_ready(hub: &Hub, m: &MachineId) -> Result<(), ToolError> {
         return Err(ToolError::new(
             ErrorCode::Invalid,
             format!("{m}'s node is too old for Google."),
+        )
+        .with_fix(format!("Update fleetd on {m} and restart its node.")));
+    }
+    Ok(())
+}
+
+/// The node can take new-mail calls too.
+fn mail_node_ready(hub: &Hub, m: &MachineId) -> Result<(), ToolError> {
+    node_ready(hub, m)?;
+    if !hub.link.node_can(m, CAP_GOOGLE_MAIL) {
+        return Err(ToolError::new(
+            ErrorCode::Invalid,
+            format!("{m}'s node is too old for real-time mail."),
         )
         .with_fix(format!("Update fleetd on {m} and restart its node.")));
     }
@@ -366,17 +379,38 @@ async fn pubsub_set(
             ErrorCode::Forbidden,
             "Only a person with operate on every machine sets up real-time mail.",
         )
-        .with_fix("Set it up in the desktop app: Administration › Google."));
+        .with_fix("Real-time mail is set up in Administration › Google."));
     }
     let store = hub.db.google();
     let mut client = store.client()?.ok_or_else(no_client)?;
-    // The machine that held the key forgets it, whatever comes next.
-    if let Some(before) = &client.pubsub
-        && input
+    let before = client.pubsub.take();
+    // The new machine takes the key first: when it can't, nothing changes.
+    if let Some(p) = input.pubsub {
+        mail_node_ready(&hub, &p.machine_id)?;
+        let call = GoogleCall::PubsubSet {
+            subscription: p.subscription.clone(),
+            sealed: Some(p.sealed),
+        };
+        let GoogleAnswer::PubsubSaved {
+            fingerprint: Some(fingerprint),
+        } = ask(&hub, &p.machine_id, call).await?
+        else {
+            return Err(unexpected(&p.machine_id));
+        };
+        client.pubsub = Some(GooglePubsub {
+            topic: p.topic,
+            subscription: p.subscription,
+            machine_id: p.machine_id,
+            fingerprint,
+        });
+    }
+    // Then the machine that held it before forgets it.
+    if let Some(before) = before
+        && client
             .pubsub
             .as_ref()
             .is_none_or(|p| p.machine_id != before.machine_id)
-        && node_ready(&hub, &before.machine_id).is_ok()
+        && mail_node_ready(&hub, &before.machine_id).is_ok()
     {
         let call = GoogleCall::PubsubSet {
             subscription: before.subscription.clone(),
@@ -386,28 +420,6 @@ async fn pubsub_set(
             tracing::warn!(machine_id = %before.machine_id, "Pub/Sub key not forgotten: {}", e.message);
         }
     }
-    client.pubsub = match input.pubsub {
-        None => None,
-        Some(p) => {
-            node_ready(&hub, &p.machine_id)?;
-            let call = GoogleCall::PubsubSet {
-                subscription: p.subscription.clone(),
-                sealed: Some(p.sealed),
-            };
-            let GoogleAnswer::PubsubSaved {
-                fingerprint: Some(fingerprint),
-            } = ask(&hub, &p.machine_id, call).await?
-            else {
-                return Err(unexpected(&p.machine_id));
-            };
-            Some(GooglePubsub {
-                topic: p.topic,
-                subscription: p.subscription,
-                machine_id: p.machine_id,
-                fingerprint,
-            })
-        }
-    };
     client.updated_at = crate::hub::mcp_servers::now(&hub);
     store.put_client(&client)?;
     super::mail::reset(&hub)?;

@@ -107,6 +107,35 @@ impl GoogleStore<'_> {
         })
     }
 
+    /// Notes when the Navi's watch of its inbox ends, on the account as it is now: a watch answered after a disconnect
+    /// brings no account back, and one answered after a rule change keeps the new rule. False: no account.
+    pub fn set_watch_expires(&self, r: &ProjectRef, expires_ms: i64) -> Result<bool, StoreError> {
+        self.db.transaction(|c| {
+            let data: Option<String> = c
+                .query_row(
+                    "SELECT data FROM google_accounts WHERE machine_id = ? AND project_id = ?",
+                    params![r.machine_id.as_str(), r.project_id.as_str()],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            let Some(mut account) =
+                data.and_then(|d| serde_json::from_str::<GoogleAccount>(&d).ok())
+            else {
+                return Ok(false);
+            };
+            account.mail.watch_expires_ms = Some(expires_ms);
+            c.execute(
+                "UPDATE google_accounts SET data = ? WHERE machine_id = ? AND project_id = ?",
+                params![
+                    serde_json::to_string(&account)?,
+                    r.machine_id.as_str(),
+                    r.project_id.as_str()
+                ],
+            )?;
+            Ok(true)
+        })
+    }
+
     pub fn remove_account(&self, r: &ProjectRef) -> Result<bool, StoreError> {
         self.db.with(|c| {
             Ok(c.execute(

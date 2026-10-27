@@ -273,12 +273,21 @@ async fn latest_history(s: &Session) -> Result<u64, String> {
 
 /// The Navi's new inbox mail since the last check, matching `query` when given, at most [`CHECK_MAX`] read. The first
 /// check, and one after Gmail forgot the last history id, only marks where the next one starts.
-pub async fn check(s: &Session, query: Option<&str>) -> Result<Vec<NewMail>, String> {
+pub async fn check(s: &Session, query: Option<&str>) -> Result<Checked, String> {
     let path = state_path(&s.home, &s.project_id);
+    // A push's check and a minute's can meet as the hub moves between them: the second waits, then starts where the
+    // first stopped, so no message is told twice.
+    let lock = CHECKS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .entry(path.clone())
+        .or_default()
+        .clone();
+    let _turn = lock.lock().await;
     let Some(state) = read::<State>(&path)? else {
         let history_id = latest_history(s).await?;
         write(&path, &State { history_id })?;
-        return Ok(Vec::new());
+        return Ok(Checked::default());
     };
     let mut added: Vec<(String, String)> = Vec::new();
     let mut latest = state.history_id;
@@ -298,7 +307,7 @@ pub async fn check(s: &Session, query: Option<&str>) -> Result<Vec<NewMail>, Str
             Err(e) if e.starts_with("Google answered 404") => {
                 let history_id = latest_history(s).await?;
                 write(&path, &State { history_id })?;
-                return Ok(Vec::new());
+                return Ok(Checked::default());
             }
             Err(e) => return Err(e),
         };
@@ -370,8 +379,23 @@ pub async fn check(s: &Session, query: Option<&str>) -> Result<Vec<NewMail>, Str
     }
     // Saved last: a check that failed reads the same mail next time.
     write(&path, &State { history_id: latest })?;
-    Ok(mails)
+    Ok(Checked {
+        more: added.len().saturating_sub(CHECK_MAX),
+        mails,
+    })
 }
+
+/// What a check found: the messages it read, and how many more it only counted.
+#[derive(Default)]
+pub struct Checked {
+    pub mails: Vec<NewMail>,
+    pub more: usize,
+}
+
+/// One turn at a time per Navi's state file.
+static CHECKS: std::sync::LazyLock<
+    std::sync::Mutex<std::collections::HashMap<PathBuf, std::sync::Arc<tokio::sync::Mutex<()>>>>,
+> = std::sync::LazyLock::new(Default::default);
 
 /// The signer, for the fake Google in tests that checks the assertion's signature.
 #[cfg(test)]
