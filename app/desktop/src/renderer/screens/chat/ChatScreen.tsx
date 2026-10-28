@@ -21,7 +21,7 @@ import { leadTurnSince, leadTurnUntil } from "./activity";
 import { ChatList } from "./ChatList";
 import { useChatData } from "./data";
 import { EmptyChat } from "./EmptyChat";
-import { arrivalsOf, chatRows, heldLabel, keepRows, rowIndexOf, type Arrivals, type Row } from "./model";
+import { arrivalsOf, chatRows, heldLabel, isMine, keepRows, rowIndexOf, type Arrivals, type Row } from "./model";
 import { ChatComposer } from "./Composer";
 import type { ProjectRef } from "./slots";
 import { useAsOfWords } from "../shell/offline";
@@ -96,8 +96,8 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
   const waiting = useMemo(
     // "asked at 09:02" (or "yesterday at …") is read when the chat changes; nothing ticks while it waits.
     // eslint-disable-next-line react-hooks/purity
-    () => (needsYou === true && items !== undefined ? waitingOn(items, { older, open: openItems }, Date.now()) : undefined),
-    [needsYou, items, older, openItems],
+    () => (needsYou === true && items !== undefined ? waitingOn(items, { older, open: openItems }, Date.now(), undefined, me) : undefined),
+    [needsYou, items, older, openItems, me],
   );
   // Show to what isn't loaded yet (an approval pages back): older pages load until it is, or there are none.
   const away = shown !== undefined && items !== undefined && !items.some((i) => i.id === shown.id);
@@ -107,7 +107,7 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
   useEffect(() => {
     if (away && older && !halted) loadOlder();
   }, [away, older, halted, loadOlder]);
-  const recall = useMemo(() => items?.findLast((i) => i.author === "human" && i.text.trim() !== "")?.text, [items]);
+  const recall = useMemo(() => items?.findLast((i) => isMine(i, me) && i.text.trim() !== "")?.text, [items, me]);
   // Once you send, the chat follows the newest message instead.
   const target = shown?.id ?? (sent === 0 ? message : undefined);
   const newAt = sent === 0 ? rows?.findIndex((r) => r.kind === "new") : undefined;

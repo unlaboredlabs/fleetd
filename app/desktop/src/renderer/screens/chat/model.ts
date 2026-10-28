@@ -68,6 +68,12 @@ export const otherPerson = (item: ChatItem, me: string | undefined): string | un
   return person !== undefined && me !== undefined && person.personId !== me ? person.name : undefined;
 };
 
+/** Yours: a human message no other person wrote. On a hub from before people, every human message. */
+export const isMine = (item: ChatItem, me: string | undefined): boolean => item.author === "human" && otherPerson(item, me) === undefined;
+
+/** A row of yours: a message row isMine says is yours (its `by` is otherPerson's). */
+export const isMineRow = (r: Row): boolean => r.kind === "message" && r.item.author === "human" && r.by === undefined;
+
 /** Who a message's header names: another person by their name, an agent by the key that wrote it. */
 export const authorLabel = (item: ChatItem, me?: string): string =>
   item.author === "human"
@@ -167,7 +173,7 @@ export function chatRows(i: RowsInput): Row[] {
   const unseen =
     seen === undefined || (i.hasOlder && !i.items.some((item) => (item.message?.seq ?? Infinity) <= seen))
       ? -1
-      : i.items.findIndex((item) => (item.author !== "human" || otherPerson(item, i.me) !== undefined) && (item.message?.seq ?? -Infinity) > seen);
+      : i.items.findIndex((item) => !isMine(item, i.me) && (item.message?.seq ?? -Infinity) > seen);
   i.items.forEach((item, n) => {
     const history = isHistory(item);
     if (history && !inHistory) out.push({ kind: "history", key: `history:${item.id}` });
@@ -184,7 +190,7 @@ export function chatRows(i: RowsInput): Row[] {
       prev = undefined;
     }
     const by = otherPerson(item, i.me);
-    const theirs = item.author !== "human" || by !== undefined;
+    const theirs = !isMine(item, i.me);
     const label = authorLabel(item, i.me);
     if (history && item.author !== "system") {
       const run = prev === undefined || authorLabel(prev, i.me) !== label || Date.parse(item.at) - Date.parse(prev.at) > GROUP_MS;
@@ -268,7 +274,7 @@ export const newestKey = (rows: readonly Row[]): string => rows.findLast(hasItem
 export function latestLabel(rows: readonly Row[], from: string | undefined): string | undefined {
   if (from === undefined) return undefined;
   const at = rows.findIndex((r) => r.key === from);
-  const n = at === -1 ? 0 : rows.slice(at + 1).filter((r) => hasItem(r) && r.item.author !== "human").length;
+  const n = at === -1 ? 0 : rows.slice(at + 1).filter((r) => hasItem(r) && !isMineRow(r)).length;
   return n === 0 ? "Latest" : `${String(n)} new`;
 }
 

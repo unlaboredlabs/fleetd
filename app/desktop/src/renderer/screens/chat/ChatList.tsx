@@ -11,7 +11,7 @@ import { leadDid, leadDoing, leadTurnSince, leadTurnUntil, sentenceCase, turnLin
 import type { ChatItem } from "../../src/data/chat";
 
 import { shortClock } from "./format";
-import { latestLabel, newestKey, type Arrival, type Row, type TopState } from "./model";
+import { isMineRow, latestLabel, newestKey, type Arrival, type Row, type TopState } from "./model";
 import { MessageView, useEnter } from "./Bubble";
 import { useBubbleActions } from "./actions";
 import { useLooked } from "./looked";
@@ -281,7 +281,7 @@ export function ChatList(props: {
 }) {
   const { rows, openAt, openSeq, openPart, sent, entering } = props;
   const virtualizer = useRef<Virtualizer<HTMLDivElement, Element> | null>(null);
-  const mineLatest = useMemo(() => rows.findLast((r) => r.kind === "message" && r.item.author === "human")?.key, [rows]);
+  const mineLatest = useMemo(() => rows.findLast(isMineRow)?.key, [rows]);
 
   // Open at the newest row and keep the end in view as rows measure and stream, until the reader scrolls. A link
   // (a notification's, or Show) opens the chat at a message instead, and keeps that message in view the same way:

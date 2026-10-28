@@ -6,7 +6,7 @@ import type { ChatOpenItem, ChatOpenNudge } from "../../../shared/contracts";
 import type { ChatItem } from "../../src/data/chat";
 import { bubblesOf } from "./bubbles";
 import { plural, shortClock } from "./format";
-import { dayLabel } from "./model";
+import { dayLabel, isMine } from "./model";
 
 /** One place Show goes: an item, and in a lead message the bubble that asks. */
 export interface WaitTarget {
@@ -45,7 +45,7 @@ const when = (iso: string, nowMs: number, timeZone?: string): string => {
   return `${day === "Yesterday" ? "yesterday" : day} at ${clock}`;
 };
 
-export function waitingOn(items: readonly ChatItem[], { older, open: away = [] }: Unloaded, nowMs: number, timeZone?: string): Waiting | undefined {
+export function waitingOn(items: readonly ChatItem[], { older, open: away = [] }: Unloaded, nowMs: number, timeZone?: string, me?: string): Waiting | undefined {
   // A loaded item goes by its own state, which may be newer than the hub's list; the rest by the list, oldest first,
   // which comes before what's loaded.
   const loaded = new Set(items.map((i) => i.id));
@@ -63,8 +63,9 @@ export function waitingOn(items: readonly ChatItem[], { older, open: away = [] }
     ];
     return { what: parts.filter((p) => p !== "").join(", "), targets: open.map((i) => ({ id: i.id })) };
   }
-  // The newest lead message since you last wrote that asks something: a later status line doesn't answer it.
-  const since = items.findLastIndex((i) => i.author === "human" && i.kind === "message") + 1;
+  // The newest lead message since you last wrote that asks something: a later status line doesn't answer it, nor
+  // does a teammate's message (`me`: the person this app acts as).
+  const since = items.findLastIndex((i) => isMine(i, me) && i.kind === "message") + 1;
   for (const ask of items.slice(since).reverse()) {
     if (ask.author !== "lead" || ask.kind !== "message") continue;
     // Each bubble that asks: an ask block, or words with a question in them.
