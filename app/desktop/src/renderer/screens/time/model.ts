@@ -6,8 +6,8 @@
 // current zoom merge into one bar per pixel column coloured by the category with the most time in it. A 15k-span
 // order paints a few hundred rects per visible row at most, and only visible rows are painted.
 import { CAT_LABEL, KIND_WORD, agentName, fmtDur, laneName, ordinal, tickLabel, type Names } from "./format";
-import type { TaskProfile } from "../../../shared/contracts";
-import { PROFILE_WORD } from "../../ui/primitives/profiles";
+import type { ProfileName } from "../../../shared/contracts";
+import { profileWord } from "../../ui/primitives/profiles";
 import { shortModel } from "../live/format";
 import { CATEGORIES, type AgentRole, type Category, type Coverage, type CriticalPath, type GapWhy, type Span, type SpanKind } from "./types";
 
@@ -19,7 +19,7 @@ export interface Row {
   readonly role?: AgentRole;
   /** The agent's model ("claude-opus-5-5") and the lane id its live frames carry, when the store knows the lane. */
   readonly model?: string;
-  readonly profile?: TaskProfile;
+  readonly profile?: ProfileName;
   readonly laneId?: string;
   /** Output tokens its model messages report, summed: what it measured, for a lane that is no longer live. */
   readonly outputTokens: number;
@@ -560,5 +560,5 @@ export const barsFor = (m: Model, ids: Iterable<number>): Set<number> => {
 };
 
 /** What an agent ran on, in a word: its task profile ("medium"), else its model ("opus") from an older hub. */
-export const ranOn = (r: { readonly model?: string | undefined; readonly profile?: TaskProfile | undefined }): string | undefined =>
-  r.profile !== undefined ? PROFILE_WORD[r.profile] : r.model === undefined ? undefined : shortModel(r.model);
+export const ranOn = (r: { readonly model?: string | undefined; readonly profile?: ProfileName | undefined }): string | undefined =>
+  r.profile !== undefined ? profileWord(r.profile) : r.model === undefined ? undefined : shortModel(r.model);

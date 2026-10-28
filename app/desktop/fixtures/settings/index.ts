@@ -27,28 +27,52 @@ const projectSummary = (p: (typeof PROJECTS)[number]): JsonObject => ({
   lastActivityAt: "2026-10-19T10:21:00.000Z",
 });
 
-/** The fleet runs medium on Sonnet at medium effort; high is left to the profile's own. */
-const PROFILES_VIEW: JsonObject = {
-  fleet: { high: {}, medium: { model: "claude-sonnet-5-5" } },
-  runs: { high: { model: "claude-opus-5-5", effort: "high" }, medium: { model: "claude-sonnet-5-5", effort: "medium" } },
-  defaults: { high: { model: "claude-opus-5-5", effort: "high" }, medium: { model: "claude-opus-5-5", effort: "medium" } },
-};
+const PROFILE_AT = "2026-10-19T10:00:00.000Z";
+
+/** The hub's profiles: high (the default), medium as migrated, and a fast one on Opus. */
+const PROFILES: JsonObject[] = [
+  { id: 1, name: "high", note: "The default: design, architecture and anything subtle. When in doubt, this one.", model: "claude-opus-5-5", effort: "high", fast: false, default: true, updatedAt: PROFILE_AT },
+  { id: 2, name: "medium", note: "Only for mechanical work: dead-code deletions, renames, doc fixes, plain wiring, cleanup.", model: "claude-opus-5-5", effort: "medium", fast: false, default: false, updatedAt: PROFILE_AT },
+  { id: 3, name: "quick", note: "Small, clear fixes where speed matters.", model: "claude-opus-5-5", effort: "low", fast: true, default: false, updatedAt: PROFILE_AT },
+];
+
+/** fleetd's own model list, as a hub without an API key answers. */
+const MODELS: JsonObject[] = [
+  ["claude-opus-5-5", "Claude Opus 5.5", true],
+  ["claude-fable-5-1", "Claude Fable 5.1", false],
+  ["claude-sonnet-5-5", "Claude Sonnet 5.5", false],
+  ["claude-haiku-5-5", "Claude Haiku 5.5", false],
+  ["claude-fable-5", "Claude Fable 5", false],
+  ["claude-opus-5", "Claude Opus 5", true],
+  ["claude-sonnet-5", "Claude Sonnet 5", false],
+  ["claude-opus-4-8", "Claude Opus 4.8", true],
+].map(([id, displayName, fast]) => ({ id, displayName, fast }) as JsonObject);
+
+const profilesList = (allowed?: string[]): JsonObject => ({
+  profiles: PROFILES,
+  models: MODELS,
+  modelsFrom: "builtin",
+  efforts: ["low", "medium", "high", "xhigh", "max"],
+  ...(allowed === undefined ? {} : { allowed }),
+});
 
 /**
- * Each project's "medium allowed" switch as project_get reads it (on, unless named in `off`), and project_set's
- * answer either way; the task profiles' settings, the fleet's and each project's (none).
+ * Each project's allowed profiles as project_get and profiles_list read them (high and medium, or high alone for those
+ * named in `defaultOnly`), and project_set's answer for each choice of medium and quick.
  */
-function projectSettings(f: Fixture, off: ReadonlySet<string> = new Set()) {
+function projectSettings(f: Fixture, defaultOnly: ReadonlySet<string> = new Set()) {
   const projects = isObject(f.snapshot) && Array.isArray(f.snapshot["projects"]) ? f.snapshot["projects"].filter(isObject) : [];
   for (const p of projects) {
     const ref = { machineId: asText(p["machineId"]), projectId: asText(p["projectId"]) };
-    f.answer("project_get", ref, { asOf: f.now, project: clone(p), stale: false, threads: [], mediumAllowed: !off.has(ref.projectId) });
-    for (const on of [true, false]) f.answer("project_set", { ...ref, mediumAllowed: on }, { mediumAllowed: on });
-    f.answer("profiles_get", { projectRef: ref }, { ...PROFILES_VIEW, project: { high: {}, medium: {} } });
+    const allowed = defaultOnly.has(ref.projectId) ? ["high"] : ["high", "medium"];
+    f.answer("project_get", ref, { asOf: f.now, project: clone(p), stale: false, threads: [], profiles: allowed });
+    f.answer("profiles_list", { projectRef: ref }, profilesList(allowed));
+    for (const picked of [[], ["medium"], ["quick"], ["medium", "quick"]]) {
+      f.answer("project_set", { ...ref, profiles: picked }, { profiles: ["high", ...picked] });
+    }
   }
-  f.answer("profiles_get", {}, PROFILES_VIEW);
+  f.answer("profiles_list", {}, profilesList());
 }
-
 
 /**
  * Settings → Memory: user.md with entries the lead remembered (each linked to its chat line), and the first project's
@@ -373,8 +397,8 @@ export default defineGroup({
       }
     }
     const withAgents = agents(base("typical"));
-    // storefront's medium switch off: every one of its tasks runs high.
-    const off = Fixture.from(withAgents, "settings-medium-off", "Max agents as in settings-agents, with storefront's medium switch off");
+    // storefront allows the default alone: every one of its tasks runs high.
+    const off = Fixture.from(withAgents, "settings-default-profile-only", "Max agents as in settings-agents, with storefront allowing only the default profile");
     const storefront = isObject(off.snapshot) && Array.isArray(off.snapshot["projects"]) ? off.snapshot["projects"].filter(isObject)[0] : undefined;
     projectSettings(off, new Set(storefront === undefined ? [] : [asText(storefront["projectId"])]));
     return [f, withAgents, off, machines(base("typical")), repos(base("typical"))];

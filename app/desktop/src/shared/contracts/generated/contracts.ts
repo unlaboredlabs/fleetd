@@ -166,8 +166,8 @@ export type AgentLane = {
   live?: LiveLane;
   model?: string;
   pr?: PrRef;
-  /** What it runs on: a task's own profile; a lead is always high. Absent from older hubs. */
-  profile?: TaskProfile;
+  /** What it runs on: a task's own profile; a lead the default's. Absent from older hubs. */
+  profile?: ProfileName;
   role: AgentRole;
   startedAt?: Timestamp;
   status: LaneStatus;
@@ -190,8 +190,8 @@ export type AgentRow = {
   live?: LiveLane;
   model?: string;
   pr?: PrRef;
-  /** What it runs on: a task's own profile; a lead is always high. Absent from older hubs. */
-  profile?: TaskProfile;
+  /** What it runs on: a task's own profile; a lead the default's. Absent from older hubs. */
+  profile?: ProfileName;
   projectRef: ProjectRef;
   projectTitle: string;
   role: AgentRole;
@@ -1921,8 +1921,11 @@ export type DoctorScope = "hub" | "machine";
 /** `unknown`: the hub could not look (machine offline, nothing to read). */
 export type DoctorStatus = "ok" | "warn" | "fail" | "unknown";
 
-/** How hard a model thinks: what a profile runs at, as a setting picks it or a node reports a session's. */
-export type Effort = "low" | "medium" | "high" | "max";
+/**
+ * How hard a model thinks: what a profile runs at, as Claude Code's `--effort` takes it, or a node reports a
+ * session's.
+ */
+export type Effort = "low" | "medium" | "high" | "xhigh" | "max";
 
 /** Who keeps a safety rule when the prompt no longer says it. */
 export type Enforcement = "code" | "prompt";
@@ -3976,6 +3979,12 @@ export type MetricsTiles = {
 
 export type ModelName = string;
 
+/**
+ * Where the model list came from: the Models API on the hub's API key, or fleetd's own list of current Claude
+ * models.
+ */
+export type ModelSource = "api" | "builtin";
+
 export type MouseAction = "pressed" | "released" | "moved" | "wheel";
 
 /** A mouse button, as CDP names it. */
@@ -4411,7 +4420,7 @@ export type PrAuthor = {
   laneId?: string;
   /** GitHub login; absent when GitHub wasn't reached. */
   login?: string;
-  profile?: TaskProfile;
+  profile?: ProfileName;
   role?: AgentRole;
   taskId?: TaskId;
   /** Its session, for `agent_work`. */
@@ -4835,42 +4844,67 @@ export type PreviewsListOutput = {
   truncated?: boolean;
 };
 
-/** What a new agent of one profile runs on, every scope applied. */
-export type ProfileRun = {
-  effort: Effort;
-  model: string;
-};
-
-/** What new agents of each profile run on. */
-export type ProfileRuns = {
-  high: ProfileRun;
-  medium: ProfileRun;
-};
-
 /**
- * One profile's setting at one scope, the fleet or a project. An unset field falls through: a project's to the
- * fleet's, the fleet's to the runner's own (`claude-opus-5-5`, effort high for high and medium for medium).
+ * One task profile (Administration › Profiles): what an agent on it runs on. Exactly one is the hub's default, which
+ * every project allows and the lead, every review and claude's helper calls run on.
  */
-export type ProfileSetting = {
-  effort?: Effort;
-  model?: ModelName;
+export type Profile = {
+  default: boolean;
+  effort: Effort;
+  /** Claude Code's fast mode (`fastMode`), only on a model that has it. */
+  fast: boolean;
+  id: number;
+  model: ModelName;
+  name: ProfileName;
+  /** What it is for, in one line; the lead reads it to pick one. */
+  note: string;
   /**
-   * Set by the hub: claude refused `model`, so agents run as if it were unset until a person sets the model again.
-   * What claude said, and where. As input it only keeps the hub's own flag, passed back as read with the same
-   * model; anything else clears it.
+   * Set by the hub: claude refused `model`, so its agents run on the runner's own model until a person sets the
+   * model again. What claude said, and where.
    */
   refused?: string;
+  updatedAt: Timestamp;
 };
 
-/** Both profiles' settings at one scope. */
-export type ProfileSettings = {
-  high?: ProfileSetting;
-  medium?: ProfileSetting;
+export type ProfileCreateInput = {
+  /** Makes it the hub's default. */
+  default?: boolean;
+  effort: Effort;
+  fast?: boolean;
+  model: ModelName;
+  name: ProfileName;
+  note: string;
 };
+
+export type ProfileCreateOutput = {
+  next?: string;
+  profile: Profile;
+  truncated?: boolean;
+};
+
+export type ProfileDeleteInput = {
+  id: number;
+};
+
+export type ProfileDeleteOutput = {
+  next?: string;
+  ok: true;
+  truncated?: boolean;
+};
+
+/** A model a profile may pick (`profiles_list`). */
+export type ProfileModel = {
+  displayName?: string;
+  /** Claude Code offers fast mode on it. */
+  fast: boolean;
+  id: ModelName;
+};
+
+export type ProfileName = string;
 
 /**
  * One task profile's part of a scope's agent time and usage, from the spans kept (`coverage.detailSince` on): the
- * tasks that ran on it, and the lead's spans under high.
+ * tasks that ran on it, and the lead's spans under the default profile they ran on.
  */
 export type ProfileTotal = {
   /** Exclusive agent time. */
@@ -4879,54 +4913,44 @@ export type ProfileTotal = {
   modelMs: number;
   /** What the runner reported for its messages. */
   outputTokens: number;
-  profile: TaskProfile;
+  profile: ProfileName;
 };
 
-export type ProfilesGetInput = {
-  /** A project: its override too, and what its agents run on. Absent: the fleet's. */
-  projectRef?: ProjectRef;
+export type ProfileUpdateInput = {
+  /** True makes it the hub's default; the default can't be unset, only replaced. */
+  default?: boolean;
+  effort?: Effort;
+  fast?: boolean;
+  id: number;
+  /** Setting the model again clears a refusal. */
+  model?: ModelName;
+  /** A rename: tasks that ran on it keep the old name in their history. */
+  name?: ProfileName;
+  note?: string;
 };
 
-/** The profiles' settings at the fleet and, when asked, a project, and what new agents run on. */
-export type ProfilesGetOutput = {
-  /** The runner's own: what a profile set nowhere runs on. */
-  defaults: ProfileRuns;
-  fleet: ProfileSettings;
+export type ProfileUpdateOutput = {
   next?: string;
-  /** The project's override; absent without projectRef. */
-  project?: ProfileSettings;
-  /**
-   * What a new agent of each profile runs on: the project's setting, else the fleet's, else the runner's own.
-   * The lead, every review and claude's helper calls run high.
-   */
-  runs: ProfileRuns;
+  profile: Profile;
   truncated?: boolean;
 };
 
-export type ProfilesSetInput = {
-  /**
-   * Replaces the profile's setting at that scope; `{}` unsets it. A refusal goes once the model is set again:
-   * to keep it while changing only the effort, pass back the `refused` profiles_get read with the same model.
-   */
-  high?: ProfileSetting;
-  medium?: ProfileSetting;
-  /** A project's override. Absent: the fleet's, which needs an admin key. */
+export type ProfilesListInput = {
+  /** A project: also which profiles it allows. */
   projectRef?: ProjectRef;
 };
 
-/** The profiles' settings at the fleet and, when asked, a project, and what new agents run on. */
-export type ProfilesSetOutput = {
-  /** The runner's own: what a profile set nowhere runs on. */
-  defaults: ProfileRuns;
-  fleet: ProfileSettings;
+export type ProfilesListOutput = {
+  /** With projectRef: the profiles it allows, the default first. */
+  allowed?: ProfileName[];
+  /** Every level Claude Code's `--effort` takes; a model without one runs the nearest below. */
+  efforts: Effort[];
+  /** The models a profile may pick. */
+  models: ProfileModel[];
+  modelsFrom: ModelSource;
   next?: string;
-  /** The project's override; absent without projectRef. */
-  project?: ProfileSettings;
-  /**
-   * What a new agent of each profile runs on: the project's setting, else the fleet's, else the runner's own.
-   * The lead, every review and claude's helper calls run high.
-   */
-  runs: ProfileRuns;
+  /** The default first, then by name. */
+  profiles: Profile[];
   truncated?: boolean;
 };
 
@@ -5086,10 +5110,10 @@ export type ProjectGetOutput = {
   asOf?: Timestamp;
   /** Absent until lead_start. */
   lead?: Lead;
-  /** Whether the lead may run a task on the medium profile (`project_set`); absent from older hubs, where it is on. */
-  mediumAllowed?: boolean;
   /** Hint for the next call. */
   next?: string;
+  /** The profiles its agents may run on (`project_set`), the hub's default first; absent from older hubs. */
+  profiles?: ProfileName[];
   project?: ProjectSummary;
   /** Without projectId: the projects. */
   projects?: ProjectSummary[];
@@ -5133,10 +5157,10 @@ export type ProjectOutcome = {
   asOf: Timestamp;
   /** Absent until lead_start. */
   lead?: Lead;
-  /** Whether the lead may run a task on the medium profile (`project_set`); absent from older hubs, where it is on. */
-  mediumAllowed?: boolean;
   /** Hint for the next call. */
   next?: string;
+  /** The profiles its agents may run on (`project_set`), the hub's default first; absent from older hubs. */
+  profiles?: ProfileName[];
   project: ProjectSummary;
   stale: boolean;
   /** Absent until the project has a task. */
@@ -5276,13 +5300,14 @@ export type ProjectRowState = KnownProjectRowState | (string & {});
 
 export type ProjectSetInput = {
   machineId: MachineId;
-  mediumAllowed: boolean;
+  profiles: ProfileName[];
   projectId: ProjectId;
 };
 
 export type ProjectSetOutput = {
-  mediumAllowed: boolean;
   next?: string;
+  /** The profiles it allows now, the default first. */
+  profiles: ProfileName[];
   truncated?: boolean;
 };
 
@@ -6703,8 +6728,11 @@ export type Task = {
    * thread could not resume), on the same branch and worktree.
    */
   previousThreads?: ThreadRef[];
-  /** Resolved at spawn. Rows stored with a model and effort read as `high` (the hub migrates its own). */
-  profile?: TaskProfile;
+  /**
+   * The profile's name, resolved at spawn: the spawn's, else the hub's default. It keeps the name it ran on through
+   * a rename. Rows stored with a model and effort read as `high` (the hub migrates its own).
+   */
+  profile?: ProfileName;
   projectRef: ProjectRef;
   prompt: string;
   /** A review task spawned with `--qa`. */
@@ -6761,13 +6789,6 @@ export type TaskId = string;
 
 /** Every task gets its own worktree: a writer on its own branch, a reader or reviewer detached. */
 export type TaskKind = "write" | "read" | "review";
-
-/**
- * What an agent runs on. There are exactly two: `high` is the default and what the lead, every reviewer and every
- * helper call run; `medium` is for mechanical tasks the lead picks. Each runs on its setting's model and effort
- * ([`ProfileSettings`]), else on the runner's own for it.
- */
-export type TaskProfile = "high" | "medium";
 
 /** A task fleetd resumes on its own after its run died: in the same thread and worktree, with a note to continue. */
 export type TaskRecovery = {
@@ -6954,7 +6975,7 @@ export type TimeBreakdownInput = {
 export type TimeBreakdownOutput = {
   agentMs: number;
   byCategory: CategoryTotal[];
-  /** High first; absent when no task or lead span is in the period. */
+  /** Most agent time first; absent when no task or lead span is in the period. */
   byProfile?: ProfileTotal[];
   ciChecks: CiCheckStat[];
   compare?: PeriodBreakdown;
@@ -7908,8 +7929,10 @@ export interface ToolMap {
   preview_feedback: { input: PreviewFeedbackInput; output: PreviewFeedbackOutput };
   preview_start: { input: PreviewStartInput; output: PreviewStartOutput };
   previews_list: { input: PreviewsListInput; output: PreviewsListOutput };
-  profiles_get: { input: ProfilesGetInput; output: ProfilesGetOutput };
-  profiles_set: { input: ProfilesSetInput; output: ProfilesSetOutput };
+  profile_create: { input: ProfileCreateInput; output: ProfileCreateOutput };
+  profile_delete: { input: ProfileDeleteInput; output: ProfileDeleteOutput };
+  profile_update: { input: ProfileUpdateInput; output: ProfileUpdateOutput };
+  profiles_list: { input: ProfilesListInput; output: ProfilesListOutput };
   project_add: { input: ProjectAddInput; output: ProjectAddOutput };
   project_discover: { input: ProjectDiscoverInput; output: ProjectDiscoverOutput };
   project_env_set: { input: ProjectEnvSetInput; output: ProjectEnvSetOutput };

@@ -2,14 +2,14 @@
 // split or an approximation says so (spec §2f) with the same mark everywhere.
 import { KIND_CATEGORY, SPAN_KINDS, type AgentRole, type Category, type Coverage, type Gap, type Span, type SpanKind } from "./types.ts";
 import { ROLE_WORD } from "../../ui/primitives/roles.ts";
-import type { TaskProfile } from "../../../shared/contracts";
+import type { ProfileName } from "../../../shared/contracts";
 
 export interface Lane {
   readonly role: AgentRole;
   readonly title: string;
   readonly model?: string;
   /** Its task profile; when known, rows show it rather than the model. */
-  readonly profile?: TaskProfile;
+  readonly profile?: ProfileName;
   readonly laneId?: string;
   /** Its place by start among agents with the same role and title (two reviewers of one PR); absent when unique. */
   readonly nth?: number;

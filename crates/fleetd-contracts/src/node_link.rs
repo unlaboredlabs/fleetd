@@ -174,6 +174,13 @@ pub const CAP_SESSION_SEAL: &str = "session_seal";
 /// `claudeAccount` on them (teams step 8).
 pub const CAP_CLAUDE_ACCOUNTS: &str = "claude_accounts";
 
+/// `claude_models`: the node lists the models the hub's API key offers, for the profiles' model picker.
+pub const CAP_CLAUDE_MODELS: &str = "claude_models";
+
+/// The node takes a launch's profile by any name, effort `xhigh` and `fast` (W146). The hub sends an older one `high`
+/// or `medium` and an effort it knows.
+pub const CAP_PROFILE_NAMES: &str = "profile_names";
+
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]

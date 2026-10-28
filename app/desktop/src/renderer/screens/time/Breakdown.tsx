@@ -2,7 +2,7 @@
 // slowest and repeated commands, the CI checks and the time spent waiting on you. With compare on, each category
 // shows the period before beside this one. Every row opens the spans behind it.
 import type { ReactNode } from "react";
-import { PROFILE_WORD, Text, Truncate, cx, humanizeKey } from "../../ui";
+import { profileWord, Text, Truncate, cx, humanizeKey } from "../../ui";
 import { fmtTokens } from "../live/format";
 import type { Linked } from "./data";
 import { CAT_LABEL, KIND_WORD, SHOWN, agentName, delta, fmtBytes, fmtDur, gapText, pct, type Missing, type Names, categoryKinds } from "./format";
@@ -293,7 +293,7 @@ function ByProfile({ b }: { b: TimeBreakdownOutput }) {
         </div>
         {rows.map((r) => (
           <div key={r.profile} className={cx(s.tableHead, s.profileRow)} role="row">
-            <Text size="sm">{PROFILE_WORD[r.profile]}</Text>
+            <Text size="sm">{profileWord(r.profile)}</Text>
             <Num>{fmtDur(r.agentMs)}</Num>
             <Num tone="quiet">{pct(r.agentMs, total)}</Num>
             <Num>{fmtDur(r.modelMs)}</Num>

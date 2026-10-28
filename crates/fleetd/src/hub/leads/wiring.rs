@@ -242,8 +242,14 @@ pub fn wire_area(area: &Arc<Area>, links: Links<'_>) {
                         serde_json::to_value(lead).unwrap_or_default(),
                     );
                 }
-                let medium = area.leads.medium_allowed(&project_ref).map_err(internal)?;
-                extra.fields.insert("mediumAllowed".into(), medium.into());
+                let profiles = area
+                    .leads
+                    .allowed_profiles(&project_ref)
+                    .map_err(internal)?;
+                extra.fields.insert(
+                    "profiles".into(),
+                    serde_json::to_value(profiles).unwrap_or_default(),
+                );
                 let mut open = area
                     .workstreams
                     .list(&WorkstreamFilter {

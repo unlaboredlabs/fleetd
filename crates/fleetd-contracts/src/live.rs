@@ -7,7 +7,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_with::skip_serializing_none;
 
-use crate::effort::{Effort, TaskProfile};
+use crate::effort::{Effort, ProfileName};
 use crate::ids::{MachineId, ProjectRef, ThreadRef, Timestamp};
 use crate::ledger::{Headline, WorkstreamId, WorkstreamState};
 use crate::model::MachineStatus;
@@ -257,8 +257,8 @@ pub struct AgentLane {
     pub title: Text<0, 80>,
     pub model: Option<Text<1, 80>>,
     pub effort: Option<Effort>,
-    /// What it runs on: a task's own profile; a lead is always high. Absent from older hubs.
-    pub profile: Option<TaskProfile>,
+    /// What it runs on: a task's own profile; a lead the default's. Absent from older hubs.
+    pub profile: Option<ProfileName>,
     pub status: LaneStatus,
     /// Queued, parked or failed: why, e.g. "fleet cap: 40 of 40 running", "usage limit: resumes 14:05".
     pub status_reason: Option<Text<0, 160>>,

@@ -415,8 +415,8 @@
           "$ref": "#/$defs/PrRef"
         },
         "profile": {
-          "$ref": "#/$defs/TaskProfile",
-          "description": "What it runs on: a task's own profile; a lead is always high. Absent from older hubs."
+          "$ref": "#/$defs/ProfileName",
+          "description": "What it runs on: a task's own profile; a lead the default's. Absent from older hubs."
         },
         "role": {
           "$ref": "#/$defs/AgentRole"
@@ -493,8 +493,8 @@
           "$ref": "#/$defs/PrRef"
         },
         "profile": {
-          "$ref": "#/$defs/TaskProfile",
-          "description": "What it runs on: a task's own profile; a lead is always high. Absent from older hubs."
+          "$ref": "#/$defs/ProfileName",
+          "description": "What it runs on: a task's own profile; a lead the default's. Absent from older hubs."
         },
         "projectRef": {
           "$ref": "#/$defs/ProjectRef"
@@ -5059,11 +5059,12 @@
       "type": "string"
     },
     "Effort": {
-      "description": "How hard a model thinks: what a profile runs at, as a setting picks it or a node reports a session's.",
+      "description": "How hard a model thinks: what a profile runs at, as Claude Code's `--effort` takes it, or a node reports a\nsession's.",
       "enum": [
         "low",
         "medium",
         "high",
+        "xhigh",
         "max"
       ],
       "type": "string"
@@ -6646,7 +6647,7 @@
         },
         {
           "const": "project.settings",
-          "description": "A project's settings changed (`project_set`): `data.mediumAllowed`; or a repo was removed from it\n(`project_repo_remove`): `data.repoRemoved`, its name.",
+          "description": "A project's settings changed (`project_set`): `data.profiles`, the profiles it allows; or a repo was removed from it\n(`project_repo_remove`): `data.repoRemoved`, its name.",
           "type": "string"
         },
         {
@@ -10180,17 +10181,29 @@
         "previews_list.output": {
           "$ref": "#/$defs/PreviewsListOutput"
         },
-        "profiles_get.input": {
-          "$ref": "#/$defs/ProfilesGetInput"
+        "profile_create.input": {
+          "$ref": "#/$defs/ProfileCreateInput"
         },
-        "profiles_get.output": {
-          "$ref": "#/$defs/ProfilesGetOutput"
+        "profile_create.output": {
+          "$ref": "#/$defs/ProfileCreateOutput"
         },
-        "profiles_set.input": {
-          "$ref": "#/$defs/ProfilesSetInput"
+        "profile_delete.input": {
+          "$ref": "#/$defs/ProfileDeleteInput"
         },
-        "profiles_set.output": {
-          "$ref": "#/$defs/ProfilesSetOutput"
+        "profile_delete.output": {
+          "$ref": "#/$defs/ProfileDeleteOutput"
+        },
+        "profile_update.input": {
+          "$ref": "#/$defs/ProfileUpdateInput"
+        },
+        "profile_update.output": {
+          "$ref": "#/$defs/ProfileUpdateOutput"
+        },
+        "profiles_list.input": {
+          "$ref": "#/$defs/ProfilesListInput"
+        },
+        "profiles_list.output": {
+          "$ref": "#/$defs/ProfilesListOutput"
         },
         "project_add.input": {
           "$ref": "#/$defs/ProjectAddInput"
@@ -10704,10 +10717,14 @@
         "preview_start.output",
         "previews_list.input",
         "previews_list.output",
-        "profiles_get.input",
-        "profiles_get.output",
-        "profiles_set.input",
-        "profiles_set.output",
+        "profile_create.input",
+        "profile_create.output",
+        "profile_delete.input",
+        "profile_delete.output",
+        "profile_update.input",
+        "profile_update.output",
+        "profiles_list.input",
+        "profiles_list.output",
         "project_add.input",
         "project_add.output",
         "project_discover.input",
@@ -12014,6 +12031,14 @@
       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@\\[\\]-]{0,79}$",
       "type": "string"
     },
+    "ModelSource": {
+      "description": "Where the model list came from: the Models API on the hub's API key, or fleetd's own list of current Claude\nmodels.",
+      "enum": [
+        "api",
+        "builtin"
+      ],
+      "type": "string"
+    },
     "NaviArchiveInput": {
       "properties": {
         "archived": {
@@ -13072,7 +13097,7 @@
           "type": "string"
         },
         "profile": {
-          "$ref": "#/$defs/TaskProfile"
+          "$ref": "#/$defs/ProfileName"
         },
         "role": {
           "$ref": "#/$defs/AgentRole"
@@ -14383,70 +14408,164 @@
       ],
       "type": "object"
     },
-    "ProfileRun": {
-      "description": "What a new agent of one profile runs on, every scope applied.",
+    "Profile": {
+      "description": "One task profile (Administration › Profiles): what an agent on it runs on. Exactly one is the hub's default, which\nevery project allows and the lead, every review and claude's helper calls run on.",
       "properties": {
+        "default": {
+          "type": "boolean"
+        },
         "effort": {
           "$ref": "#/$defs/Effort"
         },
+        "fast": {
+          "description": "Claude Code's fast mode (`fastMode`), only on a model that has it.",
+          "type": "boolean"
+        },
+        "id": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
         "model": {
+          "$ref": "#/$defs/ModelName"
+        },
+        "name": {
+          "$ref": "#/$defs/ProfileName"
+        },
+        "note": {
+          "description": "What it is for, in one line; the lead reads it to pick one.",
+          "maxLength": 300,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "refused": {
+          "description": "Set by the hub: claude refused `model`, so its agents run on the runner's own model until a person sets the\nmodel again. What claude said, and where.",
+          "type": "string"
+        },
+        "updatedAt": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "note",
+        "model",
+        "effort",
+        "fast",
+        "default",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "ProfileCreateInput": {
+      "properties": {
+        "default": {
+          "description": "Makes it the hub's default.",
+          "type": "boolean"
+        },
+        "effort": {
+          "$ref": "#/$defs/Effort"
+        },
+        "fast": {
+          "type": "boolean"
+        },
+        "model": {
+          "$ref": "#/$defs/ModelName"
+        },
+        "name": {
+          "$ref": "#/$defs/ProfileName"
+        },
+        "note": {
+          "maxLength": 300,
+          "pattern": "^[^\\r\\n]*$",
           "type": "string"
         }
       },
       "required": [
+        "name",
+        "note",
         "model",
         "effort"
       ],
       "type": "object"
     },
-    "ProfileRuns": {
-      "description": "What new agents of each profile run on.",
+    "ProfileCreateOutput": {
       "properties": {
-        "high": {
-          "$ref": "#/$defs/ProfileRun"
+        "next": {
+          "type": "string"
         },
-        "medium": {
-          "$ref": "#/$defs/ProfileRun"
+        "profile": {
+          "$ref": "#/$defs/Profile"
+        },
+        "truncated": {
+          "type": "boolean"
         }
       },
       "required": [
-        "high",
-        "medium"
+        "profile"
       ],
       "type": "object"
     },
-    "ProfileSetting": {
-      "description": "One profile's setting at one scope, the fleet or a project. An unset field falls through: a project's to the\nfleet's, the fleet's to the runner's own (`claude-opus-5-5`, effort high for high and medium for medium).",
+    "ProfileDeleteInput": {
       "properties": {
-        "effort": {
-          "$ref": "#/$defs/Effort"
-        },
-        "model": {
-          "$ref": "#/$defs/ModelName"
-        },
-        "refused": {
-          "description": "Set by the hub: claude refused `model`, so agents run as if it were unset until a person sets the model again.\nWhat claude said, and where. As input it only keeps the hub's own flag, passed back as read with the same\nmodel; anything else clears it.",
-          "type": "string"
+        "id": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
         }
       },
+      "required": [
+        "id"
+      ],
       "type": "object"
     },
-    "ProfileSettings": {
-      "description": "Both profiles' settings at one scope.",
+    "ProfileDeleteOutput": {
       "properties": {
-        "high": {
-          "$ref": "#/$defs/ProfileSetting",
-          "default": {}
+        "next": {
+          "type": "string"
         },
-        "medium": {
-          "$ref": "#/$defs/ProfileSetting",
-          "default": {}
+        "ok": {
+          "enum": [
+            true
+          ],
+          "type": "boolean"
+        },
+        "truncated": {
+          "type": "boolean"
         }
       },
+      "required": [
+        "ok"
+      ],
       "type": "object"
+    },
+    "ProfileModel": {
+      "description": "A model a profile may pick (`profiles_list`).",
+      "properties": {
+        "displayName": {
+          "type": "string"
+        },
+        "fast": {
+          "description": "Claude Code offers fast mode on it.",
+          "type": "boolean"
+        },
+        "id": {
+          "$ref": "#/$defs/ModelName"
+        }
+      },
+      "required": [
+        "id",
+        "fast"
+      ],
+      "type": "object"
+    },
+    "ProfileName": {
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,31}$",
+      "type": "string"
     },
     "ProfileTotal": {
-      "description": "One task profile's part of a scope's agent time and usage, from the spans kept (`coverage.detailSince` on): the\ntasks that ran on it, and the lead's spans under high.",
+      "description": "One task profile's part of a scope's agent time and usage, from the spans kept (`coverage.detailSince` on): the\ntasks that ran on it, and the lead's spans under the default profile they ran on.",
       "properties": {
         "agentMs": {
           "description": "Exclusive agent time.",
@@ -14467,7 +14586,7 @@
           "type": "integer"
         },
         "profile": {
-          "$ref": "#/$defs/TaskProfile"
+          "$ref": "#/$defs/ProfileName"
         }
       },
       "required": [
@@ -14478,92 +14597,121 @@
       ],
       "type": "object"
     },
-    "ProfilesGetInput": {
+    "ProfileUpdateInput": {
       "properties": {
-        "projectRef": {
-          "$ref": "#/$defs/ProjectRef",
-          "description": "A project: its override too, and what its agents run on. Absent: the fleet's."
-        }
-      },
-      "type": "object"
-    },
-    "ProfilesGetOutput": {
-      "description": "The profiles' settings at the fleet and, when asked, a project, and what new agents run on.",
-      "properties": {
-        "defaults": {
-          "$ref": "#/$defs/ProfileRuns",
-          "description": "The runner's own: what a profile set nowhere runs on."
-        },
-        "fleet": {
-          "$ref": "#/$defs/ProfileSettings"
-        },
-        "next": {
-          "type": "string"
-        },
-        "project": {
-          "$ref": "#/$defs/ProfileSettings",
-          "description": "The project's override; absent without projectRef."
-        },
-        "runs": {
-          "$ref": "#/$defs/ProfileRuns",
-          "description": "What a new agent of each profile runs on: the project's setting, else the fleet's, else the runner's own.\nThe lead, every review and claude's helper calls run high."
-        },
-        "truncated": {
+        "default": {
+          "description": "True makes it the hub's default; the default can't be unset, only replaced.",
           "type": "boolean"
+        },
+        "effort": {
+          "$ref": "#/$defs/Effort"
+        },
+        "fast": {
+          "type": "boolean"
+        },
+        "id": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "model": {
+          "$ref": "#/$defs/ModelName",
+          "description": "Setting the model again clears a refusal."
+        },
+        "name": {
+          "$ref": "#/$defs/ProfileName",
+          "description": "A rename: tasks that ran on it keep the old name in their history."
+        },
+        "note": {
+          "maxLength": 300,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
         }
       },
       "required": [
-        "fleet",
-        "runs",
-        "defaults"
+        "id"
       ],
       "type": "object"
     },
-    "ProfilesSetInput": {
+    "ProfileUpdateOutput": {
       "properties": {
-        "high": {
-          "$ref": "#/$defs/ProfileSetting",
-          "description": "Replaces the profile's setting at that scope; `{}` unsets it. A refusal goes once the model is set again:\nto keep it while changing only the effort, pass back the `refused` profiles_get read with the same model."
-        },
-        "medium": {
-          "$ref": "#/$defs/ProfileSetting"
-        },
-        "projectRef": {
-          "$ref": "#/$defs/ProjectRef",
-          "description": "A project's override. Absent: the fleet's, which needs an admin key."
-        }
-      },
-      "type": "object"
-    },
-    "ProfilesSetOutput": {
-      "description": "The profiles' settings at the fleet and, when asked, a project, and what new agents run on.",
-      "properties": {
-        "defaults": {
-          "$ref": "#/$defs/ProfileRuns",
-          "description": "The runner's own: what a profile set nowhere runs on."
-        },
-        "fleet": {
-          "$ref": "#/$defs/ProfileSettings"
-        },
         "next": {
           "type": "string"
         },
-        "project": {
-          "$ref": "#/$defs/ProfileSettings",
-          "description": "The project's override; absent without projectRef."
-        },
-        "runs": {
-          "$ref": "#/$defs/ProfileRuns",
-          "description": "What a new agent of each profile runs on: the project's setting, else the fleet's, else the runner's own.\nThe lead, every review and claude's helper calls run high."
+        "profile": {
+          "$ref": "#/$defs/Profile"
         },
         "truncated": {
           "type": "boolean"
         }
       },
       "required": [
-        "fleet",
-        "runs",
-        "defaults"
+        "profile"
+      ],
+      "type": "object"
+    },
+    "ProfilesListInput": {
+      "properties": {
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef",
+          "description": "A project: also which profiles it allows."
+        }
+      },
+      "type": "object"
+    },
+    "ProfilesListOutput": {
+      "properties": {
+        "allowed": {
+          "description": "With projectRef: the profiles it allows, the default first.",
+          "items": {
+            "$ref": "#/$defs/ProfileName"
+          },
+          "maxItems": 50,
+          "minItems": 1,
+          "type": "array"
+        },
+        "efforts": {
+          "description": "Every level Claude Code's `--effort` takes; a model without one runs the nearest below.",
+          "items": {
+            "$ref": "#/$defs/Effort"
+          },
+          "maxItems": 8,
+          "minItems": 1,
+          "type": "array"
+        },
+        "models": {
+          "description": "The models a profile may pick.",
+          "items": {
+            "$ref": "#/$defs/ProfileModel"
+          },
+          "maxItems": 200,
+          "minItems": 1,
+          "type": "array"
+        },
+        "modelsFrom": {
+          "$ref": "#/$defs/ModelSource"
+        },
+        "next": {
+          "type": "string"
+        },
+        "profiles": {
+          "description": "The default first, then by name.",
+          "items": {
+            "$ref": "#/$defs/Profile"
+          },
+          "maxItems": 50,
+          "minItems": 1,
+          "type": "array"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "profiles",
+        "models",
+        "modelsFrom",
+        "efforts"
       ],
       "type": "object"
     },
@@ -14927,13 +15075,18 @@
           "$ref": "#/$defs/Lead",
           "description": "Absent until lead_start."
         },
-        "mediumAllowed": {
-          "description": "Whether the lead may run a task on the medium profile (`project_set`); absent from older hubs, where it is on.",
-          "type": "boolean"
-        },
         "next": {
           "description": "Hint for the next call.",
           "type": "string"
+        },
+        "profiles": {
+          "description": "The profiles its agents may run on (`project_set`), the hub's default first; absent from older hubs.",
+          "items": {
+            "$ref": "#/$defs/ProfileName"
+          },
+          "maxItems": 50,
+          "minItems": 1,
+          "type": "array"
         },
         "project": {
           "$ref": "#/$defs/ProjectSummary"
@@ -15389,8 +15542,13 @@
         "machineId": {
           "$ref": "#/$defs/MachineId"
         },
-        "mediumAllowed": {
-          "type": "boolean"
+        "profiles": {
+          "items": {
+            "$ref": "#/$defs/ProfileName"
+          },
+          "maxItems": 50,
+          "type": "array",
+          "uniqueItems": true
         },
         "projectId": {
           "$ref": "#/$defs/ProjectId"
@@ -15399,24 +15557,30 @@
       "required": [
         "machineId",
         "projectId",
-        "mediumAllowed"
+        "profiles"
       ],
       "type": "object"
     },
     "ProjectSetOutput": {
       "properties": {
-        "mediumAllowed": {
-          "type": "boolean"
-        },
         "next": {
           "type": "string"
+        },
+        "profiles": {
+          "description": "The profiles it allows now, the default first.",
+          "items": {
+            "$ref": "#/$defs/ProfileName"
+          },
+          "maxItems": 50,
+          "minItems": 1,
+          "type": "array"
         },
         "truncated": {
           "type": "boolean"
         }
       },
       "required": [
-        "mediumAllowed"
+        "profiles"
       ],
       "type": "object"
     },
@@ -19328,9 +19492,9 @@
           "type": "array"
         },
         "profile": {
-          "$ref": "#/$defs/TaskProfile",
+          "$ref": "#/$defs/ProfileName",
           "default": "high",
-          "description": "Resolved at spawn. Rows stored with a model and effort read as `high` (the hub migrates its own)."
+          "description": "The profile's name, resolved at spawn: the spawn's, else the hub's default. It keeps the name it ran on through\na rename. Rows stored with a model and effort read as `high` (the hub migrates its own)."
         },
         "projectRef": {
           "$ref": "#/$defs/ProjectRef"
@@ -19482,14 +19646,6 @@
         "write",
         "read",
         "review"
-      ],
-      "type": "string"
-    },
-    "TaskProfile": {
-      "description": "What an agent runs on. There are exactly two: `high` is the default and what the lead, every reviewer and every\nhelper call run; `medium` is for mechanical tasks the lead picks. Each runs on its setting's model and effort\n([`ProfileSettings`]), else on the runner's own for it.",
-      "enum": [
-        "high",
-        "medium"
       ],
       "type": "string"
     },
@@ -19993,11 +20149,11 @@
           "type": "array"
         },
         "byProfile": {
-          "description": "High first; absent when no task or lead span is in the period.",
+          "description": "Most agent time first; absent when no task or lead span is in the period.",
           "items": {
             "$ref": "#/$defs/ProfileTotal"
           },
-          "maxItems": 2,
+          "maxItems": 50,
           "type": "array"
         },
         "ciChecks": {

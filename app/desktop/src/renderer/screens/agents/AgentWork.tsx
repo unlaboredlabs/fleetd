@@ -6,7 +6,7 @@ import { useMemo, useState } from "react";
 import type { WorkStep } from "../../../shared/contracts";
 import { useAgentWork, useData } from "../../src/data/react";
 import { selectLiveAgent, selectLiveAgents } from "../../src/data/selectors";
-import { Button, cx, EmptyState, Markdown, PROFILE_LINE, ROLE_WORD, Text, Truncate, VirtualList } from "../../ui";
+import { Button, cx, EmptyState, Markdown, profileLine, ROLE_WORD, Text, Truncate, VirtualList } from "../../ui";
 import { roleWords } from "../chat/told";
 import { ToldPanel } from "../chat/ToldPanel";
 import { ActivityLine, MiddleCut } from "../live/parts";
@@ -92,7 +92,7 @@ export function AgentWork({ id }: { id: string }) {
           ) : null}
           {row.profile === undefined ? null : (
             <Text size="xs" tone="quiet">
-              {PROFILE_LINE[row.profile]}
+              {profileLine(row.profile)}
             </Text>
           )}
         </span>

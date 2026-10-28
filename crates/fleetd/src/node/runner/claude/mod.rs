@@ -18,7 +18,7 @@ pub mod version;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use fleetd_contracts::effort::{Effort, TaskProfile};
+use fleetd_contracts::effort::{Effort, ProfileName};
 use fleetd_contracts::model::RuntimeMode;
 use fleetd_contracts::sessions::{PermissionDecision, RESUME_REFUSED, RunnerInfo, SessionRole};
 
@@ -506,12 +506,12 @@ explained! {
 }
 
 /// claude sends its background helper calls (session titles and the like) to whatever the haiku alias names. Every
-/// claude fleetd starts points it at the high profile's model ([`SessionSpec::helper_model`]; this one unless a
+/// claude fleetd starts points it at the default profile's model ([`SessionSpec::helper_model`]; this one unless a
 /// setting chose another), in its environment and its settings, so no call goes to another.
 pub const HELPER_MODEL_ENV: (&str, &str) = ("ANTHROPIC_DEFAULT_HAIKU_MODEL", MODEL);
-pub const HELPER_MODEL_WHY: &str = "claude's background helper calls (session titles and the like) run on the high \
-                                    profile's model like the lead and every review, not on the haiku model claude \
-                                    picks by default.";
+pub const HELPER_MODEL_WHY: &str = "claude's background helper calls (session titles and the like) run on the \
+                                    default profile's model like the lead and every review, not on the haiku model \
+                                    claude picks by default.";
 
 explained! {
     /// Set in every session's environment or settings overlay, besides [`SUBAGENTS_OFF_ENV`] and auto memory.
@@ -738,11 +738,11 @@ impl Runner for ClaudeRunner {
         Ok(session::start(child, marker, mapper, spec.transcript))
     }
 
-    fn profile(&self, profile: TaskProfile) -> ProfileModel {
+    fn profile(&self, profile: &ProfileName) -> ProfileModel {
         guide::profile(profile)
     }
 
-    fn profile_of(&self, model: &str, effort: Effort) -> TaskProfile {
+    fn profile_of(&self, model: &str, effort: Effort) -> ProfileName {
         guide::profile_of(model, effort)
     }
 }
@@ -752,6 +752,7 @@ fn effort_flag(effort: Effort) -> &'static str {
         Effort::Low => "low",
         Effort::Medium => "medium",
         Effort::High => "high",
+        Effort::Xhigh => "xhigh",
         Effort::Max => "max",
     }
 }

@@ -342,52 +342,56 @@ speed. At a cap of 1 it works one piece at a time and says so once.
 
 ## Models and cost {#models}
 
-Every agent runs on one of two profiles. Unless you set otherwise, both run on `claude-opus-5-5`:
+Every agent runs on a task profile: a name, a one-line note on what it is for, a model, an effort and fast mode. The
+hub keeps any number of them, and one is the default. A new hub has two:
 
-| Profile | Unless set | Runs |
+| Profile | Runs | For |
 |---|---|---|
-| `high` | `claude-opus-5-5` at effort high | The default. The lead, every review, claude's helper calls (session titles and the like), and every task the lead doesn't mark medium. |
-| `medium` | `claude-opus-5-5` at effort medium | Mechanical tasks the lead picks: dead-code deletions, renames, test removals, doc fixes, moving files, plain wiring, screenshot recaptures. Never design, concurrency, auth or secrets, approvals or the merge train. |
+| `high` (default) | `claude-opus-5-5` at effort high | The lead, every review, claude's helper calls (session titles and the like), and every task the lead names no other profile for. |
+| `medium` | `claude-opus-5-5` at effort medium | Mechanical tasks only: dead-code deletions, renames, test removals, doc fixes, moving files, plain wiring, screenshot recaptures, cleanup. Never design, architecture or anything subtle. |
 
-The lead picks the profile for each task it starts. A medium task whose review finds blockers twice is redone on high.
-Each agent's profile shows on its lane (`T12 medium`), and the time
-view splits agent time and output tokens by profile, so you can see what medium saves.
+A project allows the default and the profiles it picks; nothing else. Its lead is told each allowed profile's name and
+note, and names one in `spawn_agent` when the note fits the work; `spawn_agent` refuses a profile the project doesn't
+allow and says which it does. A task on another profile whose review finds blockers twice is redone on the default.
+Each agent's profile shows on its lane (`T12 medium`), and the time view splits agent time and output tokens by
+profile.
 
 | To change | Do |
 |---|---|
-| The model and effort behind a profile, for every project | Administration › Hub settings → Task profiles (owners and admins), or `fleetd project set --high-model claude-sonnet-5-5 --high-effort max`. |
-| The same for one project | Settings → Projects → the project → Task profiles, or `fleetd project set <machine>/<project> --medium-model claude-sonnet-5-5`. |
-| Whether the lead may use medium | Settings → Projects → Agents → the project's Medium allowed switch, or `fleetd project set <machine>/<project> --medium off`: every new task runs on high. `--medium on` allows medium again (the default). |
-| When the lead picks medium | Edit the **Task profiles** prompt (`lead.profiles`) like any [prompt](/docs/what-agents-are-told). It takes effect at the lead's next start. |
+| Which profiles a project allows | `fleetd project set <machine>/<project> --profiles medium,quick` (`none`: the default alone). |
+| A profile's model, effort, fast mode or note, or which is the default | `fleetd project profile <name> --model claude-sonnet-5-5 --effort xhigh` (owners and admins). A name that doesn't exist yet makes a new profile; `--delete` removes one. |
+| How the lead picks | Edit the **Task profiles** prompt (`lead.profiles`) like any [prompt](/docs/what-agents-are-told), or a profile's note. It takes effect at the lead's next start. |
 
-### The model and effort behind each profile {#profile-settings}
+### What a profile runs on {#profile-settings}
 
-Each profile has a model and an effort (low, medium, high or max) you can set fleet-wide, and a project can override
-either one. Each field is resolved on its own: the project's, else the fleet's, else the profile's own from the table
-above. Nothing set anywhere runs exactly as fleetd always has. A model is any name `claude --model` takes: a full name
-(`claude-sonnet-5-5`), an alias (`sonnet`) or your gateway's own name.
+A profile's model is one of the models the hub's Claude configuration offers: what the Models API lists on the hub's
+API key when it has one (Administration › Connections), else fleetd's own list of current Claude models. Its effort is
+one Claude Code takes: low, medium, high, xhigh or max; a model without that level runs the nearest one below. Fast
+mode is Claude Code's (`"fastMode": true` in the session's settings), only on the models that have it (Opus 5.5, Opus
+5 and Opus 4.8), at a higher price per token.
 
-`fleetd project profiles [<machine>/<project>]` shows what each profile runs on and the settings behind it:
+`fleetd project profiles [<machine>/<project>]` lists them, and with a project which it allows:
 
 ```text
-high    claude-opus-5-5 at high
-        fleet: unset · this project: unset · own: claude-opus-5-5 at high
-medium  claude-sonnet-5-5 at medium
-        fleet: claude-sonnet-5-5 · this project: unset · own: claude-opus-5-5 at medium
+high       claude-opus-5-5 at high (default, allowed)
+           The default: design, architecture and anything subtle. When in doubt, this one.
+medium     claude-opus-5-5 at medium (allowed)
+           Only for mechanical work: dead-code deletions, renames, test removals, doc fixes, moving files, ...
+quick      claude-opus-5-5 at low (fast, not allowed)
 ```
 
-`--high-model`, `--high-effort`, `--medium-model` and `--medium-effort` on `fleetd project set` change one field
-each, fleet-wide without a project (an admin key) or as the project's override with one; `default` unsets a field.
-From an MCP client, `profiles_get` and `profiles_set` do the same.
+From an MCP client, `profiles_list`, `profile_create`, `profile_update`, `profile_delete` and `project_set` do the
+same. The default can't be deleted, only replaced; nor can a profile a task not yet ended runs on. A renamed profile
+keeps its tasks: their history shows the name they ran on.
 
 A change applies to agents started after it. Agents already running keep the model and effort they started on, and
-each agent's usage, time and lane report the model it really ran on. The lead, every review and claude's helper calls
-follow the high profile. A node older than the hub runs each profile's own whatever is set: update fleetd there.
+each agent's usage, time and lane report the model it really ran on. A node older than the hub runs effort `xhigh` as high, and
+no profile in fast mode: update fleetd there.
 
-If claude refuses a model (a name it doesn't know, or one your gateway has no account for), no agent is stranded: the
-agent goes on at once on its profile's own model, in the same run, and its thread says why. The hub then flags the
-setting: Settings and `fleetd project profiles` show which machine refused it and when, and new agents run as if the
-model were unset until you set it again.
+If claude refuses a model (one your account or gateway has no access to), no agent is stranded: the agent goes on at
+once on `claude-opus-5-5`, in the same run, and its thread says why. The hub then flags the profile:
+`fleetd project profiles` shows which machine refused it and when, and new agents on it run on `claude-opus-5-5` until
+you set its model again.
 
 The policy file has no say in any of this: an older `.fleetd/policy.yaml`'s `defaults.model` and `defaults.effort`
 are ignored.

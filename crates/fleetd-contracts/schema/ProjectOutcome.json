@@ -215,6 +215,10 @@
       ],
       "type": "object"
     },
+    "ProfileName": {
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,31}$",
+      "type": "string"
+    },
     "ProjectCreator": {
       "description": "The key a project was created with: its id, and the person's or device's name the key carries.",
       "properties": {
@@ -255,13 +259,18 @@
           "$ref": "#/$defs/Lead",
           "description": "Absent until lead_start."
         },
-        "mediumAllowed": {
-          "description": "Whether the lead may run a task on the medium profile (`project_set`); absent from older hubs, where it is on.",
-          "type": "boolean"
-        },
         "next": {
           "description": "Hint for the next call.",
           "type": "string"
+        },
+        "profiles": {
+          "description": "The profiles its agents may run on (`project_set`), the hub's default first; absent from older hubs.",
+          "items": {
+            "$ref": "#/$defs/ProfileName"
+          },
+          "maxItems": 50,
+          "minItems": 1,
+          "type": "array"
         },
         "project": {
           "$ref": "#/$defs/ProjectSummary"
@@ -566,9 +575,9 @@
           "type": "array"
         },
         "profile": {
-          "$ref": "#/$defs/TaskProfile",
+          "$ref": "#/$defs/ProfileName",
           "default": "high",
-          "description": "Resolved at spawn. Rows stored with a model and effort read as `high` (the hub migrates its own)."
+          "description": "The profile's name, resolved at spawn: the spawn's, else the hub's default. It keeps the name it ran on through\na rename. Rows stored with a model and effort read as `high` (the hub migrates its own)."
         },
         "projectRef": {
           "$ref": "#/$defs/ProjectRef"
@@ -692,14 +701,6 @@
         "write",
         "read",
         "review"
-      ],
-      "type": "string"
-    },
-    "TaskProfile": {
-      "description": "What an agent runs on. There are exactly two: `high` is the default and what the lead, every reviewer and every\nhelper call run; `medium` is for mechanical tasks the lead picks. Each runs on its setting's model and effort\n([`ProfileSettings`]), else on the runner's own for it.",
-      "enum": [
-        "high",
-        "medium"
       ],
       "type": "string"
     },

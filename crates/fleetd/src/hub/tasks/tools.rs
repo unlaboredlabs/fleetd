@@ -3,12 +3,11 @@
 use std::sync::Arc;
 
 use fleetd_contracts::auth::Role;
-use fleetd_contracts::effort::TaskProfile;
 use fleetd_contracts::lead_calls::{LeadCall, LeadCallResult, TaskListResult, TaskResultFrame};
 use fleetd_contracts::mcp::{CapSetInput, ErrorCode, TaskGetInput, TasksListInput};
 use fleetd_contracts::prim::List;
 use fleetd_contracts::repos::ProjectRepo;
-use fleetd_contracts::tasks::{Task, TaskKind};
+use fleetd_contracts::tasks::Task;
 use serde_json::{Value, json};
 
 use super::cap::{CapChange, MachineCap, ProjectCap};
@@ -167,7 +166,7 @@ pub async fn lead_call(
     let r = &caller.project_ref;
     match call {
         LeadCall::TaskSpawn(input) => {
-            let asked = input.profile;
+            let asked = input.profile.clone();
             let spawned = tasks.spawn_noted(caller, input).await?;
             let task = spawned.task;
             let based = task.base.as_ref().map(|b| {
@@ -191,12 +190,11 @@ pub async fn lead_call(
                 .into_iter()
                 .flatten()
                 .reduce(|a, b| format!("{a} {b}"));
-            if asked == Some(TaskProfile::Medium) && task.profile == TaskProfile::High {
-                let why = if task.kind == TaskKind::Review {
-                    "It runs high: reviews always do."
-                } else {
-                    "It runs high: medium is off in this project."
-                };
+            if asked.as_ref().is_some_and(|a| a != &task.profile) {
+                let why = format!(
+                    "It runs on {}, the default: reviews always do.",
+                    task.profile
+                );
                 next = Some(match next {
                     Some(n) => format!("{why} {n}"),
                     None => why.to_owned(),

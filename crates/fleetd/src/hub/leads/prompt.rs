@@ -1,7 +1,8 @@
-//! The lead's first message: the `lead.start` prompt (a Navi's: `navi.start`), `lead.voice`, `lead.profiles` while the
-//! project allows medium (never for a Navi, which runs no code tasks), the digest, the human's custom instructions, then
-//! the memory (user memory per `You::for_lead`, and the project's `MEMORY.md`). A project with repos besides its own
-//! directory has them listed after that (`repos_block`).
+//! The lead's first message: the `lead.start` prompt (a Navi's: `navi.start`), `lead.voice`, `lead.profiles` with each
+//! profile the project allows and its note, while it allows more than the default (never for a Navi, which runs no
+//! code tasks), the digest, the human's custom instructions, then the memory (user memory per `You::for_lead`, and the
+//! project's `MEMORY.md`). A project with repos besides its own directory has them listed after that (`repos_block`).
+use fleetd_contracts::effort::Profile;
 use fleetd_contracts::ids::ProjectRef;
 use fleetd_contracts::repos::ProjectRepo;
 
@@ -24,7 +25,7 @@ pub fn render_lead_start(
     set: &PromptSet,
     project_ref: &ProjectRef,
     title: &str,
-    medium_allowed: bool,
+    profiles: &[Profile],
     digest: &str,
     memory: &str,
     people: &str,
@@ -42,11 +43,26 @@ pub fn render_lead_start(
             ("folder", &navi_folder.unwrap_or_default()),
         ],
     );
-    // Without medium every task runs high, so the lead isn't told how to pick.
-    let profiles = if medium_allowed && navi_folder.is_none() {
-        format!("\n\n{}", set.render("lead.profiles", &[]).trim_end())
-    } else {
-        String::new()
+    // With the default alone every task runs on it, so the lead isn't told how to pick.
+    let profiles = match profiles.iter().find(|p| p.default) {
+        Some(default) if profiles.len() > 1 && navi_folder.is_none() => {
+            let lines: Vec<String> = profiles
+                .iter()
+                .map(|p| {
+                    let default = if p.default { " (default)" } else { "" };
+                    format!("- `{}`{default}: {}", p.name, p.note.as_str())
+                })
+                .collect();
+            let text = set.render(
+                "lead.profiles",
+                &[
+                    ("default", &default.name.as_str()),
+                    ("profiles", &lines.join("\n")),
+                ],
+            );
+            format!("\n\n{}", text.trim_end())
+        }
+        _ => String::new(),
     };
     let voice = set.render("lead.voice", &[]);
     let first = set.with_instructions(format!(
@@ -108,20 +124,48 @@ mod tests {
 
     use super::*;
 
+    fn profile(name: &str, note: &str, default: bool) -> Profile {
+        Profile {
+            id: fleetd_contracts::effort::ProfileId::unchecked(1),
+            name: fleetd_contracts::effort::ProfileName::unchecked(name),
+            note: fleetd_contracts::prim::Line::unchecked(note),
+            model: fleetd_contracts::effort::ModelName::unchecked("claude-opus-5-5"),
+            effort: fleetd_contracts::effort::Effort::High,
+            fast: false,
+            default,
+            refused: None,
+            updated_at: fleetd_contracts::ids::Timestamp("2026-10-28T10:00:00.000Z".into()),
+        }
+    }
+
+    fn both() -> Vec<Profile> {
+        vec![
+            profile("high", "The default.", true),
+            profile("medium", "Only for mechanical work.", false),
+        ]
+    }
+
     #[test]
-    fn the_task_profiles_follow_lead_start_only_while_the_project_allows_medium() {
+    fn the_task_profiles_follow_lead_start_with_each_allowed_one_s_note() {
         let r = ProjectRef {
             machine_id: MachineId::unchecked("devbox"),
             project_id: ProjectId::unchecked("p1"),
         };
         let set = PromptSet::defaults();
-        let text = render_lead_start(set, &r, "storefront", true, "DIGEST", "", "", None);
+        let text = render_lead_start(set, &r, "storefront", &both(), "DIGEST", "", "", None);
         let guide = text.find("## Task profiles").unwrap();
         assert!(
             text.find("spawn_agent").unwrap() < guide && guide < text.find("DIGEST").unwrap(),
             "{text}"
         );
-        let off = render_lead_start(set, &r, "storefront", false, "D", "", "", None);
+        assert!(
+            text.contains("`high` is the default: leave `profile` out of `spawn_agent` for it.")
+        );
+        assert!(text.contains(
+            "- `high` (default): The default.\n- `medium`: Only for mechanical work.\n- Reviews always run"
+        ));
+        // The default alone: nothing to pick, nothing said.
+        let off = render_lead_start(set, &r, "storefront", &both()[..1], "D", "", "", None);
         assert!(!off.contains("## Task profiles") && off.contains("spawn_agent"));
         // The lead keeps the human's checklist as it runs the work.
         assert!(off.contains("Keep the checklist current with `checklist`"));
@@ -172,7 +216,16 @@ mod tests {
         };
         let set = PromptSet::defaults();
         let folder = "/home/me/.fleetd/node/navi/ada";
-        let text = render_lead_start(set, &r, "Ada", true, "DIGEST", "MEMORY", "", Some(folder));
+        let text = render_lead_start(
+            set,
+            &r,
+            "Ada",
+            &both(),
+            "DIGEST",
+            "MEMORY",
+            "",
+            Some(folder),
+        );
         assert!(
             text.starts_with("You are Ada, a personal assistant"),
             "{text}"

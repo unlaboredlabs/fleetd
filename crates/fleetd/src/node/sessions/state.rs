@@ -577,6 +577,7 @@ mod tests {
             setup: None,
             setup_pending: false,
             profile: None,
+            fast: false,
             helper_model: None,
             claude_account: None,
         };

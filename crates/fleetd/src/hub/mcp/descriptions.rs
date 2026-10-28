@@ -238,19 +238,27 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "lead_start",
-        "Start the project's lead: one thread that turns intents into briefs, asks the human in chat only about product, money, credential and irreversible calls, and never writes code. Returns the existing lead if there is one; with fresh, starts a new lead thread from the current digest instead (sessionGeneration goes up), for a lead that is stuck or whose context is full, and the old thread stays on the node. A project's first order starts its lead by itself; call this to start it earlier. The lead always runs on the high profile.",
+        "Start the project's lead: one thread that turns intents into briefs, asks the human in chat only about product, money, credential and irreversible calls, and never writes code. Returns the existing lead if there is one; with fresh, starts a new lead thread from the current digest instead (sessionGeneration goes up), for a lead that is stuck or whose context is full, and the old thread stays on the node. A project's first order starts its lead by itself; call this to start it earlier. The lead always runs on the hub's default profile.",
     ),
     (
         "project_set",
-        "Turn a project's medium profile on or off (mediumAllowed, on by default). On: its lead may run mechanical tasks on medium. Off: every new task runs high. The lead, reviewers and helper calls always run high. profiles_set picks the model and effort behind each profile.",
+        "Set which task profiles a project's lead may run agents on (profiles, by name), besides the hub's default, which every project allows; [] leaves the default alone. Its lead is told each allowed profile's name and note, and spawn_agent refuses any other. Running tasks keep their profile.",
     ),
     (
-        "profiles_get",
-        "The model and effort behind each task profile (high, medium): the fleet's settings, a project's override with projectRef, what new agents of each profile run on (runs) and the runner's own (defaults: claude-opus-5-5 at high and at medium). A setting whose model claude refused has refused, saying where and when; agents run as if it were unset.",
+        "profiles_list",
+        "The hub's task profiles, the default first: each one's id, name, note (what it is for), model, effort, fast mode and, when claude refused its model, refused (its agents run on the runner's own until the model is set again). With projectRef, allowed: the ones the project allows. Also the models a profile may pick (models, from the Models API on the hub's API key, else fleetd's own list: modelsFrom), each with whether it has fast mode, and the efforts Claude Code takes.",
     ),
     (
-        "profiles_set",
-        "Set the model and effort behind a task profile: fleet-wide (an admin key on every machine), or a project's override with projectRef. high or medium replaces that profile's setting at that scope: model (a name or alias claude takes, e.g. claude-sonnet-5-5 or sonnet), effort (low, medium, high or max), either left out to follow the fleet's, then the runner's own; {} unsets it. New agents follow it from their next start; running ones keep theirs. The lead, every review and claude's helper calls run high. If claude refuses the model, agents run on the profile's own model and the setting is flagged until it is set again.",
+        "profile_create",
+        "Add a task profile (an owner's or admin's human key): a unique name (lowercase, as spawn_agent's profile takes it), a one-line note the lead picks by, a model profiles_list offers, an effort, fast (only on a model with fast mode), and default to make it the hub's default. Projects allow it on their own (project_set).",
+    ),
+    (
+        "profile_update",
+        "Change a task profile by id (an owner's or admin's human key): its name, note, model, effort, fast mode, or default: true to make it the default the lead, every review and helper calls run on. New agents follow it from their next start; running ones keep theirs. A model without fast mode turns fast off. Setting the model again clears a refusal.",
+    ),
+    (
+        "profile_delete",
+        "Delete a task profile by id (an owner's or admin's human key); every project stops allowing it. Refused for the default, and while a task not yet ended runs on it.",
     ),
     (
         "workstream_list",
@@ -290,7 +298,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "task_get",
-        "One task: its profile (high or medium), branch, thread, queued reason or result (status, last 2000 characters of its final message, branch, PR).",
+        "One task: its profile's name, branch, thread, queued reason or result (status, last 2000 characters of its final message, branch, PR).",
     ),
     (
         "cap_set",

@@ -3,7 +3,7 @@
 use std::future::Future;
 use std::pin::Pin;
 
-use fleetd_contracts::effort::TaskProfile;
+use fleetd_contracts::effort::ProfileName;
 use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef, ThreadId, ThreadRef};
 use fleetd_contracts::ledger::{Brief, Decision, Workstream, WorkstreamId};
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
@@ -51,7 +51,7 @@ pub struct LaunchRequest {
     pub project_ref: ProjectRef,
     pub repo_id: Option<fleetd_contracts::repos::RepoId>,
     pub prompt: String,
-    pub profile: TaskProfile,
+    pub profile: ProfileName,
     pub title: String,
     pub client_request_id: String,
     /// Which MCP servers its agent gets: a writer's, or a reviewer's for a read or review task.
@@ -201,8 +201,8 @@ pub trait TaskPorts: Send + Sync {
     ) -> BoxFut<'a, Option<CmdOutput>>;
     /// LeadRecords.workstreams.get.
     fn workstream(&self, workstream_id: &WorkstreamId) -> Option<Workstream>;
-    /// Leads.medium_allowed: whether the project's tasks may run on medium; false when it can't be read.
-    fn medium_allowed(&self, project_ref: &ProjectRef) -> bool;
+    /// ProfileStore.allowed: the profiles the project's tasks may run on, the hub's default first.
+    fn allowed_profiles(&self, project_ref: &ProjectRef) -> Result<Vec<ProfileName>, String>;
     /// LeadWakes.trigger with the entry's rendered lines.
     fn wake(&self, project_ref: &ProjectRef, kind: WakeKind, text: String);
     /// `leads::digest::done_when_text` of the brief's lines, at most 200 units each, for the task prompt's "Done

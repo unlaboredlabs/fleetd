@@ -106,8 +106,9 @@ static TOOLS: &[Tool] = &[
          plain outcome (\"Saved carts survive a sign-out\"), never an id, status or PR number. kind \
          write|read|review; a writer gets its own worktree and branch; a review task needs pr. repo names the \
          project's repo it works in when it has several (its worktree, branch, setup and PR are that repo's); without \
-         it, an agent given pr works in the PR's repo, any other in the project's own. profile is high by default; medium is for mechanical \
-         work only, and reviews always run high. A full slot board queues it and it starts by itself. A writer is \
+         it, an agent given pr works in the PR's repo, any other in the project's own. profile names one of the profiles your first message \
+         lists, the default when left out; one the project doesn't allow is refused, and reviews always run on the \
+         default. A full slot board queues it and it starts by itself. A writer is \
          checked against the work in flight on its repo: one that repeats it is refused (taken, or a possible \
          duplicate); if it is different work, call again with notDuplicateOf and notDuplicateWhy. A person's claim is \
          theirs: ask in chat. The result names the other writers running in its repo and the work elsewhere it may \

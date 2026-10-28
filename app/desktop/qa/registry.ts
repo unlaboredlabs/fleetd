@@ -48,8 +48,8 @@ export const fixtures = [
   // F9: the whole real prompt registry, with edits, a project's own texts and a default changed under an edit.
   "settings-prompts",
   "settings-agents",
-  // ...with storefront's medium switch off (fixtures/settings).
-  "settings-medium-off",
+  // ...with storefront allowing only the default profile (fixtures/settings).
+  "settings-default-profile-only",
   // A machine past its memory estimate, and a project set past its machine (fixtures/settings).
   "settings-machines",
   // Administration (fixtures/admin): an owner's hub with three people and an invite waiting, as its owner, an admin and
@@ -1930,7 +1930,7 @@ export const screens: readonly Screen[] = [
   { id: "settings.agents", route: "#/settings/agents", fixtures: ["settings-agents", "long-text", "empty", "hub-unreachable"] },
   // Administration (D209): People as the owner (every row changeable but their own) and as an admin (the owner out of
   // reach), with Invite someone, Dana's invite waiting and a new one just made with its link; Connections (the hub's
-  // Claude key, GitHub App and Google client); Hub settings (the fleet and machine caps, task profiles, memory caps,
+  // Claude key, GitHub App and Google client); Hub settings (the fleet and machine caps, memory caps,
   // instructions, MCP servers, skills; its prompts under it in the sidebar); Setup; and a member who follows a link.
   { id: "admin.people", route: "#/admin/people", fixtures: ["admin-owner", "admin-admin", "admin-old-hub"] },
   // Claude (teams step 8): the hub's key sealed and tested, the members switch, what leads run on with the owner's
@@ -2123,26 +2123,6 @@ export const screens: readonly Screen[] = [
       await storefront.scrollIntoViewIfNeeded();
       await storefront.getByRole("button", { name: "Machine caps in Administration" }).waitFor();
     },
-  },
-  // The two task profiles on Administration, with the fleet's model and effort behind each; and each project's medium
-  // switch in Settings: storefront's off in settings-medium-off.
-  {
-    id: "admin.hub",
-    route: "#/admin/hub",
-    fixtures: ["settings-agents"],
-    variant: "profiles",
-    open: async (page) => {
-      const profiles = page.getByRole("region", { name: "Task profiles" });
-      await profiles.scrollIntoViewIfNeeded();
-      await profiles.getByText("New agents run on claude-sonnet-5-5 at medium effort.").waitFor();
-    },
-  },
-  {
-    id: "settings.agents",
-    route: "#/settings/agents?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22",
-    fixtures: ["settings-agents", "settings-medium-off"],
-    variant: "medium",
-    open: (page) => page.getByRole("region", { name: "Max agents" }).getByRole("switch", { name: /Medium allowed/u }).waitFor(),
   },
   // A link to one project's Agents opens on that project, whichever the sidebar last showed.
   {

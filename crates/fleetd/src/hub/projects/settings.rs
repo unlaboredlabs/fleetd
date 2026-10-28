@@ -96,7 +96,7 @@ impl ProjectSettingsStore<'_> {
         // A new row keeps medium on, its default.
         self.db.with(|c| {
             c.execute(
-                "INSERT INTO project_settings (machine_id, project_id, medium_allowed, keep_worktrees) VALUES (?, ?, 1, ?)
+                "INSERT INTO project_settings (machine_id, project_id, keep_worktrees) VALUES (?, ?, ?)
                  ON CONFLICT (machine_id, project_id) DO UPDATE SET keep_worktrees = excluded.keep_worktrees",
                 params![r.machine_id.as_str(), r.project_id.as_str(), keep],
             )?;
@@ -120,7 +120,7 @@ impl ProjectSettingsStore<'_> {
     pub fn set_memory_refresh(&self, r: &ProjectRef, on: bool) -> Result<(), StoreError> {
         self.db.with(|c| {
             c.execute(
-                "INSERT INTO project_settings (machine_id, project_id, medium_allowed, memory_refresh) VALUES (?, ?, 1, ?)
+                "INSERT INTO project_settings (machine_id, project_id, memory_refresh) VALUES (?, ?, ?)
                  ON CONFLICT (machine_id, project_id) DO UPDATE SET memory_refresh = excluded.memory_refresh",
                 params![r.machine_id.as_str(), r.project_id.as_str(), on],
             )?;
@@ -151,7 +151,7 @@ impl ProjectSettingsStore<'_> {
             .transpose()?;
         self.db.with(|c| {
             c.execute(
-                "INSERT INTO project_settings (machine_id, project_id, medium_allowed, setup) VALUES (?, ?, 1, ?)
+                "INSERT INTO project_settings (machine_id, project_id, setup) VALUES (?, ?, ?)
                  ON CONFLICT (machine_id, project_id) DO UPDATE SET setup = excluded.setup",
                 params![r.machine_id.as_str(), r.project_id.as_str(), json],
             )?;
@@ -197,7 +197,7 @@ impl ProjectSettingsStore<'_> {
             .transpose()?;
         self.db.with(|c| {
             c.execute(
-                "INSERT INTO project_settings (machine_id, project_id, medium_allowed, preview) VALUES (?, ?, 1, ?)
+                "INSERT INTO project_settings (machine_id, project_id, preview) VALUES (?, ?, ?)
                  ON CONFLICT (machine_id, project_id) DO UPDATE SET preview = excluded.preview",
                 params![r.machine_id.as_str(), r.project_id.as_str(), json],
             )?;
@@ -313,7 +313,7 @@ impl ProjectSettingsStore<'_> {
             .transpose()?;
         self.db.with(|c| {
             c.execute(
-                "INSERT INTO project_settings (machine_id, project_id, medium_allowed, train) VALUES (?, ?, 1, ?)
+                "INSERT INTO project_settings (machine_id, project_id, train) VALUES (?, ?, ?)
                  ON CONFLICT (machine_id, project_id) DO UPDATE SET train = excluded.train",
                 params![r.machine_id.as_str(), r.project_id.as_str(), json],
             )?;

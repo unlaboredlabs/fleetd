@@ -5,8 +5,8 @@
 import { Slider } from "radix-ui";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { ProjectRef, SlotState } from "../../../shared/contracts";
-import { useData, useToolQuery } from "../../src/data/react";
-import { Button, Separator, Switch, Text, textClass } from "../../ui";
+import { useData } from "../../src/data/react";
+import { Button, Separator, Text, textClass } from "../../ui";
 import {
   appliedLine,
   changeLine,
@@ -24,12 +24,11 @@ import {
   sourceLine,
   type MachineAgents,
 } from "./agentsModel";
-import { errorText, useHubCall, useLive, useRefetch } from "./hub";
+import { errorText, useHubCall, useLive } from "./hub";
 import { useFocusProjectSlider } from "./focusProject";
 import { parseScope, projectRefOf } from "./editor";
 import { McpSection } from "./McpServers";
-import { NoProject, PageHead, scopeName, Setting, useProjects } from "./parts";
-import { ProfilesSetting } from "./ProfilesSetting";
+import { NoProject, PageHead, scopeName, useProjects } from "./parts";
 import { replaceRoute, type SettingsRoute } from "./route";
 import { ProjectSkills } from "./Skills";
 import { useAdministers } from "../admin/role";
@@ -363,8 +362,7 @@ export function HubCaps() {
 }
 
 /**
- * Settings → Projects › Agents: one project's max agents and whether its tasks may run on medium, the model and effort
- * behind its task profiles, its own MCP servers and its skills.
+ * Settings → Projects › Agents: one project's max agents, its own MCP servers and its skills.
  */
 export function AgentsSettings({ route }: { route: SettingsRoute }) {
   const slots = useSlots();
@@ -390,16 +388,7 @@ export function AgentsSettings({ route }: { route: SettingsRoute }) {
           <>
             <section ref={perProject} className={s.agentsList} aria-label="Max agents" tabIndex={-1}>
               {slots ? <AgentsPanel projectRef={ref} slots={slots} /> : <Text tone="quiet">Loading…</Text>}
-              <MediumSwitch projectRef={ref} />
             </section>
-            <Separator />
-            <Setting
-              reveal="agents.profiles"
-              label="Task profiles"
-              help="The model and effort behind each profile for this project's agents. Each field left empty follows the fleet's, which the hub's admins set in Administration."
-            >
-              <ProfilesSetting projectRef={ref} />
-            </Setting>
             <Separator />
             <McpSection projectRef={ref} />
             <Separator />
@@ -407,67 +396,6 @@ export function AgentsSettings({ route }: { route: SettingsRoute }) {
           </>
         )}
       </div>
-    </div>
-  );
-}
-
-/**
- * The two task profiles every agent runs on, and the model and effort behind each for the whole fleet: hub-wide, so on
- * Administration's hub settings. A project's override stays in its own settings.
- */
-export function TaskProfiles() {
-  return (
-    <section className={s.agentsPanel} aria-labelledby="agents-profiles">
-      <Text strong id="agents-profiles">
-        Task profiles
-      </Text>
-      <Text size="xs" tone="quiet">
-        The lead picks one for each task. The lead itself and every review run high. Set the model and effort behind
-        each for every project here; a project can override it in its settings.
-      </Text>
-      <ProfilesSetting />
-      <span>
-        <Button variant="quiet" size="sm" onClick={() => (window.location.hash = toHash({ id: "admin", section: "hub", prompt: "lead.profiles" }))}>
-          Edit the Task profiles prompt
-        </Button>
-      </span>
-    </section>
-  );
-}
-
-/** A project's "medium allowed" switch (project_set): off, every one of its tasks runs high. */
-function MediumSwitch({ projectRef }: { projectRef: ProjectRef }) {
-  const live = useLive();
-  const call = useHubCall();
-  const refetch = useRefetch();
-  const project = useToolQuery("project_get", { machineId: projectRef.machineId, projectId: projectRef.projectId });
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | undefined>(undefined);
-  if (project.data === undefined) return null;
-  // A hub from before the switch has it on.
-  const allowed = project.data.mediumAllowed ?? true;
-  const set = (on: boolean) => {
-    setBusy(true);
-    setError(undefined);
-    call("project_set", { machineId: projectRef.machineId, projectId: projectRef.projectId, mediumAllowed: on })
-      .then(() => refetch(["project_get"]))
-      .catch((e: unknown) => setError(errorText(e)))
-      .finally(() => setBusy(false));
-  };
-  return (
-    <div className={s.stack}>
-      <Switch
-        label="Medium allowed"
-        description={allowed ? "Mechanical tasks may run on medium." : "Every task runs on high."}
-        checked={allowed}
-        disabled={!live || busy}
-        onCheckedChange={set}
-      />
-      {error === undefined ? null : (
-        <p role="alert" className={s.alertLine}>
-          <Text size="xs" tone="danger">{`Not changed: ${error}`}</Text>
-        </p>
-      )}
     </div>
   );
 }

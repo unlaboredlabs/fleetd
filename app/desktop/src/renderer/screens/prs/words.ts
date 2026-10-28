@@ -3,7 +3,7 @@
 // and never as the hub's raw states.
 import type { AgentRole, ChangeState } from "../../../shared/contracts";
 import type { ChecksSummary, PrAuthor, PrCheck, PrReviewEntry, PrRow } from "../../../shared/contracts";
-import { PROFILE_WORD } from "../../ui/primitives/profiles";
+import { profileWord } from "../../ui/primitives/profiles";
 import { ROLE_WORD } from "../../ui/primitives/roles";
 
 /** A state word's colour: the ui kit's status tones. */
@@ -183,7 +183,7 @@ const ROLE: Readonly<Partial<Record<string, string>>> = {
 const agentWords = (a: PrAuthor): string | undefined => {
   if (a.role === undefined) return undefined;
   const who = ROLE[a.role] ?? "An agent";
-  return a.profile === undefined ? who : `${who} (${PROFILE_WORD[a.profile]})`;
+  return a.profile === undefined ? who : `${who} (${profileWord(a.profile)})`;
 };
 
 /** To start a line: "A writer (high)", or a login as GitHub spells it, "sam on GitHub"; undefined when the hub knows neither. */

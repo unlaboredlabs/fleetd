@@ -1,11 +1,9 @@
-// The two task profiles (#290) in the app's words. Kept free of React, like roles.ts.
-import type { TaskProfile } from "../../../shared/contracts";
+// A task profile (#290, W146) in the app's words: its name, which the hub's profiles page sets. Kept free of React,
+// like roles.ts.
+import type { ProfileName } from "../../../shared/contracts";
 
 /** A profile's one word on an agent's row. */
-export const PROFILE_WORD: Record<TaskProfile, string> = { high: "high", medium: "medium" };
+export const profileWord = (profile: ProfileName): string => profile;
 
-/** Each profile in a few words, on an agent's page. Its model and effort are settings (Administration's hub settings, and each project's). */
-export const PROFILE_LINE: Record<TaskProfile, string> = {
-  high: "High profile, the default",
-  medium: "Medium profile, for mechanical work",
-};
+/** A profile in a few words, on an agent's page. Its model, effort and fast mode are the hub's settings. */
+export const profileLine = (profile: ProfileName): string => `Profile ${profile}`;

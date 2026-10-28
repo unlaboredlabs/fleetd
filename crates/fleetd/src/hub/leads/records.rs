@@ -129,30 +129,6 @@ impl LeadRecords {
         rows.into_iter().map(decode_lead).collect()
     }
 
-    /// Whether the project's lead may run a task on the medium profile: on until `project_set` turns it off.
-    pub fn medium_allowed(&self, r: &ProjectRef) -> Result<bool, StoreError> {
-        let saved: Option<bool> = self.db.with(|c| {
-            Ok(c.query_row(
-                "SELECT medium_allowed FROM project_settings WHERE machine_id = ? AND project_id = ?",
-                params![r.machine_id.as_str(), r.project_id.as_str()],
-                |row| row.get(0),
-            )
-            .optional()?)
-        })?;
-        Ok(saved.unwrap_or(true))
-    }
-
-    pub fn medium_allowed_set(&self, r: &ProjectRef, allowed: bool) -> Result<(), StoreError> {
-        self.db.with(|c| {
-            c.execute(
-                "INSERT INTO project_settings (machine_id, project_id, medium_allowed) VALUES (?, ?, ?)
-                 ON CONFLICT (machine_id, project_id) DO UPDATE SET medium_allowed = excluded.medium_allowed",
-                params![r.machine_id.as_str(), r.project_id.as_str(), allowed],
-            )?;
-            Ok(())
-        })
-    }
-
     /// Creates a draft: open, with no brief. A repeated `client_request_id` in the same project returns the first one with `created: false`.
     pub fn workstream_create(
         &self,

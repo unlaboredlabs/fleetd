@@ -204,8 +204,8 @@ pub struct ProjectOutcome {
     pub threads: List<ThreadSummary, 0, 20>,
     /// Absent until lead_start.
     pub lead: Option<Lead>,
-    /// Whether the lead may run a task on the medium profile (`project_set`); absent from older hubs, where it is on.
-    pub medium_allowed: Option<bool>,
+    /// The profiles its agents may run on (`project_set`), the hub's default first; absent from older hubs.
+    pub profiles: Option<List<crate::effort::ProfileName, 1, { crate::effort::PROFILES_MAX }>>,
     /// Open workstreams (not done, stopped or failed), newest first.
     pub workstreams: Option<List<Workstream, 0, 20>>,
     /// Absent until the project has a task.

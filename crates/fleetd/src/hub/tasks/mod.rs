@@ -598,7 +598,7 @@ impl Tasks {
             project_ref: r.clone(),
             repo_id: task.repo_id.clone(),
             prompt: prompt.clone(),
-            profile: task.profile,
+            profile: task.profile.clone(),
             title: js_prefix(
                 &format!("{}: {}", task.task_id.as_str(), task.title.as_str()),
                 80,
@@ -2343,6 +2343,21 @@ impl Tasks {
         ) {
             return Err(lead_error(ErrorCode::Invalid, message, Some(&fix)));
         }
+        let allowed = self.d.ports.allowed_profiles(r).map_err(|why| {
+            lead_error(
+                ErrorCode::Failed,
+                format!("The project's profiles were not read: {why}."),
+                Some("Retry."),
+            )
+        })?;
+        let profile =
+            resolve_profile(input.profile.as_ref(), input.kind, &allowed).map_err(|why| {
+                lead_error(
+                    ErrorCode::Invalid,
+                    format!("Not spawned: {why}."),
+                    Some("Leave `profile` out for the default, or name one of those."),
+                )
+            })?;
         let counts = self
             .db(|c| TaskRecords::counts(c, r))
             .map_err(store_error)?;
@@ -2362,7 +2377,6 @@ impl Tasks {
             Err(e) if e.code != ErrorCode::MachineOffline => return Err(e),
             _ => {}
         }
-        let profile = resolve_profile(input.profile, input.kind, self.d.ports.medium_allowed(r));
         let repo_id = repo.map(|repo| repo.repo_id);
         let task = Task {
             task_id: TaskId::unchecked("T0"),
@@ -3207,6 +3221,7 @@ impl Tasks {
 mod tests {
     use std::sync::Mutex;
 
+    use fleetd_contracts::effort::ProfileName;
     use fleetd_contracts::ids::{MachineId, ProjectId, ThreadId};
     use fleetd_contracts::lead_calls::TaskResultFrame;
     use fleetd_contracts::lead_calls::{LeadCall, LeadCallResult, TaskSpawnCall};
@@ -3402,8 +3417,11 @@ mod tests {
             }))
             .ok()
         }
-        fn medium_allowed(&self, _: &ProjectRef) -> bool {
-            true
+        fn allowed_profiles(&self, _: &ProjectRef) -> Result<Vec<ProfileName>, String> {
+            Ok(vec![
+                ProfileName::unchecked("high"),
+                ProfileName::unchecked("medium"),
+            ])
         }
         fn wake(&self, _: &ProjectRef, kind: WakeKind, text: String) {
             self.wakes.lock().unwrap().push((kind, text));
@@ -3971,6 +3989,35 @@ mod tests {
             .await
             .unwrap();
         page.events
+    }
+
+    /// A spawn names a profile the project allows, else the default runs; one it doesn't allow is refused, naming the
+    /// ones it does, and no task is made.
+    #[tokio::test]
+    async fn a_spawn_runs_on_its_allowed_profile_and_is_refused_one_the_project_doesn_t_allow() {
+        let (tasks, _node) = tasks();
+        let lead = lead();
+        let spawn = |profile: Option<&str>| {
+            let mut call = writer(&format!(
+                "docs page on {}",
+                profile.unwrap_or("the default")
+            ));
+            call.profile = profile.map(ProfileName::unchecked);
+            tools::lead_call(&tasks, &lead, LeadCall::TaskSpawn(call))
+        };
+        let LeadCallResult::TaskSpawn(frame) = spawn(None).await.unwrap() else {
+            panic!("not a spawn")
+        };
+        assert_eq!(frame.task.profile, "high");
+        let LeadCallResult::TaskSpawn(frame) = spawn(Some("medium")).await.unwrap() else {
+            panic!("not a spawn")
+        };
+        assert_eq!(frame.task.profile, "medium");
+        let refused = spawn(Some("fast")).await.unwrap_err();
+        assert_eq!(
+            refused.message,
+            "Not spawned: this project doesn't allow profile fast; it allows high, medium."
+        );
     }
 
     /// The spawn result, the task, its digest line and `task.started` say where the worktree started. Offline, the

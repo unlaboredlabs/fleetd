@@ -10,7 +10,7 @@ import { memo, useEffect, useMemo, useState } from "react";
 import { useData, useToolQuery } from "../../src/data/react";
 import { projectKey } from "../../src/data/store";
 import { selectLiveAgents, selectProjects, type LiveAgent } from "../../src/data/selectors";
-import { Button, ContextMenu, ContextMenuCopy, ContextMenuItem, Dot, EmptyState, IdChip, PROFILE_WORD, Text, Truncate, VirtualList, cx, useArrivals, useArrived, useLeavers } from "../../ui";
+import { Button, ContextMenu, ContextMenuCopy, ContextMenuItem, Dot, EmptyState, IdChip, profileWord, Text, Truncate, VirtualList, cx, useArrivals, useArrived, useLeavers } from "../../ui";
 import { ActivityLine } from "../live/parts";
 import { steerNext } from "../live/Steer";
 import { describe, isFinal } from "../live/words";
@@ -361,7 +361,7 @@ export const AgentRowLink = memo(function AgentRowLink({ agent }: { agent: LiveA
           </span>
           {row.profile === "medium" ? (
             <Text size="xs" tone="faint">
-              {PROFILE_WORD[row.profile]}
+              {profileWord(row.profile)}
             </Text>
           ) : null}
           <RolePill role={row.role} />

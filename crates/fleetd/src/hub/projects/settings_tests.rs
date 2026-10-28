@@ -357,8 +357,8 @@ async fn the_name_and_keep_worktrees_save_and_a_delete_removes_the_worktrees_and
             .keep_worktrees(&project())
             .unwrap()
     );
-    // Medium stays on, its default, for a row keepWorktrees made.
-    assert!(hub.leads.records.medium_allowed(&project()).unwrap());
+    // A row keepWorktrees made allows no profile but the default.
+    assert_eq!(hub.db.profiles().allowed(&project()).unwrap(), ["high"]);
 
     call(
         &hub,

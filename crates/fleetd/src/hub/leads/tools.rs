@@ -80,17 +80,22 @@ impl Area {
         let Some(project) = self.ctx.store.project_get(&r).map_err(refusal)? else {
             return Err(unknown_project(&r));
         };
-        self.leads
-            .set_medium_allowed(&r, &project.title, input.medium_allowed)
+        let allowed = self
+            .leads
+            .set_allowed_profiles(&r, &project.title, &input.profiles)
             .map_err(refusal)?;
-        let next = if input.medium_allowed {
-            "Its lead may run mechanical tasks on medium; everything else stays on high."
-        } else {
-            "Every new task of the project runs on high; running tasks keep their profile."
-        };
+        let next = format!(
+            "Its lead may run new tasks on {}; {} is the default. Running tasks keep their profile.",
+            allowed
+                .iter()
+                .map(|p| p.as_str())
+                .collect::<Vec<_>>()
+                .join(", "),
+            allowed[0]
+        );
         Ok(ProjectSetOutput {
-            medium_allowed: input.medium_allowed,
-            next: Some(next.into()),
+            profiles: List::unchecked(allowed),
+            next: Some(next),
             truncated: None,
         })
     }
