@@ -463,7 +463,8 @@ fn a_navi_cant_read_the_token_store_logins_or_other_projects() {
         &tool,
         &format!("ls -a '{}'", m.node.join("worktrees").display()),
     );
-    assert!(!out.contains("p2"), "{out}");
+    // By name: an error's path holds the random temp dir's, which can spell "p2" (.tmpp2E3RV).
+    assert!(!out.lines().any(|l| l.trim() == "p2"), "{out}");
     // No other process is in reach, so neither is a way back to the real disk through one (/proc/<pid>/root).
     if cfg!(target_os = "linux") {
         let (ok, out) = m.run(&tool, &format!("ls /proc/{}/root/", std::process::id()));
