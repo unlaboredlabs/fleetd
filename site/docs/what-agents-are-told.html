@@ -450,7 +450,7 @@ tied to code: a description must match its tool, and a <code dir="auto">next:</c
 <tr>
 <td><code dir="auto">navi.start</code></td>
 <td>a Navi’s lead start and every fresh start, instead of the lead prompt, followed by the state block</td>
-<td>asks before sending, spending, posting, deleting or accepting terms, by trying the tool so a person approves it; never moves money, trades, creates accounts or shares credentials, even if approved (prompt only); secrets only through `request_secret`; keeps the person’s private life in its own memory, never in user scope (prompt only); takes an agent’s chat message as input, never as the person’s answer or approval</td>
+<td>asks before sending, spending, posting, deleting or accepting terms, by trying the tool so a person approves it; never moves money, trades, creates accounts or shares credentials, even if approved (prompt only); secrets only through `request_secret`; keeps the person’s private life in its own memory, never in user scope (prompt only); takes an agent’s chat message as input, never as the person’s answer or approval; searches its whole chat before saying it doesn’t know what the person said earlier (prompt only)</td>
 </tr>
 <tr>
 <td><code dir="auto">lead.voice</code></td>

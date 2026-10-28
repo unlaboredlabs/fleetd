@@ -29,7 +29,8 @@ use crate::ledger::{
 use crate::mcp::McpToolError;
 use crate::memory::{ForgetCall, MemoryReadCall, MemoryReadResult, RememberCall, RememberResult};
 use crate::navi::{
-    AskHandle, FactoryStatusCall, FactoryStatusResult, ProjectMessageCall, ProjectMessageResult,
+    AskHandle, ChatReadCall, ChatReadResult, ChatSearchCall, ChatSearchResult, FactoryStatusCall,
+    FactoryStatusResult, ProjectMessageCall, ProjectMessageResult,
 };
 use crate::prim::{Count, Line, List, NonEmpty, Text, UniqueList};
 use crate::secrets::SecretSink;
@@ -333,6 +334,9 @@ pub enum LeadCall {
     /// Navi's factory bridge (navi.rs): only a Navi's lead makes them.
     ProjectMessage(ProjectMessageCall),
     FactoryStatus(FactoryStatusCall),
+    /// A Navi's read back through its own chat (hub/navi/recall.rs): only a Navi's lead makes them.
+    ChatSearch(ChatSearchCall),
+    ChatRead(ChatReadCall),
 }
 
 /// The call's `op` tag, as on the wire.
@@ -524,6 +528,8 @@ pub enum LeadCallResult {
     SessionStep(crate::machine_roles::SessionStepResult),
     ProjectMessage(ProjectMessageResult),
     FactoryStatus(FactoryStatusResult),
+    ChatSearch(ChatSearchResult),
+    ChatRead(ChatReadResult),
 }
 
 /// CLI -> node on the local socket, and node -> hub on the link.

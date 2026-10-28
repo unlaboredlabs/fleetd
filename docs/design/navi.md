@@ -594,6 +594,25 @@ takes read on the Navi's machine, and a hub has it when its `ready` frame names 
 **Storage.** `navi_asks` holds one row per message (from, to, text, when); `navi_ask_orders` maps each order opened
 for an ask to it. An ask may become several orders.
 
+## 8a. Reading back through its chat (W159)
+
+A Navi's fresh session sees only the latest part of its one chat, though the hub keeps all of it. Two read-only calls
+reach the rest (`crates/fleetd/src/hub/navi/recall.rs`, contracts in `navi.rs`); the prompt tells the Navi to search
+before it says it doesn't know something the person said earlier.
+
+- **`chat_search {words, from?, to?, before?}`** finds the messages whose text holds every word, in any order and any
+  case of ASCII letters (SQLite `LIKE` over the stored text, with `%` and `_` taken literally), newest first, 20 a
+  page. `from` and `to` are a day (`2026-10-20`, in UTC, `to` taking all of it) or a time. A hit's text is cut to
+  300 characters around the first word; `before` (the last id of a page) reads the next page.
+- **`chat_read {messageId, before?, after?}`** reads the messages around one, oldest first: 5 on each side unless
+  told, at most 10, each cut to 2,000 characters. With both 0 it reads that one message whole.
+
+Each message comes back with its id, time, author (`human`, `lead` for the Navi itself, `agent`, `system`) and the
+name it was written under. Only a Navi's own lead makes the calls: a coding project's lead and a person's shell are
+refused, and a task never makes them (`hub/tasks/policy.rs`). The chat read is always the caller's own, so another
+project's or another person's is out of reach, and a message id from any other chat is refused as unknown. No index,
+embeddings or service: a person's chat stays small enough for a scan.
+
 ## 9. Integrations and approvals (W97)
 
 A Navi reaches outside services through MCP servers marked with what they are (`McpServer.integration`: `google`,

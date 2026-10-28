@@ -463,6 +463,7 @@ pub fn build_on_with(
     crate::hub::skills::calls::register_lead_calls(&hub);
     crate::hub::usage::calls::register_lead_calls(&hub);
     crate::hub::navi::bridge::register_lead_calls(&hub);
+    crate::hub::navi::recall::register_lead_calls(&hub);
     crate::hub::steer::wire(&hub);
     crate::hub::chat::tools::extend_status(&hub);
     crate::hub::work::register_sweep(&hub);

@@ -25,7 +25,7 @@ use fleetd_contracts::lead_calls::{
     TaskSpawnCall, UsageResumeCall,
 };
 use fleetd_contracts::memory::{ForgetCall, MemoryReadCall, RememberCall};
-use fleetd_contracts::navi::{FactoryStatusCall, ProjectMessageCall};
+use fleetd_contracts::navi::{ChatReadCall, ChatSearchCall, FactoryStatusCall, ProjectMessageCall};
 use fleetd_contracts::preview::{PreviewConfigProposeCall, PreviewStartCall, PreviewSuggestCall};
 use fleetd_contracts::schema::inline_schema;
 use fleetd_contracts::skills::SkillInstallCall;
@@ -311,6 +311,23 @@ static TOOLS: &[Tool] = &[
          merges over 7 days, and this Navi's asks to it with the orders opened for them, plus the hubs this Navi is \
          linked to. With hub, the projects the link reaches on that hub instead. Read-only.",
         inline_schema::<FactoryStatusCall>,
+    ),
+    lead(
+        "chat_search",
+        "chat_search",
+        "A Navi's call: search your own chat, all of it, back to its start, for the messages holding every one of \
+         words (any order and case), optionally from and to a day (2026-10-20) or time, in UTC. Newest first, 20 a \
+         page, each with its id, time, author (human is the person, lead is you) and its text around the words; \
+         before (the last id of a page) reads the next. Only this chat, never another's. Read-only.",
+        inline_schema::<ChatSearchCall>,
+    ),
+    lead(
+        "chat_read",
+        "chat_read",
+        "A Navi's call: read the messages around one of your own chat by its id from chat_search, oldest first: \
+         before and after say how many on each side (5 when absent, at most 10). With both 0 it reads that one \
+         message whole. Read-only.",
+        inline_schema::<ChatReadCall>,
     ),
     lead(
         "usage_resume",
@@ -976,6 +993,8 @@ mod tests {
             "skill_install",
             "project_message",
             "factory_status",
+            "chat_search",
+            "chat_read",
             "review_read",
             "preview_suggest",
             "preview_config_propose",

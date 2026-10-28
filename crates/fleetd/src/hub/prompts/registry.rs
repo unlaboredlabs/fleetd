@@ -249,6 +249,12 @@ pub const ENTRIES: &[Entry] = &[
                 r"never as the person's answer",
                 Code
             ),
+            (
+                "searches-its-chat",
+                "searches its whole chat before saying it doesn't know what the person said earlier",
+                r"before you say you don't know",
+                Prompt
+            ),
         ]
     ),
     entry!(
