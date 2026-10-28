@@ -772,6 +772,18 @@ async fn a_session_on_a_claude_account_runs_on_its_token_alone_and_masks_it() {
         set: None,
     })
     .await;
+    // Removed mid-session: its fleetd calls go on, and the token its claude still holds stays masked.
+    assert_eq!(
+        node.service
+            .call_masker("a")
+            .expect("calls go on without the file")
+            .text(&format!("t={token}")),
+        "t=***CLAUDE_CODE_OAUTH_TOKEN***"
+    );
+    // A file the node can't read stops its calls instead: what it would mask is unknown.
+    std::fs::write(home.join("claude-accounts/p_aaaaaaaa.json"), "not json").unwrap();
+    assert!(node.service.call_masker("a").is_err());
+    std::fs::remove_file(home.join("claude-accounts/p_aaaaaaaa.json")).unwrap();
     let SessionOutput::ClaudeAccountTested { ok, error } = node
         .ok(SessionCall::ClaudeAccountTest { account: alice })
         .await

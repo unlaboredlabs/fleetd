@@ -15,14 +15,14 @@ use super::{
     EXIT_WAIT, REAP_GRACE, SessionCommand, SessionRow, SessionService, blocking, now, share,
 };
 
-/// The secret of the Claude account the session runs on, as the node holds it now; none for the machine's own login
-/// or an account it no longer holds (the session can't start on that).
+/// The secret of the Claude account the session runs on, as the node holds it now, for masking what the session
+/// reports: none for the machine's own login, or once the node no longer holds it. Lenient, as the project's are
+/// there; its fleetd calls go through [`SessionService::call_secrets`], which fails closed on a file it can't read.
 fn account_secrets(home: &std::path::Path, row: &SessionRow) -> super::super::project_env::Vars {
     row.local
         .claude_account
         .as_ref()
-        .and_then(|account| super::super::claude_accounts::env_for(home, account).ok())
-        .map(|(_, secrets)| secrets)
+        .and_then(|account| super::super::claude_accounts::secrets_checked(home, account).ok())
         .unwrap_or_default()
 }
 
@@ -86,8 +86,12 @@ impl SessionService {
             home,
             &home.join("sessions").join(id),
         ));
+        // An account gone since the session started masks nothing new, and its fleetd calls go on: the value its
+        // claude still holds is among what it spawned with, below.
         if let Some(account) = &row.local.claude_account {
-            secrets.extend(super::super::claude_accounts::env_for(home, account)?.1);
+            secrets.extend(super::super::claude_accounts::secrets_checked(
+                home, account,
+            )?);
         }
         let now = Secrets(secrets);
         let all = Secrets(
