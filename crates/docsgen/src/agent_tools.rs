@@ -877,10 +877,11 @@ fn builtins(root: &Path) -> Result<String, String> {
          any tool not below asks first. Its file tools and fetches always ask, in its settings' `permissions.ask`, \
          whatever your own settings allow. The node answers a file tool: allowed inside the Navi's own folder, \
          refused outside it (and for its `.claude`, `.mcp.json` and `.fleetd`), whoever approves it. A policy file's \
-         allow rules don't apply to it. A fetch or `agent-browser \
-         open` goes through without asking to a site the person allowed at its first visit. Any other ask reaches \
-         the person as an approval in the Navi's chat, showing the tool and exactly what it would get.\n\n| Allowed \
-         without asking | Why |\n|---|---|\n",
+         allow rules don't apply to it. The node also answers a shell command: it runs, held by the OS sandbox \
+         (decision `navi.shell-unasked`, D208), unless it opens a site in the browser. A fetch or `agent-browser \
+         open` goes through without asking to a site the person allowed at its first visit or linked in their own \
+         chat message. Any other ask reaches the person as an approval in the Navi's chat, showing the tool and \
+         exactly what it would get.\n\n| Allowed without asking | Why |\n|---|---|\n",
     );
     for (tools, why) in grouped(
         ASSISTANT_ALLOWED_WHY

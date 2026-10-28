@@ -172,39 +172,45 @@ policy file’s allow rules don’t apply to a Navi at all.</li>
 an OS sandbox (<a href="/docs/security#navi-sandbox">Security</a>). Whatever a command tries, it writes only inside its folder
 and its own scratch and <code dir="auto">/tmp</code>, and can’t read fleetd’s directory, <code dir="auto">~/.config</code>, <code dir="auto">~/.ssh</code>, other projects or the
 integrations’ tokens.</li>
-<li><strong>Sites:</strong> the first time it fetches a page or opens a site in its browser, you’re asked in its chat, with the site
-named. Approve once and it fetches and opens that site unasked from then on, with a plain URL: one with <code dir="auto">?</code> or
-<code dir="auto">&amp;</code>, quotes or other shell characters in a browser command asks each time. <code dir="auto">www.</code> is the same site, a subdomain is
-another, and <code dir="auto">localhost</code> is a site per port (<code dir="auto">localhost:3000</code>). Only <code dir="auto">http</code> and <code dir="auto">https</code> name a site: <code dir="auto">file:</code>,
-<code dir="auto">data:</code>, <code dir="auto">about:</code> and other schemes ask every time. The MCP tools <code dir="auto">navi_sites</code> and <code dir="auto">navi_site_revoke</code> list a
-Navi’s sites and take one back; a revoked site asks again.</li>
+<li><strong>Commands:</strong> its shell commands run without asking (decision <code dir="auto">navi.shell-unasked</code>, D208). The sandbox is the
+guard: a command can’t write outside its folder. The one exception is a browser command that opens a site, which
+goes through the site rule below.</li>
+<li><strong>Sites:</strong> a link you write in your own chat message is allowed as you send it, so the Navi fetches or opens it
+without asking. A link it finds itself, or reads in an email or on a page, isn’t. The first time it fetches a page or
+opens a site in its browser, you’re asked in its chat, with the site named. Approve once and it fetches and opens
+that site unasked from then on. In a browser command the URL must stand alone, plain or in single quotes
+(<code dir="auto">agent-browser open 'https://example.org/a?b=c'</code>). Double quotes, shell characters, an <code dir="auto">agent-browser open</code> inside
+a longer command, or a flag that changes the browser (<code dir="auto">--session</code>, <code dir="auto">--cdp</code>) asks each time. <code dir="auto">www.</code> is the same site,
+a subdomain is another, and <code dir="auto">localhost</code> is a site per port (<code dir="auto">localhost:3000</code>). Only <code dir="auto">http</code> and <code dir="auto">https</code> name a site:
+<code dir="auto">file:</code>, <code dir="auto">data:</code>, <code dir="auto">about:</code> and other schemes ask every time. The MCP tools <code dir="auto">navi_sites</code> and <code dir="auto">navi_site_revoke</code> list
+a Navi’s sites, those from your links included, and take one back; a revoked site asks again.</li>
 </ul>
 <p><strong>When the sandbox can’t start, the Navi doesn’t run.</strong> Its chat says why and how to fix it. On Linux a Navi needs
 bubblewrap: install it (<code dir="auto">sudo apt install bubblewrap</code>, <code dir="auto">sudo dnf install bubblewrap</code>, <code dir="auto">sudo pacman -S bubblewrap</code>).
 On Ubuntu 23.10 and later, AppArmor may also block the user namespaces bubblewrap uses; <code dir="auto">bwrap --ro-bind / / --unshare-all true</code> says so, and Ubuntu’s <code dir="auto">apparmor</code> package has a profile that allows them
 (<code dir="auto">/etc/apparmor.d/bwrap-userns-restrict</code>). A setuid-root <code dir="auto">bwrap</code> (<code dir="auto">ls -l $(which bwrap)</code> shows <code dir="auto">rws</code>) runs unprivileged
 for a Navi, so it needs unprivileged user namespaces too (on Debian before 11: <code dir="auto">sudo sysctl kernel.unprivileged_userns_clone=1</code>). A Mac uses its built-in <code dir="auto">sandbox-exec</code>.</p>
-<p>Anything hard to undo, or that someone else sees, waits for you every time: sending an email or message, accepting
-an invite, making or changing a calendar event, uploading or sharing a file, spending, posting publicly, deleting, signing or accepting terms, changing a password. There is no
-“always allow”.</p>
+<p>Anything hard to undo, or that someone else sees, waits for you every time: sending an email or message, accepting an
+invite, making or changing a calendar event, uploading or sharing a file, spending, posting publicly, deleting,
+signing or accepting terms, changing a password. There is no “always allow”. Through an integration that’s fleetd’s
+rule. Through a command, a site or a screen it’s the Navi’s instruction: it runs such a command with <code dir="auto">gated_run</code>,
+which asks with exactly that command.</p>
 <p>This is enforced outside the model. A Navi’s lead runs in Claude Code’s <code dir="auto">manual</code> permission mode with a short
 allow-list (<a href="/docs/reference/agent-tools#claude-code-tools">Agent tools</a>). Its file tools and fetches always raise a
-permission prompt, whatever your own Claude Code settings allow. The node answers the file tools. Every other prompt
-goes to the hub, which allows a site you allowed before. Anything else becomes an approval in the Navi’s chat, with
-the tool and exactly what it would get: the recipients, the full text. <strong>Approve</strong> runs the tool with exactly that
-input. <strong>Deny</strong> tells the Navi you said no, with your reason if you give one. A prompt that goes away on its own (the
-run ended) closes its approval. Moving money, trading and creating accounts through an integration are blocked even
-if approved.</p>
-<p><strong>What screens can still do.</strong> The site gate covers opening a site; it doesn’t follow a page after that. Plain
-browser commands inside an open page run unasked: clicks, and fills and typing whose text is plain words or one
-single-quoted string (<code dir="auto">fill @e2 'Ana Ruiz'</code>). So screens aren’t held to the approval rule for sends, and a click or a
-form that leads to another site isn’t asked. Its Android, iOS and desktop screens (<code dir="auto">agent-device</code>) don’t ask per site
-at all. Nor is the final Send or Pay button on a site you allowed: that final click is left to you by instruction
-only. The Navi is told to hand it to you with a takeover, but that’s its prompt, not fleetd’s rules. Only allow sites
-where that’s fine, such as your bank’s when you mean to watch.</p>
-<p>Anything else in a browser command asks: other quoting (double quotes, a quote joined to more text), a selector with
-brackets, <code dir="auto">*</code>, <code dir="auto">~</code> or braces, shell syntax, a script in the page (<code dir="auto">wait --fn</code>, <code dir="auto">eval</code>), or a flag that changes which
-browser runs or how (<code dir="auto">--session</code>, <code dir="auto">--cdp</code>, <code dir="auto">--headers</code>).</p>
+permission prompt, whatever your own Claude Code settings allow. The node answers the file tools and the shell
+commands. Every other prompt goes to the hub, which allows a site you allowed before or linked in your message.
+Anything else becomes an approval in the Navi’s chat, with the tool and exactly what it would get: the recipients, the
+full text. <strong>Approve</strong> runs the tool with exactly that input. <strong>Deny</strong> tells the Navi you said no, with your reason if
+you give one. A prompt that goes away on its own (the run ended) closes its approval. Moving money, trading and
+creating accounts through an integration are blocked even if approved.</p>
+<p><strong>What commands and screens can still do.</strong> The site gate covers fetching and opening a site; it doesn’t follow a page
+after that, or a command’s own network use. Browser commands inside an open page run unasked: clicks, fills, typing,
+snapshots, a script in the page. A command such as <code dir="auto">curl</code> reaches the network unasked too: the sandbox limits what a
+command writes and reads, not where it sends. So commands and screens aren’t held to the approval rule for sends, and
+a click or a form that leads to another site isn’t asked. Its Android, iOS and desktop screens (<code dir="auto">agent-device</code>) don’t
+ask per site at all. Nor is the final Send or Pay button on a site you allowed: that final click is left to you by
+instruction only. The Navi is told to hand it to you with a takeover, but that’s its prompt, not fleetd’s rules. Only
+allow sites where that’s fine, such as your bank’s when you mean to watch.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="hub-links">Hub links</h2><a class="sl-anchor-link" href="#hub-links"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Hub links”</span></a></div>
 <p>A Navi can open and follow work in projects on another hub, such as a team hub when the Navi lives on your personal
 one. You make a link key on the hub it reaches and add it to the Navi. It acts as you there, and either side can

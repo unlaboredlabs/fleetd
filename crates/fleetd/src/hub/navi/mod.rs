@@ -2,10 +2,12 @@
 //! folder of its own under its node's home (`navi/<name>`), marked in the `assistants` table with the key that made
 //! it. Everything else is a project's, unchanged: its chat, memory and nightly refresh, automations, screens,
 //! checklist and approvals. Its lead differs in two ways (`leads/lead.rs`): it starts from the `navi.start` prompt, and
-//! runs in the assistant role (`SessionRole::Assistant`), which asks a person before anything that isn't a read.
+//! runs in the assistant role (`SessionRole::Assistant`), which asks a person before a send, a write through an
+//! integration, or a first visit to a site they didn't give it.
 //!
-//! Its lead reads and writes only inside its folder (the node refuses the rest), and fetches or opens a site unasked
-//! only once the person allowed that site at its first visit (`sites`).
+//! Its lead reads and writes only inside its folder (the node refuses the rest, and the OS sandbox holds its commands to
+//! it), runs commands unasked (D208), and fetches or opens a site unasked only once the person allowed that site at its
+//! first visit or linked it in their own message (`sites`).
 //!
 //! An archived Navi keeps its chat, memory and folder; its lead is stopped and doesn't start again until it is brought
 //! back, and a message to it waits until then. Its factory bridge (messages to other projects' leads, the factory's
@@ -381,6 +383,22 @@ pub fn sites(
         sites,
         next,
         truncated: None,
+    })
+}
+
+/// A person's own chat message to a Navi allows the site of each link in it (D208): they gave it that link, so its
+/// first fetch or visit there doesn't ask. Nothing for any other project, or a message with no link.
+pub fn allow_pasted(hub: &Hub, r: &ProjectRef, text: &str, by: &str) -> Result<(), StoreError> {
+    let pasted = sites::pasted(text);
+    if pasted.is_empty() || of(&hub.db, r)?.is_none() {
+        return Ok(());
+    }
+    let at = now_ms(hub.clock.as_ref());
+    hub.db.with(|c| {
+        for site in &pasted {
+            store::allow_site(c, r, site, by, at)?;
+        }
+        Ok(())
     })
 }
 

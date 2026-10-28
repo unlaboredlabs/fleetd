@@ -1036,7 +1036,7 @@ async fn a_prompt_becomes_one_approval_and_approve_runs_the_tool_with_exactly_th
 async fn deny_tells_the_run_who_said_no_and_an_undelivered_approve_goes_back_to_the_person() {
     let fake = Arc::new(Fake::default());
     let a = approvals(&fake);
-    bash(&a, &fake, "q1", "rm -rf ~/Mail").await;
+    bash(&a, &fake, "q1", "agent-browser open https://mail.example").await;
     a.answer(&person(), "Q1", false, Some("not my mail".into()))
         .await
         .unwrap();
@@ -1048,7 +1048,7 @@ async fn deny_tells_the_run_who_said_no_and_an_undelivered_approve_goes_back_to_
     assert_eq!(fake.request("Q1").state, RequestState::Denied);
 
     // The node is offline when the person approves: nothing ran, so it is theirs to approve again.
-    bash(&a, &fake, "q2", "ls").await;
+    bash(&a, &fake, "q2", "agent-browser open https://a.example").await;
     *fake.answer_fails.lock().unwrap() = Some(NodeCommandError {
         reason: "offline".into(),
         message: "lab-a is offline".into(),
@@ -1064,9 +1064,9 @@ async fn deny_tells_the_run_who_said_no_and_an_undelivered_approve_goes_back_to_
 async fn a_prompt_that_goes_away_closes_its_request() {
     let fake = Arc::new(Fake::default());
     let a = approvals(&fake);
-    bash(&a, &fake, "q1", "ls").await;
+    bash(&a, &fake, "q1", "agent-browser open https://a.example").await;
     // A second prompt in the same run: the first was answered elsewhere.
-    bash(&a, &fake, "q2", "pwd").await;
+    bash(&a, &fake, "q2", "agent-browser open https://b.example").await;
     assert_eq!(fake.request("Q1").state, RequestState::Denied);
     assert_eq!(fake.request("Q2").state, RequestState::Open);
     // The run ends.
@@ -1250,6 +1250,74 @@ async fn a_browser_open_is_a_visit_and_any_other_sessions_prompt_is_left_alone()
         1,
         "only the allowed site's open"
     );
+}
+
+/// A Navi's shell command runs unasked (D208), whatever it is, when its node left it to the hub: only a browser visit to
+/// a site the person didn't allow or link asks, and a send through an integration still asks with its card.
+#[tokio::test]
+async fn a_navis_command_runs_unasked_and_only_a_new_site_or_a_send_asks() {
+    let fake = Arc::new(Fake::default());
+    *fake.servers.lock().unwrap() = vec![google()];
+    let a = approvals(&fake);
+    for (id, command) in [
+        ("q1", "ls -la"),
+        (
+            "q2",
+            "npx -y xaq-cli connect https://macbook.example --setup-mcp",
+        ),
+        ("q3", "curl -s https://api.example/v1 | jq .items"),
+        ("q4", "agent-browser click @e3"),
+        ("q5", "agent-browser eval 'document.title'"),
+    ] {
+        bash(&a, &fake, id, command).await;
+    }
+    assert!(requests(&fake).is_empty(), "no command asks");
+    let answers = fake.answers.lock().unwrap().clone();
+    assert_eq!(answers.len(), 5);
+    for (_, _, id, decision) in &answers {
+        assert_eq!(
+            decision,
+            &PermissionDecision::Allow {
+                updated_input: None
+            },
+            "{id}"
+        );
+    }
+    // A site it picked itself asks, once per site.
+    bash(&a, &fake, "q6", "agent-browser open https://new.example/a").await;
+    let filed = requests(&fake);
+    assert_eq!(filed.len(), 1);
+    assert_eq!(
+        filed[0].permission.as_ref().unwrap().site.as_deref(),
+        Some("new.example")
+    );
+    // A send still asks, with its recipients and its text.
+    prompted(
+        &a,
+        &fake,
+        (
+            event(
+                "thread.waiting",
+                Some(prompt("q7", "mcp__google__send_message", "send")),
+            ),
+            pending_with("q7", "mcp__google__send_message", Some(send_input())),
+        ),
+    )
+    .await;
+    let filed = requests(&fake);
+    assert_eq!(filed.len(), 2);
+    let send = filed
+        .iter()
+        .find_map(|r| {
+            r.permission
+                .as_ref()
+                .filter(|p| p.request_id.as_str() == "q7")
+        })
+        .unwrap();
+    let preview = serde_json::to_value(&send.preview).unwrap();
+    assert_eq!(preview["to"], json!(["ana@example.com"]));
+    assert_eq!(preview["body"], "Could we book a cleaning?");
+    assert_eq!(fake.answers.lock().unwrap().len(), 5);
 }
 
 /// A prompt whose input the node didn't send (over 64 KiB) can't be shown, so it is refused rather than approved blind.

@@ -261,6 +261,11 @@ pub async fn send(
             let reply_to = input
                 .reply_to
                 .filter(|to| replied_in(hub, &r, to).is_some());
+            // A link the person wrote is a site they gave their Navi: allowed before its lead reads the message.
+            if writer.author == ChatAuthor::Human {
+                crate::hub::navi::allow_pasted(hub, &r, input.text.as_str(), &writer.by)
+                    .map_err(store_error)?;
+            }
             let (message, created) = hub
                 .chat
                 .add(

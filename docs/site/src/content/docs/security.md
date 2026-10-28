@@ -91,8 +91,9 @@ it, so the machine's owner and any agent running there could reach it, as [Peopl
 ## Navi sandbox {#navi-sandbox}
 
 A [Navi](/docs/navi) reads mail and web pages that anyone can write, so fleetd assumes one may be talked into
-something. Its tool checks (files only in its folder, sites asked once, sends always asked) run inside the session;
-an OS sandbox holds when a command finds a way around them. Only Navis run in it; other agents don't.
+something. Its tool checks (files only in its folder, sites asked once unless you linked them, sends always asked)
+run inside the session. Its shell commands run unasked (decision `navi.shell-unasked`, D208): the OS sandbox is
+their guard, and holds when a command finds a way around the checks. Only Navis run in it; other agents don't.
 
 Both systems apply the same fence. These are the paths, with `~` the machine user's home and `~/.claude` Claude
 Code's config dir (or `$CLAUDE_CONFIG_DIR`).
