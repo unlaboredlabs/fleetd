@@ -312,7 +312,7 @@ async fn the_tools_are_an_admins_and_keep_only_what_was_put_off() {
     .unwrap();
     assert_eq!(back["step"]["status"], "todo");
 
-    // The hub's API key, saved and tested (Administration › Claude), is enough for Claude though no machine is
+    // The hub's API key, saved and tested (Administration › Connections › Claude), is enough for Claude though no machine is
     // logged in: read fresh, without a doctor run.
     let list = call(&hub, &admin, "setup_list", json!({})).await.unwrap();
     assert_eq!(list["steps"][2]["status"], "todo", "{}", list["steps"][2]);

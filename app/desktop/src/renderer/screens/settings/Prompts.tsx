@@ -1,6 +1,7 @@
-// Settings → Prompts: every text fleetd sends a model, each editable hub-wide or for one project. The prompts are
-// listed in the settings sidebar (SettingsSidebar), so the editor has the window's width. Warnings come from the
-// hub's dry run as you type and never block a save. A running session keeps the text it started with.
+// Prompts: every text fleetd sends a model. In Settings, one project's own texts; in Administration › Hub settings,
+// the hub-wide ones every project gets, which only owners and admins change (D209). The prompts are listed in the
+// sidebar (SettingsSidebar, AdminSidebar), so the editor has the window's width. Warnings come from the hub's dry run
+// as you type and never block a save. A running session keeps the text it started with.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button, Dialog, Dot, IdChip, Tab, TabList, TabPanel, Tabs, Text, Textarea, copyText, textClass } from "../../ui";
 import { useToolQuery } from "../../src/data/react";
@@ -40,7 +41,8 @@ import {
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import { ConfirmDiscard, PageHead, ScopeSelect, scopeName, useProjects } from "./parts";
 import { oldPromptName, orphanAdvice, orphanHeadline, targetName, whyLine } from "./orphans";
-import { replaceRoute, type SettingsRoute, type View } from "./route";
+import { hashFor } from "../shell/navigation";
+import { replaceHash, replaceRoute, type SettingsRoute, type View } from "./route";
 import s from "./settings.module.css";
 
 type Switch = { scope: Scope; id: string | null };
@@ -48,10 +50,21 @@ type Echo = { ok: boolean; text: string };
 /** Which reset the confirm is for: the Edit tab's level, or the stale override's (Update → Use the new default). */
 type ResetFor = "edit" | "update";
 
-/** The unsaved draft, kept while Settings is closed or another tab is open, so leaving does not lose it. */
-let kept: { filled: Filled; text: string; mergedFilled: Filled | null; merged: string } | null = null;
+/** Settings' prompts are a project's own; Administration's are the hub-wide ones. */
+export type PromptsWhere = "settings" | "admin";
 
-export function Prompts({ route }: { route: SettingsRoute }) {
+type Kept = { filled: Filled; text: string; mergedFilled: Filled | null; merged: string };
+
+/** Each place's unsaved draft, kept while the page is closed or another one is open, so leaving does not lose it. */
+const kept: Record<PromptsWhere, Kept | null> = { settings: null, admin: null };
+
+/** Where the page is, in the address bar: Settings › Prompts, or a prompt on Administration › Hub settings. */
+function placeRoute(where: PromptsWhere, prompt: string | null, project: string | null, view: View) {
+  if (where === "settings") replaceRoute({ tab: "prompts", prompt, for: project, view });
+  else replaceHash(hashFor({ id: "admin", section: "hub", ...(prompt === null ? {} : { prompt }), ...(view === "edit" ? {} : { view }) }));
+}
+
+export function Prompts({ route, where = "settings" }: { route: SettingsRoute; where?: PromptsWhere }) {
   const live = useLive();
   const hubCall = useHubCall();
   const refetch = useRefetch();
@@ -59,7 +72,7 @@ export function Prompts({ route }: { route: SettingsRoute }) {
   const projects = useProjects();
 
   // A kept draft for another prompt or scope opens first, and the route waits behind the discard confirm.
-  const [start] = useState(() => startOn(kept, route));
+  const [start] = useState(() => startOn(kept[where], route));
   const [scope, setScope] = useState<Scope>(start.scope);
   const [selected, setSelected] = useState<string | null>(start.id);
   const [pending, setPending] = useState<Switch | null>(start.ask);
@@ -70,10 +83,10 @@ export function Prompts({ route }: { route: SettingsRoute }) {
   const list = useToolQuery("prompt_get", scoped, { enabled: live });
   const detail = useToolQuery("prompt_get", { id: selected ?? "", ...scoped }, { enabled: live && selected !== null });
 
-  const [editor, setEditor] = useState(() => kept?.text ?? "");
-  const [filled, setFilled] = useState<Filled | null>(() => kept?.filled ?? null);
-  const [merged, setMerged] = useState(() => kept?.merged ?? "");
-  const [mergedFilled, setMergedFilled] = useState<Filled | null>(() => kept?.mergedFilled ?? null);
+  const [editor, setEditor] = useState(() => kept[where]?.text ?? "");
+  const [filled, setFilled] = useState<Filled | null>(() => kept[where]?.filled ?? null);
+  const [merged, setMerged] = useState(() => kept[where]?.merged ?? "");
+  const [mergedFilled, setMergedFilled] = useState<Filled | null>(() => kept[where]?.mergedFilled ?? null);
   const [view, setView] = useState<View>(route.view);
   const [seen, setSeen] = useState<PromptDetail | null>(null);
   const [checked, setChecked] = useState<{ text: string; warnings: ReadonlyArray<PromptWarning> } | null>(null);
@@ -85,7 +98,13 @@ export function Prompts({ route }: { route: SettingsRoute }) {
 
   // Fill the editors from what the hub sent for the prompt and scope on screen (see `synced`), during render so the
   // first paint of a new prompt already shows its text.
-  const d = detail.data?.prompt ?? null;
+  // Settings never offers a hub-wide change: an update to a hub-wide edit is Administration's to merge.
+  const raw = detail.data?.prompt ?? null;
+  const d = useMemo((): PromptDetail | null => {
+    if (!raw || where === "admin" || !raw.stale || raw.stale.scope === "project") return raw;
+    const { stale: _stale, ...rest } = raw;
+    return rest;
+  }, [raw, where]);
   if (d && d !== seen) {
     setSeen(d);
     const next = synced(filled, d, sk, editor);
@@ -113,12 +132,13 @@ export function Prompts({ route }: { route: SettingsRoute }) {
   const dirty = (mine(filled) && isDirty(filled, editor)) || (mine(mergedFilled) && isDirty(mergedFilled, merged));
 
   useEffect(() => {
-    kept = filled ? { filled, text: editor, mergedFilled, merged } : null;
-  }, [filled, editor, mergedFilled, merged]);
+    kept[where] = filled ? { filled, text: editor, mergedFilled, merged } : null;
+  }, [where, filled, editor, mergedFilled, merged]);
 
+  const forKey = scope.kind === "project" ? sk : null;
   useEffect(() => {
-    replaceRoute({ tab: "prompts", prompt: selected, for: scope.kind === "project" ? sk : null, view });
-  }, [selected, scope.kind, sk, view]);
+    placeRoute(where, selected, forKey, view);
+  }, [where, selected, forKey, view]);
 
   // The dry run, after a pause in typing: what saving this text would warn about.
   const editorText = view === "update" ? merged : editor;
@@ -164,6 +184,9 @@ export function Prompts({ route }: { route: SettingsRoute }) {
     setSeenRoute(routeKey);
     request({ scope: parseScope(route.for), id: route.prompt ?? selected });
   }
+  // Settings edits a project's own texts: with none picked yet, the first project's.
+  const first = where === "settings" && scope.kind === "hub" && pending === null ? projects?.[0] : undefined;
+  if (first !== undefined) go({ scope: { kind: "project", ref: { machineId: first.machineId, projectId: first.projectId } }, id: selected });
 
   /** Saves `text` at `target`, written against the default `base` (null: the one shipped now). */
   const save = (text: string, target: { scope: PromptScope; projectRef?: ProjectRef | undefined }, base: string | null) => {
@@ -227,9 +250,10 @@ export function Prompts({ route }: { route: SettingsRoute }) {
     );
   };
 
+  const screen = where === "admin" ? "admin.prompts" : "settings.prompts";
   if (!live) {
     return (
-      <div className={s.scroll} data-screen="settings.prompts">
+      <div className={s.scroll} data-screen={screen}>
         <div className={s.detail}>
           <PageHead title="Prompts" />
           <Text tone="quiet">Not connected. Connect to a hub to see and edit the prompts it sends its agents.</Text>
@@ -242,34 +266,40 @@ export function Prompts({ route }: { route: SettingsRoute }) {
   const pendingWhy =
     pending && pending.id !== selected ? "Opening another prompt drops them." : `Showing ${pending ? scopeName(pending.scope, projects) : here} drops them.`;
   const listed = list.data?.prompts?.find((p) => p.id === selected);
-  const orphans = list.data?.orphans ?? [];
+  // Each place deletes only the edits it may change: a project's here, the hub-wide ones on Administration.
+  const orphans = (list.data?.orphans ?? []).filter((o) => (o.scope === "project") === (where === "settings"));
+  // A prompt with one text for the whole hub can't be edited for a project: Settings shows it, read only.
+  const hubOnly = where === "settings" && d !== null && editScope(d, scope) === "global";
   const name = d ? describe(d).name : listed ? describe(listed).name : "this prompt";
   const resetScope = d && confirmReset ? (confirmReset === "update" ? updateTarget(d, scope).scope : editScope(d, scope)) : null;
 
   return (
-    <div className={s.scroll} data-screen={view === "edit" ? "settings.prompts" : `settings.prompts.${view}`}>
+    <div className={s.scroll} data-screen={view === "edit" ? screen : `${screen}.${view}`}>
       <div className={s.detail}>
         <PageHead
           title="Prompts"
           aside={
-            <div className={s.scopePick}>
-              <label htmlFor="prompts-scope" className={textClass({ tone: "quiet" })}>
-                Texts for
-              </label>
-              <ScopeSelect
-                id="prompts-scope"
-                className={s.scopeSelect}
-                value={scope}
-                hubWide="Hub-wide"
-                projects={projects}
-                onChange={(next) => request({ scope: next, id: selected })}
-              />
-            </div>
+            where === "admin" ? undefined : (
+              <div className={s.scopePick}>
+                <label htmlFor="prompts-scope" className={textClass({ tone: "quiet" })}>
+                  Texts for
+                </label>
+                <ScopeSelect
+                  id="prompts-scope"
+                  className={s.scopeSelect}
+                  value={scope.kind === "hub" ? null : scope}
+                  projects={projects}
+                  onChange={(next) => request({ scope: next, id: selected })}
+                />
+              </div>
+            )
           }
         >
-          {scope.kind === "hub"
-            ? "Hub-wide texts go to every project without an edit of its own."
-            : `${here}'s own texts; the prompts it hasn't edited use the hub-wide text.`}
+          {where === "admin"
+            ? "Hub-wide texts: every project gets them unless it has an edit of its own."
+            : scope.kind === "hub"
+              ? "A project's own texts. Add a project to edit them."
+              : `${here}'s own texts; the prompts it hasn't edited use the hub-wide text.`}
         </PageHead>
         {orphans.length > 0 ? (
           <Orphans orphans={orphans} projects={projects} onOpen={(id) => request({ scope, id })} onDeleted={refetchPrompts} />
@@ -290,8 +320,10 @@ export function Prompts({ route }: { route: SettingsRoute }) {
           </div>
         ) : detail.isLoadingError ? (
           <Text tone="danger">{errorText(detail.error)}</Text>
-        ) : !d || !onScreen ? (
+        ) : where === "settings" && scope.kind === "hub" ? null : !d || !onScreen ? (
           <Text tone="quiet">Loading…</Text>
+        ) : hubOnly ? (
+          <HubOnly d={d} />
         ) : (
           <Detail
             d={d}
@@ -323,7 +355,7 @@ export function Prompts({ route }: { route: SettingsRoute }) {
         onKeep={() => {
           setPending(null);
           // The link that asked already moved the hash; put it back on what is on screen, so the sidebar says so too.
-          replaceRoute({ tab: "prompts", prompt: selected, for: scope.kind === "project" ? sk : null, view });
+          placeRoute(where, selected, forKey, view);
         }}
         onDiscard={() => pending && go(pending)}
       />
@@ -357,6 +389,25 @@ export function Prompts({ route }: { route: SettingsRoute }) {
 }
 
 const EVENTS_DOC = "https://fleetd.sh/docs/what-agents-are-told#wake-events";
+
+/** A prompt without a project level, in Settings: the hub-wide text in effect, which owners and admins change. */
+function HubOnly({ d }: { d: PromptDetail }) {
+  const row = describe(d);
+  return (
+    <>
+      <div className={s.head}>
+        <IdChip label={row.name} id={d.id} kind="prompt" strong />
+        <Text tone="quiet">{row.description}</Text>
+        <Text size="xs" tone="quiet">
+          One text for every project on this hub: only the hub&apos;s owners and admins change it, in Administration.
+        </Text>
+      </div>
+      <div data-text="code">
+        <Textarea aria-label={`${row.name}: text`} value={d.effective.text} readOnly minRows={10} maxRows={40} />
+      </div>
+    </>
+  );
+}
 
 /** Edits of prompts fleetd no longer has: what each said, where it could go, and Delete. */
 function Orphans(props: {

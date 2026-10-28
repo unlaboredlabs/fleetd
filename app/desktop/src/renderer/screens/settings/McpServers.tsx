@@ -1,16 +1,16 @@
-// Settings → MCP servers (#/settings/mcp): the MCP servers every project's agents get, and whether they also get the
-// person's own; and McpSection, a project's own servers on its Projects page. Reads mcp_servers_get; saves through main
-// (mcp_server_set, each secret sealed there to each machine's key), removes with mcp_server_remove and tests with
-// mcp_server_test. A secret's value is write-only: typed here once, sealed in main, never shown again.
+// MCP servers: HubMcpServers, the ones every project's agents get and whether they also get their own (Administration ›
+// Hub settings, owners and admins only, D209); and McpSection, a project's own servers on its Projects page. Reads
+// mcp_servers_get; saves through main (mcp_server_set, each secret sealed there to each machine's key), removes with
+// mcp_server_remove and tests with mcp_server_test. A secret's value is write-only: typed here once, sealed in main, never shown again.
 import { useState } from "react";
-import { Button, Checkbox, Dialog, Field, Input, Radio, RadioGroup, Separator, Switch, Text, Textarea, Truncate } from "../../ui";
+import { Button, Checkbox, Dialog, Field, Input, Radio, RadioGroup, Switch, Text, Textarea, Truncate } from "../../ui";
 import type { McpRoles, McpScope, McpServer, McpTestResult } from "../../../shared/contracts";
 import type { McpServerRequest } from "../../../shared/ipc";
 import { CallError } from "../../src/data/queries";
 import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import { draftOf, emptyDraft, globalsFor, missingOn, nameProblem, rolesText, toRequest, transportText, valuesText, type Draft, type DraftValue, type TransportKind } from "./mcpModel";
-import { PageHead, Setting } from "./parts";
+import { Setting } from "./parts";
 import s from "./settings.module.css";
 
 /** When a change reaches agents, said wherever one is saved. */
@@ -33,41 +33,35 @@ function useMachineIds(): string[] {
   return Object.keys(machines).sort();
 }
 
-export function McpSettings() {
+/** Administration › Hub settings: the MCP servers every project's agents get, and whether they also get their own. */
+export function HubMcpServers() {
   const live = useLive();
   const read = useToolQuery("mcp_servers_get", {}, { enabled: live });
-  if (!live) {
-    return (
-      <div className={s.scroll} data-screen="settings.mcp">
-        <div className={s.column}>
-          <PageHead title="MCP servers" />
-          <Text tone="quiet">Not connected. Connect to a hub to change the MCP servers agents get.</Text>
-        </div>
-      </div>
-    );
-  }
+  if (!live) return <Text tone="quiet">Connect to a hub to see and change this.</Text>;
   const data = read.data;
   return (
-    <div className={s.scroll} data-screen="settings.mcp">
-      <div className={s.column}>
-        <PageHead title="MCP servers">Tools every project's agents get, as commands on their machine or services over HTTP. A project's own, on its Projects page, replaces one of the same name.</PageHead>
-        {read.isLoadingError ? (
-          <div className={s.inline}>
-            <Text tone="danger">{errorText(read.error)}</Text>
-            <Button onClick={() => void read.refetch()}>Try again</Button>
-          </div>
-        ) : null}
-        {data ? (
-          <>
-            <ServersSetting reveal="mcp.servers" label="Global servers" help="Given to every project's agents of the roles you pick." scope={null} servers={data.global} />
-            <Separator />
-            <UserServers on={data.userServers} />
-          </>
-        ) : read.isLoadingError ? null : (
-          <Text tone="quiet">Loading…</Text>
-        )}
-      </div>
-    </div>
+    <>
+      {read.isLoadingError ? (
+        <div className={s.inline}>
+          <Text tone="danger">{errorText(read.error)}</Text>
+          <Button onClick={() => void read.refetch()}>Try again</Button>
+        </div>
+      ) : null}
+      {data ? (
+        <>
+          <ServersSetting
+            reveal="mcp.servers"
+            label="Global MCP servers"
+            help="Given to every project's agents of the roles you pick, as commands on their machine or services over HTTP. A project's own replaces one of the same name."
+            scope={null}
+            servers={data.global}
+          />
+          <UserServers on={data.userServers} />
+        </>
+      ) : read.isLoadingError ? null : (
+        <Text tone="quiet">Loading…</Text>
+      )}
+    </>
   );
 }
 
@@ -77,9 +71,9 @@ function UserServers({ on }: { on: boolean }) {
   const [busy, setBusy] = useState(false);
   const [echo, setEcho] = useState<{ ok: boolean; text: string } | null>(null);
   return (
-    <Setting reveal="mcp.user" label="Your own MCP servers" help="The servers in your claude setup (~/.claude.json, a repo's .mcp.json).">
+    <Setting reveal="mcp.user" label="Own MCP servers" help="The servers in the claude setup where an agent runs (~/.claude.json, a repo's .mcp.json).">
       <Switch
-        label="Agents also get my own MCP servers"
+        label="Agents also get their own MCP servers"
         description="Off: agents get fleetd's tools and the servers here only. fleetd's own tools are always there."
         checked={on}
         disabled={busy}

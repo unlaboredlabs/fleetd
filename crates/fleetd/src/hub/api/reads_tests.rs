@@ -45,7 +45,16 @@ fn hub() -> (Arc<Hub>, tempfile::TempDir) {
     (hub, home)
 }
 
+/// An owner's or admin's device: admin on every machine.
 fn person() -> Caller {
+    Caller {
+        grants: serde_json::from_value(json!([{ "role": "admin", "machines": "*" }])).unwrap(),
+        ..member()
+    }
+}
+
+/// A member's device: operate on every machine, admin nowhere.
+fn member() -> Caller {
     let c = serde_json::from_value::<Caller>(json!({
         "keyId": "k1", "name": "desk", "prefix": "fld_abcdef", "createdAt": AT,
         "grants": [{ "role": "operate", "machines": "*" }],
@@ -159,6 +168,42 @@ async fn prompt_set_resets_only_on_an_explicit_reset() {
     let after = call(&hub, "prompt_get", id).await;
     assert_eq!(after["prompt"]["scope"], "default");
     assert_eq!(after["prompt"]["effective"]["ref"], shipped);
+}
+
+/// Hub-wide prompts, the instructions for every project among them, reach every teammate's agents: a member's
+/// device is refused them and still edits a project's own; an admin's saves them (D209).
+#[tokio::test]
+async fn only_an_admin_changes_hub_wide_prompts() {
+    let (hub, _home) = hub();
+    let project = json!({ "machineId": "devbox", "projectId": "app" });
+    for id in ["lead.start", "instructions"] {
+        for input in [
+            json!({ "id": id, "scope": "global", "text": "EDITED" }),
+            json!({ "id": id, "scope": "global", "reset": true }),
+        ] {
+            let refused = registry()
+                .call(&hub, &member(), "prompt_set", input)
+                .await
+                .unwrap_err();
+            assert!(
+                format!("{refused:?}").contains("only the hub's owners and admins"),
+                "{refused:?}"
+            );
+        }
+        let own = json!({ "id": id, "scope": "project", "projectRef": project, "text": "OWN" });
+        registry()
+            .call(&hub, &member(), "prompt_set", own)
+            .await
+            .unwrap();
+        call(
+            &hub,
+            "prompt_set",
+            json!({ "id": id, "scope": "global", "text": "EDITED" }),
+        )
+        .await;
+    }
+    let lead = call(&hub, "prompt_get", json!({ "id": "lead.start" })).await;
+    assert_eq!(lead["prompt"]["effective"]["text"], "EDITED");
 }
 
 #[tokio::test]

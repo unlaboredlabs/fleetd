@@ -249,7 +249,7 @@ export const fixtures = [
   // Hub links (fixtures/navi): Ada's Linked hubs and Sam's links to this hub; and neither yet.
   "navi-links",
   "navi-links-none",
-  // Google on Ada's Integrations (fixtures/navi), a state each; Administration › Google (fixtures/admin).
+  // Google on Ada's Integrations (fixtures/navi), a state each; Administration › Connections › Google (fixtures/admin).
   "navi-google-none",
   "navi-google-setup",
   "navi-google-ready",
@@ -1928,16 +1928,17 @@ export const screens: readonly Screen[] = [
   // keys and titles; settings-prompts is the real registry with edits. Compare and Update are deep links.
   // Max agents: the fleet cap and each project's slider.
   { id: "settings.agents", route: "#/settings/agents", fixtures: ["settings-agents", "long-text", "empty", "hub-unreachable"] },
-  // Administration: People as the owner (every row changeable but their own) and as an admin (the owner out of
-  // reach); Invites with Dana's waiting, and a new one just made with its link; Hub settings (the fleet and machine
-  // caps, task profiles, machine roles, memory caps); Setup's placeholder; and a member who follows a link there.
+  // Administration (D209): People as the owner (every row changeable but their own) and as an admin (the owner out of
+  // reach), with Invite someone, Dana's invite waiting and a new one just made with its link; Connections (the hub's
+  // Claude key, GitHub App and Google client); Hub settings (the fleet and machine caps, task profiles, memory caps,
+  // instructions, MCP servers, skills; its prompts under it in the sidebar); Setup; and a member who follows a link.
   { id: "admin.people", route: "#/admin/people", fixtures: ["admin-owner", "admin-admin", "admin-old-hub"] },
   // Claude (teams step 8): the hub's key sealed and tested, the members switch, what leads run on with the owner's
   // subscription and its pause, and everyone's account; Change opens the key's form, which never shows the key.
-  { id: "admin.claude", route: "#/admin/claude", fixtures: ["admin-owner", "admin-admin", "admin-old-hub"] },
+  { id: "admin.connections", route: "#/admin/connections", fixtures: ["admin-owner", "admin-admin", "admin-old-hub"] },
   {
-    id: "admin.claude",
-    route: "#/admin/claude",
+    id: "admin.connections",
+    route: "#/admin/connections",
     fixtures: ["admin-owner"],
     variant: "change",
     open: async (page) => {
@@ -1948,24 +1949,25 @@ export const screens: readonly Screen[] = [
   // Settings › Claude: the owner on their own subscription, Alice on the hub's key by choice, Bob on it by default,
   // and Bob with nothing to run on, told to connect.
   { id: "settings.claude", route: "#/settings/claude", fixtures: ["admin-owner", "admin-admin", "admin-member", "admin-claude-member", "admin-old-hub", "hub-unreachable"] },
-  { id: "admin.invites", route: "#/admin/invites", fixtures: ["admin-owner", "admin-old-hub"] },
   // Several hubs: the hub it manages above the page, and a switch to the hubs Sam administers (Club, a member's, isn't).
   {
-    id: "admin.invites",
-    route: "#/admin/invites?at=h2",
+    id: "admin.people",
+    route: "#/admin/people?at=h2",
     fixtures: ["admin-hubs"],
     variant: "hubs",
     open: async (page) => {
       await expect(page.getByRole("note", { name: "Managing Acme" })).toBeVisible();
+      await page.getByRole("button", { name: "Invite someone" }).click();
       await expect(page.getByRole("button", { name: "Create invite link to Acme" })).toBeVisible();
     },
   },
   {
-    id: "admin.invites",
-    route: "#/admin/invites",
+    id: "admin.people",
+    route: "#/admin/people",
     fixtures: ["admin-owner"],
     variant: "created",
     open: async (page) => {
+      await page.getByRole("button", { name: "Invite someone" }).click();
       await page.getByLabel("Name").fill("Eve Park");
       await page.getByRole("button", { name: "Create invite link" }).click();
       await page.getByRole("region", { name: "Invite link for Eve Park" }).getByRole("button", { name: "Copy link" }).waitFor();
@@ -2045,23 +2047,23 @@ export const screens: readonly Screen[] = [
     },
   },
   { id: "admin.hub", route: "#/admin/hub", fixtures: ["admin-owner", "settings-agents", "admin-old-hub"] },
-  // Administration → Skills: the hub-wide ones (one installed and pinned), Update on the installed one, and Install.
-  { id: "admin.skills", route: "#/admin/skills", fixtures: ["admin-owner"] },
+  // Administration → Hub settings → Skills: the hub-wide ones (one installed and pinned), Update on the installed one,
+  // and Install.
   {
-    id: "admin.skills",
-    route: "#/admin/skills",
+    id: "admin.hub",
+    route: "#/admin/hub",
     fixtures: ["admin-owner"],
-    variant: "installed",
+    variant: "skills-installed",
     open: async (page) => {
       await page.getByRole("button", { name: /^pr-review/u }).click();
       await expect(page.getByRole("button", { name: "Update" })).toBeVisible();
     },
   },
   {
-    id: "admin.skills",
-    route: "#/admin/skills",
+    id: "admin.hub",
+    route: "#/admin/hub",
     fixtures: ["admin-owner"],
-    variant: "install",
+    variant: "skills-install",
     open: async (page) => {
       await page.getByRole("button", { name: "Install from a source…" }).click();
       await page.getByRole("textbox", { name: "Source" }).fill("acme/agent-skills");
@@ -2069,10 +2071,10 @@ export const screens: readonly Screen[] = [
       await page.getByText(/^Installed pr-review, pinned/u).waitFor();
     },
   },
-  { id: "admin.google", route: "#/admin/google", fixtures: ["admin-google-none", "admin-google-set", "admin-google-refused", "admin-google-push", "admin-google-polling"] },
+  { id: "admin.connections", route: "#/admin/connections", fixtures: ["admin-google-none", "admin-google-set", "admin-google-refused", "admin-google-push", "admin-google-polling"], variant: "google" },
   {
-    id: "admin.google",
-    route: "#/admin/google",
+    id: "admin.connections",
+    route: "#/admin/connections",
     fixtures: ["admin-google-set", "admin-google-push"],
     variant: "real-time-mail",
     open: async (page) => {
@@ -2082,8 +2084,8 @@ export const screens: readonly Screen[] = [
     },
   },
   {
-    id: "admin.google",
-    route: "#/admin/google",
+    id: "admin.connections",
+    route: "#/admin/connections",
     fixtures: ["admin-google-set", "admin-google-refused"],
     variant: "tested",
     open: async (page) => {
@@ -2399,7 +2401,9 @@ export const screens: readonly Screen[] = [
     route: "#/settings/prompts?prompt=task.brief.write&for=devbox/storefront&view=compare",
     fixtures: ["settings-prompts"],
   },
-  { id: "settings.prompts.update", route: "#/settings/prompts?prompt=lead.start&view=update", fixtures: ["settings-prompts"] },
+  // The hub-wide texts are Administration's: one open from the list under Hub settings, and its update to merge.
+  { id: "admin.prompts", route: "#/admin/hub?prompt=lead.start", fixtures: ["settings-prompts"] },
+  { id: "admin.prompts.update", route: "#/admin/hub?prompt=lead.start&view=update", fixtures: ["settings-prompts"] },
   { id: "settings.instructions", route: "#/settings/instructions?for=devbox/storefront", fixtures: ["settings-prompts", "typical", "empty"] },
   // F6: Status, one row per project: every state word, its work in groups, long titles, no projects, quiet sources,
   // the skeleton before the first answer, and the link down.

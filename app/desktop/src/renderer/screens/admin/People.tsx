@@ -1,33 +1,26 @@
 // Administration → People: everyone on the hub, with their role and devices. An owner or admin changes a role in place
 // (person_set) or removes someone (person_remove, once confirmed: their devices are signed out at once). What a row
-// offers comes from model.ts; the hub checks it all again. Below them, every hub link minted here, which acts as its
-// person (hubLinks/AllLinks.tsx).
+// offers comes from model.ts; the hub checks it all again. Below them, Invite someone and the invites still open
+// (Invites.tsx), then every hub link minted here, which acts as its person (hubLinks/AllLinks.tsx).
 import { useState } from "react";
 import type { HubRole, PeopleListOutput, Person } from "../../../shared/contracts";
 import { lacksTool } from "../../src/data/errors";
 import { CallError } from "../../src/data/queries";
-import { useToolQuery } from "../../src/data/react";
 import { Button, Dialog, Select, Text } from "../../ui";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
 import { PageHead } from "../settings/parts";
 import { setUpdatesOpen } from "../updates/state";
 import { AllLinks } from "../hubLinks/AllLinks";
+import { Invites } from "./Invites";
 import { devicesLine, peopleRows, roleWord, type PersonRow } from "./model";
+import { usePeople } from "./usePeople";
 import s from "../settings/settings.module.css";
 import a from "./admin.module.css";
 
-const noInput = {};
-
-/** The hub's people, devices and open invites: one read, shared by People and Invites. */
-export const usePeople = () => {
-  const live = useLive();
-  return useToolQuery("people_list", noInput, { enabled: live });
-};
-
 /** A hub from before people answers that it has no such tool: it needs updating, not a retry. */
-export const lacksPeople = (error: unknown): boolean => error instanceof CallError && lacksTool(error.error);
+const lacksPeople = (error: unknown): boolean => error instanceof CallError && lacksTool(error.error);
 
-/** In place of People and Invites on a hub from before people; Hub settings still works there. */
+/** In place of People and its invites on a hub from before people; Hub settings still works there. */
 export function NeedsUpdate() {
   return (
     <div className={s.stack}>
@@ -57,6 +50,7 @@ export function People({ me }: { me: Person | undefined }) {
         ) : (
           <PeopleList list={read.data} me={me} />
         )}
+        {live && !lacksPeople(read.error) ? <Invites me={me} /> : null}
         <AllLinks />
       </div>
     </div>

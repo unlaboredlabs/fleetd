@@ -151,7 +151,7 @@ async fn client_set(
             ErrorCode::Forbidden,
             "Only a person with operate on every machine saves the hub's Google OAuth client.",
         )
-        .with_fix("Save it in the desktop app: Administration › Google."));
+        .with_fix("Save it in the desktop app: Administration › Connections › Google."));
     }
     let mut sealed_on = Vec::new();
     let mut missing_on = Vec::new();
@@ -213,7 +213,7 @@ fn no_client() -> ToolError {
         ErrorCode::Invalid,
         "The hub has no Google OAuth client yet.",
     )
-    .with_fix("The hub's admin saves one in Administration › Google.")
+    .with_fix("The hub's admin saves one in Administration › Connections › Google.")
 }
 
 async fn client_test(
@@ -285,7 +285,7 @@ async fn connect(
             ),
         )
         .with_fix(format!(
-            "The hub's admin saves the client again in Administration › Google while {} is online.",
+            "The hub's admin saves the client again in Administration › Connections › Google while {} is online.",
             r.machine_id
         )));
     }
@@ -393,7 +393,7 @@ async fn pubsub_set(
             ErrorCode::Forbidden,
             "Only a person with operate on every machine sets up real-time mail.",
         )
-        .with_fix("Real-time mail is set up in Administration › Google."));
+        .with_fix("Real-time mail is set up in Administration › Connections › Google."));
     }
     let store = hub.db.google();
     let mut client = store.client()?.ok_or_else(no_client)?;

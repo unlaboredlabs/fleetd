@@ -66,27 +66,29 @@ fn readable_project(hub: &Hub, caller: &Caller, r: Option<&ProjectRef>) -> Resul
     Ok(())
 }
 
-/// A hub-wide prompt reaches every machine's agents: admin on every machine, or a person's device that may operate
-/// everywhere. A project's prompt: the same on its machine.
+/// A project's prompt: admin on its machine, or a person's device that may operate there. A hub-wide prompt (the
+/// instructions for every project too) reaches every teammate's agents, so only admin on every machine changes it:
+/// an owner's or admin's device, never a member's (D209).
 fn may_edit(caller: &Caller, scope: PromptScope, r: Option<&ProjectRef>) -> Result<(), ToolError> {
-    let ok = match (scope, r) {
+    match (scope, r) {
         (PromptScope::Project, Some(r)) => {
-            allows(caller, Role::Admin, Some(&r.machine_id))
+            if allows(caller, Role::Admin, Some(&r.machine_id))
                 || (is_human(caller) && allows(caller, Role::Operate, Some(&r.machine_id)))
+            {
+                return Ok(());
+            }
+            Err(ToolError::new(
+                ErrorCode::Forbidden,
+                "Prompts steer every agent they reach; this key may not change them there.",
+            )
+            .with_fix("Use the desktop app, or a key from fleetd hub key create --role admin."))
         }
-        _ => {
-            allows_everywhere(caller, Role::Admin)
-                || (is_human(caller) && allows_everywhere(caller, Role::Operate))
-        }
-    };
-    if ok {
-        Ok(())
-    } else {
-        Err(ToolError::new(
+        _ if allows_everywhere(caller, Role::Admin) => Ok(()),
+        _ => Err(ToolError::new(
             ErrorCode::Forbidden,
-            "Prompts steer every agent they reach; this key may not change them there.",
+            "Hub-wide prompts and instructions reach every teammate's agents: only the hub's owners and admins change them.",
         )
-        .with_fix("Use the desktop app, or a key from fleetd hub key create --role admin."))
+        .with_fix("Ask an owner or admin (Administration › Hub settings), or edit this project's own text instead.")),
     }
 }
 

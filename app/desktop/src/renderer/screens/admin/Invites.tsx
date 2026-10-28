@@ -1,64 +1,68 @@
-// Administration → Invites: a link for someone new (invite_create with a name and role), shown once with Copy, and
-// the invites still open, each with Revoke (invite_revoke). The link is today's fleetd://pair link, bound to the person
+// Administration → People's invites: a link for someone new (invite_create with a name and role), shown once with
+// Copy, and the invites still open, each with Revoke (invite_revoke). The link is today's fleetd://pair link, bound to the person
 // and good for 7 days; their app opens it and pairs as them.
+import { UserPlus } from "lucide-react";
 import { useState } from "react";
 import type { HubRole, Invite, InviteCreateOutput, Person } from "../../../shared/contracts";
 import { Button, copyText, Field, Input, Radio, RadioGroup, Text, Truncate } from "../../ui";
 import { useHub, useSeveralHubs } from "../../src/data/react";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
-import { PageHead } from "../settings/parts";
 import { expiresLine, nameProblem, openInvites, ROLE_HELP, roleWord } from "./model";
-import { lacksPeople, NeedsUpdate, usePeople } from "./People";
+import { usePeople } from "./usePeople";
 import s from "../settings/settings.module.css";
 import a from "./admin.module.css";
 
 /** The roles an invite offers; owners are made from People, by an owner. */
 const INVITE_ROLES: ReadonlyArray<HubRole> = ["member", "admin"];
 
+/** Invite someone, the link just made, and the invites waiting to join; below People's list, on a hub that has people. */
 export function Invites({ me }: { me: Person | undefined }) {
-  const live = useLive();
   const read = usePeople();
+  const [inviting, setInviting] = useState(false);
   const [created, setCreated] = useState<InviteCreateOutput | null>(null);
   // Days-grained, so the time the page opened is close enough.
   const [now] = useState(() => Date.now());
   const roleOf = (i: Invite): HubRole | undefined => read.data?.people.find((p) => p.personId === i.person.personId)?.role;
   const open = read.data === undefined ? [] : openInvites(read.data.invites);
   return (
-    <div className={s.scroll} data-screen="admin.invites">
-      <div className={s.column}>
-        <PageHead title="Invites">A link someone opens in the fleetd app to join this hub as themselves. It works once, within 7 days.</PageHead>
-        {!live ? (
-          <Text tone="quiet">Connect to a hub to see and change this.</Text>
-        ) : lacksPeople(read.error) ? (
-          <NeedsUpdate />
-        ) : (
-          <>
-            <InviteForm onCreated={setCreated} />
-            {created === null ? null : <CreatedLink created={created} />}
-            <section className={a.section} aria-labelledby="invites-open">
-              <Text strong id="invites-open">
-                Waiting to join
-              </Text>
-              {read.error ? (
-                <Text tone="danger">{`Couldn't read the invites: ${errorText(read.error)}`}</Text>
-              ) : read.data === undefined ? (
-                <Text tone="quiet">Loading…</Text>
-              ) : open.length === 0 ? (
-                <Text size="sm" tone="quiet">
-                  No invite is open.
-                </Text>
-              ) : (
-                <div className={a.list} role="list" aria-label="Open invites">
-                  {open.map((i) => (
-                    <OpenInvite key={i.inviteId} invite={i} role={roleOf(i)} me={me} now={now} />
-                  ))}
-                </div>
-              )}
-            </section>
-          </>
-        )}
-      </div>
-    </div>
+    <>
+      {inviting ? (
+        <section className={a.section} aria-labelledby="invite-someone">
+          <Text strong id="invite-someone">
+            Invite someone
+          </Text>
+          <Text size="xs" tone="quiet">
+            A link they open in the fleetd app to join this hub as themselves. It works once, within 7 days.
+          </Text>
+          <InviteForm onCreated={setCreated} />
+          {created === null ? null : <CreatedLink created={created} />}
+        </section>
+      ) : (
+        <span>
+          <Button icon={<UserPlus size={14} />} onClick={() => setInviting(true)}>
+            Invite someone
+          </Button>
+        </span>
+      )}
+      {open.length === 0 && read.data !== undefined ? null : (
+        <section className={a.section} aria-labelledby="invites-open">
+          <Text strong id="invites-open">
+            Waiting to join
+          </Text>
+          {read.error ? (
+            <Text tone="danger">{`Couldn't read the invites: ${errorText(read.error)}`}</Text>
+          ) : read.data === undefined ? (
+            <Text tone="quiet">Loading…</Text>
+          ) : (
+            <div className={a.list} role="list" aria-label="Open invites">
+              {open.map((i) => (
+                <OpenInvite key={i.inviteId} invite={i} role={roleOf(i)} me={me} now={now} />
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+    </>
   );
 }
 

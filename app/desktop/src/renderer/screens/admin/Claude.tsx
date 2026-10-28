@@ -1,4 +1,4 @@
-// Administration › Claude (teams step 8, D200): the hub's API configuration (its Claude API key, sealed in main to
+// Administration › Connections › Claude (teams step 8, D200): the hub's API configuration (its Claude API key, sealed in main to
 // every machine and never shown back, and an optional endpoint), with Test; whether members may run their work on it
 // (on by default); what projects' leads and work nobody started run on (the key, else the hub owner's own
 // subscription); and each person's account, with any usage pause on it. A person's own choice and subscription are
@@ -14,9 +14,9 @@ import { Button, Field, Input, Switch, Text } from "../../ui";
 import { CONSOLE_KEYS, KEY_PLACEHOLDER, pauseLine, runsOnLine, sealedLine, theirRunsOn } from "../settings/claudeModel";
 import { ConfirmRemove, MissingOn, Problem, TestButton, TestResult, useMachines, useSave, useTest, type Tried } from "../settings/claudeParts";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
-import { PageHead, Setting } from "../settings/parts";
+import { PagePart, Setting } from "../settings/parts";
 import { toHash } from "../shell/routes";
-import { usePeople } from "./People";
+import { usePeople } from "./usePeople";
 import s from "../settings/settings.module.css";
 import a from "./admin.module.css";
 
@@ -27,24 +27,23 @@ export function ClaudeAdmin({ me }: { me: Person | undefined }) {
   const read = useToolQuery("claude_accounts_get", noInput, { enabled: live });
   const usage = useToolQuery("usage_status", noInput, { enabled: live });
   return (
-    <div className={s.scroll} data-screen="admin.claude">
-      <div className={s.column}>
-        <PageHead title="Claude">
-          The hub&apos;s Claude API key, which projects&apos; leads and work nobody asked for run on, and who else may use it. Each person picks their own account in Settings › Claude.
-        </PageHead>
-        {!live ? (
-          <Text tone="quiet">Connect to a hub to see and change this.</Text>
-        ) : read.error instanceof CallError && lacksTool(read.error.error) ? (
-          <Text tone="quiet">This hub runs every agent on each machine&apos;s own Claude login. Update fleetd on the hub to give it an API key.</Text>
-        ) : read.isLoadingError ? (
-          <Text tone="danger">{`Couldn't read the hub's Claude accounts: ${errorText(read.error)}`}</Text>
-        ) : read.data === undefined ? (
-          <Text tone="quiet">Loading…</Text>
-        ) : (
-          <Accounts data={read.data} usage={usage.data?.machines ?? []} me={me} />
-        )}
-      </div>
-    </div>
+    <PagePart
+      title="Claude"
+      reveal="admin.claude"
+      intro="The hub's Claude API key, which projects' leads and work nobody asked for run on, and who else may use it. Each person picks their own account in Settings › Claude."
+    >
+      {!live ? (
+        <Text tone="quiet">Connect to a hub to see and change this.</Text>
+      ) : read.error instanceof CallError && lacksTool(read.error.error) ? (
+        <Text tone="quiet">This hub runs every agent on each machine&apos;s own Claude login. Update fleetd on the hub to give it an API key.</Text>
+      ) : read.isLoadingError ? (
+        <Text tone="danger">{`Couldn't read the hub's Claude accounts: ${errorText(read.error)}`}</Text>
+      ) : read.data === undefined ? (
+        <Text tone="quiet">Loading…</Text>
+      ) : (
+        <Accounts data={read.data} usage={usage.data?.machines ?? []} me={me} />
+      )}
+    </PagePart>
   );
 }
 

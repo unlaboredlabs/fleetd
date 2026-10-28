@@ -120,8 +120,8 @@ The [table below](#prompts) marks prompt-only rules.
 
 ## Edit a prompt {#edit}
 
-In the app: Settings → Prompts. Pick hub-wide or one project, open a prompt from the list under Prompts in the sidebar,
-edit it and Save. "Compare with default"
+In the app: Settings → Prompts for one project's own texts, or Administration → Hub settings for the hub-wide ones
+(owners and admins only: the hub refuses anyone else). Open a prompt from the list in the sidebar, edit it and Save. "Compare with default"
 shows your changes; "Reset to default" drops them.
 
 On the hub machine:
@@ -154,7 +154,8 @@ Saving never refuses text that isn't empty, but it warns:
 
 ## Your own instructions {#instructions}
 
-In the app: Settings → Instructions. On the hub machine:
+In the app: Settings → Instructions for one project's, and Administration → Hub settings for every project's (owners
+and admins only). On the hub machine:
 
 ```sh
 fleetd instructions edit

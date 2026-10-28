@@ -168,8 +168,8 @@ describe("setup", () => {
 
   it("opens where a step's result is saved: Claude's key on Administration, a subscription in Settings", async () => {
     await render(<SetupScreen view="claude" />);
-    await click(button("Open Administration › Claude"));
-    expect(window.location.hash).toContain("admin/claude");
+    await click(button("Open Administration › Connections"));
+    expect(window.location.hash).toContain("admin/connections");
     await click(button("Open Settings › Claude"));
     expect(window.location.hash).toContain("settings/claude");
   });

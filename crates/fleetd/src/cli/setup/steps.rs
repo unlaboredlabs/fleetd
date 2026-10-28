@@ -170,11 +170,12 @@ pub fn unowned(checks: &[DoctorCheck], steps: &[HubSetupStep]) -> Vec<DoctorChec
 fn place_words(place: &str) -> String {
     let name = match place {
         "claude" => {
-            return "Administration › Claude for the hub's API key; Settings › Claude for your own subscription"
+            return "Administration › Connections › Claude for the hub's API key; Settings › Claude for your own subscription"
                 .to_owned();
         }
-        "google" => "Google",
-        "invites" => "Invites",
+        "github" => "Connections › GitHub",
+        "google" => "Connections › Google",
+        "invites" => "People",
         "machines" => "Machines",
         "people" => "People",
         other => other,
@@ -388,7 +389,10 @@ mod tests {
             text.contains("\n6. Gmail in real time (optional)\n"),
             "{text}"
         );
-        assert!(text.contains("on Administration › Google"), "{text}");
+        assert!(
+            text.contains("on Administration › Connections › Google"),
+            "{text}"
+        );
         assert!(
             text.ends_with("Test: Ask Google whether it knows this client."),
             "{text}"
@@ -397,14 +401,14 @@ mod tests {
             .into_iter()
             .find(|s| s.id == SetupStepId::People)
             .unwrap();
-        assert!(guide(&people).contains("In the app: Administration › Invites."));
+        assert!(guide(&people).contains("In the app: Administration › People."));
         let claude = steps(&[])
             .into_iter()
             .find(|s| s.id == SetupStepId::Claude)
             .unwrap();
         assert!(
             guide(&claude).contains(
-                "In the app: Administration › Claude for the hub's API key; Settings › Claude for your own subscription."
+                "In the app: Administration › Connections › Claude for the hub's API key; Settings › Claude for your own subscription."
             ),
             "{}",
             guide(&claude)

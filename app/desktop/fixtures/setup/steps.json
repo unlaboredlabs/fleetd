@@ -103,7 +103,7 @@
             {
               "label": "Where",
               "plain": true,
-              "value": "Paste it on Administration › Claude, with an endpoint if you use a gateway; the app seals it on your device."
+              "value": "Paste it on Administration › Connections › Claude, with an endpoint if you use a gateway; the app seals it on your device."
             }
           ]
         },
@@ -169,7 +169,7 @@
       "parts": [
         {
           "links": [],
-          "note": "On Administration › GitHub: one button, nothing to paste. GitHub hands the App's keys straight to the hub.",
+          "note": "On Administration › Connections › GitHub: one button, nothing to paste. GitHub hands the App's keys straight to the hub.",
           "title": "Create the hub's GitHub App",
           "values": [
             {
@@ -242,7 +242,7 @@
     },
     {
       "fields": [],
-      "fieldsNote": "Save the client ID and secret, and the Gmail subscription and key if you set them up, on Administration › Google: the app seals the secrets on your device. Then each person connects their own Google account from their Navi; if a sign-in lapses, Navi offers Reconnect.",
+      "fieldsNote": "Save the client ID and secret, and the Gmail subscription and key if you set them up, on Administration › Connections › Google: the app seals the secrets on your device. Then each person connects their own Google account from their Navi; if a sign-in lapses, Navi offers Reconnect.",
       "group": "integrations",
       "id": "google",
       "need": {
@@ -439,7 +439,7 @@
             {
               "label": "Key",
               "plain": true,
-              "value": "Service accounts › the account above › Keys › Add key › Create new key › JSON. Paste the downloaded file on Administration › Google, then delete it."
+              "value": "Service accounts › the account above › Keys › Add key › Create new key › JSON. Paste the downloaded file on Administration › Connections › Google, then delete it."
             },
             {
               "command": true,

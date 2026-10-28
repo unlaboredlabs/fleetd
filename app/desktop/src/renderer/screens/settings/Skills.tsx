@@ -79,7 +79,7 @@ export function Skills({ route }: { route: SettingsRoute }) {
                   {names.length > 0 ? `Hub-wide, for every project: ${names.join(", ")}.` : "No hub-wide skills."} Owners and admins manage them.
                 </Text>
                 {administers ? (
-                  <Button size="sm" variant="quiet" onClick={() => (window.location.hash = toHash({ id: "admin", section: "skills" }))}>
+                  <Button size="sm" variant="quiet" onClick={() => (window.location.hash = toHash({ id: "admin", section: "hub" }))}>
                     Hub-wide skills in Administration
                   </Button>
                 ) : null}
@@ -93,22 +93,12 @@ export function Skills({ route }: { route: SettingsRoute }) {
 }
 
 /**
- * Administration › Skills: the hub-wide skills every project's agents get, written, installed from skills.sh,
- * updated and removed by an owner or admin (skill_install and the rest at scope global need one).
+ * Administration › Hub settings › Skills: the hub-wide skills every project's agents get, written, installed from
+ * skills.sh, updated and removed by an owner or admin (skill_install and the rest at scope global need one).
  */
 export function HubSkills() {
   const live = useLive();
-  return (
-    <div className={s.scroll} data-screen="admin.skills">
-      <div className={s.column}>
-        <PageHead title="Skills">
-          Hub-wide skills: every project&apos;s agents get them, after the project&apos;s repo&apos;s and its own. A project&apos;s own skills are in
-          Settings.
-        </PageHead>
-        {live ? <SkillList scope={HUB} where="every project" /> : <Text tone="quiet">Not connected. Connect to a hub to see its skills.</Text>}
-      </div>
-    </div>
-  );
+  return live ? <SkillList scope={HUB} where="every project" /> : <Text tone="quiet">Not connected. Connect to a hub to see its skills.</Text>;
 }
 
 /**

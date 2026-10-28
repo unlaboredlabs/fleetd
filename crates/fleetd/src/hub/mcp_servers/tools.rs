@@ -34,20 +34,28 @@ pub fn register(tools: &mut Registry) {
 }
 
 /// A server runs whatever it is given on the machines its agents run on: only a person changes them, a project's with
-/// operate on its machine, a global one with operate everywhere.
+/// operate on its machine. A global one (and whether agents get the person's own) reaches every teammate's agents, so
+/// it takes admin on every machine: an owner's or admin's device, never a member's (D209).
 fn may_change(caller: &Caller, scope: &McpScope) -> Result<(), ToolError> {
     let allowed = match scope {
         McpScope::Project { machine_id, .. } => allows(caller, Role::Operate, Some(machine_id)),
-        McpScope::Global => allows_everywhere(caller, Role::Operate),
+        McpScope::Global => allows_everywhere(caller, Role::Admin),
     };
     if is_human(caller) && allowed {
         return Ok(());
+    }
+    if is_human(caller) && matches!(scope, McpScope::Global) {
+        return Err(ToolError::new(
+            ErrorCode::Forbidden,
+            "Global MCP servers reach every teammate's agents: only the hub's owners and admins change them.",
+        )
+        .with_fix("Ask an owner or admin (Administration › Hub settings), or add the server to one project in its settings."));
     }
     Err(ToolError::new(
         ErrorCode::Forbidden,
         "Only a person changes the MCP servers agents get, with operate on every machine they reach.",
     )
-    .with_fix("Change them in the desktop app: Settings › MCP servers, or the project's settings."))
+    .with_fix("Change them in the desktop app: Administration › Hub settings, or the project's settings."))
 }
 
 fn project_of(hub: &Hub, scope: &McpScope) -> Result<Option<ProjectRef>, ToolError> {

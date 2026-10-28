@@ -34,10 +34,13 @@ describe("setup steps", () => {
   });
 
   it("opens where each step's result is saved: Administration, and for Claude and GitHub your own Settings too", () => {
-    expect(placesOf(step("google")).map((p) => p.screen)).toEqual([{ id: "admin", section: "google" }]);
-    expect(placesOf(step("claude")).map((p) => p.label)).toEqual(["Open Administration › Claude", "Open Settings › Claude"]);
-    expect(placesOf(step("people")).map((p) => p.screen)).toEqual([{ id: "admin", section: "invites" }]);
-    expect(placesOf(step("github")).map((p) => p.label)).toEqual(["Open Administration › GitHub", "Open Settings › GitHub"]);
+    // Claude, GitHub and Google share Connections, each landing on its own part of it.
+    expect(placesOf(step("google"))).toEqual([{ label: "Open Administration › Connections", screen: { id: "admin", section: "connections" }, reveal: "admin.google" }]);
+    expect(placesOf(step("claude")).map((p) => p.label)).toEqual(["Open Administration › Connections", "Open Settings › Claude"]);
+    expect(placesOf(step("claude"))[0]?.reveal).toBe("admin.claude");
+    expect(placesOf(step("people")).map((p) => p.screen)).toEqual([{ id: "admin", section: "people" }]);
+    expect(placesOf(step("github")).map((p) => p.label)).toEqual(["Open Administration › Connections", "Open Settings › GitHub"]);
+    expect(placesOf(step("github"))[0]?.reveal).toBe("admin.github");
     // A place this app doesn't know opens nothing.
     expect(placesOf(step("github", { place: "github_app" }))).toEqual([]);
   });

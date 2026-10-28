@@ -1,4 +1,4 @@
-// Administration › Google: the hub's Google OAuth client, which every Navi's Google connection goes through. The steps
+// Administration › Connections › Google: the hub's Google OAuth client, which every Navi's Google connection goes through. The steps
 // in Google Cloud Console are the setup step's own (google/guide.ts googleParts), with google_get's scopes and redirect.
 // The client secret is sealed in main to each machine's key (secret.googleClient → google_client_set) and never comes
 // back; Test asks Google to redeem a code that can't work (google_client_test), and `invalid_grant` means it knows the
@@ -13,7 +13,7 @@ import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import { Button, Field, Input, Separator, Text } from "../../ui";
 import { useHubState } from "../onboarding/hooks";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
-import { PageHead } from "../settings/parts";
+import { PagePart } from "../settings/parts";
 import { GuideParts, Part } from "../setup/Guide";
 import { googleParts } from "./guide";
 import { RealTimeMail } from "./AdminMail";
@@ -42,35 +42,25 @@ export function AdminGoogle() {
   const state = useHubState();
   const address = state.phase === "unpaired" ? "http://127.0.0.1:4790" : state.hub;
   const hub = address.includes("://") ? address : `http://${address}`;
-  const head = (
-    <PageHead title="Google">
-      Navis read and draft mail, events and files through a Google OAuth client you own. You set it up once, here; then each person connects their own
-      account from their Navi&rsquo;s Integrations.
-    </PageHead>
-  );
+  const intro =
+    "Navis read and draft mail, events and files through a Google OAuth client you own. You set it up once, here; then each person connects their own account from their Navi's Integrations.";
   if (!live || read.data === undefined) {
     const text = !live ? "Not connected. Connect to a hub to set up Google." : read.error !== null ? errorText(read.error) : "Loading…";
     const old = read.error instanceof CallError && lacksTool(read.error.error);
     return (
-      <div className={settings.scroll} data-screen={read.error !== null ? "admin.google.error" : "admin.google.loading"}>
-        <div className={settings.column}>
-          {head}
-          <Text tone={read.error !== null && !old ? "danger" : "quiet"}>{old ? "This hub is too old for Google. Update fleetd on the hub first." : text}</Text>
-        </div>
-      </div>
+      <PagePart title="Google" reveal="admin.google" intro={intro}>
+        <Text tone={read.error !== null && !old ? "danger" : "quiet"}>{old ? "This hub is too old for Google. Update fleetd on the hub first." : text}</Text>
+      </PagePart>
     );
   }
   return (
-    <div className={settings.scroll} data-screen="admin.google">
-      <div className={settings.column}>
-        {head}
-        <ClientStatus info={read.data} />
-        <Separator />
-        <Guide info={read.data} hub={hub} />
-        <Separator />
-        <RealTimeMail info={read.data} hub={hub} />
-      </div>
-    </div>
+    <PagePart title="Google" reveal="admin.google" intro={intro}>
+      <ClientStatus info={read.data} />
+      <Separator />
+      <Guide info={read.data} hub={hub} />
+      <Separator />
+      <RealTimeMail info={read.data} hub={hub} />
+    </PagePart>
   );
 }
 

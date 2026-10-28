@@ -8,7 +8,7 @@ import type { McpServerRequest } from "../../../shared/ipc";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { UiProvider } from "../../ui";
-import { McpSection, McpSettings } from "./McpServers";
+import { McpSection, HubMcpServers } from "./McpServers";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 vi.hoisted(() => {
@@ -144,7 +144,7 @@ const field = (label: string, within: ParentNode = dialog()) => {
 
 describe("Settings → MCP servers", () => {
   it("lists a server by its roles and a secret only as such, and says which machine lacks it", async () => {
-    await render(<McpSettings />);
+    await render(<HubMcpServers />);
     const text = document.body.textContent;
     expect(text).toContain("github");
     expect(text).toContain("Lead and writers");
@@ -154,7 +154,7 @@ describe("Settings → MCP servers", () => {
   });
 
   it("tests a server: its tools, or the node's error", async () => {
-    await render(<McpSettings />);
+    await render(<HubMcpServers />);
     await click(button("Test connection"));
     expect(calls.find((c) => c.tool === "mcp_server_test")?.input).toEqual({ scope: { kind: "global" }, name: "github" });
     expect(document.body.textContent).toContain("Connected on devbox to github-mcp 1.2.0: 2 tools.");
@@ -166,7 +166,7 @@ describe("Settings → MCP servers", () => {
   });
 
   it("adds a server with a secret sealed in main to every machine, never in a hub call, and says when it takes effect", async () => {
-    await render(<McpSettings />);
+    await render(<HubMcpServers />);
     await click(button("Add server"));
     const name = dialog().querySelector<HTMLInputElement>('input[placeholder="github"]');
     if (name === null) throw new Error("no name");
@@ -205,7 +205,7 @@ describe("Settings → MCP servers", () => {
   });
 
   it("turns the person's own servers off", async () => {
-    await render(<McpSettings />);
+    await render(<HubMcpServers />);
     const toggle = document.querySelector<HTMLElement>('[role="switch"]');
     await click(toggle as HTMLElement);
     expect(calls.find((c) => c.tool === "mcp_settings_set")?.input).toEqual({ userServers: false });

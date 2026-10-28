@@ -16,7 +16,7 @@ and any other repository still uses those logins.
 
 ## Create it {#create}
 
-On an owner's or admin's app: **Administration › GitHub**.
+On an owner's or admin's app: **Administration › Connections › GitHub**.
 
 1. Choose where the App lives: your account, or an organization you administer.
 2. Check its name: by default "fleetd on" and the hub's name. App names are unique on GitHub, so GitHub asks for
@@ -103,6 +103,6 @@ removal from the hub, does the same.
 
 ## Remove it {#remove}
 
-**Remove** on Administration › GitHub, or `fleetd github-app remove`, makes the hub forget the App and its keys, and everyone's connection through it. The
+**Remove** on Administration › Connections › GitHub, or `fleetd github-app remove`, makes the hub forget the App and its keys, and everyone's connection through it. The
 hub's `gh` goes back to the machine's own login. GitHub keeps the App until you delete it under its settings' Advanced
 page.

@@ -83,7 +83,7 @@ beforeEach(() => {
   host = document.createElement("div");
   document.body.appendChild(host);
   root = createRoot(host);
-  window.location.hash = "#/admin/claude";
+  window.location.hash = "#/admin/connections";
 });
 afterEach(() => {
   act(() => root.unmount());
@@ -113,8 +113,9 @@ const render = async (accounts: ClaudeAccountsGetOutput, info: Partial<HubInfoOu
                   ? { test: { at: AT, machineId: "devbox", ok: true } }
                   : tool === "claude_settings_set"
                     ? { settings: { membersUseHubApi: false } }
-                    : {};
-      return Promise.resolve({ ok: true, output });
+                    : undefined;
+      // Connections' other parts (GitHub, Google) find a hub without them.
+      return Promise.resolve(output === undefined ? { ok: false, error: { code: "not_found", message: `${tool} isn't faked` } } : { ok: true, output });
     },
     subscribe: (l) => ((listener = l), () => undefined),
     resync: () => Promise.resolve(),
@@ -180,7 +181,7 @@ const section = (label: string) => {
 
 it("saves the hub's key and endpoint sealed through main, tests it at once, and never shows it back", async () => {
   await render(noKey);
-  expect(host.querySelector("[data-screen='admin.claude']")).not.toBeNull();
+  expect(host.querySelector("[data-screen='admin.connections']")).not.toBeNull();
   expect(section("Leads and unrequested work").textContent).toContain("Each machine's own Claude login.");
   expect(section("Leads and unrequested work").textContent).toContain("The hub owner's subscription (yours) isn't connected.");
   await type("API key", KEY);

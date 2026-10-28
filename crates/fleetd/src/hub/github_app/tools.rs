@@ -1,5 +1,5 @@
 //! `github_app_get` for everyone; `github_app_manifest`, `github_app_create`, `github_app_test` and
-//! `github_app_remove` for an owner's or admin's device (Administration › GitHub); `github_connect` and
+//! `github_app_remove` for an owner's or admin's device (Administration › Connections › GitHub); `github_connect` and
 //! `github_disconnect` for a person's own devices (Settings › GitHub). No key, secret or token crosses any of them.
 use std::sync::Arc;
 
@@ -59,7 +59,7 @@ fn none_yet() -> ToolError {
     error(
         ErrorCode::NotFound,
         "This hub has no GitHub App yet.",
-        "Create one in Administration › GitHub.",
+        "Create one in Administration › Connections › GitHub.",
     )
 }
 

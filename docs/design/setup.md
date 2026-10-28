@@ -77,14 +77,14 @@ In order. **Need** says when it must be done; nothing blocks using fleetd before
 |---|---|---|---|---|---|---|---|
 | Where the hub listens | Required | Tailnet, this machine only, or LAN; HTTPS through Tailscale Serve is optional | Each option's URL; `tailscale serve` command | Tailscale admin | none | Reach `/healthz` from this device | init, `hub/reachable`, `hub/https` |
 | Machines | Required | The machines to add | `fleetd machine add <host>`, or a join command with a code | none | none | The checks: online, runner | init, `machine add`, `*/online` |
-| Claude | Required | A hub API key and an optional endpoint, **or** nothing: then the hub owner connects their own subscription. Either way, each person later picks their own subscription or the hub's configuration in their own settings, and a switch here turns the hub's option off for members (D200) | Key name `fleetd on devbox`; for a subscription, the command `claude setup-token` | Claude Console › API keys | API key (sealed), endpoint; or the subscription's long-lived token (sealed) | One tiny `claude -p` call made with the key (and endpoint) or the token, on a machine holding it (`claude_account_test`; fleetd never calls the API itself). Done by either way: the key, or the owner's subscription (§3.1) | Built (teams step 8): `claude_hub_api_set`, `claude_subscription_set`, `claude_account_test`; the app's Settings › Claude and Administration › Claude; the `hub/claude_key` and `hub/claude_owner` checks |
+| Claude | Required | A hub API key and an optional endpoint, **or** nothing: then the hub owner connects their own subscription. Either way, each person later picks their own subscription or the hub's configuration in their own settings, and a switch here turns the hub's option off for members (D200) | Key name `fleetd on devbox`; for a subscription, the command `claude setup-token` | Claude Console › API keys | API key (sealed), endpoint; or the subscription's long-lived token (sealed) | One tiny `claude -p` call made with the key (and endpoint) or the token, on a machine holding it (`claude_account_test`; fleetd never calls the API itself). Done by either way: the key, or the owner's subscription (§3.1) | Built (teams step 8): `claude_hub_api_set`, `claude_subscription_set`, `claude_account_test`; the app's Settings › Claude and Administration › Connections › Claude; the `hub/claude_key` and `hub/claude_owner` checks |
 | GitHub App | Before the first PR | Nothing to paste: confirm the App GitHub shows, pick the repositories to install it on, connect your own account | The manifest: name, homepage, callback `<hub>/oauth/github/callback`, repository permissions, webhook | "Create on my account" or "in an organization", then GitHub's install page | none: GitHub hands the App's keys to the hub | Mint an installation token and list the repositories it reaches; the admin's own sign-in proves the callback | D190; today `gh auth` on the hub (`hub/gh_auth`) |
 | Invite people | Optional | A name, admin or not | The invite link | none | Name | The link opens | teams step 1, in flight |
 | Google | Optional | A Cloud project, the three APIs, the sign-in screen published In production, a Desktop app OAuth client; optionally Gmail in real time (a Pub/Sub topic, a pull subscription, and a service account to read it) | Project and app name, the Gmail, Calendar and Drive scopes; on an HTTPS hub, also a web redirect `<hub>/oauth/google/callback` | Cloud Console: new project, enable APIs, Auth Platform › Branding, › Clients | Client ID, client secret (sealed to the hub); optionally the Gmail subscription and the reader's JSON key (sealed to one machine) | Exchange a dummy code: `invalid_grant` means Google knows the client; with a key, pull once from the subscription; then each person connects from their Navi | D189; Navi integrations, in flight (#635) |
 | Notion | Optional | An internal integration | Integration name | Notion › Integrations | Secret (sealed) | `mcp_server_test` (search) | Navi integrations, in flight |
 | 1Password | Optional | A service account for one vault | Account name | 1Password › Service accounts | Token (sealed) | List the vault's item titles | per project today (`OP_SERVICE_ACCOUNT_TOKEN`) |
 
-Custom MCP servers stay in Settings › MCP servers. They aren't hub setup, and each one is different.
+Custom MCP servers stay in Administration › Hub settings (global ones) and each project's settings. They aren't hub setup, and each one is different.
 
 ## 3. The step model
 
@@ -292,7 +292,7 @@ person then connects their own Google account from their Navi.
      account, subscriber binding and key commands, ending in `cat … && rm …`. That prints the key once, to paste.
 
      The client, the subscription (`projects/fleetd-devbox/subscriptions/fleetd-gmail-hub`) and the JSON key are
-     saved on Administration › Google (#746, #749), which the step links to (`place: google`); the step itself has no
+     saved on Administration › Connections › Google (#746, #749), which the step links to (`place: google`); the step itself has no
      fields of its own to save. The key is sealed there to the one machine that reads (§3.4), and the page shows only
      its machine and fingerprint, never the key.
 - **Test** exchanges a dummy code at Google's token endpoint. `invalid_grant` means Google knows the client and its
@@ -351,7 +351,7 @@ copy buttons, live checks after the paste, "progress is saved".
   - Built (T1076, stage 1): `github_app_get`, `github_app_manifest`, `github_app_create`, `github_app_test`,
     `github_app_remove`; the app's loopback creation and `fleetd github-app`; the manifest's permissions as one
     constant (`GITHUB_APP_PERMISSIONS`); the App's keys sealed to the hub's box key; installation tokens for the
-    hub's `gh` on the repositories the App reaches, its own login elsewhere. Administration › GitHub.
+    hub's `gh` on the repositories the App reaches, its own login elsewhere. Administration › Connections › GitHub.
   - Built (T1076, stage 2): people's sign-in through the App (`github_connect`, `github_disconnect`; Settings ›
     GitHub; PKCE and the loopback callback), user-to-server tokens sealed to the hub's box key and refreshed; each
     order's agents get `GH_TOKEN` as an order variable (the starter's, or the App's for work nobody started), renewed
@@ -445,8 +445,8 @@ What the build does differently from the sections above, for now:
 
 - **Result fields live on the place's page, not in the step.** A step has no fields of its own (`fields` stays empty,
   and there is no `setup_save`): it names the page that saves its result (`place`), and its last part, "Save it in
-  fleetd", opens it. The Claude key and endpoint are on Administration › Claude, a subscription token on Settings ›
-  Claude, Google's client and the Pub/Sub key on Administration › Google, invites on Administration › Invites. Each
+  fleetd", opens it. The Claude key and endpoint are on Administration › Connections › Claude, a subscription token on Settings ›
+  Claude, Google's client and the Pub/Sub key on Administration › Connections › Google, invites on Administration › People. Each
   of those pages seals its secrets on the device as before. The terminal never takes a secret: the CLI's key isn't a
   person's, and the sealed paths are the app's.
 - **GitHub** is `gh auth login` on the hub (`hub/gh_auth`) until the GitHub App (D190) is built; its manifest flow,
@@ -455,7 +455,7 @@ What the build does differently from the sections above, for now:
 - **A step that wants a look** fails `fleetd init` and `fleetd doctor` only when its check fails; a warning (a
   degraded machine, a LAN address) stays a warning and leaves nothing required (`failing`).
 - **Claude** reads `hub/claude_key` and `hub/claude_owner` (#756) as its first two ways, then every machine's own
-  login. Its parts send the key to Administration › Claude and the owner's subscription token to Settings › Claude,
+  login. Its parts send the key to Administration › Connections › Claude and the owner's subscription token to Settings › Claude,
   where the app seals them.
 - **Notion** is each person's own integration on their Navi (#643), so the hub has nothing to save: the step says
   how, and is done once any Navi has it.

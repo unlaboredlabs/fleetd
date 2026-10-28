@@ -147,7 +147,7 @@ const McpValueRequest = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("keep"), name: McpValueName }),
 ]);
 /**
- * An MCP server to save (Settings › MCP servers, a project's MCP section): main seals each secret value to every box
+ * An MCP server to save (Administration › Hub settings, a project's MCP section): main seals each secret value to every box
  * key in `boxes` (a project server's machine; for a global one, every machine) and calls mcp_server_set. The hub gets
  * the boxes, never a secret's value.
  */
@@ -193,7 +193,7 @@ export const HubLinkRequest = z.strictObject({
 export type HubLinkRequest = z.infer<typeof HubLinkRequest>;
 
 /**
- * The hub's Google OAuth client (Administration › Google): main seals `secret` to every box in `boxes` (each machine
+ * The hub's Google OAuth client (Administration › Connections › Google): main seals `secret` to every box in `boxes` (each machine
  * that may run a Navi) and calls google_client_set. The hub gets the boxes and the id, never the secret.
  */
 export const GoogleClientRequest = z.strictObject({
@@ -204,7 +204,7 @@ export const GoogleClientRequest = z.strictObject({
 });
 export type GoogleClientRequest = z.infer<typeof GoogleClientRequest>;
 /**
- * Real-time mail (Administration › Google): main checks `key` is a service account's JSON key, seals it to
+ * Real-time mail (Administration › Connections › Google): main checks `key` is a service account's JSON key, seals it to
  * `boxPubKey`, the reading machine's key, and calls google_pubsub_set. The hub gets the box, never the key.
  */
 export const GooglePubsubRequest = z.strictObject({
@@ -226,7 +226,7 @@ export const GoogleConnectRequest = z.strictObject({
 });
 export type GoogleConnectRequest = z.infer<typeof GoogleConnectRequest>;
 /**
- * Create the hub's own GitHub App (Administration › GitHub): main asks the hub for its manifest, posts it to GitHub from
+ * Create the hub's own GitHub App (Administration › Connections › GitHub): main asks the hub for its manifest, posts it to GitHub from
  * a loopback page, catches GitHub's code there and calls github_app_create itself; the App's keys go to the hub only.
  */
 export const GithubAppRequest = z.strictObject({
@@ -240,7 +240,7 @@ export type GithubAppRequest = z.infer<typeof GithubAppRequest>;
 
 const Boxes = z.array(z.strictObject({ machineId: z.string().min(1).max(64), boxPubKey: z.string().regex(/^[A-Za-z0-9+/]{43}=$/u) })).max(500);
 /**
- * A Claude account's secret (Settings › Claude, Administration › Claude): main seals it to every machine in `boxes`
+ * A Claude account's secret (Settings › Claude, Administration › Connections › Claude): main seals it to every machine in `boxes`
  * and calls claude_hub_api_set (the hub's key, with its endpoint; no key keeps the saved one) or
  * claude_subscription_set (the person's own `claude setup-token` token). The hub gets the boxes, never the value.
  */

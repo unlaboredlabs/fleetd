@@ -181,7 +181,7 @@ impl GithubApps {
         redirect: &str,
     ) -> Result<GithubAccount, String> {
         let (app, secret) = self.client()?.ok_or(
-            "This hub has no GitHub App yet: an admin creates it in Administration › GitHub",
+            "This hub has no GitHub App yet: an admin creates it in Administration › Connections › GitHub",
         )?;
         let pair = self
             .token_call(&[

@@ -1,9 +1,10 @@
-// Settings → Instructions: your own text, appended to every lead's and task's first message (workers and reviewers
-// too) under "Custom instructions from the human": the hub-wide text, then the project's. Saved with
-// prompt_set on the registry id `instructions`, and pinned per session like every prompt.
+// Custom instructions, appended to every lead's and task's first message (workers and reviewers too) under "Custom
+// instructions from the human": the hub-wide text, then the project's. Settings → Instructions edits one project's;
+// Administration › Hub settings edits the one for every project (HubInstructions), which only owners and admins change
+// (D209). Saved with prompt_set on the registry id `instructions`, and pinned per session like every prompt.
 import { useEffect, useState } from "react";
-import { Button, Field, Separator, Text, Textarea } from "../../ui";
-import { INSTRUCTIONS, type PromptDetail, type PromptScope } from "./contracts";
+import { Button, Field, Text, Textarea } from "../../ui";
+import { INSTRUCTIONS, type PromptScope } from "./contracts";
 import { parseScope, projectRefOf, scopeKey, shownDraft, type Draft, type Scope } from "./editor";
 import { useToolQuery } from "../../src/data/react";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
@@ -13,75 +14,147 @@ import s from "./settings.module.css";
 
 type Echo = { ok: boolean; text: string };
 
-
 const fill = (d: Draft | null, saved: string): Draft => (d === null || d.text === d.from ? { from: saved, text: saved } : { from: saved, text: d.text });
 
-export function Instructions({ route }: { route: SettingsRoute }) {
+/**
+ * One level's text, as the hub has it, with its draft and Save: the hub-wide one (`project` null) or a project's.
+ * Another project's draft is never kept.
+ */
+function useText(project: Scope | null, scope: PromptScope) {
   const live = useLive();
-  const projects = useProjects();
-  const [project, setProject] = useState<Scope | null>(() => (route.for ? parseScope(route.for) : null));
-  const [pending, setPending] = useState<Scope | null>(null);
   const ref = project ? projectRefOf(project) : undefined;
   const key = project ? scopeKey(project) : "hub";
-
-  const read = useToolQuery("prompt_get", { id: INSTRUCTIONS, ...(ref ? { projectRef: ref } : {}) }, { enabled: live });
+  const read = useToolQuery("prompt_get", { id: INSTRUCTIONS, ...(ref ? { projectRef: ref } : {}) }, { enabled: live && (scope === "global" || ref !== undefined) });
   const hubCall = useHubCall();
   const refetch = useRefetch();
-
-  const [global, setGlobal] = useState<Draft | null>(null);
   const [own, setOwn] = useState<{ key: string; draft: Draft } | null>(null);
-  const [synced, setSynced] = useState<PromptDetail | null>(null);
-  const [busy, setBusy] = useState<PromptScope | null>(null);
+  const [synced, setSynced] = useState<unknown>(null);
+  const [busy, setBusy] = useState(false);
   const [echo, setEcho] = useState<Echo | null>(null);
-
   const d = read.data?.prompt ?? null;
   if (d && d !== synced) {
     setSynced(d);
-    setGlobal(fill(global, d.global?.text ?? ""));
-    // Another project's text is never kept.
-    setOwn({ key, draft: fill(own?.key === key ? own.draft : null, d.project?.text ?? "") });
+    const saved = (scope === "global" ? d.global?.text : d.project?.text) ?? "";
+    setOwn({ key, draft: fill(own?.key === key ? own.draft : null, saved) });
   }
-
-  useEffect(() => {
-    replaceRoute({ tab: "instructions", for: project?.kind === "project" ? key : null });
-  }, [project?.kind, key]);
-
-  const ownDirty = own !== null && own.key === key && own.draft.text !== own.draft.from;
-  // Until the hub has answered for this connection, only what you typed and haven't saved is shown; an untouched
-  // text is the last connection's answer, not the hub's now, so it shows as loading and can't be edited.
-  const shown = (draft: Draft | null) => shownDraft(d !== null, draft);
-  const globalShown = shown(global);
-  const ownShown = shown(own?.key === key ? own.draft : null);
-  const pick = (next: Scope) => {
-    if (scopeKey(next) === key) return;
-    if (ownDirty) setPending(next);
-    else {
-      setProject(next);
-      setEcho(null);
-    }
-  };
-
-  const save = (scope: PromptScope, text: string) => {
-    if (!d || busy) return;
-    setBusy(scope);
+  const draft = own?.key === key ? own.draft : null;
+  const dirty = draft !== null && draft.text !== draft.from;
+  const save = (whose: string) => {
+    if (!d || !draft || busy) return;
+    const text = draft.text;
+    setBusy(true);
     setEcho(null);
     hubCall("prompt_set", { id: INSTRUCTIONS, scope, ...(scope === "project" && ref ? { projectRef: ref } : {}), text, base: d.default.ref }).then(
       () => {
-        setBusy(null);
-        const whose = scope === "project" && project ? `for ${scopeName(project, projects)}` : "for every project";
+        setBusy(false);
         setEcho({ ok: true, text: `Saved ${whose}. New agents get them; a lead gets them at its next restart.` });
-        if (scope === "global") setGlobal({ from: text, text });
-        else setOwn({ key, draft: { from: text, text } });
+        setOwn({ key, draft: { from: text, text } });
         refetch(["prompt_get"]);
       },
       (e: unknown) => {
-        setBusy(null);
+        setBusy(false);
         setEcho({ ok: false, text: errorText(e) });
       },
     );
   };
+  return {
+    live,
+    read,
+    ready: d !== null,
+    // Until the hub has answered for this connection, only what you typed and haven't saved is shown; an untouched
+    // text is the last connection's answer, not the hub's now, so it shows as loading and can't be edited.
+    shown: shownDraft(d !== null, draft),
+    dirty,
+    busy,
+    echo,
+    setEcho,
+    edit: (text: string) => setOwn({ key, draft: { from: draft?.from ?? "", text } }),
+    discard: () => draft && setOwn({ key, draft: { ...draft, text: draft.from } }),
+    save,
+  };
+}
 
-  if (!live) {
+type TextState = ReturnType<typeof useText>;
+
+/** The textarea, Save and Discard changes, and what the last save said. */
+function Editor({ t, label, placeholder, whose }: { t: TextState; label: string; placeholder: string; whose: string }) {
+  return (
+    <>
+      <Textarea
+        aria-label={label}
+        value={t.shown?.text ?? ""}
+        disabled={!t.ready}
+        minRows={6}
+        maxRows={24}
+        placeholder={t.ready ? placeholder : "Loading…"}
+        onChange={(e) => t.edit(e.target.value)}
+      />
+      <div className={s.actions}>
+        <Button variant="primary" disabled={!t.ready || !t.dirty || t.busy} onClick={() => t.save(whose)}>
+          {t.busy ? "Saving…" : "Save"}
+        </Button>
+        <Button variant="ghost" disabled={!t.dirty} onClick={t.discard}>
+          Discard changes
+        </Button>
+      </div>
+      <div role="status">
+        {t.echo ? (
+          <Text size="xs" tone={t.echo.ok ? "quiet" : "danger"}>
+            {t.echo.text}
+          </Text>
+        ) : null}
+      </div>
+    </>
+  );
+}
+
+function LoadProblem({ t }: { t: TextState }) {
+  if (!t.read.isLoadingError) return null;
+  return (
+    <div className={s.inline}>
+      <Text tone="danger">{errorText(t.read.error)}</Text>
+      <Button onClick={() => void t.read.refetch()}>Try again</Button>
+    </div>
+  );
+}
+
+/** Administration › Hub settings: the instructions every project's agents get, before a project's own. */
+export function HubInstructions() {
+  const t = useText(null, "global");
+  if (!t.live) return <Text tone="quiet">Connect to a hub to see and change this.</Text>;
+  return (
+    <div className={s.stack}>
+      <LoadProblem t={t} />
+      <Field label="Every project" description="Added to every agent's first message on this hub, the lead's too, before a project's own.">
+        <Editor t={t} label="Instructions for every project" placeholder="e.g. Keep pull requests under 400 changed lines." whose="for every project" />
+      </Field>
+    </div>
+  );
+}
+
+/** Settings → Instructions: one project's own, sent to its agents after the hub-wide ones. */
+export function Instructions({ route }: { route: SettingsRoute }) {
+  const projects = useProjects();
+  const [project, setProject] = useState<Scope | null>(() => (route.for ? parseScope(route.for) : null));
+  const [pending, setPending] = useState<Scope | null>(null);
+  const shown = project?.kind === "project" ? project : null;
+  const key = shown ? scopeKey(shown) : null;
+  const t = useText(shown, "project");
+
+  useEffect(() => {
+    replaceRoute({ tab: "instructions", for: key });
+  }, [key]);
+
+  const pick = (next: Scope) => {
+    if (scopeKey(next) === key) return;
+    if (t.dirty) setPending(next);
+    else {
+      setProject(next);
+      t.setEcho(null);
+    }
+  };
+
+  if (!t.live) {
     return (
       <div className={s.scroll} data-screen="settings.instructions">
         <div className={s.column}>
@@ -92,83 +165,23 @@ export function Instructions({ route }: { route: SettingsRoute }) {
     );
   }
 
-  const ownDraft = ownShown;
-  const name = project ? scopeName(project, projects) : null;
+  const name = shown ? scopeName(shown, projects) : null;
   return (
     <div className={s.scroll} data-screen="settings.instructions">
       <div className={s.column}>
-        <PageHead title="Instructions">
-          Added to every agent's first message, the lead's too: these first, then the project's own.
-        </PageHead>
-        {read.isLoadingError ? (
-          <div className={s.inline}>
-            <Text tone="danger">{errorText(read.error)}</Text>
-            <Button onClick={() => void read.refetch()}>Try again</Button>
-          </div>
-        ) : null}
-        <div className={s.stack}>
-          <Field label="Every project" description="Sent to every agent on this hub.">
-            <Textarea
-              value={globalShown?.text ?? ""}
-              disabled={d === null}
-              minRows={6}
-              maxRows={24}
-              placeholder={d === null ? "Loading…" : "e.g. Keep pull requests under 400 changed lines."}
-              onChange={(e) => setGlobal({ from: global?.from ?? "", text: e.target.value })}
-            />
-          </Field>
-          <div className={s.actions}>
-            <Button
-              variant="primary"
-              disabled={d === null || global === null || global.text === global.from || busy !== null}
-              onClick={() => global && save("global", global.text)}
-            >
-              {busy === "global" ? "Saving…" : "Save"}
-            </Button>
-            <Button variant="ghost" disabled={globalShown === null || globalShown.text === globalShown.from} onClick={() => global && setGlobal({ ...global, text: global.from })}>
-              Discard changes
-            </Button>
-          </div>
-        </div>
-        <Separator />
+        <PageHead title="Instructions">Added to a project&apos;s agents&apos; first message, the lead&apos;s too, after the hub-wide ones.</PageHead>
+        <LoadProblem t={t} />
         <div className={s.stack}>
           <div className={s.setting}>
             <div className={s.settingLabel}>
-              <Text strong>One project</Text>
+              <Text strong>Project</Text>
               <Text size="xs" tone="quiet">
-                {name ? `Sent to ${name}'s agents only, after the ones above.` : "Pick a project to add instructions for it alone."}
+                {name ? `Sent to ${name}'s agents only.` : "Pick a project to add instructions for it alone."}
               </Text>
             </div>
-            <ScopeSelect id="instructions-for" className={s.scopeSelect} value={project} projects={projects} onChange={pick} />
+            <ScopeSelect id="instructions-for" className={s.scopeSelect} value={shown} projects={projects} onChange={pick} />
           </div>
-          {project ? (
-            <>
-              <Textarea
-                aria-label={`Instructions for ${name ?? "this project"}`}
-                value={ownDraft?.text ?? ""}
-                disabled={d === null}
-                minRows={6}
-                maxRows={24}
-                placeholder={d === null ? "Loading…" : "e.g. Use pnpm, not npm."}
-                onChange={(e) => setOwn({ key, draft: { from: ownDraft?.from ?? "", text: e.target.value } })}
-              />
-              <div className={s.actions}>
-                <Button variant="primary" disabled={d === null || !ownDirty || busy !== null} onClick={() => ownDraft && save("project", ownDraft.text)}>
-                  {busy === "project" ? "Saving…" : "Save"}
-                </Button>
-                <Button variant="ghost" disabled={!ownDirty} onClick={() => ownDraft && setOwn({ key, draft: { ...ownDraft, text: ownDraft.from } })}>
-                  Discard changes
-                </Button>
-              </div>
-            </>
-          ) : null}
-        </div>
-        <div role="status">
-          {echo ? (
-            <Text size="xs" tone={echo.ok ? "quiet" : "danger"}>
-              {echo.text}
-            </Text>
-          ) : null}
+          {shown ? <Editor t={t} label={`Instructions for ${name ?? "this project"}`} placeholder="e.g. Use pnpm, not npm." whose={`for ${name ?? "this project"}`} /> : null}
         </div>
       </div>
       <ConfirmDiscard
@@ -179,7 +192,7 @@ export function Instructions({ route }: { route: SettingsRoute }) {
         onDiscard={() => {
           if (pending) setProject(pending);
           setPending(null);
-          setEcho(null);
+          t.setEcho(null);
         }}
       />
     </div>

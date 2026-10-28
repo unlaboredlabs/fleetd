@@ -128,7 +128,7 @@ fn show(apps: &GithubApps) -> Result<(), String> {
     match apps_get(apps)? {
         Some(app) => describe(&app),
         None => println!(
-            "This hub has no GitHub App yet: `fleetd github-app create`, or Administration › GitHub in the app.\n\
+            "This hub has no GitHub App yet: `fleetd github-app create`, or Administration › Connections › GitHub in the app.\n\
              Until then the hub's gh uses this machine's own login."
         ),
     }
