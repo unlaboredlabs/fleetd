@@ -44,7 +44,7 @@ const settings: Settings = {
   },
 };
 
-const snapshotWith = (repos: ProjectRepo[]): HubFrame => ({
+const snapshotWith = (repos: ProjectRepo[], navi = false): HubFrame => ({
   t: "snapshot",
   snapshot: {
     cursor: 1,
@@ -59,6 +59,7 @@ const snapshotWith = (repos: ProjectRepo[]): HubFrame => ({
         threads: { running: 0, waiting: 0, idle: 0, failed: 0 },
         lastActivityAt: AT,
         ...(repos.length > 0 ? { repos } : {}),
+        ...(navi ? { kind: "assistant" as const } : {}),
       },
     ],
   },
@@ -77,6 +78,8 @@ const api: ProjectRepo = { repoId: "R2", name: "api", checkout: { machineId: "de
 let repos: ProjectRepo[];
 /** What project_settings_get answers for a repo; a repo not here is refused, as a hub before per-repo settings does. */
 let repoAnswers: Record<string, Settings>;
+/** The project is a Navi. */
+let navi: boolean;
 
 beforeEach(() => {
   host = document.createElement("div");
@@ -87,6 +90,7 @@ beforeEach(() => {
   envRequests = [];
   repos = [];
   repoAnswers = {};
+  navi = false;
   window.location.hash = "#/settings/projects?for=devbox/p1";
   vi.stubGlobal("fleetd", {
     platform: "linux",
@@ -154,7 +158,7 @@ const render = async (page: "project" | "instructions" = "project") => {
   });
   await act(async () => {
     listener({ t: "state", state: { phase: "live", hub: "devbox:4710", protocol: 1 } });
-    listener(snapshotWith(repos));
+    listener(snapshotWith(repos, navi));
     await new Promise((r) => setTimeout(r, 0));
   });
   // project_settings_get's answer.
@@ -308,6 +312,28 @@ describe("Settings → Projects", () => {
     await click(button("Delete project"));
     await settle();
     expect(calls.find((c) => c.tool === "project_remove")?.input).toEqual({ machineId: "devbox", projectId: "p1", removeWorktrees: true });
+  });
+
+  it("forgets a Navi's sign-ins after asking, and shows no sign-ins on a project of code", async () => {
+    await render();
+    expect([...document.querySelectorAll("button")].some((b) => b.textContent.trim() === "Forget sign-ins…")).toBe(false);
+    act(() => root.unmount());
+    root = createRoot(host);
+
+    navi = true;
+    answers = [{ ...settings, title: "Adri", workspaceRoot: "/home/w/.fleetd/node/navi/adri", worktrees: { dir: "/home/w/.fleetd/node/worktrees/p1", worktrees: [] } }];
+    await render();
+    expect(document.body.textContent).toContain("stays signed in to the sites it signed into");
+    await click(button("Forget sign-ins…"));
+    expect(dialog().textContent).toContain("its browser profile is deleted from devbox");
+    await click(button("Cancel"));
+    expect(calls.some((c) => c.tool === "navi_signins_forget")).toBe(false);
+    await click(button("Forget sign-ins…"));
+    await click(button("Forget sign-ins"));
+    await settle();
+    expect(calls.find((c) => c.tool === "navi_signins_forget")?.input).toEqual({ machineId: "devbox", projectId: "p1" });
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.body.textContent).toContain("Its next browser session starts signed out of every site.");
   });
 
   it("keeps Delete off while the machine can't list the worktrees, and refuses when a fresh listing fails", async () => {

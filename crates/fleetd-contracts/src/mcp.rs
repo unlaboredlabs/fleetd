@@ -1198,6 +1198,14 @@ output!(NaviSiteRevokeOutput {
     sites: Vec<NaviSite>,
 });
 
+// navi_signins_forget: a Navi's browser keeps its sign-ins (its own browser profile) between sessions (D221); this ends
+// its browser session, if one is open, and deletes them, so its next visit to each site starts signed out.
+input!(NaviSigninsForgetInput {
+    machine_id: MachineId,
+    project_id: ProjectId,
+});
+output!(NaviSigninsForgetOutput { ok: True });
+
 // project_settings_get, project_settings_set, project_env_set: a project's own settings (Settings › Projects).
 input!(ProjectSettingsGetInput {
     machine_id: MachineId,
@@ -3008,6 +3016,7 @@ tools! {
     navi_archive => NaviArchive, Operate, NaviArchiveInput, NaviArchiveOutput;
     navi_sites => NaviSites, Read, NaviSitesInput, NaviSitesOutput;
     navi_site_revoke => NaviSiteRevoke, Operate, NaviSiteRevokeInput, NaviSiteRevokeOutput;
+    navi_signins_forget => NaviSigninsForget, Operate, NaviSigninsForgetInput, NaviSigninsForgetOutput;
     project_settings_get => ProjectSettingsGet, Read, ProjectSettingsGetInput, ProjectSettingsGetOutput;
     project_settings_set => ProjectSettingsSet, Operate, ProjectSettingsSetInput, ProjectSettingsSetOutput;
     // Human keys only (the handler checks): a person sets a project's environment.

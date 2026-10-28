@@ -2363,6 +2363,21 @@ impl Executors {
         Ok(())
     }
 
+    /// Forgets a Navi's sign-ins on its node: its browser session ends and the profile it keeps goes. Only to a node
+    /// listing `CAP_NAVI_SIGNINS`.
+    pub async fn navi_signins_forget(
+        &self,
+        machine_id: &MachineId,
+        project_id: &ProjectId,
+    ) -> Result<(), ExecutorError> {
+        let call = SessionCall::NaviSigninsForget {
+            project_id: project_id.clone(),
+        };
+        self.call(machine_id, NodeOperation::Project, call, REMOVE_TIMEOUT)
+            .await?;
+        Ok(())
+    }
+
     /// Sets and removes the project's environment variables on its node; the fingerprint of each secret it saved.
     /// Only to a node listing `CAP_PROJECT_SETTINGS`.
     pub async fn project_env(

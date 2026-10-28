@@ -5,7 +5,9 @@ use std::sync::Arc;
 
 use fleetd_contracts::auth::KeyKind;
 use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef};
-use fleetd_contracts::node_link::{CAP_ASSISTANT, CAP_REPOS, HubToNode, NodeToHub};
+use fleetd_contracts::node_link::{
+    CAP_ASSISTANT, CAP_NAVI_SIGNINS, CAP_REPOS, HubToNode, NodeToHub,
+};
 use fleetd_contracts::sessions::SessionCall;
 use serde_json::{Value, json};
 use tokio::sync::mpsc;
@@ -402,6 +404,41 @@ async fn a_navis_allowed_sites_are_listed_and_a_revoked_one_asks_again() {
         project_id: "p1".into(),
     };
     assert_eq!(hub.ops.navi_site(&p1, Some("dentist.example")).await, None);
+}
+
+/// Forget sign-ins (D221) asks the Navi's node to delete the browser profile it keeps; a node too old to keep one is
+/// told to update, and a project of code has none.
+#[tokio::test]
+async fn forgetting_a_navis_sign_ins_asks_its_node_to_delete_its_browser_profile() {
+    let (hub, _home) = hub();
+    let mut calls = node(&hub, &[CAP_REPOS, CAP_ASSISTANT]).await;
+    let navi = ok(&hub, "navi_create", json!({ "name": "Ada" })).await["navi"].clone();
+    let at = json!({ "machineId": "devbox", "projectId": navi["projectId"] });
+    let old = call(&hub, "navi_signins_forget", at.clone())
+        .await
+        .unwrap_err();
+    assert!(format!("{old:?}").contains("too old"), "{old:?}");
+    hub.link
+        .set_capabilities(&devbox(), &[CAP_REPOS, CAP_ASSISTANT, CAP_NAVI_SIGNINS]);
+    while calls.try_recv().is_ok() {}
+    let out = ok(&hub, "navi_signins_forget", at.clone()).await;
+    assert_eq!(out["ok"], true);
+    assert!(out["next"].as_str().unwrap().contains("signed out"));
+    let sent = calls.recv().await.unwrap();
+    assert_eq!(
+        sent,
+        SessionCall::NaviSigninsForget {
+            project_id: ProjectId::unchecked(navi["projectId"].as_str().unwrap()),
+        }
+    );
+    let code = call(
+        &hub,
+        "navi_signins_forget",
+        json!({ "machineId": "devbox", "projectId": "p1" }),
+    )
+    .await
+    .unwrap_err();
+    assert!(format!("{code:?}").contains("not a Navi"), "{code:?}");
 }
 
 #[tokio::test]

@@ -159,6 +159,10 @@ pub const CAP_PREVIEWS: &str = "previews";
 /// `SessionRole::Assistant` (a Navi's lead) and a relative `project_upsert` root under the node's home (its folder).
 pub const CAP_ASSISTANT: &str = "assistant";
 
+/// `navi_signins`: a Navi's browser sessions keep its own profile between sessions, and the node takes
+/// `navi_signins_forget`, which deletes it (D221).
+pub const CAP_NAVI_SIGNINS: &str = "navi_signins";
+
 /// `folder_make`: the node makes a new project's folder (and `git init`s it when asked).
 pub const CAP_FOLDER_MAKE: &str = "folder_make";
 

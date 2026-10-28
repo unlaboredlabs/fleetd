@@ -721,7 +721,7 @@ impl Session {
     }
 
     /// Stops recording and the browser: the video is finished, the text files scrubbed once more with every value the
-    /// session knew, and the browser killed with its profile. Returns the files there are.
+    /// session knew, and the browser killed with its profile (a Navi's kept one stays). Returns the files there are.
     pub async fn close(&self) -> Vec<(RecordingFile, u64)> {
         // Every step's DOM capture queued so far lands first, while the page is still there.
         let (done, flushed) = tokio::sync::oneshot::channel();
@@ -748,7 +748,10 @@ impl Session {
             let _ = std::fs::remove_file(self.dir.join(RecordingFile::Video.file_name()));
             self.set_note(format!("no video: {why}"));
         }
-        lock(&self.browser).take();
+        let browser = lock(&self.browser).take();
+        if let Some(browser) = browser {
+            browser.close().await;
+        }
         let scrub = self.scrub();
         for file in [RecordingFile::Actions, RecordingFile::Dom] {
             if let Err(e) = record::scrub_file(&self.dir.join(file.file_name()), &scrub) {

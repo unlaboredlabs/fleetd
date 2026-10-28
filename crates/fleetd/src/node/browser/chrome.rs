@@ -2,7 +2,11 @@
 //! pinned Playwright release under `<node home>/browser/ms-playwright` (node.json `browser.chrome` and
 //! `browser.ffmpeg` name others), and a warm pool of launched processes. Each session takes a process of its own with a
 //! fresh, empty profile directory, and both are thrown away when it ends: nothing of one session reaches the next.
-use std::collections::VecDeque;
+//!
+//! A Navi's sessions are the exception (D221): each Navi keeps one profile of its own ([`Kept`]), so the sites it
+//! signed into stay signed in. It lives under the node's home, which the Navi's sandbox hides (runner/sandbox.rs), is
+//! used by one browser at a time, and goes when the person forgets its sign-ins or deletes the Navi.
+use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
@@ -19,6 +23,10 @@ use tokio::process::{Child, Command};
 pub const PLAYWRIGHT_VERSION: &str = "1.64.1";
 /// How long a launched Chrome has to answer on its pipe.
 const LAUNCH_TIMEOUT: Duration = Duration::from_secs(20);
+/// How long a Chrome on a kept profile has to close by itself, writing its cookies out, before it is killed.
+const CLOSE_WAIT: Duration = Duration::from_secs(5);
+/// How long forgetting a Navi's sign-ins waits for the browser on its profile to go.
+const WIPE_WAIT: Duration = Duration::from_secs(20);
 /// The page size sessions get, and the video's.
 pub const WIDTH: u32 = 1280;
 pub const HEIGHT: u32 = 800;
@@ -110,13 +118,17 @@ pub struct Launch {
     pub sandbox: Option<bool>,
 }
 
-/// One launched Chrome: its process group, its profile and the node's pipe connection to it. Killed and its profile
-/// deleted when dropped.
+/// One launched Chrome: its process group, its profile and the node's pipe connection to it. Killed when dropped, and
+/// its profile deleted unless it is a Navi's kept one.
 pub struct Browser {
     child: Child,
     pgid: Option<i32>,
     pub profile: PathBuf,
     pub cdp: Arc<Cdp>,
+    /// A fresh profile, deleted with the browser.
+    throwaway: bool,
+    /// The Navi's profile it runs on, held until it is gone.
+    kept: Option<KeptLease>,
 }
 
 impl Browser {
@@ -124,14 +136,43 @@ impl Browser {
     pub fn alive(&mut self) -> bool {
         matches!(self.child.try_wait(), Ok(None))
     }
-}
 
-impl Drop for Browser {
-    fn drop(&mut self) {
+    /// Whether it runs on a Navi's kept profile.
+    pub fn kept(&self) -> bool {
+        self.kept.is_some()
+    }
+
+    /// Ends it. A Chrome on a kept profile is asked to close first, so it writes out the cookies it holds in memory
+    /// (up to 30 s of them), then killed as any other, and what of the session the profile doesn't keep goes.
+    pub async fn close(mut self) {
+        let Some(kept) = self.kept.as_ref().map(|k| k.dir.clone()) else {
+            return;
+        };
+        let _ = tokio::time::timeout(
+            CLOSE_WAIT,
+            self.cdp.call(None, "Browser.close", serde_json::json!({})),
+        )
+        .await;
+        let _ = tokio::time::timeout(CLOSE_WAIT, self.child.wait()).await;
+        self.kill();
+        let _ = tokio::time::timeout(CLOSE_WAIT, self.child.wait()).await;
+        prune_kept(&kept);
+    }
+
+    fn kill(&mut self) {
         if let Some(pgid) = self.pgid {
             let _ = killpg(Pid::from_raw(pgid), Signal::SIGKILL);
         }
         let _ = self.child.start_kill();
+    }
+}
+
+impl Drop for Browser {
+    fn drop(&mut self) {
+        self.kill();
+        if !self.throwaway {
+            return;
+        }
         let profile = self.profile.clone();
         // Chrome's helpers may still write for a moment after the kill; try once more after it.
         if std::fs::remove_dir_all(&profile).is_err() {
@@ -185,15 +226,28 @@ pub fn args(launch: &Launch, profile: &Path, sandboxed: bool) -> Vec<String> {
 }
 
 /// Launches Chrome with its pipe on fds 3 (commands in) and 4 (answers out), which `sh` moves there from the
-/// stdin and stdout the node holds, and waits until it answers.
-pub async fn launch(launch: &Launch, sandboxed: bool) -> Result<Browser, String> {
-    std::fs::create_dir_all(&launch.profiles)
-        .map_err(|e| format!("cannot make {}: {e}", launch.profiles.display()))?;
-    let profile = tempfile::Builder::new()
-        .prefix("profile-")
-        .tempdir_in(&launch.profiles)
-        .map_err(|e| format!("cannot make a profile directory: {e}"))?
-        .keep();
+/// stdin and stdout the node holds, and waits until it answers. On a fresh profile, or on `kept`, a Navi's.
+pub async fn launch(
+    launch: &Launch,
+    sandboxed: bool,
+    kept: Option<&Path>,
+) -> Result<Browser, String> {
+    let throwaway = kept.is_none();
+    let profile = match kept {
+        Some(dir) => {
+            ready_kept(dir)?;
+            dir.to_owned()
+        }
+        None => {
+            std::fs::create_dir_all(&launch.profiles)
+                .map_err(|e| format!("cannot make {}: {e}", launch.profiles.display()))?;
+            tempfile::Builder::new()
+                .prefix("profile-")
+                .tempdir_in(&launch.profiles)
+                .map_err(|e| format!("cannot make a profile directory: {e}"))?
+                .keep()
+        }
+    };
     let mut cmd = Command::new("/bin/sh");
     cmd.arg("-c")
         .arg(r#"exec "$0" "$@" 3<&0 4>&1 </dev/null >/dev/null"#)
@@ -207,7 +261,9 @@ pub async fn launch(launch: &Launch, sandboxed: bool) -> Result<Browser, String>
     let mut child = match cmd.spawn() {
         Ok(child) => child,
         Err(e) => {
-            let _ = std::fs::remove_dir_all(&profile);
+            if throwaway {
+                let _ = std::fs::remove_dir_all(&profile);
+            }
             return Err(format!("cannot start {}: {e}", launch.chrome.display()));
         }
     };
@@ -238,6 +294,8 @@ pub async fn launch(launch: &Launch, sandboxed: bool) -> Result<Browser, String>
         pgid,
         profile,
         cdp: Cdp::over_pipe(stdin, stdout),
+        throwaway,
+        kept: None,
     };
     let ready = tokio::time::timeout(
         LAUNCH_TIMEOUT,
@@ -298,14 +356,14 @@ impl Pool {
 
     /// One browser: sandboxed unless configured otherwise. A host that refuses the sandbox (no user namespaces, as
     /// Ubuntu's AppArmor has it) gets `--no-sandbox` from then on, with a warning, unless the sandbox is required.
-    async fn launch_one(&self) -> Result<Browser, String> {
+    async fn launch_one(&self, kept: Option<&Path>) -> Result<Browser, String> {
         if self.unsandboxed() {
-            return launch(&self.launch, false).await;
+            return launch(&self.launch, false, kept).await;
         }
-        match launch(&self.launch, true).await {
+        match launch(&self.launch, true, kept).await {
             Ok(browser) => Ok(browser),
             Err(why) if self.launch.sandbox.is_none() => {
-                let browser = launch(&self.launch, false).await?;
+                let browser = launch(&self.launch, false, kept).await?;
                 tracing::warn!(error = %why, "Chrome's sandbox refused on this host: browsers run with --no-sandbox");
                 self.no_sandbox
                     .store(true, std::sync::atomic::Ordering::Relaxed);
@@ -331,9 +389,17 @@ impl Pool {
         };
         let browser = match warm {
             Some(browser) => browser,
-            None => self.launch_one().await?,
+            None => self.launch_one(None).await?,
         };
         self.refill();
+        Ok(browser)
+    }
+
+    /// A browser on a Navi's kept profile, launched now: the warm ones have fresh profiles. It holds `lease` until it
+    /// is gone.
+    pub async fn take_kept(&self, lease: KeptLease) -> Result<Browser, String> {
+        let mut browser = self.launch_one(Some(&lease.dir)).await?;
+        browser.kept = Some(lease);
         Ok(browser)
     }
 
@@ -345,7 +411,7 @@ impl Pool {
                 return;
             };
             while pool.lock().len() < pool.size {
-                match pool.launch_one().await {
+                match pool.launch_one(None).await {
                     Ok(browser) => pool.lock().push_back(browser),
                     Err(e) => {
                         tracing::warn!(error = %e, "browser pool not refilled");
@@ -369,6 +435,166 @@ impl Pool {
         self.warm
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+}
+
+/// Where a Navi's kept profile lives: under the node's home, outside the Navi's folder, so only this node's Chrome
+/// reads its cookies. None for a name that isn't a plain path component.
+pub fn kept_dir(home: &Path, navi: &str) -> Option<PathBuf> {
+    let plain = !navi.is_empty()
+        && navi.len() <= 128
+        && !navi.starts_with('.')
+        && navi
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.');
+    plain.then(|| home.join("browser").join("navis").join(navi))
+}
+
+/// What a kept profile doesn't keep, in its `Default` dir: the HTTP and code caches (a page as a site showed it, a
+/// filled value it echoed too), history, the session to restore, and the stores of saved passwords and form entries.
+/// Sign-ins live in its cookies and site storage, which stay.
+const NOT_KEPT: &[&str] = &[
+    "Cache",
+    "Code Cache",
+    "GPUCache",
+    "DawnGraphiteCache",
+    "DawnWebGPUCache",
+    "Sessions",
+    "Current Session",
+    "Current Tabs",
+    "Last Session",
+    "Last Tabs",
+    "History",
+    "History-journal",
+    "Visited Links",
+    "Top Sites",
+    "Top Sites-journal",
+    "Favicons",
+    "Favicons-journal",
+    "Shortcuts",
+    "Shortcuts-journal",
+    "Network Action Predictor",
+    "Network Action Predictor-journal",
+    "Web Data",
+    "Web Data-journal",
+    "Login Data",
+    "Login Data-journal",
+    "Login Data For Account",
+    "Login Data For Account-journal",
+];
+
+/// Deletes what a kept profile doesn't keep ([`NOT_KEPT`]), with no browser on it.
+fn prune_kept(dir: &Path) {
+    let default = dir.join("Default");
+    for name in NOT_KEPT {
+        let path = default.join(name);
+        let _ = std::fs::remove_dir_all(&path).or_else(|_| std::fs::remove_file(&path));
+    }
+}
+
+/// Chrome's preferences for a kept profile: it saves no password or form entry, so a value `fill_credential` typed
+/// stays only in the session that typed it, which refuses reading it back (credentials.rs).
+const KEPT_PREFS: &str = r#"{
+  "credentials_enable_service": false,
+  "credentials_enable_autosignin": false,
+  "profile": { "password_manager_enabled": false },
+  "autofill": { "enabled": false, "profile_enabled": false, "credit_card_enabled": false }
+}"#;
+
+/// Readies a kept profile for its next launch: made (only the node reads it) when new, its preferences set, and the
+/// lock and leftovers of the browser before it cleared (the lease says none runs on it now; one killed leaves both).
+fn ready_kept(dir: &Path) -> Result<(), String> {
+    let fail =
+        |e: std::io::Error| format!("cannot ready the Navi's profile {}: {e}", dir.display());
+    crate::node::config::mkdir_private(&dir.join("Default")).map_err(fail)?;
+    for lock in ["SingletonLock", "SingletonSocket", "SingletonCookie"] {
+        let _ = std::fs::remove_file(dir.join(lock));
+    }
+    // Left by a browser that was killed (the node stopped) rather than closed.
+    prune_kept(dir);
+    let prefs = dir.join("Default").join("Preferences");
+    let mut merged: serde_json::Value = std::fs::read(&prefs)
+        .ok()
+        .and_then(|b| serde_json::from_slice(&b).ok())
+        .filter(serde_json::Value::is_object)
+        .unwrap_or_else(|| serde_json::json!({}));
+    merge(
+        &mut merged,
+        serde_json::from_str(KEPT_PREFS).expect("the kept profile's preferences"),
+    );
+    std::fs::write(&prefs, merged.to_string()).map_err(fail)
+}
+
+/// `over` written into `into`, object by object.
+fn merge(into: &mut serde_json::Value, over: serde_json::Value) {
+    match (into, over) {
+        (serde_json::Value::Object(into), serde_json::Value::Object(over)) => {
+            for (k, v) in over {
+                merge(into.entry(k).or_insert(serde_json::Value::Null), v);
+            }
+        }
+        (into, over) => *into = over,
+    }
+}
+
+/// The Navis' kept profiles (D221), one browser on each at a time: a second session of the same Navi is refused
+/// rather than started on a profile Chrome holds.
+pub struct Kept {
+    home: PathBuf,
+    held: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
+}
+
+/// A Navi's profile, held by the one browser running on it (or a wipe) until it lets go.
+pub struct KeptLease {
+    pub dir: PathBuf,
+    _held: tokio::sync::OwnedMutexGuard<()>,
+}
+
+impl Kept {
+    pub fn new(home: &Path) -> Self {
+        Self {
+            home: home.to_owned(),
+            held: Mutex::default(),
+        }
+    }
+
+    fn lock_of(&self, navi: &str) -> Result<(PathBuf, Arc<tokio::sync::Mutex<()>>), String> {
+        let dir = kept_dir(&self.home, navi).ok_or_else(|| format!("{navi} is no Navi's name"))?;
+        let lock = self
+            .held
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .entry(navi.to_owned())
+            .or_default()
+            .clone();
+        Ok((dir, lock))
+    }
+
+    /// The Navi's profile, unless a browser runs on it now (Err: why not).
+    pub fn take(&self, navi: &str) -> Result<KeptLease, String> {
+        let (dir, lock) = self.lock_of(navi)?;
+        let held = lock
+            .try_lock_owned()
+            .map_err(|_| "This Navi's browser is open in another of its sessions".to_owned())?;
+        Ok(KeptLease { dir, _held: held })
+    }
+
+    /// Deletes the Navi's profile, once the browser on it (ending now) has let go. Nothing there is no error.
+    pub async fn wipe(&self, navi: &str) -> Result<(), String> {
+        let (dir, lock) = self.lock_of(navi)?;
+        let _held = tokio::time::timeout(WIPE_WAIT, lock.lock_owned())
+            .await
+            .map_err(|_| "its browser is still closing; try again in a minute".to_owned())?;
+        wipe_dir(&dir)
+    }
+}
+
+/// Deletes a kept profile directory, if there is one.
+pub fn wipe_dir(dir: &Path) -> Result<(), String> {
+    match std::fs::remove_dir_all(dir) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(format!("cannot delete {}: {e}", dir.display())),
     }
 }
 
@@ -402,6 +628,63 @@ mod tests {
             !sandboxed.contains(&"--no-sandbox".to_owned()),
             "sandboxed unless the host refuses it"
         );
+    }
+
+    #[tokio::test]
+    async fn a_navis_profile_is_its_own_one_browser_at_a_time_and_keeps_only_sign_ins() {
+        let home = tempfile::tempdir().unwrap();
+        assert_eq!(
+            kept_dir(home.path(), "ada"),
+            Some(home.path().join("browser/navis/ada"))
+        );
+        for name in ["", "..", "../ada", "a/b", ".hidden"] {
+            assert_eq!(kept_dir(home.path(), name), None, "{name:?}");
+        }
+        let kept = Kept::new(home.path());
+        let ada = kept.take("ada").unwrap();
+        assert!(kept.take("ada").is_err(), "one browser at a time");
+        let bee = kept.take("bee").unwrap();
+        assert_ne!(ada.dir, bee.dir);
+
+        // What a killed browser left: its lock, a cache, history, a saved password; and its cookies.
+        let default = ada.dir.join("Default");
+        std::fs::create_dir_all(default.join("Cache/Cache_Data")).unwrap();
+        std::fs::write(default.join("Cache/Cache_Data/x"), "a page").unwrap();
+        for file in ["History", "Login Data", "Cookies"] {
+            std::fs::write(default.join(file), "x").unwrap();
+        }
+        std::fs::write(
+            default.join("Preferences"),
+            r#"{"intl":{"accept_languages":"de"},"profile":{"name":"x"}}"#,
+        )
+        .unwrap();
+        std::os::unix::fs::symlink("devbox-123", ada.dir.join("SingletonLock")).unwrap();
+        ready_kept(&ada.dir).unwrap();
+        assert!(default.join("Cookies").is_file(), "sign-ins stay");
+        for gone in ["Cache", "History", "Login Data"] {
+            assert!(!default.join(gone).exists(), "{gone}");
+        }
+        assert!(std::fs::symlink_metadata(ada.dir.join("SingletonLock")).is_err());
+        let prefs: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(default.join("Preferences")).unwrap()).unwrap();
+        assert_eq!(prefs["credentials_enable_service"], false);
+        assert_eq!(prefs["profile"]["password_manager_enabled"], false);
+        assert_eq!(prefs["autofill"]["profile_enabled"], false);
+        assert_eq!(prefs["profile"]["name"], "x", "its own preferences stay");
+        assert_eq!(prefs["intl"]["accept_languages"], "de");
+
+        // A wipe waits for the browser on it to let go.
+        let wiping = tokio::spawn(async move {
+            let kept = kept;
+            kept.wipe("ada").await
+        });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(!wiping.is_finished());
+        let dir = ada.dir.clone();
+        drop(ada);
+        wiping.await.unwrap().unwrap();
+        assert!(!dir.exists());
+        drop(bee);
     }
 
     #[test]

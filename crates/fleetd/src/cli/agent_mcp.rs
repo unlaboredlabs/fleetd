@@ -408,13 +408,14 @@ static TOOLS: &[Tool] = &[
     ),
     browser(
         "session_start",
-        "Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end. It is \
-         recorded (video, the page after each step, a line per agent-browser command) for the person to replay. \
-         Drive it with the agent-browser CLI in Bash, which is already pointed at it: pass no --cdp and launch no \
-         browser of your own. purpose: one line on what for. kind android instead opens a fresh Android emulator \
-         (Android 15), driven with the agent-device CLI, which is already pointed at it: pass no --serial or \
-         --platform. kind ios opens a fresh iOS simulator on a Mac the same way: pass no --udid or --platform. \
-         kind linux_desktop opens a fresh Linux desktop (1280x800, a window manager, xterm), driven with the desktop \
+        "Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end (a \
+         Navi's browser instead keeps its own profile, so the sites it signed into stay signed in). It is recorded \
+         (video, the page after each step, a line per agent-browser command) for the person to replay. Drive it \
+         with the agent-browser CLI in Bash, which is already pointed at it: pass no --cdp and launch no browser of \
+         your own. purpose: one line on what for. kind android instead opens a fresh Android emulator (Android \
+         15), driven with the agent-device CLI, which is already pointed at it: pass no --serial or --platform. \
+         kind ios opens a fresh iOS simulator on a Mac the same way: pass no --udid or --platform. kind \
+         linux_desktop opens a fresh Linux desktop (1280x800, a window manager, xterm), driven with the desktop \
          tool.",
         inline_schema::<SessionStartCall>,
     ),
@@ -431,7 +432,8 @@ static TOOLS: &[Tool] = &[
     ),
     browser(
         "session_end",
-        "Close your browser session: the browser and its profile are thrown away, and its recording goes to the hub.",
+        "Close your browser session: the browser and its profile are thrown away (a Navi's profile stays, with its \
+         sign-ins), and its recording goes to the hub.",
         inline_schema::<SessionEndCall>,
     ),
     browser(
@@ -588,7 +590,7 @@ pub fn browser_result(answer: &Value) -> Value {
                 .unwrap_or_default()
         ),
         Some("session_start") => format!(
-            "Browser session {} is open ({} ms): a fresh Chrome with an empty profile, recorded. Drive it with \
+            "Browser session {} is open ({} ms): a Chrome of your own, recorded. Drive it with \
              agent-browser in Bash; it is already pointed at this session. If you haven't yet, run `agent-browser \
              skills get core` once for how. End it with session_end when done.",
             result["sessionId"].as_str().unwrap_or_default(),

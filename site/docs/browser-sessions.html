@@ -87,6 +87,8 @@ and task’s claude has it on its <code dir="auto">PATH</code>, already pointed 
 agent runs <code dir="auto">agent-browser skills get core</code> once for how to use it.</li>
 <li><strong><code dir="auto">session_end</code></strong>. The node kills that Chrome, deletes its profile, and uploads the recording.</li>
 </ol>
+<p>A Navi’s browser is the exception: it keeps one profile of the Navi’s own between sessions, launched fresh for each
+session rather than taken warm, so the sites it signed into stay signed in (<a href="/docs/navi#sign-ins">Navi › Sign-ins</a>).</p>
 <p>An agent has one screen open at a time. Its screen also ends when the agent’s claude exits (its work is done, it was
 stopped or it went idle), or after 30 minutes without an <code dir="auto">agent-browser</code> command. A screen never outlives its task:
 once the task is done, failed or cancelled (its order closed, say), the hub ends any screen it left open and the node
