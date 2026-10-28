@@ -2,7 +2,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { Automation, AutomationRun, ToolInput, ToolName } from "../../../shared/contracts";
+import type { Automation, AutomationRun, MemoryRefreshJob, ToolInput, ToolName } from "../../../shared/contracts";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { live, project, snapshot } from "../../src/data/fixtures.test-util";
@@ -37,6 +37,8 @@ function fakeHub() {
   const automations: Automation[] = [];
   const runs: AutomationRun[] = [];
   const calls: Array<{ tool: string; input: unknown }> = [];
+  // The nightly memory refresh, as automation_list lists it.
+  const refresh: { job: MemoryRefreshJob; why?: string } = { job: { on: true, at: "04:00", tz: "Europe/Berlin", nextRunAt: "2026-10-18T02:00:00.000Z" } };
   let n = 0;
   const ok = (output: unknown) => Promise.resolve({ ok: true as const, output });
   const find = (id: string) => automations.find((a) => a.automationId === id) as Automation;
@@ -46,7 +48,20 @@ function fakeHub() {
       calls.push({ tool, input: raw });
       const name = tool as ToolName;
       if (name === "automation_list") {
-        return ok({ automations: automations.map((a) => ({ ...a, ...(runs.find((r) => r.automationId === a.automationId) ? { lastRun: runs.find((r) => r.automationId === a.automationId) } : {}) })) });
+        return ok({
+          automations: automations.map((a) => ({ ...a, ...(runs.find((r) => r.automationId === a.automationId) ? { lastRun: runs.find((r) => r.automationId === a.automationId) } : {}) })),
+          memoryRefresh: refresh.job,
+        });
+      }
+      if (name === "memory_refresh_run") {
+        if (refresh.why === undefined) refresh.job = { ...refresh.job, lastRun: { at: AT, trigger: "manual", state: "running", added: 0, replaced: 0, removed: 0 } };
+        return ok({ memoryRefresh: refresh.job, ...(refresh.why === undefined ? {} : { why: refresh.why }) });
+      }
+      if (name === "project_settings_set") {
+        const on = (raw as ToolInput<"project_settings_set">).memoryRefresh ?? true;
+        const { nextRunAt: _, ...rest } = refresh.job;
+        refresh.job = on ? { ...rest, on, nextRunAt: "2026-10-18T02:00:00.000Z" } : { ...rest, on };
+        return ok({});
       }
       if (name === "automation_create") {
         const input = raw as ToolInput<"automation_create">;
@@ -100,7 +115,7 @@ function fakeHub() {
     chat: () => Promise.resolve(),
   };
   let send: Parameters<HubApi["subscribe"]>[0] = () => undefined;
-  return { api, calls, automations, runs, send: (f: Parameters<typeof send>[0]) => send(f) };
+  return { api, calls, automations, runs, refresh, send: (f: Parameters<typeof send>[0]) => send(f) };
 }
 
 const flush = async () => {
@@ -110,8 +125,9 @@ const flush = async () => {
   });
 };
 
-async function mount() {
+async function mount(prepare?: (hub: ReturnType<typeof fakeHub>) => void) {
   const hub = fakeHub();
+  prepare?.(hub);
   act(() => {
     root.render(
       <DataProvider layer={createDataLayer(hub.api)}>
@@ -219,4 +235,39 @@ it("says what is wrong before it saves", async () => {
   await click(button("Create", form));
   expect(form.textContent).toContain("Give it a name.");
   expect(hub.calls.some((c) => c.tool === "automation_create")).toBe(false);
+});
+
+it("lists the nightly memory refresh as a built-in row with its hour, last run, switch and Run now", async () => {
+  const hub = await mount((h) => {
+    h.refresh.job = { ...h.refresh.job, lastRun: { at: "2026-10-17T02:00:00.000Z", trigger: "schedule", state: "done", added: 2, replaced: 1, removed: 1 } };
+    h.refresh.why = "Nothing new in the chat or its orders since the last refresh.";
+  });
+  const row = card("Nightly memory refresh") as HTMLElement;
+  expect(row.getAttribute("data-builtin")).toBe("memory-refresh");
+  expect(row.textContent).toContain("Built-in");
+  expect(row.textContent).toContain("Every night at 04:00 (Europe/Berlin)");
+  expect(row.textContent).toContain("Next run");
+  expect(row.textContent).toContain(": done, 2 added, 1 updated, 1 removed");
+  // A hub job: no prompt to edit, no webhook, no delete.
+  for (const label of ["Edit", "Delete", "Rotate webhook URL", "Pause"]) expect(() => button(label, row)).toThrow();
+
+  // Run now, held by the refresh's rules: the hub says why it didn't start.
+  await click(button("Run now", row));
+  expect(hub.calls.find((c) => c.tool === "memory_refresh_run")?.input).toEqual({ projectRef: project });
+  expect(row.textContent).toContain("Not run: Nothing new in the chat or its orders since the last refresh.");
+  delete hub.refresh.why;
+  await click(button("Run now", card("Nightly memory refresh") as HTMLElement));
+  const started = card("Nightly memory refresh") as HTMLElement;
+  expect(started.textContent).toContain("Refreshing: a line in the chat lists what it changed.");
+  expect(started.textContent).toContain("Running");
+  expect(started.textContent).toContain("(Run now): running, no changes");
+  expect(button("Run now", started).disabled).toBe(true);
+
+  // The switch is the project's own setting.
+  act(() => (started.querySelector("button[role='switch']") as HTMLElement).click());
+  await flush();
+  expect(hub.calls.find((c) => c.tool === "project_settings_set")?.input).toEqual({ ...project, memoryRefresh: false });
+  const off = card("Nightly memory refresh") as HTMLElement;
+  expect(off.textContent).toContain("Off");
+  expect(off.textContent).not.toContain("Next run");
 });

@@ -16,7 +16,7 @@ lead starts the work without asking you first. Reviews, the [merge train](/docs/
 run starts one.
 
 The nightly [memory refresh](/docs/what-agents-are-told#memory-refresh) is built in, not an automation: it opens
-no order, and each project turns it off in its settings.
+no order. It is listed with a project's automations anyway, as a [built-in row](#the-nightly-memory-refresh).
 
 ## Manage them in the app
 
@@ -30,6 +30,22 @@ Open **Settings → Automations** and pick a project. There you can:
 - **Edit**: change the name, prompt, schedule or webhook.
 - **Runs**: each run's time, what started it, its state, and a link to the order it opened.
 - **Delete**: removes the automation and its run history. Orders its runs opened stay.
+
+## The nightly memory refresh
+
+The list ends with **Nightly memory refresh**, marked **Built-in**. It's the hub's own job, so it has no prompt to
+edit, no webhook and no Delete. Its row shows:
+
+- **Its hour**, such as "Every night at 04:00 (Europe/Berlin)". The hour is the hub's, the same for every project.
+  An admin sets it with the `policy.memory_refresh_at` decision, in the zone of `policy.tz`.
+- **Next run** and **Last run**: what the last refresh changed in memory, as its chat line counts it ("2 added, 1
+  updated, 1 removed"), or that it was skipped and why. A quiet day, with no chat and no order changes, is skipped.
+- **On for this project**: the same switch as **Refresh memory every night** in the project's settings.
+- **Run now**: refreshes the project's memory at once, the way the night's refresh does. It doesn't start, and says
+  why, while the refresh is off for the project, one is already running, nothing is new since the last one, the
+  lead is mid-turn, or the project's machine is offline, out of usage or too old.
+
+From an MCP client, `automation_list` returns the row as `memoryRefresh`, and `memory_refresh_run` is its Run now.
 
 You can also ask the lead in the chat ("check the dependencies every Monday morning"). It manages a project's
 automations with its own tools, listed under [Agent tools](/docs/reference/agent-tools#lead-tools).

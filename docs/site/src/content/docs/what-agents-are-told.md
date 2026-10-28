@@ -201,7 +201,8 @@ no longer holds stops misleading the agents:
   a minute apart.
 - **Which projects:** each one with the refresh on (the default; turn it off in its
   [settings](/docs/projects#settings)) and with chat from you or the lead, or a changed order, since its last refresh.
-  A quiet project costs nothing.
+  A quiet project costs nothing. Its [row on the Automations page](/docs/automations#the-nightly-memory-refresh)
+  shows its next and last run, and its Run now refreshes the project at once.
 - **What it reads:** the chat since the last refresh (your messages and the lead's, newest kept, up to about 40,000
   characters), the active decisions and every memory file of the project, plus `user.md`.
 - **What it may do:** it is a lead session of its own, the `lead.memory` prompt, that opens no order and never

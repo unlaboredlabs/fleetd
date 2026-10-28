@@ -7,12 +7,16 @@
 //! calls from it (`tasks::policy`): project memory freely, `user.md` add only. It opens no order, and its replies
 //! reach no chat: only the lead's own thread is mirrored there. Its changes are kept here as it makes them and posted
 //! at its end as one "Memory refreshed: +a ~b −c" line with Undo; a night that changed nothing posts nothing. A
-//! session that fails, or still runs after [`RUN_LIMIT_MS`], is stopped.
+//! session that fails, or still runs after [`RUN_LIMIT_MS`], is stopped. The Automations page lists it as a built-in
+//! row ([`job`]), whose Run now starts one at once ([`run_now`]) held by the same rules.
 use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::{Days, NaiveTime, TimeZone};
 use chrono_tz::Tz;
+use fleetd_contracts::automations::{
+    AutomationRunState, AutomationTrigger, MemoryRefreshJob, MemoryRefreshRun,
+};
 use fleetd_contracts::chat::{ChatAuthor, ChatMessage};
 use fleetd_contracts::effort::TaskProfile;
 use fleetd_contracts::events::HubEventType;
@@ -22,9 +26,10 @@ use fleetd_contracts::mcp_servers::{McpAgentRole, McpSessionConfig};
 use fleetd_contracts::memory::{MemoryRefreshed, REFRESHED_LISTED, RememberedItem};
 use fleetd_contracts::model::RuntimeMode;
 use fleetd_contracts::node_link::CAP_ALLOWED_ONLY;
-use fleetd_contracts::prim::{Count, List};
+use fleetd_contracts::prim::{Count, Line, List};
 use fleetd_contracts::sessions::SessionRole;
 use rusqlite::{OptionalExtension, params};
+use serde_json::json;
 
 use super::Target;
 use crate::hub::api::Hub;
@@ -33,7 +38,7 @@ use crate::hub::executor::{LaunchInput, LaunchOptions};
 use crate::hub::leads::digest::clip;
 use crate::hub::leads::hooks::BoxFuture;
 use crate::hub::ledger::{Chain, DecisionFilter};
-use crate::hub::store::{HubDb, StoreError, iso_ms, now_ms};
+use crate::hub::store::{HubDb, NewEvent, StoreError, iso_ms, now_ms};
 
 /// The global decision that moves the night's hour: "HH:MM" in the person's zone.
 pub const AT_KEY: &str = "policy.memory_refresh_at";
@@ -128,9 +133,14 @@ impl Launcher for Executors {
     }
 }
 
+/// The hub's executors, which start refresh sessions on the project's machine.
+pub fn executors(hub: &Hub) -> impl Launcher + use<> {
+    Executors(Arc::clone(&hub.executors))
+}
+
 /// The refresh's loop: one pass a minute, until the hub stops.
 pub async fn run(hub: Arc<Hub>) {
-    let launcher = Executors(Arc::clone(&hub.executors));
+    let launcher = executors(&hub);
     loop {
         if let Err(error) = tick(&hub, &launcher).await {
             tracing::warn!(%error, "memory refresh: pass failed");
@@ -155,12 +165,14 @@ pub struct Run {
     pub items: Vec<RememberedItem>,
     /// The night last skipped for a node too old to run it, whose line is in the chat.
     pub skipped_ms: Option<i64>,
+    /// How the last refresh went, or the running one started.
+    pub last_run: Option<MemoryRefreshRun>,
 }
 
 fn get(db: &HubDb, r: &ProjectRef) -> Result<Run, StoreError> {
     let row = db.with(|c| {
         Ok(c.query_row(
-            "SELECT watermark, night_ms, thread_id, started_ms, read_to, items, skipped_ms FROM memory_refreshes
+            "SELECT watermark, night_ms, thread_id, started_ms, read_to, items, skipped_ms, last_run FROM memory_refreshes
              WHERE machine_id = ? AND project_id = ?",
             params![r.machine_id.as_str(), r.project_id.as_str()],
             |row| {
@@ -172,12 +184,15 @@ fn get(db: &HubDb, r: &ProjectRef) -> Result<Run, StoreError> {
                     row.get::<_, Option<i64>>(4)?,
                     row.get::<_, String>(5)?,
                     row.get::<_, Option<i64>>(6)?,
+                    row.get::<_, Option<String>>(7)?,
                 ))
             },
         )
         .optional()?)
     })?;
-    let Some((watermark, night_ms, thread_id, started_ms, read_to, items, skipped_ms)) = row else {
+    let Some((watermark, night_ms, thread_id, started_ms, read_to, items, skipped_ms, last_run)) =
+        row
+    else {
         return Ok(Run::default());
     };
     Ok(Run {
@@ -188,19 +203,26 @@ fn get(db: &HubDb, r: &ProjectRef) -> Result<Run, StoreError> {
         read_to,
         items: serde_json::from_str(&items).unwrap_or_default(),
         skipped_ms,
+        last_run: last_run.and_then(|l| serde_json::from_str(&l).ok()),
     })
 }
 
 fn put(db: &HubDb, r: &ProjectRef, run: &Run) -> Result<(), StoreError> {
     let items = serde_json::to_string(&run.items)?;
+    let last_run = run
+        .last_run
+        .as_ref()
+        .map(serde_json::to_string)
+        .transpose()?;
     db.with(|c| {
         c.execute(
             "INSERT INTO memory_refreshes (machine_id, project_id, watermark, night_ms, thread_id, started_ms, read_to, items,
-               skipped_ms)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+               skipped_ms, last_run)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT (machine_id, project_id) DO UPDATE SET watermark = excluded.watermark,
                night_ms = excluded.night_ms, thread_id = excluded.thread_id, started_ms = excluded.started_ms,
-               read_to = excluded.read_to, items = excluded.items, skipped_ms = excluded.skipped_ms",
+               read_to = excluded.read_to, items = excluded.items, skipped_ms = excluded.skipped_ms,
+               last_run = excluded.last_run",
             params![
                 r.machine_id.as_str(),
                 r.project_id.as_str(),
@@ -210,7 +232,8 @@ fn put(db: &HubDb, r: &ProjectRef, run: &Run) -> Result<(), StoreError> {
                 run.started_ms,
                 run.read_to,
                 items,
-                run.skipped_ms
+                run.skipped_ms,
+                last_run
             ],
         )?;
         Ok(())
@@ -311,6 +334,22 @@ pub fn night_due(now_ms: i64, tz: Tz, at: NaiveTime) -> Option<i64> {
         .find(|&ms| ms <= now_ms && now_ms - ms < WINDOW_MS)
 }
 
+/// The first hour of a night after `now_ms`, as epoch ms; skipped-over hours as in [`night_due`].
+pub fn next_night(now_ms: i64, tz: Tz, at: NaiveTime) -> Option<i64> {
+    let today = tz.timestamp_millis_opt(now_ms).single()?.date_naive();
+    (0..=2)
+        .filter_map(|d| today.checked_add_days(Days::new(d)))
+        .filter_map(|day| {
+            let local = day.and_time(at);
+            (0..=GAP_MINUTES).find_map(|m| {
+                tz.from_local_datetime(&(local + chrono::Duration::minutes(m)))
+                    .earliest()
+                    .map(|t| t.timestamp_millis())
+            })
+        })
+        .find(|&ms| ms > now_ms)
+}
+
 /// `policy.memory_refresh_at`, or 04:00; and the zone it is in.
 fn schedule(hub: &Hub) -> (Tz, NaiveTime) {
     let global = |k: &str| hub.decisions.global_value(k).ok().flatten();
@@ -386,44 +425,190 @@ pub async fn tick(hub: &Arc<Hub>, launcher: &dyn Launcher) -> Result<(), StoreEr
         }
         if !active(&hub.db, &r, run.watermark, run.night_ms)? {
             run.night_ms = Some(night);
-            put(&hub.db, &r, &run)?;
+            let last = outcome(
+                night,
+                AutomationTrigger::Schedule,
+                AutomationRunState::Skipped,
+                &[],
+                Some(QUIET),
+            );
+            ran(hub, &r, &mut run, last)?;
             continue;
         }
         // A node too old to hold the session to its memory tools: tried again on the next pass, within the night's
         // window, and the chat says so once that night.
         if hub.link.node_lacks(&r.machine_id, CAP_ALLOWED_ONLY) {
             if run.skipped_ms != Some(night) {
-                hub.chat.system_line(
-                    &r,
-                    &format!(
-                        "Memory refresh skipped: update {} to let it run",
-                        r.machine_id
-                    ),
-                )?;
+                hub.chat
+                    .system_line(&r, &format!("Memory refresh skipped: {}", too_old(&r)))?;
                 run.skipped_ms = Some(night);
-                put(&hub.db, &r, &run)?;
+                let last = outcome(
+                    night,
+                    AutomationTrigger::Schedule,
+                    AutomationRunState::Skipped,
+                    &[],
+                    Some(&too_old(&r)),
+                );
+                ran(hub, &r, &mut run, last)?;
             }
             continue;
         }
-        // A lead mid-turn, a login out of usage, or no node linked: tried again on the next pass, within the night's
-        // window.
-        let busy = matches!(hub.leads.leads.get(&r), Ok(Some(l)) if l.state == LeadState::Working);
-        if busy
-            || hub
-                .usage
-                .gate_for(
-                    r.machine_id.as_str(),
-                    crate::hub::claude_accounts::lead_account_key(&hub.db, &r).as_deref(),
-                )
-                .is_some()
-            || !hub.link.node_can(&r.machine_id, CAP_ALLOWED_ONLY)
-        {
+        // Tried again on the next pass, within the night's window.
+        if held(hub, &r).is_some() {
             continue;
         }
-        start(hub, launcher, &r, &project.title, run, night).await?;
+        start(
+            hub,
+            launcher,
+            &r,
+            &project.title,
+            run,
+            night,
+            AutomationTrigger::Schedule,
+        )
+        .await?;
         return Ok(());
     }
     Ok(())
+}
+
+/// Why a project with nothing new isn't refreshed.
+const QUIET: &str = "Nothing new in the chat or its orders since the last refresh.";
+
+fn too_old(r: &ProjectRef) -> String {
+    format!("update {} to let it run", r.machine_id)
+}
+
+/// Why a refresh of `r` can't start now: its lead is mid-turn, its login is out of usage, or no node is linked.
+fn held(hub: &Hub, r: &ProjectRef) -> Option<String> {
+    if matches!(hub.leads.leads.get(r), Ok(Some(l)) if l.state == LeadState::Working) {
+        return Some("The lead is mid-turn: try again once it is done.".into());
+    }
+    if let Some(gate) = hub.usage.gate_for(
+        r.machine_id.as_str(),
+        crate::hub::claude_accounts::lead_account_key(&hub.db, r).as_deref(),
+    ) {
+        return Some(gate);
+    }
+    (!hub.link.node_can(&r.machine_id, CAP_ALLOWED_ONLY))
+        .then(|| format!("{} is offline.", r.machine_id))
+}
+
+/// A refresh's record for its row: when, what started it, how it went, and the changes in `items`.
+fn outcome(
+    at_ms: i64,
+    trigger: AutomationTrigger,
+    state: AutomationRunState,
+    items: &[RememberedItem],
+    why: Option<&str>,
+) -> MemoryRefreshRun {
+    let count =
+        |sign: char| Count::unchecked(items.iter().filter(|i| i.sign() == sign).count() as i64);
+    MemoryRefreshRun {
+        at: iso_ms(at_ms).into(),
+        trigger,
+        state,
+        added: count('+'),
+        replaced: count('~'),
+        removed: count('−'),
+        why: why.map(|w| Line::unchecked(clip(&w.replace(['\r', '\n'], " "), 200))),
+    }
+}
+
+/// Keeps `run` with `last` as how its refresh went, and tells the app (`memory.refresh`), whose Automations page reads
+/// the row again.
+fn ran(hub: &Hub, r: &ProjectRef, run: &mut Run, last: MemoryRefreshRun) -> Result<(), StoreError> {
+    let data = json!({ "projectRef": r, "trigger": last.trigger, "state": last.state });
+    let summary = format!(
+        "memory refresh of {}/{}: {}",
+        r.machine_id,
+        r.project_id,
+        crate::hub::automations::state_str(last.state)
+    );
+    run.last_run = Some(last);
+    put(&hub.db, r, run)?;
+    hub.events.append(NewEvent {
+        at: iso_ms(now_ms(hub.clock.as_ref())).into(),
+        r#type: HubEventType::MemoryRefresh,
+        machine_id: Some(r.machine_id.clone()),
+        project_id: Some(r.project_id.clone()),
+        thread_id: None,
+        summary,
+        data: Some(data),
+        attention: None,
+    })?;
+    Ok(())
+}
+
+/// The refresh as the Automations page lists it for `r`: on or off, its hour and zone, its next night, and the run
+/// going now (with what it changed so far) or the last one.
+pub fn job(hub: &Hub, r: &ProjectRef) -> Result<MemoryRefreshJob, StoreError> {
+    let on = hub.db.project_settings().memory_refresh(r)?;
+    let (tz, at) = schedule(hub);
+    let run = get(&hub.db, r)?;
+    let last_run = match run.last_run {
+        Some(last) if run.thread_id.is_some() => Some(MemoryRefreshRun {
+            at: last.at,
+            ..outcome(
+                0,
+                last.trigger,
+                AutomationRunState::Running,
+                &run.items,
+                None,
+            )
+        }),
+        last => last,
+    };
+    Ok(MemoryRefreshJob {
+        on,
+        at: Line::unchecked(at.format("%H:%M").to_string()),
+        tz: fleetd_contracts::wakes::TimeZone::unchecked(tz.name().to_owned()),
+        next_run_at: on
+            .then(|| next_night(now_ms(hub.clock.as_ref()), tz, at))
+            .flatten()
+            .map(|ms| iso_ms(ms).into()),
+        last_run,
+    })
+}
+
+/// Run now: a refresh of `r` started at once, as the night's is, held by the night's rules; why it didn't start.
+pub async fn run_now(
+    hub: &Arc<Hub>,
+    launcher: &dyn Launcher,
+    r: &ProjectRef,
+) -> Result<Option<String>, StoreError> {
+    let Some(project) = hub.store.project_get(r)? else {
+        return Ok(Some(format!(
+            "There is no project {}/{}.",
+            r.machine_id, r.project_id
+        )));
+    };
+    let run = get(&hub.db, r)?;
+    let why = if !hub.db.project_settings().memory_refresh(r)? {
+        Some("It is off for this project: turn it on first.".to_owned())
+    } else if run.thread_id.is_some() {
+        Some("A refresh is already running.".to_owned())
+    } else if !active(&hub.db, r, run.watermark, run.night_ms)? {
+        Some(QUIET.to_owned())
+    } else if hub.link.node_lacks(&r.machine_id, CAP_ALLOWED_ONLY) {
+        Some(format!("Its node is too old: {}.", too_old(r)))
+    } else {
+        held(hub, r)
+    };
+    if why.is_some() {
+        return Ok(why);
+    }
+    let now = now_ms(hub.clock.as_ref());
+    start(
+        hub,
+        launcher,
+        r,
+        &project.title,
+        run,
+        now,
+        AutomationTrigger::Manual,
+    )
+    .await
 }
 
 /// Whether the session ended after `started_ms`: true when it completed.
@@ -442,6 +627,7 @@ fn ended(db: &HubDb, thread: &ThreadRef, started_ms: i64) -> Result<Option<bool>
     Ok(ty.map(|t| t == HubEventType::ThreadCompleted.as_str()))
 }
 
+/// Starts the refresh of `night` (Run now's: its moment); why it didn't start, which its row shows.
 async fn start(
     hub: &Arc<Hub>,
     launcher: &dyn Launcher,
@@ -449,10 +635,16 @@ async fn start(
     title: &str,
     mut run: Run,
     night: i64,
-) -> Result<(), StoreError> {
+    trigger: AutomationTrigger,
+) -> Result<Option<String>, StoreError> {
     // Tried once a night: a launch that fails waits for the next one.
     run.night_ms = Some(night);
     put(&hub.db, r, &run)?;
+    let now = now_ms(hub.clock.as_ref());
+    let failed = |mut run: Run, why: String| {
+        let last = outcome(now, trigger, AutomationRunState::Failed, &[], Some(&why));
+        ran(hub, r, &mut run, last).map(|()| Some(why))
+    };
     let (chat, read_to) = chat_since(&hub.db, r, run.watermark)?;
     let decisions = hub
         .decisions
@@ -491,7 +683,7 @@ async fn start(
         Ok(account) => account,
         Err(refused) => {
             tracing::warn!(project = %title, "memory refresh: not started: {}", refused.message);
-            return Ok(());
+            return failed(run, refused.message);
         }
     };
     let options = LaunchOptions {
@@ -501,14 +693,15 @@ async fn start(
     match launcher.launch(&r.machine_id, input, options).await {
         Ok(thread_id) => {
             run.thread_id = Some(thread_id);
-            run.started_ms = Some(now_ms(hub.clock.as_ref()));
+            run.started_ms = Some(now);
             run.read_to = Some(read_to);
             run.items = Vec::new();
-            put(&hub.db, r, &run)
+            let last = outcome(now, trigger, AutomationRunState::Running, &[], None);
+            ran(hub, r, &mut run, last).map(|()| None)
         }
         Err(error) => {
             tracing::warn!(%error, project = %title, "memory refresh: not started");
-            Ok(())
+            failed(run, format!("It didn't start: {error}"))
         }
     }
 }
@@ -521,6 +714,24 @@ pub fn finish(hub: &Hub, r: &ProjectRef, completed: bool) -> Result<(), StoreErr
         return Ok(());
     }
     let items = std::mem::take(&mut run.items);
+    let started = run.started_ms.unwrap_or_else(|| now_ms(hub.clock.as_ref()));
+    let trigger = run
+        .last_run
+        .as_ref()
+        .map_or(AutomationTrigger::Schedule, |l| l.trigger);
+    let last = if completed {
+        outcome(started, trigger, AutomationRunState::Done, &items, None)
+    } else {
+        outcome(
+            started,
+            trigger,
+            AutomationRunState::Failed,
+            &items,
+            Some(
+                "It failed or ran past its hour, and was stopped; the next one reads the same chat again.",
+            ),
+        )
+    };
     if !items.is_empty() {
         let (message, _) = hub.chat.add(
             r,
@@ -540,7 +751,7 @@ pub fn finish(hub: &Hub, r: &ProjectRef, completed: bool) -> Result<(), StoreErr
     run.started_ms = None;
     run.read_to = None;
     run.items = Vec::new();
-    put(&hub.db, r, &run)
+    ran(hub, r, &mut run, last)
 }
 
 /// The chat after `watermark` as lines, oldest first, within [`CHAT_CHARS`] (newest kept, with a note of what was

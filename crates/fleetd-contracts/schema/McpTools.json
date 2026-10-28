@@ -1114,6 +1114,10 @@
           "maxItems": 50,
           "type": "array"
         },
+        "memoryRefresh": {
+          "$ref": "#/$defs/MemoryRefreshJob",
+          "description": "The nightly memory refresh, listed with them as a built-in row; absent from older hubs."
+        },
         "next": {
           "type": "string"
         },
@@ -6866,6 +6870,11 @@
           "type": "string"
         },
         {
+          "const": "memory.refresh",
+          "description": "A project's nightly memory refresh started, ended or was skipped: `data.projectRef`, `data.trigger`,\n`data.state`. automation_list reads its row.",
+          "type": "string"
+        },
+        {
           "const": "automation.changed",
           "description": "An automation was made, edited, paused, resumed, deleted or had its webhook URL rotated: `data.projectRef`,\n`data.automationId`, `data.change`. automation_list reads it.",
           "type": "string"
@@ -9997,6 +10006,12 @@
         "memory_get.output": {
           "$ref": "#/$defs/MemoryGetOutput"
         },
+        "memory_refresh_run.input": {
+          "$ref": "#/$defs/MemoryRefreshRunInput"
+        },
+        "memory_refresh_run.output": {
+          "$ref": "#/$defs/MemoryRefreshRunOutput"
+        },
         "memory_set.input": {
           "$ref": "#/$defs/MemorySetInput"
         },
@@ -10611,6 +10626,8 @@
         "memory_caps_set.output",
         "memory_get.input",
         "memory_get.output",
+        "memory_refresh_run.input",
+        "memory_refresh_run.output",
         "memory_set.input",
         "memory_set.output",
         "memory_undo.input",
@@ -11153,6 +11170,117 @@
         "at",
         "projectRef",
         "messageId"
+      ],
+      "type": "object"
+    },
+    "MemoryRefreshJob": {
+      "description": "The nightly memory refresh (hub/memory/refresh), listed with a project's automations as a built-in row: a hub job,\nnot an automation. Its hour is the hub's (`policy.memory_refresh_at` in `policy.tz`, set by an admin), its switch\nthe project's `memory_refresh` setting; it has no prompt to edit, no webhook and no delete.",
+      "properties": {
+        "at": {
+          "description": "Its hour, \"HH:MM\" in `tz`.",
+          "maxLength": 5,
+          "minLength": 5,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "lastRun": {
+          "$ref": "#/$defs/MemoryRefreshRun",
+          "description": "The run going now, else the last one."
+        },
+        "nextRunAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "Absent while off."
+        },
+        "on": {
+          "description": "The project's `memory_refresh` setting.",
+          "type": "boolean"
+        },
+        "tz": {
+          "$ref": "#/$defs/TimeZone"
+        }
+      },
+      "required": [
+        "on",
+        "at",
+        "tz"
+      ],
+      "type": "object"
+    },
+    "MemoryRefreshRun": {
+      "description": "One refresh: when it started (or was skipped), how it went, and what it changed in memory.",
+      "properties": {
+        "added": {
+          "description": "Entries added, put in place of another, and removed: the \"+a ~b −c\" of its chat line.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "removed": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "replaced": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "state": {
+          "$ref": "#/$defs/AutomationRunState",
+          "description": "running, done (it completed), failed (it didn't start, failed or ran past its hour) or skipped."
+        },
+        "trigger": {
+          "$ref": "#/$defs/AutomationTrigger"
+        },
+        "why": {
+          "description": "Why it was skipped or failed.",
+          "maxLength": 200,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "at",
+        "trigger",
+        "state",
+        "added",
+        "replaced",
+        "removed"
+      ],
+      "type": "object"
+    },
+    "MemoryRefreshRunInput": {
+      "properties": {
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        }
+      },
+      "required": [
+        "projectRef"
+      ],
+      "type": "object"
+    },
+    "MemoryRefreshRunOutput": {
+      "properties": {
+        "memoryRefresh": {
+          "$ref": "#/$defs/MemoryRefreshJob"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "why": {
+          "description": "Why it didn't start; absent when it did.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "memoryRefresh"
       ],
       "type": "object"
     },

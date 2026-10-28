@@ -2,8 +2,10 @@
 // webhook or on Run now. Each run opens an order the lead starts on its own; reviews, the merge train and approvals
 // still apply. A person makes, edits, pauses, runs and deletes them here and reads their runs, each linked to its
 // order. A webhook URL holds its secret, so the hub returns it only when it is made or rotated: shown once, here.
+// The nightly memory refresh is listed with them as a built-in row: a hub job with the project's on/off switch and Run
+// now, its hour the hub's (an admin sets it), and no prompt, webhook or delete.
 import { useEffect, useState } from "react";
-import type { Automation, ProjectRef } from "../../../shared/contracts";
+import type { Automation, MemoryRefreshJob, ProjectRef } from "../../../shared/contracts";
 import { Button, Dialog, Field, Input, StatusChip, Switch, Text, Textarea, copyText } from "../../ui";
 import { useToolQuery } from "../../src/data/react";
 import { parseScope, projectRefOf, scopeKey, type Scope } from "../settings/editor";
@@ -22,6 +24,8 @@ import {
   localZone,
   orderHref,
   problems,
+  refreshRuns,
+  refreshSchedule,
   runChip,
   runNote,
   triggerWord,
@@ -105,6 +109,11 @@ export function Automations({ route }: { route: SettingsRoute }) {
               </li>
             ),
           )}
+          {ref && list.data?.memoryRefresh ? (
+            <li key="memory-refresh">
+              <MemoryRefresh projectRef={ref} job={list.data.memoryRefresh} />
+            </li>
+          ) : null}
         </ul>
       </div>
     </div>
@@ -258,6 +267,84 @@ function Card(props: { automation: Automation; onEdit: () => void; onUrl: (u: { 
           </>
         }
       />
+    </section>
+  );
+}
+
+/** The nightly memory refresh: its hour, next and last run with what it changed, the project's switch, and Run now. */
+function MemoryRefresh({ projectRef, job }: { projectRef: ProjectRef; job: MemoryRefreshJob }) {
+  const hubCall = useHubCall();
+  const refetch = useRefetch();
+  const [busy, setBusy] = useState(false);
+  const [echo, setEcho] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const act = (work: () => Promise<string | null>) => {
+    setBusy(true);
+    setEcho(null);
+    work().then(
+      (done) => {
+        setBusy(false);
+        if (done) setEcho({ ok: true, text: done });
+        refetch(["automation_list", "project_settings_get"]);
+      },
+      (e: unknown) => {
+        setBusy(false);
+        setEcho({ ok: false, text: errorText(e) });
+      },
+    );
+  };
+
+  const running = job.lastRun?.state === "running";
+  return (
+    <section className={s.card} aria-label="Nightly memory refresh" data-builtin="memory-refresh">
+      <div className={s.cardHead}>
+        <Text strong>Nightly memory refresh</Text>
+        <span className={s.chips}>
+          {running ? <StatusChip tone="working">Running</StatusChip> : null}
+          {job.on ? null : <StatusChip tone="idle">Off</StatusChip>}
+          <StatusChip tone="quiet">Built-in</StatusChip>
+        </span>
+      </div>
+      <Text size="sm">{refreshSchedule(job)}</Text>
+      <Text size="xs" tone="quiet">
+        On a day with chat or orders, the lead tidies the project's memory; one line in the chat lists the changes, each with Undo. The hour is the
+        hub's, set by an admin.
+      </Text>
+      <Text size="xs" tone="quiet">
+        {refreshRuns(job)}
+      </Text>
+      <div className={settings.actions}>
+        <Button
+          variant="primary"
+          disabled={busy || !job.on || running}
+          onClick={() =>
+            act(async () => {
+              const out = await hubCall("memory_refresh_run", { projectRef });
+              return out.why ? `Not run: ${out.why}` : "Refreshing: a line in the chat lists what it changed.";
+            })
+          }
+        >
+          Run now
+        </Button>
+        <Switch
+          label="On for this project"
+          checked={job.on}
+          disabled={busy}
+          onCheckedChange={(on) =>
+            act(async () => {
+              await hubCall("project_settings_set", { machineId: projectRef.machineId, projectId: projectRef.projectId, memoryRefresh: on });
+              return null;
+            })
+          }
+        />
+      </div>
+      <div role="status">
+        {echo ? (
+          <Text size="xs" tone={echo.ok ? "quiet" : "danger"}>
+            {echo.text}
+          </Text>
+        ) : null}
+      </div>
     </section>
   );
 }

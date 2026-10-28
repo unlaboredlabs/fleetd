@@ -818,3 +818,226 @@ async fn a_refresh_of_more_changes_than_a_line_lists_still_posts_and_undo_all_ta
     assert_eq!(refreshed.total.map(|t| t.get()), Some(n as i64));
     assert_eq!(refreshed.undone.map(|u| u.get()), Some(n as i64));
 }
+
+/// The `memory.refresh` events so far, which tell the app to read the row again: each one's state.
+fn refresh_events(hub: &Hub) -> Vec<String> {
+    hub.events
+        .page(0, Some(&[HubEventType::MemoryRefresh]), None)
+        .unwrap()
+        .events
+        .into_iter()
+        .map(|e| {
+            let data = serde_json::to_value(&e.data).unwrap();
+            assert_eq!(data["projectRef"]["projectId"], "shop");
+            data["state"].as_str().unwrap().to_owned()
+        })
+        .collect()
+}
+
+/// The refresh's row on the Automations page, as automation_list gives it.
+async fn row(hub: &Arc<Hub>) -> Value {
+    crate::hub::api::registry()
+        .call(
+            hub,
+            &person(),
+            "automation_list",
+            json!({ "projectRef": { "machineId": "devbox", "projectId": "shop" } }),
+        )
+        .await
+        .unwrap()["memoryRefresh"]
+        .clone()
+}
+
+#[tokio::test]
+async fn the_automations_page_lists_the_refresh_with_its_hour_next_night_and_last_run() {
+    let (hub, clock, _home) = hub();
+    let r = project("shop");
+    let listed = row(&hub).await;
+    assert_eq!(listed["on"], true);
+    assert_eq!(listed["at"], "04:00");
+    assert_eq!(listed["tz"], "UTC");
+    // 04:10: tonight's hour has passed, so the next is tomorrow's.
+    assert_eq!(listed["nextRunAt"], "2026-10-28T04:00:00.000Z");
+    assert!(listed.get("lastRun").is_none(), "never run");
+
+    // A quiet night is listed as skipped, and why.
+    let node = Node::default();
+    refresh::tick(&hub, &node).await.unwrap();
+    let last = &row(&hub).await["lastRun"];
+    assert_eq!(last["state"], "skipped");
+    assert_eq!(last["trigger"], "schedule");
+    assert_eq!(
+        last["why"],
+        "Nothing new in the chat or its orders since the last refresh."
+    );
+
+    // The next night runs: running with what it changed so far, then done with all it changed.
+    clock.advance(DAY);
+    say(&hub, &r, ChatAuthor::Human, "No npm here, pnpm only.");
+    put_memory(&hub, &r, "- Use npm.\n- Deploys freeze on Fridays.\n");
+    refresh::tick(&hub, &node).await.unwrap();
+    refresh_call(
+        &hub,
+        &r,
+        "remember",
+        json!({ "scope": "project", "text": "No npm: use pnpm.", "replaces": "Use npm" }),
+    )
+    .await
+    .unwrap();
+    let last = row(&hub).await["lastRun"].clone();
+    assert_eq!(last["state"], "running");
+    assert_eq!(last["at"], "2026-10-28T04:10:00.000Z");
+    assert_eq!(
+        (last["added"].clone(), last["replaced"].clone()),
+        (json!(0), json!(1))
+    );
+    refresh_call(
+        &hub,
+        &r,
+        "remember",
+        json!({ "scope": "project", "text": "Staging deploys need the VPN." }),
+    )
+    .await
+    .unwrap();
+    refresh_call(
+        &hub,
+        &r,
+        "forget",
+        json!({ "scope": "project", "entry": "Friday", "reason": "The freeze ended." }),
+    )
+    .await
+    .unwrap();
+    complete(&hub, "refresh-1");
+    refresh::tick(&hub, &node).await.unwrap();
+    let last = row(&hub).await["lastRun"].clone();
+    assert_eq!(last["state"], "done");
+    assert_eq!(
+        (
+            last["added"].clone(),
+            last["replaced"].clone(),
+            last["removed"].clone()
+        ),
+        (json!(1), json!(1), json!(1)),
+        "the +1 ~1 −1 of its line"
+    );
+    assert!(last.get("why").is_none());
+    // Each change of the row told the app: the quiet night, the start and the end.
+    assert_eq!(refresh_events(&hub), ["skipped", "running", "done"]);
+}
+
+#[tokio::test]
+async fn the_rows_switch_is_the_project_setting() {
+    let (hub, _clock, _home) = hub();
+    crate::hub::api::registry()
+        .call(
+            &hub,
+            &person(),
+            "project_settings_set",
+            json!({ "machineId": "devbox", "projectId": "shop", "memoryRefresh": false }),
+        )
+        .await
+        .unwrap();
+    let listed = row(&hub).await;
+    assert_eq!(listed["on"], false);
+    assert!(listed.get("nextRunAt").is_none(), "off: no next run");
+    assert_eq!(listed["at"], "04:00", "its hour still shows");
+    // An admin's hour moves it.
+    global(&hub, refresh::AT_KEY, "02:30");
+    crate::hub::api::registry()
+        .call(
+            &hub,
+            &person(),
+            "project_settings_set",
+            json!({ "machineId": "devbox", "projectId": "shop", "memoryRefresh": true }),
+        )
+        .await
+        .unwrap();
+    let listed = row(&hub).await;
+    assert_eq!(listed["on"], true);
+    assert_eq!(listed["at"], "02:30");
+    assert_eq!(listed["nextRunAt"], "2026-10-28T02:30:00.000Z");
+}
+
+#[tokio::test]
+async fn run_now_starts_a_refresh_as_the_night_does_held_by_its_rules() {
+    let (hub, clock, _home) = hub();
+    let r = project("shop");
+    let tools = crate::hub::api::registry();
+    let caller = person();
+    let input = json!({ "projectRef": { "machineId": "devbox", "projectId": "shop" } });
+    let run_now = || tools.call(&hub, &caller, "memory_refresh_run", input.clone());
+    // Nothing new to read: not started, and the row is as it was.
+    let out = run_now().await.unwrap();
+    assert_eq!(
+        out["why"],
+        "Nothing new in the chat or its orders since the last refresh."
+    );
+    assert!(out["memoryRefresh"].get("lastRun").is_none());
+    // Off: not started.
+    tools
+        .call(
+            &hub,
+            &person(),
+            "project_settings_set",
+            json!({ "machineId": "devbox", "projectId": "shop", "memoryRefresh": false }),
+        )
+        .await
+        .unwrap();
+    say(&hub, &r, ChatAuthor::Human, "Keep answers short.");
+    let out = run_now().await.unwrap();
+    assert_eq!(out["why"], "It is off for this project: turn it on first.");
+    hub.db
+        .project_settings()
+        .set_memory_refresh(&r, true)
+        .unwrap();
+    // A node too old to hold the session to its memory tools: not started.
+    hub.link.set_capabilities(&r.machine_id, &[]);
+    let node = Node::default();
+    assert_eq!(
+        refresh::run_now(&hub, &node, &r).await.unwrap().as_deref(),
+        Some("Its node is too old: update devbox to let it run.")
+    );
+    hub.link.set_capabilities(
+        &r.machine_id,
+        &[fleetd_contracts::node_link::CAP_ALLOWED_ONLY],
+    );
+
+    // Past the night's window, at noon: it starts as the night's does, with the same options.
+    clock.advance(Duration::from_secs(8 * 3600));
+    assert_eq!(refresh::run_now(&hub, &node, &r).await.unwrap(), None);
+    let launches = node.launches.lock().unwrap().clone();
+    assert_eq!(launches.len(), 1);
+    assert!(launches[0].prompt.contains("Human: Keep answers short."));
+    assert_eq!(
+        node.options.lock().unwrap()[0].only_tools,
+        Some(refresh::allowed_tools())
+    );
+    let last = row(&hub).await["lastRun"].clone();
+    assert_eq!(
+        (last["state"].clone(), last["trigger"].clone()),
+        (json!("running"), json!("manual"))
+    );
+    assert_eq!(last["at"], "2026-10-27T12:10:00.000Z");
+    // One at a time.
+    assert_eq!(
+        refresh::run_now(&hub, &node, &r).await.unwrap().as_deref(),
+        Some("A refresh is already running.")
+    );
+    // It ends as the night's does; a manual run that changed nothing is done, with nothing changed.
+    complete(&hub, "refresh-1");
+    refresh::tick(&hub, &node).await.unwrap();
+    let last = row(&hub).await["lastRun"].clone();
+    assert_eq!(
+        (last["state"].clone(), last["trigger"].clone()),
+        (json!("done"), json!("manual"))
+    );
+    assert_eq!(last["added"], 0);
+    assert!(refreshed_lines(&hub, &r).is_empty());
+    // And the night still comes: the chat it read is marked read, so tonight's is quiet.
+    clock.advance(Duration::from_secs(16 * 3600));
+    refresh::tick(&hub, &node).await.unwrap();
+    assert_eq!(node.launches.lock().unwrap().len(), 1);
+    assert_eq!(row(&hub).await["lastRun"]["state"], "skipped");
+    // Run now refused tells nothing; its start and end, and the quiet night, do.
+    assert_eq!(refresh_events(&hub), ["running", "done", "skipped"]);
+}

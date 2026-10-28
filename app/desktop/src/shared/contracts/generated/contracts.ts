@@ -505,6 +505,8 @@ export type AutomationListInput = {
 
 export type AutomationListOutput = {
   automations: Automation[];
+  /** The nightly memory refresh, listed with them as a built-in row; absent from older hubs. */
+  memoryRefresh?: MemoryRefreshJob;
   next?: string;
   truncated?: boolean;
 };
@@ -2541,6 +2543,7 @@ export type KnownHubEventType =
   | "work.ended"
   | "work.landed"
   | "memory.changed"
+  | "memory.refresh"
   | "automation.changed"
   | "automation.run"
   | "checklist.changed"
@@ -3685,6 +3688,49 @@ export type MemoryNote = {
   messageId: ChatMessageId;
   projectRef: ProjectRef;
   text: string;
+};
+
+/**
+ * The nightly memory refresh (hub/memory/refresh), listed with a project's automations as a built-in row: a hub job,
+ * not an automation. Its hour is the hub's (`policy.memory_refresh_at` in `policy.tz`, set by an admin), its switch
+ * the project's `memory_refresh` setting; it has no prompt to edit, no webhook and no delete.
+ */
+export type MemoryRefreshJob = {
+  /** Its hour, "HH:MM" in `tz`. */
+  at: string;
+  /** The run going now, else the last one. */
+  lastRun?: MemoryRefreshRun;
+  /** Absent while off. */
+  nextRunAt?: Timestamp;
+  /** The project's `memory_refresh` setting. */
+  on: boolean;
+  tz: TimeZone;
+};
+
+/** One refresh: when it started (or was skipped), how it went, and what it changed in memory. */
+export type MemoryRefreshRun = {
+  /** Entries added, put in place of another, and removed: the "+a ~b −c" of its chat line. */
+  added: number;
+  at: Timestamp;
+  removed: number;
+  replaced: number;
+  /** running, done (it completed), failed (it didn't start, failed or ran past its hour) or skipped. */
+  state: AutomationRunState;
+  trigger: AutomationTrigger;
+  /** Why it was skipped or failed. */
+  why?: string;
+};
+
+export type MemoryRefreshRunInput = {
+  projectRef: ProjectRef;
+};
+
+export type MemoryRefreshRunOutput = {
+  memoryRefresh: MemoryRefreshJob;
+  next?: string;
+  truncated?: boolean;
+  /** Why it didn't start; absent when it did. */
+  why?: string;
 };
 
 /**
@@ -7782,6 +7828,7 @@ export interface ToolMap {
   mcp_settings_set: { input: McpSettingsSetInput; output: McpSettingsSetOutput };
   memory_caps_set: { input: MemoryCapsSetInput; output: MemoryCapsSetOutput };
   memory_get: { input: MemoryGetInput; output: MemoryGetOutput };
+  memory_refresh_run: { input: MemoryRefreshRunInput; output: MemoryRefreshRunOutput };
   memory_set: { input: MemorySetInput; output: MemorySetOutput };
   memory_undo: { input: MemoryUndoInput; output: MemoryUndoOutput };
   metrics_get: { input: MetricsGetInput; output: MetricsGetOutput };

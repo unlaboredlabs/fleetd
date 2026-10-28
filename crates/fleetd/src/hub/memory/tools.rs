@@ -1,6 +1,6 @@
 //! memory_get, memory_set, memory_undo and memory_caps_set: Settings > Memory and the chat's Undo. Writes are a
 //! person's (human keys): an agent changes memory only through its lead's `remember` and `forget`. The caps are an
-//! admin's.
+//! admin's. memory_refresh_run: Run now on the nightly refresh's row in Settings > Automations.
 use std::sync::Arc;
 
 use fleetd_contracts::auth::Role;
@@ -8,7 +8,8 @@ use fleetd_contracts::chat::ChatMessage;
 use fleetd_contracts::ids::ProjectRef;
 use fleetd_contracts::mcp::{
     ErrorCode, MemoryCapsSetInput, MemoryCapsSetOutput, MemoryGetInput, MemoryGetOutput,
-    MemorySetInput, MemorySetOutput, MemoryUndoInput, MemoryUndoOutput,
+    MemoryRefreshRunInput, MemoryRefreshRunOutput, MemorySetInput, MemorySetOutput,
+    MemoryUndoInput, MemoryUndoOutput,
 };
 use fleetd_contracts::memory::{MemoryRefreshed, MemoryScope, RememberedItem};
 use fleetd_contracts::prim::{Count, True};
@@ -26,6 +27,7 @@ pub fn register(tools: &mut Registry) {
     tools.add("memory_set", memory_set);
     tools.add("memory_undo", memory_undo);
     tools.add("memory_caps_set", memory_caps_set);
+    tools.add("memory_refresh_run", memory_refresh_run);
 }
 
 fn known_project(hub: &Hub, caller: &Caller, r: &ProjectRef, role: Role) -> Result<(), ToolError> {
@@ -246,6 +248,28 @@ async fn memory_caps_set(
         next: Some(
             "Writes past a cap are refused from now; a file already over a lowered cap stays as it is.".into(),
         ),
+        truncated: None,
+    })
+}
+
+async fn memory_refresh_run(
+    hub: Arc<Hub>,
+    caller: Caller,
+    input: MemoryRefreshRunInput,
+) -> Result<MemoryRefreshRunOutput, ToolError> {
+    let r = &input.project_ref;
+    known_project(&hub, &caller, r, Role::Operate)?;
+    let why = refresh::run_now(&hub, &refresh::executors(&hub), r).await?;
+    let next = match &why {
+        None => {
+            "Refreshing: a line in the chat lists what it changed, with Undo; nothing changed posts nothing."
+        }
+        Some(_) => "Nothing started; the nightly pass goes on as before.",
+    };
+    Ok(MemoryRefreshRunOutput {
+        memory_refresh: refresh::job(&hub, r)?,
+        why,
+        next: Some(next.into()),
         truncated: None,
     })
 }
