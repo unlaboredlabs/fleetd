@@ -393,13 +393,15 @@ impl Leads {
         // A Navi's lead runs from `navi.start` in the assistant role: manual permission mode, so every tool off its
         // read allow-list asks a person first (approvals/permissions.rs).
         let navi = project.kind == Some(ProjectKind::Assistant);
+        let you = crate::hub::memory::You::for_lead(&self.ctx.db, r)
+            .unwrap_or(crate::hub::memory::You::Nobody);
         let mut prompt = render_lead_start(
             &set,
             r,
             &project.title,
             medium,
             &digest,
-            &self.ctx.db.memory().injected(r, true),
+            &self.ctx.db.memory().injected(r, true, &you),
             &crate::hub::people::lead_people(&self.ctx.db),
             navi.then_some(project.workspace_root.as_str()),
         );

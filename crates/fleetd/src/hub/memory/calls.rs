@@ -1,6 +1,7 @@
-//! The lead's `remember`, `forget` and `memory_read`, scoped to the caller's project by its session. A task can make
-//! none of them (`tasks::policy`): writers get the memory in their first message and nothing else. A nightly refresh's
-//! changes are kept for its one line at the end (`refresh`), not posted one by one.
+//! The lead's `remember`, `forget` and `memory_read`, scoped to the caller's project by its session. User scope is a
+//! person's own memory: the one whose message the turn answers (a Navi's owner), and refused when that is nobody. A
+//! task can make none of them (`tasks::policy`): writers get the memory in their first message and nothing else. A
+//! nightly refresh's changes are kept for its one line at the end (`refresh`), not posted one by one.
 use std::sync::{Arc, Weak};
 
 use fleetd_contracts::chat::ChatAuthor;
@@ -14,7 +15,7 @@ use fleetd_contracts::memory::{
 use fleetd_contracts::prim::{Count, Line, Text};
 use serde_json::json;
 
-use super::{MemoryError, Target};
+use super::{MemoryError, Target, You};
 use crate::hub::api::Hub;
 use crate::hub::chat::NewMessage;
 use crate::hub::link::lead_calls::CallerAgent;
@@ -57,8 +58,9 @@ fn answer(hub: &Hub, caller: &LeadCaller, call: LeadCall) -> Result<LeadCallResu
     let r = &caller.project_ref;
     match call {
         LeadCall::Remember(call) => {
+            let you = whose(hub, caller, call.scope)?;
             let memory = hub.db.memory();
-            let (t, item, len) = memory.remember(r, &call)?;
+            let (t, item, len) = memory.remember(r, you.as_ref(), &call)?;
             let file = Line::unchecked(t.name());
             let cap = memory.cap(&t);
             let next = match item {
@@ -79,8 +81,9 @@ fn answer(hub: &Hub, caller: &LeadCaller, call: LeadCall) -> Result<LeadCallResu
             }))
         }
         LeadCall::Forget(call) => {
+            let you = whose(hub, caller, call.scope)?;
             let memory = hub.db.memory();
-            let (t, item, len) = memory.forget(r, &call)?;
+            let (t, item, len) = memory.forget(r, you.as_ref(), &call)?;
             let (file, cap) = (Line::unchecked(t.name()), memory.cap(&t));
             remembered(hub, r, caller, item)?;
             Ok(LeadCallResult::Forget(RememberResult {
@@ -94,10 +97,7 @@ fn answer(hub: &Hub, caller: &LeadCaller, call: LeadCall) -> Result<LeadCallResu
             }))
         }
         LeadCall::MemoryRead(call) => {
-            let text = hub.db.memory().read(&Target {
-                project: Some(r),
-                topic: Some(&call.topic),
-            });
+            let text = hub.db.memory().read(&Target::project(r, Some(&call.topic)));
             let next = text.trim().is_empty().then(|| {
                 format!(
                     "There is no topic {} yet; MEMORY.md lists the ones there are.",
@@ -114,6 +114,38 @@ fn answer(hub: &Hub, caller: &LeadCaller, call: LeadCall) -> Result<LeadCallResu
             ErrorCode::Invalid,
             format!("{} is not a memory call.", op_of(&other)),
         )),
+    }
+}
+
+/// Whose memory a call of `scope` writes: in user scope the person behind the turn (the shared `user.md`, None, on a
+/// hub from before people); refused when that is nobody.
+fn whose(
+    hub: &Hub,
+    caller: &LeadCaller,
+    scope: MemoryScope,
+) -> Result<Option<fleetd_contracts::people::PersonId>, McpToolError> {
+    if scope == MemoryScope::Project {
+        return Ok(None);
+    }
+    let r = &caller.project_ref;
+    let unread = |e: StoreError| McpToolError::new(ErrorCode::Failed, e.to_string());
+    let you = if caller.agent == CallerAgent::MemoryRefresh {
+        super::refresh::you(&hub.db, r).map_err(unread)?
+    } else {
+        You::for_turn(&hub.db, r, now_ms(hub.clock.as_ref())).map_err(unread)?
+    };
+    match you {
+        You::Person(p) => Ok(Some(p)),
+        You::Shared => Ok(None),
+        You::Nobody => Err(McpToolError::new(
+            ErrorCode::Invalid,
+            "User memory is each person's own, and no one person's message is behind this turn.",
+        )
+        .with_fix(if caller.agent == CallerAgent::MemoryRefresh {
+            "Several people wrote in this chat: leave user memory as it is tonight."
+        } else {
+            "Remember it in project scope, or in user scope when that person writes to you."
+        })),
     }
 }
 

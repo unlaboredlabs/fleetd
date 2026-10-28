@@ -986,7 +986,7 @@
       "oneOf": [
         {
           "const": "user",
-          "description": "`user.md`: how the human works across every project.",
+          "description": "The person's own memory: how they work across every project. One shared `user.md` on a hub from before\npeople.",
           "type": "string"
         },
         {
@@ -1227,6 +1227,10 @@
         "forgotten": {
           "description": "`forget` removed `text`; Undo puts it back.",
           "type": "boolean"
+        },
+        "person": {
+          "$ref": "#/$defs/PersonId",
+          "description": "User scope: whose memory it is in. Absent for the shared `user.md` of a hub from before people."
         },
         "reason": {
           "description": "Why it was forgotten.",

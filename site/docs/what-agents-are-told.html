@@ -305,15 +305,24 @@ warnings and asks <code dir="auto">Save? [Y/n]</code> on the terminal. In a scri
 correct the lead or state a rule, it calls <code dir="auto">remember</code> in that turn, and the chat shows “Remembered: …” with Undo. When
 an entry no longer holds, the lead removes it with <code dir="auto">forget</code>, and the chat shows “Forgot: …” with the reason and Undo.</p>
 <ul>
-<li><strong>You</strong> (<code dir="auto">user.md</code>): how you work everywhere. Every project’s lead and writers get it.</li>
+<li><strong>You</strong> (your own memory): how you work everywhere. Only you edit it. The agents of the work you start and your
+Navi get it; on a hub with several people, a project’s lead gets nobody’s (see below).</li>
 <li><strong>Each project</strong> (<code dir="auto">MEMORY.md</code>, plus topic files for detail): only that project’s sessions get it. Another project
 never sees it.</li>
 </ul>
-<p>A lead gets <code dir="auto">user.md</code> and its project’s <code dir="auto">MEMORY.md</code> at the start of each session, after your instructions; writers
-get them in their brief. A lead opens a topic file when it needs one. Something remembered mid-session reaches the
-next session.</p>
-<p>Read, edit or delete any of it in Settings → Projects → Instructions &amp; memory. The files are plain markdown in the hub’s home (<code dir="auto">memory/</code>), in no
-repo. Each file has a cap, by default 16,000 characters for <code dir="auto">user.md</code> and each <code dir="auto">MEMORY.md</code>, 32,000 per topic and
+<p>A lead gets your memory and its project’s <code dir="auto">MEMORY.md</code> at the start of each session, after your instructions;
+writers get them in their brief. A project’s lead answers everyone who shares the hub in one long session, so on a
+hub with several people it starts with no one’s memory: anyone’s would stay in its context while it answers the
+others. When it remembers something in user scope, it goes to the memory of the person whose message it is
+answering, and only that person can undo it. A lead opens a topic file when it needs one. Something remembered
+mid-session reaches the next session.</p>
+<p>Read, edit or delete your own memory and each project’s in Settings → Projects → Instructions &amp; memory. Nobody else
+reads or edits yours, owners and admins included; an owner or admin can only delete the memory of someone removed from
+the hub. A hub from before people kept one shared <code dir="auto">user.md</code>: its owner got a copy as their own memory, and the old
+file stays, read by no agent, as Shared memory, which an owner or admin reads and retires under Hub › Every project ›
+Instructions &amp; memory.</p>
+<p>The files are plain markdown in the hub’s home (<code dir="auto">memory/</code>, yours in <code dir="auto">memory/people/</code>), in no repo. Each file has a
+cap, by default 16,000 characters for each person’s memory and each <code dir="auto">MEMORY.md</code>, 32,000 per topic and
 128,000 per project: a write past one is refused, and the lead merges entries instead. An owner or admin changes the caps
 under Memory caps in <a href="/docs/desktop-app#administration">Administration › Hub settings</a> (or <code dir="auto">memory_caps_set</code> with an
 admin key for every machine): 1,000 to 100,000
@@ -332,15 +341,17 @@ a minute apart.</li>
 A quiet project costs nothing. Its <a href="/docs/automations#the-nightly-memory-refresh">row on the Automations page</a>
 shows its next and last run, and its Run now refreshes the project at once.</li>
 <li><strong>What it reads:</strong> the chat since the last refresh (your messages and the lead’s, newest kept, up to about 40,000
-characters), the active decisions and every memory file of the project, plus <code dir="auto">user.md</code>.</li>
+characters), the active decisions and every memory file of the project, plus the memory of the person whose chat it
+is: a Navi’s owner, else the one person who wrote since the last refresh.</li>
 <li><strong>What it may do:</strong> it is a lead session of its own, the <code dir="auto">lead.memory</code> prompt, that opens no order and never
 writes in the chat. It may use <code dir="auto">memory_read</code>, <code dir="auto">remember</code> and <code dir="auto">forget</code> and nothing else: it starts with none of
 Claude’s own tools (no shell, files or web) and none of your MCP servers, its machine refuses any other tool it
 asks for (fleetd’s other tools, or any tool added later), and the hub takes only those three calls from it. A
 machine whose fleetd is too old to hold it to those gets no refresh until it is updated; each night it’s skipped,
 the chat says “Memory refresh skipped: update devbox to let it run” once. It adds what the chat taught, merges
-entries that overlap and removes what no longer holds, held to the caps like any write. It only adds to <code dir="auto">user.md</code>:
-it never replaces or removes an entry there. A session still running after an hour, or one that
+entries that overlap and removes what no longer holds, held to the caps like any write. It only adds to that
+person’s memory: it never replaces or removes an entry there, and when several people wrote, it leaves user memory
+alone that night. A session still running after an hour, or one that
 failed, is stopped; what it changed until then is still listed, and the next night reads the same chat again.</li>
 <li><strong>What you see:</strong> one line in the chat when it’s done, such as “Memory refreshed: +2 ~1 −3” (added, changed,
 removed), with each change below it, each with Undo, and Undo all. A line lists at most 200 changes and says how
@@ -453,7 +464,7 @@ tied to code: a description must match its tool, and a <code dir="auto">next:</c
 <tr>
 <td><code dir="auto">lead.memory</code></td>
 <td>once a night, to a refresh session of its own, followed by the memory, the decisions and the chat since the last refresh</td>
-<td>only reads and writes memory: `memory_read`, `remember` and `forget`; adds to user.md, never replaces or removes an entry there</td>
+<td>only reads and writes memory: `memory_read`, `remember` and `forget`; adds to the user memory of the person whose chat it read, never replaces or removes an entry there</td>
 </tr>
 <tr>
 <td><code dir="auto">lead.wake</code></td>

@@ -67,7 +67,8 @@ Paths are under `crates/fleetd/src/` unless shown otherwise.
   read the web and write notes in its own directory, so **it needs its own role. That is new, and small.**
 
 ### Memory and the nightly refresh: reusable as is
-- Plain markdown under `<hub home>/memory`, in no repo. `user.md` is shared by every project. Each project has its
+- Plain markdown under `<hub home>/memory`, in no repo. Each person has their own user memory (`people/<person>.md`,
+  D212; one shared `user.md` before people). Each project has its
   own `MEMORY.md` plus topic files, never read for another project. The hub is the only writer, and a write past a cap
   is refused, never truncated (`hub/memory/mod.rs:1-5`).
 - Caps: user 16k, index 16k, topic 32k, project total 128k characters, settable up to 100k / 400k
@@ -78,8 +79,9 @@ Paths are under `crates/fleetd/src/` unless shown otherwise.
   `memory_read`, `remember` and `forget`. It may only add to `user.md`, and posts one line, "Memory refreshed: +a ~b
   −c", with Undo per item. It has a per-project off switch. **Navi gets this unchanged**, and its nightly review is a
   second job on the same schedule (§3.4).
-- **Privacy:** `user.md` goes into *every* lead's prompt. Navi's personal facts (family, health, money) must go in
-  **Navi's own project memory**, not `user.md`, or every coding lead reads them.
+- **Privacy:** a person's user memory goes into the prompt of every agent of the work they start. Navi's personal
+  facts (family, health, money) must go in **Navi's own project memory**, not user memory, or every coding agent
+  reads them.
 
 ### Automations: reusable as is
 - A project's stored prompt with triggers: a 5-field cron in an IANA zone, an incoming webhook, or Run now
@@ -199,8 +201,8 @@ Paths are under `crates/fleetd/src/` unless shown otherwise.
 ### 3.3 Memory
 - **Navi's `MEMORY.md` and topics** hold the person's life and work: people, preferences, routines, accounts by name
   (never values). The project cap is 128k by default and can go up to 400k.
-- **`user.md`** stays the short, shared "who the person is and how they like to work" file that every lead reads.
-  Navi's prompt says plainly: private facts go in Navi's own memory, never `user.md`.
+- **User memory** (each person's own, D212) stays the short "how the person likes to work" file that the agents of
+  their work read. Navi's prompt says plainly: private facts go in Navi's own memory, never user memory.
 - Every write passes the secret check (`hub/memory/mod.rs:313`). Remember and forget lines show in the chat with Undo,
   as they do for any lead.
 

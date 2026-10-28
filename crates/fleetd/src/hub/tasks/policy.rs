@@ -146,7 +146,7 @@ pub fn check(agent: &CallerAgent, op: &str) -> Result<(), McpToolError> {
 /// [`check`], and what only the call itself says: an ended preview's session reports itself closing, never live.
 pub fn check_call(agent: &CallerAgent, call: &LeadCall) -> Result<(), McpToolError> {
     check(agent, &fleetd_contracts::lead_calls::op_name(call))?;
-    // The refresh adds to user.md, every project's, but never changes or removes what is there.
+    // The refresh adds to a person's own memory, but never changes or removes what is there.
     let user_md_changed = match call {
         LeadCall::Remember(c) => c.scope == MemoryScope::User && c.replaces.is_some(),
         LeadCall::Forget(c) => c.scope == MemoryScope::User,
@@ -155,9 +155,9 @@ pub fn check_call(agent: &CallerAgent, call: &LeadCall) -> Result<(), McpToolErr
     if *agent == CallerAgent::MemoryRefresh && user_md_changed {
         return Err(McpToolError::new(
             ErrorCode::Forbidden,
-            "The nightly refresh only adds to user.md: it never replaces or removes an entry there.",
+            "The nightly refresh only adds to user memory: it never replaces or removes an entry there.",
         )
-        .with_fix("Add the lesson as a new user.md entry, or leave user.md as it is."));
+        .with_fix("Add the lesson as a new user memory entry, or leave user memory as it is."));
     }
     if let (CallerAgent::EndedPreview(preview), LeadCall::BrowserSession(report)) = (agent, call)
         && matches!(

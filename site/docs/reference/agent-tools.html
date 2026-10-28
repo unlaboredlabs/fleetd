@@ -230,7 +230,7 @@
 </tr>
 <tr>
 <td><a href="#remember"><code dir="auto">remember</code></a></td>
-<td>Keep one entry in memory, in plain words, for every later session: scope user for how the human works everywhere (tone, taste, standing rules), project for this project (MEMORY.md, or a topic file for detail).</td>
+<td>Keep one entry in memory, in plain words, for every later session: scope user for how the person whose message you answer works everywhere (tone, taste, standing rules; their own memory), project for this project (MEMORY.md, or a topic file for detail).</td>
 <td>No</td>
 </tr>
 <tr>
@@ -843,7 +843,7 @@
 <p><strong>Who may call:</strong> a lead, a task’s agent, checked by the hub. <strong>Needs a human:</strong> no.</p>
 <div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="json"><code><div class="ec-line"><div class="code"><span style="--0:#8B8B8B;--1:#686868">{</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#B8A965CD;--1:#786713FD">"</span><span style="--0:#B8A965;--1:#786713">name</span><span style="--0:#B8A965CD;--1:#786713FD">"</span><span style="--0:#8B8B8B;--1:#686868">:</span><span style="--0:#DBD7CAEE;--1:#393A34"> </span><span style="--0:#C98A7DE4;--1:#96574AFD">"</span><span style="--0:#C98A7D;--1:#96574A">decisions_search</span><span style="--0:#C98A7DE4;--1:#96574AFD">"</span><span style="--0:#8B8B8B;--1:#686868">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#B8A965CD;--1:#786713FD">"</span><span style="--0:#B8A965;--1:#786713">arguments</span><span style="--0:#B8A965CD;--1:#786713FD">"</span><span style="--0:#8B8B8B;--1:#686868">:</span><span style="--0:#DBD7CAEE;--1:#393A34"> </span><span style="--0:#8B8B8B;--1:#686868">{</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#B8A965CD;--1:#786713FD">"</span><span style="--0:#B8A965;--1:#786713">query</span><span style="--0:#B8A965CD;--1:#786713FD">"</span><span style="--0:#8B8B8B;--1:#686868">:</span><span style="--0:#DBD7CAEE;--1:#393A34"> </span><span style="--0:#C98A7DE4;--1:#96574AFD">"</span><span style="--0:#C98A7D;--1:#96574A">pagination</span><span style="--0:#C98A7DE4;--1:#96574AFD">"</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#8B8B8B;--1:#686868">}</span></div></div><div class="ec-line"><div class="code"><span style="--0:#8B8B8B;--1:#686868">}</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="{  &quot;name&quot;: &quot;decisions_search&quot;,  &quot;arguments&quot;: {    &quot;query&quot;: &quot;pagination&quot;  }}"><div></div></button></div></figure></div>
 <div class="sl-heading-wrapper level-h3"><h3 id="remember">remember</h3><a class="sl-anchor-link" href="#remember"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “remember”</span></a></div>
-<p>Keep one entry in memory, in plain words, for every later session: scope user for how the human works everywhere (tone, taste, standing rules), project for this project (MEMORY.md, or a topic file for detail). With replaces (words of one entry, quoted exactly) it takes that entry’s place: never keep two versions. A write past a file’s cap is refused: merge or replace entries, then call again. The chat shows the human what you remembered, with Undo. Never a secret.</p>
+<p>Keep one entry in memory, in plain words, for every later session: scope user for how the person whose message you answer works everywhere (tone, taste, standing rules; their own memory), project for this project (MEMORY.md, or a topic file for detail). With replaces (words of one entry, quoted exactly) it takes that entry’s place: never keep two versions. A write past a file’s cap is refused: merge or replace entries, then call again. The chat shows the human what you remembered, with Undo. Never a secret.</p>
 <table>
 <thead>
 <tr>
@@ -864,7 +864,7 @@
 <td><code dir="auto">scope</code></td>
 <td>string</td>
 <td>yes</td>
-<td>One of <code dir="auto">user</code> (<code dir="auto">user.md</code>: how the human works across every project), <code dir="auto">project</code> (This project’s <code dir="auto">MEMORY.md</code>, or one of its topic files).</td>
+<td>One of <code dir="auto">user</code> (The person’s own memory: how they work across every project. One shared <code dir="auto">user.md</code> on a hub from before people), <code dir="auto">project</code> (This project’s <code dir="auto">MEMORY.md</code>, or one of its topic files).</td>
 </tr>
 <tr>
 <td><code dir="auto">text</code></td>
@@ -910,7 +910,7 @@
 <td><code dir="auto">scope</code></td>
 <td>string</td>
 <td>yes</td>
-<td>One of <code dir="auto">user</code> (<code dir="auto">user.md</code>: how the human works across every project), <code dir="auto">project</code> (This project’s <code dir="auto">MEMORY.md</code>, or one of its topic files).</td>
+<td>One of <code dir="auto">user</code> (The person’s own memory: how they work across every project. One shared <code dir="auto">user.md</code> on a hub from before people), <code dir="auto">project</code> (This project’s <code dir="auto">MEMORY.md</code>, or one of its topic files).</td>
 </tr>
 <tr>
 <td><code dir="auto">topic</code></td>

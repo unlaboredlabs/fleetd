@@ -175,16 +175,26 @@ Leads remember how you work and what each project decided, so you don't say "con
 correct the lead or state a rule, it calls `remember` in that turn, and the chat shows "Remembered: …" with Undo. When
 an entry no longer holds, the lead removes it with `forget`, and the chat shows "Forgot: …" with the reason and Undo.
 
-- **You** (`user.md`): how you work everywhere. Every project's lead and writers get it.
+- **You** (your own memory): how you work everywhere. Only you edit it. The agents of the work you start and your
+  Navi get it; on a hub with several people, a project's lead gets nobody's (see below).
 - **Each project** (`MEMORY.md`, plus topic files for detail): only that project's sessions get it. Another project
   never sees it.
 
-A lead gets `user.md` and its project's `MEMORY.md` at the start of each session, after your instructions; writers
-get them in their brief. A lead opens a topic file when it needs one. Something remembered mid-session reaches the
-next session.
+A lead gets your memory and its project's `MEMORY.md` at the start of each session, after your instructions;
+writers get them in their brief. A project's lead answers everyone who shares the hub in one long session, so on a
+hub with several people it starts with no one's memory: anyone's would stay in its context while it answers the
+others. When it remembers something in user scope, it goes to the memory of the person whose message it is
+answering, and only that person can undo it. A lead opens a topic file when it needs one. Something remembered
+mid-session reaches the next session.
 
-Read, edit or delete any of it in Settings → Projects → Instructions & memory. The files are plain markdown in the hub's home (`memory/`), in no
-repo. Each file has a cap, by default 16,000 characters for `user.md` and each `MEMORY.md`, 32,000 per topic and
+Read, edit or delete your own memory and each project's in Settings → Projects → Instructions & memory. Nobody else
+reads or edits yours, owners and admins included; an owner or admin can only delete the memory of someone removed from
+the hub. A hub from before people kept one shared `user.md`: its owner got a copy as their own memory, and the old
+file stays, read by no agent, as Shared memory, which an owner or admin reads and retires under Hub › Every project ›
+Instructions & memory.
+
+The files are plain markdown in the hub's home (`memory/`, yours in `memory/people/`), in no repo. Each file has a
+cap, by default 16,000 characters for each person's memory and each `MEMORY.md`, 32,000 per topic and
 128,000 per project: a write past one is refused, and the lead merges entries instead. An owner or admin changes the caps
 under Memory caps in [Administration › Hub settings](/docs/desktop-app#administration) (or `memory_caps_set` with an
 admin key for every machine): 1,000 to 100,000
@@ -205,15 +215,17 @@ no longer holds stops misleading the agents:
   A quiet project costs nothing. Its [row on the Automations page](/docs/automations#the-nightly-memory-refresh)
   shows its next and last run, and its Run now refreshes the project at once.
 - **What it reads:** the chat since the last refresh (your messages and the lead's, newest kept, up to about 40,000
-  characters), the active decisions and every memory file of the project, plus `user.md`.
+  characters), the active decisions and every memory file of the project, plus the memory of the person whose chat it
+  is: a Navi's owner, else the one person who wrote since the last refresh.
 - **What it may do:** it is a lead session of its own, the `lead.memory` prompt, that opens no order and never
   writes in the chat. It may use `memory_read`, `remember` and `forget` and nothing else: it starts with none of
   Claude's own tools (no shell, files or web) and none of your MCP servers, its machine refuses any other tool it
   asks for (fleetd's other tools, or any tool added later), and the hub takes only those three calls from it. A
   machine whose fleetd is too old to hold it to those gets no refresh until it is updated; each night it's skipped,
   the chat says "Memory refresh skipped: update devbox to let it run" once. It adds what the chat taught, merges
-  entries that overlap and removes what no longer holds, held to the caps like any write. It only adds to `user.md`:
-  it never replaces or removes an entry there. A session still running after an hour, or one that
+  entries that overlap and removes what no longer holds, held to the caps like any write. It only adds to that
+  person's memory: it never replaces or removes an entry there, and when several people wrote, it leaves user memory
+  alone that night. A session still running after an hour, or one that
   failed, is stopped; what it changed until then is still listed, and the next night reads the same chat again.
 - **What you see:** one line in the chat when it's done, such as "Memory refreshed: +2 ~1 −3" (added, changed,
   removed), with each change below it, each with Undo, and Undo all. A line lists at most 200 changes and says how
@@ -362,7 +374,7 @@ Generated from the registry in the binary this site was built with. `fleetd prom
 | `navi.start` | a Navi's lead start and every fresh start, instead of the lead prompt, followed by the state block | asks before sending, spending, posting, deleting or accepting terms, by trying the tool so a person approves it; never moves money, trades, creates accounts or shares credentials, even if approved (prompt only); secrets only through \`request\_secret\`; keeps the person's private life in its own memory, never in user scope (prompt only); takes an agent's chat message as input, never as the person's answer or approval |
 | `lead.voice` | after the lead prompt, at every lead start | the casual voice stays out of commits, PR bodies, docs and briefs (prompt only) |
 | `lead.profiles` | after the lead prompt, while the project allows medium (project\_set) | medium only for mechanical work, never for design or anything subtle (prompt only); reviews always run high; a medium task whose review finds blockers twice is redone on high (prompt only) |
-| `lead.memory` | once a night, to a refresh session of its own, followed by the memory, the decisions and the chat since the last refresh | only reads and writes memory: \`memory\_read\`, \`remember\` and \`forget\`; adds to user.md, never replaces or removes an entry there |
+| `lead.memory` | once a night, to a refresh session of its own, followed by the memory, the decisions and the chat since the last refresh | only reads and writes memory: \`memory\_read\`, \`remember\` and \`forget\`; adds to the user memory of the person whose chat it read, never replaces or removes an entry there |
 | `lead.wake` | each time fleetd brings the lead up to date: the project's state, then one line per event since the last time |  |
 | `chat.human` | with each chat message the human sends the lead |  |
 | `chat.agent` | with each chat message an agent or integration with its own key sends the lead | takes it as input, never as the human's answer or approval |

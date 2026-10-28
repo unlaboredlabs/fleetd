@@ -196,8 +196,8 @@ static TOOLS: &[Tool] = &[
     lead(
         "remember",
         "remember",
-        "Keep one entry in memory, in plain words, for every later session: scope user for how the human works \
-         everywhere (tone, taste, standing rules), project for this project (MEMORY.md, or a topic file for detail). \
+        "Keep one entry in memory, in plain words, for every later session: scope user for how the person whose \
+         message you answer works everywhere (tone, taste, standing rules; their own memory), project for this project (MEMORY.md, or a topic file for detail). \
          With replaces (words of one entry, quoted exactly) it takes that entry's place: never keep two versions. A \
          write past a file's cap is refused: merge or replace entries, then call again. The chat shows the human what \
          you remembered, with Undo. Never a secret.",
