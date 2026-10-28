@@ -98,13 +98,15 @@ export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unk
   if (type === "skills.changed") out.push({ tool: "skills_list" });
   // Someone invited, joined, renamed, given a role or removed: Administration's lists, and whether this person still
   // administers (the sidebar's entry).
-  if (type === "people.changed") out.push({ tool: "people_list" }, { tool: "hub_info" });
+  // Setup's People step reads it too.
+  if (type === "people.changed") out.push({ tool: "people_list" }, { tool: "hub_info" }, { tool: "setup_list" });
   // A session started, changed hands, ended or its recording landed: the Sessions view's list reads it again. A
   // recording, once read, never changes.
   if (type === "browser.session") out.push({ tool: "browser_sessions" });
   // A preview started, moved a step, became ready, ended or failed: Try it reads the project's previews again.
   if (type === "preview.state") out.push({ tool: "previews_list" });
-  if (type === "doctor.changed") out.push({ tool: "doctor_list" });
+  // The hub's setup steps read their status from the doctor's checks.
+  if (type === "doctor.changed") out.push({ tool: "doctor_list" }, { tool: "setup_list" });
   // Add machine: a run started, moved a step or ended.
   if (type === "machine_add.step") out.push({ tool: "machine_add_status" });
   // Administration's machine roles: a machine coming and going, and a session starting or ending, move its rows.

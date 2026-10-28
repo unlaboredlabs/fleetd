@@ -216,7 +216,8 @@ an option or a prompt by name, and press Enter to open the first match.
 
 Owners and admins of the hub see **Administration** in the sidebar, above Settings, and in the command palette. Nobody
 else sees it, and Settings and the other screens carry no admin controls. It takes the sidebar's place like Settings;
-Back returns to where you were.
+Back returns to where you were. While a required setup step is left, the entry says how many (`1 to set up`) and opens
+on Setup, and a hub with no projects yet opens on setup's welcome in place of Get started.
 
 | Section | Has |
 |---|---|
@@ -226,7 +227,7 @@ Back returns to where you were.
 | Hub settings | What reaches every project and machine: the whole fleet's and each machine's [max agents](/docs/projects#max-agents), the two [task profiles](/docs/projects#models) with the model and effort behind each for the whole fleet, [machine roles](/docs/machines#roles) and the [memory caps](/docs/what-agents-are-told#memory). |
 | Skills | The hub-wide [skills](/docs/skills) every project's agents get: write, install from skills.sh, update and delete them. |
 | Google | The hub's Google OAuth client for [Google for Navi](/docs/google#client): the steps in Google Cloud Console with the values to paste, the Client ID and secret (sealed), and Test; then, optionally, [real-time mail](/docs/google#pubsub) with its service account key (sealed). |
-| Setup | Where the hub's one guided setup will go: the same steps as `fleetd init`. Until then, it opens the [setup checks](/docs/machines#health). |
+| Setup | The hub's [setup steps](/docs/quick-start#setup-steps), the same as `fleetd init`'s: each with its status, why it matters, the values to paste and the pages to open, Test, and Skip for now. A step's result is saved where it lives: its button opens Administration › Google, › Claude, › Invites or › Machines, and for Claude also your own Settings › Claude. |
 
 On a hub from before people, a key with admin on every machine counts as an admin, and so does any key on a hub too
 old to say; People and Invites there say the hub needs updating, with Update the hub, and Hub settings work as before.

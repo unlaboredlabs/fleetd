@@ -37,7 +37,7 @@ function useConnect() {
   return async (request: McpServerRequest): Promise<{ ok: true; tested: Tested } | { ok: false; problem: string }> => {
     const out = await window.fleetd.secret.mcpServer(hub, request).catch((e: unknown) => ({ ok: false as const, problem: errorText(e) }));
     if (!out.ok) return { ok: false, problem: "problem" in out ? out.problem : errorText(new CallError(out.error)) };
-    refetch(["mcp_servers_get"]);
+    refetch(["mcp_servers_get", "setup_list"]);
     const tested = await hubCall("mcp_server_test", { scope: request.scope, name: request.name }).then(
       (t): Tested => ({ machineId: t.machineId, result: t.result }),
       (e: unknown): Tested => ({ error: errorText(e) }),
@@ -478,7 +478,7 @@ function Disconnect(props: { server: McpServer; machine: string; onClose: () => 
     hubCall("mcp_server_remove", { scope: props.server.scope, name: props.server.name }).then(
       () => {
         setBusy(false);
-        refetch(["mcp_servers_get"]);
+        refetch(["mcp_servers_get", "setup_list"]);
         props.onClose();
       },
       (e: unknown) => {

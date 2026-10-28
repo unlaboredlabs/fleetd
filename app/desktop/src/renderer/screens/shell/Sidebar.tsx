@@ -12,7 +12,7 @@
 import { Activity, ChevronDown, ChevronRight, Clock, Factory, Plus, Server, Settings, ShieldCheck, Sparkle } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { display, type ShortcutId } from "../../../shared/shortcuts";
-import { HubScope, useDataLayer, useHub, useHubs } from "../../src/data/react";
+import { HubScope, useDataLayer, useHub, useHubs, useToolQuery } from "../../src/data/react";
 import { archiveNavi, RenameNaviDialog, type NaviTarget } from "../navi/actions";
 import { isNavi } from "../navi/model";
 import {
@@ -69,6 +69,27 @@ export interface SidebarProps {
 }
 
 const UNREAD = "New message from the lead";
+
+const noInput = {};
+
+/**
+ * Administration's entry, for an owner or admin. While the hub's setup has a required step left it says how many,
+ * and opens on Setup; a hub from before setup steps says nothing.
+ */
+function AdminEntry({ current, go }: { current: boolean; go: (screen: Screen) => void }) {
+  const setup = useToolQuery("setup_list", noInput);
+  const left = setup.data?.requiredLeft ?? 0;
+  return (
+    <SidebarItem
+      label="Administration"
+      icon={<ShieldCheck />}
+      current={current}
+      data-opens="admin"
+      trailing={left > 0 ? <Text size="xs" tone="warning">{`${String(left)} to set up`}</Text> : undefined}
+      onClick={() => go({ id: "admin", section: left > 0 ? "setup" : "people" })}
+    />
+  );
+}
 
 /** The row's one mark: why it wants you, else a new message, else a red main, else how many agents work. */
 const mark = (p: SidebarProject): { readonly node: ReactNode; readonly tip: string } | null => {
@@ -190,15 +211,7 @@ export function Sidebar({ projects, machinesDown, screen, jumpHints, collapsed, 
           machinesDown !== undefined && machinesDown > 0 ? <Text size="xs" tone="warning">{`${String(machinesDown)} down`}</Text> : undefined,
         )}
         {/* Administration's and Settings' Back return focus here when this opened them. */}
-        {admin ? (
-          <SidebarItem
-            label="Administration"
-            icon={<ShieldCheck />}
-            current={screen.id === "admin"}
-            data-opens="admin"
-            onClick={() => go({ id: "admin", section: "people" })}
-          />
-        ) : null}
+        {admin ? <AdminEntry current={screen.id === "admin"} go={go} /> : null}
         <SidebarItem
           label="Settings"
           icon={<Settings />}

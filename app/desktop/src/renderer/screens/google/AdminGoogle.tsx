@@ -1,5 +1,5 @@
 // Administration › Google: the hub's Google OAuth client, which every Navi's Google connection goes through. The steps
-// in Google Cloud Console are the setup step's own (setup/steps.ts googleParts), with google_get's scopes and redirect.
+// in Google Cloud Console are the setup step's own (google/guide.ts googleParts), with google_get's scopes and redirect.
 // The client secret is sealed in main to each machine's key (secret.googleClient → google_client_set) and never comes
 // back; Test asks Google to redeem a code that can't work (google_client_test), and `invalid_grant` means it knows the
 // client. Real-time mail, optional, is below it (AdminMail.tsx). Each person then connects their own account from their
@@ -15,7 +15,7 @@ import { useHubState } from "../onboarding/hooks";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
 import { PageHead } from "../settings/parts";
 import { GuideParts, Part } from "../setup/Guide";
-import { googleParts } from "../setup/steps";
+import { googleParts } from "./guide";
 import { RealTimeMail } from "./AdminMail";
 import { boxesOf, clientIdProblem, dayWords, DOCS, listWords, notHolding, secretProblem } from "./model";
 import s from "./google.module.css";
@@ -216,7 +216,7 @@ function ClientForm() {
         ? `Saved, and sealed on ${listWords(set.client.sealedOn?.map((x) => x.machineId) ?? [])}.`
         : `Saved. ${listWords(missing)} ${missing.length === 1 ? "was" : "were"} offline and ${missing.length === 1 ? "doesn't" : "don't"} hold it: save again while ${missing.length === 1 ? "it is" : "they are"} online.`;
     setSaved({ line, tested: null });
-    refetch(["google_get"]);
+    refetch(["google_get", "setup_list"]);
     const tested = await hubCall("google_client_test", {}, { timeoutMs: 60_000 }).then(testedOf, (e: unknown): Tested => ({ ok: false, text: errorText(e) }));
     setBusy(false);
     setSaved({ line, tested });

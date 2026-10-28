@@ -3,8 +3,34 @@
 import { Copy, ExternalLink } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button, Text, copyText, toast } from "../../ui";
-import type { Part as GuidePart, PasteValue } from "./steps";
 import s from "./setup.module.css";
+
+/** A value for the provider's form, computed for this hub. `note` is how to paste it. */
+export interface PasteValue {
+  readonly label: string;
+  readonly value: string;
+  readonly note?: string;
+  /** Words, not a value: what to pick, tick or leave alone. */
+  readonly plain?: boolean;
+  /** Filled in by fleetd (a manifest, a link), shown to read and never copied. */
+  readonly filled?: boolean;
+}
+
+/** A provider's page, opened in the browser. */
+export interface Link {
+  readonly label: string;
+  readonly url: string;
+}
+
+/** One numbered part of a step: what to open, then what to fill in there. */
+export interface GuidePart {
+  readonly title: string;
+  /** A part the step works without: said beside its title, and its fields are optional. */
+  readonly optional?: boolean;
+  readonly note?: string;
+  readonly links?: ReadonlyArray<Link>;
+  readonly values?: ReadonlyArray<PasteValue>;
+}
 
 /** The parts in order, numbered from `from`. */
 export function GuideParts({ parts, from = 1 }: { parts: ReadonlyArray<GuidePart>; from?: number }) {

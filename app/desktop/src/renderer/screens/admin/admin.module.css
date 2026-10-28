@@ -176,3 +176,8 @@
   height: 10px;
   border-radius: 1px;
 }
+
+/* Setup's steps and the open one side by side want more room than a settings column. */
+.setup {
+  max-width: 1040px;
+}

@@ -47,10 +47,13 @@ let host: HTMLDivElement;
 let root: Root;
 let calls: Array<{ tool: string; input: unknown }>;
 let copied: string[];
+/** Required setup steps the hub says are left. */
+let setupLeft: number;
 
 beforeEach(() => {
   calls = [];
   copied = [];
+  setupLeft = 0;
   vi.stubGlobal("fleetd", {
     platform: "linux",
     fixture: null,
@@ -105,7 +108,9 @@ const render = async (info: Partial<HubInfoOutput> | null, what: "page" | "sideb
                   ? { person: { ...bob, role: "admin" } }
                   : tool === "person_remove"
                     ? { person: { ...bob, removedAt: AT }, revoked: 1 }
-                    : tool === "hub_links_get"
+                    : tool === "setup_list"
+                      ? { steps: [], requiredLeft: setupLeft }
+                      : tool === "hub_links_get"
                       ? { links: [], issued: [], boxPubKey: "Az+6kf/abi0V7SO+sn4h++sIgyPoNDAneLBDFaJf3TA=" }
                       : {};
       return Promise.resolve({ ok: true, output });
@@ -166,6 +171,18 @@ it("shows Administration in the sidebar to an owner or admin, and to nobody else
     act(() => root.unmount());
     root = createRoot(host);
   }
+});
+
+it("counts the required setup steps left on Administration's entry, and says nothing once none is", async () => {
+  setupLeft = 2;
+  await render({ me: sam, admin: true }, "sidebar");
+  const entry = buttons().find((b) => b.textContent.includes("Administration"));
+  expect(entry?.textContent).toContain("2 to set up");
+  act(() => root.unmount());
+  root = createRoot(host);
+  setupLeft = 0;
+  await render({ me: sam, admin: true }, "sidebar");
+  expect(buttons().find((b) => b.textContent.includes("Administration"))?.textContent).not.toContain("to set up");
 });
 
 it("tells a member who follows a link that the page isn't theirs, and reads nothing of it", async () => {

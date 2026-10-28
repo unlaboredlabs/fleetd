@@ -1,79 +1,54 @@
-// The hub admin's setup (screens/setup, a design prototype): a hub `fleetd init` just made on devbox, before and
-// after its GitHub App, the Google client next, and the end. The hub is plain HTTP on its tailnet, the common case:
-// GitHub is polled and Google's Desktop app client needs no HTTPS. The checks named hub/claude_key, hub/github_app, hub/people,
-// hub/google, hub/notion and hub/onepassword are the ones docs/design/setup.md proposes; "unknown" is "not set up".
+// The hub admin's setup (screens/setup): a hub `fleetd init` just made on devbox, plain HTTP on its tailnet, at each
+// point of its first run. Every answer is the hub's own: steps.json is hub/setup's catalog read from the checks the
+// doctor reports at that point, written by `FLEETD_WRITE_FIXTURES=1 cargo test -p fleetd --lib hub::setup::fixtures`
+// (crates/fleetd/src/hub/setup/fixtures.rs), so the app shows exactly what a hub says. Each fixture answers setup_list,
+// setup_test of any step (as the next point finds it) and setup_skip both ways; hub_info makes this app's person an
+// admin, who alone sees setup.
 import { Fixture, PROTOCOL } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
 import type { JsonObject } from "../kit/json.ts";
+import steps from "./steps.json" with { type: "json" };
 
-const CHECKED = "2026-10-19T09:01:35.585Z";
-const HUB_URL = "http://devbox:4790";
+type Reads = Readonly<Record<string, JsonObject>>;
+interface Scenario {
+  readonly requiredLeft: number;
+  readonly list: Reads;
+  readonly tests: Reads;
+  readonly skips: Reads;
+  readonly unskips: Reads;
+}
 
-type Status = "ok" | "warn" | "fail" | "unknown";
+const guides = steps.guides as unknown as ReadonlyArray<JsonObject & { readonly id: string }>;
+const scenarios = steps.scenarios as unknown as Readonly<Record<string, Scenario>>;
 
-const hub = (name: string, status: Status, message: string): JsonObject => ({ id: `hub/${name}`, scope: "hub", status, message });
-const devbox = (name: string, status: Status, message: string): JsonObject => ({ id: `devbox/${name}`, scope: "machine", machineId: "devbox", status, message });
+/** A step's guide with what a read says of it. */
+const step = (id: string, read: JsonObject | undefined): JsonObject => {
+  const guide = guides.find((g) => g.id === id);
+  if (guide === undefined || read === undefined) throw new Error(`fixtures/setup: no step ${id}`);
+  return { ...guide, ...read };
+};
 
-/** Right after `fleetd init` on devbox: the hub and its machine are up, every account still to do. */
-const fresh = (): Array<JsonObject> => [
-  hub("reachable", "ok", `The hub answers at ${HUB_URL}/healthz.`),
-  devbox("online", "ok", "devbox is online and its node answers."),
-  hub("claude_key", "unknown", "No Claude key on the hub yet."),
-  // A real hub always reports each machine's own claude login; with a hub key it doesn't matter.
-  devbox("claude_login", "fail", "claude is logged out on devbox: run claude /login there, or give the hub an API key."),
-  hub("github_app", "unknown", "No GitHub App yet: no PR can open and the train can't merge."),
-  hub("people", "unknown", "Only you so far."),
-  hub("google", "unknown", "Not connected."),
-  hub("notion", "unknown", "Not connected."),
-  hub("onepassword", "unknown", "Not connected."),
-];
-
-const set = (checks: Array<JsonObject>, id: string, status: Status, message: string) =>
-  checks.map((c) => (c["id"] === id ? { ...c, status, message } : c));
-
-/** Claude through the hub's key: devbox stays logged out, which a key-mode hub expects. */
-const withClaude = (checks: Array<JsonObject>) =>
-  set(checks, "hub/claude_key", "ok", "The hub's API key answers (key ending …Q2wA, api.anthropic.com).");
-
-/** Claude through every machine's own login, with no hub key. */
-const withLogins = (checks: Array<JsonObject>) =>
-  set(checks, "devbox/claude_login", "ok", "claude on devbox is logged in with a long-lived login token.");
-
-const withGitHub = (checks: Array<JsonObject>) =>
-  set(checks, "hub/github_app", "ok", "The App \"fleetd on devbox\" is installed on acme with 12 repositories, its token works, and you're connected as dev.");
-
-const withGoogle = (checks: Array<JsonObject>) =>
-  set(checks, "hub/google", "ok", "Google knows the client \"fleetd on devbox\", and devbox pulled from fleetd-gmail-hub as fleetd-gmail-reader: Gmail arrives in real time.");
-
-const NEXT = "Each failing check names the command that fixes it.";
+const NOTES: Readonly<Record<string, string>> = {
+  "setup-fresh": "A hub fleetd init just made on devbox: the hub and devbox up, Claude and GitHub to do (devbox's claude logged out), the rest optional.",
+  "setup-claude-logins": "Claude done the plain way: no hub key, devbox's own claude logged in.",
+  "setup-github": "Claude done with the hub's API key; GitHub is next, and its Test finds gh logged in on the hub.",
+  "setup-google": "Everything required and GitHub done; Google is next, and its Test finds the client and real-time mail.",
+  "setup-done": "Everything required and GitHub done; Google and Notion put off for later, people optional.",
+};
 
 export default defineGroup({
-  fixtures: (base) => {
-    /** The empty hub (no projects yet) with these checks; `rerun` is what Re-run and Test find. */
-    const fromEmpty = (name: string, note: string, checks: Array<JsonObject>, rerun: Array<JsonObject> = checks) => {
-      const f = Fixture.from(base("empty"), name, note);
-      f.state = { phase: "live", hub: HUB_URL, protocol: PROTOCOL };
-      f.drop("doctor_list");
-      f.answer("doctor_list", {}, { checkedAt: CHECKED, checks, next: NEXT });
-      f.answer("doctor_list", { rerun: true }, { checkedAt: CHECKED, checks: rerun, next: NEXT });
+  fixtures: (base) =>
+    Object.entries(scenarios).map(([name, sc]) => {
+      const f = Fixture.from(base("empty"), name, NOTES[name] ?? name);
+      f.state = { phase: "live", hub: steps.hub, protocol: PROTOCOL };
+      f.answer("hub_info", undefined, { version: "0.9.0", protocol: 1, busy: [], admin: true });
+      f.answer("setup_list", undefined, {
+        steps: guides.map((g) => step(g.id, sc.list[g.id])),
+        requiredLeft: sc.requiredLeft,
+      });
+      for (const [id, read] of Object.entries(sc.tests)) f.answer("setup_test", { step: id }, { step: step(id, read) }, 600);
+      for (const [id, read] of Object.entries(sc.skips)) f.answer("setup_skip", { step: id, skipped: true }, { step: step(id, read) });
+      for (const [id, read] of Object.entries(sc.unskips)) f.answer("setup_skip", { step: id, skipped: false }, { step: step(id, read) });
       return f;
-    };
-    return [
-      fromEmpty("setup-fresh", "A hub fleetd init just made on devbox: hub and machine done, devbox's claude logged out, every account to do.", fresh()),
-      fromEmpty("setup-claude-logins", "Claude done the other way: no hub key, and every machine logged in on its own.", withLogins(fresh())),
-      fromEmpty(
-        "setup-github",
-        "Claude is done; the GitHub App is next, and its Test finds it installed and connected.",
-        withClaude(fresh()),
-        withGitHub(withClaude(fresh())),
-      ),
-      fromEmpty(
-        "setup-google",
-        "GitHub is done; the Google client is next, and its Test finds the client and a pull with the reader's key.",
-        withGitHub(withClaude(fresh())),
-        withGoogle(withGitHub(withClaude(fresh()))),
-      ),
-      fromEmpty("setup-done", "Everything required, and GitHub, done; people and integrations left for later.", withGitHub(withClaude(fresh()))),
-    ];
-  },
+    }),
 });
