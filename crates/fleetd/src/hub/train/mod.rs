@@ -12,6 +12,7 @@ pub mod main_ci;
 pub mod next;
 pub mod records;
 pub mod regen;
+pub mod repo_checks;
 pub mod rules;
 pub mod service;
 pub mod tools;

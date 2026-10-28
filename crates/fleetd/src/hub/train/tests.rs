@@ -5549,6 +5549,116 @@ async fn unreadable_train_settings_wait_for_every_check() {
     assert!(merged_prs(&kit).is_empty());
 }
 
+/// W127: #743 merged while its `site` check was still running, behind another job, and turned main red: the base
+/// requires only `build`. A check the repo's `.fleetd/train.json` lists is waited for like a required one: red stops
+/// the merge, skipped by its `if:` passes, and still running holds it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_check_the_repo_lists_in_its_train_file_gates_the_merge() {
+    let kit = kit_on(&REPOS[0]);
+    let file = json!({ "fastChecks": ["site"] }).to_string();
+    kit.commit("main", &[(".fleetd/train.json", Some(&file))], None);
+    let with_site = |site: Option<&'static str>| {
+        move || {
+            vec![
+                run(1, "build", Some("success")),
+                run(2, "site", site),
+                run(3, "e2e (macos-latest)", None),
+            ]
+        }
+    };
+
+    answer_checks(&kit, with_site(Some("failure")));
+    let a = kit
+        .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
+        .await;
+    assert!(kit.train.step(REPO).await);
+    let stopped = kit.get(&a.change_id);
+    assert_eq!(stopped.state, ChangeState::CiFailed);
+    assert!(
+        stopped
+            .last_error
+            .as_deref()
+            .unwrap()
+            .contains("site (failure)"),
+        "{:?}",
+        stopped.last_error
+    );
+
+    // Still running: the train waits for it, here until its (zero) timeout.
+    answer_checks(&kit, with_site(None));
+    let b = kit
+        .enqueue(kit.open_pr(8, "b", &[add("b1.txt", "b\n")]))
+        .await;
+    assert!(kit.train.step(REPO).await);
+    let waited = kit.get(&b.change_id);
+    assert_eq!(waited.state, ChangeState::CiFailed);
+    assert!(
+        waited
+            .last_error
+            .as_deref()
+            .unwrap()
+            .starts_with("CI timed out"),
+        "{:?}",
+        waited.last_error
+    );
+
+    answer_checks(&kit, with_site(Some("skipped")));
+    let c = kit
+        .enqueue(kit.open_pr(9, "c", &[add("c1.txt", "c\n")]))
+        .await;
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(state_of(&kit, &c), ChangeState::Merged);
+    assert_eq!(state_of(&kit, &a), ChangeState::CiFailed);
+}
+
+/// W127: a check the repo lists that no run has (its job renamed or removed) is named soon after every other check
+/// finished, and the lead hears of it, rather than held to the CI timeout. A required one waits as before.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_listed_check_that_never_runs_is_named_once_the_others_finish() {
+    let clock = Arc::new(Sleeps::default());
+    let kit = Kit::on_clock(FakeCi::Required, clock.clone());
+    let file = json!({ "fastChecks": ["site"] }).to_string();
+    kit.commit("main", &[(".fleetd/train.json", Some(&file))], None);
+    answer_checks(&kit, || {
+        vec![job(1, 1, "build", "success"), job(2, 1, "lint", "success")]
+    });
+    let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")]);
+    let (_, change_id) = kit.author_task(Some(&pr)).await;
+
+    kit.train.step(REPO).await;
+    let parked = kit.get(&change_id);
+    assert_eq!(parked.state, ChangeState::CiFailed);
+    let options = TrainOptions::default();
+    assert!(
+        slept(&clock) <= super::service::NEVER_RAN_WAIT + options.poll_interval,
+        "held {:?}",
+        slept(&clock)
+    );
+    let why = parked.last_error.unwrap();
+    assert!(
+        why.contains(
+            "the check site never ran, and every other check finished and passed 5 min ago"
+        ) && why.contains(".fleetd/train.json name it"),
+        "{why:?}"
+    );
+    assert!(kit.gh.merges.lock().unwrap().is_empty());
+}
+
+/// A train file the train can't use is no license to skip checks: it waits for every check, as with unreadable
+/// settings.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_train_file_it_cannot_use_waits_for_every_check() {
+    let kit = kit_on(&REPOS[0]);
+    let file = json!({ "fastCheck": ["site"] }).to_string();
+    kit.commit("main", &[(".fleetd/train.json", Some(&file))], None);
+    let a = kit
+        .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
+        .await;
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(state_of(&kit, &a), ChangeState::CiFailed);
+    assert!(merged_prs(&kit).is_empty());
+}
+
 /// W54: each pass says why each ready PR was left out of the batch, on its Change and in the train's line, in plain
 /// words; once it can join, the reason goes.
 #[tokio::test(flavor = "multi_thread")]
