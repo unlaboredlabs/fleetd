@@ -23,6 +23,8 @@ pub const BOOT_TIMEOUT: Duration = Duration::from_secs(300);
 const FIRST_BOOT: Duration = Duration::from_secs(600);
 /// agent-device's runner builds with xcodebuild: minutes on a laptop.
 const RUNNER_BUILD: Duration = Duration::from_secs(1500);
+/// How long agent-device's daemon may take to stop its runner and exit.
+const DAEMON_EXIT: Duration = Duration::from_secs(60);
 /// How long the golden may take to settle before it is shut down anyway.
 const SETTLE_MAX: Duration = Duration::from_secs(600);
 /// A simulator is settled once its processes together use less than this share of one core...
@@ -206,7 +208,7 @@ async fn runner(home: &Path, wrapper: &Path, udid: &str) -> Result<(), String> {
         .kill_on_drop(true)
         .output();
     let out = tokio::time::timeout(RUNNER_BUILD + Duration::from_secs(60), run).await;
-    stop_daemon(&state);
+    stop_daemon(&state).await;
     let out = out
         .map_err(|_| "agent-device's runner did not build in 25 minutes".to_owned())?
         .map_err(|e| format!("cannot run agent-device: {e}"))?;
@@ -224,17 +226,30 @@ async fn runner(home: &Path, wrapper: &Path, udid: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Ends the agent-device daemon whose state directory is `state`, if one runs.
-pub fn stop_daemon(state: &Path) {
-    if let Ok(text) = std::fs::read_to_string(state.join("daemon.json"))
-        && let Ok(daemon) = serde_json::from_str::<serde_json::Value>(&text)
-        && let Some(pid) = daemon["pid"].as_i64()
-        && daemon["stateDir"].as_str() == Some(&*state.to_string_lossy())
-    {
-        let _ = nix::sys::signal::kill(
-            nix::unistd::Pid::from_raw(pid as i32),
-            nix::sys::signal::Signal::SIGTERM,
-        );
+/// Ends the agent-device daemon whose state directory is `state`, if one runs, and waits for it to exit: on its way
+/// out it stops the XCTest runner it started (the wrapper keeps it from leaving the runner running for a next daemon),
+/// whose xcodebuild would otherwise boot the golden again once it is shut down, and `simctl clone` refuses a booted one.
+pub async fn stop_daemon(state: &Path) {
+    let daemon = std::fs::read_to_string(state.join("daemon.json"))
+        .ok()
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok());
+    let Some(pid) = daemon
+        .filter(|d| d["stateDir"].as_str() == Some(&*state.to_string_lossy()))
+        .and_then(|d| d["pid"].as_i64())
+    else {
+        return;
+    };
+    let pid = nix::unistd::Pid::from_raw(pid as i32);
+    if nix::sys::signal::kill(pid, nix::sys::signal::Signal::SIGTERM).is_err() {
+        return;
+    }
+    let started = Instant::now();
+    while nix::sys::signal::kill(pid, None).is_ok() {
+        if started.elapsed() > DAEMON_EXIT {
+            tracing::warn!(%pid, "agent-device's daemon did not exit in time; the golden is shut down anyway");
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(200)).await;
     }
 }
 
