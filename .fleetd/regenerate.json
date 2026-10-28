@@ -4,10 +4,12 @@
     "app/desktop/src/shared/contracts/generated/",
     "docs/site/src/content/docs/reference/cli.md",
     "docs/site/src/content/docs/reference/agent-tools.md",
-    "site/docs/"
+    "site/docs/",
+    "app/desktop/fixtures/setup/steps.json"
   ],
   "run": [
     "CARGO_TARGET_DIR=\"$FLEETD_REGENERATE_CACHE/target\" cargo run --locked -q -p fleetd-contracts --bin fleetd-schema",
+    "FLEETD_WRITE_FIXTURES=1 CARGO_TARGET_DIR=\"$FLEETD_REGENERATE_CACHE/target\" cargo test --locked -q -p fleetd --lib -- hub::setup::fixtures",
     "CARGO_TARGET_DIR=\"$FLEETD_REGENERATE_CACHE/target\" cargo run --locked -q -p docsgen",
     "npm ci --prefix docs/site --no-audit --no-fund",
     "npm run build --prefix docs/site"
