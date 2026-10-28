@@ -31,7 +31,7 @@ ed25519-dalek = { workspace = true }
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
 nix = { version = "0.30", features = ["fs", "poll", "process", "signal", "term", "time", "user"] }
 rand = { workspace = true }
-reqwest = { workspace = true }
+reqwest = { workspace = true, features = ["http2"] }
 sha2 = { workspace = true }
 # Google: signing a service account's token request (RS256)
 ring = "0.17"

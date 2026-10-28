@@ -2329,6 +2329,44 @@ output!(DeviceRevokeOutput {
     device: AgentKeyInfo,
 });
 
+// push_device_register: a phone gets its person's notifications, sealed to `publicKey` (docs/design/push.md). The
+// same token again updates that device and moves it to the caller's person: a token is one phone's.
+input!(PushDeviceRegisterInput {
+    platform: crate::push::PushPlatform,
+    /// The APNs device token (hex) or the FCM registration token.
+    token: Line<1, 4096>,
+    /// The device's X25519 public key: 32 bytes, standard base64.
+    public_key: Line<1, 64>,
+    name: Line<1, 80>,
+});
+output!(PushDeviceRegisterOutput {
+    device: crate::push::PushDevice,
+    /// The hub has a push relay set: without one it sends nothing.
+    relay: bool,
+});
+
+// push_devices_list: the caller's person's phones.
+input!(PushDevicesListInput {});
+output!(PushDevicesListOutput {
+    devices: List<crate::push::PushDevice, 0, { crate::push::PUSH_DEVICES_MAX }>,
+    relay: bool,
+});
+
+// push_device_remove: one of the caller's person's phones stops getting notifications.
+input!(PushDeviceRemoveInput {
+    device_id: crate::push::PushDeviceId
+});
+output!(PushDeviceRemoveOutput {
+    device: crate::push::PushDevice,
+});
+
+// push_relay_set: where the hub sends its sealed notifications (`fleetd push-relay`); empty sends none.
+input!(PushRelaySetInput { url: Line<0, 2000> });
+output!(PushRelaySetOutput {
+    /// Absent: no relay, no notifications.
+    url: Option<String>,
+});
+
 /// The release channel a hub's build follows: edge when its version contains "-edge." (or "-nightly.", edge's name
 /// until D203), stable otherwise.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
@@ -3136,6 +3174,12 @@ tools! {
     person_remove => PersonRemove, Admin, PersonRemoveInput, PersonRemoveOutput;
     // Human keys only: a person's own devices, or anyone's for an owner or admin (the handler checks).
     device_revoke => DeviceRevoke, Operate, DeviceRevokeInput, DeviceRevokeOutput;
+    // Human keys with a person only (the handlers check).
+    push_device_register => PushDeviceRegister, Operate, PushDeviceRegisterInput, PushDeviceRegisterOutput;
+    push_devices_list => PushDevicesList, Read, PushDevicesListInput, PushDevicesListOutput;
+    push_device_remove => PushDeviceRemove, Operate, PushDeviceRemoveInput, PushDeviceRemoveOutput;
+    // A key with Admin on every machine (the handler checks).
+    push_relay_set => PushRelaySet, Admin, PushRelaySetInput, PushRelaySetOutput;
     agents_list => AgentsList, Read, AgentsListInput, AgentsListOutput;
     agent_work => AgentWork, Read, AgentWorkInput, AgentWorkOutput;
     pr_list => PrList, Read, PrListInput, PrListOutput;

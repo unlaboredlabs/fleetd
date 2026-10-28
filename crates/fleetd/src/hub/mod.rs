@@ -38,6 +38,7 @@ pub mod preview;
 pub mod projects;
 pub mod prompts;
 pub mod prs;
+pub mod push;
 pub mod queue;
 pub mod redact;
 pub mod repos;

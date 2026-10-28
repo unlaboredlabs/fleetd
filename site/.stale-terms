@@ -1,8 +1,7 @@
 # Things fleetd no longer has. CI (.github/site-check.mjs) fails when a line of site/home.html, site/fleetd.txt or
 # site/README.md matches one of these: a case-insensitive JavaScript regex per line, # starts a comment.
 
-# The phone app (a PWA with web push) is gone: fleetd is the CLI and the desktop app.
-\bphone\b
+# The old phone app (a PWA with web push) is gone. The mobile app (W158) and its notifications (D218) are not a PWA.
 \bPWA\b
 progressive web app
 web push

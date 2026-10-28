@@ -23,3 +23,5 @@ wins.
   a Test, rendered the same by `fleetd init`, the app's first run and Administration › Setup.
 - [navi.md](navi.md): Navi, personal assistants inside fleetd: as many as a person likes, each a plain-folder project
   whose lead runs as an assistant, with approvals for its tools, integrations and a bridge to the factory.
+- [push.md](push.md): phone notifications, end-to-end encrypted: the phone registers a push token and a key, the hub
+  seals each notification to it, and `fleetd push-relay` forwards the ciphertext to APNs or FCM.
