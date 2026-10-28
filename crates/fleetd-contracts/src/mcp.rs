@@ -904,6 +904,31 @@ output!(DoctorFixOutput {
     check: DoctorCheck,
 });
 
+// setup_list: the hub admin's setup steps (docs/design/setup.md), each with its status read from the doctor's latest
+// checks, and how many required ones are left. setup_test runs one step's checks now; setup_skip puts a step that
+// isn't required off for later, or back.
+input!(SetupListInput {});
+output!(SetupListOutput {
+    steps: Vec<crate::setup::HubSetupStep>,
+    /// Required steps not done: agents can't run until none is left.
+    required_left: Count,
+});
+input!(SetupTestInput {
+    step: crate::setup::SetupStepId,
+});
+output!(SetupTestOutput {
+    /// The step, read from its checks as they are now.
+    step: crate::setup::HubSetupStep,
+});
+input!(SetupSkipInput {
+    step: crate::setup::SetupStepId,
+    /// False: back on the list as to do.
+    skipped: bool,
+});
+output!(SetupSkipOutput {
+    step: crate::setup::HubSetupStep,
+});
+
 input!(QuietWindow {
     from: Timestamp,
     to: Timestamp
@@ -2907,6 +2932,10 @@ tools! {
     doctor_list => DoctorList, Read, DoctorListInput, DoctorListOutput;
     // Admin keys, or a person's paired device (a human key) with operate on the machine; the handler checks which.
     doctor_fix => DoctorFix, Operate, DoctorFixInput, DoctorFixOutput;
+    // Admin on every machine (the handlers check): the hub's own setup.
+    setup_list => SetupList, Admin, SetupListInput, SetupListOutput;
+    setup_test => SetupTest, Admin, SetupTestInput, SetupTestOutput;
+    setup_skip => SetupSkip, Admin, SetupSkipInput, SetupSkipOutput;
     attachment_part => AttachmentPart, Operate, AttachmentPartInput, AttachmentPartOutput;
     attachment_put => AttachmentPut, Operate, AttachmentPutInput, AttachmentPutOutput;
     attachment_get => AttachmentGet, Read, AttachmentGetInput, AttachmentGetOutput;

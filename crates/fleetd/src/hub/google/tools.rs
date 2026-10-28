@@ -5,7 +5,7 @@ use std::sync::Arc;
 use fleetd_contracts::auth::Role;
 use fleetd_contracts::google::{
     GOOGLE_REDIRECT, GOOGLE_SCOPES, GoogleAccount, GoogleAnswer, GoogleCall, GoogleClient,
-    GooglePubsub, MailWake, MailWakeRule,
+    GoogleClientCheck, GooglePubsub, MailWake, MailWakeRule,
 };
 use fleetd_contracts::ids::{MachineId, ProjectRef};
 use fleetd_contracts::mcp::{
@@ -221,32 +221,46 @@ async fn client_test(
     caller: Caller,
     input: GoogleClientTestInput,
 ) -> Result<GoogleClientTestOutput, ToolError> {
+    let machine_id = test_machine(&hub, input.machine_id)?;
+    require(&caller, Role::Operate, Some(&machine_id))?;
+    let check = test_client(&hub, &machine_id).await?;
+    Ok(GoogleClientTestOutput {
+        machine_id,
+        check,
+        next: None,
+        truncated: None,
+    })
+}
+
+/// Where to test the hub's client: `machine_id`, else the first machine online that holds it.
+pub fn test_machine(hub: &Hub, machine_id: Option<MachineId>) -> Result<MachineId, ToolError> {
     let client = hub.db.google().client()?.ok_or_else(no_client)?;
-    let machine_id = match input.machine_id {
-        Some(m) => m,
+    match machine_id {
+        Some(m) => Ok(m),
         None => client
             .sealed_on
             .iter()
             .map(|s| s.machine_id.clone())
-            .find(|m| node_ready(&hub, m).is_ok())
+            .find(|m| node_ready(hub, m).is_ok())
             .ok_or_else(|| {
                 ToolError::new(
                     ErrorCode::MachineOffline,
                     "No machine holding the client is online to test it on.",
                 )
                 .with_fix("Start one's node, then test again.")
-            })?,
-    };
-    require(&caller, Role::Operate, Some(&machine_id))?;
-    node_ready(&hub, &machine_id)?;
-    match ask(&hub, &machine_id, GoogleCall::ClientTest).await? {
-        GoogleAnswer::ClientTested(check) => Ok(GoogleClientTestOutput {
-            machine_id,
-            check,
-            next: None,
-            truncated: None,
-        }),
-        _ => Err(unexpected(&machine_id)),
+            }),
+    }
+}
+
+/// Asks Google, from `machine_id`, whether it takes the hub's client: google_client_test, and setup's Test.
+pub async fn test_client(
+    hub: &Hub,
+    machine_id: &MachineId,
+) -> Result<GoogleClientCheck, ToolError> {
+    node_ready(hub, machine_id)?;
+    match ask(hub, machine_id, GoogleCall::ClientTest).await? {
+        GoogleAnswer::ClientTested(check) => Ok(check),
+        _ => Err(unexpected(machine_id)),
     }
 }
 

@@ -55,7 +55,7 @@ fleetd init [--yes] [--home <dir>] [--listen <host:port>] [--url <url>]
     [--git-identity "Name <email>"] [--no-service] [--unit-suffix <s>]
 ```
 
-set up fleetd step by step in a terminal: the hub on this machine (home default `~/.fleetd/hub`, kept running by a systemd or launchd user service), where it listens (your tailnet when there is one), the claude and gh logins, the machines that run agents, a first project and the desktop app, then `fleetd doctor`. Run it again to check and repair; it keeps what works. `--yes` takes every default. Without a terminal and without `--yes` it only sets up the hub. `--url` is how devices reach the hub (default http://\<listen\>); `--git-identity` is the commit author for every machine (the GitHub noreply address for public repos); `--no-service` prepares everything but leaves starting the hub to you
+set up fleetd step by step in a terminal: the hub on this machine (home default `~/.fleetd/hub`, kept running by a systemd or launchd user service), where it listens (your tailnet when there is one), the claude and gh logins, the machines that run agents, a first project and the desktop app, then the hub's setup steps. Run it again to check and repair; it keeps what works. `--yes` takes every default. Without a terminal and without `--yes` it only sets up the hub. `--url` is how devices reach the hub (default http://\<listen\>); `--git-identity` is the commit author for every machine (the GitHub noreply address for public repos); `--no-service` prepares everything but leaves starting the hub to you
 
 ### fleetd init {#init-join}
 
@@ -66,13 +66,21 @@ fleetd init --join <hub url> --code <code> [--machine-id <id>] [--git-identity "
 
 make this machine a worker of that hub, without SSH from the hub: the command `fleetd pair --worker` prints on the hub. Run again, it keeps the node's enrolment and repairs the rest; `--rejoin` enrols again with a new code
 
+### fleetd init {#init-step}
+
+```text
+fleetd init --step <address|machines|claude|github|people|google|notion> [--home <dir>]
+```
+
+open one of the hub's setup steps: why, the values to paste and the pages to open, then Test it, or put it off for later
+
 ### fleetd doctor {#doctor}
 
 ```text
 fleetd doctor [--home <dir>]
 ```
 
-run every setup check on the hub now and print each problem with its fix
+run every setup check on the hub now: the setup steps first, then each other problem with its fix
 
 ### fleetd uninstall {#uninstall}
 

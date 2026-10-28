@@ -38,5 +38,18 @@ pub fn is_navi(db: &HubDb, r: &ProjectRef) -> Result<bool, StoreError> {
     Ok(kind.as_deref() == Some(ASSISTANT))
 }
 
+/// How many Navis have Notion connected: setup's Notion step is done once anyone has.
+pub fn notion_navis(db: &HubDb) -> Result<usize, StoreError> {
+    db.with(|c| {
+        let n: i64 = c.query_row(
+            "SELECT COUNT(DISTINCT machine_id || '/' || project_id) FROM mcp_servers
+             WHERE json_extract(data, '$.integration.kind') = 'notion'",
+            [],
+            |row| row.get(0),
+        )?;
+        Ok(n as usize)
+    })
+}
+
 #[cfg(test)]
 mod tests;

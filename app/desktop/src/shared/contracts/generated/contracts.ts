@@ -2543,6 +2543,38 @@ export type KnownHubRole = "owner" | "admin" | "member";
 /** KnownHubRole, or a value from a newer hub. */
 export type HubRole = KnownHubRole | (string & {});
 
+export type HubSetupStep = {
+  /** The deciding check fails, rather than warns: with `look`, something can't work until it's fixed. */
+  failing?: boolean;
+  /** What comes back from the provider, entered where the step says (`place`). */
+  fields?: SetupField[];
+  /** What happens after the fields are saved. */
+  fieldsNote?: string;
+  /** The deciding check's fix, when a command fixes it. */
+  fix?: DoctorFix;
+  group: SetupGroup;
+  id: SetupStepId;
+  need: SetupNeed;
+  parts: SetupPart[];
+  /**
+   * Where in the app the fields are saved, an Administration section ("google"), where the terminal can't seal
+   * them.
+   */
+  place?: string;
+  /** What its checks say now: the deciding one's message. */
+  said?: string;
+  status: SetupStatus;
+  /** What Test does, in a few words. */
+  test?: string;
+  title: string;
+  /** The way in use, where a step has several: the one done, else the one that wants a look. */
+  way?: string;
+  /** The ways to complete it; one is enough. */
+  ways: SetupWay[];
+  /** Why it matters, in one line. */
+  why: string;
+};
+
 export type HubUpdateInput = {
   /** Absent: the channel the hub's build came from. */
   channel?: HubChannel;
@@ -5670,7 +5702,81 @@ export type SessionPromptRef = {
   scope: PromptScope;
 };
 
+/**
+ * A field for what the provider gives back. A secret one is sealed on the admin's device, never sent in the clear and
+ * never shown again.
+ */
+export type SetupField = {
+  label: string;
+  /** A pasted file (a JSON key): several lines. */
+  multiline?: boolean;
+  name: string;
+  /** Where a secret is sealed to, when not every machine. */
+  note?: string;
+  optional?: boolean;
+  placeholder?: string;
+  secret?: boolean;
+};
+
+/** Where a step sits in the list. */
+export type KnownSetupGroup = "accounts" | "people" | "integrations" | "hub";
+/** KnownSetupGroup, or a value from a newer hub. */
+export type SetupGroup = KnownSetupGroup | (string & {});
+
 export type SetupInput = string;
+
+/** A provider's page, opened in the browser. */
+export type SetupLink = {
+  label: string;
+  url: string;
+};
+
+export type SetupListInput = { [key: string]: unknown };
+
+export type SetupListOutput = {
+  next?: string;
+  /** Required steps not done: agents can't run until none is left. */
+  requiredLeft: number;
+  steps: HubSetupStep[];
+  truncated?: boolean;
+};
+
+/** When a step must be done. Nothing blocks using fleetd before then. */
+export type SetupNeed = {
+  kind: "required";
+} | {
+  kind: "before";
+  what: string;
+} | {
+  kind: "optional";
+};
+
+/** One numbered part of a step: what to open, then what to fill in there. */
+export type SetupPart = {
+  links?: SetupLink[];
+  note?: string;
+  /** The step works without it. */
+  optional?: boolean;
+  title: string;
+  values?: SetupValue[];
+};
+
+export type SetupSkipInput = {
+  /** False: back on the list as to do. */
+  skipped: boolean;
+  step: SetupStepId;
+};
+
+export type SetupSkipOutput = {
+  next?: string;
+  step: HubSetupStep;
+  truncated?: boolean;
+};
+
+/** Read from the step's checks, never from how far a wizard got. */
+export type KnownSetupStatus = "done" | "todo" | "look" | "skipped";
+/** KnownSetupStatus, or a value from a newer hub. */
+export type SetupStatus = KnownSetupStatus | (string & {});
 
 /** One step of adding or removing a machine. */
 export type SetupStep = {
@@ -5685,7 +5791,47 @@ export type SetupStep = {
   title: string;
 };
 
+/** The steps, in the order they are listed. */
+export type KnownSetupStepId = "address" | "machines" | "claude" | "github" | "people" | "google" | "notion";
+/** KnownSetupStepId, or a value from a newer hub. */
+export type SetupStepId = KnownSetupStepId | (string & {});
+
 export type SetupStepState = "running" | "done" | "failed" | "planned";
+
+export type SetupTestInput = {
+  step: SetupStepId;
+};
+
+export type SetupTestOutput = {
+  next?: string;
+  /** The step, read from its checks as they are now. */
+  step: HubSetupStep;
+  truncated?: boolean;
+};
+
+/** A value for the provider's form, computed for this hub. */
+export type SetupValue = {
+  /** A command to run, rather than a value to paste. */
+  command?: boolean;
+  /** Filled in by fleetd (a manifest, a link): shown to read, never copied. */
+  filled?: boolean;
+  label: string;
+  /** How to paste it, or where. */
+  note?: string;
+  /** Words, not a value: what to pick, tick or leave alone. */
+  plain?: boolean;
+  value: string;
+};
+
+/**
+ * One way to complete a step: its doctor checks, `hub/<name>`, or `*\/<name>` for every machine's. Its status is the
+ * worst of them.
+ */
+export type SetupWay = {
+  checks: string[];
+  /** Names the way where a step has several: "the hub's API key". */
+  label?: string;
+};
 
 export type SkillDeleteInput = {
   name: SkillName;
@@ -7526,6 +7672,9 @@ export interface ToolMap {
   requests_list: { input: RequestsListInput; output: RequestsListOutput };
   secret_submit: { input: SecretSubmitInput; output: SecretSubmitOutput };
   session_prompt_get: { input: SessionPromptGetInput; output: SessionPromptGetOutput };
+  setup_list: { input: SetupListInput; output: SetupListOutput };
+  setup_skip: { input: SetupSkipInput; output: SetupSkipOutput };
+  setup_test: { input: SetupTestInput; output: SetupTestOutput };
   skill_delete: { input: SkillDeleteInput; output: SkillDeleteOutput };
   skill_get: { input: SkillGetInput; output: SkillGetOutput };
   skill_install: { input: SkillInstallInput; output: SkillInstallOutput };

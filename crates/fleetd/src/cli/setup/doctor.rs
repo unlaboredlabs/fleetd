@@ -1,5 +1,5 @@
-//! `fleetd doctor`: every setup check on the hub, run now over its MCP endpoint (doctor_list), each problem with the
-//! command that fixes it. `fleetd init` ends with the same run.
+//! `fleetd doctor`: every setup check on the hub, run now over its MCP endpoint (doctor_list): the hub's setup steps
+//! first (setup_list), then each other problem with the command that fixes it. `fleetd init` ends with the same run.
 
 use std::path::Path;
 use std::time::Duration;
@@ -279,11 +279,22 @@ pub async fn doctor_command(argv: &[String]) -> u8 {
     };
     match list_checks(&mut client).await {
         Ok(checks) => {
+            // The setup steps first, then what no step speaks for; a hub from before steps, the checks alone.
+            let (checks, other) = match super::steps::list(&mut client).await {
+                Ok(Some(steps)) => {
+                    super::steps::show(&mut list, &steps);
+                    (super::steps::unowned(&checks, &steps), "other ")
+                }
+                _ => (checks, ""),
+            };
             let ok = show(&mut list, &checks, &[]);
             if let Some(line) = super::super::versions::line(&mut client).await {
                 list.warn("versions", &line, None);
             }
-            list.done("doctor", &format!("{ok} of {} checks pass", checks.len()));
+            list.done(
+                "doctor",
+                &format!("{ok} of {} {other}checks pass", checks.len()),
+            );
             u8::from(list.failures().next().is_some())
         }
         Err(failure) => {

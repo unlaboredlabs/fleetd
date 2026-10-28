@@ -44,6 +44,7 @@ pub mod repos;
 pub mod schema;
 pub mod secrets;
 pub mod sessions;
+pub mod setup;
 pub mod skills;
 pub mod status;
 pub mod steer;

@@ -7,6 +7,7 @@ pub mod machine;
 pub mod machine_plan;
 pub mod ssh;
 pub mod state;
+pub mod steps;
 pub mod units;
 mod wizard;
 
@@ -32,7 +33,7 @@ pub const SETUP_USAGE: &str = r#"  init [--yes] [--home <dir>] [--listen <host:p
              set up fleetd step by step in a terminal: the hub on this machine (home default
              ~/.fleetd/hub, kept running by a systemd or launchd user service), where it listens
              (your tailnet when there is one), the claude and gh logins, the machines that run
-             agents, a first project and the desktop app, then fleetd doctor. Run it again to
+             agents, a first project and the desktop app, then the hub's setup steps. Run it again to
              check and repair; it keeps what works. --yes takes every default. Without a
              terminal and without --yes it only sets up the hub. --url is how devices reach the
              hub (default http://<listen>); --git-identity is the commit author for every
@@ -43,8 +44,12 @@ pub const SETUP_USAGE: &str = r#"  init [--yes] [--home <dir>] [--listen <host:p
              make this machine a worker of that hub, without SSH from the hub: the command
              fleetd pair --worker prints on the hub. Run again, it keeps the node's enrolment
              and repairs the rest; --rejoin enrols again with a new code
+  init --step <address|machines|claude|github|people|google|notion> [--home <dir>]
+             open one of the hub's setup steps: why, the values to paste and the pages to open,
+             then Test it, or put it off for later
   doctor [--home <dir>]
-             run every setup check on the hub now and print each problem with its fix
+             run every setup check on the hub now: the setup steps first, then each other
+             problem with its fix
   uninstall [--home <dir>] [--purge]
              stop and remove the hub's service; its data stays unless --purge, which also removes
              what an older fleetd installed for T3 Code
@@ -357,6 +362,8 @@ pub struct InitOptions {
     pub rejoin: bool,
     /// `--claude-config-dir`: the CLAUDE_CONFIG_DIR this machine's node runs claude with (default: the user's own).
     pub claude_config_dir: Option<String>,
+    /// `--step <id>`: open that one setup step against the hub this machine runs.
+    pub step: Option<fleetd_contracts::setup::SetupStepId>,
 }
 
 /// What `fleetd init` sets up on this machine.
@@ -645,6 +652,7 @@ const INIT_OPTIONS: &[(&str, Kind)] = &[
     ("machine-id", Kind::Str),
     ("rejoin", Kind::Bool),
     ("claude-config-dir", Kind::Str),
+    ("step", Kind::Str),
 ];
 
 fn init_options(argv: &[String]) -> Result<InitOptions, u8> {
@@ -700,7 +708,23 @@ fn init_options(argv: &[String]) -> Result<InitOptions, u8> {
             ));
         }
     };
+    let step = match v.str("step") {
+        None => None,
+        Some(id) => Some(
+            fleetd_contracts::setup::SetupStepId::parse(id).ok_or_else(|| {
+                let ids: Vec<_> = fleetd_contracts::setup::SetupStepId::ALL
+                    .iter()
+                    .map(|s| s.as_str())
+                    .collect();
+                usage(&format!(
+                    "--step takes one of {}, got '{id}'",
+                    ids.join(", ")
+                ))
+            })?,
+        ),
+    };
     Ok(InitOptions {
+        step,
         join,
         machine_id: v.string("machine-id"),
         rejoin: v.flag("rejoin"),
@@ -773,6 +797,10 @@ async fn init_command(argv: &[String]) -> u8 {
         Err(code) => return code,
     };
     let terminal = std::io::stdin().is_terminal() && std::io::stderr().is_terminal();
+    if let Some(step) = opts.step {
+        let interactive = terminal && !opts.yes;
+        return wizard::open_step(opts, step, interactive).await;
+    }
     // A worker that joined by itself is repaired, even from a script; only a fresh machine gets the plain hub setup.
     let joined_worker = opts.previous.is_none() && machine::joined_here().is_some();
     if opts.yes || terminal || opts.join.is_some() || joined_worker {
