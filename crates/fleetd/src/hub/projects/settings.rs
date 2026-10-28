@@ -93,7 +93,6 @@ impl ProjectSettingsStore<'_> {
     }
 
     pub fn set_keep_worktrees(&self, r: &ProjectRef, keep: bool) -> Result<(), StoreError> {
-        // A new row keeps medium on, its default.
         self.db.with(|c| {
             c.execute(
                 "INSERT INTO project_settings (machine_id, project_id, keep_worktrees) VALUES (?, ?, ?)

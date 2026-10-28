@@ -307,7 +307,7 @@ input!(ProfileCreateInput {
 output!(ProfileCreateOutput { profile: Profile });
 input!(ProfileUpdateInput {
     id: ProfileId,
-    /// A rename: tasks that ran on it keep the old name in their history.
+    /// A rename: the tasks not yet ended move to the new name; ended ones keep the old in their history.
     name: Option<ProfileName>,
     note: Option<Line<0, 300>>,
     /// Setting the model again clears a refusal.

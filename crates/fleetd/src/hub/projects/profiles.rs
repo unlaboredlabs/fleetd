@@ -255,7 +255,7 @@ impl ProfileStore<'_> {
     }
 
     /// Changes the fields `edit` sets. A new model clears a refusal; `default` makes it the default. A name another
-    /// profile has is refused.
+    /// profile has is refused; a rename moves the tasks not yet ended to the new name, ended ones keep the old.
     pub fn update(
         &self,
         id: ProfileId,
@@ -294,6 +294,14 @@ impl ProfileStore<'_> {
                     id.get()
                 ],
             )?;
+            // A rename carries the tasks not yet ended with it: they start again on it, and delete sees them.
+            if let Some(name) = edit.name.as_ref().filter(|n| **n != old.name) {
+                tx.execute(
+                    "UPDATE tasks SET data = json_set(data, '$.profile', ?) WHERE state IN ('queued', 'running', 'idle')
+                       AND json_extract(data, '$.profile') = ?",
+                    params![name.as_str(), old.name.as_str()],
+                )?;
+            }
             tx.commit()?;
             Ok(())
         })?;
@@ -571,7 +579,7 @@ async fn update(
     let profile = store.update(input.id, &edit, &now(&hub))?;
     let renamed = (profile.name != old.name).then(|| {
         format!(
-            " Tasks that ran on {} keep that name in their history; a task of it that starts again runs on {}.",
+            " Ended tasks keep {} in their history; the ones not yet ended are on {} now.",
             old.name, profile.name
         )
     });

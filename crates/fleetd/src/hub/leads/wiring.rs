@@ -226,7 +226,7 @@ const OUTCOME_WORKSTREAMS: usize = 20;
 
 /// Called once in `serve::build_on`, after the areas below leads are built.
 pub fn wire_area(area: &Arc<Area>, links: Links<'_>) {
-    // project_get shows the project's lead, whether its tasks may run medium, and its open workstreams.
+    // project_get shows the project's lead, the profiles its tasks may run on, and its open workstreams.
     let outcome = Arc::clone(area);
     links
         .executors

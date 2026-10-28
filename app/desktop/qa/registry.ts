@@ -2047,7 +2047,19 @@ export const screens: readonly Screen[] = [
     },
   },
   { id: "settings.hub.tools", route: "#/settings/hub/tools", fixtures: ["admin-owner", "settings-agents", "admin-old-hub"] },
+  // Every project › Profiles: the hub's three profiles, high the default and quick in fast mode; and medium open in its
+  // editor, its model, reasoning, fast mode and the default mark.
   { id: "settings.hub.profiles", route: "#/settings/hub/profiles", fixtures: ["admin-owner", "settings-agents"] },
+  {
+    id: "settings.hub.profiles",
+    route: "#/settings/hub/profiles",
+    fixtures: ["settings-agents"],
+    variant: "edit",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Edit medium" }).click();
+      await page.getByRole("region", { name: "Edit medium" }).waitFor();
+    },
+  },
   { id: "settings.hub.instructions", route: "#/settings/hub/instructions", fixtures: ["admin-owner", "settings-agents"] },
   // Every project › Tools & skills: the hub-wide ones (one installed and pinned), Update on the installed one,
   // and Install.
@@ -2123,6 +2135,19 @@ export const screens: readonly Screen[] = [
       const storefront = page.getByRole("region", { name: "Max agents" });
       await storefront.scrollIntoViewIfNeeded();
       await storefront.getByRole("button", { name: "Machine caps in Hub › Machines" }).waitFor();
+    },
+  },
+  // A project's allowed profiles: high (the default, checked for good) and medium, quick left out; and storefront
+  // allowing the default alone.
+  {
+    id: "settings.agents",
+    route: "#/settings/agents?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22",
+    fixtures: ["settings-agents", "settings-default-profile-only"],
+    variant: "profiles",
+    open: async (page) => {
+      const allowed = page.getByRole("region", { name: "Allowed profiles" });
+      await allowed.scrollIntoViewIfNeeded();
+      await allowed.getByRole("checkbox").first().waitFor();
     },
   },
   // A link to one project's Agents opens on that project, whichever the sidebar last showed.

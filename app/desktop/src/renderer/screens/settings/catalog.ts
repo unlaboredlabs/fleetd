@@ -31,7 +31,7 @@ const e = (group: GroupKey, name: string, description: string): Entry => ({ grou
 export const ENTRIES: Readonly<Record<string, Entry>> = {
   "lead.start": e("lead", "Lead's role, rules and playbooks", "What the lead does, what it must never do, and how it runs a bug fix, a feature or research."),
   "lead.voice": e("lead", "Voice", "How the lead talks in chat: short bubbles, exact details, and the blocks it can show."),
-  "lead.profiles": e("lead", "Task profiles", "When the lead may put a task on medium; added to its first message while medium is allowed."),
+  "lead.profiles": e("lead", "Task profiles", "How the lead picks a profile for a task; added to its first message with the project's allowed profiles."),
   "task.brief.write": e("tasks", "Writer task", "First message of a task that changes code and opens a pull request."),
   "review.reviewer": e("reviews", "Reviewer", "Reviews a pull request each round, by the project's review rules."),
   "steer.message": e("messages", "Your steer, mid-run", "Your words (or the lead's) delivered straight to a running agent."),

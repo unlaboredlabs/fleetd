@@ -7,6 +7,7 @@ import { defineGroup } from "../kit/group.ts";
 import { Fixture, HUB } from "../kit/fixture.ts";
 import { isObject, type JsonObject } from "../kit/json.ts";
 import { arr } from "../kit/stress.ts";
+import { profilesList } from "../settings/profiles.ts";
 
 const AT = "2026-10-12T09:00:00.000Z";
 const person = (personId: string, name: string, role: string, createdAt = AT): JsonObject => ({ personId, name, role, createdAt });
@@ -157,6 +158,8 @@ export function answerHub(f: Fixture, me: JsonObject = sam, admin = true, member
     ],
   });
   f.answer("hub_link_revoke", undefined, { link: link("hl_samhomea", "home", sam, "Sam's MacBook", { revokedAt: f.now }) });
+  // Every project › Profiles: the hub's task profiles.
+  f.answer("profiles_list", {}, profilesList());
   // Every project's global MCP servers: GitHub's, its token sealed on every machine.
   f.answer("mcp_servers_get", undefined, {
     global: [
