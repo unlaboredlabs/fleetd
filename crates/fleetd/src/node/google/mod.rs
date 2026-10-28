@@ -467,8 +467,10 @@ pub async fn answer(
         }
         GoogleCall::MailCheck { project_id, query } => {
             let s = Session::new(home.to_path_buf(), project_id.to_string(), ep.clone());
+            let checked = mail::check(&s, query.as_ref().map(|q| q.as_str())).await?;
             GoogleAnswer::NewMail {
-                mails: mail::check(&s, query.as_ref().map(|q| q.as_str())).await?,
+                mails: checked.mails,
+                more: (checked.more > 0).then_some(checked.more as u32),
             }
         }
     })

@@ -107,6 +107,43 @@ impl GoogleStore<'_> {
         })
     }
 
+    /// Notes when the watch asked for `watched` ends, on the account as it is now, and only while it is the same
+    /// connection (address and connected_at): a watch answered after a disconnect brings no account back, one answered
+    /// after a reconnect leaves the new connection to watch for itself, and one answered after a rule change keeps the
+    /// new rule. False: that connection is gone.
+    pub fn set_watch_expires(
+        &self,
+        watched: &GoogleAccount,
+        expires_ms: i64,
+    ) -> Result<bool, StoreError> {
+        let r = &watched.project_ref;
+        self.db.transaction(|c| {
+            let data: Option<String> = c
+                .query_row(
+                    "SELECT data FROM google_accounts WHERE machine_id = ? AND project_id = ?",
+                    params![r.machine_id.as_str(), r.project_id.as_str()],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            let Some(mut account) = data
+                .and_then(|d| serde_json::from_str::<GoogleAccount>(&d).ok())
+                .filter(|a| a.email == watched.email && a.connected_at == watched.connected_at)
+            else {
+                return Ok(false);
+            };
+            account.mail.watch_expires_ms = Some(expires_ms);
+            c.execute(
+                "UPDATE google_accounts SET data = ? WHERE machine_id = ? AND project_id = ?",
+                params![
+                    serde_json::to_string(&account)?,
+                    r.machine_id.as_str(),
+                    r.project_id.as_str()
+                ],
+            )?;
+            Ok(true)
+        })
+    }
+
     pub fn remove_account(&self, r: &ProjectRef) -> Result<bool, StoreError> {
         self.db.with(|c| {
             Ok(c.execute(
