@@ -6,7 +6,7 @@ import type { ChatMessage, MemoryRefreshed } from "../../../shared/contracts";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { UiProvider } from "../../ui";
-import { RefreshedChanges } from "./Remembered";
+import { RefreshedChanges, tidied } from "./Remembered";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -60,7 +60,7 @@ const render = async () => {
     root.render(
       <UiProvider>
         <DataProvider layer={createDataLayer(hub)}>
-          <RefreshedChanges project={project} message={message} refreshed={refreshed} />
+          <RefreshedChanges project={project} message={message} refreshed={refreshed} at="04:30" />
         </DataProvider>
       </UiProvider>,
     );
@@ -82,21 +82,76 @@ const click = async (el: HTMLElement) => {
   });
 };
 
+const summary = () => {
+  const b = [...document.querySelectorAll("button")].find((x) => x.textContent.startsWith("Memory tidied"));
+  if (b === undefined) throw new Error("no summary");
+  return b;
+};
+const rows = () => [...document.querySelectorAll('[role="listitem"]')];
+const entry = (row: Element) => {
+  const b = row.querySelector("button[aria-expanded]");
+  if (!(b instanceof HTMLElement)) throw new Error("no entry");
+  return b;
+};
+
 describe("the Memory refreshed line", () => {
-  it("lists each change with its file and reason, Undo on each one still undoable, and Undo all", async () => {
+  it("is one summary line with Undo all, its changes folded away", async () => {
     await render();
-    const items = [...document.querySelectorAll('[role="listitem"]')].map((i) => i.textContent);
-    expect(items).toEqual([
-      "+ MEMORY.md: Staging deploys need the VPN. Undo",
-      "~ MEMORY.md: No npm: use pnpm. (was: Use npm.) Undo",
-      "− deploys.md: Deploys freeze on Fridays. (The freeze ended.) Undone",
+    expect(summary().textContent).toBe("Memory tidied: 1 added, 1 updated, 1 removed");
+    expect(summary().getAttribute("aria-expanded")).toBe("false");
+    expect(document.querySelector('[role="list"]')).toBeNull();
+    expect(buttons("Undo all")).toHaveLength(1);
+    expect(buttons("Undo")).toHaveLength(0);
+  });
+
+  it("opens to one row per change: what kind, the file past MEMORY.md, the entry, and Undo or Undone", async () => {
+    await render();
+    await click(summary());
+    expect(summary().getAttribute("aria-expanded")).toBe("true");
+    expect(rows().map((r) => r.textContent)).toEqual([
+      "AddedStaging deploys need the VPN.Undo",
+      "UpdatedNo npm: use pnpm.Undo",
+      "Removeddeploys.md: Deploys freeze on Fridays.Undone",
     ]);
-    const undo = buttons("Undo");
-    expect(undo).toHaveLength(2);
+    // Folded again.
+    await click(summary());
+    expect(rows()).toHaveLength(0);
+  });
+
+  it("shows an update's old wording and a removal's reason only once its row is opened", async () => {
+    await render();
+    await click(summary());
+    expect(document.body.textContent).not.toContain("Use npm.");
+    expect(document.body.textContent).not.toContain("The freeze ended.");
+    const [, updated, removed] = rows();
+    if (updated === undefined || removed === undefined) throw new Error("no rows");
+    expect(entry(updated).getAttribute("title")).toBe("No npm: use pnpm.");
+    await click(entry(updated));
+    expect(entry(updated).getAttribute("aria-expanded")).toBe("true");
+    expect(updated.textContent).toContain("Was: Use npm.");
+    await click(entry(removed));
+    expect(removed.textContent).toContain("Why: The freeze ended.");
+    await click(entry(updated));
+    expect(updated.textContent).not.toContain("Was: Use npm.");
+  });
+
+  it("undoes one change by its place in the line, and all of them with Undo all", async () => {
+    await render();
+    await click(summary());
+    expect(buttons("Undo")).toHaveLength(2);
     await click(nth("Undo", 1));
     expect(calls).toEqual([{ tool: "memory_undo", input: { projectRef: project, messageId: "m9", item: 1 } }]);
     await click(nth("Undo all", 0));
     expect(calls[1]).toEqual({ tool: "memory_undo", input: { projectRef: project, messageId: "m9" } });
+  });
+});
+
+describe("the summary's counts", () => {
+  it("come from the hub's line, which counts the changes past those listed too", () => {
+    expect(tidied("Memory refreshed: +200 −5", { items: [{ scope: "project", text: "Rule 0." }], total: 205 })).toBe("Memory tidied: 200 added, 5 removed");
+  });
+  it("fall back to the listed changes when the line says none", () => {
+    expect(tidied("Memory refreshed", refreshed)).toBe("Memory tidied: 1 added, 1 updated, 1 removed");
   });
 });
 
@@ -117,12 +172,13 @@ describe("a Memory refreshed line with more changes than it lists", () => {
       root.render(
         <UiProvider>
           <DataProvider layer={createDataLayer(hub)}>
-            <RefreshedChanges project={project} message={{ ...message, memoryRefreshed: big }} refreshed={big} />
+            <RefreshedChanges project={project} message={{ ...message, memoryRefreshed: big }} refreshed={big} at="04:30" />
           </DataProvider>
         </UiProvider>,
       );
       await Promise.resolve();
     });
+    await click(summary());
     expect(document.body.textContent).toContain("and 204 more");
     await click(nth("Undo all", 0));
     expect(calls).toEqual([{ tool: "memory_undo", input: { projectRef: project, messageId: "m9" } }]);
@@ -134,7 +190,7 @@ describe("a Memory refreshed line with more changes than it lists", () => {
         root.render(
           <UiProvider>
             <DataProvider layer={createDataLayer({ call: () => Promise.resolve({ ok: true, output: { ok: true } }), subscribe: () => () => undefined, resync: () => Promise.resolve(), focus: () => Promise.resolve(), chat: () => Promise.resolve() })}>
-              <RefreshedChanges project={project} message={{ ...message, memoryRefreshed: line }} refreshed={line} />
+              <RefreshedChanges project={project} message={{ ...message, memoryRefreshed: line }} refreshed={line} at="04:30" />
             </DataProvider>
           </UiProvider>,
         );
@@ -142,6 +198,7 @@ describe("a Memory refreshed line with more changes than it lists", () => {
       });
     // Its one listed change undone on its own: the 204 past it are still there.
     await shown({ items: [{ scope: "project", text: "Rule 0.", undone: true }], total: 205, undone: 1 });
+    await click(summary());
     expect(buttons("Undo")).toHaveLength(0);
     expect(buttons("Undo all")).toHaveLength(1);
     // One of those left.
