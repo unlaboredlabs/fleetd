@@ -69,7 +69,7 @@ function Account({ info }: { info: GithubAppGetOutput }) {
           <div className={s.stack}>
             <Text strong>Not connected</Text>
             <Text size="sm" tone="quiet">
-              Connect before your first PR: until you do, the writers of your orders on the App&apos;s repositories wait.
+              Connect before your first PR: until you do, writers for your orders on the App&apos;s repositories are refused, and the lead asks you to connect.
             </Text>
           </div>
         </div>
@@ -78,7 +78,7 @@ function Account({ info }: { info: GithubAppGetOutput }) {
           <div className={s.stack}>
             <Text strong>{`GitHub no longer takes your connection as ${me.login}`}</Text>
             <Text size="sm" tone="quiet">
-              It was revoked on GitHub, or unused for six months. Connect again; your orders&apos; writers wait until you do.
+              It was revoked on GitHub, or unused for six months. Connect again; writers for your orders are refused until you do.
             </Text>
           </div>
         </div>
@@ -105,7 +105,7 @@ function Account({ info }: { info: GithubAppGetOutput }) {
       {removing ? (
         <ConfirmRemove
           title="Disconnect your GitHub?"
-          description="The hub revokes its token at GitHub and forgets it. The writers of your orders wait until you connect again."
+          description="The hub revokes its token at GitHub and forgets it. Writers for your orders are refused until you connect again."
           action="Disconnect"
           onRemove={() => hubCall("github_disconnect", {}).then(() => refetch(["github_app_get"]))}
           onClose={() => setRemoving(false)}

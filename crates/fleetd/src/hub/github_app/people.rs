@@ -248,7 +248,8 @@ impl GithubApps {
             .await
         {
             Ok(pair) => pair,
-            Err(e) if e.contains("bad_refresh_token") || e.contains("(4") => {
+            // Only GitHub's word for a dead refresh token lapses it: a rate limit or an outage passes.
+            Err(e) if e.contains("bad_refresh_token") => {
                 let lapsed = GithubAccount {
                     lapsed: Some(true),
                     ..kept.account.clone()

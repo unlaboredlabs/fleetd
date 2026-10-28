@@ -88,7 +88,7 @@ Who an order's agents are on GitHub, on a repository the App reaches:
 | The order | Its agents' `gh` |
 |---|---|
 | Started by you, connected | Your account: the PRs open as you |
-| Started by you, not connected | Its writers wait. The lead says "Connect your GitHub to open this order's PRs." Readers and reviewers go on |
+| Started by you, not connected | Its writers are refused: the lead says "Connect your GitHub to open this order's PRs" and spawns them again once you have. Readers and reviewers go on |
 | Started by nobody (automations, train fixes) | The App, `fleetd-on-devbox[bot]` |
 
 The token reaches the order's agents as `GH_TOKEN`, one of the order's variables: masked in what they report, renewed
@@ -99,6 +99,6 @@ If GitHub stops taking your connection (revoked there, or unused for six months)
 
 ## Remove it {#remove}
 
-**Remove** on Administration › GitHub, or `fleetd github-app remove`, makes the hub forget the App and its keys. The
+**Remove** on Administration › GitHub, or `fleetd github-app remove`, makes the hub forget the App and its keys, and everyone's connection through it. The
 hub's `gh` goes back to the machine's own login. GitHub keeps the App until you delete it under its settings' Advanced
 page.

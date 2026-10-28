@@ -8,3 +8,15 @@ CREATE TABLE github_accounts (
   sealed_refresh BLOB,
   refresh_expires_ms INTEGER
 );
+
+-- The GitHub token each open order's agents hold (`GH_TOKEN`, one of the order's variables): the repo it was for, when
+-- it ends and how close to that it is delivered again. Kept here so the sweep renews it after a hub restart too.
+CREATE TABLE github_order_tokens (
+  machine_id TEXT NOT NULL,
+  project_id TEXT NOT NULL,
+  workstream_id TEXT NOT NULL,
+  repo_id TEXT,
+  expires_ms INTEGER NOT NULL,
+  margin_ms INTEGER NOT NULL,
+  PRIMARY KEY (machine_id, project_id, workstream_id)
+);

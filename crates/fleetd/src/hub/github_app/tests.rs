@@ -254,15 +254,23 @@ struct Lab {
 
 async fn lab() -> Lab {
     let home = tempfile::tempdir().unwrap();
-    let clock = ManualClock::at(1_792_000_000_000);
+    lab_in(
+        home,
+        HubDb::open_memory().unwrap(),
+        ManualClock::at(1_792_000_000_000),
+    )
+    .await
+}
+
+/// A hub over `db` in `home`, with its own fake GitHub.
+async fn lab_in(home: tempfile::TempDir, db: Arc<HubDb>, clock: Arc<ManualClock>) -> Lab {
     let config = HubConfig {
         home: home.path().to_path_buf(),
         listen: Listen::default(),
         url: Some("http://devbox.example.ts.net:4790".into()),
         queue_ttl_sec: None,
     };
-    let hub =
-        crate::hub::serve::build_on(HubDb::open_memory().unwrap(), config, clock.clone()).unwrap();
+    let hub = crate::hub::serve::build_on(db, config, clock.clone()).unwrap();
     let (ep, fake) = fake_github(clock.clone()).await;
     hub.github_app.set_endpoints(ep);
     Lab {
@@ -1027,15 +1035,21 @@ async fn a_token_goes_only_to_a_node_that_keeps_it_as_the_orders() {
     let person = sam.person.clone().unwrap().person_id;
     let (r, order) = order_on_acme(&lab.hub, Some(&person));
     // Not installed: nothing to hand over.
-    deliver(&lab.hub, &r, &order, None).await.unwrap();
+    deliver(&lab.hub, &r, &order, None, true).await.unwrap();
     call(&lab.hub, &sam, "github_app_test", json!({}))
         .await
         .unwrap();
-    // Not connected: a reader or reviewer goes without (a writer was refused at spawn).
-    deliver(&lab.hub, &r, &order, None).await.unwrap();
+    // Not connected: a reader or reviewer goes without; a writer that got past its spawn (queued before the App was
+    // installed) is refused at its launch, never run on the machine's login.
+    deliver(&lab.hub, &r, &order, None, false).await.unwrap();
+    let e = deliver(&lab.hub, &r, &order, None, true).await.unwrap_err();
+    assert!(
+        e.starts_with("Connect your GitHub to open this order's PRs."),
+        "{e}"
+    );
     connect(&lab, &sam).await.unwrap();
     // devbox's node isn't linked here, so it can't keep an order's variables: refused, never the machine's login.
-    let e = deliver(&lab.hub, &r, &order, None).await.unwrap_err();
+    let e = deliver(&lab.hub, &r, &order, None, true).await.unwrap_err();
     assert!(e.contains("too old to hand agents a GitHub token"), "{e}");
     assert!(
         lab.hub
@@ -1045,4 +1059,79 @@ async fn a_token_goes_only_to_a_node_that_keeps_it_as_the_orders() {
             .unwrap()
             .is_empty()
     );
+}
+
+/// The hub restarts while an order's agents run (an update): what it handed them is still renewed, with no new launch.
+#[tokio::test]
+async fn the_orders_tokens_are_renewed_after_a_hub_restart() {
+    use super::sessions::{Kept, keep, kept, renew};
+    let home = tempfile::tempdir().unwrap();
+    let path = home.path().to_path_buf();
+    let clock = ManualClock::at(1_792_000_000_000);
+    let first = lab_in(home, HubDb::open(&path).unwrap(), clock.clone()).await;
+    created(&first).await;
+    call(&first.hub, &admin(&first.hub), "github_app_test", json!({}))
+        .await
+        .unwrap();
+    // Work nobody started: the App's token, handed over at its launch and ending within the hour.
+    let (r, order) = order_on_acme(&first.hub, None);
+    let now = crate::hub::store::now_ms(clock.as_ref() as &dyn Clock);
+    let handed = Kept {
+        r: r.clone(),
+        order: order.clone(),
+        repo_id: None,
+        expires_ms: now + 50 * 60_000,
+        margin_ms: 30 * 60_000,
+    };
+    keep(&first.hub, &handed).unwrap();
+    let home = first._home;
+    drop(first.hub);
+    // The new process, on the same home.
+    let second = lab_in(home, HubDb::open(&path).unwrap(), clock.clone()).await;
+    assert_eq!(kept(&second.hub), std::slice::from_ref(&handed));
+    // Not due yet: nothing is asked of GitHub.
+    renew(&second.hub).await;
+    assert!(second.fake.lock().unwrap().minted.is_empty());
+    // Within its margin, the sweep renews it: a new token is minted for the order (its node, not linked in this test,
+    // then refuses it, and the record stays to try again).
+    clock.advance(Duration::from_secs(25 * 60));
+    renew(&second.hub).await;
+    assert!(
+        second
+            .fake
+            .lock()
+            .unwrap()
+            .minted
+            .iter()
+            .any(|t| t.starts_with("ghs_7_")),
+        "no token minted for acme's installation"
+    );
+    assert_eq!(kept(&second.hub), [handed]);
+    // Closed, it is forgotten.
+    let records = &second.hub.leads.records;
+    let w = records.workstream_get(&order).unwrap().unwrap();
+    records
+        .workstream_put(&fleetd_contracts::ledger::Workstream {
+            state: fleetd_contracts::ledger::WorkstreamState::Done,
+            ..w
+        })
+        .unwrap();
+    renew(&second.hub).await;
+    assert!(kept(&second.hub).is_empty());
+}
+
+#[tokio::test]
+async fn removing_the_app_forgets_everyones_connection_through_it() {
+    let lab = lab().await;
+    created(&lab).await;
+    let sam = admin(&lab.hub);
+    connect(&lab, &sam).await.unwrap();
+    call(&lab.hub, &sam, "github_app_remove", json!({}))
+        .await
+        .unwrap();
+    created(&lab).await;
+    let got = call(&lab.hub, &sam, "github_app_get", json!({}))
+        .await
+        .unwrap();
+    assert!(got.get("me").is_none(), "{got}");
 }

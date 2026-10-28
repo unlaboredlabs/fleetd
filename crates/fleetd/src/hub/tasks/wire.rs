@@ -153,6 +153,7 @@ impl TaskPorts for HubTaskPorts {
                     &request.project_ref,
                     order,
                     request.repo_id.as_ref(),
+                    request.kind == fleetd_contracts::tasks::TaskKind::Write,
                 )
                 .await
             {

@@ -358,8 +358,8 @@ copy buttons, live checks after the paste, "progress is saved".
     on the sweep; a writer whose starter hasn't connected is refused at spawn.
   - Built (stage 3): the `hub/github_app` check, the GitHub step's first way, with `hub/gh_auth` as the second.
   - Next: webhooks on HTTPS hubs (`/webhooks/github`).
-  - A `hub/github_app` check: the App exists, it is installed, a token mints, and the asking admin is connected.
-  - It takes over from `gh auth` on the hub, and `hub/gh_auth` goes.
+  - The `hub/github_app` check reads the App's installations and its last Test (a token minted for each
+    installation); `hub/gh_auth` stays as the step's second way, for a hub without an App.
 - **Claude accounts (hub key, endpoint, subscriptions)**
   - A `hub/claude_key` check (the key's last Test, `claude_account_test`, made with one tiny `claude -p` call), as
     the step's first way. Built: none is to do, a failed Test fails, a machine without the key warns, untested waits

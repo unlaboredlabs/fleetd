@@ -220,8 +220,6 @@ pub struct GithubApps {
     refreshing: tokio::sync::Mutex<()>,
     /// One change to people's tokens at a time: a refresh renews the refresh token too.
     accounts: tokio::sync::Mutex<()>,
-    /// The tokens handed to orders' sessions, to renew (sessions.rs).
-    pub delivered: sessions::Delivered,
 }
 
 fn http() -> reqwest::Client {
@@ -294,7 +292,6 @@ impl GithubApps {
             cache: tokio::sync::Mutex::new(Cache::default()),
             refreshing: tokio::sync::Mutex::new(()),
             accounts: tokio::sync::Mutex::new(()),
-            delivered: sessions::Delivered::default(),
         })
     }
 
@@ -696,9 +693,18 @@ impl GithubApps {
     }
 
     /// Forgets the App: its row and its tokens. GitHub keeps it until the admin deletes it there.
+    /// People's connections and the orders' tokens were the App's too: they go with it, so a new App never passes
+    /// for them.
     pub async fn remove(&self) -> Result<Option<GithubApp>, String> {
         let mut cache = self.cache.lock().await;
         *cache = Cache::default();
+        let _one = self.accounts.lock().await;
+        self.db
+            .with(|c| {
+                c.execute_batch("DELETE FROM github_accounts; DELETE FROM github_order_tokens;")?;
+                Ok(())
+            })
+            .map_err(|e| e.to_string())?;
         self.db.github_app().remove().map_err(|e| e.to_string())
     }
 }

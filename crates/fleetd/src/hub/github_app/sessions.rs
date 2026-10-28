@@ -3,13 +3,13 @@
 //! App's own installation token. It travels as one of the order's variables (an `order:` sink, node/order_env.rs):
 //! sealed to the project machine's box key, masked in what the agents report, read again at each turn, and dropped
 //! with the order's other variables when it closes. The hub delivers it at each task launch ([`deliver`]) and again
-//! before it ends ([`run`]).
+//! before it ends ([`run`]), from what it keeps in `github_order_tokens`: running agents keep getting fresh tokens
+//! across a hub restart, with no new launch.
 //!
 //! A writer whose order's starter hasn't connected GitHub is refused at spawn ([`refusal`]), in plain words for the
 //! lead to pass on: never anyone else's account. With no App, or on a repository it doesn't reach, nothing changes:
 //! the agents use their machine's own `gh` login, as before.
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
@@ -20,6 +20,7 @@ use fleetd_contracts::node_link::{CAP_ORDER_ENV, SecretDeliver};
 use fleetd_contracts::people::PersonId;
 use fleetd_contracts::repos::RepoId;
 use fleetd_contracts::tasks::TaskKind;
+use rusqlite::params;
 use zeroize::Zeroizing;
 
 use super::people::SESSION_MARGIN_MS;
@@ -43,16 +44,88 @@ pub enum GithubAs {
     App,
 }
 
-/// Each order's delivered token: the repo it was for, when it ends, and how close to that it is delivered again. Kept
-/// in memory: after a restart, the next task launch delivers again.
-#[derive(Default)]
-pub struct Delivered(Mutex<HashMap<(ProjectRef, WorkstreamId), Kept>>);
+/// An order's delivered token, as `github_order_tokens` keeps it: the repo it was for, when it ends, and how close to
+/// that it is delivered again.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Kept {
+    pub r: ProjectRef,
+    pub order: WorkstreamId,
+    pub repo_id: Option<RepoId>,
+    pub expires_ms: i64,
+    pub margin_ms: i64,
+}
 
-#[derive(Clone)]
-struct Kept {
-    repo_id: Option<RepoId>,
-    expires_ms: i64,
-    margin_ms: i64,
+pub(super) fn keep(hub: &Hub, kept: &Kept) -> Result<(), String> {
+    hub.db
+        .with(|c| {
+            c.execute(
+                "INSERT INTO github_order_tokens (machine_id, project_id, workstream_id, repo_id, expires_ms, margin_ms)
+                 VALUES (?, ?, ?, ?, ?, ?)
+                 ON CONFLICT (machine_id, project_id, workstream_id) DO UPDATE SET repo_id = excluded.repo_id,
+                   expires_ms = excluded.expires_ms, margin_ms = excluded.margin_ms",
+                params![
+                    kept.r.machine_id.as_str(),
+                    kept.r.project_id.as_str(),
+                    kept.order.as_str(),
+                    kept.repo_id.as_ref().map(|r| r.as_str()),
+                    kept.expires_ms,
+                    kept.margin_ms
+                ],
+            )?;
+            Ok(())
+        })
+        .map_err(|e| e.to_string())
+}
+
+fn forget(hub: &Hub, r: &ProjectRef, order: &WorkstreamId) {
+    let gone = hub.db.with(|c| {
+        c.execute(
+            "DELETE FROM github_order_tokens WHERE machine_id = ? AND project_id = ? AND workstream_id = ?",
+            params![r.machine_id.as_str(), r.project_id.as_str(), order.as_str()],
+        )?;
+        Ok(())
+    });
+    if let Err(e) = gone {
+        tracing::warn!(
+            order = order.as_str(),
+            "github: the order's token not forgotten: {e}"
+        );
+    }
+}
+
+/// Every order's delivered token.
+pub fn kept(hub: &Hub) -> Vec<Kept> {
+    let rows = hub.db.with(|c| {
+        let mut stmt = c.prepare(
+            "SELECT machine_id, project_id, workstream_id, repo_id, expires_ms, margin_ms FROM github_order_tokens",
+        )?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                    row.get::<_, i64>(4)?,
+                    row.get::<_, i64>(5)?,
+                ))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    });
+    rows.unwrap_or_default()
+        .into_iter()
+        .filter_map(|(m, p, w, repo, expires_ms, margin_ms)| {
+            Some(Kept {
+                r: serde_json::from_value(serde_json::json!({ "machineId": m, "projectId": p }))
+                    .ok()?,
+                order: WorkstreamId::new(w).ok()?,
+                repo_id: repo.and_then(|r| RepoId::new(r).ok()),
+                expires_ms,
+                margin_ms,
+            })
+        })
+        .collect()
 }
 
 /// The task's repository on GitHub (`owner/name`): its own repo's, else the project's.
@@ -139,12 +212,14 @@ pub fn refusal(
 
 /// Hands the order's sessions their GitHub token, when the App reaches the task's repo: sealed to the project
 /// machine's box key, as one of the order's variables. `Err` says why it couldn't, for a launch to refuse rather than
-/// run as the machine's login.
+/// run as the machine's login: a `writer` whose starter hasn't connected is refused here too, as at its spawn (a task
+/// queued before the App was installed, or relaunched after a disconnect).
 pub async fn deliver(
     hub: &Hub,
     r: &ProjectRef,
     order: &WorkstreamId,
     repo_id: Option<&RepoId>,
+    writer: bool,
 ) -> Result<(), String> {
     let Some(repo) = repo_of(hub, r, repo_id) else {
         return Ok(());
@@ -159,7 +234,12 @@ pub async fn deliver(
     let (token, expires_ms) = match &github {
         GithubAs::Person(person) => match hub.github_app.user_token(person).await? {
             Some(t) => t,
-            // Not connected: a writer was refused at spawn; a reader or reviewer goes without.
+            None if writer => {
+                return Err(format!(
+                    "{GITHUB_CONNECT_REFUSAL} Its starter connects GitHub in Settings › GitHub"
+                ));
+            }
+            // Not connected: a reader or reviewer opens no PR, and goes without.
             None => return Ok(()),
         },
         GithubAs::App => hub
@@ -169,20 +249,16 @@ pub async fn deliver(
             .ok_or_else(|| format!("GitHub gave the hub's App no token for {repo}"))?,
     };
     put(hub, r, order, &token).await?;
-    hub.github_app
-        .delivered
-        .0
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .insert(
-            (r.clone(), order.clone()),
-            Kept {
-                repo_id: repo_id.cloned(),
-                expires_ms,
-                margin_ms,
-            },
-        );
-    Ok(())
+    keep(
+        hub,
+        &Kept {
+            r: r.clone(),
+            order: order.clone(),
+            repo_id: repo_id.cloned(),
+            expires_ms,
+            margin_ms,
+        },
+    )
 }
 
 /// Seals `token` to the project machine's box key and has its node keep it as the order's `GH_TOKEN`.
@@ -252,36 +328,23 @@ async fn put(
 /// Delivers again each open order's token that ends within its margin; forgets closed orders'.
 pub async fn renew(hub: &Hub) {
     let now = now_ms(hub.clock.as_ref());
-    let due: Vec<_> = hub
-        .github_app
-        .delivered
-        .0
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .iter()
-        .map(|((r, order), kept)| (r.clone(), order.clone(), kept.clone()))
-        .collect();
-    for (r, order, kept) in due {
+    for kept in kept(hub) {
+        let (r, order) = (&kept.r, &kept.order);
         let open = hub
             .leads
             .records
-            .workstream_get(&order)
+            .workstream_get(order)
             .ok()
             .flatten()
             .is_some_and(|w| !crate::hub::leads::records::is_closed(w.state));
         if !open {
-            hub.github_app
-                .delivered
-                .0
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .remove(&(r, order));
+            forget(hub, r, order);
             continue;
         }
         if kept.expires_ms - now >= kept.margin_ms {
             continue;
         }
-        if let Err(e) = deliver(hub, &r, &order, kept.repo_id.as_ref()).await {
+        if let Err(e) = deliver(hub, r, order, kept.repo_id.as_ref(), false).await {
             tracing::warn!(
                 order = order.as_str(),
                 "github: the order's token not renewed: {e}"
