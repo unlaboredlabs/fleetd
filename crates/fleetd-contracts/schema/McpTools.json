@@ -14409,7 +14409,7 @@
       "type": "object"
     },
     "Profile": {
-      "description": "One task profile (Administration › Profiles): what an agent on it runs on. Exactly one is the hub's default, which\nevery project allows and the lead, every review and claude's helper calls run on.",
+      "description": "One task profile (Settings › Hub › Every project › Profiles): what an agent on it runs on. Exactly one is the hub's default, which\nevery project allows and the lead, every review and claude's helper calls run on.",
       "properties": {
         "default": {
           "type": "boolean"

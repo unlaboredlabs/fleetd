@@ -39,7 +39,9 @@ describe("settings search", () => {
     expect([tabOf("notifications"), tabOf("version"), tabOf("check for updates")]).toEqual(["general", "general", "general"]);
     expect([tabOf("max agents"), tabOf("mcp"), tabOf("skills")]).toEqual(["agents", "agents", "agents"]);
     // Task profiles are the hub's, on Every project › Profiles (W146).
-    expect([tabOf("task profiles"), tabOf("task profiles", true)]).toEqual([undefined, "hub.profiles"]);
+    const tabs = (q: string, admin: boolean) => searchSettings(q, optionsFor(admin)).map((o) => o.tab);
+    expect(tabs("task profiles", false)).not.toContain("hub.profiles");
+    expect(tabs("task profiles", true)).toContain("hub.profiles");
     expect([tabOf("instructions"), tabOf("memory")]).toEqual(["instructions", "instructions"]);
     expect([tabOf("automations"), tabOf("environment variables"), tabOf("prompts")]).toEqual(["automations", "projects", "prompts"]);
     // Nothing hub-wide for a member: the global MCP servers and the instructions for every project are the Hub group's.

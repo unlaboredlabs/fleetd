@@ -4845,7 +4845,7 @@ export type PreviewsListOutput = {
 };
 
 /**
- * One task profile (Administration › Profiles): what an agent on it runs on. Exactly one is the hub's default, which
+ * One task profile (Settings › Hub › Every project › Profiles): what an agent on it runs on. Exactly one is the hub's default, which
  * every project allows and the lead, every review and claude's helper calls run on.
  */
 export type Profile = {
