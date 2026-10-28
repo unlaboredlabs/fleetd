@@ -133,12 +133,25 @@ impl TaskPorts for HubTaskPorts {
                 fleetd_contracts::tasks::TaskKind::Read
                 | fleetd_contracts::tasks::TaskKind::Review => McpAgentRole::Reviewer,
             };
+            // Its order's starter's Claude account (teams step 8): refused when they have none here.
+            let claude_account = match self.hub() {
+                Some(hub) => crate::hub::claude_accounts::for_task(
+                    &hub.db,
+                    &hub.link,
+                    &request.project_ref,
+                    request.order_id.as_ref(),
+                    machine_id,
+                )
+                .map_err(|r| PortError::Failed(format!("{} {}", r.message, r.fix)))?,
+                None => None,
+            };
             let options = LaunchOptions {
                 workspace,
                 role: fleetd_contracts::sessions::SessionRole::Worker,
                 mcp_role: Some(mcp_role),
                 order_id: request.order_id,
                 setup,
+                claude_account,
                 ..Default::default()
             };
             self.executors
@@ -386,6 +399,26 @@ impl TaskPorts for HubTaskPorts {
         Some(stored)
     }
 
+    fn claude_account_key(
+        &self,
+        project_ref: &ProjectRef,
+        order: &WorkstreamId,
+        machine_id: &MachineId,
+    ) -> Option<String> {
+        let hub = self.hub()?;
+        crate::hub::claude_accounts::task_account_key(&hub.db, project_ref, Some(order), machine_id)
+    }
+
+    fn claude_refusal(
+        &self,
+        project_ref: &ProjectRef,
+        order: &WorkstreamId,
+    ) -> Option<(String, String)> {
+        let hub = self.hub()?;
+        crate::hub::claude_accounts::order_refusal(&hub.db, project_ref, order)
+            .map(|r| (r.message, r.fix))
+    }
+
     fn medium_allowed(&self, project_ref: &ProjectRef) -> bool {
         let Some(hub) = self.hub() else { return false };
         hub.leads
@@ -585,8 +618,8 @@ pub fn register_lead_calls(hub: &Arc<Hub>) {
 struct UsageFromArea(Arc<crate::hub::usage::Usage>);
 
 impl UsageGate for UsageFromArea {
-    fn gate(&self, machine_id: &MachineId) -> Option<String> {
-        self.0.gate(machine_id.as_str())
+    fn gate(&self, machine_id: &MachineId, account: Option<&str>) -> Option<String> {
+        self.0.gate_for(machine_id.as_str(), account)
     }
     fn parked_of(&self, event: &HubEvent) -> Option<UsageParked> {
         // Usage keeps its own copy of the event's wire shape.

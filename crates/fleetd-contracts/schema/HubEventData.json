@@ -1214,6 +1214,39 @@
         }
       ]
     },
+    "ClaudeAccount": {
+      "description": "The account a session runs on, as a launch names it. The node resolves it from the secrets it holds: `hub` is\nthe hub's API key (`ANTHROPIC_API_KEY`, and `ANTHROPIC_BASE_URL` with an endpoint), `person` that person's\nsubscription (`CLAUDE_CODE_OAUTH_TOKEN`).",
+      "oneOf": [
+        {
+          "properties": {
+            "kind": {
+              "const": "hub",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "person",
+              "type": "string"
+            },
+            "personId": {
+              "$ref": "#/$defs/PersonId"
+            }
+          },
+          "required": [
+            "kind",
+            "personId"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "ClonePhase": {
       "oneOf": [
         {
@@ -3457,6 +3490,10 @@
     "UsageEventData": {
       "description": "Fields `HubEvent.data` carries on usage.breaker and usage.resumed.",
       "properties": {
+        "account": {
+          "$ref": "#/$defs/ClaudeAccount",
+          "description": "The Claude account the pause or resume is about; absent: the machine's own login."
+        },
         "breakerCleared": {
           "description": "usage.resumed: the breaker was open and is now closed.",
           "type": "boolean"

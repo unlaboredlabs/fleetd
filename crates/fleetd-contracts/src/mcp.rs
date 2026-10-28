@@ -2688,6 +2688,86 @@ output!(WorkDoneOutput {
     claim: crate::work::Claim,
 });
 
+// claude_accounts_get, claude_hub_api_set, claude_hub_api_remove, claude_settings_set, claude_subscription_set,
+// claude_subscription_remove, claude_choice_set, claude_account_test: which Claude account each person's work runs on
+// (teams step 8, D200; `claude_accounts.rs`). Keys and tokens are sealed in the app to each machine's boxPubKey; the
+// hub relays the boxes and keeps only each node's fingerprint.
+input!(ClaudeAccountsGetInput {});
+output!(ClaudeAccountsGetOutput {
+    /// The hub's API configuration, once an admin set one up.
+    hub_api: Option<crate::claude_accounts::ClaudeHubApi>,
+    settings: crate::claude_accounts::ClaudeSettings,
+    /// What projects' leads and work nobody started (automations, train fixes) run on.
+    leads_run_on: crate::claude_accounts::ClaudeRunsOn,
+    /// The caller's own setup; absent for a key with no person.
+    me: Option<crate::claude_accounts::PersonClaude>,
+    /// Everyone's, for an owner's or admin's device; empty otherwise.
+    #[serde(default)]
+    people: Vec<crate::claude_accounts::PersonClaude>,
+});
+input!(
+    #[serde(remote = "Self")]
+    ClaudeHubApiSetInput {
+        /// The API key sealed to each machine agents run on; empty keeps the saved key, for an endpoint change alone.
+        #[serde(default)]
+        sealed: List<crate::claude_accounts::ClaudeSeal, 0, 500>,
+        /// A custom endpoint (ANTHROPIC_BASE_URL); absent: Anthropic's own.
+        endpoint: Option<crate::claude_accounts::ClaudeEndpoint>,
+    }
+);
+checked!(ClaudeHubApiSetInput, |input| {
+    crate::claude_accounts::seals_distinct(&input.sealed)
+});
+output!(ClaudeHubApiSetOutput {
+    hub_api: crate::claude_accounts::ClaudeHubApi,
+    /// Machines whose node doesn't hold the key (offline when it was saved): save it again while they are online.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    missing_on: Vec<MachineId>,
+});
+input!(ClaudeHubApiRemoveInput {});
+output!(ClaudeHubApiRemoveOutput { ok: True });
+input!(ClaudeSettingsSetInput {
+    /// Members may run their work on the hub's API configuration.
+    members_use_hub_api: bool,
+});
+output!(ClaudeSettingsSetOutput {
+    settings: crate::claude_accounts::ClaudeSettings
+});
+input!(
+    #[serde(remote = "Self")]
+    ClaudeSubscriptionSetInput {
+        /// The caller's long-lived token (`claude setup-token`) sealed to each machine agents run on.
+        sealed: List<crate::claude_accounts::ClaudeSeal, 1, 500>,
+    }
+);
+checked!(ClaudeSubscriptionSetInput, |input| {
+    crate::claude_accounts::seals_distinct(&input.sealed)
+});
+output!(ClaudeSubscriptionSetOutput {
+    me: crate::claude_accounts::PersonClaude,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    missing_on: Vec<MachineId>,
+});
+input!(ClaudeSubscriptionRemoveInput {});
+output!(ClaudeSubscriptionRemoveOutput {
+    me: crate::claude_accounts::PersonClaude
+});
+input!(ClaudeChoiceSetInput {
+    /// Absent: their subscription once connected, else the hub's API.
+    choice: Option<crate::claude_accounts::ClaudeChoice>,
+});
+output!(ClaudeChoiceSetOutput {
+    me: crate::claude_accounts::PersonClaude
+});
+input!(ClaudeAccountTestInput {
+    account: crate::claude_accounts::ClaudeTestTarget,
+    /// Where to try it; default: the first machine online that holds it.
+    machine_id: Option<MachineId>,
+});
+output!(ClaudeAccountTestOutput {
+    test: crate::claude_accounts::ClaudeTest
+});
+
 /// Declares the static tool table: `McpToolName` with each tool's minimum grant role and its input and output types.
 macro_rules! tools {
     ($($name:ident => $variant:ident, $scope:ident, $input:ty, $output:ty;)*) => {
@@ -2784,6 +2864,16 @@ tools! {
     google_disconnect => GoogleDisconnect, Operate, GoogleDisconnectInput, GoogleDisconnectOutput;
     google_pubsub_set => GooglePubsubSet, Operate, GooglePubsubSetInput, GooglePubsubSetOutput;
     google_mail_set => GoogleMailSet, Operate, GoogleMailSetInput, GoogleMailSetOutput;
+    claude_accounts_get => ClaudeAccountsGet, Read, ClaudeAccountsGetInput, ClaudeAccountsGetOutput;
+    // Owners' and admins' human keys only (the handlers check): the hub's API configuration and who may use it.
+    claude_hub_api_set => ClaudeHubApiSet, Admin, ClaudeHubApiSetInput, ClaudeHubApiSetOutput;
+    claude_hub_api_remove => ClaudeHubApiRemove, Admin, ClaudeHubApiRemoveInput, ClaudeHubApiRemoveOutput;
+    claude_settings_set => ClaudeSettingsSet, Admin, ClaudeSettingsSetInput, ClaudeSettingsSetOutput;
+    // Human keys only (the handlers check): a person's own subscription and choice.
+    claude_subscription_set => ClaudeSubscriptionSet, Operate, ClaudeSubscriptionSetInput, ClaudeSubscriptionSetOutput;
+    claude_subscription_remove => ClaudeSubscriptionRemove, Operate, ClaudeSubscriptionRemoveInput, ClaudeSubscriptionRemoveOutput;
+    claude_choice_set => ClaudeChoiceSet, Operate, ClaudeChoiceSetInput, ClaudeChoiceSetOutput;
+    claude_account_test => ClaudeAccountTest, Operate, ClaudeAccountTestInput, ClaudeAccountTestOutput;
     wake_set => WakeSet, Operate, WakeSetInput, WakeSetOutput;
     wake_list => WakeList, Read, WakeListInput, WakeListOutput;
     wake_cancel => WakeCancel, Operate, WakeCancelInput, WakeCancelOutput;

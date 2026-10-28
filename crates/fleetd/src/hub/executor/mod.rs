@@ -78,6 +78,8 @@ const READ_TIMEOUT: Duration = Duration::from_secs(15);
 const LAUNCH_TIMEOUT: Duration = Duration::from_secs(60);
 /// A connection test: the node gives a server 30 s to start and list its tools.
 const MCP_TEST_TIMEOUT: Duration = Duration::from_secs(45);
+/// A Claude account's Test: the node gives its `claude -p` call 90 s.
+const CLAUDE_TEST_TIMEOUT: Duration = Duration::from_secs(100);
 /// The node first stops the project's claude processes and waits up to 12 s for them to exit.
 const REMOVE_TIMEOUT: Duration = Duration::from_secs(30);
 /// The node's stop waits up to 25 s for claude to exit (its kill ladder, then a SIGKILL).
@@ -179,6 +181,8 @@ pub struct LaunchOptions {
     pub only_tools: Option<Vec<String>>,
     /// These MCP servers instead of `mcp_role`'s, kept for the thread's life: a send never brings it the project's.
     pub mcp: Option<fleetd_contracts::mcp_servers::McpSessionConfig>,
+    /// The Claude account it runs on for its whole life (`hub::claude_accounts`); none: the machine's own login.
+    pub claude_account: Option<fleetd_contracts::claude_accounts::ClaudeAccount>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1488,6 +1492,11 @@ impl Executors {
             })
     }
 
+    /// The hub's database, for what a launch's caller decides from it (its Claude account).
+    pub fn hub_db(&self) -> &crate::hub::store::HubDb {
+        self.store.db()
+    }
+
     pub async fn launch(
         &self,
         machine_id: &MachineId,
@@ -1500,7 +1509,14 @@ impl Executors {
         if self.cached_runner(machine_id).is_none() {
             let _ = self.runner_info(machine_id).await;
         }
-        if let Some(refused) = self.runner_refusal(machine_id, op) {
+        // On a Claude account, the machine's own login doesn't matter: only a runner that can't run at all refuses.
+        if let Some(refused) = self.runner_refusal(machine_id, op).filter(|_| {
+            options.claude_account.is_none()
+                || self.cached_runner(machine_id).is_none_or(|info| {
+                    info.login != fleetd_contracts::sessions::LoginStatus::LoggedOut
+                        || info.conformance_ok != Some(true)
+                })
+        }) {
             return Err(refused);
         }
         // The machine's runner takes it, on the model and effort the profile's settings chose and the profile's own
@@ -1600,12 +1616,28 @@ impl Executors {
             skills,
             order_id: options.order_id,
             setup: options.setup.map(Box::new),
+            claude_account: options.claude_account.clone(),
         };
         let mcp_launched = launch
             .mcp
             .as_ref()
             .map(|config| (input.project_id.clone(), mcp_digest(config)));
         let skills_launched = (input.project_id.clone(), skills_digest(&launch.skills));
+        // Recorded before the session runs, so its first limit already counts against its account (`hub::usage`);
+        // unrecorded, it doesn't start, as its limits would pause the machine's own login's work instead.
+        if let Some(account) = &options.claude_account {
+            self.store
+                .db()
+                .claude_accounts()
+                .set_thread_account(machine_id, session_id.as_str(), account)
+                .map_err(|e| {
+                    failed(
+                        machine_id,
+                        op,
+                        format!("the thread's Claude account was not recorded: {e}"),
+                    )
+                })?;
+        }
         let base = match self
             .call(machine_id, op, SessionCall::Launch(launch), LAUNCH_TIMEOUT)
             .await?
@@ -2400,6 +2432,41 @@ impl Executors {
                 op,
                 "the node sent no answer to mcp_secrets",
             )),
+        }
+    }
+
+    /// Saves (`set`) or forgets (none) one Claude account's secret on the node; the fingerprint it holds afterwards.
+    /// Only to a node listing `CAP_CLAUDE_ACCOUNTS`.
+    pub async fn claude_account_secret(
+        &self,
+        machine_id: &MachineId,
+        account: fleetd_contracts::claude_accounts::ClaudeAccount,
+        set: Option<fleetd_contracts::claude_accounts::ClaudeSecretSet>,
+    ) -> Result<Option<fleetd_contracts::secrets::SecretFingerprint>, ExecutorError> {
+        let op = NodeOperation::Project;
+        let call = SessionCall::ClaudeAccountSecret { account, set };
+        match self.call(machine_id, op, call, READ_TIMEOUT).await? {
+            SessionOutput::ClaudeAccountSaved { fingerprint } => Ok(fingerprint),
+            _ => Err(failed(
+                machine_id,
+                op,
+                "the node sent no answer to claude_account_secret",
+            )),
+        }
+    }
+
+    /// Has the node make one tiny `claude -p` call on the account: whether it worked, else claude's words, masked.
+    /// Only to a node listing `CAP_CLAUDE_ACCOUNTS`.
+    pub async fn claude_account_test(
+        &self,
+        machine_id: &MachineId,
+        account: fleetd_contracts::claude_accounts::ClaudeAccount,
+    ) -> Result<(bool, Option<String>), ExecutorError> {
+        let op = NodeOperation::Read;
+        let call = SessionCall::ClaudeAccountTest { account };
+        match self.call(machine_id, op, call, CLAUDE_TEST_TIMEOUT).await? {
+            SessionOutput::ClaudeAccountTested { ok, error } => Ok((ok, error)),
+            _ => Err(failed(machine_id, op, "the node sent no test result")),
         }
     }
 

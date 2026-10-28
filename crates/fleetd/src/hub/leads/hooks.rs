@@ -4,7 +4,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, OnceLock};
 
-use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadRef, Timestamp};
+use fleetd_contracts::ids::{ProjectRef, ThreadRef, Timestamp};
 use fleetd_contracts::ledger::WorkstreamId;
 use fleetd_contracts::repos::RepoId;
 use fleetd_contracts::tasks::TaskId;
@@ -14,8 +14,9 @@ pub type BoxFuture<T> = Pin<Box<dyn Future<Output = T> + Send>>;
 
 /// M4 usage.
 pub trait UsageHook: Send + Sync {
-    /// Why no turn may go into this machine's login now; None when it may.
-    fn gate(&self, machine_id: &MachineId) -> Option<String>;
+    /// Why no turn may go into the login the project's lead runs on now (its machine's own, or its Claude account
+    /// there); None when it may.
+    fn gate(&self, project: &ProjectRef) -> Option<String>;
     /// The thread hit a usage limit and is parked.
     fn parked_of(&self, thread: &ThreadRef) -> Option<UsageParked>;
     /// Why this thread's next turn must wait (login paused or thread parked); None when it may go.

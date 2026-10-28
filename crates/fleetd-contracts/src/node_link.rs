@@ -95,6 +95,9 @@ pub const CAP_MCP_SERVERS: &str = "mcp_servers";
 /// `google-mcp` server in a Navi lead's MCP config.
 pub const CAP_GOOGLE: &str = "google";
 
+/// New mail for a Navi: `google`'s `pubsub_set`, `mail_pull`, `mail_watch` and `mail_check` (W97).
+pub const CAP_GOOGLE_MAIL: &str = "google_mail";
+
 /// `skills_list` (a project's repo skills, for Settings → Skills). Hub-kept skills ride on `launch`, which an older
 /// node ignores.
 pub const CAP_SKILLS: &str = "skills";
@@ -162,6 +165,10 @@ pub const CAP_SESSION_END: &str = "session_end";
 /// The node seals its agents' session secrets and relay key to the machine that will host a session, and opens what
 /// is sealed to it: the hub places sessions across machines only between nodes that list it.
 pub const CAP_SESSION_SEAL: &str = "session_seal";
+
+/// The node keeps Claude accounts' secrets (`claude_account_secret`, `claude_account_test`) and runs a launch's
+/// `claudeAccount` on them (teams step 8).
+pub const CAP_CLAUDE_ACCOUNTS: &str = "claude_accounts";
 
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

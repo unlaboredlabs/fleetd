@@ -12,6 +12,7 @@ pub mod blocks;
 pub mod browser;
 pub mod chat;
 pub mod checklist;
+pub mod claude_accounts;
 pub mod doctor;
 pub mod effort;
 pub mod events;

@@ -111,8 +111,11 @@ fn usage_ref(thread: &ThreadRef) -> Option<crate::hub::usage::ports::ThreadRef> 
 }
 
 impl UsageHook for UsageForLeads {
-    fn gate(&self, machine_id: &MachineId) -> Option<String> {
-        self.0.upgrade()?.usage.gate(machine_id.as_str())
+    fn gate(&self, project: &ProjectRef) -> Option<String> {
+        let hub = self.0.upgrade()?;
+        let account = crate::hub::claude_accounts::lead_account_key(&hub.db, project);
+        hub.usage
+            .gate_for(project.machine_id.as_str(), account.as_deref())
     }
     fn parked_of(&self, thread: &ThreadRef) -> Option<UsageParked> {
         convert(&self.0.upgrade()?.usage.parked_of(&usage_ref(thread)?)?)

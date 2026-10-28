@@ -805,6 +805,10 @@ impl Runner for ClaudeRunner {
         })
     }
 
+    fn try_account<'a>(&'a self, env: &'a [(String, String)]) -> BoxFut<'a, Result<(), String>> {
+        Box::pin(conformance::try_account(&self.binary, env))
+    }
+
     fn spawn(&self, mut spec: SessionSpec) -> Result<SessionHandle, RunnerError> {
         let binary = self.binary.display().to_string();
         let refuse = |message: String| RunnerError::Spawn {

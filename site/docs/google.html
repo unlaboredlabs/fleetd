@@ -244,23 +244,25 @@ neither.</p>
 the client. The hub needs no public address: one machine reads the subscription, the way a mail client checks for mail.</p>
 <ol>
 <li><strong>Turn on Pub/Sub.</strong> Under <strong>APIs &amp; Services › Library</strong>, enable <strong>Cloud Pub/Sub API</strong>.</li>
-<li><strong>Make the topic.</strong> Under <strong>Pub/Sub › Topics</strong>, press <strong>Create topic</strong>, name it <code dir="auto">navi-mail</code>, and untick <strong>Add a
-default subscription</strong>. Its full name is <code dir="auto">projects/&lt;project&gt;/topics/navi-mail</code>.</li>
+<li><strong>Make the topic.</strong> Under <strong>Pub/Sub › Topics</strong>, press <strong>Create topic</strong>, name it <code dir="auto">fleetd-gmail</code>, and untick <strong>Add a
+default subscription</strong>. Its full name is <code dir="auto">projects/&lt;project&gt;/topics/fleetd-gmail</code>.</li>
 <li><strong>Let Gmail publish to it.</strong> On the topic, open <strong>Permissions</strong>, press <strong>Add principal</strong>, enter
 <code dir="auto">gmail-api-push@system.gserviceaccount.com</code> and give it the <strong>Pub/Sub Publisher</strong> role. Without it, a Navi’s watch
 fails with a 403 that says so.</li>
-<li><strong>Make the subscription.</strong> Under <strong>Pub/Sub › Subscriptions</strong>, press <strong>Create subscription</strong>, name it <code dir="auto">navi-mail</code>,
-pick the topic, and leave the delivery type at <strong>Pull</strong>. Its full name is
-<code dir="auto">projects/&lt;project&gt;/subscriptions/navi-mail</code>.</li>
+<li><strong>Make the subscription.</strong> Under <strong>Pub/Sub › Subscriptions</strong>, press <strong>Create subscription</strong>, name it
+<code dir="auto">fleetd-gmail-hub</code>, pick the topic, and leave the delivery type at <strong>Pull</strong>. Its full name is
+<code dir="auto">projects/&lt;project&gt;/subscriptions/fleetd-gmail-hub</code>.</li>
 <li><strong>Make a service account to read it.</strong> Under <strong>IAM &amp; Admin › Service accounts</strong>, press <strong>Create service account</strong>,
-name it <code dir="auto">navi-mail</code>, and grant it nothing at the project. On the subscription, open <strong>Permissions</strong> and give it the
-<strong>Pub/Sub Subscriber</strong> role. Then, on the service account, open <strong>Keys › Add key › Create new key</strong>, choose <strong>JSON</strong>,
-and keep the file it downloads.</li>
+name it <code dir="auto">fleetd-gmail-reader</code>, and grant it nothing at the project. On the subscription, open <strong>Permissions</strong> and
+give it the <strong>Pub/Sub Subscriber</strong> role. Then, on the service account, open <strong>Keys › Add key › Create new key</strong>,
+choose <strong>JSON</strong>, and keep the file it downloads.</li>
 <li><strong>Save it in fleetd</strong> with <code dir="auto">google_pubsub_set</code>: the topic, the subscription, the machine that reads it, and the JSON
-key sealed to that machine. Pick a machine that is usually online, such as the hub’s own. The machine checks the key
-and keeps it in its home, and the hub keeps only a fingerprint. Delete the downloaded file afterwards.</li>
+key sealed to that machine. Pick a machine that is usually online, such as the hub’s own, on a fleetd new enough
+for real-time mail. The machine checks the key and keeps it in its home, and the hub keeps only a fingerprint.
+Delete the downloaded file afterwards.</li>
 </ol>
-<p><code dir="auto">google_get</code> then says <code dir="auto">mailMode: push</code>. While the machine is offline, its key is refused, or the subscription can’t be
+<p>When the machine changes, the new one takes the key before the old one forgets it, so a refused key changes nothing.
+<code dir="auto">google_get</code> then says <code dir="auto">mailMode: push</code>. While the machine is offline, its key is refused, or the subscription can’t be
 read, it says <code dir="auto">polling</code> and <code dir="auto">mailProblem</code> says why, and Navis still hear of new mail each minute. <code dir="auto">google_pubsub_set</code>
 with no <code dir="auto">pubsub</code> turns it off, and the machine forgets the key.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="connect">Connect a Google account</h2><a class="sl-anchor-link" href="#connect"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Connect a Google account”</span></a></div>
@@ -345,11 +347,11 @@ admin saves the right secret works again.</p>
 </tr>
 <tr>
 <td><code dir="auto">all</code></td>
-<td>Each new message received.</td>
+<td>Each new message that arrives in Gmail’s main mailbox, not archived by a filter or marked as spam.</td>
 </tr>
 <tr>
 <td><code dir="auto">query</code></td>
-<td>Only new mail matching a Gmail search, such as <code dir="auto">from:boss@example.com OR is:important</code>.</td>
+<td>Only such new mail that matches a Gmail search, such as <code dir="auto">from:boss@example.com OR is:important</code>.</td>
 </tr>
 </tbody>
 </table>
@@ -358,12 +360,14 @@ admin saves the right secret works again.</p>
 <li><strong>Push</strong>, with <a href="#pubsub">real-time mail</a> set up. The Navi’s machine asks Gmail to watch for new mail (<code dir="auto">users.watch</code>)
 and tell the topic. A watch lasts 7 days, and the hub renews it a day before it ends. The machine holding the service
 account key reads the subscription and acknowledges each notice. A notice names an address, and the hub has the
-machine of each Navi connected to it check that Navi’s mail.</li>
+machine of each Navi connected to it check that Navi’s mail. While Gmail won’t watch a Navi’s mail (the topic lacks
+the Publisher grant, or a scope was unticked), the hub checks that Navi’s mail every minute instead.</li>
 <li><strong>Polling</strong>, without Pub/Sub, or while reading it fails or no read has worked for 2 minutes. The hub checks each such
 Navi’s mail about every minute. It goes back to push with the next good read.</li>
 </ul>
-<p>A check reads the mailbox’s history since the last one, so nothing is missed or told twice when the hub moves between
-push and polling. The first check only marks where to start. Sent mail and drafts don’t wake anyone.</p>
+<p>A check reads the mailbox’s history since the last one, and a Navi’s checks take turns, so nothing is missed or told
+twice when the hub moves between push and polling. A check reads up to 20 new messages and counts the rest. The first
+check only marks where to start. Sent mail and drafts don’t wake anyone.</p>
 <p>The wake reaches the Navi’s lead as one event: for each message (up to 10, then a count), its sender, subject, start
 and thread. Above them is a line saying it’s from the mailbox and untrusted, whose instructions are its sender’s, not
 yours. Each message stays on its own line, so a subject can’t pass as fleetd’s words. The Navi reads the whole thread

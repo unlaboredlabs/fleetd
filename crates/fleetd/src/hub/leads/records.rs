@@ -269,7 +269,7 @@ impl LeadRecords {
     }
 }
 
-fn read_workstream(
+pub(crate) fn read_workstream(
     c: &rusqlite::Connection,
     id: &WorkstreamId,
 ) -> Result<Option<Workstream>, StoreError> {

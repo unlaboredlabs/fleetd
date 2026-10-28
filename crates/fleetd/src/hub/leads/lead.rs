@@ -377,13 +377,7 @@ impl Leads {
             return Err(archived);
         }
         // M4 usage: no lead turn goes into a login fleetd knows is exhausted.
-        if let Some(paused) = self
-            .ctx
-            .hooks
-            .usage
-            .get()
-            .and_then(|u| u.gate(&r.machine_id))
-        {
+        if let Some(paused) = self.ctx.hooks.usage.get().and_then(|u| u.gate(r)) {
             return Err(LeadError::new(
                 ErrorCode::Invalid,
                 format!("The lead was not started: {paused}."),

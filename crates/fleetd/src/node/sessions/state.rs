@@ -578,6 +578,7 @@ mod tests {
             setup_pending: false,
             profile: None,
             helper_model: None,
+            claude_account: None,
         };
         assert_eq!(start_mode(&local, &new, "s1"), Ok(false));
         local.started = true;

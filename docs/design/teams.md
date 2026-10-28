@@ -464,7 +464,16 @@ This builds on the Navi plan's first version.
 - Attribution in the activity log by person; PR attribution comes with step 8.
 
 **Step 8: Accounts (m).** (Decided, 3.)
-- Claude (D200):
+- Claude (D200), built (T1024) on the hub and node; the app's screens come next, on these contracts:
+  - `crates/fleetd-contracts/src/claude_accounts.rs` and the `claude_*` tools; `hub/claude_accounts` (store,
+    whose work a launch is, `Setup::runs_on`); `node/claude_accounts.rs` (the sealed values, the env at each start).
+  - Keys and tokens are sealed to each machine like MCP secrets; the hub keeps fingerprints. A launch carries
+    `claudeAccount`; the node replaces the machine's own credentials with it and masks it. A node without
+    `claude_accounts` gets no work on an account.
+  - `thread_accounts` records each session's account, and the usage layer keys its pauses by login (`devbox` or
+    `devbox@<account>`), so one account's limit pauses only its work.
+  - `spawn_agent` refuses an order whose starter has nothing to run on: "Connect your Claude to start this order."
+- Claude, as decided:
   - The hub's API key and optional endpoint on the Administration page, with a switch to turn that option off for
     members.
   - In each person's own settings, the choice: connect their own subscription (a `claude setup-token` token, sealed to

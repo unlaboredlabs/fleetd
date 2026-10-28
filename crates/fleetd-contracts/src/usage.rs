@@ -54,7 +54,7 @@ pub enum BreakerState {
     Open,
 }
 
-/// Open: no new turns start on the machine's login until `until`, or (no reset named) a check or another turn on the
+/// Open: no new turns start on the login (the machine's own, or one account's there) until `until`, or (no reset named) a check or another turn on the
 /// login succeeds, or usage_resume.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -80,13 +80,27 @@ pub struct ParkedCounts {
     pub tasks: Count,
 }
 
+/// One Claude account's usage on a machine (teams step 8): a limit on it pauses only the work on it, never the
+/// machine's own login or another account's.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageAccount {
+    pub account: crate::claude_accounts::ClaudeAccount,
+    pub breaker: UsageBreaker,
+    pub parked: ParkedCounts,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct UsageStatus {
     pub machine_id: MachineId,
+    /// The machine's own login; `breaker` and `parked` are its. Work on a Claude account is in `accounts`.
     pub login: LoginKind,
     pub breaker: UsageBreaker,
     pub parked: ParkedCounts,
+    /// Each Claude account fleetd has seen work on here, with its own breaker and parked work.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub accounts: Vec<UsageAccount>,
     /// The latest thread.usage_limited, usage.breaker and usage.resumed events for the machine, oldest first.
     pub last_events: List<HubEvent, 0, 10>,
 }
@@ -105,6 +119,8 @@ pub struct UsageEventThread {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct UsageEventData {
+    /// The Claude account the pause or resume is about; absent: the machine's own login.
+    pub account: Option<crate::claude_accounts::ClaudeAccount>,
     pub class: Option<UsageClass>,
     pub until: Option<Timestamp>,
     /// usage.breaker: no reset named, so fleetd checks the login at this time.

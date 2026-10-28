@@ -208,6 +208,25 @@ pub trait TaskPorts: Send + Sync {
     /// `leads::digest::done_when_text` of the brief's lines, at most 200 units each, for the task prompt's "Done
     /// when:".
     fn done_when_text(&self, brief: &Brief) -> String;
+    /// The key of the Claude account a task of `order` would run on, on the machine (`claude_accounts`): whose
+    /// usage pause holds it. None for the machine's own login; plain ports know no accounts.
+    fn claude_account_key(
+        &self,
+        _project_ref: &ProjectRef,
+        _order: &WorkstreamId,
+        _machine_id: &MachineId,
+    ) -> Option<String> {
+        None
+    }
+    /// `claude_accounts::order_refusal`: why the order's agents have no Claude account to run on (its starter
+    /// connected none, and the hub's API isn't theirs), as a message and its fix. Plain ports know no accounts.
+    fn claude_refusal(
+        &self,
+        _project_ref: &ProjectRef,
+        _order: &WorkstreamId,
+    ) -> Option<(String, String)> {
+        None
+    }
     /// Chat.system_line: a line for the person in the project's chat. Plain ports drop it.
     fn tell_person(&self, _project_ref: &ProjectRef, _text: &str) {}
     /// Decisions.global_value: the active global decision on `key`. Plain ports know none.

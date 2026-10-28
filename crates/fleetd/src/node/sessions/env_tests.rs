@@ -670,3 +670,117 @@ async fn a_node_restart_mid_setup_runs_it_again_at_the_next_start() {
     assert_eq!(std::fs::read_to_string(&runs).unwrap(), "ran\n");
     drop(before);
 }
+
+fn on_account(id: &str, account: &fleetd_contracts::claude_accounts::ClaudeAccount) -> SessionCall {
+    let mut call = launch(id, RuntimeMode::FullAccess, SessionWorkspace::Root);
+    if let SessionCall::Launch(l) = &mut call {
+        l.claude_account = Some(account.clone());
+        l.run_id = NonEmpty::unchecked(format!("{id}-r1"));
+    }
+    call
+}
+
+/// Teams step 8: a session launched on a person's subscription runs on their token, in place of the machine's own
+/// key and gateway, and its fleetd calls mask it; a session on the machine's own login never sees it. The Test makes
+/// its one call on the account alone, and claude's words come back masked.
+#[tokio::test]
+async fn a_session_on_a_claude_account_runs_on_its_token_alone_and_masks_it() {
+    use fleetd_contracts::claude_accounts::{ClaudeAccount, ClaudeSecretSet, OAUTH_TOKEN_ENV};
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("node");
+    std::fs::write(
+        dir.path().join("claude.env"),
+        "ANTHROPIC_API_KEY=sk-machine\nANTHROPIC_BASE_URL=http://127.0.0.1:9\n",
+    )
+    .unwrap();
+    let mut node = hub(
+        dir.path(),
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::fixture("init-partial-two-turns"),
+    )
+    .await;
+    node.project(dir.path()).await;
+    let alice = ClaudeAccount::Person {
+        person_id: fleetd_contracts::people::PersonId::unchecked("p_aaaaaaaa"),
+    };
+    let token = "sk-ant-oat01-alice-81f2";
+    let saved = node
+        .ok(SessionCall::ClaudeAccountSecret {
+            account: alice.clone(),
+            set: Some(ClaudeSecretSet {
+                sealed: Some(crate::node::project_env::seal(&home, token)),
+                endpoint: None,
+            }),
+        })
+        .await;
+    assert_eq!(
+        saved,
+        SessionOutput::ClaudeAccountSaved {
+            fingerprint: Some(fleetd_contracts::secrets::SecretFingerprint::unchecked(
+                crate::node::secrets::fingerprint_of(token.as_bytes())
+            )),
+        }
+    );
+    node.ok(on_account("a", &alice)).await;
+    node.settled("a-r1").await;
+    node.ok(in_order("b", "W2", SessionWorkspace::Root)).await;
+    node.settled("b-r1").await;
+    let spawned = node.runner.spawned();
+    assert_eq!(var(&spawned[0], OAUTH_TOKEN_ENV), Some(token));
+    assert_eq!(
+        var(&spawned[0], "ANTHROPIC_API_KEY"),
+        None,
+        "the machine's key never outranks hers"
+    );
+    assert_eq!(var(&spawned[0], "ANTHROPIC_BASE_URL"), None);
+    assert_eq!(
+        var(&spawned[1], OAUTH_TOKEN_ENV),
+        None,
+        "the machine's own login never sees it"
+    );
+    assert_eq!(var(&spawned[1], "ANTHROPIC_API_KEY"), Some("sk-machine"));
+    assert_eq!(
+        node.service
+            .call_masker("a")
+            .unwrap()
+            .text(&format!("t={token}")),
+        "t=***CLAUDE_CODE_OAUTH_TOKEN***"
+    );
+    // The Test: the fake claude echoes the token it was given; it leaves the machine masked.
+    std::fs::write(
+        home.join("claude-accounts/p_aaaaaaaa.json"),
+        format!(r#"{{"value":"bad-{token}"}}"#),
+    )
+    .unwrap();
+    let SessionOutput::ClaudeAccountTested { ok, error } = node
+        .ok(SessionCall::ClaudeAccountTest {
+            account: alice.clone(),
+        })
+        .await
+    else {
+        panic!("no test result");
+    };
+    assert!(!ok);
+    let said = error.unwrap();
+    assert!(
+        !said.contains(token) && said.contains("***CLAUDE_CODE_OAUTH_TOKEN***"),
+        "{said}"
+    );
+    // Forgotten, a Test says so instead of trying the machine's own login.
+    node.ok(SessionCall::ClaudeAccountSecret {
+        account: alice.clone(),
+        set: None,
+    })
+    .await;
+    let SessionOutput::ClaudeAccountTested { ok, error } = node
+        .ok(SessionCall::ClaudeAccountTest { account: alice })
+        .await
+    else {
+        panic!("no test result");
+    };
+    assert!(
+        !ok && error
+            .unwrap()
+            .contains("holds no p_aaaaaaaa's subscription")
+    );
+}

@@ -76,6 +76,14 @@ impl LeadPorts for HubPorts {
             && !self
                 .link
                 .node_can(&machine_id, fleetd_contracts::node_link::CAP_ASSISTANT);
+        // A project's lead runs on the hub's account whoever writes to it, a Navi's on its owner's (teams step 8): the
+        // same on every turn, as the session keeps it.
+        let project = ProjectRef {
+            machine_id: machine_id.clone(),
+            project_id: input.project_id.clone(),
+        };
+        let account =
+            crate::hub::claude_accounts::for_lead(self.executors.hub_db(), &self.link, &project);
         Box::pin(async move {
             if too_old {
                 return Err(LeadError::new(
@@ -86,6 +94,8 @@ impl LeadPorts for HubPorts {
                     ),
                 ));
             }
+            let claude_account =
+                account.map_err(|r| LeadError::new(ErrorCode::Invalid, r.message, r.fix))?;
             executors
                 .launch(
                     &machine_id,
@@ -94,6 +104,7 @@ impl LeadPorts for HubPorts {
                         workspace: None,
                         role,
                         mcp_role: Some(fleetd_contracts::mcp_servers::McpAgentRole::Lead),
+                        claude_account,
                         ..Default::default()
                     },
                 )
