@@ -63,6 +63,9 @@ pub struct Golden {
     pub scale: f64,
     /// The agent-device release whose runner was built for it.
     pub agent_device: String,
+    /// That runner's `.xctestrun`, which every session's agent-device starts as it is (wrapper.rs). A golden made
+    /// before has none and is made again.
+    pub xctestrun: PathBuf,
 }
 
 pub fn golden_path(home: &Path) -> PathBuf {
@@ -74,7 +77,7 @@ pub fn find(home: &Path) -> Option<Golden> {
     let golden: Golden = serde_json::from_slice(&std::fs::read(golden_path(home)).ok()?).ok()?;
     (golden.agent_device == agent_device::VERSION
         && agent_device::find(home).is_some()
-        && wrapper::find(home).is_some())
+        && wrapper::find(home, &golden.xctestrun).is_some())
     .then_some(golden)
 }
 
@@ -84,7 +87,7 @@ pub async fn prepare(home: &Path, device_type: Option<&str>) -> Result<Golden, S
     if agent_device::find(home).is_none() {
         agent_device::install(home).await?;
     }
-    let wrapper = wrapper::install(home)?;
+    let wrapper = wrapper::install(home, None)?;
     let simctl = Simctl::new(super::set_dir(home));
     let runtimes = simctl.runtimes().await?;
     let (runtime, device_type) = super::simctl::pick(&runtimes, device_type)?;
@@ -97,14 +100,20 @@ pub async fn prepare(home: &Path, device_type: Option<&str>) -> Result<Golden, S
         simctl.boot(&udid, FIRST_BOOT).await?;
         settle(&udid).await;
         runner(home, &wrapper, &udid).await?;
-        simctl.shutdown(&udid).await
+        simctl.shutdown(&udid).await?;
+        let xctestrun = wrapper::built_xctestrun(home)?;
+        wrapper::install(home, Some(&xctestrun))?;
+        Ok(xctestrun)
     }
     .await;
-    if let Err(why) = made {
-        let _ = simctl.shutdown(&udid).await;
-        let _ = simctl.delete(&udid).await;
-        return Err(why);
-    }
+    let xctestrun = match made {
+        Ok(xctestrun) => xctestrun,
+        Err(why) => {
+            let _ = simctl.shutdown(&udid).await;
+            let _ = simctl.delete(&udid).await;
+            return Err(why);
+        }
+    };
     let golden = Golden {
         udid,
         runtime: runtime.identifier.clone(),
@@ -113,6 +122,7 @@ pub async fn prepare(home: &Path, device_type: Option<&str>) -> Result<Golden, S
         device_type_name: device_type.name.clone(),
         scale: super::simctl::scale(&device_type).await,
         agent_device: agent_device::VERSION.to_owned(),
+        xctestrun,
     };
     let bytes = serde_json::to_vec_pretty(&golden).map_err(|e| e.to_string())?;
     crate::node::secrets::write_atomic(&golden_path(home), &bytes)
@@ -675,6 +685,7 @@ mod tests {
             device_type_name: "iPhone 17".into(),
             scale: 3.0,
             agent_device: agent_device::VERSION.into(),
+            xctestrun: "/n/runner/AgentDeviceRunner_iphonesimulator27.0-arm64.xctestrun".into(),
         };
         std::fs::create_dir_all(super::super::ios_dir(home.path())).unwrap();
         std::fs::write(
