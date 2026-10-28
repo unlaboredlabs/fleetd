@@ -158,13 +158,14 @@ function BubbleLine(props: {
   step: number;
   /** The message's first bubble. */
   opening: boolean;
+  /** Yours: drawn as your side of the chat. */
+  mine: boolean;
   /** Your message's last bubble: its receipt mark goes beside it; true when it's your latest message. */
   receipt?: boolean | undefined;
 }) {
-  const { item, bubble, first, last, lead } = props;
+  const { item, bubble, first, last, lead, mine } = props;
   const actions = useBubbleActions();
   const enter = useEnter(props.enter, props.step);
-  const mine = item.author === "human";
   const block = bubble.kind === "block";
   const wide = isWide(bubble);
   const jumbo = !block && EMOJI_ONLY.test(bubble.text.trim());
@@ -268,7 +269,7 @@ function TypingLine({ enter }: { enter: Arrival | undefined }) {
 export function MessageView({ row: r, mineLatest, enter }: { row: Extract<Row, { kind: "message" }>; mineLatest: boolean; enter?: Arrival | undefined }) {
   const i = r.item;
   const actions = useBubbleActions();
-  const mine = i.author === "human";
+  const mine = i.author === "human" && r.by === undefined;
   const lead = i.author === "lead" && !r.history;
   const body = r.reply?.body;
   const bubbles = useMemo((): readonly Bubble[] => (body !== undefined ? [{ kind: "text", key: "0", text: body }] : bubblesOf(i)), [i, body]);
@@ -286,11 +287,12 @@ export function MessageView({ row: r, mineLatest, enter }: { row: Extract<Row, {
       className={cx(s.message, r.run && s.messageHead, (r.history || i.author === "agent") && s.quietMessage, mine && s.mine)}
       data-entry="message"
       data-author={i.author}
+      data-mine={mine ? "" : undefined}
     >
       {r.head && !mine && i.author !== "lead" ? (
-        <div className={s.head}>
+        <div className={s.head} data-head>
           <Text size="xs" tone="quiet">
-            {authorLabel(i)}
+            {r.by ?? authorLabel(i)}
           </Text>
         </div>
       ) : null}
@@ -317,6 +319,7 @@ export function MessageView({ row: r, mineLatest, enter }: { row: Extract<Row, {
             enter={enter}
             step={n}
             opening={n === 0}
+            mine={mine}
             receipt={mine && n === bubbles.length - 1 ? mineLatest : undefined}
           />
         ))

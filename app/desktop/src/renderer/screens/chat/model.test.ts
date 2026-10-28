@@ -68,6 +68,27 @@ describe("the chat's rows", () => {
     expect(shown).toEqual(["a:-:run", "b:-:-", "c:Agent · nightly-ci:run", "d:Agent · scout:run", "e:-:-"]);
   });
 
+  it("name another person in a chat the team shares, and keep yours as You", () => {
+    const by = (personId: string, name: string) =>
+      ({ messageId: "m", projectRef: { machineId: "devbox", projectId: "app" }, seq: 1, author: "human", text: "", createdAt: at(19, 9), state: "final", person: { personId, name } }) as ChatMessage;
+    const items = [
+      item("a", "human", at(19, 9), { message: by("P1", "Sam Ortiz") }),
+      item("b", "human", at(19, 9, 1), { message: by("P2", "Priya Nair") }),
+      item("c", "human", at(19, 9, 2), { message: by("P2", "Priya Nair") }),
+      item("d", "lead", at(19, 9, 3)),
+      item("e", "human", at(19, 9, 4)),
+    ];
+    const shown = (r: readonly Row[]) =>
+      r.flatMap((x) => (x.kind === "message" ? [`${x.item.id}:${x.head ? (x.by ?? authorLabel(x.item)) : "-"}:${x.run ? "run" : "-"}`] : []));
+    // Sam is this app's person: theirs have no header; Priya's start a run under her name; one without a person is yours.
+    expect(shown(rows(items, { me: "P1" }))).toEqual(["a:-:run", "b:Priya Nair:run", "c:-:-", "d:Lead:run", "e:-:run"]);
+    expect(authorLabel(items[1] as ChatItem, "P1")).toBe("Priya Nair");
+    expect(authorLabel(items[0] as ChatItem, "P1")).toBe("You");
+    // A hub from before people, or before hub_info answers: every human message is yours, as before.
+    expect(shown(rows(items))).toEqual(["a:-:run", "b:-:-", "c:-:-", "d:Lead:run", "e:-:run"]);
+    expect(authorLabel(items[1] as ChatItem)).toBe("You");
+  });
+
   it("mark where you stopped reading, at the first message from someone else since", () => {
     const seq = (id: string, author: ChatItem["author"], n: number, m = n, over: Partial<ChatItem> = {}) =>
       item(id, author, at(19, 9, m), { ...over, message: { seq: n } as ChatItem["message"] });

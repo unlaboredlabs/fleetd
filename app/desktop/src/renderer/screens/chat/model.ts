@@ -18,7 +18,7 @@ export type Row =
   /**
    * `history`: written before the chat existed (an old order, a note, a steer), shown as the conversation it was.
    * `run`: it starts a run (the space above it); `end`: it ends one (the stack's last bubble); `head`: its author
-   * could show, which yours never do.
+   * could show, which yours never do. `by`: another person's, by their name: it draws as theirs, under that name.
    */
   | {
       readonly kind: "message";
@@ -28,6 +28,7 @@ export type Row =
       readonly end: boolean;
       readonly head: boolean;
       readonly history: boolean;
+      readonly by?: string | undefined;
       /** Yours, answering a bubble: its quote, your words, and the message it is in when that is loaded. */
       readonly reply?: { readonly quote: string; readonly body: string; readonly target: string | undefined } | undefined;
       /** The lead's asks in it that you answered: the button's words, by bubble key. */
@@ -58,10 +59,19 @@ const GROUP_MS = 5 * 60_000;
 /** A pause this long on one day puts the time over the message that ends it, as a messaging app does. */
 const PAUSE_MS = 60 * 60_000;
 
-/** Who a message's header names, from the key that wrote it: an agent by its name. */
-export const authorLabel = (item: ChatItem): string =>
+/**
+ * Another person's message, in a project chat the team shares: the person who wrote it, when the hub names one and
+ * it isn't `me`, the person this app acts as. Undefined for yours, and on a hub from before people.
+ */
+export const otherPerson = (item: ChatItem, me: string | undefined): string | undefined => {
+  const person = item.author === "human" ? item.message?.person : undefined;
+  return person !== undefined && me !== undefined && person.personId !== me ? person.name : undefined;
+};
+
+/** Who a message's header names: another person by their name, an agent by the key that wrote it. */
+export const authorLabel = (item: ChatItem, me?: string): string =>
   item.author === "human"
-    ? "You"
+    ? (otherPerson(item, me) ?? "You")
     : item.author === "agent"
       ? `Agent · ${item.message?.by ?? "unnamed"}`
       : item.author === "lead"
@@ -114,6 +124,8 @@ export interface RowsInput {
   readonly workedSince?: number | undefined;
   /** The newest seq you had seen when the chat opened, when there was more since (data/seen.ts). */
   readonly seenSeq?: number | undefined;
+  /** The person this app acts as (hub_info's me): someone else's messages show their name. */
+  readonly me?: string | undefined;
   readonly nowMs: number;
   readonly timeZone?: string;
 }
@@ -155,7 +167,7 @@ export function chatRows(i: RowsInput): Row[] {
   const unseen =
     seen === undefined || (i.hasOlder && !i.items.some((item) => (item.message?.seq ?? Infinity) <= seen))
       ? -1
-      : i.items.findIndex((item) => item.author !== "human" && (item.message?.seq ?? -Infinity) > seen);
+      : i.items.findIndex((item) => (item.author !== "human" || otherPerson(item, i.me) !== undefined) && (item.message?.seq ?? -Infinity) > seen);
   i.items.forEach((item, n) => {
     const history = isHistory(item);
     if (history && !inHistory) out.push({ kind: "history", key: `history:${item.id}` });
@@ -171,15 +183,18 @@ export function chatRows(i: RowsInput): Row[] {
       out.push({ kind: "new", key: "new" });
       prev = undefined;
     }
+    const by = otherPerson(item, i.me);
+    const theirs = item.author !== "human" || by !== undefined;
+    const label = authorLabel(item, i.me);
     if (history && item.author !== "system") {
-      const run = prev === undefined || authorLabel(prev) !== authorLabel(item) || Date.parse(item.at) - Date.parse(prev.at) > GROUP_MS;
-      out.push({ kind: "message", key: item.id, item, run, end: true, head: run && item.author !== "human", history: true });
+      const run = prev === undefined || authorLabel(prev, i.me) !== label || Date.parse(item.at) - Date.parse(prev.at) > GROUP_MS;
+      out.push({ kind: "message", key: item.id, item, run, end: true, head: run && theirs, history: true, ...(by === undefined ? {} : { by }) });
     } else if (item.kind === "event") out.push({ kind: "event", key: item.id, item });
     else if (item.kind === "secret" || item.kind === "gated") out.push({ kind: "inline", key: item.id, item });
     else {
       const run =
-        prev === undefined || prev.kind !== "message" || authorLabel(prev) !== authorLabel(item) || Date.parse(item.at) - Date.parse(prev.at) > GROUP_MS;
-      out.push({ kind: "message", key: rowKeyOf(item), item, run, end: true, head: run && item.author !== "human", history: false, ...extras(i.items, n) });
+        prev === undefined || prev.kind !== "message" || authorLabel(prev, i.me) !== label || Date.parse(item.at) - Date.parse(prev.at) > GROUP_MS;
+      out.push({ kind: "message", key: rowKeyOf(item), item, run, end: true, head: run && theirs, history: false, ...(by === undefined ? {} : { by }), ...extras(i.items, n) });
     }
     prev = item;
     if ((activity && n === i.items.length - 1) || (worked && n === reply)) out.push({ kind: "activity", key: "activity" });
