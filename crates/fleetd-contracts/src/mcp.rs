@@ -1576,10 +1576,12 @@ output!(SessionPromptGetOutput {
 
 // memory_get, memory_set, memory_undo: what the leads remember (Settings > Memory). Writes are human keys only.
 input!(MemoryGetInput {
-    /// Also that project's MEMORY.md and topic files; absent: user.md only.
+    /// Also that project's MEMORY.md and topic files; absent: your own memory only.
     project_ref: Option<ProjectRef>,
 });
 output!(MemoryGetOutput {
+    /// Your own memory: how you work, read by the agents of work you start and by your Navi. Empty for a key with no
+    /// person. The one shared user.md on a hub from before people.
     user: MemoryFile,
     /// With projectRef: MEMORY.md first, then the topic files by name.
     files: Option<Vec<MemoryFile>>,
@@ -1599,12 +1601,18 @@ input!(
         topic: Option<MemoryTopic>,
         /// The whole file. Empty deletes it (a topic's index line too).
         text: MemoryText,
+        /// User scope: another person's memory, only to delete it (empty text) once they are removed from the hub,
+        /// by an owner's or admin's device. Absent: your own; nobody else edits it.
+        person_id: Option<PersonId>,
     }
 );
 checked!(MemorySetInput, |input| {
     match (input.scope, &input.project_ref, &input.topic) {
         (MemoryScope::Project, None, _) => Err("scope project needs projectRef".into()),
         (MemoryScope::User, _, Some(_)) => Err("user.md has no topics".into()),
+        (MemoryScope::Project, _, _) if input.person_id.is_some() => {
+            Err("personId goes with scope user".into())
+        }
         _ => Ok(()),
     }
 });
@@ -1618,6 +1626,20 @@ input!(MemoryUndoInput {
     item: Option<Int<0, 199>>,
 });
 output!(MemoryUndoOutput { ok: True });
+
+// memory_shared_get, memory_shared_set: the shared user.md every lead read before each person had their own memory
+// (D212). Each hub's owner got a copy; it stays, read by no session, until an owner or admin empties it. Admin on
+// every machine.
+input!(MemorySharedGetInput {});
+output!(MemorySharedGetOutput {
+    /// Empty once retired.
+    file: MemoryFile,
+});
+input!(MemorySharedSetInput {
+    /// The whole file. Empty retires it.
+    text: MemoryText,
+});
+output!(MemorySharedSetOutput { file: MemoryFile });
 
 // memory_caps_set: the caps every memory write is held to, hub-wide. Admin on every machine.
 input!(MemoryCapsSetInput {
@@ -3036,6 +3058,9 @@ tools! {
     memory_set => MemorySet, Operate, MemorySetInput, MemorySetOutput;
     memory_undo => MemoryUndo, Operate, MemoryUndoInput, MemoryUndoOutput;
     memory_caps_set => MemoryCapsSet, Admin, MemoryCapsSetInput, MemoryCapsSetOutput;
+    // An owner's or admin's device (the handlers check).
+    memory_shared_get => MemorySharedGet, Admin, MemorySharedGetInput, MemorySharedGetOutput;
+    memory_shared_set => MemorySharedSet, Admin, MemorySharedSetInput, MemorySharedSetOutput;
     automation_list => AutomationList, Read, AutomationListInput, AutomationListOutput;
     automation_create => AutomationCreate, Operate, AutomationCreateInput, AutomationCreateOutput;
     automation_update => AutomationUpdate, Operate, AutomationUpdateInput, AutomationUpdateOutput;

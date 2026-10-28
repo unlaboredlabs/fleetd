@@ -1,14 +1,15 @@
 //! The nightly memory refresh: once a night, at `policy.memory_refresh_at` (04:00 by default) in the person's zone
-//! (`policy.tz`, else the hub machine's), each project with the refresh on (`project_settings.memory_refresh`) and
-//! chat or order activity since its last run gets a fresh lead session of its own. It reads the chat since the last
-//! run, the decisions and the memory. It may use `memory_read`, `remember` and `forget` and nothing else
-//! ([`allowed_tools`]): it starts with none of the runtime's own tools and none of the person's MCP servers, its node
-//! refuses any other tool (so it starts only on a node that lists `CAP_ALLOWED_ONLY`), and the hub takes only those
-//! calls from it (`tasks::policy`): project memory freely, `user.md` add only. It opens no order, and its replies
-//! reach no chat: only the lead's own thread is mirrored there. Its changes are kept here as it makes them and posted
-//! at its end as one "Memory refreshed: +a ~b −c" line with Undo; a night that changed nothing posts nothing. A
-//! session that fails, or still runs after [`RUN_LIMIT_MS`], is stopped. The Automations page lists it as a built-in
-//! row ([`job`]), whose Run now starts one at once ([`run_now`]) held by the same rules.
+//! (`policy.tz`, else the hub machine's), each project with the refresh on (`project_settings.memory_refresh`) and chat
+//! or order activity since its last run gets a fresh lead session of its own. It reads the chat since the last run, the
+//! decisions and the memory. It may use `memory_read`, `remember` and `forget` and nothing else ([`allowed_tools`]): it
+//! starts with none of the runtime's own tools and none of the person's MCP servers, its node refuses any other tool
+//! (so it starts only on a node that lists `CAP_ALLOWED_ONLY`), and the hub takes only those calls from it
+//! (`tasks::policy`): project memory freely, user memory add only, and only to the person whose chat it read ([`you`]):
+//! a Navi's owner, else the one person who wrote in it; with several, user memory is left alone. It opens no order, and
+//! its replies reach no chat: only the lead's own thread is mirrored there. Its changes are kept here as it makes them
+//! and posted at its end as one "Memory refreshed: +a ~b −c" line with Undo; a night that changed nothing posts
+//! nothing. A session that fails, or still runs after [`RUN_LIMIT_MS`], is stopped. The Automations page lists it as a
+//! built-in row ([`job`]), whose Run now starts one at once ([`run_now`]) held by the same rules.
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -31,9 +32,10 @@ use fleetd_contracts::sessions::SessionRole;
 use rusqlite::{OptionalExtension, params};
 use serde_json::json;
 
-use super::Target;
+use super::{Target, You};
 use crate::hub::api::Hub;
 use crate::hub::chat::NewMessage;
+use crate::hub::claude_accounts::{Whose, whose_for_lead};
 use crate::hub::executor::{LaunchInput, LaunchOptions};
 use crate::hub::leads::digest::clip;
 use crate::hub::leads::hooks::BoxFuture;
@@ -256,6 +258,43 @@ pub fn project_of_thread(db: &HubDb, thread: &ThreadRef) -> Result<Option<Projec
             project_id: fleetd_contracts::ids::ProjectId::unchecked(id),
         })
     })
+}
+
+/// Whose user memory the running refresh of `r` adds to: a Navi's owner's, else that of the one person who wrote in
+/// the chat it read. Nobody's when several did.
+pub fn you(db: &HubDb, r: &ProjectRef) -> Result<You, StoreError> {
+    let run = get(db, r)?;
+    you_over(db, r, run.watermark, run.read_to.unwrap_or(i64::MAX))
+}
+
+/// [`you`] over the chat after `watermark`, up to `read_to`.
+fn you_over(db: &HubDb, r: &ProjectRef, watermark: i64, read_to: i64) -> Result<You, StoreError> {
+    let setup = db.claude_accounts().setup()?;
+    if let Whose::Person(owner) = whose_for_lead(db, &setup, r)? {
+        return You::of(db, Some(&owner));
+    }
+    let ids: Vec<String> = db.with(|c| {
+        let mut stmt = c.prepare_cached(
+            "SELECT DISTINCT json_extract(data, '$.person.personId') FROM chat_messages
+             WHERE machine_id = ?1 AND project_id = ?2 AND seq > ?3 AND seq <= ?4 AND held = 0
+               AND json_extract(data, '$.author') = 'human' AND json_extract(data, '$.person') IS NOT NULL",
+        )?;
+        let ids = stmt
+            .query_map(
+                params![r.machine_id.as_str(), r.project_id.as_str(), watermark, read_to],
+                |row| row.get(0),
+            )?
+            .collect::<rusqlite::Result<_>>()?;
+        Ok(ids)
+    })?;
+    match &ids[..] {
+        [] => You::of(db, None),
+        [one] => You::of(
+            db,
+            Some(&fleetd_contracts::people::PersonId::unchecked(one)),
+        ),
+        _ => Ok(You::Nobody),
+    }
 }
 
 /// Keeps what the running refresh of project `r` just changed, for its line at the end. One statement, so two calls
@@ -660,7 +699,7 @@ async fn start(
     let set = hub.db.prompts().current(Some(r));
     let prompt = prompt(
         &set.render("lead.memory", &[("project", &title)]),
-        &memory_now(hub, r),
+        &memory_now(hub, r, run.watermark, read_to),
         &decisions,
         &chat,
     );
@@ -807,30 +846,25 @@ fn chat_line(m: &ChatMessage) -> Option<String> {
     Some(format!("{who}: {text}"))
 }
 
-/// Every memory file of the project and `user.md`, whole, each under its name.
-fn memory_now(hub: &Hub, r: &ProjectRef) -> String {
+/// Every memory file of the project and the user memory of [`you`], whole, each under its name.
+fn memory_now(hub: &Hub, r: &ProjectRef, watermark: i64, read_to: i64) -> String {
     let memory = hub.db.memory();
-    let mut files = vec![(
-        "user.md (add only)".to_owned(),
-        memory.read(&Target {
-            project: None,
-            topic: None,
-        }),
-    )];
+    let you = you_over(&hub.db, r, watermark, read_to).unwrap_or(You::Nobody);
+    let user = match you.target() {
+        Some(t) => memory.read(&t),
+        None => {
+            "(Several people wrote in this chat, so user memory is left alone tonight.)".to_owned()
+        }
+    };
+    let mut files = vec![("user.md (add only)".to_owned(), user)];
     files.push((
         format!("{} (project)", super::INDEX_FILE),
-        memory.read(&Target {
-            project: Some(r),
-            topic: None,
-        }),
+        memory.read(&Target::project(r, None)),
     ));
     for topic in memory.topics(r) {
         files.push((
             format!("{topic}.md (project, topic {topic})"),
-            memory.read(&Target {
-                project: Some(r),
-                topic: Some(&topic),
-            }),
+            memory.read(&Target::project(r, Some(&topic))),
         ));
     }
     let caps = memory.caps();

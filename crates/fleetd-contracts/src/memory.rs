@@ -1,7 +1,8 @@
-//! Lead memory: plain markdown files in the hub home, never in a repo. `user.md` is how the human works everywhere;
-//! each project has its `MEMORY.md` (a short always-on part and one index line per topic) and topic files. The lead
-//! writes through `remember`, the human edits in the app; leads and writers get `user.md` and their own project's
-//! `MEMORY.md` at session start.
+//! Lead memory: plain markdown files in the hub home, never in a repo. Each person's own memory ("You", user scope) is
+//! how they work everywhere: only they edit it, and the agents of work they start and their Navi read it. Each project
+//! has its `MEMORY.md` (a short always-on part and one index line per topic) and topic files. The lead writes through
+//! `remember`, people edit in the app; sessions get their person's memory and their own project's `MEMORY.md` at
+//! start. A hub from before people keeps one shared `user.md` instead.
 
 use std::sync::LazyLock;
 
@@ -13,6 +14,7 @@ use serde_with::skip_serializing_none;
 use crate::chat::ChatMessageId;
 use crate::checked;
 use crate::ids::{ProjectRef, Timestamp};
+use crate::people::PersonId;
 use crate::prim::{Count, Int, Line, List, Text};
 
 /// The caps' defaults, in characters; a hub admin changes them with memory_caps_set.
@@ -35,7 +37,7 @@ pub type MemoryText = Text<0, FILE_CAP_MAX>;
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct MemoryCaps {
-    /// `user.md`.
+    /// Each person's own memory (the shared `user.md` too).
     pub user: FileCap,
     /// Each project's `MEMORY.md`.
     pub index: FileCap,
@@ -71,7 +73,8 @@ crate::brand!(
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum MemoryScope {
-    /// `user.md`: how the human works across every project.
+    /// The person's own memory: how they work across every project. One shared `user.md` on a hub from before
+    /// people.
     User,
     /// This project's `MEMORY.md`, or one of its topic files.
     Project,
@@ -152,6 +155,8 @@ pub struct MemoryReadResult {
 #[serde(rename_all = "camelCase")]
 pub struct RememberedItem {
     pub scope: MemoryScope,
+    /// User scope: whose memory it is in. Absent for the shared `user.md` of a hub from before people.
+    pub person: Option<PersonId>,
     pub topic: Option<MemoryTopic>,
     /// The entry written; with `forgotten`, the whole entry removed.
     pub text: MemoryEntry,

@@ -136,7 +136,8 @@ pub struct PromptInput<'a> {
     pub base_branch: Option<&'a str>,
     /// Write tasks: the work in flight elsewhere they may overlap (`duplicates::for_writer`).
     pub elsewhere: &'a [String],
-    /// Write tasks: `user.md` and the project's `MEMORY.md` (`Memory::injected`), or empty.
+    /// Write tasks: the user memory of whoever started the order and the project's `MEMORY.md` (`Memory::injected`), or
+    /// empty.
     pub memory: &'a str,
 }
 

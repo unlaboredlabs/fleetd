@@ -3625,7 +3625,7 @@ export type MemoryCaps = {
   project: number;
   /** Each topic file. */
   topic: number;
-  /** `user.md`. */
+  /** Each person's own memory (the shared `user.md` too). */
   user: number;
 };
 
@@ -3640,7 +3640,7 @@ export type MemoryCapsSetInput = {
   project: number;
   /** Each topic file. */
   topic: number;
-  /** `user.md`. */
+  /** Each person's own memory (the shared `user.md` too). */
   user: number;
 };
 
@@ -3657,7 +3657,7 @@ export type MemoryCapsSetOutput = {
   /** Each topic file. */
   topic: number;
   truncated?: boolean;
-  /** `user.md`. */
+  /** Each person's own memory (the shared `user.md` too). */
   user: number;
 };
 
@@ -3674,7 +3674,7 @@ export type MemoryFile = {
 };
 
 export type MemoryGetInput = {
-  /** Also that project's MEMORY.md and topic files; absent: user.md only. */
+  /** Also that project's MEMORY.md and topic files; absent: your own memory only. */
   projectRef?: ProjectRef;
 };
 
@@ -3688,6 +3688,10 @@ export type MemoryGetOutput = {
   /** With projectRef: the project's files together, and their cap. */
   projectChars?: number;
   truncated?: boolean;
+  /**
+   * Your own memory: how you work, read by the agents of work you start and by your Navi. Empty for a key with no
+   * person. The one shared user.md on a hub from before people.
+   */
   user: MemoryFile;
 };
 
@@ -3758,6 +3762,11 @@ export type MemoryRefreshed = {
 export type MemoryScope = "user" | "project";
 
 export type MemorySetInput = {
+  /**
+   * User scope: another person's memory, only to delete it (empty text) once they are removed from the hub,
+   * by an owner's or admin's device. Absent: your own; nobody else edits it.
+   */
+  personId?: PersonId;
   /** Required with scope project. */
   projectRef?: ProjectRef;
   scope: MemoryScope;
@@ -3768,6 +3777,26 @@ export type MemorySetInput = {
 };
 
 export type MemorySetOutput = {
+  file: MemoryFile;
+  next?: string;
+  truncated?: boolean;
+};
+
+export type MemorySharedGetInput = { [key: string]: unknown };
+
+export type MemorySharedGetOutput = {
+  /** Empty once retired. */
+  file: MemoryFile;
+  next?: string;
+  truncated?: boolean;
+};
+
+export type MemorySharedSetInput = {
+  /** The whole file. Empty retires it. */
+  text: string;
+};
+
+export type MemorySharedSetOutput = {
   file: MemoryFile;
   next?: string;
   truncated?: boolean;
@@ -5611,6 +5640,8 @@ export type RecoveryPausedData = {
 export type RememberedItem = {
   /** `forget` removed `text`; Undo puts it back. */
   forgotten?: boolean;
+  /** User scope: whose memory it is in. Absent for the shared `user.md` of a hub from before people. */
+  person?: PersonId;
   /** Why it was forgotten. */
   reason?: string;
   /** The whole entry it replaced, which Undo puts back. */
@@ -7852,6 +7883,8 @@ export interface ToolMap {
   memory_get: { input: MemoryGetInput; output: MemoryGetOutput };
   memory_refresh_run: { input: MemoryRefreshRunInput; output: MemoryRefreshRunOutput };
   memory_set: { input: MemorySetInput; output: MemorySetOutput };
+  memory_shared_get: { input: MemorySharedGetInput; output: MemorySharedGetOutput };
+  memory_shared_set: { input: MemorySharedSetInput; output: MemorySharedSetOutput };
   memory_undo: { input: MemoryUndoInput; output: MemoryUndoOutput };
   metrics_get: { input: MetricsGetInput; output: MetricsGetOutput };
   metrics_retention_set: { input: MetricsRetentionSetInput; output: MetricsRetentionSetOutput };

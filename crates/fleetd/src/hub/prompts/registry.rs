@@ -312,7 +312,7 @@ pub const ENTRIES: &[Entry] = &[
             ),
             (
                 "user-md-add-only",
-                "adds to user.md, never replaces or removes an entry there",
+                "adds to the user memory of the person whose chat it read, never replaces or removes an entry there",
                 r"add to it only",
                 Code
             ),

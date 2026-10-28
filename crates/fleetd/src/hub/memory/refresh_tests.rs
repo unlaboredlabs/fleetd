@@ -135,22 +135,13 @@ fn say(hub: &Hub, r: &ProjectRef, author: ChatAuthor, text: &str) {
 }
 
 fn memory_md(hub: &Hub, r: &ProjectRef) -> String {
-    hub.db.memory().read(&Target {
-        project: Some(r),
-        topic: None,
-    })
+    hub.db.memory().read(&Target::project(r, None))
 }
 
 fn put_memory(hub: &Hub, r: &ProjectRef, text: &str) {
     hub.db
         .memory()
-        .set(
-            &Target {
-                project: Some(r),
-                topic: None,
-            },
-            text,
-        )
+        .set(&Target::project(r, None), text)
         .unwrap();
 }
 
@@ -434,7 +425,7 @@ async fn the_refresh_session_may_only_read_and_write_memory_and_only_add_to_user
     )
     .await
     .unwrap_err();
-    assert!(replace.contains("only adds to user.md"), "{replace}");
+    assert!(replace.contains("only adds to user memory"), "{replace}");
     let forget = refresh_call(
         &hub,
         &r,
@@ -443,7 +434,7 @@ async fn the_refresh_session_may_only_read_and_write_memory_and_only_add_to_user
     )
     .await
     .unwrap_err();
-    assert!(forget.contains("only adds to user.md"), "{forget}");
+    assert!(forget.contains("only adds to user memory"), "{forget}");
     // The lead itself still may.
     assert!(
         crate::hub::tasks::policy::check_call(

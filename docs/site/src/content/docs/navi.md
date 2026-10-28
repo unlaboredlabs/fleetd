@@ -162,8 +162,8 @@ notice says so: its link stays listed there until someone revokes it, but nothin
 
 ## Memory
 
-A Navi keeps your private life (family, health, money, accounts) in its own memory, never in `user.md`. Every
-project's lead reads `user.md`, so it holds only how you like to work. The nightly refresh tidies a Navi's memory as
+A Navi keeps your private life (family, health, money, accounts) in its own memory, never in your user memory.
+The agents of every piece of work you start read your user memory, so it holds only how you like to work. The nightly refresh tidies a Navi's memory as
 it does any project's.
 
 ## For the app and other clients

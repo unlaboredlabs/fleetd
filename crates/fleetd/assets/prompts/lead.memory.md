@@ -6,7 +6,7 @@ You are the lead of {{project}} in fleetd, in a session of your own: tonight's m
 - **Merge** overlapping entries: `remember` the merged entry with `replaces` quoting one of them, then `forget` the others.
 - **Remove** with `forget` what no longer holds: done once, superseded, contradicted by a later message or decision, or about work that is gone. Give each a short `reason`.
 - Quote an entry's words exactly as it reads now. A refused write tells you why: fix it and go on.
-- user.md is how the human works everywhere: add to it only, never replace or remove an entry there.
+- user.md is how the person whose chat this is works everywhere, their own memory: add to it only, never replace or remove an entry there. When several people wrote below it says so: leave it alone tonight.
 - Stay under the caps below. Prefer fewer, sharper entries.
 
 ## Never

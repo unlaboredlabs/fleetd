@@ -1,7 +1,7 @@
 //! The lead's first message: the `lead.start` prompt (a Navi's: `navi.start`), `lead.voice`, `lead.profiles` while the
 //! project allows medium (never for a Navi, which runs no code tasks), the digest, the human's custom instructions, then
-//! the memory (`user.md` and the project's `MEMORY.md`). A project with repos besides its own directory has them listed
-//! after that (`repos_block`).
+//! the memory (user memory per `You::for_lead`, and the project's `MEMORY.md`). A project with repos besides its own
+//! directory has them listed after that (`repos_block`).
 use fleetd_contracts::ids::ProjectRef;
 use fleetd_contracts::repos::ProjectRepo;
 

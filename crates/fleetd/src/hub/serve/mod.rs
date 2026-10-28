@@ -215,7 +215,14 @@ pub fn build(config: HubConfig, clock: Arc<dyn Clock>) -> anyhow::Result<Arc<Hub
         tracing::info!("revoked {retired} owner key(s) an earlier fleetd kept in the hub home");
     }
     // An older hub's human keys all become its owner's devices; a new hub gets its owner here.
-    crate::hub::people::People::new(db.clone(), clock.clone()).ensure_owner()?;
+    let owner = crate::hub::people::People::new(db.clone(), clock.clone()).ensure_owner()?;
+    // The shared user.md becomes the owner's own memory, once (D212); it stays as the admins' "Shared memory".
+    if let Err(e) = db.memory().migrate_shared(&db, &owner.person_id) {
+        tracing::warn!(
+            "memory: the shared user.md was not copied to the owner's: {}",
+            e.message
+        );
+    }
     // A sealed GitHub webhook secret and its key, left by a hub from before webhooks went; nothing reads them.
     for gone in ["github-webhook.secret", "webhook.key"] {
         let _ = std::fs::remove_file(config.home.join(gone));

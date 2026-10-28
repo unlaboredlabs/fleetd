@@ -107,17 +107,11 @@ async fn remember(hub: &Hub, r: &ProjectRef, call: Value) -> Result<LeadCallResu
 }
 
 fn user_md(hub: &Hub) -> String {
-    hub.db.memory().read(&Target {
-        project: None,
-        topic: None,
-    })
+    hub.db.memory().read(&Target::user(None))
 }
 
 fn memory_md(hub: &Hub, r: &ProjectRef) -> String {
-    hub.db.memory().read(&Target {
-        project: Some(r),
-        topic: None,
-    })
+    hub.db.memory().read(&Target::project(r, None))
 }
 
 fn remembered_lines(hub: &Hub, r: &ProjectRef) -> Vec<ChatMessage> {
@@ -170,12 +164,12 @@ async fn user_md_is_shared_and_a_projects_memory_stays_in_that_project() {
     }
 
     let memory = hub.db.memory();
-    let for_console = memory.injected(&console, true);
+    let for_console = memory.injected(&console, true, &super::You::Shared);
     assert!(
         for_console.contains("Concise: no AI slop.") && for_console.contains("npm is fine here.")
     );
     assert!(!for_console.contains("No npm"), "{for_console}");
-    let for_fleetd = memory.injected(&fleetd, false);
+    let for_fleetd = memory.injected(&fleetd, false, &super::You::Shared);
     assert!(for_fleetd.contains("No npm: use pnpm.") && !for_fleetd.contains("npm is fine here."));
 
     // Each write is a line in that project's chat; user.md's says it holds everywhere.
@@ -228,7 +222,7 @@ async fn a_topic_gets_its_index_line_and_is_read_on_demand() {
         memory_md(&hub, &r),
         "- Public repo.\n- Docs ship with the code.\n- [deploys](deploys.md)\n"
     );
-    let injected = hub.db.memory().injected(&r, true);
+    let injected = hub.db.memory().injected(&r, true, &super::You::Shared);
     assert!(
         !injected.contains("Staging first"),
         "a topic is opened on demand: {injected}"
@@ -526,21 +520,10 @@ async fn a_lead_starts_with_user_md_and_its_projects_memory_after_the_instructio
     let hub = crate::hub::leads::auto_start_tests::hub(true);
     let db = hub.area.ctx.db.clone();
     let memory = db.memory();
+    memory.set(&Target::user(None), "- Concise.\n").unwrap();
     memory
         .set(
-            &Target {
-                project: None,
-                topic: None,
-            },
-            "- Concise.\n",
-        )
-        .unwrap();
-    memory
-        .set(
-            &Target {
-                project: Some(&hub.project),
-                topic: None,
-            },
+            &Target::project(&hub.project, None),
             "- No npm.\n- [deploys](deploys.md)\n",
         )
         .unwrap();
@@ -550,10 +533,7 @@ async fn a_lead_starts_with_user_md_and_its_projects_memory_after_the_instructio
     };
     memory
         .set(
-            &Target {
-                project: Some(&other),
-                topic: None,
-            },
+            &Target::project(&other, None),
             "- Private: never name it.\n",
         )
         .unwrap();
@@ -793,10 +773,10 @@ async fn forget_removes_one_quoted_entry_with_a_line_and_undo_puts_it_back() {
         "- Deploys go through the train.\n- Deploys freeze on Fridays.\n- [deploys](deploys.md)\n"
     );
     assert_eq!(
-        hub.db.memory().read(&Target {
-            project: Some(&r),
-            topic: Some(&fleetd_contracts::memory::MemoryTopic::unchecked("deploys")),
-        }),
+        hub.db.memory().read(&Target::project(
+            &r,
+            Some(&fleetd_contracts::memory::MemoryTopic::unchecked("deploys"))
+        )),
         "- Staging needs the VPN.\n"
     );
     let lines = remembered_lines(&hub, &r);

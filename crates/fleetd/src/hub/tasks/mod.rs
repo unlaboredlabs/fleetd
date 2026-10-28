@@ -561,8 +561,11 @@ impl Tasks {
             Vec::new()
         };
         let set = self.d.db.prompts().current(Some(r));
+        // A writer gets the memory of whoever started its order (a Navi's owner); a reader none.
         let memory = if write {
-            self.d.db.memory().injected(r, false)
+            let you = crate::hub::memory::You::for_task(&self.d.db, r, &task.workstream_id)
+                .unwrap_or(crate::hub::memory::You::Nobody);
+            self.d.db.memory().injected(r, false, &you)
         } else {
             String::new()
         };

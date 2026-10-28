@@ -54,7 +54,7 @@ Every lead gets these.
 | [`close`](#close) | The workstream is done: say why in one line. | No |
 | [`gated_run`](#gated_run) | A prod write, spend, delete or credential use: the chat shows the human exactly this argv with Approve / Deny, and the node runs it only once approved; secrets come from the node's own sinks. | A human approves the exact command in chat before the node runs it. |
 | [`decisions_search`](#decisions_search) | Search this project's decisions (and the global ones) by words, or read one by its id (D12), whole. | No |
-| [`remember`](#remember) | Keep one entry in memory, in plain words, for every later session: scope user for how the human works everywhere (tone, taste, standing rules), project for this project (MEMORY.md, or a topic file for detail). | No |
+| [`remember`](#remember) | Keep one entry in memory, in plain words, for every later session: scope user for how the person whose message you answer works everywhere (tone, taste, standing rules; their own memory), project for this project (MEMORY.md, or a topic file for detail). | No |
 | [`forget`](#forget) | Remove one entry from memory: entry quotes words of exactly one entry, as it reads now; scope and topic as for remember. | No |
 | [`memory_read`](#memory_read) | Read one of this project's memory topic files (MEMORY.md lists them). | No |
 | [`nudge`](#nudge) | Flag the chat message you just wrote for the human's look, with reason in a few words ("the Machines page redesign"): the app shows it as something to look at, below your questions, until they have seen it, for a day at most. | No |
@@ -364,12 +364,12 @@ Search this project's decisions (and the global ones) by words, or read one by i
 
 ### remember
 
-Keep one entry in memory, in plain words, for every later session: scope user for how the human works everywhere (tone, taste, standing rules), project for this project (MEMORY.md, or a topic file for detail). With replaces (words of one entry, quoted exactly) it takes that entry's place: never keep two versions. A write past a file's cap is refused: merge or replace entries, then call again. The chat shows the human what you remembered, with Undo. Never a secret.
+Keep one entry in memory, in plain words, for every later session: scope user for how the person whose message you answer works everywhere (tone, taste, standing rules; their own memory), project for this project (MEMORY.md, or a topic file for detail). With replaces (words of one entry, quoted exactly) it takes that entry's place: never keep two versions. A write past a file's cap is refused: merge or replace entries, then call again. The chat shows the human what you remembered, with Undo. Never a secret.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `replaces` | string | no | Words of the entry this one replaces, quoted exactly; it must match one entry of the file. At most 1000 characters. |
-| `scope` | string | yes | One of `user` (`user.md`: how the human works across every project), `project` (This project's `MEMORY.md`, or one of its topic files). |
+| `scope` | string | yes | One of `user` (The person's own memory: how they work across every project. One shared `user.md` on a hub from before people), `project` (This project's `MEMORY.md`, or one of its topic files). |
 | `text` | string | yes | One line. At most 1000 characters. |
 | `topic` | string | no | Project scope only: the topic file; absent, `MEMORY.md`. |
 
@@ -394,7 +394,7 @@ Remove one entry from memory: entry quotes words of exactly one entry, as it rea
 |---|---|---|---|
 | `entry` | string | yes | Words of the entry to remove, quoted exactly; they must match one entry of the file. At most 1000 characters. |
 | `reason` | string | no | One line. At most 300 characters. |
-| `scope` | string | yes | One of `user` (`user.md`: how the human works across every project), `project` (This project's `MEMORY.md`, or one of its topic files). |
+| `scope` | string | yes | One of `user` (The person's own memory: how they work across every project. One shared `user.md` on a hub from before people), `project` (This project's `MEMORY.md`, or one of its topic files). |
 | `topic` | string | no | Project scope only: the topic file; absent, `MEMORY.md`. |
 
 **Who may call:** a lead, checked by the hub. **Needs a human:** no.

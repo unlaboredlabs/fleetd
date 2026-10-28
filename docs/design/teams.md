@@ -80,7 +80,7 @@ to.
 | **Needs you** | One boolean per project: "the lead's last message waits for a human reply" (`crates/fleetd-contracts/src/chat.rs:270-282`). The lead prompt is built around one person: "You and the human share one chat" (`assets/prompts/lead.start.md:1`, "Asking the human" at `:16`). | No way to ask *Bob*. Everyone's badge lights up for every question. |
 | **Approvals** (`gated_run`, preview settings) | Any human key with operate on the project's machine may answer, recorded as `human:<device name>` (`hub/approvals/mod.rs:872-907`). | Anyone with operate on the machine approves anything on it, including money or irreversible commands in projects they have nothing to do with. The audit shows a device name. |
 | **Secrets** (`request_secret`) | Only a human key may submit, and it needs operate on the sink and project machines (`hub/approvals/mod.rs:586-617`). The value is sealed to the machine; the hub keeps a fingerprint (`app/desktop/src/main/secret.ts:1-3`, `node/secrets.rs:1-4`). | The crypto is sound. But the secret becomes the *project's*, and nobody records whose credential it was. Any member's device can overwrite it. |
-| **Memory** | One `user.md` "shared by every project" (`hub/memory/mod.rs:1-5,26`). It is injected into every session as "How the human works" (`hub/memory/mod.rs:554-580`). Memory edits need operate on the machine (`hub/memory/tools.rs:30,125`). | Alice's preferences get applied to Bob, and Bob can read and edit Alice's profile. The nightly refresh (open PR #621) may only *add* to `user.md`, so it mixes everyone into one file. |
+| **Memory** | One `user.md` "shared by every project" (`hub/memory/mod.rs:1-5,26`). It is injected into every session as "How the human works" (`hub/memory/mod.rs:554-580`). Memory edits need operate on the machine (`hub/memory/tools.rs:30,125`). | Alice's preferences get applied to Bob, and Bob can read and edit Alice's profile. The nightly refresh (open PR #621) may only *add* to `user.md`, so it mixes everyone into one file. **Now:** each person has their own memory (§5.2, D212). |
 | **Decisions** | A human key's decision is `source: human`, `by: human:<device>` (`hub/ledger/tools.rs:54-67`; `DecisionSource` at `crates/fleetd-contracts/src/ledger.rs:167-174`). | "The human decided" is no longer meaningful. Anyone can overturn anyone. |
 | **Checklist** | "The lead's to-do list for the human", one list per project, and items have no owner (`hub/checklist/mod.rs:1-3`; `crates/fleetd-contracts/src/checklist.rs:25-40`). | Everyone sees every to-do as theirs. Anyone can tick off anyone's item. |
 | **Notifications** | The hub stamps `attention` on events, and each app decides from it (`hub/attention/mod.rs:1-3`). Quiet hours and time zone are **global decisions** (`hub/attention/mod.rs:11-17`). Events reach every key that can read the machine (`hub/api/grants.rs:46-52`). | Everyone is notified for everything, in the owner's time zone. |
@@ -283,18 +283,25 @@ the 186 call sites is the largest single piece of work (§8, step 3).
   only, as the Navi plan already says (§3.7).
 
 ### 5.2 Memory
-- **`user.md` becomes per person:** `memory/people/<person>/user.md`. A lead reads the profiles of the members of
-  its project only.
-  - In a solo project this is one file, exactly as today.
-  - In a team project, the lead reads the profiles of people active in the last 14 days, each capped smaller in team
-    projects (4k instead of 16k), so ten members don't eat the prompt.
-- **Remember scoping:** a lead may write to the `user.md` of **the author of a message in the current turn**, and of
-  no one else. "Bob prefers small PRs" can only be remembered from something Bob said.
-- The nightly refresh (#621) runs per person on that person's file.
+Built (D212, `hub/memory`):
+- **Each person has their own memory** ("You", user scope): `memory/people/<person>.md`. Only they edit it, in the app
+  or through what a lead remembers from their messages. The hub refuses anyone else, owners and admins included,
+  except an owner or admin deleting a removed person's memory.
+- **Who reads it:** the agents of an order a person started (`startedBy`) get that person's. A Navi (its lead and its
+  tasks) gets its owner's. Work no person started (automations, train fixes) gets none on a hub of several people.
+- **A project's lead gets none on a hub of several people.** It answers everyone in one long session, so a person's
+  memory put in its prompt (at the start, or with each message) stays in its context while it answers the others,
+  mixing them. On a one-person hub it gets that person's, as before people.
+- **Remember scoping:** a lead's `remember` or `forget` in user scope writes to the memory of **the person whose
+  message its turn answers** (a Navi's: its owner's), and of no one else. "Bob prefers small PRs" can only be
+  remembered from something Bob said. With no person's message behind the turn, on a hub of several people, it is
+  refused. Undo on the chat line is that person's alone.
+- **The nightly refresh** still only adds to user memory, and only to the memory of the person whose chat it read:
+  a Navi's owner, else the one person who wrote since the last refresh. When several did, it leaves user memory alone
+  that night.
 - **A project's `MEMORY.md` is shared team knowledge**, readable and editable by its members, as today.
-- **Private facts live in Navi's own memory**, never `user.md`, as the Navi plan already says. In a team that rule
-  matters more, because `user.md` is read by team leads.
-- Each person can see and edit only their own `user.md` in the app; owners and admins can read it too (Decided, 2).
+- **Private facts live in Navi's own memory**, never in user memory, as the Navi plan already says.
+- A hub with no people (from before them) keeps its one shared `user.md`, read and written as before.
 
 ### 5.3 Screens and recordings
 - Recordings, live view and takeover belong to the project, so they follow membership. Navi's are visible only to its
@@ -379,7 +386,9 @@ events table today.
 2. Bind **every existing key**, human and agent, to the owner. Today they are all the owner's devices and agents.
    Each key keeps its grants as its cap, so a device paired `--role read` stays read-only.
 3. Make the owner the **maintainer of every project**. Every existing project is **open**.
-4. Move `memory/user.md` to `memory/people/<owner>/user.md`.
+4. Copy `memory/user.md` to the owner's own memory, `memory/people/<owner>.md`, once. The shared file stays, read by
+   no session, as "Shared memory": an owner or admin reads and retires it (`memory_shared_get`, `memory_shared_set`)
+   in Settings › Hub › Every project › Instructions & memory.
 5. Map history: `by: human:<device>` on approvals and decisions, and `by` on chat messages, resolve through the key
    name to the owner on display. Nothing is rewritten. `key_id` on metrics touches maps the same way
    (`factory-metrics.md:456`).
@@ -445,8 +454,9 @@ What step 1 adds, in the wire types (`crates/fleetd-contracts/src/people.rs`):
 This is what makes privacy real, and it is the biggest step.
 
 **Step 4: Per-person memory (s).**
-- `people/<person>/user.md`, loading member profiles with a smaller cap in team projects.
-- Remember scoped to the turn's authors, and the per-person nightly refresh.
+- Built (D212): `people/<person>.md`, read by the work a person starts and their Navi; a project's lead gets one only
+  on a one-person hub.
+- Remember scoped to the turn's author, and the per-person nightly refresh.
 
 **Step 5: Per-person Navis (m).**
 - "Create my Navi" for every member, private with one member.

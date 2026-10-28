@@ -10030,6 +10030,18 @@
         "memory_set.output": {
           "$ref": "#/$defs/MemorySetOutput"
         },
+        "memory_shared_get.input": {
+          "$ref": "#/$defs/MemorySharedGetInput"
+        },
+        "memory_shared_get.output": {
+          "$ref": "#/$defs/MemorySharedGetOutput"
+        },
+        "memory_shared_set.input": {
+          "$ref": "#/$defs/MemorySharedSetInput"
+        },
+        "memory_shared_set.output": {
+          "$ref": "#/$defs/MemorySharedSetOutput"
+        },
         "memory_undo.input": {
           "$ref": "#/$defs/MemoryUndoInput"
         },
@@ -10642,6 +10654,10 @@
         "memory_refresh_run.output",
         "memory_set.input",
         "memory_set.output",
+        "memory_shared_get.input",
+        "memory_shared_get.output",
+        "memory_shared_set.input",
+        "memory_shared_set.output",
         "memory_undo.input",
         "memory_undo.output",
         "metrics_get.input",
@@ -10974,7 +10990,7 @@
           "type": "integer"
         },
         "user": {
-          "description": "`user.md`.",
+          "description": "Each person's own memory (the shared `user.md` too).",
           "maximum": 100000,
           "minimum": 1000,
           "type": "integer"
@@ -11010,7 +11026,7 @@
           "type": "integer"
         },
         "user": {
-          "description": "`user.md`.",
+          "description": "Each person's own memory (the shared `user.md` too).",
           "maximum": 100000,
           "minimum": 1000,
           "type": "integer"
@@ -11052,7 +11068,7 @@
           "type": "boolean"
         },
         "user": {
-          "description": "`user.md`.",
+          "description": "Each person's own memory (the shared `user.md` too).",
           "maximum": 100000,
           "minimum": 1000,
           "type": "integer"
@@ -11114,7 +11130,7 @@
       "properties": {
         "projectRef": {
           "$ref": "#/$defs/ProjectRef",
-          "description": "Also that project's MEMORY.md and topic files; absent: user.md only."
+          "description": "Also that project's MEMORY.md and topic files; absent: your own memory only."
         }
       },
       "type": "object"
@@ -11150,7 +11166,8 @@
           "type": "boolean"
         },
         "user": {
-          "$ref": "#/$defs/MemoryFile"
+          "$ref": "#/$defs/MemoryFile",
+          "description": "Your own memory: how you work, read by the agents of work you start and by your Navi. Empty for a key with no\nperson. The one shared user.md on a hub from before people."
         }
       },
       "required": [
@@ -11330,7 +11347,7 @@
       "oneOf": [
         {
           "const": "user",
-          "description": "`user.md`: how the human works across every project.",
+          "description": "The person's own memory: how they work across every project. One shared `user.md` on a hub from before\npeople.",
           "type": "string"
         },
         {
@@ -11342,6 +11359,10 @@
     },
     "MemorySetInput": {
       "properties": {
+        "personId": {
+          "$ref": "#/$defs/PersonId",
+          "description": "User scope: another person's memory, only to delete it (empty text) once they are removed from the hub,\nby an owner's or admin's device. Absent: your own; nobody else edits it."
+        },
         "projectRef": {
           "$ref": "#/$defs/ProjectRef",
           "description": "Required with scope project."
@@ -11366,6 +11387,57 @@
       "type": "object"
     },
     "MemorySetOutput": {
+      "properties": {
+        "file": {
+          "$ref": "#/$defs/MemoryFile"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "file"
+      ],
+      "type": "object"
+    },
+    "MemorySharedGetInput": {
+      "type": "object"
+    },
+    "MemorySharedGetOutput": {
+      "properties": {
+        "file": {
+          "$ref": "#/$defs/MemoryFile",
+          "description": "Empty once retired."
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "file"
+      ],
+      "type": "object"
+    },
+    "MemorySharedSetInput": {
+      "properties": {
+        "text": {
+          "description": "The whole file. Empty retires it.",
+          "maxLength": 100000,
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "type": "object"
+    },
+    "MemorySharedSetOutput": {
       "properties": {
         "file": {
           "$ref": "#/$defs/MemoryFile"
@@ -16222,6 +16294,10 @@
         "forgotten": {
           "description": "`forget` removed `text`; Undo puts it back.",
           "type": "boolean"
+        },
+        "person": {
+          "$ref": "#/$defs/PersonId",
+          "description": "User scope: whose memory it is in. Absent for the shared `user.md` of a hub from before people."
         },
         "reason": {
           "description": "Why it was forgotten.",
