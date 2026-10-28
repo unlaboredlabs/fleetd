@@ -720,6 +720,71 @@ async fn a_node_shutting_down_waits_for_its_previews_apps_to_end() {
     assert_eq!(h.previews.running(), 0);
 }
 
+/// `project.web("true")` with a start command that notes each `$PORT` it gets in `starts`, then runs `then`.
+fn starting(project: &Project, then: &str) -> serde_json::Value {
+    let mut web = project.web("true");
+    web["start"] = json!(format!(
+        "echo $PORT >> {}; {then}",
+        project.log("starts").display()
+    ));
+    web
+}
+
+#[tokio::test]
+async fn an_app_whose_port_was_taken_starts_again_on_a_fresh_one() {
+    let project = Project::new();
+    let sha = project.branch("feat", "page.html", "<p>second try</p>\n");
+    let mut h = harness(&project);
+    let starts = project.log("starts");
+    let web = starting(
+        &project,
+        &format!(
+            "if [ $(wc -l < {}) -lt 2 ]; then echo 'OSError: [Errno 98] Address already in use' >&2; exit 1; fi; \
+             exec python3 -m http.server \"$PORT\" --bind 127.0.0.1",
+            starts.display()
+        ),
+    );
+    h.previews
+        .run(frame(1, &[("feat", &sha)], None, web, 30))
+        .await;
+    let url = h.ready(1).await.url.expect("opened").to_string();
+    assert!(answers(&url, "second try").await);
+    let ports = std::fs::read_to_string(&starts).unwrap();
+    let ports: Vec<_> = ports.lines().collect();
+    assert_eq!(ports.len(), 2, "{ports:?}");
+    assert_ne!(ports[0], ports[1], "the same port again");
+    h.stop(1, PreviewEndReason::Ended);
+    h.until(1, |r| r.state.is_over()).await;
+}
+
+#[tokio::test]
+async fn an_app_is_started_again_only_while_its_port_was_taken_and_at_most_three_times() {
+    for (id, then, tries) in [
+        (
+            1,
+            "echo 'listen EADDRINUSE: address already in use' >&2; exit 1",
+            3,
+        ),
+        (2, "echo 'SyntaxError: nope' >&2; exit 1", 1),
+    ] {
+        let project = Project::new();
+        let sha = project.branch("feat", "page.html", "<p>a</p>\n");
+        let mut h = harness(&project);
+        h.previews
+            .run(frame(
+                id,
+                &[("feat", &sha)],
+                None,
+                starting(&project, then),
+                30,
+            ))
+            .await;
+        let failed = h.until(id, |r| r.state.is_over()).await;
+        assert_eq!(failed.state, PreviewState::Failed, "{failed:#?}");
+        assert_eq!(project.ran("starts"), tries, "{then}");
+    }
+}
+
 #[tokio::test]
 async fn a_stop_right_behind_its_run_ends_it_before_anything_runs() {
     let project = Project::new();

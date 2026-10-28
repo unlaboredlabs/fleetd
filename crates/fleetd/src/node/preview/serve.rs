@@ -84,6 +84,14 @@ impl Server {
         tail_utf16(text.trim_end(), LOG_TAIL).to_owned()
     }
 
+    /// Whether its log says its port was taken ("Address already in use", Node's EADDRINUSE).
+    pub fn port_taken(&self) -> bool {
+        let log = std::fs::read_to_string(&self.log)
+            .unwrap_or_default()
+            .to_lowercase();
+        log.contains("address already in use") || log.contains("eaddrinuse")
+    }
+
     /// Asks `127.0.0.1:port{path}` until it answers 2xx or 3xx (true), the app ends, or `within` passes (false).
     pub async fn wait_ready(&mut self, path: &str, within: Duration) -> bool {
         let url = format!("http://127.0.0.1:{}{path}", self.port);

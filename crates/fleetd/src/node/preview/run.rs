@@ -29,6 +29,9 @@ pub struct Run {
     pub key: String,
 }
 
+/// How many times the app starts, each on a fresh port, while it fails because its port was taken.
+const START_TRIES: u32 = 3;
+
 /// A step's words and detail are lines of at most 300 characters.
 fn line(text: &str) -> Line<1, 300> {
     let text = text.trim();
@@ -427,58 +430,71 @@ pub async fn run(
         }
     }
 
-    // Start, and wait until it answers.
+    // Start, and wait until it answers. A port free when picked can be another socket's before the app binds it: an app
+    // that fails saying its address is in use starts again on a fresh port, up to START_TRIES times.
     r.begin(plan.start);
-    let started = free_port().and_then(|port| {
-        Server::start(
-            run.web.start.as_str(),
-            slot,
-            &env,
-            port,
-            &slots::log_file(slot),
-            &slots::pid_file(slot),
+    let ready = run.web.ready.as_str().to_owned();
+    let mut tries = 0;
+    let mut server = loop {
+        tries += 1;
+        let started = free_port().and_then(|port| {
+            Server::start(
+                run.web.start.as_str(),
+                slot,
+                &env,
+                port,
+                &slots::log_file(slot),
+                &slots::pid_file(slot),
+            )
+        });
+        let mut server = match started {
+            Ok(server) => server,
+            Err(e) => {
+                return r.fail(
+                    plan.start,
+                    None,
+                    None,
+                    &format!("The app didn't start: {e}"),
+                );
+            }
+        };
+        match or_stop(
+            &mut stopped,
+            server.wait_ready(&ready, me.timing.ready_within),
         )
-    });
-    let mut server = match started {
-        Ok(server) => server,
-        Err(e) => {
-            return r.fail(
-                plan.start,
-                None,
-                None,
-                &format!("The app didn't start: {e}"),
-            );
+        .await
+        {
+            Err(reason) => {
+                server.stop().await;
+                return ended(reason);
+            }
+            Ok(true) => break server,
+            Ok(false) if tries < START_TRIES && server.port_taken() => {
+                tracing::warn!(
+                    preview = %run.frame.preview_id.as_str(),
+                    port = server.port,
+                    tries,
+                    "a preview's port was taken before its app bound it; starting it again on another"
+                );
+                server.stop().await;
+            }
+            Ok(false) => {
+                let tail = server.log_tail(&scrub);
+                let note = if server.exited() {
+                    "The app stopped before it answered.".to_owned()
+                } else {
+                    format!(
+                        "The app didn't answer at {ready} within {} s.",
+                        me.timing.ready_within.as_secs()
+                    )
+                };
+                server.stop().await;
+                return r.fail(plan.start, None, Some(&tail), &note);
+            }
         }
     };
-    let ready = run.web.ready.as_str().to_owned();
-    match or_stop(
-        &mut stopped,
-        server.wait_ready(&ready, me.timing.ready_within),
-    )
-    .await
-    {
-        Err(reason) => {
-            server.stop().await;
-            return ended(reason);
-        }
-        Ok(true) => {
-            let detail = format!("on 127.0.0.1:{}; it answered at {ready}", server.port);
-            r.end(plan.start, PreviewStepState::Done, Some(&detail), None);
-        }
-        Ok(false) => {
-            let tail = server.log_tail(&scrub);
-            let note = if server.exited() {
-                "The app stopped before it answered.".to_owned()
-            } else {
-                format!(
-                    "The app didn't answer at {ready} within {} s.",
-                    me.timing.ready_within.as_secs()
-                )
-            };
-            server.stop().await;
-            return r.fail(plan.start, None, Some(&tail), &note);
-        }
-    }
+    let detail = format!("on 127.0.0.1:{}; it answered at {ready}", server.port);
+    r.end(plan.start, PreviewStepState::Done, Some(&detail), None);
 
     // Open it to the person's devices.
     r.begin(plan.open);
