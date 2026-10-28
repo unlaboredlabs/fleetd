@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 // Skills, a member's and an admin's: a project's Agents page in Settings shows its own and repo skills, and names the hub-wide
-// ones on a read-only line (with the way to Administration for an owner or admin only); Administration → Hub settings › Skills is
+// ones on a read-only line (with the way to Every project for an owner or admin only); Hub › Every project › Tools & skills is
 // where the hub-wide ones are installed, updated and removed, and a member never reaches it.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -10,7 +10,7 @@ import type { HubFrame } from "../../../shared/hub";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { UiProvider } from "../../ui";
-import { AdminScreen } from "../admin/AdminScreen";
+import { SettingsScreen } from "./SettingsScreen";
 import { ProjectSkills } from "./Skills";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -64,7 +64,7 @@ afterEach(() => {
 
 const settle = () => act(async () => new Promise((r) => setTimeout(r, 0)));
 
-/** `page`: storefront's skills on Settings → Projects › Agents, or Administration → Hub settings. `admin`: what hub_info says of this app's person. */
+/** `page`: storefront's skills on Settings → Projects › Agents, or Hub › Every project › Tools & skills. `admin`: what hub_info says of this app's person. */
 const render = async (page: "settings" | "admin", admin: boolean) => {
   let listener: (frame: HubFrame) => void = () => undefined;
   const hub: HubApi = {
@@ -91,11 +91,11 @@ const render = async (page: "settings" | "admin", admin: boolean) => {
     focus: () => Promise.resolve(),
     chat: () => Promise.resolve(),
   };
-  if (page === "admin") window.location.hash = "#/admin/hub";
+  if (page === "admin") window.location.hash = "#/settings/hub/tools";
   await act(async () => {
     root.render(
       <UiProvider>
-        <DataProvider layer={createDataLayer(hub)}>{page === "admin" ? <AdminScreen /> : <ProjectSkills scope={{ kind: "project", ref: storefront }} />}</DataProvider>
+        <DataProvider layer={createDataLayer(hub)}>{page === "admin" ? <SettingsScreen /> : <ProjectSkills scope={{ kind: "project", ref: storefront }} />}</DataProvider>
       </UiProvider>,
     );
     await Promise.resolve();
@@ -129,7 +129,7 @@ it("shows a member a project's skills and only names the hub-wide ones", async (
   expect(rowNamed("standup")).toBeUndefined();
   const line = document.querySelector("[aria-label='Hub-wide skills']");
   expect(line?.textContent).toContain("Hub-wide, for every project: pr-review, standup.");
-  expect(texts()).not.toContain("Hub-wide skills in Administration");
+  expect(texts()).not.toContain("Hub-wide skills in Every project");
   expect(texts()).not.toContain("Update");
   expect(document.body.textContent).not.toMatch(/Global/u);
 });
@@ -148,22 +148,22 @@ it("writes a member's install into the project, never hub-wide", async () => {
   expect(sent("skill_install")).toEqual([{ scope: "project", projectRef: storefront, source: "acme/agent-skills" }]);
 });
 
-it("gives an admin on Settings only the way to Administration", async () => {
+it("gives an admin on a project's page only the way to Every project", async () => {
   await render("settings", true);
   expect(rowNamed("pr-review")).toBeUndefined();
-  expect(texts()).toContain("Hub-wide skills in Administration");
+  expect(texts()).toContain("Hub-wide skills in Every project");
 });
 
-it("keeps Administration → Skills from a member, and reads none of it", async () => {
+it("keeps Every project's skills from a member, and reads none of it", async () => {
   await render("admin", false);
-  expect(document.querySelector("[data-screen='admin.denied']")).not.toBeNull();
+  expect(document.querySelector("[data-screen='settings.hub.denied']")).not.toBeNull();
   expect(sent("skills_list")).toEqual([]);
   expect(texts()).not.toContain("Install from a source…");
 });
 
-it("lets an admin install, update and remove hub-wide skills on Administration", async () => {
+it("lets an admin install, update and remove hub-wide skills on Every project › Tools & skills", async () => {
   await render("admin", true);
-  expect(document.querySelector("[data-screen='admin.hub']")).not.toBeNull();
+  expect(document.querySelector("[data-screen='settings.hub.tools']")).not.toBeNull();
   expect(sent("skills_list")).toEqual([{}]);
   expect(texts()).toContain("Install from a source…");
   const pr = rowNamed("pr-review");

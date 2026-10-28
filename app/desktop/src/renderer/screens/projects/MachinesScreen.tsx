@@ -106,7 +106,7 @@ function MachineRow(props: {
   open: boolean;
   onToggle: () => void;
   onRemove: (p: RemoveTarget) => void;
-  /** An owner or admin: the way to the machine's roles on Administration. */
+  /** An owner or admin: the way to the machine's roles in Settings › Hub › Machines. */
   admin: boolean;
 }) {
   const { machine: m, open } = props;
@@ -183,7 +183,7 @@ function MachineRow(props: {
               type="button"
               className={s.link}
               onClick={() => {
-                window.location.hash = toHash({ id: "admin", section: "machines" });
+                window.location.hash = toHash({ id: "settings", tab: "hub.machines" });
               }}
             >
               <Text size="sm" tone="inherit">

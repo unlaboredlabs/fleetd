@@ -246,7 +246,7 @@ const shared = (f: Fixture) => basics(f);
 function agents(from: Fixture): Fixture {
   const f = Fixture.from(from, "settings-agents", "A fleet cap of 16; one project under its max, one at it, one with no limit of its own");
   f.agentsFromSlots = true;
-  // An admin's key on a hub from before people: Administration shows, with the fleet and machine caps.
+  // An admin's key on a hub from before people: the Hub group shows, with the fleet and machine caps.
   f.answer("hub_info", undefined, { version: "0.9.0", protocol: 1, busy: [], admin: true });
   const projects = isObject(f.snapshot) && Array.isArray(f.snapshot["projects"]) ? f.snapshot["projects"].filter(isObject) : [];
   const ref = (p: JsonObject): JsonObject => ({ machineId: asText(p["machineId"]), projectId: asText(p["projectId"]) });
@@ -283,7 +283,7 @@ function agents(from: Fixture): Fixture {
     }
   }
   for (let n = 1; n <= 64; n++) f.answer("cap_set", { cap: n }, { slots: { ...clone(slots), cap: n, fleetCap: n } });
-  // Administration's hub settings read the global MCP servers too: none.
+  // Every project's Tools & skills reads the global MCP servers too: none.
   f.answer("mcp_servers_get", undefined, { global: [], project: [], userServers: true });
   return f;
 }

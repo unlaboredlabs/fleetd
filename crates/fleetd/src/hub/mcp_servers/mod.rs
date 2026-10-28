@@ -1,4 +1,4 @@
-//! The MCP servers fleetd gives its agents (Settings › MCP servers, and each project's MCP section):
+//! The MCP servers fleetd gives its agents (Settings › Hub › Every project › Tools & skills, and each project's MCP section):
 //! `mcp_servers_get`, `mcp_server_set`, `mcp_server_remove`, `mcp_settings_set` and `mcp_server_test`, and what the
 //! hub keeps of them: one `mcp_servers` row per server (a global one's machine and project are empty) and
 //! `mcp_settings.user_servers`.

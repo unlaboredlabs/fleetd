@@ -1,4 +1,4 @@
-// Whether this app's person sees Administration: the sidebar's entry, the palette's command and the page itself ask
+// Whether this app's person sees Settings' Hub group: its sidebar rows, the palette's commands and the pages ask
 // here. Small and in the shell's chunk; the page is its own.
 import type { Person } from "../../../shared/contracts";
 import { lacksTool } from "../../src/data/errors";

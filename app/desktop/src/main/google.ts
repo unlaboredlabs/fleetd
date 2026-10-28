@@ -58,7 +58,7 @@ export const googleRefusal = (error: string): { message: string; fix?: string } 
     case "org_internal":
       return { message: "Your Google Workspace doesn't allow this app.", fix: "Use an account of the organization the app belongs to, or ask your Workspace admin to trust the hub's Google client." };
     default:
-      return { message: `Google answered ${error} instead of a code.`, fix: "Connect again; if it repeats, ask your hub's admin to test the Google client in Administration › Google." };
+      return { message: `Google answered ${error} instead of a code.`, fix: "Connect again; if it repeats, ask your hub's admin to test the Google client in Settings › Hub accounts › Google." };
   }
 };
 
@@ -120,7 +120,7 @@ export const connectGoogle = async (
     if (early !== undefined) return early;
     const info = got.output as GoogleGetOutput;
     if (info.client === undefined) {
-      return failed("invalid", "The hub has no Google OAuth client yet.", "The hub's admin sets one up in Administration › Google.");
+      return failed("invalid", "The hub has no Google OAuth client yet.", "The hub's admin sets one up in Settings › Hub accounts › Google.");
     }
     const { verifier, challenge } = pkce();
     const state = base64url(randomBytes(16));

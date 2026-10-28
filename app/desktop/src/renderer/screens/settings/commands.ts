@@ -1,12 +1,13 @@
 // Settings in the command palette: its pages, each setting by its own name, and every prompt by its plain name (typed, not listed: there
-// are 60 of them), each opening in Settings → Prompts. main.tsx registers them once, with the app's data layer.
+// are 60 of them), each opening in a project's Prompts. The Hub group's pages are offered to its owners and admins
+// only. main.tsx registers them once, with the app's data layer.
 import { registerCommands, registerSource, type Command } from "../palette";
 import { GROUPS, describe, groupOf } from "./catalog";
 import { hashKey } from "@tanstack/react-query";
 import type { DataLayer } from "../../src/data/queries";
-import type { HubInfoOutput } from "../../../shared/contracts";
+import type { HubInfoOutput, SetupListOutput } from "../../../shared/contracts";
 import { administers } from "../admin/model";
-import { toHash } from "../shell/routes";
+import { toHash, type HubTab } from "../shell/routes";
 import type { PromptSummary } from "./contracts";
 import { promptHref, tabHref } from "./route";
 import { BADGE, revealNext } from "./search";
@@ -16,14 +17,6 @@ const go = (hash: string) => {
 };
 
 const pages: Command[] = [
-  {
-    id: "settings.open",
-    title: "Settings",
-    detail: "Appearance, the hub, pairing links",
-    group: "settings",
-    keywords: ["preferences"],
-    run: () => go(tabHref("general")),
-  },
   {
     id: "go:settings.notifications",
     title: "Notifications",
@@ -38,7 +31,7 @@ const pages: Command[] = [
   {
     id: "go:settings.prompts",
     title: "Prompts",
-    detail: "Everything fleetd tells its agents",
+    detail: "Everything fleetd tells a project's agents",
     group: "settings",
     keywords: ["templates", "system prompt"],
     run: () => go(tabHref("prompts")),
@@ -46,7 +39,7 @@ const pages: Command[] = [
   {
     id: "go:settings.projects",
     title: "Project settings",
-    detail: "A project's name, worktrees, environment variables and setup commands, or delete it",
+    detail: "A project's name, repos, worktrees, environment variables and setup, or delete it",
     group: "settings",
     keywords: ["env", "secrets", "worktrees", "setup", "delete project", "rename"],
     run: () => go(tabHref("projects")),
@@ -60,16 +53,24 @@ const pages: Command[] = [
     run: () => go(tabHref("instructions")),
   },
   {
-    id: "go:settings.connections",
-    title: "Connections",
-    detail: "Your hubs, your Claude account and your GitHub",
+    id: "go:settings.accounts",
+    title: "Your accounts",
+    detail: "The Claude account and GitHub your work runs on",
     group: "settings",
-    keywords: ["hubs", "claude", "github", "account", "pair", "subscription"],
-    run: () => go(tabHref("connections")),
+    keywords: ["claude", "github", "account", "subscription", "connections"],
+    run: () => go(tabHref("accounts")),
+  },
+  {
+    id: "go:settings.hubs",
+    title: "Hubs",
+    detail: "The hubs this app is paired with, and their links",
+    group: "settings",
+    keywords: ["hub", "pair", "add a hub", "hub links", "connections"],
+    run: () => go(tabHref("hubs")),
   },
   {
     id: "go:settings.updates",
-    title: "Version & updates",
+    title: "Version",
     detail: "Which fleetd this app, the hub and each machine run",
     group: "settings",
     keywords: ["version", "update", "upgrade", "edge", "channel"],
@@ -83,7 +84,7 @@ const pages: Command[] = [
     [
       ["Max agents", "How many of a project's agents run at once", "agents", ["agents", "limit", "at once", "cap", "concurrency"]],
       ["Appearance", "Light, dark or match system", "general", ["theme", "dark mode", "light mode"]],
-      ["Hub", "The connection, and this app's key", "connections", ["connection", "disconnect", "key"]],
+      ["Hub", "The connection, and this app's key", "hubs", ["connection", "disconnect", "key"]],
       ["Notify me when", "Which kinds of notification show", "general", ["notifications", "alerts", "mute"]],
       ["Sound", "Notifications play a sound or not", "general", ["notifications", "mute", "silent"]],
       [BADGE, "How many projects need you, on the app icon", "general", ["badge", "dock", "count", "app icon"]],
@@ -111,20 +112,39 @@ const groupTitle = (p: PromptSummary) => GROUPS.find((g) => g.key === groupOf(p)
 export function registerSettingsCommands(layer: DataLayer): () => void {
   const read = layer.toolQuery("prompt_get", {});
   const prompts = (): ReadonlyArray<PromptSummary> => layer.queryClient.getQueryData<{ prompts: PromptSummary[] }>(read.queryKey)?.prompts ?? [];
-  const offPages = registerCommands(pages);
-  // Administration's Hub settings, for an owner or admin as hub_info last said: what used to be Settings' hub-wide
-  // instructions, MCP servers and prompts (D209).
+  // The Hub group, for an owner or admin as hub_info last said (D211).
   const info = layer.toolQuery("hub_info", {});
-  const offAdmin = registerCommands([
+  const admin = () => administers(layer.queryClient.getQueryData<HubInfoOutput>(info.queryKey));
+  const setup = layer.toolQuery("setup_list", {});
+  // Settings opens on Hub › Setup while a required step is left, for those who can take it.
+  const left = () => (admin() ? (layer.queryClient.getQueryData<SetupListOutput>(setup.queryKey)?.requiredLeft ?? 0) : 0);
+  const offPages = registerCommands([
     {
-      id: "go:admin.hub",
-      title: "Hub settings",
-      detail: "What reaches every project: caps, profiles, instructions, MCP servers, skills and prompts",
+      id: "settings.open",
+      title: "Settings",
+      detail: "You, your projects, and the hub",
       group: "settings",
-      keywords: ["administration", "admin", "hub-wide", "every project", "global", "mcp", "instructions", "skills", "prompts", "fleet cap"],
-      enabled: () => administers(layer.queryClient.getQueryData<HubInfoOutput>(info.queryKey)),
-      run: () => go(toHash({ id: "admin", section: "hub" })),
+      keywords: ["preferences", "administration"],
+      run: () => go(left() > 0 ? toHash({ id: "settings", tab: "hub.setup" }) : tabHref("general")),
     },
+    ...pages,
+  ]);
+  const hubPage = (id: string, title: string, detail: string, tab: HubTab, keywords: ReadonlyArray<string>): Command => ({
+    id,
+    title,
+    detail,
+    group: "settings",
+    keywords: ["hub", "administration", "admin", ...keywords],
+    enabled: admin,
+    run: () => go(toHash({ id: "settings", tab })),
+  });
+  const offAdmin = registerCommands([
+    hubPage("go:hub.machines", "Machines", "Settings › Hub: add a machine, its roles, max agents", "hub.machines", ["machine", "add machine", "fleet cap", "machine roles"]),
+    hubPage("go:hub.profiles", "Profiles", "Every project: the task profiles agents run on", "hub.profiles", ["task profiles", "model", "effort"]),
+    hubPage("go:hub.tools", "Tools & skills", "Every project: global MCP servers and hub-wide skills", "hub.tools", ["mcp", "skills", "global", "every project"]),
+    hubPage("go:hub.instructions", "Instructions for every project", "Every project: instructions and memory caps", "hub.instructions", ["instructions", "memory caps", "global"]),
+    hubPage("go:hub.prompts", "Hub-wide prompts", "Every project: the texts fleetd sends every project's agents", "hub.prompts", ["prompts", "templates", "global"]),
+    hubPage("go:hub.accounts", "Hub accounts", "The hub's Claude API key, GitHub App and Google client", "hub.accounts", ["claude", "api key", "github app", "google", "connections"]),
   ]);
   const offSource = registerSource({
     id: "prompts",

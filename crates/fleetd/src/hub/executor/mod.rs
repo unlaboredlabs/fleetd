@@ -2186,7 +2186,7 @@ impl Executors {
     }
 
     /// A session whose model claude refused runs on the runner's own: the profiles on that model are marked refused,
-    /// so new agents run on the runner's own and Administration › Profiles says why.
+    /// so new agents run on the runner's own and Settings › Hub › Every project › Profiles says why.
     fn flag_refused(&self, machine_id: &MachineId, event: &MachineEvent) {
         let sessions: Vec<&SessionSummary> = match event {
             MachineEvent::Snapshot { sessions, .. } => sessions.iter().collect(),

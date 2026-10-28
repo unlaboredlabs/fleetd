@@ -64,11 +64,11 @@ const open = (state: HubState): string[] => {
 const popover = () => document.querySelector("[aria-label='Hub'][role='dialog']")?.textContent ?? "";
 
 it("shows only the actions that apply to each state", () => {
-  expect(open({ phase: "live", hub: HUB, protocol: 1, version: "0.9.2" })).toEqual(["Hub settings", "Disconnect…"]);
-  expect(open({ phase: "connecting", hub: HUB, attempt: 1 })).toEqual(["Hub settings", "Disconnect…"]);
+  expect(open({ phase: "live", hub: HUB, protocol: 1, version: "0.9.2" })).toEqual(["Settings › Hubs", "Disconnect…"]);
+  expect(open({ phase: "connecting", hub: HUB, attempt: 1 })).toEqual(["Settings › Hubs", "Disconnect…"]);
   expect(open({ phase: "retrying", hub: HUB, reason: "Nothing is listening at devbox:4790", retryAt: 0 })).toEqual([
     "Retry now",
-    "Hub settings",
+    "Settings › Hubs",
     "Disconnect…",
   ]);
   expect(open({ phase: "unpaired" })).toEqual(["Pair with a hub"]);
@@ -94,11 +94,11 @@ it("says why it is offline and what to do about it", () => {
   expect(document.querySelector("[aria-label='Hub'][role='dialog'] code")?.textContent).toBe("fleetd doctor");
 });
 
-it("changes hubs from Settings › Connections › Hubs, never #/onboarding, which a connected app leaves at once", () => {
+it("changes hubs from Settings › Hubs, never #/onboarding, which a connected app leaves at once", () => {
   const buttons = () => [...document.querySelectorAll<HTMLButtonElement>("[aria-label='Hub'][role='dialog'] button")];
   open({ phase: "live", hub: HUB, protocol: 1 });
-  act(() => buttons().find((b) => b.textContent === "Hub settings")?.click());
-  expect(parseHash(window.location.hash)).toMatchObject({ id: "settings", tab: "connections" });
+  act(() => buttons().find((b) => b.textContent === "Settings › Hubs")?.click());
+  expect(parseHash(window.location.hash)).toMatchObject({ id: "settings", tab: "hubs" });
 
   open({ phase: "unpaired" });
   act(() => buttons().find((b) => b.textContent === "Pair with a hub")?.click());

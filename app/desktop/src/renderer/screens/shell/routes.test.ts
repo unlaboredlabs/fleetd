@@ -29,14 +29,20 @@ describe("routes", () => {
       { id: "time", orderId: "W14" },
       { id: "projects.add" },
       { id: "settings", tab: "prompts" },
-      { id: "admin", section: "people" },
-      { id: "admin", section: "machines" },
-      { id: "admin", section: "machines", machine: "laptop" },
-      { id: "admin", section: "hub" },
-      { id: "admin", section: "connections" },
-      { id: "admin", section: "hub", prompt: "lead.start" },
-      { id: "admin", section: "hub", prompt: "lead.start", view: "compare" },
-      { id: "admin", section: "setup" },
+      { id: "settings", tab: "accounts" },
+      { id: "settings", tab: "hubs" },
+      { id: "settings", tab: "prompts", prompt: "lead.start", for: "devbox/storefront", view: "compare" },
+      { id: "settings", tab: "hub.people" },
+      { id: "settings", tab: "hub.machines" },
+      { id: "settings", tab: "hub.machines", machine: "laptop" },
+      { id: "settings", tab: "hub.profiles" },
+      { id: "settings", tab: "hub.tools" },
+      { id: "settings", tab: "hub.instructions" },
+      { id: "settings", tab: "hub.prompts" },
+      { id: "settings", tab: "hub.prompts", prompt: "lead.start" },
+      { id: "settings", tab: "hub.prompts", prompt: "lead.start", view: "compare" },
+      { id: "settings", tab: "hub.accounts" },
+      { id: "settings", tab: "hub.setup" },
       { id: "onboarding", hub: "http://100.64.0.1:4790", code: "ABCD-2345" },
       { id: "onboarding", hub: null, code: null },
     ];
@@ -55,41 +61,41 @@ describe("routes", () => {
     expect(toHash(panelRoute(storefront, { tab: "agents", agent: "T1" }))).toBe("#/project/devbox/storefront/agents/T1");
   });
 
-  it("opens Administration on People, and an older link on the section that has its page now", () => {
-    expect(toHash({ id: "admin", section: "connections" })).toBe("#/admin/connections");
-    expect(toHash({ id: "admin", section: "hub", prompt: "lead.start", view: "update" })).toBe("#/admin/hub?prompt=lead.start&view=update");
-    for (const [old, section] of [
-      ["invites", "people"],
-      ["claude", "connections"],
-      ["github", "connections"],
-      ["google", "connections"],
-      ["skills", "hub"],
-    ]) {
-      expect(parseHash(`#/admin/${old ?? ""}`), old).toEqual({ id: "admin", section });
-    }
-    // Only hub settings opens a prompt.
-    expect(parseHash("#/admin/people?prompt=lead.start")).toEqual({ id: "admin", section: "people" });
-    expect(parseHash("#/admin")).toEqual({ id: "admin", section: "people" });
-    expect(parseHash("#/admin/nope")).toEqual({ id: "admin", section: "people" });
-    expect(toHash({ id: "admin", section: "machines", machine: "laptop" })).toBe("#/admin/machines/laptop");
-    expect(parseHash("#/admin/people/laptop")).toEqual({ id: "admin", section: "people" });
-    expect(parseHash("#/settings/machines")).toEqual({ id: "admin", section: "machines" });
+  it("writes the Hub group's pages under #/settings/hub", () => {
+    expect(toHash({ id: "settings", tab: "hub.accounts" })).toBe("#/settings/hub/accounts");
+    expect(toHash({ id: "settings", tab: "hub.machines", machine: "laptop" })).toBe("#/settings/hub/machines/laptop");
+    expect(toHash({ id: "settings", tab: "hub.prompts", prompt: "lead.start", view: "update" })).toBe("#/settings/hub/prompts?prompt=lead.start&view=update");
+    // Only Every project's prompts open one, and only Machines a machine.
+    expect(parseHash("#/settings/hub/people?prompt=lead.start")).toEqual({ id: "settings", tab: "hub.people" });
+    expect(parseHash("#/settings/hub/people/laptop")).toEqual({ id: "settings", tab: "hub.people" });
+    expect(parseHash("#/settings/hub")).toEqual({ id: "settings", tab: "hub.people" });
+    expect(parseHash("#/settings/hub/nope")).toEqual({ id: "settings", tab: "hub.people" });
+    // A Hub page is no project's: a `for` is dropped, and a hub tab's name alone is no page.
+    expect(parseHash("#/settings/hub/tools?for=devbox/storefront")).toEqual({ id: "settings", tab: "hub.tools" });
+    expect(parseHash("#/settings/hub.people")).toEqual({ id: "settings", tab: "general" });
   });
 
-  it("opens an older Settings link on the page that has it now, for the same project", () => {
+  it("opens an Administration link on the Hub page that has it now", () => {
     for (const [old, tab] of [
-      ["hubs", "connections"],
-      ["claude", "connections"],
-      ["github", "connections"],
-      ["notifications", "general"],
-      ["memory", "instructions"],
-      ["skills", "agents"],
-      ["mcp", "agents"],
+      ["", "hub.people"],
+      ["people", "hub.people"],
+      ["invites", "hub.people"],
+      ["machines", "hub.machines"],
+      ["connections", "hub.accounts"],
+      ["claude", "hub.accounts"],
+      ["github", "hub.accounts"],
+      ["google", "hub.accounts"],
+      ["hub", "hub.tools"],
+      ["skills", "hub.tools"],
+      ["setup", "hub.setup"],
+      ["nope", "hub.people"],
     ]) {
-      expect(parseHash(`#/settings/${old ?? ""}`), old).toEqual({ id: "settings", tab });
+      expect(parseHash(`#/admin/${old ?? ""}`), old).toEqual({ id: "settings", tab });
     }
-    expect(parseHash("#/settings/memory?for=devbox/storefront")).toEqual({ id: "settings", tab: "instructions", for: "devbox/storefront" });
-    expect(parseHash("#/settings/nope")).toEqual({ id: "settings", tab: "general" });
+    expect(parseHash("#/admin/machines/laptop")).toEqual({ id: "settings", tab: "hub.machines", machine: "laptop" });
+    expect(parseHash("#/admin/hub?prompt=lead.start&view=update")).toEqual({ id: "settings", tab: "hub.prompts", prompt: "lead.start", view: "update" });
+    expect(parseHash("#/admin/people?prompt=lead.start")).toEqual({ id: "settings", tab: "hub.people" });
+    expect(parseHash("#/admin/people?at=h2")).toEqual({ id: "settings", tab: "hub.people", at: "h2" });
   });
 
   it("opens the Factory on the project a Status row links it to, else on every project", () => {

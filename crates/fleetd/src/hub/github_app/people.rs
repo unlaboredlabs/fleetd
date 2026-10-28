@@ -181,7 +181,7 @@ impl GithubApps {
         redirect: &str,
     ) -> Result<GithubAccount, String> {
         let (app, secret) = self.client()?.ok_or(
-            "This hub has no GitHub App yet: an admin creates it in Administration › Connections › GitHub",
+            "This hub has no GitHub App yet: an admin creates it in Settings › Hub accounts › GitHub",
         )?;
         let pair = self
             .token_call(&[
@@ -219,7 +219,7 @@ impl GithubApps {
         };
         if kept.account.lapsed == Some(true) {
             return Err(format!(
-                "GitHub no longer takes {}'s connection: connect GitHub again in Settings › Connections › GitHub",
+                "GitHub no longer takes {}'s connection: connect GitHub again in Settings › Your accounts › GitHub",
                 kept.account.login
             ));
         }
@@ -265,7 +265,7 @@ impl GithubApps {
                     })
                     .map_err(|e| e.to_string())?;
                 return Err(format!(
-                    "GitHub no longer takes {}'s connection ({e}): connect GitHub again in Settings › Connections › GitHub",
+                    "GitHub no longer takes {}'s connection ({e}): connect GitHub again in Settings › Your accounts › GitHub",
                     kept.account.login
                 ));
             }

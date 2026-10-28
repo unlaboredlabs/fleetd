@@ -46,7 +46,7 @@ function Versions() {
   const { hub } = useDataLayer();
   const channel = view.app === null ? null : isEdge(view.app.raw) ? "Edge" : "Stable";
   return (
-    <PagePart title="Version & updates" reveal="general.updates" intro={channel === null ? undefined : `This app follows the ${channel} channel.`}>
+    <PagePart title="Version" reveal="general.updates" intro={channel === null ? undefined : `This app follows the ${channel} channel.`}>
       {view.app === null ? <Text tone="quiet">Loading…</Text> : <AppSection part={view.app} onApp={runApp} />}
       {view.hub === null ? (
         <Text size="sm" tone="quiet">

@@ -1,5 +1,5 @@
 //! The hub admin's setup (docs/design/setup.md): one list of steps that `fleetd init`, the app's first run and
-//! Administration › Setup all render. Each step's guide (why, the values to paste computed for this hub, the
+//! Settings › Hub › Setup all render. Each step's guide (why, the values to paste computed for this hub, the
 //! provider's pages) is here; its status is read from the doctor's checks, never from how far a wizard got. The only
 //! state kept is which steps the admin put off for later, so setup resumes anywhere.
 pub mod tools;
@@ -337,7 +337,7 @@ fn google_parts(host: &str) -> Vec<SetupPart> {
                     plain(
                         "Key",
                         "Service accounts › the account above › Keys › Add key › Create new key › JSON. Paste the \
-                         downloaded file on Administration › Connections › Google, then delete it.",
+                         downloaded file on Settings › Hub accounts › Google, then delete it.",
                     ),
                     SetupValue {
                         command: Some(true),
@@ -411,7 +411,7 @@ pub fn guides(hub: &str) -> Vec<HubSetupStep> {
                 "Add a machine",
                 Some(
                     "The hub's own machine can run agents too: fleetd init on the hub offers it. In the app, \
-                     Administration › Machines › Add machine does the same.",
+                     Settings › Hub › Machines › Add machine does the same.",
                 ),
                 vec![],
                 vec![
@@ -440,7 +440,7 @@ pub fn guides(hub: &str) -> Vec<HubSetupStep> {
                     "Give the hub an API key",
                     Some(
                         "Projects' leads and work nobody started run on it, and so does anyone who picks the hub's \
-                         API in Settings › Connections › Claude. Machines need no login of their own.",
+                         API in Settings › Your accounts › Claude. Machines need no login of their own.",
                     ),
                     vec![link(
                         "Claude Console › API keys",
@@ -450,7 +450,7 @@ pub fn guides(hub: &str) -> Vec<HubSetupStep> {
                         value("Key name", &name),
                         plain(
                             "Where",
-                            "Paste it on Administration › Connections › Claude, with an endpoint if you use a gateway; the app \
+                            "Paste it on Settings › Hub accounts › Claude, with an endpoint if you use a gateway; the app \
                              seals it on your device.",
                         ),
                     ],
@@ -459,7 +459,7 @@ pub fn guides(hub: &str) -> Vec<HubSetupStep> {
                     "Or connect your own subscription",
                     Some(
                         "Without a hub key, leads and work nobody started run on the owner's subscription. Paste the \
-                         token in Settings › Connections › Claude; the app seals it on your device.",
+                         token in Settings › Your accounts › Claude; the app seals it on your device.",
                     ),
                     vec![],
                     vec![command("On any computer with claude", "claude setup-token", None)],
@@ -492,7 +492,7 @@ pub fn guides(hub: &str) -> Vec<HubSetupStep> {
                 part(
                     "Create the hub's GitHub App",
                     Some(
-                        "On Administration › Connections › GitHub: one button, nothing to paste. GitHub hands the App's keys straight to the hub.",
+                        "On Settings › Hub accounts › GitHub: one button, nothing to paste. GitHub hands the App's keys straight to the hub.",
                     ),
                     vec![],
                     vec![command(
@@ -504,7 +504,7 @@ pub fn guides(hub: &str) -> Vec<HubSetupStep> {
                 part(
                     "Install it on the repositories fleetd works on",
                     Some(
-                        "Then each person connects their own GitHub in Settings › Connections › GitHub, so the PRs of their orders open as them.",
+                        "Then each person connects their own GitHub in Settings › Your accounts › GitHub, so the PRs of their orders open as them.",
                     ),
                     vec![],
                     vec![],
@@ -551,7 +551,7 @@ pub fn guides(hub: &str) -> Vec<HubSetupStep> {
             parts: google_parts(&host),
             fields_note: Some(
                 "Save the client ID and secret, and the Gmail subscription and key if you set them up, on \
-                 Administration › Connections › Google: the app seals the secrets on your device. Then each person connects their \
+                 Settings › Hub accounts › Google: the app seals the secrets on your device. Then each person connects their \
                  own Google account from their Navi; if a sign-in lapses, Navi offers Reconnect."
                     .into(),
             ),

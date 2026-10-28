@@ -1,5 +1,5 @@
 // The hub admin's setup steps (docs/design/setup.md) as the hub serves them (setup_list, hub/setup): `fleetd init`,
-// the first run and Administration › Setup render the same ones, and the app keeps no catalog of its own. These are
+// the first run and Settings › Hub › Setup render the same ones, and the app keeps no catalog of its own. These are
 // the words around them, and where in the app each step's result is saved.
 
 import type { HubSetupStep, SetupGroup, SetupNeed, SetupStatus } from "../../../shared/contracts";
@@ -32,22 +32,22 @@ export interface Place {
 }
 
 const ADMIN: Readonly<Record<string, Place>> = {
-  machines: { label: "Open Administration › Machines", screen: { id: "admin", section: "machines" } },
-  invites: { label: "Open Administration › People", screen: { id: "admin", section: "people" } },
-  google: { label: "Open Administration › Connections", screen: { id: "admin", section: "connections" }, reveal: "admin.google" },
-  claude: { label: "Open Administration › Connections", screen: { id: "admin", section: "connections" }, reveal: "admin.claude" },
-  github: { label: "Open Administration › Connections", screen: { id: "admin", section: "connections" }, reveal: "admin.github" },
+  machines: { label: "Open Hub › Machines", screen: { id: "settings", tab: "hub.machines" } },
+  invites: { label: "Open Hub › People", screen: { id: "settings", tab: "hub.people" } },
+  google: { label: "Open Hub accounts", screen: { id: "settings", tab: "hub.accounts" }, reveal: "admin.google" },
+  claude: { label: "Open Hub accounts", screen: { id: "settings", tab: "hub.accounts" }, reveal: "admin.claude" },
+  github: { label: "Open Hub accounts", screen: { id: "settings", tab: "hub.accounts" }, reveal: "admin.github" },
 };
 
-/** Beside the Administration section, each person's own side of a step. */
+/** Beside the Hub page, each person's own side of a step. */
 const OWN: Readonly<Record<string, Place>> = {
-  claude: { label: "Open Settings › Connections", screen: { id: "settings", tab: "connections" }, reveal: "claude" },
-  github: { label: "Open Settings › Connections", screen: { id: "settings", tab: "connections" }, reveal: "github" },
+  claude: { label: "Open Your accounts", screen: { id: "settings", tab: "accounts" }, reveal: "claude" },
+  github: { label: "Open Your accounts", screen: { id: "settings", tab: "accounts" }, reveal: "github" },
 };
 
 /**
- * The step's `place` as the pages to open: an Administration section, and for Claude and GitHub also your own account
- * in Settings. A place this app doesn't know (a newer hub's step) opens nothing; the step's guide still says it.
+ * The step's `place` as the pages to open: a page of Settings' Hub group, and for Claude and GitHub also your own
+ * account under You. A place this app doesn't know (a newer hub's step) opens nothing; the step's guide still says it.
  */
 export const placesOf = (step: SetupStep): ReadonlyArray<Place> => {
   const admin = step.place === undefined ? undefined : ADMIN[step.place];

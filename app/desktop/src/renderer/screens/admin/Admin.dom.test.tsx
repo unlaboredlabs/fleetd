@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
-// Administration: hidden from members (no sidebar entry, and the page itself says it is for owners and admins); an
-// invite created with a name and role, its link copied once, and an open one revoked; a role changed and a person
-// removed, each the call the hub expects.
+// Settings' Hub group (D211): hidden from members (no Hub group in Settings' sidebar, and a Hub page says it is for
+// owners and admins); Settings' entry saying how much setup is left; an invite created with a name and role, its link
+// copied once, and an open one revoked; a role changed and a person removed, each the call the hub expects.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -13,7 +13,7 @@ import { UiProvider } from "../../ui";
 import { TooltipProvider } from "../../ui/primitives/Tooltip";
 import { Sidebar } from "../shell/Sidebar";
 import { useAdministers } from "./role";
-import { AdminScreen } from "./AdminScreen";
+import { SettingsScreen, SettingsSidebar } from "../settings/SettingsScreen";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 vi.hoisted(() => {
@@ -83,8 +83,11 @@ function Entry() {
   );
 }
 
-/** `old`: a hub from before people, which has none of the people tools; `info: null`, not even hub_info. */
-const render = async (info: Partial<HubInfoOutput> | null, what: "page" | "sidebar" = "page", old = false) => {
+/**
+ * `old`: a hub from before people, which has none of the people tools; `info: null`, not even hub_info. `what`: the
+ * Settings page the route names, the main sidebar, or Settings' own sidebar.
+ */
+const render = async (info: Partial<HubInfoOutput> | null, what: "page" | "sidebar" | "settings" = "page", old = false) => {
   let listener: (frame: HubFrame) => void = () => undefined;
   const hub: HubApi = {
     call: (tool, input) => {
@@ -123,7 +126,17 @@ const render = async (info: Partial<HubInfoOutput> | null, what: "page" | "sideb
   await act(async () => {
     root.render(
       <UiProvider>
-        <DataProvider layer={createDataLayer(hub)}>{what === "page" ? <AdminScreen /> : <Entry />}</DataProvider>
+        <DataProvider layer={createDataLayer(hub)}>
+          {what === "page" ? (
+            <SettingsScreen />
+          ) : what === "sidebar" ? (
+            <Entry />
+          ) : (
+            <TooltipProvider>
+              <SettingsSidebar onBack={() => undefined} />
+            </TooltipProvider>
+          )}
+        </DataProvider>
       </UiProvider>,
     );
     await Promise.resolve();
@@ -157,7 +170,9 @@ const row = (name: string) => {
 };
 const sent = (tool: string) => calls.filter((c) => c.tool === tool).map((c) => c.input);
 
-it("shows Administration in the sidebar to an owner or admin, and to nobody else", async () => {
+const hubGroup = () => host.querySelector("nav[aria-label='Settings'] section[aria-label='Hub']");
+
+it("shows Settings' Hub group to an owner or admin, and to nobody else; the main sidebar has no Administration row", async () => {
   for (const [info, shown] of [
     [{ me: sam, admin: true }, true],
     [{ me: alice, admin: true }, true],
@@ -166,35 +181,114 @@ it("shows Administration in the sidebar to an owner or admin, and to nobody else
     // A hub from before hub_info said: the app tries, as Settings did.
     [{}, true],
   ] as const) {
+    await render(info, "settings");
+    expect(hubGroup() !== null, JSON.stringify(info)).toBe(shown);
+    // You and Projects are everyone's.
+    expect(host.querySelector("nav[aria-label='Settings']")?.textContent).toContain("Your accounts");
+    act(() => root.unmount());
+    root = createRoot(host);
     await render(info, "sidebar");
-    expect(buttons().some((b) => b.textContent.includes("Administration"))).toBe(shown);
+    expect(buttons().some((b) => b.textContent.includes("Administration"))).toBe(false);
     act(() => root.unmount());
     root = createRoot(host);
   }
 });
 
-it("counts the required setup steps left on Administration's entry, and says nothing once none is", async () => {
+it("lists the Hub group's pages, Every project's nested, and Setup only while a required step is left", async () => {
   setupLeft = 2;
-  await render({ me: sam, admin: true }, "sidebar");
-  const entry = buttons().find((b) => b.textContent.includes("Administration"));
-  expect(entry?.textContent).toContain("2 to set up");
+  await render({ me: sam, admin: true }, "settings");
+  const rows = () => [...(hubGroup()?.querySelectorAll("button") ?? [])].map((b) => b.textContent);
+  expect(rows()).toEqual([
+    "People",
+    "Machines",
+    "Every project",
+    "Profiles",
+    "Tools & skills",
+    "Instructions & memory",
+    "Prompts",
+    "Hub accounts",
+    "Setup2 left",
+  ]);
   act(() => root.unmount());
   root = createRoot(host);
   setupLeft = 0;
-  await render({ me: sam, admin: true }, "sidebar");
-  expect(buttons().find((b) => b.textContent.includes("Administration"))?.textContent).not.toContain("to set up");
+  await render({ me: sam, admin: true }, "settings");
+  expect(rows()).not.toContain("Setup");
+  expect(rows().at(-1)).toBe("Hub accounts");
 });
 
-it("tells a member who follows a link that the page isn't theirs, and reads nothing of it", async () => {
-  window.location.hash = "#/admin/people";
-  await render({ me: bob, admin: false });
-  expect(host.querySelector("[data-screen='admin.denied']")).not.toBeNull();
-  expect(host.textContent).toContain("Administration is for the hub's owners and admins.");
+it("counts the required setup steps left on Settings' entry, opening it on Hub › Setup, and says nothing once none is", async () => {
+  setupLeft = 2;
+  const went: unknown[] = [];
+  const go = (s: unknown) => went.push(s);
+  function Opener() {
+    const admin = useAdministers();
+    return (
+      <TooltipProvider>
+        <Sidebar projects={[]} screen={{ id: "status", at: "hub" }} jumpHints={false} collapsed={new Set()} onToggleHub={() => undefined} factory={false} admin={admin} go={go} />
+      </TooltipProvider>
+    );
+  }
+  let listener: (frame: HubFrame) => void = () => undefined;
+  const hub: HubApi = {
+    call: (tool) =>
+      Promise.resolve({ ok: true, output: tool === "hub_info" ? { version: "0.0.0", protocol: 1, busy: [], me: sam, admin: true } : tool === "setup_list" ? { steps: [], requiredLeft: setupLeft } : {} }),
+    subscribe: (l) => ((listener = l), () => undefined),
+    resync: () => Promise.resolve(),
+    focus: () => Promise.resolve(),
+    chat: () => Promise.resolve(),
+  };
+  await act(async () => {
+    root.render(
+      <UiProvider>
+        <DataProvider layer={createDataLayer(hub)}>
+          <Opener />
+        </DataProvider>
+      </UiProvider>,
+    );
+    await Promise.resolve();
+  });
+  await act(async () => {
+    listener({ t: "state", state: { phase: "live", hub: "devbox:4790", protocol: 1 } });
+    listener({ t: "snapshot", snapshot: { cursor: 1, attention: [], machines: [], projects: [] } });
+    await new Promise((r) => setTimeout(r, 0));
+  });
+  for (let i = 0; i < 3; i++) await settle();
+  const entry = host.querySelector<HTMLElement>("[data-opens='settings']");
+  expect(entry?.textContent).toContain("2 left");
+  if (entry === null) throw new Error("no Settings entry");
+  await click(entry);
+  expect(went).toEqual([{ id: "settings", tab: "hub.setup" }]);
+});
+
+it("never counts setup left on Settings' entry for a member", async () => {
+  setupLeft = 2;
+  await render({ me: bob, admin: false }, "sidebar");
+  expect(host.querySelector("[data-opens='settings']")?.textContent).not.toContain("left");
+  expect(sent("setup_list")).toEqual([]);
+});
+
+it("tells a member who follows a link to a Hub page, or an old Administration one, that it isn't theirs, and reads nothing of it", async () => {
+  for (const hash of ["#/settings/hub/people", "#/admin/people", "#/settings/hub/accounts", "#/admin/hub"]) {
+    window.location.hash = hash;
+    await render({ me: bob, admin: false });
+    expect(host.querySelector("[data-screen='settings.hub.denied']"), hash).not.toBeNull();
+    expect(host.textContent).toContain("This page is for the hub's owners and admins.");
+    act(() => root.unmount());
+    root = createRoot(host);
+  }
   expect(sent("people_list")).toEqual([]);
+  expect(sent("claude_settings_get")).toEqual([]);
+});
+
+it("opens an old Administration link on the Hub page that has it now", async () => {
+  window.location.hash = "#/settings/hub/people";
+  await render({ me: sam, admin: true });
+  expect(row("Sam Rivera").textContent).toContain("you");
 });
 
 it("lists the people with their roles and devices, and changes a role", async () => {
-  window.location.hash = "#/admin/people";
+  window.location.hash = "#/settings/hub/people";
   await render({ me: sam, admin: true });
   expect(row("Sam Rivera").textContent).toContain("you");
   expect(row("Sam Rivera").textContent).toContain("1 device: MacBook");
@@ -214,7 +308,7 @@ it("lists the people with their roles and devices, and changes a role", async ()
 });
 
 it("removes a person once confirmed", async () => {
-  window.location.hash = "#/admin/people";
+  window.location.hash = "#/settings/hub/people";
   await render({ me: sam, admin: true });
   expect(() => button("Remove", row("Sam Rivera"))).toThrow();
   await click(button("Remove", row("Bob Okafor")));
@@ -224,7 +318,7 @@ it("removes a person once confirmed", async () => {
 });
 
 it("never offers an admin a change to the owner", async () => {
-  window.location.hash = "#/admin/people";
+  window.location.hash = "#/settings/hub/people";
   await render({ me: alice, admin: true });
   const owner = row("Sam Rivera");
   expect(owner.querySelector("[role='combobox']")).toBeNull();
@@ -233,7 +327,7 @@ it("never offers an admin a change to the owner", async () => {
 });
 
 it("creates an invite on People with a name and role, copies its link, and revokes an open one", async () => {
-  window.location.hash = "#/admin/people";
+  window.location.hash = "#/settings/hub/people";
   await render({ me: sam, admin: true });
   expect(row("Dana Ito").textContent).toContain("Expires in 6 days.");
   expect(row("Dana Ito").textContent).toContain("Invited by you.");
@@ -271,7 +365,7 @@ it("creates an invite on People with a name and role, copies its link, and revok
 
 it("asks for a hub update on a hub from before people, in place of a raw error", async () => {
   for (const page of ["people", "invites"]) {
-    window.location.hash = `#/admin/${page}`;
+    window.location.hash = `#/settings/hub/${page}`;
     await render({ admin: true }, "page", true);
     expect(host.textContent).toContain("This hub needs updating to manage people.");
     expect(host.textContent).not.toContain("No tool");
@@ -282,18 +376,18 @@ it("asks for a hub update on a hub from before people, in place of a raw error",
   }
 });
 
-it("lets a hub with no hub_info at all reach Administration, whose Hub settings work there", async () => {
-  await render(null, "sidebar", true);
-  expect(buttons().some((b) => b.textContent.includes("Administration"))).toBe(true);
+it("lets a hub with no hub_info at all reach the Hub group, whose Every project pages work there", async () => {
+  await render(null, "settings", true);
+  expect(hubGroup()).not.toBeNull();
   act(() => root.unmount());
   root = createRoot(host);
   window.location.hash = "#/admin/hub";
   await render(null, "page", true);
-  expect(host.querySelector("[data-screen='admin.hub']")).not.toBeNull();
+  expect(host.querySelector("[data-screen='settings.hub.tools']")).not.toBeNull();
 });
 
 it("says to connect a hub, not Loading… for ever, with no hub and nothing kept from one", async () => {
-  window.location.hash = "#/admin/people";
+  window.location.hash = "#/settings/hub/people";
   const hub: HubApi = {
     call: (tool, input) => (calls.push({ tool, input }), new Promise(() => undefined)),
     subscribe: () => () => undefined,
@@ -305,14 +399,14 @@ it("says to connect a hub, not Loading… for ever, with no hub and nothing kept
     root.render(
       <UiProvider>
         <DataProvider layer={createDataLayer(hub)}>
-          <AdminScreen />
+          <SettingsScreen />
         </DataProvider>
       </UiProvider>,
     );
     await Promise.resolve();
   });
   await settle();
-  expect(host.querySelector("[data-screen='admin.offline']")).not.toBeNull();
+  expect(host.querySelector("[data-screen='settings.hub.offline']")).not.toBeNull();
   expect(host.textContent).toContain("Connect to a hub to see and change this.");
   expect(host.textContent).not.toContain("Loading…");
 });

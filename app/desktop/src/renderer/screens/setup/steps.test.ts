@@ -33,14 +33,14 @@ describe("setup steps", () => {
     expect([statusWords("done"), statusWords("look"), statusWords("skipped"), statusWords("todo")]).toEqual(["Done", "Needs a look", "Later", undefined]);
   });
 
-  it("opens where each step's result is saved: Administration, and for Claude and GitHub your own Settings too", () => {
-    // Claude, GitHub and Google share Connections, each landing on its own part of it.
-    expect(placesOf(step("google"))).toEqual([{ label: "Open Administration › Connections", screen: { id: "admin", section: "connections" }, reveal: "admin.google" }]);
-    expect(placesOf(step("claude")).map((p) => p.label)).toEqual(["Open Administration › Connections", "Open Settings › Connections"]);
-    expect(placesOf(step("claude"))[1]).toEqual({ label: "Open Settings › Connections", screen: { id: "settings", tab: "connections" }, reveal: "claude" });
+  it("opens where each step's result is saved: a Hub page, and for Claude and GitHub your own accounts too", () => {
+    // Claude, GitHub and Google share Hub accounts, each landing on its own part of it.
+    expect(placesOf(step("google"))).toEqual([{ label: "Open Hub accounts", screen: { id: "settings", tab: "hub.accounts" }, reveal: "admin.google" }]);
+    expect(placesOf(step("claude")).map((p) => p.label)).toEqual(["Open Hub accounts", "Open Your accounts"]);
+    expect(placesOf(step("claude"))[1]).toEqual({ label: "Open Your accounts", screen: { id: "settings", tab: "accounts" }, reveal: "claude" });
     expect(placesOf(step("claude"))[0]?.reveal).toBe("admin.claude");
-    expect(placesOf(step("people")).map((p) => p.screen)).toEqual([{ id: "admin", section: "people" }]);
-    expect(placesOf(step("github")).map((p) => p.label)).toEqual(["Open Administration › Connections", "Open Settings › Connections"]);
+    expect(placesOf(step("people")).map((p) => p.screen)).toEqual([{ id: "settings", tab: "hub.people" }]);
+    expect(placesOf(step("github")).map((p) => p.label)).toEqual(["Open Hub accounts", "Open Your accounts"]);
     expect(placesOf(step("github"))[0]?.reveal).toBe("admin.github");
     // A place this app doesn't know opens nothing.
     expect(placesOf(step("github", { place: "github_app" }))).toEqual([]);

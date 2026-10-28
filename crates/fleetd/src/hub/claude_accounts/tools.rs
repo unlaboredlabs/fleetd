@@ -1,5 +1,5 @@
 //! The Claude account tools. The hub's: `claude_hub_api_set`, `claude_hub_api_remove` and `claude_settings_set`, for
-//! an owner's or admin's device (the Administration page). A person's own: `claude_subscription_set`,
+//! an owner's or admin's device (the Hub pages of the app's Settings). A person's own: `claude_subscription_set`,
 //! `claude_subscription_remove` and `claude_choice_set`, for their own devices. `claude_accounts_get` for everyone,
 //! and `claude_account_test` for whoever may change the account it tries.
 //!
@@ -50,7 +50,7 @@ fn require_administrator(hub: &Hub, caller: &Caller) -> Result<Person, ToolError
         error(
             ErrorCode::Forbidden,
             "Only the hub's owners and admins set up the hub's Claude API configuration.",
-            "Ask an owner or admin; they set it on the app's Administration page.",
+            "Ask an owner or admin; they set it on the Hub pages of the app's Settings.",
         )
     })
 }
@@ -67,7 +67,7 @@ fn me(hub: &Hub, caller: &Caller) -> Result<Person, ToolError> {
         error(
             ErrorCode::Forbidden,
             "Only a person connects their own Claude, from one of their own devices.",
-            "Open Settings › Connections › Claude in the desktop app.",
+            "Open Settings › Your accounts › Claude in the desktop app.",
         )
     })
 }

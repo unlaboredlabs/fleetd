@@ -95,7 +95,7 @@ that should own the app.
 
 6. **Make the client.** Under **Google Auth Platform › Clients**, press **Create client** and choose the **Desktop app**
    type. Name it fleetd. Copy its **Client ID** and **Client secret**.
-7. **Save it in fleetd**, in the app's **Administration › Connections › Google**. Paste the Client ID and Client secret and press
+7. **Save it in fleetd**, in the app's **Settings › Hub accounts › Google**. Paste the Client ID and Client secret and press
    **Save and test**. The app seals the secret on your computer to each machine's key, so only their nodes can open it.
    Each machine keeps it in its home, and the hub keeps only a fingerprint. The secret is never shown again and is
    never in a chat or transcript.
@@ -103,7 +103,7 @@ that should own the app.
    redeem a code that can't work. Google answers `invalid_grant` for a client it knows, which Test reports as
    "Google knows this client and its secret", and `invalid_client` for one it doesn't.
 
-Administration › Connections › Google shows these steps with the values to copy: the project and app names for your hub, each scope,
+Settings › Hub accounts › Google shows these steps with the values to copy: the project and app names for your hub, each scope,
 the **Desktop app** type and the redirect URI. Once a client is saved, the page shows its ID, the machines holding its
 secret and Test, and folds the steps away under **Save the client again, or replace it**. A machine that was offline
 when you saved, or was added since, is named there: save the client again while it's online, so its Navis can connect.
@@ -134,7 +134,7 @@ the client. The hub needs no public address: one machine reads the subscription,
    name it `fleetd-gmail-reader`, and grant it nothing at the project. On the subscription, open **Permissions** and
    give it the **Pub/Sub Subscriber** role. Then, on the service account, open **Keys › Add key › Create new key**,
    choose **JSON**, and keep the file it downloads.
-6. **Save it in fleetd**, in the app's **Administration › Connections › Google**, under **Real-time mail › Set up real-time mail**.
+6. **Save it in fleetd**, in the app's **Settings › Hub accounts › Google**, under **Real-time mail › Set up real-time mail**.
    The page shows these steps with the names to copy, and a Cloud Shell block that does steps 1 to 5 at once. Fill in
    the topic and the subscription (both prefilled with these names, in a project named for your hub), pick the machine
    that reads it under **Read on**, paste the JSON key and press **Save**. Pick a machine that is usually online, such
@@ -170,7 +170,7 @@ What the row says when Google can't be connected yet:
 
 | The row says | Why | The fix |
 |---|---|---|
-| Ask an admin to set up Google | The hub has no OAuth client. | An admin saves one in Administration › Connections › Google. An admin sees **Set up Google**, which opens it. |
+| Ask an admin to set up Google | The hub has no OAuth client. | An admin saves one in Settings › Hub accounts › Google. An admin sees **Set up Google**, which opens it. |
 | *machine* doesn't hold the hub's Google client | The Navi's machine was offline when the client was saved. | An admin saves the client again while that machine is online. |
 | Needs reconnecting | Google stopped taking the connection ([below](#lapsed)). | **Reconnect** signs in again. |
 | An error and its fix | The hub refused, or the Navi's machine is offline. | What the line says. |

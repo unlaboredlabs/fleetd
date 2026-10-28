@@ -2,7 +2,7 @@
 // granted. Connect hands over to main (window.fleetd.google.connect), which opens Google's consent page in the
 // browser and calls google_connect with the code it catches, so the page never holds a code or a token. Disconnect is
 // google_disconnect, which revokes at Google unless another Navi uses the account. Without the hub's OAuth client, an
-// admin is sent to Administration › Google and anyone else told to ask one. Once connected, the person picks when new
+// admin is sent to Settings › Hub accounts › Google and anyone else told to ask one. Once connected, the person picks when new
 // mail wakes the Navi (MailWakeControl, google_mail_set).
 import { useState, type ReactNode } from "react";
 import type { GoogleConnectOutput, GoogleDisconnectOutput, GoogleGetOutput, MailWake, MailWakeRule } from "../../../shared/contracts";
@@ -22,7 +22,7 @@ type Ref = { machineId: string; projectId: string };
 
 const toAdmin = () => {
   revealNext("admin.google");
-  window.location.hash = toHash({ id: "admin", section: "connections" });
+  window.location.hash = toHash({ id: "settings", tab: "hub.accounts" });
 };
 
 /** The scopes granted, as Data access names them, past the account's own (openid, email). */
@@ -122,7 +122,7 @@ function actions(view: GoogleView | undefined, failed: boolean, admin: boolean, 
     case "not-held":
       return admin ? (
         <Button size="sm" onClick={toAdmin}>
-          Open Administration › Google
+          Open Hub accounts › Google
         </Button>
       ) : null;
     case "none":
@@ -169,14 +169,14 @@ function Under({ view, admin, machine }: { view: GoogleView; admin: boolean; mac
       return (
         <Text size="xs" tone="quiet">
           {admin
-            ? "The hub needs a Google OAuth client first: a one-time setup in Administration › Google."
-            : "An admin sets up the hub's Google OAuth client once, in Administration › Google; then you connect here."}
+            ? "The hub needs a Google OAuth client first: a one-time setup in Settings › Hub accounts › Google."
+            : "An admin sets up the hub's Google OAuth client once, in Settings › Hub accounts › Google; then you connect here."}
         </Text>
       );
     case "not-held":
       return (
         <Text size="sm" tone="warning">
-          {`${machine} doesn't hold the hub's Google client: it was offline when the client was saved. ${admin ? "Save the client again in Administration › Google while it is online." : "Ask an admin to save it again while it is online."}`}
+          {`${machine} doesn't hold the hub's Google client: it was offline when the client was saved. ${admin ? "Save the client again in Settings › Hub accounts › Google while it is online." : "Ask an admin to save it again while it is online."}`}
         </Text>
       );
     case "none":
@@ -326,8 +326,8 @@ function GoogleHelp() {
         {item("“Google hasn’t verified this app”", "Expected: it's your hub's own app. Press Advanced, then Go to the app, and continue.")}
         {item("“Access blocked: … has not completed the Google verification process”", "The app is still in Testing and takes only its test users. Ask your hub's admin to publish it, so it is In production.")}
         {item("“Access blocked: … can only be used within its organization”", "The app is Internal: sign in with an account in that Google Workspace.")}
-        {item(<>“Error 400: <span data-text="code">redirect_uri_mismatch</span>”</>, "The hub's client isn't a Desktop app client. Ask an admin to make one in Administration › Google.")}
-        {item(<>“Error 401: <span data-text="code">invalid_client</span>” or “<span data-text="code">deleted_client</span>”</>, "The hub's client was deleted, or its ID is wrong. Ask an admin to test it in Administration › Google.")}
+        {item(<>“Error 400: <span data-text="code">redirect_uri_mismatch</span>”</>, "The hub's client isn't a Desktop app client. Ask an admin to make one in Settings › Hub accounts › Google.")}
+        {item(<>“Error 401: <span data-text="code">invalid_client</span>” or “<span data-text="code">deleted_client</span>”</>, "The hub's client was deleted, or its ID is wrong. Ask an admin to test it in Settings › Hub accounts › Google.")}
       </dl>
     </details>
   );

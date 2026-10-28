@@ -52,18 +52,18 @@ export const fixtures = [
   "settings-default-profile-only",
   // A machine past its memory estimate, and a project set past its machine (fixtures/settings).
   "settings-machines",
-  // Administration (fixtures/admin): an owner's hub with three people and an invite waiting, as its owner, an admin and
+  // Settings' Hub group (fixtures/admin): an owner's hub with three people and an invite waiting, as its owner, an admin and
   // a member.
   "admin-owner",
   "admin-admin",
   "admin-member",
   // ...and a hub from before people, whose People and Invites ask for an update.
   "admin-old-hub",
-  // ...and with several hubs: Administration names the one it manages, and switches among those Sam administers.
+  // ...and with several hubs: the Hub group names the one it manages, and switches among those Sam administers.
   "admin-hubs",
   // Teams step 8 (fixtures/admin): Bob on a hub that keeps its Claude API key for leads, with no subscription of his own.
   "admin-claude-member",
-  // Administration › Machines (fixtures/machines): Add machine's three ways in, a run at its install step, and one
+  // Hub › Machines (fixtures/machines): Add machine's three ways in, a run at its install step, and one
   // stopped at the node's service with its output and Retry.
   "machines-add",
   "machines-running",
@@ -249,7 +249,7 @@ export const fixtures = [
   // Hub links (fixtures/navi): Ada's Linked hubs and Sam's links to this hub; and neither yet.
   "navi-links",
   "navi-links-none",
-  // Google on Ada's Integrations (fixtures/navi), a state each; Administration › Connections › Google (fixtures/admin).
+  // Google on Ada's Integrations (fixtures/navi), a state each; Hub accounts › Google (fixtures/admin).
   "navi-google-none",
   "navi-google-setup",
   "navi-google-ready",
@@ -659,8 +659,8 @@ export const screens: readonly Screen[] = [
   // UX-1 [5]: each row says why it wants you (reply, approve · 2, secret, blocked), and docs' reply that arrives
   // after the app opened is bold.
   { id: "shell", route: "#/status", fixtures: ["sidebar-reasons"], variant: "sidebar" },
-  // Administration's entry in the sidebar: there for the hub's owner, and not for a member.
-  { id: "shell", route: "#/status", fixtures: ["admin-owner", "admin-member"], variant: "admin-entry" },
+  // Settings' entry in the sidebar: for the hub's owner it counts the setup steps left; a member's says nothing.
+  { id: "shell", route: "#/status", fixtures: ["admin-owner", "admin-member"], variant: "settings-entry" },
   // Several hubs: each hub's projects under its name, Status a section per hub, and each hub's connection on its own
   // row; Acme offline waits on its own while Personal works on.
   { id: "status.fleet", route: "#/status", fixtures: ["sidebar-hubs", "sidebar-hubs-offline"], variant: "hubs" },
@@ -681,7 +681,7 @@ export const screens: readonly Screen[] = [
     fixtures: ["sidebar-hubs"],
     variant: "other-hub",
   },
-  { id: "settings.connections", route: "#/settings/connections", fixtures: ["sidebar-hubs", "sidebar-hubs-offline", "typical"], variant: "hubs" },
+  { id: "settings.hubs", route: "#/settings/hubs", fixtures: ["sidebar-hubs", "sidebar-hubs-offline", "typical"] },
   { id: "onboarding", route: "#/onboarding?add", fixtures: ["sidebar-hubs"], variant: "add-hub" },
   // Hidden with its toggle in a wide window: the top row runs the full width, after the traffic lights.
   {
@@ -1928,17 +1928,17 @@ export const screens: readonly Screen[] = [
   // keys and titles; settings-prompts is the real registry with edits. Compare and Update are deep links.
   // Max agents: the fleet cap and each project's slider.
   { id: "settings.agents", route: "#/settings/agents", fixtures: ["settings-agents", "long-text", "empty", "hub-unreachable"] },
-  // Administration (D209): People as the owner (every row changeable but their own) and as an admin (the owner out of
-  // reach), with Invite someone, Dana's invite waiting and a new one just made with its link; Connections (the hub's
-  // Claude key, GitHub App and Google client); Hub settings (the fleet and machine caps, memory caps,
-  // instructions, MCP servers, skills; its prompts under it in the sidebar); Setup; and a member who follows a link.
-  { id: "admin.people", route: "#/admin/people", fixtures: ["admin-owner", "admin-admin", "admin-old-hub"] },
+  // Settings' Hub group (D211): People as the owner (every row changeable but their own) and as an admin (the owner
+  // out of reach), with Invite someone, Dana's invite waiting and a new one just made with its link; Hub accounts (the
+  // hub's Claude key, GitHub App and Google client); Every project's Tools & skills and Instructions & memory
+  // (its prompts under its Prompts in the sidebar); Setup; and a member who follows a link.
+  { id: "settings.hub.people", route: "#/settings/hub/people", fixtures: ["admin-owner", "admin-admin", "admin-old-hub"] },
   // Claude (teams step 8): the hub's key sealed and tested, the members switch, what leads run on with the owner's
   // subscription and its pause, and everyone's account; Change opens the key's form, which never shows the key.
-  { id: "admin.connections", route: "#/admin/connections", fixtures: ["admin-owner", "admin-admin", "admin-old-hub"] },
+  { id: "settings.hub.accounts", route: "#/settings/hub/accounts", fixtures: ["admin-owner", "admin-admin", "admin-old-hub"] },
   {
-    id: "admin.connections",
-    route: "#/admin/connections",
+    id: "settings.hub.accounts",
+    route: "#/settings/hub/accounts",
     fixtures: ["admin-owner"],
     variant: "change",
     open: async (page) => {
@@ -1946,13 +1946,13 @@ export const screens: readonly Screen[] = [
       await page.getByRole("textbox", { name: "API key" }).waitFor();
     },
   },
-  // Settings › Claude: the owner on their own subscription, Alice on the hub's key by choice, Bob on it by default,
+  // Your accounts › Claude: the owner on their own subscription, Alice on the hub's key by choice, Bob on it by default,
   // and Bob with nothing to run on, told to connect.
-  { id: "settings.connections", route: "#/settings/connections", fixtures: ["admin-owner", "admin-admin", "admin-member", "admin-claude-member", "admin-old-hub", "hub-unreachable"], variant: "claude" },
+  { id: "settings.accounts", route: "#/settings/accounts", fixtures: ["admin-owner", "admin-admin", "admin-member", "admin-claude-member", "admin-old-hub", "hub-unreachable"] },
   // Several hubs: the hub it manages above the page, and a switch to the hubs Sam administers (Club, a member's, isn't).
   {
-    id: "admin.people",
-    route: "#/admin/people?at=h2",
+    id: "settings.hub.people",
+    route: "#/settings/hub/people?at=h2",
     fixtures: ["admin-hubs"],
     variant: "hubs",
     open: async (page) => {
@@ -1962,8 +1962,8 @@ export const screens: readonly Screen[] = [
     },
   },
   {
-    id: "admin.people",
-    route: "#/admin/people",
+    id: "settings.hub.people",
+    route: "#/settings/hub/people",
     fixtures: ["admin-owner"],
     variant: "created",
     open: async (page) => {
@@ -1974,10 +1974,10 @@ export const screens: readonly Screen[] = [
     },
   },
   // Machines: Add machine's three ways in; a host the hub can reach and its plan; a run going; a failed step with Retry.
-  { id: "admin.machines", route: "#/admin/machines", fixtures: ["machines-add", "machines-running", "machines-failed"] },
+  { id: "settings.hub.machines", route: "#/settings/hub/machines", fixtures: ["machines-add", "machines-running", "machines-failed"] },
   {
-    id: "admin.machines",
-    route: "#/admin/machines",
+    id: "settings.hub.machines",
+    route: "#/settings/hub/machines",
     fixtures: ["machines-add"],
     variant: "hosts",
     open: async (page) => {
@@ -1986,8 +1986,8 @@ export const screens: readonly Screen[] = [
     },
   },
   {
-    id: "admin.machines",
-    route: "#/admin/machines",
+    id: "settings.hub.machines",
+    route: "#/settings/hub/machines",
     fixtures: ["machines-add"],
     variant: "plan",
     open: async (page) => {
@@ -1998,8 +1998,8 @@ export const screens: readonly Screen[] = [
   },
   // Any other machine: its name, then the line with Copy and "Waiting for laptop…", which turns into Joined.
   {
-    id: "admin.machines",
-    route: "#/admin/machines",
+    id: "settings.hub.machines",
+    route: "#/settings/hub/machines",
     fixtures: ["machines-add"],
     variant: "line",
     open: async (page) => {
@@ -2010,8 +2010,8 @@ export const screens: readonly Screen[] = [
     },
   },
   {
-    id: "admin.machines",
-    route: "#/admin/machines",
+    id: "settings.hub.machines",
+    route: "#/settings/hub/machines",
     fixtures: ["machines-joined"],
     variant: "joined",
     open: async (page) => {
@@ -2023,8 +2023,8 @@ export const screens: readonly Screen[] = [
   },
   // The machine list's Remove asks first.
   {
-    id: "admin.machines",
-    route: "#/admin/machines",
+    id: "settings.hub.machines",
+    route: "#/settings/hub/machines",
     fixtures: ["machines-add"],
     variant: "remove",
     open: async (page) => {
@@ -2035,10 +2035,10 @@ export const screens: readonly Screen[] = [
     },
   },
   // A machine's page: its checklist, and Claude's login from the app with the page to sign in at and the code field.
-  { id: "admin.machine", route: "#/admin/machines/laptop", fixtures: ["machines-checklist"] },
+  { id: "settings.hub.machine", route: "#/settings/hub/machines/laptop", fixtures: ["machines-checklist"] },
   {
-    id: "admin.machine",
-    route: "#/admin/machines/laptop",
+    id: "settings.hub.machine",
+    route: "#/settings/hub/machines/laptop",
     fixtures: ["machines-checklist"],
     variant: "login",
     open: async (page) => {
@@ -2046,12 +2046,14 @@ export const screens: readonly Screen[] = [
       await page.getByRole("form", { name: "Sign in" }).waitFor();
     },
   },
-  { id: "admin.hub", route: "#/admin/hub", fixtures: ["admin-owner", "settings-agents", "admin-old-hub"] },
-  // Administration → Hub settings → Skills: the hub-wide ones (one installed and pinned), Update on the installed one,
+  { id: "settings.hub.tools", route: "#/settings/hub/tools", fixtures: ["admin-owner", "settings-agents", "admin-old-hub"] },
+  { id: "settings.hub.profiles", route: "#/settings/hub/profiles", fixtures: ["admin-owner", "settings-agents"] },
+  { id: "settings.hub.instructions", route: "#/settings/hub/instructions", fixtures: ["admin-owner", "settings-agents"] },
+  // Every project › Tools & skills: the hub-wide ones (one installed and pinned), Update on the installed one,
   // and Install.
   {
-    id: "admin.hub",
-    route: "#/admin/hub",
+    id: "settings.hub.tools",
+    route: "#/settings/hub/tools",
     fixtures: ["admin-owner"],
     variant: "skills-installed",
     open: async (page) => {
@@ -2060,8 +2062,8 @@ export const screens: readonly Screen[] = [
     },
   },
   {
-    id: "admin.hub",
-    route: "#/admin/hub",
+    id: "settings.hub.tools",
+    route: "#/settings/hub/tools",
     fixtures: ["admin-owner"],
     variant: "skills-install",
     open: async (page) => {
@@ -2071,10 +2073,10 @@ export const screens: readonly Screen[] = [
       await page.getByText(/^Installed pr-review, pinned/u).waitFor();
     },
   },
-  { id: "admin.connections", route: "#/admin/connections", fixtures: ["admin-google-none", "admin-google-set", "admin-google-refused", "admin-google-push", "admin-google-polling"], variant: "google" },
+  { id: "settings.hub.accounts", route: "#/settings/hub/accounts", fixtures: ["admin-google-none", "admin-google-set", "admin-google-refused", "admin-google-push", "admin-google-polling"], variant: "google" },
   {
-    id: "admin.connections",
-    route: "#/admin/connections",
+    id: "settings.hub.accounts",
+    route: "#/settings/hub/accounts",
     fixtures: ["admin-google-set", "admin-google-push"],
     variant: "real-time-mail",
     open: async (page) => {
@@ -2084,8 +2086,8 @@ export const screens: readonly Screen[] = [
     },
   },
   {
-    id: "admin.connections",
-    route: "#/admin/connections",
+    id: "settings.hub.accounts",
+    route: "#/settings/hub/accounts",
     fixtures: ["admin-google-set", "admin-google-refused"],
     variant: "tested",
     open: async (page) => {
@@ -2093,26 +2095,25 @@ export const screens: readonly Screen[] = [
       await page.getByText(/Tested on devbox\./u).waitFor();
     },
   },
-  // Administration › Setup reads the hub's steps (setup_list): a fresh hub with required steps left, and one done.
-  { id: "admin.setup", route: "#/admin/setup", fixtures: ["setup-fresh", "setup-done"] },
-  { id: "admin.denied", route: "#/admin/people", fixtures: ["admin-member"] },
+  // Hub › Setup reads the hub's steps (setup_list): a fresh hub with required steps left, and one done.
+  { id: "settings.hub.setup", route: "#/settings/hub/setup", fixtures: ["setup-fresh", "setup-done"] },
+  { id: "settings.hub.denied", route: "#/settings/hub/people", fixtures: ["admin-member"] },
   // No hub and nothing kept from one: connect first, never Loading… for ever.
-  { id: "admin.offline", route: "#/admin/people", fixtures: ["hub-unreachable"] },
-  // Machines on Administration: devbox's auto 22 and where it comes from, a machine set to 40 with the way back to
-  // auto.
+  { id: "settings.hub.offline", route: "#/settings/hub/people", fixtures: ["hub-unreachable"] },
+  // Machines' max agents: devbox's auto 22 and where it comes from, a machine set to 40 with the way back to auto.
   {
-    id: "admin.hub",
-    route: "#/admin/hub",
+    id: "settings.hub.machines",
+    route: "#/settings/hub/machines",
     fixtures: ["settings-machines"],
-    variant: "machines",
+    variant: "caps",
     open: async (page) => {
-      const machines = page.getByRole("region", { name: "Machines" });
+      const machines = page.getByRole("region", { name: "Max agents" }).getByRole("region", { name: "Machines" });
       await machines.scrollIntoViewIfNeeded();
       await machines.getByText("Auto: memory 60 GB, about 2 GB an agent.").waitFor();
       await machines.getByRole("button", { name: "Use auto" }).waitFor();
     },
   },
-  // storefront set to 30 on devbox, which holds it at 22: the line, and for an admin the way to Administration.
+  // storefront set to 30 on devbox, which holds it at 22: the line, and for an admin the way to Hub › Machines.
   {
     id: "settings.agents",
     route: "#/settings/agents?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22",
@@ -2121,7 +2122,7 @@ export const screens: readonly Screen[] = [
     open: async (page) => {
       const storefront = page.getByRole("region", { name: "Max agents" });
       await storefront.scrollIntoViewIfNeeded();
-      await storefront.getByRole("button", { name: "Machine caps in Administration" }).waitFor();
+      await storefront.getByRole("button", { name: "Machine caps in Hub › Machines" }).waitFor();
     },
   },
   // A link to one project's Agents opens on that project, whichever the sidebar last showed.
@@ -2161,18 +2162,18 @@ export const screens: readonly Screen[] = [
     },
   },
   {
-    id: "admin.hub",
-    route: "#/admin/hub",
+    id: "settings.hub.machines",
+    route: "#/settings/hub/machines",
     fixtures: ["settings-agents"],
     variant: "fleet-below",
     open: async (page) => {
-      await page.getByRole("slider").first().focus();
+      await page.getByRole("region", { name: "Max agents" }).getByRole("slider").first().focus();
       for (let i = 0; i < 8; i++) await page.keyboard.press("ArrowLeft");
       await page.getByRole("button", { name: "Undo" }).waitFor();
     },
   },
   // Hub links (hubLinks/): a Navi's Linked hubs, working, can't reach and revoked there, and none yet; a person's
-  // Links to this hub, and a key just made, shown once. Administration's list of everyone's is on admin.people.
+  // Links to this hub, and a key just made, shown once. Hub › People's list of everyone's is on settings.hub.people.
   {
     id: "settings.projects",
     route: `#/settings/projects?for=${ADA.machineId}/${ADA.projectId}`,
@@ -2227,15 +2228,15 @@ export const screens: readonly Screen[] = [
     open: (page) => page.getByRole("listitem", { name: "Google" }).getByRole("button", { name: "Disconnect", exact: true }).click(),
   },
   {
-    id: "settings.connections",
-    route: "#/settings/connections",
+    id: "settings.hubs",
+    route: "#/settings/hubs",
     fixtures: ["navi-links", "navi-links-none"],
     variant: "hubs-hub-links",
     open: (page) => page.getByRole("region", { name: "Links to this hub" }).scrollIntoViewIfNeeded(),
   },
   {
-    id: "settings.connections",
-    route: "#/settings/connections",
+    id: "settings.hubs",
+    route: "#/settings/hubs",
     fixtures: ["navi-links"],
     variant: "hubs-hub-link-made",
     open: async (page) => {
@@ -2308,7 +2309,7 @@ export const screens: readonly Screen[] = [
   },
   // Skills: a project's (the first one, then storefront's): its repo's .agents/skills and .claude/skills, its own (one
   // outranked by the repo's of the same name) and a read-only line naming the hub-wide ones; a project skill open to
-  // edit, a repo skill open to read, New and Install. The hub-wide ones are on Administration → Skills.
+  // edit, a repo skill open to read, New and Install. The hub-wide ones are on Every project › Tools & skills.
   { id: "settings.agents", route: "#/settings/agents", fixtures: ["typical", "empty", "hub-unreachable"], variant: "skills" },
   { id: "settings.agents", route: "#/settings/agents?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22", fixtures: ["typical", "long-text"], variant: "skills-project" },
   {
@@ -2341,7 +2342,7 @@ export const screens: readonly Screen[] = [
       await page.getByRole("textbox", { name: "Name" }).fill("Release Notes");
     },
   },
-  // A member's: the hub-wide line, without the way to Administration an owner or admin gets.
+  // A member's: the hub-wide line, without the way to Every project an owner or admin gets.
   { id: "settings.agents", route: "#/settings/agents", fixtures: ["admin-member", "admin-owner"], variant: "skills-role" },
   // Prompts before one is picked.
   { id: "settings.prompts", route: "#/settings/prompts", fixtures: ["settings-prompts"], variant: "none" },
@@ -2381,9 +2382,9 @@ export const screens: readonly Screen[] = [
     route: "#/settings/prompts?prompt=task.brief.write&for=devbox/storefront&view=compare",
     fixtures: ["settings-prompts"],
   },
-  // The hub-wide texts are Administration's: one open from the list under Hub settings, and its update to merge.
-  { id: "admin.prompts", route: "#/admin/hub?prompt=lead.start", fixtures: ["settings-prompts"] },
-  { id: "admin.prompts.update", route: "#/admin/hub?prompt=lead.start&view=update", fixtures: ["settings-prompts"] },
+  // The hub-wide texts are Every project's: one open from the list under its Prompts, and its update to merge.
+  { id: "settings.hub.prompts", route: "#/settings/hub/prompts?prompt=lead.start", fixtures: ["settings-prompts"] },
+  { id: "settings.hub.prompts.update", route: "#/settings/hub/prompts?prompt=lead.start&view=update", fixtures: ["settings-prompts"] },
   { id: "settings.instructions", route: "#/settings/instructions?for=devbox/storefront", fixtures: ["settings-prompts", "typical", "empty"] },
   // F6: Status, one row per project: every state word, its work in groups, long titles, no projects, quiet sources,
   // the skeleton before the first answer, and the link down.

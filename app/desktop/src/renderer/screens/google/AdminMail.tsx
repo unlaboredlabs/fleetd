@@ -1,4 +1,4 @@
-// Administration › Google, Real-time mail (optional, #743): Gmail tells a Pub/Sub topic of new mail, and one machine
+// Settings › Hub accounts › Google, Real-time mail (optional, #743): Gmail tells a Pub/Sub topic of new mail, and one machine
 // reads its subscription with a service account's key. The steps are google/guide.ts realtimeParts, the same as the
 // hub's setup step for Google; the key goes to main, which checks it and seals it to that machine's key (secret.googlePubsub →
 // google_pubsub_set), and is never shown again. Turn off is google_pubsub_set with nothing, and the machine forgets

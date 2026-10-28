@@ -1,5 +1,5 @@
-// Administration's fixtures: an owner's hub with three people and an invite waiting, seen by its owner (`admin-owner`),
-// by an admin (`admin-admin`, who may not touch the owner) and by a member (`admin-member`, who sees no Administration
+// The Hub group's fixtures: an owner's hub with three people and an invite waiting, seen by its owner (`admin-owner`),
+// by an admin (`admin-admin`, who may not touch the owner) and by a member (`admin-member`, who sees no Hub group
 // at all). The people calls follow contracts PR #640 (people_list, invite_create, invite_revoke, person_set,
 // person_remove); hub_info names who this app's person is. `admin-claude-member`: Bob on a hub that keeps its Claude API key
 // for leads, with no subscription of his own.
@@ -118,7 +118,7 @@ function hub(from: Fixture, name: string, note: string, me: JsonObject, admin: b
   return answerHub(Fixture.from(from, name, note), me, admin, membersUseHubApi);
 }
 
-/** Sam's hub, its people and its links, answered on `f` as `me` sees them (the showcase's Administration too). */
+/** Sam's hub, its people and its links, answered on `f` as `me` sees them (the showcase's Hub group too). */
 export function answerHub(f: Fixture, me: JsonObject = sam, admin = true, membersUseHubApi = true): Fixture {
   f.answer("hub_info", undefined, hubInfo(me, admin));
   f.answer("claude_accounts_get", undefined, claudeAccounts(me, admin, membersUseHubApi));
@@ -157,7 +157,7 @@ export function answerHub(f: Fixture, me: JsonObject = sam, admin = true, member
     ],
   });
   f.answer("hub_link_revoke", undefined, { link: link("hl_samhomea", "home", sam, "Sam's MacBook", { revokedAt: f.now }) });
-  // Hub settings' global MCP servers: GitHub's, its token sealed on every machine.
+  // Every project's global MCP servers: GitHub's, its token sealed on every machine.
   f.answer("mcp_servers_get", undefined, {
     global: [
       {
@@ -177,7 +177,7 @@ export function answerHub(f: Fixture, me: JsonObject = sam, admin = true, member
 }
 
 /**
- * Administration › Google (google/AdminGoogle.tsx): no client yet; one saved on devbox only, buildbox missing; one
+ * Hub accounts › Google (google/AdminGoogle.tsx): no client yet; one saved on devbox only, buildbox missing; one
  * Google refuses; and real-time mail by push, or polling with why.
  */
 function google(from: Fixture, name: string, note: string, client: "none" | "set" | "refused" | "push" | "polling"): Fixture {
@@ -214,7 +214,7 @@ function google(from: Fixture, name: string, note: string, client: "none" | "set
 }
 
 /**
- * Administration › GitHub (github/AdminGithub.tsx): no App yet, with the button that creates one; one created but not
+ * Hub accounts › GitHub (github/AdminGithub.tsx): no App yet, with the button that creates one; one created but not
  * installed; one installed on acme's chosen repositories and all of Sam's, tested; and one whose key GitHub refused.
  * The App is acme's, so its pages are under acme's settings.
  */
@@ -281,12 +281,12 @@ function github(
 
 /** A hub from before people: an admin key, and no people tools, which it says as it says of any unknown tool. */
 function oldHub(from: Fixture): Fixture {
-  const f = Fixture.from(from, "admin-old-hub", "A hub from before people: its admin key reaches Hub settings, and People and Invites ask for an update");
+  const f = Fixture.from(from, "admin-old-hub", "A hub from before people: its admin key reaches the Hub group, and People and Invites ask for an update");
   f.answer("hub_info", undefined, { version: "0.8.0", protocol: 1, busy: [], admin: true });
   for (const tool of ["people_list", "invite_create", "invite_revoke", "person_set", "person_remove", "hub_links_get"]) {
     f.fail(tool, undefined, { code: "not_found", message: `No tool ${tool}.`, fix: "Use a tool name from the hub's MCP tool list." });
   }
-  // Its MCP servers are older than people: Hub settings shows them, none here.
+  // Its MCP servers are older than people: Every project shows them, none here.
   f.answer("mcp_servers_get", undefined, { global: [], project: [], userServers: true });
   return f;
 }
@@ -295,10 +295,10 @@ function oldHub(from: Fixture): Fixture {
 // every fixture stays in memory until the build writes them all, and typical's chats are megabytes a copy.
 /**
  * Two hubs Sam administers, Personal and Acme, and a third, Club, where Sam is a member (docs/design/hubs.md):
- * Administration names the hub it manages and switches between the first two only.
+ * the Hub group names the hub it manages and switches between the first two only.
  */
 function hubs(base: (name: "chat-empty") => Fixture): Fixture {
-  const f = hub(base("chat-empty"), "admin-hubs", "Sam owns Personal, is an admin on Acme and a member on Club; Administration manages one at a time", sam, true);
+  const f = hub(base("chat-empty"), "admin-hubs", "Sam owns Personal, is an admin on Acme and a member on Club; the Hub group manages one at a time", sam, true);
   f.label = "Personal";
   f.color = "green";
   const acme = hub(base("chat-empty"), "admin-hubs-acme", "Acme, where Sam is an admin", { ...sam, role: "admin" }, true);
@@ -319,19 +319,19 @@ export default defineGroup({
     hub(base("chat-empty"), "admin-owner", "Sam owns the hub: Alice is an admin, Bob a member, and Dana's invite waits", sam, true),
     hub(base("chat-empty"), "admin-admin", "The same hub as Alice, an admin: Sam the owner is out of her reach", alice, true),
     // Bob's device holds admin on every machine, as every paired device did before people: his role alone hides it.
-    google(base("chat-empty"), "admin-google-none", "Administration › Google on a hub with no OAuth client yet: the steps and the form", "none"),
-    google(base("chat-empty"), "admin-google-set", "Administration › Google with the client saved on devbox, not on buildbox; Test finds it", "set"),
-    google(base("chat-empty"), "admin-google-push", "Administration › Google with real-time mail read on devbox, by push", "push"),
-    google(base("chat-empty"), "admin-google-polling", "Administration › Google with real-time mail set up, polling because devbox is offline", "polling"),
-    google(base("chat-empty"), "admin-google-refused", "Administration › Google with a client Google doesn't know: Test says so", "refused"),
-    github(base("chat-empty"), "admin-github-none", "Administration › GitHub on a hub with no App yet: Create GitHub App", "none"),
-    github(base("chat-empty"), "admin-github-created", "Administration › GitHub with the App created and not installed yet", "created"),
-    github(base("chat-empty"), "admin-github-installed", "Administration › GitHub with the App installed on acme and Sam's account, tested", "installed"),
-    github(base("chat-empty"), "admin-github-refused", "Administration › GitHub with an App whose key GitHub refused", "refused"),
+    google(base("chat-empty"), "admin-google-none", "Hub accounts › Google on a hub with no OAuth client yet: the steps and the form", "none"),
+    google(base("chat-empty"), "admin-google-set", "Hub accounts › Google with the client saved on devbox, not on buildbox; Test finds it", "set"),
+    google(base("chat-empty"), "admin-google-push", "Hub accounts › Google with real-time mail read on devbox, by push", "push"),
+    google(base("chat-empty"), "admin-google-polling", "Hub accounts › Google with real-time mail set up, polling because devbox is offline", "polling"),
+    google(base("chat-empty"), "admin-google-refused", "Hub accounts › Google with a client Google doesn't know: Test says so", "refused"),
+    github(base("chat-empty"), "admin-github-none", "Hub accounts › GitHub on a hub with no App yet: Create GitHub App", "none"),
+    github(base("chat-empty"), "admin-github-created", "Hub accounts › GitHub with the App created and not installed yet", "created"),
+    github(base("chat-empty"), "admin-github-installed", "Hub accounts › GitHub with the App installed on acme and Sam's account, tested", "installed"),
+    github(base("chat-empty"), "admin-github-refused", "Hub accounts › GitHub with an App whose key GitHub refused", "refused"),
     github(base("chat-empty"), "admin-github-me-none", "Settings › GitHub: the hub has its App, and Sam hasn't connected yet", "installed"),
     github(base("chat-empty"), "admin-github-me-connected", "Settings › GitHub: Sam connected as sam-rivera", "installed", "connected"),
     github(base("chat-empty"), "admin-github-me-lapsed", "Settings › GitHub: GitHub no longer takes Sam's connection", "installed", "lapsed"),
-    hub(base("chat-empty"), "admin-member", "The same hub as Bob, a member: no Administration anywhere", bob, true),
+    hub(base("chat-empty"), "admin-member", "The same hub as Bob, a member: no Hub group anywhere", bob, true),
     // Members may not use the hub's key there, and Bob has connected no subscription: nothing to run his orders on.
     hub(base("chat-empty"), "admin-claude-member", "The same hub as Bob, with the hub's key kept for leads: Bob must connect his own Claude", bob, true, false),
   ],

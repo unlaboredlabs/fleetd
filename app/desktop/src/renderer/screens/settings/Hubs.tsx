@@ -1,4 +1,4 @@
-// Settings › Connections › Hubs: the hubs this app is paired with (docs/design/hubs.md), each under a name the person picks and an
+// Settings › You › Hubs: the hubs this app is paired with (docs/design/hubs.md), each under a name the person picks and an
 // optional colour. Each can be renamed, recoloured, paired again or removed; Add a hub pairs one more beside them.
 // A hub's name shows in the sidebar, notifications, Status and Commands once there are two. Under each, the hub links
 // made as you on it (hubLinks/LinksToThisHub.tsx).
@@ -16,13 +16,13 @@ import { ColorPick } from "../shell/ColorPick";
 import { PagePart, Setting } from "./parts";
 import s from "./settings.module.css";
 
-/** Settings › Connections › Hubs: each hub this app is paired with, and Add a hub. */
+/** Settings › You › Hubs: each hub this app is paired with, and Add a hub. */
 export function HubsSettings() {
   const hubs = useHubs();
   return (
     <PagePart
-      title="Hubs"
-      reveal="hubs"
+      title="Paired hubs"
+      reveal="hubs.add"
       intro="Keep work apart on hubs of its own, each with its own machines, people and keys. Name each as you like."
       aside={
         <Button

@@ -1,9 +1,11 @@
-// Settings (⌘, or the app menu), everyone's, with nothing hub-wide (that is Administration's, D209): General
-// (appearance, time in the app, notifications, version and updates), Connections (this app's hubs, your Claude account
-// and your GitHub), Projects (a project picked in the sidebar, with its Project, Agents, Instructions & memory and
-// Automations pages) and Prompts. The route picks the page (#/settings/<tab>); see route.ts for the links into one
-// prompt. The shell shows SettingsSidebar in the sidebar's place while Settings is open.
+// Settings (⌘, or the app menu), one window in three groups (D211). You: General (appearance, time in the app,
+// notifications, version), Your accounts (the Claude and GitHub your work runs on) and Hubs (this app's hubs and their
+// links). Projects: a project picked in the sidebar, with its Project, Agents, Instructions & memory, Automations and
+// Prompts pages. Hub, for the hub's owners and admins only (admin/HubPages.tsx): what reaches every teammate's work.
+// The route picks the page (#/settings/<tab>, #/settings/hub/<page>); see route.ts for the links into one prompt. The
+// shell shows SettingsSidebar in the sidebar's place while Settings is open.
 import { Automations } from "../automations";
+import { HubPage } from "../admin/HubPages";
 import { AgentsSettings } from "./Agents";
 import { ClaudeSettings } from "./Claude";
 import { General } from "./General";
@@ -13,7 +15,7 @@ import { Instructions } from "./Instructions";
 import { PageHead, useProjects } from "./parts";
 import { ProjectSettings } from "./Projects";
 import { Prompts } from "./Prompts";
-import { isProjectTab, projectFor, useSettingsRoute } from "./route";
+import { isHubTab, isProjectTab, projectFor, useSettingsRoute } from "./route";
 import s from "./settings.module.css";
 
 export { SettingsSidebar } from "./SettingsSidebar";
@@ -21,39 +23,56 @@ export { SettingsSidebar } from "./SettingsSidebar";
 export function SettingsScreen() {
   const route = useSettingsRoute();
   const projects = useProjects();
-  // A project's pages are of the project picked in the sidebar; each starts afresh on another.
+  // A project's pages are of the project picked in the sidebar; each starts afresh on another. Prompts asks before a
+  // switch drops a draft, so it follows the pick itself.
   const project = isProjectTab(route.tab) ? projectFor(route, projects) : route.for;
   const r = { ...route, for: project };
+  const tab = route.tab;
   return (
     <div className={s.frame}>
-      {route.tab === "general" ? (
+      {isHubTab(tab) ? (
+        <HubPage tab={tab} route={route} />
+      ) : tab === "general" ? (
         <General />
-      ) : route.tab === "connections" ? (
-        <Connections />
-      ) : route.tab === "projects" ? (
+      ) : tab === "accounts" ? (
+        <YourAccounts />
+      ) : tab === "hubs" ? (
+        <Hubs />
+      ) : tab === "projects" ? (
         <ProjectSettings key={project} route={r} />
-      ) : route.tab === "agents" ? (
+      ) : tab === "agents" ? (
         <AgentsSettings key={project} route={r} />
-      ) : route.tab === "instructions" ? (
+      ) : tab === "instructions" ? (
         <Instructions key={project} route={r} />
-      ) : route.tab === "automations" ? (
+      ) : tab === "automations" ? (
         <Automations key={project} route={r} />
       ) : (
-        <Prompts route={route} />
+        <Prompts route={r} />
       )}
     </div>
   );
 }
 
-/** What you connect, each once: this app's hubs, your own Claude account and your own GitHub. */
-function Connections() {
+/** The accounts your own work runs on: your Claude account and your GitHub. Nobody else's work uses them. */
+function YourAccounts() {
   return (
-    <div className={s.scroll} data-screen="settings.connections">
+    <div className={s.scroll} data-screen="settings.accounts">
       <div className={s.column}>
-        <PageHead title="Connections">Your own: the hubs this app is paired with, and the Claude and GitHub accounts your work runs on.</PageHead>
-        <HubsSettings />
+        <PageHead title="Your accounts">The accounts the work you start runs on. Nobody else&apos;s work ever uses them.</PageHead>
         <ClaudeSettings />
         <GithubSettings />
+      </div>
+    </div>
+  );
+}
+
+/** The hubs this app is paired with, each with the hub links made as you on it. */
+function Hubs() {
+  return (
+    <div className={s.scroll} data-screen="settings.hubs">
+      <div className={s.column}>
+        <PageHead title="Hubs">The hubs this app is paired with, and the links that let a Navi on another hub act as you.</PageHead>
+        <HubsSettings />
       </div>
     </div>
   );

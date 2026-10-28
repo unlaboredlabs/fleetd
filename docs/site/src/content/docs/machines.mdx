@@ -14,7 +14,7 @@ yet.
 
 ## Add a machine in the app {#app}
 
-Open **Administration › Machines**. **Add machine** at the top offers three ways:
+Open **Settings › Hub › Machines**. **Add machine** at the top offers three ways:
 
 | The machine is | Pick | What happens |
 |---|---|---|
@@ -26,7 +26,7 @@ Adding a machine the hub can reach runs [`fleetd machine add`](#ssh) in the hub,
 its output and what to fix; **Retry** runs it again and skips the steps that finished. The run goes on in the hub if
 you leave the page, and Add machine shows it when you come back.
 
-Only a person with Admin on every machine sees Administration. Agents' keys can't add or remove machines.
+Only a person with Admin on every machine sees Settings' Hub group. Agents' keys can't add or remove machines.
 
 A machine id belongs to one computer. The hub knows each computer by a hash of the id its OS gives it
 (`/etc/machine-id` on Linux, `IOPlatformUUID` on macOS), so it never enrolls a second computer under an id that is
@@ -182,7 +182,7 @@ version (see [Update](/docs/updating-and-uninstall#everything)), and nothing mov
 
 ## Remove a machine {#remove}
 
-In the app, press **Remove** beside it in [Administration › Machines](#app-repair). From the CLI:
+In the app, press **Remove** beside it in [Settings › Hub › Machines](#app-repair). From the CLI:
 
 ```sh
 fleetd machine remove builder-1
@@ -277,7 +277,7 @@ it.
 ## Machine roles {#roles}
 
 Each machine runs **agents**, hosts **screens** (an agent's [browser, emulator, simulator or desktop](/docs/browser-sessions)),
-or **both**, the default. An owner or admin sets it in **Administration › Machines** in the app, or with an admin key, where the screens role
+or **both**, the default. An owner or admin sets it in **Settings › Hub › Machines** in the app, or with an admin key, where the screens role
 is named `sessions`:
 
 ```sh
@@ -293,7 +293,7 @@ Screen slots are counted apart from agent slots. A machine hosts at most its scr
 screen per two CPUs and about 2 GB of memory each, at most 16, and never fewer than its agent slots and leads), or
 the number you set, 1 to 64.
 
-Each node reports what it can host, in plain words, and Administration › Machines shows it:
+Each node reports what it can host, in plain words, and Settings › Hub › Machines shows it:
 
 | Kind | Needs |
 |---|---|

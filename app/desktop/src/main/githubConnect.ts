@@ -70,7 +70,7 @@ export const connectGithub = async (call: Call, open: (url: string) => Promise<v
     if (cancelled()) return failed("cancelled", "Connecting was cancelled.");
     const info = got.output as GithubAppGetOutput;
     if (info.app === undefined) {
-      return failed("invalid", "This hub has no GitHub App yet.", "An admin of the hub creates it in Administration › GitHub.");
+      return failed("invalid", "This hub has no GitHub App yet.", "An admin of the hub creates it in Settings › Hub accounts › GitHub.");
     }
     const { verifier, challenge } = pkce();
     const state = randomBytes(16).toString("base64url");

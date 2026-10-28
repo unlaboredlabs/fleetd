@@ -256,7 +256,7 @@ pub fn refusal(
                 a.login
             ),
             format!(
-                "Ask {name} to press Connect again in Settings › Connections › GitHub in their fleetd app; then spawn the writer again."
+                "Ask {name} to press Connect again in Settings › Your accounts › GitHub in their fleetd app; then spawn the writer again."
             ),
         )),
         _ => Some((
@@ -264,7 +264,7 @@ pub fn refusal(
                 "{GITHUB_CONNECT_REFUSAL} {name} started it and hasn't connected their GitHub, and its PRs open as them."
             ),
             format!(
-                "Ask {name} to connect GitHub in Settings › Connections › GitHub in their fleetd app (one sign-in); then spawn the writer again."
+                "Ask {name} to connect GitHub in Settings › Your accounts › GitHub in their fleetd app (one sign-in); then spawn the writer again."
             ),
         )),
     }
@@ -306,7 +306,7 @@ pub async fn deliver(
                 Err(e) if !lapsed => return Err(e),
                 _ if writer => {
                     return Err(format!(
-                        "{GITHUB_CONNECT_REFUSAL} Its starter connects GitHub in Settings › Connections › GitHub"
+                        "{GITHUB_CONNECT_REFUSAL} Its starter connects GitHub in Settings › Your accounts › GitHub"
                     ));
                 }
                 // A reader or reviewer opens no PR: it goes on, but never on a token of theirs taken back.
@@ -441,7 +441,7 @@ async fn block_at(hub: &Hub, k: &Kept) {
         );
     let line = format!(
         "{}: {name}'s GitHub is no longer connected, so its agents' gh fails (GitHub says bad credentials) rather than \
-         use anyone else's account. Ask {name} to connect GitHub in Settings › Connections › GitHub; their agents get the token back \
+         use anyone else's account. Ask {name} to connect GitHub in Settings › Your accounts › GitHub; their agents get the token back \
          at their next turn.",
         k.order
     );

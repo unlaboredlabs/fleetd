@@ -1,4 +1,4 @@
-// Administration → People: everyone on the hub, with their role and devices. An owner or admin changes a role in place
+// Settings › Hub › People: everyone on the hub, with their role and devices. An owner or admin changes a role in place
 // (person_set) or removes someone (person_remove, once confirmed: their devices are signed out at once). What a row
 // offers comes from model.ts; the hub checks it all again. Below them, Invite someone and the invites still open
 // (Invites.tsx), then every hub link minted here, which acts as its person (hubLinks/AllLinks.tsx).
@@ -20,11 +20,11 @@ import a from "./admin.module.css";
 /** A hub from before people answers that it has no such tool: it needs updating, not a retry. */
 const lacksPeople = (error: unknown): boolean => error instanceof CallError && lacksTool(error.error);
 
-/** In place of People and its invites on a hub from before people; Hub settings still works there. */
+/** In place of People and its invites on a hub from before people; the other Hub pages still work there. */
 export function NeedsUpdate() {
   return (
     <div className={s.stack}>
-      <Text tone="quiet">This hub needs updating to manage people. Hub settings work as they are.</Text>
+      <Text tone="quiet">This hub needs updating to manage people. The other Hub pages work as they are.</Text>
       <span>
         <Button onClick={() => setUpdatesOpen(true)}>Update the hub</Button>
       </span>
@@ -36,7 +36,7 @@ export function People({ me }: { me: Person | undefined }) {
   const live = useLive();
   const read = usePeople();
   return (
-    <div className={s.scroll} data-screen="admin.people">
+    <div className={s.scroll} data-screen="settings.hub.people">
       <div className={s.column}>
         <PageHead title="People">Who is on this hub. Each person's devices act as them; removing someone signs all of them out.</PageHead>
         {!live ? (

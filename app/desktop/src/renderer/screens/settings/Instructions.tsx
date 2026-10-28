@@ -1,7 +1,7 @@
 // Custom instructions, appended to every lead's and task's first message (workers and reviewers too) under "Custom
 // instructions from the human": the hub-wide text, then the project's. Settings → Projects › Instructions & memory
 // edits one project's;
-// Administration › Hub settings edits the one for every project (HubInstructions), which only owners and admins change
+// Settings › Hub › Every project edits the one for every project (HubInstructions), which only owners and admins change
 // (D209). Saved with prompt_set on the registry id `instructions`, and pinned per session like every prompt.
 import { useEffect, useState } from "react";
 import { Button, Field, Text, Textarea } from "../../ui";
@@ -132,7 +132,7 @@ function LoadProblem({ t }: { t: TextState }) {
   );
 }
 
-/** Administration › Hub settings: the instructions every project's agents get, before a project's own. */
+/** Settings › Hub › Every project: the instructions every project's agents get, before a project's own. */
 export function HubInstructions() {
   const t = useText(null, "global");
   if (!t.live) return <Text tone="quiet">Connect to a hub to see and change this.</Text>;

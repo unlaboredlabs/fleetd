@@ -1,5 +1,5 @@
 //! The hub admin's setup (docs/design/setup.md): one list of steps that `fleetd init`, the app's first run and
-//! Administration › Setup all render. A step is a guide (why, numbered parts with the values to paste and the
+//! Settings › Hub › Setup all render. A step is a guide (why, numbered parts with the values to paste and the
 //! provider's pages, the fields for what comes back) around a few doctor checks, which decide its status. The only
 //! state the hub keeps is which steps the admin put off for later.
 
@@ -181,7 +181,7 @@ pub struct HubSetupStep {
     pub fields: Vec<SetupField>,
     /// What happens after the fields are saved.
     pub fields_note: Option<String>,
-    /// Where in the app the fields are saved, an Administration section ("google"), where the terminal can't seal
+    /// Where in the app the fields are saved, a Hub page of the app's Settings ("google"), where the terminal can't seal
     /// them.
     pub place: Option<String>,
     /// What Test does, in a few words.

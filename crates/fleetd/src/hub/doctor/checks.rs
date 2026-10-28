@@ -277,7 +277,7 @@ pub fn setup_checks(facts: &SetupFacts) -> Vec<Entry> {
                     g.client_id
                 ),
                 Some(manual(
-                    "Save the client secret again on Administration › Connections › Google",
+                    "Save the client secret again on Settings › Hub accounts › Google",
                     None,
                 )),
             )
@@ -292,7 +292,7 @@ pub fn setup_checks(facts: &SetupFacts) -> Vec<Entry> {
                     if missing.len() == 1 { "lacks" } else { "lack" }
                 ),
                 Some(manual(
-                    "Save the client secret again on Administration › Connections › Google, with those machines online",
+                    "Save the client secret again on Settings › Hub accounts › Google, with those machines online",
                     None,
                 )),
             )
@@ -339,7 +339,7 @@ pub fn github_app(app: &fleetd_contracts::github_app::GithubApp) -> Entry {
                 "The hub's GitHub App \"{}\" isn't installed on any repository yet.",
                 app.name
             ),
-            fix("Install it on Administration › Connections › GitHub, then Test"),
+            fix("Install it on Settings › Hub accounts › GitHub, then Test"),
         );
     }
     match &app.last_test {
@@ -347,7 +347,7 @@ pub fn github_app(app: &fleetd_contracts::github_app::GithubApp) -> Entry {
             "github_app",
             Fail,
             &t.said,
-            fix("Check it on Administration › Connections › GitHub, then Test"),
+            fix("Check it on Settings › Hub accounts › GitHub, then Test"),
         ),
         Some(t) => hub_entry("github_app", Pass, &t.said, None),
         None => {
@@ -386,7 +386,7 @@ pub fn google_tested(machine_id: Option<&str>, problem: Option<&str>) -> Entry {
             Fail,
             &format!("{}{on}", p.trim_end()),
             Some(manual(
-                "Check the client ID and secret on Administration › Connections › Google, then test again",
+                "Check the client ID and secret on Settings › Hub accounts › Google, then test again",
                 None,
             )),
         ),
@@ -838,16 +838,13 @@ fn account_entry(
 /// anyone who chooses it.
 pub fn claude_key(setup: &ClaudeSetupView) -> Entry {
     let fix =
-        "Check the key and endpoint on Administration › Connections › Claude, then save them again";
+        "Check the key and endpoint on Settings › Hub accounts › Claude, then save them again";
     match &setup.hub_api {
         None => hub_entry(
             "claude_key",
             Unknown,
             "The hub has no Claude API key.",
-            Some(manual(
-                "Add one on Administration › Connections › Claude",
-                None,
-            )),
+            Some(manual("Add one on Settings › Hub accounts › Claude", None)),
         ),
         Some(api) => {
             let what = match &api.endpoint {
@@ -883,7 +880,7 @@ pub fn claude_owner(setup: &ClaudeSetupView) -> Entry {
             Unknown,
             &format!("{name}, the hub's owner, has no Claude subscription connected."),
             Some(manual(
-                &format!("{name} connects it in Settings › Connections › Claude"),
+                &format!("{name} connects it in Settings › Your accounts › Claude"),
                 None,
             )),
         ),
@@ -894,7 +891,7 @@ pub fn claude_owner(setup: &ClaudeSetupView) -> Entry {
             sub.last_test.as_ref(),
             &setup.machines,
             &format!(
-                "{name} runs `claude setup-token` again and pastes the new token in Settings › Connections › Claude"
+                "{name} runs `claude setup-token` again and pastes the new token in Settings › Your accounts › Claude"
             ),
         ),
     }

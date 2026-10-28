@@ -451,7 +451,7 @@ impl Board {
             Some(format!("fleet cap: {used} of {cap} running"))
         } else if !self.runs_agents(m) {
             Some(format!(
-                "{name} runs no agents: its role is screens only (a hub admin changes it in Administration › Hub settings)"
+                "{name} runs no agents: its role is screens only (a hub admin changes it in Settings › Hub › Machines)"
             ))
         } else if on_machine >= machine_cap {
             let why = self.machine(m).map_or(sizing::UNMEASURED_WHY, Machine::why);

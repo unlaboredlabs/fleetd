@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // Hub links in the app: a Navi's Linked hubs (none yet; working, can't reach and revoked there; a key pasted with its
 // address, sealed in main and never in a hub call; removed), a person's Links to this hub (none yet; a key made for
-// chosen projects, shown once and copied with the address; only their own even for an admin; revoked), Administration's
+// chosen projects, shown once and copied with the address; only their own even for an admin; revoked), Hub › People's
 // list of everyone's, and a hub too old to link hubs.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -328,7 +328,7 @@ describe("Links to this hub, in a person's settings", () => {
   });
 });
 
-describe("Administration's hub links", () => {
+describe("Hub › People's hub links", () => {
   it("lists everyone's, with the person each acts as, and revokes any", async () => {
     answer = { ...answer, issued: [issued("hl_mineaaaa"), issued("hl_samsaaaa", { label: "work", person: SAM }), issued("hl_goneaaaa", { revokedAt: AT })] };
     await render(<AllLinks />);
@@ -345,6 +345,6 @@ describe("Administration's hub links", () => {
   it("with none, says so with a way to make one", async () => {
     await render(<AllLinks />);
     expect(text()).toContain("No links to this hub yet.");
-    expect(button("Make one in Settings")).toBeTruthy();
+    expect(button("Make one in You › Hubs")).toBeTruthy();
   });
 });

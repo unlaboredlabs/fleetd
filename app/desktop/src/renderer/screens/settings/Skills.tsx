@@ -1,5 +1,5 @@
 // Skills: the SKILL.md workflows fleetd's agents get. Settings → Projects › Agents has a project's (its repo's
-// .agents/skills and .claude/skills, and its own), with the hub-wide ones only named; Administration → Hub settings
+// .agents/skills and .claude/skills, and its own), with the hub-wide ones only named; Settings › Hub › Every project
 // (HubSkills) has the hub-wide ones, for owners and admins alone. Each views every one, edits, creates and deletes the ones the hub keeps
 // (skill_set, skill_delete, a human key's writes), installs from a skills.sh source pinned to a commit (skill_install)
 // and updates it (skill_update). Repo skills change in the repo.
@@ -10,6 +10,7 @@ import { useToolQuery } from "../../src/data/react";
 import { HUB, projectRefOf, scopeKey, type Draft, type Scope } from "./editor";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import { scopeName, useProjects } from "./parts";
+import { useReveal } from "./search";
 import { useAdministers } from "../admin/role";
 import { toHash } from "../shell/routes";
 import { ORIGIN_LABEL, groups, installLine, nameProblem, rowKey, shadowLine, slug, template } from "./skillsModel";
@@ -26,14 +27,15 @@ const target = (scope: Scope): { scope: SkillScope; projectRef?: ProjectRef } =>
 
 /**
  * Settings → Projects › Agents: what a project's agents get, its repo's skills and its own, with the hub-wide ones
- * named on a line (and for an owner or admin, the way to them in Administration).
+ * named on a line (and for an owner or admin, the way to them in Every project).
  */
 export function ProjectSkills({ scope }: { scope: Scope }) {
   const projects = useProjects();
   const administers = useAdministers();
   const where = scopeName(scope, projects);
+  const ref = useReveal<HTMLElement>("agents.skills");
   return (
-    <section className={s.stack} aria-labelledby="skills-head">
+    <section ref={ref} className={s.stack} aria-labelledby="skills-head">
       <Text strong id="skills-head">
         Skills
       </Text>
@@ -51,8 +53,8 @@ export function ProjectSkills({ scope }: { scope: Scope }) {
               {names.length > 0 ? `Hub-wide, for every project: ${names.join(", ")}.` : "No hub-wide skills."} Owners and admins manage them.
             </Text>
             {administers ? (
-              <Button size="sm" variant="quiet" onClick={() => (window.location.hash = toHash({ id: "admin", section: "hub" }))}>
-                Hub-wide skills in Administration
+              <Button size="sm" variant="quiet" onClick={() => (window.location.hash = toHash({ id: "settings", tab: "hub.tools" }))}>
+                Hub-wide skills in Every project
               </Button>
             ) : null}
           </div>
@@ -63,7 +65,7 @@ export function ProjectSkills({ scope }: { scope: Scope }) {
 }
 
 /**
- * Administration › Hub settings › Skills: the hub-wide skills every project's agents get, written, installed from
+ * Settings › Hub › Every project › Tools & skills: the hub-wide skills every project's agents get, written, installed from
  * skills.sh, updated and removed by an owner or admin (skill_install and the rest at scope global need one).
  */
 export function HubSkills() {

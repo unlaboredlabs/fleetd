@@ -1,4 +1,4 @@
-// Administration's rules, pure and tested: who sees the page, what each row of People offers the person looking at it,
+// The Hub group's rules, pure and tested: who sees the page, what each row of People offers the person looking at it,
 // and the invites still open. The hub enforces all of it again (people_list, person_set, person_remove); these only
 // keep the page from offering what it would refuse.
 import type { AgentKeyInfo, HubInfoOutput, HubRole, Invite, PeopleListOutput, Person } from "../../../shared/contracts";
@@ -21,7 +21,7 @@ export const roleWord = (role: HubRole): string => ROLE_WORD[role] ?? role;
 export const ROLE_HELP: Readonly<Record<string, string>> = {
   owner: "Everything an admin does, and makes or removes owners.",
   admin: "Invites and removes people, and changes hub-wide settings.",
-  member: "Works in every project. Sees no Administration.",
+  member: "Works in every project. Sees no Hub pages in Settings.",
 };
 
 export interface PersonRow {

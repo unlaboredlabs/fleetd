@@ -193,7 +193,7 @@ pub fn client_set(
 
 fn client(home: &Path) -> Result<Client, String> {
     read(&client_path(home))?.ok_or_else(|| {
-        "this machine holds no Google OAuth client: the hub's admin saves it in Administration › Connections › Google".to_owned()
+        "this machine holds no Google OAuth client: the hub's admin saves it in Settings › Hub accounts › Google".to_owned()
     })
 }
 
@@ -300,7 +300,7 @@ pub async fn connect(
     let mut body = token_call(ep, &form).await.map_err(|(code, said)| match code.as_str() {
         "invalid_grant" => "Google refused the code: it was used or is too old. Connect again.".to_owned(),
         "invalid_client" => {
-            "Google doesn't know the hub's OAuth client: the admin checks it in Administration › Connections › Google".to_owned()
+            "Google doesn't know the hub's OAuth client: the admin checks it in Settings › Hub accounts › Google".to_owned()
         }
         _ => format!("Google answered {code}: {said}"),
     })?;

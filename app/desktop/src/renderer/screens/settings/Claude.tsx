@@ -1,7 +1,7 @@
-// Settings › Connections › Claude: which Claude account the orders a person starts, and their Navi, run on (teams step 8, D200).
+// Settings › Your accounts › Claude: which Claude account the orders a person starts, and their Navi, run on (teams step 8, D200).
 // Their own subscription, connected here with the long-lived token `claude setup-token` prints (main seals it to
 // every machine; the page never gets it back), or the hub's API key when an admin set one up and lets them use it.
-// The hub's own key and who may use it are Administration's (admin/Claude.tsx), never here.
+// The hub's own key and who may use it are the Hub group's (admin/Claude.tsx), never here.
 import { useState } from "react";
 import type { ClaudeAccountsGetOutput, ClaudeChoice, PersonClaude } from "../../../shared/contracts";
 import { lacksTool } from "../../src/data/errors";

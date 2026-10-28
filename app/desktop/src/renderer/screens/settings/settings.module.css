@@ -103,17 +103,6 @@
   padding-bottom: var(--space-2);
   border-bottom: 1px solid var(--border);
 }
-.scopePick {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-width: 0;
-  max-width: 100%;
-}
-.scopeSelect {
-  width: 280px;
-  max-width: 100%;
-}
 .detail {
   display: flex;
   flex-direction: column;
@@ -390,7 +379,10 @@
   flex-direction: column;
 }
 /* A group title among the prompts, lined up with their labels. */
-/* The project picker under Projects in the sidebar: the sidebar's width, less the nesting. */
+/* The project picker under Projects in the sidebar, lined up with its rows. */
+.navPick {
+  padding: var(--space-1) var(--space-2);
+}
 .navPicker {
   width: 100%;
 }
@@ -430,7 +422,7 @@
 .secretValue {
   -webkit-text-security: disc;
 }
-/* Administration's machine roles: a machine a row, rows apart by space and a hairline (DESIGN.md), no cards. */
+/* Hub › Machines' roles: a machine a row, rows apart by space and a hairline (DESIGN.md), no cards. */
 .machineList {
   display: flex;
   flex-direction: column;

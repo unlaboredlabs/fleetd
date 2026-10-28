@@ -281,9 +281,9 @@ whole fleet. The hub enforces all of them; the lead plans to them.
 
 | Cap | Counts | Default | Set it |
 |---|---|---|---|
-| Per machine | Every project's agents on the machine. Not the leads. | Auto, what it fits: one per CPU less one in eight, and 2 GB of memory each after a quarter of it (4 to 16 GB) is left for the system, at most 64. An 8 GB laptop fits 2, a 32 GB one 12, a 60 GB one 22. | Administration › Hub settings → Machines, up to the fleet cap; "Use auto" goes back. Owners and admins only. node.json's `memPerAgentGb` changes the 2 GB of auto. |
+| Per machine | Every project's agents on the machine. Not the leads. | Auto, what it fits: one per CPU less one in eight, and 2 GB of memory each after a quarter of it (4 to 16 GB) is left for the system, at most 64. An 8 GB laptop fits 2, a 32 GB one 12, a 60 GB one 22. | Settings › Hub › Machines → Max agents, up to the fleet cap; "Use auto" goes back. Owners and admins only. node.json's `memPerAgentGb` changes the 2 GB of auto. |
 | Per project: Max agents | The project's agents: writers, readers, reviewers. Not the lead. | Its machine's cap, within the fleet cap: it follows a change to either at once | Click "max 12" beside the working count in the panel's Agents tab, or use Settings → Projects → Agents, up to the fleet cap. Once set it is the project's own, which no fleet or machine change moves; "Use the default" goes back. Past its machine's cap, the slider says the machine holds it there until an admin raises the machine. |
-| Fleet-wide | Every project's agents together. Not the leads. | None: the machines' caps added up | Administration › Hub settings → Whole fleet. Owners and admins only. A fleet cap saved before stays until you change it. |
+| Fleet-wide | Every project's agents together. Not the leads. | None: the machines' caps added up | Settings › Hub › Machines → Max agents. Owners and admins only. A fleet cap saved before stays until you change it. |
 
 New agents on a machine also wait for disk: 5 GB each (`diskPerAgentGb`) above the free-space floor, with agents started
 in the last 10 minutes still counted, since their worktrees haven't grown yet. The lead's state line names what sets
@@ -365,7 +365,7 @@ profile.
 ### What a profile runs on {#profile-settings}
 
 A profile's model is one of the models the hub's Claude configuration offers: what the Models API lists on the hub's
-API key when it has one (Administration › Connections), else fleetd's own list of current Claude models. Its effort is
+API key when it has one (Settings › Hub accounts), else fleetd's own list of current Claude models. Its effort is
 one Claude Code takes: low, medium, high, xhigh or max; a model without that level runs the nearest one below. Fast
 mode is Claude Code's (`"fastMode": true` in the session's settings), only on the models that have it (Opus 5.5, Opus
 5 and Opus 4.8), at a higher price per token.

@@ -1,8 +1,9 @@
 // @vitest-environment happy-dom
-// Administration's five pages (D209): People, Machines, Connections, Hub settings and Setup, last, with how many
-// required steps are left; machine roles on Machines; Claude, GitHub and Google on Connections; and the hub-wide
-// instructions, MCP servers, skills and prompts on Hub settings, its prompts nested under it in the sidebar and saved
-// hub-wide. Settings keeps a project's own: its Prompts never offer a hub-wide save, and its Instructions are a
+// Settings' Hub group (D211): People, Machines, Every project (Profiles, Tools & skills, Instructions & memory,
+// Prompts), Hub accounts, and Setup while required steps are left; machine roles and caps on Machines; Claude, GitHub
+// and Google on Hub accounts with the way back into the guided setup; and the hub-wide instructions, memory caps, MCP
+// servers, skills and prompts on Every project's pages, its prompts nested under its Prompts in the sidebar and saved
+// hub-wide. A project's pages keep its own: its Prompts never offer a hub-wide save, and its Instructions are a
 // project's.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -13,7 +14,7 @@ import { DataProvider } from "../../src/data/react";
 import { UiProvider } from "../../ui";
 import { Instructions } from "../settings/Instructions";
 import { Prompts } from "../settings/Prompts";
-import { AdminScreen, AdminSidebar } from "./AdminScreen";
+import { SettingsScreen, SettingsSidebar } from "../settings/SettingsScreen";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 vi.hoisted(() => {
@@ -125,12 +126,12 @@ const render = async (node: React.ReactNode) => {
 
 const admin = (
   <>
-    <AdminSidebar onBack={() => undefined} />
-    <AdminScreen />
+    <SettingsSidebar onBack={() => undefined} />
+    <SettingsScreen />
   </>
 );
 
-const nav = () => host.querySelector<HTMLElement>("nav[aria-label='Administration'], [aria-label='Administration']");
+const nav = () => host.querySelector<HTMLElement>("nav[aria-label='Settings'] section[aria-label='Hub']");
 const button = (text: string, within: ParentNode = document) => {
   const b = [...within.querySelectorAll("button")].find((x) => x.textContent.trim() === text || x.textContent.trim().startsWith(`${text} `));
   if (b === undefined) throw new Error(`no button ${text}`);
@@ -154,52 +155,69 @@ const type = async (el: HTMLTextAreaElement, text: string) => {
 const sent = (tool: string) => calls.filter((c) => c.tool === tool && c.input["dryRun"] !== true).map((c) => c.input);
 const parts = () => [...host.querySelectorAll<HTMLElement>("[data-part]")].map((p) => p.dataset["part"]);
 
-it("has five pages, Setup last saying how many required steps are left, and nests the prompts only under Hub settings", async () => {
-  window.location.hash = "#/admin/people";
+it("nests Every project's pages, Setup last saying how many required steps are left, and the prompts only under Every project's Prompts", async () => {
+  window.location.hash = "#/settings/hub/people";
   await render(admin);
   const rows = [...(nav()?.querySelectorAll("button") ?? [])].map((b) => b.textContent.trim());
-  expect(rows).toEqual(["Back", "People", "Machines", "Connections", "Hub settings", "Setup2 left"]);
+  expect(rows).toEqual(["People", "Machines", "Every project", "Profiles", "Tools & skills", "Instructions & memory", "Prompts", "Hub accounts", "Setup2 left"]);
   expect(nav()?.querySelector("[role='group'][aria-label='Prompts']")).toBeNull();
 
-  await click(button("Hub settings", nav() ?? document));
-  expect(window.location.hash).toBe("#/admin/hub");
+  await click(button("Every project", nav() ?? document));
+  expect(window.location.hash).toBe("#/settings/hub/profiles");
+  expect(host.querySelector("[data-screen='settings.hub.profiles']")).not.toBeNull();
+  await click(button("Prompts", nav() ?? document));
+  expect(window.location.hash).toBe("#/settings/hub/prompts");
   expect(nav()?.querySelector("[role='group'][aria-label='Prompts']")).not.toBeNull();
 });
 
-it("puts machine roles on Machines, and the hub's Claude, GitHub and Google on Connections", async () => {
-  window.location.hash = "#/admin/machines";
+it("puts machine roles and caps on Machines, and the hub's Claude, GitHub and Google on Hub accounts", async () => {
+  window.location.hash = "#/settings/hub/machines";
   await render(admin);
-  expect(host.querySelector("[data-screen='admin.machines']")).not.toBeNull();
+  expect(host.querySelector("[data-screen='settings.hub.machines']")).not.toBeNull();
   expect(host.querySelector("#machine-roles")).not.toBeNull();
-  expect(host.textContent).not.toContain("Machine roles are in Hub settings");
+  expect(parts()).toEqual(["hub.caps"]);
 
-  await click(button("Connections", nav() ?? document));
-  expect(host.querySelector("[data-screen='admin.connections']")).not.toBeNull();
+  await click(button("Hub accounts", nav() ?? document));
+  expect(host.querySelector("[data-screen='settings.hub.accounts']")).not.toBeNull();
   expect(parts()).toEqual(["admin.claude", "admin.github", "admin.google"]);
+  await click(button("Run guided setup again"));
+  expect(window.location.hash).toBe("#/settings/hub/setup");
 });
 
-it("gathers what reaches every project on Hub settings, and saves its instructions hub-wide", async () => {
-  window.location.hash = "#/admin/hub";
+it("gathers what reaches every project on Every project's pages, and saves its instructions hub-wide", async () => {
+  window.location.hash = "#/settings/hub/tools";
   await render(admin);
-  expect(parts()).toEqual(["admin.hub.agents", "admin.hub.instructions", "admin.hub.mcp", "admin.hub.skills", "admin.hub.prompts"]);
+  expect(parts()).toEqual(["hub.mcp", "hub.skills"]);
+  window.location.hash = "#/settings/hub/instructions";
+  await settle();
+  expect(parts()).toEqual(["hub.instructions", "hub.memory-caps"]);
   expect(host.querySelector("#machine-roles")).toBeNull();
   const text = host.querySelector<HTMLTextAreaElement>("textarea[aria-label='Instructions for every project']");
   if (text === null) throw new Error("no instructions");
   await type(text, "Write tests first.");
-  await click(button("Save", host.querySelector("[data-part='admin.hub.instructions']") ?? document));
+  await click(button("Save", host.querySelector("[data-part='hub.instructions']") ?? document));
   expect(sent("prompt_set")).toEqual([expect.objectContaining({ id: "instructions", scope: "global", text: "Write tests first." })]);
 });
 
-it("opens a hub-wide prompt from under Hub settings and saves it hub-wide, with no project to pick", async () => {
+it("opens an old Hub settings link on Every project's Tools & skills, and an old hub-wide prompt link on its Prompts", async () => {
   window.location.hash = "#/admin/hub";
+  await render(admin);
+  expect(host.querySelector("[data-screen='settings.hub.tools']")).not.toBeNull();
+  window.location.hash = "#/admin/hub?prompt=lead.start";
+  await settle();
+  await settle();
+  expect(host.querySelector("[data-screen='settings.hub.prompts']")).not.toBeNull();
+});
+
+it("opens a hub-wide prompt from under Every project's Prompts and saves it hub-wide, with no project to pick", async () => {
+  window.location.hash = "#/settings/hub/prompts";
   await render(admin);
   const group = nav()?.querySelector<HTMLElement>("[role='group'][aria-label='Prompts']");
   const first = group?.querySelector<HTMLButtonElement>("button");
   if (!first) throw new Error("no prompt listed");
   await click(first);
-  expect(window.location.hash).toMatch(/^#\/admin\/hub\?prompt=/u);
-  expect(host.querySelector("[data-screen='admin.prompts']")).not.toBeNull();
-  expect(host.querySelector("#prompts-scope")).toBeNull();
+  expect(window.location.hash).toMatch(/^#\/settings\/hub\/prompts\?prompt=/u);
+  expect(host.querySelector("[data-screen='settings.hub.prompts']")).not.toBeNull();
   const editor = host.querySelector<HTMLTextAreaElement>("[data-text='code'] textarea");
   if (editor === null) throw new Error("no editor");
   await type(editor, `${editor.value}\nOne more line.`);
@@ -214,7 +232,7 @@ it("shows a prompt with one text for the whole hub read only in Settings, with n
   prompts["lead.start"] = false;
   window.location.hash = "#/settings/prompts?prompt=lead.start&for=devbox/storefront";
   await render(<Prompts route={{ tab: "prompts", prompt: "lead.start", for: "devbox/storefront", view: "edit" }} />);
-  expect(host.textContent).toContain("only the hub's owners and admins change it, in Administration");
+  expect(host.textContent).toContain("only the hub's owners and admins change it, in Hub › Every project › Prompts");
   expect(host.querySelector<HTMLTextAreaElement>("[data-text='code'] textarea")?.readOnly).toBe(true);
   expect([...host.querySelectorAll("button")].some((b) => b.textContent.trim() === "Save")).toBe(false);
 });

@@ -1,4 +1,4 @@
-//! The hub's task profiles (Administration › Profiles): `profiles_list`, `profile_create`, `profile_update`,
+//! The hub's task profiles (Settings › Hub › Every project › Profiles): `profiles_list`, `profile_create`, `profile_update`,
 //! `profile_delete`, and the `profiles` rows they keep, one per profile, exactly one of them the default. Each project
 //! allows the default and the profiles in its `project_profiles` rows (`project_set`).
 //!
@@ -430,7 +430,7 @@ fn require_administrator(hub: &Hub, caller: &Caller) -> Result<(), ToolError> {
         error(
             ErrorCode::Forbidden,
             "Only the hub's owners and admins change task profiles.",
-            "Ask an owner or admin; they change them on the app's Administration › Profiles page.",
+            "Ask an owner or admin; they change them on Settings › Hub › Every project › Profiles in the app.",
         )
     })
 }

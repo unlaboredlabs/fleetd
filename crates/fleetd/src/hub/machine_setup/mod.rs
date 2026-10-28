@@ -1,4 +1,4 @@
-//! Administration > Machines (W105): the hub adds and removes machines for an owner or admin, with the CLI's own
+//! Settings › Hub › Machines (W105): the hub adds and removes machines for an owner or admin, with the CLI's own
 //! `machine add` and `machine remove` (cli/setup/machine.rs), run here with the hub's database instead of one opened
 //! beside it. `machine_add` answers at once with its run and goes on in the background: each step it starts or ends
 //! updates the run and sends a `machine_add.step` event, and `machine_add_status` reads the run. Runs live in memory:

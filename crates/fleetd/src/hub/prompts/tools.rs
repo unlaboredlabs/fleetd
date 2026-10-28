@@ -88,7 +88,7 @@ fn may_edit(caller: &Caller, scope: PromptScope, r: Option<&ProjectRef>) -> Resu
             ErrorCode::Forbidden,
             "Hub-wide prompts and instructions reach every teammate's agents: only the hub's owners and admins change them.",
         )
-        .with_fix("Ask an owner or admin (Administration › Hub settings), or edit this project's own text instead.")),
+        .with_fix("Ask an owner or admin (Settings › Hub › Every project › Prompts), or edit this project's own text instead.")),
     }
 }
 
