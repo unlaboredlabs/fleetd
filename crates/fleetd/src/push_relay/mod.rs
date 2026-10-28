@@ -2,7 +2,10 @@
 //! relay forwards it to APNs (apns.rs) or FCM (fcm.rs) with the publisher's credentials, which only it holds, from
 //! files and the environment. It reads no notification: it sees a token, ciphertext and an opaque collapse key, keeps
 //! none of them and logs none of them. Limits: a body of at most [`CIPHERTEXT_MAX`], [`PER_TOKEN_PER_MIN`] pushes a
-//! minute to one token. A token APNs or FCM no longer knows is answered `dead`, and the hub drops that device.
+//! minute to one token. A token APNs or FCM no longer knows is answered `dead`, and the hub drops that device; an
+//! answer that means the relay's own setup is wrong (another APNs environment or bundle id, another Firebase project)
+//! is `failed`, saying what to fix, so a misconfigured relay never wipes the hub's phones. With
+//! `FLEETD_PUSH_RELAY_KEY_FILE` set, it takes only requests that carry that key as a bearer token.
 pub mod apns;
 pub mod fcm;
 
@@ -15,7 +18,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use axum::extract::{DefaultBodyLimit, State};
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
@@ -71,6 +74,8 @@ pub enum Delivery {
 pub struct Relay {
     pub apns: Option<apns::Apns>,
     pub fcm: Option<fcm::Fcm>,
+    /// The key hubs send as `Authorization: Bearer`; None takes every request.
+    pub key: Option<zeroize::Zeroizing<String>>,
     pub http: reqwest::Client,
     limits: Mutex<HashMap<[u8; 32], (Instant, u32)>>,
 }
@@ -80,6 +85,7 @@ impl Relay {
         Self {
             apns,
             fcm,
+            key: None,
             http: reqwest::Client::builder()
                 .timeout(UPSTREAM_TIMEOUT)
                 .build()
@@ -88,9 +94,30 @@ impl Relay {
         }
     }
 
-    /// The credentials the environment names: `FLEETD_APNS_*` and `FLEETD_FCM_SERVICE_ACCOUNT`.
+    /// The credentials the environment names: `FLEETD_APNS_*` and `FLEETD_FCM_SERVICE_ACCOUNT`, and the key in
+    /// `FLEETD_PUSH_RELAY_KEY_FILE`.
     pub fn from_env() -> Result<Self, String> {
-        Ok(Self::new(apns::Apns::from_env()?, fcm::Fcm::from_env()?))
+        let mut relay = Self::new(apns::Apns::from_env()?, fcm::Fcm::from_env()?);
+        if let Some(key) = read_named("FLEETD_PUSH_RELAY_KEY_FILE")? {
+            let key = key.trim();
+            if key.is_empty() {
+                return Err("FLEETD_PUSH_RELAY_KEY_FILE names an empty file".into());
+            }
+            relay.key = Some(zeroize::Zeroizing::new(key.to_owned()));
+        }
+        Ok(relay)
+    }
+
+    /// Whether `headers` carry the relay's key, when it has one. Compared as hashes, so the time taken says nothing
+    /// about the key.
+    fn admits(&self, headers: &HeaderMap) -> bool {
+        let Some(key) = &self.key else { return true };
+        let sent = headers
+            .get(header::AUTHORIZATION)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.strip_prefix("Bearer "))
+            .unwrap_or_default();
+        sha2::Sha256::digest(sent.trim().as_bytes()) == sha2::Sha256::digest(key.as_bytes())
     }
 
     /// Counts a push to `token` against its minute; false when that minute is spent. Only a hash of the token is kept.
@@ -136,7 +163,17 @@ fn plausible(push: &RelayPush) -> bool {
             .is_none_or(|k| !k.is_empty() && k.len() <= 64 && k.chars().all(|c| c.is_ascii_alphanumeric()))
 }
 
-async fn push(State(relay): State<Arc<Relay>>, body: axum::body::Bytes) -> Response {
+async fn push(
+    State(relay): State<Arc<Relay>>,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> Response {
+    if !relay.admits(&headers) {
+        return failed(
+            StatusCode::UNAUTHORIZED,
+            "this relay takes a key: set it on the hub with `fleetd push-relay set <url> --relay-key-file <path>`",
+        );
+    }
     let Ok(push) = serde_json::from_slice::<RelayPush>(&body) else {
         return failed(StatusCode::BAD_REQUEST, "not a push");
     };
@@ -190,7 +227,11 @@ pub fn router(relay: Arc<Relay>) -> Router {
 
 /// Serves the relay on `listen` until SIGINT or SIGTERM.
 pub async fn serve(listen: SocketAddr, relay: Relay) -> Result<(), String> {
-    let (apns, fcm) = (relay.apns.is_some(), relay.fcm.is_some());
+    let (apns, fcm, key) = (
+        relay.apns.is_some(),
+        relay.fcm.is_some(),
+        relay.key.is_some(),
+    );
     if !apns && !fcm {
         return Err(
             "no credentials: set FLEETD_APNS_KEY_FILE (with _KEY_ID, _TEAM_ID, _TOPIC) or FLEETD_FCM_SERVICE_ACCOUNT"
@@ -201,9 +242,10 @@ pub async fn serve(listen: SocketAddr, relay: Relay) -> Result<(), String> {
         .await
         .map_err(|e| format!("can't listen on {listen}: {e}"))?;
     println!(
-        "push relay on http://{listen} (APNs {}, FCM {})",
+        "push relay on http://{listen} (APNs {}, FCM {}, {})",
         if apns { "on" } else { "off" },
-        if fcm { "on" } else { "off" }
+        if fcm { "on" } else { "off" },
+        if key { "key required" } else { "no key" }
     );
     let mut stop = crate::cli::Stop::on_signals();
     axum::serve(listener, router(Arc::new(relay)))

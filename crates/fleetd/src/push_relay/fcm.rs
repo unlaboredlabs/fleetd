@@ -1,6 +1,9 @@
 //! FCM HTTP v1 with a Firebase service account: an RS256 JWT traded at the account's `token_uri` for an access token
 //! (RFC 7523), kept until a minute before it expires. Each push is a high-priority data message carrying the
 //! ciphertext as `c`; the app decrypts it and posts the notification itself.
+//!
+//! Only UNREGISTERED marks a token dead. SENDER_ID_MISMATCH, a 403 or a 404 without it are what every token gets when
+//! the service account is another Firebase project's or may not send: they are the relay's failure, not the token's.
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -142,18 +145,27 @@ impl Fcm {
             return Delivery::Sent;
         }
         let body: Value = answer.json().await.unwrap_or_default();
-        let unregistered = body["error"]["details"]
-            .as_array()
-            .is_some_and(|d| d.iter().any(|d| d["errorCode"] == "UNREGISTERED"));
+        let code = body["error"]["details"].as_array().and_then(|d| {
+            d.iter()
+                .find_map(|d| d["errorCode"].as_str().map(str::to_owned))
+        });
+        let state = body["error"]["status"].as_str().unwrap_or_default();
         if status == 401 {
             *self.access.lock().unwrap() = None;
         }
-        if status == 404 || unregistered {
-            return Delivery::Dead;
+        match (status, code.as_deref()) {
+            (_, Some("UNREGISTERED")) => Delivery::Dead,
+            (_, Some("SENDER_ID_MISMATCH")) => Delivery::Failed(format!(
+                "FCM answered SENDER_ID_MISMATCH: the app's tokens are another Firebase project's than {}; \
+                 FLEETD_FCM_SERVICE_ACCOUNT must be a key from the app's own project",
+                self.project_id
+            )),
+            (401 | 403, _) => Delivery::Failed(format!(
+                "FCM refused the service account ({status} {state}): it must be from project {}, with the \
+                 Firebase Cloud Messaging API on and a role that may send",
+                self.project_id
+            )),
+            _ => Delivery::Failed(format!("FCM answered {status} {state}")),
         }
-        Delivery::Failed(format!(
-            "FCM answered {status} {}",
-            body["error"]["status"].as_str().unwrap_or_default()
-        ))
     }
 }

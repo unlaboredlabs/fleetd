@@ -38,6 +38,25 @@ fleetd push-relay --listen 127.0.0.1:4795
 It prints which platforms are on. Keep the key files out of any repo, readable only by the user that runs the relay.
 `curl http://127.0.0.1:4795/` answers `{"ok":true,"apns":true,"fcm":true}`.
 
+`FLEETD_APNS_SANDBOX` must match the builds your phones run: `1` for development builds from Xcode, unset for
+TestFlight and release builds. Until a push has gone through, the relay treats an APNs or Firebase answer that could
+mean its own setup is wrong (another environment, bundle ID or Firebase project) as its failure, not the phone's, and
+the hub keeps the phone and logs what to fix.
+
+### Relay key {#key}
+
+A relay anyone can reach sends its generic alert to any token they know. To take only your hubs, give it a key: a
+file holding a long random string, outside any repo.
+
+```sh
+openssl rand -hex 32 > ~/keys/push-relay.key
+chmod 600 ~/keys/push-relay.key
+export FLEETD_PUSH_RELAY_KEY_FILE=~/keys/push-relay.key
+```
+
+It then refuses a push without `Authorization: Bearer <key>` with 401. Give the same file to each hub that uses it
+(below). Use a key whenever the relay listens on more than `127.0.0.1`.
+
 To keep it running, use a systemd user unit with the same variables in `Environment=` lines or an
 `EnvironmentFile=`. If hubs on other machines use it, listen on the tailnet address (`--listen 100.x.y.z:4795`) or
 put it behind HTTPS.
@@ -48,8 +67,12 @@ On the hub machine:
 
 ```sh
 fleetd push-relay set http://127.0.0.1:4795
+fleetd push-relay set http://100.x.y.z:4795 --relay-key-file ~/keys/push-relay.key
 fleetd push-relay set off       # no more phone notifications
 ```
+
+`--relay-key-file` seals the relay's key to the hub on your machine. The hub keeps it sealed and sends it with every
+push. Setting the URL again without it drops the key.
 
 From another machine, add `--hub <url> --key-file <path>` with a key that has admin on every machine. Each person then
 turns notifications on in the phone app, which registers the phone with the hub.
@@ -69,7 +92,9 @@ A phone signed out of the hub, or whose person was removed, gets nothing more.
 
 The relay takes a ciphertext of at most 3500 characters and 60 pushes a minute to one device. It keeps nothing and
 logs no token or ciphertext. When Apple or Google say a token is no longer valid (the app was removed), the relay
-tells the hub, and the hub forgets that phone.
+tells the hub, and the hub forgets that phone. If one notification would drop more than half of a
+person's phones, or their only one, the hub keeps them and logs that the relay's setup is the likelier cause. The hub logs
+each relay failure once an hour at most.
 
 The wire format and the encryption are in
 [docs/design/push.md](https://github.com/unlaboredlabs/fleetd/blob/main/docs/design/push.md).

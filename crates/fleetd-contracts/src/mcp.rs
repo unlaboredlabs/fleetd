@@ -2368,11 +2368,19 @@ output!(PushDeviceRemoveOutput {
     device: crate::push::PushDevice,
 });
 
-// push_relay_set: where the hub sends its sealed notifications (`fleetd push-relay`); empty sends none.
-input!(PushRelaySetInput { url: Line<0, 2000> });
+// push_relay_set: where the hub sends its sealed notifications (`fleetd push-relay`); empty sends none. It replaces the
+// whole setting: a URL set without `key` sends none.
+input!(PushRelaySetInput {
+    url: Line<0, 2000>,
+    /// The relay's key (its FLEETD_PUSH_RELAY_KEY_FILE), sealed to this hub's boxPubKey (hub_links_get); the hub sends
+    /// it as a bearer token. Absent: the relay takes no key.
+    key: Option<crate::secrets::SealedSecret>,
+});
 output!(PushRelaySetOutput {
     /// Absent: no relay, no notifications.
     url: Option<String>,
+    /// The hub keeps a key for the relay.
+    key: bool,
 });
 
 /// The release channel a hub's build follows: edge when its version contains "-edge." (or "-nightly.", edge's name
