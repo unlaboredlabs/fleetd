@@ -5,6 +5,8 @@
 pub mod tools;
 
 #[cfg(test)]
+mod fixtures;
+#[cfg(test)]
 mod tests;
 
 use std::collections::BTreeSet;
@@ -569,7 +571,8 @@ pub fn guides(hub: &str) -> Vec<HubSetupStep> {
     ]
 }
 
-fn rank(s: DoctorStatus) -> u8 {
+/// How bad a check's status is: ok, then unknown ("not set up"), warn, fail.
+pub(super) fn rank(s: DoctorStatus) -> u8 {
     match s {
         DoctorStatus::Ok => 0,
         DoctorStatus::Unknown => 1,

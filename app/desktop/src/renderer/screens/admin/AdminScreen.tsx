@@ -2,13 +2,13 @@
 // an admin control. People, Invites, Machines (Add machine, the machines with Repair and Remove, and each one's page
 // with its checklist), Claude (the hub's API key and who may use it), Hub settings (everything hub-wide that used to sit in
 // Settings: the fleet and machine caps, machine roles, task profiles and memory caps), Skills (the hub-wide ones), Google
-// (the hub's OAuth client for Navis, google/AdminGoogle.tsx) and Setup. The shell shows AdminSidebar in the sidebar's
+// (the hub's OAuth client for Navis, google/AdminGoogle.tsx) and Setup (the hub's guided setup, setup/SetupScreen.tsx). The shell shows AdminSidebar in the sidebar's
 // place while it is open, as it does Settings'. With several hubs (docs/design/hubs.md) it manages one hub at a time,
 // named above every page, and its sidebar switches between the hubs this person administers: nothing here acts on a
 // hub the page doesn't name.
 import { ArrowLeft, Bot, KeyRound, ListChecks, Server, SlidersHorizontal, Sparkles, UserPlus, Users } from "lucide-react";
 import { useState, type ReactNode } from "react";
-import { Button, Separator, Sidebar, SidebarItem, SidebarSection, Text, Truncate } from "../../ui";
+import { Separator, Sidebar, SidebarItem, SidebarSection, Text, Truncate, cx } from "../../ui";
 import type { HubView } from "../../src/data/hubs";
 import { HubScope, useData, useHub, useHubs, useSeveralHubs } from "../../src/data/react";
 import { HUB_COLOR } from "../shell/hubColor";
@@ -19,8 +19,9 @@ import { HubMemoryCaps } from "../settings/MemoryCaps";
 import { PageHead } from "../settings/parts";
 import { HubSkills } from "../settings/Skills";
 import { AdminGoogle } from "../google/AdminGoogle";
+import { progressLine, SetupSteps, useSetupSteps } from "../setup/SetupScreen";
 import { navigate, useRoute } from "../shell/navigation";
-import { toHash, type AdminSection } from "../shell/routes";
+import type { AdminSection } from "../shell/routes";
 import { ClaudeAdmin } from "./Claude";
 import { Invites } from "./Invites";
 import { MachineList } from "./MachineList";
@@ -212,20 +213,29 @@ function HubSettings() {
 }
 
 /**
- * Where the hub's one guided setup goes once it is built (docs/design: the first-run setup): the same steps as
- * `fleetd init`. Until then, the setup checks on Machines.
+ * The hub's guided setup (docs/design/setup.md): the steps the hub serves, the same as `fleetd init` and the first
+ * run, with one open beside them. The open step is this page's own: the route names only the section.
  */
 function Setup() {
+  const steps = useSetupSteps();
+  const [open, setOpen] = useState<string | null>(null);
+  const head = (text: string) => <PageHead title="Setup">{text}</PageHead>;
+  if (steps === null || "problem" in steps) {
+    const text = steps === null ? "Loading…" : steps.old ? "This hub is too old for guided setup. Update fleetd on the hub first." : steps.problem;
+    return (
+      <div className={s.scroll} data-screen={steps === null ? "admin.setup.loading" : "admin.setup.error"}>
+        <div className={s.column}>
+          {head("Everything the hub needs, step by step: the same steps as fleetd init.")}
+          <Text tone={steps === null || steps.old ? "quiet" : "danger"}>{text}</Text>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className={s.scroll} data-screen="admin.setup">
-      <div className={s.column}>
-        <PageHead title="Setup">The hub's guided setup comes here: the same steps as fleetd init, each with the values to paste and a Test button.</PageHead>
-        <Text size="sm" tone="quiet">
-          Until then, the setup checks on Machines say what is missing and fix what they can.
-        </Text>
-        <span>
-          <Button onClick={() => (window.location.hash = toHash({ id: "machines" }))}>Open the setup checks</Button>
-        </span>
+      <div className={cx(s.column, a.setup)}>
+        {head(progressLine(steps.steps))}
+        <SetupSteps steps={steps.steps} open={open} onOpen={setOpen} />
       </div>
     </div>
   );

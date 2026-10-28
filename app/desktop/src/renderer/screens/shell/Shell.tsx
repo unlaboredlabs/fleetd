@@ -26,7 +26,7 @@ import { inSections, sectionsFor } from "../panel/Sections";
 import { isNavi, sidebarOrder } from "../navi/model";
 import { HOME, listView, panelRoute, type ProjectKey, type Screen } from "./routes";
 import { PanelSlot, PanelToggle, useProjectPanel } from "./panel";
-import { ConnectionBanner, GetStarted, needsOnboarding } from "../onboarding";
+import { ConnectionBanner, needsOnboarding } from "../onboarding";
 import { UpdatesHost } from "../updates";
 import { useUpdatesHub } from "../updates/state";
 import { Boundary } from "../../src/Boundary";
@@ -44,6 +44,8 @@ const JUMPS = [1, 2, 3, 4, 5, 6, 7, 8, 9] as const;
 // does the same.
 const SettingsSidebar = lazy(() => import("../settings/SettingsScreen").then((m) => ({ default: m.SettingsSidebar })));
 const AdminSidebar = lazy(() => import("../admin/AdminScreen").then((m) => ({ default: m.AdminSidebar })));
+// The empty home: setup's welcome for an admin while a required step is left, else Get started.
+const FirstRun = lazy(() => import("../setup/FirstRun").then((m) => ({ default: m.FirstRun })));
 
 /** The project `#/` opens, kept across launches: the app opens where you left it. */
 const LAST_PROJECT = "fleetd.lastProject";
@@ -356,7 +358,9 @@ function Frame({ route, hubs, sidebar }: { route: Routed; hubs: readonly HubView
           <div className={s.screen}>
             {shown.id === "home" && projects !== undefined && projects.length === 0 ? (
               <div data-screen="home.empty" style={{ display: "contents" }}>
-                <GetStarted onAddProject={() => go({ id: "projects.add" })} />
+                <Suspense fallback={null}>
+                  <FirstRun onAddProject={() => go({ id: "projects.add" })} />
+                </Suspense>
               </div>
             ) : (
               // Keyed by the screen, so going elsewhere after an error opens that screen, not the card.

@@ -1,39 +1,62 @@
-// #/setup: the hub admin's setup, a design prototype (docs/design/setup.md). The welcome, the steps with one open
-// beside them, and the end. Each step's status comes from doctor_list; Test re-runs the checks and says what the
-// step's check says now. Nothing is saved here yet: the hub's setup_save comes with the build. A step whose values
-// are saved elsewhere already (Google: Administration › Google) sends the admin there instead of showing fields.
+// The hub admin's setup (docs/design/setup.md): the steps the hub serves (setup_list), the same ones `fleetd init`
+// walks. #/setup is the first run: the welcome, the steps with one open beside them, and the end. Administration ›
+// Setup shows the same steps (SetupSteps) on its page. Each step's status is the hub's, read from its checks; Test runs
+// that step's checks now (setup_test), Skip for now keeps it for later (setup_skip), and a step's result is saved
+// where it lives already (Administration › Google, › Claude, …), which its place opens. Only owners and admins see any
+// of it.
 
 import { Check } from "lucide-react";
 import { useState } from "react";
-import { callKey } from "../../src/data/queries";
-import { useDataLayer, useToolQuery } from "../../src/data/react";
-import { Button, Field, Input, Text, Textarea, cx } from "../../ui";
+import type { SetupListOutput, SetupStepId } from "../../../shared/contracts";
+import { lacksTool } from "../../src/data/errors";
+import { CallError, callKey } from "../../src/data/queries";
+import { useDataLayer, useHub, useToolQuery } from "../../src/data/react";
+import { Button, Text, cx } from "../../ui";
+import { useHubRole } from "../admin/role";
+import { errorText } from "../settings/hub";
+import { navigate } from "../shell/navigation";
 import { GuideParts, Part } from "./Guide";
-import { useHubState } from "../onboarding/hooks";
-import { needWords, requiredLeft, setupSteps, type SetupStep, type StepId, type StepStatus } from "./steps";
+import { groupWords, isRequiredLeft, needWords, placesOf, requiredLeft, statusWords, type SetupStep } from "./steps";
 import s from "./setup.module.css";
 
-export type SetupView = "welcome" | "done" | StepId | null;
+const noInput = {};
 
-const allChecks = {};
-
-const go = (view: SetupView) => {
+const go = (view: string | null) => {
   window.location.hash = view === null ? "#/setup" : `#/setup/${view}`;
 };
 
-const useSteps = (): { steps: ReadonlyArray<SetupStep>; hub: string } => {
-  const state = useHubState();
-  const hub = state.phase === "unpaired" ? "http://127.0.0.1:4790" : state.hub;
-  const query = useToolQuery("doctor_list", allChecks);
-  return { steps: setupSteps(hub, query.data?.checks ?? []), hub };
-};
+type Steps = { readonly steps: ReadonlyArray<SetupStep> } | { readonly problem: string; readonly old: boolean } | null;
+
+/** The hub's steps; null while they load. */
+export function useSetupSteps(): Steps {
+  const query = useToolQuery("setup_list", noInput);
+  if (query.data !== undefined) return { steps: query.data.steps };
+  if (query.error === null) return null;
+  return { problem: errorText(query.error), old: query.error instanceof CallError && lacksTool(query.error.error) };
+}
+
+/** Keeps a step the hub just answered with (Test, Skip) in the list, so every view of it agrees at once. */
+function useKeep(): (step: SetupStep) => void {
+  const data = useDataLayer();
+  return (step) =>
+    data.queryClient.setQueryData<SetupListOutput>(callKey("setup_list", noInput), (list) => {
+      if (list === undefined) return list;
+      const steps = list.steps.map((st) => (st.id === step.id ? step : st));
+      return { ...list, steps, requiredLeft: requiredLeft(steps) };
+    });
+}
 
 export function SetupScreen({ view }: { view: string | null }) {
-  const { steps, hub } = useSteps();
-  if (view === "welcome") return <Welcome steps={steps} />;
-  if (view === "done") return <Done steps={steps} />;
-  const open = steps.find((step) => step.id === view) ?? steps.find((step) => step.status !== "done") ?? steps[0];
-  if (open === undefined) return null;
+  const role = useHubRole();
+  const steps = useSetupSteps();
+  if (!role.administers) {
+    const text = role.pending ? "Loading…" : "Setting up the hub is for its owners and admins.";
+    return <Note screen="setup.denied" text={text} />;
+  }
+  if (steps === null) return <Note screen="setup.loading" text="Loading…" />;
+  if ("problem" in steps) return <Note screen="setup.error" text={steps.old ? "This hub is too old for guided setup. Update fleetd on the hub first." : steps.problem} />;
+  if (view === "welcome") return <Welcome steps={steps.steps} />;
+  if (view === "done") return <Done steps={steps.steps} />;
   return (
     <div className={s.screen} data-screen="setup">
       <div className={s.wide}>
@@ -42,45 +65,78 @@ export function SetupScreen({ view }: { view: string | null }) {
             Set up your hub
           </Text>
           <Text as="p" size="sm" tone="quiet">
-            {progressLine(steps)}
+            {progressLine(steps.steps)}
           </Text>
         </header>
-        <div className={s.split}>
-          <StepRail steps={steps} open={open.id} />
-          <StepPane key={open.id} step={open} steps={steps} hub={hub} />
-        </div>
+        <SetupSteps steps={steps.steps} open={view} onOpen={go} onEnd={() => go("done")} />
       </div>
     </div>
   );
 }
 
-const progressLine = (steps: ReadonlyArray<SetupStep>): string => {
+function Note({ screen, text }: { screen: string; text: string }) {
+  return (
+    <div className={s.screen} data-screen={screen}>
+      <div className={s.narrow}>
+        <Text tone="quiet">{text}</Text>
+      </div>
+    </div>
+  );
+}
+
+export const progressLine = (steps: ReadonlyArray<SetupStep>): string => {
   const left = requiredLeft(steps);
   const done = steps.filter((st) => st.status === "done").length;
   const head = `${done} of ${steps.length} done`;
   return left === 0 ? `${head}. fleetd is ready to use; the rest can wait until you need it.` : `${head}. ${left} required before agents can run.`;
 };
 
-const STATUS_WORD: Readonly<Record<StepStatus, string>> = { done: "Done", todo: "", look: "Needs a look", skipped: "Later" };
-
-function StatusWord({ status }: { status: StepStatus }) {
-  if (status === "todo") return null;
-  const tone = status === "done" ? "success" : status === "look" ? "warning" : "faint";
+function StatusWord({ step }: { step: SetupStep }) {
+  const words = statusWords(step.status);
+  if (words === undefined) return null;
+  const tone = step.status === "done" ? "success" : step.status === "look" ? (step.failing === true ? "danger" : "warning") : "faint";
   return (
     <Text size="xs" tone={tone} className={s.status}>
-      {STATUS_WORD[status]}
+      {words}
     </Text>
   );
 }
 
-function StepRail({ steps, open }: { steps: ReadonlyArray<SetupStep>; open: StepId }) {
+/**
+ * The steps down the left, grouped, and the open one beside them: `open` names it, else the first not done. `onEnd`
+ * is Continue past the last step.
+ */
+export function SetupSteps({
+  steps,
+  open,
+  onOpen,
+  onEnd,
+}: {
+  steps: ReadonlyArray<SetupStep>;
+  open: string | null;
+  onOpen: (id: SetupStepId) => void;
+  onEnd?: () => void;
+}) {
+  // With none named, the first not done when the steps came: it stays open when its Test passes.
+  const [first] = useState(() => steps.find((st) => st.status !== "done")?.id);
+  const shown = steps.find((st) => st.id === open) ?? steps.find((st) => st.id === first) ?? steps[0];
+  if (shown === undefined) return null;
+  return (
+    <div className={s.split}>
+      <StepRail steps={steps} open={shown.id} onOpen={onOpen} />
+      <StepPane key={shown.id} step={shown} steps={steps} onOpen={onOpen} onEnd={onEnd} />
+    </div>
+  );
+}
+
+function StepRail({ steps, open, onOpen }: { steps: ReadonlyArray<SetupStep>; open: SetupStepId; onOpen: (id: SetupStepId) => void }) {
   const groups = [...new Set(steps.map((st) => st.group))];
   return (
     <nav className={s.rail} aria-label="Setup steps">
       {groups.map((group) => (
         <section key={group} className={s.railGroup}>
           <Text as="h2" size="xs" tone="faint" className={s.railHead}>
-            {group}
+            {groupWords(group)}
           </Text>
           <ol className={s.railList}>
             {steps
@@ -91,7 +147,8 @@ function StepRail({ steps, open }: { steps: ReadonlyArray<SetupStep>; open: Step
                     type="button"
                     className={cx(s.railRow, st.id === open && s.railOpen, st.status === "done" && s.railDone)}
                     aria-current={st.id === open ? "step" : undefined}
-                    onClick={() => go(st.id)}
+                    data-step={st.id}
+                    onClick={() => onOpen(st.id)}
                   >
                     <span className={s.railTitle}>{st.title}</span>
                     {st.status === "todo" ? (
@@ -99,7 +156,7 @@ function StepRail({ steps, open }: { steps: ReadonlyArray<SetupStep>; open: Step
                         {needWords(st.need)}
                       </Text>
                     ) : (
-                      <StatusWord status={st.status} />
+                      <StatusWord step={st} />
                     )}
                   </button>
                 </li>
@@ -111,26 +168,51 @@ function StepRail({ steps, open }: { steps: ReadonlyArray<SetupStep>; open: Step
   );
 }
 
-function StepPane({ step, steps, hub }: { step: SetupStep; steps: ReadonlyArray<SetupStep>; hub: string }) {
+function StepPane({
+  step,
+  steps,
+  onOpen,
+  onEnd,
+}: {
+  step: SetupStep;
+  steps: ReadonlyArray<SetupStep>;
+  onOpen: (id: SetupStepId) => void;
+  onEnd: (() => void) | undefined;
+}) {
   const data = useDataLayer();
-  const [testing, setTesting] = useState(false);
+  const hub = useHub();
+  const keep = useKeep();
+  const [busy, setBusy] = useState<"test" | "skip" | null>(null);
   const [tested, setTested] = useState<{ ok: boolean; text: string } | null>(null);
   const index = steps.indexOf(step);
   const next = steps.slice(index + 1).find((st) => st.status !== "done");
+  const onward = () => (next !== undefined ? onOpen(next.id) : onEnd?.());
   const test = async () => {
-    setTesting(true);
-    const out = await data.call("doctor_list", { rerun: true }, { timeoutMs: 120_000 });
-    setTesting(false);
+    setBusy("test");
+    const out = await data.call("setup_test", { step: step.id }, { timeoutMs: 120_000 });
+    setBusy(null);
     if (!out.ok) {
       setTested({ ok: false, text: out.error.message });
       return;
     }
-    data.queryClient.setQueryData(callKey("doctor_list", allChecks), out.output);
-    const now = setupSteps(hub, out.output.checks).find((st) => st.id === step.id);
-    setTested({ ok: now?.status === "done", text: now?.said ?? "No check answered for this step yet." });
+    keep(out.output.step);
+    setTested({ ok: out.output.step.status === "done", text: out.output.step.said ?? "Nothing answered for this step yet." });
   };
+  const skip = async (skipped: boolean) => {
+    setBusy("skip");
+    const out = await data.call("setup_skip", { step: step.id, skipped });
+    setBusy(null);
+    if (!out.ok) {
+      setTested({ ok: false, text: out.error.message });
+      return;
+    }
+    keep(out.output.step);
+    if (skipped) onward();
+  };
+  const places = placesOf(step);
+  const left = isRequiredLeft(step);
   return (
-    <article className={s.pane} aria-labelledby="setup-step-title">
+    <article className={s.pane} aria-labelledby="setup-step-title" data-step={step.id}>
       <Text as="p" size="xs" tone="quiet">
         Step {index + 1} of {steps.length} · {needWords(step.need)}
       </Text>
@@ -140,59 +222,33 @@ function StepPane({ step, steps, hub }: { step: SetupStep; steps: ReadonlyArray<
       <Text as="p" tone="quiet">
         {step.why}
       </Text>
-      {step.way === undefined ? null : (
-        <Text as="p" size="sm" tone={step.status === "done" ? "success" : "quiet"}>
-          {step.status === "done" ? `Done with ${step.way}.` : `Using ${step.way}.`}
-        </Text>
-      )}
-      {step.status === "look" && step.said !== undefined ? (
-        <Text as="p" size="sm" tone="warning">
-          {step.said}
-        </Text>
-      ) : null}
+      <Said step={step} />
 
       <GuideParts parts={step.parts} />
 
-      {step.savedIn === undefined ? null : (
+      {places.length === 0 && step.fieldsNote === undefined ? null : (
         <Part n={step.parts.length + 1} title="Save it in fleetd">
-          <Text as="p" size="sm" tone="quiet">
-            {step.savedIn.note}
-          </Text>
-          <span>
-            <Button onClick={() => (window.location.hash = step.savedIn?.hash ?? "#/")}>{step.savedIn.label}</Button>
-          </span>
-        </Part>
-      )}
-
-      {step.fields.length === 0 ? null : (
-        <Part n={step.parts.length + 1} title="Paste what you get back">
-          <div className={s.fields}>
-            {step.fields.map((f) => (
-              <Field
-                key={f.name}
-                label={f.optional === true ? `${f.label} (optional)` : f.label}
-                description={f.note ?? (f.secret === true ? "Sealed on this device; the hub keeps only its fingerprint." : undefined)}
-              >
-                {f.multiline === true ? (
-                  <Textarea mono minRows={3} placeholder={f.placeholder} spellCheck={false} autoComplete="off" />
-                ) : (
-                  <Input type={f.secret === true ? "password" : "text"} placeholder={f.placeholder} spellCheck={false} autoComplete="off" />
-                )}
-              </Field>
-            ))}
-          </div>
           {step.fieldsNote === undefined ? null : (
             <Text as="p" size="sm" tone="quiet">
               {step.fieldsNote}
             </Text>
+          )}
+          {places.length === 0 ? null : (
+            <div className={s.links}>
+              {places.map((place) => (
+                <Button key={place.label} onClick={() => navigate({ ...place.screen, at: hub.id })}>
+                  {place.label}
+                </Button>
+              ))}
+            </div>
           )}
         </Part>
       )}
 
       {step.test === undefined ? null : (
         <div className={s.test}>
-          <Button onClick={() => void test()} disabled={testing}>
-            {testing ? "Testing…" : "Test"}
+          <Button onClick={() => void test()} disabled={busy !== null}>
+            {busy === "test" ? "Testing…" : "Test"}
           </Button>
           <Text size="sm" tone="quiet">
             {step.test}
@@ -206,23 +262,46 @@ function StepPane({ step, steps, hub }: { step: SetupStep; steps: ReadonlyArray<
       )}
 
       <footer className={s.foot}>
-        {step.need.kind === "required" ? (
+        {step.need.kind === "required" || step.status === "done" ? (
           <span />
+        ) : step.status === "skipped" ? (
+          <Button variant="ghost" onClick={() => void skip(false)} disabled={busy !== null}>
+            Back on the list
+          </Button>
         ) : (
-          <Button variant="ghost" onClick={() => go(next?.id ?? "done")}>
+          <Button variant="ghost" onClick={() => void skip(true)} disabled={busy !== null}>
             Skip for now
           </Button>
         )}
-        <Button variant="primary" onClick={() => go(next?.id ?? "done")}>
-          {next === undefined ? "Finish" : "Continue"}
-        </Button>
+        {next === undefined && onEnd === undefined ? null : (
+          <Button variant="primary" onClick={onward} disabled={busy !== null}>
+            {next === undefined ? "Finish" : left ? "Continue anyway" : "Continue"}
+          </Button>
+        )}
       </footer>
     </article>
   );
 }
 
-/** The first run on a new hub: what setup is, what it asks for, and that only three steps must be done now. */
-function Welcome({ steps }: { steps: ReadonlyArray<SetupStep> }) {
+/** What the step's checks say: the way in use when done, and why it wants a look. */
+function Said({ step }: { step: SetupStep }) {
+  if (step.status === "done") {
+    return (
+      <Text as="p" size="sm" tone="success">
+        {step.way === undefined ? step.said : `Done with ${step.way}. ${step.said ?? ""}`}
+      </Text>
+    );
+  }
+  if (step.status !== "look" || step.said === undefined) return null;
+  return (
+    <Text as="p" size="sm" tone={step.failing === true ? "danger" : "warning"}>
+      {step.said}
+    </Text>
+  );
+}
+
+/** The first run on a new hub: what setup is, what it asks for, and that only the required steps must be done now. */
+export function Welcome({ steps }: { steps: ReadonlyArray<SetupStep> }) {
   const required = steps.filter((st) => st.need.kind === "required");
   const later = steps.filter((st) => st.need.kind !== "required");
   return (
@@ -233,7 +312,8 @@ function Welcome({ steps }: { steps: ReadonlyArray<SetupStep> }) {
         </Text>
         <Text as="p" tone="quiet">
           A few accounts and keys turn it into a factory. Each step says why, gives you the exact values to paste, and
-          checks your work. Your progress is saved; stop at any point and come back.
+          checks your work. Your progress is saved; stop at any point and come back, here, in Administration › Setup or
+          with fleetd init.
         </Text>
         <StepSummary title="Needed before agents can run" steps={required} />
         <StepSummary title="When you need them" steps={later} brief />
@@ -268,12 +348,12 @@ function StepSummary({ title, steps, brief = false }: { title: string; steps: Re
                 {st.why}
               </Text>
             )}
-            {brief && st.status === "todo" ? (
+            {st.status === "todo" ? (
               <Text size="xs" tone="faint" className={s.status}>
                 {needWords(st.need)}
               </Text>
             ) : (
-              <StatusWord status={st.status} />
+              <StatusWord step={st} />
             )}
           </li>
         ))}
@@ -306,7 +386,7 @@ function Done({ steps }: { steps: ReadonlyArray<SetupStep> }) {
               Add a project
             </Button>
           ) : (
-            <Button variant="primary" size="md" onClick={() => go(waiting.find((st) => st.need.kind === "required")?.id ?? null)}>
+            <Button variant="primary" size="md" onClick={() => go(steps.find(isRequiredLeft)?.id ?? null)}>
               Back to setup
             </Button>
           )}

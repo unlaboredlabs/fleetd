@@ -166,9 +166,13 @@ pub fn unowned(checks: &[DoctorCheck], steps: &[HubSetupStep]) -> Vec<DoctorChec
         .collect()
 }
 
-/// Administration's sections, as the app names them.
+/// Administration's sections, as the app names them; Claude's subscription way is a person's own, in Settings.
 fn place_words(place: &str) -> String {
     let name = match place {
+        "claude" => {
+            return "Administration › Claude for the hub's API key; Settings › Claude for your own subscription"
+                .to_owned();
+        }
         "google" => "Google",
         "invites" => "Invites",
         "machines" => "Machines",
@@ -394,5 +398,16 @@ mod tests {
             .find(|s| s.id == SetupStepId::People)
             .unwrap();
         assert!(guide(&people).contains("In the app: Administration › Invites."));
+        let claude = steps(&[])
+            .into_iter()
+            .find(|s| s.id == SetupStepId::Claude)
+            .unwrap();
+        assert!(
+            guide(&claude).contains(
+                "In the app: Administration › Claude for the hub's API key; Settings › Claude for your own subscription."
+            ),
+            "{}",
+            guide(&claude)
+        );
     }
 }

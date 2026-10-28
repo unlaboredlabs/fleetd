@@ -52,15 +52,6 @@ async fn with_fresh(hub: &Hub, mut checks: Vec<DoctorCheck>) -> Vec<DoctorCheck>
     checks
 }
 
-fn rank(s: checks::DoctorStatus) -> u8 {
-    match s {
-        checks::DoctorStatus::Ok => 0,
-        checks::DoctorStatus::Unknown => 1,
-        checks::DoctorStatus::Warn => 2,
-        checks::DoctorStatus::Fail => 3,
-    }
-}
-
 fn read(hub: &Hub, checks: &[DoctorCheck]) -> Result<Vec<HubSetupStep>, ToolError> {
     let skipped = super::skipped(&hub.db)?;
     Ok(super::read(super::guides(&hub_url(hub)), checks, &skipped))
@@ -123,7 +114,7 @@ async fn setup_test(
         // Google's answer and what the hub keeps both count: a client Google takes still wants a look on a machine
         // that lacks its secret.
         match checks.iter().position(|c| c.id == "hub/google") {
-            Some(i) if rank(checks[i].status) >= rank(tested.check.status) => {}
+            Some(i) if super::rank(checks[i].status) >= super::rank(tested.check.status) => {}
             Some(i) => checks[i] = tested.check,
             None => checks.push(tested.check),
         }

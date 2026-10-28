@@ -1,0 +1,1016 @@
+{
+  "guides": [
+    {
+      "fields": [],
+      "group": "hub",
+      "id": "address",
+      "need": {
+        "kind": "required"
+      },
+      "parts": [
+        {
+          "links": [
+            {
+              "label": "Tailscale admin",
+              "url": "https://login.tailscale.com/admin/machines"
+            }
+          ],
+          "note": "Your tailnet keeps it private, and plain HTTP is fine there. HTTPS (Tailscale Serve) is optional.",
+          "title": "Pick the address",
+          "values": [
+            {
+              "label": "Hub address",
+              "note": "Another address: run fleetd init again on the hub and pick it.",
+              "value": "http://devbox:4790"
+            }
+          ]
+        }
+      ],
+      "status": "todo",
+      "test": "Reach the hub at its address",
+      "title": "Where the hub listens",
+      "ways": [
+        {
+          "checks": [
+            "hub/reachable",
+            "hub/https"
+          ]
+        }
+      ],
+      "why": "Your devices and machines reach the hub at this address; a tailnet keeps it off the internet."
+    },
+    {
+      "fields": [],
+      "group": "hub",
+      "id": "machines",
+      "need": {
+        "kind": "required"
+      },
+      "parts": [
+        {
+          "links": [],
+          "note": "The hub's own machine can run agents too: fleetd init on the hub offers it. In the app, Administration › Machines › Add machine does the same.",
+          "title": "Add a machine",
+          "values": [
+            {
+              "command": true,
+              "label": "On the hub, for a code",
+              "value": "fleetd pair --worker <name>"
+            },
+            {
+              "command": true,
+              "label": "On the machine",
+              "note": "Or, from the hub, over SSH: fleetd machine add <ssh host>.",
+              "value": "fleetd init --join http://devbox:4790 --code <code>"
+            }
+          ]
+        }
+      ],
+      "place": "machines",
+      "status": "todo",
+      "title": "Machines that run agents",
+      "ways": [
+        {
+          "checks": [
+            "*/online"
+          ]
+        }
+      ],
+      "why": "Agents run on machines; the hub's own machine can be one."
+    },
+    {
+      "fields": [],
+      "group": "accounts",
+      "id": "claude",
+      "need": {
+        "kind": "required"
+      },
+      "parts": [
+        {
+          "links": [
+            {
+              "label": "Claude Console › API keys",
+              "url": "https://console.anthropic.com/settings/keys"
+            }
+          ],
+          "note": "Projects' leads and work nobody started run on it, and so does anyone who picks the hub's API in Settings › Claude. Machines need no login of their own.",
+          "title": "Give the hub an API key",
+          "values": [
+            {
+              "label": "Key name",
+              "value": "fleetd on devbox"
+            },
+            {
+              "label": "Where",
+              "plain": true,
+              "value": "Paste it on Administration › Claude, with an endpoint if you use a gateway; the app seals it on your device."
+            }
+          ]
+        },
+        {
+          "links": [],
+          "note": "Without a hub key, leads and work nobody started run on the owner's subscription. Paste the token in Settings › Claude; the app seals it on your device.",
+          "title": "Or connect your own subscription",
+          "values": [
+            {
+              "command": true,
+              "label": "On any computer with claude",
+              "value": "claude setup-token"
+            }
+          ]
+        },
+        {
+          "links": [],
+          "note": "Each machine's agents run on the Claude account logged in there.",
+          "title": "Or log Claude in on each machine",
+          "values": [
+            {
+              "command": true,
+              "label": "On each machine",
+              "value": "claude auth login"
+            }
+          ]
+        }
+      ],
+      "place": "claude",
+      "status": "todo",
+      "test": "Read the account's last Test and each machine's login",
+      "title": "Claude",
+      "ways": [
+        {
+          "checks": [
+            "hub/claude_key"
+          ],
+          "label": "the hub's API key"
+        },
+        {
+          "checks": [
+            "hub/claude_owner"
+          ],
+          "label": "the owner's subscription"
+        },
+        {
+          "checks": [
+            "*/claude_login"
+          ],
+          "label": "each machine's own login"
+        }
+      ],
+      "why": "Agents think with Claude: the hub's API key, your subscription, or each machine's login."
+    },
+    {
+      "fields": [],
+      "group": "accounts",
+      "id": "github",
+      "need": {
+        "kind": "before",
+        "what": "the first PR"
+      },
+      "parts": [
+        {
+          "links": [
+            {
+              "label": "GitHub CLI",
+              "url": "https://cli.github.com"
+            }
+          ],
+          "note": "The merge train merges, reads CI and opens PRs with it.",
+          "title": "Log gh in on the hub",
+          "values": [
+            {
+              "command": true,
+              "label": "On the hub",
+              "value": "gh auth login"
+            }
+          ]
+        }
+      ],
+      "status": "todo",
+      "test": "Ask gh who it is logged in as",
+      "title": "GitHub",
+      "ways": [
+        {
+          "checks": [
+            "hub/gh_auth"
+          ]
+        }
+      ],
+      "why": "The hub opens PRs, reads their CI and merges them."
+    },
+    {
+      "fields": [],
+      "group": "people",
+      "id": "people",
+      "need": {
+        "kind": "optional"
+      },
+      "parts": [
+        {
+          "links": [],
+          "note": "The invite is a link and a code, for one person, good for 7 days. Send it to them yourself.",
+          "title": "Invite someone",
+          "values": [
+            {
+              "command": true,
+              "label": "On the hub",
+              "note": "--role admin for another admin.",
+              "value": "fleetd invite --name <name>"
+            }
+          ]
+        }
+      ],
+      "place": "invites",
+      "status": "todo",
+      "title": "Invite people",
+      "ways": [
+        {
+          "checks": [
+            "hub/people"
+          ]
+        }
+      ],
+      "why": "Each person gets their own sign-in, chats and Navi; you choose who is an admin."
+    },
+    {
+      "fields": [],
+      "fieldsNote": "Save the client ID and secret, and the Gmail subscription and key if you set them up, on Administration › Google: the app seals the secrets on your device. Then each person connects their own Google account from their Navi; if a sign-in lapses, Navi offers Reconnect.",
+      "group": "integrations",
+      "id": "google",
+      "need": {
+        "kind": "optional"
+      },
+      "parts": [
+        {
+          "links": [
+            {
+              "label": "New project",
+              "url": "https://console.cloud.google.com/projectcreate"
+            }
+          ],
+          "title": "Create a Google Cloud project",
+          "values": [
+            {
+              "label": "Project name",
+              "note": "Keep the project ID the same as the name. IDs are global across Google Cloud: if fleetd-devbox is taken, take the ID Google offers and use it wherever fleetd-devbox appears below.",
+              "value": "fleetd-devbox"
+            }
+          ]
+        },
+        {
+          "links": [
+            {
+              "label": "Enable the three APIs",
+              "url": "https://console.cloud.google.com/flows/enableapi?apiid=gmail.googleapis.com,calendar-json.googleapis.com,drive.googleapis.com"
+            }
+          ],
+          "title": "Turn on Gmail, Calendar and Drive",
+          "values": []
+        },
+        {
+          "links": [
+            {
+              "label": "Branding",
+              "url": "https://console.cloud.google.com/auth/branding"
+            },
+            {
+              "label": "Audience",
+              "url": "https://console.cloud.google.com/auth/audience"
+            }
+          ],
+          "title": "Set up the sign-in screen",
+          "values": [
+            {
+              "label": "App name",
+              "value": "fleetd on devbox"
+            },
+            {
+              "label": "Audience",
+              "plain": true,
+              "value": "Internal if everyone is in your Google Workspace; otherwise External."
+            },
+            {
+              "label": "Publishing status",
+              "plain": true,
+              "value": "External: press Publish app, so it is In production. In Testing, Google ends each connection after 7 days."
+            }
+          ]
+        },
+        {
+          "links": [
+            {
+              "label": "Data access",
+              "url": "https://console.cloud.google.com/auth/scopes"
+            }
+          ],
+          "note": "Gmail and Drive are restricted scopes: until Google verifies the app, people see a warning when they connect and press Advanced, then Go to the app. An unverified app takes up to 100 people.",
+          "title": "Add the scopes",
+          "values": [
+            {
+              "label": "Account",
+              "note": "Which account is connected.",
+              "value": "openid"
+            },
+            {
+              "label": "Address",
+              "note": "Which account is connected.",
+              "value": "email"
+            },
+            {
+              "label": "Read mail",
+              "note": "Searching and reading mail.",
+              "value": "https://www.googleapis.com/auth/gmail.readonly"
+            },
+            {
+              "label": "Draft and send",
+              "note": "Drafts, sends and replies. It can't delete mail or change labels.",
+              "value": "https://www.googleapis.com/auth/gmail.compose"
+            },
+            {
+              "label": "Calendar",
+              "note": "Reading, making and changing events.",
+              "value": "https://www.googleapis.com/auth/calendar.events"
+            },
+            {
+              "label": "Drive",
+              "note": "Searching, reading, uploading and sharing files.",
+              "value": "https://www.googleapis.com/auth/drive"
+            }
+          ]
+        },
+        {
+          "links": [
+            {
+              "label": "Create client",
+              "url": "https://console.cloud.google.com/auth/clients/create"
+            }
+          ],
+          "title": "Create the OAuth client",
+          "values": [
+            {
+              "label": "Application type",
+              "plain": true,
+              "value": "Desktop app"
+            },
+            {
+              "label": "Name",
+              "value": "fleetd on devbox"
+            },
+            {
+              "label": "Redirect URI",
+              "note": "Nothing to register: a Desktop app client takes it on any port. When someone connects, the fleetd app listens on a free port on their own computer, and Google sends them back there.",
+              "value": "http://127.0.0.1"
+            }
+          ]
+        },
+        {
+          "links": [
+            {
+              "label": "Enable Pub/Sub",
+              "url": "https://console.cloud.google.com/flows/enableapi?apiid=pubsub.googleapis.com"
+            },
+            {
+              "label": "Create the topic",
+              "url": "https://console.cloud.google.com/cloudpubsub/topic/create"
+            },
+            {
+              "label": "Create the subscription",
+              "url": "https://console.cloud.google.com/cloudpubsub/subscription/create"
+            }
+          ],
+          "note": "New mail reaches Navi in seconds. Gmail publishes to a Pub/Sub topic and fleetd pulls from it, so no public address is needed. Without it, Navi checks Gmail about every minute.",
+          "optional": true,
+          "title": "Gmail in real time",
+          "values": [
+            {
+              "label": "Topic ID",
+              "note": "Untick \"Add a default subscription\". Its full name is projects/fleetd-devbox/topics/fleetd-gmail.",
+              "value": "fleetd-gmail"
+            },
+            {
+              "label": "Publisher on the topic",
+              "note": "Topic › Permissions › Add principal, role Pub/Sub Publisher. Gmail publishes as this account.",
+              "value": "gmail-api-push@system.gserviceaccount.com"
+            },
+            {
+              "label": "Subscription ID",
+              "note": "Topic fleetd-gmail, delivery type Pull. Its full name is projects/fleetd-devbox/subscriptions/fleetd-gmail-hub.",
+              "value": "fleetd-gmail-hub"
+            }
+          ]
+        },
+        {
+          "links": [
+            {
+              "label": "Create the service account",
+              "url": "https://console.cloud.google.com/iam-admin/serviceaccounts/create"
+            },
+            {
+              "label": "Subscriptions",
+              "url": "https://console.cloud.google.com/cloudpubsub/subscription/list"
+            },
+            {
+              "label": "Service accounts",
+              "url": "https://console.cloud.google.com/iam-admin/serviceaccounts"
+            }
+          ],
+          "note": "A service account that may only read the subscription. Its key goes to one machine, which pulls new-mail notices and passes them to the hub.",
+          "optional": true,
+          "title": "A key to read it",
+          "values": [
+            {
+              "label": "Service account ID",
+              "note": "No project roles: skip the optional steps and press Done.",
+              "value": "fleetd-gmail-reader"
+            },
+            {
+              "label": "Subscriber on the subscription",
+              "note": "Subscriptions › the subscription above › Permissions › Add principal, role Pub/Sub Subscriber.",
+              "value": "fleetd-gmail-reader@fleetd-devbox.iam.gserviceaccount.com"
+            },
+            {
+              "label": "Key",
+              "plain": true,
+              "value": "Service accounts › the account above › Keys › Add key › Create new key › JSON. Paste the downloaded file on Administration › Google, then delete it."
+            },
+            {
+              "command": true,
+              "label": "Or in Cloud Shell",
+              "note": "Both parts in one go, in project fleetd-devbox: it prints the key once, to paste. A new account can take a minute to show up; if the Subscriber grant says it doesn't exist, run the last three lines again. If your organization refuses the key (iam.disableServiceAccountKeyCreation), an organization admin lifts that policy for this project; or leave real-time mail off, and Navi checks mail about every minute.",
+              "value": "gcloud config set project fleetd-devbox\nSA=fleetd-gmail-reader@fleetd-devbox.iam.gserviceaccount.com\ngcloud services enable pubsub.googleapis.com &&\ngcloud pubsub topics create fleetd-gmail &&\ngcloud pubsub topics add-iam-policy-binding fleetd-gmail --member=serviceAccount:gmail-api-push@system.gserviceaccount.com --role=roles/pubsub.publisher &&\ngcloud pubsub subscriptions create fleetd-gmail-hub --topic=fleetd-gmail &&\ngcloud iam service-accounts create fleetd-gmail-reader &&\nsleep 30 &&\ngcloud pubsub subscriptions add-iam-policy-binding fleetd-gmail-hub --member=serviceAccount:$SA --role=roles/pubsub.subscriber &&\ngcloud iam service-accounts keys create key.json --iam-account=$SA &&\ncat key.json && rm key.json"
+            }
+          ]
+        }
+      ],
+      "place": "google",
+      "status": "todo",
+      "test": "Ask Google whether it knows this client",
+      "title": "Google",
+      "ways": [
+        {
+          "checks": [
+            "hub/google"
+          ]
+        }
+      ],
+      "why": "Each person's Navi reads and drafts their mail, calendar and Drive, through a Google client you own."
+    },
+    {
+      "fields": [],
+      "group": "integrations",
+      "id": "notion",
+      "need": {
+        "kind": "optional"
+      },
+      "parts": [
+        {
+          "links": [
+            {
+              "label": "Notion › Integrations",
+              "url": "https://www.notion.so/profile/integrations"
+            }
+          ],
+          "note": "Nothing to set up for the hub: each person connects Notion on their Navi's Integrations, with an internal integration of their own, and shares with it only the pages Navi may use.",
+          "title": "Each person makes their own integration",
+          "values": [
+            {
+              "label": "Integration name",
+              "value": "fleetd on devbox"
+            },
+            {
+              "label": "Type",
+              "plain": true,
+              "value": "Internal, in the workspace Navi should use."
+            }
+          ]
+        }
+      ],
+      "status": "todo",
+      "title": "Notion",
+      "ways": [
+        {
+          "checks": [
+            "hub/notion"
+          ]
+        }
+      ],
+      "why": "Navis read and write the Notion pages each person shares with them."
+    }
+  ],
+  "hub": "http://devbox:4790",
+  "scenarios": {
+    "setup-claude-logins": {
+      "list": {
+        "address": {
+          "said": "The hub answers at http://127.0.0.1:4790/healthz.",
+          "status": "done"
+        },
+        "claude": {
+          "said": "devbox: claude is logged in.",
+          "status": "done",
+          "way": "each machine's own login"
+        },
+        "github": {
+          "failing": true,
+          "fix": {
+            "command": "gh auth login",
+            "kind": "manual",
+            "label": "Log gh in on the hub machine"
+          },
+          "said": "gh is not logged in on the hub; the merge train and PR checks need it.",
+          "status": "look"
+        },
+        "google": {
+          "status": "todo"
+        },
+        "machines": {
+          "said": "devbox is online.",
+          "status": "done"
+        },
+        "notion": {
+          "status": "todo"
+        },
+        "people": {
+          "status": "todo"
+        }
+      },
+      "requiredLeft": 0,
+      "skips": {
+        "github": {
+          "failing": true,
+          "fix": {
+            "command": "gh auth login",
+            "kind": "manual",
+            "label": "Log gh in on the hub machine"
+          },
+          "said": "gh is not logged in on the hub; the merge train and PR checks need it.",
+          "status": "look"
+        },
+        "google": {
+          "status": "skipped"
+        },
+        "notion": {
+          "status": "skipped"
+        },
+        "people": {
+          "status": "skipped"
+        }
+      },
+      "tests": {
+        "address": {
+          "said": "The hub answers at http://127.0.0.1:4790/healthz.",
+          "status": "done"
+        },
+        "claude": {
+          "said": "devbox: claude is logged in.",
+          "status": "done",
+          "way": "each machine's own login"
+        },
+        "github": {
+          "failing": true,
+          "fix": {
+            "command": "gh auth login",
+            "kind": "manual",
+            "label": "Log gh in on the hub machine"
+          },
+          "said": "gh is not logged in on the hub; the merge train and PR checks need it.",
+          "status": "look"
+        },
+        "google": {
+          "status": "todo"
+        },
+        "machines": {
+          "said": "devbox is online.",
+          "status": "done"
+        },
+        "notion": {
+          "status": "todo"
+        },
+        "people": {
+          "status": "todo"
+        }
+      },
+      "unskips": {
+        "github": {
+          "failing": true,
+          "fix": {
+            "command": "gh auth login",
+            "kind": "manual",
+            "label": "Log gh in on the hub machine"
+          },
+          "said": "gh is not logged in on the hub; the merge train and PR checks need it.",
+          "status": "look"
+        },
+        "google": {
+          "status": "todo"
+        },
+        "notion": {
+          "status": "todo"
+        },
+        "people": {
+          "status": "todo"
+        }
+      }
+    },
+    "setup-done": {
+      "list": {
+        "address": {
+          "said": "The hub answers at http://127.0.0.1:4790/healthz.",
+          "status": "done"
+        },
+        "claude": {
+          "said": "The hub's Claude API key works: tested on devbox.",
+          "status": "done",
+          "way": "the hub's API key"
+        },
+        "github": {
+          "said": "gh is logged in on the hub as dev.",
+          "status": "done"
+        },
+        "google": {
+          "status": "skipped"
+        },
+        "machines": {
+          "said": "devbox is online.",
+          "status": "done"
+        },
+        "notion": {
+          "status": "skipped"
+        },
+        "people": {
+          "status": "todo"
+        }
+      },
+      "requiredLeft": 0,
+      "skips": {
+        "github": {
+          "said": "gh is logged in on the hub as dev.",
+          "status": "done"
+        },
+        "google": {
+          "status": "skipped"
+        },
+        "notion": {
+          "status": "skipped"
+        },
+        "people": {
+          "status": "skipped"
+        }
+      },
+      "tests": {
+        "address": {
+          "said": "The hub answers at http://127.0.0.1:4790/healthz.",
+          "status": "done"
+        },
+        "claude": {
+          "said": "The hub's Claude API key works: tested on devbox.",
+          "status": "done",
+          "way": "the hub's API key"
+        },
+        "github": {
+          "said": "gh is logged in on the hub as dev.",
+          "status": "done"
+        },
+        "google": {
+          "status": "skipped"
+        },
+        "machines": {
+          "said": "devbox is online.",
+          "status": "done"
+        },
+        "notion": {
+          "status": "skipped"
+        },
+        "people": {
+          "status": "todo"
+        }
+      },
+      "unskips": {
+        "github": {
+          "said": "gh is logged in on the hub as dev.",
+          "status": "done"
+        },
+        "google": {
+          "status": "todo"
+        },
+        "notion": {
+          "status": "todo"
+        },
+        "people": {
+          "status": "todo"
+        }
+      }
+    },
+    "setup-fresh": {
+      "list": {
+        "address": {
+          "said": "The hub answers at http://127.0.0.1:4790/healthz.",
+          "status": "done"
+        },
+        "claude": {
+          "failing": true,
+          "said": "devbox: claude is not logged in, so its sessions can't start.",
+          "status": "look",
+          "way": "each machine's own login"
+        },
+        "github": {
+          "failing": true,
+          "fix": {
+            "command": "gh auth login",
+            "kind": "manual",
+            "label": "Log gh in on the hub machine"
+          },
+          "said": "gh is not logged in on the hub; the merge train and PR checks need it.",
+          "status": "look"
+        },
+        "google": {
+          "status": "todo"
+        },
+        "machines": {
+          "said": "devbox is online.",
+          "status": "done"
+        },
+        "notion": {
+          "status": "todo"
+        },
+        "people": {
+          "status": "todo"
+        }
+      },
+      "requiredLeft": 1,
+      "skips": {
+        "github": {
+          "failing": true,
+          "fix": {
+            "command": "gh auth login",
+            "kind": "manual",
+            "label": "Log gh in on the hub machine"
+          },
+          "said": "gh is not logged in on the hub; the merge train and PR checks need it.",
+          "status": "look"
+        },
+        "google": {
+          "status": "skipped"
+        },
+        "notion": {
+          "status": "skipped"
+        },
+        "people": {
+          "status": "skipped"
+        }
+      },
+      "tests": {
+        "address": {
+          "said": "The hub answers at http://127.0.0.1:4790/healthz.",
+          "status": "done"
+        },
+        "claude": {
+          "failing": true,
+          "said": "devbox: claude is not logged in, so its sessions can't start.",
+          "status": "look",
+          "way": "each machine's own login"
+        },
+        "github": {
+          "failing": true,
+          "fix": {
+            "command": "gh auth login",
+            "kind": "manual",
+            "label": "Log gh in on the hub machine"
+          },
+          "said": "gh is not logged in on the hub; the merge train and PR checks need it.",
+          "status": "look"
+        },
+        "google": {
+          "status": "todo"
+        },
+        "machines": {
+          "said": "devbox is online.",
+          "status": "done"
+        },
+        "notion": {
+          "status": "todo"
+        },
+        "people": {
+          "status": "todo"
+        }
+      },
+      "unskips": {
+        "github": {
+          "failing": true,
+          "fix": {
+            "command": "gh auth login",
+            "kind": "manual",
+            "label": "Log gh in on the hub machine"
+          },
+          "said": "gh is not logged in on the hub; the merge train and PR checks need it.",
+          "status": "look"
+        },
+        "google": {
+          "status": "todo"
+        },
+        "notion": {
+          "status": "todo"
+        },
+        "people": {
+          "status": "todo"
+        }
+      }
+    },
+    "setup-github": {
+      "list": {
+        "address": {
+          "said": "The hub answers at http://127.0.0.1:4790/healthz.",
+          "status": "done"
+        },
+        "claude": {
+          "said": "The hub's Claude API key works: tested on devbox.",
+          "status": "done",
+          "way": "the hub's API key"
+        },
+        "github": {
+          "failing": true,
+          "fix": {
+            "command": "gh auth login",
+            "kind": "manual",
+            "label": "Log gh in on the hub machine"
+          },
+          "said": "gh is not logged in on the hub; the merge train and PR checks need it.",
+          "status": "look"
+        },
+        "google": {
+          "status": "todo"
+        },
+        "machines": {
+          "said": "devbox is online.",
+          "status": "done"
+        },
+        "notion": {
+          "status": "todo"
+        },
+        "people": {
+          "status": "todo"
+        }
+      },
+      "requiredLeft": 0,
+      "skips": {
+        "github": {
+          "failing": true,
+          "fix": {
+            "command": "gh auth login",
+            "kind": "manual",
+            "label": "Log gh in on the hub machine"
+          },
+          "said": "gh is not logged in on the hub; the merge train and PR checks need it.",
+          "status": "look"
+        },
+        "google": {
+          "status": "skipped"
+        },
+        "notion": {
+          "status": "skipped"
+        },
+        "people": {
+          "status": "skipped"
+        }
+      },
+      "tests": {
+        "address": {
+          "said": "The hub answers at http://127.0.0.1:4790/healthz.",
+          "status": "done"
+        },
+        "claude": {
+          "said": "The hub's Claude API key works: tested on devbox.",
+          "status": "done",
+          "way": "the hub's API key"
+        },
+        "github": {
+          "said": "gh is logged in on the hub as dev.",
+          "status": "done"
+        },
+        "google": {
+          "status": "todo"
+        },
+        "machines": {
+          "said": "devbox is online.",
+          "status": "done"
+        },
+        "notion": {
+          "status": "todo"
+        },
+        "people": {
+          "status": "todo"
+        }
+      },
+      "unskips": {
+        "github": {
+          "failing": true,
+          "fix": {
+            "command": "gh auth login",
+            "kind": "manual",
+            "label": "Log gh in on the hub machine"
+          },
+          "said": "gh is not logged in on the hub; the merge train and PR checks need it.",
+          "status": "look"
+        },
+        "google": {
+          "status": "todo"
+        },
+        "notion": {
+          "status": "todo"
+        },
+        "people": {
+          "status": "todo"
+        }
+      }
+    },
+    "setup-google": {
+      "list": {
+        "address": {
+          "said": "The hub answers at http://127.0.0.1:4790/healthz.",
+          "status": "done"
+        },
+        "claude": {
+          "said": "The hub's Claude API key works: tested on devbox.",
+          "status": "done",
+          "way": "the hub's API key"
+        },
+        "github": {
+          "said": "gh is logged in on the hub as dev.",
+          "status": "done"
+        },
+        "google": {
+          "status": "todo"
+        },
+        "machines": {
+          "said": "devbox is online.",
+          "status": "done"
+        },
+        "notion": {
+          "status": "todo"
+        },
+        "people": {
+          "status": "todo"
+        }
+      },
+      "requiredLeft": 0,
+      "skips": {
+        "github": {
+          "said": "gh is logged in on the hub as dev.",
+          "status": "done"
+        },
+        "google": {
+          "status": "skipped"
+        },
+        "notion": {
+          "status": "skipped"
+        },
+        "people": {
+          "status": "skipped"
+        }
+      },
+      "tests": {
+        "address": {
+          "said": "The hub answers at http://127.0.0.1:4790/healthz.",
+          "status": "done"
+        },
+        "claude": {
+          "said": "The hub's Claude API key works: tested on devbox.",
+          "status": "done",
+          "way": "the hub's API key"
+        },
+        "github": {
+          "said": "gh is logged in on the hub as dev.",
+          "status": "done"
+        },
+        "google": {
+          "said": "Google client 1234567890-abc.apps.googleusercontent.com is saved on devbox; new mail arrives in real time through Pub/Sub.",
+          "status": "done"
+        },
+        "machines": {
+          "said": "devbox is online.",
+          "status": "done"
+        },
+        "notion": {
+          "status": "todo"
+        },
+        "people": {
+          "status": "todo"
+        }
+      },
+      "unskips": {
+        "github": {
+          "said": "gh is logged in on the hub as dev.",
+          "status": "done"
+        },
+        "google": {
+          "status": "todo"
+        },
+        "notion": {
+          "status": "todo"
+        },
+        "people": {
+          "status": "todo"
+        }
+      }
+    }
+  }
+}

@@ -290,7 +290,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "setup_list",
-        "Admin on every machine. The hub admin's setup, the steps fleetd init and the app's Administration › Setup show: where the hub listens, machines, Claude (required), GitHub (before the first PR), people, Google and Notion (optional). Each step has its why, numbered parts with the values to paste computed for this hub and the provider's pages, the fields for what comes back and where they are saved (place), and its status read from the doctor's checks (ways: one way done is enough): done, todo, look (set up but failing; said and fix say why) or skipped. requiredLeft: required steps not done.",
+        "Admin on every machine. The hub admin's setup, the steps fleetd init and the app's Administration › Setup show: where the hub listens, machines, Claude (required), GitHub (before the first PR), people, Google and Notion (optional). Each step has its why, numbered parts with the values to paste computed for this hub and the provider's pages, the fields for what comes back and where they are saved (place), and its status read from the doctor's checks (ways: one way done is enough): done, todo, look (set up but failing; said and fix say why) or skipped. failing: with look, its check fails rather than warns. requiredLeft: required steps not set up, or failing; agents can't run until none is left.",
     ),
     (
         "setup_test",

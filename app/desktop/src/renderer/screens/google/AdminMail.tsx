@@ -1,6 +1,6 @@
 // Administration › Google, Real-time mail (optional, #743): Gmail tells a Pub/Sub topic of new mail, and one machine
-// reads its subscription with a service account's key. The steps are the setup step's own (setup/steps.ts
-// realtimeParts); the key goes to main, which checks it and seals it to that machine's key (secret.googlePubsub →
+// reads its subscription with a service account's key. The steps are google/guide.ts realtimeParts, the same as the
+// hub's setup step for Google; the key goes to main, which checks it and seals it to that machine's key (secret.googlePubsub →
 // google_pubsub_set), and is never shown again. Turn off is google_pubsub_set with nothing, and the machine forgets
 // the key. How mail arrives now, push or polling and why, is google_get's.
 import { useState } from "react";
@@ -10,7 +10,7 @@ import { useData, useDataLayer } from "../../src/data/react";
 import { Button, Dialog, Field, Input, Select, Text, Textarea } from "../../ui";
 import { errorText, useHubCall, useRefetch } from "../settings/hub";
 import { GuideParts, Part } from "../setup/Guide";
-import { cloudProject, GMAIL_SUBSCRIPTION, GMAIL_TOPIC, realtimeParts } from "../setup/steps";
+import { cloudProject, GMAIL_SUBSCRIPTION, GMAIL_TOPIC, realtimeParts } from "./guide";
 import { boxesOf, keyProblem, mailModeLine, subscriptionProblem, topicProblem } from "./model";
 import s from "./google.module.css";
 import settings from "../settings/settings.module.css";

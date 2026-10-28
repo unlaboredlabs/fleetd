@@ -1430,7 +1430,12 @@ async fn setup(
     if left.is_empty() || !ui.interactive {
         return Ok(());
     }
-    let picked = ui.multi(list, "Set up any of these now?", &left, Vec::new())?;
+    let picked = ui.multi(
+        list,
+        "Set up any of these now? (the app's Administration › Setup has them too)",
+        &left,
+        Vec::new(),
+    )?;
     for step in steps.iter().filter(|s| picked.contains(&s.id)) {
         walk(opts, ui, list, &mut client, step).await?;
     }
@@ -1583,7 +1588,7 @@ pub async fn open_step(opts: InitOptions, id: SetupStepId, interactive: bool) ->
     };
     match walk(&opts, &ui, &mut list, &mut client, &step).await {
         Ok(SetupStatus::Done) => {
-            list.outro(&[], "Next: fleetd init lists what's left.");
+            list.outro(&[], "Next: fleetd init lists what's left; the app's Administration › Setup has the same steps.");
             0
         }
         Ok(_) => {

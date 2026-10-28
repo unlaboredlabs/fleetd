@@ -420,8 +420,12 @@ None are open. Each answer below is already in the sections above.
    and `hub/notion` (a Navi has it).
 2. Built: `fleetd init` lists the hub's steps after its bootstrap and offers the ones left; `--step <id>` opens one
    (its guide, Test, Later, and for People an invite).
-3. Next: the app's welcome, step screen and Administration › Setup on `setup_list`, replacing the prototype's
-   catalog.
+3. Built: the app's first run (an admin's empty home is the welcome while a required step is left), the step screen
+   (`#/setup`) and Administration › Setup on `setup_list`, `setup_test` and `setup_skip`, with the prototype's
+   catalog gone. Each step's `place` opens where its result is saved; the sidebar's Administration entry counts the
+   required steps left. The app's fixtures are the hub's own answers, written from the catalog
+   (`hub/setup/fixtures.rs` → `app/desktop/fixtures/setup/steps.json`), so the app keeps no second catalog. The
+   GitHub App's step needs nothing of the app: its part and `place` come from the hub.
 4. Each in-flight piece adds its step as it lands (§5).
 
 What the build does differently from the sections above, for now:
