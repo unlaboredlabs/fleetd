@@ -83,5 +83,5 @@ install a new build.
 
 ## Not yet {#not-yet}
 
-- Notifications. They will carry their full content, end-to-end encrypted to a key only your phone holds.
+- Notifications. The hub and relay side is in [Phone notifications](/docs/phone-notifications); the app doesn't register for them yet.
 - Secrets, settings and taking over a browser session: use the desktop app.
