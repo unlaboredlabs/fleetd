@@ -1,7 +1,8 @@
 //! What a Navi's browser may touch on this machine (local.rs), on a real Chrome: no `file:` page, asked for directly,
-//! through a redirect, a link or the driver's own interception; a fence the driver can't take down, and a session that
-//! ends should it go; uploads (picked or dropped) only of files in its folder, not through a link out of it; downloads
-//! only into its folder. A regular agent's session opens files as before.
+//! through a redirect, a link or the driver's own interception; only agent-browser's commands, run by the real
+//! agent-browser too; a fence the driver can't take down, and a session that ends should it go; uploads only of files
+//! in its folder, not through a link out of it; downloads only into its folder. A regular agent's session opens files
+//! as before.
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use super::*;
@@ -32,7 +33,8 @@ async fn site(file: &Path) -> (String, AbortOnDrop) {
                     ),
                     "/upload" => (
                         "200 OK\r\ncontent-type: text/html".to_owned(),
-                        "<html><body><input type=file id=f></body></html>".to_owned(),
+                        "<html><body><input type=file id=f><a id=d href=\"/download\">report</a></body></html>"
+                            .to_owned(),
                     ),
                     "/drop" => (
                         "200 OK\r\ncontent-type: text/html".to_owned(),
@@ -232,6 +234,22 @@ async fn a_navis_browser_opens_no_file_however_it_is_asked_and_an_agents_still_d
         .await;
     let (_, text) = shown(&mut driver, &page).await;
     assert!(text.contains(BEE_COOKIES), "{text}");
+    // What every session refuses: a way to the browser around the proxy's checks.
+    let target = driver
+        .ok(Some(&page), "Target.getTargetInfo", json!({}))
+        .await["targetInfo"]["targetId"]
+        .clone();
+    let answer = driver
+        .send(
+            None,
+            "Target.exposeDevToolsProtocol",
+            json!({ "targetId": target, "bindingName": "cdp" }),
+        )
+        .await;
+    assert!(
+        refusal(&answer).contains("around fleetd's checks"),
+        "{answer}"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -410,7 +428,8 @@ async fn drop_files(driver: &mut Driver, page: &str, files: Vec<String>) -> Opti
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_navis_fence_stays_up_and_its_session_ends_if_it_goes_and_dropped_files_are_fenced_too() {
+async fn a_navi_takes_only_agent_browsers_commands_its_fence_stays_up_and_its_session_ends_if_it_goes()
+ {
     let Some(rig) = rig().await else { return };
     let cookies = bee_cookies(&rig);
     let file = format!("file://{}", cookies.display());
@@ -419,7 +438,8 @@ async fn a_navis_fence_stays_up_and_its_session_ends_if_it_goes_and_dropped_file
     std::fs::write(folder.join("report.txt"), "ada's report").unwrap();
     let (mut driver, page) = start(&rig, ADA).await;
 
-    // Files dropped on the page: only the folder's, as copies.
+    // Only agent-browser's commands: a drag carrying files, a command wrapped in another, the protocol handed to the
+    // page's script and a page snapshot are all refused, as are sessions it couldn't drive.
     driver
         .ok(
             Some(&page),
@@ -430,48 +450,62 @@ async fn a_navis_fence_stays_up_and_its_session_ends_if_it_goes_and_dropped_file
     driver
         .wait_for(&page, "!!document.getElementById('z')")
         .await;
-    let answer = drop_files(&mut driver, &page, vec![cookies.display().to_string()])
-        .await
-        .expect("a drop of a file outside the folder is refused");
-    assert!(refusal(&answer).contains("outside your folder"), "{answer}");
-    assert!(
-        drop_files(
-            &mut driver,
-            &page,
-            vec![folder.join("report.txt").display().to_string()]
-        )
-        .await
-        .is_none()
-    );
-    driver
-        .wait_for(&page, "window.dropped === \"report.txt: ada's report\"")
-        .await;
-
-    // Nor wrapped in a session that isn't flattened, where no check would read it.
+    let answer = drop_files(
+        &mut driver,
+        &page,
+        vec![folder.join("report.txt").display().to_string()],
+    )
+    .await
+    .expect("a drag is no command of agent-browser's");
+    let not_listed = "takes only the commands agent-browser";
+    assert!(refusal(&answer).contains(not_listed), "{answer}");
     let target = driver
         .ok(Some(&page), "Target.getTargetInfo", json!({}))
         .await["targetInfo"]["targetId"]
         .clone();
-    let answer = driver
-        .send(
-            None,
-            "Target.attachToTarget",
-            json!({ "targetId": target, "flatten": false }),
-        )
-        .await;
-    assert!(refusal(&answer).contains("flatten: true"), "{answer}");
     let wrapped = json!({
         "id": 1, "method": "DOM.setFileInputFiles",
         "params": { "files": [cookies.display().to_string()], "backendNodeId": 1 },
     });
-    let answer = driver
-        .send(
-            None,
+    for (method, params) in [
+        (
             "Target.sendMessageToTarget",
             json!({ "sessionId": page, "message": wrapped.to_string() }),
-        )
-        .await;
-    assert!(refusal(&answer).contains("flatten: true"), "{answer}");
+        ),
+        (
+            "Target.exposeDevToolsProtocol",
+            json!({ "targetId": target, "bindingName": "cdp" }),
+        ),
+        (
+            "DOMSnapshot.captureSnapshot",
+            json!({ "computedStyles": [] }),
+        ),
+    ] {
+        let answer = driver.send(None, method, params).await;
+        assert!(refusal(&answer).contains(not_listed), "{method}: {answer}");
+    }
+    for (method, params) in [
+        (
+            "Target.attachToTarget",
+            json!({ "targetId": target, "flatten": false }),
+        ),
+        (
+            "Target.setAutoAttach",
+            json!({ "autoAttach": true, "waitForDebuggerOnStart": false }),
+        ),
+    ] {
+        let answer = driver.send(None, method, params).await;
+        assert!(
+            refusal(&answer).contains("flatten: true"),
+            "{method}: {answer}"
+        );
+    }
+    assert_eq!(
+        driver
+            .eval(&page, "typeof window.cdp + ' ' + typeof window.dropped")
+            .await,
+        "undefined undefined"
+    );
 
     // The driver can't detach the node's session on the browser target.
     let browser =
@@ -512,4 +546,82 @@ async fn a_navis_fence_stays_up_and_its_session_ends_if_it_goes_and_dropped_file
         .send(Some(&page), "Page.navigate", json!({ "url": file }))
         .await;
     assert!(answer.get("error").is_some(), "{answer}");
+}
+
+/// The real agent-browser, driving a Navi's session from the Navi's folder: everything it does there gets through,
+/// uploading a file of the folder and downloading into it among them.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn agent_browser_drives_a_navis_session_uploads_from_its_folder_and_downloads_into_it() {
+    let Some(binary) = agent_browser() else {
+        return;
+    };
+    let Some(rig) = rig().await else { return };
+    let cookies = bee_cookies(&rig);
+    let (site, _site) = site(&cookies).await;
+    let folder = rig.navi(ADA, "ada");
+    std::fs::write(folder.join("report.txt"), "ada's report").unwrap();
+    let (driver, _page) = start(&rig, ADA).await;
+    drop(driver);
+    let env = SessionHooks::env(rig.broker.as_ref(), ADA, Some("/usr/bin:/bin"));
+    let socket_dir = tempfile::tempdir().unwrap();
+    let run = |args: &[&str]| {
+        let (binary, env, folder) = (binary.clone(), env.clone(), folder.clone());
+        let args: Vec<String> = args.iter().map(|a| (*a).to_owned()).collect();
+        let socket_dir = socket_dir.path().to_owned();
+        async move {
+            let out = tokio::process::Command::new(&binary)
+                .args(&args)
+                .envs(env)
+                .env("AGENT_BROWSER_SOCKET_DIR", socket_dir)
+                .current_dir(folder)
+                .output()
+                .await
+                .unwrap();
+            format!(
+                "{}{}",
+                String::from_utf8_lossy(&out.stdout),
+                String::from_utf8_lossy(&out.stderr)
+            )
+        }
+    };
+    let opened = run(&["open", &format!("{site}/upload")]).await;
+    assert!(opened.contains('✓'), "{opened}");
+    let snapshot = run(&["snapshot", "-i"]).await;
+    assert!(snapshot.contains("link"), "{snapshot}");
+    let uploaded = run(&["upload", "#f", "report.txt"]).await;
+    assert!(uploaded.contains('✓'), "{uploaded}");
+    let named = run(&["eval", "document.getElementById('f').files[0].name"]).await;
+    assert!(named.contains("report.txt"), "{named}");
+    let refused = run(&["upload", "#f", &cookies.display().to_string()]).await;
+    assert!(refused.contains("outside your folder"), "{refused}");
+    let downloaded = run(&["download", "#d", "./got.txt"]).await;
+    assert!(downloaded.contains('✓'), "{downloaded}");
+    assert_eq!(
+        std::fs::read_to_string(folder.join("got.txt")).unwrap(),
+        "the report"
+    );
+    let shot = run(&["screenshot", "shot.png"]).await;
+    assert!(shot.contains('✓'), "{shot}");
+    let title = run(&["get", "url"]).await;
+    assert!(title.contains("/upload"), "{title}");
+    run(&["close"]).await;
+}
+
+/// The list a Navi's driver is held to is agent-browser's: each method on it is one its binary names.
+#[test]
+fn each_method_a_navi_may_send_is_one_agent_browser_names() {
+    let Some(binary) = agent_browser() else {
+        return;
+    };
+    // The npm wrapper's target: the binary for this platform.
+    let binary = std::fs::canonicalize(binary).unwrap();
+    let bytes = std::fs::read(&binary).unwrap();
+    let text = String::from_utf8_lossy(&bytes);
+    for method in super::super::local::AGENT_BROWSER_METHODS {
+        assert!(
+            text.contains(method),
+            "{method} isn't in {}",
+            binary.display()
+        );
+    }
 }

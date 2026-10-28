@@ -210,6 +210,13 @@ fn command_in(session: &Arc<Session>, command: Value, out: &mpsc::UnboundedSende
         let _ = out.send(refused(&id, &why).to_string());
         return;
     }
+    // The protocol handed to a page's script would carry commands past every check here too, the site's own as well.
+    if method == "Target.exposeDevToolsProtocol" {
+        let why = "Target.exposeDevToolsProtocol is refused here: a page's script would reach the browser around \
+                   fleetd's checks. Send each command yourself.";
+        let _ = out.send(refused(&id, why).to_string());
+        return;
+    }
     // By target, a detach could take the broker's session on it rather than the driver's.
     if method == "Target.detachFromTarget"
         && command["params"]["targetId"]

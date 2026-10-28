@@ -2,15 +2,18 @@
 //! could read any file the node can: another Navi's kept profile and its cookies (D221), the node's own config. In a
 //! Navi's session it reads and writes only in the Navi's folder; every other session is as before.
 //!
+//! - The driver sends only the commands agent-browser does ([`AGENT_BROWSER_METHODS`]); anything else is refused, so
+//!   no other way into the browser (a page handed the protocol, a command wrapped in another, a drag carrying files)
+//!   goes around the checks below.
 //! - Every `file:` load fails, whatever asked for it: the driver, a page's link, a new tab or browser context, a
 //!   request the driver's own interception rewrote. The node intercepts them all from its own hidden session on the
 //!   browser target (`Fetch`), which the driver can't reach or turn off: the proxy refuses commands that name the
 //!   node's sessions or detach its targets (proxy.rs), and should that session go anyway, the browser session ends.
 //!   Chrome already refuses a web page's redirects and links to `file:`. The driver's `file:`, `view-source:file:` and
 //!   `filesystem:` URLs are refused before they go, saying why.
-//! - An upload (`DOM.setFileInputFiles`, or files dropped on the page with `Input.dispatchDragEvent`) is of files in the
-//!   folder only: the real path of each file the node opened is checked to be inside it, and Chrome gets a copy only
-//!   the node can see, so a link swapped in after the check leads nowhere.
+//! - An upload (`DOM.setFileInputFiles`) is of files in the folder only: the real path of each file the node opened is
+//!   checked to be inside it, and Chrome gets a copy only the node can see, so a link swapped in after the check leads
+//!   nowhere.
 //! - Downloads go to the folder itself, by default and wherever the driver says (`setDownloadBehavior`). Not a folder
 //!   inside it: the Navi could swap that for a link out of it before Chrome writes there. Each is saved under a name
 //!   of Chrome's own (`allowAndName`), as agent-browser's `download` asks anyway, then renames it: a site's file name
@@ -23,6 +26,94 @@ use serde_json::{Value, json};
 
 use super::cdp::Cdp;
 use crate::node::util::AbortOnDrop;
+
+/// The protocol methods agent-browser sends (every one its binary names, checked by the agent-browser tests), the
+/// only ones a Navi's driver may.
+pub const AGENT_BROWSER_METHODS: &[&str] = &[
+    "Accessibility.enable",
+    "Accessibility.getFullAXTree",
+    "Browser.close",
+    "Browser.getVersion",
+    "Browser.getWindowForTarget",
+    "Browser.grantPermissions",
+    "Browser.setContentsSize",
+    "Browser.setDownloadBehavior",
+    "DOM.describeNode",
+    "DOM.enable",
+    "DOM.getBoxModel",
+    "DOM.getDocument",
+    "DOM.getFrameOwner",
+    "DOM.querySelector",
+    "DOM.querySelectorAll",
+    "DOM.resolveNode",
+    "DOM.scrollIntoViewIfNeeded",
+    "DOM.setFileInputFiles",
+    "Emulation.setDeviceMetricsOverride",
+    "Emulation.setEmulatedMedia",
+    "Emulation.setGeolocationOverride",
+    "Emulation.setLocaleOverride",
+    "Emulation.setTimezoneOverride",
+    "Emulation.setUserAgentOverride",
+    "Fetch.continueRequest",
+    "Fetch.continueWithAuth",
+    "Fetch.disable",
+    "Fetch.enable",
+    "Fetch.failRequest",
+    "Fetch.fulfillRequest",
+    "IO.close",
+    "IO.read",
+    "Input.dispatchKeyEvent",
+    "Input.dispatchMouseEvent",
+    "Input.dispatchTouchEvent",
+    "Input.insertText",
+    "Network.clearBrowserCookies",
+    "Network.emulateNetworkConditions",
+    "Network.enable",
+    "Network.getAllCookies",
+    "Network.getCookies",
+    "Network.getResponseBody",
+    "Network.setCookie",
+    "Network.setCookies",
+    "Network.setExtraHTTPHeaders",
+    "Page.addScriptToEvaluateOnNewDocument",
+    "Page.bringToFront",
+    "Page.captureScreenshot",
+    "Page.createIsolatedWorld",
+    "Page.enable",
+    "Page.getFrameTree",
+    "Page.getLayoutMetrics",
+    "Page.handleJavaScriptDialog",
+    "Page.navigate",
+    "Page.printToPDF",
+    "Page.reload",
+    "Page.removeScriptToEvaluateOnNewDocument",
+    "Page.screencastFrameAck",
+    "Page.setDocumentContent",
+    "Page.startScreencast",
+    "Page.stopScreencast",
+    "Runtime.addBinding",
+    "Runtime.callFunctionOn",
+    "Runtime.enable",
+    "Runtime.evaluate",
+    "Runtime.releaseObject",
+    "Runtime.runIfWaitingForDebugger",
+    "Security.setIgnoreCertificateErrors",
+    "Target.activateTarget",
+    "Target.attachToTarget",
+    "Target.closeTarget",
+    "Target.createBrowserContext",
+    "Target.createTarget",
+    "Target.detachFromTarget",
+    "Target.getTargetInfo",
+    "Target.getTargets",
+    "Target.setAutoAttach",
+    "Target.setDiscoverTargets",
+    "Tracing.end",
+    "Tracing.start",
+    "WebMCP.cancelInvocation",
+    "WebMCP.enable",
+    "WebMCP.invokeTool",
+];
 
 /// Where the node keeps the copies of the files a Navi's sessions upload: under its home, which the Navi's sandbox
 /// hides.
@@ -126,7 +217,18 @@ impl Fence {
         }
         let method = command["method"].as_str().unwrap_or_default().to_owned();
         let params = &mut command["params"];
+        if !AGENT_BROWSER_METHODS.contains(&method.as_str()) {
+            return Err(format!(
+                "{method} is refused: a Navi's browser takes only the commands agent-browser {} sends. Drive it with \
+                 agent-browser.",
+                super::agent_browser::VERSION
+            ));
+        }
         match method.as_str() {
+            // Sessions it can't drive, but that a driver which left `flatten` out would wait on.
+            "Target.setAutoAttach" if params["flatten"] != true => {
+                return Err("Target.setAutoAttach is refused without flatten: true.".to_owned());
+            }
             "Page.navigate" | "Target.createTarget" => {
                 let url = params["url"].as_str().unwrap_or_default();
                 if local_url(url) {
@@ -142,11 +244,6 @@ impl Fence {
             "DOM.setFileInputFiles" => {
                 let copies = self.stage_all(&params["files"]).await?;
                 params["files"] = copies;
-            }
-            // Files dragged onto the page: the page reads each as a file input's.
-            "Input.dispatchDragEvent" if !params["data"]["files"].is_null() => {
-                let copies = self.stage_all(&params["data"]["files"]).await?;
-                params["data"]["files"] = copies;
             }
             _ => {}
         }
@@ -271,6 +368,18 @@ fn real_path(file: &std::fs::File) -> std::io::Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_methods_a_navi_may_send_are_each_once_and_in_order() {
+        assert!(AGENT_BROWSER_METHODS.windows(2).all(|w| w[0] < w[1]));
+        for refused in [
+            "Target.exposeDevToolsProtocol",
+            "Target.sendMessageToTarget",
+            "Input.dispatchDragEvent",
+        ] {
+            assert!(!AGENT_BROWSER_METHODS.contains(&refused), "{refused}");
+        }
+    }
 
     #[test]
     fn the_drivers_urls_that_read_the_disk_are_known_however_written() {
