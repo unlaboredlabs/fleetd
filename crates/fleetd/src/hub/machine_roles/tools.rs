@@ -2,14 +2,14 @@
 use std::sync::Arc;
 
 use fleetd_contracts::auth::Role;
-use fleetd_contracts::machine_roles::MachineRole;
+use fleetd_contracts::machine_roles::{MachineRole, MachineRolesEntry};
 use fleetd_contracts::mcp::{
     ErrorCode, MachineRolesInput, MachineRolesOutput, MachineRolesSetInput, MachineRolesSetOutput,
 };
 use fleetd_contracts::prim::List;
 
 use super::{entry, roles_on, runners, set_roles};
-use crate::hub::api::{Caller, Hub, Registry, ToolError, readable, require};
+use crate::hub::api::{Caller, Hub, Registry, ToolError, allows, readable, require};
 
 pub fn register(tools: &mut Registry) {
     tools.add("machine_roles", machine_roles);
@@ -24,16 +24,30 @@ async fn machine_roles(
     let machines: Vec<_> = runners(&hub)?
         .into_iter()
         .filter(|(r, _, _)| readable(&caller, &r.machine_id))
-        .map(|(r, roles, why)| entry(r, roles, why))
+        .map(|(r, roles, why)| for_caller(&hub, &caller, entry(r, roles, why)))
         .collect();
     let next = machines
         .is_empty()
         .then(|| "No machine has joined yet: add one with fleetd machine add.".to_owned());
     Ok(MachineRolesOutput {
         machines: List::unchecked(machines),
+        best: crate::hub::projects::best_worker(&hub),
         next,
         truncated: None,
     })
+}
+
+/// What the app's Navi dialog reads besides roles: the machine's Navi sandbox, and whether the caller may make a Navi
+/// there.
+fn for_caller(hub: &Hub, caller: &Caller, entry: MachineRolesEntry) -> MachineRolesEntry {
+    MachineRolesEntry {
+        navi_sandbox: hub
+            .executors
+            .cached_runner(&entry.machine_id)
+            .and_then(|info| info.sandbox),
+        operates: Some(allows(caller, Role::Operate, Some(&entry.machine_id))),
+        ..entry
+    }
 }
 
 async fn machine_roles_set(
@@ -82,7 +96,7 @@ async fn machine_roles_set(
         _ => None,
     };
     Ok(MachineRolesSetOutput {
-        machine: entry(runner, roles, why),
+        machine: for_caller(&hub, &caller, entry(runner, roles, why)),
         next,
         truncated: None,
     })

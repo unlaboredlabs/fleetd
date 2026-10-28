@@ -8851,8 +8851,16 @@
         "name": {
           "type": "string"
         },
+        "naviSandbox": {
+          "$ref": "#/$defs/NaviSandbox",
+          "description": "The OS sandbox a Navi runs in there, as its node last reported it (`RunnerInfo.sandbox`). Absent until it\nreports, from a node before it, and on a system fleetd has no sandbox for."
+        },
         "online": {
           "description": "Its node is linked to the hub now.",
+          "type": "boolean"
+        },
+        "operates": {
+          "description": "The caller may work there (operate): make a Navi, start agents. Absent from a hub before it.",
           "type": "boolean"
         },
         "roles": {
@@ -8887,6 +8895,10 @@
     },
     "MachineRolesOutput": {
       "properties": {
+        "best": {
+          "$ref": "#/$defs/MachineId",
+          "description": "Where a new Navi or project goes when none is named (`project_discover.best`). Absent: no machine is."
+        },
         "machines": {
           "items": {
             "$ref": "#/$defs/MachineRolesEntry"
@@ -12170,6 +12182,27 @@
       },
       "required": [
         "navi"
+      ],
+      "type": "object"
+    },
+    "NaviSandbox": {
+      "description": "What a Navi's OS sandbox is on a machine, in a person's words.",
+      "properties": {
+        "fix": {
+          "description": "What to run to close a gap or make Navis run here.",
+          "type": "string"
+        },
+        "line": {
+          "description": "\"Navis run in bubblewrap, with abstract sockets scoped (Landlock).\"",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/SandboxStatus"
+        }
+      },
+      "required": [
+        "status",
+        "line"
       ],
       "type": "object"
     },
@@ -16673,6 +16706,26 @@
         "enforced"
       ],
       "type": "object"
+    },
+    "SandboxStatus": {
+      "oneOf": [
+        {
+          "const": "ready",
+          "description": "Navis run fenced, with nothing left open fleetd knows of.",
+          "type": "string"
+        },
+        {
+          "const": "gap",
+          "description": "Navis run fenced, with a gap the line names.",
+          "type": "string"
+        },
+        {
+          "const": "missing",
+          "description": "Navis can't run here: no sandbox starts.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
     },
     "SealedSecret": {
       "type": "string"

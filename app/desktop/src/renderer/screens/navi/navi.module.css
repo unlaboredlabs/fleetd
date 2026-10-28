@@ -38,6 +38,16 @@
   flex: 1;
   min-width: 0;
 }
+/* Where a new Navi lives, under its name box: each machine with its Navi sandbox. */
+.homes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+.line {
+  display: block;
+}
 .group {
   display: flex;
   flex-direction: column;

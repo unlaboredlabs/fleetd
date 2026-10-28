@@ -1,11 +1,12 @@
 // @vitest-environment happy-dom
 // #/navi: the first run says what Navi is and has one button, which makes a Navi (called Navi when unnamed) and opens
 // its chat once the hub has added it; with Navis, the list and the archived ones, each a click from coming back.
-// Asked work, in a Navi's panel: each ask with its orders, or a plain sentence on a hub that doesn't serve it.
+// With more than one machine it could live on, a choice of them, each with its Navi sandbox: a missing one can't be
+// picked. Asked work, in a Navi's panel: each ask with its orders, or a plain sentence on a hub that doesn't serve it.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { FleetStatus, NaviAsksOutput, ProjectSummary } from "../../../shared/contracts";
+import type { FleetStatus, MachineRolesEntry, MachineRolesOutput, NaviAsksOutput, ProjectSummary } from "../../../shared/contracts";
 import type { CallOutcome, HubFrame } from "../../../shared/hub";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
@@ -147,6 +148,88 @@ describe("Navi's first run", () => {
     expect(host.querySelector("[role=alert] code")?.textContent).toBe("fleetd update");
     // The one button tries again.
     expect(button("Retry").disabled).toBe(false);
+  });
+});
+
+const machine = (machineId: string, extra: Partial<MachineRolesEntry> = {}): MachineRolesEntry => ({
+  machineId,
+  name: machineId,
+  online: true,
+  operates: true,
+  roles: ["agents"],
+  maxSessions: 4,
+  maxSessionsWhy: "auto: 8 CPUs, 32 GB",
+  sessionsLive: 0,
+  hostsOthers: true,
+  ...extra,
+});
+const MAC = machine("mac", { naviSandbox: { status: "ready", line: "Navis run in sandbox-exec." } });
+const DEVBOX = machine("devbox", {
+  naviSandbox: { status: "gap", line: "Navis run in bubblewrap, but this kernel can't scope abstract sockets.", fix: "Update the kernel to Linux 6.12 or later." },
+});
+const NO_BWRAP = { status: "missing", line: "A Navi runs only inside a sandbox, and this machine has no bubblewrap (bwrap).", fix: "Install bubblewrap on this machine." } as const;
+const PI = machine("pi", { naviSandbox: NO_BWRAP });
+const roles = (machines: MachineRolesEntry[], best?: string) => (tool: string) => {
+  const output: MachineRolesOutput = { machines, ...(best === undefined ? {} : { best }) };
+  if (tool === "machine_roles") return { ok: true as const, output };
+  if (tool === "navi_create") return { ok: true as const, output: { navi: summary("Navi", { kind: "assistant", projectId: "navi" }) } };
+  return undefined;
+};
+const radio = (name: string): HTMLButtonElement => {
+  const r = [...host.querySelectorAll<HTMLButtonElement>("[role=radio]")].find((x) => x.closest("label")?.textContent.startsWith(name));
+  if (r === undefined) throw new Error(`no machine ${name}`);
+  return r;
+};
+const created = (calls: { tool: string; input: unknown }[]) => calls.filter((c) => c.tool === "navi_create").map((c) => c.input);
+
+describe("where a new Navi lives", () => {
+  it("offers no choice with one machine to put it on, and leaves it to the hub", async () => {
+    // pi is offline and the person can't work on buildbox: devbox is the one machine left.
+    const { calls } = await mount(<NaviScreen />, [STOREFRONT], roles([DEVBOX, machine("pi", { online: false }), machine("buildbox", { operates: false })], "devbox"));
+    expect(host.querySelector("[role=radiogroup]")).toBeNull();
+    act(() => button("Create your Navi").click());
+    await settle();
+    expect(created(calls)).toEqual([{ name: "Navi" }]);
+  });
+
+  it("starts on the machine the hub would pick, each with its sandbox, and makes it on the one picked", async () => {
+    const { calls } = await mount(<NaviScreen />, [STOREFRONT], roles([DEVBOX, MAC], "mac"));
+    expect(host.textContent).toContain("Lives on");
+    expect(radio("mac").getAttribute("aria-checked")).toBe("true");
+    expect(radio("devbox").getAttribute("aria-checked")).toBe("false");
+    expect(radio("mac").closest("label")?.textContent).toContain("Navis run in sandbox-exec.");
+    // A gap can be picked, with its warning and fix.
+    const gap = radio("devbox").closest("label")?.textContent;
+    expect(gap).toContain("can't scope abstract sockets");
+    expect(gap).toContain("Update the kernel to Linux 6.12 or later.");
+    expect(radio("devbox").disabled).toBe(false);
+    act(() => radio("devbox").click());
+    expect(radio("devbox").getAttribute("aria-checked")).toBe("true");
+    act(() => button("Create your Navi").click());
+    await settle();
+    expect(created(calls)).toEqual([{ name: "Navi", machineId: "devbox" }]);
+  });
+
+  it("shows why a machine without a sandbox can't hold one, and its fix, and never picks it", async () => {
+    // The hub's own pick has no sandbox: the choice starts on the first that has one.
+    const { calls } = await mount(<NaviScreen />, [STOREFRONT], roles([PI, MAC], "pi"));
+    const missing = radio("pi");
+    expect(missing.disabled).toBe(true);
+    expect(missing.getAttribute("aria-checked")).toBe("false");
+    expect(missing.closest("label")?.textContent).toContain("has no bubblewrap (bwrap).");
+    expect(missing.closest("label")?.textContent).toContain("Install bubblewrap on this machine.");
+    expect(radio("mac").getAttribute("aria-checked")).toBe("true");
+    act(() => missing.click());
+    expect(radio("mac").getAttribute("aria-checked")).toBe("true");
+    act(() => button("Create your Navi").click());
+    await settle();
+    expect(created(calls)).toEqual([{ name: "Navi", machineId: "mac" }]);
+  });
+
+  it("can't create while no machine has a sandbox", async () => {
+    const { calls } = await mount(<NaviScreen />, [STOREFRONT], roles([PI, machine("pi2", { naviSandbox: NO_BWRAP })]));
+    expect(button("Create your Navi").disabled).toBe(true);
+    expect(created(calls)).toEqual([]);
   });
 });
 

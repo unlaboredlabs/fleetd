@@ -1,7 +1,7 @@
 // Navi in the app, as plain view data: which projects are Navis (a project the hub marks `kind: "assistant"`), the
 // sidebar's order (the Navis pinned above the projects, an archived one in neither), a name the hub would take, and
 // the work a Navi asked other projects for (navi_asks, docs/design/navi.md). Pure, so it is unit-tested.
-import type { NaviAsk, NaviAskOrder, ProjectSummary } from "../../../shared/contracts";
+import type { MachineRolesEntry, NaviAsk, NaviAskOrder, ProjectSummary } from "../../../shared/contracts";
 
 /** A Navi: a plain-folder project with an assistant for its lead. */
 export const isNavi = (p: Pick<ProjectSummary, "kind">): boolean => p.kind === "assistant";
@@ -31,6 +31,19 @@ export const nameProblem = (name: string): string | undefined => {
   if (/[\r\n]/u.test(name)) return "One line";
   return undefined;
 };
+
+/**
+ * The machines a new Navi could live on, as machine_roles lists them: linked now, and where the person may work. One
+ * whose sandbox is missing stays in the list, to say why and how to fix it, but can't be picked.
+ */
+export const naviHomes = (machines: ReadonlyArray<MachineRolesEntry>): MachineRolesEntry[] => machines.filter((m) => m.online && m.operates !== false);
+
+/** A Navi can run there: its sandbox starts, gap or not. A node that doesn't say is left to the hub. */
+export const canHost = (m: Pick<MachineRolesEntry, "naviSandbox">): boolean => m.naviSandbox?.status !== "missing";
+
+/** Where the choice starts: where the hub would put the Navi unasked (`best`), else the first machine that can host one. */
+export const firstHome = (homes: ReadonlyArray<MachineRolesEntry>, best: string | undefined): string | undefined =>
+  (homes.find((m) => m.machineId === best && canHost(m)) ?? homes.find(canHost))?.machineId;
 
 /** One message the Navi sent another project's lead (project_message), and the orders that lead opened for it. */
 export type Ask = NaviAsk;
