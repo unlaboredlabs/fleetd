@@ -5,7 +5,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test } from "@playwright/test";
-import { launch, pngSize, resultsDir, setNativeView, type Shot, settle, show } from "./harness.ts";
+import { check, launch, pngSize, resultsDir, setNativeView, setView, type Shot, settle, show } from "./harness.ts";
 import { sizes, themes } from "./registry.ts";
 
 test.describe.configure({ mode: "parallel" });
@@ -155,6 +155,27 @@ test("a window whose page dies reloads at its route and logs why; crash dumps go
     // crashReporter is on, with its database beside the log (a killed renderer leaves no dump).
     expect(dumps).toBe(path.join(logs, "crashes"));
     expect(existsSync(path.join(dumps, "settings.dat"))).toBe(true);
+  } finally {
+    await close();
+  }
+});
+
+// The panel's toggle sits at the window's top right, over the panel's tab row while the panel is open, and that row
+// is part of the macOS drag region. A click there must reach the toggle, or the panel never closes on a Mac: here the
+// window takes clicks as Electron's region says (the DOM checks' drag rule), then the toggle closes the panel.
+test("the panel's toggle closes the panel it sits over", async () => {
+  const { app, page, settled, close } = await launch("chat-waiting");
+  try {
+    await settled();
+    await setView(app, page, "medium", "light");
+    await show(page, "shell", "#/");
+    const panel = page.getByRole("complementary", { name: "Project panel" });
+    await panel.waitFor();
+    const dragged = (await check(page, [])).filter((f) => f.check === "drag");
+    expect(dragged, "controls a click on drags the macOS window instead").toEqual([]);
+    await page.getByRole("button", { name: "Hide the panel" }).click();
+    await panel.waitFor({ state: "detached" });
+    await expect(page.getByRole("button", { name: "Show the panel" })).toBeVisible();
   } finally {
     await close();
   }

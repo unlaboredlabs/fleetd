@@ -74,6 +74,7 @@ const pages = {
     <button class="edge-right" data-testid="exp-edge-right">Right</button>
     <div class="case drag-bar"><button data-testid="exp-drag-inside">Close</button></div>
     <div class="case drag-stack"><div class="drag-bar"></div><div class="over-bar"><button data-testid="exp-drag-over">Close</button></div></div>
+    <div class="case drag-stack"><div class="over-bar no-drag"><button data-testid="exp-drag-under">Close</button></div><div class="drag-bar"></div></div>
   </div>`,
 };
 

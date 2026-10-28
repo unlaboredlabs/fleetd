@@ -38,7 +38,8 @@
   grid-area: top;
 }
 /* The window's top right, over whichever row ends there (the top row, or the aside's first): the panel's toggle, in one
-   place whether the panel shows or not. Its button opts out of the drag region as every control does (base.css). */
+   place whether the panel shows or not. Its button opts out of the drag region as every control does (base.css),
+   and the frame puts it last so no row's drag box comes after it. */
 .withCorner {
   --corner-w: calc(var(--control) + var(--space-1) + var(--space-3));
 }
