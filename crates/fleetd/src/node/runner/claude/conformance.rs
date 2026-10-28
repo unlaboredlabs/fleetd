@@ -146,6 +146,72 @@ pub async fn probe(binary: &Path, env: &[(String, String)]) -> RunnerInfo {
     info
 }
 
+/// `claude -p` for an account's Test: one short answer on the smallest model in one turn, no MCP servers, the user
+/// settings sessions read.
+const TRY_ARGS: &[&str] = &[
+    "-p",
+    "Reply with the word OK and nothing else.",
+    "--model",
+    "haiku",
+    "--max-turns",
+    "1",
+    "--output-format",
+    "json",
+    "--strict-mcp-config",
+    "--setting-sources",
+    "user",
+    "--settings",
+    AUTO_MEMORY_OFF_SETTINGS,
+];
+/// A model call takes longer than the probe's `initialize`.
+const TRY_TIMEOUT: Duration = Duration::from_secs(90);
+
+/// One tiny `claude -p` call with exactly `env`: proves the key or token in it works. claude's own words when it
+/// doesn't; the caller masks the secret in them.
+pub async fn try_account(binary: &Path, env: &[(String, String)]) -> Result<(), String> {
+    let run = command(binary, env).args(TRY_ARGS).output();
+    let out = match tokio::time::timeout(TRY_TIMEOUT, run).await {
+        Err(_) => {
+            return Err(format!(
+                "claude did not answer within {}s",
+                TRY_TIMEOUT.as_secs()
+            ));
+        }
+        Ok(Err(e)) => return Err(format!("could not run claude: {e}")),
+        Ok(Ok(out)) => out,
+    };
+    tried(out.status.success(), &out.stdout, &out.stderr)
+}
+
+/// What a Test's `claude -p --output-format json` said: it worked when it exited 0 with a result that is no error.
+fn tried(exited_ok: bool, stdout: &[u8], stderr: &[u8]) -> Result<(), String> {
+    let answer: Option<Value> = serde_json::from_slice(stdout).ok();
+    let is_error = answer
+        .as_ref()
+        .and_then(|a| a.get("is_error"))
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    if exited_ok && !is_error {
+        return Ok(());
+    }
+    let said = answer
+        .as_ref()
+        .and_then(|a| a.get("result"))
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| {
+            let text = String::from_utf8_lossy(if stderr.is_empty() { stdout } else { stderr });
+            text.trim().to_owned()
+        });
+    let said: String = said.chars().take(500).collect();
+    Err(if said.is_empty() {
+        "claude failed and said nothing".to_owned()
+    } else {
+        said
+    })
+}
+
 /// A claude tool that starts, lists, messages or stops agents, teams, workflows or background tasks. MCP tools
 /// (`mcp__…`, fleetd's own among them) never count.
 pub fn agent_like(tool: &str) -> bool {
@@ -390,6 +456,31 @@ pub fn missing_init_capabilities(capabilities: &[String]) -> Vec<&'static str> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_test_call_works_only_on_an_answer_that_is_no_error() {
+        assert_eq!(
+            super::tried(
+                true,
+                br#"{"type":"result","is_error":false,"result":"OK"}"#,
+                b""
+            ),
+            Ok(())
+        );
+        assert_eq!(
+            super::tried(
+                false,
+                br#"{"type":"result","is_error":true,"result":"Invalid API key \u00b7 Fix external API key"}"#,
+                b""
+            ),
+            Err("Invalid API key \u{b7} Fix external API key".to_owned())
+        );
+        assert_eq!(
+            super::tried(false, b"", b"OAuth token has expired\n"),
+            Err("OAuth token has expired".to_owned())
+        );
+        assert!(super::tried(true, b"not json", b"").is_err());
+    }
+
     use std::os::unix::fs::PermissionsExt;
     use std::path::PathBuf;
 

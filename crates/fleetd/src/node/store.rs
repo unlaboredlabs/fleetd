@@ -104,6 +104,10 @@ pub struct SessionLocal {
     /// The model claude's helper calls run on (the high profile's setting); absent: the runner's own.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub helper_model: Option<String>,
+    /// The Claude account it runs on (claude_accounts.rs), at every start of its claude; absent: the machine's own
+    /// login.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub claude_account: Option<fleetd_contracts::claude_accounts::ClaudeAccount>,
 }
 
 #[derive(Clone, Debug, PartialEq)]

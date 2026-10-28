@@ -165,6 +165,18 @@ impl UsageOwners for OpsPorts {
         })
     }
 
+    // Asked of every thread event, even before `start_loops` binds the ports (a hub that never starts them): none then.
+    fn account_of(&self, thread: &ThreadRef) -> Option<String> {
+        let hub = self.hub.get().and_then(Weak::upgrade)?;
+        let account = hub
+            .db
+            .claude_accounts()
+            .thread_account(&thread.machine_id, &thread.thread_id);
+        logged(account, "reading a thread's Claude account")
+            .flatten()
+            .map(|a| a.key().to_owned())
+    }
+
     fn still_parked(&self, parked: &ParkedThread) -> BoxFut<'_, bool> {
         let parked = parked.clone();
         Box::pin(async move {

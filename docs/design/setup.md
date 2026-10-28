@@ -78,7 +78,7 @@ In order. **Need** says when it must be done; nothing blocks using fleetd before
 |---|---|---|---|---|---|---|---|
 | Where the hub listens | Required | Tailnet, this machine only, or LAN; HTTPS through Tailscale Serve is optional | Each option's URL; `tailscale serve` command | Tailscale admin | none | Reach `/healthz` from this device | init, `hub/reachable`, `hub/https` |
 | Machines | Required | The machines to add | `fleetd machine add <host>`, or a join command with a code | none | none | The checks: online, runner | init, `machine add`, `*/online` |
-| Claude | Required | A hub API key and an optional endpoint, **or** nothing: then the hub owner connects their own subscription. Either way, each person later picks their own subscription or the hub's configuration in their own settings, and a switch here turns the hub's option off for members (D200) | Key name `fleetd on devbox`; for a subscription, the command `claude setup-token` | Claude Console › API keys | API key (sealed), endpoint; or the subscription's long-lived token (sealed) | `GET /v1/models` at the endpoint; for the subscription, one tiny `claude -p` call made with its token. Done by either way: the key, or the owner's subscription (§3.1) | per-machine `claude login` only; key is D186, the per-person choice D200 |
+| Claude | Required | A hub API key and an optional endpoint, **or** nothing: then the hub owner connects their own subscription. Either way, each person later picks their own subscription or the hub's configuration in their own settings, and a switch here turns the hub's option off for members (D200) | Key name `fleetd on devbox`; for a subscription, the command `claude setup-token` | Claude Console › API keys | API key (sealed), endpoint; or the subscription's long-lived token (sealed) | One tiny `claude -p` call made with the key (and endpoint) or the token, on a machine holding it (`claude_account_test`; fleetd never calls the API itself). Done by either way: the key, or the owner's subscription (§3.1) | Built (teams step 8): `claude_hub_api_set`, `claude_subscription_set`, `claude_account_test`; the app's screens and the step's checks are next |
 | GitHub App | Before the first PR | Nothing to paste: confirm the App GitHub shows, pick the repositories to install it on, connect your own account | The manifest: name, homepage, callback `<hub>/oauth/github/callback`, repository permissions, webhook | "Create on my account" or "in an organization", then GitHub's install page | none: GitHub hands the App's keys to the hub | Mint an installation token and list the repositories it reaches; the admin's own sign-in proves the callback | D190; today `gh auth` on the hub (`hub/gh_auth`) |
 | Invite people | Optional | A name, admin or not | The invite link | none | Name | The link opens | teams step 1, in flight |
 | Google | Optional | A Cloud project, the three APIs, the sign-in screen published In production, a Desktop app OAuth client; optionally Gmail in real time (a Pub/Sub topic, a pull subscription, and a service account to read it) | Project and app name, the Gmail, Calendar and Drive scopes; on an HTTPS hub, also a web redirect `<hub>/oauth/google/callback` | Cloud Console: new project, enable APIs, Auth Platform › Branding, › Clients | Client ID, client secret (sealed to the hub); optionally the Gmail subscription and the reader's JSON key (sealed to one machine) | Exchange a dummy code: `invalid_grant` means Google knows the client; with a key, pull once from the subscription; then each person connects from their Navi | D189; Navi integrations, in flight (#635) |
@@ -124,11 +124,11 @@ pub struct SetupStep {
       login of their own;
     - the hub owner's own subscription (`hub/claude_owner`): a long-lived token from `claude setup-token`, pasted
       in the app and sealed to the hub's machines. One tiny `claude -p` call made with that token proves it works.
-      Until teams step 8 lands, this way is every machine's own login (`*/claude_login`).
+      With neither set up, machines run on their own login (`*/claude_login`), as before step 8.
 
     With a key set and tested, logged-out machines don't hold the step back. Without a key, it is Done once the
-    owner's subscription is connected (today, once every machine is logged in; a machine that isn't makes it Look
-    with that machine's message). The step shows which way is in use ("Done with the hub's API key"). Projects'
+    owner's subscription is connected (with neither, once every machine is logged in; a machine that isn't makes it
+    Look with that machine's message). The step shows which way is in use ("Done with the hub's API key"). Projects'
     leads and work nobody started run on the step's way: the key if there is one, else the owner's subscription.
 
     The hub step only makes sure something can run. **Each person chooses their own way** in their own settings
@@ -357,10 +357,11 @@ copy buttons, live checks after the paste, "progress is saved".
   - A `hub/github_app` check: the App exists, it is installed, a token mints, and the asking admin is connected.
   - It takes over from `gh auth` on the hub, and `hub/gh_auth` goes.
 - **Claude accounts (hub key, endpoint, subscriptions)**
-  - A `hub/claude_key` check (`GET /v1/models` at the endpoint, saying which key by its last 4 characters), as the
-    step's first way.
-  - A `hub/claude_owner` check for the owner's subscription (one tiny `claude -p` call made with its token), as its
-    second way; until it lands, the per-machine `claude_login` checks stand in.
+  - A `hub/claude_key` check (the key's last Test, `claude_account_test`, made with one tiny `claude -p` call), as
+    the step's first way.
+  - A `hub/claude_owner` check for the owner's subscription (its last Test, the same way), as its second way; until
+    then, the per-machine `claude_login` checks stand in.
+  - Built in teams step 8: the sealing, the tools and the Test; the two checks read what they record.
   - Where the key and the subscription tokens are sealed (machines).
   - Each person's choice and whether their subscription is connected, for "Connect your Claude" before a first order
     (D200).

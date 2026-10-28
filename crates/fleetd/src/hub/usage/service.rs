@@ -10,9 +10,12 @@
 use super::classify::{UsageClass, UsageParked, limit_of_event};
 use super::ports::{BoxFut, EventLog, NewEvent, ThreadRef, WaitInput};
 use super::source::{LoginKind, UsageReading};
-use super::state::{Owner, ParkedCounts, ParkedThread, Resumed, UsageState, resumed_event};
+use super::state::{
+    Owner, ParkedCounts, ParkedThread, Resumed, UsageState, login_key, resumed_event, split_login,
+};
 use crate::clock::Clock;
 use crate::hub::store::{iso_ms, parse_ms, system_ms};
+use fleetd_contracts::claude_accounts::ClaudeAccount;
 use fleetd_contracts::events::{HubEvent, HubEventType};
 use serde::Serialize;
 use std::sync::{Arc, Mutex};
@@ -41,6 +44,11 @@ pub trait UsageOwners: Send + Sync {
     fn owner_of(&self, thread: &ThreadRef) -> BoxFut<'_, Option<Owner>>;
     /// The task has not ended or been cancelled; for a lead, the thread is still its current one.
     fn still_parked(&self, parked: &ParkedThread) -> BoxFut<'_, bool>;
+    /// The Claude account the thread was launched on, by key (`hub`, a person's id); none for the machine's own
+    /// login. Its limits pause only the work on that account.
+    fn account_of(&self, _thread: &ThreadRef) -> Option<String> {
+        None
+    }
 }
 
 /// The write queue's `send` of the `usage.continue` prompt, rendered from the thread's own texts: delivered once per
@@ -78,7 +86,42 @@ pub struct UsageStatus {
     pub login: LoginKind,
     pub breaker: UsageBreaker,
     pub parked: ParkedCounts,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub accounts: Vec<AccountUsage>,
     pub last_events: Vec<HubEvent>,
+}
+
+/// One Claude account's usage on a machine (teams step 8): its own breaker and parked work.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountUsage {
+    pub account: ClaudeAccount,
+    pub breaker: UsageBreaker,
+    pub parked: ParkedCounts,
+}
+
+/// A login's breaker as usage_status shows it.
+fn breaker_view(m: Option<&super::state::MachineUsage>) -> UsageBreaker {
+    match m.and_then(|m| m.breaker.as_ref()) {
+        None => UsageBreaker {
+            state: "closed",
+            class: None,
+            since: None,
+            until: None,
+            check_at: None,
+            proxy: None,
+            message: None,
+        },
+        Some(b) => UsageBreaker {
+            state: "open",
+            class: Some(b.class),
+            since: Some(b.since.clone()),
+            until: b.until.clone(),
+            check_at: b.check_at.clone(),
+            proxy: b.proxy.then_some(true),
+            message: Some(b.message.clone()),
+        },
+    }
 }
 
 pub struct UsageDeps {
@@ -175,7 +218,17 @@ impl Usage {
         system_ms(self.inner.deps.clock.now())
     }
 
+    /// The account of an event's thread, by key.
+    fn account_of(&self, event: &HubEvent) -> Option<String> {
+        let thread = ThreadRef {
+            machine_id: event.machine_id.as_ref()?.to_string(),
+            thread_id: event.thread_id.as_ref()?.to_string(),
+        };
+        self.inner.deps.owners.account_of(&thread)
+    }
+
     async fn apply(&self, event: &HubEvent) {
+        let account = self.account_of(event);
         let owner = match (event.r#type, &event.machine_id, &event.thread_id) {
             (HubEventType::ThreadUsageLimited, Some(m), Some(t))
                 if limit_of_event(event).is_some() =>
@@ -191,7 +244,11 @@ impl Usage {
             }
             _ => None,
         };
-        self.inner.state.lock().unwrap().apply(event, owner);
+        self.inner
+            .state
+            .lock()
+            .unwrap()
+            .apply(event, owner, account.as_deref());
     }
 
     async fn emit(&self, event: NewEvent) {
@@ -325,7 +382,13 @@ impl Usage {
     }
 
     async fn on_live(&self, event: &HubEvent) {
-        let lifted = self.inner.state.lock().unwrap().lifted_by(event);
+        let account = self.account_of(event);
+        let lifted = self
+            .inner
+            .state
+            .lock()
+            .unwrap()
+            .lifted_by(event, account.as_deref());
         self.apply(event).await;
         if let Some(l) = lifted {
             self.resume_threads(&l.machine_id, l.threads, l.breaker_cleared, "turn")
@@ -339,12 +402,13 @@ impl Usage {
         else {
             return;
         };
+        let login = login_key(machine_id, account.as_deref());
         let trip = self
             .inner
             .state
             .lock()
             .unwrap()
-            .trip(machine_id, &iso_ms(self.now_ms()));
+            .trip(&login, &iso_ms(self.now_ms()));
         if let Some((breaker, until)) = trip {
             self.emit(breaker).await;
             if let Some(u) = until {
@@ -376,7 +440,7 @@ impl Usage {
             .lock()
             .unwrap()
             .machines
-            .get(machine_id)
+            .get(&login)
             .and_then(|m| m.breaker.as_ref()?.check_at.clone());
         if let Some(at) = breaker_check {
             self.schedule(&at);
@@ -413,18 +477,29 @@ impl Usage {
         self.pump(&mut cursor).await;
     }
 
-    /// Why a new turn may not start on the machine now, as a queued reason ("usage: paused until …").
+    /// Why a new turn may not start on the machine's own login now, as a queued reason ("usage: paused until …").
     pub fn gate(&self, machine_id: &str) -> Option<String> {
+        self.gate_for(machine_id, None)
+    }
+
+    /// `gate` for one Claude account on the machine (by key), or its own login with none: a pause on one never holds
+    /// work on another.
+    pub fn gate_for(&self, machine_id: &str, account: Option<&str>) -> Option<String> {
         self.inner
             .state
             .lock()
             .unwrap()
-            .gate(machine_id, self.now_ms())
+            .gate(&login_key(machine_id, account), self.now_ms())
     }
 
-    /// `gate`, or why this thread is parked. Lead wakes wait while it is set.
+    /// `gate` of the thread's own login, or why this thread is parked. Lead wakes wait while it is set.
     pub fn hold(&self, thread: &ThreadRef) -> Option<String> {
-        self.inner.state.lock().unwrap().hold(thread, self.now_ms())
+        let account = self.inner.deps.owners.account_of(thread);
+        self.inner
+            .state
+            .lock()
+            .unwrap()
+            .hold(thread, account.as_deref(), self.now_ms())
     }
 
     pub fn parked_of(&self, thread: &ThreadRef) -> Option<UsageParked> {
@@ -451,7 +526,8 @@ impl Usage {
         }
     }
 
-    /// The machine's usage view; `reading` is its runner's login, failing when the machine is offline.
+    /// The machine's usage view; `reading` is its runner's login, failing when the machine is offline. `accounts`:
+    /// each Claude account the state knows on the machine, paused or not, on its own.
     pub async fn status(
         &self,
         machine_id: &str,
@@ -460,31 +536,24 @@ impl Usage {
         self.drain().await;
         let s = self.inner.state.lock().unwrap();
         let m = s.machines.get(machine_id);
-        let breaker = match m.and_then(|m| m.breaker.as_ref()) {
-            None => UsageBreaker {
-                state: "closed",
-                class: None,
-                since: None,
-                until: None,
-                check_at: None,
-                proxy: None,
-                message: None,
-            },
-            Some(b) => UsageBreaker {
-                state: "open",
-                class: Some(b.class),
-                since: Some(b.since.clone()),
-                until: b.until.clone(),
-                check_at: b.check_at.clone(),
-                proxy: b.proxy.then_some(true),
-                message: Some(b.message.clone()),
-            },
-        };
+        let accounts = s
+            .logins_of(machine_id)
+            .iter()
+            .filter_map(|login| {
+                let account = ClaudeAccount::from_key(split_login(login).1?)?;
+                Some(AccountUsage {
+                    account,
+                    breaker: breaker_view(s.machines.get(login)),
+                    parked: s.counts_on(login),
+                })
+            })
+            .collect();
         UsageStatus {
             machine_id: machine_id.to_string(),
             login: reading.map_or(LoginKind::Unknown, |r| r.login),
-            breaker,
+            breaker: breaker_view(m),
             parked: s.counts_on(machine_id),
+            accounts,
             last_events: m.map(|m| m.last_events.clone()).unwrap_or_default(),
         }
     }
@@ -510,14 +579,14 @@ impl Usage {
         let now = self.now_ms();
         let last = {
             let s = self.inner.state.lock().unwrap();
-            s.machines.get(machine_id).and_then(|m| {
+            s.logins_of(machine_id)
+                .iter()
+                .filter_map(|login| s.machines.get(login))
+                .flat_map(|m| m.resumed_by.iter())
                 // A lead's `by` is `lead:<machine>/<project>` (`lead_by`).
-                m.resumed_by
-                    .iter()
-                    .filter(|(who, _)| who.starts_with("lead:"))
-                    .max_by_key(|(_, at)| **at)
-                    .map(|(who, at)| (who.clone(), *at))
-            })
+                .filter(|(who, _)| who.starts_with("lead:"))
+                .max_by_key(|(_, at)| **at)
+                .map(|(who, at)| (who.clone(), *at))
         };
         if let Some(last) = last.filter(|(_, at)| now - at < every_ms) {
             return Err(last);
@@ -525,17 +594,24 @@ impl Usage {
         Ok(self.resume_held(machine_id, by).await)
     }
 
-    /// `resume`'s work; the caller holds the op lock and has pumped.
+    /// `resume`'s work, for the machine's own login and each account's there; the caller holds the op lock and has
+    /// pumped.
     async fn resume_held(&self, machine_id: &str, by: &str) -> usize {
-        let (cleared, parked) = {
-            let s = self.inner.state.lock().unwrap();
-            (
-                s.machines
-                    .get(machine_id)
-                    .is_some_and(|m| m.breaker.is_some()),
-                s.parked_on(machine_id),
-            )
-        };
-        self.resume_threads(machine_id, parked, cleared, by).await
+        let mut logins = self.inner.state.lock().unwrap().logins_of(machine_id);
+        if !logins.iter().any(|l| l == machine_id) {
+            logins.insert(0, machine_id.to_owned());
+        }
+        let mut resumed = 0;
+        for login in logins {
+            let (cleared, parked) = {
+                let s = self.inner.state.lock().unwrap();
+                (
+                    s.machines.get(&login).is_some_and(|m| m.breaker.is_some()),
+                    s.parked_on(&login),
+                )
+            };
+            resumed += self.resume_threads(&login, parked, cleared, by).await;
+        }
+        resumed
     }
 }

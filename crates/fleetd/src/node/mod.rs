@@ -4,6 +4,7 @@
 //! SIGINT or SIGTERM (`Ok`) or a failure the node cannot retry past (`Err`, exit 1 with `fleetd: <message>`).
 pub mod actions;
 pub mod browser;
+pub mod claude_accounts;
 pub mod claude_login;
 pub mod cmd;
 pub mod config;

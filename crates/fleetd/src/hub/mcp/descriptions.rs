@@ -149,6 +149,38 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
         "Human keys only, operate on the Navi's machine. Set when new mail wakes a Navi: rule off (it reads mail only when asked), all (each new inbox message) or query (only new mail matching query, in Gmail's search syntax). The wake names each message's sender, subject, start and thread, marked as the mailbox's untrusted words.",
     ),
     (
+        "claude_accounts_get",
+        "Which Claude account each person's work runs on (teams step 8). hubApi: the hub's API configuration (endpoint, the machines holding the key with each node's fingerprint, the last Test), never the key. settings.membersUseHubApi: members may run on it (on by default; owners and admins always may). leadsRunOn: what projects' leads and work nobody started (automations, train fixes) run on: the hub's API, else the hub owner's subscription, else each machine's own login (machine_login) when nothing is set up. me: the caller's own choice, subscription (machines and fingerprints, never the token) and runsOn, what the orders they start and their Navi run on, or refused with the fix. people: everyone's, for an owner's or admin's device.",
+    ),
+    (
+        "claude_hub_api_set",
+        "Owners' and admins' devices only. Set the hub's Claude API configuration: sealed, the API key sealed on the client with crypto_box_seal to each machine's boxPubKey (every machine agents run on), or empty to keep the saved key; endpoint, a custom ANTHROPIC_BASE_URL, absent for Anthropic's own. The hub relays each box to its node and keeps the fingerprint, never the key; missingOn names machines that don't hold it, where nothing runs on it until it is saved again while they are online. Projects' leads and work nobody started run on it, and so do people who choose it.",
+    ),
+    (
+        "claude_hub_api_remove",
+        "Owners' and admins' devices only. Remove the hub's Claude API configuration; each online node holding the key forgets it.",
+    ),
+    (
+        "claude_settings_set",
+        "Owners' and admins' devices only. membersUseHubApi: whether members may run their work on the hub's API configuration (on by default). Off, each member connects their own subscription; owners and admins, projects' leads and work nobody started are never affected.",
+    ),
+    (
+        "claude_subscription_set",
+        "A person's own device only. Connect the caller's Claude subscription: sealed, the long-lived token `claude setup-token` prints, sealed on the client with crypto_box_seal to each machine's boxPubKey. The hub relays each box to its node and keeps the fingerprint, never the token. The orders the caller starts and their Navi run on it (unless they chose the hub's API), and nobody else's work ever does. Replaces a subscription connected before; missingOn names machines that don't hold it.",
+    ),
+    (
+        "claude_subscription_remove",
+        "A person's own device only. Disconnect the caller's subscription; each online node holding the token forgets it.",
+    ),
+    (
+        "claude_choice_set",
+        "A person's own device only. choice: subscription (their own, always) or hub_api (the hub's API configuration, if they may use it); absent: their subscription once connected, else the hub's API. Agents started from then on run this way; a running one keeps its account.",
+    ),
+    (
+        "claude_account_test",
+        "Try an account with one tiny claude -p call on a machine holding it (machineId, default the first online): account hub_api (owners' and admins' devices) or mine (the caller's subscription). test.ok, else test.error in claude's words with the secret masked; recorded as the account's lastTest.",
+    ),
+    (
         "thread_tail",
         "A thread's newest messages and actions, newest first (n defaults to 10, max 50; kinds filters to message or action), plus its summary.",
     ),

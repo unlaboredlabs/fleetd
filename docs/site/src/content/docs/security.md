@@ -64,6 +64,23 @@ before. All projects are open to everyone on the hub, so give a hub only to peop
 it. The hub's operator, and any agent on the hub machine, can read the hub's database: fleetd records who did what,
 but it keeps nothing private from them.
 
+## Claude accounts {#claude}
+
+The hub's API key and each person's subscription token (see [Claude accounts](/docs/people#claude)) go the way of
+every other secret:
+- The app seals the value to each machine's key. The hub relays the boxes and keeps only each machine's fingerprint,
+  never the value. No agent key can set, read or test them.
+- The node keeps the value in a 0600 file in its home. It passes it only to the claude processes of work on that
+  account, and masks it in everything those sessions report, transcripts included.
+- A session on an account drops the machine's own key, token and gateway variables, so they can't outrank it. One
+  whose account the node no longer holds fails to start; it never falls back to the machine's own login. A node too
+  old to run accounts gets no work on one.
+- One person's subscription runs only work they started, or their Navi. Removing a person forgets their token on
+  every machine.
+
+Like project secrets, the value is in the claude process's environment. Any process of the node's OS user can read
+it, so the machine's owner and any agent running there could reach it, as [People](#people) says of the hub.
+
 ## Secrets and commands {#secrets}
 
 - **Secrets never reach the hub in plain text.** The app seals each value to the target node's key (a libsodium
