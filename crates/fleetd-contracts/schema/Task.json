@@ -61,6 +61,10 @@
       "pattern": "^[a-z0-9-]{1,32}$",
       "type": "string"
     },
+    "ProfileName": {
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,31}$",
+      "type": "string"
+    },
     "ProjectId": {
       "type": "string"
     },
@@ -219,9 +223,9 @@
           "type": "array"
         },
         "profile": {
-          "$ref": "#/$defs/TaskProfile",
+          "$ref": "#/$defs/ProfileName",
           "default": "high",
-          "description": "Resolved at spawn. Rows stored with a model and effort read as `high` (the hub migrates its own)."
+          "description": "The profile's name, resolved at spawn: the spawn's, else the hub's default. It keeps the name it ran on through\na rename. Rows stored with a model and effort read as `high` (the hub migrates its own)."
         },
         "projectRef": {
           "$ref": "#/$defs/ProjectRef"
@@ -301,14 +305,6 @@
         "write",
         "read",
         "review"
-      ],
-      "type": "string"
-    },
-    "TaskProfile": {
-      "description": "What an agent runs on. There are exactly two: `high` is the default and what the lead, every reviewer and every\nhelper call run; `medium` is for mechanical tasks the lead picks. Each runs on its setting's model and effort\n([`ProfileSettings`]), else on the runner's own for it.",
-      "enum": [
-        "high",
-        "medium"
       ],
       "type": "string"
     },

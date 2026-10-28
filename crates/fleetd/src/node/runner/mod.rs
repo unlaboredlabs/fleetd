@@ -3,7 +3,7 @@
 //!
 //! The boundary, which is all the hub, the train and the app may rely on:
 //! - a [`Runner`] spawns one process per live session from a [`SessionSpec`] and hands back a [`SessionHandle`]:
-//!   commands in, normalized [`RunnerEvent`]s out; it maps a [`TaskProfile`] onto its own model and effort;
+//!   commands in, normalized [`RunnerEvent`]s out; it maps a profile ([`ProfileName`]) onto its own model and effort;
 //! - a [`RunnerGuide`] ([`guide`]) says, from a [`RunnerInfo`], what a person reads and runs about that runner;
 //! - tool calls arrive classified ([`fleetd_contracts::sessions::ToolClass`]) and usage provider-neutral
 //!   ([`RunUsage`]), so no tool name, CLI flag, config path, error text or usage field crosses it.
@@ -25,7 +25,7 @@ use std::path::PathBuf;
 use std::pin::Pin;
 use std::time::Duration;
 
-use fleetd_contracts::effort::{Effort, TaskProfile};
+use fleetd_contracts::effort::{Effort, ProfileName};
 use fleetd_contracts::model::RuntimeMode;
 use fleetd_contracts::sessions::{
     PermissionDecision, RunFailure, RunUsage, RunnerInfo, RunnerKind, SendMode, SendNow, ThreadItem,
@@ -34,7 +34,7 @@ use tokio::sync::mpsc;
 
 pub type BoxFut<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
-/// The model and effort a runner runs one [`TaskProfile`] on.
+/// The model and effort a runner runs a profile on when the hub chose none.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ProfileModel {
     pub model: &'static str,
@@ -268,9 +268,9 @@ pub trait Runner: Send + Sync + 'static {
     fn spawn(&self, spec: SessionSpec) -> Result<SessionHandle, RunnerError>;
     /// The model and effort a session of `profile` runs on when no setting chose them, and where one whose model
     /// claude refused falls back to.
-    fn profile(&self, profile: TaskProfile) -> ProfileModel;
+    fn profile(&self, profile: &ProfileName) -> ProfileModel;
     /// The profile of a session stored with `model` and `effort`, or launched by a hub from before profiles.
-    fn profile_of(&self, model: &str, effort: Effort) -> TaskProfile;
+    fn profile_of(&self, model: &str, effort: Effort) -> ProfileName;
 }
 
 /// What a person reads and runs about one kind of runner, from what its probe reported ([`RunnerInfo`]). The hub's
@@ -298,7 +298,7 @@ pub trait RunnerGuide: Sync {
     /// The tools no session of this runner ever gets.
     fn denied_tools(&self) -> &'static [&'static str];
     /// The model and effort a profile runs on when no setting chose them ([`Runner::profile`]).
-    fn profile(&self, profile: TaskProfile) -> ProfileModel;
+    fn profile(&self, profile: &ProfileName) -> ProfileModel;
 }
 
 /// The guide for a runner `kind`: the one place the hub turns a runner kind into its words.

@@ -100,8 +100,11 @@ pub struct SessionLocal {
     /// The profile it was launched on; absent from sessions stored before profile settings, which run on their
     /// profile's own. Where it falls back to when claude refuses its model.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub profile: Option<fleetd_contracts::effort::TaskProfile>,
-    /// The model claude's helper calls run on (the high profile's setting); absent: the runner's own.
+    pub profile: Option<fleetd_contracts::effort::ProfileName>,
+    /// Claude Code's fast mode, at every start of its claude.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub fast: bool,
+    /// The model claude's helper calls run on (the default profile's); absent: the runner's own.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub helper_model: Option<String>,
     /// The Claude account it runs on (claude_accounts.rs), at every start of its claude; absent: the machine's own

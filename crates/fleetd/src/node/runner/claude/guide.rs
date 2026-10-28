@@ -1,6 +1,6 @@
 //! What fleetd says about claude outside the adapter: the model each profile runs on when no setting chose one, and the
 //! words and commands a person reads ([`RunnerGuide`]).
-use fleetd_contracts::effort::{Effort, TaskProfile};
+use fleetd_contracts::effort::{Effort, ProfileName};
 use fleetd_contracts::sessions::RunnerInfo;
 
 use super::setup::ClaudeSetup;
@@ -10,24 +10,26 @@ use crate::node::runner::{ProfileModel, RunnerGuide};
 /// The model every claude fleetd starts runs on, helper calls included, unless a profile's setting chose another.
 pub const MODEL: &str = "claude-opus-5-5";
 
-/// A profile's own, with no setting: both on [`MODEL`], `high` at effort high, `medium` at effort medium.
-pub fn profile(profile: TaskProfile) -> ProfileModel {
+/// A profile's own, where the hub sent no model or claude refused it: every one on [`MODEL`], `medium` at effort
+/// medium and any other at high, as the first two profiles ran.
+pub fn profile(profile: &ProfileName) -> ProfileModel {
     ProfileModel {
         model: MODEL,
-        effort: match profile {
-            TaskProfile::High => Effort::High,
-            TaskProfile::Medium => Effort::Medium,
+        effort: if profile == "medium" {
+            Effort::Medium
+        } else {
+            Effort::High
         },
     }
 }
 
 /// The profile of a model and effort stored before profiles: [`MODEL`] at medium is medium, anything else is high.
-pub fn profile_of(model: &str, effort: Effort) -> TaskProfile {
-    if model == MODEL && effort == Effort::Medium {
-        TaskProfile::Medium
+pub fn profile_of(model: &str, effort: Effort) -> ProfileName {
+    ProfileName::unchecked(if model == MODEL && effort == Effort::Medium {
+        "medium"
     } else {
-        TaskProfile::High
-    }
+        "high"
+    })
 }
 
 pub struct Guide;
@@ -76,7 +78,7 @@ impl RunnerGuide for Guide {
         ALWAYS_DISALLOWED
     }
 
-    fn profile(&self, p: TaskProfile) -> ProfileModel {
+    fn profile(&self, p: &ProfileName) -> ProfileModel {
         profile(p)
     }
 }
@@ -87,17 +89,24 @@ mod tests {
 
     #[test]
     fn only_opus_at_medium_stays_medium() {
-        assert_eq!(profile_of(MODEL, Effort::Medium), TaskProfile::Medium);
-        assert_eq!(profile_of(MODEL, Effort::High), TaskProfile::High);
-        for effort in [Effort::Low, Effort::Max] {
-            assert_eq!(profile_of(MODEL, effort), TaskProfile::High);
+        assert_eq!(profile_of(MODEL, Effort::Medium), "medium");
+        assert_eq!(profile_of(MODEL, Effort::High), "high");
+        for effort in [Effort::Low, Effort::Xhigh, Effort::Max] {
+            assert_eq!(profile_of(MODEL, effort), "high");
         }
+        assert_eq!(profile_of("claude-haiku-5-5", Effort::Medium), "high");
         assert_eq!(
-            profile_of("claude-haiku-5-5", Effort::Medium),
-            TaskProfile::High
+            profile(&ProfileName::unchecked("high")).effort,
+            Effort::High
         );
-        assert_eq!(profile(TaskProfile::High).effort, Effort::High);
-        assert_eq!(profile(TaskProfile::Medium).model, "claude-opus-5-5");
+        assert_eq!(
+            profile(&ProfileName::unchecked("medium")).model,
+            "claude-opus-5-5"
+        );
+        assert_eq!(
+            profile(&ProfileName::unchecked("sonnet")).effort,
+            Effort::High
+        );
     }
 
     #[test]

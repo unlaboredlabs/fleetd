@@ -452,16 +452,15 @@ impl TaskPorts for HubTaskPorts {
         crate::hub::github_app::sessions::refusal(&hub, project_ref, order, kind, repo)
     }
 
-    fn medium_allowed(&self, project_ref: &ProjectRef) -> bool {
-        let Some(hub) = self.hub() else { return false };
-        hub.leads
-            .leads
-            .medium_allowed(project_ref)
-            .unwrap_or_else(|error| {
-                // Unread, a task runs high: the safe side.
-                tracing::warn!(message = %error.message, "the project's medium switch was not read");
-                false
-            })
+    fn allowed_profiles(
+        &self,
+        project_ref: &ProjectRef,
+    ) -> Result<Vec<fleetd_contracts::effort::ProfileName>, String> {
+        let hub = self.hub().ok_or("the hub is stopping")?;
+        hub.db
+            .profiles()
+            .allowed(project_ref)
+            .map_err(|e| e.to_string())
     }
 
     fn wake(&self, project_ref: &ProjectRef, kind: WakeKind, text: String) {

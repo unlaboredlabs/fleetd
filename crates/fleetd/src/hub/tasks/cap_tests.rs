@@ -1,6 +1,7 @@
 //! Changing a project's max agents over a real hub with an in-memory database and no node linked.
 use std::sync::Arc;
 
+use fleetd_contracts::effort::ProfileName;
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef};
 use fleetd_contracts::sessions::RunEnd;
@@ -537,18 +538,28 @@ fn a_pause_line_counts_in_good_grammar() {
     );
 }
 
-/// "Medium allowed" is on until `project_set` turns it off; the change is evented for the clients and is what the next
-/// spawn reads, so a spawn's medium then runs high.
+/// A project allows the default alone until `project_set` picks more; the change is evented for the clients and is
+/// what the next spawn reads.
 #[tokio::test]
-async fn the_medium_switch_is_on_by_default_and_a_spawn_reads_it() {
+async fn a_project_allows_the_default_until_it_picks_more_and_a_spawn_reads_it() {
     let (hub, _home) = hub();
     let r = project();
-    assert!(hub.tasks.d.ports.medium_allowed(&r));
-    hub.leads
+    let names =
+        |n: &[&str]| -> Vec<ProfileName> { n.iter().map(|n| ProfileName::unchecked(*n)).collect() };
+    assert_eq!(
+        hub.tasks.d.ports.allowed_profiles(&r).unwrap(),
+        names(&["high"])
+    );
+    let allowed = hub
         .leads
-        .set_medium_allowed(&r, "shop", false)
+        .leads
+        .set_allowed_profiles(&r, "shop", &names(&["medium", "high"]))
         .unwrap();
-    assert!(!hub.tasks.d.ports.medium_allowed(&r));
+    assert_eq!(allowed, names(&["high", "medium"]));
+    assert_eq!(
+        hub.tasks.d.ports.allowed_profiles(&r).unwrap(),
+        names(&["high", "medium"])
+    );
     let (summary, data): (String, String) = hub
         .db
         .with(|c| {
@@ -559,13 +570,27 @@ async fn the_medium_switch_is_on_by_default_and_a_spawn_reads_it() {
             )?)
         })
         .unwrap();
-    assert_eq!(summary, "shop: every task runs on high (medium off)");
-    assert_eq!(data, r#"{"mediumAllowed":false}"#);
+    assert_eq!(summary, "shop: agents may run on high, medium");
+    assert_eq!(data, r#"{"profiles":["high","medium"]}"#);
+    // A name no profile has is refused, and nothing changes.
+    let refused = hub
+        .leads
+        .leads
+        .set_allowed_profiles(&r, "shop", &names(&["nope"]))
+        .unwrap_err();
+    assert_eq!(refused.message, "no profile is named nope.");
+    assert_eq!(
+        hub.tasks.d.ports.allowed_profiles(&r).unwrap(),
+        names(&["high", "medium"])
+    );
     hub.leads
         .leads
-        .set_medium_allowed(&r, "shop", true)
+        .set_allowed_profiles(&r, "shop", &[])
         .unwrap();
-    assert!(hub.tasks.d.ports.medium_allowed(&r));
+    assert_eq!(
+        hub.tasks.d.ports.allowed_profiles(&r).unwrap(),
+        names(&["high"])
+    );
 }
 
 /// The watchdog's stall fails the task, and the lead's line says why: the thread row does not hold it yet.

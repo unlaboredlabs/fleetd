@@ -2,6 +2,7 @@
 //! and a permission answer, and what it makes of the frames that come back.
 use std::sync::Arc;
 
+use fleetd_contracts::effort::Effort;
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{MachineId, ProjectId, ThreadId, ThreadRef};
 use fleetd_contracts::node_link::{HubToNode, NodeToHub};
@@ -177,7 +178,7 @@ fn launch_input(request: &str) -> LaunchInput {
     LaunchInput {
         project_id: ProjectId::unchecked("p1"),
         prompt: "reply with the word OK".into(),
-        profile: TaskProfile::Medium,
+        profile: ProfileName::unchecked("medium"),
         runtime_mode: RuntimeMode::ApprovalRequired,
         title: None,
         client_request_id: request.into(),
@@ -219,11 +220,17 @@ async fn launch_send_interrupt_and_a_permission_answer_go_out_as_session_calls()
     let SessionCall::Launch(l) = call else {
         panic!("not a launch: {call:?}")
     };
-    // The hub sends the profile; the node's runner picks the model.
+    // The hub sends the profile with its model and effort, the default's model for helper calls.
     assert_eq!(
-        (l.profile, l.model, l.effort),
-        (Some(TaskProfile::Medium), None, None)
+        (l.profile.as_deref(), l.model.as_deref(), l.effort, l.fast),
+        (
+            Some("medium"),
+            Some("claude-opus-5-5"),
+            Some(Effort::Medium),
+            false
+        )
     );
+    assert_eq!(l.helper_model.as_deref(), Some("claude-opus-5-5"));
     assert_eq!(l.prompt.as_str(), "reply with the word OK");
     assert_eq!(l.title.as_deref(), Some("reply with the word OK"));
     assert_eq!(l.workspace, SessionWorkspace::Root);
@@ -706,4 +713,31 @@ async fn a_navis_lead_gets_no_allow_rules_from_its_folders_policy_file() {
         json!({ "ok": { "kind": "launched", "summary": session(l.session_id.as_str(), json!({})) } }),
     );
     launched.await.unwrap().unwrap();
+}
+
+/// A node from before named profiles reads only high or medium and the efforts it knew: anything else runs high.
+#[test]
+fn an_older_node_gets_high_or_medium_and_an_effort_it_knows() {
+    use crate::hub::projects::profiles::Chosen;
+    let chosen = |profile: &str, effort| Chosen {
+        profile: ProfileName::unchecked(profile),
+        model: Some(fleetd_contracts::effort::ModelName::unchecked(
+            "claude-sonnet-5-5",
+        )),
+        effort,
+        fast: true,
+        helper_model: None,
+    };
+    let old = super::old_node_launch(chosen("quick", Effort::Xhigh));
+    assert_eq!(
+        (
+            old.profile.as_str(),
+            old.effort,
+            old.fast,
+            old.model.as_deref()
+        ),
+        ("high", Effort::High, false, Some("claude-sonnet-5-5"))
+    );
+    let old = super::old_node_launch(chosen("medium", Effort::Low));
+    assert_eq!((old.profile.as_str(), old.effort), ("medium", Effort::Low));
 }

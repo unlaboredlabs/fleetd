@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use fleetd_contracts::effort::{Effort, TaskProfile};
+use fleetd_contracts::effort::{Effort, ProfileName};
 use fleetd_contracts::sessions::{LoginStatus, RunnerInfo, RunnerKind};
 use serde_json::{Value, json};
 use tokio::sync::mpsc;
@@ -178,11 +178,11 @@ impl Runner for FakeRunner {
         })
     }
 
-    fn profile(&self, profile: TaskProfile) -> ProfileModel {
+    fn profile(&self, profile: &ProfileName) -> ProfileModel {
         crate::node::runner::claude::guide::profile(profile)
     }
 
-    fn profile_of(&self, model: &str, effort: Effort) -> TaskProfile {
+    fn profile_of(&self, model: &str, effort: Effort) -> ProfileName {
         crate::node::runner::claude::guide::profile_of(model, effort)
     }
 }

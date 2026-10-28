@@ -19,7 +19,7 @@ use fleetd_contracts::automations::{
     AutomationRunState, AutomationTrigger, MemoryRefreshJob, MemoryRefreshRun,
 };
 use fleetd_contracts::chat::{ChatAuthor, ChatMessage};
-use fleetd_contracts::effort::TaskProfile;
+use fleetd_contracts::effort::ProfileName;
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadId, ThreadRef};
 use fleetd_contracts::ledger::{Decision, LeadState};
@@ -706,7 +706,11 @@ async fn start(
     let input = LaunchInput {
         project_id: r.project_id.clone(),
         prompt,
-        profile: TaskProfile::High,
+        profile: hub
+            .db
+            .profiles()
+            .default_profile()
+            .map_or_else(|_| ProfileName::legacy(), |p| p.name),
         // Its node asks for any tool not allowed, and refuses it.
         runtime_mode: RuntimeMode::ApprovalRequired,
         title: Some(

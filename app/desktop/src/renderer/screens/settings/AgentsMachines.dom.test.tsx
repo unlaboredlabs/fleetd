@@ -96,7 +96,7 @@ const render = async (page: "hub" | "settings" = "hub", admin?: boolean) => {
         return Promise.resolve({ ok: true, output: { slots: now } });
       }
       if (tool === "hub_info") return Promise.resolve({ ok: true, output: { version: "0.0.0", protocol: 1, busy: [], ...(admin === undefined ? {} : { admin }) } });
-      if (tool === "project_get") return Promise.resolve({ ok: true, output: { machineId: "devbox", projectId: "storefront", mediumAllowed: true } });
+      if (tool === "project_get") return Promise.resolve({ ok: true, output: { machineId: "devbox", projectId: "storefront", profiles: ["high"] } });
       // The rest of a project's Agents page (profiles, MCP servers, skills) finds a hub without them.
       return Promise.resolve({ ok: false, error: { code: "not_found", message: `${tool} isn't faked` } });
     },

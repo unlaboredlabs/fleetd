@@ -4,7 +4,7 @@
 // agree with the bars; they are fixture data, not the hub's rules. Ported from the GPUI app's time/fixture.rs.
 // Value imports carry ".ts": `pnpm fixtures` runs this file under plain Node (fixtures/time/index.ts).
 import { NO_NAMES, KIND_WORD, SHOWN, categoryKinds, fmtDur, type Lane as NamedLane, type Names } from "./format.ts";
-import type { TaskProfile } from "../../../shared/contracts";
+import type { ProfileName } from "../../../shared/contracts";
 import {
   KIND_CATEGORY,
   type AgentRole,
@@ -31,7 +31,7 @@ const MIN = 60_000;
 const PAGES = ["about", "pricing", "contact"] as const;
 
 /** The fixtures' task profiles: the contact page's writers do mechanical work on medium; everything else runs high. */
-export const fixtureProfile = (role: AgentRole, title: string): TaskProfile => (role === "implementer" && title.startsWith("contact") ? "medium" : "high");
+export const fixtureProfile = (role: AgentRole, title: string): ProfileName => (role === "implementer" && title.startsWith("contact") ? "medium" : "high");
 
 type Mutable<T> = { -readonly [K in keyof T]: T[K] };
 type Draft = Mutable<Span> & { extra?: SpanExtra };
@@ -467,7 +467,7 @@ const breakdownOf = (d: Data): TimeBreakdownOutput => {
   const waits = d.spans.filter((s) => s.kind === "wait.request");
   const longest = waits.reduce<Span | undefined>((best, s) => (best === undefined || dur(s) > dur(best) ? s : best), undefined);
   // Each span's agent by its thread; the lead's spans count under high, as the hub counts them.
-  const profiles = new Map<TaskProfile, { agentMs: number; modelMs: number; outputTokens: number }>();
+  const profiles = new Map<ProfileName, { agentMs: number; modelMs: number; outputTokens: number }>();
   for (const s of d.spans) {
     const who = s.threadId === undefined ? undefined : d.roles?.get(s.threadId);
     if (who === undefined) continue;

@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 use fleetd_contracts::auth::Role;
-use fleetd_contracts::effort::TaskProfile;
+use fleetd_contracts::effort::{PROFILES_MAX, ProfileName};
 use fleetd_contracts::ids::{MachineId, ThreadRef, Timestamp};
 use fleetd_contracts::mcp::{
     ErrorCode, ThreadWindowInput, ThreadWindowOutput, TimeBreakdownInput, TimeBreakdownOutput,
@@ -400,44 +400,48 @@ fn p50(v: &mut [i64]) -> i64 {
     v[(v.len() - 1) / 2]
 }
 
-/// Each profile's agent time, model time and output tokens over the period's spans, high first; spans of no task
-/// or lead are left out.
+/// Each profile's agent time, model time and output tokens over the period's spans, most agent time first; spans of
+/// no task or lead are left out.
 fn by_profile(l: &Loaded, since: i64, until: i64) -> Vec<ProfileTotal> {
-    let mut sums = [(0.0_f64, 0.0_f64, 0_i64); 2];
-    let mut seen = [false; 2];
+    let mut sums: HashMap<&str, (f64, f64, i64)> = HashMap::new();
     for (r, w) in l.rows.iter().zip(&l.weights) {
         if r.start_ms < since || r.start_ms >= until {
             continue;
         }
-        let k = match r.profile.as_deref() {
-            Some("high") => 0,
-            Some("medium") => 1,
-            _ => continue,
+        let Some(name) = r.profile.as_deref() else {
+            continue;
         };
-        seen[k] = true;
+        let sum = sums.entry(name).or_default();
         let tokens = r.extra.output_tokens.as_ref().map_or(0, |t| t.get());
-        sums[k].2 += (tokens as f64 * w).round() as i64;
+        sum.2 += (tokens as f64 * w).round() as i64;
         if is_detail(r.kind) {
             continue;
         }
         let ms = r.excl_ms as f64 * w;
-        sums[k].0 += ms;
+        sum.0 += ms;
         if r.cat() == Category::Model {
-            sums[k].1 += ms;
+            sum.1 += ms;
         }
     }
-    [TaskProfile::High, TaskProfile::Medium]
+    let mut totals: Vec<ProfileTotal> = sums
         .into_iter()
-        .zip(sums)
-        .zip(seen)
-        .filter(|(_, seen)| *seen)
-        .map(|((profile, (agent, model, tokens)), _)| ProfileTotal {
-            profile,
-            agent_ms: count(agent.round() as i64),
-            model_ms: count(model.round() as i64),
-            output_tokens: count(tokens),
+        .filter_map(|(name, (agent, model, tokens))| {
+            Some(ProfileTotal {
+                profile: ProfileName::new(name).ok()?,
+                agent_ms: count(agent.round() as i64),
+                model_ms: count(model.round() as i64),
+                output_tokens: count(tokens),
+            })
         })
-        .collect()
+        .collect();
+    totals.sort_by(|a, b| {
+        b.agent_ms
+            .get()
+            .cmp(&a.agent_ms.get())
+            .then_with(|| a.profile.cmp(&b.profile))
+    });
+    totals.truncate(PROFILES_MAX);
+    totals
 }
 
 fn top_commands(rows: &[Row]) -> Vec<CommandStat> {
@@ -1440,8 +1444,8 @@ mod tests {
             assert_eq!(
                 got,
                 [
-                    (TaskProfile::High, 11_000, 9_000, 900),
-                    (TaskProfile::Medium, 5_000, 4_000, 300),
+                    (ProfileName::unchecked("high"), 11_000, 9_000, 900),
+                    (ProfileName::unchecked("medium"), 5_000, 4_000, 300),
                 ]
             );
             Ok(())

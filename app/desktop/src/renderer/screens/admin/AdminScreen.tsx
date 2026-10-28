@@ -16,7 +16,7 @@ import type { HubView } from "../../src/data/hubs";
 import { HubScope, useData, useHub, useHubs, useSeveralHubs, useToolQuery } from "../../src/data/react";
 import { HUB_COLOR } from "../shell/hubColor";
 import { AddMachine, type View } from "../addMachine";
-import { HubCaps, TaskProfiles } from "../settings/Agents";
+import { HubCaps } from "../settings/Agents";
 import { MachineRoles } from "../settings/MachineRoles";
 import { HubMemoryCaps } from "../settings/MemoryCaps";
 import { HUB } from "../settings/editor";
@@ -250,8 +250,6 @@ function HubSettings() {
         <PageHead title="Hub settings">What reaches every project and machine on this hub. A project&apos;s own settings come after these.</PageHead>
         <PagePart title="Agents" reveal="admin.hub.agents">
           <HubCaps />
-          <Separator />
-          <TaskProfiles />
           <Separator />
           <HubMemoryCaps />
         </PagePart>

@@ -272,25 +272,25 @@ pub const ENTRIES: &[Entry] = &[
         Lead,
         Lead,
         "Task profiles",
-        "after the lead prompt, while the project allows medium (project_set)",
-        "",
+        "after the lead prompt, while the project allows more than the default profile (project_set)",
+        "default!=the default profile's name; profiles!=each profile the project allows, a line each with its note",
         &[
             (
-                "mechanical-only",
-                "medium only for mechanical work, never for design or anything subtle",
-                r"only for mechanical work",
+                "default-unless-noted",
+                "another profile only when its note fits the work",
+                r"Name another only when its note fits the work",
                 Prompt
             ),
             (
-                "reviews-high",
-                "reviews always run high",
-                r"Reviews always run high",
+                "reviews-default",
+                "reviews always run on the default",
+                r"Reviews always run on the default",
                 Code
             ),
             (
-                "redo-on-high",
-                "a medium task whose review finds blockers twice is redone on high",
-                r"redone on high",
+                "redo-on-default",
+                "a task whose review finds blockers twice is redone on the default",
+                r"redone on the default",
                 Prompt
             ),
         ]

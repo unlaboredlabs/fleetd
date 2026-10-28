@@ -19,7 +19,7 @@ use crate::browser::{
 use crate::chat::{ChatRequestId, NudgeCall, NudgeResult};
 use crate::checked;
 use crate::checklist::{ChecklistCall, ChecklistResult};
-use crate::effort::TaskProfile;
+use crate::effort::ProfileName;
 use crate::ids::{MachineId, ThreadId};
 use crate::ledger::{
     Brief, Decision, DecisionKey, DecisionValue, DecisionWhy, EnvName, GATED_DEFAULT_TIMEOUT_SEC,
@@ -171,9 +171,9 @@ fn default_task_kind() -> TaskKind {
 }
 
 /// `fleetd task spawn --workstream W1 --title t --prompt p [--kind write|read|review]
-/// [--profile high|medium] [--pr <url>] [--qa] [--repo <name>]`. The profile defaults to high; a review task, and
-/// every task of a project with medium off, runs high whatever it says. A review task needs `--pr`; `--qa` marks a
-/// review task as a QA run.
+/// [--profile <name>] [--pr <url>] [--qa] [--repo <name>]`. The profile defaults to the hub's default; one the project
+/// doesn't allow is refused, and a review task runs on the default whatever it says. A review task needs `--pr`;
+/// `--qa` marks a review task as a QA run.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(remote = "Self", rename_all = "camelCase")]
@@ -183,7 +183,7 @@ pub struct TaskSpawnCall {
     #[serde(default = "default_task_kind")]
     pub kind: TaskKind,
     pub prompt: TaskPrompt,
-    pub profile: Option<TaskProfile>,
+    pub profile: Option<ProfileName>,
     pub pr: Option<PrUrl>,
     pub qa: Option<bool>,
     /// The project's repo it works in, by name: its worktree, branch, setup and PR are that repo's. Absent: the

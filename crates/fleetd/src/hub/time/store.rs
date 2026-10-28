@@ -25,7 +25,7 @@ pub struct Ids {
     pub run_id: Option<String>,
     /// `AgentRole` as stored: lead, implementer, reviewer, ...
     pub role: Option<String>,
-    /// A task's profile ("high", "medium"); "high" for a lead.
+    /// A task's profile's name; the default's for a lead.
     pub profile: Option<String>,
 }
 

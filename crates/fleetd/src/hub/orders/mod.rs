@@ -10,7 +10,7 @@ mod tests;
 use std::collections::{BTreeSet, HashMap};
 
 use fleetd_contracts::auth::Role;
-use fleetd_contracts::effort::{Effort, TaskProfile};
+use fleetd_contracts::effort::{Effort, ProfileName};
 use fleetd_contracts::ids::{ProjectRef, ThreadRef, Timestamp};
 use fleetd_contracts::ledger::{Lead, LeadState, Workstream, WorkstreamId, WorkstreamState};
 use fleetd_contracts::live::{
@@ -44,6 +44,8 @@ pub trait Lookups {
     /// The thread's status, model and effort as the hub last saw them.
     fn thread(&self, r: &ThreadRef) -> Option<ThreadSeen>;
     fn live(&self, r: &ThreadRef) -> Option<LiveParts>;
+    /// The hub's default profile, which leads run on.
+    fn default_profile(&self) -> Option<ProfileName>;
 }
 
 #[derive(Clone, Debug, Default)]
@@ -63,6 +65,9 @@ impl Lookups for Hub {
     }
     fn live(&self, r: &ThreadRef) -> Option<LiveParts> {
         self.executors.live(r)
+    }
+    fn default_profile(&self) -> Option<ProfileName> {
+        self.db.profiles().default_profile().ok().map(|p| p.name)
     }
 }
 
@@ -252,7 +257,7 @@ pub fn task_lane(task: &Task, prs: &[(&Change, PrRef)], look: &dyn Lookups) -> A
             .as_ref()
             .and_then(|t| t.effort.as_deref())
             .and_then(effort_of),
-        profile: Some(task.profile),
+        profile: Some(task.profile.clone()),
         status,
         status_reason: reason_of(task, status).map(|r| text(&r)),
         started_at: task.started_at.clone(),
@@ -316,8 +321,8 @@ pub fn lead_lane(lead: &Lead, project_title: &str, look: &dyn Lookups) -> AgentL
             .as_ref()
             .and_then(|t| t.effort.as_deref())
             .and_then(effort_of),
-        // The lead always runs high.
-        profile: Some(TaskProfile::High),
+        // The lead always runs on the default.
+        profile: look.default_profile(),
         status,
         status_reason: None,
         started_at: Some(lead.started_at.clone()),

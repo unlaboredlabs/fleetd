@@ -3,7 +3,7 @@
 //! their task, order or lead here.
 use std::collections::HashMap;
 
-use fleetd_contracts::effort::TaskProfile;
+use fleetd_contracts::effort::ProfileName;
 use fleetd_contracts::time::{SpanExtra, SpanKind, SpanStatus, SpanWire};
 use rusqlite::{Connection, OptionalExtension, params};
 use tokio::sync::mpsc;
@@ -193,14 +193,22 @@ pub fn who(c: &Connection, machine: &str, thread: &str) -> Result<Who, StoreErro
             )
             .optional()?,
     };
+    // The lead always runs on the default.
+    let profile = match lead {
+        Some(_) => c
+            .query_row("SELECT name FROM profiles WHERE is_default = 1", [], |r| {
+                r.get(0)
+            })
+            .optional()?,
+        None => None,
+    };
     Ok(Who {
         ids: Ids {
             machine_id: Some(machine.to_owned()),
             project_id: project,
             thread_id: Some(thread.to_owned()),
             role: lead.is_some().then(|| "lead".into()),
-            // The lead always runs high.
-            profile: lead.is_some().then(|| TaskProfile::High.as_str().into()),
+            profile,
             ..Ids::default()
         },
         lead: lead.is_some(),
@@ -211,7 +219,7 @@ pub fn who(c: &Connection, machine: &str, thread: &str) -> Result<Who, StoreErro
 pub fn profile_of(task: &serde_json::Value) -> String {
     task["profile"]
         .as_str()
-        .unwrap_or(TaskProfile::High.as_str())
+        .unwrap_or(ProfileName::legacy().as_str())
         .to_owned()
 }
 

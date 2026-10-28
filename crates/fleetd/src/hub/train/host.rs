@@ -42,7 +42,7 @@ pub struct EventView {
     pub data: Value,
 }
 
-/// A review task as Tasks.spawn takes it (kind "review", so the high profile), from the caller `by` in `project_ref`.
+/// A review task as Tasks.spawn takes it (kind "review", so the default profile), from the caller `by` in `project_ref`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ReviewSpawn {
     pub project_ref: ProjectRef,

@@ -301,23 +301,13 @@ fleetd project set --fleet-cap <n> [--home <dir>] [--hub <url>]
 
 the most agents the project runs at once (its lead not counted), or the fleet's cap on running agents (admin key); more wait queued and start as slots free. default: its machine's cap within the fleet cap, following both. Lowering stops nothing; `--pause-extras` has the newest agents above the new max push their work and wait
 
-### fleetd project set {#project-set-medium}
+### fleetd project set {#project-set-profiles}
 
 ```text
-fleetd project set <machine>/<project> --medium on|off [--home <dir>] [--hub <url>]
+fleetd project set <machine>/<project> --profiles <name>,...|none [--home <dir>] [--hub <url>]
 ```
 
-whether the lead may run mechanical tasks on the medium profile (on by default); off runs every task on high
-
-### fleetd project set {#project-set-high-model}
-
-```text
-fleetd project set [<machine>/<project>] [--high-model <model>|default]
-    [--high-effort low|medium|high|max|default] [--medium-model <model>|default]
-    [--medium-effort low|medium|high|max|default] [--home <dir>] [--hub <url>]
-```
-
-the model and effort behind a task profile, fleet-wide (admin key) or as the project's override. default unsets it: a project's follows the fleet's, the fleet's the profile's own (claude-opus-5-5 at high or medium). The lead, every review and helper calls run high. New agents follow it; if claude refuses the model they run on the profile's own and `project profiles` says so
+the task profiles its lead may run agents on besides the hub's default, which every project allows; none: the default alone
 
 ### fleetd project profiles {#project-profiles}
 
@@ -325,7 +315,17 @@ the model and effort behind a task profile, fleet-wide (admin key) or as the pro
 fleetd project profiles [<machine>/<project>] [--home <dir>] [--hub <url>]
 ```
 
-what each profile's agents run on, and the settings behind it
+the hub's task profiles: model, effort, fast mode and note, and which the project allows
+
+### fleetd project profile {#project-profile}
+
+```text
+fleetd project profile <name> [--model <model>] [--effort low|medium|high|xhigh|max]
+    [--fast on|off] [--note <text>] [--rename <new>] [--default] [--delete]
+    [--home <dir>] [--hub <url>]
+```
+
+create or change a task profile (owner or admin), or delete one. A new one needs `--model` and `--effort`. `--default` makes it the one the lead, every review and helper calls run on
 
 ### fleetd project set {#project-set-fast-check}
 

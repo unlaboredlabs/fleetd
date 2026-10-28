@@ -40,7 +40,7 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use fleetd_contracts::effort::TaskProfile;
+use fleetd_contracts::effort::ProfileName;
 use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef, ThreadId, ThreadRef};
 use fleetd_contracts::mcp::McpToolError;
 use fleetd_contracts::model::RuntimeMode;
@@ -155,7 +155,8 @@ pub struct NodeSessions {
 pub struct LaunchInput {
     pub project_id: ProjectId,
     pub prompt: String,
-    pub profile: TaskProfile,
+    /// The profile's name; one gone since runs on the default.
+    pub profile: ProfileName,
     pub runtime_mode: RuntimeMode,
     pub title: Option<String>,
     /// The session and run ids derive from it, and the node's launch is idempotent on the session id, so a retried
@@ -392,6 +393,32 @@ pub struct Executors {
     /// Where later areas plug into the M1 tools.
     pub hooks: tools::ToolHooks,
     time: std::sync::OnceLock<Arc<crate::hub::time::Time>>,
+    /// Whether a machine's node takes any profile name, `xhigh` and fast mode (`CAP_PROFILE_NAMES`); none until
+    /// `hub/serve` sets it, and every node does.
+    profile_names: std::sync::OnceLock<TakesProfileNames>,
+}
+
+/// Whether a machine's node takes any profile name (`Executors::set_profile_names`).
+pub type TakesProfileNames = Arc<dyn Fn(&MachineId) -> bool + Send + Sync>;
+
+/// What a node from before named profiles reads: `high` or `medium`, an effort it knows, no fast mode (it ignores it).
+fn old_node_launch(
+    chosen: crate::hub::projects::profiles::Chosen,
+) -> crate::hub::projects::profiles::Chosen {
+    let profile = if chosen.profile == "medium" {
+        "medium"
+    } else {
+        "high"
+    };
+    crate::hub::projects::profiles::Chosen {
+        profile: ProfileName::unchecked(profile),
+        effort: match chosen.effort {
+            fleetd_contracts::effort::Effort::Xhigh => fleetd_contracts::effort::Effort::High,
+            e => e,
+        },
+        fast: false,
+        ..chosen
+    }
 }
 
 /// A finished command whose output holds a GitHub pull URL, such as `gh pr create`'s.
@@ -539,6 +566,7 @@ impl Executors {
             clones: Mutex::default(),
             hooks: tools::ToolHooks::default(),
             time: std::sync::OnceLock::new(),
+            profile_names: std::sync::OnceLock::new(),
         })
     }
 
@@ -548,6 +576,12 @@ impl Executors {
 
     pub fn set_pr_sink(&self, sink: PrSink) {
         let _ = self.pr_sink.set(sink);
+    }
+
+    /// `hub/serve` sets this once the link server exists: a node that lists no `CAP_PROFILE_NAMES` gets what it can
+    /// read (`old_node_launch`).
+    pub fn set_profile_names(&self, takes: TakesProfileNames) {
+        let _ = self.profile_names.set(takes);
     }
 
     /// `hub/serve` sets this once the policy reader exists; until then launches carry no tool rules.
@@ -1548,19 +1582,10 @@ impl Executors {
                     })?
             }
         };
-        let project = ProjectRef {
-            machine_id: machine_id.clone(),
-            project_id: input.project_id.clone(),
-        };
-        let chosen = self
-            .store
-            .db()
-            .profile_settings()
-            .chosen(&project, input.profile)
-            .unwrap_or_else(|e| {
-                tracing::warn!(error = %e, "the profile settings were not read; the profile's own runs");
-                Default::default()
-            });
+        let chosen = self.store.db().profiles().chosen(&input.profile).ok();
+        if chosen.is_none() {
+            tracing::warn!(profile = %input.profile, "the profiles were not read; the runner's own runs");
+        }
         let fixed_mcp = options.mcp.is_some();
         // A Navi's lead gets no allow rules from the policy file in its own folder, which it could write: only its
         // denials hold.
@@ -1586,6 +1611,10 @@ impl Executors {
             }
         }
         let skills = self.skill_bundles(machine_id, &input.project_id);
+        let chosen = match self.profile_names.get() {
+            Some(takes) if !takes(machine_id) => chosen.map(old_node_launch),
+            _ => chosen,
+        };
         let seed = format!("{machine_id}\n{}", input.client_request_id);
         let session_id = ThreadId::unchecked(uuid_from(&format!("session\n{seed}")));
         let launch = SessionLaunch {
@@ -1593,12 +1622,21 @@ impl Executors {
             project_id: input.project_id.clone(),
             title: Some(title),
             runner,
-            profile: Some(input.profile),
-            model: chosen.model.map(|m| NonEmpty::unchecked(m.into_inner())),
-            effort: chosen.effort,
+            profile: Some(
+                chosen
+                    .as_ref()
+                    .map_or_else(|| input.profile.clone(), |c| c.profile.clone()),
+            ),
+            model: chosen
+                .as_ref()
+                .and_then(|c| c.model.as_ref())
+                .map(|m| NonEmpty::unchecked(m.as_str())),
+            effort: chosen.as_ref().map(|c| c.effort),
+            fast: chosen.as_ref().is_some_and(|c| c.fast),
             helper_model: chosen
-                .helper_model
-                .map(|m| NonEmpty::unchecked(m.into_inner())),
+                .as_ref()
+                .and_then(|c| c.helper_model.as_ref())
+                .map(|m| NonEmpty::unchecked(m.as_str())),
             runtime_mode: input.runtime_mode,
             workspace: options.workspace.unwrap_or(SessionWorkspace::Root),
             prompt: non_empty(machine_id, op, "prompt", &input.prompt)?,
@@ -2147,8 +2185,8 @@ impl Executors {
         }
     }
 
-    /// A session whose model claude refused runs on its profile's own: the settings that chose that model are marked
-    /// refused, so new agents run as if they were unset and Settings says why.
+    /// A session whose model claude refused runs on the runner's own: the profiles on that model are marked refused,
+    /// so new agents run on the runner's own and Administration › Profiles says why.
     fn flag_refused(&self, machine_id: &MachineId, event: &MachineEvent) {
         let sessions: Vec<&SessionSummary> = match event {
             MachineEvent::Snapshot { sessions, .. } => sessions.iter().collect(),
@@ -2166,7 +2204,7 @@ impl Executors {
             match self
                 .store
                 .db()
-                .profile_settings()
+                .profiles()
                 .refuse(model, s.created_at.as_str(), &why)
             {
                 Ok(true) => {
@@ -2467,6 +2505,24 @@ impl Executors {
         match self.call(machine_id, op, call, CLAUDE_TEST_TIMEOUT).await? {
             SessionOutput::ClaudeAccountTested { ok, error } => Ok((ok, error)),
             _ => Err(failed(machine_id, op, "the node sent no test result")),
+        }
+    }
+
+    /// Has the node list the models the hub's API key offers. Only to a node listing `CAP_CLAUDE_MODELS`.
+    pub async fn claude_models(
+        &self,
+        machine_id: &MachineId,
+    ) -> Result<Result<Vec<fleetd_contracts::sessions::ApiModel>, String>, ExecutorError> {
+        let op = NodeOperation::Read;
+        match self
+            .call(machine_id, op, SessionCall::ClaudeModels, READ_TIMEOUT)
+            .await?
+        {
+            SessionOutput::ClaudeModels { models, error } => Ok(match error {
+                Some(why) => Err(why),
+                None => Ok(models),
+            }),
+            _ => Err(failed(machine_id, op, "the node sent no model list")),
         }
     }
 

@@ -70,6 +70,19 @@ impl From<StoreError> for LeadError {
     }
 }
 
+impl From<crate::hub::projects::profiles::ProfileError> for LeadError {
+    fn from(error: crate::hub::projects::profiles::ProfileError) -> Self {
+        match error {
+            crate::hub::projects::profiles::ProfileError::Refused(why) => LeadError::new(
+                ErrorCode::Invalid,
+                format!("{why}."),
+                "Name profiles profiles_list lists.",
+            ),
+            crate::hub::projects::profiles::ProfileError::Store(e) => e.into(),
+        }
+    }
+}
+
 impl From<serde_json::Error> for LeadError {
     fn from(e: serde_json::Error) -> Self {
         LeadError::bare(ErrorCode::Invalid, format!("Invalid JSON: {e}"))

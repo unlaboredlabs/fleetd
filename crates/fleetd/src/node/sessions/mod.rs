@@ -329,7 +329,8 @@ fn agent_exe(exe: std::io::Result<PathBuf>, pid: u32) -> String {
 
 /// fleetd's settings overlay (`--settings`). claude ranks it above the user's own settings, so a user's `env` or
 /// allow rule can't undo what sessions depend on: the pinned claude (no autoupdate), helper calls on `helper_model`,
-/// the subagent cap, the tools fleetd never gives an agent, auto memory off ([`AUTO_MEMORY_OFF_ENV`]), and `extra_env`
+/// the subagent cap, the tools fleetd never gives an agent, auto memory off ([`AUTO_MEMORY_OFF_ENV`]), fast mode when its
+/// profile has it (`fast`; left to the user's own settings otherwise), and `extra_env`
 /// (the session's prompt cache TTL and role defaults such as a task agent's command timeout). `skills` turns off
 /// claude's own skills of the names fleetd's plugin gives the session (`node::skills`). `ask` are the role's ask rules
 /// (`claude::role_ask`), which outrank every allow rule.
@@ -338,6 +339,7 @@ pub fn settings_overlay(
     skills: serde_json::Map<String, serde_json::Value>,
     helper_model: &str,
     ask: &[&str],
+    fast: bool,
 ) -> String {
     let mut env = subagents_off_settings_env();
     env.extend(
@@ -356,6 +358,9 @@ pub fn settings_overlay(
     });
     if !skills.is_empty() {
         overlay["skillOverrides"] = skills.into();
+    }
+    if fast {
+        overlay["fastMode"] = true.into();
     }
     if !ask.is_empty() {
         overlay["permissions"]["ask"] = ask.into();
@@ -751,7 +756,8 @@ impl SessionService {
             // A session stored before profiles, on another model or effort, resumes on its profile's own. One
             // launched on a profile keeps what its settings chose.
             let runner = &service.inner.runner;
-            let runs_on = runner.profile(runner.profile_of(&row.summary.model, row.summary.effort));
+            let runs_on =
+                runner.profile(&runner.profile_of(&row.summary.model, row.summary.effort));
             if row.local.profile.is_none()
                 && (row.summary.model.as_str(), row.summary.effort)
                     != (runs_on.model, runs_on.effort)
@@ -966,6 +972,14 @@ impl SessionService {
                 .await
                 .map_err(invalid)?;
                 Ok(SessionOutput::ClaudeAccountSaved { fingerprint })
+            }
+            SessionCall::ClaudeModels => {
+                let (models, error) =
+                    match super::claude_accounts::hub_models(&self.inner.config.home).await {
+                        Ok(models) => (models, None),
+                        Err(why) => (Vec::new(), Some(why)),
+                    };
+                Ok(SessionOutput::ClaudeModels { models, error })
             }
             SessionCall::ClaudeAccountTest { account } => {
                 let mut env = self.inner.config.runner_env();
@@ -1687,9 +1701,9 @@ impl SessionService {
             let first = launch.prompt.lines().next().unwrap_or_default();
             first.chars().take(80).collect()
         });
-        // The profile's settings as the hub resolved them, else the profile's own. A hub before profiles sends only a
-        // model and effort, which name a profile.
-        let (profile, chosen) = match launch.profile {
+        // The profile's model and effort as the hub sent them, else the profile's own. A hub before profiles sends only
+        // a model and effort, which name a profile.
+        let (profile, chosen) = match launch.profile.clone() {
             Some(profile) => (profile, Some((&launch.model, launch.effort))),
             None => (
                 self.inner.runner.profile_of(
@@ -1699,7 +1713,7 @@ impl SessionService {
                 None,
             ),
         };
-        let own = self.inner.runner.profile(profile);
+        let own = self.inner.runner.profile(&profile);
         let (model, effort) = match chosen {
             Some((model, effort)) => (
                 model.as_deref().unwrap_or(own.model).to_owned(),
@@ -1753,6 +1767,7 @@ impl SessionService {
                 setup_pending: setup.is_some(),
                 setup: setup.clone(),
                 profile: Some(profile),
+                fast: launch.fast,
                 helper_model: launch.helper_model.as_ref().map(|m| m.to_string()),
                 claude_account: launch.claude_account.clone(),
             },
@@ -2294,6 +2309,7 @@ impl SessionService {
                 skills.overrides(),
                 &helper_model,
                 claude::role_ask(row.local.role),
+                row.local.fast,
             ),
         )?;
         env.extend([
@@ -3106,7 +3122,7 @@ impl SessionService {
             failure.class,
             FailureClass::InvalidRequest | FailureClass::PoolExhausted
         ) && failure.model.as_deref() == Some(row.summary.model.as_str());
-        let Some(profile) = row.local.profile.filter(|_| refused) else {
+        let Some(profile) = row.local.profile.as_ref().filter(|_| refused) else {
             return false;
         };
         let own = self.inner.runner.profile(profile);

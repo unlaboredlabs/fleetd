@@ -8,7 +8,7 @@ import { selectOrderEvents } from "../../src/data/selectors";
 import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import type { HubError, HubEvent } from "../../../shared/hub";
 import { spansInput, type TimeQuery } from "./filters";
-import type { OrderCard, TaskProfile } from "../../../shared/contracts";
+import type { OrderCard, ProfileName } from "../../../shared/contracts";
 import { NO_NAMES, numberCollisions, type Lane, type Names } from "./format";
 import type { DataState } from "../../src/data/store";
 import type { AgentRole, Coverage, InsightRule, Span, SpanKind, ThreadWindowOutput, TimeBreakdownOutput, TimeInsightsOutput } from "./types";
@@ -231,7 +231,7 @@ export const namesOf = (s: NamesInput): Names => {
   const leads = new Set<string>();
   const changes = new Map<string, number>();
   const orders = new Map<string, { title: string; project: string; ref: { machineId: string; projectId: string } }>();
-  const lane = (l: { role: AgentRole; title: string; model?: string | undefined; profile?: TaskProfile | undefined; laneId: string; startedAt?: string | undefined; threadRef?: { threadId: string } | undefined }) => {
+  const lane = (l: { role: AgentRole; title: string; model?: string | undefined; profile?: ProfileName | undefined; laneId: string; startedAt?: string | undefined; threadRef?: { threadId: string } | undefined }) => {
     if (l.threadRef === undefined) return;
     seen.set(l.threadRef.threadId, {
       role: l.role,

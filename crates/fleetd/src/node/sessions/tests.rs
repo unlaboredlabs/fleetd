@@ -83,6 +83,7 @@ fn launch(id: &str, mode: RuntimeMode, workspace: SessionWorkspace) -> SessionCa
         profile: None,
         model: Some(NonEmpty::unchecked("claude-haiku-5-5")),
         effort: Some(Effort::Low),
+        fast: false,
         helper_model: None,
         runtime_mode: mode,
         workspace,
@@ -3323,7 +3324,7 @@ async fn configured_mcp_servers_reach_each_role_with_secrets_resolved_on_the_nod
                 &crate::hub::executor::LaunchInput {
                     project_id: ProjectId::unchecked("p1"),
                     prompt: "Reply with the word OK and nothing else.".into(),
-                    profile: Default::default(),
+                    profile: fleetd_contracts::effort::ProfileName::legacy(),
                     runtime_mode: RuntimeMode::FullAccess,
                     title: Some(role.into()),
                     client_request_id: format!("req-{role}"),
@@ -3556,10 +3557,10 @@ async fn a_new_session_gets_the_repos_and_the_hubs_skills_the_first_source_winni
     assert!(kept.contains("deploy-check") && !kept.contains("standup"));
 }
 
-/// A launch on `profile` with what its settings chose, as a hub with profile settings sends it.
+/// A launch on `profile` with its model and effort, as a hub with profiles sends it.
 fn profile_launch(
     id: &str,
-    profile: fleetd_contracts::effort::TaskProfile,
+    profile: &str,
     model: Option<&str>,
     effort: Option<Effort>,
 ) -> SessionCall {
@@ -3568,7 +3569,7 @@ fn profile_launch(
         unreachable!()
     };
     SessionCall::Launch(SessionLaunch {
-        profile: Some(profile),
+        profile: Some(fleetd_contracts::effort::ProfileName::unchecked(profile)),
         model: model.map(NonEmpty::unchecked),
         effort,
         helper_model: model.map(NonEmpty::unchecked),
@@ -3576,12 +3577,15 @@ fn profile_launch(
     })
 }
 
+/// A spawn's settings overlay.
+fn overlay(spec: &crate::node::runner::SessionSpec) -> serde_json::Value {
+    serde_json::from_str(&std::fs::read_to_string(spec.settings.as_ref().unwrap()).unwrap())
+        .unwrap()
+}
+
 /// The model in a spawn's settings overlay for claude's helper calls.
 fn helper_model(spec: &crate::node::runner::SessionSpec) -> String {
-    let overlay: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(spec.settings.as_ref().unwrap()).unwrap())
-            .unwrap();
-    overlay["env"]["ANTHROPIC_DEFAULT_HAIKU_MODEL"]
+    overlay(spec)["env"]["ANTHROPIC_DEFAULT_HAIKU_MODEL"]
         .as_str()
         .unwrap()
         .to_owned()
@@ -3589,20 +3593,20 @@ fn helper_model(spec: &crate::node::runner::SessionSpec) -> String {
 
 #[tokio::test]
 async fn a_profile_runs_on_what_its_settings_chose_else_on_its_own() {
-    use fleetd_contracts::effort::TaskProfile::{High, Medium};
+    let (high, medium) = ("high", "medium");
     for (profile, model, effort, runs) in [
         // Nothing set: exactly as before settings.
-        (High, None, None, ("claude-opus-5-5", Effort::High)),
-        (Medium, None, None, ("claude-opus-5-5", Effort::Medium)),
+        (high, None, None, ("claude-opus-5-5", Effort::High)),
+        (medium, None, None, ("claude-opus-5-5", Effort::Medium)),
         // A setting's model and effort, and one field alone over the profile's own.
         (
-            High,
+            high,
             Some("claude-sonnet-5-5"),
             Some(Effort::Max),
             ("claude-sonnet-5-5", Effort::Max),
         ),
         (
-            Medium,
+            medium,
             None,
             Some(Effort::Low),
             ("claude-opus-5-5", Effort::Low),
@@ -3622,13 +3626,44 @@ async fn a_profile_runs_on_what_its_settings_chose_else_on_its_own() {
         assert_eq!(done.model_refused, None);
         let spec = &hub.runner.spawned()[0];
         assert_eq!((spec.model.as_str(), spec.effort), runs);
-        // claude's helper calls follow the high profile's model.
+        // claude's helper calls follow the default profile's model.
         let helper = model.unwrap_or("claude-opus-5-5");
         assert_eq!(
             (spec.helper_model.as_str(), helper_model(spec).as_str()),
             (helper, helper)
         );
+        // Fast mode is left to the user's own settings.
+        assert_eq!(overlay(spec).get("fastMode"), None);
     }
+}
+
+#[tokio::test]
+async fn a_fast_profile_turns_claude_s_fast_mode_on_at_every_start() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut hub = hub(
+        dir.path(),
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::fixture("init-partial-two-turns"),
+    )
+    .await;
+    hub.project(dir.path()).await;
+    let SessionCall::Launch(launch) =
+        profile_launch("s1", "quick", Some("claude-opus-5-5"), Some(Effort::Low))
+    else {
+        unreachable!()
+    };
+    hub.ok(SessionCall::Launch(SessionLaunch {
+        fast: true,
+        ..launch
+    }))
+    .await;
+    hub.settled("r1").await;
+    let spec = &hub.runner.spawned()[0];
+    assert_eq!(overlay(spec)["fastMode"], serde_json::Value::Bool(true));
+    assert_eq!(
+        (spec.model.as_str(), spec.effort),
+        ("claude-opus-5-5", Effort::Low)
+    );
 }
 
 #[tokio::test]
@@ -3655,7 +3690,7 @@ async fn a_model_claude_refuses_runs_the_profile_s_own_in_the_same_run_and_says_
     hub.project(dir.path()).await;
     hub.ok(profile_launch(
         "s1",
-        fleetd_contracts::effort::TaskProfile::High,
+        "high",
         Some("claude-does-not-exist-9"),
         Some(Effort::Max),
     ))
@@ -3726,13 +3761,8 @@ async fn a_refusal_of_another_model_than_the_session_s_never_falls_back() {
     .await;
     hub.project(dir.path()).await;
     // The failure names claude-does-not-exist-9; the session runs on a gateway's own name.
-    hub.ok(profile_launch(
-        "s1",
-        fleetd_contracts::effort::TaskProfile::High,
-        Some("gw-opus"),
-        None,
-    ))
-    .await;
+    hub.ok(profile_launch("s1", "high", Some("gw-opus"), None))
+        .await;
     let done = hub.settled("r1").await;
     assert_eq!(done.status, SessionStatus::Failed);
     assert_eq!((done.model.as_str(), done.model_refused), ("gw-opus", None));

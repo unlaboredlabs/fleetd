@@ -9,7 +9,9 @@ use crate::auth::{AgentKeyInfo, Role};
 use crate::chat::{ChatMessageId, ChatRequestId};
 use crate::checklist::{CHECKLIST_MAX, TodoEdit, TodoItem};
 use crate::doctor::{DoctorCheck, DoctorCheckId};
-use crate::effort::{ProfileRuns, ProfileSetting, ProfileSettings};
+use crate::effort::{
+    Effort, ModelName, ModelSource, PROFILES_MAX, Profile, ProfileId, ProfileModel, ProfileName,
+};
 use crate::events::{HubEvent, HubEventType};
 use crate::hello::ProtocolVersion;
 use crate::ids::{EventSeq, MachineId, ProjectId, ProjectRef, ThreadId, Timestamp};
@@ -264,62 +266,60 @@ output!(LeadStartOutput {
     lead: Lead,
 });
 
-// project_set: a project's settings. `mediumAllowed` (default on): whether its lead may run a task on the medium
-// profile; off runs every task on high.
+// project_set: a project's settings. `profiles`: the profiles its agents may run on, by name, besides the hub's
+// default, which every project allows.
 input!(ProjectSetInput {
     machine_id: MachineId,
     project_id: ProjectId,
-    medium_allowed: bool,
+    profiles: UniqueList<ProfileName, 0, PROFILES_MAX>,
 });
 output!(ProjectSetOutput {
-    medium_allowed: bool
+    /// The profiles it allows now, the default first.
+    profiles: List<ProfileName, 1, PROFILES_MAX>,
 });
 
-// profiles_get, profiles_set: the model and effort behind each task profile, fleet-wide (Administration › Hub settings)
-// and as a project's override (its settings). Unset everywhere, a profile runs on the runner's own.
-input!(ProfilesGetInput {
-    /// A project: its override too, and what its agents run on. Absent: the fleet's.
+// profiles_list, profile_create, profile_update, profile_delete: the hub's task profiles (Administration › Profiles).
+// Reading needs a key; the writes need an owner's or admin's human key (the handlers check).
+input!(ProfilesListInput {
+    /// A project: also which profiles it allows.
     project_ref: Option<ProjectRef>,
 });
-input!(
-    #[serde(remote = "Self")]
-    ProfilesSetInput {
-        /// A project's override. Absent: the fleet's, which needs an admin key.
-        project_ref: Option<ProjectRef>,
-        /// Replaces the profile's setting at that scope; `{}` unsets it. A refusal goes once the model is set again:
-        /// to keep it while changing only the effort, pass back the `refused` profiles_get read with the same model.
-        high: Option<ProfileSetting>,
-        medium: Option<ProfileSetting>,
-    }
-);
-checked!(ProfilesSetInput, |input| {
-    if input.high.is_none() && input.medium.is_none() {
-        return Err("expected high, medium or both".into());
-    }
-    Ok(())
+output!(ProfilesListOutput {
+    /// The default first, then by name.
+    profiles: List<Profile, 1, PROFILES_MAX>,
+    /// With projectRef: the profiles it allows, the default first.
+    allowed: Option<List<ProfileName, 1, PROFILES_MAX>>,
+    /// The models a profile may pick.
+    models: List<ProfileModel, 1, 200>,
+    models_from: ModelSource,
+    /// Every level Claude Code's `--effort` takes; a model without one runs the nearest below.
+    efforts: List<Effort, 1, 8>,
 });
-/// The profiles' settings at the fleet and, when asked, a project, and what new agents run on.
-#[skip_serializing_none]
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ProfilesView {
-    pub fleet: ProfileSettings,
-    /// The project's override; absent without projectRef.
-    pub project: Option<ProfileSettings>,
-    /// What a new agent of each profile runs on: the project's setting, else the fleet's, else the runner's own.
-    /// The lead, every review and claude's helper calls run high.
-    pub runs: ProfileRuns,
-    /// The runner's own: what a profile set nowhere runs on.
-    pub defaults: ProfileRuns,
-}
-output!(ProfilesGetOutput {
-    #[serde(flatten)]
-    view: ProfilesView,
+input!(ProfileCreateInput {
+    name: ProfileName,
+    note: Line<0, 300>,
+    model: ModelName,
+    effort: Effort,
+    fast: Option<bool>,
+    /// Makes it the hub's default.
+    default: Option<bool>,
 });
-output!(ProfilesSetOutput {
-    #[serde(flatten)]
-    view: ProfilesView,
+output!(ProfileCreateOutput { profile: Profile });
+input!(ProfileUpdateInput {
+    id: ProfileId,
+    /// A rename: tasks that ran on it keep the old name in their history.
+    name: Option<ProfileName>,
+    note: Option<Line<0, 300>>,
+    /// Setting the model again clears a refusal.
+    model: Option<ModelName>,
+    effort: Option<Effort>,
+    fast: Option<bool>,
+    /// True makes it the hub's default; the default can't be unset, only replaced.
+    default: Option<bool>,
 });
+output!(ProfileUpdateOutput { profile: Profile });
+input!(ProfileDeleteInput { id: ProfileId });
+output!(ProfileDeleteOutput { ok: True });
 
 // hub_links_get, hub_link_mint, hub_link_revoke, hub_link_add, hub_link_remove: hub links (D194). Minting and revoking
 // happen on the hub whose projects a link reaches; adding and removing on the hub whose Navi uses it. Human keys only
@@ -608,8 +608,8 @@ output!(TimeBreakdownOutput {
     wall_ms: Count,
     agent_ms: Count,
     by_category: List<CategoryTotal, 0, 8>,
-    /// High first; absent when no task or lead span is in the period.
-    by_profile: Option<List<ProfileTotal, 0, 2>>,
+    /// Most agent time first; absent when no task or lead span is in the period.
+    by_profile: Option<List<ProfileTotal, 0, PROFILES_MAX>>,
     top_commands: List<CommandStat, 0, 20>,
     repeated: List<RepeatStat, 0, 10>,
     ci_checks: List<CiCheckStat, 0, 20>,
@@ -3010,9 +3010,11 @@ tools! {
     wake_cancel => WakeCancel, Operate, WakeCancelInput, WakeCancelOutput;
     lead_start => LeadStart, Operate, LeadStartInput, LeadStartOutput;
     project_set => ProjectSet, Operate, ProjectSetInput, ProjectSetOutput;
-    profiles_get => ProfilesGet, Read, ProfilesGetInput, ProfilesGetOutput;
-    // Operate on the project for its override; the fleet's needs admin on every machine (the handler checks).
-    profiles_set => ProfilesSet, Operate, ProfilesSetInput, ProfilesSetOutput;
+    profiles_list => ProfilesList, Read, ProfilesListInput, ProfilesListOutput;
+    // Owners' and admins' human keys only (the handlers check): the hub's task profiles.
+    profile_create => ProfileCreate, Admin, ProfileCreateInput, ProfileCreateOutput;
+    profile_update => ProfileUpdate, Admin, ProfileUpdateInput, ProfileUpdateOutput;
+    profile_delete => ProfileDelete, Admin, ProfileDeleteInput, ProfileDeleteOutput;
     hub_links_get => HubLinksGet, Read, HubLinksGetInput, HubLinksGetOutput;
     // Human keys only (the handlers check): a person links hubs.
     hub_link_mint => HubLinkMint, Operate, HubLinkMintInput, HubLinkMintOutput;

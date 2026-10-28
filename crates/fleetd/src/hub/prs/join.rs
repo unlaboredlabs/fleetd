@@ -208,7 +208,7 @@ pub fn agent_of(task: &Task, role: fleetd_contracts::live::AgentRole) -> PrAutho
         task_id: Some(task.task_id.clone()),
         role: Some(role),
         title: Some(Text::unchecked(js_take(&task.title, 80))),
-        profile: Some(task.profile),
+        profile: Some(task.profile.clone()),
         thread_ref: task.thread_ref.clone(),
         login: None,
     }

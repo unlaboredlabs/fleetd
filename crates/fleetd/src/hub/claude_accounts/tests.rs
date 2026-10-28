@@ -707,7 +707,7 @@ fn request(order: fleetd_contracts::ledger::WorkstreamId, id: &str) -> LaunchReq
         project_ref: project(),
         repo_id: None,
         prompt: "go".into(),
-        profile: Default::default(),
+        profile: fleetd_contracts::effort::ProfileName::legacy(),
         title: "T1: go".into(),
         client_request_id: id.into(),
         kind: fleetd_contracts::tasks::TaskKind::Write,

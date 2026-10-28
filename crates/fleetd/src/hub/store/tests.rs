@@ -1061,3 +1061,117 @@ fn a_hub_at_the_old_lists_end_upgrades_to_a_fresh_hubs_schema() {
     assert_eq!(upgraded_schema, fresh.with(|c| Ok(schema(c))).unwrap());
     assert_eq!(machines, 1);
 }
+
+/// Profiles become rows with no change in what runs: high (the default) and medium on the fleet's model and effort,
+/// the runner's own where none was set or claude refused it; each project allows medium unless its switch was off; a
+/// project's overrides and the switch go.
+#[test]
+fn profiles_become_rows_and_each_project_keeps_what_it_allowed() {
+    use super::migrations::MIGRATIONS;
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    // Found by content, not as the last migration, so later migrations don't break this test.
+    let at = MIGRATIONS
+        .iter()
+        .position(|m| m.contains("CREATE TABLE profiles ("))
+        .expect("the profiles migration");
+    for m in &MIGRATIONS[..at] {
+        conn.execute_batch(m).unwrap();
+    }
+    conn.execute_batch(
+        r#"INSERT INTO projects (machine_id, project_id, search, last_activity_at, data) VALUES
+             ('devbox', 'on', '', '', '{}'), ('devbox', 'off', '', '', '{}'), ('devbox', 'unset', '', '', '{}');
+           INSERT INTO project_settings (machine_id, project_id, medium_allowed) VALUES
+             ('devbox', 'on', 1), ('devbox', 'off', 0);
+           INSERT INTO profile_settings (machine_id, project_id, profile, model, effort, refused, set_at) VALUES
+             ('', '', 'high', 'claude-sonnet-5-5', 'max', NULL, '2026-10-01T00:00:00.000Z'),
+             ('', '', 'medium', 'claude-nope', NULL, 'claude refused it', '2026-10-01T00:00:00.000Z'),
+             ('devbox', 'on', 'high', 'claude-haiku-5-5', 'low', NULL, '2026-10-01T00:00:00.000Z');"#,
+    )
+    .unwrap();
+    conn.execute_batch(MIGRATIONS[at]).unwrap();
+    let profiles: Vec<(i64, String, String, String, bool, bool)> = conn
+        .prepare("SELECT id, name, model, effort, fast, is_default FROM profiles ORDER BY id")
+        .unwrap()
+        .query_map([], |r| {
+            Ok((
+                r.get(0)?,
+                r.get(1)?,
+                r.get(2)?,
+                r.get(3)?,
+                r.get(4)?,
+                r.get(5)?,
+            ))
+        })
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap();
+    assert_eq!(
+        profiles,
+        [
+            (
+                1,
+                "high".into(),
+                "claude-sonnet-5-5".into(),
+                "max".into(),
+                false,
+                true
+            ),
+            (
+                2,
+                "medium".into(),
+                "claude-opus-5-5".into(),
+                "medium".into(),
+                false,
+                false
+            ),
+        ]
+    );
+    let note: String = conn
+        .query_row("SELECT note FROM profiles WHERE name = 'medium'", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert!(note.starts_with("Only for mechanical work"), "{note}");
+    let allowed: Vec<String> = conn
+        .prepare("SELECT project_id FROM project_profiles WHERE profile_id = 2 ORDER BY project_id")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap();
+    assert_eq!(allowed, ["on", "unset"]);
+    let gone: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM sqlite_master WHERE name = 'profile_settings'
+               OR (name = 'project_settings' AND sql LIKE '%medium_allowed%')",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(gone, 0);
+}
+
+/// A fresh hub's profiles: high (the default) and medium, both on the runner's own.
+#[test]
+fn a_fresh_hub_has_high_and_medium() {
+    let db = HubDb::open_memory().unwrap();
+    let profiles = db.profiles().list().unwrap();
+    let got: Vec<(&str, &str, &str, bool)> = profiles
+        .iter()
+        .map(|p| {
+            (
+                p.name.as_str(),
+                p.model.as_str(),
+                p.effort.as_str(),
+                p.default,
+            )
+        })
+        .collect();
+    assert_eq!(
+        got,
+        [
+            ("high", "claude-opus-5-5", "high", true),
+            ("medium", "claude-opus-5-5", "medium", false)
+        ]
+    );
+}

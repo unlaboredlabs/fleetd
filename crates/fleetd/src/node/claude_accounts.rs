@@ -14,6 +14,7 @@ use fleetd_contracts::claude_accounts::{
     ACCOUNT_CLEARS, API_KEY_ENV, BASE_URL_ENV, ClaudeAccount, ClaudeSecretSet, OAUTH_TOKEN_ENV,
 };
 use fleetd_contracts::secrets::SecretFingerprint;
+use fleetd_contracts::sessions::ApiModel;
 use serde::{Deserialize, Serialize};
 use zeroize::{Zeroize, Zeroizing};
 
@@ -159,6 +160,64 @@ pub fn env_for(home: &Path, account: &ClaudeAccount) -> Result<(Vars, Vars), Str
     }
     let secrets = vec![(name.to_owned(), file.value.clone())];
     Ok((vars, secrets))
+}
+
+/// The models the hub's API key offers: `GET /v1/models` at its endpoint, else at the Anthropic API. Why not, with
+/// the key masked, when the node holds no key or the endpoint lists none (a gateway without the Models API).
+pub async fn hub_models(home: &Path) -> Result<Vec<ApiModel>, String> {
+    #[derive(Deserialize)]
+    struct Page {
+        data: Vec<Listed>,
+    }
+    #[derive(Deserialize)]
+    struct Listed {
+        id: String,
+        display_name: Option<String>,
+    }
+    let Some(file) = read(home, &ClaudeAccount::Hub)? else {
+        return Err("this machine holds no hub API key".into());
+    };
+    let base = file
+        .endpoint
+        .as_deref()
+        .unwrap_or("https://api.anthropic.com")
+        .trim_end_matches('/')
+        .to_owned();
+    let key = Zeroizing::new(file.value.clone());
+    let masked = |e: String| {
+        super::mask::Masker::new(&[(API_KEY_ENV.to_owned(), key.to_string())])
+            .text(&e)
+            .into_owned()
+    };
+    let response = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .unwrap_or_default()
+        .get(format!("{base}/v1/models?limit=1000"))
+        .header("x-api-key", key.as_str())
+        .header("anthropic-version", "2023-06-01")
+        .send()
+        .await
+        .map_err(|e| masked(format!("the Models API at {base} didn't answer: {e}")))?;
+    let status = response.status();
+    if !status.is_success() {
+        return Err(format!("the Models API at {base} answered {status}"));
+    }
+    let page: Page = response
+        .json()
+        .await
+        .map_err(|e| masked(format!("the Models API at {base} sent no model list: {e}")))?;
+    if page.data.is_empty() {
+        return Err(format!("the Models API at {base} listed no models"));
+    }
+    Ok(page
+        .data
+        .into_iter()
+        .map(|m| ApiModel {
+            id: m.id,
+            display_name: m.display_name,
+        })
+        .collect())
 }
 
 /// The account's secret by its variable's name, for masking a session's fleetd calls: none once the node no longer

@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use fleetd_contracts::chat::{ChatAuthor, ChatMessage};
-use fleetd_contracts::effort::TaskProfile;
+use fleetd_contracts::effort::{Profile, ProfileName};
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadRef, Timestamp};
 use fleetd_contracts::ledger::{Lead, LeadState, WorkstreamState};
@@ -274,24 +274,24 @@ impl Leads {
             .transpose()
     }
 
-    /// Whether the project's tasks may run on medium. Read at each spawn, so a change applies to the next one.
-    pub fn medium_allowed(&self, r: &ProjectRef) -> Result<bool, LeadError> {
-        Ok(self.records.medium_allowed(r)?)
+    /// The profiles the project's tasks may run on, the default first. Read at each spawn, so a change applies to the
+    /// next one.
+    pub fn allowed_profiles(&self, r: &ProjectRef) -> Result<Vec<ProfileName>, LeadError> {
+        Ok(self.ctx.db.profiles().allowed(r)?)
     }
 
-    /// `project_set`: saves the switch and tells the clients (`project.settings`).
-    pub fn set_medium_allowed(
+    /// `project_set`: saves what the project allows besides the default and tells the clients (`project.settings`).
+    /// The profiles it allows now.
+    pub fn set_allowed_profiles(
         &self,
         r: &ProjectRef,
         title: &str,
-        allowed: bool,
-    ) -> Result<(), LeadError> {
-        self.records.medium_allowed_set(r, allowed)?;
-        let summary = if allowed {
-            format!("{title}: mechanical tasks may run on medium")
-        } else {
-            format!("{title}: every task runs on high (medium off)")
-        };
+        names: &[ProfileName],
+    ) -> Result<Vec<ProfileName>, LeadError> {
+        self.ctx.db.profiles().set_allowed(r, names)?;
+        let allowed = self.allowed_profiles(r)?;
+        let names: Vec<&str> = allowed.iter().map(ProfileName::as_str).collect();
+        let summary = format!("{title}: agents may run on {}", names.join(", "));
         self.ctx.events.append(NewEvent {
             at: now_iso(&self.ctx).into(),
             r#type: HubEventType::ProjectSettings,
@@ -299,10 +299,10 @@ impl Leads {
             project_id: Some(r.project_id.clone()),
             thread_id: None,
             summary,
-            data: Some(serde_json::json!({ "mediumAllowed": allowed })),
+            data: Some(serde_json::json!({ "profiles": allowed })),
             attention: None,
         })?;
-        Ok(())
+        Ok(allowed)
     }
 
     fn with_state(&self, lead: StoredLead) -> Result<Lead, LeadError> {
@@ -388,7 +388,14 @@ impl Leads {
         // Taken before the digest is read: every intent made before it is in the first message (`LeadWakes::flush`).
         let at = now_iso(&self.ctx);
         let set = self.ctx.db.prompts().current(Some(r));
-        let medium = self.records.medium_allowed(r)?;
+        let profiles = self.ctx.db.profiles();
+        let default = profiles.default_profile()?;
+        let names = profiles.allowed(r)?;
+        let allowed: Vec<Profile> = profiles
+            .list()?
+            .into_iter()
+            .filter(|p| names.contains(&p.name))
+            .collect();
         let (digest, idle) = self.wakes.digest_to_send(r).await?;
         // A Navi's lead runs from `navi.start` in the assistant role: manual permission mode, so every tool off its
         // read allow-list asks a person first (approvals/permissions.rs).
@@ -399,7 +406,7 @@ impl Leads {
             &set,
             r,
             &project.title,
-            medium,
+            &allowed,
             &digest,
             &self.ctx.db.memory().injected(r, true, &you),
             &crate::hub::people::lead_people(&self.ctx.db),
@@ -419,11 +426,11 @@ impl Leads {
             .chars()
             .take(80)
             .collect();
-        // The lead always runs high.
+        // The lead always runs on the default.
         let input = LaunchInput {
             project_id: r.project_id.clone(),
             prompt: prompt.clone(),
-            profile: TaskProfile::High,
+            profile: default.name.clone(),
             runtime_mode: if navi {
                 RuntimeMode::ApprovalRequired
             } else {
@@ -471,7 +478,7 @@ impl Leads {
             project_id: Some(r.project_id.clone()),
             thread_id: Some(thread_id),
             summary: format!("Lead of {} started (session {session_generation})", project.title),
-            data: Some(serde_json::json!({ "sessionGeneration": session_generation, "profile": TaskProfile::High, "promptRef": set.get(super::prompt::start_prompt(navi)).r#ref, "textSha": text_sha })),
+            data: Some(serde_json::json!({ "sessionGeneration": session_generation, "profile": default.name, "promptRef": set.get(super::prompt::start_prompt(navi)).r#ref, "textSha": text_sha })),
             attention: None,
         })?;
         self.with_state(lead)

@@ -4,7 +4,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::brand;
-use crate::effort::TaskProfile;
+use crate::effort::ProfileName;
 use crate::ids::{MachineId, ProjectRef, ThreadRef, Timestamp};
 use crate::ledger::WorkstreamId;
 use crate::prim::{Count, Line, List, NonEmpty, Positive, Text, is_http_url, js_len};
@@ -101,9 +101,10 @@ pub struct Task {
     pub title: TaskTitle,
     pub kind: TaskKind,
     pub prompt: TaskPrompt,
-    /// Resolved at spawn. Rows stored with a model and effort read as `high` (the hub migrates its own).
-    #[serde(default)]
-    pub profile: TaskProfile,
+    /// The profile's name, resolved at spawn: the spawn's, else the hub's default. It keeps the name it ran on through
+    /// a rename. Rows stored with a model and effort read as `high` (the hub migrates its own).
+    #[serde(default = "ProfileName::legacy")]
+    pub profile: ProfileName,
     /// A review task spawned with `--qa`.
     pub qa: Option<bool>,
     /// The PR a review task reviews. Required at spawn for review; absent on older rows (hub-spawned judges).
@@ -330,8 +331,8 @@ pub struct PolicyFileTools {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PolicyFile {
-    // An older file's `defaults` (model, effort) is ignored: the lead picks a TaskProfile per task, and the model and
-    // effort behind each are hub settings (profiles_set), fleet-wide or per project, so nothing in a repo competes.
+    // An older file's `defaults` (model, effort) is ignored: the lead picks a profile per task, and the model and
+    // effort behind each are the hub's profiles (Administration › Profiles), so nothing in a repo competes.
     pub tools: Option<PolicyFileTools>,
     /// What the branches fleetd names start with (default `fleetd/`), for several fleets sharing one repo.
     pub branch_prefix: Option<BranchPrefix>,

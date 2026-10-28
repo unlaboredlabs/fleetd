@@ -6,7 +6,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_with::skip_serializing_none;
 
-use crate::effort::TaskProfile;
+use crate::effort::ProfileName;
 use crate::ids::{MachineId, ProjectId, ProjectRef, ThreadId, Timestamp};
 use crate::ledger::WorkstreamId;
 use crate::live::AgentRole;
@@ -503,11 +503,11 @@ pub struct CriticalPath {
 }
 
 /// One task profile's part of a scope's agent time and usage, from the spans kept (`coverage.detailSince` on): the
-/// tasks that ran on it, and the lead's spans under high.
+/// tasks that ran on it, and the lead's spans under the default profile they ran on.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ProfileTotal {
-    pub profile: TaskProfile,
+    pub profile: ProfileName,
     /// Exclusive agent time.
     pub agent_ms: Count,
     /// The model's part of it.

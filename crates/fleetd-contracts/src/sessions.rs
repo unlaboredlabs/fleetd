@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use serde_with::skip_serializing_none;
 
-use crate::effort::{Effort, TaskProfile};
+use crate::effort::{Effort, ProfileName};
 use crate::ids::{ProjectId, ThreadId, Timestamp};
 use crate::model::RuntimeMode;
 use crate::prim::{Count, Int, NonEmpty, Text};
@@ -67,14 +67,17 @@ pub struct SessionLaunch {
     pub title: Option<String>,
     #[serde(default)]
     pub runner: RunnerKind,
-    /// What it runs on. Absent from a hub before profiles, which sends `model` and `effort` alone: the runner reads
-    /// its profile off them and runs that profile's own.
-    pub profile: Option<TaskProfile>,
-    /// With a profile: the model and effort its settings chose (ProfileSettings), each absent when none did and the
-    /// runner's own for the profile applies. A node before settings runs the profile's own whatever these say.
+    /// What it runs on, by name. Absent from a hub before profiles, which sends `model` and `effort` alone: the
+    /// runner reads its profile off them and runs that profile's own.
+    pub profile: Option<ProfileName>,
+    /// With a profile: its model and effort, the model absent when claude refused it and the runner's own applies.
+    /// A node before settings runs the profile's own whatever these say.
     pub model: Option<NonEmpty>,
     pub effort: Option<Effort>,
-    /// The model claude's background helper calls run on: the high profile's setting. Absent: the runner's own.
+    /// Claude Code's fast mode (`"fastMode": true` in the session's settings). An older node ignores it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub fast: bool,
+    /// The model claude's background helper calls run on: the default profile's. Absent: the runner's own.
     pub helper_model: Option<NonEmpty>,
     pub runtime_mode: RuntimeMode,
     pub workspace: SessionWorkspace,
@@ -259,6 +262,9 @@ pub enum SessionCall {
     ClaudeAccountTest {
         account: crate::claude_accounts::ClaudeAccount,
     },
+    /// The models the hub's API key offers, from the Models API at its endpoint. Only nodes listing
+    /// [`crate::node_link::CAP_CLAUDE_MODELS`] get it.
+    ClaudeModels,
     /// Where the project's worktrees live, the branch new ones start from, and the worktrees there now. Only nodes
     /// listing [`crate::node_link::CAP_PROJECT_SETTINGS`] get it.
     #[serde(rename_all = "camelCase")]
@@ -648,6 +654,15 @@ pub struct WorktreeBase {
     pub fork_behind: Option<u32>,
 }
 
+/// One model the Models API listed.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiModel {
+    pub id: String,
+    pub display_name: Option<String>,
+}
+
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -730,6 +745,11 @@ pub enum SessionOutput {
     /// Answer to `claude_account_test`: whether the call worked, else claude's words with the secret masked.
     ClaudeAccountTested {
         ok: bool,
+        error: Option<String>,
+    },
+    /// Answer to `claude_models`: each model's id and display name, else why they weren't read, the key masked.
+    ClaudeModels {
+        models: Vec<ApiModel>,
         error: Option<String>,
     },
     /// Answer to `skills_list`.

@@ -127,6 +127,9 @@ impl HubDb {
                 let Some(next) = MIGRATIONS.get(current) else {
                     return Ok(());
                 };
+                if next.contains("DROP TABLE profile_settings") {
+                    log_dropped_overrides(conn)?;
+                }
                 conn.execute_batch(next)?;
                 conn.execute_batch(&format!("PRAGMA user_version = {}", current + 1))?;
                 Ok(())
@@ -134,6 +137,35 @@ impl HubDb {
         }
         Ok(())
     }
+}
+
+/// Profiles became rows (W146), which a project only allows: one line for each project's model or effort override
+/// the migration drops, so a person can make a profile of it.
+fn log_dropped_overrides(conn: &Connection) -> rusqlite::Result<()> {
+    let mut stmt = conn.prepare(
+        "SELECT machine_id, project_id, profile, model, effort FROM profile_settings WHERE project_id != ''
+         ORDER BY machine_id, project_id, profile",
+    )?;
+    let rows = stmt.query_map([], |r| {
+        Ok((
+            r.get::<_, String>(0)?,
+            r.get::<_, String>(1)?,
+            r.get::<_, String>(2)?,
+            r.get::<_, Option<String>>(3)?,
+            r.get::<_, Option<String>>(4)?,
+        ))
+    })?;
+    for row in rows {
+        let (machine, project, profile, model, effort) = row?;
+        tracing::warn!(
+            project = format!("{machine}/{project}"),
+            profile,
+            model = model.as_deref().unwrap_or("-"),
+            effort = effort.as_deref().unwrap_or("-"),
+            "profiles: a project's override of a profile is dropped; make a profile of it and allow it in the project"
+        );
+    }
+    Ok(())
 }
 
 fn user_version(conn: &Connection) -> rusqlite::Result<i64> {
