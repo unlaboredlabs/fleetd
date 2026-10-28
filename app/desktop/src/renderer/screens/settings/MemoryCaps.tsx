@@ -1,5 +1,5 @@
 // Memory caps: how long each memory file may grow, hub-wide (memory_caps_set, an admin's write), on Administration's
-// hub settings. The lead's `remember` and Settings → Memory's editors are held to what is set here.
+// hub settings. The lead's `remember` and Settings → Projects → Instructions & memory's editors are held to what is set here.
 import { useState } from "react";
 import type { MemoryCaps as Caps } from "../../../shared/contracts";
 import { Button, Field, Input, Text } from "../../ui";

@@ -29,7 +29,7 @@ const notifyTargets = [
   z.strictObject({ kind: z.literal("chat"), machineId, projectId: hubId, messageId: hubId.optional(), at }),
   z.strictObject({ kind: z.literal("machines"), at }),
   z.strictObject({ kind: z.literal("status"), at }),
-  /** Settings → Notifications: where the test notification leads. */
+  /** Settings → General → Notifications: where the test notification leads. */
   z.strictObject({ kind: z.literal("notifications") }),
 ] as const;
 
@@ -60,7 +60,7 @@ export const NotifyRequest = z.strictObject({
   title: z.string().min(1).max(120),
   body: z.string().max(400),
   target: NotifyTarget,
-  /** No sound (Settings → Notifications). */
+  /** No sound (Settings → General → Notifications). */
   silent: z.boolean().optional(),
 });
 export type NotifyRequest = z.infer<typeof NotifyRequest>;

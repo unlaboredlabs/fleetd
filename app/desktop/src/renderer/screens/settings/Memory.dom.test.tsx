@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// Settings → Memory against a hub that keeps user.md in memory: a person edits an entry, deletes one and undoes the
+// Settings → Projects → Instructions & memory against a hub that keeps user.md in memory: a person edits an entry, deletes one and undoes the
 // delete from its toast, and edits the whole file as text, where a cap refusal shows as before.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -11,7 +11,6 @@ import { DataProvider } from "../../src/data/react";
 import { live, project, snapshot } from "../../src/data/fixtures.test-util";
 import { UiProvider } from "../../ui";
 import { Memory } from "./Memory";
-import { parseRoute } from "./route";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 vi.hoisted(() => vi.stubGlobal("fleetd", { platform: "linux", fixture: null }));
@@ -67,7 +66,7 @@ async function mount(text: string, refuse?: HubError) {
     root.render(
       <UiProvider>
         <DataProvider layer={createDataLayer(api)}>
-          <Memory route={parseRoute("#/settings/memory")} />
+          <Memory project={null} />
         </DataProvider>
       </UiProvider>,
     );

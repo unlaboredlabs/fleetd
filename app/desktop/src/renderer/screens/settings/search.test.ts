@@ -6,7 +6,7 @@ const labels = (q: string) => searchSettings(q).map((o) => o.label);
 
 describe("settings search", () => {
   it("finds an option by its own name, name matches first", () => {
-    expect(labels("max agents")[0]).toBe("Max agents per project");
+    expect(labels("max agents")[0]).toBe("Max agents");
     // The fleet and machine caps are Administration's, never Settings'.
     expect(labels("max agents")).not.toContain("Whole fleet");
     expect(labels("fleet cap")).toEqual([]);
@@ -27,6 +27,17 @@ describe("settings search", () => {
   it("needs every word, and finds nothing for nothing", () => {
     expect(labels("dark sound")).toEqual([]);
     expect(labels("   ")).toEqual([]);
+  });
+
+  it("still finds every page Settings had before it had four (D209), on the page that has it now", () => {
+    const tabOf = (q: string) => searchSettings(q)[0]?.tab;
+    expect([tabOf("hubs"), tabOf("claude"), tabOf("github")]).toEqual(["connections", "connections", "connections"]);
+    expect([tabOf("notifications"), tabOf("version"), tabOf("check for updates")]).toEqual(["general", "general", "general"]);
+    expect([tabOf("max agents"), tabOf("task profiles"), tabOf("mcp"), tabOf("skills")]).toEqual(["agents", "agents", "agents", "agents"]);
+    expect([tabOf("instructions"), tabOf("memory")]).toEqual(["instructions", "instructions"]);
+    expect([tabOf("automations"), tabOf("environment variables"), tabOf("prompts")]).toEqual(["automations", "projects", "prompts"]);
+    // Nothing hub-wide: the global MCP servers and the instructions for every project are Administration's.
+    expect(labels("global")).toEqual([]);
   });
 
   it("gives every option a unique key", () => {

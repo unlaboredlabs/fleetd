@@ -2,7 +2,7 @@
 // every machine and never shown back, and an optional endpoint), with Test; whether members may run their work on it
 // (on by default); what projects' leads and work nobody started run on (the key, else the hub owner's own
 // subscription); and each person's account, with any usage pause on it. A person's own choice and subscription are
-// theirs, in Settings › Claude.
+// theirs, in Settings › Connections › Claude.
 import { useState } from "react";
 import type { ClaudeAccountsGetOutput, ClaudeHubApi, Person, PersonClaude, UsageStatus } from "../../../shared/contracts";
 import { lacksTool } from "../../src/data/errors";
@@ -30,7 +30,7 @@ export function ClaudeAdmin({ me }: { me: Person | undefined }) {
     <PagePart
       title="Claude"
       reveal="admin.claude"
-      intro="The hub's Claude API key, which projects' leads and work nobody asked for run on, and who else may use it. Each person picks their own account in Settings › Claude."
+      intro="The hub's Claude API key, which projects' leads and work nobody asked for run on, and who else may use it. Each person picks their own account in Settings › Connections › Claude."
     >
       {!live ? (
         <Text tone="quiet">Connect to a hub to see and change this.</Text>
@@ -246,12 +246,12 @@ function Owner({ data, usage, me, nowMs }: { data: ClaudeAccountsGetOutput; usag
       )}
       {you ? (
         <span>
-          <Button size="sm" onClick={() => (window.location.hash = toHash({ id: "settings", tab: "claude" }))}>
-            {sub === undefined ? "Connect yours in Settings" : "Open Settings › Claude"}
+          <Button size="sm" onClick={() => (window.location.hash = toHash({ id: "settings", tab: "connections" }))}>
+            {sub === undefined ? "Connect yours in Settings" : "Open Settings › Connections › Claude"}
           </Button>
         </span>
       ) : sub === undefined ? (
-        <Text size="xs" tone="quiet">{`${owner.name} connects it in their own Settings › Claude.`}</Text>
+        <Text size="xs" tone="quiet">{`${owner.name} connects it in their own Settings › Connections › Claude.`}</Text>
       ) : null}
     </div>
   );

@@ -1003,7 +1003,7 @@ async fn a_writer_waits_for_its_starter_to_connect_and_runs_as_them() {
         message.starts_with("Connect your GitHub to open this order's PRs."),
         "{message}"
     );
-    assert!(fix.contains("Settings › GitHub"), "{fix}");
+    assert!(fix.contains("Settings › Connections › GitHub"), "{fix}");
     // A reader or reviewer opens no PR: it goes on.
     assert_eq!(
         github_refusal(&lab.hub, &r, &order, TaskKind::Review, None),

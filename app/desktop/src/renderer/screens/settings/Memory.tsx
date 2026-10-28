@@ -1,15 +1,15 @@
-// Settings → Memory: what the leads remember, as the plain text files the hub keeps. user.md goes to every project's
+// Memory, on a project's Instructions & memory in Settings: what the leads remember, as the plain text files the hub keeps. user.md goes to every project's
 // lead and writers; a project's MEMORY.md (and the topic files it lists) only to that project's. The lead writes with
 // `remember`; here a person reads each file as a list of entries (one card per line, with where and when the lead
 // remembered it when the hub knows), edits or deletes one (its buttons, or its right-click menu), and undoes a delete
 // from its toast. "Edit as text" is the whole file in a textarea. Every change is the file's new text through
 // memory_set, a human key's write.
 import { Pencil, Trash2 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import type { MemoryFile, MemoryNote, MemorySetInput, ProjectRef } from "../../../shared/contracts";
 import { Button, ContextMenu, ContextMenuItem, Field, Input, Separator, Text, Textarea, toast, Tooltip } from "../../ui";
 import { useToolQuery } from "../../src/data/react";
-import { parseScope, projectRefOf, scopeKey, type Draft, type Scope } from "./editor";
+import { projectRefOf, scopeKey, type Draft, type Scope } from "./editor";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import {
   capState,
@@ -23,8 +23,7 @@ import {
   type CapState,
   type MemoryLine,
 } from "./memoryModel";
-import { PageHead, ScopeSelect, scopeName, useProjects } from "./parts";
-import { replaceRoute, type SettingsRoute } from "./route";
+import { PagePart, scopeName, useProjects } from "./parts";
 import m from "./Memory.module.css";
 import s from "./settings.module.css";
 
@@ -39,19 +38,15 @@ interface ProjectFiles {
 /** Which file a write goes to: memory_set's input without the text. */
 type Target = Omit<MemorySetInput, "text">;
 
-export function Memory({ route }: { route: SettingsRoute }) {
+/** Memory, on a project's Instructions & memory: yours ("You", every project's), then the project's own files. */
+export function Memory({ project }: { project: Scope | null }) {
   const live = useLive();
   const projects = useProjects();
-  const [project, setProject] = useState<Scope | null>(() => (route.for ? parseScope(route.for) : null));
   const [query, setQuery] = useState("");
   const ref = project ? projectRefOf(project) : undefined;
   const read = useToolQuery("memory_get", ref ? { projectRef: ref } : {}, { enabled: live });
   const hubCall = useHubCall();
   const refetch = useRefetch();
-
-  useEffect(() => {
-    replaceRoute({ tab: "memory", for: project?.kind === "project" ? scopeKey(project) : null });
-  }, [project]);
 
   const save = (input: MemorySetInput) => hubCall("memory_set", input).then(() => refetch(["memory_get"]));
   // A file's text as the hub has it now, not as last shown: what an undo puts its entry back into.
@@ -61,14 +56,12 @@ export function Memory({ route }: { route: SettingsRoute }) {
     return (t.scope === "user" ? now.user : now.files?.find((f) => fileName(f) === name))?.text ?? "";
   };
 
+  const head = "What the leads remember when you correct them or set a rule. Each session starts with it; edit or delete anything that is wrong.";
   if (!live) {
     return (
-      <div className={s.scroll} data-screen="settings.memory">
-        <div className={s.column}>
-          <PageHead title="Memory" />
-          <Text tone="quiet">Not connected. Connect to a hub to see what its leads remember.</Text>
-        </div>
-      </div>
+      <PagePart title="Memory" reveal="memory" intro={head}>
+        <Text tone="quiet">Not connected. Connect to a hub to see what its leads remember.</Text>
+      </PagePart>
     );
   }
 
@@ -93,54 +86,48 @@ export function Memory({ route }: { route: SettingsRoute }) {
     />
   );
   return (
-    <div className={s.scroll} data-screen="settings.memory">
-      <div className={s.column}>
-        <PageHead title="Memory">
-          What the leads remember when you correct them or set a rule. Each session starts with it; edit or delete anything that is wrong.
-        </PageHead>
-        {read.isLoadingError ? (
-          <div className={s.inline}>
-            <Text tone="danger">{errorText(read.error)}</Text>
-            <Button onClick={() => void read.refetch()}>Try again</Button>
-          </div>
-        ) : null}
-        <div className={m.search}>
-          <Input type="search" aria-label="Search memory" placeholder="Search entries" value={query} onChange={(e) => setQuery(e.target.value)} />
-          <div role="status">
-            {query.trim() && d && hits === 0 ? (
-              <Text size="sm" tone="quiet">
-                No entry has “{query.trim()}”.
-              </Text>
-            ) : null}
-          </div>
+    <PagePart title="Memory" reveal="memory" intro={head}>
+      {read.isLoadingError ? (
+        <div className={s.inline}>
+          <Text tone="danger">{errorText(read.error)}</Text>
+          <Button onClick={() => void read.refetch()}>Try again</Button>
         </div>
-        {group(d?.user, { scope: "user" }, "You", "How you work, for every project's lead and writers.")}
-        <Separator />
-        <div className={s.stack}>
-          <div className={s.setting}>
-            <div className={s.settingLabel}>
-              <Text strong>One project</Text>
-              <Text size="xs" tone="quiet">
-                {name ? `Only ${name}'s sessions get this.` : "Pick a project to see what its lead remembers."}
-              </Text>
-            </div>
-            <ScopeSelect id="memory-for" className={s.scopeSelect} value={project} projects={projects} onChange={setProject} />
-          </div>
-          {total ? <CapMeter state={total} label="This project's memory" /> : null}
-          {ref && d?.files
-            ? files.map((f) =>
-                group(
-                  f,
-                  projectTarget(ref, f),
-                  f.topic ? f.topic : "Always on",
-                  f.topic ? "Opened by the lead when it needs it." : "Every session of this project starts with it.",
-                  { files, cap: d.projectCap ?? 0 },
-                ),
-              )
-            : null}
+      ) : null}
+      <div className={m.search}>
+        <Input type="search" aria-label="Search memory" placeholder="Search entries" value={query} onChange={(e) => setQuery(e.target.value)} />
+        <div role="status">
+          {query.trim() && d && hits === 0 ? (
+            <Text size="sm" tone="quiet">
+              No entry has “{query.trim()}”.
+            </Text>
+          ) : null}
         </div>
       </div>
-    </div>
+      {group(d?.user, { scope: "user" }, "You", "How you work, for every project's lead and writers.")}
+      <Separator />
+      <div className={s.stack}>
+        <div className={s.setting}>
+          <div className={s.settingLabel}>
+            <Text strong>{name ?? "This project"}</Text>
+            <Text size="xs" tone="quiet">
+              {name ? `Only ${name}'s sessions get this.` : "No project yet."}
+            </Text>
+          </div>
+        </div>
+        {total ? <CapMeter state={total} label="This project's memory" /> : null}
+        {ref && d?.files
+          ? files.map((f) =>
+              group(
+                f,
+                projectTarget(ref, f),
+                f.topic ? f.topic : "Always on",
+                f.topic ? "Opened by the lead when it needs it." : "Every session of this project starts with it.",
+                { files, cap: d.projectCap ?? 0 },
+              ),
+            )
+          : null}
+      </div>
+    </PagePart>
   );
 }
 

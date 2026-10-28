@@ -219,7 +219,7 @@ impl GithubApps {
         };
         if kept.account.lapsed == Some(true) {
             return Err(format!(
-                "GitHub no longer takes {}'s connection: connect GitHub again in Settings › GitHub",
+                "GitHub no longer takes {}'s connection: connect GitHub again in Settings › Connections › GitHub",
                 kept.account.login
             ));
         }
@@ -265,7 +265,7 @@ impl GithubApps {
                     })
                     .map_err(|e| e.to_string())?;
                 return Err(format!(
-                    "GitHub no longer takes {}'s connection ({e}): connect GitHub again in Settings › GitHub",
+                    "GitHub no longer takes {}'s connection ({e}): connect GitHub again in Settings › Connections › GitHub",
                     kept.account.login
                 ));
             }

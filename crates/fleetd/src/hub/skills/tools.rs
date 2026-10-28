@@ -1,4 +1,4 @@
-//! skills_list, skill_get, skill_set, skill_delete, skill_install and skill_update: Settings → Skills and the
+//! skills_list, skill_get, skill_set, skill_delete, skill_install and skill_update: Settings → Projects → Agents and the
 //! composer's `$`. Writes are a person's (human keys); a lead installs with its own `skill_install` (`calls`). The
 //! repo's skills are read from the project's node and never written here: they change in the repo.
 use std::sync::Arc;

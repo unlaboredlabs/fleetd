@@ -189,7 +189,7 @@ on a chat attach to your message. See <a href="/docs/projects#add-a-project">Add
 message back. The banner says why the hub doesn’t answer and when the app tries again; Retry now tries at once.
 Approvals, secrets and Stop wait until the hub is back.</p>
 <p>Once you’re connected again, a chat says “Last known” until its newest messages load; if they can’t, it says so, with
-Retry. “Disconnect and forget key” in Settings → Hubs clears what the app kept for that hub, queued messages included.</p>
+Retry. “Disconnect and forget key” in Settings → Connections → Hubs clears what the app kept for that hub, queued messages included.</p>
 <p>How to work with the lead: <a href="/docs/chat">Chat with the lead</a>.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="agents">Agents</h2><a class="sl-anchor-link" href="#agents"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Agents”</span></a></div>
 <p>The Agents tab of the panel beside a chat (⌥⌘B) lists the project’s agents at work, those waiting on you first: each
@@ -201,7 +201,7 @@ first message and prompts it started with; <strong>All agents</strong> or Esc go
 agent waiting on you first. Click an agent of another project to open its work beside that project’s chat.
 <strong>This project</strong> goes back. The panel remembers which you chose.</p>
 <p>Beside the count of agents working, <strong>max</strong> is the project’s <a href="/docs/projects#max-agents">Max agents</a> (“4 working · max
-20”). Click it to change it in Settings › Agents.</p>
+20”). Click it to change it in Settings › Projects › Agents.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="train">Train</h2><a class="sl-anchor-link" href="#train"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Train”</span></a></div>
 <p>The Train tab shows the project’s merge train: the pull request merging now and its stage (rebasing onto the base,
 running CI, merging) with the checks it waits on, then the pull requests in line, in the order they’ll merge. Each
@@ -278,49 +278,32 @@ its fix (a command to copy, or Fix), then the rest a click away. Re-run runs the
 <p>Open Settings with ⌘,. It is everyone’s: nothing hub-wide is in it (that is <a href="#administration">Administration</a>’s). It
 takes the sidebar’s place; Back returns to where you were. Type in “Search settings” to find
 an option or a prompt by name, and press Enter to open the first match.</p>
+<p>Settings has four pages. While one of a project’s pages is open, Projects shows a project picker and that project’s
+four pages under it, and Prompts lists the prompts under it. Every option is at most two clicks from opening Settings.
+An older <code dir="auto">#/settings/&lt;page&gt;</code> link opens the page that has its options now.</p>
 <table>
 <thead>
 <tr>
-<th>Section</th>
+<th>Page</th>
 <th>Has</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>General</td>
-<td>Appearance (light, dark, match system) and time in the app.</td>
+<td>Appearance (light, dark, match system) and time in the app. <strong>Notifications</strong>: which alerts show (the lead asks you something, a command or secret waits, the lead finishes what you asked, a machine problem, anything else), whether they play a sound, the Dock badge, and a test. There is never an alert for the chat in front of you, and in quiet hours only urgent ones show. <strong>Version &amp; updates</strong>: this app’s version and channel with Check for updates, the hub’s and each machine’s fleetd and whether each is up to date; owners and admins also get the updates sheet, which updates the hub, then every machine, then this app.</td>
 </tr>
 <tr>
-<td>Claude</td>
-<td>Which Claude account the orders you start and your Navi run on: your own subscription (paste the token <code dir="auto">claude setup-token</code> prints, then Connect and test) or the hub’s API key, when the hub’s admins let you. See <a href="/docs/people#claude">Claude accounts</a>.</td>
-</tr>
-<tr>
-<td>Hubs</td>
-<td>Each hub this app is paired with: its address, its connection, its name and colour, Pair again and Remove. Add a hub pairs one more. See <a href="/docs/several-hubs">Several hubs</a>.</td>
-</tr>
-<tr>
-<td>Notifications</td>
-<td>Which alerts show (the lead asks you something, a command or secret waits, the lead finishes what you asked, a machine problem, anything else), whether they play a sound, the Dock badge, and a test. There is never an alert for the chat in front of you, and in quiet hours only urgent ones show. Clicking one opens what it’s about.</td>
-</tr>
-<tr>
-<td>Agents</td>
-<td><a href="/docs/projects#max-agents">Max agents</a> for each project. Each slider applies when you let go, with Undo. A project says whether its max is its own or follows the default, and “Use the default” goes back. Under each, the project’s Medium allowed switch.</td>
+<td>Connections</td>
+<td><strong>Hubs</strong>: each hub this app is paired with, with its address, its connection, its name and colour, Pair again and Remove; Add a hub pairs one more (see <a href="/docs/several-hubs">Several hubs</a>). <strong>Claude</strong>: which Claude account the orders you start and your Navi run on, your own subscription (paste the token <code dir="auto">claude setup-token</code> prints, then Connect and test) or the hub’s API key when the hub’s admins allow it (see <a href="/docs/people#claude">Claude accounts</a>). <strong>GitHub</strong>: the GitHub account your PRs open as.</td>
 </tr>
 <tr>
 <td>Projects</td>
-<td>One project’s name, its worktrees, its agents’ environment variables (plain and secret), its own MCP servers, its setup commands, the merge train’s checks, its task profiles’ model and effort, and deleting it. See <a href="/docs/projects#settings">Project settings</a>.</td>
-</tr>
-<tr>
-<td>Instructions</td>
-<td>One project’s own text, added to its agents’ first message after the hub-wide one.</td>
+<td>One project, picked under Projects in the sidebar. <strong>Project</strong>: its name, repos, worktrees, memory refresh, its agents’ environment variables (plain and secret), its setup commands, the merge train’s checks, and deleting it; for a Navi, its integrations and linked hubs (see <a href="/docs/projects#settings">Project settings</a>). <strong>Agents</strong>: its <a href="/docs/projects#max-agents">max agents</a> (the slider applies when you let go, with Undo, and “Use the default” goes back), its Medium allowed switch, its task profiles’ model and effort, its own MCP servers and its <a href="/docs/skills">skills</a>. <strong>Instructions &amp; memory</strong>: its own instructions, added to its agents’ first message after the hub-wide ones, then what its leads remember: yours (“You”, every project’s), then the project’s. <strong>Automations</strong>: its <a href="/docs/automations">automations</a>.</td>
 </tr>
 <tr>
 <td>Prompts</td>
 <td>The prompts fleetd sends a project’s agents, listed under Prompts in the sidebar, to read and edit for that project, and any of its edits that no longer apply. A prompt with one text for the whole hub shows read only. See <a href="/docs/what-agents-are-told">What agents are told</a>.</td>
-</tr>
-<tr>
-<td>Skills</td>
-<td>One project’s <a href="/docs/skills">skills</a>: its repo’s and its own, to read, write, install and update, and a line naming the hub-wide ones it gets.</td>
 </tr>
 </tbody>
 </table>
@@ -355,7 +338,7 @@ on Setup, and a hub with no projects yet opens on setup’s welcome in place of 
 </tr>
 <tr>
 <td>Setup</td>
-<td>The hub’s <a href="/docs/quick-start#setup-steps">setup steps</a>, the same as <code dir="auto">fleetd init</code>’s: each with its status, why it matters, the values to paste and the pages to open, Test, and Skip for now. Its row says how many required steps are left. A step’s result is saved where it lives: its button opens Administration › Connections, › People or › Machines, and for Claude also your own Settings › Claude.</td>
+<td>The hub’s <a href="/docs/quick-start#setup-steps">setup steps</a>, the same as <code dir="auto">fleetd init</code>’s: each with its status, why it matters, the values to paste and the pages to open, Test, and Skip for now. Its row says how many required steps are left. A step’s result is saved where it lives: its button opens Administration › Connections, › People or › Machines, and for Claude also your own Settings › Connections › Claude.</td>
 </tr>
 </tbody>
 </table>

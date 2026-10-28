@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// Settings › Claude: someone with nothing to run on is told to connect; a token pasted goes to main to seal (to
+// Settings › Connections › Claude: someone with nothing to run on is told to connect; a token pasted goes to main to seal (to
 // every machine with a box key) and is tested at once, and the page never shows it again; the choice between their
 // subscription and the hub's API key is offered only when the admin lets them; Test says what claude said.
 import { act } from "react";
@@ -28,7 +28,7 @@ const sealedOn = [{ machineId: "devbox", fingerprint: "ab12cd34" }];
 const refused: PersonClaude = {
   person: bob,
   mayUseHubApi: false,
-  runsOn: { kind: "refused", message: "Connect your Claude to start this order.", fix: "Members may not use the hub's API on this hub: connect your subscription in Settings › Claude." },
+  runsOn: { kind: "refused", message: "Connect your Claude to start this order.", fix: "Members may not use the hub's API on this hub: connect your subscription in Settings › Connections › Claude." },
 };
 const connected: PersonClaude = {
   person: bob,

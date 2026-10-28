@@ -16,6 +16,7 @@ import { steerNext } from "../live/Steer";
 import { describe, isFinal } from "../live/words";
 import { useNow } from "../live/clock";
 import { projectAgents } from "../settings/agentsModel";
+import { focusSliderNext } from "../settings/focusProject";
 import { formatRoute } from "../settings/route";
 import { useRoute } from "../shell/navigation";
 import { panelRoute, toHash, type ProjectKey } from "../shell/routes";
@@ -228,7 +229,7 @@ function Counts({ counts, max }: { counts: ReturnType<typeof tally>; max: { limi
   if (working + waiting + queued === 0 && max === undefined) return null;
   const cap =
     max === undefined ? null : (
-      <a className={s.max} href={max.href} title="Max agents for this project" aria-label={`Max agents: ${String(max.limit)}`}>
+      <a className={s.max} href={max.href} title="Max agents for this project" aria-label={`Max agents: ${String(max.limit)}`} onClick={focusSliderNext}>
         {`max ${String(max.limit)}`}
       </a>
     );

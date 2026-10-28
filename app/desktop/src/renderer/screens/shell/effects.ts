@@ -35,7 +35,7 @@ const screenFor = (target: OpenTarget): Screen => {
     case "status":
       return { id: "status", ...on };
     case "notifications":
-      return { id: "settings", tab: "notifications" };
+      return { id: "settings", tab: "general" };
     case "pair":
       return { id: "onboarding", hub: target.hub, code: target.code };
   }

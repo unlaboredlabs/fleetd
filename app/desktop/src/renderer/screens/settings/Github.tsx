@@ -1,4 +1,4 @@
-// Settings › GitHub: the person's own GitHub account, connected through the hub's App (D187, D190). The PRs agents open
+// Settings › Connections › GitHub: the person's own GitHub account, connected through the hub's App (D187, D190). The PRs agents open
 // for the orders they start open as them; until they connect, a writer for their order on a repository the App reaches
 // is refused with "Connect your GitHub to open this order's PRs", never run as anyone else. Connect goes through main
 // (window.fleetd.github.connect): GitHub's sign-in with PKCE and a loopback redirect, the code to github_connect. The
@@ -12,7 +12,7 @@ import { Button, Text } from "../../ui";
 import { dayWords } from "../google/model";
 import { ConfirmRemove, Problem } from "./claudeParts";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
-import { PageHead, Setting } from "./parts";
+import { PagePart, Setting } from "./parts";
 import s from "./settings.module.css";
 
 const noInput = {};
@@ -21,24 +21,21 @@ export function GithubSettings() {
   const live = useLive();
   const read = useToolQuery("github_app_get", noInput, { enabled: live });
   return (
-    <div className={s.scroll} data-screen="settings.github">
-      <div className={s.column}>
-        <PageHead title="GitHub">The GitHub account the PRs of the orders you start open as. Nobody else&apos;s work ever opens a PR as you.</PageHead>
-        {!live ? (
-          <Text tone="quiet">Not connected. Connect to a hub to connect your GitHub.</Text>
-        ) : read.error instanceof CallError && lacksTool(read.error.error) ? (
-          <Text tone="quiet">This hub opens PRs with each machine&apos;s own gh login. Update fleetd on the hub to connect your own GitHub.</Text>
-        ) : read.isLoadingError ? (
-          <Text tone="danger">{errorText(read.error)}</Text>
-        ) : read.data === undefined ? (
-          <Text tone="quiet">Loading…</Text>
-        ) : read.data.app === undefined ? (
-          <Text tone="quiet">This hub has no GitHub App yet, so agents open PRs with each machine&apos;s own gh login. An admin creates it in Administration › GitHub.</Text>
-        ) : (
-          <Account info={read.data} />
-        )}
-      </div>
-    </div>
+    <PagePart title="GitHub" reveal="github" intro="The GitHub account the PRs of the orders you start open as. Nobody else's work ever opens a PR as you.">
+      {!live ? (
+        <Text tone="quiet">Not connected. Connect to a hub to connect your GitHub.</Text>
+      ) : read.error instanceof CallError && lacksTool(read.error.error) ? (
+        <Text tone="quiet">This hub opens PRs with each machine&apos;s own gh login. Update fleetd on the hub to connect your own GitHub.</Text>
+      ) : read.isLoadingError ? (
+        <Text tone="danger">{errorText(read.error)}</Text>
+      ) : read.data === undefined ? (
+        <Text tone="quiet">Loading…</Text>
+      ) : read.data.app === undefined ? (
+        <Text tone="quiet">This hub has no GitHub App yet, so agents open PRs with each machine&apos;s own gh login. An admin creates it in Administration › Connections.</Text>
+      ) : (
+        <Account info={read.data} />
+      )}
+    </PagePart>
   );
 }
 

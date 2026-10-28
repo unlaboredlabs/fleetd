@@ -22,7 +22,7 @@ Where fleetd keeps everything, and the settings you can change. The [hub](/docs/
     keys/<name>.key      agent keys made with fleetd hub key create --agent
     prompts/<id>.md      your version of a prompt, hub-wide
     prompts/projects/<key>/<id>.md   the same for one project
-    memory/user.md       what the leads remember about how you work (Settings → Memory)
+    memory/user.md       what the leads remember about how you work (Settings → Projects → Instructions & memory)
     memory/<machine>/<project>/MEMORY.md   one project's memory, with its topic files beside it
   node/                  the node's home (every worker)
     node.json            the node's settings (below)
@@ -51,7 +51,7 @@ What the leads [remember](/docs/what-agents-are-told#memory) is plain markdown u
 for every project, and per project a `MEMORY.md` (its always-on entries, then one `- [topic](topic.md)` line per
 topic) with its topic files beside it. Each remembered line is one `- ` entry.
 
-Settings → Memory lists each file as cards, one per entry, with a search across them and the file's length against
+Settings → Projects → Instructions & memory lists each file as cards, one per entry, with a search across them and the file's length against
 its cap. An entry the lead wrote says when, and links to the "Remembered: …" line in that project's chat (or the
 [nightly refresh](/docs/what-agents-are-told#memory-refresh)'s line); an entry
 you wrote or changed since shows no source. Edit an entry in its card, or delete it and use Undo in the toast to put it

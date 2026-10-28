@@ -6,7 +6,7 @@ import { editable, groups, installLine, isSkillName, nameProblem, rowKey, shadow
 
 const skill = (over: Partial<SkillSummary>): SkillSummary => ({ name: "release", origin: "global", description: "", files: [], ...over });
 
-describe("Settings → Skills", () => {
+describe("Settings → Projects → Agents", () => {
   it("edits the hub's skills only; the repo's change in the repo", () => {
     expect(editable("project")).toBe(true);
     expect(editable("global")).toBe(true);
@@ -44,8 +44,8 @@ describe("Settings → Skills", () => {
     expect(rowKey(list[0] ?? skill({}))).toBe("global/release");
   });
 
-  it("is a page of its own, found by search and linked per project", () => {
-    expect(searchSettings("skills.sh")[0]?.tab).toBe("skills");
-    expect(parseRoute("#/settings/skills?for=devbox/shop")).toMatchObject({ tab: "skills", for: "devbox/shop" });
+  it("is on a project's Agents, found by search, and an older link lands there per project", () => {
+    expect(searchSettings("skills.sh")[0]?.tab).toBe("agents");
+    expect(parseRoute("#/settings/skills?for=devbox/shop")).toMatchObject({ tab: "agents", for: "devbox/shop" });
   });
 });

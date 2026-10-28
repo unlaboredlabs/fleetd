@@ -45,7 +45,11 @@ export const listView = (tab: PanelTab): PanelView => {
 export const hasItem = (view: PanelView): boolean =>
   view.tab === "agents" ? view.agent !== null : view.tab === "prs" ? view.pr !== null : view.tab === "sessions" ? view.session !== null : false;
 
-export const SETTINGS_TABS = ["general", "hubs", "claude", "github", "notifications", "agents", "projects", "prompts", "instructions", "memory", "automations", "skills"] as const;
+/**
+ * Settings' pages (D209): General, Connections, Projects and Prompts in its sidebar; a project's Agents, Instructions &
+ * memory and Automations nest under Projects with its Project page, all of one project (`for`).
+ */
+export const SETTINGS_TABS = ["general", "connections", "projects", "agents", "instructions", "automations", "prompts"] as const;
 export type SettingsTab = (typeof SETTINGS_TABS)[number];
 export type SettingsView = "edit" | "compare" | "update";
 
@@ -100,6 +104,18 @@ type ScreenOf =
 export const HOME: Screen = { id: "home" };
 
 const isSettingsTab = (tab: string | undefined): tab is SettingsTab => SETTINGS_TABS.some((t) => t === tab);
+
+/** Where Settings' pages before D209 went: an older link lands on the page that has it now, for the same project. */
+const SETTINGS_MOVED: Readonly<Record<string, SettingsTab>> = {
+  hubs: "connections",
+  claude: "connections",
+  github: "connections",
+  notifications: "general",
+  memory: "instructions",
+  skills: "agents",
+  // The global MCP servers went to Administration › Hub settings; a project's own are with its agents.
+  mcp: "agents",
+};
 const isAdminSection = (section: string | undefined): section is AdminSection => ADMIN_SECTIONS.some((x) => x === section);
 
 const decode = (segment: string): string | null => {
@@ -176,12 +192,10 @@ const screenOf = (parts: ReadonlyArray<string>, query: URLSearchParams): ScreenO
     case "settings": {
       // Machine roles moved to Administration › Machines; an older link still lands on them.
       if (a === "machines") return { id: "admin", section: "machines" };
-      // The global MCP servers went to Administration › Hub settings; a project's own are on its page.
-      if (a === "mcp") return { id: "settings", tab: "projects" };
       const [prompt, project, view] = [query.get("prompt"), query.get("for"), query.get("view")];
       return {
         id: "settings",
-        tab: isSettingsTab(a) ? a : "general",
+        tab: isSettingsTab(a) ? a : ((a === undefined ? undefined : SETTINGS_MOVED[a]) ?? "general"),
         ...(prompt ? { prompt } : {}),
         ...(project ? { for: project } : {}),
         ...(view === "compare" || view === "update" ? { view } : {}),

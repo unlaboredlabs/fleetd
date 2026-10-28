@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 // Administration's machine caps: each machine's number and where it comes from, the slider that sets it and the way
-// back to auto; and Settings → Agents' project slider past its machine's cap, which says the machine holds it, with the
+// back to auto; and Settings → Projects → Agents' project slider past its machine's cap, which says the machine holds it, with the
 // way to Administration for an owner or admin and nothing more for anyone else.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -83,7 +83,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-/** `page`: Administration's caps, or Settings → Agents. `admin`: what hub_info says of the key. */
+/** `page`: Administration's caps, or storefront's Settings → Projects › Agents. `admin`: what hub_info says of the key. */
 const render = async (page: "hub" | "settings" = "hub", admin?: boolean) => {
   let listener: (frame: HubFrame) => void = () => undefined;
   let now = slots;
@@ -96,7 +96,9 @@ const render = async (page: "hub" | "settings" = "hub", admin?: boolean) => {
         return Promise.resolve({ ok: true, output: { slots: now } });
       }
       if (tool === "hub_info") return Promise.resolve({ ok: true, output: { version: "0.0.0", protocol: 1, busy: [], ...(admin === undefined ? {} : { admin }) } });
-      return Promise.resolve({ ok: true, output: { machineId: "devbox", projectId: "storefront", mediumAllowed: true } });
+      if (tool === "project_get") return Promise.resolve({ ok: true, output: { machineId: "devbox", projectId: "storefront", mediumAllowed: true } });
+      // The rest of a project's Agents page (profiles, MCP servers, skills) finds a hub without them.
+      return Promise.resolve({ ok: false, error: { code: "not_found", message: `${tool} isn't faked` } });
     },
     subscribe: (l) => ((listener = l), () => undefined),
     resync: () => Promise.resolve(),
@@ -107,7 +109,7 @@ const render = async (page: "hub" | "settings" = "hub", admin?: boolean) => {
     root.render(
       <UiProvider>
         <DataProvider layer={createDataLayer(hub)}>
-          {page === "hub" ? <HubCaps /> : <AgentsSettings />}
+          {page === "hub" ? <HubCaps /> : <AgentsSettings route={{ tab: "agents", prompt: null, for: "devbox/storefront", view: "edit" }} />}
         </DataProvider>
       </UiProvider>,
     );
@@ -175,7 +177,7 @@ it("sets a machine with its slider, and Undo goes back to auto", async () => {
 it("takes a project's slider to the fleet cap and says when its machine holds it, with no machine control in Settings", async () => {
   await render("settings", false);
   await act(async () => new Promise((r) => setTimeout(r, 0)));
-  const project = section("storefront");
+  const project = section("Max agents");
   const thumb = project.querySelector("[role='slider']");
   expect(thumb?.getAttribute("aria-valuenow")).toBe("30");
   expect(thumb?.getAttribute("aria-valuemax")).toBe("50");
@@ -191,6 +193,6 @@ it("takes a project's slider to the fleet cap and says when its machine holds it
 it("gives an owner or admin the way to the machine caps on Administration", async () => {
   await render("settings", true);
   await act(async () => new Promise((r) => setTimeout(r, 0)));
-  await click(button(section("storefront"), "Machine caps in Administration"));
+  await click(button(section("Max agents"), "Machine caps in Administration"));
   expect(window.location.hash).toBe("#/admin/hub");
 });

@@ -1,4 +1,4 @@
-// Which Claude account work runs on (teams step 8, D200), in a person's words: Settings › Claude (each person's own
+// Which Claude account work runs on (teams step 8, D200), in a person's words: Settings › Connections › Claude (each person's own
 // choice and subscription) and Administration › Claude (the hub's API key, who may use it, what leads run on) read
 // claude_accounts_get and say it the same way. Pure, so the wording is tested without a hub.
 import type { ClaudeAccount, ClaudeChoice, ClaudeRunsOn, ClaudeSealedOn, ClaudeTest, PersonClaude, PersonRef, UsageStatus } from "../../../shared/contracts";

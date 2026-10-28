@@ -1,30 +1,33 @@
 // Settings in the sidebar's place: Back to where you were, a search field that narrows to an option by name, the
-// pages, and (on Prompts) the prompts themselves, so the editor has the rest of the window.
-import { ArrowLeft, Bell, Bot, Brain, FolderGit2, GitBranch, MessageSquareText, Network, Repeat, ScrollText, SlidersHorizontal, Sparkles, Users } from "lucide-react";
+// four pages, under Projects (while one of its pages is open) the project picker and that project's pages, and under
+// Prompts the prompts themselves, so the editor has the rest of the window.
+import { ArrowLeft, FolderGit2, MessageSquareText, Plug, SlidersHorizontal } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Input, Sidebar, SidebarItem, SidebarSection, Text } from "../../ui";
 import { sections } from "./catalog";
 import type { PromptSummary } from "./contracts";
-import { parseScope, projectRefOf, type Scope } from "./editor";
+import { parseScope, projectRefOf, scopeKey, type Scope } from "./editor";
 import { useToolQuery } from "../../src/data/react";
 import { errorText, useLive } from "./hub";
-import { promptHref, tabHref, useSettingsRoute, type Tab } from "./route";
+import { ScopeSelect, useProjects } from "./parts";
+import { formatRoute, isProjectTab, projectFor, promptHref, tabHref, useSettingsRoute, type Tab } from "./route";
 import { openOption, PAGE_LABEL, searchSettings } from "./search";
 import s from "./settings.module.css";
 
+/** Settings' rows (D209); a project's pages nest under Projects, as the prompts nest under Prompts. */
 const PAGES: ReadonlyArray<{ tab: Tab; icon: ReactNode }> = [
   { tab: "general", icon: <SlidersHorizontal /> },
-  { tab: "hubs", icon: <Network /> },
-  { tab: "claude", icon: <Bot /> },
-  { tab: "github", icon: <GitBranch /> },
-  { tab: "notifications", icon: <Bell /> },
-  { tab: "agents", icon: <Users /> },
+  { tab: "connections", icon: <Plug /> },
   { tab: "projects", icon: <FolderGit2 /> },
-  { tab: "instructions", icon: <ScrollText /> },
-  { tab: "memory", icon: <Brain /> },
-  { tab: "skills", icon: <Sparkles /> },
   { tab: "prompts", icon: <MessageSquareText /> },
-  { tab: "automations", icon: <Repeat /> },
+];
+
+/** Under Projects: the picked project's pages. */
+const PROJECT_PAGES: ReadonlyArray<{ tab: Tab; label: string }> = [
+  { tab: "projects", label: "Project" },
+  { tab: "agents", label: "Agents" },
+  { tab: "instructions", label: "Instructions & memory" },
+  { tab: "automations", label: "Automations" },
 ];
 
 const go = (hash: string) => {
@@ -33,6 +36,7 @@ const go = (hash: string) => {
 
 export function SettingsSidebar({ onBack }: { onBack: () => void }) {
   const route = useSettingsRoute();
+  const projects = useProjects();
   const [query, setQuery] = useState("");
   const results = searchSettings(query);
   const searching = query.trim() !== "";
@@ -88,13 +92,42 @@ export function SettingsSidebar({ onBack }: { onBack: () => void }) {
         <SidebarSection title="Settings">
           {PAGES.map((p) => (
             <div key={p.tab} className={s.navGroup}>
-              <SidebarItem label={PAGE_LABEL[p.tab]} icon={p.icon} current={route.tab === p.tab && route.prompt === null} onClick={() => go(tabHref(p.tab))} />
+              {p.tab === "projects" ? (
+                <>
+                  <SidebarItem label="Projects" icon={p.icon} current={false} onClick={() => go(tabHref("projects"))} />
+                  {isProjectTab(route.tab) ? <ProjectNav tab={route.tab} project={projectFor(route, projects)} /> : null}
+                </>
+              ) : (
+                <SidebarItem label={PAGE_LABEL[p.tab]} icon={p.icon} current={route.tab === p.tab && route.prompt === null} onClick={() => go(tabHref(p.tab))} />
+              )}
               {p.tab === "prompts" && route.tab === "prompts" ? <PromptNav selected={route.prompt} scope={parseScope(route.for)} onOpen={(id) => go(promptHref(id))} /> : null}
             </div>
           ))}
         </SidebarSection>
       )}
     </Sidebar>
+  );
+}
+
+/** The project the pages under Projects are of, picked here, and its four pages. */
+function ProjectNav({ tab, project }: { tab: Tab; project: string | null }) {
+  const projects = useProjects();
+  const scope = project === null ? null : parseScope(project);
+  return (
+    <div role="group" aria-label="Project">
+      <div className={s.navNested}>
+        <ScopeSelect
+          id="settings-project"
+          className={s.navPicker}
+          value={scope?.kind === "project" ? scope : null}
+          projects={projects}
+          onChange={(next) => go(formatRoute({ tab, for: scopeKey(next) }))}
+        />
+      </div>
+      {PROJECT_PAGES.map((p) => (
+        <SidebarItem key={p.tab} indent label={p.label} current={tab === p.tab} onClick={() => go(formatRoute({ tab: p.tab, for: project }))} />
+      ))}
+    </div>
   );
 }
 

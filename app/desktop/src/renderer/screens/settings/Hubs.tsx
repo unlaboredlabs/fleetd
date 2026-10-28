@@ -1,4 +1,4 @@
-// Settings › Hubs: the hubs this app is paired with (docs/design/hubs.md), each under a name the person picks and an
+// Settings › Connections › Hubs: the hubs this app is paired with (docs/design/hubs.md), each under a name the person picks and an
 // optional colour. Each can be renamed, recoloured, paired again or removed; Add a hub pairs one more beside them.
 // A hub's name shows in the sidebar, notifications, Status and Commands once there are two. Under each, the hub links
 // made as you on it (hubLinks/LinksToThisHub.tsx).
@@ -13,43 +13,41 @@ import { useKeyStore } from "../onboarding";
 import { sentence } from "../onboarding/form";
 import { Prose } from "../onboarding/Prose";
 import { ColorPick } from "../shell/ColorPick";
-import { PageHead, Setting } from "./parts";
+import { PagePart, Setting } from "./parts";
 import s from "./settings.module.css";
 
+/** Settings › Connections › Hubs: each hub this app is paired with, and Add a hub. */
 export function HubsSettings() {
   const hubs = useHubs();
   return (
-    <div className={s.scroll} data-screen="settings.hubs">
-      <div className={s.column}>
-        <PageHead
-          title="Hubs"
-          aside={
-            <Button
-              onClick={() => {
-                window.location.hash = "#/onboarding?add";
-              }}
-            >
-              Add a hub
-            </Button>
-          }
+    <PagePart
+      title="Hubs"
+      reveal="hubs"
+      intro="Keep work apart on hubs of its own, each with its own machines, people and keys. Name each as you like."
+      aside={
+        <Button
+          onClick={() => {
+            window.location.hash = "#/onboarding?add";
+          }}
         >
-          Keep work apart on hubs of its own, each with its own machines, people and keys. Name each as you like.
-        </PageHead>
-        {/* Main's word about the list itself (one that couldn't be read, its hubs found again), said once. */}
-        {hubs[0]?.note === undefined ? null : (
-          <div className={s.hubLine} role="status">
-            <Dot color="var(--warning)" />
-            <Prose text={hubs[0].note} />
-          </div>
-        )}
-        {hubs.map((hub) => (
-          <HubScope key={hub.id} hub={hub}>
-            <HubSetting only={hubs.length === 1} />
-            <LinksToThisHub />
-          </HubScope>
-        ))}
-      </div>
-    </div>
+          Add a hub
+        </Button>
+      }
+    >
+      {/* Main's word about the list itself (one that couldn't be read, its hubs found again), said once. */}
+      {hubs[0]?.note === undefined ? null : (
+        <div className={s.hubLine} role="status">
+          <Dot color="var(--warning)" />
+          <Prose text={hubs[0].note} />
+        </div>
+      )}
+      {hubs.map((hub) => (
+        <HubScope key={hub.id} hub={hub}>
+          <HubSetting only={hubs.length === 1} />
+          <LinksToThisHub />
+        </HubScope>
+      ))}
+    </PagePart>
   );
 }
 

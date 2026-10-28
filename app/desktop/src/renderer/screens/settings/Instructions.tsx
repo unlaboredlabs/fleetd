@@ -1,5 +1,6 @@
 // Custom instructions, appended to every lead's and task's first message (workers and reviewers too) under "Custom
-// instructions from the human": the hub-wide text, then the project's. Settings → Instructions edits one project's;
+// instructions from the human": the hub-wide text, then the project's. Settings → Projects › Instructions & memory
+// edits one project's;
 // Administration › Hub settings edits the one for every project (HubInstructions), which only owners and admins change
 // (D209). Saved with prompt_set on the registry id `instructions`, and pinned per session like every prompt.
 import { useEffect, useState } from "react";
@@ -8,11 +9,15 @@ import { INSTRUCTIONS, type PromptScope } from "./contracts";
 import { parseScope, projectRefOf, scopeKey, shownDraft, type Draft, type Scope } from "./editor";
 import { useToolQuery } from "../../src/data/react";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
-import { ConfirmDiscard, PageHead, ScopeSelect, scopeName, useProjects } from "./parts";
+import { Memory } from "./Memory";
+import { NoProject, PageHead, PagePart, scopeName, useProjects } from "./parts";
 import { replaceRoute, type SettingsRoute } from "./route";
 import s from "./settings.module.css";
 
 type Echo = { ok: boolean; text: string };
+
+/** Unsaved instructions by "hub" or "<machine>/<project>", kept while their page is closed. */
+const drafts = new Map<string, Draft>();
 
 const fill = (d: Draft | null, saved: string): Draft => (d === null || d.text === d.from ? { from: saved, text: saved } : { from: saved, text: d.text });
 
@@ -27,7 +32,16 @@ function useText(project: Scope | null, scope: PromptScope) {
   const read = useToolQuery("prompt_get", { id: INSTRUCTIONS, ...(ref ? { projectRef: ref } : {}) }, { enabled: live && (scope === "global" || ref !== undefined) });
   const hubCall = useHubCall();
   const refetch = useRefetch();
-  const [own, setOwn] = useState<{ key: string; draft: Draft } | null>(null);
+  const [own, setOwnState] = useState<{ key: string; draft: Draft } | null>(() => {
+    const kept = drafts.get(key);
+    return kept === undefined ? null : { key, draft: kept };
+  });
+  // A draft outlives its page: picking another project and coming back finds it.
+  const setOwn = (next: { key: string; draft: Draft }) => {
+    if (next.draft.text === next.draft.from) drafts.delete(next.key);
+    else drafts.set(next.key, next.draft);
+    setOwnState(next);
+  };
   const [synced, setSynced] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
   const [echo, setEcho] = useState<Echo | null>(null);
@@ -132,69 +146,39 @@ export function HubInstructions() {
   );
 }
 
-/** Settings → Instructions: one project's own, sent to its agents after the hub-wide ones. */
+/**
+ * Settings → Projects › Instructions & memory: the project's own instructions, sent to its agents after the hub-wide
+ * ones, then what its leads remember (Memory.tsx), yours first.
+ */
 export function Instructions({ route }: { route: SettingsRoute }) {
   const projects = useProjects();
-  const [project, setProject] = useState<Scope | null>(() => (route.for ? parseScope(route.for) : null));
-  const [pending, setPending] = useState<Scope | null>(null);
-  const shown = project?.kind === "project" ? project : null;
-  const key = shown ? scopeKey(shown) : null;
-  const t = useText(shown, "project");
+  const shown = route.for ? parseScope(route.for) : null;
+  const project = shown?.kind === "project" ? shown : null;
+  const t = useText(project, "project");
 
   useEffect(() => {
-    replaceRoute({ tab: "instructions", for: key });
-  }, [key]);
+    replaceRoute({ tab: "instructions", for: route.for });
+  }, [route.for]);
 
-  const pick = (next: Scope) => {
-    if (scopeKey(next) === key) return;
-    if (t.dirty) setPending(next);
-    else {
-      setProject(next);
-      t.setEcho(null);
-    }
-  };
-
-  if (!t.live) {
-    return (
-      <div className={s.scroll} data-screen="settings.instructions">
-        <div className={s.column}>
-          <PageHead title="Instructions" />
-          <Text tone="quiet">Not connected. Connect to a hub to add instructions for its agents.</Text>
-        </div>
-      </div>
-    );
-  }
-
-  const name = shown ? scopeName(shown, projects) : null;
+  const name = project ? scopeName(project, projects) : null;
   return (
     <div className={s.scroll} data-screen="settings.instructions">
       <div className={s.column}>
-        <PageHead title="Instructions">Added to a project&apos;s agents&apos; first message, the lead&apos;s too, after the hub-wide ones.</PageHead>
-        <LoadProblem t={t} />
-        <div className={s.stack}>
-          <div className={s.setting}>
-            <div className={s.settingLabel}>
-              <Text strong>Project</Text>
-              <Text size="xs" tone="quiet">
-                {name ? `Sent to ${name}'s agents only.` : "Pick a project to add instructions for it alone."}
-              </Text>
+        <PageHead title="Instructions & memory">What {name ?? "a project"}&apos;s agents are told, and what its leads remember.</PageHead>
+        <PagePart title="Instructions" reveal="instructions" intro="Added to the project's agents' first message, the lead's too, after the hub-wide ones.">
+          {!t.live ? (
+            <Text tone="quiet">Not connected. Connect to a hub to add instructions for its agents.</Text>
+          ) : project === null ? (
+            <NoProject />
+          ) : (
+            <div className={s.stack}>
+              <LoadProblem t={t} />
+              <Editor t={t} label={`Instructions for ${name ?? "this project"}`} placeholder="e.g. Use pnpm, not npm." whose={`for ${name ?? "this project"}`} />
             </div>
-            <ScopeSelect id="instructions-for" className={s.scopeSelect} value={shown} projects={projects} onChange={pick} />
-          </div>
-          {shown ? <Editor t={t} label={`Instructions for ${name ?? "this project"}`} placeholder="e.g. Use pnpm, not npm." whose={`for ${name ?? "this project"}`} /> : null}
-        </div>
+          )}
+        </PagePart>
+        <Memory project={project} />
       </div>
-      <ConfirmDiscard
-        open={pending !== null}
-        what={`${name ?? "this project"}'s instructions`}
-        why={pending ? `Showing ${scopeName(pending, projects)} drops them.` : ""}
-        onKeep={() => setPending(null)}
-        onDiscard={() => {
-          if (pending) setProject(pending);
-          setPending(null);
-          t.setEcho(null);
-        }}
-      />
     </div>
   );
 }

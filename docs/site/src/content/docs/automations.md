@@ -20,7 +20,7 @@ no order. It is listed with a project's automations anyway, as a [built-in row](
 
 ## Manage them in the app
 
-Open **Settings → Automations** and pick a project. There you can:
+Open **Settings → Projects → Automations** and pick a project. There you can:
 
 - **New automation**: a name, the prompt, and its triggers. While you type a cron, the editor shows it in words
   ("At 09:00, Monday to Friday (Europe/Berlin)") or says what's wrong with it.

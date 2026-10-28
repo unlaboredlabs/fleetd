@@ -1,4 +1,4 @@
-/* Settings → Skills: the list by origin, then the open skill. */
+/* Settings → Projects → Agents: the list by origin, then the open skill. */
 .group {
   display: flex;
   flex-direction: column;

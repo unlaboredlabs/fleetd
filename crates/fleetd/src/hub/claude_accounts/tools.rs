@@ -67,7 +67,7 @@ fn me(hub: &Hub, caller: &Caller) -> Result<Person, ToolError> {
         error(
             ErrorCode::Forbidden,
             "Only a person connects their own Claude, from one of their own devices.",
-            "Open Settings › Claude in the desktop app.",
+            "Open Settings › Connections › Claude in the desktop app.",
         )
     })
 }

@@ -41,8 +41,8 @@ const ADMIN: Readonly<Record<string, Place>> = {
 
 /** Beside the Administration section, each person's own side of a step. */
 const OWN: Readonly<Record<string, Place>> = {
-  claude: { label: "Open Settings › Claude", screen: { id: "settings", tab: "claude" } },
-  github: { label: "Open Settings › GitHub", screen: { id: "settings", tab: "github" } },
+  claude: { label: "Open Settings › Connections", screen: { id: "settings", tab: "connections" }, reveal: "claude" },
+  github: { label: "Open Settings › Connections", screen: { id: "settings", tab: "connections" }, reveal: "github" },
 };
 
 /**

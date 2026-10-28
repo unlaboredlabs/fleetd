@@ -98,7 +98,7 @@ message back. The banner says why the hub doesn't answer and when the app tries 
 Approvals, secrets and Stop wait until the hub is back.
 
 Once you're connected again, a chat says "Last known" until its newest messages load; if they can't, it says so, with
-Retry. "Disconnect and forget key" in Settings → Hubs clears what the app kept for that hub, queued messages included.
+Retry. "Disconnect and forget key" in Settings → Connections → Hubs clears what the app kept for that hub, queued messages included.
 
 How to work with the lead: [Chat with the lead](/docs/chat).
 
@@ -115,7 +115,7 @@ agent waiting on you first. Click an agent of another project to open its work b
 **This project** goes back. The panel remembers which you chose.
 
 Beside the count of agents working, **max** is the project's [Max agents](/docs/projects#max-agents) ("4 working · max
-20"). Click it to change it in Settings › Agents.
+20"). Click it to change it in Settings › Projects › Agents.
 
 ## Train {#train}
 
@@ -199,17 +199,16 @@ Open Settings with ⌘,. It is everyone's: nothing hub-wide is in it (that is [A
 takes the sidebar's place; Back returns to where you were. Type in "Search settings" to find
 an option or a prompt by name, and press Enter to open the first match.
 
-| Section | Has |
+Settings has four pages. While one of a project's pages is open, Projects shows a project picker and that project's
+four pages under it, and Prompts lists the prompts under it. Every option is at most two clicks from opening Settings.
+An older `#/settings/<page>` link opens the page that has its options now.
+
+| Page | Has |
 |---|---|
-| General | Appearance (light, dark, match system) and time in the app. |
-| Claude | Which Claude account the orders you start and your Navi run on: your own subscription (paste the token `claude setup-token` prints, then Connect and test) or the hub's API key, when the hub's admins let you. See [Claude accounts](/docs/people#claude). |
-| Hubs | Each hub this app is paired with: its address, its connection, its name and colour, Pair again and Remove. Add a hub pairs one more. See [Several hubs](/docs/several-hubs). |
-| Notifications | Which alerts show (the lead asks you something, a command or secret waits, the lead finishes what you asked, a machine problem, anything else), whether they play a sound, the Dock badge, and a test. There is never an alert for the chat in front of you, and in quiet hours only urgent ones show. Clicking one opens what it's about. |
-| Agents | [Max agents](/docs/projects#max-agents) for each project. Each slider applies when you let go, with Undo. A project says whether its max is its own or follows the default, and "Use the default" goes back. Under each, the project's Medium allowed switch. |
-| Projects | One project's name, its worktrees, its agents' environment variables (plain and secret), its own MCP servers, its setup commands, the merge train's checks, its task profiles' model and effort, and deleting it. See [Project settings](/docs/projects#settings). |
-| Instructions | One project's own text, added to its agents' first message after the hub-wide one. |
+| General | Appearance (light, dark, match system) and time in the app. **Notifications**: which alerts show (the lead asks you something, a command or secret waits, the lead finishes what you asked, a machine problem, anything else), whether they play a sound, the Dock badge, and a test. There is never an alert for the chat in front of you, and in quiet hours only urgent ones show. **Version & updates**: this app's version and channel with Check for updates, the hub's and each machine's fleetd and whether each is up to date; owners and admins also get the updates sheet, which updates the hub, then every machine, then this app. |
+| Connections | **Hubs**: each hub this app is paired with, with its address, its connection, its name and colour, Pair again and Remove; Add a hub pairs one more (see [Several hubs](/docs/several-hubs)). **Claude**: which Claude account the orders you start and your Navi run on, your own subscription (paste the token `claude setup-token` prints, then Connect and test) or the hub's API key when the hub's admins allow it (see [Claude accounts](/docs/people#claude)). **GitHub**: the GitHub account your PRs open as. |
+| Projects | One project, picked under Projects in the sidebar. **Project**: its name, repos, worktrees, memory refresh, its agents' environment variables (plain and secret), its setup commands, the merge train's checks, and deleting it; for a Navi, its integrations and linked hubs (see [Project settings](/docs/projects#settings)). **Agents**: its [max agents](/docs/projects#max-agents) (the slider applies when you let go, with Undo, and "Use the default" goes back), its Medium allowed switch, its task profiles' model and effort, its own MCP servers and its [skills](/docs/skills). **Instructions & memory**: its own instructions, added to its agents' first message after the hub-wide ones, then what its leads remember: yours ("You", every project's), then the project's. **Automations**: its [automations](/docs/automations). |
 | Prompts | The prompts fleetd sends a project's agents, listed under Prompts in the sidebar, to read and edit for that project, and any of its edits that no longer apply. A prompt with one text for the whole hub shows read only. See [What agents are told](/docs/what-agents-are-told). |
-| Skills | One project's [skills](/docs/skills): its repo's and its own, to read, write, install and update, and a line naming the hub-wide ones it gets. |
 
 ## Administration {#administration}
 
@@ -224,7 +223,7 @@ on Setup, and a hub with no projects yet opens on setup's welcome in place of Ge
 | Machines | Add machine, the hub's machines with Repair and Remove, each one's page with its checklist, and [machine roles](/docs/machines#roles). |
 | Connections | What the hub itself connects to. **Claude**: the hub's API key and optional endpoint, sealed to every machine, with Test; the switch "Members may use the hub's API key"; what projects' leads and unrequested work run on, with the hub owner's subscription they fall back to; and each person's account, with any usage pause (see [Claude accounts](/docs/people#claude)). **GitHub**: the hub's own [GitHub App](/docs/github). **Google**: the OAuth client for [Google for Navi](/docs/google#client), with the steps in Google Cloud Console, the Client ID and secret (sealed) and Test, then, optionally, [real-time mail](/docs/google#pubsub). |
 | Hub settings | What reaches every project and machine: the whole fleet's and each machine's [max agents](/docs/projects#max-agents), the two [task profiles](/docs/projects#models) with the model and effort behind each, the [memory caps](/docs/what-agents-are-told#memory), the instructions for every project, the global [MCP servers](/docs/mcp-servers) and whether agents also get their own, the hub-wide [skills](/docs/skills), and the hub-wide prompts, listed under Hub settings in the sidebar. The hub refuses these changes from anyone but an owner or admin. |
-| Setup | The hub's [setup steps](/docs/quick-start#setup-steps), the same as `fleetd init`'s: each with its status, why it matters, the values to paste and the pages to open, Test, and Skip for now. Its row says how many required steps are left. A step's result is saved where it lives: its button opens Administration › Connections, › People or › Machines, and for Claude also your own Settings › Claude. |
+| Setup | The hub's [setup steps](/docs/quick-start#setup-steps), the same as `fleetd init`'s: each with its status, why it matters, the values to paste and the pages to open, Test, and Skip for now. Its row says how many required steps are left. A step's result is saved where it lives: its button opens Administration › Connections, › People or › Machines, and for Claude also your own Settings › Connections › Claude. |
 
 On a hub from before people, a key with admin on every machine counts as an admin, and so does any key on a hub too
 old to say; People there says the hub needs updating, with Update the hub, and Hub settings work as before.

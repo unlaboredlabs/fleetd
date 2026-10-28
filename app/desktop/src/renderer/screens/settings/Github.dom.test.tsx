@@ -120,7 +120,7 @@ const click = async (el: HTMLElement) => {
   await settle();
 };
 
-describe("Settings › GitHub", () => {
+describe("Settings › Connections › GitHub", () => {
   it("asks to connect before a first PR, and connects through main", async () => {
     await render();
     expect(document.body.textContent).toContain("Not connected");

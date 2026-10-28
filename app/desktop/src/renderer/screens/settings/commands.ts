@@ -4,9 +4,12 @@ import { registerCommands, registerSource, type Command } from "../palette";
 import { GROUPS, describe, groupOf } from "./catalog";
 import { hashKey } from "@tanstack/react-query";
 import type { DataLayer } from "../../src/data/queries";
+import type { HubInfoOutput } from "../../../shared/contracts";
+import { administers } from "../admin/model";
+import { toHash } from "../shell/routes";
 import type { PromptSummary } from "./contracts";
 import { promptHref, tabHref } from "./route";
-import { BADGE } from "./search";
+import { BADGE, revealNext } from "./search";
 
 const go = (hash: string) => {
   window.location.hash = hash;
@@ -27,7 +30,10 @@ const pages: Command[] = [
     detail: "What alerts you, sound, the badge",
     group: "settings",
     keywords: ["alerts", "sound", "badge", "dock", "mute"],
-    run: () => go(tabHref("notifications")),
+    run: () => {
+      revealNext("notifications");
+      go(tabHref("general"));
+    },
   },
   {
     id: "go:settings.prompts",
@@ -47,21 +53,40 @@ const pages: Command[] = [
   },
   {
     id: "go:settings.instructions",
-    title: "Instructions",
-    detail: "A project's own, added to its agents' first message",
+    title: "Instructions & memory",
+    detail: "A project's own instructions, and what its leads remember",
     group: "settings",
-    keywords: ["custom instructions", "rules"],
+    keywords: ["custom instructions", "rules", "memory", "remember"],
     run: () => go(tabHref("instructions")),
+  },
+  {
+    id: "go:settings.connections",
+    title: "Connections",
+    detail: "Your hubs, your Claude account and your GitHub",
+    group: "settings",
+    keywords: ["hubs", "claude", "github", "account", "pair", "subscription"],
+    run: () => go(tabHref("connections")),
+  },
+  {
+    id: "go:settings.updates",
+    title: "Version & updates",
+    detail: "Which fleetd this app, the hub and each machine run",
+    group: "settings",
+    keywords: ["version", "update", "upgrade", "edge", "channel"],
+    run: () => {
+      revealNext("general.updates");
+      go(tabHref("general"));
+    },
   },
   // Each setting by its own name, typed rather than listed, so "max agents" or "dark mode" finds it.
   ...(
     [
-      ["Max agents", "How many agents run at once, per project and in all", "agents", ["agents", "limit", "at once", "whole fleet", "cap", "concurrency"]],
+      ["Max agents", "How many of a project's agents run at once", "agents", ["agents", "limit", "at once", "cap", "concurrency"]],
       ["Appearance", "Light, dark or match system", "general", ["theme", "dark mode", "light mode"]],
-      ["Hub", "The connection, and this app's key", "general", ["connection", "disconnect", "key"]],
-      ["Notify me when", "Which kinds of notification show", "notifications", ["notifications", "alerts", "mute"]],
-      ["Sound", "Notifications play a sound or not", "notifications", ["notifications", "mute", "silent"]],
-      [BADGE, "How many projects need you, on the app icon", "notifications", ["badge", "dock", "count", "app icon"]],
+      ["Hub", "The connection, and this app's key", "connections", ["connection", "disconnect", "key"]],
+      ["Notify me when", "Which kinds of notification show", "general", ["notifications", "alerts", "mute"]],
+      ["Sound", "Notifications play a sound or not", "general", ["notifications", "mute", "silent"]],
+      [BADGE, "How many projects need you, on the app icon", "general", ["badge", "dock", "count", "app icon"]],
     ] as const
   ).map(
     ([title, detail, tab, keywords]): Command => ({
@@ -87,6 +112,20 @@ export function registerSettingsCommands(layer: DataLayer): () => void {
   const read = layer.toolQuery("prompt_get", {});
   const prompts = (): ReadonlyArray<PromptSummary> => layer.queryClient.getQueryData<{ prompts: PromptSummary[] }>(read.queryKey)?.prompts ?? [];
   const offPages = registerCommands(pages);
+  // Administration's Hub settings, for an owner or admin as hub_info last said: what used to be Settings' hub-wide
+  // instructions, MCP servers and prompts (D209).
+  const info = layer.toolQuery("hub_info", {});
+  const offAdmin = registerCommands([
+    {
+      id: "go:admin.hub",
+      title: "Hub settings",
+      detail: "What reaches every project: caps, profiles, instructions, MCP servers, skills and prompts",
+      group: "settings",
+      keywords: ["administration", "admin", "hub-wide", "every project", "global", "mcp", "instructions", "skills", "prompts", "fleet cap"],
+      enabled: () => administers(layer.queryClient.getQueryData<HubInfoOutput>(info.queryKey)),
+      run: () => go(toHash({ id: "admin", section: "hub" })),
+    },
+  ]);
   const offSource = registerSource({
     id: "prompts",
     items: () => {
@@ -115,6 +154,7 @@ export function registerSettingsCommands(layer: DataLayer): () => void {
   });
   return () => {
     offSource();
+    offAdmin();
     offPages();
   };
 }
