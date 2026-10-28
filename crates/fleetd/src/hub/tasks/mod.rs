@@ -2331,6 +2331,15 @@ impl Tasks {
         if let Some((message, fix)) = self.d.ports.claude_refusal(r, &input.workstream_id) {
             return Err(lead_error(ErrorCode::Invalid, message, Some(&fix)));
         }
+        // A writer whose PRs would open as a person who hasn't connected GitHub (D187): never anyone else's account.
+        if let Some((message, fix)) = self.d.ports.github_refusal(
+            r,
+            &input.workstream_id,
+            input.kind,
+            repo.as_ref().map(|x| &x.repo_id),
+        ) {
+            return Err(lead_error(ErrorCode::Invalid, message, Some(&fix)));
+        }
         let counts = self
             .db(|c| TaskRecords::counts(c, r))
             .map_err(store_error)?;

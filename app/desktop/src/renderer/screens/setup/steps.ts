@@ -35,15 +35,22 @@ const ADMIN: Readonly<Record<string, Place>> = {
   invites: { label: "Open Administration › Invites", screen: { id: "admin", section: "invites" } },
   google: { label: "Open Administration › Google", screen: { id: "admin", section: "google" } },
   claude: { label: "Open Administration › Claude", screen: { id: "admin", section: "claude" } },
+  github: { label: "Open Administration › GitHub", screen: { id: "admin", section: "github" } },
+};
+
+/** Beside the Administration section, each person's own side of a step. */
+const OWN: Readonly<Record<string, Place>> = {
+  claude: { label: "Open Settings › Claude", screen: { id: "settings", tab: "claude" } },
+  github: { label: "Open Settings › GitHub", screen: { id: "settings", tab: "github" } },
 };
 
 /**
- * The step's `place` as the pages to open: an Administration section, and for Claude also your own subscription in
- * Settings › Claude. A place this app doesn't know (a newer hub's step) opens nothing; the step's guide still says it.
+ * The step's `place` as the pages to open: an Administration section, and for Claude and GitHub also your own account
+ * in Settings. A place this app doesn't know (a newer hub's step) opens nothing; the step's guide still says it.
  */
 export const placesOf = (step: SetupStep): ReadonlyArray<Place> => {
   const admin = step.place === undefined ? undefined : ADMIN[step.place];
   if (admin === undefined) return [];
-  if (step.place !== "claude") return [admin];
-  return [admin, { label: "Open Settings › Claude", screen: { id: "settings", tab: "claude" } }];
+  const own = step.place === undefined ? undefined : OWN[step.place];
+  return own === undefined ? [admin] : [admin, own];
 };

@@ -352,10 +352,14 @@ copy buttons, live checks after the paste, "progress is saved".
     `github_app_remove`; the app's loopback creation and `fleetd github-app`; the manifest's permissions as one
     constant (`GITHUB_APP_PERMISSIONS`); the App's keys sealed to the hub's box key; installation tokens for the
     hub's `gh` on the repositories the App reaches, its own login elsewhere. Administration › GitHub.
-  - Next: people's sign-in through the App (user-to-server tokens, refreshed), with the loopback callback; webhooks
-    on HTTPS hubs (`/webhooks/github`).
-  - A `hub/github_app` check: the App exists, it is installed, a token mints, and the asking admin is connected.
-  - It takes over from `gh auth` on the hub, and `hub/gh_auth` goes.
+  - Built (T1076, stage 2): people's sign-in through the App (`github_connect`, `github_disconnect`; Settings ›
+    GitHub; PKCE and the loopback callback), user-to-server tokens sealed to the hub's box key and refreshed; each
+    order's agents get `GH_TOKEN` as an order variable (the starter's, or the App's for work nobody started), renewed
+    on the sweep; a writer whose starter hasn't connected is refused at spawn.
+  - Built (stage 3): the `hub/github_app` check, the GitHub step's first way, with `hub/gh_auth` as the second.
+  - Next: webhooks on HTTPS hubs (`/webhooks/github`).
+  - The `hub/github_app` check reads the App's installations and its last Test (a token minted for each
+    installation); `hub/gh_auth` stays as the step's second way, for a hub without an App.
 - **Claude accounts (hub key, endpoint, subscriptions)**
   - A `hub/claude_key` check (the key's last Test, `claude_account_test`, made with one tiny `claude -p` call), as
     the step's first way. Built: none is to do, a failed Test fails, a machine without the key warns, untested waits

@@ -126,10 +126,10 @@ describe("setup", () => {
     expect(rail("claude")).toContain("Done");
     expect(rail("github")).toContain("Before the first PR");
     expect(pane()?.getAttribute("data-step")).toBe("github");
-    expect(pane()?.textContent).toContain("gh auth login");
+    expect(pane()?.textContent).toContain("fleetd github-app create");
     await click(button("Test"));
     expect(calls.filter((c) => c.tool === "setup_test")).toEqual([{ tool: "setup_test", input: { step: "github" } }]);
-    expect(pane()?.textContent).toContain("gh is logged in on the hub as dev.");
+    expect(pane()?.textContent).toContain("is installed on acme (2 repositories), and its tokens work.");
     expect(rail("github")).toContain("Done");
   });
 

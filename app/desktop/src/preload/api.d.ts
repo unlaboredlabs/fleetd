@@ -68,6 +68,11 @@ export interface FleetdApi {
      * code there and calls github_app_create, answering as it does. Error code `cancelled` after `cancel()`.
      */
     createApp(hub: HubId, request: GithubAppRequest): Promise<CallOutcome>;
+    /**
+     * Connects the person's own GitHub through the hub's App: main opens GitHub's sign-in in the browser, catches the
+     * answer on 127.0.0.1 and calls github_connect, answering as it does. Error code `cancelled` after `cancel()`.
+     */
+    connect(hub: HubId): Promise<CallOutcome>;
     /** Stops waiting for GitHub. */
     cancel(): Promise<void>;
   };

@@ -196,7 +196,13 @@ function google(from: Fixture, name: string, note: string, client: "none" | "set
  * installed; one installed on acme's chosen repositories and all of Sam's, tested; and one whose key GitHub refused.
  * The App is acme's, so its pages are under acme's settings.
  */
-function github(from: Fixture, name: string, note: string, app: "none" | "created" | "installed" | "refused"): Fixture {
+function github(
+  from: Fixture,
+  name: string,
+  note: string,
+  app: "none" | "created" | "installed" | "refused",
+  me: "none" | "connected" | "lapsed" = "none",
+): Fixture {
   const f = hub(from, name, note, sam, true);
   const made = {
     appId: 1048576,
@@ -236,7 +242,14 @@ function github(from: Fixture, name: string, note: string, app: "none" | "create
     ["checks", "read"],
     ["metadata", "read"],
   ];
-  f.answer("github_app_get", undefined, { ...(kept === undefined ? {} : { app: kept }), permissions });
+  const account = { login: "sam-rivera", userId: 583231, connectedAt: "2026-10-18T09:20:00.000Z", ...(me === "lapsed" ? { lapsed: true } : {}) };
+  f.answer("github_app_get", undefined, {
+    ...(kept === undefined ? {} : { app: kept }),
+    permissions,
+    ...(me === "none" ? {} : { me: account }),
+    authorizeUrl: "https://github.com/login/oauth/authorize",
+  });
+  f.answer("github_disconnect", undefined, { revoked: true });
   if (kept !== undefined) {
     f.answer("github_app_test", undefined, { app: kept });
     f.answer("github_app_remove", undefined, { settingsUrl: made.settingsUrl });
@@ -291,6 +304,9 @@ export default defineGroup({
     github(base("chat-empty"), "admin-github-created", "Administration › GitHub with the App created and not installed yet", "created"),
     github(base("chat-empty"), "admin-github-installed", "Administration › GitHub with the App installed on acme and Sam's account, tested", "installed"),
     github(base("chat-empty"), "admin-github-refused", "Administration › GitHub with an App whose key GitHub refused", "refused"),
+    github(base("chat-empty"), "admin-github-me-none", "Settings › GitHub: the hub has its App, and Sam hasn't connected yet", "installed"),
+    github(base("chat-empty"), "admin-github-me-connected", "Settings › GitHub: Sam connected as sam-rivera", "installed", "connected"),
+    github(base("chat-empty"), "admin-github-me-lapsed", "Settings › GitHub: GitHub no longer takes Sam's connection", "installed", "lapsed"),
     hub(base("chat-empty"), "admin-member", "The same hub as Bob, a member: no Administration anywhere", bob, true),
     // Members may not use the hub's key there, and Bob has connected no subscription: nothing to run his orders on.
     hub(base("chat-empty"), "admin-claude-member", "The same hub as Bob, with the hub's key kept for leads: Bob must connect his own Claude", bob, true, false),

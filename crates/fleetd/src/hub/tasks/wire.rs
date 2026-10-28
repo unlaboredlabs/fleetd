@@ -145,6 +145,28 @@ impl TaskPorts for HubTaskPorts {
                 .map_err(|r| PortError::Failed(format!("{} {}", r.message, r.fix)))?,
                 None => None,
             };
+            // Its order's GitHub token (D187): its starter's, or the App's for work nobody started. A writer that can't
+            // have its starter's isn't run on the machine's login instead.
+            if let (Some(hub), Some(order)) = (self.hub(), request.order_id.as_ref())
+                && let Err(e) = crate::hub::github_app::sessions::deliver(
+                    &hub,
+                    &request.project_ref,
+                    order,
+                    request.repo_id.as_ref(),
+                    request.kind == fleetd_contracts::tasks::TaskKind::Write,
+                )
+                .await
+            {
+                if request.kind == fleetd_contracts::tasks::TaskKind::Write {
+                    return Err(PortError::Failed(format!(
+                        "The order's GitHub token couldn't be handed over: {e}."
+                    )));
+                }
+                tracing::warn!(
+                    order = order.as_str(),
+                    "github: no token for the order's agents: {e}"
+                );
+            }
             let options = LaunchOptions {
                 workspace,
                 role: fleetd_contracts::sessions::SessionRole::Worker,
@@ -417,6 +439,17 @@ impl TaskPorts for HubTaskPorts {
         let hub = self.hub()?;
         crate::hub::claude_accounts::order_refusal(&hub.db, project_ref, order)
             .map(|r| (r.message, r.fix))
+    }
+
+    fn github_refusal(
+        &self,
+        project_ref: &ProjectRef,
+        order: &WorkstreamId,
+        kind: fleetd_contracts::tasks::TaskKind,
+        repo: Option<&fleetd_contracts::repos::RepoId>,
+    ) -> Option<(String, String)> {
+        let hub = self.hub()?;
+        crate::hub::github_app::sessions::refusal(&hub, project_ref, order, kind, repo)
     }
 
     fn medium_allowed(&self, project_ref: &ProjectRef) -> bool {

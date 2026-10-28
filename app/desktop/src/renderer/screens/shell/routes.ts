@@ -44,7 +44,7 @@ export const listView = (tab: PanelTab): PanelView => {
 export const hasItem = (view: PanelView): boolean =>
   view.tab === "agents" ? view.agent !== null : view.tab === "prs" ? view.pr !== null : view.tab === "sessions" ? view.session !== null : false;
 
-export const SETTINGS_TABS = ["general", "hubs", "claude", "notifications", "agents", "projects", "mcp", "prompts", "instructions", "memory", "automations", "skills"] as const;
+export const SETTINGS_TABS = ["general", "hubs", "claude", "github", "notifications", "agents", "projects", "mcp", "prompts", "instructions", "memory", "automations", "skills"] as const;
 export type SettingsTab = (typeof SETTINGS_TABS)[number];
 export type SettingsView = "edit" | "compare" | "update";
 

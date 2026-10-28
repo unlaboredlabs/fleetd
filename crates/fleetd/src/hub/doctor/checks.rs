@@ -231,6 +231,8 @@ pub struct SetupFacts {
     pub google: Option<GoogleFacts>,
     /// Navis with Notion connected.
     pub notion: usize,
+    /// The hub's own GitHub App (D190), as the hub keeps it: where it is installed and its last Test.
+    pub github_app: Option<fleetd_contracts::github_app::GithubApp>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -307,6 +309,9 @@ pub fn setup_checks(facts: &SetupFacts) -> Vec<Entry> {
             )
         });
     }
+    if let Some(app) = &facts.github_app {
+        out.push(github_app(app));
+    }
     if facts.notion > 0 {
         let navis = if facts.notion == 1 {
             "1 Navi".to_owned()
@@ -321,6 +326,48 @@ pub fn setup_checks(facts: &SetupFacts) -> Vec<Entry> {
         ));
     }
     out
+}
+
+/// `hub/github_app`: the hub's own GitHub App, installed somewhere, and what its last Test said.
+pub fn github_app(app: &fleetd_contracts::github_app::GithubApp) -> Entry {
+    let fix = |what: &str| Some(manual(what, Some("fleetd github-app test".to_owned())));
+    if app.installations.is_empty() {
+        return hub_entry(
+            "github_app",
+            Warn,
+            &format!(
+                "The hub's GitHub App \"{}\" isn't installed on any repository yet.",
+                app.name
+            ),
+            fix("Install it on Administration › GitHub, then Test"),
+        );
+    }
+    match &app.last_test {
+        Some(t) if !t.ok => hub_entry(
+            "github_app",
+            Fail,
+            &t.said,
+            fix("Check it on Administration › GitHub, then Test"),
+        ),
+        Some(t) => hub_entry("github_app", Pass, &t.said, None),
+        None => {
+            let places: Vec<&str> = app
+                .installations
+                .iter()
+                .map(|i| i.account.as_str())
+                .collect();
+            hub_entry(
+                "github_app",
+                Pass,
+                &format!(
+                    "The hub's GitHub App \"{}\" is installed on {}.",
+                    app.name,
+                    places.join(", ")
+                ),
+                None,
+            )
+        }
+    }
 }
 
 /// Setup's Test of the Google step: what Google said of the client, asked from `machine_id`; `problem` is why it
@@ -1561,6 +1608,7 @@ mod tests {
             joined: vec!["Alice".into(), "Bo".into(), "Cy".into()],
             google: Some(google(&["devbox", "lab"])),
             notion: 1,
+            github_app: None,
         };
         let got: Vec<_> = setup_checks(&facts)
             .into_iter()
@@ -1729,6 +1777,52 @@ mod tests {
             ok,
             error: (!ok).then(|| "Invalid API key · Fix external API key".to_owned()),
         }
+    }
+
+    /// The GitHub App's check: created but not installed wants a look, a Test GitHub refused fails, a passing one
+    /// says what Test said.
+    #[test]
+    fn the_github_app_check_reads_its_installations_and_last_test() {
+        let app = |installed: bool,
+                   test: Option<(bool, &str)>|
+         -> fleetd_contracts::github_app::GithubApp {
+            serde_json::from_value(serde_json::json!({
+                "appId": 1, "slug": "fleetd-on-devbox", "name": "fleetd on devbox", "clientId": "Iv23li", "owner": "acme",
+                "htmlUrl": "https://github.com/apps/fleetd-on-devbox",
+                "settingsUrl": "https://github.com/organizations/acme/settings/apps/fleetd-on-devbox",
+                "createdAt": "2026-10-28T10:00:00.000Z",
+                "installations": if installed { serde_json::json!([{ "installationId": 7, "account": "acme",
+                    "allRepositories": true, "repositoryCount": 3 }]) } else { serde_json::json!([]) },
+                "lastTest": test.map(|(ok, said)| serde_json::json!({ "at": "2026-10-28T10:00:00.000Z", "ok": ok, "said": said })),
+            }))
+            .unwrap()
+        };
+        let at = |e: Entry| (e.check.id, e.check.status, e.check.message);
+        assert_eq!(
+            at(github_app(&app(false, None))),
+            (
+                "hub/github_app".into(),
+                Warn,
+                "The hub's GitHub App \"fleetd on devbox\" isn't installed on any repository yet."
+                    .into()
+            )
+        );
+        assert_eq!(
+            at(github_app(&app(
+                true,
+                Some((false, "GitHub refused (401)."))
+            )))
+            .1,
+            Fail
+        );
+        assert_eq!(
+            at(github_app(&app(true, Some((true, "It works."))))),
+            ("hub/github_app".into(), Pass, "It works.".into())
+        );
+        assert_eq!(
+            at(github_app(&app(true, None))).2,
+            "The hub's GitHub App \"fleetd on devbox\" is installed on acme."
+        );
     }
 
     /// The hub's key and the owner's subscription read the same way: none is to do, a failed Test fails, a machine

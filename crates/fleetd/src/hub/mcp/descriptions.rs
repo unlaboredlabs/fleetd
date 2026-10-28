@@ -169,6 +169,14 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
         "Owners' and admins' devices only. Ask GitHub whether it takes the App's key, read where it is installed and mint a token for each installation; app.lastTest says it in a line. The hub's gh then works as the App on those repositories.",
     ),
     (
+        "github_connect",
+        "Human keys only. Connect the caller's own GitHub account through the hub's App: code from GitHub's sign-in (opened with the App's clientId at authorizeUrl, a PKCE challenge and a loopback redirectUri), codeVerifier and redirectUri as sent. The hub keeps the user-to-server token sealed and refreshes it; the PRs agents open for the caller's orders open as them. Never returns a token.",
+    ),
+    (
+        "github_disconnect",
+        "Human keys only. Disconnect the caller's own GitHub account: the hub revokes the grant at GitHub (revoked says whether GitHub confirmed) and forgets the tokens. Writers for their orders are then refused until they connect again.",
+    ),
+    (
         "github_app_remove",
         "Owners' and admins' devices only. Forget the hub's GitHub App and its keys; the hub's gh goes back to the machine's own login. settingsUrl is its settings on GitHub, where it is deleted.",
     ),

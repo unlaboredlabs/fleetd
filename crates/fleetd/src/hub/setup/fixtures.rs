@@ -114,6 +114,18 @@ fn doctor_at(p: &Point) -> Vec<DoctorCheck> {
             online: vec!["devbox".into()],
             pubsub: true,
         }),
+        github_app: p.github.then(|| {
+            serde_json::from_value(json!({
+                "appId": 1048576, "slug": "fleetd-on-devbox", "name": "fleetd on devbox", "clientId": "Iv23liQ4fXk8w2ZsT0aB",
+                "owner": "acme", "htmlUrl": "https://github.com/apps/fleetd-on-devbox",
+                "settingsUrl": "https://github.com/organizations/acme/settings/apps/fleetd-on-devbox", "createdAt": AT,
+                "installations": [{ "installationId": 51234567, "account": "acme", "allRepositories": false,
+                  "repositoryCount": 2, "repositories": ["acme/storefront", "acme/api"] }],
+                "lastTest": { "at": AT, "ok": true,
+                  "said": "\"fleetd on devbox\" is installed on acme (2 repositories), and its tokens work." },
+            }))
+            .unwrap()
+        }),
         ..SetupFacts::default()
     };
     out.extend(checks::setup_checks(&facts).into_iter().map(|e| e.check));

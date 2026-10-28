@@ -486,16 +486,36 @@ pub fn guides(hub: &str) -> Vec<HubSetupStep> {
                 SetupNeed::Required,
             )
         },
-        // The GitHub App (D190) takes this step over: its manifest link as the part, `hub/github_app` as the way.
+        // The hub's own GitHub App (D190) first; gh logged in on the hub still works without one.
         HubSetupStep {
-            parts: vec![part(
-                "Log gh in on the hub",
-                Some("The merge train merges, reads CI and opens PRs with it."),
-                vec![link("GitHub CLI", "https://cli.github.com")],
-                vec![command("On the hub", "gh auth login", None)],
-            )],
-            test: Some("Ask gh who it is logged in as".into()),
-            ways: vec![way(None, &["hub/gh_auth"])],
+            parts: vec![
+                part(
+                    "Create the hub's GitHub App",
+                    Some(
+                        "On Administration › GitHub: one button, nothing to paste. GitHub hands the App's keys straight to the hub.",
+                    ),
+                    vec![],
+                    vec![command(
+                        "Or on the hub, from a terminal",
+                        "fleetd github-app create",
+                        None,
+                    )],
+                ),
+                part(
+                    "Install it on the repositories fleetd works on",
+                    Some(
+                        "Then each person connects their own GitHub in Settings › GitHub, so the PRs of their orders open as them.",
+                    ),
+                    vec![],
+                    vec![],
+                ),
+            ],
+            place: Some("github".into()),
+            test: Some("Mint a token for each installation, or ask gh who it is logged in as".into()),
+            ways: vec![
+                way(Some("the hub's GitHub App"), &["hub/github_app"]),
+                way(Some("gh on the hub"), &["hub/gh_auth"]),
+            ],
             ..step(
                 SetupStepId::Github,
                 SetupGroup::Accounts,

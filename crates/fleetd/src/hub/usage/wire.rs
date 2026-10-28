@@ -310,6 +310,7 @@ impl DoctorFleet for OpsPorts {
             joined: people.joined().unwrap_or_default(),
             google,
             notion: crate::hub::integrations::notion_navis(&hub.db).unwrap_or(0),
+            github_app: hub.github_app.get().ok().flatten(),
         }
     }
     fn bases(&self, machine_id: &str) -> Vec<(String, fleetd_contracts::sessions::WorktreeBase)> {

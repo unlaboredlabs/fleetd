@@ -2721,6 +2721,11 @@ output!(GithubAppGetOutput {
     app: Option<crate::github_app::GithubApp>,
     /// What it asks for on each repository, as the manifest has it: `[name, read|write]`.
     permissions: Vec<(String, String)>,
+    /// The caller's own GitHub account, connected through the App; absent until they connect, or for a key with no
+    /// person.
+    me: Option<crate::github_app::GithubAccount>,
+    /// GitHub's sign-in page, which `github_connect`'s code comes from (with the App's clientId).
+    authorize_url: String,
 });
 input!(GithubAppManifestInput {
     /// What the admin's GitHub shows it as: `fleetd on <host>`. GitHub may ask for another when it is taken.
@@ -2746,6 +2751,22 @@ output!(GithubAppCreateOutput {
 input!(GithubAppTestInput {});
 output!(GithubAppTestOutput {
     app: crate::github_app::GithubApp,
+});
+input!(GithubConnectInput {
+    /// From GitHub's redirect.
+    code: crate::github_app::GithubCode,
+    /// The PKCE verifier whose challenge the sign-in was opened with.
+    code_verifier: crate::google::PkceVerifier,
+    /// The loopback address the code was sent to.
+    redirect_uri: crate::github_app::GithubLoopback,
+});
+output!(GithubConnectOutput {
+    me: crate::github_app::GithubAccount,
+});
+input!(GithubDisconnectInput {});
+output!(GithubDisconnectOutput {
+    /// GitHub confirmed the token is revoked.
+    revoked: bool,
 });
 input!(GithubAppRemoveInput {});
 output!(GithubAppRemoveOutput {
@@ -2935,6 +2956,9 @@ tools! {
     github_app_create => GithubAppCreate, Admin, GithubAppCreateInput, GithubAppCreateOutput;
     github_app_test => GithubAppTest, Admin, GithubAppTestInput, GithubAppTestOutput;
     github_app_remove => GithubAppRemove, Admin, GithubAppRemoveInput, GithubAppRemoveOutput;
+    // Human keys only (the handlers check): a person's own GitHub account.
+    github_connect => GithubConnect, Operate, GithubConnectInput, GithubConnectOutput;
+    github_disconnect => GithubDisconnect, Operate, GithubDisconnectInput, GithubDisconnectOutput;
     claude_accounts_get => ClaudeAccountsGet, Read, ClaudeAccountsGetInput, ClaudeAccountsGetOutput;
     // Owners' and admins' human keys only (the handlers check): the hub's API configuration and who may use it.
     claude_hub_api_set => ClaudeHubApiSet, Admin, ClaudeHubApiSetInput, ClaudeHubApiSetOutput;

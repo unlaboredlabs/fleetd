@@ -1,14 +1,18 @@
 ---
 title: GitHub App
-description: Give the hub a GitHub App of its own, created from one button with nothing to paste. The merge train and PR pages then work as the App on the repositories you install it on.
+description: Give the hub a GitHub App of its own, created from one button with nothing to paste. The merge train works as the App, and each person's PRs open as them.
 ---
 
 The hub works on GitHub as a GitHub App of its own: the merge train's reads, rebases, `fleetd/train` statuses and
 merges, and the PR pages. Each hub makes its own App. fleetd is open source and has no shared App, so the App and its
 keys are yours.
 
-Without an App, the hub runs `gh` as it is logged in on the hub machine (`gh auth login`), as before. With one, a
-repository the App is installed on uses the App, and any other repository still uses that login.
+Each person connects their own GitHub account through the same App, and the PRs agents open for the orders they start
+open as them.
+
+Without an App, the hub runs `gh` as it is logged in on the hub machine (`gh auth login`), and agents use each
+machine's own login, as before. With one, a repository the App is installed on uses the App and people's own accounts,
+and any other repository still uses those logins.
 
 ## Create it {#create}
 
@@ -73,8 +77,28 @@ token. The hub reads the App's installations again every 10 minutes, so a reposi
 
 Work the hub does on GitHub then appears as the App, `fleetd-on-devbox[bot]`.
 
+## Your own GitHub {#connect}
+
+In **Settings › GitHub**, press **Connect GitHub** and authorize the App on GitHub's page. The app catches GitHub's
+answer on this computer (`127.0.0.1`), and the hub keeps your token sealed and renews it. You never see it, and
+nobody else's work uses it.
+
+Who an order's agents are on GitHub, on a repository the App reaches:
+
+| The order | Its agents' `gh` |
+|---|---|
+| Started by you, connected | Your account: the PRs open as you |
+| Started by you, not connected | Its writers are refused: the lead says "Connect your GitHub to open this order's PRs" and spawns them again once you have. Readers and reviewers go on |
+| Started by nobody (automations, train fixes) | The App, `fleetd-on-devbox[bot]` |
+
+The token reaches the order's agents as `GH_TOKEN`, one of the order's variables: masked in what they report, renewed
+before it ends, and gone when the order closes.
+
+If GitHub stops taking your connection (revoked there, or unused for six months), Settings › GitHub says so, with
+**Connect again**. **Disconnect** revokes the token at GitHub and forgets it.
+
 ## Remove it {#remove}
 
-**Remove** on Administration › GitHub, or `fleetd github-app remove`, makes the hub forget the App and its keys. The
+**Remove** on Administration › GitHub, or `fleetd github-app remove`, makes the hub forget the App and its keys, and everyone's connection through it. The
 hub's `gh` goes back to the machine's own login. GitHub keeps the App until you delete it under its settings' Advanced
 page.

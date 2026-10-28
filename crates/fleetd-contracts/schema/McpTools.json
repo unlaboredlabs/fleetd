@@ -5577,6 +5577,34 @@
       ],
       "type": "object"
     },
+    "GithubAccount": {
+      "description": "A person's own GitHub account, as the hub keeps it: no token.",
+      "properties": {
+        "connectedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "lapsed": {
+          "description": "GitHub no longer takes its refresh token (revoked, or six months unused): Connect again.",
+          "type": "boolean"
+        },
+        "login": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "userId": {
+          "format": "int64",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "login",
+        "userId",
+        "connectedAt"
+      ],
+      "type": "object"
+    },
     "GithubApp": {
       "description": "The hub's App, as the hub keeps it: no key and no secret.",
       "properties": {
@@ -5690,6 +5718,14 @@
           "$ref": "#/$defs/GithubApp",
           "description": "None until an admin creates one."
         },
+        "authorizeUrl": {
+          "description": "GitHub's sign-in page, which `github_connect`'s code comes from (with the App's clientId).",
+          "type": "string"
+        },
+        "me": {
+          "$ref": "#/$defs/GithubAccount",
+          "description": "The caller's own GitHub account, connected through the App; absent until they connect, or for a key with no\nperson."
+        },
         "next": {
           "type": "string"
         },
@@ -5715,7 +5751,8 @@
         }
       },
       "required": [
-        "permissions"
+        "permissions",
+        "authorizeUrl"
       ],
       "type": "object"
     },
@@ -5832,6 +5869,70 @@
       ],
       "type": "object"
     },
+    "GithubCode": {
+      "pattern": "^[A-Za-z0-9_-]{1,200}$",
+      "type": "string"
+    },
+    "GithubConnectInput": {
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/GithubCode",
+          "description": "From GitHub's redirect."
+        },
+        "codeVerifier": {
+          "$ref": "#/$defs/PkceVerifier",
+          "description": "The PKCE verifier whose challenge the sign-in was opened with."
+        },
+        "redirectUri": {
+          "$ref": "#/$defs/GithubLoopback",
+          "description": "The loopback address the code was sent to."
+        }
+      },
+      "required": [
+        "code",
+        "codeVerifier",
+        "redirectUri"
+      ],
+      "type": "object"
+    },
+    "GithubConnectOutput": {
+      "properties": {
+        "me": {
+          "$ref": "#/$defs/GithubAccount"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "me"
+      ],
+      "type": "object"
+    },
+    "GithubDisconnectInput": {
+      "type": "object"
+    },
+    "GithubDisconnectOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "revoked": {
+          "description": "GitHub confirmed the token is revoked.",
+          "type": "boolean"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "revoked"
+      ],
+      "type": "object"
+    },
     "GithubInstallation": {
       "description": "One installation of the App: an account or organization, and the repositories it reaches there.",
       "properties": {
@@ -5876,6 +5977,10 @@
     },
     "GithubLogin": {
       "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$",
+      "type": "string"
+    },
+    "GithubLoopback": {
+      "pattern": "^http://127\\.0\\.0\\.1:[1-9][0-9]{0,4}/github/callback$",
       "type": "string"
     },
     "GithubManifestCode": {
@@ -9676,6 +9781,18 @@
         "github_app_test.output": {
           "$ref": "#/$defs/GithubAppTestOutput"
         },
+        "github_connect.input": {
+          "$ref": "#/$defs/GithubConnectInput"
+        },
+        "github_connect.output": {
+          "$ref": "#/$defs/GithubConnectOutput"
+        },
+        "github_disconnect.input": {
+          "$ref": "#/$defs/GithubDisconnectInput"
+        },
+        "github_disconnect.output": {
+          "$ref": "#/$defs/GithubDisconnectOutput"
+        },
         "google_client_set.input": {
           "$ref": "#/$defs/GoogleClientSetInput"
         },
@@ -10422,6 +10539,10 @@
         "github_app_remove.output",
         "github_app_test.input",
         "github_app_test.output",
+        "github_connect.input",
+        "github_connect.output",
+        "github_disconnect.input",
+        "github_disconnect.output",
         "google_client_set.input",
         "google_client_set.output",
         "google_client_test.input",
