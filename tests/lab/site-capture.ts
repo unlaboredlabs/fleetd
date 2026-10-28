@@ -1,8 +1,8 @@
-// `node tests/lab/site-capture.ts`: rewrites the landing page's real-output blocks from the product.
-// `node tests/lab/site-capture.ts --docs` only recaptures the docs' ```console capture=NAME blocks.
-// The setup CLI in a throwaway HOME (`fleetd init` and `fleetd machine add --dry-run`, with your claude and gh logins
-// copied in, sanitized) fills the `<!-- capture:NAME -->` blocks in site/home.html and the same blocks in
-// site/fleetd.txt. No hub, node or claude turn. The page's app screenshots come from app/desktop's fixtures instead (app/desktop/qa/site.ts).
+// `node tests/lab/site-capture.ts`: rewrites the docs' setup transcripts from the product, checked first for anything
+// that names this machine. `node tests/lab/site-capture.ts --docs` recaptures the docs' ```console capture=NAME blocks
+// without that check. The setup CLI in a throwaway HOME (`fleetd init` and `fleetd machine add --dry-run`, with your
+// claude and gh logins copied in, sanitized) fills the docs' `init` and `machine-add` blocks. No hub, node or claude
+// turn. The landing page's clips come from app/desktop's fixtures instead (app/desktop/qa/showcase.spec.ts).
 import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -10,7 +10,6 @@ import path from "node:path";
 import { type Body, claudeLoginEnv, check, fleetdCommand, LAB, log, REPO, scrubbedEnv } from "./harness.ts";
 
 const DOCS_ONLY = process.argv.includes("--docs");
-const SITE = path.join(REPO, "site");
 
 /** Undone last to first in `finally`. */
 const cleanups: Array<() => Promise<void> | void> = [];
@@ -169,52 +168,6 @@ function fillDocs(blocks: ReturnType<typeof docsBlocks>) {
   log(`docs: recaptured ${blocks.size} block(s) in ${files.size} file(s) and rebuilt site/docs`);
 }
 
-// ---- The page's capture blocks ----
-
-const esc = (s: string) => s.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
-const indentAll = (text: string, by: string) => text.split("\n").map((l) => (l === "" ? l : by + l)).join("\n");
-type Blocks = Record<string, (indent: string) => string>;
-
-const transcriptBlocks = ({ cmd, out }: { cmd: string; out: string }) => ({
-  html: (indent: string) => `${indent}<pre class="lines"><span class="c">${esc(`$ ${cmd}`)}</span>\n<span class="o">${esc(out)}</span></pre>`,
-  txt: () => `$ ${cmd}\n${out}`,
-});
-
-/** In home.html: replaces what is between `<!-- capture:NAME -->` and `<!-- /capture:NAME -->`; each block gets the
- * opening marker's indentation. */
-function fill(file: string, blocks: Blocks) {
-  let text = fs.readFileSync(file, "utf8");
-  for (const [name, make] of Object.entries(blocks)) {
-    const re = new RegExp(`^([ \\t]*)<!-- capture:${name} -->\\n[\\s\\S]*?\\n([ \\t]*<!-- /capture:${name} -->)$`, "mu");
-    check(re.test(text), `${path.basename(file)} has a capture:${name} block`);
-    text = text.replace(re, (_all, indent: string, close: string) => `${indent}<!-- capture:${name} -->\n${make(indent)}\n${close}`);
-  }
-  fs.writeFileSync(file, text);
-}
-
-/** Where each block sits in fleetd.txt, found by the shape of fleetd's own output, so its readers never see markers. */
-const TWIN: Record<string, RegExp> = {
-  init: /^\$ fleetd init .*\n(?:.*\n)*?\[exit \d+\]$/gmu,
-  "machine-add": /^\$ fleetd machine add .*\n(?:.*\n)*?\[exit \d+\]$/gmu,
-};
-
-/** Replaces each block in the plain-text twin; each must be found exactly once, before and after. */
-export function fillTwin(text: string, blocks: Blocks) {
-  const find = (name: string, within: string) => {
-    const found = [...within.matchAll(TWIN[name]!)];
-    check(found.length === 1, `fleetd.txt has one capture:${name} block, found ${found.length}`);
-    const [m] = found;
-    return { at: m!.index, length: m![0].replace(/\n+$/u, "").length };
-  };
-  for (const [name, make] of Object.entries(blocks)) {
-    const { at, length } = find(name, text);
-    const body = make("");
-    text = text.slice(0, at) + body + text.slice(at + length);
-    check(find(name, text).length === body.length, `capture:${name} reads back from fleetd.txt as written`);
-  }
-  return text;
-}
-
 /** Nothing on a public page may name this machine, its paths or its network, or carry a key. */
 function assertPublishable(name: string, text: string) {
   const host = os.hostname();
@@ -237,28 +190,22 @@ function assertPublishable(name: string, text: string) {
 
 async function main() {
   check(fs.existsSync(fleetdCommand([])[0]), `${fleetdCommand([])[0]} is built (cargo build --release --locked -p fleetd)`);
-  const { init, add } = setupTranscripts();
-  const htmlBlocks: Blocks = { init: transcriptBlocks(init).html, "machine-add": transcriptBlocks(add).html };
-  const txtBlocks: Blocks = { init: transcriptBlocks(init).txt, "machine-add": transcriptBlocks(add).txt };
-  for (const [name, make] of [...Object.entries(htmlBlocks), ...Object.entries(txtBlocks)]) assertPublishable(`capture:${name}`, make(""));
-
-  // Everything checked: now the site changes.
-  fill(path.join(SITE, "home.html"), htmlBlocks);
-  fs.writeFileSync(path.join(SITE, "fleetd.txt"), fillTwin(fs.readFileSync(path.join(SITE, "fleetd.txt"), "utf8"), txtBlocks));
-  log("wrote the capture blocks in site/home.html and site/fleetd.txt");
-  fillDocs(docsBlocks(landingTranscripts({ init, add })));
+  const transcripts = setupBlocks(setupTranscripts());
+  for (const [name, text] of Object.entries(transcripts)) assertPublishable(`capture:${name}`, text);
+  // Everything checked: now the docs change.
+  fillDocs(docsBlocks(transcripts));
 }
 
-/** Docs blocks named `init` and `machine-add` show exactly the landing page's transcripts (the dry-run plan without
- * the shell command under each step). */
-const landingTranscripts = ({ init, add }: ReturnType<typeof setupTranscripts>) => ({
+/** Docs blocks named `init` and `machine-add` show exactly these transcripts (the dry-run plan without the shell
+ * command under each step). */
+const setupBlocks = ({ init, add }: ReturnType<typeof setupTranscripts>) => ({
   init: `$ ${init.cmd}\n${init.out}`,
   "machine-add": `$ ${add.cmd}\n${add.out}`,
 });
 
 async function docsOnly() {
   check(fs.existsSync(fleetdCommand([])[0]), `${fleetdCommand([])[0]} is built (cargo build --release --locked -p fleetd)`);
-  fillDocs(docsBlocks(landingTranscripts(setupTranscripts())));
+  fillDocs(docsBlocks(setupBlocks(setupTranscripts())));
 }
 
 if (import.meta.main) (DOCS_ONLY ? docsOnly() : main())

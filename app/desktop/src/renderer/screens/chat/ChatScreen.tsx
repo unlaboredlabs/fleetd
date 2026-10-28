@@ -27,6 +27,7 @@ import type { ProjectRef } from "./slots";
 import { useAsOfWords } from "../shell/offline";
 import { navigate } from "../shell/navigation";
 import { isNavi } from "../navi/model";
+import { useHubRole } from "../admin/role";
 import s from "./view.module.css";
 
 export function ChatScreen({ project, message }: { project: ProjectRef; message?: string }) {
@@ -57,6 +58,8 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
   // What comes in from here on enters with motion; what the chat opens with, and what a reconnect reads back, doesn't.
   const live = view !== undefined && !view.held;
   const [arrived, setArrived] = useState<Arrivals>();
+  // Whose messages are yours: in a chat the team shares, someone else's show their name.
+  const me = useHubRole().me?.personId;
   if (view !== undefined && (arrived?.items !== view.items || arrived.live !== live)) {
     // Stamped as it comes in: a row mounted much later shows still.
     // eslint-disable-next-line react-hooks/purity
@@ -75,11 +78,12 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
             activity: data.leadWorking === true,
             workedSince,
             seenSeq,
+            me,
             // "Today" is read against the clock when the chat changes; nothing ticks while it's idle.
             // eslint-disable-next-line react-hooks/purity
             nowMs: Date.now(),
           }),
-    [view, data.leadWorking, workedSince, seenSeq],
+    [view, data.leadWorking, workedSince, seenSeq, me],
   );
   // Rows that say what they said keep their object, so a streamed word draws its own row and not the whole list.
   const [kept, setKept] = useState<{ from?: readonly Row[] | undefined; rows?: readonly Row[] | undefined }>({});
