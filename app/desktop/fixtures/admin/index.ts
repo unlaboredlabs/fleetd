@@ -286,6 +286,8 @@ function oldHub(from: Fixture): Fixture {
   for (const tool of ["people_list", "invite_create", "invite_revoke", "person_set", "person_remove", "hub_links_get"]) {
     f.fail(tool, undefined, { code: "not_found", message: `No tool ${tool}.`, fix: "Use a tool name from the hub's MCP tool list." });
   }
+  // Its MCP servers are older than people: Hub settings shows them, none here.
+  f.answer("mcp_servers_get", undefined, { global: [], project: [], userServers: true });
   return f;
 }
 
