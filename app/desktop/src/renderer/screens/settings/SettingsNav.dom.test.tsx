@@ -52,6 +52,9 @@ beforeEach(() => {
     fixture: null,
     app: { presence: () => Promise.resolve(true), notify: () => Promise.resolve(true) },
     pair: { store: () => new Promise(() => undefined) },
+    system: { hostName: () => Promise.resolve("devbox") },
+    // Add machine, on Hub › Machines: this computer isn't one of the hub's, and nothing is joining.
+    machines: { thisComputer: () => new Promise(() => undefined), joinHereState: () => new Promise(() => undefined), onJoinHere: () => () => undefined },
     updates: {
       subscribe: () => () => undefined,
       state: () => Promise.resolve({ current: "0.9.0", app: { kind: "idle" }, release: null }),
@@ -196,23 +199,30 @@ it("shows a project's prompts under its Prompts, with no picker of its own", asy
   expect(group?.querySelector("#settings-project")?.textContent).toContain("storefront");
 });
 
-it("says which fleetd this app, the hub and each machine run, with Check for updates for everyone and the sheet for an admin only", async () => {
+it("says which fleetd this app runs, with Check for updates, and the hub's standing in one read-only line; the update itself is on Hub › Machines", async () => {
   await render("#/settings/general", false);
   const part = host.querySelector<HTMLElement>("[data-part='general.updates']");
   expect(part).not.toBeNull();
   expect(part?.textContent).toContain("Stable channel");
   expect(part?.querySelector("[data-updates-part='app']")?.textContent).toContain("fleetd 0.9.0");
-  expect(part?.querySelector("[data-updates-row='devbox']")).not.toBeNull();
+  expect(part?.querySelector("[data-hub-standing]")?.textContent).toBe("The hub and its machines are up to date.");
   await click(button("Check for updates", part ?? document));
   expect(checks).toBe(1);
-  // A member updates no hub: no way to the sheet.
-  expect([...(part?.querySelectorAll("button") ?? [])].map((b) => b.textContent.trim())).not.toContain("Open updates…");
+  // A member updates no hub: no machine rows, no sheet and no way to one.
+  expect(part?.querySelector("[data-updates-row='devbox']")).toBeNull();
+  expect(part?.textContent).not.toContain("Update…");
+  expect(part?.textContent).not.toContain("Open updates…");
   expect([...host.querySelectorAll("[data-part]")].map((p) => p.getAttribute("data-part"))).toContain("notifications");
 
   act(() => root.unmount());
   root = createRoot(host);
   await render("#/settings/general", true);
   const mine = host.querySelector<HTMLElement>("[data-part='general.updates']");
-  await click(button("Open updates…", mine ?? document));
+  expect(mine?.textContent).not.toContain("Open updates…");
+  await click(button("Updates in Hub › Machines", mine ?? document));
+  expect(window.location.hash).toBe("#/settings/hub/machines");
+  const updates = host.querySelector<HTMLElement>("[data-part='hub.updates']");
+  expect(updates?.querySelector("[data-updates-row='devbox']")).not.toBeNull();
+  await click(button("Open updates…", updates ?? document));
   expect(host.querySelector("[data-sheet]")).not.toBeNull();
 });

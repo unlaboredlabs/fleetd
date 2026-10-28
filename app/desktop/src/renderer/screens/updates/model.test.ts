@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AppUpdate, Release } from "../../../shared/updates";
 import type { UpdatePart, UpdateRun } from "../../../shared/contracts";
 import type { Flow } from "./flow";
-import { updatesView, type HubInput, type MachineInput } from "./model";
+import { hubStanding, updatesView, type HubInput, type MachineInput, type PartRow } from "./model";
 
 const MINE = "0.0.0-edge.202610221030+abc1234";
 const NEXT = "0.0.0-edge.202610231030+def5678";
@@ -500,5 +500,22 @@ describe("the sheet's lines, the notice and the note", () => {
       now: at,
     });
     expect(channel.update?.title).toBe("fleetd Edge · Oct 24, 10:30 UTC · fff9999 is available");
+  });
+});
+
+describe("the hub's standing in one line, for General", () => {
+  const row = (tone: PartRow["tone"], status = "Up to date: 0.9.0"): PartRow => ({ key: "devbox", name: "devbox", status, tone });
+  const view = (o: Partial<Parameters<typeof hubStanding>[0]> = {}) => hubStanding({ hub: { ...row("quiet"), key: "hub", notes: [] } as never, nodes: [row("quiet")], update: null, progress: null, ...o });
+  it("says nothing without a hub", () => {
+    expect(hubStanding({ hub: null, nodes: [], update: null, progress: null })).toBeNull();
+  });
+  it("is up to date, ready, failed, or the run's own words", () => {
+    expect(view()).toEqual({ tone: "quiet", text: "The hub and its machines are up to date." });
+    expect(view({ nodes: [row("accent")] })?.text).toBe("An update is ready for the hub and its machines.");
+    expect(view({ nodes: [row("danger")] })).toEqual({ tone: "danger", text: "The hub or a machine didn't update. An admin retries it in Settings › Hub › Machines." });
+    expect(view({ progress: { tone: "quiet", text: "Updating devbox…" } })?.text).toBe("Updating devbox…");
+    // Unknown or offline: never "up to date".
+    expect(view({ nodes: [row("quiet", "Its version is unknown")] })?.text).toBe("Not every machine has said which fleetd it runs.");
+    expect(view({ nodes: [row("quiet", "Offline")] })?.text).toBe("Not every machine has said which fleetd it runs.");
   });
 });

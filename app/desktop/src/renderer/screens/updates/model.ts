@@ -559,3 +559,18 @@ export const updatesView = ({ app, hub, machines = [], run = null, flow = { phas
       : null;
   return { line, notice, lines, app: app === null ? null : appPart(app), hub: hubPart, nodes, update, progress, going, startOver };
 };
+
+/**
+ * The hub and its machines in one read-only line, for General's Version (D211): everyone sees where they stand; the
+ * update itself is on Hub › Machines, for owners and admins. Null without a hub.
+ */
+export const hubStanding = (view: Pick<UpdatesView, "hub" | "nodes" | "update" | "progress">): Line | null => {
+  if (view.hub === null) return null;
+  if (view.progress !== null) return view.progress;
+  const rows = [view.hub, ...view.nodes];
+  if (rows.some((r) => r.tone === "danger")) return { tone: "danger", text: "The hub or a machine didn't update. An admin retries it in Settings › Hub › Machines." };
+  if (view.update !== null || rows.some((r) => r.tone === "accent")) return { tone: "accent", text: "An update is ready for the hub and its machines." };
+  // Offline, or a version it never said: nothing to claim for it.
+  if (!rows.every((r) => /^(Up to date|Updated)\b/u.test(r.status))) return { tone: "quiet", text: "Not every machine has said which fleetd it runs." };
+  return { tone: "quiet", text: "The hub and its machines are up to date." };
+};

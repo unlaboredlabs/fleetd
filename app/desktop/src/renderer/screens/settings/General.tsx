@@ -1,16 +1,16 @@
-// Settings › General: Appearance and time in the app, then Notifications (Notifications.tsx) and Version & updates:
-// this app's version and channel with Check for updates, the hub's and each machine's fleetd and whether each is up to
-// date, as the updates sheet says them (updates/), and for an owner or admin the sheet itself, whose Update runs on
-// the hub. Updating the hub and its machines takes admin on every machine, so only they see the way to it.
+// Settings › You › General: Appearance and time in the app, then Notifications (Notifications.tsx) and Version: this
+// app's version and channel with Check for updates, and one read-only line on whether the hub and its machines are up
+// to date (updates/model.ts hubStanding). Updating them takes admin on every machine, so it is on Hub › Machines, and
+// only owners and admins get the way there.
 import { useEffect, useState } from "react";
 import { isEdge } from "../../../shared/pairing";
 import { Button, Radio, RadioGroup, Switch, Text, THEME_MODES, useTheme } from "../../ui";
-import { useDataLayer } from "../../src/data/react";
 import { useAdministers } from "../admin/role";
+import { navigate } from "../shell/navigation";
 import { useUpdatesView } from "../updates/hooks";
+import { hubStanding } from "../updates/model";
 import { runApp } from "../updates/UpdatesHost";
-import { AppSection, HubSection } from "../updates/UpdatesSheet";
-import { setUpdatesOpen } from "../updates/state";
+import { AppSection, Line } from "../updates/UpdatesSheet";
 import { Notifications } from "./Notifications";
 import { PageHead, PagePart, Setting } from "./parts";
 import s from "./settings.module.css";
@@ -39,32 +39,34 @@ export function General() {
   );
 }
 
-/** Which fleetd this app, the hub and each machine run, whether each is up to date, and the way to update. */
+/**
+ * Which fleetd this app runs, with Check for updates, and one read-only line on the hub and its machines. Updating the
+ * hub takes admin on every machine: its owners and admins do it in Hub › Machines › Updates.
+ */
 function Versions() {
   const view = useUpdatesView();
   const administers = useAdministers();
-  const { hub } = useDataLayer();
   const channel = view.app === null ? null : isEdge(view.app.raw) ? "Edge" : "Stable";
+  const hub = hubStanding(view);
   return (
     <PagePart title="Version" reveal="general.updates" intro={channel === null ? undefined : `This app follows the ${channel} channel.`}>
       {view.app === null ? <Text tone="quiet">Loading…</Text> : <AppSection part={view.app} onApp={runApp} />}
-      {view.hub === null ? (
+      {hub === null ? (
         <Text size="sm" tone="quiet">
-          Connect to a hub to see its version and its machines&apos;.
+          Connect to a hub to see whether it is up to date.
         </Text>
       ) : (
-        <HubSection part={view.hub} nodes={view.nodes} />
-      )}
-      {administers && view.hub !== null ? (
-        <div className={s.inline}>
-          <Button variant={view.update === null ? "secondary" : "primary"} onClick={() => setUpdatesOpen(true, hub)}>
-            {view.update === null ? "Open updates…" : "Update…"}
-          </Button>
-          <Text size="xs" tone="quiet">
-            Updates the hub, then every machine, then this app.
+        <div className={s.inline} data-hub-standing>
+          <Text size="sm" tone={hub.tone === "quiet" ? "quiet" : hub.tone}>
+            <Line text={hub.text} />
           </Text>
+          {administers ? (
+            <Button size="sm" variant="quiet" onClick={() => navigate({ id: "settings", tab: "hub.machines" })}>
+              Updates in Hub › Machines
+            </Button>
+          ) : null}
         </div>
-      ) : null}
+      )}
     </PagePart>
   );
 }

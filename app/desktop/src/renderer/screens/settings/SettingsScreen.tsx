@@ -23,8 +23,8 @@ export { SettingsSidebar } from "./SettingsSidebar";
 export function SettingsScreen() {
   const route = useSettingsRoute();
   const projects = useProjects();
-  // A project's pages are of the project picked in the sidebar; each starts afresh on another. Prompts asks before a
-  // switch drops a draft, so it follows the pick itself.
+  // A project's pages are of the project picked in the sidebar; each starts afresh on another, except Prompts, which
+  // stays mounted so it can ask before a switch drops a draft.
   const project = isProjectTab(route.tab) ? projectFor(route, projects) : route.for;
   const r = { ...route, for: project };
   const tab = route.tab;

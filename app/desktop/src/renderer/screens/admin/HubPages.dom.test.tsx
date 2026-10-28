@@ -67,6 +67,8 @@ beforeEach(() => {
   vi.stubGlobal("fleetd", { platform: "linux", fixture: null, openExternal: () => Promise.resolve({ ok: true }), system: { hostName: () => Promise.resolve("devbox") },
     // Add machine, on Machines: this computer isn't one of the hub's, and nothing is joining.
     machines: { thisComputer: () => new Promise(() => undefined), joinHereState: () => new Promise(() => undefined), onJoinHere: () => () => undefined },
+    // Updates, on Machines: nothing to say.
+    updates: { subscribe: () => () => undefined, state: () => new Promise(() => undefined) },
   });
   host = document.createElement("div");
   document.body.appendChild(host);
@@ -175,7 +177,7 @@ it("puts machine roles and caps on Machines, and the hub's Claude, GitHub and Go
   await render(admin);
   expect(host.querySelector("[data-screen='settings.hub.machines']")).not.toBeNull();
   expect(host.querySelector("#machine-roles")).not.toBeNull();
-  expect(parts()).toEqual(["hub.caps"]);
+  expect(parts()).toEqual(["hub.caps", "hub.updates"]);
 
   await click(button("Hub accounts", nav() ?? document));
   expect(host.querySelector("[data-screen='settings.hub.accounts']")).not.toBeNull();
