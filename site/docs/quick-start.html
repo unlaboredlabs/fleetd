@@ -78,8 +78,9 @@
 <p><strong>Before you start</strong>, have these on the machine:</p>
 <ul>
 <li>macOS or Linux x64.</li>
-<li>The <code dir="auto">claude</code> CLI, logged in. fleetd uses your own Claude Code setup, including any proxy in <code dir="auto">~/.claude/settings.json</code>.</li>
-<li><code dir="auto">git</code>, and the <code dir="auto">gh</code> CLI logged in to GitHub.</li>
+<li>The <code dir="auto">claude</code> CLI on the machines that run agents. Its Claude account can be the hub’s API key, your subscription, or
+each machine’s own login; the setup steps below set it.</li>
+<li><code dir="auto">git</code>. GitHub goes through the hub’s own GitHub App, set up in the steps below, or the <code dir="auto">gh</code> CLI logged in on the hub.</li>
 <li>A GitHub repo to work on. fleetd branches from its default branch and merges back into it; see
 <a href="/docs/projects#branches">Which branch fleetd works on</a>.</li>
 </ul>
@@ -195,7 +196,7 @@ point and pick up again later, from any of them.</p>
 <tr>
 <td>GitHub</td>
 <td><code dir="auto">github</code></td>
-<td>Before the first PR: <code dir="auto">gh auth login</code> on the hub.</td>
+<td>Before the first PR: the hub’s GitHub App, made with one button on Administration › GitHub, then each person connects theirs in Settings › GitHub; or <code dir="auto">gh auth login</code> on the hub.</td>
 </tr>
 <tr>
 <td>Invite people</td>

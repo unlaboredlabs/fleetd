@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- Type: IBM Plex Sans for every human sentence and Lilex for machine text, because they are the two faces the fleetd app itself renders in, so the page and the recorded app read as one document. Light or dark follows the reader's system, as the app does. -->
+<!-- Type: IBM Plex Sans for every human sentence and Lilex for machine text, because they are the two faces the fleetd app itself renders in, so the page and the recorded app read as one document. Light or dark follows the reader's system, as the app does, unless they pick one in the header. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -7,6 +7,33 @@
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#f2f2ef" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#121212" media="(prefers-color-scheme: dark)">
+<script>
+// Auto, Light or Dark, from the header's switch: kept under the docs' own key (Starlight's starlight-theme: "light",
+// "dark", or empty for auto), so the choice carries over between this page and /docs. Applied here, before the first
+// paint; the switch's script applies it again once the page's pictures are parsed. A pinned choice sets data-theme for
+// the CSS, and turns each theme-color meta and each picture's dark <source> on ("all") or off ("not all").
+(function(){
+  var KEY="starlight-theme",root=document.documentElement,system=matchMedia("(prefers-color-scheme: dark)");
+  var get=function(){try{var t=localStorage.getItem(KEY);return t==="light"||t==="dark"?t:"auto"}catch(e){return "auto"}};
+  var apply=function(){
+    var t=get();
+    if(t==="auto")delete root.dataset.theme;else root.dataset.theme=t;
+    document.querySelectorAll('meta[name="theme-color"],picture source[media]').forEach(function(el){
+      if(!el.dataset.media)el.dataset.media=el.getAttribute("media");
+      var want=/dark/.test(el.dataset.media)?"dark":"light";
+      el.setAttribute("media",t==="auto"?el.dataset.media:t===want?"all":"not all");
+    });
+  };
+  window.fleetdTheme={
+    get:get,
+    apply:apply,
+    dark:function(){var t=get();return t==="dark"||(t==="auto"&&system.matches)},
+    set:function(t){try{localStorage.setItem(KEY,t==="auto"?"":t)}catch(e){}apply();dispatchEvent(new Event("fleetdtheme"))}
+  };
+  system.addEventListener("change",function(){if(get()==="auto")dispatchEvent(new Event("fleetdtheme"))});
+  apply();
+})();
+</script>
 <title>fleetd: a software factory on your own machines</title>
 <meta name="description" content="fleetd is a software factory, not another coding assistant. You give it work; a lead plans it; Claude Code agents build in parallel on your machines; a separate reviewer checks every change; a merge train lands it. You are asked only for decisions.">
 <meta property="og:title" content="fleetd: a software factory on your own machines">
@@ -42,9 +69,10 @@
   --sec:clamp(48px,6vw,88px);
   --snap:cubic-bezier(.2,0,0,1);
 }
-/* Dark: the app's own dark greys, one step darker around it so the recording sits on the page as a window does. */
+/* Dark: the app's own dark greys, one step darker around it so the recording sits on the page as a window does. The
+   system's, unless the header's switch pins Light; and pinned Dark whatever the system. */
 @media (prefers-color-scheme:dark){
-  :root{
+  :root:not([data-theme="light"]){
     color-scheme:dark;
     --paper:#121212;
     --tone:#1d1d1d;
@@ -56,6 +84,18 @@
     --ring:rgba(255,255,255,.12);
     --drop:0 18px 40px -22px rgba(0,0,0,.9);
   }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --paper:#121212;
+  --tone:#1d1d1d;
+  --ink:#ececea;
+  --grey:#a4a5a7;
+  --faint:#7c7e81;
+  --rule:#313133;
+  --mark:#f0884e;
+  --ring:rgba(255,255,255,.12);
+  --drop:0 18px 40px -22px rgba(0,0,0,.9);
 }
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
@@ -74,6 +114,10 @@ h1,h2,h3{margin:0;font-weight:500}
 .nav{display:flex;gap:22px;font-size:15px;color:var(--grey)}
 .nav a{text-decoration:none}
 .nav a:hover{color:var(--ink);text-decoration:underline;text-decoration-color:var(--rule)}
+.theme{display:flex;align-self:center;border:1px solid var(--rule);border-radius:4px;font-size:13px;line-height:1.5}
+.theme button{font:inherit;color:var(--grey);background:none;border:0;border-radius:3px;padding:1px 7px;cursor:pointer}
+.theme button:hover{color:var(--ink)}
+.theme button[aria-pressed="true"]{color:var(--ink);background:var(--tone)}
 
 /* hero */
 .hero{display:grid;grid-template-columns:minmax(0,7fr) minmax(0,5fr);gap:32px var(--gap);align-items:end;padding-top:clamp(28px,5vw,72px);padding-bottom:clamp(28px,3.4vw,48px)}
@@ -156,7 +200,7 @@ summary:hover{color:var(--ink)}
 }
 @media (max-width:640px){
   body{font-size:16px}
-  .nav{gap:16px;font-size:14px}
+  .nav{gap:10px 16px;font-size:14px;flex-wrap:wrap;justify-content:flex-end;align-items:baseline}
   .shot{border-radius:4px}
   .play{right:6px;bottom:6px;font-size:12px;padding:4px 7px}
   .feats,.docs,.pair{grid-template-columns:minmax(0,1fr)}
@@ -190,6 +234,11 @@ summary:hover{color:var(--ink)}
     <a href="/docs">Docs</a>
     <a href="https://github.com/unlaboredlabs/fleetd">GitHub</a>
     <a href="/fleetd.txt" type="text/plain">Plain text</a>
+    <div class="theme" role="group" aria-label="Colour theme">
+      <button type="button" data-theme-set="auto" aria-pressed="true">Auto</button>
+      <button type="button" data-theme-set="light" aria-pressed="false">Light</button>
+      <button type="button" data-theme-set="dark" aria-pressed="false">Dark</button>
+    </div>
   </nav>
 </header>
 
@@ -201,7 +250,7 @@ summary:hover{color:var(--ink)}
   </div>
   <div class="install">
     <div class="cmd"><code id="cmd">curl -fsSL https://fleetd.sh | sh</code><button class="copy" type="button" data-copy="cmd">Copy</button></div>
-    <p class="facts">Installs the fleetd CLI and desktop app, then runs <code>fleetd init</code> to set up the hub and pair the app. You need macOS or Linux x64, the <code>claude</code> CLI logged in (fleetd uses your own Claude Code setup, including any proxy), <code>git</code>, and <code>gh</code> for pull requests. Open source, MIT.</p>
+    <p class="facts">Installs the fleetd CLI and desktop app, then runs <code>fleetd init</code>: the same guided steps as the app’s first run, to start the hub, connect Claude and GitHub, and pair the app. You need macOS or Linux x64, <code>git</code>, and the <code>claude</code> CLI where agents run. Claude runs on the hub’s API key, your subscription or each machine’s login; GitHub through the hub’s own GitHub App, or <code>gh</code>. Open source, MIT.</p>
   </div>
 </section>
 
@@ -377,6 +426,18 @@ Then run fleetd init again; it keeps what's done.
 </footer>
 
 <script>
+// The header's theme switch: the pressed button is the stored choice; a press stores it, and the CSS, the theme-color,
+// the pictures and the showcase follow (fleetdTheme, in the head).
+(function(){
+  var buttons=[].slice.call(document.querySelectorAll("[data-theme-set]"));
+  var show=function(){var t=fleetdTheme.get();buttons.forEach(function(b){b.setAttribute("aria-pressed",String(b.dataset.themeSet===t))})};
+  buttons.forEach(function(b){b.addEventListener("click",function(){fleetdTheme.set(b.dataset.themeSet);show()})});
+  // Another tab (this page or the docs) changed it.
+  addEventListener("storage",function(e){if(e.key==="starlight-theme"){fleetdTheme.apply();dispatchEvent(new Event("fleetdtheme"));show()}});
+  fleetdTheme.apply();
+  show();
+})();
+
 document.querySelectorAll("[data-copy]").forEach(function(b){
   b.addEventListener("click",function(){
     var t=document.getElementById(b.dataset.copy).textContent;
@@ -388,11 +449,11 @@ document.querySelectorAll("[data-copy]").forEach(function(b){
 
 // The showcase. The still is what everyone gets first. Without reduced motion, the recording loads at once, the small
 // one on a small screen, and plays while the frame is on screen; with reduced motion, the still stays until Play. It
-// follows the system theme and marks the step it is on.
+// follows the theme (the switch's choice, else the system's) and marks the step it is on.
 (function(){
   var box=document.getElementById("show"),video=box.querySelector("video"),button=box.querySelector(".play");
   var steps=[].slice.call(document.querySelectorAll("#line [data-step]"));
-  var calm=matchMedia("(prefers-reduced-motion: reduce)"),dark=matchMedia("(prefers-color-scheme: dark)");
+  var calm=matchMedia("(prefers-reduced-motion: reduce)");
   var chapters,paused=calm.matches;
   var mark=function(){
     if(!chapters)return;
@@ -406,12 +467,13 @@ document.querySelectorAll("[data-copy]").forEach(function(b){
     var small=box.clientWidth*(window.devicePixelRatio||1)<1600;
     // VP9 WebM where the browser is sure of it, else the H.264 MP4 (an older Safari).
     var webm=video.canPlayType('video/webm; codecs="vp9"')==="probably";
-    var want=video.dataset.src+(dark.matches?"dark":"light")+(small?"-small":"")+(webm?".webm":".mp4");
+    var theme=fleetdTheme.dark()?"dark":"light";
+    var want=video.dataset.src+theme+(small?"-small":"")+(webm?".webm":".mp4");
     if(video.getAttribute("src")===want)return;
     var at=video.currentTime||0;
     video.src=want;
     video.addEventListener("loadedmetadata",function(){video.currentTime=at},{once:true});
-    fetch("/showcase.json").then(function(r){return r.json()}).then(function(j){chapters=j[dark.matches?"dark":"light"];mark()}).catch(function(){});
+    fetch("/showcase.json").then(function(r){return r.json()}).then(function(j){chapters=j[theme];mark()}).catch(function(){});
   };
   var start=function(){
     if(paused)return;
@@ -426,7 +488,7 @@ document.querySelectorAll("[data-copy]").forEach(function(b){
     if(paused){paused=false;button.textContent="Pause";start()}else hold();
   });
   calm.addEventListener("change",function(){if(calm.matches){hold();box.classList.remove("on");box.classList.add("ready");clear()}});
-  dark.addEventListener("change",function(){if(video.getAttribute("src")){source();if(!paused)video.play().catch(function(){})}});
+  addEventListener("fleetdtheme",function(){if(video.getAttribute("src")){source();if(!paused)video.play().catch(function(){})}});
   new IntersectionObserver(function(es){
     if(es[es.length-1].isIntersecting)start();else video.pause();
   },{rootMargin:"200px 0px"}).observe(box);

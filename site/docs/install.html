@@ -93,9 +93,9 @@
 <td>The desktop app needs macOS 12 or newer. On an older Mac the installer stops without changing anything; install the CLI only with <code dir="auto">--no-app</code>.</td>
 </tr>
 <tr>
-<td><code dir="auto">claude</code> CLI, logged in</td>
+<td><code dir="auto">claude</code> CLI</td>
 <td>every machine that runs agents</td>
-<td>Your own Claude Code login. <code dir="auto">fleetd init</code> checks it.</td>
+<td>Agents run through it. Its Claude account is the hub’s API key, your subscription, or the machine’s own <code dir="auto">claude auth login</code>: the <a href="/docs/quick-start#setup-steps">Claude setup step</a>.</td>
 </tr>
 <tr>
 <td><code dir="auto">git</code></td>
@@ -104,8 +104,8 @@
 </tr>
 <tr>
 <td><code dir="auto">gh</code> CLI, logged in</td>
-<td>the hub</td>
-<td>fleetd opens and merges pull requests with it.</td>
+<td>the hub, only without the hub’s GitHub App</td>
+<td>fleetd opens and merges pull requests through the hub’s own GitHub App, which an admin creates on Administration › GitHub; without one, through <code dir="auto">gh</code>.</td>
 </tr>
 </tbody>
 </table>

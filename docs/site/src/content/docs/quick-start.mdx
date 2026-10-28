@@ -10,8 +10,9 @@ You'll install fleetd, open a project in the desktop app, and tell its lead what
 **Before you start**, have these on the machine:
 
 - macOS or Linux x64.
-- The `claude` CLI, logged in. fleetd uses your own Claude Code setup, including any proxy in `~/.claude/settings.json`.
-- `git`, and the `gh` CLI logged in to GitHub.
+- The `claude` CLI on the machines that run agents. Its Claude account can be the hub's API key, your subscription, or
+  each machine's own login; the setup steps below set it.
+- `git`. GitHub goes through the hub's own GitHub App, set up in the steps below, or the `gh` CLI logged in on the hub.
 - A GitHub repo to work on. fleetd branches from its default branch and merges back into it; see
   [Which branch fleetd works on](/docs/projects#branches).
 
@@ -112,7 +113,7 @@ point and pick up again later, from any of them.
 | Where the hub listens | `address` | Required. Plain HTTP is fine on your tailnet. |
 | Machines that run agents | `machines` | Required. |
 | Claude | `claude` | Required. The hub's API key on Administration › Claude, your subscription in Settings › Claude, or each machine's own `claude auth login`. |
-| GitHub | `github` | Before the first PR: `gh auth login` on the hub. |
+| GitHub | `github` | Before the first PR: the hub's GitHub App, made with one button on Administration › GitHub, then each person connects theirs in Settings › GitHub; or `gh auth login` on the hub. |
 | Invite people | `people` | Optional. Done once someone you invited has joined. |
 | Google | `google` | Optional. The client is saved on Administration › Google; see [Google](/docs/google). |
 | Notion | `notion` | Optional. Each person connects their own, on their Navi. |

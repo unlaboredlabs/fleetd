@@ -9,10 +9,12 @@ change; a merge train lands it. You're asked only for decisions.
 
 Install
   curl -fsSL https://fleetd.sh | sh
-  Installs the fleetd CLI and desktop app, then runs `fleetd init` to set up the
-  hub and pair the app. You need macOS or Linux x64, the claude CLI logged in
-  (fleetd uses your own Claude Code setup, including any proxy), git, and gh for
-  pull requests. Open source, MIT.
+  Installs the fleetd CLI and desktop app, then runs `fleetd init`: the same
+  guided steps as the app's first run, to start the hub, connect Claude and
+  GitHub, and pair the app. You need macOS or Linux x64, git, and the claude CLI
+  where agents run. Claude runs on the hub's API key, your subscription or each
+  machine's login; GitHub through the hub's own GitHub App, or gh. Open source,
+  MIT.
 
 Docs:   https://fleetd.sh/docs
 GitHub: https://github.com/unlaboredlabs/fleetd
