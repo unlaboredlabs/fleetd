@@ -8,7 +8,20 @@
 # Run from app/mobile after npm ci: mobile-env.sh <platform>... Env (each optional): UPDATES_CERT_PEM, the update
 # certificate; GOOGLE_SERVICES_JSON, the Firebase project's google-services.json, for FCM on Android (the Android
 # fingerprint hashes its contents).
+#
+# mobile-env.sh check <fingerprint file> <runtime version>: fails when the runtime version a native build embedded
+# (the `fingerprint` resource expo-updates writes into the app while it builds) isn't the one given, which is what
+# the update job resolves on Linux for the same commit. Its updates would then never reach that build.
 set -euo pipefail
+if [ "${1:-}" = check ]; then
+  built="$(cat "$2" 2>/dev/null || true)"
+  if [ "$built" != "$3" ]; then
+    echo "::error::The build embeds runtime version ${built:-(none)}, but the update job resolves $3 for this commit: no published update would reach it. Something in the build's settings or runner changes the fingerprint (compare the fingerprint sources of npx expo-updates runtimeversion:resolve --debug on each)."
+    exit 1
+  fi
+  echo "runtime version $built, as the update job resolves it"
+  exit 0
+fi
 if [ -n "${UPDATES_CERT_PEM:-}" ]; then
   printf '%s\n' "$UPDATES_CERT_PEM" > updates-cert.pem
   export FLEETD_UPDATES_CERT="$PWD/updates-cert.pem"

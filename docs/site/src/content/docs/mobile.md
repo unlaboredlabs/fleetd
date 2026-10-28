@@ -129,7 +129,8 @@ until you [set one up](#own-updates).
    certificate's key and made for its runtime version. Anything else, or no answer, leaves it on the bundle it has.
 
 The runtime version is a fingerprint of the app's native side and its build settings. A build whose native code
-differs gets a different one, so it never loads a bundle made for another.
+differs gets a different one, so it never loads a bundle made for another. **Mobile release** fails a build with a
+certificate whose runtime version isn't the one releases publish its commit's updates for.
 
 ### Channels {#channels}
 

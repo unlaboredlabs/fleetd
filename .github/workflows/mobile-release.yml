@@ -64,11 +64,41 @@ jobs:
           echo "ios=$(.github/release/mobile-sign.sh ios-enabled)" | tee -a "$GITHUB_OUTPUT"
           echo "testflight=$(.github/release/mobile-sign.sh testflight-enabled)" | tee -a "$GITHUB_OUTPUT"
 
+  runtime:
+    # Each platform's runtime version, resolved as build-release.yml's update job resolves it (on Linux, with no
+    # secrets), which each build checks against the one it embeds, so a build whose updates would never arrive fails.
+    name: runtime
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      ios: ${{ steps.runtime.outputs.ios }}
+      android: ${{ steps.runtime.outputs.android }}
+    defaults:
+      run:
+        working-directory: app/mobile
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/mobile/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - name: Build settings
+        env:
+          UPDATES_CERT_PEM: ${{ vars.UPDATES_CERT_PEM }}
+          GOOGLE_SERVICES_JSON: ${{ vars.GOOGLE_SERVICES_JSON }}
+        run: ../../.github/release/mobile-env.sh ios android
+      - id: runtime
+        run: printf 'ios=%s\nandroid=%s\n' "$RUNTIME_IOS" "$RUNTIME_ANDROID" >> "$GITHUB_OUTPUT"
+
   android:
     # A release APK for installing directly and an app bundle (.aab) for a store, each signed once, by gradle, with the
     # keystore; without it, the APK alone, debug-signed.
     name: android
-    needs: signing
+    needs: [signing, runtime]
     runs-on: ubuntu-latest
     timeout-minutes: 60
     defaults:
@@ -111,6 +141,14 @@ jobs:
         run: |
           # The app bundle is for a store, which takes it signed only.
           if [ "$SIGN" = true ]; then ./gradlew assembleRelease bundleRelease --no-daemon; else ./gradlew assembleRelease --no-daemon; fi
+      - name: Runtime version
+        # Only a build that takes updates must match what they're published for.
+        if: env.FLEETD_UPDATES_CERT != ''
+        env:
+          RUNTIME: ${{ needs.runtime.outputs.android }}
+        run: |
+          unzip -p android/app/build/outputs/apk/release/app-release.apk assets/fingerprint > "$RUNNER_TEMP/fingerprint" || true
+          ../../.github/release/mobile-env.sh check "$RUNNER_TEMP/fingerprint" "$RUNTIME"
       - name: Check the signatures
         if: needs.signing.outputs.android == 'true'
         run: |
@@ -132,7 +170,7 @@ jobs:
     # An App Store build signed with the distribution certificate and profile, sent to TestFlight when asked and the
     # App Store Connect key is set, else kept as an .ipa.
     name: ios
-    needs: signing
+    needs: [signing, runtime]
     if: needs.signing.outputs.ios == 'true'
     runs-on: macos-latest
     timeout-minutes: 60
@@ -167,6 +205,14 @@ jobs:
           set -o pipefail
           xcodebuild -workspace ios/fleetd.xcworkspace -scheme fleetd -configuration Release \
             -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/fleetd.xcarchive" archive | tail -n 200
+      - name: Runtime version
+        # The update job resolves iOS's on Linux; this build's, embedded on macOS, must be the same.
+        if: env.FLEETD_UPDATES_CERT != ''
+        env:
+          RUNTIME: ${{ needs.runtime.outputs.ios }}
+        run: |
+          built="$(find "$RUNNER_TEMP/fleetd.xcarchive/Products/Applications" -path '*/EXUpdates.bundle/fingerprint' | head -1)"
+          ../../.github/release/mobile-env.sh check "${built:-/nonexistent}" "$RUNTIME"
       - name: Export
         env:
           TESTFLIGHT: ${{ inputs.testflight }}
