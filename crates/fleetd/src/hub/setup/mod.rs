@@ -104,6 +104,18 @@ fn host_of(hub: &str) -> String {
     host.split('.').next().unwrap_or("hub").to_owned()
 }
 
+/// The Cloud project id the guide proposes, `fleetd-<host>`, within Google's rules: up to 30 lowercase letters,
+/// digits and dashes, starting with a letter and not ending with a dash.
+fn cloud_project(host: &str) -> String {
+    let id: String = format!("fleetd-{host}")
+        .to_ascii_lowercase()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .take(30)
+        .collect();
+    id.trim_end_matches('-').to_owned()
+}
+
 /// Each scope in words where it is pasted, and what it is for (the app's google/model.ts).
 fn scope_words(scope: &str) -> (&str, &str) {
     match scope {
@@ -133,7 +145,7 @@ fn scope_words(scope: &str) -> (&str, &str) {
 /// for, a Desktop app client with the loopback redirect (so a plain-HTTP tailnet hub works), and Gmail in real time.
 fn google_parts(host: &str) -> Vec<SetupPart> {
     let name = format!("fleetd on {host}");
-    let project = format!("fleetd-{host}");
+    let project = cloud_project(host);
     let reader = format!("{GMAIL_READER}@{project}.iam.gserviceaccount.com");
     let shell = [
         format!("gcloud config set project {project}"),
@@ -167,7 +179,10 @@ fn google_parts(host: &str) -> Vec<SetupPart> {
             vec![noted(
                 "Project name",
                 &project,
-                "Keep the project ID the same as the name.",
+                format!(
+                    "Keep the project ID the same as the name. IDs are global across Google Cloud: if {project} is \
+                     taken, take the ID Google offers and use it wherever {project} appears below."
+                ),
             )],
         ),
         part(
@@ -330,7 +345,9 @@ fn google_parts(host: &str) -> Vec<SetupPart> {
                             format!(
                                 "Both parts in one go, in project {project}: it prints the key once, to paste. A new \
                                  account can take a minute to show up; if the Subscriber grant says it doesn't exist, \
-                                 run the last three lines again."
+                                 run the last three lines again. If your organization refuses the key \
+                                 (iam.disableServiceAccountKeyCreation), an organization admin lifts that policy for \
+                                 this project; or leave real-time mail off, and Navi checks mail about every minute."
                             ),
                         )
                     },
@@ -355,6 +372,7 @@ pub fn guides(hub: &str) -> Vec<SetupStep> {
         said: None,
         way: None,
         fix: None,
+        failing: None,
         parts: Vec::new(),
         fields: Vec::new(),
         fields_note: None,
@@ -413,16 +431,46 @@ pub fn guides(hub: &str) -> Vec<SetupStep> {
                 SetupNeed::Required,
             )
         },
-        // The hub's API key and the owner's subscription (hub/claude_key, hub/claude_owner) are the first ways: their
-        // checks count as soon as the hub has them, and bring their own part. Until then, each machine's own login.
+        // Any one way is enough (D200): the hub's API key, the owner's subscription, or every machine's own login.
         SetupStep {
-            parts: vec![part(
-                "Log Claude in on each machine",
-                Some("Each machine's agents run on the Claude account logged in there."),
-                vec![],
-                vec![command("On each machine", "claude auth login", None)],
-            )],
-            test: Some("Ask each machine whether its Claude is logged in".into()),
+            parts: vec![
+                part(
+                    "Give the hub an API key",
+                    Some(
+                        "Projects' leads and work nobody started run on it, and so does anyone who picks the hub's \
+                         API in Settings › Claude. Machines need no login of their own.",
+                    ),
+                    vec![link(
+                        "Claude Console › API keys",
+                        "https://console.anthropic.com/settings/keys",
+                    )],
+                    vec![
+                        value("Key name", &name),
+                        plain(
+                            "Where",
+                            "Paste it on Administration › Claude, with an endpoint if you use a gateway; the app \
+                             seals it on your device.",
+                        ),
+                    ],
+                ),
+                part(
+                    "Or connect your own subscription",
+                    Some(
+                        "Without a hub key, leads and work nobody started run on the owner's subscription. Paste the \
+                         token in Settings › Claude; the app seals it on your device.",
+                    ),
+                    vec![],
+                    vec![command("On any computer with claude", "claude setup-token", None)],
+                ),
+                part(
+                    "Or log Claude in on each machine",
+                    Some("Each machine's agents run on the Claude account logged in there."),
+                    vec![],
+                    vec![command("On each machine", "claude auth login", None)],
+                ),
+            ],
+            place: Some("claude".into()),
+            test: Some("Read the account's last Test and each machine's login".into()),
             ways: vec![
                 way(Some("the hub's API key"), &["hub/claude_key"]),
                 way(Some("the owner's subscription"), &["hub/claude_owner"]),
@@ -432,10 +480,11 @@ pub fn guides(hub: &str) -> Vec<SetupStep> {
                 SetupStepId::Claude,
                 SetupGroup::Accounts,
                 "Claude",
-                "Agents think with Claude.",
+                "Agents think with Claude: the hub's API key, your subscription, or each machine's login.",
                 SetupNeed::Required,
             )
         },
+        // The GitHub App (D190) takes this step over: its manifest link as the part, `hub/github_app` as the way.
         SetupStep {
             parts: vec![part(
                 "Log gh in on the hub",
@@ -579,6 +628,8 @@ pub fn read(
                 step.way = w.label.clone();
             }
             step.said = check.map(|c| c.message.clone());
+            step.failing = (status == SetupStatus::Look)
+                .then(|| check.is_some_and(|c| c.status == DoctorStatus::Fail));
             step.fix = check
                 .filter(|_| status != SetupStatus::Done)
                 .and_then(|c| c.fix.as_ref())

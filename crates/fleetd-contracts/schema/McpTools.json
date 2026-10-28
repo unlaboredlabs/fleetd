@@ -16534,6 +16534,10 @@
     },
     "SetupStep": {
       "properties": {
+        "failing": {
+          "description": "The deciding check fails, rather than warns: with `look`, something can't work until it's fixed.",
+          "type": "boolean"
+        },
         "fields": {
           "default": [],
           "description": "What comes back from the provider, entered where the step says (`place`).",

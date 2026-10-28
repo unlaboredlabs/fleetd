@@ -432,9 +432,11 @@ What the build does differently from the sections above, for now:
   are the app's.
 - **GitHub** is `gh auth login` on the hub (`hub/gh_auth`) until the GitHub App (D190) is built; its manifest flow,
   endpoints and `hub/github_app` replace this step's part and way then.
-- **Claude** lists `hub/claude_key` and `hub/claude_owner` as its first two ways already, so the hub's API key and
-  the owner's subscription count as soon as their checks exist; their part comes with Administration › Claude.
-  Until then the step is each machine's own login.
+- **A step that wants a look** fails `fleetd init` and `fleetd doctor` only when its check fails; a warning (a
+  degraded machine, a LAN address) stays a warning and leaves nothing required (`failing`).
+- **Claude** reads `hub/claude_key` and `hub/claude_owner` (#756) as its first two ways, then every machine's own
+  login. Its parts send the key to Administration › Claude and the owner's subscription token to Settings › Claude,
+  where the app seals them.
 - **Notion** is each person's own integration on their Navi (#643), so the hub has nothing to save: the step says
   how, and is done once any Navi has it.
 - **1Password** stays a project secret for now, and isn't a step.

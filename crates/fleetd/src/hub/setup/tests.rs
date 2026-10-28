@@ -4,6 +4,7 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use fleetd_contracts::auth::KeyKind;
+use fleetd_contracts::claude_accounts::ClaudeHubApi;
 use fleetd_contracts::people::{HubRole, PersonName};
 use fleetd_contracts::setup::{SetupStatus, SetupStepId};
 use serde_json::{Value, json};
@@ -78,6 +79,20 @@ fn values_are_computed_for_this_hub_and_work_on_plain_http() {
         steps
             .iter()
             .all(|s| s.fields.iter().all(|f| f.secret != Some(true)))
+    );
+    // The Cloud project id keeps to Google's rules, whatever the host is called.
+    assert_eq!(super::cloud_project("DevBox"), "fleetd-devbox");
+    assert_eq!(
+        super::cloud_project("my_very-long-machine-name-here"),
+        "fleetd-my-very-long-machine-na"
+    );
+    assert_eq!(
+        super::cloud_project("box-name-that-ends-on-dash-here-x"),
+        "fleetd-box-name-that-ends-on-d"
+    );
+    assert_eq!(
+        super::cloud_project("a-b-c-d-e-f-g-h-i-j-k-l-m-"),
+        "fleetd-a-b-c-d-e-f-g-h-i-j-k-l"
     );
     // A hub reached by address names itself "hub".
     assert_eq!(
@@ -268,6 +283,38 @@ async fn the_tools_are_an_admins_and_keep_only_what_was_put_off() {
     .await
     .unwrap();
     assert_eq!(back["step"]["status"], "todo");
+
+    // The hub's API key, saved and tested (Administration › Claude), is enough for Claude though no machine is
+    // logged in: read fresh, without a doctor run.
+    let list = call(&hub, &admin, "setup_list", json!({})).await.unwrap();
+    assert_eq!(list["steps"][2]["status"], "todo", "{}", list["steps"][2]);
+    let api: ClaudeHubApi = serde_json::from_value(json!({
+        "sealedOn": [], "updatedAt": "2026-10-19T10:00:00.000Z",
+        "lastTest": { "at": "2026-10-19T10:00:00.000Z", "machineId": "devbox", "ok": true },
+    }))
+    .unwrap();
+    hub.db.claude_accounts().put_hub_api(&api).unwrap();
+    let list = call(&hub, &admin, "setup_list", json!({})).await.unwrap();
+    let claude = &list["steps"][2];
+    assert_eq!(claude["status"], "done", "{claude}");
+    assert_eq!(claude["way"], "the hub's API key");
+    assert_eq!(
+        claude["said"],
+        "The hub's Claude API key works: tested on devbox."
+    );
+    assert_eq!(claude["place"], "claude");
+    // A failed Test makes it fail, and required again.
+    let failed: ClaudeHubApi = serde_json::from_value(json!({
+        "sealedOn": [], "updatedAt": "2026-10-19T10:00:00.000Z",
+        "lastTest": { "at": "2026-10-19T10:00:00.000Z", "machineId": "devbox", "ok": false, "error": "401" },
+    }))
+    .unwrap();
+    hub.db.claude_accounts().put_hub_api(&failed).unwrap();
+    let list = call(&hub, &admin, "setup_list", json!({})).await.unwrap();
+    assert_eq!(
+        (&list["steps"][2]["status"], &list["steps"][2]["failing"]),
+        (&json!("look"), &json!(true))
+    );
 
     // Someone invited hasn't joined until a device of theirs pairs; then People reads done at once, without a doctor
     // run.

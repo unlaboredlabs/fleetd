@@ -1379,7 +1379,7 @@ fn app(
     }
 }
 
-/// The hub's setup steps (the ones the app's Administration › Setup shows), each a line, then the doctor's checks no
+/// The hub's setup steps (setup_list), each a line, then the doctor's checks no
 /// step speaks for. A person at the terminal may open the steps left, one by one.
 async fn setup(
     opts: &InitOptions,
@@ -1430,12 +1430,7 @@ async fn setup(
     if left.is_empty() || !ui.interactive {
         return Ok(());
     }
-    let picked = ui.multi(
-        list,
-        "Set up any of these now? (the app's Administration › Setup has them too)",
-        &left,
-        Vec::new(),
-    )?;
+    let picked = ui.multi(list, "Set up any of these now?", &left, Vec::new())?;
     for step in steps.iter().filter(|s| picked.contains(&s.id)) {
         walk(opts, ui, list, &mut client, step).await?;
     }
@@ -1588,7 +1583,7 @@ pub async fn open_step(opts: InitOptions, id: SetupStepId, interactive: bool) ->
     };
     match walk(&opts, &ui, &mut list, &mut client, &step).await {
         Ok(SetupStatus::Done) => {
-            list.outro(&[], "Next: fleetd init lists what's left; the app's Administration › Setup has the same steps.");
+            list.outro(&[], "Next: fleetd init lists what's left.");
             0
         }
         Ok(_) => {

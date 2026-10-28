@@ -247,13 +247,15 @@ impl Doctor {
         out
     }
 
-    /// The setup checks read from the hub's own state, as it is now: cheap, so setup reads them fresh rather than
-    /// from the last run.
-    pub fn setup_checks(&self) -> Vec<DoctorCheck> {
-        checks::setup_checks(&self.deps.fleet.setup_facts())
-            .into_iter()
-            .map(|e| e.check)
-            .collect()
+    /// The setup checks read from the hub's own state, as it is now (people, Google, Notion, Claude's accounts): cheap,
+    /// so setup reads them fresh rather than from the last run.
+    pub async fn setup_checks(&self) -> Vec<DoctorCheck> {
+        let mut out = checks::setup_checks(&self.deps.fleet.setup_facts());
+        if let Some(claude) = self.deps.fleet.claude_setup().await {
+            out.push(checks::claude_key(&claude));
+            out.push(checks::claude_owner(&claude));
+        }
+        out.into_iter().map(|e| e.check).collect()
     }
 
     async fn machine_checks(&self, machine: &MachineView) -> Vec<Entry> {

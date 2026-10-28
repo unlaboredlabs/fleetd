@@ -5747,6 +5747,8 @@ export type KnownSetupStatus = "done" | "todo" | "look" | "skipped";
 export type SetupStatus = KnownSetupStatus | (string & {});
 
 export type SetupStep = {
+  /** The deciding check fails, rather than warns: with `look`, something can't work until it's fixed. */
+  failing?: boolean;
   /** What comes back from the provider, entered where the step says (`place`). */
   fields?: SetupField[];
   /** What happens after the fields are saved. */

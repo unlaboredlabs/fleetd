@@ -44,16 +44,22 @@ fn hub_url(hub: &Hub) -> String {
         .unwrap_or_else(|| hub.config.url())
 }
 
-/// The doctor's checks with the ones read from the hub's own state taken now, so a client saved a moment ago counts.
-fn with_fresh(hub: &Hub, mut checks: Vec<DoctorCheck>) -> Vec<DoctorCheck> {
-    let fresh = hub.doctor.setup_checks();
-    checks.retain(|c| !SETUP_CHECKS.contains(&c.id.as_str()));
+/// The doctor's checks with the ones read from the hub's own state taken now, so a key saved a moment ago counts.
+async fn with_fresh(hub: &Hub, mut checks: Vec<DoctorCheck>) -> Vec<DoctorCheck> {
+    let fresh = hub.doctor.setup_checks().await;
+    checks.retain(|c| !fresh.iter().any(|f| f.id == c.id));
     checks.extend(fresh);
     checks
 }
 
-/// The checks [`checks::setup_checks`] makes.
-const SETUP_CHECKS: [&str; 3] = ["hub/people", "hub/google", "hub/notion"];
+fn rank(s: checks::DoctorStatus) -> u8 {
+    match s {
+        checks::DoctorStatus::Ok => 0,
+        checks::DoctorStatus::Unknown => 1,
+        checks::DoctorStatus::Warn => 2,
+        checks::DoctorStatus::Fail => 3,
+    }
+}
 
 fn read(hub: &Hub, checks: &[DoctorCheck]) -> Result<Vec<SetupStep>, ToolError> {
     let skipped = super::skipped(&hub.db)?;
@@ -73,7 +79,7 @@ async fn setup_list(
     _input: SetupListInput,
 ) -> Result<SetupListOutput, ToolError> {
     require_admin(&caller)?;
-    let checks = with_fresh(&hub, hub.doctor.list(false).await.checks);
+    let checks = with_fresh(&hub, hub.doctor.list(false).await.checks).await;
     let steps = read(&hub, &checks)?;
     let left = steps.iter().filter(|s| s.required_left()).count();
     let next = match steps.iter().find(|s| s.required_left()) {
@@ -103,7 +109,7 @@ async fn setup_test(
         SetupStepId::Machines | SetupStepId::Claude => hub.doctor.list(true).await,
         _ => hub.doctor.rerun_hub().await,
     };
-    let mut checks = with_fresh(&hub, results.checks);
+    let mut checks = with_fresh(&hub, results.checks).await;
     if input.step == SetupStepId::Google && hub.db.google().client()?.is_some() {
         let tested = match crate::hub::google::tools::test_machine(&hub, None) {
             Err(e) => checks::google_tested(None, Some(&e.message)),
@@ -114,8 +120,13 @@ async fn setup_test(
                 Err(e) => checks::google_tested(Some(m.as_str()), Some(&e.message)),
             },
         };
-        checks.retain(|c| c.id != "hub/google");
-        checks.push(tested.check);
+        // Google's answer and what the hub keeps both count: a client Google takes still wants a look on a machine
+        // that lacks its secret.
+        match checks.iter().position(|c| c.id == "hub/google") {
+            Some(i) if rank(checks[i].status) >= rank(tested.check.status) => {}
+            Some(i) => checks[i] = tested.check,
+            None => checks.push(tested.check),
+        }
     }
     Ok(SetupTestOutput {
         step: one(read(&hub, &checks)?, input.step),
@@ -130,7 +141,7 @@ async fn setup_skip(
     input: SetupSkipInput,
 ) -> Result<SetupSkipOutput, ToolError> {
     require_admin(&caller)?;
-    let checks = with_fresh(&hub, hub.doctor.list(false).await.checks);
+    let checks = with_fresh(&hub, hub.doctor.list(false).await.checks).await;
     let step = one(read(&hub, &checks)?, input.step);
     if input.skipped && step.need == SetupNeed::Required {
         return Err(error(

@@ -1,6 +1,6 @@
-//! The hub's setup steps in the terminal (docs/design/setup.md): `fleetd init` and `fleetd doctor` list the same steps
-//! the app's Administration › Setup shows (setup_list), one line each, and `fleetd init --step <id>` opens one as a
-//! guide: why, numbered parts with the values to paste and the provider's pages, and where the result is saved.
+//! The hub's setup steps in the terminal (docs/design/setup.md): `fleetd init` and `fleetd doctor` list the hub's steps
+//! (setup_list), one line each, and `fleetd init --step <id>` opens one as a guide: why, numbered parts with the values
+//! to paste and the provider's pages, and where the result is saved.
 //! Secrets are never typed here: a step that takes one says where in the app it is sealed.
 
 use std::time::Duration;
@@ -90,7 +90,7 @@ fn resume(step: &SetupStep) -> String {
 }
 
 /// The step's line: done with what its checks say; a required one left fails with how to do it; one that wants a look
-/// warns with its fix; one not needed yet says when it is, and how to open it.
+/// fails or warns as its check does, with its fix; one not needed yet says when it is, and how to open it.
 pub fn line(step: &SetupStep) -> (State, String, Option<String>) {
     let said = step
         .said
@@ -105,8 +105,9 @@ pub fn line(step: &SetupStep) -> (State, String, Option<String>) {
             };
             (State::Done, detail, None)
         }
+        // As its check says: a failing one fails, whatever the step's need; a warning stays one.
         SetupStatus::Look => {
-            let state = if step.need == SetupNeed::Required {
+            let state = if step.failing == Some(true) {
                 State::Failed
             } else {
                 State::Warn
@@ -310,6 +311,34 @@ mod tests {
             "required: Agents run on machines; the hub's own machine can be one"
         );
         assert_eq!(fix.as_deref(), Some("fleetd init --step machines"));
+    }
+
+    #[test]
+    fn a_step_fails_only_when_its_check_does() {
+        // A degraded machine warns: agents still run, so nothing required is left.
+        let degraded = [check(
+            "devbox/online",
+            DoctorStatus::Warn,
+            "devbox is degraded.",
+        )];
+        let machines = &steps(&degraded)[1];
+        assert_eq!(line(machines).0, State::Warn);
+        assert!(!machines.required_left());
+        let offline = [check(
+            "devbox/online",
+            DoctorStatus::Fail,
+            "devbox is offline.",
+        )];
+        let machines = &steps(&offline)[1];
+        assert_eq!(line(machines).0, State::Failed);
+        assert!(machines.required_left());
+        // gh logged out fails the GitHub step though it is only needed before the first PR.
+        let gh = [check(
+            "hub/gh_auth",
+            DoctorStatus::Fail,
+            "gh is not logged in on the hub.",
+        )];
+        assert_eq!(line(&steps(&gh)[3]).0, State::Failed);
     }
 
     #[test]

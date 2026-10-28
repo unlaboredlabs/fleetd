@@ -173,6 +173,8 @@ pub struct SetupStep {
     pub way: Option<String>,
     /// The deciding check's fix, when a command fixes it.
     pub fix: Option<DoctorFix>,
+    /// The deciding check fails, rather than warns: with `look`, something can't work until it's fixed.
+    pub failing: Option<bool>,
     pub parts: Vec<SetupPart>,
     /// What comes back from the provider, entered where the step says (`place`).
     #[serde(default)]
@@ -189,9 +191,15 @@ pub struct SetupStep {
 }
 
 impl SetupStep {
-    /// Required and not done: until none is left, the admin's app keeps setup in front.
+    /// Required and not set up, or failing: until none is left, the admin's app keeps setup in front. A required step
+    /// that only warns (a machine degraded, an address on a LAN) doesn't stop agents.
     pub fn required_left(&self) -> bool {
-        self.need == SetupNeed::Required && self.status != SetupStatus::Done
+        self.need == SetupNeed::Required
+            && match self.status {
+                SetupStatus::Done => false,
+                SetupStatus::Look => self.failing == Some(true),
+                SetupStatus::Todo | SetupStatus::Skipped => true,
+            }
     }
 }
 
