@@ -1816,6 +1816,8 @@ output!(BrowserRetentionSetOutput {
 input!(MachineRolesInput {});
 output!(MachineRolesOutput {
     machines: List<crate::machine_roles::MachineRolesEntry, 0, 1000>,
+    /// Where a new Navi or project goes when none is named (`project_discover.best`). Absent: no machine is.
+    best: Option<MachineId>,
 });
 
 // machine_roles_set: what a machine is for, and the most sessions it hosts at once. Turning agents off stops nothing:

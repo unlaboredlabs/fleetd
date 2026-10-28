@@ -3342,8 +3342,15 @@ export type MachineRolesEntry = {
   /** Where `maxSessions` comes from: "set", "auto: 8 CPUs, 16 GB". */
   maxSessionsWhy: string;
   name: string;
+  /**
+   * The OS sandbox a Navi runs in there, as its node last reported it (`RunnerInfo.sandbox`). Absent until it
+   * reports, from a node before it, and on a system fleetd has no sandbox for.
+   */
+  naviSandbox?: NaviSandbox;
   /** Its node is linked to the hub now. */
   online: boolean;
+  /** The caller may work there (operate): make a Navi, start agents. Absent from a hub before it. */
+  operates?: boolean;
   roles: MachineRole[];
   /** Its sessions live now, its own agents' and other machines'. */
   sessionsLive: number;
@@ -3352,6 +3359,8 @@ export type MachineRolesEntry = {
 export type MachineRolesInput = { [key: string]: unknown };
 
 export type MachineRolesOutput = {
+  /** Where a new Navi or project goes when none is named (`project_discover.best`). Absent: no machine is. */
+  best?: MachineId;
   machines: MachineRolesEntry[];
   next?: string;
   truncated?: boolean;
@@ -4029,6 +4038,15 @@ export type NaviRenameOutput = {
   navi: ProjectSummary;
   next?: string;
   truncated?: boolean;
+};
+
+/** What a Navi's OS sandbox is on a machine, in a person's words. */
+export type NaviSandbox = {
+  /** What to run to close a gap or make Navis run here. */
+  fix?: string;
+  /** "Navis run in bubblewrap, with abstract sockets scoped (Landlock)." */
+  line: string;
+  status: SandboxStatus;
 };
 
 /** A site a Navi fetches and opens without asking: a person approved its first visit. */
@@ -5779,6 +5797,10 @@ export type SafetyRule = {
   /** In `PromptDetail`: whether the effective text still matches `needle`. */
   present?: boolean;
 };
+
+export type KnownSandboxStatus = "ready" | "gap" | "missing";
+/** KnownSandboxStatus, or a value from a newer hub. */
+export type SandboxStatus = KnownSandboxStatus | (string & {});
 
 export type SealedSecret = string;
 

@@ -448,6 +448,8 @@ pub fn entry(runner: Runner, roles: Roles, why: String) -> MachineRolesEntry {
             .others_note
             .filter(|_| roles.sessions)
             .map(Line::unchecked),
+        navi_sandbox: None,
+        operates: None,
     }
 }
 

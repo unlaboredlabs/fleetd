@@ -1,21 +1,24 @@
 // Navi (#/navi): your assistants. With none yet, what Navi is in a few lines and one button that makes the first;
 // otherwise a box to name a new one, your Navis (each opens its chat) and the archived ones, each a click from coming
-// back. A new Navi opens its chat once the hub has added it. Rename and archive are also in the sidebar's menu.
+// back. With more than one machine to put it on, the box has a choice of machine, each with its Navi sandbox. A new
+// Navi opens its chat once the hub has added it. Rename and archive are also in the sidebar's menu.
 import { useEffect, useMemo, useState } from "react";
-import { useData, useDataLayer } from "../../src/data/react";
+import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import { selectProjects } from "../../src/data/selectors";
 import { projectKey } from "../../src/data/store";
-import { Button, Field, FrameTitle, Input, Text } from "../../ui";
+import { Button, Field, FrameTitle, Input, Radio, RadioGroup, Text } from "../../ui";
 import { HubText } from "../projects/HubText";
 import { navigate } from "../shell/navigation";
 import { when } from "../status/view";
 import { archiveNavi } from "./actions";
-import { isArchived, isNavi, NAME_MAX, nameProblem } from "./model";
-import type { ProjectSummary } from "../../../shared/contracts";
+import { canHost, firstHome, isArchived, isNavi, NAME_MAX, nameProblem, naviHomes } from "./model";
+import type { MachineRolesEntry, ProjectSummary } from "../../../shared/contracts";
 import s from "./navi.module.css";
 
 /** What a new Navi is called when you leave the name empty. */
 export const DEFAULT_NAME = "Navi";
+
+const noInput = {};
 
 const open = (p: ProjectSummary) => navigate({ id: "project", project: { machineId: p.machineId, projectId: p.projectId }, message: null });
 
@@ -68,9 +71,10 @@ const REREAD_MS = 3_000;
 const OPEN_ANYWAY_MS = 8_000;
 
 /**
- * The name box and the one button: an empty name makes a Navi called Navi. It opens once the hub has added it; if
- * that word is slow, the project list is read again, and then it opens from the create call's reply. A create that
- * failed says why, and the button tries again.
+ * The name box and the one button: an empty name makes a Navi called Navi. With more than one machine it could live
+ * on, a choice of them below, starting where the hub would put it; with one, the hub places it as before. It opens
+ * once the hub has added it; if that word is slow, the project list is read again, and then it opens from the create
+ * call's reply. A create that failed says why, and the button tries again.
  */
 function NewNavi({ first }: { first: boolean }) {
   const layer = useDataLayer();
@@ -78,6 +82,11 @@ function NewNavi({ first }: { first: boolean }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<{ message: string; fix?: string | undefined } | null>(null);
   const [made, setMade] = useState<ProjectSummary | null>(null);
+  const [picked, setPicked] = useState<string | null>(null);
+  const roles = useToolQuery("machine_roles", noInput);
+  const homes = naviHomes(roles.data?.machines ?? []);
+  const choose = homes.length > 1;
+  const machineId = !choose ? undefined : homes.some((m) => m.machineId === picked && canHost(m)) ? (picked ?? undefined) : firstHome(homes, roles.data?.best);
   const arrived = useData((d) => made !== null && projectKey(made) in d.projects);
   useEffect(() => {
     if (made === null) return;
@@ -93,11 +102,12 @@ function NewNavi({ first }: { first: boolean }) {
     };
   }, [layer, made, arrived]);
   const problem = nameProblem(name);
+  const blocked = problem !== undefined || (choose && machineId === undefined);
   const create = async () => {
-    if (busy || problem !== undefined) return;
+    if (busy || blocked) return;
     setBusy(true);
     setError(null);
-    const out = await layer.call("navi_create", { name: name.trim() === "" ? DEFAULT_NAME : name.trim() });
+    const out = await layer.call("navi_create", { name: name.trim() === "" ? DEFAULT_NAME : name.trim(), ...(machineId === undefined ? {} : { machineId }) });
     if (!out.ok) {
       setBusy(false);
       setError({ message: out.error.message, fix: out.error.fix });
@@ -119,10 +129,22 @@ function NewNavi({ first }: { first: boolean }) {
         <Field label={first ? "What will you call it?" : "A new Navi"} error={problem}>
           <Input value={name} placeholder={DEFAULT_NAME} maxLength={NAME_MAX + 1} autoComplete="off" disabled={busy} onChange={(e) => setName(e.target.value)} />
         </Field>
-        <Button type="submit" variant="primary" disabled={busy || problem !== undefined}>
+        <Button type="submit" variant="primary" disabled={busy || blocked}>
           {label}
         </Button>
       </div>
+      {choose ? (
+        <div className={s.homes}>
+          <Text id="navi-home" size="xs" tone="quiet">
+            Lives on
+          </Text>
+          <RadioGroup value={machineId ?? ""} onValueChange={setPicked} disabled={busy} aria-labelledby="navi-home">
+            {homes.map((m) => (
+              <Radio key={m.machineId} value={m.machineId} label={m.name} description={<Sandbox machine={m} />} disabled={!canHost(m)} />
+            ))}
+          </RadioGroup>
+        </div>
+      ) : null}
       {error === null ? null : (
         <div role="alert">
           <Text size="sm" tone="danger">
@@ -136,6 +158,24 @@ function NewNavi({ first }: { first: boolean }) {
         </div>
       )}
     </form>
+  );
+}
+
+/** A machine's Navi sandbox under its name: the line, and the fix for a gap (a warning) or a missing one. */
+function Sandbox({ machine }: { machine: MachineRolesEntry }) {
+  const box = machine.naviSandbox;
+  if (box === undefined) return null;
+  return (
+    <>
+      <Text size="xs" tone={box.status === "gap" ? "warning" : "inherit"} className={s.line}>
+        <HubText>{box.line}</HubText>
+      </Text>
+      {box.fix === undefined || box.status === "ready" ? null : (
+        <Text size="xs" tone="inherit" className={s.line}>
+          <HubText>{box.fix}</HubText>
+        </Text>
+      )}
+    </>
   );
 }
 

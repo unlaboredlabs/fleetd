@@ -1077,3 +1077,52 @@ async fn the_hub_ends_a_session_whose_task_ended_and_tells_its_node() {
     assert_eq!(crate::hub::browser::tell_nodes(&hub, &mut told).unwrap(), 0);
     assert_eq!(state(&hub).0, BrowserSessionState::Uploading);
 }
+
+/// The app's Navi dialog reads each machine's Navi sandbox as its node last reported it, whether the caller may make
+/// a Navi there, and where the hub puts one by default.
+#[tokio::test]
+async fn machine_roles_say_where_a_navi_can_live() {
+    let (hub, _home) = hub();
+    let info = serde_json::from_value(json!({
+        "runner": "claude", "supported": "", "versionOk": true, "login": "logged_in",
+        "sandbox": { "status": "gap", "line": "Navis run in bubblewrap, but…", "fix": "Update the kernel." },
+    }))
+    .unwrap();
+    hub.executors.handle_frame(
+        &mid("devbox"),
+        fleetd_contracts::node_link::NodeToHub::MachineEvent(
+            fleetd_contracts::sessions::MachineEventFrame {
+                seq: 1,
+                at: fleetd_contracts::ids::Timestamp::from(AT),
+                event: fleetd_contracts::sessions::MachineEvent::RunnerInfo(info),
+            },
+        ),
+    );
+    let listed = tool(&hub, "machine_roles", json!({})).await.unwrap();
+    let on = |m: &str| {
+        listed["machines"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|e| e["machineId"] == m)
+            .unwrap()
+            .clone()
+    };
+    assert_eq!(on("devbox")["naviSandbox"]["status"], "gap");
+    assert_eq!(on("devbox")["naviSandbox"]["fix"], "Update the kernel.");
+    assert_eq!(on("devbox")["operates"], true);
+    assert!(on("mac1").get("naviSandbox").is_none(), "nothing reported");
+
+    // A key that only reads sees the machines, and that it can't make a Navi on them.
+    let reader: Caller = serde_json::from_value(json!({
+        "keyId": "k2", "name": "phone", "prefix": "fld_ghijkl", "createdAt": AT,
+        "grants": [{ "role": "read", "machines": "*" }],
+    }))
+    .unwrap();
+    let read = crate::hub::api::registry()
+        .call(&hub, &reader, "machine_roles", json!({}))
+        .await
+        .unwrap();
+    assert_eq!(read["machines"][0]["operates"], false);
+    assert_eq!(read["best"], listed["best"]);
+}

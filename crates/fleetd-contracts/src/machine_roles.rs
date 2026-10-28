@@ -127,6 +127,11 @@ pub struct MachineRolesEntry {
     pub hosts_others: bool,
     /// Why it doesn't, in plain words, while it hosts sessions and doesn't.
     pub hosts_others_note: Option<Line<1, 200>>,
+    /// The OS sandbox a Navi runs in there, as its node last reported it (`RunnerInfo.sandbox`). Absent until it
+    /// reports, from a node before it, and on a system fleetd has no sandbox for.
+    pub navi_sandbox: Option<crate::sessions::NaviSandbox>,
+    /// The caller may work there (operate): make a Navi, start agents. Absent from a hub before it.
+    pub operates: Option<bool>,
 }
 
 brand!(
