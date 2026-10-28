@@ -7,7 +7,7 @@ import { searchSettings } from "./search";
 
 const file = (over: Partial<MemoryFile>): MemoryFile => ({ scope: "project", text: "", chars: 0, cap: 4000, notes: [], ...over });
 
-describe("Settings → Memory", () => {
+describe("Settings → Projects → Instructions & memory", () => {
   it("names the files as the hub does", () => {
     expect(fileName({ scope: "user" })).toBe("user.md");
     expect(fileName({ scope: "project" })).toBe("MEMORY.md");
@@ -108,8 +108,8 @@ describe("Settings → Memory", () => {
     expect(restoreLine("- One.\n", { at: 5, raw: "- Six." })).toBe("- One.\n- Six.\n");
   });
 
-  it("is a Settings page that search finds by what people call it", () => {
-    expect(parseRoute("#/settings/memory?for=devbox/fleetd")).toMatchObject({ tab: "memory", for: "devbox/fleetd" });
+  it("is on a project's Instructions & memory, which search finds by what people call it", () => {
+    expect(parseRoute("#/settings/memory?for=devbox/fleetd")).toMatchObject({ tab: "instructions", for: "devbox/fleetd" });
     expect(searchSettings("remember").map((o) => o.label)).toEqual(["Memory"]);
   });
 });

@@ -65,7 +65,7 @@ it), and the session's skill list has it from its next start. A deleted skill go
 
 ## Manage skills in the app {#app}
 
-A project's skills are in Settings → Skills: pick the project. Changing them takes operate on its machine. The
+A project's skills are in Settings → Projects → Agents: pick the project. Changing them takes operate on its machine. The
 hub-wide (global) skills it gets are named on one line there, read-only.
 
 Global skills reach every machine's agents, so changing them takes admin on every machine: they are in

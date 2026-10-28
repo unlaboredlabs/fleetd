@@ -207,6 +207,8 @@ function basics(f: Fixture) {
   if (f.output("project_get") === undefined) f.answer("project_get", undefined, { projects: PROJECTS.map(projectSummary) });
   // The dry run, for any text: a fixture cannot know what will be typed, so it answers with no warnings.
   f.answer("prompt_set", { dryRun: true }, { ref: "lead.start@5e771ed000", warnings: [] });
+  // A project's Agents page lists its MCP servers: none, where the recording has no answer of its own.
+  f.answer("mcp_servers_get", undefined, { global: [], project: [], userServers: true });
 }
 
 /** Every shared fixture: what Settings calls besides the recorded prompt reads. */

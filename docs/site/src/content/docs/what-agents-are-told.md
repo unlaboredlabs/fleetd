@@ -154,7 +154,7 @@ Saving never refuses text that isn't empty, but it warns:
 
 ## Your own instructions {#instructions}
 
-In the app: Settings → Instructions for one project's, and Administration → Hub settings for every project's (owners
+In the app: Settings → Projects → Instructions & memory for one project's, and Administration → Hub settings for every project's (owners
 and admins only). On the hub machine:
 
 ```sh
@@ -183,7 +183,7 @@ A lead gets `user.md` and its project's `MEMORY.md` at the start of each session
 get them in their brief. A lead opens a topic file when it needs one. Something remembered mid-session reaches the
 next session.
 
-Read, edit or delete any of it in Settings → Memory. The files are plain markdown in the hub's home (`memory/`), in no
+Read, edit or delete any of it in Settings → Projects → Instructions & memory. The files are plain markdown in the hub's home (`memory/`), in no
 repo. Each file has a cap, by default 16,000 characters for `user.md` and each `MEMORY.md`, 32,000 per topic and
 128,000 per project: a write past one is refused, and the lead merges entries instead. An owner or admin changes the caps
 under Memory caps in [Administration › Hub settings](/docs/desktop-app#administration) (or `memory_caps_set` with an

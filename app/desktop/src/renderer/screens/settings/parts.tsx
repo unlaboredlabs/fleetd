@@ -98,17 +98,20 @@ export function PageHead(props: { title: string; children?: ReactNode; aside?: R
 }
 
 /**
- * One part of a page that gathers several (Administration's Connections and Hub settings): its heading and a line,
+ * One part of a page that gathers several (Connections, Hub settings, General's Notifications): its heading and a line,
  * then its options. A search or a link for `reveal` lands on it.
  */
-export function PagePart(props: { title: string; reveal: string; intro?: ReactNode; children?: ReactNode }) {
+export function PagePart(props: { title: string; reveal: string; intro?: ReactNode; aside?: ReactNode; children?: ReactNode }) {
   const ref = useReveal<HTMLElement>(props.reveal);
   return (
     <section ref={ref} className={s.part} aria-label={props.title} data-part={props.reveal} tabIndex={-1}>
       <div className={s.partHead}>
-        <Text as="h2" size="lg" strong>
-          {props.title}
-        </Text>
+        <div className={s.partTitle}>
+          <Text as="h2" size="lg" strong>
+            {props.title}
+          </Text>
+          {props.aside}
+        </div>
         {props.intro ? (
           <Text size="sm" tone="quiet">
             {props.intro}
@@ -118,6 +121,12 @@ export function PagePart(props: { title: string; reveal: string; intro?: ReactNo
       {props.children}
     </section>
   );
+}
+
+/** In place of a project's page while the hub has no project. */
+export function NoProject() {
+  const projects = useProjects();
+  return <Text tone="quiet">{projects === undefined ? "Loading…" : "No projects yet. Add one from Projects in the sidebar."}</Text>;
 }
 
 /** One option: its name and a line of help, then its controls. A settings search for `reveal` lands on it. */

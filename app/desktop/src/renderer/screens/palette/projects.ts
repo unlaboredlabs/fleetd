@@ -8,6 +8,7 @@ import { hubKey } from "../../src/data/react";
 import type { DataState } from "../../src/data/store";
 import { selectMachines, selectProjects } from "../../src/data/selectors";
 import { projectKey } from "../../src/data/store";
+import { focusSliderNext } from "../settings/focusProject";
 import { panelRoute, parseHash, toHash } from "../shell/routes";
 import { chatRoute } from "./defaults";
 import type { Command, Source } from "./registry";
@@ -43,7 +44,13 @@ export const projectItems = (state: DataState, go: (hash: string) => void, on?: 
         { title: "Pull requests in this project", run: () => there(toHash(panelRoute(p, { tab: "prs", pr: null }))) },
         { title: "Instructions for this project", run: () => there(settingsFor("instructions", p)) },
         { title: "Prompts for this project", run: () => there(settingsFor("prompts", p)) },
-        { title: "Max agents for this project", run: () => there(settingsFor("agents", p)) },
+        {
+          title: "Max agents for this project",
+          run: () => {
+            focusSliderNext();
+            there(settingsFor("agents", p));
+          },
+        },
       ],
     };
   });

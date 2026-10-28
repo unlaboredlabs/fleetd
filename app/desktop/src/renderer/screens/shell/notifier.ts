@@ -55,7 +55,7 @@ export interface AttentionEvent {
   readonly messageId: string | null;
 }
 
-/** The kinds Settings → Notifications turns on and off. */
+/** The kinds Settings → General → Notifications turns on and off. */
 export type NotifyKind = "reply" | "approval" | "done" | "machine" | "other";
 
 /** The synthetic event type of "the lead finished what you asked" (Requests). */
@@ -159,7 +159,7 @@ export interface DueContext {
   readonly stillNeeded: (project: ProjectKey) => boolean;
   /** You have that project's chat in front of you (the window focused on it): no alert for what you can see. */
   readonly looking?: (project: ProjectKey) => boolean;
-  /** Settings → Notifications has this kind on. */
+  /** Settings → General → Notifications has this kind on. */
   readonly enabled?: (kind: NotifyKind) => boolean;
   /** The project's name, for the title of a notification about one project. */
   readonly nameOf?: (project: ProjectKey) => string | undefined;

@@ -1,18 +1,17 @@
-// Skills: the SKILL.md workflows fleetd's agents get. Settings → Skills is a project's (its repo's .agents/skills and
-// .claude/skills, and its own), with the hub-wide ones only named; Administration → Skills (HubSkills) is the hub-wide
-// ones', for owners and admins alone. Each views every one, edits, creates and deletes the ones the hub keeps
+// Skills: the SKILL.md workflows fleetd's agents get. Settings → Projects › Agents has a project's (its repo's
+// .agents/skills and .claude/skills, and its own), with the hub-wide ones only named; Administration → Hub settings
+// (HubSkills) has the hub-wide ones, for owners and admins alone. Each views every one, edits, creates and deletes the ones the hub keeps
 // (skill_set, skill_delete, a human key's writes), installs from a skills.sh source pinned to a commit (skill_install)
 // and updates it (skill_update). Repo skills change in the repo.
-import { useEffect, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import type { ProjectRef, SkillScope, SkillSummary } from "../../../shared/contracts";
 import { Button, Dialog, Field, IdChip, Input, Text, Textarea, cx } from "../../ui";
 import { useToolQuery } from "../../src/data/react";
-import { HUB, parseScope, projectRefOf, scopeKey, type Draft, type Scope } from "./editor";
+import { HUB, projectRefOf, scopeKey, type Draft, type Scope } from "./editor";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
-import { PageHead, ScopeSelect, scopeName, useProjects } from "./parts";
+import { scopeName, useProjects } from "./parts";
 import { useAdministers } from "../admin/role";
 import { toHash } from "../shell/routes";
-import { replaceRoute, type SettingsRoute } from "./route";
 import { ORIGIN_LABEL, groups, installLine, nameProblem, rowKey, shadowLine, slug, template } from "./skillsModel";
 import s from "./settings.module.css";
 import k from "./skills.module.css";
@@ -25,70 +24,41 @@ const target = (scope: Scope): { scope: SkillScope; projectRef?: ProjectRef } =>
   return ref ? { scope: "project", projectRef: ref } : { scope: "global" };
 };
 
-export function Skills({ route }: { route: SettingsRoute }) {
-  const live = useLive();
+/**
+ * Settings → Projects › Agents: what a project's agents get, its repo's skills and its own, with the hub-wide ones
+ * named on a line (and for an owner or admin, the way to them in Administration).
+ */
+export function ProjectSkills({ scope }: { scope: Scope }) {
   const projects = useProjects();
   const administers = useAdministers();
-  const [picked, setPicked] = useState<Scope | null>(() => (route.for ? parseScope(route.for) : null));
-  // Settings is a member's: a project's skills only. With none picked, the first project.
-  const first = projects?.[0];
-  const scope = picked?.kind === "project" ? picked : first ? ({ kind: "project", ref: { machineId: first.machineId, projectId: first.projectId } } as const) : null;
-  const key = scope ? scopeKey(scope) : null;
-
-  useEffect(() => {
-    if (key) replaceRoute({ tab: "skills", for: key });
-  }, [key]);
-
-  if (!live) {
-    return (
-      <div className={s.scroll} data-screen="settings.skills">
-        <div className={s.column}>
-          <PageHead title="Skills" />
-          <Text tone="quiet">Not connected. Connect to a hub to see its skills.</Text>
-        </div>
-      </div>
-    );
-  }
-
-  const where = scope ? scopeName(scope, projects) : "";
+  const where = scopeName(scope, projects);
   return (
-    <div className={s.scroll} data-screen="settings.skills">
-      <div className={s.column}>
-        <PageHead title="Skills">
-          Workflows a project&apos;s agents can follow, from its repo or kept for it here. Agents see each one&apos;s name and
-          description, and open it when it fits. Name one in the chat with $.
-        </PageHead>
-        <div className={s.setting}>
-          <div className={s.settingLabel}>
-            <Text strong>Project</Text>
+    <section className={s.stack} aria-labelledby="skills-head">
+      <Text strong id="skills-head">
+        Skills
+      </Text>
+      <Text size="xs" tone="quiet">
+        Workflows {where}&apos;s agents can follow, from its repo or kept for it here: its repo&apos;s, its own and the hub-wide ones. On a name clash
+        the first wins. Name one in the chat with $.
+      </Text>
+      <SkillList
+        key={scopeKey(scope)}
+        scope={scope}
+        where={where}
+        hubWide={(names) => (
+          <div className={s.inline} aria-label="Hub-wide skills">
             <Text size="xs" tone="quiet">
-              What {scope ? where : "a project"}&apos;s agents get: its repo&apos;s, its own and the hub-wide skills. On a name clash the first wins.
+              {names.length > 0 ? `Hub-wide, for every project: ${names.join(", ")}.` : "No hub-wide skills."} Owners and admins manage them.
             </Text>
+            {administers ? (
+              <Button size="sm" variant="quiet" onClick={() => (window.location.hash = toHash({ id: "admin", section: "hub" }))}>
+                Hub-wide skills in Administration
+              </Button>
+            ) : null}
           </div>
-          <ScopeSelect id="skills-for" className={s.scopeSelect} value={scope} projects={projects} onChange={setPicked} />
-        </div>
-        {projects !== undefined && scope === null ? <Text tone="quiet">No projects yet. A project&apos;s skills show here once it has one.</Text> : null}
-        {scope ? (
-          <SkillList
-            key={key}
-            scope={scope}
-            where={where}
-            hubWide={(names) => (
-              <div className={s.inline} aria-label="Hub-wide skills">
-                <Text size="xs" tone="quiet">
-                  {names.length > 0 ? `Hub-wide, for every project: ${names.join(", ")}.` : "No hub-wide skills."} Owners and admins manage them.
-                </Text>
-                {administers ? (
-                  <Button size="sm" variant="quiet" onClick={() => (window.location.hash = toHash({ id: "admin", section: "hub" }))}>
-                    Hub-wide skills in Administration
-                  </Button>
-                ) : null}
-              </div>
-            )}
-          />
-        ) : null}
-      </div>
-    </div>
+        )}
+      />
+    </section>
   );
 }
 

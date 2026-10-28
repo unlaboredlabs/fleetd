@@ -26,10 +26,25 @@ type RouteParts = { tab: Tab; prompt?: string | null; for?: string | null; view?
 export const formatRoute = (r: RouteParts): string =>
   toHash({ id: "settings", tab: r.tab, ...(r.prompt ? { prompt: r.prompt } : {}), ...(r.for ? { for: r.for } : {}), ...(r.view ? { view: r.view } : {}) });
 
+/** A project's pages, nested under Projects in the sidebar: all of the one project picked there (`for`). */
+export const PROJECT_TABS: ReadonlyArray<Tab> = ["projects", "agents", "instructions", "automations"];
+export const isProjectTab = (tab: Tab): boolean => PROJECT_TABS.includes(tab);
+
 const last = new Map<Tab, string>();
+/** The project the project pages last showed: each of them opens on it. */
+let lastProject: string | null = null;
 
 /** Where a tab was left, so going back to it returns to the same prompt and project. */
-export const tabHref = (tab: Tab): string => last.get(tab) ?? formatRoute({ tab });
+export const tabHref = (tab: Tab): string => (isProjectTab(tab) ? formatRoute({ tab, for: lastProject }) : (last.get(tab) ?? formatRoute({ tab })));
+
+/** The project a project page shows: the route's, else the last one shown, else the first of `projects`. */
+export const projectFor = (route: Pick<SettingsRoute, "for">, projects: ReadonlyArray<{ machineId: string; projectId: string }> | undefined): string | null => {
+  const known = (key: string | null) => key !== null && (projects === undefined || projects.some((p) => `${p.machineId}/${p.projectId}` === key));
+  if (route.for !== null) return route.for;
+  if (known(lastProject)) return lastProject;
+  const first = projects?.[0];
+  return first ? `${first.machineId}/${first.projectId}` : null;
+};
 
 /** A link to one prompt, in the scope the Prompts page was last showing. */
 export const promptHref = (id: string): string => formatRoute({ tab: "prompts", prompt: id, for: parseRoute(tabHref("prompts")).for });
@@ -41,6 +56,7 @@ export const promptHref = (id: string): string => formatRoute({ tab: "prompts", 
 export function replaceRoute(r: RouteParts) {
   const next = formatRoute(r);
   last.set(r.tab, next);
+  if (isProjectTab(r.tab) && r.for) lastProject = r.for;
   replaceHash(next);
 }
 

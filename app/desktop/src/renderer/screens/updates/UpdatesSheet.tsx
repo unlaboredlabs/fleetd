@@ -114,7 +114,7 @@ function Head({ title, detail, children }: { title: string; detail: string | und
 }
 
 /** This app's own words and action, behind Details: the one Update button leads, so its action steps back. */
-function AppSection({ part, onApp }: { part: AppPart; onApp: (action: AppAction) => void }) {
+export function AppSection({ part, onApp }: { part: AppPart; onApp: (action: AppAction) => void }) {
   const { action } = part;
   return (
     <section className={s.step} aria-label="This app" data-updates-part="app">
@@ -147,7 +147,7 @@ function Row({ row }: { row: PartRow }) {
   );
 }
 
-function HubSection({ part, nodes }: { part: HubPart; nodes: UpdatesView["nodes"] }) {
+export function HubSection({ part, nodes }: { part: HubPart; nodes: UpdatesView["nodes"] }) {
   return (
     <section className={s.step} aria-label="The hub and its machines" data-updates-part="hub">
       <ul className={s.rows}>

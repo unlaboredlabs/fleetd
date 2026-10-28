@@ -170,7 +170,7 @@ pub fn unowned(checks: &[DoctorCheck], steps: &[HubSetupStep]) -> Vec<DoctorChec
 fn place_words(place: &str) -> String {
     let name = match place {
         "claude" => {
-            return "Administration › Connections › Claude for the hub's API key; Settings › Claude for your own subscription"
+            return "Administration › Connections › Claude for the hub's API key; Settings › Connections › Claude for your own subscription"
                 .to_owned();
         }
         "github" => "Connections › GitHub",
@@ -408,7 +408,7 @@ mod tests {
             .unwrap();
         assert!(
             guide(&claude).contains(
-                "In the app: Administration › Connections › Claude for the hub's API key; Settings › Claude for your own subscription."
+                "In the app: Administration › Connections › Claude for the hub's API key; Settings › Connections › Claude for your own subscription."
             ),
             "{}",
             guide(&claude)

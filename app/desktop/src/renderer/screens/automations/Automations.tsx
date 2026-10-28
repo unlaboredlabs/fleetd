@@ -1,4 +1,4 @@
-// Settings → Automations: one project's automations, each a prompt the project's lead runs on a schedule, from a
+// Settings → Projects › Automations: one project's automations (the project picked in the sidebar), each a prompt the project's lead runs on a schedule, from a
 // webhook or on Run now. Each run opens an order the lead starts on its own; reviews, the merge train and approvals
 // still apply. A person makes, edits, pauses, runs and deletes them here and reads their runs, each linked to its
 // order. A webhook URL holds its secret, so the hub returns it only when it is made or rotated: shown once, here.
@@ -8,9 +8,9 @@ import { useEffect, useState } from "react";
 import type { Automation, MemoryRefreshJob, ProjectRef } from "../../../shared/contracts";
 import { Button, Dialog, Field, Input, StatusChip, Switch, Text, Textarea, copyText } from "../../ui";
 import { useToolQuery } from "../../src/data/react";
-import { parseScope, projectRefOf, scopeKey, type Scope } from "../settings/editor";
+import { parseScope, projectRefOf, type Scope } from "../settings/editor";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
-import { PageHead, ScopeSelect, scopeName, useProjects } from "../settings/parts";
+import { PageHead, scopeName, useProjects } from "../settings/parts";
 import { replaceRoute, type SettingsRoute } from "../settings/route";
 import settings from "../settings/settings.module.css";
 import { describeCron } from "./cron";
@@ -41,18 +41,16 @@ const READS = ["automation_list", "automation_runs"] as const;
 export function Automations({ route }: { route: SettingsRoute }) {
   const live = useLive();
   const projects = useProjects();
-  const [picked, setPicked] = useState<Scope | null>(() => (route.for ? parseScope(route.for) : null));
-  const first = projects?.[0];
-  const project: Scope | null =
-    picked?.kind === "project" ? picked : first ? { kind: "project", ref: { machineId: first.machineId, projectId: first.projectId } } : null;
+  const picked = route.for ? parseScope(route.for) : null;
+  const project: Scope | null = picked?.kind === "project" ? picked : null;
   const ref = project ? projectRefOf(project) : undefined;
   const list = useToolQuery("automation_list", { projectRef: ref ?? { machineId: "", projectId: "" } }, { enabled: live && ref !== undefined });
   const [editing, setEditing] = useState<string | null>(null);
   const [url, setUrl] = useState<{ name: string; url: string } | null>(null);
 
   useEffect(() => {
-    replaceRoute({ tab: "automations", for: picked?.kind === "project" ? scopeKey(picked) : null });
-  }, [picked]);
+    replaceRoute({ tab: "automations", for: route.for });
+  }, [route.for]);
 
   if (!live) {
     return (
@@ -70,10 +68,7 @@ export function Automations({ route }: { route: SettingsRoute }) {
   return (
     <div className={settings.scroll} data-screen="settings.automations">
       <div className={settings.column}>
-        <PageHead
-          title="Automations"
-          aside={<ScopeSelect id="automations-for" className={settings.scopeSelect} value={project} projects={projects} onChange={(p) => (setPicked(p), setEditing(null))} />}
-        >
+        <PageHead title="Automations">
           A prompt the lead runs on a schedule, from a webhook, or when you press Run now. Each run opens an order the lead starts on its own; reviews and
           approvals still apply.
         </PageHead>

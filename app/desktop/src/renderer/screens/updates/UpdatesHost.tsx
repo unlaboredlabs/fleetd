@@ -14,7 +14,7 @@ import { appUpdate, setUpdatesOpen, useAppUpdate, useUpdatesOpen } from "./state
 import { Notes, UpdatesSheet } from "./UpdatesSheet";
 import { Boundary } from "../../src/Boundary";
 
-const runApp = (action: AppAction): void => {
+export const runApp = (action: AppAction): void => {
   if (action === "check") void window.fleetd.updates.check();
   // Restarting closes the window; the composer saves every draft as the page goes (pagehide).
   else if (action === "install") void window.fleetd.updates.install();

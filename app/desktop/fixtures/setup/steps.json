@@ -93,7 +93,7 @@
               "url": "https://console.anthropic.com/settings/keys"
             }
           ],
-          "note": "Projects' leads and work nobody started run on it, and so does anyone who picks the hub's API in Settings › Claude. Machines need no login of their own.",
+          "note": "Projects' leads and work nobody started run on it, and so does anyone who picks the hub's API in Settings › Connections › Claude. Machines need no login of their own.",
           "title": "Give the hub an API key",
           "values": [
             {
@@ -109,7 +109,7 @@
         },
         {
           "links": [],
-          "note": "Without a hub key, leads and work nobody started run on the owner's subscription. Paste the token in Settings › Claude; the app seals it on your device.",
+          "note": "Without a hub key, leads and work nobody started run on the owner's subscription. Paste the token in Settings › Connections › Claude; the app seals it on your device.",
           "title": "Or connect your own subscription",
           "values": [
             {
@@ -181,7 +181,7 @@
         },
         {
           "links": [],
-          "note": "Then each person connects their own GitHub in Settings › GitHub, so the PRs of their orders open as them.",
+          "note": "Then each person connects their own GitHub in Settings › Connections › GitHub, so the PRs of their orders open as them.",
           "title": "Install it on the repositories fleetd works on",
           "values": []
         }

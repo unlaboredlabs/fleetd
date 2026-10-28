@@ -1,4 +1,4 @@
-// Settings → Notifications: which kinds alert, with or without a sound, and the Dock badge. Per install, in the
+// Settings → General → Notifications: which kinds alert, with or without a sound, and the Dock badge. Per install, in the
 // renderer's storage like the theme; the shell reads them when it posts.
 import { useSyncExternalStore } from "react";
 import type { NotifyKind } from "./notifier";

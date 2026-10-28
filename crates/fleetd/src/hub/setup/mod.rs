@@ -440,7 +440,7 @@ pub fn guides(hub: &str) -> Vec<HubSetupStep> {
                     "Give the hub an API key",
                     Some(
                         "Projects' leads and work nobody started run on it, and so does anyone who picks the hub's \
-                         API in Settings › Claude. Machines need no login of their own.",
+                         API in Settings › Connections › Claude. Machines need no login of their own.",
                     ),
                     vec![link(
                         "Claude Console › API keys",
@@ -459,7 +459,7 @@ pub fn guides(hub: &str) -> Vec<HubSetupStep> {
                     "Or connect your own subscription",
                     Some(
                         "Without a hub key, leads and work nobody started run on the owner's subscription. Paste the \
-                         token in Settings › Claude; the app seals it on your device.",
+                         token in Settings › Connections › Claude; the app seals it on your device.",
                     ),
                     vec![],
                     vec![command("On any computer with claude", "claude setup-token", None)],
@@ -504,7 +504,7 @@ pub fn guides(hub: &str) -> Vec<HubSetupStep> {
                 part(
                     "Install it on the repositories fleetd works on",
                     Some(
-                        "Then each person connects their own GitHub in Settings › GitHub, so the PRs of their orders open as them.",
+                        "Then each person connects their own GitHub in Settings › Connections › GitHub, so the PRs of their orders open as them.",
                     ),
                     vec![],
                     vec![],

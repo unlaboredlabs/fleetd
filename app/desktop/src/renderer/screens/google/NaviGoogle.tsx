@@ -13,6 +13,7 @@ import { Button, Dialog, Field, Input, Segmented, Text, Truncate } from "../../u
 import { useAdministers } from "../admin/role";
 import { toHash } from "../shell/routes";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
+import { revealNext } from "../settings/search";
 import { dayWords, googleView, lapsedLine, listWords, mailModeLine, queryProblem, scopeFor, scopeName, type GoogleView } from "./model";
 import s from "./google.module.css";
 import settings from "../settings/settings.module.css";
@@ -20,6 +21,7 @@ import settings from "../settings/settings.module.css";
 type Ref = { machineId: string; projectId: string };
 
 const toAdmin = () => {
+  revealNext("admin.google");
   window.location.hash = toHash({ id: "admin", section: "connections" });
 };
 

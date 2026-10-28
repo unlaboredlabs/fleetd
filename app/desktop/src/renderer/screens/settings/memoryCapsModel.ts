@@ -1,4 +1,4 @@
-// The memory caps as Settings → Memory edits them: four numbers, each checked against the range the hub takes before
+// The memory caps as Settings → Projects → Instructions & memory edits them: four numbers, each checked against the range the hub takes before
 // memory_caps_set goes.
 import { MEMORY_CAP_MIN, MEMORY_FILE_CAP_MAX, MEMORY_PROJECT_CAP_MAX, type MemoryCaps } from "../../../shared/contracts";
 

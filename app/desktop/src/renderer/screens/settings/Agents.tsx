@@ -1,5 +1,5 @@
-// Max agents in the app: the slider per project in Settings → Agents (the panel's Agents tab links to it, "4 working
-// · max 20"), and each machine's and the fleet-wide cap, which are hub-wide and live on Administration's hub settings
+// Max agents in the app: a project's slider in Settings → Projects › Agents (the panel's Agents tab links to it, "4
+// working · max 20"), with the rest of what its agents get, and each machine's and the fleet-wide cap, which are hub-wide and live on Administration's hub settings
 // (HubCaps). Reads the hub's slot state from the data layer's store; a slider applies when you let go (a cap_set call
 // through the layer), with Undo, and the hub's next slot state confirms it.
 import { Slider } from "radix-ui";
@@ -26,9 +26,12 @@ import {
 } from "./agentsModel";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import { useFocusProjectSlider } from "./focusProject";
-import { PageHead, scopeName, useProjects } from "./parts";
+import { parseScope, projectRefOf } from "./editor";
+import { McpSection } from "./McpServers";
+import { NoProject, PageHead, scopeName, Setting, useProjects } from "./parts";
 import { ProfilesSetting } from "./ProfilesSetting";
-import { promptHref } from "./route";
+import { replaceRoute, type SettingsRoute } from "./route";
+import { ProjectSkills } from "./Skills";
 import { useAdministers } from "../admin/role";
 import { toHash } from "../shell/routes";
 import { useReveal } from "./search";
@@ -359,43 +362,48 @@ export function HubCaps() {
   );
 }
 
-/** Settings → Agents: each project's max, and whether its tasks may run on medium. */
-export function AgentsSettings() {
+/**
+ * Settings → Projects › Agents: one project's max agents and whether its tasks may run on medium, the model and effort
+ * behind its task profiles, its own MCP servers and its skills.
+ */
+export function AgentsSettings({ route }: { route: SettingsRoute }) {
   const slots = useSlots();
   const projects = useProjects();
   const live = useLive();
-  useFocusProjectSlider(live && slots !== undefined && projects !== undefined);
+  const scope = route.for ? parseScope(route.for) : null;
+  const ref = scope ? projectRefOf(scope) : undefined;
+  useFocusProjectSlider(live && slots !== undefined && ref !== undefined);
   const perProject = useReveal<HTMLElement>("agents.project");
+  useEffect(() => {
+    replaceRoute({ tab: "agents", for: route.for });
+  }, [route.for]);
+  const name = scope ? scopeName(scope, projects) : "a project";
   return (
     <div className={s.scroll} data-screen="settings.agents">
       <div className={s.column}>
-        <PageHead title="Agents">
-          How many agents run at once. Past the limit, the next one waits its turn; merge reviews go first.
-        </PageHead>
-        {!live || !slots ? (
-          <Text tone="quiet">{live ? "Loading…" : "Connect to a hub to see and change this."}</Text>
+        <PageHead title="Agents">{`How many of ${name}'s agents run at once, what they run on, and the tools and skills they get.`}</PageHead>
+        {!live ? (
+          <Text tone="quiet">Connect to a hub to see and change this.</Text>
+        ) : ref === undefined || scope === null ? (
+          <NoProject />
         ) : (
           <>
-            <section ref={perProject} className={s.agentsList} aria-labelledby="agents-per-project" tabIndex={-1}>
-              <Text strong id="agents-per-project">
-                Max agents per project
-              </Text>
-              {projects === undefined ? (
-                <Text tone="quiet">Loading…</Text>
-              ) : projects.length === 0 ? (
-                <Text tone="quiet">No projects yet. Each project you add gets its own max here.</Text>
-              ) : (
-                projects.map((p) => {
-                  const ref = { machineId: p.machineId, projectId: p.projectId };
-                  return (
-                    <section key={`${p.machineId}/${p.projectId}`} className={s.agentsRow} aria-label={p.title}>
-                      <AgentsPanel projectRef={ref} slots={slots} title={scopeName({ kind: "project", ref }, projects)} />
-                      <MediumSwitch projectRef={ref} />
-                    </section>
-                  );
-                })
-              )}
+            <section ref={perProject} className={s.agentsList} aria-label="Max agents" tabIndex={-1}>
+              {slots ? <AgentsPanel projectRef={ref} slots={slots} /> : <Text tone="quiet">Loading…</Text>}
+              <MediumSwitch projectRef={ref} />
             </section>
+            <Separator />
+            <Setting
+              reveal="agents.profiles"
+              label="Task profiles"
+              help="The model and effort behind each profile for this project's agents. Each field left empty follows the fleet's, which the hub's admins set in Administration."
+            >
+              <ProfilesSetting projectRef={ref} />
+            </Setting>
+            <Separator />
+            <McpSection projectRef={ref} />
+            <Separator />
+            <ProjectSkills scope={scope} />
           </>
         )}
       </div>
@@ -419,7 +427,7 @@ export function TaskProfiles() {
       </Text>
       <ProfilesSetting />
       <span>
-        <Button variant="quiet" size="sm" onClick={() => (window.location.hash = promptHref("lead.profiles"))}>
+        <Button variant="quiet" size="sm" onClick={() => (window.location.hash = toHash({ id: "admin", section: "hub", prompt: "lead.profiles" }))}>
           Edit the Task profiles prompt
         </Button>
       </span>

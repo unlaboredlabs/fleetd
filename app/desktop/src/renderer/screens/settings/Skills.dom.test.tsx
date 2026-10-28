@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// Skills, a member's and an admin's: Settings → Skills shows a project's own and repo skills, and names the hub-wide
+// Skills, a member's and an admin's: a project's Agents page in Settings shows its own and repo skills, and names the hub-wide
 // ones on a read-only line (with the way to Administration for an owner or admin only); Administration → Hub settings › Skills is
 // where the hub-wide ones are installed, updated and removed, and a member never reaches it.
 import { act } from "react";
@@ -11,7 +11,7 @@ import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { UiProvider } from "../../ui";
 import { AdminScreen } from "../admin/AdminScreen";
-import { Skills } from "./Skills";
+import { ProjectSkills } from "./Skills";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 vi.hoisted(() => {
@@ -64,7 +64,7 @@ afterEach(() => {
 
 const settle = () => act(async () => new Promise((r) => setTimeout(r, 0)));
 
-/** `page`: Settings → Skills or Administration → Skills. `admin`: what hub_info says of this app's person. */
+/** `page`: storefront's skills on Settings → Projects › Agents, or Administration → Hub settings. `admin`: what hub_info says of this app's person. */
 const render = async (page: "settings" | "admin", admin: boolean) => {
   let listener: (frame: HubFrame) => void = () => undefined;
   const hub: HubApi = {
@@ -95,7 +95,7 @@ const render = async (page: "settings" | "admin", admin: boolean) => {
   await act(async () => {
     root.render(
       <UiProvider>
-        <DataProvider layer={createDataLayer(hub)}>{page === "admin" ? <AdminScreen /> : <Skills route={{ tab: "skills", prompt: null, for: null, view: "edit" }} />}</DataProvider>
+        <DataProvider layer={createDataLayer(hub)}>{page === "admin" ? <AdminScreen /> : <ProjectSkills scope={{ kind: "project", ref: storefront }} />}</DataProvider>
       </UiProvider>,
     );
     await Promise.resolve();

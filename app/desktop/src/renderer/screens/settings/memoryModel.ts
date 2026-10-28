@@ -1,4 +1,4 @@
-// Settings → Memory's rules, kept pure: a file's name, its length against its cap as the hub counts it, its lines as
+// Settings → Projects → Instructions & memory's rules, kept pure: a file's name, its length against its cap as the hub counts it, its lines as
 // entries with where each was remembered, and the whole file after an entry is edited, deleted or put back. The file
 // stays the truth: every change is the file's new text, for memory_set.
 import type { MemoryFile, MemoryNote } from "../../../shared/contracts";

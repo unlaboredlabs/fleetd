@@ -131,7 +131,7 @@ A Navi can open and follow work in projects on another hub, such as a team hub w
 one. You make a link key on the hub it reaches and add it to the Navi. It acts as you there, and either side can
 revoke it. [Security](/docs/security#hub-links) has the rules.
 
-**On the hub it reaches.** Open **Settings › Hubs**, **Links to this hub** under that hub, and click **Make a link key**:
+**On the hub it reaches.** Open **Settings › Connections › Hubs**, **Links to this hub** under that hub, and click **Make a link key**:
 
 1. Name the other hub as you think of it, such as *home*. Requests through the link read "*you* via home Navi"
    there.

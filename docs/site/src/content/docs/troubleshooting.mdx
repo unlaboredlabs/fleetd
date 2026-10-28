@@ -58,7 +58,7 @@ same checks. The tables below give each check's id in brackets, such as `[claude
 | "The hub's Claude API key failed its Test on devbox: …" `[claude_key]` | The key was revoked, is out of credit, or the endpoint is wrong. | Administration › Connections › Claude: Change, paste the key and endpoint again, then Save and test. |
 | "… isn't on buildbox, so nothing runs on it there." `[claude_key]` `[claude_owner]` ! | That machine was offline when the key or token was saved. | Save it again while the machine is online. |
 | "… is saved but not tested yet." `[claude_key]` `[claude_owner]` | No Test since it was saved. | Press Test beside it. |
-| "Sam Rivera's Claude subscription failed its Test on devbox: …" `[claude_owner]` | The owner's token expired or was revoked. | The owner runs `claude setup-token` again and pastes the token in Settings › Claude. |
+| "Sam Rivera's Claude subscription failed its Test on devbox: …" `[claude_owner]` | The owner's token expired or was revoked. | The owner runs `claude setup-token` again and pastes the token in Settings › Connections › Claude. |
 | "The hub has no address set up", or `setup.json` is unreadable `[https]` | `~/.fleetd/hub/setup.json` is missing or broken. | Same as above: `fleetd init --url <https address>`. |
 | "… has no hub set up" `[exit 4]` | The hub was started by hand without `fleetd init` first, so its home has no `setup.json`. | Run the fix it prints. For a hub you run yourself, that is `fleetd init --no-service --home <home> --listen <host:port>`, which leaves the running hub alone. |
 

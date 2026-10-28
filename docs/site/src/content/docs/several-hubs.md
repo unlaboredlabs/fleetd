@@ -23,7 +23,7 @@ first. A link or address for a hub you already have pairs that hub again instead
 
 ## Rename, recolour or remove {#manage}
 
-Settings → Hubs lists each hub with its address, its connection and where its key is kept.
+Settings → Connections → Hubs lists each hub with its address, its connection and where its key is kept.
 
 | To | Do |
 |---|---|
@@ -68,7 +68,7 @@ Offline, Reconnecting or Key refused. Click the row for why and for Retry now.
 
 A hub that's out of reach only affects its own group. Its projects show as they were last seen, marked "as of 09:02",
 and the other hubs keep working. A hub refusing the app's key doesn't lock the window either: its row says
-"Key refused", and Settings → Hubs has **Pair again**.
+"Key refused", and Settings → Connections → Hubs has **Pair again**.
 
 The app reaches each hub directly, over your tailnet or HTTPS. A hub that only your company network reaches is out of
 reach from home until you're on that network or its VPN.
@@ -81,5 +81,5 @@ the fleetd directory. The first hub keeps the files it always had, so an app upd
 has one hub.
 
 If `desktop-hubs.json` can't be read, no hub is lost. The app keeps the old file as `desktop-hubs.json.bad`, finds
-each hub again from its saved key, and Settings → Hubs says so. The hubs come back under their host names, so rename
+each hub again from its saved key, and Settings → Connections → Hubs says so. The hubs come back under their host names, so rename
 them if you like.

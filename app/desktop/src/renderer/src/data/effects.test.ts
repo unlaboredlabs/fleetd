@@ -77,7 +77,7 @@ describe("event effects", () => {
     expect(effectsOf(e("machine.online", undefined, { machineId: "buildbox" }), { devbox: {} }).resync).toBe(true);
     expect(effectsOf(e("rocket.launched"))).toEqual({ invalidate: [], resync: false });
     expect(tools(e("prompt.changed"))).toContain("prompt_get");
-    // A lead's remember, an Undo or an edit elsewhere: Settings → Memory reads the files again, and Automations the
+    // A lead's remember, an Undo or an edit elsewhere: Settings → Projects → Instructions & memory reads the files again, and Automations the
     // nightly refresh's row, with what a running refresh changed so far.
     expect(tools(e("memory.changed"))).toEqual(["memory_get", "automation_list"]);
     // A refresh started, ended or was skipped: the row reads its next and last run again.

@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// Settings → Memory's caps: the hub's caps in the fields, an edit saved with memory_caps_set, a value out of range
+// Settings → Projects → Instructions & memory's caps: the hub's caps in the fields, an edit saved with memory_caps_set, a value out of range
 // refused before it goes.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";

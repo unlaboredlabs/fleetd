@@ -1,4 +1,4 @@
-// Settings → Skills' rules, kept pure: where a skill comes from in words, which ones the page can edit, the name a new
+// Settings → Projects → Agents' rules, kept pure: where a skill comes from in words, which ones the page can edit, the name a new
 // one may have, its first SKILL.md, and the line an installed one shows.
 import type { SkillOrigin, SkillSummary } from "../../../shared/contracts";
 

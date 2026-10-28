@@ -1,4 +1,4 @@
-// Settings → Automations' rules, kept pure: an automation's triggers in a line, a run's state as a chip, the editor's
+// Settings → Projects → Automations' rules, kept pure: an automation's triggers in a line, a run's state as a chip, the editor's
 // draft and the hub input it saves as (an edit sends only what changed), where a run's order opens, and the nightly
 // memory refresh's built-in row in words.
 import type {

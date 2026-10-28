@@ -46,7 +46,7 @@ const withKey: ClaudeAccountsGetOutput = {
 const noKey: ClaudeAccountsGetOutput = {
   settings: { membersUseHubApi: true },
   leadsRunOn: { kind: "machine_login" },
-  people: [{ person: ref(sam), mayUseHubApi: false, runsOn: { kind: "refused", message: "Connect your Claude to start this order.", fix: "Open Settings › Claude." } }],
+  people: [{ person: ref(sam), mayUseHubApi: false, runsOn: { kind: "refused", message: "Connect your Claude to start this order.", fix: "Open Settings › Connections › Claude." } }],
 };
 const usage: UsageStatusOutput = {
   machines: [

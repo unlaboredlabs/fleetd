@@ -55,7 +55,7 @@ export const submitHubLink = async (
   call: (tool: "hub_link_add", input: ToolInput<"hub_link_add">) => Promise<CallOutcome>,
 ): Promise<CallOutcome> => {
   if (!/^flk_[a-z2-7]{52}$/u.test(request.key)) {
-    return refused("That isn't a link key.", "Paste the key from the other hub's Settings › Hubs, Links to this hub: it starts with flk_.");
+    return refused("That isn't a link key.", "Paste the key from the other hub's Settings › Connections › Hubs, Links to this hub: it starts with flk_.");
   }
   const sealed = await seal(request.boxPubKey, request.key);
   if (!sealed.ok) return sealed;

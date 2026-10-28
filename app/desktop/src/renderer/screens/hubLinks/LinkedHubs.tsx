@@ -195,7 +195,7 @@ function AddLink(props: { navi: ProjectRef; boxPubKey: string; taken: ReadonlyAr
         void submit();
       }}
     >
-      <Field label="Link key" description="Made on the other hub, in Settings › Hubs, Links to this hub. It is sealed to this hub and never shown again.">
+      <Field label="Link key" description="Made on the other hub, in Settings › Connections › Hubs, Links to this hub. It is sealed to this hub and never shown again.">
         {/* A secret's characters show as dots; two lines, so the address Links to this hub copies with it pastes too. */}
         <Textarea
           mono

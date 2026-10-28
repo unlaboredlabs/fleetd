@@ -1,5 +1,7 @@
-// Settings → Projects (#/settings/projects?for=<machine>/<project>): one project's name, its repos (RepoSetting.tsx), its worktrees, its agents'
-// environment variables, a Navi's linked hubs (hubLinks/LinkedHubs.tsx), its setup commands (SetupSetting.tsx), the merge train's checks (TrainSetting.tsx), and deleting it. Reads project_settings_get; writes project_settings_set, project_env_set
+// Settings → Projects › Project (#/settings/projects?for=<machine>/<project>, the project picked in the sidebar): its
+// name, its repos (RepoSetting.tsx), its worktrees, its memory refresh, its agents' environment variables, a Navi's
+// integrations and linked hubs (hubLinks/LinkedHubs.tsx), its setup commands (SetupSetting.tsx), the merge train's
+// checks (TrainSetting.tsx), and deleting it. Reads project_settings_get; writes project_settings_set, project_env_set
 // (through main, which seals each secret to the project machine's key) and project_remove. A secret's value is
 // write-only: typed here once, sealed in main, and only its fingerprint ever comes back.
 import { useEffect, useState } from "react";
@@ -10,13 +12,13 @@ import { CallError } from "../../src/data/queries";
 import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import { projectKey } from "../../src/data/store";
 import { RemoveProjectDialog, type RemoveTarget } from "../projects/RemoveProjectDialog";
+import { navigate } from "../shell/navigation";
 import { parseScope, projectRefOf, scopeKey, type Scope } from "./editor";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import { IntegrationsSection } from "./Integrations";
 import { isNavi } from "./integrationsModel";
 import { LinkedHubs } from "../hubLinks/LinkedHubs";
-import { McpSection } from "./McpServers";
-import { PageHead, ScopeSelect, Setting, useProjects } from "./parts";
+import { NoProject, PageHead, Setting } from "./parts";
 import {
   countAfter,
   ENV_MAX,
@@ -35,7 +37,6 @@ import { isOwn } from "./repoModel";
 import { replaceRoute, type SettingsRoute } from "./route";
 import { SetupSetting } from "./SetupSetting";
 import { TrainSetting } from "./TrainSetting";
-import { ProfilesSetting } from "./ProfilesSetting";
 import s from "./settings.module.css";
 
 type Echo = { ok: boolean; text: string };
@@ -55,10 +56,7 @@ function useEnvSubmit(ref: Ref) {
 
 export function ProjectSettings({ route }: { route: SettingsRoute }) {
   const live = useLive();
-  const projects = useProjects();
-  const [picked, setPicked] = useState<Scope | null>(() => (route.for ? parseScope(route.for) : null));
-  const first = projects?.[0];
-  const scope: Scope | null = picked?.kind === "project" ? picked : first ? { kind: "project", ref: { machineId: first.machineId, projectId: first.projectId } } : null;
+  const scope: Scope | null = route.for ? parseScope(route.for) : null;
   const ref = scope ? projectRefOf(scope) : undefined;
   const key = scope ? scopeKey(scope) : null;
 
@@ -82,13 +80,8 @@ export function ProjectSettings({ route }: { route: SettingsRoute }) {
   return (
     <div className={s.scroll} data-screen="settings.projects">
       <div className={s.column}>
-        <PageHead
-          title="Projects"
-          aside={<ScopeSelect id="projects-scope" className={s.scopeSelect} value={scope} projects={projects} onChange={(next) => setPicked(next)} />}
-        >
-          One project's name, repos, worktrees, its agents' environment and setup, and its merge train.
-        </PageHead>
-        {projects?.length === 0 ? <Text tone="quiet">No projects yet. Add one from Machines.</Text> : null}
+        <PageHead title="Project">Its name, repos, worktrees, its agents&apos; environment and setup, and its merge train.</PageHead>
+        {ref === undefined ? <NoProject /> : null}
         {read.isLoadingError ? (
           <div className={s.inline}>
             <Text tone="danger">{errorText(read.error)}</Text>
@@ -96,7 +89,7 @@ export function ProjectSettings({ route }: { route: SettingsRoute }) {
           </div>
         ) : null}
         {settings && ref && settings.projectId === ref.projectId && settings.machineId === ref.machineId ? (
-          <ProjectPage key={key} settings={settings} refresh={async () => (await read.refetch()).data?.settings} onDeleted={() => setPicked(null)} />
+          <ProjectPage key={key} settings={settings} refresh={async () => (await read.refetch()).data?.settings} onDeleted={() => navigate({ id: "settings", tab: "projects" })} />
         ) : ref && !read.isLoadingError ? (
           <Text tone="quiet">Loading…</Text>
         ) : null}
@@ -153,8 +146,6 @@ function ProjectPage({ settings, refresh, onDeleted }: { settings: Settings; ref
           <Separator />
         </>
       ) : null}
-      <McpSection projectRef={ref} />
-      <Separator />
       {navi ? (
         <>
           <LinkedHubs navi={ref} />
@@ -164,14 +155,6 @@ function ProjectPage({ settings, refresh, onDeleted }: { settings: Settings; ref
       <SetupSetting settings={settings} />
       <Separator />
       <TrainSetting settings={settings} />
-      <Separator />
-      <Setting
-        reveal="projects.profiles"
-        label="Task profiles"
-        help="The model and effort behind each profile for this project's agents. Each field left empty follows the fleet's, which the hub's admins set in Administration."
-      >
-        <ProfilesSetting projectRef={ref} />
-      </Setting>
       <Separator />
       <Setting reveal="projects.delete" label="Delete project" help="Stops its agents and removes it from fleetd, with its fleetd worktrees.">
         <Text size="sm" tone="quiet">
@@ -309,7 +292,7 @@ function WorktreeSetting({ settings }: { settings: Settings }) {
 function MemoryRefreshSetting({ settings }: { settings: Settings }) {
   const { busy, echo, save } = useSave();
   return (
-    <Setting reveal="projects.memory" label="Memory" help="What the lead remembers about this project, in Settings → Memory.">
+    <Setting reveal="projects.memory" label="Memory" help="What the lead remembers about this project, in its Instructions & memory.">
       <Switch
         label="Refresh memory every night"
         description="Around 4:00, on a day with chat or orders, the lead tidies the project's memory: it adds what it missed, merges overlaps and removes what no longer holds. One line in the chat lists the changes, each with Undo."

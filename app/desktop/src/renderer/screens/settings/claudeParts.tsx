@@ -1,4 +1,4 @@
-// What Settings › Claude and Administration › Claude share: saving a key or token through main (which seals it to
+// What Settings › Connections › Claude and Administration › Claude share: saving a key or token through main (which seals it to
 // every machine; the page never gets it back), the Test button (one tiny claude call on a machine holding it), its
 // verdict, and a confirm before removing one.
 import { useState } from "react";

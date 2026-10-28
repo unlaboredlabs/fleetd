@@ -170,8 +170,8 @@ describe("setup", () => {
     await render(<SetupScreen view="claude" />);
     await click(button("Open Administration › Connections"));
     expect(window.location.hash).toContain("admin/connections");
-    await click(button("Open Settings › Claude"));
-    expect(window.location.hash).toContain("settings/claude");
+    await click(button("Open Settings › Connections"));
+    expect(window.location.hash).toContain("settings/connections");
   });
 
   it("is for admins only", async () => {

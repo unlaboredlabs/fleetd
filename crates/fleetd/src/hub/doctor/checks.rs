@@ -883,7 +883,7 @@ pub fn claude_owner(setup: &ClaudeSetupView) -> Entry {
             Unknown,
             &format!("{name}, the hub's owner, has no Claude subscription connected."),
             Some(manual(
-                &format!("{name} connects it in Settings › Claude"),
+                &format!("{name} connects it in Settings › Connections › Claude"),
                 None,
             )),
         ),
@@ -894,7 +894,7 @@ pub fn claude_owner(setup: &ClaudeSetupView) -> Entry {
             sub.last_test.as_ref(),
             &setup.machines,
             &format!(
-                "{name} runs `claude setup-token` again and pastes the new token in Settings › Claude"
+                "{name} runs `claude setup-token` again and pastes the new token in Settings › Connections › Claude"
             ),
         ),
     }

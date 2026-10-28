@@ -392,7 +392,7 @@ impl Setup {
 
     /// What someone with no way to run does, in their own settings.
     fn connect_fix(&self, person: &PersonId) -> String {
-        let subscribe = "connect your subscription in Settings › Claude (paste the token `claude setup-token` prints)";
+        let subscribe = "connect your subscription in Settings › Connections › Claude (paste the token `claude setup-token` prints)";
         match self.choices.get(person) {
             Some(ClaudeChoice::HubApi) if self.hub_api.is_none() => format!(
                 "The hub has no API key yet: {subscribe}, or ask an admin to add one on the Administration page."
@@ -403,7 +403,7 @@ impl Setup {
             _ if self.hub_api.is_some() && !self.may_use_hub_api(person) => {
                 format!("Members may not use the hub's API on this hub: {subscribe}.")
             }
-            _ => format!("Open Settings › Claude and {subscribe}."),
+            _ => format!("Open Settings › Connections › Claude and {subscribe}."),
         }
     }
 
@@ -431,7 +431,9 @@ fn account_text(account: &ClaudeAccount) -> &'static str {
 fn connect_text(account: &ClaudeAccount) -> &'static str {
     match account {
         ClaudeAccount::Hub => "Save the hub's API key on the Administration page",
-        ClaudeAccount::Person { .. } => "Connect the subscription in Settings › Claude",
+        ClaudeAccount::Person { .. } => {
+            "Connect the subscription in Settings › Connections › Claude"
+        }
     }
 }
 

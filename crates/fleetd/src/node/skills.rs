@@ -100,7 +100,7 @@ pub fn repo_candidates(root: &Path) -> Vec<Candidate> {
     out
 }
 
-/// The checkout's skills with their descriptions, for Settings → Skills (`skills_list`).
+/// The checkout's skills with their descriptions, for Settings → Projects → Agents (`skills_list`).
 pub fn repo_skills(root: &Path) -> Vec<RepoSkill> {
     let mut found = repo_candidates(root);
     found.sort_by(|a, b| (a.origin, a.name.as_str()).cmp(&(b.origin, b.name.as_str())));

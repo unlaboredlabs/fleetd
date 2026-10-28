@@ -74,7 +74,22 @@ describe("routes", () => {
     expect(toHash({ id: "admin", section: "machines", machine: "laptop" })).toBe("#/admin/machines/laptop");
     expect(parseHash("#/admin/people/laptop")).toEqual({ id: "admin", section: "people" });
     expect(parseHash("#/settings/machines")).toEqual({ id: "admin", section: "machines" });
-    expect(parseHash("#/settings/mcp")).toEqual({ id: "settings", tab: "projects" });
+  });
+
+  it("opens an older Settings link on the page that has it now, for the same project", () => {
+    for (const [old, tab] of [
+      ["hubs", "connections"],
+      ["claude", "connections"],
+      ["github", "connections"],
+      ["notifications", "general"],
+      ["memory", "instructions"],
+      ["skills", "agents"],
+      ["mcp", "agents"],
+    ]) {
+      expect(parseHash(`#/settings/${old ?? ""}`), old).toEqual({ id: "settings", tab });
+    }
+    expect(parseHash("#/settings/memory?for=devbox/storefront")).toEqual({ id: "settings", tab: "instructions", for: "devbox/storefront" });
+    expect(parseHash("#/settings/nope")).toEqual({ id: "settings", tab: "general" });
   });
 
   it("opens the Factory on the project a Status row links it to, else on every project", () => {

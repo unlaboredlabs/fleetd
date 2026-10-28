@@ -681,7 +681,7 @@ export const screens: readonly Screen[] = [
     fixtures: ["sidebar-hubs"],
     variant: "other-hub",
   },
-  { id: "settings.hubs", route: "#/settings/hubs", fixtures: ["sidebar-hubs", "sidebar-hubs-offline", "typical"] },
+  { id: "settings.connections", route: "#/settings/connections", fixtures: ["sidebar-hubs", "sidebar-hubs-offline", "typical"], variant: "hubs" },
   { id: "onboarding", route: "#/onboarding?add", fixtures: ["sidebar-hubs"], variant: "add-hub" },
   // Hidden with its toggle in a wide window: the top row runs the full width, after the traffic lights.
   {
@@ -1164,7 +1164,7 @@ export const screens: readonly Screen[] = [
     variant: "from-panel",
     open: async (page) => {
       await page.getByRole("link", { name: /^Max agents: \d+$/u }).click();
-      await expect(page.getByRole("slider", { name: "storefront" })).toBeFocused();
+      await expect(page.getByRole("slider", { name: "Max agents" })).toBeFocused();
     },
   },
   // W89: one header row. The panel runs from the window's top, its tabs beside the chat's title: the two rows share a
@@ -1948,7 +1948,7 @@ export const screens: readonly Screen[] = [
   },
   // Settings › Claude: the owner on their own subscription, Alice on the hub's key by choice, Bob on it by default,
   // and Bob with nothing to run on, told to connect.
-  { id: "settings.claude", route: "#/settings/claude", fixtures: ["admin-owner", "admin-admin", "admin-member", "admin-claude-member", "admin-old-hub", "hub-unreachable"] },
+  { id: "settings.connections", route: "#/settings/connections", fixtures: ["admin-owner", "admin-admin", "admin-member", "admin-claude-member", "admin-old-hub", "hub-unreachable"], variant: "claude" },
   // Several hubs: the hub it manages above the page, and a switch to the hubs Sam administers (Club, a member's, isn't).
   {
     id: "admin.people",
@@ -2115,11 +2115,11 @@ export const screens: readonly Screen[] = [
   // storefront set to 30 on devbox, which holds it at 22: the line, and for an admin the way to Administration.
   {
     id: "settings.agents",
-    route: "#/settings/agents",
+    route: "#/settings/agents?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22",
     fixtures: ["settings-machines"],
     variant: "machine-holds",
     open: async (page) => {
-      const storefront = page.getByRole("region", { name: "storefront" });
+      const storefront = page.getByRole("region", { name: "Max agents" });
       await storefront.scrollIntoViewIfNeeded();
       await storefront.getByRole("button", { name: "Machine caps in Administration" }).waitFor();
     },
@@ -2139,29 +2139,29 @@ export const screens: readonly Screen[] = [
   },
   {
     id: "settings.agents",
-    route: "#/settings/agents",
+    route: "#/settings/agents?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22",
     fixtures: ["settings-agents", "settings-medium-off"],
     variant: "medium",
-    open: (page) => page.getByRole("region", { name: "storefront" }).getByRole("switch", { name: /Medium allowed/u }).waitFor(),
+    open: (page) => page.getByRole("region", { name: "Max agents" }).getByRole("switch", { name: /Medium allowed/u }).waitFor(),
   },
-  // The palette's "Max agents for this project": that project's slider scrolled to and focused.
+  // A link to one project's Agents opens on that project, whichever the sidebar last showed.
   {
     id: "settings.agents",
     variant: "for-project",
     route: "#/settings/agents?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22",
     fixtures: ["settings-agents"],
-    open: (page) => expect(page.getByRole("slider", { name: "storefront" })).toBeFocused(),
+    open: (page) => page.getByRole("slider", { name: "Max agents" }).waitFor(),
   },
   // A slider applies when you let go (keys: once they rest): a project lowered under its running agents, with the
   // pause and Undo; and the whole fleet moved below a project's own max, which warns.
   {
     id: "settings.agents",
-    route: "#/settings/agents",
+    route: "#/settings/agents?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22",
     fixtures: ["settings-agents"],
     variant: "applied",
     open: async (page) => {
       // storefront: 6 running under a max of 12, lowered to 4.
-      await page.getByRole("slider", { name: "storefront" }).focus();
+      await page.getByRole("slider", { name: "Max agents" }).focus();
       for (let i = 0; i < 8; i++) await page.keyboard.press("ArrowLeft");
       await page.getByRole("button", { name: "Undo" }).waitFor();
     },
@@ -2169,11 +2169,11 @@ export const screens: readonly Screen[] = [
   // A project's own max goes back to the default: storefront's 12 to the fleet's 16, with Undo.
   {
     id: "settings.agents",
-    route: "#/settings/agents",
+    route: "#/settings/agents?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22",
     fixtures: ["settings-agents"],
     variant: "to-default",
     open: async (page) => {
-      const storefront = page.getByRole("region", { name: "storefront" });
+      const storefront = page.getByRole("region", { name: "Max agents" });
       await storefront.getByText("Set for this project. The default is 16.").waitFor();
       await storefront.getByRole("button", { name: "Use the default" }).click();
       await storefront.getByText("Max agents, the default: 16, was 12.").waitFor();
@@ -2247,17 +2247,17 @@ export const screens: readonly Screen[] = [
     open: (page) => page.getByRole("listitem", { name: "Google" }).getByRole("button", { name: "Disconnect", exact: true }).click(),
   },
   {
-    id: "settings.hubs",
-    route: "#/settings/hubs",
+    id: "settings.connections",
+    route: "#/settings/connections",
     fixtures: ["navi-links", "navi-links-none"],
-    variant: "hub-links",
+    variant: "hubs-hub-links",
     open: (page) => page.getByRole("region", { name: "Links to this hub" }).scrollIntoViewIfNeeded(),
   },
   {
-    id: "settings.hubs",
-    route: "#/settings/hubs",
+    id: "settings.connections",
+    route: "#/settings/connections",
     fixtures: ["navi-links"],
-    variant: "hub-link-made",
+    variant: "hubs-hub-link-made",
     open: async (page) => {
       const region = page.getByRole("region", { name: "Links to this hub" });
       await region.getByRole("button", { name: "Make a link key" }).click();
@@ -2282,14 +2282,14 @@ export const screens: readonly Screen[] = [
     open: (page) => page.getByRole("searchbox", { name: "Search settings" }).fill("zebra"),
   },
   // Memory: user.md with what the lead remembered, then one project's MEMORY.md and a topic.
-  { id: "settings.memory", route: "#/settings/memory", fixtures: ["typical", "empty", "hub-unreachable"] },
-  { id: "settings.memory", route: "#/settings/memory?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22", fixtures: ["typical", "long-text"], variant: "project" },
+  { id: "settings.instructions", route: "#/settings/instructions", fixtures: ["typical", "empty", "hub-unreachable"], variant: "memory" },
+  { id: "settings.instructions", route: "#/settings/instructions?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22", fixtures: ["typical", "long-text"], variant: "memory-project" },
   // An entry being edited in its card, and a topic open as text.
   {
-    id: "settings.memory",
-    route: "#/settings/memory?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22",
+    id: "settings.instructions",
+    route: "#/settings/instructions?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22",
     fixtures: ["typical"],
-    variant: "editing",
+    variant: "memory-editing",
     open: async (page) => {
       await page.getByRole("button", { name: "Edit “No npm here: use pnpm.”" }).click();
       await page.getByRole("textbox", { name: "Edit the entry in MEMORY.md" }).fill("No npm here: use pnpm, and pin its version.");
@@ -2299,10 +2299,10 @@ export const screens: readonly Screen[] = [
   },
   // A deleted entry, gone from its file, with Undo in the toast.
   {
-    id: "settings.memory",
-    route: "#/settings/memory",
+    id: "settings.instructions",
+    route: "#/settings/instructions",
     fixtures: ["typical"],
-    variant: "deleted",
+    variant: "memory-deleted",
     open: async (page) => {
       await page.getByRole("button", { name: "Delete “Never estimate time.”" }).click();
       await expect(page.getByRole("button", { name: "Undo" })).toBeVisible();
@@ -2329,51 +2329,51 @@ export const screens: readonly Screen[] = [
   // Skills: a project's (the first one, then storefront's): its repo's .agents/skills and .claude/skills, its own (one
   // outranked by the repo's of the same name) and a read-only line naming the hub-wide ones; a project skill open to
   // edit, a repo skill open to read, New and Install. The hub-wide ones are on Administration → Skills.
-  { id: "settings.skills", route: "#/settings/skills", fixtures: ["typical", "empty", "hub-unreachable"] },
-  { id: "settings.skills", route: "#/settings/skills?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22", fixtures: ["typical", "long-text"], variant: "project" },
+  { id: "settings.agents", route: "#/settings/agents", fixtures: ["typical", "empty", "hub-unreachable"], variant: "skills" },
+  { id: "settings.agents", route: "#/settings/agents?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22", fixtures: ["typical", "long-text"], variant: "skills-project" },
   {
-    id: "settings.skills",
-    route: "#/settings/skills?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22",
+    id: "settings.agents",
+    route: "#/settings/agents?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22",
     fixtures: ["typical"],
-    variant: "edit",
+    variant: "skills-edit",
     open: async (page) => {
       await page.getByRole("button", { name: /^checkout-qa/u }).click();
       await expect(page.getByRole("textbox", { name: "SKILL.md" })).toHaveValue(/name: checkout-qa/u);
     },
   },
   {
-    id: "settings.skills",
-    route: "#/settings/skills?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22",
+    id: "settings.agents",
+    route: "#/settings/agents?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22",
     fixtures: ["typical"],
-    variant: "repo",
+    variant: "skills-repo",
     open: async (page) => {
       await page.getByRole("button", { name: /^triage/u }).click();
       await expect(page.getByRole("textbox", { name: "SKILL.md" })).toHaveValue(/name: triage/u);
     },
   },
   {
-    id: "settings.skills",
-    route: "#/settings/skills?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22",
+    id: "settings.agents",
+    route: "#/settings/agents?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22",
     fixtures: ["typical"],
-    variant: "new",
+    variant: "skills-new",
     open: async (page) => {
       await page.getByRole("button", { name: "New skill" }).click();
       await page.getByRole("textbox", { name: "Name" }).fill("Release Notes");
     },
   },
   // A member's: the hub-wide line, without the way to Administration an owner or admin gets.
-  { id: "settings.skills", route: "#/settings/skills", fixtures: ["admin-member", "admin-owner"], variant: "role" },
+  { id: "settings.agents", route: "#/settings/agents", fixtures: ["admin-member", "admin-owner"], variant: "skills-role" },
   // Prompts before one is picked.
   { id: "settings.prompts", route: "#/settings/prompts", fixtures: ["settings-prompts"], variant: "none" },
   { id: "settings.general", route: "#/settings/general", fixtures: ["typical", "empty", "hub-unreachable"] },
   // Notifications: the kinds, sound, the Dock badge, then the test's two answers: sent (with where to allow fleetd
   // if nothing showed) and a system that shows none.
-  { id: "settings.notifications", route: "#/settings/notifications", fixtures: ["typical"] },
+  { id: "settings.general", route: "#/settings/general", fixtures: ["typical"], variant: "notifications" },
   {
-    id: "settings.notifications",
-    route: "#/settings/notifications",
+    id: "settings.general",
+    route: "#/settings/general",
     fixtures: ["typical"],
-    variant: "test-sent",
+    variant: "notifications-test-sent",
     open: async (page, app) => {
       await systemNotifications(app, true);
       await page.getByRole("button", { name: "Send a test notification" }).click();
@@ -2381,10 +2381,10 @@ export const screens: readonly Screen[] = [
     },
   },
   {
-    id: "settings.notifications",
-    route: "#/settings/notifications",
+    id: "settings.general",
+    route: "#/settings/general",
     fixtures: ["typical"],
-    variant: "test-unsupported",
+    variant: "notifications-test-unsupported",
     open: async (page, app) => {
       await systemNotifications(app, false);
       await page.getByRole("button", { name: "Send a test notification" }).click();

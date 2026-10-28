@@ -1,4 +1,4 @@
-// Settings › Claude: which Claude account the orders a person starts, and their Navi, run on (teams step 8, D200).
+// Settings › Connections › Claude: which Claude account the orders a person starts, and their Navi, run on (teams step 8, D200).
 // Their own subscription, connected here with the long-lived token `claude setup-token` prints (main seals it to
 // every machine; the page never gets it back), or the hub's API key when an admin set one up and lets them use it.
 // The hub's own key and who may use it are Administration's (admin/Claude.tsx), never here.
@@ -13,7 +13,7 @@ import { Button, Field, InlineCode, Input, Radio, RadioGroup, Text } from "../..
 import { CONNECT, runsOnLine, sealedLine, SETUP_TOKEN, shownChoice, TOKEN_PLACEHOLDER } from "./claudeModel";
 import { ConfirmRemove, MissingOn, Problem, TestButton, TestResult, useMachines, useSave, useTest, type Tried } from "./claudeParts";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
-import { PageHead, Setting } from "./parts";
+import { PagePart, Setting } from "./parts";
 import s from "./settings.module.css";
 
 const noInput = {};
@@ -22,24 +22,21 @@ export function ClaudeSettings() {
   const live = useLive();
   const read = useToolQuery("claude_accounts_get", noInput, { enabled: live });
   return (
-    <div className={s.scroll} data-screen="settings.claude">
-      <div className={s.column}>
-        <PageHead title="Claude">Which Claude account the orders you start and your Navi run on. Nobody else's work ever runs on your subscription.</PageHead>
-        {!live ? (
-          <Text tone="quiet">Not connected. Connect to a hub to choose your Claude account.</Text>
-        ) : read.error instanceof CallError && lacksTool(read.error.error) ? (
-          <Text tone="quiet">This hub runs every agent on each machine&apos;s own Claude login. Update fleetd on the hub to choose your own account.</Text>
-        ) : read.isLoadingError ? (
-          <Text tone="danger">{errorText(read.error)}</Text>
-        ) : read.data === undefined ? (
-          <Text tone="quiet">Loading…</Text>
-        ) : read.data.me === undefined ? (
-          <Text tone="quiet">This device&apos;s key belongs to no person, so it has no Claude account of its own. Pair the app as yourself to choose one.</Text>
-        ) : (
-          <Mine data={read.data} me={read.data.me} />
-        )}
-      </div>
-    </div>
+    <PagePart title="Claude" reveal="claude" intro="Which Claude account the orders you start and your Navi run on. Nobody else's work ever runs on your subscription.">
+      {!live ? (
+        <Text tone="quiet">Not connected. Connect to a hub to choose your Claude account.</Text>
+      ) : read.error instanceof CallError && lacksTool(read.error.error) ? (
+        <Text tone="quiet">This hub runs every agent on each machine&apos;s own Claude login. Update fleetd on the hub to choose your own account.</Text>
+      ) : read.isLoadingError ? (
+        <Text tone="danger">{errorText(read.error)}</Text>
+      ) : read.data === undefined ? (
+        <Text tone="quiet">Loading…</Text>
+      ) : read.data.me === undefined ? (
+        <Text tone="quiet">This device&apos;s key belongs to no person, so it has no Claude account of its own. Pair the app as yourself to choose one.</Text>
+      ) : (
+        <Mine data={read.data} me={read.data.me} />
+      )}
+    </PagePart>
   );
 }
 
