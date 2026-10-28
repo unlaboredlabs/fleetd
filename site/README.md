@@ -22,13 +22,16 @@ them in place. Re-shoot them when what those screens show changes, and keep the 
 The showcase under the hero is the app recorded while a busy storefront takes one request from the message to the
 merge, on the `showcase-order` fixture (`app/desktop/fixtures/showcase`): seven agents already at work on other orders,
 the lead splitting the request into three parts, a live browser screen and an iPhone simulator testing them, you
-taking over the iPhone to type a sign-in code and handing back, the browser's recording landing as a PR's proof, and the
-train merging four PRs as one batch. Something happens every second or so, and its end fades into its start, so it
-loops without a cut. It is `showcase-light.webm` and `showcase-dark.webm` (VP9, 2240x1440, 25 fps) with H.264 `.mp4`
-twins for browsers without VP9 (1792x1152 at level 4.0, the most a 14:9 frame gets under level 4.2, which older iPhones
+taking over the iPhone to type a sign-in code and handing back, the browser's recording landing as a PR's proof, another
+PR tried on the web with Try it, and the train merging four PRs as one batch; then a quick look around: the night's
+memory refresh line opened in the chat, the Automations page with its built-in nightly row, Ada (a Navi) woken by mail
+with a two-attachment reply you send, and Administration's people and invites, with two hubs in the sidebar. Each of
+those is another group's fixture (`fixtures/showcase/more.ts`). Something happens every second or so, and its end fades
+into its start, so it loops without a cut. It is `showcase-light.webm` and `showcase-dark.webm` (VP9, 2240x1440,
+25 fps) with H.264 `.mp4` twins for browsers without VP9 (1792x1152 at level 4.0, the most a 14:9 frame gets under level 4.2, which older iPhones
 and iPads decode; encoded frame by frame by the app's WebCodecs, so nothing is dropped), their posters
 `showcase-light.jpg` and `showcase-dark.jpg` (a busy moment: the iPhone's screen yours, its code typed), a half-size
-`-small` twin of each for small screens, and `showcase.json`, when each of the page's five steps starts in the video.
+`-small` twin of each for small screens, and `showcase.json`, when each of the page's eight steps starts in the video.
 `pnpm fixtures && pnpm qa:build && pnpm site:showcase` in `app/desktop` records them in place
 (`app/desktop/qa/showcase.spec.ts`; it needs Playwright's ffmpeg, `pnpm exec playwright install ffmpeg` in
 `app/desktop`); the screens' pages are `fixtures/showcase/media/`, drawn by `node fixtures/showcase/media.ts`. The page

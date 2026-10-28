@@ -92,6 +92,35 @@ function leadAtWork(f: Fixture, turn: Turn): Fixture {
   return f;
 }
 
+/** The night's refresh of storefront's memory, as its chat line carries it (the showcase's too). */
+export const MEMORY_REFRESHED: JsonObject = {
+  items: [
+    {
+      scope: "project",
+      text: "PR screenshots live in the private repo storefront-shots (main branch, one folder per task branch, embedded via blob/main/...?raw=true). Never push extra branches to storefront: Vercel deploys every branch, and each images-only branch failed a deployment.",
+      replaced: "PR screenshots live in the private repo storefront-shots (main branch, one folder per task branch); never push -shots branches to storefront, as Vercel builds them and fails.",
+    },
+    {
+      scope: "project",
+      text: "Never push extra branches to storefront: Vercel deploys every branch, and images-only `-shots` branches each failed a deployment.",
+      forgotten: true,
+      reason: "Merged into the storefront-shots entry.",
+    },
+    {
+      scope: "project",
+      topic: "deploys",
+      text: "The checkout rewrite plan is in /tmp/checkout-plan.md on devbox; copy it into docs/design if it's still needed.",
+      forgotten: true,
+      reason: "Every checkout stage has merged; the plan is no longer needed.",
+      undone: true,
+    },
+    { scope: "project", text: "`pnpm deploy` does nothing when staging already runs the newest build: restart it with `systemctl --user restart storefront`." },
+    { scope: "project", text: "Agents can't run real Stripe payments: those flows are tested against fakes. Say so when they land." },
+    { scope: "project", text: "Main's branch protection treats a skipped required check as passing." },
+  ],
+  undone: 1,
+};
+
 /** The night's memory refresh in storefront's chat: 3 entries added, 1 updated and 2 removed, one of them undone. */
 function memoryRefreshed(f: Fixture): Fixture {
   const t = (s: number) => at(f.now, -s * 1000);
@@ -107,37 +136,10 @@ function memoryRefreshed(f: Fixture): Fixture {
     ...(author === "human" ? { by: "laptop", clientRequestId: `seed-${seq}`, delivery: "turn" } : {}),
     ...extra,
   });
-  const memoryRefreshed: JsonObject = {
-    items: [
-      {
-        scope: "project",
-        text: "PR screenshots live in the private repo storefront-shots (main branch, one folder per task branch, embedded via blob/main/...?raw=true). Never push extra branches to storefront: Vercel deploys every branch, and each images-only branch failed a deployment.",
-        replaced: "PR screenshots live in the private repo storefront-shots (main branch, one folder per task branch); never push -shots branches to storefront, as Vercel builds them and fails.",
-      },
-      {
-        scope: "project",
-        text: "Never push extra branches to storefront: Vercel deploys every branch, and images-only `-shots` branches each failed a deployment.",
-        forgotten: true,
-        reason: "Merged into the storefront-shots entry.",
-      },
-      {
-        scope: "project",
-        topic: "deploys",
-        text: "The checkout rewrite plan is in /tmp/checkout-plan.md on devbox; copy it into docs/design if it's still needed.",
-        forgotten: true,
-        reason: "Every checkout stage has merged; the plan is no longer needed.",
-        undone: true,
-      },
-      { scope: "project", text: "`pnpm deploy` does nothing when staging already runs the newest build: restart it with `systemctl --user restart storefront`." },
-      { scope: "project", text: "Agents can't run real Stripe payments: those flows are tested against fakes. Say so when they land." },
-      { scope: "project", text: "Main's branch protection treats a skipped required check as passing." },
-    ],
-    undone: 1,
-  };
   const messages = [
     msg(1, "human", "Ship the receipts PR once its review is clean.", 9 * 3600),
     msg(2, "lead", "Receipts merged. Nothing else is open on checkout.", 8 * 3600),
-    msg(3, "system", "Memory refreshed: +3 ~1 −2", 3600, { memoryRefreshed }),
+    msg(3, "system", "Memory refreshed: +3 ~1 −2", 3600, { memoryRefreshed: MEMORY_REFRESHED }),
   ];
   const state = setChatState(f, STOREFRONT, { needsYou: false, leadWorking: false, lastSeq: 3, lastMessageAt: t(3600) });
   for (const { input } of f.answers("chat_history")) if (obj(input?.["projectRef"])["projectId"] === STOREFRONT.projectId) f.drop("chat_history", input);

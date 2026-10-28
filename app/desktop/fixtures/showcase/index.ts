@@ -4,7 +4,9 @@
 // three parts and starts a writer on each, the first PR opens and its review passes, the web writer tests the change in
 // a live browser screen and the iPhone writer boots a simulator and taps through the app, until its sign-in texts a
 // code and the lead asks you to take over (QA takes over, types the code and hands back), the browser's recording lands
-// as the second PR's proof, and the train merges four PRs as one batch.
+// as the second PR's proof, #230 is tried on the web (Try it), and the train merges four PRs as one batch. Then QA
+// shows what else the app does (more.ts): the night's memory refresh in this chat and the Automations page, Ada (a
+// Navi) with a reply to approve, and Administration's people, with a second hub beside this one in the sidebar.
 //
 // The board, the PR list and the merge line move in STEPS: each step's rows carry its own updatedAt, and a "rows" frame
 // swaps one step's rows for the next one's (src/main/hub/fixture.ts) before the event that makes the app read them again.
@@ -17,7 +19,10 @@ import { firstProject, writeChat } from "../kit/chat.ts";
 import { asText, type JsonObject, type JsonValue } from "../kit/json.ts";
 import type { Change } from "../../src/shared/contracts";
 import { changesAnswers } from "../../src/renderer/screens/train/fixture.ts";
+import { MEMORY_REFRESHED } from "../lead/index.ts";
+import { answerHub } from "../admin/index.ts";
 import { CODE, PHONE_FRAME } from "./pages.ts";
+import { hubsScene, naviScene, tryItScene } from "./more.ts";
 
 export const REQUEST = "Let shoppers save their cart and pick it up on the web or the iPhone app.";
 
@@ -41,8 +46,11 @@ export const STEPS = {
   approved: 21_800,
   batch: 22_600,
   merged: 25_000,
-  end: 27_600,
+  end: 36_900,
 } as const;
+
+/** #230's Try it page: there before QA opens it, then flipped to German while it is on view. */
+export const TRY_IT = { page: 19_800, flip: 22_200 } as const;
 
 /** The web screen's pages, by when each shows. */
 const WEB_PAGES: ReadonlyArray<readonly [number, string, string]> = [
@@ -101,11 +109,11 @@ const read = (p: string): JsonObject => ({ kind: "read", path: p });
 const AGENTS: readonly Agent[] = [
   { id: "T51", order: "W19", role: "implementer", title: "Add a price filter to search", from: BEFORE, doing: [edit("src/search/filters.tsx"), cmd("pnpm test search"), read("src/search/query.ts"), edit("src/search/query.ts")] },
   { id: "T52", order: "W19", role: "reviewer", title: "Review #229", from: BEFORE, to: "approve229", doing: [read("src/search/facets.ts"), cmd("gh pr diff 229"), { kind: "thinking" }] },
-  { id: "T55", order: "W20", role: "implementer", title: "Translate the order emails", from: BEFORE, doing: [edit("emails/order/de.json"), edit("emails/order/fr.json"), cmd("pnpm emails:build"), edit("emails/order/nl.json")] },
-  { id: "T56", order: "W20", role: "verifier", title: "Check the German order email", from: BEFORE, doing: [cmd("pnpm emails:preview de"), read("emails/order/de.json"), { kind: "thinking" }] },
+  { id: "T55", order: "W20", role: "implementer", title: "Translate the checkout’s buttons", from: BEFORE, doing: [edit("src/i18n/checkout.de.json"), edit("src/i18n/checkout.fr.json"), cmd("pnpm i18n:build"), edit("src/i18n/checkout.nl.json")] },
+  { id: "T56", order: "W20", role: "verifier", title: "Check the Dutch checkout", from: BEFORE, doing: [cmd("pnpm preview --lang nl"), read("src/i18n/checkout.nl.json"), { kind: "thinking" }] },
   { id: "T58", order: "W18", role: "implementer", title: "Apply gift cards before tax", from: BEFORE, doing: [read("src/checkout/tax.ts"), edit("src/checkout/giftCards.ts"), cmd("pnpm test checkout/tax")] },
   { id: "T59", order: "W18", role: "implementer", title: "Show the gift card balance at checkout", from: BEFORE, doing: [edit("web/checkout/GiftCard.tsx"), cmd("pnpm test checkout/gift"), read("src/checkout/giftCards.ts")] },
-  { id: "T57", order: "W20", role: "implementer", title: "Pick the email language from the order", from: BEFORE, doing: [read("src/orders/locale.ts"), edit("src/orders/locale.ts"), cmd("pnpm test orders/locale")] },
+  { id: "T57", order: "W20", role: "implementer", title: "Pick the checkout language from the browser", from: BEFORE, doing: [read("src/checkout/locale.ts"), edit("src/checkout/locale.ts"), cmd("pnpm test checkout/locale")] },
   { id: "T61", order: ORDER, role: "implementer", title: "Save carts per shopper", from: "split", to: "pr231", doing: [read("src/cart/store.ts"), edit("src/cart/store.ts"), cmd("pnpm test cart/store")] },
   { id: "T62", order: ORDER, role: "implementer", title: "Bring the saved cart back on the web", from: "split", to: "pr232", doing: [read("web/cart/page.tsx"), edit("web/cart/restore.ts"), cmd("pnpm test web/cart")] },
   { id: "T63", order: ORDER, role: "implementer", title: "Bring the saved cart back in the iPhone app", from: "split", to: "pr233", doing: [read("ios/Cart/CartView.swift"), edit("ios/Cart/CartStore.swift"), cmd("xcodebuild test -scheme Linen")] },
@@ -123,7 +131,7 @@ const ON_SCREEN: Readonly<Record<string, { from: number; to: number; activity: J
 const ORDERS: ReadonlyArray<{ id: string; title: string; prs: readonly number[] }> = [
   { id: ORDER, title: TITLE, prs: [231, 232, 233] },
   { id: "W19", title: "Filter search results by price", prs: [229] },
-  { id: "W20", title: "Order emails in the shopper’s language", prs: [230] },
+  { id: "W20", title: "Checkout in the shopper’s language", prs: [230] },
   { id: "W18", title: "Gift cards apply before tax", prs: [] },
 ];
 
@@ -139,14 +147,14 @@ interface Pr {
 }
 const PRS: readonly Pr[] = [
   { n: 229, order: "W19", task: "T50", title: "Search filters by price range", branch: "fleetd/T50-price-filter", states: [[BEFORE, "reviewing"], ["approve229", "ready"], ["ci229", "ci"], ["merged229", "merged"]] },
-  { n: 230, order: "W20", task: "T54", title: "Order emails speak the shopper’s language", branch: "fleetd/T54-email-locale", states: [[BEFORE, "ready"], ["batch", "ci"], ["merged", "merged"]] },
+  { n: 230, order: "W20", task: "T54", title: "Checkout buttons in German and Dutch", branch: "fleetd/T54-checkout-de-nl", states: [[BEFORE, "ready"], ["batch", "ci"], ["merged", "merged"]] },
   { n: 231, order: ORDER, task: "T61", title: "Carts are saved per shopper", branch: "fleetd/T61-saved-carts", states: [["pr231", "reviewing"], ["approve231", "ready"], ["batch", "ci"], ["merged", "merged"]] },
   { n: 232, order: ORDER, task: "T62", title: "The web cart comes back at sign-in", branch: "fleetd/T62-web-cart", states: [["pr232", "reviewing"], ["approved", "ready"], ["batch", "ci"], ["merged", "merged"]] },
   { n: 233, order: ORDER, task: "T63", title: "The iPhone app picks up the saved cart", branch: "fleetd/T63-ios-cart", states: [["pr233", "reviewing"], ["approved", "ready"], ["batch", "ci"], ["merged", "merged"]] },
 ];
 const prState = (pr: Pr, s: When): PrState | undefined => pr.states.filter(([from]) => within(s, from)).at(-1)?.[1];
 
-const build = (base: Fixture): Fixture => {
+const build = (base: Fixture, other: Fixture): Fixture => {
   const f = Fixture.from(base, "showcase-order", "storefront at work on three orders; sending the showcase's request plays it from the lead's reply, through its screens, to its batch merged.");
   const ref = firstProject(f);
   const now = Date.parse(f.now);
@@ -159,11 +167,14 @@ const build = (base: Fixture): Fixture => {
   const STEPPED: readonly When[] = [BEFORE, ...ORDERED];
   const stamp = (s: When) => iso(-60_000 + (index(s) + 1) * 1000);
 
-  writeChat(f, ref, [
-    { author: "human", text: "Order emails should go out in the shopper’s language.", minutesAgo: 42 },
-    { author: "lead", text: "On it: one writer translates the order emails, and a QA agent checks the German one in a real inbox. #230 is up for the first part.", minutesAgo: 41 },
+  // Last night's memory refresh, then the order before this one.
+  const [refreshed] = writeChat(f, ref, [
+    { author: "system", text: "Memory refreshed: +3 ~1 −2", minutesAgo: 303 },
+    { author: "human", text: "The checkout should speak the shopper’s language.", minutesAgo: 42 },
+    { author: "lead", text: "On it: one writer translates the checkout, and a QA agent checks the Dutch one in a real browser. #230 is up for the first part.", minutesAgo: 41 },
   ]);
-  const FIRST = 3;
+  if (refreshed !== undefined) refreshed["memoryRefreshed"] = MEMORY_REFRESHED;
+  const FIRST = 4;
 
   // ---- the board, as each step leaves it ----
   const lane = (a: Agent, s: When): JsonObject | undefined => {
@@ -318,6 +329,15 @@ const build = (base: Fixture): Fixture => {
     history: [],
     links: { pr: url(229), checks: `${url(229)}/checks`, files: `${url(229)}/files` },
   });
+  // #230, ready, as Try it opens it.
+  f.answer("pr_get", { repo: REPO, number: 230 }, {
+    pr: prRow(PRS[1] as Pr, "approve229") ?? {},
+    body: "The checkout’s pay and back buttons read naturally in German, and checkout gets its Dutch copy.",
+    checks: ["build", "lint", "typecheck", "unit tests", "e2e (chromium)", "licenses"].map((name) => check(name, true)),
+    reviews: [],
+    history: [],
+    links: { pr: url(230), checks: `${url(230)}/checks`, files: `${url(230)}/files` },
+  });
 
   // ---- the screens ----
   const sessionRow = (id: string, task: string, purpose: string, kind: string, startMs: number, more: JsonObject): JsonObject => ({
@@ -357,7 +377,7 @@ const build = (base: Fixture): Fixture => {
   };
   // Screens that ended before: the list's Recent.
   const recent = [
-    sessionRow("B1c4e7a0d3f6b9c2e5a8d1f4b7c0e3a6d", "T56", "Check the German order email in a real inbox", "browser", -900_000, { state: "recorded", endedAt: iso(-810_000), files }),
+    sessionRow("B1c4e7a0d3f6b9c2e5a8d1f4b7c0e3a6d", "T56", "Check the Dutch checkout in a real browser", "browser", -900_000, { state: "recorded", endedAt: iso(-810_000), files }),
     sessionRow("B9e2b5d8a1c4f7e0b3d6a9c2f5e8b1d4a", "T50", "Check the price filter on a phone-sized screen", "android", -2_400_000, { state: "recorded", endedAt: iso(-2_310_000), files }),
   ];
   const sessions = [web.live, web.saving, web.ended, phone.live, phone.asking, phone.yours, phone.handing, phone.saving, phone.ended, ...recent];
@@ -530,6 +550,13 @@ const build = (base: Fixture): Fixture => {
   // The screens' pages.
   WEB_PAGES.forEach(([ms, image, address], i) => at(ms, "browser_frame", frame(SCREEN.web, i + 1, image, "agent", address)));
   PHONE_PAGES.forEach(([ms, image], i) => at(ms, "browser_frame", frame(SCREEN.phone, i + 1, image, "agent")));
+  // Try it on #230, Ada, Administration and the second hub (more.ts).
+  const tryIt = tryItScene(f, REPO, 230);
+  at(TRY_IT.page, "browser_frame", tryIt.first);
+  at(TRY_IT.flip, "browser_frame", tryIt.flipped);
+  naviScene(f, ref);
+  answerHub(f);
+  hubsScene(f, other);
 
   f.answer("chat_send", { text: REQUEST }, { message: message(FIRST, "human", REQUEST, "final", 0, { by: "laptop", clientRequestId: "showcase-1", delivery: "turn" }) });
   f.then("chat_send", { text: REQUEST }, { frames });
@@ -568,5 +595,5 @@ const build = (base: Fixture): Fixture => {
 };
 
 export default defineGroup({
-  fixtures: (base) => [build(base("typical"))],
+  fixtures: (base) => [build(base("typical"), base("chat-empty"))],
 });

@@ -1,12 +1,15 @@
 // fleetd.sh's showcase: the app on fixtures/showcase, recorded while a busy storefront takes one request from the
-// message to the merge, in the light and the dark theme. `pnpm fixtures && pnpm qa:build && pnpm site:showcase` writes
+// message to the merge, then through what else the app does (the night's memory refresh, automations, a Navi, the
+// team), in the light and the dark theme. `pnpm fixtures && pnpm qa:build && pnpm site:showcase` writes
 // site/showcase-<theme>.webm, its H.264 twin site/showcase-<theme>.mp4 and its poster, site/showcase-<theme>.jpg (a
 // busy moment: the phone's screen yours, its code typed), each with a -small twin for small screens, over the files in
 // the repo, and each step's start in the video, in seconds, to site/showcase.json: the page marks the step that is
 // playing.
 //
 // It runs at a person's pace with nothing idle: QA types the request at once, then moves through the views as the
-// story goes (Screens, the browser, the phone, Take over and the code, Hand back, the merge line, back to Agents).
+// story goes (Screens, the browser, the phone, Take over and the code, Hand back, Try it on #230, the merge line), and
+// on once it merged: the chat's memory refresh line opened, Automations, Ada and its Send it, Administration's people
+// and invites, and back to Agents.
 // The video loops: its last moments fade into its first, which the encode then leaves out, so the end runs into the
 // start without a cut.
 //
@@ -23,13 +26,16 @@ import { DIGIT_MS, REQUEST, STEPS } from "../fixtures/showcase/index.ts";
 import { appMain, desktopDir, fixtureMeta, fixturesDir, launch, settle, setView, show } from "./harness.ts";
 
 const repo = path.resolve(desktopDir, "../..");
-const CHAT = "#/project/devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22";
+const STOREFRONT = "devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22";
+const CHAT = `#/project/${STOREFRONT}`;
 const FPS = 25;
 /** The loop's fade, in frames: the last ones fade into the first ones, which the video then starts after. */
 const FADE = 15;
 // When QA moves, in ms after the send: to Screens once the two screens are up, into the browser's, back out and into
 // the phone's once it has booted, Take over once the lead asks, Hand back once the code is in, out again as the
-// browser's recording lands, to the merge line as the batch starts, and back to Agents once it merged.
+// browser's recording lands, into #230 and its Try it, to the merge line as the batch starts; once it merged, up the
+// chat to the night's memory refresh and open it, to Automations, to Ada and Send it, to Administration's people and
+// invites, and back to the storefront's Agents.
 const QA = {
   screens: STEPS.screens + 600,
   web: STEPS.screens + 1200,
@@ -38,9 +44,20 @@ const QA = {
   takeOver: STEPS.phoneAsks + 1200,
   handBack: STEPS.phoneAsks + 3400,
   back: STEPS.pr232 + 500,
-  shipping: STEPS.batch - 400,
+  shipping: 20_300,
+  pr230: 20_800,
+  tryIt: 21_300,
   line: STEPS.batch,
-  agents: STEPS.merged + 1600,
+  memory: STEPS.merged + 1000,
+  memoryOpen: STEPS.merged + 1400,
+  automations: STEPS.merged + 3000,
+  back2: STEPS.merged + 4800,
+  navi: STEPS.merged + 5100,
+  send: STEPS.merged + 6600,
+  admin: STEPS.merged + 8200,
+  invites: STEPS.merged + 9400,
+  agents: STEPS.merged + 10_600,
+  end: STEPS.end,
 } as const;
 /** The poster's moment: the phone yours, its code typed, the rest of the floor still at work. */
 const POSTER = QA.takeOver + DIGIT_MS.first + CODE.length * DIGIT_MS.every + 200;
@@ -257,6 +274,9 @@ async function poster(page: Page, jpeg: Buffer, scale: number, quality: number, 
   writeFileSync(file, Buffer.from(out, "base64"));
 }
 
+/** Opens `route` as a link would. */
+const go = (page: Page, route: string) => page.evaluate((r) => (window.location.hash = r), route);
+
 /** Clicks what `target` finds, then leaves no hover or focus ring behind. */
 async function press(page: Page, target: ReturnType<Page["locator"]>) {
   await target.first().click();
@@ -278,8 +298,8 @@ for (const theme of ["light", "dark"] as const) {
       await show(page, "chat", `${CHAT}/agents`);
       await settled();
       // As on the site's shots (site.spec.ts): no sample-data banner or chip.
+      // The hubs' rows name the two hubs, Acme and Personal, rather than sample data: they stay.
       await hideByClass(page, '[role="status"]', "Sample data, not connected", "display: none");
-      await hideByClass(page, "[data-hub-status]", "Sample data", "visibility: hidden");
       await page.emulateMedia({ colorScheme: theme, reducedMotion: "no-preference" });
       await settle(page);
 
@@ -307,6 +327,8 @@ for (const theme of ["light", "dark"] as const) {
       await page.keyboard.press("Enter");
       const sent = Date.now();
       const tab = (name: RegExp) => page.getByRole("tab", { name }).or(page.getByRole("radio", { name }));
+      // A sidebar's row: the app's and Administration's.
+      const item = (name: string | RegExp) => page.getByRole("button", { name }).or(page.getByRole("link", { name }));
 
       await sleepUntil(sent + QA.screens);
       await press(page, tab(/^Screens/u));
@@ -329,14 +351,42 @@ for (const theme of ["light", "dark"] as const) {
       await press(page, page.getByText("All screens"));
       await sleepUntil(sent + QA.shipping);
       await press(page, tab(/^Shipping/u));
+      await sleepUntil(sent + QA.pr230);
+      await press(page, page.getByText("Checkout buttons in German and Dutch"));
+      await sleepUntil(sent + QA.tryIt);
+      await press(page, page.getByRole("tab", { name: "Try it" }));
       await sleepUntil(sent + QA.line);
       await press(page, tab(/^Merge line/u));
-      // Agents, and in it its agents rather than the Screens it showed last: the floor as the video starts.
+      // Up the chat to last night's memory refresh, and open it.
+      await sleepUntil(sent + QA.memory);
+      const chat = page.locator('[data-screen^="chat"]').first();
+      const memory = page.getByRole("button", { name: /^Memory tidied/u });
+      await chat.hover();
+      for (let i = 0; i < 4 && !(await memory.isVisible()); i++) await page.mouse.wheel(0, -1200);
+      await sleepUntil(sent + QA.memoryOpen);
+      await press(page, memory);
+      // Automations, storefront's: its own and the nightly refresh's built-in row.
+      await sleepUntil(sent + QA.automations);
+      await go(page, `#/settings/automations?for=${STOREFRONT}`);
+      // Back, then Ada: Gmail woke it, and its reply with two files waits on you.
+      await sleepUntil(sent + QA.back2);
+      await press(page, page.getByRole("button", { name: "Back" }));
+      await sleepUntil(sent + QA.navi);
+      await press(page, item(/^Ada\b/u));
+      await sleepUntil(sent + QA.send);
+      await press(page, page.getByRole("button", { name: "Send it" }));
+      // Administration: the hub's people, then its invites.
+      await sleepUntil(sent + QA.admin);
+      await press(page, item("Administration"));
+      await sleepUntil(sent + QA.invites);
+      await press(page, item(/^Invites/u));
+      // Back to storefront's Agents, and in it its agents rather than the Screens it showed last: the floor as the
+      // video starts.
       await sleepUntil(sent + QA.agents);
-      await press(page, tab(/^Agents/u));
+      await go(page, `${CHAT}/agents`);
       await sleepUntil(sent + QA.agents + 300);
       await press(page, tab(/^Agents/u).last());
-      await sleepUntil(sent + STEPS.end);
+      await sleepUntil(sent + QA.end);
       await cdp.send("Page.stopScreencast");
       const end = Date.now();
       if (frames.length < 10) throw new Error(`the screencast sent ${frames.length} frames`);
@@ -360,7 +410,17 @@ for (const theme of ["light", "dark"] as const) {
       const at = (ms: number) => Math.max(0, Math.round((ms - first) / 100) / 10);
       const chapters = path.join(repo, "site", "showcase.json");
       const all = existsSync(chapters) ? (JSON.parse(readFileSync(chapters, "utf8")) as Record<string, unknown>) : {};
-      all[theme] = { ask: at(typing), plan: at(sent + STEPS.reply - 500), build: at(sent + STEPS.split + 600), screens: at(sent + QA.web), merge: at(sent + QA.shipping), end: Math.round((video.length / FPS) * 10) / 10 };
+      all[theme] = {
+        ask: at(typing),
+        plan: at(sent + STEPS.reply - 500),
+        build: at(sent + STEPS.split + 600),
+        screens: at(sent + QA.web),
+        merge: at(sent + QA.line),
+        night: at(sent + QA.memory),
+        navi: at(sent + QA.back2),
+        team: at(sent + QA.admin),
+        end: Math.round((video.length / FPS) * 10) / 10,
+      };
       writeFileSync(chapters, `${JSON.stringify(all, null, 2)}\n`);
       // Two sizes: 1440 px tall for a wide screen at 2x, 720 for a small screen's (the page picks by the frame's pixels).
       for (const [height, file] of [[1440, `${out}.webm`], [720, `${out}-small.webm`]] as const) {

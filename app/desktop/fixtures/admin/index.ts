@@ -113,7 +113,11 @@ const usageStatus: JsonObject = {
 
 /** The owner's hub as `me` sees it, with every write answered as the hub would. */
 function hub(from: Fixture, name: string, note: string, me: JsonObject, admin: boolean, membersUseHubApi = true): Fixture {
-  const f = Fixture.from(from, name, note);
+  return answerHub(Fixture.from(from, name, note), me, admin, membersUseHubApi);
+}
+
+/** Sam's hub, its people and its links, answered on `f` as `me` sees them (the showcase's Administration too). */
+export function answerHub(f: Fixture, me: JsonObject = sam, admin = true, membersUseHubApi = true): Fixture {
   f.answer("hub_info", undefined, hubInfo(me, admin));
   f.answer("claude_accounts_get", undefined, claudeAccounts(me, admin, membersUseHubApi));
   f.answer("usage_status", undefined, usageStatus);
