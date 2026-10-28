@@ -819,6 +819,21 @@ async fn a_refresh_of_more_changes_than_a_line_lists_still_posts_and_undo_all_ta
     assert_eq!(refreshed.undone.map(|u| u.get()), Some(n as i64));
 }
 
+/// The `memory.refresh` events so far, which tell the app to read the row again: each one's state.
+fn refresh_events(hub: &Hub) -> Vec<String> {
+    hub.events
+        .page(0, Some(&[HubEventType::MemoryRefresh]), None)
+        .unwrap()
+        .events
+        .into_iter()
+        .map(|e| {
+            let data = serde_json::to_value(&e.data).unwrap();
+            assert_eq!(data["projectRef"]["projectId"], "shop");
+            data["state"].as_str().unwrap().to_owned()
+        })
+        .collect()
+}
+
 /// The refresh's row on the Automations page, as automation_list gives it.
 async fn row(hub: &Arc<Hub>) -> Value {
     crate::hub::api::registry()
@@ -906,6 +921,8 @@ async fn the_automations_page_lists_the_refresh_with_its_hour_next_night_and_las
         "the +1 ~1 −1 of its line"
     );
     assert!(last.get("why").is_none());
+    // Each change of the row told the app: the quiet night, the start and the end.
+    assert_eq!(refresh_events(&hub), ["skipped", "running", "done"]);
 }
 
 #[tokio::test]
@@ -1021,4 +1038,6 @@ async fn run_now_starts_a_refresh_as_the_night_does_held_by_its_rules() {
     refresh::tick(&hub, &node).await.unwrap();
     assert_eq!(node.launches.lock().unwrap().len(), 1);
     assert_eq!(row(&hub).await["lastRun"]["state"], "skipped");
+    // Run now refused tells nothing; its start and end, and the quiet night, do.
+    assert_eq!(refresh_events(&hub), ["running", "done", "skipped"]);
 }

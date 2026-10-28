@@ -2543,6 +2543,7 @@ export type KnownHubEventType =
   | "work.ended"
   | "work.landed"
   | "memory.changed"
+  | "memory.refresh"
   | "automation.changed"
   | "automation.run"
   | "checklist.changed"

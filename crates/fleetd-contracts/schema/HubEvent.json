@@ -351,6 +351,11 @@
           "type": "string"
         },
         {
+          "const": "memory.refresh",
+          "description": "A project's nightly memory refresh started, ended or was skipped: `data.projectRef`, `data.trigger`,\n`data.state`. automation_list reads its row.",
+          "type": "string"
+        },
+        {
           "const": "automation.changed",
           "description": "An automation was made, edited, paused, resumed, deleted or had its webhook URL rotated: `data.projectRef`,\n`data.automationId`, `data.change`. automation_list reads it.",
           "type": "string"

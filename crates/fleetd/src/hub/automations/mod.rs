@@ -184,7 +184,7 @@ fn local(ms: i64, schedule: &AutomationSchedule) -> String {
     )
 }
 
-fn state_str(state: AutomationRunState) -> &'static str {
+pub(crate) fn state_str(state: AutomationRunState) -> &'static str {
     match state {
         AutomationRunState::Running => "running",
         AutomationRunState::Done => "done",

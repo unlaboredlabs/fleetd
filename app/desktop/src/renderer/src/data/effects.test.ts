@@ -80,6 +80,8 @@ describe("event effects", () => {
     // A lead's remember, an Undo or an edit elsewhere: Settings → Memory reads the files again, and Automations the
     // nightly refresh's row, with what a running refresh changed so far.
     expect(tools(e("memory.changed"))).toEqual(["memory_get", "automation_list"]);
+    // A refresh started, ended or was skipped: the row reads its next and last run again.
+    expect(tools(e("memory.refresh"))).toEqual(["automation_list"]);
     expect(tools(e("checklist.changed"))).toEqual(["checklist_get"]);
     // A preview moving: Try it reads the project's previews again, and nothing else.
     expect(tools(e("preview.state", { previewId: `P${"a".repeat(32)}`, state: "ready" }))).toEqual(["previews_list"]);
