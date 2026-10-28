@@ -102,26 +102,65 @@ mod tests {
     }
 
     /// fleetd's own `.fleetd/train.json` names jobs of its CI that run on each PR's push on Linux: never a macOS job,
-    /// which the batch skips (D204), and never a name no job has, which no run would ever report.
+    /// which the batch skips (D204), and never a name no job has, which no run would ever report. Linux QA blocks
+    /// merges (D158): every Linux shard of desktop-qa.yml's `qa` is in it, so a shard renamed or added fails here
+    /// rather than drop out of the gate.
     #[test]
     fn fleetds_own_file_names_linux_jobs_of_its_ci() {
         use serde_yaml_ng::Value;
         let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
         let file = parse(&std::fs::read_to_string(format!("{root}/{PATH}")).unwrap()).unwrap();
-        let ci: Value = serde_yaml_ng::from_str(
-            &std::fs::read_to_string(format!("{root}/.github/workflows/ci.yml")).unwrap(),
-        )
-        .unwrap();
+        let workflow = |name: &str| -> Value {
+            let path = format!("{root}/.github/workflows/{name}");
+            serde_yaml_ng::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
+        };
+        let ci = workflow("ci.yml");
         let jobs = ci["jobs"].as_mapping().unwrap();
+        // The Linux shards' check names: `qa`'s name with each Linux entry of its matrix (a `fromJSON` of literal
+        // entries) put in.
+        let qa = &workflow("desktop-qa.yml")["jobs"]["qa"];
+        let template = qa["name"].as_str().unwrap();
+        let include = qa["strategy"]["matrix"]["include"].as_str().unwrap();
+        let shards: Vec<String> = include
+            .split('{')
+            .filter_map(|piece| piece.split_once('}'))
+            .filter_map(|(entry, _)| {
+                serde_json::from_str::<serde_json::Value>(&format!("{{{entry}}}")).ok()
+            })
+            .filter(|entry| entry["os"] == "ubuntu-latest")
+            .map(|entry| {
+                let mut name = template.to_string();
+                for (key, value) in entry.as_object().unwrap() {
+                    let value = value
+                        .as_str()
+                        .map_or_else(|| value.to_string(), str::to_string);
+                    name = name.replace(&format!("${{{{ matrix.{key} }}}}"), &value);
+                }
+                name
+            })
+            .collect();
+        assert_eq!(shards.len(), 4, "{shards:?}");
+        assert_eq!(qa["runs-on"].as_str(), Some("${{ matrix.os }}"));
+        for shard in &shards {
+            assert!(
+                file.fast_checks.iter().any(|c| c.as_str() == shard),
+                "{PATH} leaves out {shard}"
+            );
+        }
         assert!(!file.fast_checks.is_empty());
         for check in file.fast_checks.iter().chain(file.after_merge.iter()) {
             let check = check.as_str();
+            if shards.iter().any(|s| s == check) {
+                continue;
+            }
             let job = jobs
                 .iter()
                 .find(|(id, job)| job["name"].as_str().or(id.as_str()) == Some(check))
                 .map(|(_, job)| job);
             let Some(job) = job else {
-                panic!("{PATH} names {check}, which no job of ci.yml is");
+                panic!(
+                    "{PATH} names {check}, which no job of ci.yml or Linux shard of desktop-qa.yml is"
+                );
             };
             assert_eq!(job["runs-on"].as_str(), Some("ubuntu-latest"), "{check}");
         }

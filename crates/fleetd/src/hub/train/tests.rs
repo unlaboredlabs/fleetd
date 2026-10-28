@@ -5971,6 +5971,44 @@ async fn a_pr_merged_alone_waits_for_its_own_heads_checks_the_batch_skips() {
     }
 }
 
+/// D158, W152: Linux QA blocks merges. With its shards in the fast set, as fleetd's `.fleetd/train.json` lists them, a
+/// PR merged alone waits for each: #787 merged while `qa (ubuntu-latest, 4/4)` still ran on its head, then failed.
+/// Running or failed holds it; passed, it merges.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_pr_merged_alone_waits_for_its_linux_qa_shards() {
+    for (shard, merges) in [
+        (None, false),
+        (Some("failure"), false),
+        (Some("success"), true),
+    ] {
+        let kit = kit_on(&RepoCi {
+            required: &["build"],
+            fast: &["qa (ubuntu-latest, 1/4)", "qa (ubuntu-latest, 4/4)"],
+            runs: || vec![run(1, "build", Some("success"))],
+        });
+        let change = kit
+            .enqueue(kit.open_pr(7, "a", &[add("a.txt", "x\n")]))
+            .await;
+        kit.gh.head_runs.lock().unwrap().insert(
+            kit.head_of("a"),
+            json!([
+                run(1, "build", Some("success")),
+                run(2, "qa (ubuntu-latest, 1/4)", Some("success")),
+                run(3, "qa (ubuntu-latest, 4/4)", shard),
+            ]),
+        );
+
+        assert!(kit.train.step(REPO).await);
+        let after = kit.get(&change.change_id);
+        if merges {
+            assert_eq!(after.state, ChangeState::Merged, "{shard:?}");
+            continue;
+        }
+        assert!(merged_prs(&kit).is_empty(), "{shard:?}");
+        assert_eq!(after.state, ChangeState::CiFailed, "{shard:?}");
+    }
+}
+
 /// A cancelled check the batch skips, or a cancelled `macos scope`, on a ready PR's own head: nothing would run it
 /// again, so the PR would wait forever. The train re-runs that job once, never the rest of its workflow run, so a job
 /// that failed beside it stays failed, and says so on the PR's line; cancelled again, it says to push or re-run it, and
