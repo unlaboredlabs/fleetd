@@ -3,7 +3,7 @@
 // send an email (the approval card, with its preview) and has asked storefront and billing for work (Asked work,
 // navi_asks). navi-old-hub: the same on a hub that doesn't serve
 // Asked work to the app yet. navi-links: Ada's Linked hubs and Sam's links to this hub (hubLinks/); navi-links-none:
-// neither yet. navi-google-*: Google on Ada's Integrations, one fixture a state (google/NaviGoogle.tsx).
+// neither yet. navi-google-*: Ada's Google on You › Your accounts, one fixture a state (google/NaviGoogle.tsx).
 import { writeChat, type Ref } from "../kit/chat.ts";
 import { Fixture } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
@@ -242,7 +242,7 @@ const linksNone = (from: Fixture): Fixture => {
 };
 
 /**
- * Google on Ada's Integrations (google/NaviGoogle.tsx), one fixture a state: no client yet as a member and as an
+ * Ada's Google on You › Your accounts (google/NaviGoogle.tsx), one fixture a state: no client yet as a member and as an
  * admin; ready to connect; connected (and Home without Drive); lapsed at Google; and devbox not holding the client.
  */
 const GOOGLE_SCOPES = [

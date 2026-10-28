@@ -361,6 +361,9 @@ const whileLoading = (go: (page: Page) => Promise<void>, shown: (page: Page) => 
 /** An entry's name in test titles, shot files and the contact sheet. */
 export const label = (s: Pick<Screen, "id" | "variant">) => (s.variant === undefined ? s.id : `${s.id}~${s.variant}`);
 
+// Ada's Google row on You › Your accounts, where navi-google-* and navi-two's Home get one list each.
+const adaGoogle = (page: Page) => page.getByRole("list", { name: "Ada's Google" }).getByRole("listitem", { name: "Google" });
+
 export const screens: readonly Screen[] = [
   // F2 (A4): the live strip docked to the top of the project's composer. live-0 draws no strip.
   {
@@ -2204,7 +2207,7 @@ export const screens: readonly Screen[] = [
     route: "#/settings/hubs",
     fixtures: ["navi-links", "navi-links-none"],
     variant: "linked-hubs",
-    open: (page) => page.getByRole("region", { name: "Linked hubs" }).scrollIntoViewIfNeeded(),
+    open: (page) => page.getByRole("region", { name: "Hubs Ada reaches" }).scrollIntoViewIfNeeded(),
   },
   {
     id: "settings.hubs",
@@ -2212,7 +2215,7 @@ export const screens: readonly Screen[] = [
     fixtures: ["navi-links-none"],
     variant: "link-a-hub",
     open: async (page) => {
-      const region = page.getByRole("region", { name: "Linked hubs" });
+      const region = page.getByRole("region", { name: "Hubs Ada reaches" });
       await region.getByRole("button", { name: "Link a hub" }).click();
       await region.getByRole("form", { name: "Link a hub" }).scrollIntoViewIfNeeded();
     },
@@ -2233,7 +2236,7 @@ export const screens: readonly Screen[] = [
       "navi-google-mail-off",
     ],
     variant: "google",
-    open: (page) => page.getByRole("listitem", { name: "Google" }).scrollIntoViewIfNeeded(),
+    open: (page) => adaGoogle(page).scrollIntoViewIfNeeded(),
   },
   {
     id: "settings.accounts",
@@ -2241,7 +2244,7 @@ export const screens: readonly Screen[] = [
     fixtures: ["navi-google-ready"],
     variant: "google-connect",
     open: async (page) => {
-      await page.getByRole("listitem", { name: "Google" }).getByRole("button", { name: "Connect", exact: true }).click();
+      await adaGoogle(page).getByRole("button", { name: "Connect", exact: true }).click();
       await page.getByRole("dialog").getByText("Seeing a warning or an error on Google’s page?").click();
     },
   },
@@ -2250,7 +2253,7 @@ export const screens: readonly Screen[] = [
     route: "#/settings/accounts",
     fixtures: ["navi-google-connected"],
     variant: "google-disconnect",
-    open: (page) => page.getByRole("listitem", { name: "Google" }).getByRole("button", { name: "Disconnect", exact: true }).click(),
+    open: (page) => adaGoogle(page).getByRole("button", { name: "Disconnect", exact: true }).click(),
   },
   {
     id: "settings.hubs",
