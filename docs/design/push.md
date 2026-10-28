@@ -149,7 +149,16 @@ its environment, never the repo (`FLEETD_APNS_KEY_FILE`, `FLEETD_APNS_KEY_ID`, `
 `FLEETD_APNS_TOPIC`, `FLEETD_APNS_SANDBOX`, `FLEETD_FCM_SERVICE_ACCOUNT`, `FLEETD_PUSH_RELAY_KEY_FILE`). How to run one:
 [docs/site phone-notifications](../site/src/content/docs/phone-notifications.md).
 
+## The app
+
+`app/mobile/src/push.ts` registers the phone, opens a payload and says what shows for it and where a tap goes;
+`src/seal.ts` is `crypto_box_seal_open` in JavaScript. The iOS extension is added at `expo prebuild` by
+`plugins/notification-service`, which opens the box in Swift (`Sealed.swift`) with the key it reads from the keychain
+group it shares with the app. On Android, `src/notifications.ts` handles each FCM data message in a background task
+and posts the notification on a channel per kind (`quiet` for quiet hours), one per chat or request. Both open the
+hub's own sealed boxes in their tests (`src/push.fixture.json`). Disconnect calls `push_device_remove`, then
+`device_revoke` for the phone's own key.
+
 ## Later
 
-- The app's Notification Service Extension and Android handler (`app/mobile`).
 - The relay URL on the Hub pages of the app's Settings and in the setup flow. For now it is `fleetd push-relay set`.

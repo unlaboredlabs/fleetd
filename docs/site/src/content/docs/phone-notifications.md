@@ -74,8 +74,9 @@ fleetd push-relay set off       # no more phone notifications
 `--relay-key-file` seals the relay's key to the hub on your machine. The hub keeps it sealed and sends it with every
 push. Setting the URL again without it drops the key.
 
-From another machine, add `--hub <url> --key-file <path>` with a key that has admin on every machine. Each person then
-turns notifications on in the phone app, which registers the phone with the hub.
+From another machine, add `--hub <url> --key-file <path>` with a key that has admin on every machine. The phone app
+registers each paired phone with the hub once its person allows notifications: see
+[Phone app › Notifications](/docs/mobile#notifications), which also says what the app build needs.
 
 ## What is sent, and to whom {#what}
 

@@ -1,6 +1,7 @@
 // Pairing, as the desktop app pairs (app/desktop/src/main/pairing): the person types the hub's address and a code
 // from `fleetd pair` on the hub, and `POST <hub>/pair {code, deviceName}` trades it for this phone's own key. No auth
-// header: the code is the credential.
+// header: the code is the credential, so it goes to the typed address only, never where a redirect points. React
+// Native's fetch may follow one anyway (its XMLHttpRequest does), so an answer from another URL is refused too.
 import { hubOrigin, normalizeCode, type PairFailure } from "../desktop";
 
 export type Fetch = (url: string, init: RequestInit) => Promise<Response>;
@@ -44,6 +45,7 @@ export const pair = async (fetch: Fetch, hub: string, typed: string, deviceName:
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ code, deviceName }),
       signal: abort.signal,
+      redirect: "error",
     });
   } catch {
     return failed(
@@ -52,6 +54,10 @@ export const pair = async (fetch: Fetch, hub: string, typed: string, deviceName:
     );
   } finally {
     clearTimeout(timer);
+  }
+  const answered = typeof response.url === "string" ? response.url.toLowerCase() : "";
+  if (response.redirected || (answered !== "" && answered !== `${origin.origin}/pair`.toLowerCase())) {
+    return failed(`${origin.origin} redirected the pairing to another address.`, "Type the hub's own address: the one `fleetd pair` prints.");
   }
   const body = (await readJson(response)) as Record<string, unknown> | undefined;
   if (response.ok) {

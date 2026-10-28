@@ -3,7 +3,7 @@
 // off; events re-read what they changed (store.ts effectsOf). Screens subscribe and dispatch nothing themselves.
 import { mergeMessages, toResend, type ApprovalDecision, type ChatSend, type HubState } from "./desktop";
 import { HubClient, type HubFrame, type Transport } from "./hub/client";
-import { registerDevice } from "./push";
+import { registerDevice, signOut, type PushDeps } from "./push";
 import { initial, reduce, refOf, effectsOf, type Action, type Key, type State } from "./store";
 
 export const CHAT_PAGE = 50;
@@ -15,6 +15,8 @@ export interface SessionOptions {
   readonly transport: Transport;
   readonly now?: () => number;
   readonly newId?: () => string;
+  /** Registers this phone for push on each session's first live link, and again with each new token. */
+  readonly push?: PushDeps;
 }
 
 const randomId = (): string => `m${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
@@ -28,10 +30,15 @@ export class Session {
   /** The chat on screen, which gets streamed text and is reloaded on each connection. */
   #open: Key | null = null;
   #registered = false;
+  readonly #key: string;
+  readonly #push: PushDeps | undefined;
+  #unsubscribeToken: (() => void) | undefined;
 
   constructor(options: SessionOptions) {
     this.#now = options.now ?? Date.now;
     this.#newId = options.newId ?? randomId;
+    this.#key = options.key;
+    this.#push = options.push;
     this.#state = initial({ phase: "connecting", hub: options.hub, attempt: 0 });
     this.#client = new HubClient({ hub: options.hub, key: options.key, transport: options.transport, emit: (f) => this.#onFrame(f) });
   }
@@ -49,10 +56,20 @@ export class Session {
 
   start(): void {
     this.#client.start();
+    this.#unsubscribeToken = this.#push?.onToken((token) => {
+      if (this.#state.hub.phase === "live") void this.#register(token);
+      else this.#registered = false;
+    });
   }
 
   stop(): void {
+    this.#unsubscribeToken?.();
     this.#client.stop();
+  }
+
+  /** Disconnect, on the hub: this phone's push registration removed and its key revoked. */
+  signOut(): ReturnType<typeof signOut> {
+    return signOut(this.#client, { loadDevice: this.#push?.loadDevice ?? (async () => null) }, this.#key);
   }
 
   /** The app came back to the front: its socket may have died while it slept. */
@@ -165,7 +182,14 @@ export class Session {
   #onState(state: HubState): void {
     if (state.phase !== "live" || this.#registered) return;
     this.#registered = true;
-    void registerDevice(this.#client);
+    void this.#register();
+  }
+
+  async #register(token?: string): Promise<void> {
+    if (this.#push === undefined) return;
+    const r = await registerDevice(this.#client, this.#push, token);
+    // The link went before the hub answered: again on the next.
+    if (r.t === "failed" && r.error.code === "offline") this.#registered = false;
   }
 
   #dispatch(action: Action): void {

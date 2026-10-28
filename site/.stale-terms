@@ -1,16 +1,13 @@
 # Things fleetd no longer has. CI (.github/site-check.mjs) fails when a line of site/home.html, site/fleetd.txt or
 # site/README.md matches one of these: a case-insensitive JavaScript regex per line, # starts a comment.
 
-# The old phone app (a PWA with web push) is gone. The mobile app (W158) and its notifications (D218) are not a PWA.
+# The old phone app (a PWA with web push) is gone. The phone app (W158) and its notifications (D218) are not a PWA,
+# and fleetd has iOS and Android apps again.
 \bPWA\b
 progressive web app
 web push
 mobile app
-# iOS and Android themselves are back, as simulators and emulators agents use (machine roles); only the apps are gone.
-\b(iOS|android) app\b
 \bfor (iOS|android)\b
-app store
-google play
 home screen
 
 # fleetd installs with `curl -fsSL https://fleetd.sh | sh` (or a GitHub release), never from npm.

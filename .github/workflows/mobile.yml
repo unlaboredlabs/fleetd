@@ -119,7 +119,8 @@ jobs:
           retention-days: 14
 
   ios:
-    # A Release build for the iOS simulator: no signing, the JavaScript bundled in. Only when app/mobile or this
+    # A Release build for the iOS simulator, its Notification Service Extension embedded: no signing, the JavaScript
+    # bundled in. First, the extension's crypto against the hub's sealed boxes. Only when app/mobile or this
     # workflow changed (mobile scope); the merge train's batch skips it, as ci.yml's macOS jobs, and each PR's own head
     # runs it first.
     name: mobile (ios)
@@ -137,6 +138,11 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: app/mobile/package-lock.json
+      - name: Extension crypto
+        run: |
+          swiftc -O plugins/notification-service/Sealed.swift plugins/notification-service/test/main.swift \
+            -o "$RUNNER_TEMP/sealed-test"
+          "$RUNNER_TEMP/sealed-test" src/push.fixture.json
       - run: npm ci --no-audit --no-fund
       # Installs the pods too.
       - run: npx expo prebuild --platform ios --clean
@@ -146,6 +152,8 @@ jobs:
           xcodebuild -workspace ios/fleetd.xcworkspace -scheme fleetd -configuration Release \
             -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO build | tail -n 200
+          appex=build/Build/Products/Release-iphonesimulator/fleetd.app/PlugIns/FleetdNotifications.appex
+          test -x "$appex/FleetdNotifications" || { echo "::error::the app has no Notification Service Extension"; exit 1; }
       - name: Pack
         run: ditto -c -k --keepParent build/Build/Products/Release-iphonesimulator/fleetd.app "$RUNNER_TEMP/fleetd-ios-simulator.zip"
       - uses: actions/upload-artifact@v7

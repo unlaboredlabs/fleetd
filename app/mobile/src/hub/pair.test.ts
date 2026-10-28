@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { pair, type Fetch } from "./pair";
 
 const answering =
-  (status: number, body: unknown, seen: Array<{ url: string; body: unknown }> = []): Fetch =>
+  (status: number, body: unknown, seen: Array<{ url: string; body: unknown; redirect?: RequestRedirect | undefined }> = []): Fetch =>
   async (url, init) => {
-    seen.push({ url, body: JSON.parse(String(init.body)) });
+    seen.push({ url, body: JSON.parse(String(init.body)), redirect: init.redirect });
     return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
   };
 
@@ -13,7 +13,17 @@ describe("pair", () => {
     const seen: Array<{ url: string; body: unknown }> = [];
     const result = await pair(answering(200, { key: "key_1", hubUrl: "http://elsewhere:4790", hubName: "devbox" }, seen), "devbox:4790", "abcd 2345", "Pixel");
     expect(result).toEqual({ ok: true, paired: { hub: "http://devbox:4790", key: "key_1", hubName: "devbox" } });
-    expect(seen).toEqual([{ url: "http://devbox:4790/pair", body: { code: "ABCD-2345", deviceName: "Pixel" } }]);
+    expect(seen).toEqual([{ url: "http://devbox:4790/pair", body: { code: "ABCD-2345", deviceName: "Pixel" }, redirect: "error" }]);
+  });
+
+  it("refuses an answer from where a redirect went: the code is for the typed hub only", async () => {
+    const followed: Fetch = async () => {
+      const response = new Response(JSON.stringify({ key: "key_1", hubUrl: "http://evil:4790", hubName: "evil" }), { status: 200 });
+      Object.defineProperty(response, "url", { value: "http://evil:4790/pair" });
+      return response;
+    };
+    const result = await pair(followed, "http://devbox:4790", "ABCD2345", "Pixel");
+    expect(result).toMatchObject({ ok: false, failure: { message: "http://devbox:4790 redirected the pairing to another address." } });
   });
 
   it("refuses a code that can't be one before asking the hub", async () => {
