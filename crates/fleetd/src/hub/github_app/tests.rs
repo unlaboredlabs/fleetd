@@ -1084,6 +1084,7 @@ async fn the_orders_tokens_are_renewed_after_a_hub_restart() {
         person: None,
         expires_ms: now + 50 * 60_000,
         margin_ms: 30 * 60_000,
+        blocked: false,
     };
     keep(&first.hub, &handed).unwrap();
     let home = first._home;
@@ -1211,6 +1212,7 @@ fn handed(
             person: person.cloned(),
             expires_ms: 1_792_000_000_000 + 8 * 3600 * 1000,
             margin_ms: 2 * 3600 * 1000,
+            blocked: false,
         },
     )
     .unwrap();
@@ -1237,72 +1239,6 @@ fn drops(
             _ => None,
         })
         .collect()
-}
-
-#[tokio::test]
-async fn disconnecting_takes_the_token_from_the_persons_open_orders() {
-    let lab = lab().await;
-    created(&lab).await;
-    let sam = admin(&lab.hub);
-    call(&lab.hub, &sam, "github_app_test", json!({}))
-        .await
-        .unwrap();
-    connect(&lab, &sam).await.unwrap();
-    let person = sam.person.clone().unwrap().person_id;
-    let (r, order) = order_on_acme(&lab.hub, Some(&person));
-    let (_, nobody) = order_on_acme(&lab.hub, None);
-    handed(&lab.hub, &r, &order, Some(&person));
-    handed(&lab.hub, &r, &nobody, None);
-    let calls = fake_node(&lab.hub).await;
-    call(&lab.hub, &sam, "github_disconnect", json!({}))
-        .await
-        .unwrap();
-    // Only Sam's, and only the value it handed out.
-    assert_eq!(
-        drops(&calls),
-        [(order.to_string(), Some("ab12cd34".into()))]
-    );
-    let left = super::sessions::kept(&lab.hub);
-    assert_eq!(left.iter().map(|k| &k.order).collect::<Vec<_>>(), [&nobody]);
-    assert!(
-        lab.hub
-            .db
-            .order_env()
-            .list(&r, order.as_str())
-            .unwrap()
-            .is_empty()
-    );
-}
-
-#[tokio::test]
-async fn a_person_removed_from_the_hub_has_their_token_revoked_and_withdrawn() {
-    let lab = lab().await;
-    created(&lab).await;
-    let sam = admin(&lab.hub);
-    call(&lab.hub, &sam, "github_app_test", json!({}))
-        .await
-        .unwrap();
-    let bob = member(&lab.hub);
-    connect(&lab, &bob).await.unwrap();
-    let person = bob.person.clone().unwrap().person_id;
-    let (r, order) = order_on_acme(&lab.hub, Some(&person));
-    handed(&lab.hub, &r, &order, Some(&person));
-    let calls = fake_node(&lab.hub).await;
-    call(
-        &lab.hub,
-        &sam,
-        "person_remove",
-        json!({ "personId": person.as_str() }),
-    )
-    .await
-    .unwrap();
-    assert_eq!(lab.fake.lock().unwrap().revoked, 1, "not revoked at GitHub");
-    assert!(lab.hub.github_app.account(&person).unwrap().is_none());
-    assert_eq!(
-        drops(&calls),
-        [(order.to_string(), Some("ab12cd34".into()))]
-    );
-    assert!(super::sessions::kept(&lab.hub).is_empty());
 }
 
 #[tokio::test]
@@ -1351,4 +1287,246 @@ async fn the_app_reaches_repositories_past_the_first_hundred_it_keeps() {
     lab.hub.db.github_app().update(&app).unwrap();
     assert!(lab.hub.github_app.reaches("acme/api"));
     assert!(!lab.hub.github_app.reaches("acme/elsewhere"));
+}
+
+/// What a node linked for `machine` kept of each `secret_deliver`: its sink, its project, its variable and the value,
+/// opened with the box key the test publishes for it. The node takes order variables.
+async fn fake_link(
+    hub: &Arc<Hub>,
+    machine: &str,
+) -> Arc<Mutex<Vec<(String, String, String, String)>>> {
+    use fleetd_contracts::node_link::{CAP_ORDER_ENV, HubToNode, NodeToHub};
+    let m = fleetd_contracts::ids::MachineId::unchecked(machine);
+    let secret = crypto_box::SecretKey::generate(&mut crypto_box::aead::OsRng);
+    let public = base64::engine::general_purpose::STANDARD.encode(secret.public_key().as_bytes());
+    let record = serde_json::from_value(json!({
+        "machineId": machine, "name": machine, "tags": [], "status": "online",
+        "lastSeenAt": "2026-10-28T10:00:00.000Z", "nodeVersion": "0.1.0", "boxPubKey": public,
+    }))
+    .unwrap();
+    hub.store.machine_upsert(&record, None).unwrap();
+    hub.link.set_capabilities(&m, &[CAP_ORDER_ENV]);
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let link = hub.node_commands.attach(&m, tx);
+    let kept: Arc<Mutex<Vec<_>>> = Arc::default();
+    let (seen, hub) = (kept.clone(), hub.clone());
+    tokio::spawn(async move {
+        let _link = link;
+        while let Some(frame) = rx.recv().await {
+            let HubToNode::SecretDeliver(d) = frame else {
+                continue;
+            };
+            let sealed = base64::engine::general_purpose::STANDARD
+                .decode(d.sealed.as_str())
+                .unwrap();
+            let plain = String::from_utf8(secret.unseal(&sealed).unwrap()).unwrap();
+            seen.lock().unwrap().push((
+                d.sink.to_string(),
+                d.project_id.map(|p| p.to_string()).unwrap_or_default(),
+                d.env_name.map(|n| n.to_string()).unwrap_or_default(),
+                plain,
+            ));
+            let reply = json!({ "t": "secret_result", "id": d.id, "fingerprint": "f00dfeed" });
+            hub.node_commands
+                .resolve(&m, serde_json::from_value::<NodeToHub>(reply).unwrap());
+        }
+    });
+    kept
+}
+
+/// The values a fake link was handed, as `GH_TOKEN`.
+fn tokens(link: &Mutex<Vec<(String, String, String, String)>>) -> Vec<String> {
+    link.lock()
+        .unwrap()
+        .iter()
+        .filter(|(_, _, name, _)| name == "GH_TOKEN")
+        .map(|(_, _, _, value)| value.clone())
+        .collect()
+}
+
+#[tokio::test]
+async fn a_disconnect_blocks_the_persons_orders_never_falling_back_to_the_machines_login() {
+    use super::sessions::{BLOCKED_TOKEN, kept, renew};
+    let lab = lab().await;
+    created(&lab).await;
+    let sam = admin(&lab.hub);
+    call(&lab.hub, &sam, "github_app_test", json!({}))
+        .await
+        .unwrap();
+    connect(&lab, &sam).await.unwrap();
+    let person = sam.person.clone().unwrap().person_id;
+    let (r, order) = order_on_acme(&lab.hub, Some(&person));
+    let (_, nobody) = order_on_acme(&lab.hub, None);
+    let link = fake_link(&lab.hub, "devbox").await;
+    let drops_at = fake_node(&lab.hub).await;
+    super::sessions::deliver(&lab.hub, &r, &order, None, true)
+        .await
+        .unwrap();
+    super::sessions::deliver(&lab.hub, &r, &nobody, None, true)
+        .await
+        .unwrap();
+    let handed = tokens(&link);
+    assert!(
+        handed[0].starts_with("ghu_") && handed[1].starts_with("ghs_7_"),
+        "{handed:?}"
+    );
+    call(&lab.hub, &sam, "github_disconnect", json!({}))
+        .await
+        .unwrap();
+    // Sam's agents hold a value GitHub refuses, not nothing: gh fails rather than run as the machine's login.
+    assert_eq!(tokens(&link)[2..], [BLOCKED_TOKEN.to_owned()]);
+    assert!(
+        drops(&drops_at).is_empty(),
+        "a person's token was dropped, not blocked"
+    );
+    let blocked: Vec<_> = kept(&lab.hub)
+        .into_iter()
+        .map(|k| (k.order, k.blocked))
+        .collect();
+    assert_eq!(blocked, [(order.clone(), true), (nobody.clone(), false)]);
+    // The sweep leaves it so, and a writer for it is refused at launch.
+    renew(&lab.hub).await;
+    assert_eq!(tokens(&link).len(), 3);
+    assert!(
+        super::sessions::deliver(&lab.hub, &r, &order, None, true)
+            .await
+            .is_err()
+    );
+    // Connected again: the next sweep gives the agents their token back.
+    connect(&lab, &sam).await.unwrap();
+    renew(&lab.hub).await;
+    assert!(tokens(&link)[3].starts_with("ghu_"), "{:?}", tokens(&link));
+    assert!(kept(&lab.hub).iter().all(|k| !k.blocked));
+}
+
+#[tokio::test]
+async fn a_person_removed_from_the_hub_has_their_token_revoked_and_their_orders_blocked() {
+    use super::sessions::BLOCKED_TOKEN;
+    let lab = lab().await;
+    created(&lab).await;
+    let sam = admin(&lab.hub);
+    call(&lab.hub, &sam, "github_app_test", json!({}))
+        .await
+        .unwrap();
+    let bob = member(&lab.hub);
+    connect(&lab, &bob).await.unwrap();
+    let person = bob.person.clone().unwrap().person_id;
+    let (r, order) = order_on_acme(&lab.hub, Some(&person));
+    let link = fake_link(&lab.hub, "devbox").await;
+    super::sessions::deliver(&lab.hub, &r, &order, None, true)
+        .await
+        .unwrap();
+    call(
+        &lab.hub,
+        &sam,
+        "person_remove",
+        json!({ "personId": person.as_str() }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(lab.fake.lock().unwrap().revoked, 1, "not revoked at GitHub");
+    assert!(lab.hub.github_app.account(&person).unwrap().is_none());
+    assert_eq!(
+        tokens(&link).last().map(String::as_str),
+        Some(BLOCKED_TOKEN)
+    );
+}
+
+#[tokio::test]
+async fn a_block_a_node_missed_while_offline_comes_with_the_next_sweep() {
+    use super::sessions::{BLOCKED_TOKEN, kept, renew};
+    let lab = lab().await;
+    created(&lab).await;
+    let sam = admin(&lab.hub);
+    call(&lab.hub, &sam, "github_app_test", json!({}))
+        .await
+        .unwrap();
+    connect(&lab, &sam).await.unwrap();
+    let person = sam.person.clone().unwrap().person_id;
+    let (r, order) = order_on_acme(&lab.hub, Some(&person));
+    handed(&lab.hub, &r, &order, Some(&person));
+    // devbox is offline when Sam disconnects: nothing can be blocked yet.
+    call(&lab.hub, &sam, "github_disconnect", json!({}))
+        .await
+        .unwrap();
+    assert!(!kept(&lab.hub)[0].blocked);
+    let link = fake_link(&lab.hub, "devbox").await;
+    renew(&lab.hub).await;
+    assert_eq!(tokens(&link), [BLOCKED_TOKEN.to_owned()]);
+    assert!(kept(&lab.hub)[0].blocked);
+}
+
+#[tokio::test]
+async fn a_task_in_another_projects_checkout_gets_the_token_there() {
+    let lab = lab().await;
+    created(&lab).await;
+    call(&lab.hub, &admin(&lab.hub), "github_app_test", json!({}))
+        .await
+        .unwrap();
+    let (r, order) = order_on_acme(&lab.hub, None);
+    // acme/api is checked out on buildbox, as project `api`, and the order's project takes it in as a repo.
+    let summary: fleetd_contracts::model::ProjectSummary = serde_json::from_value(json!({
+        "machineId": "buildbox", "projectId": "api", "title": "api", "workspaceRoot": "/home/dev/src/api",
+        "threads": { "running": 0, "waiting": 0, "idle": 0, "failed": 0 }, "lastActivityAt": "2026-10-28T10:00:00.000Z",
+    }))
+    .unwrap();
+    let buildbox = fleetd_contracts::ids::MachineId::unchecked("buildbox");
+    lab.hub
+        .store
+        .projects_upsert_many(&buildbox, &[summary])
+        .unwrap();
+    lab.hub
+        .db
+        .with(|c| {
+            c.execute_batch("INSERT INTO work_projects VALUES ('buildbox', 'api', 'github.com/acme/api', 'main', 1);")?;
+            Ok(())
+        })
+        .unwrap();
+    let api: fleetd_contracts::ids::ProjectRef =
+        serde_json::from_value(json!({ "machineId": "buildbox", "projectId": "api" })).unwrap();
+    let repo = lab
+        .hub
+        .repos
+        .attach(&r, None, &api, "/home/dev/src/api")
+        .unwrap();
+    assert_eq!(
+        super::sessions::repo_at(&lab.hub, &r, Some(&repo.repo_id)),
+        Some(("acme/api".to_owned(), api.clone()))
+    );
+    let devbox = fake_link(&lab.hub, "devbox").await;
+    let at_buildbox = fake_link(&lab.hub, "buildbox").await;
+    super::sessions::deliver(&lab.hub, &r, &order, Some(&repo.repo_id), true)
+        .await
+        .unwrap();
+    // Under buildbox's checkout, where that task's sessions read their order's variables; nothing on devbox.
+    let kept = at_buildbox.lock().unwrap().clone();
+    assert_eq!(kept.len(), 1);
+    assert_eq!(
+        (kept[0].0.as_str(), kept[0].1.as_str()),
+        (format!("order:buildbox:{order}").as_str(), "api")
+    );
+    assert!(kept[0].3.starts_with("ghs_7_"));
+    assert!(devbox.lock().unwrap().is_empty());
+    assert_eq!(super::sessions::kept(&lab.hub)[0].checkout, api);
+}
+
+#[tokio::test]
+async fn removing_the_app_takes_back_what_it_handed_to_orders() {
+    let lab = lab().await;
+    created(&lab).await;
+    let sam = admin(&lab.hub);
+    call(&lab.hub, &sam, "github_app_test", json!({}))
+        .await
+        .unwrap();
+    let (r, order) = order_on_acme(&lab.hub, None);
+    handed(&lab.hub, &r, &order, None);
+    let calls = fake_node(&lab.hub).await;
+    call(&lab.hub, &sam, "github_app_remove", json!({}))
+        .await
+        .unwrap();
+    assert_eq!(
+        drops(&calls),
+        [(order.to_string(), Some("ab12cd34".into()))]
+    );
+    assert!(super::sessions::kept(&lab.hub).is_empty());
 }

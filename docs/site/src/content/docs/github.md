@@ -96,8 +96,10 @@ before it ends, and gone when the order closes. Each repo the order works in get
 repo's owner, and none in a repo the App doesn't reach, where `gh` uses the machine's own login.
 
 If GitHub stops taking your connection (revoked there, or unused for six months), Settings › GitHub says so, with
-**Connect again**. **Disconnect** revokes the token at GitHub, forgets it and takes it from your open orders' agents.
-Removing a person from the hub does the same with theirs.
+**Connect again**. **Disconnect** revokes the token at GitHub and forgets it. Your open orders' agents then hold a
+value GitHub refuses, so their `gh` fails (never falling back to the machine's login) and the order's lead asks you to
+connect again; they get your token back at their next turn once you do. GitHub lapsing your connection, or your
+removal from the hub, does the same.
 
 ## Remove it {#remove}
 

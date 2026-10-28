@@ -140,6 +140,8 @@ async fn remove(
 ) -> Result<GithubAppRemoveOutput, ToolError> {
     require_administrator(&hub, &caller)?;
     let app = hub.github_app.remove().await.map_err(failed)?;
+    // What it handed to orders' agents goes too: they use the machine's own login, as before the App.
+    super::sessions::withdraw_all(&hub).await;
     Ok(GithubAppRemoveOutput {
         settings_url: app.ok_or_else(none_yet)?.settings_url.into_inner(),
         next: None,

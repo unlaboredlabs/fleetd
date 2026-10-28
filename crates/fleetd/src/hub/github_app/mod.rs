@@ -209,6 +209,10 @@ struct Cache {
     installs: Vec<Install>,
 }
 
+/// One installation's reach, for [`GithubApps::reaches`]: its account (lowercase), whether it takes all its
+/// repositories, and which.
+type Reach = (String, bool, HashSet<String>);
+
 /// The hub's App: creating it, and its tokens.
 pub struct GithubApps {
     db: Arc<HubDb>,
@@ -218,6 +222,10 @@ pub struct GithubApps {
     cache: tokio::sync::Mutex<Cache>,
     /// One read of the installations at a time.
     refreshing: tokio::sync::Mutex<()>,
+    /// Where the App reaches, as its installations were last read, whole (up to 1000 repositories each): read by
+    /// [`Self::reaches`] without waiting on a read of GitHub. The App's id, and each installation's account, whether it
+    /// takes all its repositories, and which.
+    reach: std::sync::RwLock<Option<(i64, Vec<Reach>)>>,
     /// One change to people's tokens at a time: a refresh renews the refresh token too.
     accounts: tokio::sync::Mutex<()>,
 }
@@ -291,6 +299,7 @@ impl GithubApps {
             ep: RwLock::new(Endpoints::default()),
             cache: tokio::sync::Mutex::new(Cache::default()),
             refreshing: tokio::sync::Mutex::new(()),
+            reach: std::sync::RwLock::new(None),
             accounts: tokio::sync::Mutex::new(()),
         })
     }
@@ -542,6 +551,13 @@ impl GithubApps {
 
     /// Keeps what [`Self::read_installs`] read: in the cache, and on the App.
     async fn keep(&self, app_id: i64, installs: Vec<Install>, read: &GithubApp) {
+        *self.reach.write().unwrap_or_else(|e| e.into_inner()) = Some((
+            app_id,
+            installs
+                .iter()
+                .map(|i| (i.account.clone(), i.all, i.repos.clone()))
+                .collect(),
+        ));
         *self.cache.lock().await = Cache {
             app_id: Some(app_id),
             read_ms: self.now_ms(),
@@ -632,9 +648,8 @@ impl GithubApps {
         }
     }
 
-    /// Whether the App reaches `repo` (`owner/name`), as its installations were last read: with no call to GitHub,
-    /// from the token cache's whole list (up to 1000 repositories an installation) when it holds this App's, else from
-    /// the first 100 the App keeps.
+    /// Whether the App reaches `repo` (`owner/name`), as its installations were last read, with no call to GitHub:
+    /// from their whole list once this process has read it, else from the first 100 of each the App keeps.
     pub fn reaches(&self, repo: &str) -> bool {
         let Ok(Some(app)) = self.get() else {
             return false;
@@ -643,13 +658,12 @@ impl GithubApps {
         let Some((owner, _)) = repo.split_once('/') else {
             return false;
         };
-        if let Ok(cache) = self.cache.try_lock()
-            && cache.app_id == Some(app.app_id)
+        if let Some((id, installs)) = &*self.reach.read().unwrap_or_else(|e| e.into_inner())
+            && *id == app.app_id
         {
-            return cache
-                .installs
+            return installs
                 .iter()
-                .any(|i| i.account == owner && (i.all || i.repos.contains(&repo)));
+                .any(|(account, all, repos)| account == owner && (*all || repos.contains(&repo)));
         }
         app.installations.iter().any(|i| {
             i.account.to_lowercase() == owner
@@ -702,15 +716,16 @@ impl GithubApps {
     }
 
     /// Forgets the App: its row and its tokens. GitHub keeps it until the admin deletes it there.
-    /// People's connections and the orders' tokens were the App's too: they go with it, so a new App never passes
-    /// for them.
+    /// People's connections were the App's too: they go with it, so a new App never passes for them. The tokens handed
+    /// to orders' agents stay recorded until they are taken back (sessions.rs `withdraw_all`, and the sweep).
     pub async fn remove(&self) -> Result<Option<GithubApp>, String> {
         let mut cache = self.cache.lock().await;
         *cache = Cache::default();
         let _one = self.accounts.lock().await;
         self.db
             .with(|c| {
-                c.execute_batch("DELETE FROM github_accounts; DELETE FROM github_order_tokens;")?;
+                // The orders' tokens stay recorded, for the sweep to take back from their agents (sessions.rs).
+                c.execute("DELETE FROM github_accounts", [])?;
                 Ok(())
             })
             .map_err(|e| e.to_string())?;
