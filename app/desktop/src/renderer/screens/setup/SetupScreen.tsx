@@ -6,14 +6,14 @@
 // of it.
 
 import { Check } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { SetupListOutput, SetupStepId } from "../../../shared/contracts";
 import { lacksTool } from "../../src/data/errors";
 import { CallError, callKey } from "../../src/data/queries";
 import { useDataLayer, useHub, useToolQuery } from "../../src/data/react";
 import { Button, Text, cx } from "../../ui";
 import { useHubRole } from "../admin/role";
-import { errorText } from "../settings/hub";
+import { errorText, useRefetch } from "../settings/hub";
 import { navigate } from "../shell/navigation";
 import { GuideParts, Part } from "./Guide";
 import { groupWords, isRequiredLeft, needWords, placesOf, requiredLeft, statusWords, type SetupStep } from "./steps";
@@ -27,8 +27,20 @@ const go = (view: string | null) => {
 
 type Steps = { readonly steps: ReadonlyArray<SetupStep> } | { readonly problem: string; readonly old: boolean } | null;
 
+/**
+ * Asks the hub for its steps again each time a setup view opens: what was saved elsewhere meanwhile (Administration ›
+ * Claude, `fleetd init`) shows at once, rather than at the doctor's next run.
+ */
+export function useFreshSetup(enabled = true) {
+  const refetch = useRefetch();
+  useEffect(() => {
+    if (enabled) refetch(["setup_list"]);
+  }, [enabled, refetch]);
+}
+
 /** The hub's steps; null while they load. */
 export function useSetupSteps(): Steps {
+  useFreshSetup();
   const query = useToolQuery("setup_list", noInput);
   if (query.data !== undefined) return { steps: query.data.steps };
   if (query.error === null) return null;

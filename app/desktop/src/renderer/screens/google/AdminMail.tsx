@@ -31,7 +31,7 @@ export function RealTimeMail({ info, hub }: { info: GoogleGetOutput; hub: string
         setBusy(false);
         setConfirm(false);
         setSaid({ ok: true, text: out.next ?? "Real-time mail is off." });
-        refetch(["google_get"]);
+        refetch(["google_get", "setup_list"]);
       },
       (e: unknown) => {
         setBusy(false);
@@ -150,7 +150,7 @@ function MailForm({ hub, info, onSaved }: { hub: string; info: GoogleGetOutput; 
     }
     // Saved: the key leaves this page now.
     setKey("");
-    refetch(["google_get"]);
+    refetch(["google_get", "setup_list"]);
     onSaved((out.output as GooglePubsubSetOutput).next ?? "Saved.");
   };
   return (

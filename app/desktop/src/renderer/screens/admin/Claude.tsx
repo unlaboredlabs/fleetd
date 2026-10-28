@@ -200,7 +200,7 @@ function Members({ on, hubApi }: { on: boolean; hubApi: boolean }) {
     hubCall("claude_settings_set", { membersUseHubApi: next }).then(
       () => {
         setBusy(false);
-        refetch(["claude_accounts_get"]);
+        refetch(["claude_accounts_get", "setup_list"]);
       },
       (e: unknown) => {
         setBusy(false);

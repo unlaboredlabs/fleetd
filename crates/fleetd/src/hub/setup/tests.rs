@@ -145,6 +145,34 @@ fn a_step_is_todo_until_a_check_says_otherwise_and_skipping_is_only_kept_for_tod
 }
 
 #[test]
+fn github_is_to_do_not_failing_before_any_project_can_open_a_pr() {
+    let gh = [check(
+        "hub/gh_auth",
+        DoctorStatus::Fail,
+        "gh is not logged in on the hub.",
+    )];
+    let github = |projects| {
+        read(
+            guides(HUB),
+            &super::before_first_use(gh.to_vec(), projects),
+            &BTreeSet::new(),
+        )
+        .into_iter()
+        .find(|s| s.id == SetupStepId::Github)
+        .unwrap()
+    };
+    let fresh = github(0);
+    assert_eq!((fresh.status, fresh.failing), (SetupStatus::Todo, None));
+    assert_eq!(
+        fresh.said.as_deref(),
+        Some("gh is not logged in on the hub.")
+    );
+    // With a project of code, a PR can open: logged out is broken.
+    let live = github(1);
+    assert_eq!((live.status, live.failing), (SetupStatus::Look, Some(true)));
+}
+
+#[test]
 fn claude_is_done_by_any_one_of_its_ways_and_says_which() {
     let logins = [
         check(

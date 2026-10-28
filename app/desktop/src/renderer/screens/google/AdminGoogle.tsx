@@ -216,7 +216,7 @@ function ClientForm() {
         ? `Saved, and sealed on ${listWords(set.client.sealedOn?.map((x) => x.machineId) ?? [])}.`
         : `Saved. ${listWords(missing)} ${missing.length === 1 ? "was" : "were"} offline and ${missing.length === 1 ? "doesn't" : "don't"} hold it: save again while ${missing.length === 1 ? "it is" : "they are"} online.`;
     setSaved({ line, tested: null });
-    refetch(["google_get"]);
+    refetch(["google_get", "setup_list"]);
     const tested = await hubCall("google_client_test", {}, { timeoutMs: 60_000 }).then(testedOf, (e: unknown): Tested => ({ ok: false, text: errorText(e) }));
     setBusy(false);
     setSaved({ line, tested });

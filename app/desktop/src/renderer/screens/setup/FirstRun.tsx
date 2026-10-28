@@ -3,12 +3,13 @@
 import { useToolQuery } from "../../src/data/react";
 import { useHubRole } from "../admin/role";
 import { GetStarted } from "../onboarding";
-import { Welcome } from "./SetupScreen";
+import { useFreshSetup, Welcome } from "./SetupScreen";
 
 const noInput = {};
 
 export function FirstRun({ onAddProject }: { onAddProject: () => void }) {
   const role = useHubRole();
+  useFreshSetup(role.administers);
   const setup = useToolQuery("setup_list", noInput, { enabled: role.administers });
   // Nothing until it's known which, so the welcome never replaces Get started under the admin's eyes.
   if (role.pending || (role.administers && setup.data === undefined && setup.error === null)) return null;

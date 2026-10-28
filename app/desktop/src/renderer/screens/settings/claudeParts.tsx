@@ -31,7 +31,7 @@ export function useTest() {
       (out): Tried => ({ test: out.test }),
       (e: unknown): Tried => ({ error: errorText(e) }),
     );
-    refetch(["claude_accounts_get"]);
+    refetch(["claude_accounts_get", "setup_list"]);
     return tried;
   };
 }
@@ -47,7 +47,7 @@ export function useSave() {
   return async (request: ClaudeAccountRequest): Promise<{ ok: true; missing: string[]; tried: Tried | null } | { ok: false; problem: string }> => {
     const out = await window.fleetd.secret.claudeAccount(hub, request).catch((e: unknown) => ({ ok: false as const, problem: errorText(e) }));
     if (!out.ok) return { ok: false, problem: "problem" in out ? out.problem : errorText(new CallError(out.error)) };
-    refetch(["claude_accounts_get"]);
+    refetch(["claude_accounts_get", "setup_list"]);
     const missing = (out.output as { missingOn?: string[] } | null)?.missingOn ?? [];
     // An endpoint change alone keeps a key already tried; anything new is tried now.
     const fresh = request.account === "mine" || request.key !== undefined || request.endpoint !== undefined;
@@ -120,7 +120,7 @@ export function ConfirmRemove(props: { title: string; description: string; actio
     props.onRemove().then(
       () => {
         setBusy(false);
-        refetch(["claude_accounts_get"]);
+        refetch(["claude_accounts_get", "setup_list"]);
         props.onClose();
       },
       (e: unknown) => {

@@ -95,7 +95,7 @@ function Choice({ me, hubApi }: { me: PersonClaude; hubApi: boolean }) {
     hubCall("claude_choice_set", { choice }).then(
       () => {
         setBusy(false);
-        refetch(["claude_accounts_get"]);
+        refetch(["claude_accounts_get", "setup_list"]);
       },
       (e: unknown) => {
         setBusy(false);

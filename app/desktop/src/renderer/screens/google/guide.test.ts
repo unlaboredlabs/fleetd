@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import fixtures from "../../../../fixtures/setup/steps.json" with { type: "json" };
 import { cloudProject, googleParts, realtimeParts } from "./guide";
 
 const values = (parts: ReturnType<typeof googleParts>) => parts.flatMap((p) => p.values ?? []);
@@ -23,5 +24,13 @@ describe("Administration › Google's guide", () => {
     expect(shell).toContain("subscriptions add-iam-policy-binding fleetd-gmail-hub");
     expect(shell).toContain("--role=roles/pubsub.subscriber");
     expect(cloudProject("http://devbox:4790")).toBe("fleetd-devbox");
+  });
+
+  // The words around them (plain values: what to pick, where to paste) may name this page's own fields.
+  it("gives the same titles and values to paste as the hub's Google step, so the two can't drift", () => {
+    type Part = { title: string; values?: ReadonlyArray<{ label: string; value: string; plain?: boolean }> };
+    const pairs = (parts: ReadonlyArray<Part>) => parts.map((p) => [p.title, (p.values ?? []).filter((v) => v.plain !== true).map((v) => [v.label, v.value])]);
+    const hub = (fixtures.guides as ReadonlyArray<{ id: string; parts: ReadonlyArray<Part> }>).find((g) => g.id === "google");
+    expect(pairs([...googleParts(fixtures.hub), ...realtimeParts(fixtures.hub)])).toEqual(pairs(hub?.parts ?? []));
   });
 });

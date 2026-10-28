@@ -510,14 +510,13 @@
           "way": "each machine's own login"
         },
         "github": {
-          "failing": true,
           "fix": {
             "command": "gh auth login",
             "kind": "manual",
             "label": "Log gh in on the hub machine"
           },
           "said": "gh is not logged in on the hub; the merge train and PR checks need it.",
-          "status": "look"
+          "status": "todo"
         },
         "google": {
           "status": "todo"
@@ -536,14 +535,13 @@
       "requiredLeft": 0,
       "skips": {
         "github": {
-          "failing": true,
           "fix": {
             "command": "gh auth login",
             "kind": "manual",
             "label": "Log gh in on the hub machine"
           },
           "said": "gh is not logged in on the hub; the merge train and PR checks need it.",
-          "status": "look"
+          "status": "skipped"
         },
         "google": {
           "status": "skipped"
@@ -566,14 +564,13 @@
           "way": "each machine's own login"
         },
         "github": {
-          "failing": true,
           "fix": {
             "command": "gh auth login",
             "kind": "manual",
             "label": "Log gh in on the hub machine"
           },
           "said": "gh is not logged in on the hub; the merge train and PR checks need it.",
-          "status": "look"
+          "status": "todo"
         },
         "google": {
           "status": "todo"
@@ -591,14 +588,13 @@
       },
       "unskips": {
         "github": {
-          "failing": true,
           "fix": {
             "command": "gh auth login",
             "kind": "manual",
             "label": "Log gh in on the hub machine"
           },
           "said": "gh is not logged in on the hub; the merge train and PR checks need it.",
-          "status": "look"
+          "status": "todo"
         },
         "google": {
           "status": "todo"
@@ -713,14 +709,13 @@
           "way": "each machine's own login"
         },
         "github": {
-          "failing": true,
           "fix": {
             "command": "gh auth login",
             "kind": "manual",
             "label": "Log gh in on the hub machine"
           },
           "said": "gh is not logged in on the hub; the merge train and PR checks need it.",
-          "status": "look"
+          "status": "todo"
         },
         "google": {
           "status": "todo"
@@ -739,14 +734,13 @@
       "requiredLeft": 1,
       "skips": {
         "github": {
-          "failing": true,
           "fix": {
             "command": "gh auth login",
             "kind": "manual",
             "label": "Log gh in on the hub machine"
           },
           "said": "gh is not logged in on the hub; the merge train and PR checks need it.",
-          "status": "look"
+          "status": "skipped"
         },
         "google": {
           "status": "skipped"
@@ -770,14 +764,13 @@
           "way": "each machine's own login"
         },
         "github": {
-          "failing": true,
           "fix": {
             "command": "gh auth login",
             "kind": "manual",
             "label": "Log gh in on the hub machine"
           },
           "said": "gh is not logged in on the hub; the merge train and PR checks need it.",
-          "status": "look"
+          "status": "todo"
         },
         "google": {
           "status": "todo"
@@ -795,14 +788,13 @@
       },
       "unskips": {
         "github": {
-          "failing": true,
           "fix": {
             "command": "gh auth login",
             "kind": "manual",
             "label": "Log gh in on the hub machine"
           },
           "said": "gh is not logged in on the hub; the merge train and PR checks need it.",
-          "status": "look"
+          "status": "todo"
         },
         "google": {
           "status": "todo"
@@ -827,14 +819,13 @@
           "way": "the hub's API key"
         },
         "github": {
-          "failing": true,
           "fix": {
             "command": "gh auth login",
             "kind": "manual",
             "label": "Log gh in on the hub machine"
           },
           "said": "gh is not logged in on the hub; the merge train and PR checks need it.",
-          "status": "look"
+          "status": "todo"
         },
         "google": {
           "status": "todo"
@@ -853,14 +844,13 @@
       "requiredLeft": 0,
       "skips": {
         "github": {
-          "failing": true,
           "fix": {
             "command": "gh auth login",
             "kind": "manual",
             "label": "Log gh in on the hub machine"
           },
           "said": "gh is not logged in on the hub; the merge train and PR checks need it.",
-          "status": "look"
+          "status": "skipped"
         },
         "google": {
           "status": "skipped"
@@ -902,14 +892,13 @@
       },
       "unskips": {
         "github": {
-          "failing": true,
           "fix": {
             "command": "gh auth login",
             "kind": "manual",
             "label": "Log gh in on the hub machine"
           },
           "said": "gh is not logged in on the hub; the merge train and PR checks need it.",
-          "status": "look"
+          "status": "todo"
         },
         "google": {
           "status": "todo"

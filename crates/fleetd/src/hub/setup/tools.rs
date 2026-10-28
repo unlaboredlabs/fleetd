@@ -6,6 +6,7 @@ use fleetd_contracts::mcp::{
     ErrorCode, SetupListInput, SetupListOutput, SetupSkipInput, SetupSkipOutput, SetupTestInput,
     SetupTestOutput,
 };
+use fleetd_contracts::model::ProjectKind;
 use fleetd_contracts::prim::Count;
 use fleetd_contracts::setup::{HubSetupStep, SetupNeed, SetupStepId};
 
@@ -54,7 +55,14 @@ async fn with_fresh(hub: &Hub, mut checks: Vec<DoctorCheck>) -> Vec<DoctorCheck>
 
 fn read(hub: &Hub, checks: &[DoctorCheck]) -> Result<Vec<HubSetupStep>, ToolError> {
     let skipped = super::skipped(&hub.db)?;
-    Ok(super::read(super::guides(&hub_url(hub)), checks, &skipped))
+    let code = hub
+        .store
+        .projects_shown(None, None)?
+        .iter()
+        .filter(|p| p.kind != Some(ProjectKind::Assistant))
+        .count();
+    let checks = super::before_first_use(checks.to_vec(), code);
+    Ok(super::read(super::guides(&hub_url(hub)), &checks, &skipped))
 }
 
 fn one(steps: Vec<HubSetupStep>, id: SetupStepId) -> HubSetupStep {

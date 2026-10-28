@@ -72,7 +72,12 @@ struct Point {
     google: bool,
 }
 
+/// The checks at `p`, on a hub with no project yet (the fixtures' empty hub).
 fn checks_at(p: &Point) -> Vec<DoctorCheck> {
+    super::before_first_use(doctor_at(p), 0)
+}
+
+fn doctor_at(p: &Point) -> Vec<DoctorCheck> {
     let mut out = vec![
         checks::hub_reachable("http://127.0.0.1:4790/healthz", &Probe::Ok, String::new()).check,
         DoctorCheck {

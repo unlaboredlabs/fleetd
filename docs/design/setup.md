@@ -424,18 +424,25 @@ None are open. Each answer below is already in the sections above.
    (`#/setup`) and Administration › Setup on `setup_list`, `setup_test` and `setup_skip`, with the prototype's
    catalog gone. Each step's `place` opens where its result is saved; the sidebar's Administration entry counts the
    required steps left. The app's fixtures are the hub's own answers, written from the catalog
-   (`hub/setup/fixtures.rs` → `app/desktop/fixtures/setup/steps.json`), so the app keeps no second catalog. The
-   GitHub App's step needs nothing of the app: its part and `place` come from the hub.
+   (`hub/setup/fixtures.rs` → `app/desktop/fixtures/setup/steps.json`), so the app keeps no second catalog. Setup
+   reads `setup_list` again when a setup view opens, when the doctor's checks change (`doctor.changed`) or people do,
+   and after a save on a step's place (Claude, Google, a Navi's integrations), so a result saved elsewhere, or with
+   `fleetd init`, shows at once. Today the GitHub step is "Log gh in on the hub", with no `place`: there is nothing
+   to save in the app. When the GitHub App replaces it, its parts, check and `place` come from the hub, and the app
+   needs only to learn the new place's page.
 4. Each in-flight piece adds its step as it lands (§5).
 
 What the build does differently from the sections above, for now:
 
-- **Fields are saved where they live today.** A step names the Administration section that saves its result
-  (`place`: Google's client and Pub/Sub key on Administration › Google, invites on Invites), rather than a
-  `setup_save` of its own. The terminal never takes a secret: the CLI's key isn't a person's, and the sealed paths
-  are the app's.
+- **Result fields live on the place's page, not in the step.** A step has no fields of its own (`fields` stays empty,
+  and there is no `setup_save`): it names the page that saves its result (`place`), and its last part, "Save it in
+  fleetd", opens it. The Claude key and endpoint are on Administration › Claude, a subscription token on Settings ›
+  Claude, Google's client and the Pub/Sub key on Administration › Google, invites on Administration › Invites. Each
+  of those pages seals its secrets on the device as before. The terminal never takes a secret: the CLI's key isn't a
+  person's, and the sealed paths are the app's.
 - **GitHub** is `gh auth login` on the hub (`hub/gh_auth`) until the GitHub App (D190) is built; its manifest flow,
-  endpoints and `hub/github_app` replace this step's part and way then.
+  endpoints and `hub/github_app` replace this step's part and way then. Before the hub has a project of code, no PR
+  can open, so gh logged out there reads "to do", not failing (`before_first_use`).
 - **A step that wants a look** fails `fleetd init` and `fleetd doctor` only when its check fails; a warning (a
   degraded machine, a LAN address) stays a warning and leaves nothing required (`failing`).
 - **Claude** reads `hub/claude_key` and `hub/claude_owner` (#756) as its first two ways, then every machine's own

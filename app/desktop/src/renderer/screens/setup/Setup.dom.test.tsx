@@ -30,6 +30,8 @@ let root: Root;
 let calls: Array<{ tool: string; input: unknown }>;
 let admin: boolean;
 let scenario: Scenario;
+/** Sends the app a frame, as the hub's feed would. */
+let send: (frame: HubFrame) => void = () => undefined;
 
 beforeEach(() => {
   host = document.createElement("div");
@@ -76,7 +78,7 @@ const render = async (node: ReactNode) => {
       calls.push({ tool, input });
       return Promise.resolve(answer(tool, input));
     },
-    subscribe: (l) => ((listener = l), () => undefined),
+    subscribe: (l) => ((listener = l), (send = l), () => undefined),
     resync: () => Promise.resolve(),
     focus: () => Promise.resolve(),
     chat: () => Promise.resolve(),
@@ -120,15 +122,33 @@ describe("setup", () => {
     await render(<SetupScreen view={null} />);
     expect(document.querySelector("[data-screen='setup']")).not.toBeNull();
     expect(document.body.textContent).toContain("3 of 7 done.");
-    // Claude is done with the hub's key; GitHub wants a look: gh isn't logged in, and that fails.
+    // Claude is done with the hub's key; GitHub is next, to do before the first PR (no project yet), not failing.
     expect(rail("claude")).toContain("Done");
+    expect(rail("github")).toContain("Before the first PR");
     expect(pane()?.getAttribute("data-step")).toBe("github");
-    expect(pane()?.textContent).toContain("gh is not logged in on the hub");
     expect(pane()?.textContent).toContain("gh auth login");
     await click(button("Test"));
     expect(calls.filter((c) => c.tool === "setup_test")).toEqual([{ tool: "setup_test", input: { step: "github" } }]);
     expect(pane()?.textContent).toContain("gh is logged in on the hub as dev.");
     expect(rail("github")).toContain("Done");
+  });
+
+  it("asks the hub again when its checks change, and each time a setup view opens, so a save elsewhere shows", async () => {
+    await render(<SetupScreen view="claude" />);
+    expect(rail("github")).toContain("Before the first PR");
+    // gh logged in on the hub (fleetd init, or a terminal): the doctor's next run says so, and the steps follow.
+    scenario = { ...scenario, list: { ...scenario.list, github: scenario.tests["github"] ?? {} } };
+    await act(async () => {
+      send({ t: "event", event: { seq: 2, at: "2026-10-19T10:00:00.000Z", type: "doctor.changed", summary: "doctor: hub/gh_auth fail → ok", data: {} } });
+      await new Promise((r) => setTimeout(r, 300));
+    });
+    await settle();
+    expect(rail("github")).toContain("Done");
+    // Opening a setup view reads them again, whatever was cached.
+    const lists = () => calls.filter((c) => c.tool === "setup_list").length;
+    const before = lists();
+    await render(<FirstRun onAddProject={() => undefined} />);
+    expect(lists()).toBeGreaterThan(before);
   });
 
   it("puts an optional step off for later on the hub, and back", async () => {

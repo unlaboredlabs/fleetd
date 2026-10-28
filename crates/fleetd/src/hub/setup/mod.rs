@@ -642,6 +642,20 @@ pub fn read(
         .collect()
 }
 
+/// GitHub is needed only before the first PR: on a hub with no project of code yet no PR can open, so gh logged out
+/// (or missing) there is GitHub not set up yet, "todo", not failing. Once a project exists, it fails as the doctor says.
+pub fn before_first_use(mut checks: Vec<DoctorCheck>, code_projects: usize) -> Vec<DoctorCheck> {
+    if code_projects == 0 {
+        for c in checks
+            .iter_mut()
+            .filter(|c| c.id == "hub/gh_auth" && c.status == DoctorStatus::Fail)
+        {
+            c.status = DoctorStatus::Unknown;
+        }
+    }
+    checks
+}
+
 /// The steps the admin put off for later.
 pub fn skipped(db: &HubDb) -> Result<BTreeSet<SetupStepId>, StoreError> {
     db.with(|c| {

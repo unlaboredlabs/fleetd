@@ -61,6 +61,11 @@ describe("event effects", () => {
     expect(tools(e("thread.progress", undefined, { threadId: "t1" }))).not.toContain("work_list");
   });
 
+  it("the hub's setup steps follow the doctor's checks and the hub's people", () => {
+    expect(tools(e("doctor.changed"))).toEqual(["doctor_list", "setup_list"]);
+    expect(tools(e("people.changed"))).toContain("setup_list");
+  });
+
   it("a machine or project coming or going resyncs; an unknown type does nothing", () => {
     expect(effectsOf(e("project.added")).resync).toBe(true);
     // A repo removed from a project can bring its checkout back as a project of its own.
