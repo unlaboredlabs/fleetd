@@ -11,6 +11,12 @@
 // - FLEETD_UPDATES_CERT: a code signing certificate (PEM) for over-the-air updates (D219). Without it the app takes no
 //   updates at all: an unsigned bundle is never loaded. FLEETD_UPDATES_CHANNEL (edge or stable, default edge) picks
 //   the static manifests published alongside fleetd's releases, per runtime version and platform.
+// - FLEETD_GOOGLE_SERVICES_FILE: the Firebase project's google-services.json, for FCM on Android. Without it the app
+//   builds and runs, and gets no notifications: Android gives it no push token.
+// - FLEETD_ANDROID_KEYSTORE: a keystore that signs release builds (plugins/android-signing.js), else debug-signed.
+//
+// Notifications use the platforms' own push, APNs and FCM, through `fleetd push-relay`, never Expo's push service
+// (docs/design/push.md). The iOS Notification Service Extension that opens them comes from plugins/notification-service.
 import { relative, resolve } from "node:path";
 import type { ConfigContext, ExpoConfig } from "expo/config";
 
@@ -18,6 +24,7 @@ const appId = process.env.FLEETD_APP_ID || "sh.fleetd.app";
 const updatesCert = process.env.FLEETD_UPDATES_CERT || undefined;
 const build = /^\d+$/u.test(process.env.FLEETD_BUILD_NUMBER ?? "") ? process.env.FLEETD_BUILD_NUMBER : undefined;
 const channel = process.env.FLEETD_UPDATES_CHANNEL === "stable" ? "stable" : "edge";
+const googleServices = process.env.FLEETD_GOOGLE_SERVICES_FILE || undefined;
 
 /** The manifests' home: one URL per channel, which serves by the request's expo-runtime-version and expo-platform. */
 export const UPDATES_URL = `https://fleetd.sh/updates/${channel}`;
@@ -64,6 +71,14 @@ export default ({ projectRoot }: ConfigContext): ExpoConfig => ({
       monochromeImage: "./assets/android-icon-monochrome.png",
     },
     predictiveBackGestureEnabled: false,
+    ...(googleServices === undefined ? {} : { googleServicesFile: relative(projectRoot, resolve(googleServices)) }),
   },
-  plugins: ["expo-secure-store", ["expo-build-properties", { android: { usesCleartextTraffic: true } }]],
+  plugins: [
+    "expo-secure-store",
+    ["expo-build-properties", { android: { usesCleartextTraffic: true } }],
+    // A signed build is a store's (TestFlight, the App Store), whose APNs is production; the relay picks the matching one.
+    ["expo-notifications", { mode: "production", icon: "./assets/android-icon-monochrome.png", color: "#1c1c1b", defaultChannel: "other" }],
+    "./plugins/notification-service",
+    "./plugins/android-signing",
+  ],
 });

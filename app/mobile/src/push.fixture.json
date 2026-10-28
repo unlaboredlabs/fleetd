@@ -1,0 +1,15 @@
+{
+  "note": "Sealed boxes made by the hub's seal (crates/fleetd/src/hub/push/mod.rs, crypto_box 0.9.1's crypto_box_seal) to this fixed key pair. The app's tests (push.test.ts) and the iOS extension's (ios/test.swift) open them.",
+  "secretKey": "AwoRGB8mLTQ7QklQV15lbHN6gYiPlp2kq7K5wMfO1dw=",
+  "publicKey": "u1D/noKldM+/gg6X9g+5wUPsdBXPUU+M/Zjv9Z4FlhQ=",
+  "cases": [
+    {
+      "plaintext": "{\"v\":1,\"kind\":\"message\",\"title\":\"Ada\",\"body\":\"Your flight moved to 9:40.\",\"hub\":\"http://devbox:4790\",\"machineId\":\"devbox\",\"projectId\":\"navi-ada\",\"messageId\":\"m42\",\"quiet\":true,\"at\":\"2026-10-29T08:12:00.000Z\"}",
+      "ciphertext": "/ahVj8Ni3WtLmh9sY7BcAD8eqpEckY3CbvUF1zspA1zZrq7wPt4V8cHDUQdFsXB30k2Mw49yVMC53srRre+YX0XW/3j+zcvEVanirjbznZyfFNPYOrKHD8UckvJOwyeIker96yjM5IJ/AFQTWYYmGedYPVcL1bFTSVPRdkwhbkczn4n34q7KCSoEtacUOYtQTxJtzTbEcb3AVKSMA0BCWSYibi27FKYFqCAnOMkzPxes800W8LPqmVU5/3ZyBfKrgA2ZIjln6vx7Tm8UYu2lIB0kDNN/UPTAgewAw3CS75H8VfhoZH1VKr10mUTArlNGhoiWgKrLhFPB7TPuwifkzA=="
+    },
+    {
+      "plaintext": "{\"v\":1,\"kind\":\"approval\",\"title\":\"storefront\",\"body\":\"Send an email to landlord@example.com — naïve café ✓\",\"hub\":\"http://devbox:4790\",\"machineId\":\"devbox\",\"projectId\":\"shop\",\"threadId\":\"t1\",\"requestId\":\"Q7\",\"urgent\":true,\"at\":\"2026-10-29T08:13:00.000Z\"}",
+      "ciphertext": "XPX14+CYCrMSt1wsMdJc0cTuSbPgAlN1VUFeytHXUCIfoKD8XUcoeiixwdSuJDnPJm+isg8Vmilq7DfTiTgH1vhZSA6WqOc1emcL6bMte98hVGHj9awrWrQAGoes/iOWGSILJyrYVc4y8JG+ziSJ24+qe4r9tpaTRmS3PhAC1kdcBtYWu5U9u7Gs5LGD6iAq01W+mDm9M1zeZ/JgmG7z+Z0TZ/PqEJQ0ZUnTHeLOeWrgq8x8BA9KJPO6DOMFdErsmQo/EltpkpkPQaf+PTlQ7COCcxEmKpgSj9ej7ejNdkH4BNEH+DxRiju5kSZW40fLrRrV4DxyZOWz3Lld9t3PRce0uW+jeJAUoOFnnXR9/OQ2YkBjLq8k2WjhoSzLlAtxpHxcNtV/GHHOAZfo4QEBn+id30Q="
+    }
+  ]
+}

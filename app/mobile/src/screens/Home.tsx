@@ -62,9 +62,11 @@ function ProjectRow({ row, onPress }: { row: Row; onPress: () => void }) {
   );
 }
 
-export function Approvals({ state, session }: { state: State; session: Session }) {
+/** `focus`: the request a tapped notification named, first. */
+export function Approvals({ state, session, focus }: { state: State; session: Session; focus?: string | undefined }) {
   if (state.requests === undefined) return <Empty text={state.hub.phase === "live" ? "Loading…" : "Not connected."} />;
-  const open = approvals(state.requests);
+  const listed = approvals(state.requests);
+  const open = [...listed.filter((r) => r.requestId === focus), ...listed.filter((r) => r.requestId !== focus)];
   if (open.length === 0) return <Empty text="Nothing waits for your approval." />;
   return (
     <FlatList
