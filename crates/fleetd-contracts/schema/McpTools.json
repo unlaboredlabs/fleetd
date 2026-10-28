@@ -5577,6 +5577,311 @@
       ],
       "type": "object"
     },
+    "GithubApp": {
+      "description": "The hub's App, as the hub keeps it: no key and no secret.",
+      "properties": {
+        "appId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "clientId": {
+          "description": "What people sign in through it with (not a secret).",
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "createdAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "htmlUrl": {
+          "description": "Its public page on GitHub.",
+          "maxLength": 500,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "installations": {
+          "default": [],
+          "description": "Where it is installed, as the last Test (or token) read them.",
+          "items": {
+            "$ref": "#/$defs/GithubInstallation"
+          },
+          "type": "array"
+        },
+        "lastTest": {
+          "$ref": "#/$defs/GithubAppTest"
+        },
+        "name": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "owner": {
+          "description": "The account or organization that owns it.",
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "settingsUrl": {
+          "description": "Its settings on GitHub, under its owner's: where it is changed or deleted.",
+          "maxLength": 500,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "slug": {
+          "description": "From GitHub's answer, never from the name proposed: the admin may rename it on GitHub's form.",
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "appId",
+        "slug",
+        "name",
+        "clientId",
+        "owner",
+        "htmlUrl",
+        "settingsUrl",
+        "createdAt"
+      ],
+      "type": "object"
+    },
+    "GithubAppCreateInput": {
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/GithubManifestCode",
+          "description": "From GitHub's redirect."
+        }
+      },
+      "required": [
+        "code"
+      ],
+      "type": "object"
+    },
+    "GithubAppCreateOutput": {
+      "properties": {
+        "app": {
+          "$ref": "#/$defs/GithubApp"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "app"
+      ],
+      "type": "object"
+    },
+    "GithubAppGetInput": {
+      "type": "object"
+    },
+    "GithubAppGetOutput": {
+      "properties": {
+        "app": {
+          "$ref": "#/$defs/GithubApp",
+          "description": "None until an admin creates one."
+        },
+        "next": {
+          "type": "string"
+        },
+        "permissions": {
+          "description": "What it asks for on each repository, as the manifest has it: `[name, read|write]`.",
+          "items": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "type": "array"
+          },
+          "type": "array"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "permissions"
+      ],
+      "type": "object"
+    },
+    "GithubAppManifestInput": {
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/GithubAppName",
+          "description": "What the admin's GitHub shows it as: `fleetd on <host>`. GitHub may ask for another when it is taken."
+        },
+        "organization": {
+          "$ref": "#/$defs/GithubLogin",
+          "description": "Make it in this organization; absent: in the admin's own account."
+        },
+        "redirect": {
+          "$ref": "#/$defs/LoopbackUri",
+          "description": "Where GitHub sends the admin back with the code: the loopback page that posted the manifest."
+        }
+      },
+      "required": [
+        "name",
+        "redirect"
+      ],
+      "type": "object"
+    },
+    "GithubAppManifestOutput": {
+      "properties": {
+        "manifest": {
+          "description": "The manifest, JSON.",
+          "type": "string"
+        },
+        "next": {
+          "type": "string"
+        },
+        "postTo": {
+          "description": "GitHub's page to post the manifest to, as a form field `manifest`, with a `state` of the caller's own.",
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "postTo",
+        "manifest"
+      ],
+      "type": "object"
+    },
+    "GithubAppName": {
+      "pattern": "^[^\\r\\n]{1,34}$",
+      "type": "string"
+    },
+    "GithubAppRemoveInput": {
+      "type": "object"
+    },
+    "GithubAppRemoveOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "settingsUrl": {
+          "description": "Its settings on GitHub, where it is deleted too.",
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "settingsUrl"
+      ],
+      "type": "object"
+    },
+    "GithubAppTest": {
+      "description": "What the last Test said.",
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "said": {
+          "description": "In a line a person can act on.",
+          "maxLength": 1000,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "at",
+        "ok",
+        "said"
+      ],
+      "type": "object"
+    },
+    "GithubAppTestInput": {
+      "type": "object"
+    },
+    "GithubAppTestOutput": {
+      "properties": {
+        "app": {
+          "$ref": "#/$defs/GithubApp"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "app"
+      ],
+      "type": "object"
+    },
+    "GithubInstallation": {
+      "description": "One installation of the App: an account or organization, and the repositories it reaches there.",
+      "properties": {
+        "account": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "allRepositories": {
+          "description": "Every repository of the account, now and later.",
+          "type": "boolean"
+        },
+        "installationId": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "repositories": {
+          "default": [],
+          "description": "With chosen repositories: their `owner/name`, the first 100.",
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "pattern": "^[^\\r\\n]*$",
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "repositoryCount": {
+          "description": "How many it reaches.",
+          "format": "int64",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "installationId",
+        "account",
+        "allRepositories",
+        "repositoryCount"
+      ],
+      "type": "object"
+    },
+    "GithubLogin": {
+      "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$",
+      "type": "string"
+    },
+    "GithubManifestCode": {
+      "pattern": "^[A-Za-z0-9_-]{1,200}$",
+      "type": "string"
+    },
     "GoogleAccount": {
       "description": "One Navi's Google account.",
       "properties": {
@@ -9341,6 +9646,36 @@
         "fleetd_status.output": {
           "$ref": "#/$defs/FleetdStatusOutput"
         },
+        "github_app_create.input": {
+          "$ref": "#/$defs/GithubAppCreateInput"
+        },
+        "github_app_create.output": {
+          "$ref": "#/$defs/GithubAppCreateOutput"
+        },
+        "github_app_get.input": {
+          "$ref": "#/$defs/GithubAppGetInput"
+        },
+        "github_app_get.output": {
+          "$ref": "#/$defs/GithubAppGetOutput"
+        },
+        "github_app_manifest.input": {
+          "$ref": "#/$defs/GithubAppManifestInput"
+        },
+        "github_app_manifest.output": {
+          "$ref": "#/$defs/GithubAppManifestOutput"
+        },
+        "github_app_remove.input": {
+          "$ref": "#/$defs/GithubAppRemoveInput"
+        },
+        "github_app_remove.output": {
+          "$ref": "#/$defs/GithubAppRemoveOutput"
+        },
+        "github_app_test.input": {
+          "$ref": "#/$defs/GithubAppTestInput"
+        },
+        "github_app_test.output": {
+          "$ref": "#/$defs/GithubAppTestOutput"
+        },
         "google_client_set.input": {
           "$ref": "#/$defs/GoogleClientSetInput"
         },
@@ -10077,6 +10412,16 @@
         "events_wait.output",
         "fleetd_status.input",
         "fleetd_status.output",
+        "github_app_create.input",
+        "github_app_create.output",
+        "github_app_get.input",
+        "github_app_get.output",
+        "github_app_manifest.input",
+        "github_app_manifest.output",
+        "github_app_remove.input",
+        "github_app_remove.output",
+        "github_app_test.input",
+        "github_app_test.output",
         "google_client_set.input",
         "google_client_set.output",
         "google_client_test.input",

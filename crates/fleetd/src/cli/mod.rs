@@ -4,6 +4,7 @@
 pub mod agent_mcp;
 pub mod args;
 pub mod chat;
+pub mod github_app;
 pub mod google_mcp;
 pub mod hub_key;
 pub mod mcp_client;
@@ -66,7 +67,7 @@ commands:
   help       show this message
 {}
 setting up (on the hub machine):
-{}{}{}{}
+{}{}{}{}{}
 projects:
 {}{}
 running by hand:
@@ -76,6 +77,7 @@ running by hand:
         setup::machine::machine_usage(),
         pair::PAIR_USAGE,
         people::PEOPLE_USAGE,
+        github_app::GITHUB_APP_USAGE,
         project::PROJECT_USAGE,
         navi::NAVI_USAGE,
         node::HUB_START_USAGE,
@@ -114,6 +116,7 @@ pub fn help_for(argv: &[String]) -> Option<String> {
         "machine" => setup::machine::machine_usage(),
         "pair" => pair::PAIR_USAGE.to_owned(),
         "invite" | "people" => people::PEOPLE_USAGE.to_owned(),
+        "github-app" => github_app::GITHUB_APP_USAGE.to_owned(),
         "project" | "projects" => project::PROJECT_USAGE.to_owned(),
         "navi" | "navis" => navi::NAVI_USAGE.to_owned(),
         "hub" => match rest.first().map(String::as_str) {
@@ -196,6 +199,7 @@ fn is_long_running(argv: &[String]) -> bool {
                 | "doctor"
                 | "uninstall"
                 | "machine"
+                | "github-app"
                 | "project"
                 | "projects"
                 | "navi"
@@ -219,6 +223,7 @@ async fn run_long_running(argv: &[String]) -> u8 {
     match argv[0].as_str() {
         "init" | "doctor" | "uninstall" => setup::setup_command(&argv[0], rest).await,
         "machine" => setup::machine::machine_command(rest).await,
+        "github-app" => github_app::github_app_command(rest).await,
         "project" | "projects" => project::project_command(rest).await,
         "navi" | "navis" => navi::navi_command(rest).await,
         "node" => node::node_command(rest).await,

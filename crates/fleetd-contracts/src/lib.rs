@@ -16,6 +16,7 @@ pub mod claude_accounts;
 pub mod doctor;
 pub mod effort;
 pub mod events;
+pub mod github_app;
 pub mod google;
 pub mod hello;
 pub mod hub_links;

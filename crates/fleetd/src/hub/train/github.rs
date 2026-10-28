@@ -34,22 +34,30 @@ pub struct SystemGh;
 
 impl GhRunner for SystemGh {
     fn run(&self, args: Vec<String>) -> BoxFut<'_, Result<GhOut, String>> {
-        Box::pin(async move {
-            let child = tokio::process::Command::new("gh")
-                .args(&args)
-                .kill_on_drop(true)
-                .output();
-            match tokio::time::timeout(std::time::Duration::from_secs(30), child).await {
-                Err(_) => Err("gh timed out after 30 s".into()),
-                Ok(Err(e)) if e.kind() == std::io::ErrorKind::NotFound => Err("ENOENT".into()),
-                Ok(Err(e)) => Err(e.to_string()),
-                Ok(Ok(out)) => Ok(GhOut {
-                    exit_code: out.status.code().unwrap_or(1),
-                    stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
-                    stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
-                }),
-            }
-        })
+        Box::pin(run_gh("gh", args, None))
+    }
+}
+
+/// One run of `program` (`gh`), 30 s at most; with `token`, as that token (`GH_TOKEN`) instead of gh's own login.
+pub async fn run_gh(
+    program: &str,
+    args: Vec<String>,
+    token: Option<&str>,
+) -> Result<GhOut, String> {
+    let mut command = tokio::process::Command::new(program);
+    command.args(&args).kill_on_drop(true);
+    if let Some(token) = token {
+        command.env("GH_TOKEN", token);
+    }
+    match tokio::time::timeout(std::time::Duration::from_secs(30), command.output()).await {
+        Err(_) => Err("gh timed out after 30 s".into()),
+        Ok(Err(e)) if e.kind() == std::io::ErrorKind::NotFound => Err("ENOENT".into()),
+        Ok(Err(e)) => Err(e.to_string()),
+        Ok(Ok(out)) => Ok(GhOut {
+            exit_code: out.status.code().unwrap_or(1),
+            stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
+        }),
     }
 }
 

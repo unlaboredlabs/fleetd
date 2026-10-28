@@ -68,6 +68,7 @@ export default defineConfig({
             "navi",
             "chat",
             "merge-train",
+            "github",
             "steering",
             "automations",
             "approvals-and-secrets",

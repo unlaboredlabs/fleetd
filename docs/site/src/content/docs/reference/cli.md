@@ -190,6 +190,38 @@ fleetd people remove <personId> [--home <dir>]
 
 signs out all their devices; one device: `fleetd hub` key revoke \<keyId\>. The hub always keeps an owner
 
+### fleetd github-app {#github-app}
+
+```text
+fleetd github-app [--home <dir>]
+```
+
+the hub's own GitHub App: where it is installed and its last test
+
+### fleetd github-app create {#github-app-create}
+
+```text
+fleetd github-app create [--org <org>] [--name <name>] [--port <port>] [--home <dir>]
+```
+
+make it on GitHub with nothing to paste: opens a page on this machine (127.0.0.1) that sends GitHub the App's manifest; press Create on GitHub and the hub keeps its keys, sealed. From another computer, forward the port first: ssh -L \<port\>:127.0.0.1:\<port\> \<this machine\>
+
+### fleetd github-app test {#github-app-test}
+
+```text
+fleetd github-app test [--home <dir>]
+```
+
+mint a token for each installation and say where the App reaches
+
+### fleetd github-app remove {#github-app-remove}
+
+```text
+fleetd github-app remove [--home <dir>]
+```
+
+forget it; the hub's gh goes back to this machine's own login
+
 
 ## Projects {#projects}
 

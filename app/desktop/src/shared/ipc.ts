@@ -225,6 +225,18 @@ export const GoogleConnectRequest = z.strictObject({
   project: z.strictObject({ machineId: z.string().min(1).max(64), projectId: z.string().min(1).max(200) }),
 });
 export type GoogleConnectRequest = z.infer<typeof GoogleConnectRequest>;
+/**
+ * Create the hub's own GitHub App (Administration › GitHub): main asks the hub for its manifest, posts it to GitHub from
+ * a loopback page, catches GitHub's code there and calls github_app_create itself; the App's keys go to the hub only.
+ */
+export const GithubAppRequest = z.strictObject({
+  name: z.string().regex(/^[^\r\n]{1,34}$/u),
+  organization: z
+    .string()
+    .regex(/^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/u)
+    .optional(),
+});
+export type GithubAppRequest = z.infer<typeof GithubAppRequest>;
 
 const Boxes = z.array(z.strictObject({ machineId: z.string().min(1).max(64), boxPubKey: z.string().regex(/^[A-Za-z0-9+/]{43}=$/u) })).max(500);
 /**
@@ -340,6 +352,8 @@ export const REQUESTS = {
   [IPC.googlePubsubSubmit]: z.tuple([HubId, GooglePubsubRequest]),
   [IPC.googleConnect]: z.tuple([HubId, GoogleConnectRequest]),
   [IPC.googleCancel]: none,
+  [IPC.githubAppCreate]: z.tuple([HubId, GithubAppRequest]),
+  [IPC.githubAppCancel]: none,
   [IPC.claudeAccountSubmit]: z.tuple([HubId, ClaudeAccountRequest]),
   [IPC.systemHostName]: none,
   [IPC.machinesJoinHere]: z.tuple([HubId, z.string().regex(/^[a-z0-9-]{1,32}$/u)]),

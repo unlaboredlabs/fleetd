@@ -1,12 +1,13 @@
 // Administration (#/admin/<section>): the hub's owners' and admins' page, apart from Settings so nobody else ever sees
 // an admin control. People, Invites, Machines (Add machine, the machines with Repair and Remove, and each one's page
 // with its checklist), Claude (the hub's API key and who may use it), Hub settings (everything hub-wide that used to sit in
-// Settings: the fleet and machine caps, machine roles, task profiles and memory caps), Skills (the hub-wide ones), Google
-// (the hub's OAuth client for Navis, google/AdminGoogle.tsx) and Setup (the hub's guided setup, setup/SetupScreen.tsx). The shell shows AdminSidebar in the sidebar's
+// Settings: the fleet and machine caps, machine roles, task profiles and memory caps), Skills (the hub-wide ones), GitHub
+// (the hub's own GitHub App, github/AdminGithub.tsx), Google (the hub's OAuth client for Navis, google/AdminGoogle.tsx)
+// and Setup (the hub's guided setup, setup/SetupScreen.tsx). The shell shows AdminSidebar in the sidebar's
 // place while it is open, as it does Settings'. With several hubs (docs/design/hubs.md) it manages one hub at a time,
 // named above every page, and its sidebar switches between the hubs this person administers: nothing here acts on a
 // hub the page doesn't name.
-import { ArrowLeft, Bot, KeyRound, ListChecks, Server, SlidersHorizontal, Sparkles, UserPlus, Users } from "lucide-react";
+import { ArrowLeft, Bot, GitBranch, KeyRound, ListChecks, Server, SlidersHorizontal, Sparkles, UserPlus, Users } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Separator, Sidebar, SidebarItem, SidebarSection, Text, Truncate, cx } from "../../ui";
 import type { HubView } from "../../src/data/hubs";
@@ -18,6 +19,7 @@ import { MachineRoles } from "../settings/MachineRoles";
 import { HubMemoryCaps } from "../settings/MemoryCaps";
 import { PageHead } from "../settings/parts";
 import { HubSkills } from "../settings/Skills";
+import { AdminGithub } from "../github/AdminGithub";
 import { AdminGoogle } from "../google/AdminGoogle";
 import { progressLine, SetupSteps, useSetupSteps } from "../setup/SetupScreen";
 import { navigate, useRoute } from "../shell/navigation";
@@ -38,6 +40,7 @@ const SECTIONS: ReadonlyArray<{ section: AdminSection; label: string; icon: Reac
   { section: "claude", label: "Claude", icon: <Bot /> },
   { section: "hub", label: "Hub settings", icon: <SlidersHorizontal /> },
   { section: "skills", label: "Skills", icon: <Sparkles /> },
+  { section: "github", label: "GitHub", icon: <GitBranch /> },
   { section: "google", label: "Google", icon: <KeyRound /> },
   { section: "setup", label: "Setup", icon: <ListChecks /> },
 ];
@@ -164,6 +167,8 @@ function page(section: AdminSection, machine: string | undefined, { administers,
       return <HubSettings />;
     case "skills":
       return <HubSkills />;
+    case "github":
+      return <AdminGithub />;
     case "google":
       return <AdminGoogle />;
     case "setup":

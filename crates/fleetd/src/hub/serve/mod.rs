@@ -305,6 +305,11 @@ pub fn build_on_with(
         clock.clone(),
     );
     let fresh = Arc::new(crate::hub::status::fresh::Fresh::default());
+    // The hub's gh: as the hub's GitHub App on the repositories it is installed on, else the machine's own login.
+    let github_app =
+        crate::hub::github_app::GithubApps::new(db.clone(), config.home.clone(), clock.clone());
+    let gh: Arc<dyn crate::hub::train::github::GhRunner> =
+        Arc::new(crate::hub::github_app::gh::AppGh::new(github_app.clone()));
     let checks = crate::hub::checks::build(&db, &events, &clock);
     let train_host =
         crate::hub::train::hub_host::HubHost::new(clock.clone(), events.clone(), store.clone());
@@ -312,7 +317,7 @@ pub fn build_on_with(
         train_host.clone(),
         clock.clone(),
         db.clone(),
-        Arc::new(crate::hub::train::github::SystemGh),
+        gh.clone(),
         crate::hub::train::TrainOptions {
             fresh: fresh.clone(),
             ..Default::default()
@@ -368,8 +373,7 @@ pub fn build_on_with(
         clock.clone(),
         leads.clone(),
     );
-    let prs =
-        crate::hub::prs::Prs::new(Arc::new(crate::hub::train::github::SystemGh), clock.clone());
+    let prs = crate::hub::prs::Prs::new(gh, clock.clone());
     let work = crate::hub::work::Work::new(
         db.clone(),
         events.clone(),
@@ -423,6 +427,7 @@ pub fn build_on_with(
         relays: Arc::default(),
         previews: Arc::default(),
         machine_setup: Arc::default(),
+        github_app,
     });
     hub.updates
         .set_ports(Arc::new(crate::hub::update::ports::HubPorts(

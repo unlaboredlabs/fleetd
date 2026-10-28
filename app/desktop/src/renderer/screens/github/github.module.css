@@ -1,0 +1,58 @@
+/* Administration › GitHub. Space and hairlines, no cards (ui/DESIGN.md); the fold reads as Google's. */
+.status,
+.guide {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  min-width: 0;
+}
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-wrap: anywhere;
+}
+.links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-width: 440px;
+}
+.tested {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-1);
+}
+.fold summary {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  cursor: pointer;
+  list-style: none;
+}
+.fold summary::-webkit-details-marker {
+  display: none;
+}
+.fold summary > :first-child::after {
+  content: " ›";
+  color: var(--quiet);
+}
+.fold[open] summary > :first-child::after {
+  content: " ⌄";
+}

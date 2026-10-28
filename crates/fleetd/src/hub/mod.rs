@@ -13,6 +13,7 @@ pub mod checks;
 pub mod claude_accounts;
 pub mod doctor;
 pub mod executor;
+pub mod github_app;
 pub mod google;
 pub mod http;
 pub mod hub_links;

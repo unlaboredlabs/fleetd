@@ -2097,6 +2097,109 @@ export type GitHubRepos = {
   repos: GitHubCandidate[];
 };
 
+/** The hub's App, as the hub keeps it: no key and no secret. */
+export type GithubApp = {
+  appId: number;
+  /** What people sign in through it with (not a secret). */
+  clientId: string;
+  createdAt: Timestamp;
+  /** Its public page on GitHub. */
+  htmlUrl: string;
+  /** Where it is installed, as the last Test (or token) read them. */
+  installations?: GithubInstallation[];
+  lastTest?: GithubAppTest;
+  name: string;
+  /** The account or organization that owns it. */
+  owner: string;
+  /** Its settings on GitHub, under its owner's: where it is changed or deleted. */
+  settingsUrl: string;
+  /** From GitHub's answer, never from the name proposed: the admin may rename it on GitHub's form. */
+  slug: string;
+};
+
+export type GithubAppCreateInput = {
+  /** From GitHub's redirect. */
+  code: GithubManifestCode;
+};
+
+export type GithubAppCreateOutput = {
+  app: GithubApp;
+  next?: string;
+  truncated?: boolean;
+};
+
+export type GithubAppGetInput = { [key: string]: unknown };
+
+export type GithubAppGetOutput = {
+  /** None until an admin creates one. */
+  app?: GithubApp;
+  next?: string;
+  /** What it asks for on each repository, as the manifest has it: `[name, read|write]`. */
+  permissions: [string, string][];
+  truncated?: boolean;
+};
+
+export type GithubAppManifestInput = {
+  /** What the admin's GitHub shows it as: `fleetd on <host>`. GitHub may ask for another when it is taken. */
+  name: GithubAppName;
+  /** Make it in this organization; absent: in the admin's own account. */
+  organization?: GithubLogin;
+  /** Where GitHub sends the admin back with the code: the loopback page that posted the manifest. */
+  redirect: LoopbackUri;
+};
+
+export type GithubAppManifestOutput = {
+  /** The manifest, JSON. */
+  manifest: string;
+  next?: string;
+  /** GitHub's page to post the manifest to, as a form field `manifest`, with a `state` of the caller's own. */
+  postTo: string;
+  truncated?: boolean;
+};
+
+export type GithubAppName = string;
+
+export type GithubAppRemoveInput = { [key: string]: unknown };
+
+export type GithubAppRemoveOutput = {
+  next?: string;
+  /** Its settings on GitHub, where it is deleted too. */
+  settingsUrl: string;
+  truncated?: boolean;
+};
+
+/** What the last Test said. */
+export type GithubAppTest = {
+  at: Timestamp;
+  ok: boolean;
+  /** In a line a person can act on. */
+  said: string;
+};
+
+export type GithubAppTestInput = { [key: string]: unknown };
+
+export type GithubAppTestOutput = {
+  app: GithubApp;
+  next?: string;
+  truncated?: boolean;
+};
+
+/** One installation of the App: an account or organization, and the repositories it reaches there. */
+export type GithubInstallation = {
+  account: string;
+  /** Every repository of the account, now and later. */
+  allRepositories: boolean;
+  installationId: number;
+  /** With chosen repositories: their `owner/name`, the first 100. */
+  repositories?: string[];
+  /** How many it reaches. */
+  repositoryCount: number;
+};
+
+export type GithubLogin = string;
+
+export type GithubManifestCode = string;
+
 /** One Navi's Google account. */
 export type GoogleAccount = {
   connectedAt: Timestamp;
@@ -7594,6 +7697,11 @@ export interface ToolMap {
   events_list: { input: EventsListInput; output: EventsListOutput };
   events_wait: { input: EventsWaitInput; output: EventsWaitOutput };
   fleetd_status: { input: FleetdStatusInput; output: FleetdStatusOutput };
+  github_app_create: { input: GithubAppCreateInput; output: GithubAppCreateOutput };
+  github_app_get: { input: GithubAppGetInput; output: GithubAppGetOutput };
+  github_app_manifest: { input: GithubAppManifestInput; output: GithubAppManifestOutput };
+  github_app_remove: { input: GithubAppRemoveInput; output: GithubAppRemoveOutput };
+  github_app_test: { input: GithubAppTestInput; output: GithubAppTestOutput };
   google_client_set: { input: GoogleClientSetInput; output: GoogleClientSetOutput };
   google_client_test: { input: GoogleClientTestInput; output: GoogleClientTestOutput };
   google_connect: { input: GoogleConnectInput; output: GoogleConnectOutput };

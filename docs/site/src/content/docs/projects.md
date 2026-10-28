@@ -50,7 +50,7 @@ A project doesn't need a repo to start: it can be a plain folder, and repos can 
 | `--git-init` | With `--new`: run `git init` in the new folder. |
 | `--use-existing` | Add the folder's checkout when it already holds the same repo. Without a terminal, this is how you accept it. |
 
-fleetd reads GitHub through `gh` on the hub machine. A private repo clones on any worker where `gh auth login` was run.
+fleetd reads GitHub through `gh` on the hub machine, as the hub's [GitHub App](/docs/github/) where it is installed. A private repo clones on any worker where `gh auth login` was run.
 When something is in the way, such as an offline worker or a folder that exists, it prints the command that fixes it.
 
 ### Start a new project {#start-a-new-project}
