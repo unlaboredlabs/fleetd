@@ -511,6 +511,18 @@ async fn agent_device(router: &Router, args: &[&str]) -> (bool, String) {
     (out.status.success(), text)
 }
 
+/// The node's simulators and their states, for a failure's log: whether the session's clone is still there.
+async fn set_devices(home: &std::path::Path) -> String {
+    match Simctl::new(super::set_dir(home)).devices().await {
+        Ok(devices) => devices
+            .iter()
+            .map(|d| format!("{} {} {}", d.name, d.udid, d.state))
+            .collect::<Vec<_>>()
+            .join("; "),
+        Err(e) => e,
+    }
+}
+
 async fn frame_after(
     frames: &mut tokio::sync::watch::Receiver<Option<Frame>>,
     seq: u64,
@@ -606,6 +618,7 @@ async fn an_agent_opens_settings_on_an_ios_session_and_its_recording_is_on_the_h
     // 3011 ms.
     assert!(start_ms < 10_000, "{start_ms} ms");
     let udid = result["udid"].as_str().unwrap().to_owned();
+    eprintln!("the session's clone: {udid}");
     let live = sessions(&hub).await;
     assert_eq!(live["sessions"][0]["kind"], "ios", "{live}");
     let refused = call(&router, json!({ "op": "session_start", "purpose": "Shop" })).await;
@@ -644,15 +657,26 @@ async fn an_agent_opens_settings_on_an_ios_session_and_its_recording_is_on_the_h
         );
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
+    // The golden stays shut down once made: its agent-device daemon stopped the XCTest runner on its way out. A runner
+    // left running relaunched itself, booted the golden again, and every refill's clone was refused (wrapper.rs).
+    let golden = pool::find(&home).unwrap().udid;
+    let devices = set_devices(&home).await;
+    assert!(
+        devices.contains(&format!("{golden} Shutdown")),
+        "the golden {golden} is booted again: {devices}"
+    );
 
     // The agent opens Settings and taps a row, with agent-device pointed at the session's clone.
     let t = Instant::now();
     let (mut ok, mut opened) = agent_device(&router, &["open", "com.apple.Preferences"]).await;
     if !ok {
-        eprintln!("agent-device open failed once, trying again: {opened}");
+        eprintln!(
+            "agent-device open failed once, trying again: {opened}\nsimulators: {}",
+            set_devices(&home).await
+        );
         (ok, opened) = agent_device(&router, &["open", "com.apple.Preferences"]).await;
     }
-    assert!(ok, "{opened}");
+    assert!(ok, "{opened}\nsimulators: {}", set_devices(&home).await);
     eprintln!(
         "agent-device's first command (the runner starts): {} ms",
         ms(t.elapsed())
@@ -669,12 +693,13 @@ async fn an_agent_opens_settings_on_an_ios_session_and_its_recording_is_on_the_h
     let (mut ok, mut pressed) = agent_device(&router, &press).await;
     if !ok {
         eprintln!(
-            "agent-device press failed once after {} ms, trying again: {pressed}",
-            ms(t.elapsed())
+            "agent-device press failed once after {} ms, trying again: {pressed}\nsimulators: {}",
+            ms(t.elapsed()),
+            set_devices(&home).await
         );
         (ok, pressed) = agent_device(&router, &press).await;
     }
-    assert!(ok, "{pressed}");
+    assert!(ok, "{pressed}\nsimulators: {}", set_devices(&home).await);
     eprintln!("agent-device press --settle: {} ms", ms(t.elapsed()));
     router.item(
         THREAD,

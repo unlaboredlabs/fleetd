@@ -54,7 +54,10 @@ pub fn install(home: &Path) -> Result<PathBuf, String> {
 }
 
 /// The wrapper: refuses while the session's control file says a person has the simulator, else runs agent-device on
-/// the node's simulator set with the runner the golden built.
+/// the node's simulator set with the runner the golden built. A daemon that is stopped stops its XCTest runner: by
+/// default agent-device leaves it running for a next daemon to take over, and fleetd's daemons have none (each lives
+/// as long as its session, or the golden's prepare). The runner's xcodebuild left behind relaunches it after the
+/// simulator shuts down, which boots the simulator again: a golden booted again can't be cloned.
 pub fn wrapper_script(entry: &Path, home: &Path) -> String {
     let quote = |p: &Path| p.to_string_lossy().replace('\'', r"'\''");
     let paused = PAUSED.replace('\'', r"'\''");
@@ -65,8 +68,10 @@ pub fn wrapper_script(entry: &Path, home: &Path) -> String {
          echo '{paused}' >&2\n  exit 75\nfi\n\
          AGENT_DEVICE_IOS_SIMULATOR_DEVICE_SET='{set}'\n\
          AGENT_DEVICE_IOS_RUNNER_DERIVED_PATH='{runner}'\n\
+         AGENT_DEVICE_IOS_RUNNER_DETACH=0\n\
          AGENT_DEVICE_NO_UPDATE_NOTIFIER=1\n\
-         export AGENT_DEVICE_IOS_SIMULATOR_DEVICE_SET AGENT_DEVICE_IOS_RUNNER_DERIVED_PATH AGENT_DEVICE_NO_UPDATE_NOTIFIER\n\
+         export AGENT_DEVICE_IOS_SIMULATOR_DEVICE_SET AGENT_DEVICE_IOS_RUNNER_DERIVED_PATH AGENT_DEVICE_IOS_RUNNER_DETACH \
+         AGENT_DEVICE_NO_UPDATE_NOTIFIER\n\
          exec node '{entry}' \"$@\"\n",
         set = quote(&super::set_dir(home)),
         runner = quote(&runner_dir(home)),
@@ -156,7 +161,8 @@ mod tests {
         std::fs::write(
             &fake,
             "console.log('ran', process.argv.slice(2).join(' '), \
-             process.env.AGENT_DEVICE_IOS_SIMULATOR_DEVICE_SET, process.env.AGENT_DEVICE_IOS_RUNNER_DERIVED_PATH)\n",
+             process.env.AGENT_DEVICE_IOS_SIMULATOR_DEVICE_SET, process.env.AGENT_DEVICE_IOS_RUNNER_DERIVED_PATH, \
+             process.env.AGENT_DEVICE_IOS_RUNNER_DETACH)\n",
         )
         .unwrap();
         let wrapper = dir.path().join("agent-device");
@@ -189,7 +195,7 @@ mod tests {
             assert_eq!(
                 String::from_utf8_lossy(&ran.stdout).trim(),
                 "ran open settings /n/device/ios/set \
-                 /n/device/agent-device/node_modules/agent-device/.tmp/fleetd-runner"
+                 /n/device/agent-device/node_modules/agent-device/.tmp/fleetd-runner 0"
             );
         }
     }
