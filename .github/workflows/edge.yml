@@ -1,6 +1,8 @@
 # Every push to main updates the rolling `edge` prerelease (and `nightly`, its copy for builds from before the rename,
-# D203). A newer push cancels a running edge build; the app change check compares with what the release carries, so
-# nothing a cancelled run would have shipped is lost.
+# D203). A build takes longer than merges come, so a newer push never cancels a running edge build: it waits, and a
+# still newer push replaces it while it waits, so the newest merge builds next and the ones between are skipped. The
+# app change check compares with what the release carries, so nothing a skipped run would have shipped is lost, and the
+# publish job skips a build when the release already holds a newer commit.
 # Pull requests that change the release pipeline itself get a dry run on Linux (CLI and the app's Linux packages),
 # publishing nothing. The mac app job runs only for a main push that changed the app, a tag, or a manual dispatch
 # (from a branch: a dry run that publishes nothing).
@@ -25,7 +27,8 @@ on:
 
 concurrency:
   group: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && 'release-edge' || format('release-dry-run-{0}', github.ref) }}
-  cancel-in-progress: true
+  # Only pull request dry runs and dispatches from a branch cancel the run in progress.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' || github.event_name == 'pull_request' }}
 
 jobs:
   edge:

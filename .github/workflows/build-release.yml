@@ -474,7 +474,24 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+      # Edge runs one build at a time (edge.yml), but a re-run of an older one still comes after newer builds: an older
+      # build never lands over a newer one. release.json's commit is what edge holds; one off main's history (or none)
+      # doesn't stop the publish.
+      - name: Is edge already newer
+        id: newer
+        if: inputs.channel == 'edge'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          held="$(gh release download edge -p release.json -O - 2>/dev/null | jq -r '.commit // empty' || true)"
+          echo "edge holds: ${held:-nothing}, this run: $GITHUB_SHA"
+          if [ -n "$held" ] && [ "$held" != "$GITHUB_SHA" ] && git cat-file -e "$held^{commit}" 2>/dev/null &&
+            git merge-base --is-ancestor "$GITHUB_SHA" "$held"; then
+            echo "edge already holds a newer commit; not publishing"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
       - name: Publish
+        if: steps.newer.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           CHANNEL: ${{ inputs.channel }}
