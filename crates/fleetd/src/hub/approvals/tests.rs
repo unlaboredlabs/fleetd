@@ -1252,45 +1252,31 @@ async fn a_browser_open_is_a_visit_and_any_other_sessions_prompt_is_left_alone()
     );
 }
 
-/// A Navi's shell command runs unasked (D208), whatever it is, when its node left it to the hub: only a browser visit to
-/// a site the person didn't allow or link asks, and a send through an integration still asks with its card.
+/// A Navi's sandboxed node answers its commands itself (D208), so a command that reaches the hub comes from a node with
+/// no sandbox: it asks, as before. A browser visit to a site the person didn't allow or link asks, and a send through
+/// an integration still asks with its card.
 #[tokio::test]
-async fn a_navis_command_runs_unasked_and_only_a_new_site_or_a_send_asks() {
+async fn an_unsandboxed_command_a_new_site_and_a_send_ask() {
     let fake = Arc::new(Fake::default());
     *fake.servers.lock().unwrap() = vec![google()];
     let a = approvals(&fake);
-    for (id, command) in [
-        ("q1", "ls -la"),
-        (
-            "q2",
-            "npx -y xaq-cli connect https://macbook.example --setup-mcp",
-        ),
-        ("q3", "curl -s https://api.example/v1 | jq .items"),
-        ("q4", "agent-browser click @e3"),
-        ("q5", "agent-browser eval 'document.title'"),
-    ] {
-        bash(&a, &fake, id, command).await;
-    }
-    assert!(requests(&fake).is_empty(), "no command asks");
-    let answers = fake.answers.lock().unwrap().clone();
-    assert_eq!(answers.len(), 5);
-    for (_, _, id, decision) in &answers {
-        assert_eq!(
-            decision,
-            &PermissionDecision::Allow {
-                updated_input: None
-            },
-            "{id}"
-        );
-    }
+    bash(&a, &fake, "q5", "rm -rf ~").await;
+    let filed = requests(&fake);
+    assert_eq!(filed.len(), 1, "a command no sandbox fences asks");
+    assert_eq!(filed[0].permission.as_ref().unwrap().site, None);
     // A site it picked itself asks, once per site.
     bash(&a, &fake, "q6", "agent-browser open https://new.example/a").await;
     let filed = requests(&fake);
-    assert_eq!(filed.len(), 1);
-    assert_eq!(
-        filed[0].permission.as_ref().unwrap().site.as_deref(),
-        Some("new.example")
-    );
+    assert_eq!(filed.len(), 2);
+    let visit = filed
+        .iter()
+        .find_map(|r| {
+            r.permission
+                .as_ref()
+                .filter(|p| p.request_id.as_str() == "q6")
+        })
+        .unwrap();
+    assert_eq!(visit.site.as_deref(), Some("new.example"));
     // A send still asks, with its recipients and its text.
     prompted(
         &a,
@@ -1305,7 +1291,7 @@ async fn a_navis_command_runs_unasked_and_only_a_new_site_or_a_send_asks() {
     )
     .await;
     let filed = requests(&fake);
-    assert_eq!(filed.len(), 2);
+    assert_eq!(filed.len(), 3);
     let send = filed
         .iter()
         .find_map(|r| {
@@ -1317,7 +1303,7 @@ async fn a_navis_command_runs_unasked_and_only_a_new_site_or_a_send_asks() {
     let preview = serde_json::to_value(&send.preview).unwrap();
     assert_eq!(preview["to"], json!(["ana@example.com"]));
     assert_eq!(preview["body"], "Could we book a cleaning?");
-    assert_eq!(fake.answers.lock().unwrap().len(), 5);
+    assert!(fake.answers.lock().unwrap().is_empty());
 }
 
 /// A prompt whose input the node didn't send (over 64 KiB) can't be shown, so it is refused rather than approved blind.

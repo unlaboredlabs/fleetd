@@ -5,8 +5,9 @@
 //! and an asking one opens an approval with its preview (who it reaches, what it says). Any other tool (a command, an
 //! edit) opens an approval showing the tool, its summary and its input. A Navi's fetch or browser visit goes through
 //! its site gate first: a site the person allowed (or linked in their own message) goes through, and approving a first
-//! visit allows its site. Any other command runs unasked (D208): the node answers it, and so does this relay when an
-//! older node didn't. Approved, the tool runs with exactly the input the approval showed; denied, the session hears who
+//! visit allows its site. Any other command runs unasked (D208), but only because the OS sandbox fences it: the node
+//! answers it itself, and a command that still reaches this relay comes from a node with no sandbox, so it asks.
+//! Approved, the tool runs with exactly the input the approval showed; denied, the session hears who
 //! said no. A prompt that goes away (answered elsewhere, or its run ended) closes its request.
 use std::sync::Arc;
 
@@ -167,16 +168,10 @@ impl Approvals {
             None => (None, None),
         };
         // A Navi's fetch or browser visit: a site the person allowed before goes through; any other asks, and its
-        // approval allows the site (hub/navi/sites.rs). Any other command runs unasked.
+        // approval allows the site (hub/navi/sites.rs).
         let mut site = None;
         let mut decided = decided;
-        let visit = sites::visit(tool, &input);
-        if tool == "Bash" && visit.is_none() && prompt.input.is_some() {
-            decided = Some(PermissionDecision::Allow {
-                updated_input: None,
-            });
-        }
-        if let Some(visit) = visit {
+        if let Some(visit) = sites::visit(tool, &input) {
             let host = match &visit {
                 Visit::Site(host) => Some(host.as_str()),
                 Visit::Unknown => None,
