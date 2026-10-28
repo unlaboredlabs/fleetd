@@ -188,9 +188,11 @@ nobody else’s work uses it.</p>
 </tbody>
 </table>
 <p>The token reaches the order’s agents as <code dir="auto">GH_TOKEN</code>, one of the order’s variables: masked in what they report, renewed
-before it ends, and gone when the order closes.</p>
+before it ends, and gone when the order closes. Each repo the order works in gets its own: the App’s token for that
+repo’s owner, and none in a repo the App doesn’t reach, where <code dir="auto">gh</code> uses the machine’s own login.</p>
 <p>If GitHub stops taking your connection (revoked there, or unused for six months), Settings › GitHub says so, with
-<strong>Connect again</strong>. <strong>Disconnect</strong> revokes the token at GitHub and forgets it.</p>
+<strong>Connect again</strong>. <strong>Disconnect</strong> revokes the token at GitHub, forgets it and takes it from your open orders’ agents.
+Removing a person from the hub does the same with theirs.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="remove">Remove it</h2><a class="sl-anchor-link" href="#remove"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Remove it”</span></a></div>
 <p><strong>Remove</strong> on Administration › GitHub, or <code dir="auto">fleetd github-app remove</code>, makes the hub forget the App and its keys, and everyone’s connection through it. The
 hub’s <code dir="auto">gh</code> goes back to the machine’s own login. GitHub keeps the App until you delete it under its settings’ Advanced

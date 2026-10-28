@@ -177,6 +177,8 @@ async fn disconnect(
 ) -> Result<GithubDisconnectOutput, ToolError> {
     let person = me(&hub, &caller)?;
     let revoked = hub.github_app.disconnect(&person).await.map_err(failed)?;
+    // Their open orders' agents no longer hold it.
+    super::sessions::withdraw_person(&hub, &person).await;
     Ok(GithubDisconnectOutput {
         revoked,
         next: None,

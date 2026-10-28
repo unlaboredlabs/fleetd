@@ -102,6 +102,17 @@ impl OrderEnvStore<'_> {
         })
     }
 
+    /// Forgets one of the order's variables, once its node has.
+    pub fn forget_one(&self, r: &ProjectRef, order: &str, name: &str) -> Result<(), StoreError> {
+        self.db.with(|c| {
+            c.prepare_cached(
+                "DELETE FROM order_env WHERE machine_id = ? AND project_id = ? AND workstream_id = ? AND name = ?",
+            )?
+            .execute(params![r.machine_id.as_str(), r.project_id.as_str(), order, name])?;
+            Ok(())
+        })
+    }
+
     pub fn forget(&self, r: &ProjectRef, order: &str) -> Result<(), StoreError> {
         self.db.with(|c| {
             c.prepare_cached(
@@ -200,7 +211,9 @@ pub async fn drop_closed(hub: &Hub) -> Result<usize, StoreError> {
         let open = id
             .as_ref()
             .and_then(|id| hub.leads.records.workstream_get(id).ok().flatten())
-            .is_some_and(|w| w.project_ref == r && !is_closed(w.state));
+            // Held under its own project, or under the checkout of a repo its tasks work in (an order's GitHub token,
+            // github_app/sessions.rs): open while the order is.
+            .is_some_and(|w| !is_closed(w.state));
         if open {
             continue;
         }

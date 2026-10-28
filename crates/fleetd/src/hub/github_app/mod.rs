@@ -632,8 +632,9 @@ impl GithubApps {
         }
     }
 
-    /// Whether the App reaches `repo` (`owner/name`), as its installations were last read (the first 100 chosen
-    /// repositories of each): no call to GitHub.
+    /// Whether the App reaches `repo` (`owner/name`), as its installations were last read: with no call to GitHub,
+    /// from the token cache's whole list (up to 1000 repositories an installation) when it holds this App's, else from
+    /// the first 100 the App keeps.
     pub fn reaches(&self, repo: &str) -> bool {
         let Ok(Some(app)) = self.get() else {
             return false;
@@ -642,6 +643,14 @@ impl GithubApps {
         let Some((owner, _)) = repo.split_once('/') else {
             return false;
         };
+        if let Ok(cache) = self.cache.try_lock()
+            && cache.app_id == Some(app.app_id)
+        {
+            return cache
+                .installs
+                .iter()
+                .any(|i| i.account == owner && (i.all || i.repos.contains(&repo)));
+        }
         app.installations.iter().any(|i| {
             i.account.to_lowercase() == owner
                 && (i.all_repositories || i.repositories.iter().any(|r| r.to_lowercase() == repo))

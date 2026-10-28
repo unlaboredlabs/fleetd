@@ -1079,7 +1079,9 @@ async fn the_orders_tokens_are_renewed_after_a_hub_restart() {
     let handed = Kept {
         r: r.clone(),
         order: order.clone(),
+        checkout: r.clone(),
         repo_id: None,
+        person: None,
         expires_ms: now + 50 * 60_000,
         margin_ms: 30 * 60_000,
     };
@@ -1134,4 +1136,219 @@ async fn removing_the_app_forgets_everyones_connection_through_it() {
         .await
         .unwrap();
     assert!(got.get("me").is_none(), "{got}");
+}
+
+/// Links a node for devbox that answers every session call, and hands each one to the test.
+async fn fake_node(hub: &Arc<Hub>) -> Arc<Mutex<Vec<fleetd_contracts::sessions::SessionCall>>> {
+    use fleetd_contracts::node_link::{HubToNode, NodeToHub};
+    let devbox = fleetd_contracts::ids::MachineId::unchecked("devbox");
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    hub.executors
+        .attach(
+            &devbox,
+            crate::hub::executor::NodeSessions {
+                link_id: 1,
+                send: tx,
+            },
+        )
+        .await;
+    let HubToNode::SessionCall(subscribe) = rx.recv().await.unwrap() else {
+        panic!("not a subscribe")
+    };
+    let frame = |v: Value| {
+        hub.executors
+            .handle_frame(&devbox, serde_json::from_value::<NodeToHub>(v).unwrap())
+    };
+    frame(
+        json!({ "t": "machine_event", "seq": 1, "at": "2026-10-28T10:00:00.000Z",
+        "event": { "type": "snapshot", "projects": [{ "projectId": "shop", "title": "shop",
+          "workspaceRoot": "/home/dev/src/shop", "updatedAt": "2026-10-28T10:00:00.000Z" }], "sessions": [] } }),
+    );
+    frame(
+        json!({ "t": "session_reply", "id": subscribe.id, "result": { "ok": { "kind": "done" } } }),
+    );
+    hub.executors.await_live(&devbox).await;
+    let calls: Arc<Mutex<Vec<_>>> = Arc::default();
+    let (seen, hub) = (calls.clone(), hub.clone());
+    tokio::spawn(async move {
+        while let Some(frame) = rx.recv().await {
+            let HubToNode::SessionCall(f) = frame else {
+                continue;
+            };
+            let id = f.id.clone();
+            seen.lock().unwrap().push(f.call);
+            let reply =
+                json!({ "t": "session_reply", "id": id, "result": { "ok": { "kind": "done" } } });
+            hub.executors
+                .handle_frame(&devbox, serde_json::from_value::<NodeToHub>(reply).unwrap());
+        }
+    });
+    calls
+}
+
+/// As a launch leaves it: the order's `GH_TOKEN` held at `checkout`, and its record, `person`'s or the App's.
+fn handed(
+    hub: &Hub,
+    r: &fleetd_contracts::ids::ProjectRef,
+    order: &fleetd_contracts::ledger::WorkstreamId,
+    person: Option<&PersonId>,
+) {
+    let row = crate::hub::projects::order_env::OrderEnvRow {
+        name: "GH_TOKEN".into(),
+        fingerprint: "ab12cd34".into(),
+        bytes: 40,
+        request_id: "github".into(),
+        updated_at: "2026-10-28T10:00:00.000Z".into(),
+    };
+    hub.db.order_env().save(r, order.as_str(), &row).unwrap();
+    super::sessions::keep(
+        hub,
+        &super::sessions::Kept {
+            r: r.clone(),
+            order: order.clone(),
+            checkout: r.clone(),
+            repo_id: None,
+            person: person.cloned(),
+            expires_ms: 1_792_000_000_000 + 8 * 3600 * 1000,
+            margin_ms: 2 * 3600 * 1000,
+        },
+    )
+    .unwrap();
+}
+
+/// The `GH_TOKEN` drops the node was asked for.
+fn drops(
+    calls: &Mutex<Vec<fleetd_contracts::sessions::SessionCall>>,
+) -> Vec<(String, Option<String>)> {
+    calls
+        .lock()
+        .unwrap()
+        .iter()
+        .filter_map(|c| match c {
+            fleetd_contracts::sessions::SessionCall::OrderEnvDrop {
+                order_id,
+                name,
+                fingerprint,
+                ..
+            } if name.as_ref().map(|n| n.as_str()) == Some("GH_TOKEN") => Some((
+                order_id.to_string(),
+                fingerprint.as_ref().map(|f| f.to_string()),
+            )),
+            _ => None,
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn disconnecting_takes_the_token_from_the_persons_open_orders() {
+    let lab = lab().await;
+    created(&lab).await;
+    let sam = admin(&lab.hub);
+    call(&lab.hub, &sam, "github_app_test", json!({}))
+        .await
+        .unwrap();
+    connect(&lab, &sam).await.unwrap();
+    let person = sam.person.clone().unwrap().person_id;
+    let (r, order) = order_on_acme(&lab.hub, Some(&person));
+    let (_, nobody) = order_on_acme(&lab.hub, None);
+    handed(&lab.hub, &r, &order, Some(&person));
+    handed(&lab.hub, &r, &nobody, None);
+    let calls = fake_node(&lab.hub).await;
+    call(&lab.hub, &sam, "github_disconnect", json!({}))
+        .await
+        .unwrap();
+    // Only Sam's, and only the value it handed out.
+    assert_eq!(
+        drops(&calls),
+        [(order.to_string(), Some("ab12cd34".into()))]
+    );
+    let left = super::sessions::kept(&lab.hub);
+    assert_eq!(left.iter().map(|k| &k.order).collect::<Vec<_>>(), [&nobody]);
+    assert!(
+        lab.hub
+            .db
+            .order_env()
+            .list(&r, order.as_str())
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[tokio::test]
+async fn a_person_removed_from_the_hub_has_their_token_revoked_and_withdrawn() {
+    let lab = lab().await;
+    created(&lab).await;
+    let sam = admin(&lab.hub);
+    call(&lab.hub, &sam, "github_app_test", json!({}))
+        .await
+        .unwrap();
+    let bob = member(&lab.hub);
+    connect(&lab, &bob).await.unwrap();
+    let person = bob.person.clone().unwrap().person_id;
+    let (r, order) = order_on_acme(&lab.hub, Some(&person));
+    handed(&lab.hub, &r, &order, Some(&person));
+    let calls = fake_node(&lab.hub).await;
+    call(
+        &lab.hub,
+        &sam,
+        "person_remove",
+        json!({ "personId": person.as_str() }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(lab.fake.lock().unwrap().revoked, 1, "not revoked at GitHub");
+    assert!(lab.hub.github_app.account(&person).unwrap().is_none());
+    assert_eq!(
+        drops(&calls),
+        [(order.to_string(), Some("ab12cd34".into()))]
+    );
+    assert!(super::sessions::kept(&lab.hub).is_empty());
+}
+
+#[tokio::test]
+async fn a_repo_the_app_doesnt_reach_gets_no_token_and_loses_one_held_before() {
+    let lab = lab().await;
+    created(&lab).await;
+    let sam = admin(&lab.hub);
+    call(&lab.hub, &sam, "github_app_test", json!({}))
+        .await
+        .unwrap();
+    let (r, order) = order_on_acme(&lab.hub, None);
+    // The repo moved to an owner the App isn't installed on, since a token was handed there.
+    lab.hub
+        .db
+        .with(|c| {
+            c.execute_batch("UPDATE work_projects SET repo_key = 'github.com/stranger/web';")?;
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(
+        super::sessions::repo_at(&lab.hub, &r, None).map(|(name, checkout)| (name, checkout == r)),
+        Some(("stranger/web".to_owned(), true))
+    );
+    handed(&lab.hub, &r, &order, None);
+    let calls = fake_node(&lab.hub).await;
+    super::sessions::deliver(&lab.hub, &r, &order, None, true)
+        .await
+        .unwrap();
+    assert_eq!(
+        drops(&calls),
+        [(order.to_string(), Some("ab12cd34".into()))]
+    );
+    assert!(super::sessions::kept(&lab.hub).is_empty());
+}
+
+#[tokio::test]
+async fn the_app_reaches_repositories_past_the_first_hundred_it_keeps() {
+    let lab = lab().await;
+    created(&lab).await;
+    call(&lab.hub, &admin(&lab.hub), "github_app_test", json!({}))
+        .await
+        .unwrap();
+    // As an installation with more chosen repositories than the App keeps for its page: the cache reads them all.
+    let mut app = lab.hub.db.github_app().get().unwrap().unwrap();
+    app.installations[0].repositories.clear();
+    lab.hub.db.github_app().update(&app).unwrap();
+    assert!(lab.hub.github_app.reaches("acme/api"));
+    assert!(!lab.hub.github_app.reaches("acme/elsewhere"));
 }

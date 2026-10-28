@@ -92,10 +92,12 @@ Who an order's agents are on GitHub, on a repository the App reaches:
 | Started by nobody (automations, train fixes) | The App, `fleetd-on-devbox[bot]` |
 
 The token reaches the order's agents as `GH_TOKEN`, one of the order's variables: masked in what they report, renewed
-before it ends, and gone when the order closes.
+before it ends, and gone when the order closes. Each repo the order works in gets its own: the App's token for that
+repo's owner, and none in a repo the App doesn't reach, where `gh` uses the machine's own login.
 
 If GitHub stops taking your connection (revoked there, or unused for six months), Settings › GitHub says so, with
-**Connect again**. **Disconnect** revokes the token at GitHub and forgets it.
+**Connect again**. **Disconnect** revokes the token at GitHub, forgets it and takes it from your open orders' agents.
+Removing a person from the hub does the same with theirs.
 
 ## Remove it {#remove}
 
