@@ -22,7 +22,7 @@ use super::github::{
 };
 use super::host::{BoxFut, TrainHost};
 use super::main_ci::{GithubSync, MainCi, ci_state};
-use super::next::{Reruns, upstreams};
+use super::next::{Reruns, gated_name, upstreams};
 use super::records::{ChangeRecords, DRAFT, Db, HEAD_STATES, ListFilter, QUEUED_STATES, is_draft};
 use super::regen::Conflict;
 use super::rules::Refusal;
@@ -1244,6 +1244,8 @@ impl Train {
         let (mut tried_label, mut told) = (start, false);
         // Since when every check on the head has read finished while checks added to its fast set never ran.
         let mut finished_without: Option<i64> = None;
+        // A PR's own head, not a batch's: it merges alone, so the checks a batch skips are decided here (D204).
+        let alone = change.head_sha.as_str() == sha;
         loop {
             let mut all = Vec::new();
             // The checks of the fast set that have neither a run nor a status on `sha` while every other is green, and
@@ -1261,8 +1263,34 @@ impl Train {
                 }
             };
             let fast = self.fast(repo, base).await;
+            // The checks a batch skips, as `own_checks` judges them on a PR's own head: waited for by name, a skip
+            // counted only once its scope said it had no work (`proven_runs`). None of them on a batch's head, which
+            // skips them, nor while the repo's workflows were never read (`lone` holds its skips for that).
+            let skips = if alone {
+                self.workflows(repo, base).await.unwrap_or_default().batch
+            } else {
+                Vec::new()
+            };
+            let runs = match runs {
+                Some(runs) if !skips.is_empty() => {
+                    Some(self.proven_runs(repo, sha, runs, &skips).await)
+                }
+                runs => runs,
+            };
+            let skipped_by_batch: Vec<String> = skips.into_iter().map(|b| b.name).collect();
+            let judge = |runs: &[CheckRun]| {
+                let mut judged = gated(runs, fast.as_ref());
+                judged.extend(
+                    runs.iter()
+                        .filter(|r| skipped_by_batch.iter().any(|n| gated_name(n, &r.name)))
+                        .filter(|r| !judged.iter().any(|j| j.name == r.name))
+                        .cloned()
+                        .collect::<Vec<_>>(),
+                );
+                judged
+            };
             if let Some(runs) = &runs {
-                let judged = gated(runs, fast.as_ref());
+                let judged = judge(runs);
                 let (now, queued) = (self.now_ms(), super::next::queued(&judged));
                 queued_since = (queued > 0).then(|| queued_since.unwrap_or(now));
                 let note = queued_since
@@ -1271,8 +1299,9 @@ impl Train {
                 self.runner_note(noted, note.as_deref(), earlier);
             }
             let runs = runs.unwrap_or_default();
-            // Only the fast set is waited for; a head whose runs are all outside it waits on its required checks below.
-            let judged = gated(&runs, fast.as_ref());
+            // Only the fast set (and on a PR's own head the checks a batch skips) is waited for; a head whose runs are
+            // all outside it waits on its required checks below.
+            let judged = judge(&runs);
             if !judged.is_empty() {
                 last = judged.clone();
             } else if !runs.is_empty() {
@@ -1345,8 +1374,16 @@ impl Train {
                         .await
                         .ok()
                         .map(|c| c.required_checks);
-                    // Every check of the fast set, an added one as a required one, reports before the merge.
-                    let waits = must_report(fast.as_ref(), required.as_deref());
+                    // Every check of the fast set, an added one as a required one, reports before the merge, and so
+                    // does each check a batch skips: one its scope will run but GitHub hasn't created yet waits too.
+                    let mut waits = must_report(fast.as_ref(), required.as_deref());
+                    for name in &skipped_by_batch {
+                        let waits = waits.get_or_insert_with(Vec::new);
+                        if !waits.contains(name) && !runs.iter().any(|r| gated_name(name, &r.name))
+                        {
+                            waits.push(name.clone());
+                        }
+                    }
                     base_requires = required.clone().unwrap_or_default();
                     let (reported, missing) = self
                         .required_reported(repo, sha, &runs, waits.as_deref())
