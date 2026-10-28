@@ -191,6 +191,58 @@ function google(from: Fixture, name: string, note: string, client: "none" | "set
   return f;
 }
 
+/**
+ * Administration › GitHub (github/AdminGithub.tsx): no App yet, with the button that creates one; one created but not
+ * installed; one installed on acme's chosen repositories and all of Sam's, tested; and one whose key GitHub refused.
+ * The App is acme's, so its pages are under acme's settings.
+ */
+function github(from: Fixture, name: string, note: string, app: "none" | "created" | "installed" | "refused"): Fixture {
+  const f = hub(from, name, note, sam, true);
+  const made = {
+    appId: 1048576,
+    slug: "fleetd-on-devbox",
+    name: "fleetd on devbox",
+    clientId: "Iv23liQ4fXk8w2ZsT0aB",
+    owner: "acme",
+    htmlUrl: "https://github.com/apps/fleetd-on-devbox",
+    settingsUrl: "https://github.com/organizations/acme/settings/apps/fleetd-on-devbox",
+    createdAt: "2026-10-18T09:00:00.000Z",
+  };
+  const installations = [
+    { installationId: 51234567, account: "acme", allRepositories: false, repositoryCount: 2, repositories: ["acme/storefront", "acme/api"] },
+    { installationId: 51234568, account: "sam-rivera", allRepositories: true, repositoryCount: 14, repositories: [] },
+  ];
+  const tested = {
+    at: "2026-10-19T08:30:00.000Z",
+    ok: true,
+    said: '"fleetd on devbox" is installed on acme (2 repositories), sam-rivera (all 14 repositories), and its tokens work.',
+  };
+  const refused = { at: "2026-10-19T08:30:00.000Z", ok: false, said: "GitHub refused (401): A JSON web token could not be decoded." };
+  const kept =
+    app === "none"
+      ? undefined
+      : app === "created"
+        ? made
+        : app === "installed"
+          ? { ...made, installations, lastTest: tested }
+          : { ...made, installations, lastTest: refused };
+  const permissions = [
+    ["contents", "write"],
+    ["pull_requests", "write"],
+    ["workflows", "write"],
+    ["statuses", "write"],
+    ["actions", "write"],
+    ["checks", "read"],
+    ["metadata", "read"],
+  ];
+  f.answer("github_app_get", undefined, { ...(kept === undefined ? {} : { app: kept }), permissions });
+  if (kept !== undefined) {
+    f.answer("github_app_test", undefined, { app: kept });
+    f.answer("github_app_remove", undefined, { settingsUrl: made.settingsUrl });
+  }
+  return f;
+}
+
 /** A hub from before people: an admin key, and no people tools, which it says as it says of any unknown tool. */
 function oldHub(from: Fixture): Fixture {
   const f = Fixture.from(from, "admin-old-hub", "A hub from before people: its admin key reaches Hub settings, and People and Invites ask for an update");
@@ -234,6 +286,10 @@ export default defineGroup({
     google(base("chat-empty"), "admin-google-push", "Administration › Google with real-time mail read on devbox, by push", "push"),
     google(base("chat-empty"), "admin-google-polling", "Administration › Google with real-time mail set up, polling because devbox is offline", "polling"),
     google(base("chat-empty"), "admin-google-refused", "Administration › Google with a client Google doesn't know: Test says so", "refused"),
+    github(base("chat-empty"), "admin-github-none", "Administration › GitHub on a hub with no App yet: Create GitHub App", "none"),
+    github(base("chat-empty"), "admin-github-created", "Administration › GitHub with the App created and not installed yet", "created"),
+    github(base("chat-empty"), "admin-github-installed", "Administration › GitHub with the App installed on acme and Sam's account, tested", "installed"),
+    github(base("chat-empty"), "admin-github-refused", "Administration › GitHub with an App whose key GitHub refused", "refused"),
     hub(base("chat-empty"), "admin-member", "The same hub as Bob, a member: no Administration anywhere", bob, true),
     // Members may not use the hub's key there, and Bob has connected no subscription: nothing to run his orders on.
     hub(base("chat-empty"), "admin-claude-member", "The same hub as Bob, with the hub's key kept for leads: Bob must connect his own Claude", bob, true, false),

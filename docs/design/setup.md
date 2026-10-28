@@ -209,22 +209,26 @@ A plain-HTTP tailnet hub is enough for every step. HTTPS (Tailscale Serve) is op
 One GitHub App per hub. It does the hub's own work, and it signs each person in. There is no separate OAuth app and
 no `gh auth` on the hub.
 
-1. **Create.** "Create on my account" or "Create in an organization" opens `<hub>/setup/github/new`. That page posts
-   GitHub's app manifest to `github.com/settings/apps/new` (or `/organizations/<org>/settings/apps/new`) with a
-   one-time `state`. The manifest fills in:
+1. **Create** (built, T1076). "Create GitHub App", on the admin's account or an organization, makes the app (or
+   `fleetd github-app create` on the hub machine) listen on a loopback port, as Google's desktop sign-in does, so it
+   works on every hub, plain HTTP included. Its page there posts GitHub's app manifest (`github_app_manifest`) to
+   `github.com/settings/apps/new` (or `/organizations/<org>/settings/apps/new`) with a one-time `state`. The manifest
+   fills in:
    - the name (`fleetd on devbox`; App names are global, so the admin may edit it on GitHub's form);
-   - the homepage, and `callback_urls: [<hub>/oauth/github/callback]`;
-   - `redirect_url: <hub>/setup/github/created` and `setup_url: <hub>/setup/github/installed`;
+   - the homepage (the hub), and `callback_urls: [http://127.0.0.1/github/callback]` for people's sign-in later;
+   - `redirect_url: http://127.0.0.1:<port>/created`, the loopback page;
    - `public: false`;
-   - the permissions: contents, pull requests and workflows write; checks, actions and statuses read;
-   - a webhook at `<hub>/webhooks/github` only when the hub's address is HTTPS; otherwise webhooks are off.
+   - the permissions: contents, pull requests, workflows, statuses and actions write (statuses for `fleetd/train`,
+     actions for re-runs); checks and metadata read;
+   - no webhook: the hub polls (D192).
 
-   The admin checks the name and presses Create. GitHub redirects to the hub with a code. The hub converts it
-   (`POST /app-manifests/{code}/conversions`, within the hour) into the App's id, slug, client ID, client secret,
-   webhook secret and private key, straight into the hub sink. Nobody copies a key.
+   The admin checks the name and presses Create. GitHub redirects to the loopback page with a code, and the app hands
+   it to `github_app_create`. The hub converts it (`POST /app-manifests/{code}/conversions`, within the hour) into the
+   App's id, slug, client secret, webhook secret and private key, each sealed at once to the hub's box key in the
+   `github_app` row. Nobody copies a key.
 2. **Install** on the repositories fleetd works on (`github.com/apps/<slug>/installations/new`). The slug is the
    one the conversion returns, since the admin may have renamed the App on GitHub's form. The hub fills the link
-   in from it, never from the name it proposed. GitHub returns to `setup_url` with the installation.
+   in from it, never from the name it proposed. Test (`github_app_test`) then reads the installations.
 3. **Connect your own GitHub.** The admin signs in through the App (`/oauth/github/start` → GitHub →
    `/oauth/github/callback`). The hub keeps the user-to-server token and refreshes it.
    - In the terminal, `fleetd init` opens the same link in a browser and waits for the hub to say it's done.
@@ -238,8 +242,8 @@ no `gh auth` on the hub.
 **Webhooks.** The hub polls GitHub by default, as the train already does. Webhooks are optional, for hubs reachable
 over HTTPS, and the manifest leaves them off unless the hub's address is HTTPS.
 
-**Test** mints an installation token, lists the repositories it reaches (`GET /installation/repositories`), and
-checks the admin's own token (`GET /user`). The status line says: "The App "fleetd on devbox" is installed on acme with
+**Test** mints an installation token, lists the repositories it reaches (`GET /installation/repositories`), and,
+once people sign in, checks the admin's own token (`GET /user`). The status line says: "The App "fleetd on devbox" is installed on acme with
 12 repositories, its token works, and you're connected as dev."
 
 ### 3.7 Google (D189)
@@ -344,14 +348,12 @@ copy buttons, live checks after the paste, "progress is saved".
   - The person's own account state (GitHub connected, Claude subscription connected), for "Connect your …" at
     first use.
 - **GitHub App (D190)**
-  - The hub's endpoints:
-    - `/setup/github/new`, which posts the manifest;
-    - `/setup/github/created`, which converts the code;
-    - `/setup/github/installed`;
-    - `/oauth/github/start` and `/oauth/github/callback`;
-    - `/webhooks/github`.
-  - The manifest's permissions as one constant the step shows.
-  - The hub sink for the App's keys and people's tokens, with refresh.
+  - Built (T1076, stage 1): `github_app_get`, `github_app_manifest`, `github_app_create`, `github_app_test`,
+    `github_app_remove`; the app's loopback creation and `fleetd github-app`; the manifest's permissions as one
+    constant (`GITHUB_APP_PERMISSIONS`); the App's keys sealed to the hub's box key; installation tokens for the
+    hub's `gh` on the repositories the App reaches, its own login elsewhere. Administration › GitHub.
+  - Next: people's sign-in through the App (user-to-server tokens, refreshed), with the loopback callback; webhooks
+    on HTTPS hubs (`/webhooks/github`).
   - A `hub/github_app` check: the App exists, it is installed, a token mints, and the asking admin is connected.
   - It takes over from `gh auth` on the hub, and `hub/gh_auth` goes.
 - **Claude accounts (hub key, endpoint, subscriptions)**

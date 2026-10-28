@@ -3,7 +3,7 @@ import type { MenuCommand } from "../shared/menu";
 import type { BrowserInput } from "../shared/contracts";
 import type { CallOutcome, ConnectOutcome, DropInfo, HubFrame, OpenOutcome, SecretOutcome } from "../shared/hub";
 import type { HubColor, HubEntry, HubId, PairTarget } from "../shared/hubs";
-import type { ChatScope, ClaudeAccountRequest, ErrorReport, GoogleClientRequest, GoogleConnectRequest, GooglePubsubRequest, HubLinkRequest, McpServerRequest, OrderFocus, ProjectEnvRequest, SecretRequest, SessionWindowRequest } from "../shared/ipc";
+import type { ChatScope, ClaudeAccountRequest, ErrorReport, GoogleClientRequest, GithubAppRequest, GoogleConnectRequest, GooglePubsubRequest, HubLinkRequest, McpServerRequest, OrderFocus, ProjectEnvRequest, SecretRequest, SessionWindowRequest } from "../shared/ipc";
 import type { JoinHere, ThisComputer } from "../shared/joinHere";
 import type { KeyStore, PairOutcome, PairRequest, PairStart, Probe, SetupOutcome } from "../shared/pairing";
 import type { UpdatesState } from "../shared/updates";
@@ -60,6 +60,15 @@ export interface FleetdApi {
      */
     connect(hub: HubId, request: GoogleConnectRequest): Promise<CallOutcome>;
     /** Stops waiting for Google's answer. */
+    cancel(): Promise<void>;
+  };
+  readonly github: {
+    /**
+     * Creates the hub's own GitHub App: main posts its manifest to GitHub from a page on 127.0.0.1, catches GitHub's
+     * code there and calls github_app_create, answering as it does. Error code `cancelled` after `cancel()`.
+     */
+    createApp(hub: HubId, request: GithubAppRequest): Promise<CallOutcome>;
+    /** Stops waiting for GitHub. */
     cancel(): Promise<void>;
   };
   /**

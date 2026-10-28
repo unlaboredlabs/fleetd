@@ -75,6 +75,10 @@ const api: FleetdApi = {
     connect: (hub, request) => ipcRenderer.invoke(IPC.googleConnect, hub, request) as Promise<CallOutcome>,
     cancel: () => ipcRenderer.invoke(IPC.googleCancel) as Promise<void>,
   },
+  github: {
+    createApp: (hub, request) => ipcRenderer.invoke(IPC.githubAppCreate, hub, request) as Promise<CallOutcome>,
+    cancel: () => ipcRenderer.invoke(IPC.githubAppCancel) as Promise<void>,
+  },
   openExternal: (url) => ipcRenderer.invoke(IPC.openExternal, url) as Promise<OpenOutcome>,
   hubs: {
     initial: initialHubs,

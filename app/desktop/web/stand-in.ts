@@ -85,6 +85,10 @@ const fleetdApi = (file: File): FleetdApi => {
       connect: () => Promise.resolve({ ok: false, error: notHere }),
       cancel: done,
     },
+    github: {
+      createApp: () => Promise.resolve({ ok: false, error: notHere }),
+      cancel: done,
+    },
     openExternal: (url) => {
       window.open(url, "_blank", "noopener");
       return Promise.resolve({ ok: true });

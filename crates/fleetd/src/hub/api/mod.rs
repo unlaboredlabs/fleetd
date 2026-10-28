@@ -151,6 +151,8 @@ pub struct Hub {
     pub previews: Arc<crate::hub::preview::Previews>,
     /// Machines added and removed from the app (hub/machine_setup).
     pub machine_setup: Arc<crate::hub::machine_setup::MachineSetup>,
+    /// The hub's own GitHub App and its tokens (hub/github_app).
+    pub github_app: Arc<crate::hub::github_app::GithubApps>,
 }
 
 /// Every MCP tool the hub serves, from every area that registers. The one place that lists them.
@@ -168,6 +170,7 @@ pub fn registry() -> Registry {
     crate::hub::projects::tools::register(&mut tools);
     crate::hub::mcp_servers::tools::register(&mut tools);
     crate::hub::claude_accounts::tools::register(&mut tools);
+    crate::hub::github_app::tools::register(&mut tools);
     crate::hub::hub_links::tools::register(&mut tools);
     crate::hub::google::tools::register(&mut tools);
     crate::hub::train::tools::register(&mut tools);

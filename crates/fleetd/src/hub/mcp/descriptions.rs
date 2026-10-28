@@ -153,6 +153,26 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
         "Which Claude account each person's work runs on (teams step 8). hubApi: the hub's API configuration (endpoint, the machines holding the key with each node's fingerprint, the last Test), never the key. settings.membersUseHubApi: members may run on it (on by default; owners and admins always may). leadsRunOn: what projects' leads and work nobody started (automations, train fixes) run on: the hub's API, else the hub owner's subscription, else each machine's own login (machine_login) when nothing is set up. me: the caller's own choice, subscription (machines and fingerprints, never the token) and runsOn, what the orders they start and their Navi run on, or refused with the fix. people: everyone's, for an owner's or admin's device.",
     ),
     (
+        "github_app_get",
+        "The hub's own GitHub App, once an admin created it (id, slug, name, owner, its page, where it is installed and its last Test), and permissions, what it asks for on each repository. Never a key or secret.",
+    ),
+    (
+        "github_app_manifest",
+        "Owners' and admins' devices only. The manifest for a new GitHub App named name, which sends the admin back to redirect (a loopback page) with a code: postTo is GitHub's page to post it to as the form field manifest, for the admin's account or organization. Webhooks are off; the hub polls.",
+    ),
+    (
+        "github_app_create",
+        "Owners' and admins' devices only. Trade code, from GitHub's redirect after the manifest was posted, for the App: GitHub hands its private key and secrets to the hub, which seals them to its own box key and never returns them. Replaces any App the hub had. Then install it on repositories (github.com/apps/<slug>/installations/new) and call github_app_test.",
+    ),
+    (
+        "github_app_test",
+        "Owners' and admins' devices only. Ask GitHub whether it takes the App's key, read where it is installed and mint a token for each installation; app.lastTest says it in a line. The hub's gh then works as the App on those repositories.",
+    ),
+    (
+        "github_app_remove",
+        "Owners' and admins' devices only. Forget the hub's GitHub App and its keys; the hub's gh goes back to the machine's own login. settingsUrl is its settings on GitHub, where it is deleted.",
+    ),
+    (
         "claude_hub_api_set",
         "Owners' and admins' devices only. Set the hub's Claude API configuration: sealed, the API key sealed on the client with crypto_box_seal to each machine's boxPubKey (every machine agents run on), or empty to keep the saved key; endpoint, a custom ANTHROPIC_BASE_URL, absent for Anthropic's own. The hub relays each box to its node and keeps the fingerprint, never the key; missingOn names machines that don't hold it, where nothing runs on it until it is saved again while they are online. Projects' leads and work nobody started run on it, and so do people who choose it.",
     ),

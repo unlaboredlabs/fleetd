@@ -2713,6 +2713,46 @@ output!(WorkDoneOutput {
     claim: crate::work::Claim,
 });
 
+// github_app_get, github_app_manifest, github_app_create, github_app_test, github_app_remove: the hub's own GitHub App
+// (D190, `github_app.rs`). GitHub hands its keys to the hub, which seals them to its own box key; none crosses here.
+input!(GithubAppGetInput {});
+output!(GithubAppGetOutput {
+    /// None until an admin creates one.
+    app: Option<crate::github_app::GithubApp>,
+    /// What it asks for on each repository, as the manifest has it: `[name, read|write]`.
+    permissions: Vec<(String, String)>,
+});
+input!(GithubAppManifestInput {
+    /// What the admin's GitHub shows it as: `fleetd on <host>`. GitHub may ask for another when it is taken.
+    name: crate::github_app::GithubAppName,
+    /// Where GitHub sends the admin back with the code: the loopback page that posted the manifest.
+    redirect: crate::google::LoopbackUri,
+    /// Make it in this organization; absent: in the admin's own account.
+    organization: Option<crate::github_app::GithubLogin>,
+});
+output!(GithubAppManifestOutput {
+    /// GitHub's page to post the manifest to, as a form field `manifest`, with a `state` of the caller's own.
+    post_to: String,
+    /// The manifest, JSON.
+    manifest: String,
+});
+input!(GithubAppCreateInput {
+    /// From GitHub's redirect.
+    code: crate::github_app::GithubManifestCode,
+});
+output!(GithubAppCreateOutput {
+    app: crate::github_app::GithubApp,
+});
+input!(GithubAppTestInput {});
+output!(GithubAppTestOutput {
+    app: crate::github_app::GithubApp,
+});
+input!(GithubAppRemoveInput {});
+output!(GithubAppRemoveOutput {
+    /// Its settings on GitHub, where it is deleted too.
+    settings_url: String,
+});
+
 // claude_accounts_get, claude_hub_api_set, claude_hub_api_remove, claude_settings_set, claude_subscription_set,
 // claude_subscription_remove, claude_choice_set, claude_account_test: which Claude account each person's work runs on
 // (teams step 8, D200; `claude_accounts.rs`). Keys and tokens are sealed in the app to each machine's boxPubKey; the
@@ -2889,6 +2929,12 @@ tools! {
     google_disconnect => GoogleDisconnect, Operate, GoogleDisconnectInput, GoogleDisconnectOutput;
     google_pubsub_set => GooglePubsubSet, Operate, GooglePubsubSetInput, GooglePubsubSetOutput;
     google_mail_set => GoogleMailSet, Operate, GoogleMailSetInput, GoogleMailSetOutput;
+    github_app_get => GithubAppGet, Read, GithubAppGetInput, GithubAppGetOutput;
+    // Owners' and admins' human keys only (the handlers check): the hub's own GitHub App.
+    github_app_manifest => GithubAppManifest, Admin, GithubAppManifestInput, GithubAppManifestOutput;
+    github_app_create => GithubAppCreate, Admin, GithubAppCreateInput, GithubAppCreateOutput;
+    github_app_test => GithubAppTest, Admin, GithubAppTestInput, GithubAppTestOutput;
+    github_app_remove => GithubAppRemove, Admin, GithubAppRemoveInput, GithubAppRemoveOutput;
     claude_accounts_get => ClaudeAccountsGet, Read, ClaudeAccountsGetInput, ClaudeAccountsGetOutput;
     // Owners' and admins' human keys only (the handlers check): the hub's API configuration and who may use it.
     claude_hub_api_set => ClaudeHubApiSet, Admin, ClaudeHubApiSetInput, ClaudeHubApiSetOutput;

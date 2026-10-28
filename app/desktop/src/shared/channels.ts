@@ -83,6 +83,13 @@ export const IPC = {
   googleConnect: "google:connect",
   /** invoke() → void. Stops waiting for Google's answer to the connect under way, if any. */
   googleCancel: "google:cancel",
+  /**
+   * invoke(GithubAppRequest) → CallOutcome. Main posts the hub's App manifest to GitHub from a loopback page, catches
+   * GitHub's code there and calls github_app_create; `cancelled` when the admin stops waiting.
+   */
+  githubAppCreate: "github:app-create",
+  /** invoke() → void. Stops waiting for GitHub to send the App back, if it is. */
+  githubAppCancel: "github:app-cancel",
   /** invoke(ClaudeAccountRequest) → CallOutcome. Main seals a Claude key or token to each machine's key, then calls claude_hub_api_set or claude_subscription_set. */
   claudeAccountSubmit: "claude-account:submit",
   /** invoke(url) → OpenOutcome. Opens an http(s) link in the user's browser; refuses other schemes. */
