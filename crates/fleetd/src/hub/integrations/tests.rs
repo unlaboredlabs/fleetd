@@ -1,3 +1,4 @@
+use fleetd_contracts::google::MailFile;
 use fleetd_contracts::integrations::{
     IntegrationKind, McpIntegration, McpToolName, ToolAction, ToolPolicy, ToolPreview,
 };
@@ -6,8 +7,8 @@ use fleetd_contracts::prim::List;
 use serde_json::{Value, json};
 
 use super::policy::{
-    Never, Verdict, attachment_size, launch_rules, sends_credential, shown_input, tool_policy,
-    verdict, words,
+    Never, Verdict, attachment_size, file_holds_credential, launch_rules, sends_credential,
+    shown_input, tool_policy, verdict, with_mail_files, words,
 };
 
 fn server(name: &str, kind: IntegrationKind, reads: &[&str]) -> McpServer {
@@ -435,27 +436,137 @@ fn a_long_body_comes_whole_and_too_large_a_call_is_refused() {
     );
 }
 
-#[test]
-fn mail_with_attachments_is_refused_before_any_card() {
-    // fleetd's own Google tools can't attach files yet: the person is never asked to approve a call that would fail.
-    for tool in ["send_message", "reply", "create_draft"] {
-        let input = json!({ "to": "a@example.com", "subject": "Lease", "body": "Attached.",
-            "attachments": [{ "content_base64": "QUJD", "filename": "tenant-form.pdf" }] });
-        assert_eq!(
-            blocked(&format!("mcp__google__{tool}"), input),
-            Never::Attachments.why(),
-            "{tool}"
-        );
+fn mail_file(path: &str, name: &str, bytes: u64, mime: &str) -> MailFile {
+    MailFile {
+        path: path.into(),
+        name: name.into(),
+        bytes,
+        mime: mime.into(),
+        sha256: format!("{:064x}", bytes),
+        credential: false,
     }
-    // Without files, a draft still runs unasked.
+}
+
+#[test]
+fn a_send_s_files_are_read_on_the_navi_s_machine_before_its_card() {
+    // A send or reply with files asks only once the node read them: their paths, in order, as the input names them.
+    for tool in ["send_message", "reply"] {
+        let input = json!({ "to": "a@example.com", "message_id": "m1", "subject": "Lease", "body": "Attached.",
+            "attachments": ["lease.pdf", { "path": "scans/id.png" }] });
+        match verdict(&format!("mcp__google__{tool}"), &input, &navi()) {
+            Some(Verdict::Files { paths, preview }) => {
+                assert_eq!(paths, ["lease.pdf", "scans/id.png"], "{tool}");
+                assert_eq!(preview.to.len(), 1);
+            }
+            other => panic!("{tool}: expected files to read, got {other:?}"),
+        }
+    }
+    // Anything but paths is refused before any card: a Navi attaches only its own files.
+    for attachments in [
+        json!([{ "content_base64": "QUJD", "filename": "tenant-form.pdf" }]),
+        json!("lease.pdf"),
+        json!([7]),
+    ] {
+        let why = blocked(
+            "mcp__google__send_message",
+            json!({ "to": "a@example.com", "body": "x", "attachments": attachments }),
+        );
+        assert!(why.contains("paths to files in your folder"), "{why}");
+    }
+    // A draft runs unasked with its files: it sends nothing, and the node reads them inside the folder.
     assert_eq!(
         verdict(
             "mcp__google__create_draft",
-            &json!({ "to": "a@example.com", "body": "Hi" }),
+            &json!({ "to": "a@example.com", "body": "Hi", "attachments": ["lease.pdf"] }),
             &navi()
         ),
         Some(Verdict::Allow)
     );
+    // An empty list attaches nothing, and asks as any send.
+    assert!(matches!(
+        verdict(
+            "mcp__google__send_message",
+            &json!({ "to": "a@example.com", "body": "Hi", "attachments": [] }),
+            &navi()
+        ),
+        Some(Verdict::Ask(_))
+    ));
+}
+
+#[test]
+fn the_card_lists_each_file_and_approving_runs_the_input_that_pins_its_hash() {
+    let input = json!({ "to": "a@example.com", "subject": "Lease", "body": "Attached.",
+        "attachments": ["lease.pdf", { "path": "scans/id.png", "sha256": "made-up" }] });
+    let Some(Verdict::Files { preview, paths }) =
+        verdict("mcp__google__send_message", &input, &navi())
+    else {
+        panic!("expected files to read")
+    };
+    let files = [
+        mail_file("lease.pdf", "lease.pdf", 120_000, "application/pdf"),
+        mail_file("scans/id.png", "id.png", 800, "image/png"),
+    ];
+    let (card, pinned) = with_mail_files(*preview, &input, &paths, &files).unwrap();
+    let listed: Vec<_> = card
+        .attachments
+        .iter()
+        .map(|a| {
+            (
+                a.name.as_str(),
+                a.bytes,
+                a.mime.as_ref().map(|m| m.as_str()),
+            )
+        })
+        .collect();
+    assert_eq!(
+        listed,
+        [
+            ("lease.pdf", Some(120_000), Some("application/pdf")),
+            ("id.png", Some(800), Some("image/png"))
+        ]
+    );
+    // The Navi's own hash is replaced by the one read for the card; the rest of the input is as it was.
+    assert_eq!(
+        pinned["attachments"],
+        json!([
+            { "path": "lease.pdf", "sha256": files[0].sha256 },
+            { "path": "scans/id.png", "sha256": files[1].sha256 },
+        ])
+    );
+    assert_eq!(pinned["body"], "Attached.");
+    assert!(card.input.contains(&files[1].sha256) && !card.input.contains("made-up"));
+
+    // A text file holding a key never leaves, even if approved.
+    let mut key = files.clone();
+    key[1].credential = true;
+    let Some(Verdict::Files { preview, .. }) =
+        verdict("mcp__google__send_message", &input, &navi())
+    else {
+        panic!()
+    };
+    assert_eq!(
+        with_mail_files(*preview.clone(), &input, &paths, &key).unwrap_err(),
+        Never::Credential.why()
+    );
+    // Files the node read for other paths, or not all of them, are no card for this input.
+    assert!(with_mail_files(*preview, &input, &paths, &files[..1]).is_err());
+}
+
+#[test]
+fn a_text_file_is_searched_for_keys_and_a_binary_one_is_not() {
+    assert!(file_holds_credential(
+        b"notes\nANTHROPIC_API_KEY=sk-ant-abcdefghijklmnop0123\n"
+    ));
+    assert!(!file_holds_credential(
+        b"Dear landlord,\nthe lease is attached.\n"
+    ));
+    let mut binary = vec![0u8, 1, 2, 3, 0xff, 0xfe];
+    binary.extend_from_slice(b"sk-ant-abcdefghijklmnop0123");
+    assert!(!file_holds_credential(&binary));
+}
+
+#[test]
+fn inline_file_bytes_are_said_by_their_size() {
     // A file's bytes are said by their size, which no one reads: 300 KB, past the card's bound as base64.
     let shown = shown_input(
         IntegrationKind::Google,

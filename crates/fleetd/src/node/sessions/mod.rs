@@ -1018,12 +1018,15 @@ impl SessionService {
                 Ok(SessionOutput::McpTested(result))
             }
             SessionCall::Google { call } => {
-                if let fleetd_contracts::google::GoogleCall::Connect { project_id, .. }
-                | fleetd_contracts::google::GoogleCall::Status { project_id }
-                | fleetd_contracts::google::GoogleCall::Disconnect { project_id, .. } = &call
-                {
-                    self.project_root(project_id)?;
-                }
+                let folder = match &call {
+                    fleetd_contracts::google::GoogleCall::Connect { project_id, .. }
+                    | fleetd_contracts::google::GoogleCall::Status { project_id }
+                    | fleetd_contracts::google::GoogleCall::Disconnect { project_id, .. }
+                    | fleetd_contracts::google::GoogleCall::MailFiles { project_id, .. } => {
+                        Some(self.project_root(project_id)?)
+                    }
+                    _ => None,
+                };
                 let home = self.inner.config.home.clone();
                 let box_key = super::identity::load_or_create_box_key(&home).ok();
                 let answer = super::google::answer(
@@ -1031,6 +1034,7 @@ impl SessionService {
                     &super::google::Endpoints::default(),
                     call,
                     box_key.as_ref(),
+                    folder,
                 )
                 .await
                 .map_err(invalid)?;
@@ -2228,6 +2232,7 @@ impl SessionService {
         let kept = super::mcp_servers::kept(&dir);
         let session_mcp = super::mcp_servers::session_config(
             &config.home,
+            Some(Path::new(&row.local.workspace_root)),
             kept.as_ref(),
             fleetd_server(row.local.role, &sock, id),
             id,

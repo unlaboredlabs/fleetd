@@ -244,6 +244,12 @@ fn answer(method: &axum::http::Method, path: &str, query: &[(String, String)]) -
         }
         ("POST", "/gmail/v1/users/me/messages/send") => json!({ "id": "sent1", "threadId": "t1" }),
         ("POST", "/gmail/v1/users/me/drafts") => json!({ "id": "d1", "message": { "id": "m9" } }),
+        ("POST", "/upload/gmail/v1/users/me/messages/send") => {
+            json!({ "id": "sent2", "threadId": "t1" })
+        }
+        ("POST", "/upload/gmail/v1/users/me/drafts") => {
+            json!({ "id": "d2", "message": { "id": "m10" } })
+        }
         ("GET", "/calendar/v3/calendars/primary/events") => {
             json!({ "timeZone": "Europe/Madrid", "items": [
                 { "id": "e1", "summary": "Standup", "start": { "dateTime": "2026-10-28T09:00:00+01:00" },
@@ -915,29 +921,372 @@ async fn a_list_entry_holding_several_addresses_splits_as_the_card_shows_them() 
     assert_eq!(guests.len(), 2);
 }
 
+/// A Navi's folder with a lease, a scan in a subfolder, and links: one inside, one out to a file beside the folder.
+fn navi_folder() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    let folder = dir.path().join("navi");
+    std::fs::create_dir_all(folder.join("scans")).unwrap();
+    std::fs::write(folder.join("lease.pdf"), b"%PDF-1.7 the lease").unwrap();
+    std::fs::write(
+        folder.join("scans/Café ID.PNG"),
+        [0x89, b'P', b'N', b'G', 0, 1, 2],
+    )
+    .unwrap();
+    std::fs::write(dir.path().join("secret.txt"), b"not the Navi's").unwrap();
+    std::os::unix::fs::symlink(folder.join("lease.pdf"), folder.join("latest.pdf")).unwrap();
+    std::os::unix::fs::symlink(dir.path().join("secret.txt"), folder.join("out.txt")).unwrap();
+    std::os::unix::fs::symlink(dir.path(), folder.join("up")).unwrap();
+    dir
+}
+
+#[test]
+fn a_navi_attaches_only_files_inside_its_own_folder() {
+    let dir = navi_folder();
+    let folder = dir.path().join("navi");
+    for inside in ["lease.pdf", "./scans/../lease.pdf", "latest.pdf"] {
+        let f = files::read_all(&folder, &[inside]).unwrap();
+        assert_eq!(f[0].bytes, b"%PDF-1.7 the lease", "{inside}");
+    }
+    // The name the Navi gave, typed by it.
+    let f = files::read_all(&folder, &["latest.pdf", "scans/Café ID.PNG"]).unwrap();
+    assert_eq!(
+        (f[0].name.as_str(), f[0].mime),
+        ("latest.pdf", "application/pdf")
+    );
+    assert_eq!(
+        (f[1].name.as_str(), f[1].mime),
+        ("Café ID.PNG", "image/png")
+    );
+    assert_eq!(f[0].sha256, files::sha256_hex(b"%PDF-1.7 the lease"));
+    let absolute = folder.join("lease.pdf");
+    files::read_all(&folder, &[absolute.to_str().unwrap()]).unwrap();
+
+    let secret = dir.path().join("secret.txt");
+    for outside in [
+        "../secret.txt",
+        "out.txt",
+        "up/secret.txt",
+        secret.to_str().unwrap(),
+        "/etc/hostname",
+    ] {
+        let why = files::read_all(&folder, &[outside])
+            .map(|_| ())
+            .unwrap_err();
+        assert!(why.contains("outside your folder"), "{outside}: {why}");
+    }
+    let missing = files::read_all(&folder, &["nope.pdf"])
+        .map(|_| ())
+        .unwrap_err();
+    assert!(missing.contains("no such file in your folder"), "{missing}");
+    let dir_too = files::read_all(&folder, &["scans"])
+        .map(|_| ())
+        .unwrap_err();
+    assert!(dir_too.contains("isn't a file"), "{dir_too}");
+}
+
+#[test]
+fn gmail_s_25_mb_is_the_most_one_email_attaches() {
+    let dir = tempfile::tempdir().unwrap();
+    let big = std::fs::File::create(dir.path().join("big.zip")).unwrap();
+    big.set_len(20_000_000).unwrap();
+    std::fs::write(dir.path().join("small.pdf"), vec![b'x'; 4_000_000]).unwrap();
+    std::fs::write(dir.path().join("more.pdf"), vec![b'x'; 1_000_001]).unwrap();
+    // 20 MB and 4 MB fit; one byte past 25 MB doesn't, and says how much they come to.
+    files::read_all(dir.path(), &["big.zip", "small.pdf"]).unwrap();
+    let why = files::read_all(dir.path(), &["big.zip", "small.pdf", "more.pdf"])
+        .map(|_| ())
+        .unwrap_err();
+    assert!(
+        why.contains("add up to 25.0 MB") && why.contains("at most 25 MB"),
+        "{why}"
+    );
+    let many: Vec<&str> = std::iter::repeat_n("small.pdf", 21).collect();
+    let why = files::read_all(dir.path(), &many).map(|_| ()).unwrap_err();
+    assert!(why.contains("at most 20 files"), "{why}");
+}
+
+#[test]
+fn a_file_is_typed_by_its_name() {
+    for (name, mime) in [
+        ("a.pdf", "application/pdf"),
+        ("b.JPEG", "image/jpeg"),
+        (
+            "c.docx",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ),
+        ("d.csv", "text/csv"),
+        ("e.ics", "text/calendar"),
+        ("Makefile", "application/octet-stream"),
+        ("f.unknown", "application/octet-stream"),
+    ] {
+        assert_eq!(files::mime_of(name), mime, "{name}");
+    }
+}
+
 #[tokio::test]
-async fn mail_with_attachments_is_refused_and_nothing_is_saved_or_sent() {
+async fn the_card_s_read_hashes_each_file_and_marks_a_key_in_a_text_one() {
+    let dir = navi_folder();
+    let folder = dir.path().join("navi");
+    std::fs::write(
+        folder.join("env.txt"),
+        "ANTHROPIC_API_KEY=sk-ant-abcdefghijklmnop0123\n",
+    )
+    .unwrap();
+    let call = GoogleCall::MailFiles {
+        project_id: fleetd_contracts::ids::ProjectId::unchecked("p1"),
+        paths: vec!["lease.pdf".into(), "env.txt".into()],
+    };
+    let GoogleAnswer::MailFiles { files } = super::answer(
+        Path::new("/nowhere"),
+        &Endpoints::default(),
+        call.clone(),
+        None,
+        Some(folder),
+    )
+    .await
+    .unwrap() else {
+        panic!("not files")
+    };
+    assert_eq!(files[0].sha256, files::sha256_hex(b"%PDF-1.7 the lease"));
+    assert_eq!((files[0].bytes, files[0].credential), (18, false));
+    assert_eq!(
+        (files[1].mime.as_str(), files[1].credential),
+        ("text/plain", true)
+    );
+    // Without the project's folder nothing is read.
+    assert!(
+        super::answer(
+            Path::new("/nowhere"),
+            &Endpoints::default(),
+            call,
+            None,
+            None
+        )
+        .await
+        .is_err()
+    );
+}
+
+/// The message inside a recorded upload: its `message/rfc822` part, and the metadata beside it.
+fn uploaded(seen: &[(String, String, String, String)], path: &str) -> (Value, String) {
+    let (_, _, q, body) = seen.iter().rev().find(|(_, p, _, _)| p == path).unwrap();
+    assert_eq!(q, "uploadType=multipart");
+    let boundary = body.lines().next().unwrap().to_owned();
+    let mut parts = body.split(&boundary).skip(1);
+    let meta = parts
+        .next()
+        .unwrap()
+        .split("\r\n\r\n")
+        .nth(1)
+        .unwrap()
+        .trim();
+    let message = parts.next().unwrap();
+    let message = message
+        .strip_prefix("\r\nContent-Type: message/rfc822\r\n\r\n")
+        .unwrap()
+        .trim_end_matches("\r\n");
+    (serde_json::from_str(meta).unwrap(), message.to_owned())
+}
+
+/// Each part of a multipart/mixed message: its headers and its decoded bytes.
+fn parts_of(message: &str) -> Vec<(String, Vec<u8>)> {
+    let boundary = message
+        .split("boundary=\"")
+        .nth(1)
+        .unwrap()
+        .split('"')
+        .next()
+        .unwrap();
+    let closing = format!("--{boundary}--");
+    assert!(message.ends_with(&closing));
+    message
+        .trim_end_matches(&closing)
+        .split(&format!("--{boundary}\r\n"))
+        .skip(1)
+        .map(|part| {
+            let (head, body) = part.split_once("\r\n\r\n").unwrap();
+            let encoded: String = body.split_whitespace().collect();
+            (head.to_owned(), STANDARD.decode(encoded).unwrap())
+        })
+        .collect()
+}
+
+fn in_folder(session: Session, folder: &Path) -> Session {
+    Session {
+        folder: Some(folder.to_path_buf()),
+        ..session
+    }
+}
+
+#[tokio::test]
+async fn a_send_attaches_exactly_the_files_approved_typed_and_named() {
     let (_home, _ep, fake, session) = signed_in().await;
+    let dir = navi_folder();
+    let folder = dir.path().join("navi");
+    let session = in_folder(session, &folder);
+    let lease = files::sha256_hex(b"%PDF-1.7 the lease");
+    let scan = files::sha256_hex(&[0x89, b'P', b'N', b'G', 0, 1, 2]);
+    let input = json!({ "to": ["bo@vendor.test"], "subject": "Lease", "body": "Both attached.", "thread_id": "t1",
+        "attachments": [{ "path": "lease.pdf", "sha256": lease }, { "path": "scans/Café ID.PNG", "sha256": scan }] });
+    let sent = tools::call(&session, "send_message", &input).await.unwrap();
+    assert_eq!(sent["message_id"], "sent2");
+    let seen = fake.lock().unwrap().seen.clone();
+    let (meta, message) = uploaded(&seen, "/upload/gmail/v1/users/me/messages/send");
+    assert_eq!(meta, json!({ "threadId": "t1" }));
+    assert!(message.contains("To: bo@vendor.test\r\n"));
+    let parts = parts_of(&message);
+    assert_eq!(parts.len(), 3);
+    assert!(parts[0].0.contains("text/plain; charset=UTF-8"));
+    assert_eq!(parts[0].1, b"Both attached.");
+    assert!(
+        parts[1]
+            .0
+            .contains("Content-Type: application/pdf; name=\"lease.pdf\"")
+    );
+    assert!(
+        parts[1]
+            .0
+            .contains("Content-Disposition: attachment; filename=\"lease.pdf\"")
+    );
+    assert_eq!(parts[1].1, b"%PDF-1.7 the lease");
+    assert!(
+        parts[2]
+            .0
+            .contains("Content-Type: image/png; name*=UTF-8''Caf%C3%A9%20ID.PNG")
+    );
+    assert_eq!(parts[2].1, [0x89, b'P', b'N', b'G', 0, 1, 2]);
+
+    // A reply carries them the same way, in its thread.
+    let reply = json!({ "message_id": "m1", "to": ["bo@vendor.test"], "body": "Here.",
+        "attachments": [{ "path": "lease.pdf", "sha256": lease }] });
+    tools::call(&session, "reply", &reply).await.unwrap();
+    let seen = fake.lock().unwrap().seen.clone();
+    let (meta, message) = uploaded(&seen, "/upload/gmail/v1/users/me/messages/send");
+    assert_eq!(meta, json!({ "threadId": "t1" }));
+    assert!(message.contains("In-Reply-To: <m1@vendor.test>\r\n"));
+    assert_eq!(parts_of(&message)[1].1, b"%PDF-1.7 the lease");
+}
+
+#[tokio::test]
+async fn a_file_changed_since_its_card_or_never_on_one_is_not_sent() {
+    let (_home, _ep, fake, session) = signed_in().await;
+    let dir = navi_folder();
+    let folder = dir.path().join("navi");
+    let session = in_folder(session, &folder);
+    let approved = files::sha256_hex(b"%PDF-1.7 the lease");
+    std::fs::write(folder.join("lease.pdf"), b"%PDF-1.7 another lease").unwrap();
     let before = fake.lock().unwrap().seen.len();
-    for tool in ["create_draft", "send_message", "reply"] {
-        let error = tools::call(
+    let changed = tools::call(
+        &session,
+        "send_message",
+        &json!({ "to": ["bo@vendor.test"], "body": "x", "attachments": [{ "path": "lease.pdf", "sha256": approved }] }),
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        changed.contains("changed after the person approved it"),
+        "{changed}"
+    );
+    // A send's files are always on a card; one without its hash never was.
+    for tool in ["send_message", "reply"] {
+        let unpinned = tools::call(
             &session,
             tool,
-            &json!({ "message_id": "m1", "to": ["bo@vendor.test"], "subject": "Lease", "body": "Attached.",
-                     "attachments": [{ "filename": "lease.pdf", "content_base64": "QUJD" }] }),
+            &json!({ "message_id": "m1", "to": ["bo@vendor.test"], "body": "x", "attachments": ["lease.pdf"] }),
         )
         .await
         .unwrap_err();
         assert!(
-            error.contains("attachments aren't supported yet"),
-            "{tool}: {error}"
+            unpinned.contains("wasn't on the person's approval card"),
+            "{tool}: {unpinned}"
         );
     }
+    // Outside the folder, or with no folder at all, nothing goes either.
+    let outside = tools::call(
+        &session,
+        "send_message",
+        &json!({ "to": ["bo@vendor.test"], "body": "x", "attachments": [{ "path": "out.txt", "sha256": approved }] }),
+    )
+    .await
+    .unwrap_err();
+    assert!(outside.contains("outside your folder"), "{outside}");
+    let (_h, _e, _f, no_folder) = signed_in().await;
+    let none = tools::call(
+        &no_folder,
+        "create_draft",
+        &json!({ "to": ["bo@vendor.test"], "body": "x", "attachments": ["lease.pdf"] }),
+    )
+    .await
+    .unwrap_err();
+    assert!(none.contains("restart this Navi's session"), "{none}");
     let writes = fake.lock().unwrap().seen[before..]
         .iter()
         .filter(|(method, ..)| method != "GET")
         .count();
     assert_eq!(writes, 0);
+}
+
+#[tokio::test]
+async fn a_draft_carries_its_files_unasked_and_sends_nothing() {
+    let (_home, _ep, fake, session) = signed_in().await;
+    let dir = navi_folder();
+    let session = in_folder(session, &dir.path().join("navi"));
+    let saved = tools::call(
+        &session,
+        "create_draft",
+        &json!({ "to": ["bo@vendor.test"], "subject": "Lease", "body": "Draft.", "thread_id": "t1",
+                 "attachments": ["lease.pdf"] }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(saved["draft_id"], "d2");
+    let seen = fake.lock().unwrap().seen.clone();
+    assert!(seen.iter().all(|(_, p, _, _)| !p.ends_with("/send")));
+    let (meta, message) = uploaded(&seen, "/upload/gmail/v1/users/me/drafts");
+    assert_eq!(meta, json!({ "message": { "threadId": "t1" } }));
+    assert_eq!(parts_of(&message)[1].1, b"%PDF-1.7 the lease");
+    // A text file holding a key never goes, not even into a draft no one approved; nor in a send.
+    std::fs::write(
+        dir.path().join("navi/env.txt"),
+        "ANTHROPIC_API_KEY=sk-ant-abcdefghijklmnop0123\n",
+    )
+    .unwrap();
+    let before = fake.lock().unwrap().seen.len();
+    let key = tools::call(
+        &session,
+        "create_draft",
+        &json!({ "to": ["bo@vendor.test"], "body": "x", "attachments": ["lease.pdf", "env.txt"] }),
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        key.contains("env.txt looks like it holds a password, key or token"),
+        "{key}"
+    );
+    let pinned = files::sha256_hex(b"ANTHROPIC_API_KEY=sk-ant-abcdefghijklmnop0123\n");
+    let sent = tools::call(
+        &session,
+        "send_message",
+        &json!({ "to": ["bo@vendor.test"], "body": "x", "attachments": [{ "path": "env.txt", "sha256": pinned }] }),
+    )
+    .await
+    .unwrap_err();
+    assert!(sent.contains("Nothing was sent or saved"), "{sent}");
+    let writes = fake.lock().unwrap().seen[before..]
+        .iter()
+        .filter(|(method, ..)| method != "GET")
+        .count();
+    assert_eq!(writes, 0);
+    // Not a list of paths: refused, nothing saved.
+    let error = tools::call(
+        &session,
+        "create_draft",
+        &json!({ "to": ["bo@vendor.test"], "body": "x",
+                 "attachments": [{ "filename": "lease.pdf", "content_base64": "QUJD" }] }),
+    )
+    .await
+    .unwrap_err();
+    assert!(error.contains("paths to files in your folder"), "{error}");
 }
 
 #[tokio::test]

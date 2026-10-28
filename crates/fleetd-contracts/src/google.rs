@@ -142,6 +142,30 @@ pub struct MailWake {
     pub watch_expires_ms: Option<i64>,
 }
 
+/// The most files one email attaches.
+pub const MAIL_FILES_MAX: usize = 20;
+
+/// The most one email's files may add up to: Gmail sends at most 25 MB of attachments.
+pub const MAIL_FILES_MAX_BYTES: u64 = 25_000_000;
+
+/// A file in a Navi's folder that a Gmail send or reply attaches, as its node read it for the approval card.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct MailFile {
+    /// As the tool's input names it.
+    pub path: String,
+    /// The name the recipient sees.
+    pub name: String,
+    pub bytes: u64,
+    /// Its type, from its name: "application/pdf".
+    pub mime: String,
+    /// The SHA-256 of its bytes, in hex: the tool sends it only while the file still has them.
+    pub sha256: String,
+    /// It reads as text holding what looks like a password, key or token.
+    #[serde(default)]
+    pub credential: bool,
+}
+
 /// One new message, as a wake says it: who from, its subject and the start of it, untrusted.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -246,6 +270,13 @@ pub enum GoogleCall {
         project_id: ProjectId,
         query: Option<Line<1, 500>>,
     },
+    /// Read the files a Gmail send or reply attaches, each by its path inside the project's folder, for its approval
+    /// card. Only to a node listing [`crate::node_link::CAP_GOOGLE_FILES`].
+    #[serde(rename_all = "camelCase")]
+    MailFiles {
+        project_id: ProjectId,
+        paths: Vec<String>,
+    },
 }
 
 /// Node -> hub, the answer to a [`GoogleCall`].
@@ -286,6 +317,9 @@ pub enum GoogleAnswer {
         mails: Vec<NewMail>,
         /// New messages past those read, only counted.
         more: Option<u32>,
+    },
+    MailFiles {
+        files: Vec<MailFile>,
     },
 }
 

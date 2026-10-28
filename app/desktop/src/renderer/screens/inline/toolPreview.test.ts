@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CommandApprovalItem, ToolPreview } from "../../../shared/contracts";
-import { actionWarning, answeredWords, answerWords, askTitle, domainOf, foldedBody, previewNeedsConfirm, previewOutcome, previewRows, sizeText } from "./toolPreview";
+import { actionWarning, answeredWords, answerWords, askTitle, domainOf, foldedBody, previewNeedsConfirm, previewOutcome, previewRows, sizeText, typeText } from "./toolPreview";
 
 const email: ToolPreview = {
   integration: "google",
@@ -47,12 +47,24 @@ describe("an integration's approval card", () => {
       { label: "Subject", values: [{ text: "Lunch" }] },
     ]);
   });
-  it("lists attachments by name, size and source", () => {
-    const rows = previewRows({ ...email, attachments: [{ name: "lease.pdf", bytes: 120_400 }, { name: "Drive file 1AbC", from: "from Drive" }] });
+  it("lists attachments by name, size, type and source", () => {
+    const rows = previewRows({
+      ...email,
+      attachments: [
+        { name: "lease.pdf", bytes: 120_400, mime: "application/pdf" },
+        { name: "Café ID.PNG", bytes: 800, mime: "image/png" },
+        { name: "notes.bin", bytes: 4_000, mime: "application/x-thing" },
+        { name: "Drive file 1AbC", from: "from Drive" },
+      ],
+    });
     expect(rows.find((r) => r.label === "Attached")?.values).toEqual([
-      { text: "lease.pdf", note: "120 KB" },
+      { text: "lease.pdf", note: "120 KB · PDF" },
+      { text: "Café ID.PNG", note: "800 bytes · PNG image" },
+      { text: "notes.bin", note: "4 KB · application/x-thing" },
       { text: "Drive file 1AbC", note: "from Drive" },
     ]);
+    expect(typeText("image/svg+xml")).toBe("SVG image");
+    expect(typeText("application/vnd.openxmlformats-officedocument.wordprocessingml.document")).toBe("Word document");
     expect(sizeText(2_400_000)).toBe("2.4 MB");
     expect(sizeText(800)).toBe("800 bytes");
   });

@@ -1,10 +1,11 @@
 //! fleetd's own Google server (`fleetd google-mcp`, node/google/tools.rs; the hub gives it to a Navi with an account,
 //! hub/google): its tool names, which of them read, and how each asking one reads on a card. A read, and a draft,
 //! which sends nothing, run unasked; a send, a reply, an event change, an upload and a share ask, showing everyone it
-//! reaches and everything that goes out. Mail with attachments is refused: the tools can't attach files yet.
+//! reaches and everything that goes out. A send's or reply's files are its Navi's own, read by its node for the card
+//! ([`mail_paths`]).
 use serde_json::Value;
 
-use super::policy::{Draft, Never, Rule, addresses, text_of};
+use super::policy::{Draft, Rule, addresses, text_of};
 use fleetd_contracts::integrations::ToolAction::{Send, Share, Write};
 
 /// The tools that run unasked: node/google/tools.rs marks the same ones `readOnlyHint`.
@@ -30,13 +31,38 @@ fn emails_guests(tool: &str, input: &Value) -> bool {
     }
 }
 
-pub fn rule(tool: &str, input: &Value) -> Option<Rule> {
-    // Refused before any card: the tools can't attach files yet, and node/google/tools.rs refuses them too, for a draft
-    // that runs unasked.
-    if matches!(tool, "send_message" | "reply" | "create_draft") && !input["attachments"].is_null()
-    {
-        return Some(Rule::Blocked(Never::Attachments));
+/// The paths in the Navi's folder a send or reply attaches, which its node reads for the card: `None` for none, `Err`
+/// for an `attachments` that isn't a list of paths. A draft's files aren't asked about: it sends nothing.
+pub fn mail_paths(tool: &str, input: &Value) -> Option<Result<Vec<String>, &'static str>> {
+    if !matches!(tool, "send_message" | "reply") {
+        return None;
     }
+    let items = match &input["attachments"] {
+        Value::Null => return None,
+        Value::Array(items) if items.is_empty() => return None,
+        Value::Array(items) => items,
+        _ => return Some(Err(NOT_PATHS)),
+    };
+    Some(
+        items
+            .iter()
+            .map(|item| match item {
+                Value::String(p) => Ok(p.clone()),
+                // The node checks a hash given here against the file too, but the card's own replaces it.
+                Value::Object(o) => match o.get("path") {
+                    Some(Value::String(p)) => Ok(p.clone()),
+                    _ => Err(NOT_PATHS),
+                },
+                _ => Err(NOT_PATHS),
+            })
+            .collect(),
+    )
+}
+
+const NOT_PATHS: &str = "Blocked by fleetd: attachments is a list of paths to files in your folder, like \
+     [\"reports/q3.pdf\"]. A Navi attaches only its own files.";
+
+pub fn rule(tool: &str, input: &Value) -> Option<Rule> {
     if READS.contains(&tool) {
         return Some(Rule::Read);
     }

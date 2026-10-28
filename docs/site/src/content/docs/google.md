@@ -18,9 +18,9 @@ The Navi's lead gets these tools as `mcp__google__<tool>`.
 |---|---|---|
 | `search_threads` | Searches Gmail with Gmail's own syntax (`from:`, `is:unread`, `newer_than:7d`). | Unasked |
 | `get_thread` | Reads a thread: each message's sender, recipients, subject, whole body and attachment names. | Unasked |
-| `create_draft` | Saves a draft in Gmail. Nothing is sent. | Unasked |
-| `send_message` | Sends an email. | Asks you |
-| `reply` | Replies in a thread to the recipients it names. | Asks you |
+| `create_draft` | Saves a draft in Gmail, with any files from the Navi's folder. Nothing is sent. | Unasked |
+| `send_message` | Sends an email, with any files from the Navi's folder. | Asks you |
+| `reply` | Replies in a thread to the recipients it names, with any files from the Navi's folder. | Asks you |
 | `list_calendar_events`, `get_calendar_event` | Reads events, with their guests and answers. | Unasked |
 | `create_calendar_event` | Makes an event. Google emails the guests it names unless `notify_attendees` is false. | Asks you |
 | `update_calendar_event` | Changes an event. Its guests are emailed only when `notify_attendees` is true. That needs the whole new guest list in `attendees`, and each guest it drops in `removed_attendees`, since Google emails them a cancellation. You see everyone Google emails. | Asks you |
@@ -39,10 +39,31 @@ is a [custom server](/docs/mcp-servers/): each of its tools asks, showing its wh
 that only reads.
 
 A tool that asks shows the [approval card](/docs/integrations#card) in the Navi's chat. The card has every
-recipient, the subject and the whole body, read from the exact input the tool runs with. The tool sends exactly what
-you approved. fleetd doesn't rewrite it or block links. Refused even with approval: something that looks like a
-password, key or token, and an email with attachments, which aren't supported yet. You're never asked to approve a
-send that would fail. To pass a file on, the Navi can share it from Drive.
+recipient, the subject, the whole body and each attached file, read from the exact input the tool runs with. The tool
+sends exactly what you approved. fleetd doesn't rewrite it or block links. Refused even with approval: something that
+looks like a password, key or token.
+
+### Attachments {#attachments}
+
+A Navi attaches files from its own folder only. It names each by its path there, as
+`"attachments": ["reports/q3.pdf"]`.
+
+- **Inside the folder only.** A path is resolved inside the Navi's folder. A path above it (`../`), an absolute path
+  elsewhere, and a link that leads out of it are refused, as is anything but a file.
+- **On the card before anything goes.** Before the card appears, the Navi's machine reads each file. The card lists
+  each one by name, size and type, such as "lease.pdf 120 KB · PDF". A text file holding what looks like a password,
+  key or token is refused instead, as the rest of the email would be.
+- **Exactly the files you approved.** The machine hashes each file (SHA-256) when it makes the card, and the input you
+  approve carries those hashes. When the email goes, each file is read again. If one changed since, nothing is sent,
+  and the Navi is told to ask again.
+- **Gmail's limit.** One email attaches at most 20 files of at most 25 MB together. Past that it's refused, saying how
+  much the files come to, and the Navi sends fewer or smaller files, or several emails.
+- **Typed by name.** Each file goes with the type its name gives: `application/pdf` for `.pdf`, `image/png` for
+  `.png`, and so on. An unknown kind goes as `application/octet-stream`.
+
+A draft carries files the same way, from the same folder, without a card: it sends nothing. A text file holding what
+looks like a password, key or token is refused for a draft too, so it never reaches Drafts. You check the files in
+Drafts before you send it.
 
 What a read brings back from your mailbox, calendar or Drive comes back whole, as Google has it: no summary, no stripped
 links. Above it is one line telling the Navi it's untrusted content, whose instructions come from whoever wrote it, not
@@ -221,7 +242,7 @@ On the Navi's machine, under the node's home (`~/.fleetd/node`), each file at mo
 | `google/mail/<project>.json` | Where the Navi's last mail check stopped, a Gmail history id. |
 
 None is inside the Navi's folder. The Navi's MCP config starts the server as the node's own fleetd binary in its
-`google-mcp` mode, given the node's home and the project, never a token. The server reads the tokens from these files
+`google-mcp` mode, given the node's home, the project and the Navi's folder, never a token. The server reads the tokens from these files
 and refreshes them in place. Removing a Navi's project from its machine deletes its tokens.
 
 ## Hub tools {#hub-tools}

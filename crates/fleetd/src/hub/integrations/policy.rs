@@ -2,6 +2,7 @@
 //! list, by the words of the tool's name, for every server; then the integration's own table ([`super::google`] for
 //! the hub's own native server only, [`super::notion`], or a custom server's tools the person marked as reading); anything else asks, with an action
 //! guessed from its name. An asking tool whose input looks like it holds a credential is blocked too.
+use fleetd_contracts::google::MailFile;
 use fleetd_contracts::integrations::{
     IntegrationKind, McpToolName, PREVIEW_INPUT_MAX, PreviewAttachment, ToolAction, ToolPolicy,
     ToolPreview,
@@ -25,9 +26,6 @@ pub enum Never {
     Trading,
     Accounts,
     Credential,
-    /// A Gmail send, reply or draft with files: fleetd's own Google tools can't attach them yet, so the person is never
-    /// asked to approve a call that would fail or go without them.
-    Attachments,
 }
 
 impl Never {
@@ -50,10 +48,6 @@ impl Never {
                 "Blocked by fleetd: this would send or store what looks like a password, key or token, which never \
                  leaves through an assistant, even with approval. Leave the value out; a secret goes through \
                  request_secret."
-            }
-            Never::Attachments => {
-                "Blocked by fleetd: Gmail attachments aren't supported yet. Send it without the files, or share them \
-                 from Drive with drive_share and say so in the message."
             }
         }
     }
@@ -80,6 +74,12 @@ pub enum Verdict {
     Allow,
     /// Ask the person, showing this; once approved, answer Allow with the exact input it was read from.
     Ask(Box<ToolPreview>),
+    /// Have the Navi's node read the files at `paths` in its folder, which a Gmail send or reply attaches; then ask
+    /// with [`with_mail_files`]'s card, or refuse with why the node couldn't.
+    Files {
+        preview: Box<ToolPreview>,
+        paths: Vec<String>,
+    },
     /// Answer Deny with this, and ask no one.
     Block(&'static str),
 }
@@ -197,12 +197,17 @@ pub(super) fn sends_credential(kind: IntegrationKind, input: &Value) -> bool {
         files.push(bytes);
         Some(Value::String("[file]".into()))
     });
-    short_key
-        || holds_credential(&text)
-        || files.iter().filter(|f| is_text(f)).any(|f| {
-            let t = String::from_utf8_lossy(f);
-            crate::hub::redact::redact(&t) != t
-        })
+    short_key || holds_credential(&text) || files.iter().any(|f| file_holds_credential(f))
+}
+
+/// Whether a file reads as text holding what looks like a credential. A binary one never does: its name and size are
+/// on the card, and the person's approval decides.
+pub fn file_holds_credential(bytes: &[u8]) -> bool {
+    if !is_text(bytes) {
+        return false;
+    }
+    let t = String::from_utf8_lossy(bytes);
+    crate::hub::redact::redact(&t) != t
 }
 
 /// A tool name's words, lower case: `create_account`, `createAccount` and `API-create-account` are all
@@ -385,10 +390,19 @@ pub fn verdict(tool_name: &str, input: &Value, servers: &[McpServer]) -> Option<
             {
                 return Some(Verdict::Block(TOO_LARGE));
             }
-            match preview(kind, server_name, tool, action, input) {
-                Some(p) => Verdict::Ask(Box::new(p)),
+            let files = match kind {
+                IntegrationKind::Google => super::google::mail_paths(tool, input),
+                _ => None,
+            };
+            match (preview(kind, server_name, tool, action, input), files) {
+                (_, Some(Err(why))) => Verdict::Block(why),
+                (Some(p), Some(Ok(paths))) => Verdict::Files {
+                    preview: Box::new(p),
+                    paths,
+                },
+                (Some(p), None) => Verdict::Ask(Box::new(p)),
                 // A name the contracts can't carry is no tool fleetd shows a person: refused rather than asked blind.
-                None => Verdict::Block(
+                (None, _) => Verdict::Block(
                     "Blocked by fleetd: this tool's name can't be shown on an approval card.",
                 ),
             }
@@ -512,6 +526,7 @@ pub fn preview(
                 Some(PreviewAttachment {
                     name: line(&a.name)?,
                     bytes: a.bytes,
+                    mime: None,
                     from: a.from.as_deref().and_then(line),
                 })
             })
@@ -524,6 +539,49 @@ pub fn preview(
         // Whole: `verdict` refuses an input past the bound before it asks.
         input: Text::new(pretty).ok()?,
     })
+}
+
+/// A Gmail send's or reply's card once the Navi's node read the files it attaches (`GoogleCall::MailFiles`): each
+/// listed by name, size and type, and the input it runs with pinning each file's SHA-256 (`{ "path", "sha256" }`), so
+/// the tool sends exactly the bytes the person approved, or nothing. `Err`: why it is refused instead.
+pub fn with_mail_files(
+    mut preview: ToolPreview,
+    input: &Value,
+    paths: &[String],
+    files: &[MailFile],
+) -> Result<(ToolPreview, Value), &'static str> {
+    let read: Vec<&str> = files.iter().map(|f| f.path.as_str()).collect();
+    if read != paths.iter().map(String::as_str).collect::<Vec<_>>() {
+        return Err(
+            "Blocked by fleetd: the Navi's machine didn't read the files this email attaches.",
+        );
+    }
+    if files.iter().any(|f| f.credential) {
+        return Err(Never::Credential.why());
+    }
+    preview.attachments = files
+        .iter()
+        .map(|f| {
+            Some(PreviewAttachment {
+                name: line(&f.name)?,
+                bytes: Some(f.bytes),
+                mime: line(&f.mime),
+                from: None,
+            })
+        })
+        .collect::<Option<_>>()
+        .ok_or("Blocked by fleetd: a file's name can't be shown on an approval card.")?;
+    let mut input = input.clone();
+    input["attachments"] = files
+        .iter()
+        .map(|f| serde_json::json!({ "path": f.path, "sha256": f.sha256 }))
+        .collect();
+    let pretty = serde_json::to_string_pretty(&input).unwrap_or_default();
+    if js_len(&pretty) > PREVIEW_INPUT_MAX {
+        return Err(TOO_LARGE);
+    }
+    preview.input = Text::new(pretty).map_err(|_| TOO_LARGE)?;
+    Ok((preview, input))
 }
 
 /// Addresses as a tool takes them: an array, or one comma-separated string.

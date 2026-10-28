@@ -450,7 +450,8 @@ describe("an integration's approval", () => {
     expect(text).toContain("Navi wants to send an email");
     expect(text).toContain("bo@example.com.auoutside example.com");
     expect(text).toContain("hidden from the others");
-    expect(text).toContain("menu.pdffrom Drive");
+    expect(text).toContain("menu.pdf184 KB · PDF");
+    expect(text).toContain("table.png43 KB · PNG image");
     expect(text).toContain("Lunch on Tuesday");
     expect(one("[data-tool=send_message]").textContent).toContain("Tuesday at 12:30 at the usual place? I'll book a table.");
     // Labelled rows, in the order a person checks them.

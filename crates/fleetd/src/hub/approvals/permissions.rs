@@ -132,7 +132,7 @@ impl Approvals {
         let (tool, summary) = (prompt.tool_name.as_str(), prompt.summary.as_str());
         let machine = &project.machine_id;
         let servers = self.deps.hub.mcp_servers(project).await;
-        let input = prompt.input.clone().unwrap_or(Value::Null);
+        let mut input = prompt.input.clone().unwrap_or(Value::Null);
         let deny = |why: &str| {
             Some(PermissionDecision::Deny {
                 message: fleetd_contracts::prim::Text::unchecked(clip(why, 2000)),
@@ -148,6 +148,20 @@ impl Approvals {
             _ if prompt.input.is_none() => (deny(UNSHOWN), None),
             Some(Verdict::Block(why)) => (deny(why), None),
             Some(Verdict::Ask(preview)) => (None, Some(preview)),
+            // An email's files, read on the Navi's machine: the card lists each, and approving runs the input that
+            // pins their hashes.
+            Some(Verdict::Files { preview, paths }) => {
+                match self.deps.hub.mail_files(project, paths.clone()).await {
+                    Err(why) => (deny(&why), None),
+                    Ok(files) => match policy::with_mail_files(*preview, &input, &paths, &files) {
+                        Err(why) => (deny(why), None),
+                        Ok((preview, pinned)) => {
+                            input = pinned;
+                            (None, Some(Box::new(preview)))
+                        }
+                    },
+                }
+            }
             None => (None, None),
         };
         // A Navi's fetch or browser visit: a site the person allowed before goes through; any other asks, and its
@@ -204,7 +218,8 @@ impl Approvals {
                     tool_name: prompt.tool_name.clone(),
                     summary: prompt.summary.clone(),
                     preview,
-                    input: prompt.input.clone(),
+                    // What approving runs: the prompt's input, with an email's files pinned.
+                    input: prompt.input.as_ref().map(|_| input.clone()),
                     site,
                 }),
                 preview_config: None,

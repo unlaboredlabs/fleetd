@@ -185,7 +185,21 @@ async fn node(hub: &Arc<Hub>, answers: Answers) -> mpsc::UnboundedReceiver<Googl
                     .collect(),
                     more: answers.more,
                 },
+                GoogleCall::MailFiles { paths, .. } => GoogleAnswer::MailFiles {
+                    files: paths
+                        .iter()
+                        .map(|p| fleetd_contracts::google::MailFile {
+                            path: p.clone(),
+                            name: p.rsplit('/').next().unwrap_or(p).into(),
+                            bytes: 1200,
+                            mime: "application/pdf".into(),
+                            sha256: "ab".repeat(32),
+                            credential: false,
+                        })
+                        .collect(),
+                },
             };
+            let outside = matches!(call, GoogleCall::MailFiles { paths, .. } if paths.iter().any(|p| p.starts_with("..")));
             if let (Some(during), GoogleCall::MailWatch { project_id, .. }) =
                 (answers.during_watch, call)
             {
@@ -198,6 +212,8 @@ async fn node(hub: &Arc<Hub>, answers: Answers) -> mpsc::UnboundedReceiver<Googl
                 && matches!(call, GoogleCall::MailPull)
             {
                 json!({ "err": { "code": "invalid", "message": "Pub/Sub answered 403: no Subscriber role" } })
+            } else if outside {
+                json!({ "err": { "code": "invalid", "message": "../lease.pdf is outside your folder, or a link out of it" } })
             } else {
                 json!({ "ok": { "kind": "google", "answer": answer } })
             };
@@ -1003,4 +1019,53 @@ async fn a_watch_answered_after_a_reconnect_leaves_the_new_connection_unwatched(
     super::mail::tick(&hub).await.unwrap();
     let ana = hub.db.google().account(&navi()).unwrap().unwrap();
     assert_eq!(ana.mail.watch_expires_ms, Some(WATCH_ENDS));
+}
+
+/// An email's files are read on the Navi's own machine, which must be online and new enough; its refusal is the Navi's.
+#[tokio::test]
+async fn an_email_s_files_are_read_on_the_navi_s_machine_for_its_card() {
+    use crate::hub::approvals::ApprovalHub;
+    let (hub, _home) = hub();
+    let ports = crate::hub::usage::wire::OpsPorts::default();
+    ports.bind(&hub);
+    let navi = crate::hub::usage::ports::ProjectRef {
+        machine_id: lab().to_string(),
+        project_id: "ana".into(),
+    };
+    let offline = ports
+        .mail_files(&navi, vec!["lease.pdf".into()])
+        .await
+        .unwrap_err();
+    assert!(offline.contains("offline"), "{offline}");
+
+    let mut calls = node(&hub, Answers::default()).await;
+    hub.link.set_capabilities(&lab(), &[CAP_GOOGLE]);
+    let old = ports
+        .mail_files(&navi, vec!["lease.pdf".into()])
+        .await
+        .unwrap_err();
+    assert!(old.contains("too old"), "{old}");
+
+    hub.link.set_capabilities(
+        &lab(),
+        &[CAP_GOOGLE, fleetd_contracts::node_link::CAP_GOOGLE_FILES],
+    );
+    let files = ports
+        .mail_files(&navi, vec!["lease.pdf".into(), "scans/id.png".into()])
+        .await
+        .unwrap();
+    assert_eq!(files[1].name, "id.png");
+    let Some(GoogleCall::MailFiles { project_id, paths }) = calls.recv().await else {
+        panic!("no files call")
+    };
+    assert_eq!((project_id.as_str(), paths.len()), ("ana", 2));
+
+    let outside = ports
+        .mail_files(&navi, vec!["../lease.pdf".into()])
+        .await
+        .unwrap_err();
+    assert!(
+        outside.contains("nothing was sent") && outside.contains("outside your folder"),
+        "{outside}"
+    );
 }

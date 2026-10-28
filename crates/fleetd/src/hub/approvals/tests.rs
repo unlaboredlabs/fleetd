@@ -39,6 +39,9 @@ struct Fake {
     /// who allowed it.
     navi: Mutex<bool>,
     sites: Mutex<Vec<(String, String)>>,
+    /// What the Navi's node answers for an email's files, and each list of paths it was asked to read.
+    mail_files: Mutex<Result<Vec<fleetd_contracts::google::MailFile>, String>>,
+    files_asked: Mutex<Vec<Vec<String>>>,
 }
 
 impl Default for Fake {
@@ -67,6 +70,8 @@ impl Default for Fake {
             servers: Mutex::default(),
             navi: Mutex::new(true),
             sites: Mutex::default(),
+            mail_files: Mutex::new(Ok(Vec::new())),
+            files_asked: Mutex::default(),
         }
     }
 }
@@ -177,6 +182,15 @@ impl ApprovalHub for Fake {
             })
         });
         Box::pin(async move { known })
+    }
+    fn mail_files(
+        &self,
+        _: &ProjectRef,
+        paths: Vec<String>,
+    ) -> BoxFut<'_, Result<Vec<fleetd_contracts::google::MailFile>, String>> {
+        let files = self.mail_files.lock().unwrap().clone();
+        self.files_asked.lock().unwrap().push(paths);
+        Box::pin(async move { files })
     }
     fn navi_site_allow(&self, _: &ProjectRef, site: &str, by: &str) -> BoxFut<'_, ()> {
         self.sites.lock().unwrap().push((site.into(), by.into()));
@@ -1274,7 +1288,7 @@ fn integration(name: &str, kind: &str, reads: &[&str]) -> fleetd_contracts::mcp_
 }
 
 #[tokio::test]
-async fn through_the_relay_notion_and_custom_servers_get_their_policy_and_mail_with_attachments_is_refused()
+async fn through_the_relay_notion_and_custom_servers_get_their_policy_and_mail_with_inline_files_is_refused()
  {
     use base64::Engine;
     let fake = Arc::new(Fake::default());
@@ -1302,7 +1316,8 @@ async fn through_the_relay_notion_and_custom_servers_get_their_policy_and_mail_w
             "mcp__notion__API-patch-page",
             json!({ "page_id": "p9", "archived": true }),
         ),
-        // Mail with files, whatever they hold: refused before any card, as Gmail attachments aren't supported yet.
+        // Mail with files in its input, whatever they hold: refused before any card, as a Navi attaches only files in
+        // its folder; a key is refused as a key.
         ("q4", "mcp__google__send_message", mail(&notes, "notes.txt")),
         ("q5", "mcp__google__send_message", mail(&photo, "photo.jpg")),
     ] {
@@ -1327,8 +1342,8 @@ async fn through_the_relay_notion_and_custom_servers_get_their_policy_and_mail_w
     );
     for (id, why) in [
         ("q2", "moves money"),
-        ("q4", "attachments aren't supported yet"),
-        ("q5", "attachments aren't supported yet"),
+        ("q4", "looks like a password, key or token"),
+        ("q5", "paths to files in your folder"),
     ] {
         let (_, PermissionDecision::Deny { message }) =
             decided.iter().find(|(i, _)| *i == id).unwrap()
@@ -1346,4 +1361,74 @@ async fn through_the_relay_notion_and_custom_servers_get_their_policy_and_mail_w
     assert_eq!(open[0].permission.as_ref().unwrap().request_id, "q3");
     assert_eq!(card(&open[0])["action"], "delete");
     assert_eq!(card(&open[0])["title"], "Move a Notion page to the trash");
+}
+
+/// A send's files are read on the Navi's machine before its card, which lists each; approving runs the input that pins
+/// their hashes, and a file the node refuses is denied with its words, no card.
+#[tokio::test]
+async fn an_email_s_files_are_on_its_card_and_approving_pins_them() {
+    use fleetd_contracts::google::MailFile;
+    let fake = Arc::new(Fake::default());
+    *fake.servers.lock().unwrap() = vec![google()];
+    *fake.mail_files.lock().unwrap() = Ok(vec![MailFile {
+        path: "lease.pdf".into(),
+        name: "lease.pdf".into(),
+        bytes: 120_000,
+        mime: "application/pdf".into(),
+        sha256: "ab".repeat(32),
+        credential: false,
+    }]);
+    let a = approvals(&fake);
+    let input = json!({ "to": ["ana@example.com"], "subject": "Lease", "body": "Attached.",
+        "attachments": ["lease.pdf"] });
+    let tool = "mcp__google__send_message";
+    *fake.pending.lock().unwrap() = Some(pending_with("q1", tool, Some(input.clone())));
+    a.on_thread_event(&event("thread.waiting", Some(prompt("q1", tool, "a call"))))
+        .await;
+    assert_eq!(
+        *fake.files_asked.lock().unwrap(),
+        [vec!["lease.pdf".to_owned()]]
+    );
+    let open = requests(&fake);
+    assert_eq!(open.len(), 1);
+    let permission = open[0].permission.as_ref().unwrap();
+    let card = serde_json::to_value(&permission.preview).unwrap();
+    assert_eq!(
+        card["attachments"],
+        json!([{ "name": "lease.pdf", "bytes": 120_000, "mime": "application/pdf" }])
+    );
+    let pinned = json!([{ "path": "lease.pdf", "sha256": "ab".repeat(32) }]);
+    assert_eq!(permission.input.as_ref().unwrap()["attachments"], pinned);
+
+    a.answer(&person(), &open[0].request_id, true, None)
+        .await
+        .unwrap();
+    let answers = fake.answers.lock().unwrap().clone();
+    let PermissionDecision::Allow {
+        updated_input: Some(ran),
+    } = &answers[0].3
+    else {
+        panic!("{answers:?}")
+    };
+    assert_eq!(ran["attachments"], pinned);
+    assert_eq!(ran["body"], "Attached.");
+
+    // The node's refusal reaches the Navi as it is, and no card is filed.
+    *fake.mail_files.lock().unwrap() =
+        Err("Blocked by fleetd, nothing was sent: ../lease.pdf is outside your folder".into());
+    let outside =
+        json!({ "to": ["ana@example.com"], "body": "x", "attachments": ["../lease.pdf"] });
+    *fake.pending.lock().unwrap() = Some(pending_with("q2", tool, Some(outside)));
+    a.on_thread_event(&event("thread.waiting", Some(prompt("q2", tool, "a call"))))
+        .await;
+    assert_eq!(requests(&fake).len(), 1);
+    let answers = fake.answers.lock().unwrap().clone();
+    let PermissionDecision::Deny { message } = &answers[1].3 else {
+        panic!("{answers:?}")
+    };
+    assert!(
+        message.as_str().contains("outside your folder"),
+        "{}",
+        message.as_str()
+    );
 }

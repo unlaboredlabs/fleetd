@@ -208,13 +208,20 @@
       "description": "A file an asking tool attaches, as its input names it.",
       "properties": {
         "bytes": {
-          "description": "Its size, when its bytes are in the input.",
+          "description": "Its size, when its bytes are in the input or the Navi's node read the file.",
           "format": "uint64",
           "minimum": 0,
           "type": "integer"
         },
         "from": {
           "description": "Where it comes from, when not from the input: \"from Drive\", \"from message 18c2\".",
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "mime": {
+          "description": "Its type, as the email names it: \"application/pdf\".",
           "maxLength": 200,
           "minLength": 1,
           "pattern": "^[^\\r\\n]*$",
