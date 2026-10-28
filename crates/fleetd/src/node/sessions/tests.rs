@@ -4024,7 +4024,7 @@ impl crate::node::browser::SessionHooks for NaviHooks {
     fn filled_since(&self, _thread: &str, _known: usize) -> Option<crate::node::mask::Secrets> {
         None
     }
-    fn navi(&self, thread: &str, navi: &str) {
+    fn navi(&self, thread: &str, navi: &str, _folder: &std::path::Path) {
         self.0
             .lock()
             .unwrap()

@@ -61,6 +61,8 @@ pub struct Session {
     pub start: Instant,
     pub dir: PathBuf,
     pub cdp: Arc<Cdp>,
+    /// A Navi's session: what its browser may touch on this machine (local.rs).
+    pub fence: Option<Arc<super::local::Fence>>,
     browser: Mutex<Option<Browser>>,
     pages: Arc<Mutex<Pages>>,
     video: Option<VideoSink>,
@@ -123,6 +125,8 @@ pub struct Opened {
     pub ffmpeg: Option<PathBuf>,
     /// The agent session's secrets (its project's, its order's, its MCP servers').
     pub secrets: Secrets,
+    /// A Navi's session: what its browser may touch on this machine, put on before any driver reaches it.
+    pub fence: Option<super::local::Fence>,
 }
 
 impl Session {
@@ -152,6 +156,7 @@ impl Session {
             start: Instant::now(),
             dir: opened.dir,
             cdp: cdp.clone(),
+            fence: opened.fence.map(Arc::new),
             browser: Mutex::new(Some(browser)),
             pages: Arc::default(),
             video,

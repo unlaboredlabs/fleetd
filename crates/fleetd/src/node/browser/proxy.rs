@@ -151,9 +151,20 @@ async fn serve(tcp: tokio::net::TcpStream, proxy: Weak<Proxy>, broker: Weak<Brok
                     Some(Ok(Message::Close(_))) | None | Some(Err(_)) => break,
                     Some(Ok(_)) => continue,
                 };
-                let Ok(command) = serde_json::from_str::<Value>(&text) else {
+                let Ok(mut command) = serde_json::from_str::<Value>(&text) else {
                     continue;
                 };
+                // A Navi's session: nothing on this machine outside its folder.
+                if let Some(fence) = &session.fence {
+                    let id = command.get("id").cloned().unwrap_or(Value::Null);
+                    match fence.check(command).await {
+                        Ok(checked) => command = checked,
+                        Err(why) => {
+                            let _ = out.send(refused(&id, &why).to_string());
+                            continue;
+                        }
+                    }
+                }
                 // Before the input goes: what it is about to act on, for the action log and the replay.
                 if session.control() != fleetd_contracts::browser::BrowserControl::Human {
                     session.note_target(&command).await;

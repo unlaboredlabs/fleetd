@@ -9,6 +9,9 @@ import { useData, useDataLayer } from "../../src/data/react";
 import { HubText } from "./HubText";
 import { openAddProject } from "./store";
 
+/** The hub gives the node 70 s: it stops the project's processes, ends its previews and browser, then removes it. */
+const REMOVE_MS = 80_000;
+
 export interface RemoveTarget {
   readonly machineId: string;
   readonly projectId: string;
@@ -45,7 +48,7 @@ export function RemoveProjectDialog({ project, onClose, onRemoved }: { project: 
   const remove = async (p: RemoveTarget) => {
     setBusy(true);
     setError(null);
-    const out = await data.call("project_remove", { machineId: p.machineId, projectId: p.projectId, ...(p.deleting ? { removeWorktrees: true } : {}) });
+    const out = await data.call("project_remove", { machineId: p.machineId, projectId: p.projectId, ...(p.deleting ? { removeWorktrees: true } : {}) }, { timeoutMs: REMOVE_MS });
     setBusy(false);
     if (!out.ok) {
       setError(out.error.fix ? { message: out.error.message, fix: out.error.fix } : { message: out.error.message });

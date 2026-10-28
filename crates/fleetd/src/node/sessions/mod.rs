@@ -2402,7 +2402,7 @@ impl SessionService {
             sandbox = Some(self.navi_fence(row, &dir, &env));
             // Its browser sessions run on the profile this Navi keeps (D221), which its sandbox hides.
             if let Some(browser) = self.inner.browser.get() {
-                browser.navi(id, row.summary.project_id.as_str());
+                browser.navi(id, row.summary.project_id.as_str(), &row.local.cwd);
             }
         }
         let spec = SessionSpec {

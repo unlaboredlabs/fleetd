@@ -147,8 +147,13 @@ session is still signed in there. No login page, captcha or approve-on-your-phon
   empty profile that is thrown away when the session ends.
 - **One at a time:** one browser runs on the profile. If the Navi opens a second session while one is open in another
   of its chats, the second is refused until the first ends.
-- **Another machine:** when the hub places the Navi's browser on another machine because its own is full, that
-  session starts signed out and keeps nothing.
+- **Its machine only:** a Navi's browser always runs on the Navi's own machine, where its profile and folder are,
+  never on another one the hub would pick.
+- **Files:** the browser touches no file on the machine outside the Navi's folder. It opens no `file://` page, whether
+  asked for, linked to or redirected to. It uploads only files in the folder, not through a link out of it. It saves
+  downloads only in the folder itself, each under a name of the browser's own so no site overwrites a file there;
+  `agent-browser download <ref> ./<name>` saves one under the name you give. A project's agents keep the browser as
+  before.
 
 **To sign it out of everything,** open the Navi's settings (**Open settings** in its right-click menu), find
 **Sign-ins** and click **Forget sign-ins…**. A browser session it has open now ends, and the profile is deleted. Its

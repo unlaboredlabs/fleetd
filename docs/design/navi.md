@@ -109,6 +109,10 @@ Paths are under `crates/fleetd/src/` unless shown otherwise.
   so it stays signed in: cookies and site storage only, under the node's home where its sandbox can't read them.
   One browser at a time runs on it. `navi_signins_forget` (Settings › Projects › Sign-ins) deletes it, as deleting the
   Navi does.
+- **Done (W160):** the browser runs outside the Navi's sandbox, so in a Navi's session it is fenced to its folder
+  (`node/browser/local.rs`): every `file:` load fails (the node's own hidden `Fetch` on the browser target, which the
+  driver can't turn off), uploads are copies of files whose opened path is inside the folder, and downloads go only to
+  the folder itself under Chrome's names (`allowAndName`). A Navi's browser session always runs on its own node.
 
 ### Secrets and approvals: reusable as is
 - Requests `Q<n>` (`hub/approvals/mod.rs:1-11`):

@@ -32,6 +32,8 @@ use crate::node::util::AbortOnDrop;
 mod credentials;
 /// A Navi's sign-ins, kept between its sessions.
 mod kept;
+/// What a Navi's browser may touch on this machine: no file pages, uploads and downloads only in its folder.
+mod local;
 /// agent-browser's own script shapes.
 mod shapes;
 
@@ -259,6 +261,16 @@ struct Rig {
     hub: Arc<TestHub>,
     node_home: tempfile::TempDir,
     _hub_home: tempfile::TempDir,
+}
+
+impl Rig {
+    /// Makes agent session `thread` Navi `navi`'s, with a folder of its own under the node's home: its path.
+    fn navi(&self, thread: &str, navi: &str) -> PathBuf {
+        let folder = self.node_home.path().join("navi").join(navi);
+        std::fs::create_dir_all(&folder).unwrap();
+        SessionHooks::navi(self.broker.as_ref(), thread, navi, &folder);
+        folder
+    }
 }
 
 /// A broker with a warm Chrome, or None (said why) where this machine has none.

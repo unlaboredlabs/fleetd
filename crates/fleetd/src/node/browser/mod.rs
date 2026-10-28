@@ -8,11 +8,13 @@
 //!
 //! A Navi's session runs on the profile that Navi keeps (D221, chrome.rs [`chrome::Kept`]), not a fresh one: the node's
 //! sessions tell the broker which agent sessions are a Navi's ([`SessionHooks::navi`]), and every other one gets a
-//! fresh profile as before.
+//! fresh profile as before. Its browser reads and writes only in the Navi's folder (local.rs): no `file:` page, no
+//! upload or download elsewhere.
 pub mod agent_browser;
 pub mod cdp;
 pub mod chrome;
 pub mod credentials;
+pub mod local;
 pub mod onepassword;
 pub mod proxy;
 pub mod record;
@@ -176,13 +178,21 @@ pub trait SessionHooks: Send + Sync + 'static {
     /// The values filled into the session's browsers from 1Password, when there are more than `known`: masked in what
     /// the session reports, as its own secrets are.
     fn filled_since(&self, thread: &str, known: usize) -> Option<Secrets>;
-    /// The agent session is Navi `navi`'s (its project): its browser sessions run on that Navi's kept profile.
-    fn navi(&self, _thread: &str, _navi: &str) {}
+    /// The agent session is Navi `navi`'s (its project), whose folder is `folder`: its browser sessions run on that
+    /// Navi's kept profile, and touch only that folder on this machine.
+    fn navi(&self, _thread: &str, _navi: &str, _folder: &Path) {}
     /// Forgets Navi `navi`'s sign-ins: its browser session here ends, and its kept profile goes. None: no broker here
     /// to ask, and the node deletes the profile itself.
     fn forget_signins(&self, _navi: &str) -> Option<Forgetting> {
         None
     }
+}
+
+/// An agent session's Navi: its name (its project) and its folder.
+#[derive(Clone)]
+struct Navi {
+    name: String,
+    folder: PathBuf,
 }
 
 pub struct Broker {
@@ -201,7 +211,7 @@ pub struct Broker {
     /// Agent sessions whose browser is starting: a second start meanwhile is refused before it launches anything.
     starting: Mutex<HashSet<String>>,
     /// The Navi of each agent session that is one's, by the agent session: its browser runs on that Navi's profile.
-    navis: Mutex<HashMap<String, String>>,
+    navis: Mutex<HashMap<String, Navi>>,
     /// The Navis' kept profiles.
     kept: chrome::Kept,
     hub: Arc<dyn HubCalls>,
@@ -356,6 +366,8 @@ impl Broker {
             .clone()
             .map(PathBuf::from)
             .or_else(|| chrome::find_ffmpeg(&chrome::install_dir(home)));
+        // The upload copies of sessions a node that stopped without closing them left.
+        let _ = std::fs::remove_dir_all(local::uploads_dir(home));
         let broker = Arc::new_cyclic(|me| Self {
             me: me.clone(),
             home: home.to_owned(),
@@ -655,9 +667,9 @@ impl Broker {
         let secrets_thread = thread.clone();
         let secrets = tokio::task::spawn_blocking(move || secrets_for(&secrets_thread));
         let navi = lock(&self.navis).get(&thread).cloned();
-        let browser = match navi {
+        let browser = match &navi {
             Some(navi) => {
-                let lease = self.kept.take(&navi).map_err(|why| {
+                let lease = self.kept.take(&navi.name).map_err(|why| {
                     refuse(
                         ErrorCode::Invalid,
                         format!("{why}: it keeps your sign-ins, and one browser at a time runs on them."),
@@ -689,6 +701,23 @@ impl Broker {
                 )
             })?;
         let id = new_id();
+        let fence = match &navi {
+            Some(navi) => {
+                let staging = local::uploads_dir(&self.home).join(id.as_str());
+                Some(
+                    local::Fence::start(&browser.cdp, &navi.folder, staging)
+                        .await
+                        .map_err(|why| {
+                            refuse(
+                                ErrorCode::Failed,
+                                format!("The browser did not start: {why}."),
+                                "try session_start again",
+                            )
+                        })?,
+                )
+            }
+            None => None,
+        };
         let ffmpeg = lock(&self.ffmpeg).clone();
         let dir = upload::recordings_dir(&self.home).join(id.as_str());
         let session = Session::open(
@@ -701,6 +730,7 @@ impl Broker {
                 purpose: purpose.clone(),
                 ffmpeg,
                 secrets,
+                fence,
             },
         )
         .await
@@ -974,6 +1004,7 @@ impl Broker {
                 purpose: purpose.to_owned(),
                 ffmpeg,
                 secrets,
+                fence: None,
             },
         )
         .await
@@ -1015,19 +1046,27 @@ impl Broker {
         lock(&self.navis).remove(thread);
     }
 
+    /// Whether the agent session is a Navi's: its browser runs here, on its profile and inside its fence.
+    pub fn is_navi(&self, thread: &str) -> bool {
+        lock(&self.navis).contains_key(thread)
+    }
+
     /// Forgets Navi `navi`'s sign-ins: the browser session of any of its agent sessions ends (its recording goes to the
-    /// hub as at any end), then its kept profile is deleted once that browser has let go of it.
+    /// hub as at any end), then its kept profile is deleted once that browser has let go of it. Takes at most
+    /// [`chrome::WIPE_WAIT`] and the delete: a session that takes longer to close leaves the profile, and says so.
     pub async fn forget_signins(self: &Arc<Self>, navi: &str) -> Result<(), String> {
         let threads: Vec<String> = lock(&self.navis)
             .iter()
-            .filter(|(_, n)| n.as_str() == navi)
+            .filter(|(_, n)| n.name == navi)
             .map(|(t, _)| t.clone())
             .collect();
         for thread in threads {
             let session = lock(&self.sessions).remove(&thread);
             if let Some(session) = session {
                 session.step("signins_forgotten", json!({}), true, None, 0);
-                self.close(session).await;
+                // Closing finishes its recording first, which may take a while; the wipe waits for its browser.
+                let broker = self.clone();
+                tokio::spawn(async move { broker.close(session).await });
             }
         }
         self.kept.wipe(navi).await
@@ -1059,8 +1098,14 @@ impl SessionHooks for Broker {
         self.credentials.filled_since(thread, known)
     }
 
-    fn navi(&self, thread: &str, navi: &str) {
-        lock(&self.navis).insert(thread.to_owned(), navi.to_owned());
+    fn navi(&self, thread: &str, navi: &str, folder: &Path) {
+        lock(&self.navis).insert(
+            thread.to_owned(),
+            Navi {
+                name: navi.to_owned(),
+                folder: folder.to_owned(),
+            },
+        );
     }
 
     fn forget_signins(&self, navi: &str) -> Option<Forgetting> {
