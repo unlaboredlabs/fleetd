@@ -2073,7 +2073,8 @@ export const screens: readonly Screen[] = [
       await page.getByText(/Tested on devbox\./u).waitFor();
     },
   },
-  { id: "admin.setup", route: "#/admin/setup", fixtures: ["admin-owner"] },
+  // Administration › Setup reads the hub's steps (setup_list): a fresh hub with required steps left, and one done.
+  { id: "admin.setup", route: "#/admin/setup", fixtures: ["setup-fresh", "setup-done"] },
   { id: "admin.denied", route: "#/admin/people", fixtures: ["admin-member"] },
   // No hub and nothing kept from one: connect first, never Loading… for ever.
   { id: "admin.offline", route: "#/admin/people", fixtures: ["hub-unreachable"] },
