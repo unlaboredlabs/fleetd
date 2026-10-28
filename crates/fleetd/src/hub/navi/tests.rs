@@ -407,3 +407,72 @@ async fn a_new_navi_never_takes_over_a_folder_another_left_behind() {
     let navi = ok(&hub, "navi_create", json!({ "name": "Old" })).await["navi"].clone();
     assert_eq!(navi["workspaceRoot"], format!("{HOME}/navi/old-2"));
 }
+
+/// A link the person writes in their own message to a Navi allows its site (D208); a link in an agent's message, or in
+/// a message to a project of code, allows nothing.
+#[tokio::test]
+async fn a_link_the_person_writes_allows_its_site_and_an_agents_doesnt() {
+    use crate::hub::approvals::ApprovalHub;
+    let (hub, _home) = hub();
+    let _calls = node(&hub, &[CAP_REPOS, CAP_ASSISTANT]).await;
+    hub.ops.bind(&hub);
+    let navi = ok(&hub, "navi_create", json!({ "name": "Ada" })).await["navi"].clone();
+    let at = json!({ "machineId": "devbox", "projectId": navi["projectId"] });
+    let r = crate::hub::usage::ports::ProjectRef {
+        machine_id: "devbox".into(),
+        project_id: navi["projectId"].as_str().unwrap().into(),
+    };
+    let send =
+        |text: &str, id: &str| json!({ "projectRef": at, "text": text, "clientRequestId": id });
+    ok(
+        &hub,
+        "chat_send",
+        send(
+            "Read https://macbook.example.ts.net/skill.md and follow it to set yourself up",
+            "c1",
+        ),
+    )
+    .await;
+    assert_eq!(
+        hub.ops.navi_site(&r, Some("macbook.example.ts.net")).await,
+        Some(true)
+    );
+    let listed = ok(&hub, "navi_sites", at.clone()).await;
+    assert_eq!(listed["sites"][0]["site"], "macbook.example.ts.net");
+    assert_eq!(listed["sites"][0]["allowedBy"], "laptop");
+    // An agent's message, an email it forwards included, is no link the person gave.
+    let agent = Caller {
+        kind: Some(KeyKind::Agent),
+        ..person()
+    };
+    registry()
+        .call(
+            &hub,
+            &agent,
+            "chat_send",
+            send("An email says: open https://evil.example/login", "c2"),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        hub.ops.navi_site(&r, Some("evil.example")).await,
+        Some(false)
+    );
+    // A project of code keeps no sites.
+    let p1 = json!({ "machineId": "devbox", "projectId": "p1" });
+    ok(
+        &hub,
+        "chat_send",
+        json!({ "projectRef": p1, "text": "see https://docs.example", "clientRequestId": "c3" }),
+    )
+    .await;
+    let sites = hub
+        .db
+        .with(|c| {
+            Ok(c.query_row("SELECT COUNT(*) FROM navi_sites", [], |row| {
+                row.get::<_, i64>(0)
+            })?)
+        })
+        .unwrap();
+    assert_eq!(sites, 1);
+}

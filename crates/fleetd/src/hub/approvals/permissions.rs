@@ -4,8 +4,11 @@
 //! for an MCP server's tool: a read answers the prompt at once, a blocked tool is denied with why and nothing is filed,
 //! and an asking one opens an approval with its preview (who it reaches, what it says). Any other tool (a command, an
 //! edit) opens an approval showing the tool, its summary and its input. A Navi's fetch or browser visit goes through
-//! its site gate first: a site the person allowed goes through, and approving a first visit allows its site. Approved, the tool runs with exactly the input the approval showed; denied, the session hears who said
-//! no. A prompt that goes away (answered elsewhere, or its run ended) closes its request.
+//! its site gate first: a site the person allowed (or linked in their own message) goes through, and approving a first
+//! visit allows its site. Any other command runs unasked (D208), but only because the OS sandbox fences it: the node
+//! answers it itself, and a command that still reaches this relay comes from a node with no sandbox, so it asks.
+//! Approved, the tool runs with exactly the input the approval showed; denied, the session hears who
+//! said no. A prompt that goes away (answered elsewhere, or its run ended) closes its request.
 use std::sync::Arc;
 
 use fleetd_contracts::chat::ChatRequestId;
