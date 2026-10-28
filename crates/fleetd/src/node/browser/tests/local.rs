@@ -447,6 +447,32 @@ async fn a_navis_fence_stays_up_and_its_session_ends_if_it_goes_and_dropped_file
         .wait_for(&page, "window.dropped === \"report.txt: ada's report\"")
         .await;
 
+    // Nor wrapped in a session that isn't flattened, where no check would read it.
+    let target = driver
+        .ok(Some(&page), "Target.getTargetInfo", json!({}))
+        .await["targetInfo"]["targetId"]
+        .clone();
+    let answer = driver
+        .send(
+            None,
+            "Target.attachToTarget",
+            json!({ "targetId": target, "flatten": false }),
+        )
+        .await;
+    assert!(refusal(&answer).contains("flatten: true"), "{answer}");
+    let wrapped = json!({
+        "id": 1, "method": "DOM.setFileInputFiles",
+        "params": { "files": [cookies.display().to_string()], "backendNodeId": 1 },
+    });
+    let answer = driver
+        .send(
+            None,
+            "Target.sendMessageToTarget",
+            json!({ "sessionId": page, "message": wrapped.to_string() }),
+        )
+        .await;
+    assert!(refusal(&answer).contains("flatten: true"), "{answer}");
+
     // The driver can't detach the node's session on the browser target.
     let browser =
         driver.ok(None, "Target.getTargetInfo", json!({})).await["targetInfo"]["targetId"].clone();

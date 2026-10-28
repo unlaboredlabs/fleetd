@@ -199,6 +199,17 @@ fn command_in(session: &Arc<Session>, command: Value, out: &mpsc::UnboundedSende
         let _ = out.send(refused(&id, "No session with given id").to_string());
         return;
     }
+    // A command wrapped in another (`Target.sendMessageToTarget`, the only way into a session that isn't flattened)
+    // would pass every check here unread: the fence, the sealed session's refusals. agent-browser flattens.
+    if method == "Target.sendMessageToTarget"
+        || (method == "Target.attachToTarget" && command["params"]["flatten"] != true)
+    {
+        let why = format!(
+            "{method} is refused here: attach with flatten: true and send each command with its sessionId."
+        );
+        let _ = out.send(refused(&id, &why).to_string());
+        return;
+    }
     // By target, a detach could take the broker's session on it rather than the driver's.
     if method == "Target.detachFromTarget"
         && command["params"]["targetId"]
