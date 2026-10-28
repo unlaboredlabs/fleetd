@@ -355,7 +355,10 @@ copy buttons, live checks after the paste, "progress is saved".
   - Built (T1076, stage 2): people's sign-in through the App (`github_connect`, `github_disconnect`; Settings ›
     GitHub; PKCE and the loopback callback), user-to-server tokens sealed to the hub's box key and refreshed; each
     order's agents get `GH_TOKEN` as an order variable (the starter's, or the App's for work nobody started), renewed
-    on the sweep; a writer whose starter hasn't connected is refused at spawn.
+    on the sweep; a writer whose starter hasn't connected is refused at spawn. Tokens go per repo (each checkout's
+    order variables), so each owner's installation gives its own and a repo the App doesn't reach gets none; a
+    person's are replaced by a value GitHub refuses when they disconnect, lapse or leave the hub (never the machine's
+    login), the lead told, and given back when they connect again.
   - Built (stage 3): the `hub/github_app` check, the GitHub step's first way, with `hub/gh_auth` as the second.
   - Next: webhooks on HTTPS hubs (`/webhooks/github`).
   - The `hub/github_app` check reads the App's installations and its last Test (a token minted for each

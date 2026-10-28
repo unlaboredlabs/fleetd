@@ -105,7 +105,7 @@ function Account({ info }: { info: GithubAppGetOutput }) {
       {removing ? (
         <ConfirmRemove
           title="Disconnect your GitHub?"
-          description="The hub revokes its token at GitHub and forgets it. Writers for your orders are refused until you connect again."
+          description="The hub revokes its token at GitHub and forgets it. Your orders' agents can't use GitHub, and new writers are refused, until you connect again."
           action="Disconnect"
           onRemove={() => hubCall("github_disconnect", {}).then(() => refetch(["github_app_get"]))}
           onClose={() => setRemoving(false)}

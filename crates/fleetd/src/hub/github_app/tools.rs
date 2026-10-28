@@ -140,6 +140,8 @@ async fn remove(
 ) -> Result<GithubAppRemoveOutput, ToolError> {
     require_administrator(&hub, &caller)?;
     let app = hub.github_app.remove().await.map_err(failed)?;
+    // What it handed to orders' agents goes too: they use the machine's own login, as before the App.
+    super::sessions::withdraw_all(&hub).await;
     Ok(GithubAppRemoveOutput {
         settings_url: app.ok_or_else(none_yet)?.settings_url.into_inner(),
         next: None,
@@ -177,6 +179,8 @@ async fn disconnect(
 ) -> Result<GithubDisconnectOutput, ToolError> {
     let person = me(&hub, &caller)?;
     let revoked = hub.github_app.disconnect(&person).await.map_err(failed)?;
+    // Their open orders' agents no longer hold it.
+    super::sessions::withdraw_person(&hub, &person).await;
     Ok(GithubDisconnectOutput {
         revoked,
         next: None,
