@@ -559,6 +559,14 @@ impl Simulators {
         }
     }
 
+    /// Holds the pool's refills back, or lets them go ([`Pool::hold`]).
+    #[cfg(test)]
+    pub fn hold_refill(&self, held: bool) {
+        if let Prep::Ready(pool) = &*lock(&self.prep) {
+            pool.hold(held);
+        }
+    }
+
     /// The live session of an agent session.
     pub fn live(&self, thread: &str) -> Option<Arc<Session>> {
         lock(&self.sessions).get(thread).cloned()

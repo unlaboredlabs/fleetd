@@ -429,6 +429,9 @@ pub struct Pool {
     /// Drained (the node stops): a boot still under way deletes its clone instead of keeping it.
     closed: AtomicBool,
     refill: Mutex<Refill>,
+    /// A test holds refills back while it drives a session ([`Pool::hold`]).
+    #[cfg(test)]
+    held: AtomicBool,
 }
 
 /// A clone, from the moment simctl made it: shut down and deleted when dropped, so one whose boot failed, whose
@@ -463,6 +466,8 @@ impl Pool {
             filling: tokio::sync::Mutex::new(()),
             closed: AtomicBool::new(false),
             refill: Mutex::default(),
+            #[cfg(test)]
+            held: AtomicBool::new(false),
         })
     }
 
@@ -492,6 +497,10 @@ impl Pool {
 
     /// Clones and boots in the background until the pool holds its size.
     pub fn refill(self: &Arc<Self>) {
+        #[cfg(test)]
+        if self.held.load(Ordering::Relaxed) {
+            return;
+        }
         let pool = self.clone();
         tokio::spawn(async move {
             let Ok(_filling) = pool.filling.try_lock() else {
@@ -519,6 +528,14 @@ impl Pool {
                 }
             }
         });
+    }
+
+    /// Holds refills back, or lets them go and starts one. GitHub's 3-vCPU macOS VM can't boot the next clone (or
+    /// keep it booted) beside a session while agent-device's XCTest runner starts there (tests.rs).
+    #[cfg(test)]
+    pub fn hold(self: &Arc<Self>, held: bool) {
+        self.held.store(held, Ordering::Relaxed);
+        self.refill();
     }
 
     pub fn warm(&self) -> usize {

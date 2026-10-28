@@ -297,7 +297,11 @@ mod tests {
     fn sessions_start_the_runner_built_for_the_simulator_not_a_starts_copy() {
         let home = tempfile::tempdir().unwrap();
         assert!(built_xctestrun(home.path()).is_err(), "nothing built");
+        // The runner is named by the package's real path once it is installed: on macOS a temp dir under /var is
+        // /private/var, which agent-device compares against.
+        std::fs::create_dir_all(agent_device::package_dir(home.path())).unwrap();
         let products = runner_dir(home.path()).join("Build/Products");
+        assert!(products.starts_with(std::fs::canonicalize(home.path()).unwrap()));
         std::fs::create_dir_all(&products).unwrap();
         let built = products.join("AgentDeviceRunner_iphonesimulator27.0-arm64.xctestrun");
         std::fs::write(&built, "").unwrap();
