@@ -47,7 +47,7 @@ text or which chat it is about. Apple and Google see the same, plus a generic "f
 - Tapping one opens its chat, or Approvals with that request on top.
 
 The hub needs a relay set, and the app needs your push credentials when you build it: an APNs key for your bundle id
-on the relay, and for Android your Firebase project's `google-services.json` (below).
+on the relay, and your Firebase project's `google-services.json` for the Android build (below).
 
 ## Build it on GitHub {#build}
 
@@ -63,7 +63,7 @@ on the relay, and for Android your Firebase project's `google-services.json` (be
 The workflow runs `expo prebuild`, then gradle on an Ubuntu runner and xcodebuild on a macOS runner. On pull requests
 and on `main`, the app's checks and the Android build run when `app/mobile`, the workflow, or a desktop module the app
 imports (`app/mobile/src/desktop.ts` lists them) changes. The iOS build runs only when `app/mobile` or the workflow
-changes, as macOS runners are scarce: the same JavaScript is bundled for Android, so a desktop change that breaks it
+changes, as macOS runners are scarce: the Android build bundles the same JavaScript, so a desktop change that breaks it
 fails there.
 
 An iPhone runs only signed apps, so for a real iPhone you need the signed build below.

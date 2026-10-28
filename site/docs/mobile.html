@@ -110,7 +110,7 @@ alerts, Quiet hours. One notification per chat, replaced by the next.</li>
 <li>Tapping one opens its chat, or Approvals with that request on top.</li>
 </ul>
 <p>The hub needs a relay set, and the app needs your push credentials when you build it: an APNs key for your bundle id
-on the relay, and for Android your Firebase project’s <code dir="auto">google-services.json</code> (below).</p>
+on the relay, and your Firebase project’s <code dir="auto">google-services.json</code> for the Android build (below).</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="build">Build it on GitHub</h2><a class="sl-anchor-link" href="#build"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Build it on GitHub”</span></a></div>
 <ol>
 <li>Fork <a href="https://github.com/unlaboredlabs/fleetd">unlaboredlabs/fleetd</a> and enable Actions on your fork.</li>
@@ -138,7 +138,7 @@ on the relay, and for Android your Firebase project’s <code dir="auto">google-
 <p>The workflow runs <code dir="auto">expo prebuild</code>, then gradle on an Ubuntu runner and xcodebuild on a macOS runner. On pull requests
 and on <code dir="auto">main</code>, the app’s checks and the Android build run when <code dir="auto">app/mobile</code>, the workflow, or a desktop module the app
 imports (<code dir="auto">app/mobile/src/desktop.ts</code> lists them) changes. The iOS build runs only when <code dir="auto">app/mobile</code> or the workflow
-changes, as macOS runners are scarce: the same JavaScript is bundled for Android, so a desktop change that breaks it
+changes, as macOS runners are scarce: the Android build bundles the same JavaScript, so a desktop change that breaks it
 fails there.</p>
 <p>An iPhone runs only signed apps, so for a real iPhone you need the signed build below.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="signing">Signed builds</h2><a class="sl-anchor-link" href="#signing"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Signed builds”</span></a></div>
