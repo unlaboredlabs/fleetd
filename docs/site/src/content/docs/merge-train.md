@@ -95,12 +95,14 @@ spend queued for runners doesn't count. While every check is still queued, there
 provider gives no start times, the 45 minutes count from when the train starts waiting.
 
 A red check fails the PR at once, however long the other checks have left. A cancelled check is never a failure: if
-a push to the PR cancelled its run, the train takes the new commit instead; otherwise it re-runs the run, or waits. CI that runs out of time is different: the
+a push to the PR cancelled its run, the train takes the new commit instead; otherwise it re-runs the cancelled jobs alone, never a job that failed beside
+them, or waits. CI that runs out of time is different: the
 PR shows `ci_failed` with "CI timed out", the lead is told, and the agent that wrote it isn't asked to push. The train
 keeps reading that commit's checks. If they finish green, the PR goes back in the queue ("CI finished after the
 timeout; back in the queue") and merges on that run, after the usual rebase if its base moved. If one goes red, the
-PR goes back to its agent as for any red CI. If they read cancelled, the train re-runs them twice, then sends the PR
-back to its agent to push again. A new push starts over as usual.
+PR goes back to its agent as for any red CI. If they read cancelled, the train re-runs those jobs twice, then sends the PR
+back to its agent to push again. If GitHub refuses a re-run, the train asks again after a minute, then two, and after
+the third refusal sends the PR back the same way. A new push starts over as usual.
 
 When the hub restarts while a PR's CI runs, alone or in a batch, the new hub keeps watching the same run on the same
 commit, and merges once it is green. It doesn't rebase the PR or run its CI again.
@@ -350,8 +352,8 @@ on the PR's branch (`gh workflow run ci.yml --ref <branch>`).
 Give the runs that workflow starts a concurrency group of their own, not the PR's. GitHub's ruleset reads a required
 check from the PR's own run on the head, not from the newest run of it. A started run that cancels the PR's own run on
 the same head leaves that check reading cancelled, and GitHub refuses the merge even though the started run passed.
-The train guards against it: before it merges, it re-runs any workflow run on the head whose required check reads
-cancelled, and waits for it again. A run still cancelled after 2 re-runs is red.
+The train guards against it: before it merges, it re-runs each job on the head whose required check reads cancelled,
+on its own and once its workflow run is done, and waits for it again. A job still cancelled after 2 re-runs is red.
 
 The train reads the repo's workflows to see which checks the label runs. It looks for jobs whose `if:` names
 `fleetd:next`, in a workflow that reacts to the label being added, or in one that such a workflow starts with
