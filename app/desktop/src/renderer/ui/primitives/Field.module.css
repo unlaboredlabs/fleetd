@@ -77,8 +77,10 @@
   background: var(--sidebar);
 }
 
-/* Checkbox, radio and switch */
+/* Checkbox, radio and switch. Inside a <form>, Radix adds a hidden absolutely placed input beside each; the label
+   holds it, or it escapes the page's scrolling box and makes the whole document scroll under the window controls. */
 .check {
+  position: relative;
   display: flex;
   align-items: flex-start;
   gap: var(--space-2);
