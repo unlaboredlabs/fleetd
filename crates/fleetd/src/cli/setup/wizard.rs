@@ -21,7 +21,7 @@ use crate::cli::pair;
 use crate::hub::doctor::checks::{self, CmdOutcome, DoctorStatus};
 use crate::node::runner::claude::setup::{ClaudeSetup, describe};
 use crate::node::runner::claude::version::{self, VersionVerdict};
-use fleetd_contracts::setup::{SetupNeed, SetupStatus, SetupStep, SetupStepId};
+use fleetd_contracts::setup::{HubSetupStep, SetupNeed, SetupStatus, SetupStepId};
 
 const PORT: u16 = 4790;
 const AGAIN: &str = "Run fleetd init to continue; it keeps what's done.";
@@ -1443,7 +1443,7 @@ async fn walk(
     ui: &Ui,
     list: &mut Checklist,
     client: &mut crate::cli::mcp_client::McpClient,
-    step: &SetupStep,
+    step: &HubSetupStep,
 ) -> Result<SetupStatus, Stopped> {
     list.section(&format!(
         "{} · {}",

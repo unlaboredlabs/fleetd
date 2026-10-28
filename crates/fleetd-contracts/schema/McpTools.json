@@ -6857,6 +6857,89 @@
       "type": "string",
       "x-open": true
     },
+    "HubSetupStep": {
+      "properties": {
+        "failing": {
+          "description": "The deciding check fails, rather than warns: with `look`, something can't work until it's fixed.",
+          "type": "boolean"
+        },
+        "fields": {
+          "default": [],
+          "description": "What comes back from the provider, entered where the step says (`place`).",
+          "items": {
+            "$ref": "#/$defs/SetupField"
+          },
+          "type": "array"
+        },
+        "fieldsNote": {
+          "description": "What happens after the fields are saved.",
+          "type": "string"
+        },
+        "fix": {
+          "$ref": "#/$defs/DoctorFix",
+          "description": "The deciding check's fix, when a command fixes it."
+        },
+        "group": {
+          "$ref": "#/$defs/SetupGroup"
+        },
+        "id": {
+          "$ref": "#/$defs/SetupStepId"
+        },
+        "need": {
+          "$ref": "#/$defs/SetupNeed"
+        },
+        "parts": {
+          "items": {
+            "$ref": "#/$defs/SetupPart"
+          },
+          "type": "array"
+        },
+        "place": {
+          "description": "Where in the app the fields are saved, an Administration section (\"google\"), where the terminal can't seal\nthem.",
+          "type": "string"
+        },
+        "said": {
+          "description": "What its checks say now: the deciding one's message.",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/SetupStatus"
+        },
+        "test": {
+          "description": "What Test does, in a few words.",
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "way": {
+          "description": "The way in use, where a step has several: the one done, else the one that wants a look.",
+          "type": "string"
+        },
+        "ways": {
+          "description": "The ways to complete it; one is enough.",
+          "items": {
+            "$ref": "#/$defs/SetupWay"
+          },
+          "type": "array"
+        },
+        "why": {
+          "description": "Why it matters, in one line.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "group",
+        "title",
+        "why",
+        "need",
+        "status",
+        "parts",
+        "ways"
+      ],
+      "type": "object"
+    },
     "HubUpdateInput": {
       "properties": {
         "channel": {
@@ -7909,7 +7992,7 @@
         "steps": {
           "description": "What machine_add would run there now, each planned; a machine already set up runs fewer.",
           "items": {
-            "$ref": "#/$defs/SetupStep2"
+            "$ref": "#/$defs/SetupStep"
           },
           "type": "array"
         },
@@ -7970,7 +8053,7 @@
         "steps": {
           "description": "Every step: first reading the machine, then the plan's (planned until they start), then the wait for the node.",
           "items": {
-            "$ref": "#/$defs/SetupStep2"
+            "$ref": "#/$defs/SetupStep"
           },
           "type": "array"
         }
@@ -8236,7 +8319,7 @@
         "steps": {
           "description": "What ran on the machine; none for one the hub didn't set up (joined by itself).",
           "items": {
-            "$ref": "#/$defs/SetupStep2"
+            "$ref": "#/$defs/SetupStep"
           },
           "type": "array"
         },
@@ -16379,7 +16462,7 @@
         },
         "steps": {
           "items": {
-            "$ref": "#/$defs/SetupStep"
+            "$ref": "#/$defs/HubSetupStep"
           },
           "type": "array"
         },
@@ -16495,7 +16578,7 @@
           "type": "string"
         },
         "step": {
-          "$ref": "#/$defs/SetupStep"
+          "$ref": "#/$defs/HubSetupStep"
         },
         "truncated": {
           "type": "boolean"
@@ -16533,89 +16616,6 @@
       "x-open": true
     },
     "SetupStep": {
-      "properties": {
-        "failing": {
-          "description": "The deciding check fails, rather than warns: with `look`, something can't work until it's fixed.",
-          "type": "boolean"
-        },
-        "fields": {
-          "default": [],
-          "description": "What comes back from the provider, entered where the step says (`place`).",
-          "items": {
-            "$ref": "#/$defs/SetupField"
-          },
-          "type": "array"
-        },
-        "fieldsNote": {
-          "description": "What happens after the fields are saved.",
-          "type": "string"
-        },
-        "fix": {
-          "$ref": "#/$defs/DoctorFix",
-          "description": "The deciding check's fix, when a command fixes it."
-        },
-        "group": {
-          "$ref": "#/$defs/SetupGroup"
-        },
-        "id": {
-          "$ref": "#/$defs/SetupStepId"
-        },
-        "need": {
-          "$ref": "#/$defs/SetupNeed"
-        },
-        "parts": {
-          "items": {
-            "$ref": "#/$defs/SetupPart"
-          },
-          "type": "array"
-        },
-        "place": {
-          "description": "Where in the app the fields are saved, an Administration section (\"google\"), where the terminal can't seal\nthem.",
-          "type": "string"
-        },
-        "said": {
-          "description": "What its checks say now: the deciding one's message.",
-          "type": "string"
-        },
-        "status": {
-          "$ref": "#/$defs/SetupStatus"
-        },
-        "test": {
-          "description": "What Test does, in a few words.",
-          "type": "string"
-        },
-        "title": {
-          "type": "string"
-        },
-        "way": {
-          "description": "The way in use, where a step has several: the one done, else the one that wants a look.",
-          "type": "string"
-        },
-        "ways": {
-          "description": "The ways to complete it; one is enough.",
-          "items": {
-            "$ref": "#/$defs/SetupWay"
-          },
-          "type": "array"
-        },
-        "why": {
-          "description": "Why it matters, in one line.",
-          "type": "string"
-        }
-      },
-      "required": [
-        "id",
-        "group",
-        "title",
-        "why",
-        "need",
-        "status",
-        "parts",
-        "ways"
-      ],
-      "type": "object"
-    },
-    "SetupStep2": {
       "description": "One step of adding or removing a machine.",
       "properties": {
         "command": {
@@ -16692,7 +16692,7 @@
           "type": "string"
         },
         "step": {
-          "$ref": "#/$defs/SetupStep",
+          "$ref": "#/$defs/HubSetupStep",
           "description": "The step, read from its checks as they are now."
         },
         "truncated": {

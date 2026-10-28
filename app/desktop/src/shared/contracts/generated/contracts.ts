@@ -2543,6 +2543,38 @@ export type KnownHubRole = "owner" | "admin" | "member";
 /** KnownHubRole, or a value from a newer hub. */
 export type HubRole = KnownHubRole | (string & {});
 
+export type HubSetupStep = {
+  /** The deciding check fails, rather than warns: with `look`, something can't work until it's fixed. */
+  failing?: boolean;
+  /** What comes back from the provider, entered where the step says (`place`). */
+  fields?: SetupField[];
+  /** What happens after the fields are saved. */
+  fieldsNote?: string;
+  /** The deciding check's fix, when a command fixes it. */
+  fix?: DoctorFix;
+  group: SetupGroup;
+  id: SetupStepId;
+  need: SetupNeed;
+  parts: SetupPart[];
+  /**
+   * Where in the app the fields are saved, an Administration section ("google"), where the terminal can't seal
+   * them.
+   */
+  place?: string;
+  /** What its checks say now: the deciding one's message. */
+  said?: string;
+  status: SetupStatus;
+  /** What Test does, in a few words. */
+  test?: string;
+  title: string;
+  /** The way in use, where a step has several: the one done, else the one that wants a look. */
+  way?: string;
+  /** The ways to complete it; one is enough. */
+  ways: SetupWay[];
+  /** Why it matters, in one line. */
+  why: string;
+};
+
 export type HubUpdateInput = {
   /** Absent: the channel the hub's build came from. */
   channel?: HubChannel;
@@ -2968,7 +3000,7 @@ export type MachineAddPlanOutput = {
   /** The machine's OS and CPU as its read found them: "linux-x64", "darwin-arm64". */
   platform: string;
   /** What machine_add would run there now, each planned; a machine already set up runs fewer. */
-  steps: SetupStep2[];
+  steps: SetupStep[];
   truncated?: boolean;
 };
 
@@ -2990,7 +3022,7 @@ export type MachineAddRun = {
   startedAt: Timestamp;
   state: MachineAddState;
   /** Every step: first reading the machine, then the plan's (planned until they start), then the wait for the node. */
-  steps: SetupStep2[];
+  steps: SetupStep[];
 };
 
 export type MachineAddRunId = string;
@@ -3118,7 +3150,7 @@ export type MachineRemoveOutput = {
   /** The hub held its node key and revoked it. */
   revoked: boolean;
   /** What ran on the machine; none for one the hub didn't set up (joined by itself). */
-  steps: SetupStep2[];
+  steps: SetupStep[];
   truncated?: boolean;
 };
 
@@ -5705,7 +5737,7 @@ export type SetupListOutput = {
   next?: string;
   /** Required steps not done: agents can't run until none is left. */
   requiredLeft: number;
-  steps: SetupStep[];
+  steps: HubSetupStep[];
   truncated?: boolean;
 };
 
@@ -5737,7 +5769,7 @@ export type SetupSkipInput = {
 
 export type SetupSkipOutput = {
   next?: string;
-  step: SetupStep;
+  step: HubSetupStep;
   truncated?: boolean;
 };
 
@@ -5746,40 +5778,8 @@ export type KnownSetupStatus = "done" | "todo" | "look" | "skipped";
 /** KnownSetupStatus, or a value from a newer hub. */
 export type SetupStatus = KnownSetupStatus | (string & {});
 
-export type SetupStep = {
-  /** The deciding check fails, rather than warns: with `look`, something can't work until it's fixed. */
-  failing?: boolean;
-  /** What comes back from the provider, entered where the step says (`place`). */
-  fields?: SetupField[];
-  /** What happens after the fields are saved. */
-  fieldsNote?: string;
-  /** The deciding check's fix, when a command fixes it. */
-  fix?: DoctorFix;
-  group: SetupGroup;
-  id: SetupStepId;
-  need: SetupNeed;
-  parts: SetupPart[];
-  /**
-   * Where in the app the fields are saved, an Administration section ("google"), where the terminal can't seal
-   * them.
-   */
-  place?: string;
-  /** What its checks say now: the deciding one's message. */
-  said?: string;
-  status: SetupStatus;
-  /** What Test does, in a few words. */
-  test?: string;
-  title: string;
-  /** The way in use, where a step has several: the one done, else the one that wants a look. */
-  way?: string;
-  /** The ways to complete it; one is enough. */
-  ways: SetupWay[];
-  /** Why it matters, in one line. */
-  why: string;
-};
-
 /** One step of adding or removing a machine. */
-export type SetupStep2 = {
+export type SetupStep = {
   /** The command as you would run it yourself (over ssh for another machine); absent for the hub's own wait. */
   command?: string;
   /** The last lines it printed: a short answer when done, its output and the fix when failed. */
@@ -5805,7 +5805,7 @@ export type SetupTestInput = {
 export type SetupTestOutput = {
   next?: string;
   /** The step, read from its checks as they are now. */
-  step: SetupStep;
+  step: HubSetupStep;
   truncated?: boolean;
 };
 

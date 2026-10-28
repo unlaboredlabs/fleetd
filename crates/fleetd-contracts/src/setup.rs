@@ -159,7 +159,7 @@ pub struct SetupWay {
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct SetupStep {
+pub struct HubSetupStep {
     pub id: SetupStepId,
     pub group: SetupGroup,
     pub title: String,
@@ -190,7 +190,7 @@ pub struct SetupStep {
     pub ways: Vec<SetupWay>,
 }
 
-impl SetupStep {
+impl HubSetupStep {
     /// Required and not set up, or failing: until none is left, the admin's app keeps setup in front. A required step
     /// that only warns (a machine degraded, an address on a LAN) doesn't stop agents.
     pub fn required_left(&self) -> bool {

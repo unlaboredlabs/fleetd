@@ -5,7 +5,7 @@
 
 use std::time::Duration;
 
-use fleetd_contracts::setup::{SetupNeed, SetupStatus, SetupStep, SetupStepId, matches_check};
+use fleetd_contracts::setup::{HubSetupStep, SetupNeed, SetupStatus, SetupStepId, matches_check};
 use serde_json::{Value, json};
 
 use super::Failure;
@@ -50,7 +50,7 @@ fn shape(error: serde_json::Error) -> Failure {
 }
 
 /// The hub's steps; `None` from a hub too old to have them.
-pub async fn list(client: &mut McpClient) -> Result<Option<Vec<SetupStep>>, Failure> {
+pub async fn list(client: &mut McpClient) -> Result<Option<Vec<HubSetupStep>>, Failure> {
     match call(client, "setup_list", json!({})).await {
         Ok(body) => serde_json::from_value(body["steps"].clone())
             .map(Some)
@@ -61,13 +61,13 @@ pub async fn list(client: &mut McpClient) -> Result<Option<Vec<SetupStep>>, Fail
 }
 
 /// Runs one step's checks now.
-pub async fn test(client: &mut McpClient, id: SetupStepId) -> Result<SetupStep, Failure> {
+pub async fn test(client: &mut McpClient, id: SetupStepId) -> Result<HubSetupStep, Failure> {
     let body = call(client, "setup_test", json!({ "step": id })).await?;
     serde_json::from_value(body["step"].clone()).map_err(shape)
 }
 
 /// Puts a step off for later.
-pub async fn skip(client: &mut McpClient, id: SetupStepId) -> Result<SetupStep, Failure> {
+pub async fn skip(client: &mut McpClient, id: SetupStepId) -> Result<HubSetupStep, Failure> {
     let body = call(client, "setup_skip", json!({ "step": id, "skipped": true })).await?;
     serde_json::from_value(body["step"].clone()).map_err(shape)
 }
@@ -81,7 +81,7 @@ pub fn need_words(need: &SetupNeed) -> String {
 }
 
 /// How to open the step again: its fix's command where a command fixes it, else `fleetd init --step <id>`.
-fn resume(step: &SetupStep) -> String {
+fn resume(step: &HubSetupStep) -> String {
     step.fix
         .as_ref()
         .and_then(|f| f.command.as_ref())
@@ -91,7 +91,7 @@ fn resume(step: &SetupStep) -> String {
 
 /// The step's line: done with what its checks say; a required one left fails with how to do it; one that wants a look
 /// fails or warns as its check does, with its fix; one not needed yet says when it is, and how to open it.
-pub fn line(step: &SetupStep) -> (State, String, Option<String>) {
+pub fn line(step: &HubSetupStep) -> (State, String, Option<String>) {
     let said = step
         .said
         .as_deref()
@@ -144,7 +144,7 @@ pub fn line(step: &SetupStep) -> (State, String, Option<String>) {
 }
 
 /// One checklist line per step.
-pub fn show(list: &mut Checklist, steps: &[SetupStep]) {
+pub fn show(list: &mut Checklist, steps: &[HubSetupStep]) {
     for step in steps {
         let (state, detail, fix) = line(step);
         list.finish(&step.title, state, &detail, fix.as_deref());
@@ -152,7 +152,7 @@ pub fn show(list: &mut Checklist, steps: &[SetupStep]) {
 }
 
 /// The doctor's checks no step owns (disk, a stale session, a fork behind): the steps already speak for theirs.
-pub fn unowned(checks: &[DoctorCheck], steps: &[SetupStep]) -> Vec<DoctorCheck> {
+pub fn unowned(checks: &[DoctorCheck], steps: &[HubSetupStep]) -> Vec<DoctorCheck> {
     checks
         .iter()
         .filter(|c| {
@@ -180,7 +180,7 @@ fn place_words(place: &str) -> String {
 
 /// The step as a guide, for the terminal: why, its numbered parts (what to open, then what to fill in there, a value
 /// on a line of its own so it copies whole), and what happens after.
-pub fn guide(step: &SetupStep) -> String {
+pub fn guide(step: &HubSetupStep) -> String {
     let mut out = vec![step.why.clone()];
     for (n, part) in step.parts.iter().enumerate() {
         out.push(String::new());
@@ -243,7 +243,7 @@ mod tests {
         }
     }
 
-    fn steps(checks: &[DoctorCheck]) -> Vec<SetupStep> {
+    fn steps(checks: &[DoctorCheck]) -> Vec<HubSetupStep> {
         read(
             guides(HUB),
             checks,

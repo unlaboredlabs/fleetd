@@ -12,8 +12,8 @@ use std::collections::BTreeSet;
 use fleetd_contracts::doctor::DoctorFix;
 use fleetd_contracts::google::{GOOGLE_REDIRECT, GOOGLE_SCOPES};
 use fleetd_contracts::setup::{
-    SetupGroup, SetupLink, SetupNeed, SetupPart, SetupStatus, SetupStep, SetupStepId, SetupValue,
-    SetupWay, matches_check,
+    HubSetupStep, SetupGroup, SetupLink, SetupNeed, SetupPart, SetupStatus, SetupStepId,
+    SetupValue, SetupWay, matches_check,
 };
 use rusqlite::params;
 
@@ -358,11 +358,11 @@ fn google_parts(host: &str) -> Vec<SetupPart> {
 }
 
 /// Every step in order, its values computed for `hub` (the URL devices reach it at), status still to read.
-pub fn guides(hub: &str) -> Vec<SetupStep> {
+pub fn guides(hub: &str) -> Vec<HubSetupStep> {
     let base = hub.trim_end_matches('/');
     let host = host_of(base);
     let name = format!("fleetd on {host}");
-    let step = |id, group, title: &str, why: &str, need| SetupStep {
+    let step = |id, group, title: &str, why: &str, need| HubSetupStep {
         id,
         group,
         title: title.into(),
@@ -381,7 +381,7 @@ pub fn guides(hub: &str) -> Vec<SetupStep> {
         ways: Vec::new(),
     };
     vec![
-        SetupStep {
+        HubSetupStep {
             parts: vec![part(
                 "Pick the address",
                 Some(
@@ -404,7 +404,7 @@ pub fn guides(hub: &str) -> Vec<SetupStep> {
                 SetupNeed::Required,
             )
         },
-        SetupStep {
+        HubSetupStep {
             parts: vec![part(
                 "Add a machine",
                 Some(
@@ -432,7 +432,7 @@ pub fn guides(hub: &str) -> Vec<SetupStep> {
             )
         },
         // Any one way is enough (D200): the hub's API key, the owner's subscription, or every machine's own login.
-        SetupStep {
+        HubSetupStep {
             parts: vec![
                 part(
                     "Give the hub an API key",
@@ -485,7 +485,7 @@ pub fn guides(hub: &str) -> Vec<SetupStep> {
             )
         },
         // The GitHub App (D190) takes this step over: its manifest link as the part, `hub/github_app` as the way.
-        SetupStep {
+        HubSetupStep {
             parts: vec![part(
                 "Log gh in on the hub",
                 Some("The merge train merges, reads CI and opens PRs with it."),
@@ -504,7 +504,7 @@ pub fn guides(hub: &str) -> Vec<SetupStep> {
                 },
             )
         },
-        SetupStep {
+        HubSetupStep {
             parts: vec![part(
                 "Invite someone",
                 Some("The invite is a link and a code, for one person, good for 7 days. Send it to them yourself."),
@@ -525,7 +525,7 @@ pub fn guides(hub: &str) -> Vec<SetupStep> {
                 SetupNeed::Optional,
             )
         },
-        SetupStep {
+        HubSetupStep {
             parts: google_parts(&host),
             fields_note: Some(
                 "Save the client ID and secret, and the Gmail subscription and key if you set them up, on \
@@ -544,7 +544,7 @@ pub fn guides(hub: &str) -> Vec<SetupStep> {
                 SetupNeed::Optional,
             )
         },
-        SetupStep {
+        HubSetupStep {
             parts: vec![part(
                 "Each person makes their own integration",
                 Some(
@@ -602,10 +602,10 @@ fn read_way<'a>(
 /// Each step's status is its best way's: one way done is enough, else one set up but failing wants a look, else it is
 /// to do, or later when the admin skipped it.
 pub fn read(
-    guides: Vec<SetupStep>,
+    guides: Vec<HubSetupStep>,
     checks: &[DoctorCheck],
     skipped: &BTreeSet<SetupStepId>,
-) -> Vec<SetupStep> {
+) -> Vec<HubSetupStep> {
     guides
         .into_iter()
         .map(|mut step| {

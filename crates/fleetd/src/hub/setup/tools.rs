@@ -7,7 +7,7 @@ use fleetd_contracts::mcp::{
     SetupTestOutput,
 };
 use fleetd_contracts::prim::Count;
-use fleetd_contracts::setup::{SetupNeed, SetupStep, SetupStepId};
+use fleetd_contracts::setup::{HubSetupStep, SetupNeed, SetupStepId};
 
 use crate::hub::api::{Caller, Hub, Registry, ToolError, allows_everywhere, error};
 use crate::hub::doctor::checks::{self, DoctorCheck};
@@ -61,12 +61,12 @@ fn rank(s: checks::DoctorStatus) -> u8 {
     }
 }
 
-fn read(hub: &Hub, checks: &[DoctorCheck]) -> Result<Vec<SetupStep>, ToolError> {
+fn read(hub: &Hub, checks: &[DoctorCheck]) -> Result<Vec<HubSetupStep>, ToolError> {
     let skipped = super::skipped(&hub.db)?;
     Ok(super::read(super::guides(&hub_url(hub)), checks, &skipped))
 }
 
-fn one(steps: Vec<SetupStep>, id: SetupStepId) -> SetupStep {
+fn one(steps: Vec<HubSetupStep>, id: SetupStepId) -> HubSetupStep {
     steps
         .into_iter()
         .find(|s| s.id == id)

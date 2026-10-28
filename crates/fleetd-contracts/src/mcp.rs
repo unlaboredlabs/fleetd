@@ -909,7 +909,7 @@ output!(DoctorFixOutput {
 // isn't required off for later, or back.
 input!(SetupListInput {});
 output!(SetupListOutput {
-    steps: Vec<crate::setup::SetupStep>,
+    steps: Vec<crate::setup::HubSetupStep>,
     /// Required steps not done: agents can't run until none is left.
     required_left: Count,
 });
@@ -918,7 +918,7 @@ input!(SetupTestInput {
 });
 output!(SetupTestOutput {
     /// The step, read from its checks as they are now.
-    step: crate::setup::SetupStep,
+    step: crate::setup::HubSetupStep,
 });
 input!(SetupSkipInput {
     step: crate::setup::SetupStepId,
@@ -926,7 +926,7 @@ input!(SetupSkipInput {
     skipped: bool,
 });
 output!(SetupSkipOutput {
-    step: crate::setup::SetupStep,
+    step: crate::setup::HubSetupStep,
 });
 
 input!(QuietWindow {
