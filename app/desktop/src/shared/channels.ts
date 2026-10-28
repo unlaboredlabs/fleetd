@@ -74,6 +74,8 @@ export const IPC = {
   hubLinkSubmit: "hub-link:submit",
   /** invoke(GoogleClientRequest) → CallOutcome. Main seals the client secret to each machine's key, then calls google_client_set. */
   googleClientSubmit: "google:client-submit",
+  /** invoke(GooglePubsubRequest) → CallOutcome. Main seals the service account key to the reading machine's key, then calls google_pubsub_set. */
+  googlePubsubSubmit: "google:pubsub-submit",
   /**
    * invoke(GoogleConnectRequest) → CallOutcome. Main opens Google's consent page, catches the code on a loopback port
    * and calls google_connect; `cancelled` when the person stops waiting.

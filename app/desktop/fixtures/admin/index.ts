@@ -91,8 +91,11 @@ function hub(from: Fixture, name: string, note: string, me: JsonObject, admin: b
   return f;
 }
 
-/** Administration › Google (google/AdminGoogle.tsx): no client yet; one saved on devbox only, buildbox missing; and one Google refuses. */
-function google(from: Fixture, name: string, note: string, client: "none" | "set" | "refused"): Fixture {
+/**
+ * Administration › Google (google/AdminGoogle.tsx): no client yet; one saved on devbox only, buildbox missing; one
+ * Google refuses; and real-time mail by push, or polling with why.
+ */
+function google(from: Fixture, name: string, note: string, client: "none" | "set" | "refused" | "push" | "polling"): Fixture {
   const f = hub(from, name, note, sam, true);
   const box = "Az+6kf/abi0V7SO+sn4h++sIgyPoNDAneLBDFaJf3TA=";
   if (f.snapshot !== undefined) f.snapshot["machines"] = arr(f.snapshot["machines"]).map((m) => (isObject(m) ? { ...m, boxPubKey: box } : m));
@@ -105,7 +108,16 @@ function google(from: Fixture, name: string, note: string, client: "none" | "set
     "https://www.googleapis.com/auth/calendar.events",
     "https://www.googleapis.com/auth/drive",
   ];
-  f.answer("google_get", undefined, { ...(client === "none" ? {} : { client: saved }), scopes, redirect: "http://127.0.0.1", mailMode: "polling" });
+  const pubsub = { topic: "projects/fleetd-devbox/topics/fleetd-gmail", subscription: "projects/fleetd-devbox/subscriptions/fleetd-gmail-hub", machineId: "devbox", fingerprint: "71d03a5e" };
+  const realtime = client === "push" || client === "polling";
+  f.answer("google_get", undefined, {
+    ...(client === "none" ? {} : { client: { ...saved, ...(realtime ? { pubsub } : {}) } }),
+    scopes,
+    redirect: "http://127.0.0.1",
+    mailMode: client === "push" ? "push" : "polling",
+    ...(client === "polling" ? { mailProblem: "devbox is offline, and it holds the key" } : {}),
+  });
+  f.answer("google_pubsub_set", undefined, { client: saved, next: "The hub checks the mail of each Navi whose mail wakes it about every minute." });
   f.answer(
     "google_client_test",
     undefined,
@@ -156,6 +168,8 @@ export default defineGroup({
     // Bob's device holds admin on every machine, as every paired device did before people: his role alone hides it.
     google(base("chat-empty"), "admin-google-none", "Administration › Google on a hub with no OAuth client yet: the steps and the form", "none"),
     google(base("chat-empty"), "admin-google-set", "Administration › Google with the client saved on devbox, not on buildbox; Test finds it", "set"),
+    google(base("chat-empty"), "admin-google-push", "Administration › Google with real-time mail read on devbox, by push", "push"),
+    google(base("chat-empty"), "admin-google-polling", "Administration › Google with real-time mail set up, polling because devbox is offline", "polling"),
     google(base("chat-empty"), "admin-google-refused", "Administration › Google with a client Google doesn't know: Test says so", "refused"),
     hub(base("chat-empty"), "admin-member", "The same hub as Bob, a member: no Administration anywhere", bob, true),
   ],

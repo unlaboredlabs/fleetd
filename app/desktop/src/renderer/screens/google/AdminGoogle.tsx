@@ -2,7 +2,8 @@
 // in Google Cloud Console are the setup step's own (setup/steps.ts googleParts), with google_get's scopes and redirect.
 // The client secret is sealed in main to each machine's key (secret.googleClient → google_client_set) and never comes
 // back; Test asks Google to redeem a code that can't work (google_client_test), and `invalid_grant` means it knows the
-// client. Each person then connects their own account from their Navi's Integrations.
+// client. Real-time mail, optional, is below it (AdminMail.tsx). Each person then connects their own account from their
+// Navi's Integrations.
 import { Check } from "lucide-react";
 import { useState } from "react";
 import type { GoogleClientSetOutput, GoogleClientTestOutput, GoogleGetOutput } from "../../../shared/contracts";
@@ -15,6 +16,7 @@ import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
 import { PageHead } from "../settings/parts";
 import { GuideParts, Part } from "../setup/Guide";
 import { googleParts } from "../setup/steps";
+import { RealTimeMail } from "./AdminMail";
 import { boxesOf, clientIdProblem, dayWords, DOCS, listWords, notHolding, secretProblem } from "./model";
 import s from "./google.module.css";
 import settings from "../settings/settings.module.css";
@@ -36,6 +38,10 @@ function useBoxes() {
 export function AdminGoogle() {
   const live = useLive();
   const read = useToolQuery("google_get", noInput, { enabled: live });
+  // The hub's address, for the names the steps suggest (fleetd-<host>).
+  const state = useHubState();
+  const address = state.phase === "unpaired" ? "http://127.0.0.1:4790" : state.hub;
+  const hub = address.includes("://") ? address : `http://${address}`;
   const head = (
     <PageHead title="Google">
       Navis read and draft mail, events and files through a Google OAuth client you own. You set it up once, here; then each person connects their own
@@ -60,7 +66,9 @@ export function AdminGoogle() {
         {head}
         <ClientStatus info={read.data} />
         <Separator />
-        <Guide info={read.data} />
+        <Guide info={read.data} hub={hub} />
+        <Separator />
+        <RealTimeMail info={read.data} hub={hub} />
       </div>
     </div>
   );
@@ -135,10 +143,8 @@ function TestLine({ tested }: { tested: Tested }) {
 }
 
 /** The steps in Google Cloud Console and the form for what comes back; folded away once a client is saved. */
-function Guide({ info }: { info: GoogleGetOutput }) {
-  const state = useHubState();
-  const hub = state.phase === "unpaired" ? "http://127.0.0.1:4790" : state.hub;
-  const parts = googleParts(hub.includes("://") ? hub : `http://${hub}`, info.scopes, info.redirect);
+function Guide({ info, hub }: { info: GoogleGetOutput; hub: string }) {
+  const parts = googleParts(hub, info.scopes, info.redirect);
   // A machine without the secret needs it saved again: the form opens.
   const missing = notHolding(info, useBoxes()).length > 0;
   const steps = (

@@ -3,7 +3,7 @@ import type { MenuCommand } from "../shared/menu";
 import type { BrowserInput } from "../shared/contracts";
 import type { CallOutcome, ConnectOutcome, DropInfo, HubFrame, OpenOutcome, SecretOutcome } from "../shared/hub";
 import type { HubColor, HubEntry, HubId, PairTarget } from "../shared/hubs";
-import type { ChatScope, ErrorReport, GoogleClientRequest, GoogleConnectRequest, HubLinkRequest, McpServerRequest, OrderFocus, ProjectEnvRequest, SecretRequest, SessionWindowRequest } from "../shared/ipc";
+import type { ChatScope, ErrorReport, GoogleClientRequest, GoogleConnectRequest, GooglePubsubRequest, HubLinkRequest, McpServerRequest, OrderFocus, ProjectEnvRequest, SecretRequest, SessionWindowRequest } from "../shared/ipc";
 import type { JoinHere, ThisComputer } from "../shared/joinHere";
 import type { KeyStore, PairOutcome, PairRequest, PairStart, Probe, SetupOutcome } from "../shared/pairing";
 import type { UpdatesState } from "../shared/updates";
@@ -42,6 +42,11 @@ export interface FleetdApi {
      * output has the client by its id and the machines holding it, never the secret.
      */
     googleClient(hub: HubId, request: GoogleClientRequest): Promise<CallOutcome>;
+    /**
+     * Real-time mail: main checks the service account key, seals it to `boxPubKey` and calls google_pubsub_set. The
+     * output has the client with its Pub/Sub by fingerprint, never the key.
+     */
+    googlePubsub(hub: HubId, request: GooglePubsubRequest): Promise<CallOutcome>;
   };
   readonly google: {
     /**

@@ -2,9 +2,9 @@
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { GoogleAccount, GoogleClient } from "../../../shared/contracts";
+import type { GoogleAccount, GoogleClient, GooglePubsub, MailMode } from "../../../shared/contracts";
 import type { CallOutcome, HubFrame } from "../../../shared/hub";
-import type { GoogleClientRequest, GoogleConnectRequest } from "../../../shared/ipc";
+import type { GoogleClientRequest, GoogleConnectRequest, GooglePubsubRequest } from "../../../shared/ipc";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { UiProvider } from "../../ui";
@@ -42,6 +42,10 @@ let connects: GoogleConnectRequest[];
 let connectAnswer: CallOutcome;
 let cancelled: number;
 let hang: boolean;
+let pubsub: GooglePubsub | undefined;
+let mailMode: MailMode;
+let mailProblem: string | undefined;
+let pubsubRequests: GooglePubsubRequest[];
 
 beforeEach(() => {
   host = document.createElement("div");
@@ -57,6 +61,10 @@ beforeEach(() => {
   connects = [];
   cancelled = 0;
   hang = false;
+  pubsub = undefined;
+  mailMode = "polling";
+  mailProblem = undefined;
+  pubsubRequests = [];
   connectAnswer = { ok: true, output: { account: account(), next: "The Navi gets its Google tools from its next start." } };
   vi.stubGlobal("fleetd", {
     platform: "linux",
@@ -66,6 +74,11 @@ beforeEach(() => {
         sealedRequests.push(request);
         client = held(...request.boxes.map((b) => b.machineId));
         return Promise.resolve({ ok: true, output: { client } });
+      },
+      googlePubsub: (_hub: string, request: GooglePubsubRequest): Promise<CallOutcome> => {
+        pubsubRequests.push(request);
+        pubsub = { topic: request.topic, subscription: request.subscription, machineId: request.machineId, fingerprint: "71d03a5e" };
+        return Promise.resolve({ ok: true, output: { client: { ...client, pubsub }, next: "Navis whose mail wakes them start watching their inbox within a minute." } });
       },
     },
     google: {
@@ -101,15 +114,24 @@ const answer = (tool: string, input: unknown): CallOutcome => {
       return {
         ok: true,
         output: {
-          ...(client === undefined ? {} : { client }),
+          ...(client === undefined ? {} : { client: { ...client, ...(pubsub === undefined ? {} : { pubsub }) } }),
+          mailMode,
+          ...(mailProblem === undefined ? {} : { mailProblem }),
           ...((input as { project?: unknown }).project === undefined || linked === undefined ? {} : { account: linked }),
           scopes: [...SCOPES],
           redirect: "http://127.0.0.1",
-          mailMode: "polling",
         },
       };
     case "google_client_test":
       return { ok: true, output: { machineId: "devbox", check } };
+    case "google_pubsub_set":
+      pubsub = undefined;
+      return { ok: true, output: { client, next: "The hub checks the mail of each Navi whose mail wakes it about every minute." } };
+    case "google_mail_set": {
+      const set = input as { rule: "off" | "all" | "query"; query?: string };
+      if (linked !== undefined) linked = { ...linked, mail: { rule: set.rule, ...(set.query === undefined ? {} : { query: set.query }) } };
+      return { ok: true, output: { account: linked, next: set.rule === "off" ? "New mail no longer wakes the Navi." : "New mail matching the query wakes the Navi." } };
+    }
     case "google_disconnect":
       linked = undefined;
       return { ok: true, output: { revoked: true, next: "Google revoked the Navi's access. It goes without its Google tools from its next start." } };
@@ -165,10 +187,11 @@ const click = async (el: HTMLElement) => {
   await settle();
 };
 const type = async (label: string, value: string) => {
-  const field = document.querySelector<HTMLInputElement>(`[aria-label="${label}"]`);
+  const field = document.querySelector<HTMLInputElement | HTMLTextAreaElement>(`[aria-label="${label}"]`);
   if (field === null) throw new Error(`no field ${label}`);
   await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(field, value);
+    const proto = field instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    Object.getOwnPropertyDescriptor(proto, "value")?.set?.call(field, value);
     field.dispatchEvent(new Event("input", { bubbles: true }));
     await Promise.resolve();
   });
@@ -354,5 +377,87 @@ describe("a Navi's Google", () => {
     getError = { ok: false, error: { code: "not_found", message: "No tool google_get." } };
     await render(<IntegrationsSection projectRef={ref} />);
     expect(document.querySelector('[role="listitem"][aria-label="Google"]')).toBeNull();
+  });
+});
+
+const KEY = JSON.stringify({ type: "service_account", project_id: "fleetd-devbox", private_key: "-----BEGIN PRIVATE KEY-----never_in_a_hub_call", client_email: "fleetd-gmail-reader@fleetd-devbox.iam.gserviceaccount.com" });
+
+describe("real-time mail", () => {
+  it("in Administration: off until set up, the key sealed through main and never in a hub call", async () => {
+    client = held("devbox", "buildbox");
+    await render(<AdminGoogle />);
+    const mail = region("Real-time mail");
+    expect(mail.textContent).toContain("Off. A Navi whose new mail wakes it hears of it within about a minute");
+    const fold = [...mail.querySelectorAll("details")][0];
+    if (fold === undefined) throw new Error("no fold");
+    await act(async () => {
+      fold.open = true;
+      fold.dispatchEvent(new Event("toggle"));
+      await Promise.resolve();
+    });
+    expect(mail.textContent).toContain("gmail-api-push@system.gserviceaccount.com");
+    expect((mail.querySelector('[aria-label="Topic"]') as HTMLInputElement).value).toBe("projects/fleetd-devbox/topics/fleetd-gmail");
+    await type("Service account key", "{ not json");
+    expect(mail.textContent).toContain("That isn't JSON");
+    await type("Service account key", KEY);
+    await click(button("Save", mail));
+    expect(pubsubRequests).toEqual([
+      {
+        topic: "projects/fleetd-devbox/topics/fleetd-gmail",
+        subscription: "projects/fleetd-devbox/subscriptions/fleetd-gmail-hub",
+        machineId: "buildbox",
+        boxPubKey: BOX,
+        key: KEY,
+      },
+    ]);
+    expect(JSON.stringify(calls)).not.toContain("never_in_a_hub_call");
+    expect(document.body.textContent).not.toContain("never_in_a_hub_call");
+    expect(mail.querySelector('[role="status"]')?.textContent).toContain("start watching their inbox within a minute");
+  });
+
+  it("in Administration: push, or polling with why, and Turn off after asking", async () => {
+    client = held("devbox");
+    pubsub = { topic: "projects/fleetd-devbox/topics/fleetd-gmail", subscription: "projects/fleetd-devbox/subscriptions/fleetd-gmail-hub", machineId: "devbox", fingerprint: "71d03a5e" };
+    mailMode = "polling";
+    mailProblem = "devbox is offline, and it holds the key";
+    await render(<AdminGoogle />);
+    const mail = region("Real-time mail");
+    expect(mail.textContent).toContain("Read on devbox, whose node holds the key.");
+    expect(mail.textContent).toContain("By checking about every minute for now: devbox is offline, and it holds the key.");
+    await click(button("Turn off", mail));
+    expect(dialog().textContent).toContain("devbox forgets the service account key");
+    await click(button("Turn off", dialog()));
+    expect(calls.find((c) => c.tool === "google_pubsub_set")?.input).toEqual({});
+    expect(mail.textContent).toContain("The hub checks the mail of each Navi whose mail wakes it about every minute.");
+  });
+
+  it("on a Navi: off by default; All saves at once; a search saves with its button; and how mail arrives", async () => {
+    client = held("devbox");
+    linked = account();
+    mailMode = "push";
+    await render(<IntegrationsSection projectRef={ref} />);
+    const wake = google().querySelector<HTMLElement>('[role="group"][aria-label="New mail"]');
+    if (wake === null) throw new Error("no mail wake");
+    expect(button("Off", wake).getAttribute("aria-pressed")).toBe("true");
+    // Off says nothing of how mail arrives: nothing wakes the Navi.
+    expect(wake.textContent).not.toContain("By push");
+    await click(button("All new mail", wake));
+    expect(calls.filter((c) => c.tool === "google_mail_set").map((c) => c.input)).toEqual([{ project: ref, rule: "all" }]);
+    expect(wake.textContent).toContain("By push: new mail reaches it within seconds.");
+    await click(button("Matching a search", wake));
+    expect(calls.filter((c) => c.tool === "google_mail_set")).toHaveLength(1);
+    await type("Gmail search", "from:ana@example.com OR is:important");
+    await click(button("Save", wake));
+    expect(calls.filter((c) => c.tool === "google_mail_set").map((c) => c.input)[1]).toEqual({ project: ref, rule: "query", query: "from:ana@example.com OR is:important" });
+    expect(wake.querySelector('[role="status"]')?.textContent).toBe("New mail matching the query wakes the Navi.");
+  });
+
+  it("on a Navi: polling without real-time mail says so", async () => {
+    client = held("devbox");
+    linked = account({ mail: { rule: "query", query: "is:important" } });
+    await render(<IntegrationsSection projectRef={ref} />);
+    const wake = google().querySelector<HTMLElement>('[role="group"][aria-label="New mail"]');
+    expect((wake?.querySelector('[aria-label="Gmail search"]') as HTMLInputElement | null)?.value).toBe("is:important");
+    expect(wake?.textContent).toContain("By checking about every minute: real-time mail isn't set up on this hub.");
   });
 });

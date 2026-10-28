@@ -4,7 +4,7 @@ import rust from "./secret.rust-seal.json";
 import { SECRET_MAX_BYTES } from "../shared/contracts";
 import { IPC } from "../shared/channels";
 import { parseRequest } from "../shared/ipc";
-import { seal, submitGoogleClient, submitHubLink, submitMcpServer, submitProjectEnv, submitSecret } from "./secret";
+import { seal, submitGoogleClient, submitGooglePubsub, submitHubLink, submitMcpServer, submitProjectEnv, submitSecret } from "./secret";
 
 const bytes = (b64: string) => new Uint8Array(Buffer.from(b64, "base64"));
 
@@ -238,6 +238,40 @@ describe("a pasted hub link key", () => {
     const spaced = await submitGoogleClient({ ...request, secret: "GOCSPX-a b" }, call);
     expect(spaced.ok).toBe(false);
     if (!spaced.ok) expect(spaced.error.fix).toBeTruthy();
+    expect(sent).toEqual([]);
+  });
+
+  it("checks real-time mail's key is a service account's, seals it to the reading machine, and never sends it plain", async () => {
+    await sodium.ready;
+    const [pk, sk] = [bytes(rust.publicKey), bytes(rust.secretKey)];
+    const sent: Array<{ tool: string; input: unknown }> = [];
+    const call = (tool: string, input: unknown) => {
+      sent.push({ tool, input });
+      return Promise.resolve({ ok: true as const, output: {} });
+    };
+    const key = JSON.stringify({ type: "service_account", private_key: "-----BEGIN PRIVATE KEY-----never_in_a_hub_call", client_email: "fleetd-gmail-reader@fleetd-devbox.iam.gserviceaccount.com" });
+    const request = {
+      topic: "projects/fleetd-devbox/topics/fleetd-gmail",
+      subscription: "projects/fleetd-devbox/subscriptions/fleetd-gmail-hub",
+      machineId: "devbox",
+      boxPubKey: rust.publicKey,
+      key,
+    };
+    expect(parseRequest(IPC.googlePubsubSubmit, ["hub", request]).ok).toBe(true);
+    expect(parseRequest(IPC.googlePubsubSubmit, ["hub", { ...request, topic: "fleetd-gmail" }]).ok).toBe(false);
+    expect((await submitGooglePubsub(request, call)).ok).toBe(true);
+    expect(sent[0]?.tool).toBe("google_pubsub_set");
+    expect(JSON.stringify(sent[0]?.input)).not.toContain("never_in_a_hub_call");
+    const input = sent[0]?.input as { pubsub: { topic: string; subscription: string; machineId: string; sealed: string } };
+    expect(input.pubsub).toMatchObject({ topic: request.topic, subscription: request.subscription, machineId: "devbox" });
+    expect(sodium.to_string(sodium.crypto_box_seal_open(bytes(input.pubsub.sealed), pk, sk))).toBe(key);
+
+    sent.length = 0;
+    for (const wrong of ["not json", JSON.stringify({ type: "authorized_user", client_id: "x" })]) {
+      const out = await submitGooglePubsub({ ...request, key: wrong }, call);
+      expect(out.ok).toBe(false);
+      if (!out.ok) expect(out.error.fix).toContain("JSON");
+    }
     expect(sent).toEqual([]);
   });
 });

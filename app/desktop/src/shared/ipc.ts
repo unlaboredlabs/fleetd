@@ -204,6 +204,19 @@ export const GoogleClientRequest = z.strictObject({
 });
 export type GoogleClientRequest = z.infer<typeof GoogleClientRequest>;
 /**
+ * Real-time mail (Administration › Google): main checks `key` is a service account's JSON key, seals it to
+ * `boxPubKey`, the reading machine's key, and calls google_pubsub_set. The hub gets the box, never the key.
+ */
+export const GooglePubsubRequest = z.strictObject({
+  /** google.rs PubsubTopic and PubsubSubscription. */
+  topic: z.string().regex(/^projects\/[a-z][a-z0-9-]{4,28}[a-z0-9]\/topics\/[A-Za-z][A-Za-z0-9._~+%-]{2,254}$/u),
+  subscription: z.string().regex(/^projects\/[a-z][a-z0-9-]{4,28}[a-z0-9]\/subscriptions\/[A-Za-z][A-Za-z0-9._~+%-]{2,254}$/u),
+  machineId: z.string().min(1).max(64),
+  boxPubKey: z.string().regex(/^[A-Za-z0-9+/]{43}=$/u),
+  key: z.string().min(1).max(SECRET_MAX_BYTES),
+});
+export type GooglePubsubRequest = z.infer<typeof GooglePubsubRequest>;
+/**
  * Connect a Navi to a Google account (its Integrations): main reads the hub's client from google_get, opens Google's
  * consent page with PKCE in the browser, catches the answer on a loopback port and calls google_connect itself, so the
  * code never reaches the page.
@@ -307,6 +320,7 @@ export const REQUESTS = {
   [IPC.mcpServerSubmit]: z.tuple([HubId, McpServerRequest]),
   [IPC.hubLinkSubmit]: z.tuple([HubId, HubLinkRequest]),
   [IPC.googleClientSubmit]: z.tuple([HubId, GoogleClientRequest]),
+  [IPC.googlePubsubSubmit]: z.tuple([HubId, GooglePubsubRequest]),
   [IPC.googleConnect]: z.tuple([HubId, GoogleConnectRequest]),
   [IPC.googleCancel]: none,
   [IPC.systemHostName]: none,
