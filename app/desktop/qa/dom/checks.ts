@@ -458,22 +458,36 @@ export function runChecks(opts: CheckOptions): Finding[] {
     });
   }
 
-  // 5. Drag regions (the macOS hiddenInset title bar). Electron drags the window from the union of every
-  // app-region: drag box minus every no-drag box, whatever is stacked on top, so a control inside OR over a drag box
-  // must sit in a no-drag box (itself or an ancestor) or a click on it drags the window. Linux and Windows draw a
-  // native frame, so this only shows on a Mac, which is why it is checked on every platform here.
+  // 5. Drag regions (the macOS hiddenInset title bar). Electron makes the window's drag region from every
+  // app-region box in document order, adding each drag box and cutting each no-drag one, whatever is stacked on top:
+  // a later box wins over an earlier one. So a control inside OR over a drag box must have a no-drag box (itself or
+  // an ancestor) that comes after that drag box, or a click on it drags the window. A control drawn over a later drag
+  // box (a corner placed before the row it sits on) loses its click though it says no-drag. Linux and Windows draw
+  // a native frame, so this only shows on a Mac, which is why it is checked on every platform here.
   const regionOf = (el: Element) => {
     const s = style(el);
     return s.getPropertyValue("app-region") || s.getPropertyValue("-webkit-app-region") || "none";
   };
-  const dragBoxes: Rect[] = [];
+  const regions: { r: Rect; drag: boolean }[] = [];
   for (const el of document.body.querySelectorAll("*")) {
+    const region = regionOf(el);
     // Not hidden(): a modal marks the page behind it aria-hidden, but Electron still drags from it.
-    if (regionOf(el) !== "drag" || !el.checkVisibility({ checkVisibilityCSS: true })) continue;
+    if ((region !== "drag" && region !== "no-drag") || !el.checkVisibility({ checkVisibilityCSS: true })) continue;
     // Only the part that can be seen: a box scrolled out of its container drags nothing.
     const r = intersect(rectOf(el.getBoundingClientRect()), el.parentElement ? clipOf(el.parentElement) : viewport);
-    if (!empty(r)) dragBoxes.push(r);
+    if (!empty(r)) regions.push({ r, drag: region === "drag" });
   }
+  // Whether the window takes a click at the middle of this rect: the last box over it says.
+  const drags = (r: Rect) => {
+    const x = (r.left + r.right) / 2;
+    const y = (r.top + r.bottom) / 2;
+    let drag = false;
+    for (const region of regions) {
+      if (x >= region.r.left && x < region.r.right && y >= region.r.top && y < region.r.bottom) drag = region.drag;
+    }
+    return drag;
+  };
+  const dragBoxes = regions.filter((b) => b.drag).map((b) => b.r);
   if (dragBoxes.length > 0) {
     const focusable = document.body.querySelectorAll(
       // The same list base.css makes no-drag (minus its [data-no-drag] opt-out marker); keep the two in step.
@@ -484,20 +498,10 @@ export function runChecks(opts: CheckOptions): Finding[] {
       const clip = style(el).position === "fixed" || !el.parentElement ? viewport : clipOf(el.parentElement);
       const rect = intersect(rectOf(el.getBoundingClientRect()), clip);
       const over = dragBoxes.map((d) => intersect(rect, d)).find((hit) => !empty(hit));
-      if (!over) continue;
-      // The nearest box that says either way decides; none, or drag, means the window takes the click.
-      let decided = "none";
-      for (let e: Element | null = el; e && e !== document.documentElement; e = e.parentElement) {
-        const r = regionOf(e);
-        if (r === "drag" || r === "no-drag") {
-          decided = r;
-          break;
-        }
-      }
-      if (decided === "no-drag") continue;
+      if (!over || !drags(over)) continue;
       findings.push({
         check: "drag",
-        message: "a control in the title-bar drag region: on macOS a click drags the window (set app-region: no-drag)",
+        message: "a control in the title-bar drag region: on macOS a click drags the window (set app-region: no-drag, after the drag box in the page's order)",
         text: snippet(el.textContent || el.getAttribute("aria-label") || ""),
         where: describe(el),
         box: toBox(over),

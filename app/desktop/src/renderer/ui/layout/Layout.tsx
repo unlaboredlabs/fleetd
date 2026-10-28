@@ -41,9 +41,10 @@ export function AppFrame(props: {
             </div>
           ) : null}
           {props.topBar}
-          {props.corner ? <div className={s.corner}>{props.corner}</div> : null}
           <main className={s.main}>{props.children}</main>
           {props.aside ? <div className={s.aside}>{props.aside}</div> : null}
+          {/* Last: Electron takes app-region boxes in document order, so the aside's drag row would cover it. */}
+          {props.corner ? <div className={s.corner}>{props.corner}</div> : null}
         </div>
       </TitleSlot.Provider>
     </SetTitleSlot.Provider>
