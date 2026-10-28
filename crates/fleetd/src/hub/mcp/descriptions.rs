@@ -289,6 +289,18 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
         "Run a check's automatic fix, then the check again. Manual fixes are refused with the exact command to run. Admin keys, or a person's device (a human key).",
     ),
     (
+        "setup_list",
+        "Admin on every machine. The hub admin's setup, the steps fleetd init and the app's Administration › Setup show: where the hub listens, machines, Claude (required), GitHub (before the first PR), people, Google and Notion (optional). Each step has its why, numbered parts with the values to paste computed for this hub and the provider's pages, the fields for what comes back and where they are saved (place), and its status read from the doctor's checks (ways: one way done is enough): done, todo, look (set up but failing; said and fix say why) or skipped. requiredLeft: required steps not done.",
+    ),
+    (
+        "setup_test",
+        "Admin on every machine. Run one step's checks now and return the step: the hub's checks, every machine's for machines and claude, and for google, Google asked whether it takes the hub's client.",
+    ),
+    (
+        "setup_skip",
+        "Admin on every machine. Put a step that isn't required off for later (skipped: true), or back on the list. A skipped step keeps its place and reads skipped until it is set up.",
+    ),
+    (
         "orders_board",
         "Open orders (workstreams) joined with their agents: each card has its phase (needs you, working, reviewing, merging, ...), active lanes (role, model, status, branch, PR), PRs with review counts, open requests and the lead's headline; plus the merge trains of their repos. Filter by projectRef; includeDoneSince adds orders done since then.",
     ),

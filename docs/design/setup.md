@@ -1,9 +1,8 @@
 # One setup for the hub admin
 
-Status: proposed (W100), revised for D189 (Google, native), D190 (one GitHub App per hub), D195 (Gmail in real time)
-and the answers to its open questions (§6). This is the design,
-with a prototype of the app's screens: `#/setup` in `app/desktop/src/renderer/screens/setup`, against
-`fixtures/setup`. The build waits for approval and for teams step 1 and the Navi integrations to land.
+Status: approved (D197), being built (§7). Revised for D189 (Google, native), D190 (one GitHub App per hub), D195
+(Gmail in real time) and the answers to its open questions (§6). The prototype of the app's screens is `#/setup` in
+`app/desktop/src/renderer/screens/setup`, against `fixtures/setup`.
 
 A new hub needs a lot of configuring: where it listens, its machines, Claude, a GitHub App, and optionally people,
 Google, Notion and 1Password. Today these live in five places with five vocabularies. This design makes each
@@ -288,11 +287,10 @@ person then connects their own Google account from their Navi.
      also one copyable Cloud Shell block, in project `fleetd-devbox`: the services, topic, publisher, subscription,
      account, subscriber binding and key commands, ending in `cat … && rm …`. That prints the key once, to paste.
 
-     The fields take the subscription's full name (`projects/fleetd-devbox/subscriptions/fleetd-gmail-hub`) and the
-     JSON key. The key is a sealed multi-line field, sealed to the one machine that reads (§3.4). Once pasted and
-     sealed, the field shows only the key's account and fingerprint, never the key.
-
-  T805 (native Google) owns the exact client type, scopes and credential; this step shows what its PR fixes.
+     The client, the subscription (`projects/fleetd-devbox/subscriptions/fleetd-gmail-hub`) and the JSON key are
+     saved on Administration › Google (#746, #749), which the step links to (`place: google`); the step itself has no
+     fields of its own to save. The key is sealed there to the one machine that reads (§3.4), and the page shows only
+     its machine and fingerprint, never the key.
 - **Test** exchanges a dummy code at Google's token endpoint. `invalid_grant` means Google knows the client and its
   secret; `invalid_client` means it doesn't. With a key saved, the reading machine also pulls from the subscription
   once as the service account: an empty answer is fine, and a refused one names the missing Subscriber role or a
@@ -416,7 +414,28 @@ None are open. Each answer below is already in the sections above.
 
 ## 7. Build order, after approval
 
-1. `hub/setup` (steps, tools, skips, the hub sink) on today's checks, with `fleetd doctor` printing steps.
-2. The app's welcome, step screen and Administration › Setup on `setup_list`, replacing the prototype's catalog.
-3. `fleetd init` walking the hub's steps after its bootstrap; `--step`.
+1. Built: `hub/setup` (the steps, `setup_list`, `setup_test`, `setup_skip`, skips) on today's checks, with
+   `fleetd doctor` printing steps first. New hub checks read from the hub's own state, there only once their step is
+   set up: `hub/people` (someone invited has paired a device), `hub/google` (the client saved, and on which machines)
+   and `hub/notion` (a Navi has it).
+2. Built: `fleetd init` lists the hub's steps after its bootstrap and offers the ones left; `--step <id>` opens one
+   (its guide, Test, Later, and for People an invite).
+3. Next: the app's welcome, step screen and Administration › Setup on `setup_list`, replacing the prototype's
+   catalog.
 4. Each in-flight piece adds its step as it lands (§5).
+
+What the build does differently from the sections above, for now:
+
+- **Fields are saved where they live today.** A step names the Administration section that saves its result
+  (`place`: Google's client and Pub/Sub key on Administration › Google, invites on Invites), rather than a
+  `setup_save` of its own. The terminal never takes a secret: the CLI's key isn't a person's, and the sealed paths
+  are the app's.
+- **GitHub** is `gh auth login` on the hub (`hub/gh_auth`) until the GitHub App (D190) is built; its manifest flow,
+  endpoints and `hub/github_app` replace this step's part and way then.
+- **Claude** lists `hub/claude_key` and `hub/claude_owner` as its first two ways already, so the hub's API key and
+  the owner's subscription count as soon as their checks exist; their part comes with Administration › Claude.
+  Until then the step is each machine's own login.
+- **Notion** is each person's own integration on their Navi (#643), so the hub has nothing to save: the step says
+  how, and is done once any Navi has it.
+- **1Password** stays a project secret for now, and isn't a step.
+- No `setup.changed` event yet: a screen re-reads `setup_list` after its own calls and on `doctor.changed`.

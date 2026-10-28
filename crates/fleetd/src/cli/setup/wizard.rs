@@ -13,6 +13,7 @@ use super::machine::{self, Added, local_host_name, machine_id_from_host};
 use super::machine_plan::{login_command, login_status_command};
 use super::ssh::{run_attached, run_local, run_ssh};
 use super::state::{GitIdentity, is_noreply, parse_git_identity, read_setup};
+use super::steps;
 use super::units::q;
 use super::{HubPlan, InitOptions, Probe, install_hub, probe_listen};
 use crate::cli::hub_key::open_hub;
@@ -20,6 +21,7 @@ use crate::cli::pair;
 use crate::hub::doctor::checks::{self, CmdOutcome, DoctorStatus};
 use crate::node::runner::claude::setup::{ClaudeSetup, describe};
 use crate::node::runner::claude::version::{self, VersionVerdict};
+use fleetd_contracts::setup::{SetupNeed, SetupStatus, SetupStep, SetupStepId};
 
 const PORT: u16 = 4790;
 const AGAIN: &str = "Run fleetd init to continue; it keeps what's done.";
@@ -386,11 +388,11 @@ async fn steps(opts: &InitOptions, ui: &Ui, list: &mut Checklist) -> Result<u8, 
         list.skipped("project", "needs the hub running");
     }
 
-    list.section("App & check");
+    list.section("App & setup");
     let paired = app(opts, ui, list, &mut summary)?;
     if hub_up {
         await_runner_checks(opts, list, &added).await;
-        doctor(opts, list, &idle).await;
+        setup(opts, ui, list, &idle).await?;
     }
     finish(list, &summary, paired);
     Ok(u8::from(list.failures().next().is_some()))
@@ -1377,14 +1379,233 @@ fn app(
     }
 }
 
-async fn doctor(opts: &InitOptions, list: &mut Checklist, idle: &[String]) {
+/// The hub's setup steps (the ones the app's Administration › Setup shows), each a line, then the doctor's checks no
+/// step speaks for. A person at the terminal may open the steps left, one by one.
+async fn setup(
+    opts: &InitOptions,
+    ui: &Ui,
+    list: &mut Checklist,
+    idle: &[String],
+) -> Result<(), Stopped> {
     list.start("Running the doctor");
-    match super::doctor::run(&opts.home).await {
-        Ok(checks) => {
+    let checks = match super::doctor::run(&opts.home).await {
+        Ok(checks) => checks,
+        Err(failure) => {
+            list.failed("doctor", &failure.message, &failure.fix);
+            return Ok(());
+        }
+    };
+    let mut client = match super::doctor::connect(&opts.home).await {
+        Ok(client) => client,
+        Err(failure) => {
+            list.failed("setup", &failure.message, &failure.fix);
+            return Ok(());
+        }
+    };
+    let steps = match steps::list(&mut client).await {
+        Ok(Some(steps)) => steps,
+        // A hub from before setup steps: the doctor alone, as then.
+        Ok(None) => {
             let ok = super::doctor::show(list, &checks, idle);
             list.done("doctor", &format!("{ok} of {} checks pass", checks.len()));
+            return Ok(());
         }
-        Err(failure) => list.failed("doctor", &failure.message, &failure.fix),
+        Err(failure) => {
+            list.failed("setup", &failure.message, &failure.fix);
+            return Ok(());
+        }
+    };
+    steps::show(list, &steps);
+    let rest = steps::unowned(&checks, &steps);
+    let ok = super::doctor::show(list, &rest, idle);
+    list.done(
+        "doctor",
+        &format!("{ok} of {} other checks pass", rest.len()),
+    );
+    let left: Vec<_> = steps
+        .iter()
+        .filter(|s| s.status != SetupStatus::Done)
+        .map(|s| (s.id, s.title.clone(), steps::need_words(&s.need)))
+        .collect();
+    if left.is_empty() || !ui.interactive {
+        return Ok(());
+    }
+    let picked = ui.multi(
+        list,
+        "Set up any of these now? (the app's Administration › Setup has them too)",
+        &left,
+        Vec::new(),
+    )?;
+    for step in steps.iter().filter(|s| picked.contains(&s.id)) {
+        walk(opts, ui, list, &mut client, step).await?;
+    }
+    Ok(())
+}
+
+/// One step, open: its guide, then Test (its checks, now) until it passes or the person goes on, or Later.
+async fn walk(
+    opts: &InitOptions,
+    ui: &Ui,
+    list: &mut Checklist,
+    client: &mut crate::cli::mcp_client::McpClient,
+    step: &SetupStep,
+) -> Result<SetupStatus, Stopped> {
+    list.section(&format!(
+        "{} · {}",
+        step.title,
+        steps::need_words(&step.need)
+    ));
+    list.note(&steps::guide(step));
+    if !ui.interactive {
+        return Ok(tested(list, client, step.id).await);
+    }
+    loop {
+        let mut actions = Vec::new();
+        if step.id == SetupStepId::People {
+            actions.push((
+                "invite",
+                "Invite someone now".to_owned(),
+                "a link and a code, for 7 days".to_owned(),
+            ));
+        }
+        if step.test.is_some() || !step.ways.is_empty() {
+            actions.push((
+                "test",
+                "Test it".to_owned(),
+                "run its checks now".to_owned(),
+            ));
+        }
+        if step.need != SetupNeed::Required {
+            actions.push((
+                "later",
+                "Later".to_owned(),
+                "it keeps its place; fleetd init asks again".to_owned(),
+            ));
+        }
+        actions.push(("next", "Go on".to_owned(), String::new()));
+        match ui.select(list, &format!("{}:", step.title), &actions, actions[0].0)? {
+            // An invite counts once they join; test it now anyway, as the hub may already know them.
+            "invite" => {
+                invite(opts, ui, list)?;
+                if tested(list, client, step.id).await == SetupStatus::Done {
+                    return Ok(SetupStatus::Done);
+                }
+            }
+            "test" => {
+                if tested(list, client, step.id).await == SetupStatus::Done {
+                    return Ok(SetupStatus::Done);
+                }
+            }
+            "later" => {
+                return Ok(match steps::skip(client, step.id).await {
+                    Ok(s) => {
+                        list.skipped(&s.title, "later");
+                        s.status
+                    }
+                    Err(failure) => {
+                        list.warn(&step.title, &failure.message, Some(&failure.fix));
+                        step.status
+                    }
+                });
+            }
+            _ => return Ok(step.status),
+        }
+    }
+}
+
+/// setup_test, said as the step's line.
+async fn tested(
+    list: &mut Checklist,
+    client: &mut crate::cli::mcp_client::McpClient,
+    id: SetupStepId,
+) -> SetupStatus {
+    list.start("Testing");
+    match steps::test(client, id).await {
+        Ok(step) => {
+            let (state, detail, fix) = steps::line(&step);
+            list.finish(&step.title, state, &detail, fix.as_deref());
+            step.status
+        }
+        Err(failure) => {
+            list.failed("test", &failure.message, &failure.fix);
+            SetupStatus::Look
+        }
+    }
+}
+
+/// `fleetd invite --name <name>` from the People step: the link and code are shown this once.
+fn invite(opts: &InitOptions, ui: &Ui, list: &mut Checklist) -> Result<(), Stopped> {
+    let name = ui.input(list, "Their name", "", "alice", needed)?;
+    let home = opts.home.to_string_lossy().into_owned();
+    let out =
+        crate::cli::people::invite_command(&["--name".into(), name.clone(), "--home".into(), home]);
+    if out.code == 0 {
+        list.done(&format!("invite {name}"), "send them this:");
+        list.note(out.stdout.trim_end());
+    } else {
+        list.failed(
+            &format!("invite {name}"),
+            out.stderr.trim().trim_start_matches("fleetd: "),
+            "fleetd invite --name <name>",
+        );
+    }
+    Ok(())
+}
+
+/// `fleetd init --step <id>`: that one step against the hub this machine runs, then the next action.
+pub async fn open_step(opts: InitOptions, id: SetupStepId, interactive: bool) -> u8 {
+    let ui = Ui { interactive };
+    let mut list = Checklist::new();
+    let mut client = match super::doctor::connect(&opts.home).await {
+        Ok(client) => client,
+        Err(failure) => {
+            list.failed("setup", &failure.message, &failure.fix);
+            return 4;
+        }
+    };
+    let step = match steps::list(&mut client).await {
+        Ok(Some(steps)) => steps.into_iter().find(|s| s.id == id),
+        Ok(None) => {
+            list.failed(
+                "setup",
+                "this hub has no setup steps yet",
+                "fleetd update, then fleetd init --step again",
+            );
+            return 1;
+        }
+        Err(failure) => {
+            list.failed("setup", &failure.message, &failure.fix);
+            return 4;
+        }
+    };
+    let Some(step) = step else {
+        list.failed(
+            "setup",
+            &format!("this hub has no step {}", id.as_str()),
+            "fleetd init",
+        );
+        return 1;
+    };
+    match walk(&opts, &ui, &mut list, &mut client, &step).await {
+        Ok(SetupStatus::Done) => {
+            list.outro(&[], "Next: fleetd init lists what's left; the app's Administration › Setup has the same steps.");
+            0
+        }
+        Ok(_) => {
+            list.outro(
+                &[],
+                &format!(
+                    "Run fleetd init --step {} again when you've done it; it keeps what's done.",
+                    id.as_str()
+                ),
+            );
+            u8::from(step.need == SetupNeed::Required)
+        }
+        Err(Stopped) => {
+            list.stop_spinner();
+            eprintln!("{}{AGAIN}", if list.rich { "   " } else { "" });
+            130
+        }
     }
 }
 

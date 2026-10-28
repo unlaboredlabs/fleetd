@@ -42,6 +42,7 @@ pub mod redact;
 pub mod repos;
 pub mod reviews;
 pub mod serve;
+pub mod setup;
 pub mod skills;
 pub mod slots;
 pub mod status;

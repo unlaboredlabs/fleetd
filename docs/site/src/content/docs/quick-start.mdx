@@ -36,7 +36,7 @@ You'll install fleetd, open a project in the desktop app, and tell its lead what
    | 3. Hub | Runs the hub as a background service. |
    | 4. Workers | Picks the [workers](/docs/glossary#worker): the machines that run agents. This machine can be one. |
    | 5. Project | Adds your first [project](/docs/glossary#project): a git repo on a worker. |
-   | 6. App & check | Prints a pairing code for the desktop app, then runs `fleetd doctor`. |
+   | 6. App & setup | Prints a pairing code for the desktop app, then lists the hub's [setup steps](#setup-steps) and runs `fleetd doctor`. |
 
    Expected output ends like this:
 
@@ -98,6 +98,26 @@ You'll install fleetd, open a project in the desktop app, and tell its lead what
    passes. The lead says in the chat when the work is done and checked.
 
 </Steps>
+
+## Setup steps {#setup-steps}
+
+Everything a hub admin sets up is one list of steps. `fleetd init` lists them at its end, `fleetd doctor` lists them
+first, and `fleetd init --step <id>` opens one: why it matters, the values to paste (computed for your hub), the
+pages to open, then **Test** or **Later**. Each step's status comes from the hub's checks, so you can stop at any
+point and pick up again later, from any of them.
+
+| Step | Id | Needed |
+|---|---|---|
+| Where the hub listens | `address` | Required. Plain HTTP is fine on your tailnet. |
+| Machines that run agents | `machines` | Required. |
+| Claude | `claude` | Required. Today, each machine's own `claude auth login`. |
+| GitHub | `github` | Before the first PR: `gh auth login` on the hub. |
+| Invite people | `people` | Optional. Done once someone you invited has joined. |
+| Google | `google` | Optional. The client is saved on Administration › Google; see [Google](/docs/google). |
+| Notion | `notion` | Optional. Each person connects their own, on their Navi. |
+
+Optional steps never block anything; **Later** keeps a step in the list. Secrets are never typed in the terminal: a
+step that takes one names the page in the app that seals it on your device.
 
 ## Without the app {#headless}
 

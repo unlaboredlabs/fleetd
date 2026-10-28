@@ -163,6 +163,7 @@ pub fn registry() -> Registry {
     crate::hub::wakes::tools::register(&mut tools);
     crate::hub::usage::tools::register(&mut tools);
     crate::hub::doctor::tools::register(&mut tools);
+    crate::hub::setup::tools::register(&mut tools);
     crate::hub::approvals::tools::register(&mut tools);
     crate::hub::projects::tools::register(&mut tools);
     crate::hub::mcp_servers::tools::register(&mut tools);

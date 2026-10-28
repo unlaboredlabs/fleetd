@@ -155,6 +155,25 @@ impl People {
         })
     }
 
+    /// The names of people who joined after the hub's first person: not removed, with a device that still works.
+    /// Someone invited who hasn't paired yet hasn't joined.
+    pub fn joined(&self) -> Result<Vec<String>, StoreError> {
+        self.db.with(|c| {
+            let mut stmt = c.prepare(
+                "SELECT p.name FROM people p
+                 WHERE p.removed_ms IS NULL
+                   AND p.person_id != (SELECT person_id FROM people ORDER BY created_ms, rowid LIMIT 1)
+                   AND EXISTS (SELECT 1 FROM agent_keys k WHERE k.person_id = p.person_id AND k.kind = 'human'
+                               AND k.revoked_ms IS NULL)
+                 ORDER BY p.created_ms, p.rowid",
+            )?;
+            let names = stmt
+                .query_map([], |row| row.get(0))?
+                .collect::<Result<Vec<String>, _>>()?;
+            Ok(names)
+        })
+    }
+
     pub fn create(&self, name: &PersonName, role: HubRole) -> Result<Person, StoreError> {
         let now = self.now();
         let person = Person {

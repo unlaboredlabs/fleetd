@@ -7909,7 +7909,7 @@
         "steps": {
           "description": "What machine_add would run there now, each planned; a machine already set up runs fewer.",
           "items": {
-            "$ref": "#/$defs/SetupStep"
+            "$ref": "#/$defs/SetupStep2"
           },
           "type": "array"
         },
@@ -7970,7 +7970,7 @@
         "steps": {
           "description": "Every step: first reading the machine, then the plan's (planned until they start), then the wait for the node.",
           "items": {
-            "$ref": "#/$defs/SetupStep"
+            "$ref": "#/$defs/SetupStep2"
           },
           "type": "array"
         }
@@ -8236,7 +8236,7 @@
         "steps": {
           "description": "What ran on the machine; none for one the hub didn't set up (joined by itself).",
           "items": {
-            "$ref": "#/$defs/SetupStep"
+            "$ref": "#/$defs/SetupStep2"
           },
           "type": "array"
         },
@@ -9726,6 +9726,24 @@
         "session_prompt_get.output": {
           "$ref": "#/$defs/SessionPromptGetOutput"
         },
+        "setup_list.input": {
+          "$ref": "#/$defs/SetupListInput"
+        },
+        "setup_list.output": {
+          "$ref": "#/$defs/SetupListOutput"
+        },
+        "setup_skip.input": {
+          "$ref": "#/$defs/SetupSkipInput"
+        },
+        "setup_skip.output": {
+          "$ref": "#/$defs/SetupSkipOutput"
+        },
+        "setup_test.input": {
+          "$ref": "#/$defs/SetupTestInput"
+        },
+        "setup_test.output": {
+          "$ref": "#/$defs/SetupTestOutput"
+        },
         "skill_delete.input": {
           "$ref": "#/$defs/SkillDeleteInput"
         },
@@ -10132,6 +10150,12 @@
         "secret_submit.output",
         "session_prompt_get.input",
         "session_prompt_get.output",
+        "setup_list.input",
+        "setup_list.output",
+        "setup_skip.input",
+        "setup_skip.output",
+        "setup_test.input",
+        "setup_test.output",
         "skill_delete.input",
         "skill_delete.output",
         "skill_get.input",
@@ -16268,10 +16292,326 @@
       ],
       "type": "object"
     },
+    "SetupField": {
+      "description": "A field for what the provider gives back. A secret one is sealed on the admin's device, never sent in the clear and\nnever shown again.",
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "multiline": {
+          "description": "A pasted file (a JSON key): several lines.",
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "note": {
+          "description": "Where a secret is sealed to, when not every machine.",
+          "type": "string"
+        },
+        "optional": {
+          "type": "boolean"
+        },
+        "placeholder": {
+          "type": "string"
+        },
+        "secret": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "label"
+      ],
+      "type": "object"
+    },
+    "SetupGroup": {
+      "description": "Where a step sits in the list.",
+      "oneOf": [
+        {
+          "enum": [
+            "accounts",
+            "people",
+            "integrations"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "hub",
+          "description": "This hub: where it listens, its machines.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
     "SetupInput": {
       "type": "string"
     },
+    "SetupLink": {
+      "description": "A provider's page, opened in the browser.",
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "label",
+        "url"
+      ],
+      "type": "object"
+    },
+    "SetupListInput": {
+      "type": "object"
+    },
+    "SetupListOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "requiredLeft": {
+          "description": "Required steps not done: agents can't run until none is left.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/SetupStep"
+          },
+          "type": "array"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "steps",
+        "requiredLeft"
+      ],
+      "type": "object"
+    },
+    "SetupNeed": {
+      "description": "When a step must be done. Nothing blocks using fleetd before then.",
+      "oneOf": [
+        {
+          "description": "Agents can't run without it.",
+          "properties": {
+            "kind": {
+              "const": "required",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Needed only before a feature's first use: `what` is that use, \"the first PR\".",
+          "properties": {
+            "kind": {
+              "const": "before",
+              "type": "string"
+            },
+            "what": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "what"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "optional",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "SetupPart": {
+      "description": "One numbered part of a step: what to open, then what to fill in there.",
+      "properties": {
+        "links": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/SetupLink"
+          },
+          "type": "array"
+        },
+        "note": {
+          "type": "string"
+        },
+        "optional": {
+          "description": "The step works without it.",
+          "type": "boolean"
+        },
+        "title": {
+          "type": "string"
+        },
+        "values": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/SetupValue"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "title"
+      ],
+      "type": "object"
+    },
+    "SetupSkipInput": {
+      "properties": {
+        "skipped": {
+          "description": "False: back on the list as to do.",
+          "type": "boolean"
+        },
+        "step": {
+          "$ref": "#/$defs/SetupStepId"
+        }
+      },
+      "required": [
+        "step",
+        "skipped"
+      ],
+      "type": "object"
+    },
+    "SetupSkipOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "step": {
+          "$ref": "#/$defs/SetupStep"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "step"
+      ],
+      "type": "object"
+    },
+    "SetupStatus": {
+      "description": "Read from the step's checks, never from how far a wizard got.",
+      "oneOf": [
+        {
+          "const": "done",
+          "description": "One way's checks all pass.",
+          "type": "string"
+        },
+        {
+          "const": "todo",
+          "description": "Not set up: no check yet, or \"unknown\".",
+          "type": "string"
+        },
+        {
+          "const": "look",
+          "description": "Set up, but a check fails or warns.",
+          "type": "string"
+        },
+        {
+          "const": "skipped",
+          "description": "Not set up, and the admin said later.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
     "SetupStep": {
+      "properties": {
+        "fields": {
+          "default": [],
+          "description": "What comes back from the provider, entered where the step says (`place`).",
+          "items": {
+            "$ref": "#/$defs/SetupField"
+          },
+          "type": "array"
+        },
+        "fieldsNote": {
+          "description": "What happens after the fields are saved.",
+          "type": "string"
+        },
+        "fix": {
+          "$ref": "#/$defs/DoctorFix",
+          "description": "The deciding check's fix, when a command fixes it."
+        },
+        "group": {
+          "$ref": "#/$defs/SetupGroup"
+        },
+        "id": {
+          "$ref": "#/$defs/SetupStepId"
+        },
+        "need": {
+          "$ref": "#/$defs/SetupNeed"
+        },
+        "parts": {
+          "items": {
+            "$ref": "#/$defs/SetupPart"
+          },
+          "type": "array"
+        },
+        "place": {
+          "description": "Where in the app the fields are saved, an Administration section (\"google\"), where the terminal can't seal\nthem.",
+          "type": "string"
+        },
+        "said": {
+          "description": "What its checks say now: the deciding one's message.",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/SetupStatus"
+        },
+        "test": {
+          "description": "What Test does, in a few words.",
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "way": {
+          "description": "The way in use, where a step has several: the one done, else the one that wants a look.",
+          "type": "string"
+        },
+        "ways": {
+          "description": "The ways to complete it; one is enough.",
+          "items": {
+            "$ref": "#/$defs/SetupWay"
+          },
+          "type": "array"
+        },
+        "why": {
+          "description": "Why it matters, in one line.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "group",
+        "title",
+        "why",
+        "need",
+        "status",
+        "parts",
+        "ways"
+      ],
+      "type": "object"
+    },
+    "SetupStep2": {
       "description": "One step of adding or removing a machine.",
       "properties": {
         "command": {
@@ -16300,6 +16640,20 @@
       ],
       "type": "object"
     },
+    "SetupStepId": {
+      "description": "The steps, in the order they are listed.",
+      "enum": [
+        "address",
+        "machines",
+        "claude",
+        "github",
+        "people",
+        "google",
+        "notion"
+      ],
+      "type": "string",
+      "x-open": true
+    },
     "SetupStepState": {
       "oneOf": [
         {
@@ -16316,6 +16670,86 @@
           "type": "string"
         }
       ]
+    },
+    "SetupTestInput": {
+      "properties": {
+        "step": {
+          "$ref": "#/$defs/SetupStepId"
+        }
+      },
+      "required": [
+        "step"
+      ],
+      "type": "object"
+    },
+    "SetupTestOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "step": {
+          "$ref": "#/$defs/SetupStep",
+          "description": "The step, read from its checks as they are now."
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "step"
+      ],
+      "type": "object"
+    },
+    "SetupValue": {
+      "description": "A value for the provider's form, computed for this hub.",
+      "properties": {
+        "command": {
+          "description": "A command to run, rather than a value to paste.",
+          "type": "boolean"
+        },
+        "filled": {
+          "description": "Filled in by fleetd (a manifest, a link): shown to read, never copied.",
+          "type": "boolean"
+        },
+        "label": {
+          "type": "string"
+        },
+        "note": {
+          "description": "How to paste it, or where.",
+          "type": "string"
+        },
+        "plain": {
+          "description": "Words, not a value: what to pick, tick or leave alone.",
+          "type": "boolean"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "label",
+        "value"
+      ],
+      "type": "object"
+    },
+    "SetupWay": {
+      "description": "One way to complete a step: its doctor checks, `hub/<name>`, or `*/<name>` for every machine's. Its status is the\nworst of them.",
+      "properties": {
+        "checks": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "label": {
+          "description": "Names the way where a step has several: \"the hub's API key\".",
+          "type": "string"
+        }
+      },
+      "required": [
+        "checks"
+      ],
+      "type": "object"
     },
     "SkillDeleteInput": {
       "properties": {

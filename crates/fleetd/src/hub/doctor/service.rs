@@ -92,6 +92,10 @@ pub trait DoctorFleet: Send + Sync {
     fn claude_setup(&self) -> BoxFut<'_, Option<checks::ClaudeSetupView>> {
         Box::pin(async { None })
     }
+    /// What the hub keeps of its optional setup: people, the Google client, Navis with Notion.
+    fn setup_facts(&self) -> checks::SetupFacts {
+        checks::SetupFacts::default()
+    }
 }
 
 pub struct DoctorDeps {
@@ -239,7 +243,17 @@ impl Doctor {
             out.push(checks::claude_key(&claude));
             out.push(checks::claude_owner(&claude));
         }
+        out.extend(checks::setup_checks(&self.deps.fleet.setup_facts()));
         out
+    }
+
+    /// The setup checks read from the hub's own state, as it is now: cheap, so setup reads them fresh rather than
+    /// from the last run.
+    pub fn setup_checks(&self) -> Vec<DoctorCheck> {
+        checks::setup_checks(&self.deps.fleet.setup_facts())
+            .into_iter()
+            .map(|e| e.check)
+            .collect()
     }
 
     async fn machine_checks(&self, machine: &MachineView) -> Vec<Entry> {
@@ -364,15 +378,18 @@ impl Doctor {
         }
     }
 
-    /// Replaces the entries of the groups just run (all of them when `machine_ids` is `None`) and emits changes.
+    /// Replaces the entries of the groups just run (all of them when `machine_ids` is `None`, the hub's when it is
+    /// empty) and emits changes.
     async fn record(&self, state: &mut State, fresh: Vec<Entry>, machine_ids: Option<&[String]>) {
         let before: HashMap<String, Entry> = state
             .latest
             .iter()
             .map(|e| (e.check.id.clone(), e.clone()))
             .collect();
+        // `Some(&[])` is the hub's own checks.
         let replaced = |e: &Entry| match machine_ids {
             None => true,
+            Some([]) => e.check.scope == "hub",
             Some(ids) => {
                 e.check.scope != "hub" && ids.iter().any(|m| Some(m) == e.check.machine_id.as_ref())
             }
@@ -412,6 +429,21 @@ impl Doctor {
         fresh.extend(per_machine);
         self.record(state, fresh, None).await;
         state.last_run_ms = Some(self.now_ms());
+    }
+
+    /// Runs the hub's own checks now, leaving the machines' as they were; every check when nothing has run yet.
+    pub async fn rerun_hub(&self) -> DoctorResults {
+        let mut state = self.state.lock().await;
+        if state.checked_at.is_none() {
+            self.run_all(&mut state).await;
+        } else {
+            let fresh = self.hub_checks().await;
+            self.record(&mut state, fresh, Some(&[])).await;
+        }
+        DoctorResults {
+            checks: state.latest.iter().map(|e| e.check.clone()).collect(),
+            checked_at: state.checked_at.clone().unwrap_or_else(|| iso_ms(0)),
+        }
     }
 
     /// The latest results; runs every check first when `rerun` is set or nothing has run yet.
