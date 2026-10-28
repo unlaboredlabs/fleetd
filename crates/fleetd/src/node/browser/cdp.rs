@@ -55,6 +55,8 @@ struct Routes {
     waiting: HashMap<u64, Waiter>,
     /// Target sessions the broker attached: their events and answers never reach the proxy.
     own: HashSet<String>,
+    /// The targets those sessions are on: the driver may not detach them by target (it names its own by session).
+    own_targets: HashSet<String>,
     /// Targets the broker is attaching now, and the attach events held until its answer names its session.
     attaching: HashMap<String, Vec<Event>>,
     broker: Vec<mpsc::UnboundedSender<Event>>,
@@ -139,6 +141,7 @@ impl Routes {
                     .map(str::to_owned);
                 if let Some(mine) = &mine {
                     self.own.insert(mine.clone());
+                    self.own_targets.insert(target.clone());
                 }
                 // The attach events held meanwhile that weren't the broker's were the agent's own (auto-attach).
                 for held in self.attaching.remove(&target).unwrap_or_default() {
@@ -244,6 +247,11 @@ impl Cdp {
     /// Whether a target session is the broker's own.
     pub fn is_own(&self, session: &str) -> bool {
         lock(&self.routes).own.contains(session)
+    }
+
+    /// Whether the broker attached a session of its own to `target`.
+    pub fn is_own_target(&self, target: &str) -> bool {
+        lock(&self.routes).own_targets.contains(target)
     }
 
     fn message(id: u64, session: Option<&str>, method: &str, params: Value) -> Vec<u8> {

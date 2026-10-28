@@ -1,6 +1,7 @@
 //! What a Navi's browser may touch on this machine (local.rs), on a real Chrome: no `file:` page, asked for directly,
-//! through a redirect, a link or the driver's own interception; uploads only of files in its folder, not through a
-//! link out of it; downloads only into its folder. A regular agent's session opens files as before.
+//! through a redirect, a link or the driver's own interception; a fence the driver can't take down, and a session that
+//! ends should it go; uploads (picked or dropped) only of files in its folder, not through a link out of it; downloads
+//! only into its folder. A regular agent's session opens files as before.
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use super::*;
@@ -32,6 +33,14 @@ async fn site(file: &Path) -> (String, AbortOnDrop) {
                     "/upload" => (
                         "200 OK\r\ncontent-type: text/html".to_owned(),
                         "<html><body><input type=file id=f></body></html>".to_owned(),
+                    ),
+                    "/drop" => (
+                        "200 OK\r\ncontent-type: text/html".to_owned(),
+                        "<html><body style=\"margin:0\"><div id=z style=\"width:100vw;height:100vh\"></div><script>\
+                         z.addEventListener('dragover', e => e.preventDefault());\
+                         z.addEventListener('drop', async e => { e.preventDefault(); const f = e.dataTransfer.files[0];\
+                         window.dropped = f.name + ': ' + await f.text(); });</script></body></html>"
+                            .to_owned(),
                     ),
                     "/download" => (
                         "200 OK\r\ncontent-type: application/octet-stream\r\ncontent-disposition: attachment; \
@@ -378,4 +387,103 @@ async fn a_navi_uploads_only_files_in_its_folder_and_downloads_only_into_it() {
         0,
         "the copies go with the session"
     );
+}
+
+/// Files dropped on a page at (20, 20): the drag's events, as a driver sends them. The first refusal, if any.
+async fn drop_files(driver: &mut Driver, page: &str, files: Vec<String>) -> Option<Value> {
+    for kind in ["dragEnter", "dragOver", "drop"] {
+        let answer = driver
+            .send(
+                Some(page),
+                "Input.dispatchDragEvent",
+                json!({
+                    "type": kind, "x": 20, "y": 20,
+                    "data": { "items": [], "files": files, "dragOperationsMask": 1 },
+                }),
+            )
+            .await;
+        if answer.get("error").is_some() {
+            return Some(answer);
+        }
+    }
+    None
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_navis_fence_stays_up_and_its_session_ends_if_it_goes_and_dropped_files_are_fenced_too() {
+    let Some(rig) = rig().await else { return };
+    let cookies = bee_cookies(&rig);
+    let file = format!("file://{}", cookies.display());
+    let (site, _site) = site(&cookies).await;
+    let folder = rig.navi(ADA, "ada");
+    std::fs::write(folder.join("report.txt"), "ada's report").unwrap();
+    let (mut driver, page) = start(&rig, ADA).await;
+
+    // Files dropped on the page: only the folder's, as copies.
+    driver
+        .ok(
+            Some(&page),
+            "Page.navigate",
+            json!({ "url": format!("{site}/drop") }),
+        )
+        .await;
+    driver
+        .wait_for(&page, "!!document.getElementById('z')")
+        .await;
+    let answer = drop_files(&mut driver, &page, vec![cookies.display().to_string()])
+        .await
+        .expect("a drop of a file outside the folder is refused");
+    assert!(refusal(&answer).contains("outside your folder"), "{answer}");
+    assert!(
+        drop_files(
+            &mut driver,
+            &page,
+            vec![folder.join("report.txt").display().to_string()]
+        )
+        .await
+        .is_none()
+    );
+    driver
+        .wait_for(&page, "window.dropped === \"report.txt: ada's report\"")
+        .await;
+
+    // The driver can't detach the node's session on the browser target.
+    let browser =
+        driver.ok(None, "Target.getTargetInfo", json!({})).await["targetInfo"]["targetId"].clone();
+    let answer = driver
+        .send(
+            None,
+            "Target.detachFromTarget",
+            json!({ "targetId": browser }),
+        )
+        .await;
+    assert!(refusal(&answer).contains("by its sessionId"), "{answer}");
+    let answer = driver
+        .send(
+            Some(&page),
+            "Page.navigate",
+            json!({ "url": format!("{site}/a") }),
+        )
+        .await;
+    assert!(
+        answer.get("error").is_none(),
+        "the session goes on: {answer}"
+    );
+
+    // Should that session go anyway, nothing more goes through and the browser session ends.
+    let id = rig.broker.live(ADA).unwrap().id.clone();
+    rig.broker.live(ADA).unwrap().cdp.post(
+        None,
+        "Target.detachFromTarget",
+        json!({ "targetId": browser }),
+    );
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while rig.broker.live(ADA).is_some_and(|s| s.id == id) {
+        assert!(Instant::now() < deadline, "the session didn't end");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    let answer = driver
+        .send(Some(&page), "Page.navigate", json!({ "url": file }))
+        .await;
+    assert!(answer.get("error").is_some(), "{answer}");
 }

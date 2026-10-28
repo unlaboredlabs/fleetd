@@ -190,11 +190,23 @@ async fn serve(tcp: tokio::net::TcpStream, proxy: Weak<Proxy>, broker: Weak<Brok
 fn command_in(session: &Arc<Session>, command: Value, out: &mpsc::UnboundedSender<String>) {
     let id = command.get("id").cloned().unwrap_or(Value::Null);
     let method = command["method"].as_str().unwrap_or_default();
-    if command["sessionId"]
-        .as_str()
-        .is_some_and(|s| session.cdp.is_own(s))
+    // The broker's sessions, whether the command goes to one or names one (`Target.detachFromTarget`,
+    // `Target.sendMessageToTarget`), are as if they didn't exist.
+    if [&command["sessionId"], &command["params"]["sessionId"]]
+        .iter()
+        .any(|s| s.as_str().is_some_and(|s| session.cdp.is_own(s)))
     {
         let _ = out.send(refused(&id, "No session with given id").to_string());
+        return;
+    }
+    // By target, a detach could take the broker's session on it rather than the driver's.
+    if method == "Target.detachFromTarget"
+        && command["params"]["targetId"]
+            .as_str()
+            .is_some_and(|t| session.cdp.is_own_target(t))
+    {
+        let why = "Target.detachFromTarget by targetId is refused here: detach your own session by its sessionId.";
+        let _ = out.send(refused(&id, why).to_string());
         return;
     }
     if let Some(why) = session.refusal(method, &command["params"]) {

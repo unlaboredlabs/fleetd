@@ -704,8 +704,18 @@ impl Broker {
         let fence = match &navi {
             Some(navi) => {
                 let staging = local::uploads_dir(&self.home).join(id.as_str());
+                let on_breach: local::OnBreach = {
+                    let (broker, thread, id) = (self.me.clone(), thread.clone(), id.clone());
+                    Box::new(move || {
+                        tokio::spawn(async move {
+                            if let Some(broker) = broker.upgrade() {
+                                broker.end_breached(&thread, &id).await;
+                            }
+                        });
+                    })
+                };
                 Some(
-                    local::Fence::start(&browser.cdp, &navi.folder, staging)
+                    local::Fence::start(&browser.cdp, &navi.folder, staging, on_breach)
                         .await
                         .map_err(|why| {
                             refuse(
@@ -1039,6 +1049,21 @@ impl Broker {
             return;
         };
         self.close(session).await;
+    }
+
+    /// A Navi's session `id` lost its fence (local.rs): it ends now, its recording going to the hub as at any end.
+    async fn end_breached(self: &Arc<Self>, thread: &str, id: &BrowserSessionId) {
+        let session = {
+            let mut sessions = lock(&self.sessions);
+            match sessions.get(thread) {
+                Some(s) if s.id == *id => sessions.remove(thread),
+                _ => None,
+            }
+        };
+        if let Some(session) = session {
+            session.step("fence_lost", json!({}), false, None, 0);
+            self.close(session).await;
+        }
     }
 
     /// The agent session ended: it is no Navi's any more.

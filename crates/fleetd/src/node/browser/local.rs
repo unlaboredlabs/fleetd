@@ -4,19 +4,20 @@
 //!
 //! - Every `file:` load fails, whatever asked for it: the driver, a page's link, a new tab or browser context, a
 //!   request the driver's own interception rewrote. The node intercepts them all from its own hidden session on the
-//!   browser target (`Fetch`), which the driver can't reach or turn off. Chrome already refuses a web page's redirects
-//!   and links to `file:`. The driver's `file:`, `view-source:file:` and `filesystem:` URLs are refused before they
-//!   go, saying why.
-//! - An upload (`DOM.setFileInputFiles`) is of files in the folder only: the real path of each file the node opened is
-//!   checked to be inside it, and Chrome gets a copy only the node can see, so a link swapped in after the check leads
-//!   nowhere.
+//!   browser target (`Fetch`), which the driver can't reach or turn off: the proxy refuses commands that name the
+//!   node's sessions or detach its targets (proxy.rs), and should that session go anyway, the browser session ends.
+//!   Chrome already refuses a web page's redirects and links to `file:`. The driver's `file:`, `view-source:file:` and
+//!   `filesystem:` URLs are refused before they go, saying why.
+//! - An upload (`DOM.setFileInputFiles`, or files dropped on the page with `Input.dispatchDragEvent`) is of files in the
+//!   folder only: the real path of each file the node opened is checked to be inside it, and Chrome gets a copy only
+//!   the node can see, so a link swapped in after the check leads nowhere.
 //! - Downloads go to the folder itself, by default and wherever the driver says (`setDownloadBehavior`). Not a folder
 //!   inside it: the Navi could swap that for a link out of it before Chrome writes there. Each is saved under a name
 //!   of Chrome's own (`allowAndName`), as agent-browser's `download` asks anyway, then renames it: a site's file name
 //!   (`allow`) would overwrite the folder's file of that name.
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use serde_json::{Value, json};
 
@@ -36,12 +37,23 @@ pub struct Fence {
     /// This session's upload copies; gone with the session.
     staging: PathBuf,
     copies: AtomicU64,
+    /// The node's session on the browser target went: nothing holds `file:` back any more.
+    breached: Arc<AtomicBool>,
     _refuser: AbortOnDrop,
 }
 
+/// What the browser session does once its fence is gone: end.
+pub type OnBreach = Box<dyn FnOnce() + Send>;
+
 impl Fence {
     /// Puts the fence on a browser no driver has reached yet: its `file:` loads refused, its downloads in `folder`.
-    pub async fn start(cdp: &Arc<Cdp>, folder: &Path, staging: PathBuf) -> Result<Self, String> {
+    /// Should the node's session that holds it go, every later command is refused and `on_breach` ends the session.
+    pub async fn start(
+        cdp: &Arc<Cdp>,
+        folder: &Path,
+        staging: PathBuf,
+        on_breach: OnBreach,
+    ) -> Result<Self, String> {
         let real = folder
             .canonicalize()
             .map_err(|e| format!("the Navi's folder {} can't be read: {e}", folder.display()))?;
@@ -54,10 +66,19 @@ impl Fence {
             .ok_or("the browser named no target of its own")?;
         let own = cdp.attach(&browser).await?;
         let mut events = cdp.events();
+        let breached = Arc::new(AtomicBool::new(false));
         let refuser = {
-            let (cdp, own) = (Arc::downgrade(cdp), own.clone());
+            let (cdp, own, breached) = (Arc::downgrade(cdp), own.clone(), breached.clone());
             tokio::spawn(async move {
                 while let Some(event) = events.recv().await {
+                    if event.method == "Target.detachedFromTarget"
+                        && event.params["sessionId"].as_str() == Some(own.as_str())
+                    {
+                        breached.store(true, Ordering::SeqCst);
+                        tracing::warn!("a Navi's browser lost its file fence; ending its session");
+                        on_breach();
+                        return;
+                    }
                     if event.method != "Fetch.requestPaused"
                         || event.session_id.as_deref() != Some(own.as_str())
                     {
@@ -88,6 +109,7 @@ impl Fence {
             folder: real,
             staging,
             copies: AtomicU64::new(0),
+            breached,
             _refuser: AbortOnDrop(refuser),
         })
     }
@@ -95,6 +117,13 @@ impl Fence {
     /// The driver's command as it may go to the browser (an upload's files swapped for the node's copies), or why it
     /// may not.
     pub async fn check(self: &Arc<Self>, mut command: Value) -> Result<Value, String> {
+        if self.breached.load(Ordering::SeqCst) {
+            return Err(
+                "This browser session lost what keeps it to your folder, so it is ending. Start a new one with \
+                 session_start."
+                    .to_owned(),
+            );
+        }
         let method = command["method"].as_str().unwrap_or_default().to_owned();
         let params = &mut command["params"];
         match method.as_str() {
@@ -111,26 +140,38 @@ impl Fence {
                 self.downloads(params)?;
             }
             "DOM.setFileInputFiles" => {
-                let files: Vec<String> = params["files"]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .map(|f| f.as_str().unwrap_or_default().to_owned())
-                    .collect();
-                let fence = self.clone();
-                let copies = tokio::task::spawn_blocking(move || {
-                    files
-                        .iter()
-                        .map(|f| fence.stage(f))
-                        .collect::<Result<Vec<_>, _>>()
-                })
-                .await
-                .map_err(|e| e.to_string())??;
-                params["files"] = json!(copies);
+                let copies = self.stage_all(&params["files"]).await?;
+                params["files"] = copies;
+            }
+            // Files dragged onto the page: the page reads each as a file input's.
+            "Input.dispatchDragEvent" if !params["data"]["files"].is_null() => {
+                let copies = self.stage_all(&params["data"]["files"]).await?;
+                params["data"]["files"] = copies;
             }
             _ => {}
         }
         Ok(command)
+    }
+
+    /// The node's copies of the files the driver named (a list of paths), or why one can't be uploaded.
+    async fn stage_all(self: &Arc<Self>, files: &Value) -> Result<Value, String> {
+        let files: Vec<String> = match files {
+            Value::Array(files) => files
+                .iter()
+                .map(|f| f.as_str().unwrap_or_default().to_owned())
+                .collect(),
+            _ => return Err("files must be a list of paths in your folder".to_owned()),
+        };
+        let fence = self.clone();
+        let copies = tokio::task::spawn_blocking(move || {
+            files
+                .iter()
+                .map(|f| fence.stage(f))
+                .collect::<Result<Vec<_>, _>>()
+        })
+        .await
+        .map_err(|e| e.to_string())??;
+        Ok(json!(copies))
     }
 
     /// A download behavior the driver sets: refusing all, or saving to the folder itself under Chrome's names (the
