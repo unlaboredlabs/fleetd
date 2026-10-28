@@ -162,7 +162,7 @@ impl Apns {
             }
             (400, "BadDeviceToken" | "DeviceTokenNotForTopic") => Delivery::Failed(format!(
                 "APNs answered {reason} and no push has gone through yet: the relay sends to {environment} \
-                 (FLEETD_APNS_SANDBOX=1 for development builds, unset for TestFlight and the App Store) as {} \
+                 (FLEETD_APNS_SANDBOX=1 for development builds, unset for TestFlight and release builds) as {} \
                  (FLEETD_APNS_TOPIC must be the app's bundle id)",
                 self.topic
             )),

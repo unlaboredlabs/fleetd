@@ -39,7 +39,7 @@ It prints which platforms are on. Keep the key files out of any repo, readable o
 `curl http://127.0.0.1:4795/` answers `{"ok":true,"apns":true,"fcm":true}`.
 
 `FLEETD_APNS_SANDBOX` must match the builds your phones run: `1` for development builds from Xcode, unset for
-TestFlight and the App Store. Until a push has gone through, the relay treats an APNs or Firebase answer that could
+TestFlight and release builds. Until a push has gone through, the relay treats an APNs or Firebase answer that could
 mean its own setup is wrong (another environment, bundle ID or Firebase project) as its failure, not the phone's, and
 the hub keeps the phone and logs what to fix.
 
