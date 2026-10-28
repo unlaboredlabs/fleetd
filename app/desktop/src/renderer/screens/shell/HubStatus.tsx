@@ -4,7 +4,8 @@
 // (Retry now, Hub settings, Disconnect), each only when it applies. A paired app adds or changes hubs from Settings ›
 // Hubs, not #/onboarding: that page sends a connected app straight back to the board. With several hubs there is one
 // row per hub, each under its name and with its own state: one offline never hides another. While any of the hub's
-// machines is down the row says how many ("1 down"), which opens Machines: the sidebar has no Machines entry.
+// machines is down the row says how many ("1 down"), which opens Machines, as the popover's Machines line always does:
+// the sidebar has no Machines entry.
 import { useState } from "react";
 import type { HubState } from "../../../shared/hub";
 import { versionLabel } from "../../../shared/updates";
@@ -94,7 +95,19 @@ export function HubStatus({ hub }: { hub: HubState }) {
               {machines === undefined ? null : (
                 <>
                   <dt>Machines</dt>
-                  <dd>{`${String(machines.filter((m) => m.machine.status === "online").length)} of ${String(machines.length)} online`}</dd>
+                  <dd>
+                    <button
+                      type="button"
+                      className={h.factLink}
+                      data-opens="machines"
+                      onClick={() => {
+                        setOpen(false);
+                        navigate({ id: "machines", at: self.id });
+                      }}
+                    >
+                      {`${String(machines.length - down)} of ${String(machines.length)} online`}
+                    </button>
+                  </dd>
                 </>
               )}
               {live === null ? null : (

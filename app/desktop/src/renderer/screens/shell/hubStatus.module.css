@@ -113,6 +113,19 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* The Machines line opens Machines: a link in the text's own size. */
+.factLink {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+.factLink:hover {
+  text-decoration: underline;
+}
+
 /* The address in full: it wraps rather than cut, and can be selected to copy. */
 .url {
   overflow-wrap: anywhere;

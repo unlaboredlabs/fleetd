@@ -105,7 +105,7 @@ it("changes hubs from Settings › Hubs, never #/onboarding, which a connected a
   expect(window.location.hash).toBe("#/onboarding");
 });
 
-it("says how many machines are down, and opens Machines from there", async () => {
+it("opens Machines from the popover always, and from \"N down\" while machines are down", async () => {
   let listener: (frame: HubFrame) => void = () => undefined;
   const machine = (name: string, status: "online" | "offline") => ({
     machineId: name,
@@ -134,8 +134,16 @@ it("says how many machines are down, and opens Machines from there", async () =>
   });
   const down = () => host.querySelector<HTMLButtonElement>("[data-opens='machines']");
 
+  // All online: no "N down", and the popover's Machines line still opens Machines.
   await feed([machine("devbox", "online")]);
   expect(down()).toBeNull();
+  act(() => host.querySelector<HTMLButtonElement>("[data-hub-status]")?.click());
+  const line = document.querySelector<HTMLButtonElement>("[aria-label='Hub'][role='dialog'] [data-opens='machines']");
+  expect(line?.textContent).toBe("1 of 1 online");
+  act(() => line?.click());
+  expect(parseHash(window.location.hash)).toEqual({ id: "machines" });
+  expect(document.querySelector("[aria-label='Hub'][role='dialog']")).toBeNull();
+  window.location.hash = "#/status";
 
   await feed([machine("devbox", "online"), machine("buildbox", "offline"), machine("laptop", "offline")]);
   expect(down()?.textContent).toBe("2 down");
