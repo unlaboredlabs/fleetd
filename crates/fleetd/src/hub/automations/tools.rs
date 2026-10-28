@@ -1,6 +1,7 @@
 //! automation_list, automation_create, automation_update, automation_pause, automation_rotate, automation_delete,
 //! automation_run and automation_runs: Settings > Automations, and any MCP client with the grant. Reads need read on
-//! the project's machine, writes operate there.
+//! the project's machine, writes operate there. automation_list also gives the nightly memory refresh's row
+//! (hub/memory/refresh), whose switch is project_settings_set's memoryRefresh and whose Run now is memory_refresh_run.
 use std::sync::Arc;
 
 use fleetd_contracts::auth::Role;
@@ -60,8 +61,14 @@ async fn automation_list(
     let next = automations
         .is_empty()
         .then(|| "No automations yet; automation_create makes one.".to_owned());
+    // A project the hub doesn't know has no refresh to list.
+    let memory_refresh = match hub.store.project_get(&input.project_ref)? {
+        Some(_) => Some(crate::hub::memory::refresh::job(&hub, &input.project_ref)?),
+        None => None,
+    };
     Ok(AutomationListOutput {
         automations: List::unchecked(automations),
+        memory_refresh,
         next,
         truncated: None,
     })

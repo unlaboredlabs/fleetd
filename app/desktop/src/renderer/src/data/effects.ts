@@ -93,6 +93,8 @@ export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unk
   }
   if (type === "memory.changed") out.push({ tool: "memory_get" });
   if (type.startsWith("automation.")) out.push({ tool: "automation_list" }, { tool: "automation_runs" });
+  // The nightly memory refresh's row: its project's switch, the hub's hour, and what a running refresh changed.
+  if (type === "project.settings" || type === "memory.changed" || type === "decision.recorded") out.push({ tool: "automation_list" });
   // Only the open panel's project has its checklist mounted.
   if (type === "checklist.changed") out.push({ tool: "checklist_get" });
   if (type === "skills.changed") out.push({ tool: "skills_list" });

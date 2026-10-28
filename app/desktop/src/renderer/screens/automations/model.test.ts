@@ -1,6 +1,21 @@
 import { describe, expect, it } from "vitest";
-import type { Automation } from "../../../shared/contracts";
-import { createInput, draftOf, emptyDraft, hasProblems, orderHref, problems, runChip, runNote, triggersLine, updateInput } from "./model";
+import type { Automation, MemoryRefreshJob } from "../../../shared/contracts";
+import {
+  createInput,
+  draftOf,
+  emptyDraft,
+  hasProblems,
+  orderHref,
+  problems,
+  refreshChanges,
+  refreshRuns,
+  refreshSchedule,
+  runChip,
+  runNote,
+  triggersLine,
+  updateInput,
+  when,
+} from "./model";
 
 const project = { machineId: "devbox", projectId: "storefront" };
 const nightly: Automation = {
@@ -65,5 +80,32 @@ describe("the automation list", () => {
     expect(runNote({ ...run, why: "run ar_x is still going (W12 is open)" })).toBe("run ar_x is still going (W12 is open)");
     expect(runNote({ ...run, payloadBytes: 2048 })).toBe("Body of 2,048 bytes.");
     expect(orderHref("W12")).toBe("#/time/order/W12");
+  });
+});
+
+describe("the nightly memory refresh's row", () => {
+  const job: MemoryRefreshJob = { on: true, at: "04:00", tz: "Europe/Berlin", nextRunAt: "2026-10-28T03:00:00.000Z" };
+  const run = { at: "2026-10-27T03:00:00.000Z", trigger: "schedule", state: "done", added: 1, replaced: 2, removed: 1 } as const;
+
+  it("reads its hour in the hub's zone", () => {
+    expect(refreshSchedule(job)).toBe("Every night at 04:00 (Europe/Berlin)");
+  });
+
+  it("counts what it changed as its chat line does", () => {
+    expect(refreshChanges(run)).toBe("1 added, 2 updated, 1 removed");
+    expect(refreshChanges({ added: 0, replaced: 0, removed: 3 })).toBe("3 removed");
+    expect(refreshChanges({ added: 0, replaced: 0, removed: 0 })).toBe("no changes");
+  });
+
+  it("says its next run, and its last with what it changed or why it was skipped", () => {
+    expect(refreshRuns(job)).toBe(`Next run ${when("2026-10-28T03:00:00.000Z")} · Not run yet`);
+    expect(refreshRuns({ ...job, lastRun: run })).toBe(`Next run ${when(job.nextRunAt ?? "")} · Last run ${when(run.at)}: done, 1 added, 2 updated, 1 removed`);
+    const skipped = { ...run, state: "skipped", added: 0, replaced: 0, removed: 0, why: "Nothing new in the chat or its orders since the last refresh." } as const;
+    expect(refreshRuns({ ...job, lastRun: skipped })).toContain("skipped: Nothing new in the chat or its orders since the last refresh.");
+    const manual = { ...run, trigger: "manual", state: "running", added: 0, replaced: 0, removed: 0 } as const;
+    expect(refreshRuns({ ...job, lastRun: manual })).toContain(`Started ${when(run.at)} (Run now): running, no changes`);
+    // Off: no next run.
+    const { nextRunAt: _, ...off } = { ...job, on: false };
+    expect(refreshRuns({ ...off, lastRun: run })).toBe(`Last run ${when(run.at)}: done, 1 added, 2 updated, 1 removed`);
   });
 });

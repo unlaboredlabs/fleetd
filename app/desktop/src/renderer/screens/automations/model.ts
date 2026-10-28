@@ -1,5 +1,6 @@
 // Settings → Automations' rules, kept pure: an automation's triggers in a line, a run's state as a chip, the editor's
-// draft and the hub input it saves as (an edit sends only what changed), and where a run's order opens.
+// draft and the hub input it saves as (an edit sends only what changed), where a run's order opens, and the nightly
+// memory refresh's built-in row in words.
 import type {
   Automation,
   AutomationCreateInput,
@@ -7,6 +8,8 @@ import type {
   AutomationRunState,
   AutomationTrigger,
   AutomationUpdateInput,
+  MemoryRefreshJob,
+  MemoryRefreshRun,
   ProjectRef,
 } from "../../../shared/contracts";
 import type { StatusTone } from "../../ui";
@@ -133,4 +136,37 @@ export function runNote(run: AutomationRun): string | null {
   if (run.lateMin !== undefined) return `Missed while the hub was down; ran once on its return.`;
   if (run.payloadBytes !== undefined) return `Body of ${run.payloadBytes.toLocaleString("en-US")} bytes.`;
   return null;
+}
+
+/** The nightly memory refresh's hour: "Every night at 04:00 (Europe/Berlin)". */
+export const refreshSchedule = (job: MemoryRefreshJob): string => `Every night at ${job.at} (${job.tz})`;
+
+/** What a refresh changed, in the words of its chat line: "2 added, 1 updated, 1 removed", or "no changes". */
+export function refreshChanges(run: Pick<MemoryRefreshRun, "added" | "replaced" | "removed">): string {
+  const parts = (
+    [
+      [run.added, "added"],
+      [run.replaced, "updated"],
+      [run.removed, "removed"],
+    ] as const
+  )
+    .filter(([n]) => n > 0)
+    .map(([n, word]) => `${String(n)} ${word}`);
+  return parts.length > 0 ? parts.join(", ") : "no changes";
+}
+
+/** The refresh's next and last run in a line: when, how it went, and what it changed or why it was skipped. */
+export function refreshRuns(job: MemoryRefreshJob): string {
+  const last = job.lastRun;
+  const how = (run: MemoryRefreshRun): string => {
+    const state = runChip(run).label.toLowerCase();
+    if (run.state === "skipped" || (run.state === "failed" && run.why)) return `${state}: ${run.why ?? "no reason given"}`;
+    return `${state}, ${refreshChanges(run)}`;
+  };
+  return [
+    job.on && job.nextRunAt ? `Next run ${when(job.nextRunAt)}` : null,
+    last ? `${last.state === "running" ? "Started" : "Last run"} ${when(last.at)}${last.trigger === "manual" ? " (Run now)" : ""}: ${how(last)}` : "Not run yet",
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }

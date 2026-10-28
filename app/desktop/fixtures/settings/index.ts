@@ -146,12 +146,21 @@ function automations(f: Fixture) {
       paused: true,
     },
   ];
-  f.answer("automation_list", { projectRef }, { automations: json(list) });
+  // The nightly memory refresh, listed with them as a built-in row: last night it tidied the memory.
+  const memoryRefresh = {
+    on: true,
+    at: "04:00",
+    tz: "Europe/Berlin",
+    nextRunAt: "2026-10-20T02:00:00.000Z",
+    lastRun: { at: "2026-10-19T02:00:00.000Z", trigger: "schedule", state: "done", added: 2, replaced: 1, removed: 1 },
+  };
+  f.answer("automation_list", { projectRef }, { automations: json(list), memoryRefresh });
   f.answer("automation_runs", { automationId: deps }, { runs: depsRuns });
   f.answer("automation_runs", { automationId: alerts }, { runs: alertRuns });
   f.answer("automation_runs", { automationId: notes }, { runs: [] });
   f.answer("automation_run", undefined, { run: run(deps, 8, { trigger: "manual", at: f.now, state: "running", workstreamId: "W62", by: "human" }) });
   f.answer("automation_pause", undefined, { automation: json(list[2]) });
+  f.answer("memory_refresh_run", undefined, { memoryRefresh, why: "A refresh is already running." });
 }
 
 /**

@@ -111,6 +111,41 @@ pub struct Automation {
     pub updated_at: Timestamp,
 }
 
+/// The nightly memory refresh (hub/memory/refresh), listed with a project's automations as a built-in row: a hub job,
+/// not an automation. Its hour is the hub's (`policy.memory_refresh_at` in `policy.tz`, set by an admin), its switch
+/// the project's `memory_refresh` setting; it has no prompt to edit, no webhook and no delete.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct MemoryRefreshJob {
+    /// The project's `memory_refresh` setting.
+    pub on: bool,
+    /// Its hour, "HH:MM" in `tz`.
+    pub at: Line<5, 5>,
+    pub tz: TimeZone,
+    /// Absent while off.
+    pub next_run_at: Option<Timestamp>,
+    /// The run going now, else the last one.
+    pub last_run: Option<MemoryRefreshRun>,
+}
+
+/// One refresh: when it started (or was skipped), how it went, and what it changed in memory.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct MemoryRefreshRun {
+    pub at: Timestamp,
+    pub trigger: AutomationTrigger,
+    /// running, done (it completed), failed (it didn't start, failed or ran past its hour) or skipped.
+    pub state: AutomationRunState,
+    /// Entries added, put in place of another, and removed: the "+a ~b −c" of its chat line.
+    pub added: Count,
+    pub replaced: Count,
+    pub removed: Count,
+    /// Why it was skipped or failed.
+    pub why: Option<Line<0, 200>>,
+}
+
 pub type Automations = List<Automation, 0, AUTOMATIONS_PER_PROJECT>;
 pub type AutomationRuns = List<AutomationRun, 0, RUNS_KEPT>;
 /// A webhook run's body as it came, at most [`WEBHOOK_BODY_MAX`] bytes.

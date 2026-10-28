@@ -77,8 +77,9 @@ describe("event effects", () => {
     expect(effectsOf(e("machine.online", undefined, { machineId: "buildbox" }), { devbox: {} }).resync).toBe(true);
     expect(effectsOf(e("rocket.launched"))).toEqual({ invalidate: [], resync: false });
     expect(tools(e("prompt.changed"))).toContain("prompt_get");
-    // A lead's remember, an Undo or an edit elsewhere: Settings → Memory reads the files again.
-    expect(tools(e("memory.changed"))).toEqual(["memory_get"]);
+    // A lead's remember, an Undo or an edit elsewhere: Settings → Memory reads the files again, and Automations the
+    // nightly refresh's row, with what a running refresh changed so far.
+    expect(tools(e("memory.changed"))).toEqual(["memory_get", "automation_list"]);
     expect(tools(e("checklist.changed"))).toEqual(["checklist_get"]);
     // A preview moving: Try it reads the project's previews again, and nothing else.
     expect(tools(e("preview.state", { previewId: `P${"a".repeat(32)}`, state: "ready" }))).toEqual(["previews_list"]);

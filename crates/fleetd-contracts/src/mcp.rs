@@ -1636,7 +1636,9 @@ input!(AutomationListInput {
     project_ref: ProjectRef
 });
 output!(AutomationListOutput {
-    automations: crate::automations::Automations
+    automations: crate::automations::Automations,
+    /// The nightly memory refresh, listed with them as a built-in row; absent from older hubs.
+    memory_refresh: Option<crate::automations::MemoryRefreshJob>,
 });
 input!(AutomationCreateInput {
     project_ref: ProjectRef,
@@ -1700,6 +1702,16 @@ input!(AutomationRunsInput {
 });
 output!(AutomationRunsOutput {
     runs: crate::automations::AutomationRuns
+});
+// memory_refresh_run: Run now on the nightly memory refresh's row: a refresh of the project now, as the night's
+// starts, held by the same rules (on, none running, something new to read, the lead free, its node able).
+input!(MemoryRefreshRunInput {
+    project_ref: ProjectRef
+});
+output!(MemoryRefreshRunOutput {
+    memory_refresh: crate::automations::MemoryRefreshJob,
+    /// Why it didn't start; absent when it did.
+    why: Option<String>,
 });
 
 // checklist_get: a project's checklist, which its lead keeps with `checklist` (the panel's Checklist tab).
@@ -3030,6 +3042,7 @@ tools! {
     automation_delete => AutomationDelete, Operate, AutomationDeleteInput, AutomationDeleteOutput;
     automation_run => AutomationRun, Operate, AutomationRunInput, AutomationRunOutput;
     automation_runs => AutomationRuns, Read, AutomationRunsInput, AutomationRunsOutput;
+    memory_refresh_run => MemoryRefreshRun, Operate, MemoryRefreshRunInput, MemoryRefreshRunOutput;
     checklist_get => ChecklistGet, Read, ChecklistGetInput, ChecklistGetOutput;
     navi_asks => NaviAsks, Read, NaviAsksInput, NaviAsksOutput;
     // Human keys only (the handler checks).

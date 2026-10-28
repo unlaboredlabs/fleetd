@@ -2306,7 +2306,8 @@ export const screens: readonly Screen[] = [
       await expect(page.getByRole("button", { name: "Undo" })).toBeVisible();
     },
   },
-  // Automations: one project's schedule, webhook and paused automations, a run history with its orders, and the editor.
+  // Automations: one project's schedule, webhook and paused automations, the nightly memory refresh's built-in row, a
+  // run history with its orders, and the editor.
   { id: "settings.automations", route: "#/settings/automations", fixtures: ["empty", "hub-unreachable"] },
   { id: "settings.automations", route: "#/settings/automations?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22", fixtures: ["typical", "long-text"] },
   {

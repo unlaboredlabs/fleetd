@@ -442,7 +442,11 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "automation_list",
-        "A project's automations (a stored prompt with a cron schedule in an IANA tz, a webhook, Run now), each with its next run, paused state and last run.",
+        "A project's automations (a stored prompt with a cron schedule in an IANA tz, a webhook, Run now), each with its next run, paused state and last run. memoryRefresh: the nightly memory refresh, a built-in hub job listed with them: on (project_settings_set memoryRefresh), its hour and zone (policy.memory_refresh_at in policy.tz, an admin's), next run, and the last run with what it changed (added, replaced, removed) or why it was skipped.",
+    ),
+    (
+        "memory_refresh_run",
+        "Run the nightly memory refresh of a project now: the lead tidies its memory from the chat since the last refresh, as at night, and posts one line with Undo when it changed anything. Not started (why says so) while it is off for the project, already running, with nothing new to read, the lead mid-turn, or its node out of usage, offline or too old.",
     ),
     (
         "automation_create",
