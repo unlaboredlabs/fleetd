@@ -3234,10 +3234,11 @@ async fn configured_mcp_servers_reach_each_role_with_secrets_resolved_on_the_nod
     central
         .link
         .set_capabilities(&lab, &[fleetd_contracts::node_link::CAP_MCP_SERVERS]);
+    // Global servers are an owner's or admin's to save (D209): a device with admin on every machine.
     let person = {
         let c = serde_json::from_value::<crate::hub::api::Caller>(serde_json::json!({
             "keyId": "k1", "name": "desk", "prefix": "fld_abcdef", "createdAt": at,
-            "grants": [{ "role": "operate", "machines": "*" }],
+            "grants": [{ "role": "admin", "machines": "*" }],
         }))
         .unwrap();
         crate::hub::api::Caller {
