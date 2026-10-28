@@ -10,12 +10,12 @@ import { lacksTool } from "../../src/data/errors";
 import { CallError } from "../../src/data/queries";
 import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import { Button, Dialog, Field, Input, Segmented, Text, Truncate } from "../../ui";
-import { useAdministers } from "../admin/role";
+import { useAdministers, useHubRole } from "../admin/role";
 import { toHash } from "../shell/routes";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
 import { revealNext } from "../settings/search";
 import { PagePart, useProjects } from "../settings/parts";
-import { isArchived, isNavi } from "../navi/model";
+import { yourNavis } from "../navi/model";
 import { dayWords, googleView, lapsedLine, listWords, mailModeLine, queryProblem, scopeFor, scopeName, type GoogleView } from "./model";
 import s from "./google.module.css";
 import settings from "../settings/settings.module.css";
@@ -32,12 +32,13 @@ const grantedNames = (granted: ReadonlyArray<string>): string[] =>
   granted.map(scopeName).filter((n) => n !== "openid" && n !== "email" && n !== "userinfo.email");
 
 /**
- * You › Your accounts › Google: the Google account your Navi reads, and writes as when you say so. Each Navi on the hub
- * connects its own; with none yet there is nothing to connect.
+ * You › Your accounts › Google: the Google account your Navi reads, and writes as when you say so. Each of your Navis
+ * connects its own; with none yet there is nothing to connect. Another person's Navi isn't yours to connect (D213).
  */
 export function YourGoogle() {
   const projects = useProjects();
-  const navis = (projects ?? []).filter((p) => isNavi(p) && !isArchived(p));
+  const me = useHubRole().me?.personId;
+  const navis = yourNavis(projects ?? [], me);
   return (
     <PagePart title="Google" reveal="accounts.google" intro="The Google account your Navi reads Gmail, Calendar and Drive with. Anything it would send or change asks you first.">
       {projects === undefined ? (

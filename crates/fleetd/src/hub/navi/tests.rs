@@ -17,11 +17,11 @@ use crate::hub::store::test_clock::ManualClock;
 const AT: &str = "2026-10-27T10:00:00.000Z";
 const HOME: &str = "/home/me/.fleetd/node";
 
-fn devbox() -> MachineId {
+pub(super) fn devbox() -> MachineId {
     MachineId::unchecked("devbox")
 }
 
-fn hub() -> (Arc<Hub>, tempfile::TempDir) {
+pub(super) fn hub() -> (Arc<Hub>, tempfile::TempDir) {
     let home = tempfile::tempdir().unwrap();
     let config = HubConfig {
         home: home.path().to_path_buf(),
@@ -46,7 +46,10 @@ fn hub() -> (Arc<Hub>, tempfile::TempDir) {
 
 /// Links a node holding one project of code, p1, that lists `capabilities` and answers as a node of this version: a
 /// relative project root is a folder under its home. Hands each call to the test.
-async fn node(hub: &Arc<Hub>, capabilities: &[&str]) -> mpsc::UnboundedReceiver<SessionCall> {
+pub(super) async fn node(
+    hub: &Arc<Hub>,
+    capabilities: &[&str],
+) -> mpsc::UnboundedReceiver<SessionCall> {
     let (tx, mut rx) = mpsc::unbounded_channel();
     hub.executors
         .attach(
@@ -341,6 +344,7 @@ async fn a_plain_folder_with_no_git_is_added_as_a_project_with_no_repo() {
         repos: vec![],
         kind: None,
         created_by: None,
+        owner: None,
         archived_at: None,
     };
     hub.store

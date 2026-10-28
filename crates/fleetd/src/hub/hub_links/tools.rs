@@ -38,8 +38,9 @@ fn person_only(caller: &Caller) -> Result<(), ToolError> {
     .with_fix("Do it in the desktop app."))
 }
 
-/// Only the Navi's owner, whoever made it (its person, or its device on a hub without people), or an admin changes
-/// the Navi's links: a link acts as someone on another hub, and a Navi is its owner's.
+/// Only the Navi's owner changes its links: a link acts as someone on another hub, and a Navi is its owner's. The
+/// registry already refused another person's Navi (`navi::owner::guard`, D213); on a hub without people, the device
+/// that made it or an admin does.
 fn may_manage(hub: &Hub, caller: &Caller, navi: &ProjectRef) -> Result<(), ToolError> {
     require(caller, Role::Operate, Some(&navi.machine_id))?;
     if allows_everywhere(caller, Role::Admin) {

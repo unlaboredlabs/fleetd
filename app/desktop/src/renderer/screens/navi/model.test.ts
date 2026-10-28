@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ProjectSummary } from "../../../shared/contracts";
-import { nameProblem, orderWords, sidebarOrder, splitNavis } from "./model";
+import { isYours, nameProblem, orderWords, sidebarOrder, splitNavis, yourNavis } from "./model";
 
 const project = (title: string, extra: Partial<ProjectSummary> = {}): { project: ProjectSummary } => ({
   project: {
@@ -30,6 +30,27 @@ describe("the sidebar's Navis", () => {
   });
   it("takes a project of another, newer kind as a project", () => {
     expect(splitNavis([project("x", { kind: "team" })]).projects).toHaveLength(1);
+  });
+});
+
+describe("whose Navi it is", () => {
+  const me = "p_aaaaaaaa";
+  it("is yours with your owner, or with none (a hub without people); a teammate's never is", () => {
+    expect(isYours({ owner: me }, me)).toBe(true);
+    expect(isYours({}, me)).toBe(true);
+    expect(isYours({}, undefined)).toBe(true);
+    expect(isYours({ owner: "p_bbbbbbbb" }, me)).toBe(false);
+    // Until the hub says who you are, one with an owner waits.
+    expect(isYours({ owner: me }, undefined)).toBe(false);
+  });
+  it("lists your Navis in use, and no project of code", () => {
+    const all = [
+      project("billing"),
+      project("Ada", { kind: "assistant", owner: me }),
+      project("Bee", { kind: "assistant", owner: "p_bbbbbbbb" }),
+      project("Taxes", { kind: "assistant", owner: me, archivedAt: "2026-10-20T09:00:00.000Z" }),
+    ].map((r) => r.project);
+    expect(yourNavis(all, me).map((p) => p.title)).toEqual(["Ada"]);
   });
 });
 

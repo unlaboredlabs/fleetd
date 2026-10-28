@@ -525,7 +525,7 @@ async fn a_navi_starts_no_agents_of_its_own() {
         name: "laptop".into(),
     };
     hub.db
-        .with(|c| Ok(crate::hub::navi::store::put(c, &app, &by, 0)?))
+        .with(|c| Ok(crate::hub::navi::store::put(c, &app, &by, None, 0)?))
         .unwrap();
     let refused = spawn(
         &hub,

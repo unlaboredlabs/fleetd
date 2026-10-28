@@ -6,6 +6,17 @@ import type { MachineRolesEntry, NaviAsk, NaviAskOrder, ProjectSummary } from ".
 /** A Navi: a plain-folder project with an assistant for its lead. */
 export const isNavi = (p: Pick<ProjectSummary, "kind">): boolean => p.kind === "assistant";
 
+/**
+ * Yours (D213): a Navi belongs to the person who made it, and only they see and use it. The hub already lists no one
+ * else's; this keeps another's out of your lists all the same. One with no owner (a hub without people, or an older
+ * hub) is yours, as before; one with an owner shows once the hub has said who you are.
+ */
+export const isYours = (p: Pick<ProjectSummary, "owner">, me: string | undefined): boolean => p.owner === undefined || p.owner === me;
+
+/** Your Navis still in use, as Settings lists them: your Google and the hubs each reaches. */
+export const yourNavis = (projects: ReadonlyArray<ProjectSummary>, me: string | undefined): ProjectSummary[] =>
+  projects.filter((p) => isNavi(p) && !isArchived(p) && isYours(p, me));
+
 /** An archived Navi keeps its chat, memory and folder; its lead doesn't start until it is brought back. */
 export const isArchived = (p: Pick<ProjectSummary, "archivedAt">): boolean => p.archivedAt !== undefined;
 

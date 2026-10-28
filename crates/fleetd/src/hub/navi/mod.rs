@@ -9,10 +9,15 @@
 //! it), runs commands unasked (D208), and fetches or opens a site unasked only once the person allowed that site at its
 //! first visit or linked it in their own message (`sites`).
 //!
+//! Each Navi has an owner (D213, `owner`): only they see it and use it, and the hub refuses anyone else.
+//!
 //! An archived Navi keeps its chat, memory and folder; its lead is stopped and doesn't start again until it is brought
 //! back, and a message to it waits until then. Its factory bridge (messages to other projects' leads, the factory's
 //! status, wakes when that work lands) is `bridge`; the app reads a Navi's asks with `navi_asks` (`tools`).
 pub mod bridge;
+pub mod owner;
+#[cfg(test)]
+mod owner_tests;
 pub mod sites;
 pub mod store;
 #[cfg(test)]
@@ -166,8 +171,10 @@ pub async fn create(
         name: caller.name.clone(),
     };
     // Marked first, so the node's report of the new project already reads as a Navi.
-    hub.db
-        .with(|c| Ok(store::put(c, &r, &created_by, at_ms)?))?;
+    hub.db.with(|c| {
+        let owner = owner::who(c, caller)?;
+        Ok(store::put(c, &r, &created_by, owner.as_ref(), at_ms)?)
+    })?;
     let mut made = None;
     for folder in &folders {
         match hub
@@ -211,6 +218,7 @@ pub async fn create(
         repos: vec![],
         kind: None,
         created_by: None,
+        owner: None,
         archived_at: None,
     };
     if hub.store.project_get(&r)?.is_none() {
@@ -246,6 +254,7 @@ pub async fn create(
 
 pub fn list(hub: &Hub, caller: &Caller, input: NaviListInput) -> Result<NaviListOutput, ToolError> {
     let archived = input.archived == Some(true);
+    let others = owner::others(&hub.db, caller)?;
     let mut navis = Vec::new();
     for r in hub.db.with(|c| Ok(store::all(c)?))? {
         if input
@@ -253,6 +262,7 @@ pub fn list(hub: &Hub, caller: &Caller, input: NaviListInput) -> Result<NaviList
             .as_ref()
             .is_some_and(|m| *m != r.machine_id)
             || !allows(caller, Role::Read, Some(&r.machine_id))
+            || others.contains(&r)
         {
             continue;
         }

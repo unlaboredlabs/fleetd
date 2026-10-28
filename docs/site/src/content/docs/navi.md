@@ -12,6 +12,14 @@ every project has, unchanged: [chat](/docs/chat), memory and its nightly refresh
 [automations](/docs/automations), [screens](/docs/browser-sessions), the checklist and
 [approvals](/docs/approvals-and-secrets).
 
+## Yours alone {#yours}
+
+Each Navi belongs to the person who made it. Only you see your Navis, in the sidebar, on the Navi page, under
+**Your accounts › Google** and **Hubs › Hub links**. Only you use them: their chat and approvals, Google, Notion and
+other tools, hub links, allowed sites, settings, archive and delete. The hub refuses everyone else, admins included. An
+admin can only delete the Navi of someone removed from the hub. On a hub from before people, Navis made earlier
+belong to the person whose device made them, else the hub's owner.
+
 ## In the app
 
 Your Navis are pinned at the top of the sidebar, above Projects. With none yet, the sidebar shows **Meet Navi**. It

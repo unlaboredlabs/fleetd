@@ -85,10 +85,12 @@ pub fn extend_status(hub: &Arc<Hub>) {
     // fleetd_status (and so the app's snapshot) carries each readable project's chat state.
     hub.executors.hooks.extend_status(Arc::new(|hub, caller| {
         Box::pin(async move {
+            let navis = crate::hub::navi::owner::others(&hub.db, &caller)?;
             let chats: Vec<_> = flow::states(&hub)
                 .into_iter()
                 .filter(|s| {
                     crate::hub::api::allows(&caller, Role::Read, Some(&s.project_ref.machine_id))
+                        && !navis.contains(&s.project_ref)
                 })
                 .collect();
             let mut out = serde_json::Map::new();

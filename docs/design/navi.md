@@ -176,9 +176,9 @@ Paths are under `crates/fleetd/src/` unless shown otherwise.
   model"): lead, chat, memory, env and secrets, MCP servers, skills, automations, checklist and screens. A new
   top-level entity would mean re-plumbing all of them. A project gets them free, and the multi-repo work already makes
   a no-repo project valid.
-- **Who made it:** each Navi records the key that created it (`createdBy`: key id and name). Nothing filters on it
-  yet. When a company shares a hub, a team and auth design (separate work) can give each person their own Navis from
-  it, with their own human key, memory and secrets. That is a step, not a redesign.
+- **Whose it is (D213):** each Navi records the key that created it (`createdBy`: key id and name) and its owner, the
+  person behind that key. Only its owner sees it and uses it; §7, "Each Navi is its owner's", says how the hub holds
+  to that.
 - **What makes it special** is small: an assistant prompt (`navi.start` instead of `lead.start`), the assistant role
   (§3.5), the factory bridge tools (§3.8) allowed only in this project, and a pinned place in the app's sidebar.
 
@@ -354,15 +354,16 @@ bridge (`hub/navi/bridge`) and the integrations (`hub/integrations`) are separat
 - Agents that change code still need a repo: spawning a writer in a plain folder fails at its worktree (stage 3).
 
 ### The Navi kind
-- Hub table `assistants` (machine, project, `created_ms`, `created_by_key`, `created_by_name`, `archived_ms`),
-  owned by `hub/navi/store.rs`. It is stored by the hub, never by the node: `projects_upsert_many` drops `kind`,
-  `createdBy` and `archivedAt` from a node's row, and `with_repos` (`hub/store/hub_store.rs`) fills them when the hub
+- Hub table `assistants` (machine, project, `created_ms`, `created_by_key`, `created_by_name`, `archived_ms`,
+  `owner_person`), owned by `hub/navi/store.rs`. It is stored by the hub, never by the node: `projects_upsert_many`
+  drops `kind`, `createdBy`, `archivedAt` and `owner` from a node's row, and `with_repos` (`hub/store/hub_store.rs`) fills them when the hub
   serves a summary, as it does `repos`. Any reader goes through `project_get`/`projects_list`, never
   `projects.data`.
-- `ProjectSummary` gains three optional fields. A project of code has none of them.
+- `ProjectSummary` gains four optional fields. A project of code has none of them.
   - `kind: "assistant"` (`ProjectKind`, open for later kinds).
   - `createdBy: {keyId, name}`: the key that made it.
   - `archivedAt`.
+  - `owner`: the person it belongs to; absent on a hub without people.
 - MCP tools (`hub/navi/tools.rs`), each returning the Navi as a `ProjectSummary`:
 
   | Tool | Input | Does |
@@ -376,6 +377,25 @@ bridge (`hub/navi/bridge`) and the integrations (`hub/integrations`) are separat
 - An archived Navi's lead takes no turns. `Leads::launch` refuses it (no first start, restart or fresh start of a
   cold lead), `auto_start` and `start_with` refuse it before returning a running lead, and `LeadWakes` drops its wakes.
   A chat message is held with the reason until it is back.
+
+### Each Navi is its owner's (D213)
+- `navi_create` records the creating person as `owner_person`: the caller's person, else the hub's first owner for a
+  key with no person (an agent key, minted only from the hub's home on its machine, whose user is the owner). A Navi
+  made before owners went to its creating key's person, else the hub's owner (migration `navi_owner`); a hub with no
+  people yet leaves it unowned, and its owner takes it at the next start (`people::ensure_owner_on`).
+  `claude_accounts::navi_owner`, and through it memory's "a Navi's owner", read this one column.
+- The hub refuses everyone else, admins included, in one place: `navi::owner::guard`, which the registry runs before
+  every tool's handler. It refuses a call whose input names another person's Navi anywhere: a `machineId` with a
+  `projectId`, or with a `threadId` (the thread's project), or a `requestId` (the project that asked). That covers
+  `navi_*`, chat, approvals and secrets, integrations (Google, Notion, custom MCP servers), hub links, allowed sites,
+  settings, events and `project_remove`. The one exception: an admin's `project_remove` of a Navi whose owner was
+  removed from the hub.
+- Lists leave other people's Navis out (`owner::others`): `navi_list`, `fleetd_status` (projects, attention, chats),
+  `project_get`'s list, `events_wait`, `requests_list`, the status rows and the agents view, and the app's chat and
+  live streams. The factory bridge doesn't see or reach another person's Navi either, nor does a hub link.
+- A Navi with no owner (a hub without people) is anyone's, as before people.
+- The app also keeps a Navi with another `owner` out of the Navi page, Your accounts › Google and Hubs › Hub links
+  (`isYours` in `screens/navi/model.ts`).
 
 ### The assistant role
 - A Navi's lead starts from the `navi.start` prompt (stored and editable like the others, `hub/prompts`), with its

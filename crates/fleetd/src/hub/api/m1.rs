@@ -50,6 +50,8 @@ async fn events_wait(
         require(&caller, Role::Read, Some(machine_id))?;
     }
     let mut cursor = input.cursor.map_or_else(|| hub.events.head(), |c| c.get());
+    // Another person's Navi's events are theirs alone (D213).
+    let navis = crate::hub::navi::owner::others(&hub.db, &caller)?;
     let deadline = now_ms(hub.clock.as_ref()) + input.timeout_sec.get() * 1000;
     loop {
         let remaining = ((deadline - now_ms(hub.clock.as_ref())).max(0) as u64).div_ceil(1000);
@@ -67,7 +69,7 @@ async fn events_wait(
         let visible: Vec<_> = page
             .events
             .into_iter()
-            .filter(|e| can_read(&caller, e))
+            .filter(|e| can_read(&caller, e) && !crate::hub::navi::owner::about(&navis, e))
             .collect();
         if !visible.is_empty() || total == 0 || (remaining == 0 && !page.more) {
             let next = if page.more {

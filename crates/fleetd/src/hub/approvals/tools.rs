@@ -95,9 +95,14 @@ async fn requests_list(
             limit: input.limit.get(),
         })
         .map_err(refusal)?;
+    // Another person's Navi's approvals are theirs alone (D213).
+    let navis = crate::hub::navi::owner::others(&hub.db, &caller)?;
     let visible: Vec<HumanRequest> = listed
         .into_iter()
-        .filter(|r| allows(&caller, Role::Read, Some(&r.project_ref.machine_id)))
+        .filter(|r| {
+            allows(&caller, Role::Read, Some(&r.project_ref.machine_id))
+                && !navis.contains(&r.project_ref)
+        })
         .collect();
     Ok(json!({ "requests": visible }))
 }

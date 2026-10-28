@@ -26,7 +26,9 @@ const ref = { machineId: "devbox", projectId: "ada" };
 const machine = (machineId: string) => ({ machineId, name: machineId, nodeVersion: "1", status: "online" as const, lastSeenAt: AT, tags: [], boxPubKey: BOX });
 // Ada, a Navi on devbox: its Google is on You › Your accounts.
 const ada = { ...ref, title: "Ada", kind: "assistant" as const, workspaceRoot: "/home/sam/navi/ada", threads: { running: 0, waiting: 0, idle: 0, failed: 0 }, lastActivityAt: AT };
-const snapshot: HubFrame = { t: "snapshot", snapshot: { cursor: 1, attention: [], machines: [machine("devbox"), machine("buildbox")], projects: [ada] } };
+/** The snapshot's projects: Ada, and in one test a teammate's Navi beside it. */
+let projects: Array<typeof ada & { owner?: string }>;
+const snapshot = (): HubFrame => ({ t: "snapshot", snapshot: { cursor: 1, attention: [], machines: [machine("devbox"), machine("buildbox")], projects } });
 
 const held = (...machines: string[]): GoogleClient => ({ clientId: CLIENT_ID, sealedOn: machines.map((machineId) => ({ machineId, fingerprint: "9c41e0b2" })), updatedAt: AT });
 const account = (patch: Partial<GoogleAccount> = {}): GoogleAccount => ({ projectRef: ref, email: "sam@example.com", scopes: [...SCOPES], connectedAt: AT, ...patch });
@@ -54,6 +56,7 @@ beforeEach(() => {
   document.body.appendChild(host);
   root = createRoot(host);
   calls = [];
+  projects = [ada];
   client = undefined;
   linked = undefined;
   admin = false;
@@ -167,7 +170,7 @@ const render = async (node: ReactNode) => {
   });
   await act(async () => {
     listener({ t: "state", state: { phase: "live", hub: "devbox:4790", protocol: 1 } });
-    listener(snapshot);
+    listener(snapshot());
     await new Promise((r) => setTimeout(r, 0));
   });
   await settle();
@@ -274,6 +277,20 @@ describe("Hub accounts › Google", () => {
 });
 
 describe("a Navi's Google", () => {
+  it("lists only the person's own Navis, never a teammate's", async () => {
+    client = held("devbox");
+    projects = [
+      { ...ada, owner: "p_aaaaaaaa" },
+      { ...ada, projectId: "bee", title: "Bee", owner: "p_bbbbbbbb" },
+      { ...ada, projectId: "cal", title: "Cal", owner: "p_aaaaaaaa" },
+    ];
+    await render(<YourGoogle />);
+    expect(document.querySelector('[aria-label="Ada\'s Google"]')).not.toBeNull();
+    expect(document.querySelector('[aria-label="Cal\'s Google"]')).not.toBeNull();
+    expect(document.querySelector('[aria-label="Bee\'s Google"]')).toBeNull();
+    expect(calls.some((c) => c.tool === "google_get" && (c.input as { project?: { projectId: string } }).project?.projectId === "bee")).toBe(false);
+  });
+
   it("without a client, tells a member to ask an admin", async () => {
     await render(<YourGoogle />);
     expect(google().textContent).toContain("Ask an admin to set up Google");

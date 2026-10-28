@@ -386,7 +386,7 @@
         },
         "createdBy": {
           "$ref": "#/$defs/ProjectCreator",
-          "description": "A Navi's: the key that created it, from the hub. Recorded for per-person Navis later; nothing filters on it\nyet. Absent for other projects, and for a Navi made before it was recorded."
+          "description": "A Navi's: the key that created it, from the hub. Absent for other projects, and for a Navi made before it was\nrecorded."
         },
         "kind": {
           "$ref": "#/$defs/ProjectKind",
@@ -397,6 +397,10 @@
         },
         "machineId": {
           "$ref": "#/$defs/MachineId"
+        },
+        "owner": {
+          "$ref": "#/$defs/PersonId",
+          "description": "A Navi's: the person it belongs to (D213), from the hub, which shows it and lets it be used by them alone.\nAbsent for other projects, on a hub without people, and from an older hub."
         },
         "projectId": {
           "$ref": "#/$defs/ProjectId"

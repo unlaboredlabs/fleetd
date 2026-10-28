@@ -234,6 +234,20 @@ describe("where a new Navi lives", () => {
 });
 
 describe("with Navis", () => {
+  it("lists only the person's own: a teammate's Navi isn't theirs to see", async () => {
+    const me = { personId: "p_aaaaaaaa", name: "Alex", role: "member", createdAt: AT };
+    const theirs = summary("Bee", { kind: "assistant", owner: "p_bbbbbbbb" });
+    const mine = summary("Cal", { kind: "assistant", owner: me.personId });
+    const old = summary("Dot", { kind: "assistant", archivedAt: AT, owner: "p_bbbbbbbb" });
+    await mount(<NaviScreen />, [STOREFRONT, ADA, theirs, mine, old], (tool) => (tool === "hub_info" ? { ok: true, output: { version: "1", protocol: 1, busy: [], me } } : undefined));
+    // Ada, from before people, and Cal are Alex's; Bee and the archived Dot are Bea's.
+    const listed = host.querySelector("[aria-label='Your Navis']")?.textContent;
+    expect(listed).toContain("Ada");
+    expect(listed).toContain("Cal");
+    expect(host.textContent).not.toContain("Bee");
+    expect(host.textContent).not.toContain("Dot");
+  });
+
   it("lists them with the archived ones, which come back in a click", async () => {
     const { calls } = await mount(<NaviScreen />, [STOREFRONT, ADA, TAXES]);
     expect(screen()).toBe("navi");

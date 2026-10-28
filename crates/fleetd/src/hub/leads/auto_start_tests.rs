@@ -119,6 +119,7 @@ pub(crate) fn hub(runner_usable: bool) -> Hub {
                 repos: Vec::new(),
                 kind: None,
                 created_by: None,
+                owner: None,
                 archived_at: None,
             }],
         )
@@ -753,6 +754,7 @@ async fn a_navis_lead_starts_as_an_assistant_and_not_at_all_while_archived() {
                 c,
                 &hub.project,
                 &by,
+                None,
                 T0_MS as i64,
             )?)
         })
@@ -829,6 +831,7 @@ async fn an_archived_navis_cold_lead_stays_stopped() {
             c,
             &hub.project,
             &by,
+            None,
             T0_MS as i64,
         )?)
     })
@@ -891,6 +894,7 @@ async fn a_navi_archived_while_its_lead_runs_takes_no_more_turns() {
             c,
             &hub.project,
             &by,
+            None,
             T0_MS as i64,
         )?)
     })

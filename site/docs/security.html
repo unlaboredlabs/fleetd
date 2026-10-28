@@ -163,7 +163,8 @@ invite people, change roles and change hub-wide settings, and the hub always kee
 revokes all their devices at once.</p>
 <p>Chat messages, approvals, secrets, decisions and checklist changes record the person, next to the device as
 before. All projects are open to everyone on the hub, so give a hub only to people you trust with every project on
-it. The hub’s operator, and any agent on the hub machine, can read the hub’s database: fleetd records who did what,
+it. Navis are the exception: the hub shows and serves each only to its owner, admins included (only deleting a
+removed person’s Navi is an admin’s). The hub’s operator, and any agent on the hub machine, can read the hub’s database: fleetd records who did what,
 but it keeps nothing private from them.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="claude">Claude accounts</h2><a class="sl-anchor-link" href="#claude"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Claude accounts”</span></a></div>
 <p>The hub’s API key and each person’s subscription token (see <a href="/docs/people#claude">Claude accounts</a>) go the way of
@@ -340,7 +341,7 @@ into a team hub. You make it on the hub it reaches and add it to the Navi on the
 </tr>
 <tr>
 <td>A person names the host it calls</td>
-<td><code dir="auto">hub_link_add</code> makes the Navi’s hub contact the URL that a person with operate gives it. Only the Navi’s owner or an admin adds or removes a Navi’s links.</td>
+<td><code dir="auto">hub_link_add</code> makes the Navi’s hub contact the URL that a person with operate gives it. Only the Navi’s owner adds or removes its links.</td>
 </tr>
 <tr>
 <td>Only the Navi’s hub calls out</td>
