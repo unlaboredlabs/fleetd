@@ -3,16 +3,21 @@
 //! App's own installation token. It travels as one of the order's variables (an `order:` sink, node/order_env.rs) at
 //! each repo's checkout, so a task in each repo gets that repo's (its owner's installation), and one the App doesn't
 //! reach gets none: sealed to the checkout machine's box key, masked in what the agents report, read again at each
-//! turn, and dropped with the order's other variables when it closes. The hub delivers it at each task launch
+//! command, and dropped with the order's other variables when it closes. The hub delivers it at each task launch
 //! ([`deliver`]) and checks every order's on each sweep ([`run`]), from what it keeps in `github_order_tokens`, so
-//! running agents keep getting fresh tokens across a hub restart, with no new launch.
+//! running agents keep getting fresh tokens across a hub restart, with no new launch. A running agent must get each new
+//! one before its next command, not its next turn: GitHub ends a person's token the moment it is refreshed, and a
+//! writer's one turn can outlast an installation's hour. So a person's refreshed token goes to every one of their
+//! orders at once, and nodes give it to running sessions at their next command (node/order_env.rs).
 //!
 //! Never anyone else's account (D187). A writer whose order's starter hasn't connected GitHub is refused at spawn
 //! ([`refusal`]) and at launch. When a person's token is taken back (they disconnect, GitHub lapses it, or they leave
 //! the hub), their orders' agents get [`BLOCKED_TOKEN`] in its place, so `gh` fails there rather than run on the
-//! machine's own login, and the order's lead is told; their own token comes back once they connect again. Only where
-//! the App doesn't reach (no App, or a repository it isn't installed on) do agents use the machine's own login, as
-//! before the App.
+//! machine's own login, and the order's lead is told; their own token comes back once they connect again, and never
+//! before. A token that ends before the hub could renew it (GitHub unreachable) is replaced the same way, with
+//! [`UNRENEWED_TOKEN`], until a sweep renews it; the agents' brief says never to fall back to the machine's login.
+//! Only where the App doesn't reach (no App, or a repository it isn't installed on) do agents use the machine's own
+//! login, as before the App.
 use std::sync::Arc;
 
 use base64::Engine;
@@ -43,6 +48,18 @@ const REQUEST_ID: &str = "github";
 /// credentials"), so their `gh` fails, never falling back to the machine's own login, and its words say what to do.
 pub const BLOCKED_TOKEN: &str = "fleetd-github-not-connected-connect-it-in-settings";
 
+/// What an order's agents hold as `GH_TOKEN` once theirs ended before the hub could renew it: refused like
+/// [`BLOCKED_TOKEN`], until a sweep renews it.
+pub const UNRENEWED_TOKEN: &str = "fleetd-github-token-not-renewed-ask-your-lead";
+
+/// Why an order's agents hold a placeholder in place of their token.
+enum Block {
+    /// Their person's token was taken back.
+    Disconnected,
+    /// It ended, and couldn't be renewed: why.
+    NotRenewed(String),
+}
+
 /// Whose GitHub an order's agents use.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum GithubAs {
@@ -64,7 +81,7 @@ pub struct Kept {
     pub person: Option<PersonId>,
     pub expires_ms: i64,
     pub margin_ms: i64,
-    /// The person's token was taken back: the agents hold [`BLOCKED_TOKEN`].
+    /// The agents hold a placeholder: [`BLOCKED_TOKEN`] (their person's token was taken back) or [`UNRENEWED_TOKEN`].
     pub blocked: bool,
 }
 
@@ -312,7 +329,7 @@ pub async fn deliver(
                 // A reader or reviewer opens no PR: it goes on, but never on a token of theirs taken back.
                 _ => {
                     if let Some(k) = kept_at(hub, &checkout, order) {
-                        block_at(hub, &k).await;
+                        block_at(hub, &k, Block::Disconnected).await;
                     }
                     return Ok(());
                 }
@@ -330,14 +347,49 @@ pub async fn deliver(
         &Kept {
             r: r.clone(),
             order: order.clone(),
-            checkout,
+            checkout: checkout.clone(),
             repo_id: repo_id.cloned(),
-            person,
+            person: person.clone(),
             expires_ms,
             margin_ms,
             blocked: false,
         },
-    )
+    )?;
+    if let Some(person) = &person {
+        spread(hub, person, &token, expires_ms).await;
+    }
+    Ok(())
+}
+
+/// Hands a person's token, refreshed for one of their orders, to every other of their orders that holds the one
+/// before: GitHub ended that one with the refresh. A blocked order stays blocked; a node offline gets it at the next
+/// sweep.
+async fn spread(hub: &Hub, person: &PersonId, token: &Zeroizing<String>, expires_ms: i64) {
+    for k in kept(hub)
+        .into_iter()
+        .filter(|k| k.person.as_ref() == Some(person) && !k.blocked && k.expires_ms != expires_ms)
+    {
+        match put(hub, &k.checkout, &k.order, token).await {
+            Ok(()) => {
+                if let Err(e) = keep(
+                    hub,
+                    &Kept {
+                        expires_ms,
+                        ..k.clone()
+                    },
+                ) {
+                    tracing::warn!(
+                        order = k.order.as_str(),
+                        "github: the refreshed token's record not kept: {e}"
+                    );
+                }
+            }
+            Err(e) => tracing::warn!(
+                order = k.order.as_str(),
+                "github: the refreshed token not handed over yet: {e}"
+            ),
+        }
+    }
 }
 
 /// The order's record at `checkout`.
@@ -395,18 +447,22 @@ async fn withdraw_at(hub: &Hub, checkout: &ProjectRef, order: &WorkstreamId) {
     }
 }
 
-/// Takes a person's token back from the agents of one of their orders: they get [`BLOCKED_TOKEN`] in its place, never
-/// the machine's login, and the order's lead is told. A node offline leaves the record as it was, and the next sweep
-/// tries again.
-async fn block_at(hub: &Hub, k: &Kept) {
+/// Takes a token back from the agents of one order: they get a placeholder GitHub refuses in its place
+/// ([`BLOCKED_TOKEN`], [`UNRENEWED_TOKEN`]), never the machine's login, and the order's lead is told why and what fixes
+/// it. A node offline leaves the record as it was, and the next sweep tries again.
+async fn block_at(hub: &Hub, k: &Kept, why: Block) {
     if k.blocked {
         return;
     }
+    let placeholder = match why {
+        Block::Disconnected => BLOCKED_TOKEN,
+        Block::NotRenewed(_) => UNRENEWED_TOKEN,
+    };
     if let Err(e) = put(
         hub,
         &k.checkout,
         &k.order,
-        &Zeroizing::new(BLOCKED_TOKEN.to_owned()),
+        &Zeroizing::new(placeholder.to_owned()),
     )
     .await
     {
@@ -439,12 +495,21 @@ async fn block_at(hub: &Hub, k: &Kept) {
             || "The person who started it".to_owned(),
             |p| p.name.to_string(),
         );
-    let line = format!(
-        "{}: {name}'s GitHub is no longer connected, so its agents' gh fails (GitHub says bad credentials) rather than \
-         use anyone else's account. Ask {name} to connect GitHub in Settings › Your accounts › GitHub; their agents get the token back \
-         at their next turn.",
-        k.order
-    );
+    let line = match why {
+        Block::Disconnected => format!(
+            "{}: {name}'s GitHub is no longer connected, so its agents' gh fails (GitHub says bad credentials) rather than \
+             use anyone else's account. Ask {name} to connect GitHub in Settings › Your accounts › GitHub; their agents get the token back \
+             at their next command.",
+            k.order
+        ),
+        Block::NotRenewed(e) => format!(
+            "{}: its agents' GitHub token ended and the hub couldn't renew it ({e}), so their gh fails (GitHub says bad \
+             credentials) rather than use the machine's own login. The hub tries again every 5 minutes and the agents \
+             get the new token at their next command; if it keeps failing, an admin runs Test in Settings › Hub \
+             accounts › GitHub.",
+            k.order
+        ),
+    };
     hub.leads.wakes.trigger(
         &k.r,
         crate::hub::leads::wakes::Trigger::Line {
@@ -460,7 +525,7 @@ pub async fn withdraw_person(hub: &Hub, person: &PersonId) {
         .into_iter()
         .filter(|k| k.person.as_ref() == Some(person))
     {
-        block_at(hub, &k).await;
+        block_at(hub, &k, Block::Disconnected).await;
     }
 }
 
@@ -545,11 +610,16 @@ async fn put(
 }
 
 /// Checks each open order's token on every sweep: withdrawn where the App no longer reaches, taken back from a person
-/// no longer connected (and given back once they connect again), and delivered again within its margin of its end.
-/// Forgets closed orders'. A record a node was offline for is tried again here.
+/// no longer connected (and given back once they connect again, never before), delivered again within its margin of
+/// its end, and replaced by [`UNRENEWED_TOKEN`] once it ends unrenewed. Forgets closed orders'. A record a node was
+/// offline for is tried again here.
 pub async fn renew(hub: &Hub) {
     let now = now_ms(hub.clock.as_ref());
-    for kept in kept(hub) {
+    for listed in kept(hub) {
+        // Read again: a refresh for an order before it in this sweep may have handed it its token already.
+        let Some(kept) = kept_at(hub, &listed.checkout, &listed.order) else {
+            continue;
+        };
         let open = hub
             .leads
             .records
@@ -577,7 +647,7 @@ pub async fn renew(hub: &Hub) {
                 }
             };
             if !connected {
-                block_at(hub, &kept).await;
+                block_at(hub, &kept, Block::Disconnected).await;
                 continue;
             }
         }
@@ -589,6 +659,10 @@ pub async fn renew(hub: &Hub) {
                 order = kept.order.as_str(),
                 "github: the order's token not renewed: {e}"
             );
+            // Ended unrenewed: the agents are told so, never left to fall back to the machine's login.
+            if kept.expires_ms <= now {
+                block_at(hub, &kept, Block::NotRenewed(e)).await;
+            }
         }
     }
 }

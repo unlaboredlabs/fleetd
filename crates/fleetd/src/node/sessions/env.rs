@@ -1,6 +1,7 @@
-//! What a session is given beyond its brief: its order's variables on top of its project's, the names of both in its
-//! brief, a new claude at the next turn once its order's variables change, its worktree's setup commands before the
-//! brief goes, and the masker its own fleetd calls pass through.
+//! What a session is given beyond its brief: its order's variables on top of its project's (as they are at each Bash
+//! command), the names of both in its brief, a new claude at the next turn once its order's variables change, its
+//! worktree's setup commands before the brief goes, and the masker its own fleetd calls pass through.
+use fleetd_contracts::github_app::GITHUB_TOKEN_ENV;
 use fleetd_contracts::prim::NonEmpty;
 use fleetd_contracts::project_settings::WorktreeSetup;
 use fleetd_contracts::sessions::{
@@ -163,6 +164,14 @@ impl SessionService {
                 "- Set for order {order_id}'s agents: {}.",
                 names.join(", ")
             ));
+            if order.iter().any(|(n, _)| n == GITHUB_TOKEN_ENV) {
+                lines.push(format!(
+                    "- `{GITHUB_TOKEN_ENV}` is the GitHub account this order's work goes out as. fleetd renews it while \
+                     you work, and a new value reaches your next command. If GitHub refuses it (`gh auth status` says \
+                     it is invalid, or Bad credentials), never unset it or push with the machine's own gh login: \
+                     ask_lead with what gh said, and go on with what doesn't need GitHub."
+                ));
+            }
         }
         if has_token {
             lines.push(format!(
