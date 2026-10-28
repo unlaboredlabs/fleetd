@@ -16,6 +16,7 @@ import { AddMachine, type View } from "../addMachine";
 import { HubCaps } from "../settings/Agents";
 import { MachineRoles } from "../settings/MachineRoles";
 import { HubMemoryCaps } from "../settings/MemoryCaps";
+import { SharedMemory } from "../settings/Memory";
 import { HubInstructions } from "../settings/Instructions";
 import { HubMcpServers } from "../settings/McpServers";
 import { PagePart, PageHead } from "../settings/parts";
@@ -223,12 +224,15 @@ function InstructionsAndMemory() {
   return (
     <div className={s.scroll} data-screen="settings.hub.instructions">
       <div className={s.column}>
-        <PageHead title="Instructions & memory">What every project&apos;s agents are told, and how much its leads may remember.</PageHead>
+        <PageHead title="Instructions & memory">What every project&apos;s agents are told, how much its leads may remember, and the old shared memory.</PageHead>
         <PagePart title="Instructions" reveal="hub.instructions">
           <HubInstructions />
         </PagePart>
         <PagePart title="Memory caps" reveal="hub.memory-caps">
           <HubMemoryCaps />
+        </PagePart>
+        <PagePart title="Shared memory" reveal="hub.shared-memory" intro="The one memory every lead read before each person had their own. Owners and admins only.">
+          <SharedMemory />
         </PagePart>
       </div>
     </div>

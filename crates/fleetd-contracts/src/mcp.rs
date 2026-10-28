@@ -2762,6 +2762,9 @@ output!(GithubAppGetOutput {
     me: Option<crate::github_app::GithubAccount>,
     /// GitHub's sign-in page, which `github_connect`'s code comes from (with the App's clientId).
     authorize_url: String,
+    /// Everyone's connection, for an owner's or admin's device; empty otherwise.
+    #[serde(default)]
+    people: Vec<crate::github_app::PersonGithub>,
 });
 input!(GithubAppManifestInput {
     /// What the admin's GitHub shows it as: `fleetd on <host>`. GitHub may ask for another when it is taken.

@@ -5734,6 +5734,14 @@
         "next": {
           "type": "string"
         },
+        "people": {
+          "default": [],
+          "description": "Everyone's connection, for an owner's or admin's device; empty otherwise.",
+          "items": {
+            "$ref": "#/$defs/PersonGithub"
+          },
+          "type": "array"
+        },
         "permissions": {
           "description": "What it asks for on each repository, as the manifest has it: `[name, read|write]`.",
           "items": {
@@ -12959,6 +12967,21 @@
         "person",
         "mayUseHubApi",
         "runsOn"
+      ],
+      "type": "object"
+    },
+    "PersonGithub": {
+      "description": "One person's GitHub, as an owner or admin sees it on People: absent `account` until they connect.",
+      "properties": {
+        "account": {
+          "$ref": "#/$defs/GithubAccount"
+        },
+        "person": {
+          "$ref": "#/$defs/PersonRef"
+        }
+      },
+      "required": [
+        "person"
       ],
       "type": "object"
     },

@@ -23,7 +23,7 @@ The product questions (§10) are answered, and these decisions override anything
        subscription. It never switches accounts per turn: one lead turn mixes several people's work, and switching
        would throw away the prompt cache.
      - Work nobody started (automations, train fixes) runs the same way as the lead.
-   - The admin can **turn the hub's API option off for members** on the Administration page. It is on by default, and
+   - The admin can **turn the hub's API option off for members** in Settings' Hub group. It is on by default, and
      it never affects leads or work nobody started. Someone with neither is **asked to connect before their first
      order**. One person's subscription is never used for anyone else's work.
    - **GitHub: one GitHub App per hub** (D190). The admin creates it during setup through GitHub's app-manifest link,
@@ -40,9 +40,9 @@ The product questions (§10) are answered, and these decisions override anything
      someone else's account.
    - Each order records **which person started it** (`Workstream.startedBy`, from step 1), so this needs no migration.
    - Both are later steps (§8, step 8).
-4. **Admin options live on a separate Administration page** in the app: people, invites, roles and hub-wide settings.
-   It is shown only to owners and admins, and normal screens show no admin controls. Below, "Settings › People" and
-   "Settings › Activity" mean that page.
+4. **Admin options live in Settings' Hub group** in the app (D211, which replaced the separate Administration page
+   this first named): people, invites, roles and hub-wide settings. It is shown only to owners and admins, and no
+   other screen shows admin controls. Below, "Settings › People" and "Settings › Activity" mean that group's pages.
 
 ## The recommendation in brief
 
@@ -342,7 +342,7 @@ Settings › People and on the Navi page. For strict privacy, run your Navi on *
     - A project's lead, and work nobody started (automations, train fixes), always run on the hub's API
       configuration, else the hub owner's subscription. The lead never switches accounts per turn, since one turn
       mixes several people's work and a switch would throw away the prompt cache.
-    - The admin can turn the hub's API option off for members on the Administration page; then each member connects
+    - The admin can turn the hub's API option off for members in Settings' Hub group; then each member connects
       a subscription. The switch is on by default and never affects leads or work nobody started. Someone with
       neither is asked to connect before their first order. One person's subscription is never used for anyone
       else's work.
@@ -418,7 +418,7 @@ events table today.
 
 **Step 1: People, invites and names (m). The smallest useful step. Being built in W99.**
 - The `people` table (id, name, hub role, created), with `person_id` on keys and the migration (§7).
-- `fleetd invite`, invite links (7 days, single use), and the Administration page's People (invite, remove, role).
+- `fleetd invite`, invite links (7 days, single use), and Settings › Hub › People (invite, remove, role).
   A new person needs a name. Only an owner makes, unmakes or removes an owner, and the hub always keeps one.
 - Hub roles owner, admin, member, with member = operate on every machine and admin = today's admin.
 - The lead sees "Alice writes".
@@ -475,7 +475,7 @@ This builds on the Navi plan's first version.
 
 **Step 8: Accounts (m).** (Decided, 3.)
 - Claude (D200), built (T1024) on the hub and node, and in the app (T1041): Settings › Claude (each person's choice
-  and subscription, with Test) and Administration › Connections › Claude (the hub's key and endpoint, the members switch, what
+  and subscription, with Test) and Settings › Hub accounts › Claude (the hub's key and endpoint, the members switch, what
   leads run on, everyone's account with its usage pause), plus the `hub/claude_key`, `hub/claude_owner` and
   `<machine>/claude_account_override` checks. On these contracts:
   - `crates/fleetd-contracts/src/claude_accounts.rs` and the `claude_*` tools; `hub/claude_accounts` (store,
@@ -487,7 +487,7 @@ This builds on the Navi plan's first version.
     `devbox@<account>`), so one account's limit pauses only its work.
   - `spawn_agent` refuses an order whose starter has nothing to run on: "Connect your Claude to start this order."
 - Claude, as decided:
-  - The hub's API key and optional endpoint on the Administration page, with a switch to turn that option off for
+  - The hub's API key and optional endpoint in Settings' Hub group, with a switch to turn that option off for
     members.
   - In each person's own settings, the choice: connect their own subscription (a `claude setup-token` token, sealed to
     the hub's machines) or use the hub's API configuration.

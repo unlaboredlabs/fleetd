@@ -1,13 +1,16 @@
-// Memory, on a project's Instructions & memory in Settings: what the leads remember, as the plain text files the hub keeps. user.md goes to every project's
-// lead and writers; a project's MEMORY.md (and the topic files it lists) only to that project's. The lead writes with
-// `remember`; here a person reads each file as a list of entries (one card per line, with where and when the lead
+// Memory, as the plain text files the hub keeps (D212): a project's MEMORY.md and the topic files it lists, on its
+// Instructions & memory, which only its sessions get; your own memory, on You › Your memory, which only the agents of
+// work you start and your Navi read, and only you edit; and the hub's old shared user.md, read by no agent now, on Hub ›
+// Every project › Instructions & memory for an owner or admin to read and retire. The lead writes with `remember`; here a person reads each file as a list of entries (one card per line, with where and when the lead
 // remembered it when the hub knows), edits or deletes one (its buttons, or its right-click menu), and undoes a delete
 // from its toast. "Edit as text" is the whole file in a textarea. Every change is the file's new text through
-// memory_set, a human key's write.
+// memory_set (memory_shared_set for the shared file), a human key's write.
 import { Pencil, Trash2 } from "lucide-react";
 import { useRef, useState } from "react";
 import type { MemoryFile, MemoryNote, MemorySetInput, ProjectRef } from "../../../shared/contracts";
-import { Button, ContextMenu, ContextMenuItem, Field, Input, Separator, Text, Textarea, toast, Tooltip } from "../../ui";
+import { Button, ContextMenu, ContextMenuItem, Field, Input, Text, Textarea, toast, Tooltip } from "../../ui";
+import { lacksTool } from "../../src/data/errors";
+import { CallError } from "../../src/data/queries";
 import { useToolQuery } from "../../src/data/react";
 import { projectRefOf, scopeKey, type Draft, type Scope } from "./editor";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
@@ -38,7 +41,7 @@ interface ProjectFiles {
 /** Which file a write goes to: memory_set's input without the text. */
 type Target = Omit<MemorySetInput, "text">;
 
-/** Memory, on a project's Instructions & memory: yours ("You", every project's), then the project's own files. */
+/** Memory, on a project's Instructions & memory: the project's own files. Yours is on You › Your memory. */
 export function Memory({ project }: { project: Scope | null }) {
   const live = useLive();
   const projects = useProjects();
@@ -53,10 +56,10 @@ export function Memory({ project }: { project: Scope | null }) {
   const reread = async (t: Target): Promise<string> => {
     const now = await hubCall("memory_get", t.projectRef ? { projectRef: t.projectRef } : {});
     const name = fileName(t);
-    return (t.scope === "user" ? now.user : now.files?.find((f) => fileName(f) === name))?.text ?? "";
+    return now.files?.find((f) => fileName(f) === name)?.text ?? "";
   };
 
-  const head = "What the leads remember when you correct them or set a rule. Each session starts with it; edit or delete anything that is wrong.";
+  const head = "What the project's leads remember when you correct them or set a rule. Each of its sessions starts with it; edit or delete anything that is wrong. What they remember about you is in You › Your memory.";
   if (!live) {
     return (
       <PagePart title="Memory" reveal="memory" intro={head}>
@@ -68,7 +71,7 @@ export function Memory({ project }: { project: Scope | null }) {
   const d = read.data;
   const files = ref && d?.files ? d.files : [];
   const name = project ? scopeName(project, projects) : null;
-  const all = d ? [d.user, ...files] : [];
+  const all = files;
   const hits = all.reduce((n, f) => n + memoryLines(f).filter((l) => l.kind === "entry" && lineMatches(l, query)).length, 0);
   const total = ref && d?.files ? projectCapState(files, null, d.projectCap ?? 0) : null;
   const group = (f: MemoryFile | undefined, target: Target, label: string, help: string, project?: ProjectFiles) => (
@@ -103,8 +106,6 @@ export function Memory({ project }: { project: Scope | null }) {
           ) : null}
         </div>
       </div>
-      {group(d?.user, { scope: "user" }, "You", "How you work, for every project's lead and writers.")}
-      <Separator />
       <div className={s.stack}>
         <div className={s.setting}>
           <div className={s.settingLabel}>
@@ -128,6 +129,83 @@ export function Memory({ project }: { project: Scope | null }) {
           : null}
       </div>
     </PagePart>
+  );
+}
+
+/**
+ * You › Your memory: how you work, as the leads remember it. The agents of work you start and your Navi read it; only
+ * you edit it (memory_set at user scope writes the caller's own). On a hub with no people it is the hub's one user.md.
+ */
+export function YourMemory() {
+  const live = useLive();
+  const read = useToolQuery("memory_get", {}, { enabled: live });
+  const hubCall = useHubCall();
+  const refetch = useRefetch();
+  const [query, setQuery] = useState("");
+  if (!live) return <Text tone="quiet">Not connected. Connect to a hub to see what its leads remember about you.</Text>;
+  return (
+    <div className={s.stack}>
+      <FileError read={read} />
+      <div className={m.search}>
+        <Input type="search" aria-label="Search your memory" placeholder="Search entries" value={query} onChange={(e) => setQuery(e.target.value)} />
+      </div>
+      <MemoryGroup
+        label="Your memory"
+        help="Read by the agents of work you start and by your Navi. Nobody else reads or edits it."
+        name="your memory"
+        file={read.data?.user}
+        query={query}
+        onSave={(text) => hubCall("memory_set", { scope: "user", text }).then(() => refetch(["memory_get"]))}
+        reread={() => hubCall("memory_get", {}).then((now) => now.user.text)}
+        deletable={false}
+      />
+    </div>
+  );
+}
+
+/**
+ * Hub › Every project › Instructions & memory: the hub's old shared user.md (D212). Its owner got a copy as their own;
+ * no agent reads it now. An owner or admin reads it, moves what still matters to the people it was about, and retires
+ * it (empty). A hub from before per-person memory has no such tool, and says so.
+ */
+export function SharedMemory() {
+  const live = useLive();
+  const read = useToolQuery("memory_shared_get", {}, { enabled: live });
+  const hubCall = useHubCall();
+  const refetch = useRefetch();
+  if (!live) return <Text tone="quiet">Connect to a hub to see and change this.</Text>;
+  if (read.error instanceof CallError && lacksTool(read.error.error)) {
+    return <Text tone="quiet">This hub still shares one memory among everyone: each person reads and edits it in You › Your memory. Update fleetd on the hub to give each person their own.</Text>;
+  }
+  const file = read.data?.file;
+  return (
+    <div className={s.stack}>
+      <FileError read={read} />
+      {file !== undefined && file.text.trim() === "" ? (
+        <Text tone="quiet">Retired: each person&apos;s memory is their own.</Text>
+      ) : (
+        <MemoryGroup
+          label="Shared memory"
+          help="What every lead read before each person had their own. No agent reads it now; its owner got a copy. Retire it once nothing in it is missing elsewhere."
+          name="user.md"
+          file={file}
+          query=""
+          onSave={(text) => hubCall("memory_shared_set", { text }).then(() => refetch(["memory_shared_get"]))}
+          reread={() => hubCall("memory_shared_get", {}).then((now) => now.file.text)}
+          deletable
+        />
+      )}
+    </div>
+  );
+}
+
+function FileError({ read }: { read: { isLoadingError: boolean; error: unknown; refetch: () => unknown } }) {
+  if (!read.isLoadingError) return null;
+  return (
+    <div className={s.inline}>
+      <Text tone="danger">{errorText(read.error)}</Text>
+      <Button onClick={() => void read.refetch()}>Try again</Button>
+    </div>
   );
 }
 

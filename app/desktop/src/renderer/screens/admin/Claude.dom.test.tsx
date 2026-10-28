@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
 // Settings › Hub accounts › Claude: the hub's key pasted goes to main to seal with its endpoint and is tested at once, never
-// shown back; the members switch; what leads run on and the owner's subscription they fall back to; everyone's
-// account with a usage pause on one; and a member who follows the link sees none of it.
+// shown back; the members switch; what leads run on and the owner's subscription they fall back to; each person's
+// account, with a usage pause on one and their GitHub, on their People row; and a member who follows the link sees
+// none of it.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -109,6 +110,16 @@ const render = async (accounts: ClaudeAccountsGetOutput, info: Partial<HubInfoOu
               ? people
               : tool === "usage_status"
                 ? usage
+                : tool === "github_app_get"
+                  ? {
+                      app: { appId: 1, clientId: "Iv1.abc", createdAt: AT, htmlUrl: "https://github.com/apps/fleetd-devbox", name: "fleetd on devbox", slug: "fleetd-devbox", owner: "acme" },
+                      permissions: [],
+                      authorizeUrl: "https://github.com/login/oauth/authorize",
+                      people: [
+                        { person: { personId: sam.personId, name: sam.name }, account: { login: "sam-rivera", userId: 1, connectedAt: AT } },
+                        { person: { personId: "p_bbbbbbbb", name: "Alice Chen" } },
+                      ],
+                    }
                 : tool === "claude_account_test"
                   ? { test: { at: AT, machineId: "devbox", ok: true } }
                   : tool === "claude_settings_set"
@@ -202,7 +213,7 @@ it("saves the hub's key and endpoint sealed through main, tests it at once, and 
   expect(host.textContent).not.toContain(KEY);
 });
 
-it("shows where the key is, the members switch, the owner's subscription and everyone's account with a pause", async () => {
+it("shows where the key is, the members switch and the owner's subscription; each person's account, with a pause and their GitHub, on People", async () => {
   await render(withKey);
   const key = section("Hub API key");
   expect(key.textContent).toContain("Saved. Sealed on devbox. Through https://gateway.devbox.example.");
@@ -210,18 +221,25 @@ it("shows where the key is, the members switch, the owner's subscription and eve
   expect(key.textContent).toContain("Worked on devbox");
   expect(section("Leads and unrequested work").textContent).toContain("The hub's API key.");
   expect(section("Leads and unrequested work").textContent).toContain("The hub owner's subscription (yours) is connected. Sealed on buildbox and devbox.");
-  const list = host.querySelector<HTMLElement>("[role='list'][aria-label='Claude accounts']");
-  const rows = [...(list?.querySelectorAll<HTMLElement>("[role='listitem']") ?? [])];
-  expect(rows.map((r) => r.getAttribute("aria-label"))).toEqual(["Sam Rivera", "Alice Chen", "Bob Okafor"]);
-  expect(rows[1]?.textContent).toContain("Hub API key");
-  expect(rows[2]?.textContent).toContain("Own subscription");
-  expect(rows[2]?.textContent).toContain("Paused on devbox until");
-  expect(rows[0]?.textContent).not.toContain("Paused");
+  // Everyone's account is on People now.
+  expect(host.querySelector("[role='list'][aria-label='Claude accounts']")).toBeNull();
   const toggle = section("Members").querySelector<HTMLElement>("[role='switch']");
   if (toggle === null) throw new Error("no switch");
   expect(toggle.getAttribute("aria-checked")).toBe("true");
   await click(toggle);
   expect(sent("claude_settings_set")).toEqual([{ membersUseHubApi: false }]);
+
+  await act(async () => {
+    window.location.hash = "#/settings/hub/people";
+    await Promise.resolve();
+  });
+  for (let i = 0; i < 4; i++) await settle();
+  const line = (name: string) => host.querySelector<HTMLElement>(`[role='listitem'][aria-label='${name}'] [data-accounts]`)?.parentElement?.textContent ?? "";
+  expect(line("Sam Rivera")).toContain("Claude: Own subscription · GitHub: sam-rivera");
+  expect(line("Sam Rivera")).not.toContain("Paused");
+  expect(line("Alice Chen")).toContain("Claude: Hub API key · GitHub: not connected");
+  expect(line("Bob Okafor")).toContain("Claude: Own subscription");
+  expect(line("Bob Okafor")).toContain("Paused on devbox until");
 });
 
 it("changes the endpoint alone, keeping the saved key, and removes the key once confirmed", async () => {

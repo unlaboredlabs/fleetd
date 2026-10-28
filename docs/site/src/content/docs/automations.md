@@ -40,7 +40,7 @@ edit, no webhook and no Delete. Its row shows:
   An admin sets it with the `policy.memory_refresh_at` decision, in the zone of `policy.tz`.
 - **Next run** and **Last run**: what the last refresh changed in memory, as its chat line counts it ("2 added, 1
   updated, 1 removed"), or that it was skipped and why. A quiet day, with no chat and no order changes, is skipped.
-- **On for this project**: the same switch as **Refresh memory every night** in the project's settings.
+- **On for this project**: the same switch as **Refresh memory every night** on the project's Instructions & memory.
 - **Run now**: refreshes the project's memory at once, the way the night's refresh does. It doesn't start, and says
   why, while the refresh is off for the project, one is already running, nothing is new since the last one, the
   lead is mid-turn, or the project's machine is offline, out of usage or too old.

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { AgentKeyInfo, Invite, Person } from "../../../shared/contracts";
-import { administers, devicesLine, expiresLine, nameProblem, openInvites, peopleRows } from "./model";
+import type { AgentKeyInfo, Invite, Person, PersonClaude } from "../../../shared/contracts";
+import { accountsLine, administers, devicesLine, expiresLine, nameProblem, openInvites, peopleRows } from "./model";
 
 const AT = "2026-10-19T10:00:00.000Z";
 const person = (personId: string, name: string, role: Person["role"]): Person => ({ personId, name, role, createdAt: AT });
@@ -98,5 +98,24 @@ describe("invites and words", () => {
     expect(nameProblem("  ")).toBe("Give them a name.");
     expect(nameProblem("x".repeat(81))).toBe("80 characters at most.");
     expect(nameProblem(" Dana ")).toBeUndefined();
+  });
+});
+
+describe("a person's accounts on People", () => {
+  const claude = (runsOn: PersonClaude["runsOn"], lastOk?: boolean): PersonClaude => ({
+    person: { personId: "p_cccccccc", name: "Bob" },
+    mayUseHubApi: true,
+    runsOn,
+    ...(lastOk === undefined ? {} : { subscription: { sealedOn: [], connectedAt: "2026-10-19T10:00:00.000Z", lastTest: { at: "2026-10-19T10:00:00.000Z", machineId: "devbox", ok: lastOk } } }),
+  });
+  const own = { kind: "account", account: { kind: "person", personId: "p_cccccccc" } } as PersonClaude["runsOn"];
+  it("says what their Claude runs on and their GitHub, leaving out what the hub doesn't say", () => {
+    const login = { login: "bob", userId: 2, connectedAt: "2026-10-19T10:00:00.000Z" };
+    expect(accountsLine(claude(own), { account: login }, true)).toBe("Claude: Own subscription · GitHub: bob");
+    expect(accountsLine(claude(own, false), {}, true)).toBe("Claude: Own subscription, its last Test failed · GitHub: not connected");
+    expect(accountsLine(claude(own), { account: { ...login, lapsed: true } }, true)).toBe("Claude: Own subscription · GitHub: bob, to connect again");
+    // No GitHub App: no GitHub part. An older hub: no Claude part.
+    expect(accountsLine(claude({ kind: "machine_login" }), {}, false)).toBe("Claude: Machine's own login");
+    expect(accountsLine(undefined, undefined, true)).toBeNull();
   });
 });

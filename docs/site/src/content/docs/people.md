@@ -98,8 +98,9 @@ In the app:
 - **Settings › Hub accounts › Claude** is for owners and admins. *Hub API key* takes the key and an optional endpoint
   (Save and test), then shows the machines that hold it, its last Test, and Test, Change and Remove. A change to the
   endpoint alone keeps the saved key. *Members* is the switch. *Leads and unrequested work* says what they run on, and
-  whether the hub owner's subscription, their fallback, is connected. *Everyone's account* lists each person's way,
-  with any usage pause on their account.
+  whether the hub owner's subscription, their fallback, is connected.
+- **Settings › Hub › People** shows each person's way on their row, beside their GitHub, with any usage pause on
+  their account.
 
 The hub's tools are `claude_accounts_get`, `claude_hub_api_set`, `claude_hub_api_remove`, `claude_settings_set`,
 `claude_subscription_set`, `claude_subscription_remove`, `claude_choice_set` and `claude_account_test`. See

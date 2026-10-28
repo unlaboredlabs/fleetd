@@ -290,8 +290,8 @@ When the machine changes, the new one takes the key before the old one forgets i
 <strong>Turn off</strong> asks first, then the machine forgets the key. Under the hood these are <code dir="auto">google_pubsub_set</code> and
 <code dir="auto">google_get</code>’s <code dir="auto">mailMode</code> and <code dir="auto">mailProblem</code>.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="connect">Connect a Google account</h2><a class="sl-anchor-link" href="#connect"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Connect a Google account”</span></a></div>
-<p>A person connects their own account from their own computer, in the app: open the Navi’s settings (Settings ›
-Projects, the Navi), then <strong>Integrations › Google</strong>.</p>
+<p>A person connects their own account from their own computer, in the app: <strong>Settings › Your accounts › Google</strong>, the
+Navi’s row.</p>
 <ol>
 <li>Press <strong>Connect</strong>. The dialog lists what Google will ask you to allow, and what to do about the warnings Google’s
 own page can show. Press <strong>Continue in browser</strong>.</li>
@@ -356,7 +356,7 @@ nothing is sent.</p>
 <p>A client secret saved wrong lapses nothing: the Navi is told the hub’s client was refused. The first refresh after the
 admin saves the right secret works again.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="new-mail">New mail wakes a Navi</h2><a class="sl-anchor-link" href="#new-mail"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “New mail wakes a Navi”</span></a></div>
-<p>A person chooses, per Navi, when new mail wakes it: on the Navi’s <strong>Integrations › Google</strong>, once connected, <strong>New mail
+<p>A person chooses, per Navi, when new mail wakes it: on its row in <strong>Settings › Your accounts › Google</strong>, once connected, <strong>New mail
 wakes this Navi</strong> is <strong>Off</strong>, <strong>All new mail</strong> or <strong>Matching a search</strong>. Off and All save at once; a search saves with
 its <strong>Save</strong> button. While it’s on, the row says how mail arrives: by push, or by checking about every minute and why.
 Under the hood this is <code dir="auto">google_mail_set</code>:</p>

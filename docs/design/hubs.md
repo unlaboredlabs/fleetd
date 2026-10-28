@@ -53,7 +53,7 @@ hub there is no label and no group: the sidebar looks as it does with #651 alone
 - Commands (Ctrl+K) lists every hub's projects, each with its hub label beside the machine.
 
 **Connection state is per hub.** The sidebar's footer has one status row per hub, each with its own popover (Retry
-now, Hub settings, Disconnect). A hub offline greys only its own group, marked "as of 09:02" as today. The other hubs
+now, Settings › Hubs, Disconnect). A hub offline greys only its own group, marked "as of 09:02" as today. The other hubs
 keep working. The offline banner shows only for the hub of the screen you're on.
 
 **Updates.** The updates sheet belongs to one hub. Its pill sits on that hub's status row, and Update updates that
@@ -82,20 +82,20 @@ reachable, revokes it there too. Either way, the Navi's next call is refused wit
 silently.
 
 **Where it's managed in the app.** Both lists come from `hub_links_get` on each hub (`renderer/screens/hubLinks/`).
-Links kept on a hub show in the Navi's own settings; keys minted on a hub show in the person's own settings for
-theirs and on Administration for an admin, never as admin controls in Settings (D186):
+Both halves are in one place, Settings › You › Hubs › Hub links (D211); everyone's keys show to an admin only, in
+Settings' Hub group:
 
-- **Linked hubs** (Settings › Projects, for a Navi): each link's label and address, the person it acts as and the
+- **Linked hubs** (Settings › Hubs › Hub links, for each Navi): each link's label and address, the person it acts as and the
   projects it is limited to (from the other hub's `hello`), its state (working, can't reach with the address and
   reason, revoked there), and Remove. **Link a hub** takes the pasted key, the address and a label; main seals the
   key to `boxPubKey` (`main/secret.ts`, IPC `hub-link:submit`) and calls `hub_link_add`, so the page never sends it
   to the hub in the clear.
-- **Links to this hub** (Settings › Hubs, under each paired hub): **Make a link key** with a label and optional
+- **Links to this hub** (Settings › Hubs › Hub links, one per paired hub): **Make a link key** with a label and optional
   projects; the key shows once, and Copy takes it with the address other hubs reach this one at, on two lines, which
   Linked hubs reads back. That address is `hub_info`'s `url`: the hub's URL when it is https, or http over a tailnet,
   never loopback. Without one, the person types it. Below, the person's own links with Revoke, even for an admin, and
   nothing until `hub_info` names the person.
-- **Hub links** (Administration › People): every link minted on the hub, with its person, and Revoke.
+- **Hub links** (Settings › Hub › People, admins only): every link minted on the hub, with its person, and Revoke.
 
 A hub too old to have the tools gets "needs updating"; none yet gets one line and a button.
 

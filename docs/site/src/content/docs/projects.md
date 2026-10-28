@@ -114,14 +114,16 @@ Open a project's settings in the desktop app: Settings → Projects, then pick t
 | Setting | Does |
 |---|---|
 | Name | How fleetd shows the project. Its folder keeps its own name. |
-| Repos | The git repos the project holds, each with its remote, base branch and checkout (machine and path), and the setup and preview it runs with: its own, or the project's. A plain folder holds none. **Add repo** and **Remove…**: see [Repos](#repos). |
+| Repos | The git repos the project holds, each with its remote, base branch and checkout (machine and path), and the setup and preview it runs with: its own, or the default. A plain folder holds none. **Add repo** and **Remove…**: see [Repos](#repos). Under them, **Default setup**: what runs in each new worktree of a repo without setup of its own. See [Setup commands](#setup). |
 | Keep finished worktrees | Off (the default): a reader's worktree goes when its task finishes, and a writer's once its pull request merges; any left behind go in the [nightly cleanup](#cleanup). On: they stay on the machine. |
-| Refresh memory every night | On (the default): around 04:00, on a day with chat or orders, the lead tidies the project's memory and the chat shows one line of its changes, with Undo. Off: memory changes only as the lead and you write it. See [The nightly refresh](/docs/what-agents-are-told#memory-refresh). |
 | Environment variables | Variables every new agent of the project gets. See [Environment variables](#env). |
 | MCP servers | The project's own MCP servers for its agents, and the global ones it gets. See [MCP servers](/docs/mcp-servers). |
-| Setup commands | What runs in each new worktree before its agent starts. See [Setup commands](#setup). |
 | Merge train | The checks the train also waits for before a merge, and those left for after it. See [Which checks it waits for](/docs/merge-train#fast-set). |
 | Delete project | See [Delete a project](#delete). |
+
+Its **Instructions & memory** page has **Refresh memory every night**: on (the default), around 04:00 on a day with
+chat or orders, the lead tidies the project's memory and the chat shows one line of its changes, with Undo; off,
+memory changes only as the lead and you write it. See [The nightly refresh](/docs/what-agents-are-told#memory-refresh).
 
 The page also shows where the project's worktrees live on its machine (`~/.fleetd/node/worktrees/<project>/`, one per
 agent), the branch new ones start from (the repo's default branch, freshly fetched; see [Which branch](#branches)),
@@ -185,7 +187,8 @@ From an MCP client: `project_settings_get` reads a project's settings, `project_
 
 ### Setup commands {#setup}
 
-Commands that run in each new worktree before its agent starts: install dependencies, generate code. One a line, in
+The project's **Default setup**, under its repos: commands that run in each new worktree of a repo without setup of
+its own, before its agent starts: install dependencies, generate code. One a line, in
 order; each runs with `sh -c` in the worktree, with the project's variables (and the order's), the machine's build
 jobs and the agent's own `$TMPDIR`. The first that fails, or runs past the time limit (10 minutes unless you set
 another, up to an hour), stops the rest.

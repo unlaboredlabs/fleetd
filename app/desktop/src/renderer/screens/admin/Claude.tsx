@@ -1,24 +1,23 @@
 // Settings › Hub accounts › Claude (teams step 8, D200): the hub's API configuration (its Claude API key, sealed in main to
 // every machine and never shown back, and an optional endpoint), with Test; whether members may run their work on it
 // (on by default); what projects' leads and work nobody started run on (the key, else the hub owner's own
-// subscription); and each person's account, with any usage pause on it. A person's own choice and subscription are
-// theirs, in Settings › Your accounts › Claude.
+// subscription). Each person's account, with any usage pause on it, is on their People row; their own choice and
+// subscription are theirs, in Settings › Your accounts › Claude.
 import { useState } from "react";
-import type { ClaudeAccountsGetOutput, ClaudeHubApi, Person, PersonClaude, UsageStatus } from "../../../shared/contracts";
+import type { ClaudeAccountsGetOutput, ClaudeHubApi, Person, UsageStatus } from "../../../shared/contracts";
 import { lacksTool } from "../../src/data/errors";
 import { CallError } from "../../src/data/queries";
 import { useToolQuery } from "../../src/data/react";
 import { useNow } from "../live";
 import { HubText } from "../projects/HubText";
 import { Button, Field, Input, Switch, Text } from "../../ui";
-import { CONSOLE_KEYS, KEY_PLACEHOLDER, pauseLine, runsOnLine, sealedLine, theirRunsOn } from "../settings/claudeModel";
+import { CONSOLE_KEYS, KEY_PLACEHOLDER, pauseLine, runsOnLine, sealedLine } from "../settings/claudeModel";
 import { ConfirmRemove, MissingOn, Problem, TestButton, TestResult, useMachines, useSave, useTest, type Tried } from "../settings/claudeParts";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
 import { PagePart, Setting } from "../settings/parts";
 import { toHash } from "../shell/routes";
 import { usePeople } from "./usePeople";
 import s from "../settings/settings.module.css";
-import a from "./admin.module.css";
 
 const noInput = {};
 
@@ -60,13 +59,6 @@ function Accounts({ data, usage, me }: { data: ClaudeAccountsGetOutput; usage: R
           <HubText>{runsOnLine(data.leadsRunOn, people, me?.personId)}</HubText>
         </Text>
         <Owner data={data} usage={usage} me={me} nowMs={nowMs} />
-      </Setting>
-      <Setting reveal="admin.claude.people" label="Everyone's account" help="What the orders each person starts, and their Navi, run on. One person's usage limit pauses only their own work.">
-        <div className={a.list} role="list" aria-label="Claude accounts">
-          {(data.people ?? []).map((p) => (
-            <PersonLine key={p.person.personId} p={p} usage={usage} me={me} nowMs={nowMs} />
-          ))}
-        </div>
       </Setting>
     </>
   );
@@ -257,35 +249,3 @@ function Owner({ data, usage, me, nowMs }: { data: ClaudeAccountsGetOutput; usag
   );
 }
 
-function PersonLine({ p, usage, me, nowMs }: { p: PersonClaude; usage: ReadonlyArray<UsageStatus>; me: Person | undefined; nowMs: number }) {
-  const you = p.person.personId === me?.personId;
-  const pause = pauseLine({ kind: "person", personId: p.person.personId }, usage, nowMs);
-  const sub = p.subscription === undefined ? "No subscription connected." : p.subscription.lastTest?.ok === false ? "Subscription connected; its last Test failed." : "Subscription connected.";
-  return (
-    <div className={a.row} role="listitem" aria-label={p.person.name}>
-      <div className={a.who}>
-        <div className={a.name}>
-          <Text strong>{p.person.name}</Text>
-          {you ? (
-            <Text size="xs" tone="quiet">
-              you
-            </Text>
-          ) : null}
-        </div>
-        <Text size="xs" tone="quiet">
-          {sub}
-        </Text>
-        {pause === null ? null : (
-          <Text size="xs" tone="warning">
-            <HubText>{pause}</HubText>
-          </Text>
-        )}
-      </div>
-      <div className={a.controls}>
-        <Text size="sm" tone={p.runsOn.kind === "refused" ? "warning" : "quiet"}>
-          {theirRunsOn(p.runsOn)}
-        </Text>
-      </div>
-    </div>
-  );
-}

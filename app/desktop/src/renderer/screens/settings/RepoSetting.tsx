@@ -1,5 +1,6 @@
-// Settings → Projects → Repos: the git repos a project holds (ProjectSummary.repos), each with its remote, base
-// branch, checkout, and the setup and preview it runs with, read with project_settings_get and `repo`. Add repo takes a
+// Settings › Projects › Project › Repos: the git repos a project holds (ProjectSummary.repos), each with its remote, base
+// branch, checkout, and the setup and preview it runs with, read with project_settings_get and `repo`; then the
+// project's default setup (SetupSetting.tsx), which a repo without its own runs. Add repo takes a
 // checkout on the project's machine or a GitHub repo to clone there (project_repo_add); Remove takes one out
 // (project_repo_remove), ending its agents and leaving its files. A plain folder holds none until one is added.
 import { useState, type ReactNode } from "react";
@@ -9,6 +10,7 @@ import { useData, useToolQuery } from "../../src/data/react";
 import { repoName } from "../factory/model";
 import { errorText, useHubCall, useLive } from "./hub";
 import { Setting, useProjects } from "./parts";
+import { DefaultSetup } from "./SetupSetting";
 import { addInput, applied, checkoutPath, isOwn, sourceProblem, type Applied } from "./repoModel";
 import s from "./settings.module.css";
 
@@ -20,7 +22,7 @@ export function RepoSetting({ settings }: { settings: Settings }) {
   const [echo, setEcho] = useState<Echo | null>(null);
   const [removing, setRemoving] = useState<ProjectRepo | null>(null);
   return (
-    <Setting reveal="projects.repos" label="Repos" help="The git repos the project holds, and the setup and preview each one runs with.">
+    <Setting reveal="projects.repos" label="Repos" help="The git repos the project holds, the setup and preview each one runs with, and the default setup for those with none of their own.">
       {repos.length === 0 ? (
         <Text size="sm" tone="quiet">
           No repo, a plain folder.
@@ -33,6 +35,7 @@ export function RepoSetting({ settings }: { settings: Settings }) {
         </div>
       )}
       <AddRepo settings={settings} onDone={setEcho} />
+      <DefaultSetup settings={settings} />
       {echo ? (
         <div role={echo.ok ? "status" : "alert"}>
           <Text size="sm" tone={echo.ok ? "quiet" : "danger"}>
@@ -184,10 +187,10 @@ function RepoRow({
           </Text>
         </Fact>
         <Fact label="Setup">
-          <AppliedLine applied={setup} />
+          <AppliedLine applied={setup} of="the default" />
         </Fact>
         <Fact label="Preview">
-          <AppliedLine applied={preview} />
+          <AppliedLine applied={preview} of="the project's" />
         </Fact>
       </dl>
     </div>
@@ -215,11 +218,12 @@ function Quiet({ children }: { children: ReactNode }) {
   );
 }
 
-function AppliedLine({ applied: a }: { applied: Applied }) {
+/** `of`: whose a repo without its own uses, in words: the default setup, the project's preview. */
+function AppliedLine({ applied: a, of }: { applied: Applied; of: string }) {
   if (a.own) return a.line ? <Text size="sm" mono>{a.line}</Text> : <Quiet>None</Quiet>;
   return (
     <Quiet>
-      Uses the project's: {a.line ? <code>{a.line}</code> : "none"}
+      Uses {of}: {a.line ? <code>{a.line}</code> : "none"}
     </Quiet>
   );
 }

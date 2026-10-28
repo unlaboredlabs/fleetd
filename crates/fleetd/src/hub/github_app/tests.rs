@@ -821,10 +821,25 @@ async fn a_person_connects_their_github_kept_sealed_and_refreshed() {
     let out = connect(&lab, &sam).await.unwrap();
     assert_eq!(out["me"]["login"], "sam-rivera");
     assert!(!out.to_string().contains("ghu_"));
+    let bob = member(&lab.hub);
     let got = call(&lab.hub, &sam, "github_app_get", json!({}))
         .await
         .unwrap();
     assert_eq!(got["me"]["login"], "sam-rivera");
+    // An admin sees everyone's on People: Sam's connected, Bob's not yet; a member sees nobody's.
+    let people = got["people"].as_array().unwrap();
+    assert_eq!(people.len(), 2, "{got}");
+    assert_eq!(people[0]["account"]["login"], "sam-rivera");
+    assert!(people[1]["account"].is_null(), "{got}");
+    let theirs = call(&lab.hub, &bob, "github_app_get", json!({}))
+        .await
+        .unwrap();
+    assert!(
+        theirs
+            .get("people")
+            .is_none_or(|p| p.as_array().is_some_and(Vec::is_empty)),
+        "{theirs}"
+    );
     assert_eq!(
         got["authorizeUrl"],
         format!(

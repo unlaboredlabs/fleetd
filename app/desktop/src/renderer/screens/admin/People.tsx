@@ -1,4 +1,5 @@
-// Settings › Hub › People: everyone on the hub, with their role and devices. An owner or admin changes a role in place
+// Settings › Hub › People: everyone on the hub, with their role, devices, and the Claude and GitHub their work runs on
+// (claude_accounts_get and github_app_get answer an admin with everyone's), any usage pause on their account included. An owner or admin changes a role in place
 // (person_set) or removes someone (person_remove, once confirmed: their devices are signed out at once). What a row
 // offers comes from model.ts; the hub checks it all again. Below them, Invite someone and the invites still open
 // (Invites.tsx), then every hub link minted here, which acts as its person (hubLinks/AllLinks.tsx).
@@ -12,10 +13,16 @@ import { PageHead } from "../settings/parts";
 import { setUpdatesOpen } from "../updates/state";
 import { AllLinks } from "../hubLinks/AllLinks";
 import { Invites } from "./Invites";
-import { devicesLine, peopleRows, roleWord, type PersonRow } from "./model";
+import { useToolQuery } from "../../src/data/react";
+import { useNow } from "../live";
+import { HubText } from "../projects/HubText";
+import { pauseLine } from "../settings/claudeModel";
+import { accountsLine, devicesLine, peopleRows, roleWord, type PersonRow } from "./model";
 import { usePeople } from "./usePeople";
 import s from "../settings/settings.module.css";
 import a from "./admin.module.css";
+
+const noInput = {};
 
 /** A hub from before people answers that it has no such tool: it needs updating, not a retry. */
 const lacksPeople = (error: unknown): boolean => error instanceof CallError && lacksTool(error.error);
@@ -60,11 +67,25 @@ export function People({ me }: { me: Person | undefined }) {
 function PeopleList({ list, me }: { list: PeopleListOutput; me: Person | undefined }) {
   const [removing, setRemoving] = useState<PersonRow | null>(null);
   const rows = peopleRows(list, me);
+  const live = useLive();
+  const claude = useToolQuery("claude_accounts_get", noInput, { enabled: live });
+  const github = useToolQuery("github_app_get", noInput, { enabled: live });
+  const usage = useToolQuery("usage_status", noInput, { enabled: live });
+  const nowMs = useNow(true, 60_000);
+  const accounts = (personId: string) => {
+    const line = accountsLine(
+      claude.data?.people?.find((p) => p.person.personId === personId),
+      github.data?.people?.find((p) => p.person.personId === personId),
+      github.data?.app !== undefined,
+    );
+    const pause = pauseLine({ kind: "person", personId }, usage.data?.machines ?? [], nowMs);
+    return { line, pause };
+  };
   return (
     <>
       <div className={a.list} role="list" aria-label="People">
         {rows.map((row) => (
-          <PersonLine key={row.person.personId} row={row} onRemove={() => setRemoving(row)} />
+          <PersonLine key={row.person.personId} row={row} accounts={accounts(row.person.personId)} onRemove={() => setRemoving(row)} />
         ))}
       </div>
       <RemoveDialog row={removing} onClose={() => setRemoving(null)} />
@@ -72,7 +93,7 @@ function PeopleList({ list, me }: { list: PeopleListOutput; me: Person | undefin
   );
 }
 
-function PersonLine({ row, onRemove }: { row: PersonRow; onRemove: () => void }) {
+function PersonLine({ row, accounts, onRemove }: { row: PersonRow; accounts: { line: string | null; pause: string | null }; onRemove: () => void }) {
   const live = useLive();
   const call = useHubCall();
   const refetch = useRefetch();
@@ -103,6 +124,16 @@ function PersonLine({ row, onRemove }: { row: PersonRow; onRemove: () => void })
         <Text size="xs" tone="quiet">
           {row.invited ? "Invited, not joined yet" : devices === "" ? devicesLine(0) : `${devicesLine(row.devices.length)}: ${devices}`}
         </Text>
+        {accounts.line === null || row.invited ? null : (
+          <Text size="xs" tone="quiet" data-accounts>
+            {accounts.line}
+          </Text>
+        )}
+        {accounts.pause === null ? null : (
+          <Text size="xs" tone="warning">
+            <HubText>{accounts.pause}</HubText>
+          </Text>
+        )}
         {row.why ? (
           <Text size="xs" tone="quiet">
             {row.why}

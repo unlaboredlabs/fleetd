@@ -8,6 +8,7 @@ import type { ProjectEnvRequest } from "../../../shared/ipc";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { UiProvider } from "../../ui";
+import { Instructions } from "./Instructions";
 import { ProjectSettings } from "./Projects";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -106,7 +107,8 @@ afterEach(() => {
 
 const settle = () => act(async () => new Promise((r) => setTimeout(r, 0)));
 
-const render = async () => {
+/** `page`: the Project page, or the project's Instructions & memory (its nightly refresh). */
+const render = async (page: "project" | "instructions" = "project") => {
   let listener: (frame: HubFrame) => void = () => undefined;
   const hub: HubApi = {
     call: (tool, input) => {
@@ -140,7 +142,11 @@ const render = async () => {
     root.render(
       <UiProvider>
         <DataProvider layer={layer}>
-          <ProjectSettings route={{ tab: "projects", prompt: null, for: "devbox/p1", view: "edit" }} />
+          {page === "project" ? (
+            <ProjectSettings route={{ tab: "projects", prompt: null, for: "devbox/p1", view: "edit" }} />
+          ) : (
+            <Instructions route={{ tab: "instructions", prompt: null, for: "devbox/p1", view: "edit" }} />
+          )}
         </DataProvider>
       </UiProvider>,
     );
@@ -216,15 +222,19 @@ describe("Settings → Projects", () => {
 
   it("turns keep finished worktrees on", async () => {
     await render();
-    const toggle = document.querySelector<HTMLElement>('[role="switch"]');
+    const toggle = document.querySelector<HTMLElement>('section[aria-label="Worktrees"] [role="switch"]');
     if (toggle === null) throw new Error("no switch");
     await click(toggle);
     await settle();
     expect(calls.find((c) => c.tool === "project_settings_set")?.input).toEqual({ machineId: "devbox", projectId: "p1", keepWorktrees: true });
   });
 
-  it("turns the nightly memory refresh off, on by default", async () => {
+  it("turns the nightly memory refresh off, on by default, beside the project's memory", async () => {
     await render();
+    expect(document.body.textContent).not.toContain("Refresh memory every night");
+    act(() => root.unmount());
+    root = createRoot(host);
+    await render("instructions");
     const toggle = [...document.querySelectorAll<HTMLElement>('[role="switch"]')].find((x) => x.closest("label, div")?.textContent.includes("Refresh memory every night"));
     if (toggle === undefined) throw new Error("no memory switch");
     expect(toggle.getAttribute("aria-checked")).toBe("true");
@@ -233,9 +243,9 @@ describe("Settings → Projects", () => {
     expect(calls.find((c) => c.tool === "project_settings_set")?.input).toEqual({ machineId: "devbox", projectId: "p1", memoryRefresh: false });
   });
 
-  it("saves setup commands in order, with their limit, inputs and run anyway", async () => {
+  it("saves the default setup, under the repos, in order, with its limit, inputs and run anyway", async () => {
     await render();
-    const section = document.querySelector<HTMLElement>('section[aria-label="Setup commands"]');
+    const section = document.querySelector<HTMLElement>('section[aria-label="Repos"] section[aria-labelledby="default-setup"]');
     if (section === null) throw new Error("no setup section");
     const [commands, inputs] = [...section.querySelectorAll("textarea")];
     const limit = section.querySelector("input");
@@ -353,7 +363,7 @@ describe("Settings → Projects → Repos", () => {
     expect(text).not.toContain("github.com");
     expect(text).toContain("main");
     expect(text).toContain("/home/w/src/storefront on devbox");
-    expect(text).toContain("Uses the project's: pnpm install");
+    expect(text).toContain("Uses the default: pnpm install");
     expect(text).toContain("Uses the project's: none");
     expect(calls).toContainEqual({ tool: "project_settings_get", input: { machineId: "devbox", projectId: "p1", repo: "web" } });
   });
@@ -367,7 +377,7 @@ describe("Settings → Projects → Repos", () => {
     };
     await renderRepos();
     expect([...section().querySelectorAll('[role="listitem"]')].map((x) => x.getAttribute("aria-label"))).toEqual(["web", "api"]);
-    expect(row("web")).toContain("Uses the project's: pnpm install");
+    expect(row("web")).toContain("Uses the default: pnpm install");
     const text = row("api");
     expect(text).toContain("team/api on gitlab.example.com");
     expect(text).toContain("Not known yet");
@@ -375,6 +385,7 @@ describe("Settings → Projects → Repos", () => {
     expect(text).toContain("p9 on devbox");
     expect(text).toContain("go mod download; make gen");
     expect(text).toContain("make serve");
+    expect(text).not.toContain("Uses the default");
     expect(text).not.toContain("Uses the project's");
   });
 

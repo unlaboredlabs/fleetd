@@ -187,11 +187,12 @@ others. When it remembers something in user scope, it goes to the memory of the 
 answering, and only that person can undo it. A lead opens a topic file when it needs one. Something remembered
 mid-session reaches the next session.
 
-Read, edit or delete your own memory and each project's in Settings › a project › Instructions & memory. Nobody else
+Read, edit or delete your own memory in Settings › Your memory, and each project's in Settings › a project ›
+Instructions & memory. Nobody else
 reads or edits yours, owners and admins included; an owner or admin can only delete the memory of someone removed from
 the hub. A hub from before people kept one shared `user.md`: its owner got a copy as their own memory, and the old
-file stays, read by no agent, as Shared memory, which an owner or admin reads and retires under Hub › Every project ›
-Instructions & memory.
+file stays, read by no agent, as Shared memory, which an owner or admin reads and retires under Settings › Hub › Every
+project › Instructions & memory.
 
 The files are plain markdown in the hub's home (`memory/`, yours in `memory/people/`), in no repo. Each file has a
 cap, by default 16,000 characters for each person's memory and each `MEMORY.md`, 32,000 per topic and

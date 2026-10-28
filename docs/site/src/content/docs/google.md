@@ -151,8 +151,8 @@ When the machine changes, the new one takes the key before the old one forgets i
 
 ## Connect a Google account {#connect}
 
-A person connects their own account from their own computer, in the app: open the Navi's settings (Settings ›
-Projects, the Navi), then **Integrations › Google**.
+A person connects their own account from their own computer, in the app: **Settings › Your accounts › Google**, the
+Navi's row.
 
 1. Press **Connect**. The dialog lists what Google will ask you to allow, and what to do about the warnings Google's
    own page can show. Press **Continue in browser**.
@@ -200,7 +200,7 @@ admin saves the right secret works again.
 
 ## New mail wakes a Navi {#new-mail}
 
-A person chooses, per Navi, when new mail wakes it: on the Navi's **Integrations › Google**, once connected, **New mail
+A person chooses, per Navi, when new mail wakes it: on its row in **Settings › Your accounts › Google**, once connected, **New mail
 wakes this Navi** is **Off**, **All new mail** or **Matching a search**. Off and All save at once; a search saves with
 its **Save** button. While it's on, the row says how mail arrives: by push, or by checking about every minute and why.
 Under the hood this is `google_mail_set`:

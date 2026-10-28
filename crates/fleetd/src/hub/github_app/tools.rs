@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use fleetd_contracts::auth::Role;
-use fleetd_contracts::github_app::GITHUB_APP_PERMISSIONS;
+use fleetd_contracts::github_app::{GITHUB_APP_PERMISSIONS, PersonGithub};
 use fleetd_contracts::mcp::{
     ErrorCode, GithubAppCreateInput, GithubAppCreateOutput, GithubAppGetInput, GithubAppGetOutput,
     GithubAppManifestInput, GithubAppManifestOutput, GithubAppRemoveInput, GithubAppRemoveOutput,
@@ -77,7 +77,21 @@ async fn get(
         Some(p) => hub.github_app.account(&p.person_id)?,
         None => None,
     };
+    let people = if administrator(&hub, &caller)?.is_some() {
+        crate::hub::people::active(&hub.db)?
+            .iter()
+            .map(|p| {
+                Ok(PersonGithub {
+                    person: p.as_ref(),
+                    account: hub.github_app.account(&p.person_id)?,
+                })
+            })
+            .collect::<Result<Vec<_>, crate::hub::store::StoreError>>()?
+    } else {
+        Vec::new()
+    };
     Ok(GithubAppGetOutput {
+        people,
         app: hub.db.github_app().get()?,
         me,
         authorize_url: format!("{}/login/oauth/authorize", hub.github_app.endpoints().web),

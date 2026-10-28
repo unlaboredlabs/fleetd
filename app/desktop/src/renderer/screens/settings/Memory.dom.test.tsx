@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
-// Settings → Projects → Instructions & memory against a hub that keeps user.md in memory: a person edits an entry, deletes one and undoes the
-// delete from its toast, and edits the whole file as text, where a cap refusal shows as before.
+// You › Your memory against a hub that keeps the person's memory: a person edits an entry, deletes one and undoes the
+// delete from its toast, and edits the whole file as text, where a cap refusal shows as before. The same cards serve a
+// project's files and the hub's Shared memory (Memory.tsx).
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -10,7 +11,7 @@ import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { live, project, snapshot } from "../../src/data/fixtures.test-util";
 import { UiProvider } from "../../ui";
-import { Memory } from "./Memory";
+import { SharedMemory, YourMemory } from "./Memory";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 vi.hoisted(() => vi.stubGlobal("fleetd", { platform: "linux", fixture: null }));
@@ -66,7 +67,7 @@ async function mount(text: string, refuse?: HubError) {
     root.render(
       <UiProvider>
         <DataProvider layer={createDataLayer(api)}>
-          <Memory project={null} />
+          <YourMemory />
         </DataProvider>
       </UiProvider>,
     );
@@ -86,7 +87,7 @@ const settle = () =>
     for (let i = 0; i < 10; i++) await new Promise((r) => setTimeout(r, 0));
   });
 
-const cards = () => Array.from(document.querySelectorAll('ul[aria-label="Entries of user.md"] > li')).map((li) => li.textContent);
+const cards = () => Array.from(document.querySelectorAll('ul[aria-label="Entries of your memory"] > li')).map((li) => li.textContent);
 
 const button = (name: string): HTMLButtonElement => {
   const found = Array.from(document.querySelectorAll("button")).find((b) => b.getAttribute("aria-label") === name || b.textContent.trim() === name);
@@ -119,7 +120,7 @@ const textarea = (label: string): HTMLTextAreaElement => {
 
 const FILE = "# Style\n- Concise. State first.\n- No npm.\n- Never estimate time.\n";
 
-it("lists user.md as one card per entry, with the lead's source and time only where the hub knows it", async () => {
+it("lists your memory as one card per entry, with the lead's source and time only where the hub knows it", async () => {
   await mount(FILE);
   const list = cards();
   expect(list).toHaveLength(4);
@@ -128,7 +129,7 @@ it("lists user.md as one card per entry, with the lead's source and time only wh
   expect(list[1]).toContain("Remembered by the lead");
   // An entry with no note says nothing about where it came from.
   expect(list[2]).not.toContain("Remembered");
-  const link = document.querySelector<HTMLAnchorElement>('ul[aria-label="Entries of user.md"] a');
+  const link = document.querySelector<HTMLAnchorElement>('ul[aria-label="Entries of your memory"] a');
   expect(link?.getAttribute("href")).toContain("m12");
   expect(document.querySelector('[role="meter"]')?.getAttribute("aria-valuetext")).toBe(`${String(FILE.length)} of 4,000 characters`);
 });
@@ -142,7 +143,7 @@ it("has no hub-wide caps: those are Every project's", async () => {
 it("edits one entry in place", async () => {
   const hub = await mount(FILE);
   await click("Edit “No npm.”");
-  type(textarea("Edit the entry in user.md"), "No npm: use pnpm.");
+  type(textarea("Edit the entry in your memory"), "No npm: use pnpm.");
   await click("Save");
   expect(hub.sets).toEqual([{ scope: "user", text: "# Style\n- Concise. State first.\n- No npm: use pnpm.\n- Never estimate time.\n" }]);
   expect(cards()[2]).toContain("No npm: use pnpm.");
@@ -153,18 +154,18 @@ it("deletes an entry without a confirm, and Undo in the toast puts it back where
   await click("Delete “No npm.”");
   expect(hub.text).toBe("# Style\n- Concise. State first.\n- Never estimate time.\n");
   expect(cards().join("|")).not.toContain("No npm.");
-  expect(document.body.textContent).toContain("Deleted from user.md");
+  expect(document.body.textContent).toContain("Deleted from your memory");
   // The lead remembers something meanwhile; undo keeps it.
   hub.text += "- Plain words.\n";
   await click("Undo");
   expect(hub.text).toBe(`${FILE}- Plain words.\n`);
-  expect(document.body.textContent).toContain("Put back in user.md");
+  expect(document.body.textContent).toContain("Put back in your memory");
 });
 
 it("an entry's right-click menu edits or deletes it", async () => {
   const hub = await mount(FILE);
   const menu = async (entry: string, label: string) => {
-    const card = Array.from(document.querySelectorAll('ul[aria-label="Entries of user.md"] > li > div')).find((d) => d.textContent.startsWith(entry));
+    const card = Array.from(document.querySelectorAll('ul[aria-label="Entries of your memory"] > li > div')).find((d) => d.textContent.startsWith(entry));
     act(() => {
       card?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }));
     });
@@ -174,7 +175,7 @@ it("an entry's right-click menu edits or deletes it", async () => {
     await settle();
   };
   await menu("No npm.", "Edit");
-  expect(textarea("Edit the entry in user.md").value).toBe("No npm.");
+  expect(textarea("Edit the entry in your memory").value).toBe("No npm.");
   await click("Cancel");
   await menu("Never estimate time.", "Delete");
   expect(hub.text).toBe("# Style\n- Concise. State first.\n- No npm.\n");
@@ -184,9 +185,9 @@ it("an entry's right-click menu edits or deletes it", async () => {
 });
 
 it("edits the whole file as text, and a cap refusal shows as before", async () => {
-  const hub = await mount(FILE, { code: "invalid", message: "user.md would be 4001 characters, past its cap of 4000. Nothing was written." });
+  const hub = await mount(FILE, { code: "invalid", message: "your memory would be 4001 characters, past its cap of 4000. Nothing was written." });
   await click("Edit as text");
-  const field = textarea("All of user.md");
+  const field = textarea("All of your memory");
   expect(field.value).toBe(FILE);
   // Past the cap the page stops the save itself.
   type(field, "x".repeat(4001));
@@ -224,14 +225,14 @@ it("builds an edit from the file as the hub has it now, keeping what the lead wr
   const hub = await mount(FILE);
   hub.text = `- Plain words.\n${FILE}`;
   await click("Edit “No npm.”");
-  type(textarea("Edit the entry in user.md"), "No npm: use pnpm.");
+  type(textarea("Edit the entry in your memory"), "No npm: use pnpm.");
   await click("Save");
   expect(hub.text).toBe("- Plain words.\n# Style\n- Concise. State first.\n- No npm: use pnpm.\n- Never estimate time.\n");
 });
 
 it("keeps a file's section and its Edit as text when a search matches none of its entries", async () => {
   await mount(FILE);
-  const search = document.querySelector<HTMLInputElement>('input[aria-label="Search memory"]');
+  const search = document.querySelector<HTMLInputElement>('input[aria-label="Search your memory"]');
   if (!search) throw new Error("no search");
   type(search, "zebra");
   expect(cards()).toEqual([]);
@@ -239,4 +240,60 @@ it("keeps a file's section and its Edit as text when a search matches none of it
   expect(button("Edit as text").disabled).toBe(false);
   type(search, "npm");
   expect(cards()).toHaveLength(1);
+});
+
+/** The hub's old shared user.md as `text` (null: a hub from before per-person memory), every memory_shared_set kept. */
+async function mountShared(text: string | null) {
+  const hub = { text: text ?? "", sets: [] as Array<{ text: string }> };
+  const file = (): MemoryFile => ({ scope: "user", text: hub.text, chars: Array.from(hub.text).length, cap: 16000, notes: [] });
+  let send: Parameters<HubApi["subscribe"]>[0] = () => undefined;
+  const api: HubApi = {
+    call: (tool, input) => {
+      if (text === null && tool.startsWith("memory_shared")) return Promise.resolve({ ok: false, error: { code: "not_found", message: `No tool ${tool}.` } });
+      if (tool === "memory_shared_set") {
+        const set = input as { text: string };
+        hub.sets.push(set);
+        hub.text = set.text;
+        return Promise.resolve({ ok: true, output: { file: file() } });
+      }
+      if (tool === "memory_shared_get") return Promise.resolve({ ok: true, output: { file: file() } });
+      return Promise.resolve({ ok: true, output: {} });
+    },
+    subscribe: (l) => ((send = l), () => undefined),
+    resync: () => Promise.resolve(),
+    focus: () => Promise.resolve(),
+    chat: () => Promise.resolve(),
+  };
+  await act(async () => {
+    root.render(
+      <UiProvider>
+        <DataProvider layer={createDataLayer(api)}>
+          <SharedMemory />
+        </DataProvider>
+      </UiProvider>,
+    );
+    await Promise.resolve();
+  });
+  act(() => {
+    send(live());
+    send(snapshot(1));
+  });
+  await settle();
+  return hub;
+}
+
+it("shows the hub's old shared memory for an admin to edit, and retires it whole", async () => {
+  const hub = await mountShared(FILE);
+  expect(Array.from(document.querySelectorAll('ul[aria-label="Entries of user.md"] > li'))).toHaveLength(4);
+  await click("Edit as text");
+  const field = textarea("All of user.md");
+  type(field, "");
+  await click("Save");
+  expect(hub.sets.at(-1)).toEqual({ text: "" });
+  expect(document.body.textContent).toContain("Retired: each person's memory is their own.");
+});
+
+it("says a hub from before per-person memory still shares one, read and edited in Your memory", async () => {
+  await mountShared(null);
+  expect(document.body.textContent).toContain("This hub still shares one memory among everyone");
 });

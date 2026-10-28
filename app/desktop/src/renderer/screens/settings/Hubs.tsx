@@ -1,19 +1,21 @@
 // Settings › You › Hubs: the hubs this app is paired with (docs/design/hubs.md), each under a name the person picks and an
 // optional colour. Each can be renamed, recoloured, paired again or removed; Add a hub pairs one more beside them.
-// A hub's name shows in the sidebar, notifications, Status and Commands once there are two. Under each, the hub links
-// made as you on it (hubLinks/LinksToThisHub.tsx).
+// A hub's name shows in the sidebar, notifications, Status and Commands once there are two. Then Hub links: the keys
+// made as you on each hub (hubLinks/LinksToThisHub.tsx) and the hubs your Navi reaches (hubLinks/LinkedHubs.tsx).
 import { useState } from "react";
 import type { HubState } from "../../../shared/hub";
 import { LABEL_MAX, type HubColor } from "../../../shared/hubs";
 import { keyStoreLine } from "../../../shared/pairing";
 import { Button, Dialog, Dot, Field, Input, Truncate } from "../../ui";
 import { HubScope, useData, useHub, useHubs } from "../../src/data/react";
+import { LinkedHubs } from "../hubLinks/LinkedHubs";
 import { LinksToThisHub } from "../hubLinks/LinksToThisHub";
+import { isArchived, isNavi } from "../navi/model";
 import { useKeyStore } from "../onboarding";
 import { sentence } from "../onboarding/form";
 import { Prose } from "../onboarding/Prose";
 import { ColorPick } from "../shell/ColorPick";
-import { PagePart, Setting } from "./parts";
+import { PagePart, Setting, useProjects } from "./parts";
 import s from "./settings.module.css";
 
 /** Settings › You › Hubs: each hub this app is paired with, and Add a hub. */
@@ -44,8 +46,29 @@ export function HubsSettings() {
       {hubs.map((hub) => (
         <HubScope key={hub.id} hub={hub}>
           <HubSetting only={hubs.length === 1} />
-          <LinksToThisHub />
         </HubScope>
+      ))}
+    </PagePart>
+  );
+}
+
+/**
+ * Hub links, both halves in one place: the link keys made as you on each paired hub, which let your Navi elsewhere act
+ * here, then the other hubs your Navi on this hub reaches through keys made there.
+ */
+export function HubLinksSettings() {
+  const hubs = useHubs();
+  const projects = useProjects();
+  const navis = (projects ?? []).filter((p) => isNavi(p) && !isArchived(p));
+  return (
+    <PagePart title="Hub links" reveal="hubs.hub-links" intro="Keys that let a Navi on one hub open and follow work on another, as the person who made them.">
+      {hubs.map((hub) => (
+        <HubScope key={hub.id} hub={hub}>
+          <LinksToThisHub label={hubs.length === 1 ? "Links to this hub" : `Links to ${hub.label}`} />
+        </HubScope>
+      ))}
+      {navis.map((n) => (
+        <LinkedHubs key={`${n.machineId}/${n.projectId}`} navi={{ machineId: n.machineId, projectId: n.projectId }} label={navis.length === 1 ? "Linked hubs" : `Hubs ${n.title} reaches`} />
       ))}
     </PagePart>
   );

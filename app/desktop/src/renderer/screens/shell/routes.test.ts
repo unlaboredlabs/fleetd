@@ -31,6 +31,7 @@ describe("routes", () => {
       { id: "settings", tab: "prompts" },
       { id: "settings", tab: "accounts" },
       { id: "settings", tab: "hubs" },
+      { id: "settings", tab: "your-memory" },
       { id: "settings", tab: "prompts", prompt: "lead.start", for: "devbox/storefront", view: "compare" },
       { id: "settings", tab: "hub.people" },
       { id: "settings", tab: "hub.machines" },

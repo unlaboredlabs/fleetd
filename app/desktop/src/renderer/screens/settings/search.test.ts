@@ -42,7 +42,10 @@ describe("settings search", () => {
     const tabs = (q: string, admin: boolean) => searchSettings(q, optionsFor(admin)).map((o) => o.tab);
     expect(tabs("task profiles", false)).not.toContain("hub.profiles");
     expect(tabs("task profiles", true)).toContain("hub.profiles");
-    expect([tabOf("instructions"), tabOf("memory")]).toEqual(["instructions", "instructions"]);
+    // Memory is yours on You › Your memory, a project's on its Instructions & memory, with its nightly refresh (D212).
+    expect([tabOf("instructions"), tabOf("memory"), tabOf("project memory"), tabOf("nightly")]).toEqual(["instructions", "your-memory", "instructions", "instructions"]);
+    expect([tabOf("setup commands"), tabOf("linked hubs"), tabOf("gmail")]).toEqual(["projects", "hubs", "accounts"]);
+    expect(tabOf("shared memory", true)).toBe("hub.instructions");
     expect([tabOf("automations"), tabOf("environment variables"), tabOf("prompts")]).toEqual(["automations", "projects", "prompts"]);
     // Nothing hub-wide for a member: the global MCP servers and the instructions for every project are the Hub group's.
     expect(labels("global")).toEqual([]);

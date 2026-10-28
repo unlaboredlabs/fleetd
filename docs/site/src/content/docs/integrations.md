@@ -6,8 +6,8 @@ description: Connect a Navi to Notion and any MCP server, with your own credenti
 A Navi can reach your notes and any service with an MCP server. You connect each one yourself in the Navi's settings,
 with credentials you make: fleetd is open source and has no shared app. Your keys are sealed on the Navi's machine, and
 the Navi never sees them. The same rules and the same approval card cover every integration, Gmail, Calendar and Drive
-([Google for Navi](/docs/google)) included. A Navi's settings list them under **Integrations**: Google first, then
-Notion and the MCP servers you added.
+([Google for Navi](/docs/google)) included. A Navi's settings list them under **Integrations**: Notion and the MCP
+servers you added. Its Google is in **Settings › Your accounts**, beside your other accounts.
 
 Integrations connect only to a Navi. A coding project's lead runs with full access, so it would send unasked; the hub
 refuses an integration on any other project.
