@@ -108,7 +108,8 @@ export const approvalOutcome = (item: CommandApprovalItem): Outcome | undefined 
     case "open":
       return undefined;
     case "approved":
-      return { tone: "quiet", text: "Approved, running…" };
+      // A session's tool prompt runs in the session, which shows how it went: the hub never hears it finish.
+      return { tone: "quiet", text: item.permission === undefined ? "Approved, running…" : "Approved" };
     case "ran": {
       // No exit code: a signal or the timeout ended it.
       if (item.exitCode === undefined) return { tone: "warning", text: time === undefined ? "Approved, stopped before it finished" : `Approved, stopped after ${time}` };

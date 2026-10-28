@@ -100,6 +100,8 @@ describe("a command approval", () => {
     expect(approvalOutcome(approval("Q11"))).toEqual({ tone: "danger", text: "Approved, didn't run" });
     expect(approvalOutcome(approval("Q8"))?.text).toBe("Denied, nothing ran");
     expect(approvalOutcome(approval("Q9"))?.text).toBe("Approved, running…");
+    // A session's tool prompt runs in the session, never reported back: approved is all it ever says, not running.
+    expect(approvalOutcome({ ...approval("Q8"), state: "approved" })).toEqual({ tone: "quiet", text: "Approved" });
     // An older hub records no finish time: no duration rather than a wrong one.
     const { finishedAt: _, ...unfinished } = approval("Q5");
     expect(approvalOutcome(unfinished)?.text).toBe("Approved and ran");

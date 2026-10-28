@@ -10,7 +10,7 @@ mod env;
 pub mod files;
 mod health;
 mod proc;
-mod share;
+pub(crate) mod share;
 mod spans;
 pub mod state;
 mod steers;

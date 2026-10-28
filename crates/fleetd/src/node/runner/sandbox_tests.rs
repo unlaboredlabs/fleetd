@@ -224,7 +224,7 @@ impl Machine {
             .env_clear()
             .env("PATH", "/usr/bin:/bin")
             .env("HOME", &self.home)
-            .env("TMPDIR", &self.scratch)
+            .envs(crate::node::sessions::share::scratch_env(&self.scratch))
             .env("DISPLAY", ":0")
             .output()
             .unwrap();
@@ -541,6 +541,43 @@ fn a_navi_works_in_its_folder_as_usual() {
         );
         assert!(!snapshot.exists());
     }
+}
+
+#[test]
+fn a_navis_claude_makes_its_temp_dir_in_its_scratch_dir() {
+    let Some(tool) = sandbox_or_skip() else {
+        return;
+    };
+    let m = Machine::new();
+    // As claude (2.1.302) does before every command: `claude-<uid>` under CLAUDE_CODE_TMPDIR, else os.tmpdir(), which
+    // on a Mac came out as /private/tmp, and every command failed with EPERM.
+    let (ok, out) = m.run(
+        &tool,
+        r#"set -e
+         dir="${CLAUDE_CODE_TMPDIR:?unset: claude falls back to /tmp}/claude-$(id -u)/-navi-ada/s1/tasks"
+         mkdir -p "$dir"
+         echo done > "$dir/b1.output""#,
+    );
+    assert!(ok, "{out}");
+    let uid = nix::unistd::getuid();
+    assert!(
+        m.scratch
+            .join(format!("claude-{uid}/-navi-ada/s1/tasks/b1.output"))
+            .is_file(),
+        "{out}"
+    );
+    // The machine's /tmp stays shut: on macOS no write reaches it, and on Linux the session's /tmp is its own.
+    let tmp = format!("/private/tmp/fleetd-sandbox-claude-{}", std::process::id());
+    let tmp = if cfg!(target_os = "macos") {
+        tmp
+    } else {
+        tmp.replace("/private", "")
+    };
+    let (ok, out) = m.run(&tool, &format!("mkdir {tmp}"));
+    if cfg!(target_os = "macos") {
+        assert!(!ok && out.contains("not permitted"), "{out}");
+    }
+    assert!(!Path::new(&tmp).exists(), "{out}");
 }
 
 #[test]

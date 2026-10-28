@@ -159,7 +159,7 @@ secret is masked even where the same text comes from somewhere else, such as a g
 The hub and the app never get a secret's value: they see its name, its fingerprint and its size in bytes (the size
 counts toward the project's total).
 
-Names are letters, digits and `_`. fleetd sets `HOME`, `PATH`, `USER`, `TMPDIR` (and `TMP`, `TEMP`) and every
+Names are letters, digits and `_`. fleetd sets `HOME`, `PATH`, `USER`, `TMPDIR` (and `TMP`, `TEMP`, `CLAUDE_CODE_TMPDIR`) and every
 `FLEETD_` variable itself, and a project can't change how claude itself runs: `ANTHROPIC_*` and `CLAUDE*` names are
 refused. A variable the node already gives every session, from its own environment or
 [`claude.env`](/docs/config-and-files), keeps the node's value.

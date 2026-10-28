@@ -274,7 +274,7 @@ encoding, or a value under 4 characters goes out as printed, so keep secrets out
 secret is masked even where the same text comes from somewhere else, such as a generic line of a JSON file.</p>
 <p>The hub and the app never get a secret’s value: they see its name, its fingerprint and its size in bytes (the size
 counts toward the project’s total).</p>
-<p>Names are letters, digits and <code dir="auto">_</code>. fleetd sets <code dir="auto">HOME</code>, <code dir="auto">PATH</code>, <code dir="auto">USER</code>, <code dir="auto">TMPDIR</code> (and <code dir="auto">TMP</code>, <code dir="auto">TEMP</code>) and every
+<p>Names are letters, digits and <code dir="auto">_</code>. fleetd sets <code dir="auto">HOME</code>, <code dir="auto">PATH</code>, <code dir="auto">USER</code>, <code dir="auto">TMPDIR</code> (and <code dir="auto">TMP</code>, <code dir="auto">TEMP</code>, <code dir="auto">CLAUDE_CODE_TMPDIR</code>) and every
 <code dir="auto">FLEETD_</code> variable itself, and a project can’t change how claude itself runs: <code dir="auto">ANTHROPIC_*</code> and <code dir="auto">CLAUDE*</code> names are
 refused. A variable the node already gives every session, from its own environment or
 <a href="/docs/config-and-files"><code dir="auto">claude.env</code></a>, keeps the node’s value.</p>
