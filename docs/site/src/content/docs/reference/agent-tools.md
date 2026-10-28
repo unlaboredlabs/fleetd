@@ -75,9 +75,9 @@ Every lead gets these.
 | [`preview_suggest`](#preview_suggest) | Suggest the person try a PR themselves, where a human test clearly matters (a UI change, copy in several languages, a mobile build): one line with a Try it button in the chat and the PR, once per PR, which the app also shows as something to look at until the person has seen it. | No |
 | [`preview_config_propose`](#preview_config_propose) | Propose how Try it runs this project's web app, once you know: setup commands (install), build, a start command that serves on 127.0.0.1:$PORT, the ready path and the lockfiles setup depends on. | A person approves the proposed setting in chat before it is saved. |
 | [`preview_start`](#preview_start) | Start a preview of a PR (or an order's PRs merged together) for the person to try: only when the person asked for it in the message you are answering, never on your own (use preview_suggest for that). | No |
-| [`session_start`](#session_start) | Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end. | No |
+| [`session_start`](#session_start) | Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end (a Navi's browser instead keeps its own profile, so the sites it signed into stay signed in). | No |
 | [`desktop`](#desktop) | Act on your Linux desktop session (session_start kind linux_desktop), with computer-use actions plus launch. | No |
-| [`session_end`](#session_end) | Close your browser session: the browser and its profile are thrown away, and its recording goes to the hub. | No |
+| [`session_end`](#session_end) | Close your browser session: the browser and its profile are thrown away (a Navi's profile stays, with its sign-ins), and its recording goes to the hub. | No |
 | [`request_takeover`](#request_takeover) | Ask a person to take your browser over, for what only they can do: a captcha, a login confirmation only they can give, a judgement call. | No |
 | [`fill_credential`](#fill_credential) | Fill a login field of your browser session from 1Password without seeing the value: ref is its secret reference (op://&lt;vault>/&lt;item>/&lt;field>, ?attribute=otp for a one-time code), target the field's CSS selector. | No |
 
@@ -854,7 +854,7 @@ Start a preview of a PR (or an order's PRs merged together) for the person to tr
 
 ### session_start
 
-Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end. It is recorded (video, the page after each step, a line per agent-browser command) for the person to replay. Drive it with the agent-browser CLI in Bash, which is already pointed at it: pass no --cdp and launch no browser of your own. purpose: one line on what for. kind android instead opens a fresh Android emulator (Android 15), driven with the agent-device CLI, which is already pointed at it: pass no --serial or --platform. kind ios opens a fresh iOS simulator on a Mac the same way: pass no --udid or --platform. kind linux_desktop opens a fresh Linux desktop (1280x800, a window manager, xterm), driven with the desktop tool.
+Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end (a Navi's browser instead keeps its own profile, so the sites it signed into stay signed in). It is recorded (video, the page after each step, a line per agent-browser command) for the person to replay. Drive it with the agent-browser CLI in Bash, which is already pointed at it: pass no --cdp and launch no browser of your own. purpose: one line on what for. kind android instead opens a fresh Android emulator (Android 15), driven with the agent-device CLI, which is already pointed at it: pass no --serial or --platform. kind ios opens a fresh iOS simulator on a Mac the same way: pass no --udid or --platform. kind linux_desktop opens a fresh Linux desktop (1280x800, a window manager, xterm), driven with the desktop tool.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -903,7 +903,7 @@ Act on your Linux desktop session (session_start kind linux_desktop), with compu
 
 ### session_end
 
-Close your browser session: the browser and its profile are thrown away, and its recording goes to the hub.
+Close your browser session: the browser and its profile are thrown away (a Navi's profile stays, with its sign-ins), and its recording goes to the hub.
 
 No parameters.
 
@@ -970,9 +970,9 @@ Every task's agent gets these: implementers, readers, reviewers and QA.
 | [`review_read`](#review_read-task) | Read every finding of the latest reviews of your PRs, blocking and non-blocking, in full, each with path:line. | No |
 | [`preview_suggest`](#preview_suggest-task) | Suggest the person try a PR themselves, where a human test clearly matters (a UI change, copy in several languages, a mobile build): one line with a Try it button in the chat and the PR, once per PR, which the app also shows as something to look at until the person has seen it. | No |
 | [`preview_config_propose`](#preview_config_propose-task) | Propose how Try it runs this project's web app, once you know: setup commands (install), build, a start command that serves on 127.0.0.1:$PORT, the ready path and the lockfiles setup depends on. | A person approves the proposed setting in chat before it is saved. |
-| [`session_start`](#session_start-task) | Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end. | No |
+| [`session_start`](#session_start-task) | Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end (a Navi's browser instead keeps its own profile, so the sites it signed into stay signed in). | No |
 | [`desktop`](#desktop-task) | Act on your Linux desktop session (session_start kind linux_desktop), with computer-use actions plus launch. | No |
-| [`session_end`](#session_end-task) | Close your browser session: the browser and its profile are thrown away, and its recording goes to the hub. | No |
+| [`session_end`](#session_end-task) | Close your browser session: the browser and its profile are thrown away (a Navi's profile stays, with its sign-ins), and its recording goes to the hub. | No |
 | [`request_takeover`](#request_takeover-task) | Ask a person to take your browser over, for what only they can do: a captcha, a login confirmation only they can give, a judgement call. | No |
 | [`fill_credential`](#fill_credential-task) | Fill a login field of your browser session from 1Password without seeing the value: ref is its secret reference (op://&lt;vault>/&lt;item>/&lt;field>, ?attribute=otp for a one-time code), target the field's CSS selector. | No |
 
@@ -1133,7 +1133,7 @@ Propose how Try it runs this project's web app, once you know: setup commands (i
 
 ### session_start (task)
 
-Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end. It is recorded (video, the page after each step, a line per agent-browser command) for the person to replay. Drive it with the agent-browser CLI in Bash, which is already pointed at it: pass no --cdp and launch no browser of your own. purpose: one line on what for. kind android instead opens a fresh Android emulator (Android 15), driven with the agent-device CLI, which is already pointed at it: pass no --serial or --platform. kind ios opens a fresh iOS simulator on a Mac the same way: pass no --udid or --platform. kind linux_desktop opens a fresh Linux desktop (1280x800, a window manager, xterm), driven with the desktop tool.
+Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end (a Navi's browser instead keeps its own profile, so the sites it signed into stay signed in). It is recorded (video, the page after each step, a line per agent-browser command) for the person to replay. Drive it with the agent-browser CLI in Bash, which is already pointed at it: pass no --cdp and launch no browser of your own. purpose: one line on what for. kind android instead opens a fresh Android emulator (Android 15), driven with the agent-device CLI, which is already pointed at it: pass no --serial or --platform. kind ios opens a fresh iOS simulator on a Mac the same way: pass no --udid or --platform. kind linux_desktop opens a fresh Linux desktop (1280x800, a window manager, xterm), driven with the desktop tool.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -1182,7 +1182,7 @@ Act on your Linux desktop session (session_start kind linux_desktop), with compu
 
 ### session_end (task)
 
-Close your browser session: the browser and its profile are thrown away, and its recording goes to the hub.
+Close your browser session: the browser and its profile are thrown away (a Navi's profile stays, with its sign-ins), and its recording goes to the hub.
 
 No parameters.
 

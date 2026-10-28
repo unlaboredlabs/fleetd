@@ -16,7 +16,7 @@ every project has, unchanged: [chat](/docs/chat), memory and its nightly refresh
 
 Each Navi belongs to the person who made it. Only you see your Navis, in the sidebar, on the Navi page, under
 **Your accounts › Google** and **Hubs › Hub links**. Only you use them: their chat and approvals, Google, Notion and
-other tools, hub links, allowed sites, settings, archive and delete. The hub refuses everyone else, admins included. An
+other tools, hub links, allowed sites, sign-ins, settings, archive and delete. The hub refuses everyone else, admins included. An
 admin can only delete the Navi of someone removed from the hub. On a hub from before people, Navis made earlier
 belong to the person whose device made them, else the hub's owner.
 
@@ -133,6 +133,28 @@ ask per site at all. Nor is the final Send or Pay button on a site you allowed: 
 instruction only. The Navi is told to hand it to you with a takeover, but that's its prompt, not fleetd's rules. Only
 allow sites where that's fine, such as your bank's when you mean to watch.
 
+## Sign-ins {#sign-ins}
+
+A Navi's browser stays signed in. Sign in to a site once, yourself in a takeover or by the Navi, and its next browser
+session is still signed in there. No login page, captcha or approve-on-your-phone step each time.
+
+- **What's kept:** the browser's cookies and site data (local storage, IndexedDB), in a browser profile of the Navi's
+  own. Its history, cache, open tabs, saved passwords and form entries are not kept. Logins filled from 1Password
+  aren't saved either: each session that fills one still refuses to read it back.
+- **Where:** on the Navi's machine, under fleetd's node directory (`browser/navis/<project id>`). The Navi's sandbox
+  hides that directory, so the Navi's commands can't read the cookies. Only the browser fleetd starts for it uses them.
+- **Whose:** that Navi's alone. Another Navi, a project's agents and the browser in a preview each start with a fresh,
+  empty profile that is thrown away when the session ends.
+- **One at a time:** one browser runs on the profile. If the Navi opens a second session while one is open in another
+  of its chats, the second is refused until the first ends.
+- **Another machine:** when the hub places the Navi's browser on another machine because its own is full, that
+  session starts signed out and keeps nothing.
+
+**To sign it out of everything,** open the Navi's settings (**Open settings** in its right-click menu), find
+**Sign-ins** and click **Forget sign-ins…**. A browser session it has open now ends, and the profile is deleted. Its
+chat, memory, folder and allowed sites stay. Deleting the Navi deletes its sign-ins too. To sign out of one site only,
+ask the Navi to sign out there.
+
 ## Hub links {#hub-links}
 
 A Navi can open and follow work in projects on another hub, such as a team hub when the Navi lives on your personal
@@ -182,6 +204,7 @@ Navis are MCP tools on the hub: `navi_create {name, machineId?}`, `navi_list {ar
 Navi as a project summary with `kind: "assistant"`, `createdBy` (the id and name of the key that made it) and, once
 archived, `archivedAt`. Every other project has no `kind`. Talk to a Navi with `chat_send`, as to any project.
 `navi_asks {navi}` lists what a Navi asked other projects for, with the orders opened for each, on a hub whose ready
-frame names the `navi_asks` feature. Hub links are `hub_links_get {navi?}`, `hub_link_mint {label, projects?}`,
+frame names the `navi_asks` feature. `navi_signins_forget {machineId, projectId}` forgets a Navi's
+[sign-ins](#sign-ins); it needs the Navi's machine online and on a fleetd that keeps them. Hub links are `hub_links_get {navi?}`, `hub_link_mint {label, projects?}`,
 `hub_link_revoke {linkId}`, `hub_link_add {navi, label, url, sealed}` (the key sealed to `boxPubKey` from
 `hub_links_get`) and `hub_link_remove {linkId}`.

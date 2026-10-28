@@ -10099,6 +10099,12 @@
         "navi_rename.output": {
           "$ref": "#/$defs/NaviRenameOutput"
         },
+        "navi_signins_forget.input": {
+          "$ref": "#/$defs/NaviSigninsForgetInput"
+        },
+        "navi_signins_forget.output": {
+          "$ref": "#/$defs/NaviSigninsForgetOutput"
+        },
         "navi_site_revoke.input": {
           "$ref": "#/$defs/NaviSiteRevokeInput"
         },
@@ -10719,6 +10725,8 @@
         "navi_list.output",
         "navi_rename.input",
         "navi_rename.output",
+        "navi_signins_forget.input",
+        "navi_signins_forget.output",
         "navi_site_revoke.input",
         "navi_site_revoke.output",
         "navi_sites.input",
@@ -12340,6 +12348,41 @@
       "required": [
         "status",
         "line"
+      ],
+      "type": "object"
+    },
+    "NaviSigninsForgetInput": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        }
+      },
+      "required": [
+        "machineId",
+        "projectId"
+      ],
+      "type": "object"
+    },
+    "NaviSigninsForgetOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "ok": {
+          "enum": [
+            true
+          ],
+          "type": "boolean"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ok"
       ],
       "type": "object"
     },

@@ -21,6 +21,9 @@ their names, `session_start` and `session_end`.
    agent runs `agent-browser skills get core` once for how to use it.
 3. **`session_end`**. The node kills that Chrome, deletes its profile, and uploads the recording.
 
+A Navi's browser is the exception: it keeps one profile of the Navi's own between sessions, launched fresh for each
+session rather than taken warm, so the sites it signed into stay signed in ([Navi › Sign-ins](/docs/navi#sign-ins)).
+
 An agent has one screen open at a time. Its screen also ends when the agent's claude exits (its work is done, it was
 stopped or it went idle), or after 30 minutes without an `agent-browser` command. A screen never outlives its task:
 once the task is done, failed or cancelled (its order closed, say), the hub ends any screen it left open and the node

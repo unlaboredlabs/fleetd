@@ -1239,3 +1239,95 @@ async fn after_a_fill_agent_browser_works_but_reads_no_value_back() {
     run(&["close"]).await;
     call(&rig.broker, json!({ "op": "session_end" })).await;
 }
+
+/// Every file under `dir`, read whole.
+fn files_under(dir: &Path) -> Vec<(PathBuf, Vec<u8>)> {
+    let mut out = Vec::new();
+    for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            out.extend(files_under(&path));
+        } else if let Ok(bytes) = std::fs::read(&path) {
+            out.push((path, bytes));
+        }
+    }
+    out
+}
+
+/// The value of the page's `field`, read as an agent's own script would.
+async fn read(driver: &mut Driver, page: &str, field: &str) -> Value {
+    let expression = format!("document.querySelector('{field}').value");
+    driver
+        .send(
+            Some(page),
+            "Runtime.evaluate",
+            json!({ "expression": expression, "returnByValue": true }),
+        )
+        .await
+}
+
+/// A Navi's browser keeps its profile between sessions (D221), and the no-read-back rule is still each session's own:
+/// the session that filled is sealed, the next one starts unsealed with no filled value anywhere in the profile (no
+/// saved password or form entry), and seals again at its own fill.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_navis_kept_profile_keeps_no_filled_value_and_each_session_that_fills_is_sealed() {
+    let Some(rig) = rig_with(vec![(TOKEN_ENV.into(), TOKEN.into())]).await else {
+        return;
+    };
+    let (site, _bodies, _site) = shop().await;
+    let (_, vault_for) = fake(vec![format!("{site}/")]);
+    rig.broker.set_vaults(vault_for);
+    SessionHooks::navi(rig.broker.as_ref(), THREAD, "ada");
+    let start = || {
+        call(
+            &rig.broker,
+            json!({ "op": "session_start", "purpose": "Sign in" }),
+        )
+    };
+    let sealed = |answer: &Value| {
+        answer["error"]["message"]
+            .as_str()
+            .is_some_and(|m| m.contains("filled a login from 1Password"))
+    };
+
+    let started = start().await;
+    let mut driver = Driver::connect(started["result"]["cdp"].as_str().unwrap())
+        .await
+        .unwrap();
+    let page = driver.page().await;
+    open(&mut driver, &page, &site).await;
+    assert!(fill(&rig, USER_REF, "#user", Some(false)).await["result"].is_object());
+    assert!(fill(&rig, PASSWORD_REF, "#pw", None).await["result"].is_object());
+    wait_title(&mut driver, &page, "Welcome").await;
+    let answer = read(&mut driver, &page, "#echo").await;
+    assert!(sealed(&answer), "{answer}");
+    drop(driver);
+    call(&rig.broker, json!({ "op": "session_end" })).await;
+
+    // The next session, on the same profile: nothing filled yet, so nothing sealed, and nothing of the last fill.
+    let started = start().await;
+    let mut driver = Driver::connect(started["result"]["cdp"].as_str().unwrap())
+        .await
+        .unwrap();
+    let page = driver.page().await;
+    open(&mut driver, &page, &site).await;
+    for field in ["#user", "#pw"] {
+        let answer = read(&mut driver, &page, field).await;
+        assert_eq!(answer["result"]["result"]["value"], "", "{field}: {answer}");
+    }
+    assert!(fill(&rig, PASSWORD_REF, "#pw", Some(false)).await["result"].is_object());
+    let answer = read(&mut driver, &page, "#pw").await;
+    assert!(sealed(&answer), "sealed again at its own fill: {answer}");
+    drop(driver);
+    call(&rig.broker, json!({ "op": "session_end" })).await;
+
+    let kept = super::super::chrome::kept_dir(rig.node_home.path(), "ada").unwrap();
+    let files = files_under(&kept);
+    assert!(!files.is_empty(), "the profile is kept");
+    for (path, bytes) in files {
+        assert_clean(
+            &format!("the kept profile's {}", path.display()),
+            &String::from_utf8_lossy(&bytes),
+        );
+    }
+}

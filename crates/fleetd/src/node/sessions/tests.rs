@@ -2307,6 +2307,59 @@ async fn deleting_a_plain_folder_project_with_its_worktrees_skips_git() {
     assert_eq!(gone.code, SessionErrorCode::NotFound);
 }
 
+/// A Navi's browser profile (D221): forgetting its sign-ins deletes it, deleting the Navi does too, and another Navi's
+/// stays.
+#[tokio::test]
+async fn forgetting_a_navis_sign_ins_or_deleting_it_deletes_its_browser_profile() {
+    let dir = tempfile::tempdir().unwrap();
+    let folder = dir.path().join("navi/ada");
+    std::fs::create_dir_all(&folder).unwrap();
+    let home = dir.path().join("node");
+    let hub = hub(
+        dir.path(),
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::fixture("permission-allow"),
+    )
+    .await;
+    hub.project(&folder).await;
+    let kept = |navi: &str| crate::node::browser::chrome::kept_dir(&home, navi).unwrap();
+    let sign_in = |navi: &str| {
+        std::fs::create_dir_all(kept(navi).join("Default")).unwrap();
+        std::fs::write(kept(navi).join("Default/Cookies"), "who=ada").unwrap();
+    };
+    sign_in("p1");
+    sign_in("bee");
+
+    let forget = || SessionCall::NaviSigninsForget {
+        project_id: ProjectId::unchecked("p1"),
+    };
+    assert_eq!(hub.ok(forget()).await, SessionOutput::Done);
+    assert!(!kept("p1").exists());
+    assert_eq!(
+        hub.ok(forget()).await,
+        SessionOutput::Done,
+        "nothing to forget"
+    );
+    sign_in("p1");
+    assert_eq!(
+        hub.ok(SessionCall::ProjectRemove {
+            project_id: ProjectId::unchecked("p1"),
+            remove_worktrees: false,
+        })
+        .await,
+        SessionOutput::Done
+    );
+    assert!(!kept("p1").exists());
+    assert!(
+        kept("bee").join("Default/Cookies").is_file(),
+        "another Navi's stays"
+    );
+    let SessionResult::Err(gone) = hub.call(forget()).await else {
+        panic!("forgot a removed project's sign-ins")
+    };
+    assert_eq!(gone.code, SessionErrorCode::NotFound);
+}
+
 /// The recorded `echo hi` turn, as a `printenv` that prints `printed` and a reply that repeats it.
 fn printenv_turn(printed: &str) -> String {
     fn swap(v: &mut serde_json::Value, printed: &str) {
@@ -3811,6 +3864,8 @@ async fn a_navi_gets_its_folder_under_the_node_home_and_its_lead_the_assistant_r
         FakeRunner::fixture("init-partial-two-turns"),
     )
     .await;
+    let navis = Arc::new(NaviHooks::default());
+    hub.service.set_browser(navis.clone());
     // A relative root is a folder under the node's home, made on demand; one that would leave it is refused.
     let made = hub
         .ok(SessionCall::ProjectUpsert {
@@ -3875,6 +3930,11 @@ async fn a_navi_gets_its_folder_under_the_node_home_and_its_lead_the_assistant_r
     hub.settled("r1").await;
     let spec = hub.runner.spawned()[0].clone();
     assert_eq!(spec.cwd, folder);
+    // Its browser sessions run on the profile Navi p1 keeps (D221).
+    assert_eq!(
+        *navis.0.lock().unwrap(),
+        [("s1".to_owned(), "p1".to_owned())]
+    );
     assert_eq!(spec.runtime_mode, RuntimeMode::ApprovalRequired);
     // Nothing reads files or fetches unasked: every such call asks, above any allow rule, and the node or the hub
     // answers it.
@@ -3945,6 +4005,31 @@ async fn a_navi_gets_its_folder_under_the_node_home_and_its_lead_the_assistant_r
             .iter()
             .any(|(k, _)| crate::node::runner::sandbox::NO_ENV.contains(&k.as_str()))
     );
+}
+
+/// The browser's hooks, keeping only which agent sessions are a Navi's.
+#[derive(Default)]
+struct NaviHooks(std::sync::Mutex<Vec<(String, String)>>);
+
+impl crate::node::browser::SessionHooks for NaviHooks {
+    fn env(&self, _thread: &str, _path: Option<&str>) -> Vec<(String, String)> {
+        Vec::new()
+    }
+    fn plugin_dirs(&self) -> Vec<PathBuf> {
+        Vec::new()
+    }
+    fn item(&self, _thread: &str, _item: &fleetd_contracts::sessions::ThreadItem) {}
+    fn ended(&self, _thread: &str) {}
+    fn screen_ended(&self, _thread: &str, _session: &str) {}
+    fn filled_since(&self, _thread: &str, _known: usize) -> Option<crate::node::mask::Secrets> {
+        None
+    }
+    fn navi(&self, thread: &str, navi: &str) {
+        self.0
+            .lock()
+            .unwrap()
+            .push((thread.to_owned(), navi.to_owned()));
+    }
 }
 
 #[test]

@@ -885,6 +885,11 @@ impl SessionService {
                 .map_err(invalid)?;
                 Ok(SessionOutput::ProjectEnv { secrets })
             }
+            SessionCall::NaviSigninsForget { project_id } => {
+                self.project_root(project_id.as_str())?;
+                self.forget_signins(project_id.as_str()).await?;
+                Ok(SessionOutput::Done)
+            }
             SessionCall::ProjectEnvCopy { from, to } => {
                 self.project_root(&from)?;
                 self.project_root(&to)?;
@@ -2395,6 +2400,10 @@ impl SessionService {
             ]);
             env.retain(|(k, _)| !sandbox::NO_ENV.contains(&k.as_str()));
             sandbox = Some(self.navi_fence(row, &dir, &env));
+            // Its browser sessions run on the profile this Navi keeps (D221), which its sandbox hides.
+            if let Some(browser) = self.inner.browser.get() {
+                browser.navi(id, row.summary.project_id.as_str());
+            }
         }
         let spec = SessionSpec {
             session_id: id.to_owned(),
@@ -3624,6 +3633,8 @@ impl SessionService {
                 "project worktrees removed"
             );
         }
+        // A Navi's kept browser profile goes with it, before the project does: one left behind is run again.
+        self.forget_signins(project_id.as_str()).await?;
         let frame = self
             .store()
             .remove_project(project_id)?
@@ -3638,6 +3649,29 @@ impl SessionService {
         .await;
         self.st().machine(frame);
         Ok(SessionOutput::Done)
+    }
+
+    /// Forgets a Navi's sign-ins (D221): its browser session ends and the profile it keeps goes. A project with no kept
+    /// profile (any but a Navi) has nothing to forget.
+    async fn forget_signins(&self, project_id: &str) -> Result<(), SessionError> {
+        let Some(dir) = super::browser::chrome::kept_dir(&self.inner.config.home, project_id)
+        else {
+            return Ok(());
+        };
+        let forgotten = match self
+            .inner
+            .browser
+            .get()
+            .and_then(|b| b.forget_signins(project_id))
+        {
+            Some(forgetting) => forgetting.await,
+            None => blocking(move || super::browser::chrome::wipe_dir(&dir)).await,
+        };
+        forgotten.map_err(|why| {
+            invalid(format!(
+                "project {project_id}'s browser sign-ins were not forgotten: {why}"
+            ))
+        })
     }
 
     async fn answer(

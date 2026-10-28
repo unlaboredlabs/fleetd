@@ -30,6 +30,8 @@ use crate::node::util::AbortOnDrop;
 
 /// Logins from 1Password, with a fake one.
 mod credentials;
+/// A Navi's sign-ins, kept between its sessions.
+mod kept;
 /// agent-browser's own script shapes.
 mod shapes;
 
@@ -146,7 +148,8 @@ fn hub(home: &Path) -> Arc<TestHub> {
     Arc::new(TestHub { hub, project })
 }
 
-/// A local site: a login form at /, and /login, which greets whoever signed in.
+/// A local site: a login form at /, and /login, which greets whoever signed in; /remember?user=… signs in for a day
+/// (a cookie that outlives the browser), and /whoami says who is signed in.
 pub(crate) async fn site() -> (String, AbortOnDrop) {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
@@ -181,7 +184,35 @@ pub(crate) async fn site() -> (String, AbortOnDrop) {
                     let body =
                         String::from_utf8_lossy(&request[head_end + 4..head_end + 4 + length])
                             .into_owned();
-                    let page = if text.starts_with("GET /search-form") {
+                    let mut headers = String::new();
+                    let page = if let Some(query) = text.strip_prefix("GET /remember?user=") {
+                        let user: String = query
+                            .chars()
+                            .take_while(char::is_ascii_alphanumeric)
+                            .collect();
+                        headers =
+                            format!("set-cookie: who={user}; Max-Age=86400; Path=/; HttpOnly\r\n");
+                        format!(
+                            "<html><head><title>Welcome</title></head><body>Welcome {user}</body></html>"
+                        )
+                    } else if text.starts_with("GET /whoami") {
+                        let who = text[..head_end]
+                            .lines()
+                            .find_map(|l| {
+                                l.to_ascii_lowercase()
+                                    .strip_prefix("cookie:")
+                                    .map(str::to_owned)
+                            })
+                            .and_then(|c| {
+                                c.split(';').find_map(|kv| {
+                                    kv.trim().strip_prefix("who=").map(str::to_owned)
+                                })
+                            });
+                        match who {
+                            Some(user) => format!("<html><body>Signed in as {user}</body></html>"),
+                            None => "<html><body>Signed out</body></html>".to_owned(),
+                        }
+                    } else if text.starts_with("GET /search-form") {
                         "<html><body><form method=get action=/found><input id=code name=code><button id=find>Find</button>\
                          </form></body></html>"
                             .to_owned()
@@ -211,7 +242,7 @@ pub(crate) async fn site() -> (String, AbortOnDrop) {
                             .to_owned()
                     };
                     let response = format!(
-                        "HTTP/1.1 200 OK\r\ncontent-type: text/html\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{page}",
+                        "HTTP/1.1 200 OK\r\ncontent-type: text/html\r\n{headers}content-length: {}\r\nconnection: close\r\n\r\n{page}",
                         page.len()
                     );
                     let _ = tcp.write_all(response.as_bytes()).await;

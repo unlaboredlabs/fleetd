@@ -235,6 +235,13 @@ pub enum SessionCall {
     Google {
         call: crate::google::GoogleCall,
     },
+    /// Forget a Navi's sign-ins: end its browser session, if one is open, and delete the browser profile it keeps
+    /// between sessions (D221). Nothing to delete is no error. Only nodes listing
+    /// [`crate::node_link::CAP_NAVI_SIGNINS`] get it.
+    #[serde(rename_all = "camelCase")]
+    NaviSigninsForget {
+        project_id: ProjectId,
+    },
     /// The order closed: forget the variables delivered for it, or only `name` (one the hub could not record), and
     /// then only while its value is still the one `fingerprint` names, so a value delivered since stays. Its sessions
     /// run on without them from their next turn. Only nodes listing [`crate::node_link::CAP_ORDER_ENV`] get it.

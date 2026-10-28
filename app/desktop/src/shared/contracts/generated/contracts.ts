@@ -4089,6 +4089,17 @@ export type NaviSandbox = {
   status: SandboxStatus;
 };
 
+export type NaviSigninsForgetInput = {
+  machineId: MachineId;
+  projectId: ProjectId;
+};
+
+export type NaviSigninsForgetOutput = {
+  next?: string;
+  ok: true;
+  truncated?: boolean;
+};
+
 /** A site a Navi fetches and opens without asking: a person approved its first visit. */
 export type NaviSite = {
   allowedAt: Timestamp;
@@ -7988,6 +7999,7 @@ export interface ToolMap {
   navi_create: { input: NaviCreateInput; output: NaviCreateOutput };
   navi_list: { input: NaviListInput; output: NaviListOutput };
   navi_rename: { input: NaviRenameInput; output: NaviRenameOutput };
+  navi_signins_forget: { input: NaviSigninsForgetInput; output: NaviSigninsForgetOutput };
   navi_site_revoke: { input: NaviSiteRevokeInput; output: NaviSiteRevokeOutput };
   navi_sites: { input: NaviSitesInput; output: NaviSitesOutput };
   order_get: { input: OrderGetInput; output: OrderGetOutput };

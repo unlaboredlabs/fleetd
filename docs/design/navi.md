@@ -105,8 +105,10 @@ Paths are under `crates/fleetd/src/` unless shown otherwise.
   After a fill, the session refuses to read values back (`node/browser/credentials.rs:1-7`, `refusal` at `:339`).
 - Leads already have the screen tools (`cli/agent_mcp.rs:77-83`, `session_start` at `:363`, `fill_credential` at
   `:399`).
-- **Gap:** the profile is thrown away every time, so Navi has to log in on every visit. A persistent profile per site
-  is new (later step).
+- **Done (D221):** a Navi keeps one browser profile of its own between sessions (`node/browser/chrome.rs`, `Kept`),
+  so it stays signed in: cookies and site storage only, under the node's home where its sandbox can't read them.
+  One browser at a time runs on it. `navi_signins_forget` (Settings › Projects › Sign-ins) deletes it, as deleting the
+  Navi does.
 
 ### Secrets and approvals: reusable as is
 - Requests `Q<n>` (`hub/approvals/mod.rs:1-11`):
@@ -302,8 +304,8 @@ approvals, the checklist, automations, and notifications with quiet hours.
    morning brief. **m**
 6. **Telegram gateway** on the node: allow-listed user, chat both ways, urgent notices, "open the app" for approvals.
    **m**
-7. **Persistent browser profiles** per site for Navi, so it stays logged in, kept on its node and scrubbed in
-   recordings. **m**
+7. ~~**Persistent browser profiles** per site for Navi, so it stays logged in, kept on its node and scrubbed in
+   recordings.~~ Done (D221): one profile per Navi, not per site. **m**
 8. **A look around every few hours**, with a person-set frequency, silent unless needed. **s**
 9. **Channels** (Duet): topic threads in Navi's chat (money, hiring, home) sharing one memory. **m**
 10. **Slack**, then **iMessage**, through the same gateway. Slack **m**; iMessage **l** (Mac bridge).

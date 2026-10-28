@@ -499,6 +499,17 @@ impl SessionHooks for Router {
         (all.len() > known).then(|| crate::node::mask::Secrets(all))
     }
 
+    /// A Navi's browser runs here on its kept profile; one the hub places on another machine starts signed out.
+    fn navi(&self, thread: &str, navi: &str) {
+        if let Some(broker) = &self.broker {
+            broker.navi(thread, navi);
+        }
+    }
+
+    fn forget_signins(&self, navi: &str) -> Option<super::browser::Forgetting> {
+        SessionHooks::forget_signins(self.broker.as_ref()?.as_ref(), navi)
+    }
+
     /// The agent's claude exited: its session ends, here or on the machine hosting it.
     fn ended(&self, thread: &str) {
         self.filled_elsewhere.lock().remove(thread);
@@ -515,6 +526,7 @@ impl SessionHooks for Router {
             return;
         };
         broker.forget_remote_vault(thread);
+        broker.not_navi(thread);
         if broker.remote(thread).is_none() {
             broker.ended(thread);
             return;

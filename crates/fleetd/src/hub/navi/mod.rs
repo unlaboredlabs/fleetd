@@ -11,6 +11,9 @@
 //!
 //! Each Navi has an owner (D215, `owner`): only they see it and use it, and the hub refuses anyone else.
 //!
+//! Its browser keeps its sign-ins between sessions in a profile of its own on its node (D221, node/browser/chrome.rs);
+//! `navi_signins_forget` deletes it, and deleting the Navi (`project_remove`) does too.
+//!
 //! An archived Navi keeps its chat, memory and folder; its lead is stopped and doesn't start again until it is brought
 //! back, and a message to it waits until then. Its factory bridge (messages to other projects' leads, the factory's
 //! status, wakes when that work lands) is `bridge`; the app reads a Navi's asks with `navi_asks` (`tools`).
@@ -31,11 +34,12 @@ use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef, ThreadRef};
 use fleetd_contracts::mcp::{
     ErrorCode, NaviArchiveInput, NaviArchiveOutput, NaviCreateInput, NaviCreateOutput,
-    NaviListInput, NaviListOutput, NaviRenameInput, NaviRenameOutput, NaviSiteRevokeInput,
-    NaviSiteRevokeOutput, NaviSitesInput, NaviSitesOutput,
+    NaviListInput, NaviListOutput, NaviRenameInput, NaviRenameOutput, NaviSigninsForgetInput,
+    NaviSigninsForgetOutput, NaviSiteRevokeInput, NaviSiteRevokeOutput, NaviSitesInput,
+    NaviSitesOutput,
 };
 use fleetd_contracts::model::{ProjectCreator, ProjectKind, ProjectSummary};
-use fleetd_contracts::node_link::CAP_ASSISTANT;
+use fleetd_contracts::node_link::{CAP_ASSISTANT, CAP_NAVI_SIGNINS};
 use fleetd_contracts::projects::ProjectAddedData;
 
 use crate::hub::api::{Caller, Hub, ToolError, allows, error, offline, require, unknown_project};
@@ -432,6 +436,51 @@ pub fn revoke_site(
     Ok(NaviSiteRevokeOutput {
         sites,
         next: Some(format!("Its next fetch or visit to {site} asks again.")),
+        truncated: None,
+    })
+}
+
+/// Forgets the Navi's sign-ins: its browser session, if one is open, ends, and the profile it keeps between sessions
+/// is deleted on its node, so its next visit to each site starts signed out.
+pub async fn forget_signins(
+    hub: &Hub,
+    caller: &Caller,
+    input: NaviSigninsForgetInput,
+) -> Result<NaviSigninsForgetOutput, ToolError> {
+    let r = ProjectRef {
+        machine_id: input.machine_id,
+        project_id: input.project_id,
+    };
+    require(caller, Role::Operate, Some(&r.machine_id))?;
+    let navi = navi_of(hub, &r)?;
+    if !hub.executors.is_connected(&r.machine_id) {
+        return Err(offline(&r.machine_id));
+    }
+    if !hub.link.node_can(&r.machine_id, CAP_NAVI_SIGNINS) {
+        return Err(error(
+            ErrorCode::Invalid,
+            format!(
+                "{}'s node is too old to keep a Navi's sign-ins",
+                r.machine_id
+            ),
+            format!(
+                "Run fleetd update on {}: until then its browser starts signed out every session",
+                r.machine_id
+            ),
+        ));
+    }
+    hub.executors
+        .navi_signins_forget(&r.machine_id, &r.project_id)
+        .await
+        .map_err(from_executor)?;
+    changed(
+        hub,
+        &navi,
+        format!("Navi {}'s sign-ins forgotten", navi.title),
+    )?;
+    Ok(NaviSigninsForgetOutput {
+        ok: fleetd_contracts::prim::True,
+        next: Some("Its next browser session starts signed out of every site.".into()),
         truncated: None,
     })
 }

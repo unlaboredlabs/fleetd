@@ -85,6 +85,10 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
         "Take back a site a Navi may fetch and open without asking: its next fetch or visit there asks the person again. Answers the sites it still may.",
     ),
     (
+        "navi_signins_forget",
+        "Forget a Navi's sign-ins: its browser keeps the sites it signed into (cookies and site storage, in a browser profile of its own on its machine) between sessions; this ends its open browser session, if any, and deletes that profile, so its next visit to each site starts signed out. Deleting the Navi deletes it too.",
+    ),
+    (
         "navi_archive",
         "Archive a Navi: its lead stops and doesn't start again, and navi_list leaves it out; its chat, memory and folder stay. archived: false brings it back.",
     ),

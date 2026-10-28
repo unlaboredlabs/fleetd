@@ -46,6 +46,8 @@ impl Machine {
             (m.home.join(".config/gh/hosts.yml"), "oauth_token: gho_x"),
             (m.fleetd.join("hub/hub.sqlite"), "hub"),
             (m.tokens.join("google.json"), "{\"refresh_token\":\"x\"}"),
+            // The Navi's own browser profile (D221): only the node's Chrome reads its cookies.
+            (navi_cookies(&m.node), "SQLite format 3"),
             (m.worktree.join("README.md"), "another project"),
             (m.other.join("README.md"), "another checkout"),
             (m.session.join("mcp.json"), "{\"mcpServers\":{}}"),
@@ -423,6 +425,13 @@ fn a_navi_cant_write_outside_its_folder() {
     assert!(!m.fleetd.join("escape").exists());
 }
 
+/// Where the node keeps the Navi's cookies, in the browser profile it keeps for it.
+fn navi_cookies(node: &Path) -> PathBuf {
+    crate::node::browser::chrome::kept_dir(node, "4f2c9a1e-ada")
+        .unwrap()
+        .join("Default/Cookies")
+}
+
 #[test]
 fn a_navi_cant_read_the_token_store_logins_or_other_projects() {
     let Some(tool) = sandbox_or_skip() else {
@@ -431,6 +440,7 @@ fn a_navi_cant_read_the_token_store_logins_or_other_projects() {
     let m = Machine::new();
     for secret in [
         m.tokens.join("google.json"),
+        navi_cookies(&m.node),
         m.home.join(".ssh/id_ed25519"),
         m.home.join(".config/gh/hosts.yml"),
         m.fleetd.join("hub/hub.sqlite"),
