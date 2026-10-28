@@ -10303,6 +10303,30 @@
         "prompt_set.output": {
           "$ref": "#/$defs/PromptSetOutput"
         },
+        "push_device_register.input": {
+          "$ref": "#/$defs/PushDeviceRegisterInput"
+        },
+        "push_device_register.output": {
+          "$ref": "#/$defs/PushDeviceRegisterOutput"
+        },
+        "push_device_remove.input": {
+          "$ref": "#/$defs/PushDeviceRemoveInput"
+        },
+        "push_device_remove.output": {
+          "$ref": "#/$defs/PushDeviceRemoveOutput"
+        },
+        "push_devices_list.input": {
+          "$ref": "#/$defs/PushDevicesListInput"
+        },
+        "push_devices_list.output": {
+          "$ref": "#/$defs/PushDevicesListOutput"
+        },
+        "push_relay_set.input": {
+          "$ref": "#/$defs/PushRelaySetInput"
+        },
+        "push_relay_set.output": {
+          "$ref": "#/$defs/PushRelaySetOutput"
+        },
         "requests_list.input": {
           "$ref": "#/$defs/RequestsListInput"
         },
@@ -10763,6 +10787,14 @@
         "prompt_get.output",
         "prompt_set.input",
         "prompt_set.output",
+        "push_device_register.input",
+        "push_device_register.output",
+        "push_device_remove.input",
+        "push_device_remove.output",
+        "push_devices_list.input",
+        "push_devices_list.output",
+        "push_relay_set.input",
+        "push_relay_set.output",
         "requests_list.input",
         "requests_list.output",
         "secret_submit.input",
@@ -16375,6 +16407,188 @@
     "PubsubTopic": {
       "pattern": "^projects/[a-z][a-z0-9-]{4,28}[a-z0-9]/topics/[A-Za-z][A-Za-z0-9._~+%-]{2,254}$",
       "type": "string"
+    },
+    "PushDevice": {
+      "description": "A phone that gets its person's notifications. Its token and key stay on the hub.",
+      "properties": {
+        "createdAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "deviceId": {
+          "$ref": "#/$defs/PushDeviceId"
+        },
+        "lastSentAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "The last notification the relay took for it."
+        },
+        "name": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "platform": {
+          "$ref": "#/$defs/PushPlatform"
+        }
+      },
+      "required": [
+        "deviceId",
+        "platform",
+        "name",
+        "createdAt"
+      ],
+      "type": "object"
+    },
+    "PushDeviceId": {
+      "pattern": "^pd_[a-z2-7]{8}$",
+      "type": "string"
+    },
+    "PushDeviceRegisterInput": {
+      "properties": {
+        "name": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "platform": {
+          "$ref": "#/$defs/PushPlatform"
+        },
+        "publicKey": {
+          "description": "The device's X25519 public key: 32 bytes, standard base64.",
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "token": {
+          "description": "The APNs device token (hex) or the FCM registration token.",
+          "maxLength": 4096,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "platform",
+        "token",
+        "publicKey",
+        "name"
+      ],
+      "type": "object"
+    },
+    "PushDeviceRegisterOutput": {
+      "properties": {
+        "device": {
+          "$ref": "#/$defs/PushDevice"
+        },
+        "next": {
+          "type": "string"
+        },
+        "relay": {
+          "description": "The hub has a push relay set: without one it sends nothing.",
+          "type": "boolean"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "device",
+        "relay"
+      ],
+      "type": "object"
+    },
+    "PushDeviceRemoveInput": {
+      "properties": {
+        "deviceId": {
+          "$ref": "#/$defs/PushDeviceId"
+        }
+      },
+      "required": [
+        "deviceId"
+      ],
+      "type": "object"
+    },
+    "PushDeviceRemoveOutput": {
+      "properties": {
+        "device": {
+          "$ref": "#/$defs/PushDevice"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "device"
+      ],
+      "type": "object"
+    },
+    "PushDevicesListInput": {
+      "type": "object"
+    },
+    "PushDevicesListOutput": {
+      "properties": {
+        "devices": {
+          "items": {
+            "$ref": "#/$defs/PushDevice"
+          },
+          "maxItems": 20,
+          "type": "array"
+        },
+        "next": {
+          "type": "string"
+        },
+        "relay": {
+          "type": "boolean"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "devices",
+        "relay"
+      ],
+      "type": "object"
+    },
+    "PushPlatform": {
+      "enum": [
+        "ios",
+        "android"
+      ],
+      "type": "string"
+    },
+    "PushRelaySetInput": {
+      "properties": {
+        "url": {
+          "maxLength": 2000,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "type": "object"
+    },
+    "PushRelaySetOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "url": {
+          "description": "Absent: no relay, no notifications.",
+          "type": "string"
+        }
+      },
+      "type": "object"
     },
     "QuietWindow": {
       "properties": {

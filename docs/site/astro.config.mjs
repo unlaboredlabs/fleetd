@@ -74,6 +74,7 @@ export default defineConfig({
             "approvals-and-secrets",
             "people",
             "desktop-app",
+            "phone-notifications",
             "several-hubs",
             "status",
             "time-inspector",

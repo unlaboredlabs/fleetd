@@ -15,6 +15,7 @@ pub mod pair;
 pub mod people;
 pub mod project;
 pub mod prompts;
+pub mod push_relay;
 pub mod setup;
 pub mod status;
 pub mod steer;
@@ -71,7 +72,7 @@ setting up (on the hub machine):
 projects:
 {}{}
 running by hand:
-{}{}{}{}{}{}{}{}{}{}{}",
+{}{}{}{}{}{}{}{}{}{}{}{}",
         UPDATE_USAGE,
         setup::SETUP_USAGE,
         setup::machine::machine_usage(),
@@ -84,6 +85,7 @@ running by hand:
         hub_key::HUB_KEY_USAGE,
         node::NODE_USAGE,
         prompts::PROMPTS_USAGE,
+        push_relay::PUSH_RELAY_USAGE,
         time::TIME_USAGE,
         metrics::METRICS_USAGE,
         status::STATUS_USAGE,
@@ -126,6 +128,7 @@ pub fn help_for(argv: &[String]) -> Option<String> {
         },
         "node" => node::NODE_USAGE.to_owned(),
         "prompts" | "instructions" => prompts::PROMPTS_USAGE.to_owned(),
+        "push-relay" => push_relay::PUSH_RELAY_USAGE.to_owned(),
         "time" => time::TIME_USAGE.to_owned(),
         "metrics" => metrics::METRICS_USAGE.to_owned(),
         "update" => UPDATE_USAGE.to_owned(),
@@ -207,6 +210,7 @@ fn is_long_running(argv: &[String]) -> bool {
                 | "node"
                 | "time"
                 | "metrics"
+                | "push-relay"
                 | "update"
                 | "steer"
                 | "steers"
@@ -229,6 +233,7 @@ async fn run_long_running(argv: &[String]) -> u8 {
         "node" => node::node_command(rest).await,
         "time" => time::time_command(rest).await,
         "metrics" => metrics::metrics_command(rest).await,
+        "push-relay" => push_relay::push_relay_command(rest).await,
         "status" => status::status_command(rest).await,
         "usage" => usage::usage_command(rest).await,
         "steer" => steer::steer_command(rest, false).await,

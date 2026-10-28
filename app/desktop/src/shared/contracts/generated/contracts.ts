@@ -5637,6 +5637,67 @@ export type PubsubSubscription = string;
 
 export type PubsubTopic = string;
 
+/** A phone that gets its person's notifications. Its token and key stay on the hub. */
+export type PushDevice = {
+  createdAt: Timestamp;
+  deviceId: PushDeviceId;
+  /** The last notification the relay took for it. */
+  lastSentAt?: Timestamp;
+  name: string;
+  platform: PushPlatform;
+};
+
+export type PushDeviceId = string;
+
+export type PushDeviceRegisterInput = {
+  name: string;
+  platform: PushPlatform;
+  /** The device's X25519 public key: 32 bytes, standard base64. */
+  publicKey: string;
+  /** The APNs device token (hex) or the FCM registration token. */
+  token: string;
+};
+
+export type PushDeviceRegisterOutput = {
+  device: PushDevice;
+  next?: string;
+  /** The hub has a push relay set: without one it sends nothing. */
+  relay: boolean;
+  truncated?: boolean;
+};
+
+export type PushDeviceRemoveInput = {
+  deviceId: PushDeviceId;
+};
+
+export type PushDeviceRemoveOutput = {
+  device: PushDevice;
+  next?: string;
+  truncated?: boolean;
+};
+
+export type PushDevicesListInput = { [key: string]: unknown };
+
+export type PushDevicesListOutput = {
+  devices: PushDevice[];
+  next?: string;
+  relay: boolean;
+  truncated?: boolean;
+};
+
+export type PushPlatform = "ios" | "android";
+
+export type PushRelaySetInput = {
+  url: string;
+};
+
+export type PushRelaySetOutput = {
+  next?: string;
+  truncated?: boolean;
+  /** Absent: no relay, no notifications. */
+  url?: string;
+};
+
 export type QuietWindow = {
   from: Timestamp;
   to: Timestamp;
@@ -7961,6 +8022,10 @@ export interface ToolMap {
   project_stop: { input: ProjectStopInput; output: ProjectStopOutput };
   prompt_get: { input: PromptGetInput; output: PromptGetOutput };
   prompt_set: { input: PromptSetInput; output: PromptSetOutput };
+  push_device_register: { input: PushDeviceRegisterInput; output: PushDeviceRegisterOutput };
+  push_device_remove: { input: PushDeviceRemoveInput; output: PushDeviceRemoveOutput };
+  push_devices_list: { input: PushDevicesListInput; output: PushDevicesListOutput };
+  push_relay_set: { input: PushRelaySetInput; output: PushRelaySetOutput };
   requests_list: { input: RequestsListInput; output: RequestsListOutput };
   secret_submit: { input: SecretSubmitInput; output: SecretSubmitOutput };
   session_prompt_get: { input: SessionPromptGetInput; output: SessionPromptGetOutput };

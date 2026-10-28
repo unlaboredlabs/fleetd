@@ -6,6 +6,7 @@ pub mod fingerprint;
 pub mod home;
 pub mod hub;
 pub mod node;
+pub mod push_relay;
 pub mod tiles;
 pub mod update;
 
