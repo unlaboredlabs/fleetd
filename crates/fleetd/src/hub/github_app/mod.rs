@@ -9,6 +9,8 @@
 //! each installation's token an hour at a time. Any other repository, or no token to be had, leaves `gh` on the hub
 //! machine's own login, as before the App; so does a run GitHub refuses to the App itself (gh.rs).
 pub mod gh;
+pub mod people;
+pub mod sessions;
 #[cfg(test)]
 mod tests;
 pub mod tools;
@@ -216,6 +218,10 @@ pub struct GithubApps {
     cache: tokio::sync::Mutex<Cache>,
     /// One read of the installations at a time.
     refreshing: tokio::sync::Mutex<()>,
+    /// One change to people's tokens at a time: a refresh renews the refresh token too.
+    accounts: tokio::sync::Mutex<()>,
+    /// The tokens handed to orders' sessions, to renew (sessions.rs).
+    pub delivered: sessions::Delivered,
 }
 
 fn http() -> reqwest::Client {
@@ -287,6 +293,8 @@ impl GithubApps {
             ep: RwLock::new(Endpoints::default()),
             cache: tokio::sync::Mutex::new(Cache::default()),
             refreshing: tokio::sync::Mutex::new(()),
+            accounts: tokio::sync::Mutex::new(()),
+            delivered: sessions::Delivered::default(),
         })
     }
 
@@ -551,6 +559,17 @@ impl GithubApps {
     /// An installation token for `repo` (`owner/name`) when the App is installed on it; none otherwise, or when
     /// GitHub can't be asked, so `gh` goes on with the machine's own login.
     pub async fn token_for(&self, repo: &str) -> Option<Zeroizing<String>> {
+        self.installation_token(repo, TOKEN_MARGIN_MS)
+            .await
+            .map(|(token, _)| token)
+    }
+
+    /// [`Self::token_for`] with at least `margin_ms` left, and when it ends.
+    pub async fn installation_token(
+        &self,
+        repo: &str,
+        margin_ms: i64,
+    ) -> Option<(Zeroizing<String>, i64)> {
         let repo = repo.to_lowercase();
         let (owner, _) = repo.split_once('/')?;
         let (app, pem) = match self.opened() {
@@ -590,8 +609,8 @@ impl GithubApps {
                 .iter()
                 .find(|i| i.account == owner && (i.all || i.repos.contains(&repo)))?;
             match &install.token {
-                Some(t) if t.expires_ms - now > TOKEN_MARGIN_MS => {
-                    return Some(Zeroizing::new(t.value.to_string()));
+                Some(t) if t.expires_ms - now > margin_ms => {
+                    return Some((Zeroizing::new(t.value.to_string()), t.expires_ms));
                 }
                 _ => install.id,
             }
@@ -604,7 +623,7 @@ impl GithubApps {
         let install = cache.installs.iter_mut().find(|i| i.id == id)?;
         match minted {
             Ok(t) => {
-                let value = Zeroizing::new(t.value.to_string());
+                let value = (Zeroizing::new(t.value.to_string()), t.expires_ms);
                 install.token = Some(t);
                 Some(value)
             }
@@ -614,6 +633,22 @@ impl GithubApps {
                 None
             }
         }
+    }
+
+    /// Whether the App reaches `repo` (`owner/name`), as its installations were last read (the first 100 chosen
+    /// repositories of each): no call to GitHub.
+    pub fn reaches(&self, repo: &str) -> bool {
+        let Ok(Some(app)) = self.get() else {
+            return false;
+        };
+        let repo = repo.to_lowercase();
+        let Some((owner, _)) = repo.split_once('/') else {
+            return false;
+        };
+        app.installations.iter().any(|i| {
+            i.account.to_lowercase() == owner
+                && (i.all_repositories || i.repositories.iter().any(|r| r.to_lowercase() == repo))
+        })
     }
 
     /// Tests the App: GitHub knows it and takes its key, and where it is installed, with a token minted for each

@@ -77,6 +77,7 @@ const api: FleetdApi = {
   },
   github: {
     createApp: (hub, request) => ipcRenderer.invoke(IPC.githubAppCreate, hub, request) as Promise<CallOutcome>,
+    connect: (hub) => ipcRenderer.invoke(IPC.githubConnect, hub) as Promise<CallOutcome>,
     cancel: () => ipcRenderer.invoke(IPC.githubAppCancel) as Promise<void>,
   },
   openExternal: (url) => ipcRenderer.invoke(IPC.openExternal, url) as Promise<OpenOutcome>,

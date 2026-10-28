@@ -37,6 +37,12 @@ struct Fake {
     minted: Vec<String>,
     /// Calls with a JWT that didn't verify.
     bad_jwts: usize,
+    /// People's tokens issued so far: `ghu_<n>` and `ghr_<n>`.
+    issued: usize,
+    /// GitHub no longer takes refresh tokens (revoked).
+    refuse_refresh: bool,
+    /// Grants revoked.
+    revoked: usize,
 }
 
 #[derive(Clone)]
@@ -164,6 +170,52 @@ async fn repositories(headers: HeaderMap) -> Response {
     }
 }
 
+/// GitHub's token endpoint for people's sign-in: a code from the sign-in, with the App's client and the PKCE verifier,
+/// or a refresh token, makes a new pair. GitHub says a refusal with 200 and an `error`.
+async fn user_token(
+    State(s): State<Shared>,
+    axum::Form(form): axum::Form<std::collections::HashMap<String, String>>,
+) -> Response {
+    let mut fake = s.fake.lock().unwrap();
+    let field = |k: &str| form.get(k).map(String::as_str).unwrap_or_default();
+    if field("client_id") != "Iv23liTEST" || field("client_secret") != CLIENT_SECRET {
+        return axum::Json(json!({ "error": "incorrect_client_credentials" })).into_response();
+    }
+    let ok = match field("grant_type") {
+        "refresh_token" => {
+            !fake.refuse_refresh && field("refresh_token") == format!("ghr_{}", fake.issued)
+        }
+        _ => {
+            field("code") == "good-user-code"
+                && field("code_verifier").len() >= 43
+                && field("redirect_uri").starts_with("http://127.0.0.1:")
+        }
+    };
+    if !ok {
+        return axum::Json(json!({ "error": "bad_refresh_token", "error_description": "The refresh token passed is incorrect or expired." }))
+            .into_response();
+    }
+    fake.issued += 1;
+    let n = fake.issued;
+    axum::Json(json!({
+        "access_token": format!("ghu_{n}"), "expires_in": 28800,
+        "refresh_token": format!("ghr_{n}"), "refresh_token_expires_in": 15_811_200, "token_type": "bearer",
+    }))
+    .into_response()
+}
+
+async fn user(headers: HeaderMap) -> Response {
+    if !bearer(&headers).starts_with("ghu_") {
+        return refused(StatusCode::UNAUTHORIZED, "Bad credentials");
+    }
+    axum::Json(json!({ "login": "sam-rivera", "id": 583231 })).into_response()
+}
+
+async fn revoke(State(s): State<Shared>) -> Response {
+    s.fake.lock().unwrap().revoked += 1;
+    StatusCode::NO_CONTENT.into_response()
+}
+
 async fn fake_github(clock: Arc<ManualClock>) -> (Endpoints, Arc<Mutex<Fake>>) {
     let fake: Arc<Mutex<Fake>> = Arc::default();
     let shared = Shared {
@@ -176,6 +228,12 @@ async fn fake_github(clock: Arc<ManualClock>) -> (Endpoints, Arc<Mutex<Fake>>) {
         .route("/app/installations", get(installations))
         .route("/app/installations/{id}/access_tokens", post(access_token))
         .route("/installation/repositories", get(repositories))
+        .route("/login/oauth/access_token", post(user_token))
+        .route("/user", get(user))
+        .route(
+            "/applications/{client}/grant",
+            axum::routing::delete(revoke),
+        )
         .with_state(shared);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
@@ -651,4 +709,340 @@ fn the_manifest_asks_for_everything_the_hubs_github_calls_need() {
     );
     // The labelled PRs (fleetd:next) are listed through the issues endpoint.
     assert!(granted("issues", "write"));
+    // gh's own commands: each one the hub runs, and what it needs.
+    let pr = regex::Regex::new(r#""pr",\s*"([a-z-]+)""#).unwrap();
+    let mut commands = 0;
+    for m in pr.captures_iter(&text) {
+        let needs: &[(&str, &str)] = match &m[1] {
+            "view" | "list" | "checks" | "diff" => &[("pull_requests", "read")],
+            "update-branch" | "merge" => &[("pull_requests", "write"), ("contents", "write")],
+            "edit" | "comment" | "ready" | "close" => &[("pull_requests", "write")],
+            other => panic!("the hub runs gh pr {other}: say what it needs here"),
+        };
+        for (name, level) in needs {
+            assert!(
+                granted(name, level),
+                "gh pr {} needs {name}: {level}",
+                &m[1]
+            );
+        }
+        commands += 1;
+    }
+    assert!(
+        commands >= 2,
+        "only {commands} gh pr commands found: the scan missed them"
+    );
+    // GraphQL, in a query or a `--json` list: each field that reads more than the pull request itself.
+    for (field, name, level) in [
+        ("pullRequest", "pull_requests", "read"),
+        ("statusCheckRollup", "checks", "read"),
+        ("statusCheckRollup", "statuses", "read"),
+        ("labels", "issues", "read"),
+        ("commits", "contents", "read"),
+        ("mergeCommit", "contents", "read"),
+    ] {
+        if text.contains(field) {
+            assert!(
+                granted(name, level),
+                "GraphQL's {field} needs {name}: {level}"
+            );
+        }
+    }
+    assert!(
+        text.contains("statusCheckRollup"),
+        "the PR pages' GraphQL wasn't scanned"
+    );
+}
+
+const VERIFIER: &str = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
+const LOOPBACK: &str = "http://127.0.0.1:5123/github/callback";
+
+async fn connect(lab: &Lab, caller: &Caller) -> Result<Value, CallError> {
+    call(
+        &lab.hub,
+        caller,
+        "github_connect",
+        json!({ "code": "good-user-code", "codeVerifier": VERIFIER, "redirectUri": LOOPBACK }),
+    )
+    .await
+}
+
+/// Every text and blob of the people's tokens table, as text.
+fn kept_tokens(hub: &Hub) -> String {
+    hub.db
+        .with(|c| {
+            let mut stmt =
+                c.prepare("SELECT data, sealed_access, sealed_refresh FROM github_accounts")?;
+            let rows = stmt
+                .query_map([], |r| {
+                    let data: String = r.get(0)?;
+                    let a: Vec<u8> = r.get(1)?;
+                    let b: Option<Vec<u8>> = r.get(2)?;
+                    Ok(format!(
+                        "{data}{}{}",
+                        String::from_utf8_lossy(&a),
+                        String::from_utf8_lossy(&b.unwrap_or_default())
+                    ))
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            Ok(rows.concat())
+        })
+        .unwrap()
+}
+
+#[tokio::test]
+async fn a_person_connects_their_github_kept_sealed_and_refreshed() {
+    let lab = lab().await;
+    created(&lab).await;
+    let sam = admin(&lab.hub);
+    let out = connect(&lab, &sam).await.unwrap();
+    assert_eq!(out["me"]["login"], "sam-rivera");
+    assert!(!out.to_string().contains("ghu_"));
+    let got = call(&lab.hub, &sam, "github_app_get", json!({}))
+        .await
+        .unwrap();
+    assert_eq!(got["me"]["login"], "sam-rivera");
+    assert_eq!(
+        got["authorizeUrl"],
+        format!(
+            "{}/login/oauth/authorize",
+            lab.hub.github_app.endpoints().web
+        )
+    );
+    let kept = kept_tokens(&lab.hub);
+    assert!(
+        !kept.contains("ghu_") && !kept.contains("ghr_"),
+        "a token kept in the clear"
+    );
+    let person = sam.person.clone().unwrap().person_id;
+    let (first, _) = lab
+        .hub
+        .github_app
+        .user_token(&person)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(*first, "ghu_1");
+    // Within two hours of its end, a token handed out is refreshed first, and the refresh token turns over.
+    lab.clock.advance(Duration::from_secs(6 * 3600 + 60));
+    let (second, ends) = lab
+        .hub
+        .github_app
+        .user_token(&person)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(*second, "ghu_2");
+    assert!(ends - crate::hub::store::now_ms(lab.clock.as_ref() as &dyn Clock) > 7 * 3600 * 1000);
+    lab.clock.advance(Duration::from_secs(6 * 3600 + 60));
+    assert_eq!(
+        *lab.hub
+            .github_app
+            .user_token(&person)
+            .await
+            .unwrap()
+            .unwrap()
+            .0,
+        "ghu_3"
+    );
+}
+
+#[tokio::test]
+async fn a_refresh_github_refuses_marks_the_connection_lapsed() {
+    let lab = lab().await;
+    created(&lab).await;
+    let sam = admin(&lab.hub);
+    connect(&lab, &sam).await.unwrap();
+    let person = sam.person.clone().unwrap().person_id;
+    lab.fake.lock().unwrap().refuse_refresh = true;
+    lab.clock.advance(Duration::from_secs(7 * 3600));
+    let e = lab.hub.github_app.user_token(&person).await.unwrap_err();
+    assert!(e.contains("connect GitHub again"), "{e}");
+    let got = call(&lab.hub, &sam, "github_app_get", json!({}))
+        .await
+        .unwrap();
+    assert_eq!(got["me"]["lapsed"], true);
+    // Connecting again clears it.
+    lab.fake.lock().unwrap().refuse_refresh = false;
+    connect(&lab, &sam).await.unwrap();
+    assert!(
+        lab.hub
+            .github_app
+            .user_token(&person)
+            .await
+            .unwrap()
+            .is_some()
+    );
+}
+
+#[tokio::test]
+async fn disconnecting_revokes_at_github_and_forgets() {
+    let lab = lab().await;
+    created(&lab).await;
+    let sam = admin(&lab.hub);
+    connect(&lab, &sam).await.unwrap();
+    let out = call(&lab.hub, &sam, "github_disconnect", json!({}))
+        .await
+        .unwrap();
+    assert_eq!(out["revoked"], true);
+    assert_eq!(lab.fake.lock().unwrap().revoked, 1);
+    let got = call(&lab.hub, &sam, "github_app_get", json!({}))
+        .await
+        .unwrap();
+    assert!(got.get("me").is_none());
+    assert_eq!(kept_tokens(&lab.hub), "");
+}
+
+#[tokio::test]
+async fn only_a_person_connects_and_never_without_an_app() {
+    let lab = lab().await;
+    let sam = admin(&lab.hub);
+    let (code, message) = refusal(connect(&lab, &sam).await);
+    assert_eq!(code, "failed");
+    assert!(message.contains("no GitHub App yet"), "{message}");
+    created(&lab).await;
+    let agent: Vec<Grant> =
+        serde_json::from_value(json!([{ "role": "operate", "machines": "*" }])).unwrap();
+    let agent = lab
+        .hub
+        .auth
+        .create_key_for("lead", &agent, KeyKind::Agent, None)
+        .unwrap()
+        .info;
+    let (code, _) = refusal(connect(&lab, &agent).await);
+    assert_eq!(code, "forbidden");
+}
+
+/// A project `shop` on devbox whose repo is acme/web, with an order started by `person` (none: nobody).
+fn order_on_acme(
+    hub: &Hub,
+    person: Option<&PersonId>,
+) -> (
+    fleetd_contracts::ids::ProjectRef,
+    fleetd_contracts::ledger::WorkstreamId,
+) {
+    let summary: fleetd_contracts::model::ProjectSummary = serde_json::from_value(json!({
+        "machineId": "devbox", "projectId": "shop", "title": "shop", "workspaceRoot": "/home/dev/src/shop",
+        "threads": { "running": 0, "waiting": 0, "idle": 0, "failed": 0 }, "lastActivityAt": "2026-10-28T10:00:00.000Z",
+    }))
+    .unwrap();
+    hub.store
+        .projects_upsert_many(
+            &fleetd_contracts::ids::MachineId::unchecked("devbox"),
+            &[summary],
+        )
+        .unwrap();
+    hub.db
+        .with(|c| {
+            c.execute_batch("INSERT OR IGNORE INTO work_projects VALUES ('devbox', 'shop', 'github.com/acme/web', 'main', 1);")?;
+            Ok(())
+        })
+        .unwrap();
+    let r: fleetd_contracts::ids::ProjectRef =
+        serde_json::from_value(json!({ "machineId": "devbox", "projectId": "shop" })).unwrap();
+    let records = &hub.leads.records;
+    let (w, _) = records
+        .workstream_create(crate::hub::leads::records::NewWorkstream {
+            project_ref: r.clone(),
+            title: "Ship it".into(),
+            text: "Ship it".into(),
+            channel: fleetd_contracts::ledger::IntakeChannel::App,
+            by: "human".into(),
+            at: "2026-10-28T10:00:00.000Z".into(),
+            client_request_id: None,
+        })
+        .unwrap();
+    let started_by = person.map(|id| {
+        People::new(hub.db.clone(), hub.clock.clone())
+            .person_ref(id)
+            .unwrap()
+            .unwrap()
+    });
+    records
+        .workstream_put(&fleetd_contracts::ledger::Workstream {
+            started_by,
+            ..w.clone()
+        })
+        .unwrap();
+    (r, w.workstream_id)
+}
+
+#[tokio::test]
+async fn a_writer_waits_for_its_starter_to_connect_and_runs_as_them() {
+    use super::sessions::{GithubAs, github_as, refusal as github_refusal, repo_of as task_repo};
+    use fleetd_contracts::tasks::TaskKind;
+    let lab = lab().await;
+    created(&lab).await;
+    let sam = admin(&lab.hub);
+    let person = sam.person.clone().unwrap().person_id;
+    let (r, order) = order_on_acme(&lab.hub, Some(&person));
+    assert_eq!(task_repo(&lab.hub, &r, None).as_deref(), Some("acme/web"));
+    // Not installed yet: nothing changes, the machine's own login.
+    assert_eq!(github_as(&lab.hub, &r, Some(&order), "acme/web"), None);
+    assert_eq!(
+        github_refusal(&lab.hub, &r, &order, TaskKind::Write, None),
+        None
+    );
+    call(&lab.hub, &sam, "github_app_test", json!({}))
+        .await
+        .unwrap();
+    assert_eq!(
+        github_as(&lab.hub, &r, Some(&order), "acme/web"),
+        Some(GithubAs::Person(person.clone()))
+    );
+    let (message, fix) = github_refusal(&lab.hub, &r, &order, TaskKind::Write, None).unwrap();
+    assert!(
+        message.starts_with("Connect your GitHub to open this order's PRs."),
+        "{message}"
+    );
+    assert!(fix.contains("Settings › GitHub"), "{fix}");
+    // A reader or reviewer opens no PR: it goes on.
+    assert_eq!(
+        github_refusal(&lab.hub, &r, &order, TaskKind::Review, None),
+        None
+    );
+    connect(&lab, &sam).await.unwrap();
+    assert_eq!(
+        github_refusal(&lab.hub, &r, &order, TaskKind::Write, None),
+        None
+    );
+    // Work nobody started runs as the App.
+    let (_, nobody) = order_on_acme(&lab.hub, None);
+    assert_eq!(
+        github_as(&lab.hub, &r, Some(&nobody), "acme/web"),
+        Some(GithubAs::App)
+    );
+    assert_eq!(
+        github_refusal(&lab.hub, &r, &nobody, TaskKind::Write, None),
+        None
+    );
+}
+
+#[tokio::test]
+async fn a_token_goes_only_to_a_node_that_keeps_it_as_the_orders() {
+    use super::sessions::deliver;
+    let lab = lab().await;
+    created(&lab).await;
+    let sam = admin(&lab.hub);
+    let person = sam.person.clone().unwrap().person_id;
+    let (r, order) = order_on_acme(&lab.hub, Some(&person));
+    // Not installed: nothing to hand over.
+    deliver(&lab.hub, &r, &order, None).await.unwrap();
+    call(&lab.hub, &sam, "github_app_test", json!({}))
+        .await
+        .unwrap();
+    // Not connected: a reader or reviewer goes without (a writer was refused at spawn).
+    deliver(&lab.hub, &r, &order, None).await.unwrap();
+    connect(&lab, &sam).await.unwrap();
+    // devbox's node isn't linked here, so it can't keep an order's variables: refused, never the machine's login.
+    let e = deliver(&lab.hub, &r, &order, None).await.unwrap_err();
+    assert!(e.contains("too old to hand agents a GitHub token"), "{e}");
+    assert!(
+        lab.hub
+            .db
+            .order_env()
+            .list(&r, order.as_str())
+            .unwrap()
+            .is_empty()
+    );
 }

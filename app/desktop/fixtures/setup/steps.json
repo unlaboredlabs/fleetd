@@ -168,31 +168,40 @@
       },
       "parts": [
         {
-          "links": [
-            {
-              "label": "GitHub CLI",
-              "url": "https://cli.github.com"
-            }
-          ],
-          "note": "The merge train merges, reads CI and opens PRs with it.",
-          "title": "Log gh in on the hub",
+          "links": [],
+          "note": "On Administration › GitHub: one button, nothing to paste. GitHub hands the App's keys straight to the hub.",
+          "title": "Create the hub's GitHub App",
           "values": [
             {
               "command": true,
-              "label": "On the hub",
-              "value": "gh auth login"
+              "label": "Or on the hub, from a terminal",
+              "value": "fleetd github-app create"
             }
           ]
+        },
+        {
+          "links": [],
+          "note": "Then each person connects their own GitHub in Settings › GitHub, so the PRs of their orders open as them.",
+          "title": "Install it on the repositories fleetd works on",
+          "values": []
         }
       ],
+      "place": "github",
       "status": "todo",
-      "test": "Ask gh who it is logged in as",
+      "test": "Mint a token for each installation, or ask gh who it is logged in as",
       "title": "GitHub",
       "ways": [
         {
           "checks": [
+            "hub/github_app"
+          ],
+          "label": "the hub's GitHub App"
+        },
+        {
+          "checks": [
             "hub/gh_auth"
-          ]
+          ],
+          "label": "gh on the hub"
         }
       ],
       "why": "The hub opens PRs, reads their CI and merges them."
@@ -619,8 +628,9 @@
           "way": "the hub's API key"
         },
         "github": {
-          "said": "gh is logged in on the hub as dev.",
-          "status": "done"
+          "said": "\"fleetd on devbox\" is installed on acme (2 repositories), and its tokens work.",
+          "status": "done",
+          "way": "the hub's GitHub App"
         },
         "google": {
           "status": "skipped"
@@ -639,8 +649,9 @@
       "requiredLeft": 0,
       "skips": {
         "github": {
-          "said": "gh is logged in on the hub as dev.",
-          "status": "done"
+          "said": "\"fleetd on devbox\" is installed on acme (2 repositories), and its tokens work.",
+          "status": "done",
+          "way": "the hub's GitHub App"
         },
         "google": {
           "status": "skipped"
@@ -663,8 +674,9 @@
           "way": "the hub's API key"
         },
         "github": {
-          "said": "gh is logged in on the hub as dev.",
-          "status": "done"
+          "said": "\"fleetd on devbox\" is installed on acme (2 repositories), and its tokens work.",
+          "status": "done",
+          "way": "the hub's GitHub App"
         },
         "google": {
           "status": "skipped"
@@ -682,8 +694,9 @@
       },
       "unskips": {
         "github": {
-          "said": "gh is logged in on the hub as dev.",
-          "status": "done"
+          "said": "\"fleetd on devbox\" is installed on acme (2 repositories), and its tokens work.",
+          "status": "done",
+          "way": "the hub's GitHub App"
         },
         "google": {
           "status": "todo"
@@ -873,8 +886,9 @@
           "way": "the hub's API key"
         },
         "github": {
-          "said": "gh is logged in on the hub as dev.",
-          "status": "done"
+          "said": "\"fleetd on devbox\" is installed on acme (2 repositories), and its tokens work.",
+          "status": "done",
+          "way": "the hub's GitHub App"
         },
         "google": {
           "status": "todo"
@@ -923,8 +937,9 @@
           "way": "the hub's API key"
         },
         "github": {
-          "said": "gh is logged in on the hub as dev.",
-          "status": "done"
+          "said": "\"fleetd on devbox\" is installed on acme (2 repositories), and its tokens work.",
+          "status": "done",
+          "way": "the hub's GitHub App"
         },
         "google": {
           "status": "todo"
@@ -943,8 +958,9 @@
       "requiredLeft": 0,
       "skips": {
         "github": {
-          "said": "gh is logged in on the hub as dev.",
-          "status": "done"
+          "said": "\"fleetd on devbox\" is installed on acme (2 repositories), and its tokens work.",
+          "status": "done",
+          "way": "the hub's GitHub App"
         },
         "google": {
           "status": "skipped"
@@ -967,8 +983,9 @@
           "way": "the hub's API key"
         },
         "github": {
-          "said": "gh is logged in on the hub as dev.",
-          "status": "done"
+          "said": "\"fleetd on devbox\" is installed on acme (2 repositories), and its tokens work.",
+          "status": "done",
+          "way": "the hub's GitHub App"
         },
         "google": {
           "said": "Google client 1234567890-abc.apps.googleusercontent.com is saved on devbox; new mail arrives in real time through Pub/Sub.",
@@ -987,8 +1004,9 @@
       },
       "unskips": {
         "github": {
-          "said": "gh is logged in on the hub as dev.",
-          "status": "done"
+          "said": "\"fleetd on devbox\" is installed on acme (2 repositories), and its tokens work.",
+          "status": "done",
+          "way": "the hub's GitHub App"
         },
         "google": {
           "status": "todo"

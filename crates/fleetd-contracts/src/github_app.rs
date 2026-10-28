@@ -7,6 +7,12 @@
 //! The hub mints the App's installation tokens, an hour at a time, for its own work on repositories the App is
 //! installed on: the train's reads, rebases, statuses and merges, and the PR reads. A repository the App doesn't reach
 //! falls back to the hub machine's `gh` login, as before. Webhooks stay off (D192): the hub polls.
+//!
+//! Each person connects their own GitHub account through the same App (`github_connect`): the app opens GitHub's
+//! sign-in with a loopback redirect, and the hub trades the code for a user-to-server token, which it keeps sealed and
+//! refreshes. An order's agents get its starter's token as `GH_TOKEN`, so the PRs they open are that person's (D187);
+//! work nobody started gets the App's own. A writer whose starter hasn't connected is refused until they do: never
+//! anyone else's account.
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_with::skip_serializing_none;
@@ -31,11 +37,34 @@ pub const GITHUB_APP_PERMISSIONS: &[(&str, &str)] = &[
     ("metadata", "read"),
 ];
 
+/// The variable an agent's `gh` takes its token from.
+pub const GITHUB_TOKEN_ENV: &str = "GH_TOKEN";
+
+/// The refusal for a writer whose order's starter hasn't connected GitHub, on a repository the App reaches.
+pub const GITHUB_CONNECT_REFUSAL: &str = "Connect your GitHub to open this order's PRs.";
+
+/// Where people sign in to GitHub through the App: each person's own loopback port, under this path.
+pub const GITHUB_CALLBACK_PATH: &str = "/github/callback";
+
 brand!(
     /// The code GitHub's manifest flow redirects with: an hour to trade it, once.
     GithubManifestCode,
     name = "GithubManifestCode",
     pattern = r"^[A-Za-z0-9_-]{1,200}$"
+);
+
+brand!(
+    /// The code GitHub's sign-in redirects with.
+    GithubCode,
+    name = "GithubCode",
+    pattern = r"^[A-Za-z0-9_-]{1,200}$"
+);
+
+brand!(
+    /// The loopback address the app caught GitHub's sign-in on: `http://127.0.0.1:<port>/github/callback`.
+    GithubLoopback,
+    name = "GithubLoopback",
+    pattern = r"^http://127\.0\.0\.1:[1-9][0-9]{0,4}/github/callback$"
 );
 
 brand!(
@@ -100,4 +129,16 @@ pub struct GithubAppTest {
     pub ok: bool,
     /// In a line a person can act on.
     pub said: Line<1, 1000>,
+}
+
+/// A person's own GitHub account, as the hub keeps it: no token.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct GithubAccount {
+    pub login: Line<1, 100>,
+    pub user_id: i64,
+    pub connected_at: Timestamp,
+    /// GitHub no longer takes its refresh token (revoked, or six months unused): Connect again.
+    pub lapsed: Option<bool>,
 }

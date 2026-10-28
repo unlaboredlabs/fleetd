@@ -33,12 +33,12 @@ describe("setup steps", () => {
     expect([statusWords("done"), statusWords("look"), statusWords("skipped"), statusWords("todo")]).toEqual(["Done", "Needs a look", "Later", undefined]);
   });
 
-  it("opens where each step's result is saved: Administration, and for Claude your own Settings too", () => {
+  it("opens where each step's result is saved: Administration, and for Claude and GitHub your own Settings too", () => {
     expect(placesOf(step("google")).map((p) => p.screen)).toEqual([{ id: "admin", section: "google" }]);
     expect(placesOf(step("claude")).map((p) => p.label)).toEqual(["Open Administration › Claude", "Open Settings › Claude"]);
     expect(placesOf(step("people")).map((p) => p.screen)).toEqual([{ id: "admin", section: "invites" }]);
-    // GitHub has nowhere in the app to save to yet, and a place this app doesn't know opens nothing.
-    expect(placesOf(step("github"))).toEqual([]);
+    expect(placesOf(step("github")).map((p) => p.label)).toEqual(["Open Administration › GitHub", "Open Settings › GitHub"]);
+    // A place this app doesn't know opens nothing.
     expect(placesOf(step("github", { place: "github_app" }))).toEqual([]);
   });
 });

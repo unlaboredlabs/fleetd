@@ -354,6 +354,7 @@ export const REQUESTS = {
   [IPC.googleCancel]: none,
   [IPC.githubAppCreate]: z.tuple([HubId, GithubAppRequest]),
   [IPC.githubAppCancel]: none,
+  [IPC.githubConnect]: z.tuple([HubId]),
   [IPC.claudeAccountSubmit]: z.tuple([HubId, ClaudeAccountRequest]),
   [IPC.systemHostName]: none,
   [IPC.machinesJoinHere]: z.tuple([HubId, z.string().regex(/^[a-z0-9-]{1,32}$/u)]),

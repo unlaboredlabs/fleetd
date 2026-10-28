@@ -39,7 +39,7 @@ impl GhRunner for AppGh {
                 return run_gh(&self.program, args, None).await;
             };
             let out = run_gh(&self.program, args.clone(), Some(token.as_str())).await?;
-            if out.exit_code != 0 && (refused_app(&out.stderr) || refused_app(&out.stdout)) {
+            if out.exit_code != 0 && refused_app(&out.stderr) {
                 tracing::warn!(
                     "github app: GitHub refused the App on gh {}; running it on the machine's login",
                     args.first().map(String::as_str).unwrap_or_default()

@@ -530,6 +530,7 @@ pub fn start_loops(hub: &Arc<Hub>, tools: &Arc<Registry>) -> Vec<JoinHandle<()>>
     loops.push(tokio::spawn(crate::hub::projects::order_env::run(
         hub.clone(),
     )));
+    crate::hub::github_app::sessions::run(hub);
     loops.push(tokio::spawn(crate::hub::work::landings::run(
         hub.clone(),
         Arc::new(crate::hub::work::landings::HubLandingPorts(hub.clone())),

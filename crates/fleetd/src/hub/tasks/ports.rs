@@ -227,6 +227,18 @@ pub trait TaskPorts: Send + Sync {
     ) -> Option<(String, String)> {
         None
     }
+    /// `github_app::sessions::refusal`: why a task of `kind` on `repo` can't open the order's PRs (a writer whose
+    /// starter hasn't connected GitHub, on a repository the hub's App reaches), as a message and its fix. Plain ports
+    /// know no GitHub.
+    fn github_refusal(
+        &self,
+        _project_ref: &ProjectRef,
+        _order: &WorkstreamId,
+        _kind: fleetd_contracts::tasks::TaskKind,
+        _repo: Option<&fleetd_contracts::repos::RepoId>,
+    ) -> Option<(String, String)> {
+        None
+    }
     /// Chat.system_line: a line for the person in the project's chat. Plain ports drop it.
     fn tell_person(&self, _project_ref: &ProjectRef, _text: &str) {}
     /// Decisions.global_value: the active global decision on `key`. Plain ports know none.

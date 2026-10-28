@@ -23,8 +23,8 @@ export const LEAKS: ReadonlyArray<readonly [string, RegExp]> = [
   ["a tailnet IPv6 address", /\bfd7a:115c:a1e0:/iu],
   ["a tailnet host", /\.ts\.net\b/iu],
   ["a home directory other than /home/dev", /\/(?:home|Users)\/(?!dev\b)[A-Za-z0-9._-]+/u],
-  // A GitHub App's own pages (github.com/apps/<slug>, acme's settings) are no repo.
-  ["a GitHub repo outside acme", /github\.com[/:](?!acme\/|apps\/|organizations\/acme\/)[A-Za-z0-9-]+\/[A-Za-z0-9._-]+/iu],
+  // A GitHub App's own pages (github.com/apps/<slug>, acme's settings) and GitHub's sign-in are no repo.
+  ["a GitHub repo outside acme", /github\.com[/:](?!acme\/|apps\/|organizations\/acme\/|login\/oauth\/)[A-Za-z0-9-]+\/[A-Za-z0-9._-]+/iu],
   ["a repo outside acme", /"(?:repo|fullName|nameWithOwner)": ?"(?!acme\/)[A-Za-z0-9-]+\/[A-Za-z0-9._-]+"/u],
   ["the lab", /fleetd-lab|fleetd-testbed|unlaboredlabs/iu],
 ];

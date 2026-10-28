@@ -1,4 +1,5 @@
-// Settings (⌘, or the app menu): General, Hubs, Claude (the person's own Claude account), Notifications, Agents (Max agents per project), Projects, MCP servers,
+// Settings (⌘, or the app menu): General, Hubs, Claude (the person's own Claude account), GitHub (their own GitHub
+// account, Github.tsx), Notifications, Agents (Max agents per project), Projects, MCP servers,
 // Instructions, Memory, Skills and Prompts: everyone's, with nothing hub-wide (that is Administration's). The route picks the page
 // (#/settings/<tab>); see route.ts for the links into one prompt. The shell shows SettingsSidebar in the sidebar's
 // place while Settings is open.
@@ -6,6 +7,7 @@ import { Automations } from "../automations";
 import { AgentsSettings } from "./Agents";
 import { ClaudeSettings } from "./Claude";
 import { General } from "./General";
+import { GithubSettings } from "./Github";
 import { HubsSettings } from "./Hubs";
 import { Instructions } from "./Instructions";
 import { McpSettings } from "./McpServers";
@@ -29,6 +31,8 @@ export function SettingsScreen() {
         <HubsSettings />
       ) : route.tab === "claude" ? (
         <ClaudeSettings />
+      ) : route.tab === "github" ? (
+        <GithubSettings />
       ) : route.tab === "notifications" ? (
         <Notifications />
       ) : route.tab === "agents" ? (

@@ -87,6 +87,7 @@ const fleetdApi = (file: File): FleetdApi => {
     },
     github: {
       createApp: () => Promise.resolve({ ok: false, error: notHere }),
+      connect: () => Promise.resolve({ ok: false, error: notHere }),
       cancel: done,
     },
     openExternal: (url) => {

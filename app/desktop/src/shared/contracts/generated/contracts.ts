@@ -2097,6 +2097,15 @@ export type GitHubRepos = {
   repos: GitHubCandidate[];
 };
 
+/** A person's own GitHub account, as the hub keeps it: no token. */
+export type GithubAccount = {
+  connectedAt: Timestamp;
+  /** GitHub no longer takes its refresh token (revoked, or six months unused): Connect again. */
+  lapsed?: boolean;
+  login: string;
+  userId: number;
+};
+
 /** The hub's App, as the hub keeps it: no key and no secret. */
 export type GithubApp = {
   appId: number;
@@ -2133,6 +2142,13 @@ export type GithubAppGetInput = { [key: string]: unknown };
 export type GithubAppGetOutput = {
   /** None until an admin creates one. */
   app?: GithubApp;
+  /** GitHub's sign-in page, which `github_connect`'s code comes from (with the App's clientId). */
+  authorizeUrl: string;
+  /**
+   * The caller's own GitHub account, connected through the App; absent until they connect, or for a key with no
+   * person.
+   */
+  me?: GithubAccount;
   next?: string;
   /** What it asks for on each repository, as the manifest has it: `[name, read|write]`. */
   permissions: [string, string][];
@@ -2184,6 +2200,32 @@ export type GithubAppTestOutput = {
   truncated?: boolean;
 };
 
+export type GithubCode = string;
+
+export type GithubConnectInput = {
+  /** From GitHub's redirect. */
+  code: GithubCode;
+  /** The PKCE verifier whose challenge the sign-in was opened with. */
+  codeVerifier: PkceVerifier;
+  /** The loopback address the code was sent to. */
+  redirectUri: GithubLoopback;
+};
+
+export type GithubConnectOutput = {
+  me: GithubAccount;
+  next?: string;
+  truncated?: boolean;
+};
+
+export type GithubDisconnectInput = { [key: string]: unknown };
+
+export type GithubDisconnectOutput = {
+  next?: string;
+  /** GitHub confirmed the token is revoked. */
+  revoked: boolean;
+  truncated?: boolean;
+};
+
 /** One installation of the App: an account or organization, and the repositories it reaches there. */
 export type GithubInstallation = {
   account: string;
@@ -2197,6 +2239,8 @@ export type GithubInstallation = {
 };
 
 export type GithubLogin = string;
+
+export type GithubLoopback = string;
 
 export type GithubManifestCode = string;
 
@@ -7702,6 +7746,8 @@ export interface ToolMap {
   github_app_manifest: { input: GithubAppManifestInput; output: GithubAppManifestOutput };
   github_app_remove: { input: GithubAppRemoveInput; output: GithubAppRemoveOutput };
   github_app_test: { input: GithubAppTestInput; output: GithubAppTestOutput };
+  github_connect: { input: GithubConnectInput; output: GithubConnectOutput };
+  github_disconnect: { input: GithubDisconnectInput; output: GithubDisconnectOutput };
   google_client_set: { input: GoogleClientSetInput; output: GoogleClientSetOutput };
   google_client_test: { input: GoogleClientTestInput; output: GoogleClientTestOutput };
   google_connect: { input: GoogleConnectInput; output: GoogleConnectOutput };

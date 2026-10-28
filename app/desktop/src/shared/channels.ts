@@ -88,8 +88,13 @@ export const IPC = {
    * GitHub's code there and calls github_app_create; `cancelled` when the admin stops waiting.
    */
   githubAppCreate: "github:app-create",
-  /** invoke() → void. Stops waiting for GitHub to send the App back, if it is. */
+  /** invoke() → void. Stops waiting for GitHub to send the App back, or a person's sign-in, if either is under way. */
   githubAppCancel: "github:app-cancel",
+  /**
+   * invoke() → CallOutcome. Main opens GitHub's sign-in for the hub's App with PKCE, catches the code on a loopback
+   * port and calls github_connect; `cancelled` when the person stops waiting.
+   */
+  githubConnect: "github:connect",
   /** invoke(ClaudeAccountRequest) → CallOutcome. Main seals a Claude key or token to each machine's key, then calls claude_hub_api_set or claude_subscription_set. */
   claudeAccountSubmit: "claude-account:submit",
   /** invoke(url) → OpenOutcome. Opens an http(s) link in the user's browser; refuses other schemes. */

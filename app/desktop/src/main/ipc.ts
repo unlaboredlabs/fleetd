@@ -10,6 +10,7 @@ import { claimLinkHandler, linkHandlerStatus } from "./linkHandlerMain";
 import type { PairingService } from "./pairing/service";
 import type { PresenceSetting } from "./presence";
 import { cancelGithubApp, createGithubApp } from "./github";
+import { cancelGithubConnect, connectGithub } from "./githubConnect";
 import { cancelGoogle, connectGoogle } from "./google";
 import { submitClaudeAccount, submitGoogleClient, submitGooglePubsub, submitHubLink, submitMcpServer, submitProjectEnv, submitSecret } from "./secret";
 import { applyMenuState } from "./menuState";
@@ -90,7 +91,17 @@ export const registerIpc = (
       await shell.openExternal(checked.url);
     }),
   );
-  handle(IPC.githubAppCancel, () => cancelGithubApp());
+  handle(IPC.githubAppCancel, () => {
+    cancelGithubApp();
+    cancelGithubConnect();
+  });
+  handle(IPC.githubConnect, (_event, id) =>
+    connectGithub(call(id), async (url) => {
+      const checked = externalUrl(url);
+      if (!checked.ok) throw new Error(checked.message);
+      await shell.openExternal(checked.url);
+    }),
+  );
   handle(IPC.claudeAccountSubmit, (_event, id, request) => submitClaudeAccount(request, call(id)));
   handle(IPC.systemHostName, () => hostName());
   // This computer joins the hub the page's Add machine is on, and each hub keeps its own join's state. One join at a

@@ -103,6 +103,12 @@ async fn setup_test(
     input: SetupTestInput,
 ) -> Result<SetupTestOutput, ToolError> {
     require_admin(&caller)?;
+    // The App's Test asks GitHub, and keeps what it said for its check.
+    if input.step == SetupStepId::Github
+        && let Err(e) = hub.github_app.test().await
+    {
+        tracing::warn!("setup: the GitHub App's test didn't run: {e}");
+    }
     // Machines and Claude read every machine's checks; the rest, the hub's own.
     let results = match input.step {
         SetupStepId::Machines | SetupStepId::Claude => hub.doctor.list(true).await,
