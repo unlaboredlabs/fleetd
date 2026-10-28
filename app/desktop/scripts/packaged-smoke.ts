@@ -107,8 +107,9 @@ const stop = (): void => {
 /**
  * --record: waits for the first still in frames/, which the app writes only once the capture has delivered a frame: a
  * quit before that finishes an empty recording, and a hosted macOS runner can take seconds to deliver one. (fleetd.mp4
- * itself can stay empty until the quit: a fragment closes on the next frame, and an idle page sends none.) SIGTERM
- * then finishes the recording as quitting does, and fleetd.mp4 must hold an MP4 (an ftyp box first).
+ * holds at most its ftyp until the quit: MediaRecorder hands the MP4 over at stop, which the app holds until the
+ * encoder has delivered a frame, which can take seconds more.) SIGTERM then finishes the recording as quitting does,
+ * and fleetd.mp4 must hold an MP4 (an ftyp box first).
  */
 const checkRecording = async (): Promise<void> => {
   const dir = path.join(home, "record");
@@ -128,6 +129,8 @@ const checkRecording = async (): Promise<void> => {
     });
   }
   const file = path.join(dir, "fleetd.mp4");
+  // The app writes the file with its first bytes, so none means the recording ended empty; its log says why.
+  if (!existsSync(file)) throw new Error(`${file} was never written: the recording ended empty (see FLEETD_RECORD above)`);
   const bytes = readFileSync(file);
   if (bytes.length === 0 || bytes.toString("latin1", 4, 8) !== "ftyp") throw new Error(`${file} isn't an MP4 (${bytes.length} bytes)`);
   console.log(`packaged smoke: recorded ${bytes.length} bytes to fleetd.mp4`);

@@ -6,9 +6,20 @@
 //
 // Frames are carried by Chromium's insertable streams, not a <video> and requestVideoFrameCallback: this window is
 // never shown, so it never renders, and only a pipeline outside rendering sees every frame (with its own timestamp).
+//
+// A take's encoder starts on the first frame its MediaRecorder gets, and a stop before the encoder has delivered one
+// finishes an empty take (no bytes at all). On a hosted macOS runner the encoder has started up to 3.6 s after the
+// capture's first frame: Chromium's recorder takes frames only once it knows which encoders the GPU process offers,
+// and an idle page sends no more after that. So until a take's encoder has delivered a frame, the canvas's last frame
+// is sent again every PROBE_MS, and a stop waits for that first frame. Nothing else shows when it comes (the MP4 is
+// handed over only at stop, whatever the timeslice), but requestData returns the file's first bytes (its ftyp) once
+// it has, so each take asks for them every PROBE_MS too.
 import { type Chunk, type Lights, RECORDER_GLOBAL, RECORDER_MIME, type RecorderApi, type Take } from "../../shared/recorder";
 
 const TIMESLICE_MS = 1000;
+const PROBE_MS = 50;
+/** How long a stop waits for the take's encoder to deliver its first frame. */
+const BEGIN_MS = 10_000;
 
 // Chromium's insertable streams for video, which TypeScript's DOM types don't carry yet.
 declare class MediaStreamTrackProcessor {
@@ -23,6 +34,13 @@ declare class MediaStreamTrackGenerator extends MediaStreamTrack {
 let canvas: OffscreenCanvas | undefined;
 let stream: MediaStream | undefined;
 const recorders = new Map<Take, MediaRecorder>();
+/** Each take's first bytes, which come once its encoder has delivered a frame. */
+const begun = new Map<Take, Promise<void>>();
+let startedAt = 0;
+let frames = 0;
+let firstFrame: number | null = null;
+let encoding: number | null = null;
+const since = () => (performance.now() - startedAt) / 1000;
 const queue: Array<Chunk> = [];
 // Blob → bytes is async; chaining keeps each take's chunks in the order they were encoded.
 let pending: Promise<void> = Promise.resolve();
@@ -30,12 +48,23 @@ let bitrate = 0;
 let active = true;
 /** Whether the canvas holds a frame yet; a still before that would be blank. */
 let drawn = false;
+/** Sends the canvas again, if nothing went out for PROBE_MS. */
+let resend = (): void => undefined;
 
 const record = (take: Take): void => {
   if (stream === undefined || recorders.has(take)) return;
   const recorder = new MediaRecorder(stream, { mimeType: RECORDER_MIME, videoBitsPerSecond: bitrate });
+  let probe: ReturnType<typeof setInterval> | undefined;
+  let begin: () => void = () => undefined;
+  begun.set(take, new Promise<void>((resolve) => (begin = resolve)));
   recorder.ondataavailable = (event) => {
     const data = event.data;
+    if (data.size > 0 && probe !== undefined) {
+      clearInterval(probe);
+      probe = undefined;
+      if (take === "full") encoding = since();
+      begin();
+    }
     pending = pending.then(async () => {
       if (data.size > 0) queue.push({ take, bytes: new Uint8Array(await data.arrayBuffer()) });
     });
@@ -45,10 +74,15 @@ const record = (take: Take): void => {
     pending = pending.then(() => void queue.push({ take, error }));
   };
   recorder.onstop = () => {
+    clearInterval(probe);
     pending = pending.then(() => void queue.push({ take, end: true }));
   };
   recorders.set(take, recorder);
   recorder.start(TIMESLICE_MS);
+  probe = setInterval(() => {
+    resend();
+    if (recorder.state === "recording") recorder.requestData();
+  }, PROBE_MS);
 };
 
 const drawLights = (ctx: OffscreenCanvasRenderingContext2D, lights: Lights, scale: number): void => {
@@ -79,9 +113,23 @@ const api: RecorderApi = {
     if (ctx === null) throw new Error("no 2d canvas");
     const scale = options.width / options.contentWidth;
     const generator = new MediaStreamTrackGenerator({ kind: "video" });
+    // The last frame out, in the capture's microseconds and in performance.now() milliseconds.
+    let sent = { timestamp: 0, at: 0 };
+    const send = (controller: TransformStreamDefaultController<VideoFrame>, timestamp: number) => {
+      // Never behind a frame sent again, which carries a timestamp of its own.
+      const next = Math.max(timestamp, sent.timestamp + 1);
+      controller.enqueue(new VideoFrame(out, { timestamp: next }));
+      sent = { timestamp: next, at: performance.now() };
+    };
     void new MediaStreamTrackProcessor({ track }).readable
       .pipeThrough(
         new TransformStream<VideoFrame, VideoFrame>({
+          start(controller) {
+            resend = () => {
+              const idle = performance.now() - sent.at;
+              if (drawn && idle >= PROBE_MS) send(controller, sent.timestamp + Math.round(idle * 1000));
+            };
+          },
           transform(frame, controller) {
             // Top-left anchored at 1:1, so a resized window crops or pads instead of stretching.
             ctx.fillStyle = "#000";
@@ -90,21 +138,27 @@ const api: RecorderApi = {
             if (options.lights !== null) drawLights(ctx, options.lights, scale);
             const timestamp = frame.timestamp;
             frame.close();
-            controller.enqueue(new VideoFrame(out, { timestamp }));
+            send(controller, timestamp);
             drawn = true;
+            frames += 1;
+            firstFrame ??= since();
           },
         }),
       )
       .pipeTo(generator.writable);
     canvas = out;
     stream = new MediaStream([generator]);
+    startedAt = performance.now();
     record("full");
     return RECORDER_MIME;
   },
   clipStart: () => record("clip"),
-  stop(take) {
+  async stop(take) {
     const recorder = recorders.get(take);
-    if (recorder?.state === "recording") recorder.stop();
+    if (recorder?.state !== "recording") return;
+    await Promise.race([begun.get(take), new Promise((resolve) => setTimeout(resolve, BEGIN_MS))]);
+    // A no-op if it stopped meanwhile.
+    recorder.stop();
   },
   async drain() {
     await pending;
@@ -113,6 +167,7 @@ const api: RecorderApi = {
   setActive(value) {
     active = value;
   },
+  timing: () => ({ frames, firstFrame, encoding }),
   async still() {
     if (canvas === undefined || !drawn) return null;
     return new Uint8Array(await (await canvas.convertToBlob({ type: "image/png" })).arrayBuffer());

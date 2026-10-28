@@ -13,7 +13,7 @@ import { mkdirSync } from "node:fs";
 import { open, rm, writeFile, type FileHandle } from "node:fs/promises";
 import { join } from "node:path";
 import { app, BrowserWindow, nativeTheme, powerSaveBlocker, screen, session, systemPreferences } from "electron";
-import { type Chunk, type Lights, RECORDER_GLOBAL, type RecorderApi, type RecorderStart, type Take } from "../../shared/recorder";
+import { type Chunk, type Lights, RECORDER_GLOBAL, type RecorderApi, type RecorderStart, type Take, type Timing } from "../../shared/recorder";
 import { DEV_BUILD } from "../build";
 import { APP_ORIGIN, APP_SCHEME } from "../origin";
 import { appFile } from "../security";
@@ -35,6 +35,7 @@ const remote = (win: BrowserWindow): Call => {
     start: (options: RecorderStart) => call("start", options) as Promise<string>,
     clipStart: () => call("clipStart") as Promise<undefined>,
     stop: (take: Take) => call("stop", take) as Promise<undefined>,
+    timing: () => call("timing") as Promise<Timing>,
     drain: () => call("drain") as Promise<ReadonlyArray<Chunk>>,
     setActive: (active: boolean) => call("setActive", active) as Promise<undefined>,
     still: () => call("still") as Promise<Uint8Array | null>,
@@ -186,7 +187,7 @@ export const startRecording = async (target: BrowserWindow, config: RecordConfig
   void still();
   const stillTimer = setInterval(() => void still().catch(() => undefined), STILL_MS);
 
-  /** Stops `take` and resolves once its last byte is on disk (or after FINISH_MS). */
+  /** Stops `take` (once its encoder has delivered a frame) and resolves once its last byte is on disk (or after FINISH_MS). */
   const stop = async (take: Take) => {
     if (recorder.isDestroyed() || ended.has(take)) return;
     await page.stop(take);
@@ -210,9 +211,16 @@ export const startRecording = async (target: BrowserWindow, config: RecordConfig
       }
       clearInterval(pump);
       for (const handle of handles.values()) await handle.close();
+      // When the capture's first frame came and when the encoder delivered its own (src/renderer/demo/recorder.ts): on
+      // a hosted macOS runner the encoder has started up to 3.6 s after the start.
+      const timing = recorder.isDestroyed() ? null : await page.timing().catch(() => null);
+      const at = (s: number | null | undefined) => (s === null || s === undefined ? "none" : `${s.toFixed(2)}s`);
+      const counts = `frames=${timing?.frames ?? "?"} first_frame=${at(timing?.firstFrame)} encoder=${at(timing?.encoding)}`;
       if (!recorder.isDestroyed()) recorder.destroy();
-      if (ended.has("full") && !failed) log(`done mp4=${mp4} bytes=${bytes.full} pngs=${stills} seconds=${total.toFixed(1)}`);
-      else if (!failed) log(`error=the capture did not finish within ${FINISH_MS / 1000} s; ${mp4} may be cut short`);
+      if (failed) return;
+      if (!ended.has("full")) log(`error=the capture did not finish within ${FINISH_MS / 1000} s; ${mp4} may be cut short (${counts})`);
+      else if (bytes.full === 0) log(`error=the encoder delivered no frame before the recording stopped; ${mp4} is empty (${counts})`);
+      else log(`done mp4=${mp4} bytes=${bytes.full} pngs=${stills} seconds=${total.toFixed(1)} ${counts}`);
     })());
 
   // Hold every way out until the files are whole: a quit (signals included) and closing the window.
