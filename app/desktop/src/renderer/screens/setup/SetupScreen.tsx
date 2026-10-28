@@ -14,6 +14,7 @@ import { useDataLayer, useHub, useToolQuery } from "../../src/data/react";
 import { Button, Text, cx } from "../../ui";
 import { useHubRole } from "../admin/role";
 import { errorText, useRefetch } from "../settings/hub";
+import { revealNext } from "../settings/search";
 import { navigate } from "../shell/navigation";
 import { GuideParts, Part } from "./Guide";
 import { groupWords, isRequiredLeft, needWords, placesOf, requiredLeft, statusWords, type SetupStep } from "./steps";
@@ -248,7 +249,13 @@ function StepPane({
           {places.length === 0 ? null : (
             <div className={s.links}>
               {places.map((place) => (
-                <Button key={place.label} onClick={() => navigate({ ...place.screen, at: hub.id })}>
+                <Button
+                  key={place.label}
+                  onClick={() => {
+                    revealNext(place.reveal ?? null);
+                    navigate({ ...place.screen, at: hub.id });
+                  }}
+                >
                   {place.label}
                 </Button>
               ))}

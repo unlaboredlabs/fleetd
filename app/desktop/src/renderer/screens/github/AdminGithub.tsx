@@ -1,4 +1,4 @@
-// Administration › GitHub: the hub's own GitHub App (D190), which does the hub's work on GitHub (the train's reads,
+// Administration › Connections › GitHub: the hub's own GitHub App (D190), which does the hub's work on GitHub (the train's reads,
 // rebases, statuses and merges, and the PR pages) on the repositories it is installed on. Create GitHub App goes
 // through main (window.fleetd.github.createApp): it posts the hub's manifest to GitHub from a page on 127.0.0.1 and
 // hands GitHub's code to github_app_create, so the App's keys go from GitHub to the hub and never to this computer.
@@ -13,7 +13,7 @@ import { useDataLayer, useHub, useToolQuery } from "../../src/data/react";
 import { Button, Field, Input, Segmented, Separator, Text } from "../../ui";
 import { useHubState } from "../onboarding/hooks";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
-import { PageHead } from "../settings/parts";
+import { PagePart } from "../settings/parts";
 import { ConfirmRemove } from "../settings/claudeParts";
 import { Part } from "../setup/Guide";
 import { dayWords, listWords } from "../google/model";
@@ -59,34 +59,24 @@ export function AdminGithub() {
   const read = useToolQuery("github_app_get", noInput, { enabled: live });
   // Said once the App's own section has gone with it.
   const [removed, setRemoved] = useState<string | null>(null);
-  const head = (
-    <PageHead title="GitHub">
-      The hub works on GitHub as an App of its own: the merge train&rsquo;s rebases, statuses and merges, and the PR pages. You create it here once, with
-      nothing to paste; GitHub hands its keys straight to the hub.
-    </PageHead>
-  );
+  const intro =
+    "The hub works on GitHub as an App of its own: the merge train's rebases, statuses and merges, and the PR pages. You create it here once, with nothing to paste; GitHub hands its keys straight to the hub.";
   if (!live || read.data === undefined) {
     const text = !live ? "Not connected. Connect to a hub to set up GitHub." : read.error !== null ? errorText(read.error) : "Loading…";
     const old = read.error instanceof CallError && lacksTool(read.error.error);
     return (
-      <div className={settings.scroll} data-screen={read.error !== null ? "admin.github.error" : "admin.github.loading"}>
-        <div className={settings.column}>
-          {head}
-          <Text tone={read.error !== null && !old ? "danger" : "quiet"}>{old ? "This hub is too old for a GitHub App. Update fleetd on the hub first." : text}</Text>
-        </div>
-      </div>
+      <PagePart title="GitHub" reveal="admin.github" intro={intro}>
+        <Text tone={read.error !== null && !old ? "danger" : "quiet"}>{old ? "This hub is too old for a GitHub App. Update fleetd on the hub first." : text}</Text>
+      </PagePart>
     );
   }
   const app = read.data.app;
   return (
-    <div className={settings.scroll} data-screen="admin.github">
-      <div className={settings.column}>
-        {head}
-        {app === undefined ? <NoApp removed={removed} /> : <AppStatus app={app} onRemoved={setRemoved} />}
-        <Separator />
-        <Create info={read.data} />
-      </div>
-    </div>
+    <PagePart title="GitHub" reveal="admin.github" intro={intro}>
+      {app === undefined ? <NoApp removed={removed} /> : <AppStatus app={app} onRemoved={setRemoved} />}
+      <Separator />
+      <Create info={read.data} />
+    </PagePart>
   );
 }
 

@@ -257,6 +257,8 @@ function agents(from: Fixture): Fixture {
     }
   }
   for (let n = 1; n <= 64; n++) f.answer("cap_set", { cap: n }, { slots: { ...clone(slots), cap: n, fleetCap: n } });
+  // Administration's hub settings read the global MCP servers too: none.
+  f.answer("mcp_servers_get", undefined, { global: [], project: [], userServers: true });
   return f;
 }
 
@@ -289,6 +291,7 @@ function machines(from: Fixture): Fixture {
     f.answer("cap_set", { machine: { machineId, auto: true } }, at({ ...unset, cap: auto }));
     for (let n = 1; n <= 50; n++) f.answer("cap_set", { machine: { machineId, maxAgents: n } }, at({ ...clone(m), cap: n, maxAgents: n }));
   }
+  f.answer("mcp_servers_get", undefined, { global: [], project: [], userServers: true });
   return f;
 }
 

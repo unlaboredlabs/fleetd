@@ -97,6 +97,29 @@ export function PageHead(props: { title: string; children?: ReactNode; aside?: R
   );
 }
 
+/**
+ * One part of a page that gathers several (Administration's Connections and Hub settings): its heading and a line,
+ * then its options. A search or a link for `reveal` lands on it.
+ */
+export function PagePart(props: { title: string; reveal: string; intro?: ReactNode; children?: ReactNode }) {
+  const ref = useReveal<HTMLElement>(props.reveal);
+  return (
+    <section ref={ref} className={s.part} aria-label={props.title} data-part={props.reveal} tabIndex={-1}>
+      <div className={s.partHead}>
+        <Text as="h2" size="lg" strong>
+          {props.title}
+        </Text>
+        {props.intro ? (
+          <Text size="sm" tone="quiet">
+            {props.intro}
+          </Text>
+        ) : null}
+      </div>
+      {props.children}
+    </section>
+  );
+}
+
 /** One option: its name and a line of help, then its controls. A settings search for `reveal` lands on it. */
 export function Setting(props: { reveal: string; label: string; help: string; children: ReactNode }) {
   const ref = useReveal<HTMLElement>(props.reveal);

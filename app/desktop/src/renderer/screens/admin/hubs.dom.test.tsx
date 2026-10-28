@@ -151,6 +151,13 @@ const go = async (hash: string) => {
 const managing = () => host.querySelector<HTMLElement>("[data-managing]");
 const choices = () => [...host.querySelectorAll<HTMLElement>("[data-admin-hub]")].map((b) => [b.dataset["adminHub"], b.getAttribute("aria-current") === "page"]);
 const button = (name: string) => [...host.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent === name);
+/** Opens People's invite form, if it isn't open already. */
+const openInvite = async () => {
+  const open = button("Invite someone");
+  if (open === undefined) return;
+  act(() => open.click());
+  await settle();
+};
 
 const THREE: HubEntry[] = [
   { id: "hub", label: "Personal" },
@@ -172,8 +179,8 @@ afterEach(() => {
 
 it("names the hub it manages, and lists to switch only the hubs this person administers", async () => {
   await mount(THREE);
-  await go("#/admin/invites?at=a1b2");
-  expect(host.querySelector('[data-screen="admin.invites"]')).not.toBeNull();
+  await go("#/admin/people?at=a1b2");
+  expect(host.querySelector('[data-screen="admin.people"]')).not.toBeNull();
   expect(managing()?.dataset["managing"]).toBe("a1b2");
   expect(managing()?.textContent).toContain("Acme");
   expect(managing()?.textContent).toContain("https://hub.acme.example");
@@ -188,7 +195,8 @@ it("creates the invite on the hub it names, saying which, never on another", asy
   await mount(THREE);
   // Another hub's screen was open last: Administration on Acme still acts on Acme.
   await go("#/project/devbox/hub?at=hub");
-  await go("#/admin/invites?at=a1b2");
+  await go("#/admin/people?at=a1b2");
+  await openInvite();
   const create = button("Create invite link to Acme");
   expect(create).toBeDefined();
   const input = host.querySelector<HTMLInputElement>("form input");
@@ -210,22 +218,24 @@ it("creates the invite on the hub it names, saying which, never on another", asy
 
 it("switches hub from its sidebar, keeping the section, and the page follows", async () => {
   await mount(THREE);
-  await go("#/admin/invites?at=a1b2");
+  await go("#/admin/people?at=a1b2");
   const personal = host.querySelector<HTMLButtonElement>('[data-admin-hub="hub"]');
   act(() => personal?.click());
   await settle();
   await settle();
-  expect(window.location.hash).toBe("#/admin/invites?at=hub");
+  expect(window.location.hash).toBe("#/admin/people?at=hub");
   expect(managing()?.dataset["managing"]).toBe("hub");
   expect(managing()?.textContent).toContain("Personal");
+  await openInvite();
   expect(button("Create invite link to Personal")).toBeDefined();
 });
 
 it("with one hub, names none and offers no switch: the page is as it was", async () => {
   await mount([{ id: "hub", label: "devbox" }]);
-  await go("#/admin/invites");
-  expect(host.querySelector('[data-screen="admin.invites"]')).not.toBeNull();
+  await go("#/admin/people");
+  expect(host.querySelector('[data-screen="admin.people"]')).not.toBeNull();
   expect(managing()).toBeNull();
   expect(choices()).toEqual([]);
+  await openInvite();
   expect(button("Create invite link")).toBeDefined();
 });

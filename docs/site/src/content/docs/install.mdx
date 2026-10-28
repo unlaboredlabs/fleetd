@@ -20,7 +20,7 @@ In a terminal, the installer then starts the setup wizard, `fleetd init`. Contin
 | macOS (Apple silicon or Intel) or Linux x64 | every machine | The desktop app needs macOS 12 or newer. On an older Mac the installer stops without changing anything; install the CLI only with `--no-app`. |
 | `claude` CLI | every machine that runs agents | Agents run through it. Its Claude account is the hub's API key, your subscription, or the machine's own `claude auth login`: the [Claude setup step](/docs/quick-start#setup-steps). |
 | `git` | the [hub](/docs/glossary#hub) | |
-| `gh` CLI, logged in | the hub, only without the hub's GitHub App | fleetd opens and merges pull requests through the hub's own GitHub App, which an admin creates on Administration › GitHub; without one, through `gh`. |
+| `gh` CLI, logged in | the hub, only without the hub's GitHub App | fleetd opens and merges pull requests through the hub's own GitHub App, which an admin creates on Administration › Connections › GitHub; without one, through `gh`. |
 
 `fleetd init` checks each one and prints the install command for anything missing.
 

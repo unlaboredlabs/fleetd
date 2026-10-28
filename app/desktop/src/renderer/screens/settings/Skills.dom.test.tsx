@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 // Skills, a member's and an admin's: Settings → Skills shows a project's own and repo skills, and names the hub-wide
-// ones on a read-only line (with the way to Administration for an owner or admin only); Administration → Skills is
+// ones on a read-only line (with the way to Administration for an owner or admin only); Administration → Hub settings › Skills is
 // where the hub-wide ones are installed, updated and removed, and a member never reaches it.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -80,15 +80,18 @@ const render = async (page: "settings" | "admin", admin: boolean) => {
               ? { skill: GLOBAL[0], text: "---\nname: pr-review\n---\n" }
               : tool === "skill_install"
                 ? { installed: [GLOBAL[0]], next: "" }
-                : {};
-      return Promise.resolve({ ok: true, output });
+                : tool === "mcp_servers_get"
+                  ? undefined
+                  : {};
+      // Hub settings' other parts find a hub without them.
+      return Promise.resolve(output === undefined ? { ok: false, error: { code: "not_found", message: `${tool} isn't faked` } } : { ok: true, output });
     },
     subscribe: (l) => ((listener = l), () => undefined),
     resync: () => Promise.resolve(),
     focus: () => Promise.resolve(),
     chat: () => Promise.resolve(),
   };
-  if (page === "admin") window.location.hash = "#/admin/skills";
+  if (page === "admin") window.location.hash = "#/admin/hub";
   await act(async () => {
     root.render(
       <UiProvider>
@@ -160,7 +163,7 @@ it("keeps Administration → Skills from a member, and reads none of it", async 
 
 it("lets an admin install, update and remove hub-wide skills on Administration", async () => {
   await render("admin", true);
-  expect(document.querySelector("[data-screen='admin.skills']")).not.toBeNull();
+  expect(document.querySelector("[data-screen='admin.hub']")).not.toBeNull();
   expect(sent("skills_list")).toEqual([{}]);
   expect(texts()).toContain("Install from a source…");
   const pr = rowNamed("pr-review");

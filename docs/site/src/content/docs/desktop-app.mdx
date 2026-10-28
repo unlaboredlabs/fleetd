@@ -188,7 +188,7 @@ Each machine is one row: its name, its state (online, degraded, or offline and w
 run there and how many projects it has. On the right, anything that wants a look: a recent sleep, Claude usage near
 its limit, a setup check that failed. A degraded machine says why under its name. Click a row to open it: load, memory,
 Claude usage, its fleetd version and tags, its projects (each with Open, Settings and Remove) and, for an owner or
-admin, Roles and screens, which goes to [Administration › Hub settings](#administration).
+admin, Roles and screens, which goes to [Administration › Machines](#administration).
 
 Under the machines, the [setup checks](/docs/machines#health) the hub ran: the ones that failed or warned, each with
 its fix (a command to copy, or Fix), then the rest a click away. Re-run runs them again.
@@ -207,9 +207,8 @@ an option or a prompt by name, and press Enter to open the first match.
 | Notifications | Which alerts show (the lead asks you something, a command or secret waits, the lead finishes what you asked, a machine problem, anything else), whether they play a sound, the Dock badge, and a test. There is never an alert for the chat in front of you, and in quiet hours only urgent ones show. Clicking one opens what it's about. |
 | Agents | [Max agents](/docs/projects#max-agents) for each project. Each slider applies when you let go, with Undo. A project says whether its max is its own or follows the default, and "Use the default" goes back. Under each, the project's Medium allowed switch. |
 | Projects | One project's name, its worktrees, its agents' environment variables (plain and secret), its own MCP servers, its setup commands, the merge train's checks, its task profiles' model and effort, and deleting it. See [Project settings](/docs/projects#settings). |
-| MCP servers | The MCP servers every project's agents get, each with Test connection, and whether agents also get your own. See [MCP servers](/docs/mcp-servers). |
-| Instructions | Your own text, added to every agent's first message. |
-| Prompts | The prompts fleetd sends agents, listed under Prompts in the sidebar, to read and edit, and any of your edits that no longer apply. See [What agents are told](/docs/what-agents-are-told). |
+| Instructions | One project's own text, added to its agents' first message after the hub-wide one. |
+| Prompts | The prompts fleetd sends a project's agents, listed under Prompts in the sidebar, to read and edit for that project, and any of its edits that no longer apply. A prompt with one text for the whole hub shows read only. See [What agents are told](/docs/what-agents-are-told). |
 | Skills | One project's [skills](/docs/skills): its repo's and its own, to read, write, install and update, and a line naming the hub-wide ones it gets. |
 
 ## Administration {#administration}
@@ -221,16 +220,14 @@ on Setup, and a hub with no projects yet opens on setup's welcome in place of Ge
 
 | Section | Has |
 |---|---|
-| People | Everyone on the hub, with their role and devices. Change a role in place, or remove someone: their devices are signed out at once, and what they did keeps their name. An admin can't change or remove an owner, and nobody changes their own role here. |
-| Invites | Create an invite link with a name and a role (member or admin). The link is shown once, with Copy: send it, and their fleetd app opens it and joins as them. It works once, within 7 days. Below, the invites still waiting, each with Revoke. |
-| Claude | The hub's Claude API key and optional endpoint, sealed to every machine, with Test; the switch "Members may use the hub's API key"; what projects' leads and unrequested work run on, with the hub owner's subscription they fall back to; and each person's account, with any usage pause. See [Claude accounts](/docs/people#claude). |
-| Hub settings | What reaches every project and machine: the whole fleet's and each machine's [max agents](/docs/projects#max-agents), the two [task profiles](/docs/projects#models) with the model and effort behind each for the whole fleet, [machine roles](/docs/machines#roles) and the [memory caps](/docs/what-agents-are-told#memory). |
-| Skills | The hub-wide [skills](/docs/skills) every project's agents get: write, install from skills.sh, update and delete them. |
-| Google | The hub's Google OAuth client for [Google for Navi](/docs/google#client): the steps in Google Cloud Console with the values to paste, the Client ID and secret (sealed), and Test; then, optionally, [real-time mail](/docs/google#pubsub) with its service account key (sealed). |
-| Setup | The hub's [setup steps](/docs/quick-start#setup-steps), the same as `fleetd init`'s: each with its status, why it matters, the values to paste and the pages to open, Test, and Skip for now. A step's result is saved where it lives: its button opens Administration › Google, › Claude, › Invites or › Machines, and for Claude also your own Settings › Claude. |
+| People | Everyone on the hub, with their role and devices. Change a role in place, or remove someone: their devices are signed out at once, and what they did keeps their name. An admin can't change or remove an owner, and nobody changes their own role here. Below, Invite someone: a name and a role (member or admin) make an invite link, shown once with Copy; their fleetd app opens it and joins as them, once, within 7 days. Then the invites still waiting, each with Revoke, and every hub link minted on the hub. |
+| Machines | Add machine, the hub's machines with Repair and Remove, each one's page with its checklist, and [machine roles](/docs/machines#roles). |
+| Connections | What the hub itself connects to. **Claude**: the hub's API key and optional endpoint, sealed to every machine, with Test; the switch "Members may use the hub's API key"; what projects' leads and unrequested work run on, with the hub owner's subscription they fall back to; and each person's account, with any usage pause (see [Claude accounts](/docs/people#claude)). **GitHub**: the hub's own [GitHub App](/docs/github). **Google**: the OAuth client for [Google for Navi](/docs/google#client), with the steps in Google Cloud Console, the Client ID and secret (sealed) and Test, then, optionally, [real-time mail](/docs/google#pubsub). |
+| Hub settings | What reaches every project and machine: the whole fleet's and each machine's [max agents](/docs/projects#max-agents), the two [task profiles](/docs/projects#models) with the model and effort behind each, the [memory caps](/docs/what-agents-are-told#memory), the instructions for every project, the global [MCP servers](/docs/mcp-servers) and whether agents also get their own, the hub-wide [skills](/docs/skills), and the hub-wide prompts, listed under Hub settings in the sidebar. The hub refuses these changes from anyone but an owner or admin. |
+| Setup | The hub's [setup steps](/docs/quick-start#setup-steps), the same as `fleetd init`'s: each with its status, why it matters, the values to paste and the pages to open, Test, and Skip for now. Its row says how many required steps are left. A step's result is saved where it lives: its button opens Administration › Connections, › People or › Machines, and for Claude also your own Settings › Claude. |
 
 On a hub from before people, a key with admin on every machine counts as an admin, and so does any key on a hub too
-old to say; People and Invites there say the hub needs updating, with Update the hub, and Hub settings work as before.
+old to say; People there says the hub needs updating, with Update the hub, and Hub settings work as before.
 
 ## Shortcuts {#shortcuts}
 

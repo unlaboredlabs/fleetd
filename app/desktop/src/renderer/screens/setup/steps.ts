@@ -24,18 +24,19 @@ export const isRequiredLeft = (step: SetupStep): boolean =>
 
 export const requiredLeft = (steps: ReadonlyArray<SetupStep>): number => steps.filter(isRequiredLeft).length;
 
-/** Where a step's result is saved in the app. */
+/** Where a step's result is saved in the app: a page, and on a page that gathers several, the part (useReveal). */
 export interface Place {
   readonly label: string;
   readonly screen: Screen;
+  readonly reveal?: string;
 }
 
 const ADMIN: Readonly<Record<string, Place>> = {
   machines: { label: "Open Administration › Machines", screen: { id: "admin", section: "machines" } },
-  invites: { label: "Open Administration › Invites", screen: { id: "admin", section: "invites" } },
-  google: { label: "Open Administration › Google", screen: { id: "admin", section: "google" } },
-  claude: { label: "Open Administration › Claude", screen: { id: "admin", section: "claude" } },
-  github: { label: "Open Administration › GitHub", screen: { id: "admin", section: "github" } },
+  invites: { label: "Open Administration › People", screen: { id: "admin", section: "people" } },
+  google: { label: "Open Administration › Connections", screen: { id: "admin", section: "connections" }, reveal: "admin.google" },
+  claude: { label: "Open Administration › Connections", screen: { id: "admin", section: "connections" }, reveal: "admin.claude" },
+  github: { label: "Open Administration › Connections", screen: { id: "admin", section: "connections" }, reveal: "admin.github" },
 };
 
 /** Beside the Administration section, each person's own side of a step. */

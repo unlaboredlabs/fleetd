@@ -337,7 +337,7 @@ fn google_parts(host: &str) -> Vec<SetupPart> {
                     plain(
                         "Key",
                         "Service accounts › the account above › Keys › Add key › Create new key › JSON. Paste the \
-                         downloaded file on Administration › Google, then delete it.",
+                         downloaded file on Administration › Connections › Google, then delete it.",
                     ),
                     SetupValue {
                         command: Some(true),
@@ -450,7 +450,7 @@ pub fn guides(hub: &str) -> Vec<HubSetupStep> {
                         value("Key name", &name),
                         plain(
                             "Where",
-                            "Paste it on Administration › Claude, with an endpoint if you use a gateway; the app \
+                            "Paste it on Administration › Connections › Claude, with an endpoint if you use a gateway; the app \
                              seals it on your device.",
                         ),
                     ],
@@ -492,7 +492,7 @@ pub fn guides(hub: &str) -> Vec<HubSetupStep> {
                 part(
                     "Create the hub's GitHub App",
                     Some(
-                        "On Administration › GitHub: one button, nothing to paste. GitHub hands the App's keys straight to the hub.",
+                        "On Administration › Connections › GitHub: one button, nothing to paste. GitHub hands the App's keys straight to the hub.",
                     ),
                     vec![],
                     vec![command(
@@ -551,7 +551,7 @@ pub fn guides(hub: &str) -> Vec<HubSetupStep> {
             parts: google_parts(&host),
             fields_note: Some(
                 "Save the client ID and secret, and the Gmail subscription and key if you set them up, on \
-                 Administration › Google: the app seals the secrets on your device. Then each person connects their \
+                 Administration › Connections › Google: the app seals the secrets on your device. Then each person connects their \
                  own Google account from their Navi; if a sign-in lapses, Navi offers Reconnect."
                     .into(),
             ),

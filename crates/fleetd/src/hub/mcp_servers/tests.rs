@@ -119,7 +119,16 @@ async fn node(hub: &Arc<Hub>) -> mpsc::UnboundedReceiver<SessionCall> {
     calls
 }
 
+/// An owner's or admin's device: admin on every machine.
 fn person() -> Caller {
+    Caller {
+        grants: serde_json::from_value(json!([{ "role": "admin", "machines": "*" }])).unwrap(),
+        ..member()
+    }
+}
+
+/// A member's device: operate on every machine, admin nowhere.
+fn member() -> Caller {
     let c = serde_json::from_value::<Caller>(json!({
         "keyId": "k1", "name": "desk", "prefix": "fld_abcdef", "createdAt": AT,
         "grants": [{ "role": "operate", "machines": "*" }],
@@ -209,6 +218,25 @@ async fn only_a_person_changes_them_and_fleetd_is_not_a_name() {
             .unwrap(),
         ..person()
     };
+    // A global server, and whether agents get a person's own, reach every teammate's agents: a member's device is
+    // refused them (D209).
+    for (tool, input) in [
+        (
+            "mcp_server_set",
+            github(json!({ "kind": "global" }), header.clone()),
+        ),
+        (
+            "mcp_server_remove",
+            json!({ "scope": { "kind": "global" }, "name": "github" }),
+        ),
+        ("mcp_settings_set", json!({ "userServers": false })),
+    ] {
+        let error = call(&hub, &member(), tool, input).await.unwrap_err();
+        assert!(
+            format!("{error:?}").contains("only the hub's owners and admins"),
+            "{tool}: {error:?}"
+        );
+    }
     // A global server reaches every machine: operate on one isn't enough.
     assert!(
         call(

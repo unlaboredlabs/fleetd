@@ -217,7 +217,7 @@ Paths are under `crates/fleetd/src/` unless shown otherwise.
 - **Screens:** browser, Android, iOS and Linux desktop sessions with recordings, takeover and 1Password fills, all as
   they are. The browser is the **fallback**; connectors come first, as Grok Bot does it.
 - **Integrations (v1, W97):** Google (Gmail, Calendar, Drive), Notion and any custom **MCP server**, added to a Navi
-  in Settings › MCP servers. Their OAuth tokens are sealed to the machine. Read tools run unasked; write and send
+  in Administration › Hub settings. Their OAuth tokens are sealed to the machine. Read tools run unasked; write and send
   tools ask, the approval showing recipients and content (a separate writer's part).
 - **Web:** WebSearch and WebFetch, allowed in the assistant role.
 - **Files:** Navi's project directory on its machine is its filing cabinet: notes, drafts, downloads, exports. Files

@@ -45,13 +45,16 @@ export const listView = (tab: PanelTab): PanelView => {
 export const hasItem = (view: PanelView): boolean =>
   view.tab === "agents" ? view.agent !== null : view.tab === "prs" ? view.pr !== null : view.tab === "sessions" ? view.session !== null : false;
 
-export const SETTINGS_TABS = ["general", "hubs", "claude", "github", "notifications", "agents", "projects", "mcp", "prompts", "instructions", "memory", "automations", "skills"] as const;
+export const SETTINGS_TABS = ["general", "hubs", "claude", "github", "notifications", "agents", "projects", "prompts", "instructions", "memory", "automations", "skills"] as const;
 export type SettingsTab = (typeof SETTINGS_TABS)[number];
 export type SettingsView = "edit" | "compare" | "update";
 
 /** The Administration page's sections: for the hub's owners and admins only, never mixed into Settings. */
-export const ADMIN_SECTIONS = ["people", "invites", "machines", "claude", "hub", "skills", "github", "google", "setup"] as const;
+export const ADMIN_SECTIONS = ["people", "machines", "connections", "hub", "setup"] as const;
 export type AdminSection = (typeof ADMIN_SECTIONS)[number];
+
+/** Where the sections Administration had before D209 went: an older link lands on the page that has it now. */
+const ADMIN_MOVED: Readonly<Record<string, AdminSection>> = { invites: "people", claude: "connections", github: "connections", google: "connections", skills: "hub" };
 
 
 /**
@@ -82,8 +85,11 @@ type ScreenOf =
   | { readonly id: "projects.add" }
   /** A tab; `prompt`, `for` ("<machine>/<project>") and `view` link one prompt, a project's texts or a prompt's update. */
   | { readonly id: "settings"; readonly tab: SettingsTab; readonly prompt?: string; readonly for?: string; readonly view?: SettingsView }
-  /** Administration: people, invites, machines (one machine's page with `machine`), hub-wide settings and setup. */
-  | { readonly id: "admin"; readonly section: AdminSection; readonly machine?: string }
+  /**
+   * Administration: people, machines (one machine's page with `machine`), connections, hub settings and setup. On hub
+   * settings, `prompt` and `view` open one hub-wide prompt in the editor.
+   */
+  | { readonly id: "admin"; readonly section: AdminSection; readonly machine?: string; readonly prompt?: string; readonly view?: SettingsView }
   /** A fleetd://pair link prefills the hub and code; the screen still asks before it pairs. */
   | { readonly id: "onboarding"; readonly hub: string | null; readonly code: string | null }
   /** The hub admin's setup (a design prototype, docs/design/setup.md): the welcome, one step open, or the end. */
@@ -168,8 +174,10 @@ const screenOf = (parts: ReadonlyArray<string>, query: URLSearchParams): ScreenO
     case "projects":
       return a === "add" ? { id: "projects.add" } : HOME;
     case "settings": {
-      // Machine roles moved to Administration's hub settings; an older link still lands on them.
-      if (a === "machines") return { id: "admin", section: "hub" };
+      // Machine roles moved to Administration › Machines; an older link still lands on them.
+      if (a === "machines") return { id: "admin", section: "machines" };
+      // The global MCP servers went to Administration › Hub settings; a project's own are on its page.
+      if (a === "mcp") return { id: "settings", tab: "projects" };
       const [prompt, project, view] = [query.get("prompt"), query.get("for"), query.get("view")];
       return {
         id: "settings",
@@ -179,8 +187,13 @@ const screenOf = (parts: ReadonlyArray<string>, query: URLSearchParams): ScreenO
         ...(view === "compare" || view === "update" ? { view } : {}),
       };
     }
-    case "admin":
-      return a === "machines" && b !== undefined ? { id: "admin", section: a, machine: b } : { id: "admin", section: isAdminSection(a) ? a : "people" };
+    case "admin": {
+      if (a === "machines" && b !== undefined) return { id: "admin", section: a, machine: b };
+      const section = isAdminSection(a) ? a : ((a === undefined ? undefined : ADMIN_MOVED[a]) ?? "people");
+      const [prompt, view] = [query.get("prompt"), query.get("view")];
+      if (section !== "hub" || !prompt) return { id: "admin", section };
+      return { id: "admin", section, prompt, ...(view === "compare" || view === "update" ? { view } : {}) };
+    }
     case "onboarding":
       return { id: "onboarding", hub: query.get("hub") || null, code: query.get("code") || null };
     case "setup":
@@ -255,6 +268,10 @@ export const toHash = (screen: Screen): string => {
   if (screen.id === "settings") {
     if (screen.prompt !== undefined) query.set("prompt", screen.prompt);
     if (screen.for !== undefined) query.set("for", screen.for);
+    if (screen.view !== undefined && screen.view !== "edit") query.set("view", screen.view);
+  }
+  if (screen.id === "admin" && screen.prompt !== undefined) {
+    query.set("prompt", screen.prompt);
     if (screen.view !== undefined && screen.view !== "edit") query.set("view", screen.view);
   }
   if (screen.at !== undefined) query.set("at", screen.at);

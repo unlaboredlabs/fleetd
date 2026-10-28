@@ -183,7 +183,7 @@ function MachineRow(props: {
               type="button"
               className={s.link}
               onClick={() => {
-                window.location.hash = toHash({ id: "admin", section: "hub" });
+                window.location.hash = toHash({ id: "admin", section: "machines" });
               }}
             >
               <Text size="sm" tone="inherit">

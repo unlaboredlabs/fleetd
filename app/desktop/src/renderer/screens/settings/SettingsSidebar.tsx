@@ -1,6 +1,6 @@
 // Settings in the sidebar's place: Back to where you were, a search field that narrows to an option by name, the
 // pages, and (on Prompts) the prompts themselves, so the editor has the rest of the window.
-import { ArrowLeft, Bell, Bot, Brain, FolderGit2, GitBranch, MessageSquareText, Network, Plug, Repeat, ScrollText, SlidersHorizontal, Sparkles, Users } from "lucide-react";
+import { ArrowLeft, Bell, Bot, Brain, FolderGit2, GitBranch, MessageSquareText, Network, Repeat, ScrollText, SlidersHorizontal, Sparkles, Users } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Input, Sidebar, SidebarItem, SidebarSection, Text } from "../../ui";
 import { sections } from "./catalog";
@@ -20,7 +20,6 @@ const PAGES: ReadonlyArray<{ tab: Tab; icon: ReactNode }> = [
   { tab: "notifications", icon: <Bell /> },
   { tab: "agents", icon: <Users /> },
   { tab: "projects", icon: <FolderGit2 /> },
-  { tab: "mcp", icon: <Plug /> },
   { tab: "instructions", icon: <ScrollText /> },
   { tab: "memory", icon: <Brain /> },
   { tab: "skills", icon: <Sparkles /> },
@@ -90,7 +89,7 @@ export function SettingsSidebar({ onBack }: { onBack: () => void }) {
           {PAGES.map((p) => (
             <div key={p.tab} className={s.navGroup}>
               <SidebarItem label={PAGE_LABEL[p.tab]} icon={p.icon} current={route.tab === p.tab && route.prompt === null} onClick={() => go(tabHref(p.tab))} />
-              {p.tab === "prompts" && route.tab === "prompts" ? <PromptNav selected={route.prompt} scope={parseScope(route.for)} /> : null}
+              {p.tab === "prompts" && route.tab === "prompts" ? <PromptNav selected={route.prompt} scope={parseScope(route.for)} onOpen={(id) => go(promptHref(id))} /> : null}
             </div>
           ))}
         </SidebarSection>
@@ -106,8 +105,11 @@ function badge(summary: PromptSummary, scope: Scope): { label: string; update?: 
   return null;
 }
 
-/** The prompts under Prompts, grouped, each with its edited or update mark for the scope on screen. */
-function PromptNav({ selected, scope }: { selected: string | null; scope: Scope }) {
+/**
+ * The prompts under Prompts (and under Administration's Hub settings, hub-wide), grouped, each with its edited or
+ * update mark for the scope on screen.
+ */
+export function PromptNav({ selected, scope, onOpen }: { selected: string | null; scope: Scope; onOpen: (id: string) => void }) {
   const live = useLive();
   const projectRef = projectRefOf(scope);
   // The same read as the page's list: one query, shared.
@@ -149,7 +151,7 @@ function PromptNav({ selected, scope }: { selected: string | null; scope: Scope 
                 label={row.name}
                 current={row.summary.id === selected}
                 trailing={b ? <Text size="xs" tone={b.update ? "warning" : "quiet"}>{b.label}</Text> : undefined}
-                onClick={() => go(promptHref(row.summary.id))}
+                onClick={() => onOpen(row.summary.id)}
               />
             );
           })}

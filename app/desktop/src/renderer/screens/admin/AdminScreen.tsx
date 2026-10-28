@@ -1,53 +1,64 @@
 // Administration (#/admin/<section>): the hub's owners' and admins' page, apart from Settings so nobody else ever sees
-// an admin control. People, Invites, Machines (Add machine, the machines with Repair and Remove, and each one's page
-// with its checklist), Claude (the hub's API key and who may use it), Hub settings (everything hub-wide that used to sit in
-// Settings: the fleet and machine caps, machine roles, task profiles and memory caps), Skills (the hub-wide ones), GitHub
-// (the hub's own GitHub App, github/AdminGithub.tsx), Google (the hub's OAuth client for Navis, google/AdminGoogle.tsx)
-// and Setup (the hub's guided setup, setup/SetupScreen.tsx). The shell shows AdminSidebar in the sidebar's
-// place while it is open, as it does Settings'. With several hubs (docs/design/hubs.md) it manages one hub at a time,
-// named above every page, and its sidebar switches between the hubs this person administers: nothing here acts on a
-// hub the page doesn't name.
-import { ArrowLeft, Bot, GitBranch, KeyRound, ListChecks, Server, SlidersHorizontal, Sparkles, UserPlus, Users } from "lucide-react";
+// an admin control (D186). Five pages (D209): People (roles, Invite someone and the invites open, and every hub link),
+// Machines (Add machine, the machines with Repair and Remove, each one's page with its checklist, and machine roles),
+// Connections (the hub's Claude API key, its own GitHub App, github/AdminGithub.tsx, and its Google OAuth client for
+// Navis, google/AdminGoogle.tsx), Hub settings (everything that reaches every project: the fleet and machine caps, task
+// profiles, memory caps, the instructions, MCP servers, skills and prompts for every project) and Setup, last, with how
+// many required steps are left (the hub's guided setup, setup/SetupScreen.tsx). The shell shows AdminSidebar in the
+// sidebar's place while it is open, as it does Settings'; the hub-wide prompts nest under Hub settings there, as
+// Settings' Prompts nest theirs. With several hubs (docs/design/hubs.md) it manages one hub at a time, named above
+// every page, and its sidebar switches between the hubs this person administers: nothing here acts on a hub the page
+// doesn't name.
+import { ArrowLeft, ListChecks, Plug, Server, SlidersHorizontal, Users } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Separator, Sidebar, SidebarItem, SidebarSection, Text, Truncate, cx } from "../../ui";
 import type { HubView } from "../../src/data/hubs";
-import { HubScope, useData, useHub, useHubs, useSeveralHubs } from "../../src/data/react";
+import { HubScope, useData, useHub, useHubs, useSeveralHubs, useToolQuery } from "../../src/data/react";
 import { HUB_COLOR } from "../shell/hubColor";
 import { AddMachine, type View } from "../addMachine";
 import { HubCaps, TaskProfiles } from "../settings/Agents";
 import { MachineRoles } from "../settings/MachineRoles";
 import { HubMemoryCaps } from "../settings/MemoryCaps";
-import { PageHead } from "../settings/parts";
+import { HUB } from "../settings/editor";
+import { HubInstructions } from "../settings/Instructions";
+import { HubMcpServers } from "../settings/McpServers";
+import { PagePart, PageHead } from "../settings/parts";
+import { Prompts } from "../settings/Prompts";
+import { PromptNav } from "../settings/SettingsSidebar";
 import { HubSkills } from "../settings/Skills";
 import { AdminGithub } from "../github/AdminGithub";
 import { AdminGoogle } from "../google/AdminGoogle";
 import { progressLine, SetupSteps, useSetupSteps } from "../setup/SetupScreen";
 import { navigate, useRoute } from "../shell/navigation";
-import type { AdminSection } from "../shell/routes";
+import type { AdminSection, SettingsView } from "../shell/routes";
 import { ClaudeAdmin } from "./Claude";
-import { Invites } from "./Invites";
 import { MachineList } from "./MachineList";
 import { MachinePage } from "./MachinePage";
 import { People } from "./People";
 import { useAdministers, useHubRole, type HubRoleView } from "./role";
+import type { Person } from "../../../shared/contracts";
 import s from "../settings/settings.module.css";
 import a from "./admin.module.css";
 
 const SECTIONS: ReadonlyArray<{ section: AdminSection; label: string; icon: ReactNode }> = [
   { section: "people", label: "People", icon: <Users /> },
-  { section: "invites", label: "Invites", icon: <UserPlus /> },
   { section: "machines", label: "Machines", icon: <Server /> },
-  { section: "claude", label: "Claude", icon: <Bot /> },
+  { section: "connections", label: "Connections", icon: <Plug /> },
   { section: "hub", label: "Hub settings", icon: <SlidersHorizontal /> },
-  { section: "skills", label: "Skills", icon: <Sparkles /> },
-  { section: "github", label: "GitHub", icon: <GitBranch /> },
-  { section: "google", label: "Google", icon: <KeyRound /> },
   { section: "setup", label: "Setup", icon: <ListChecks /> },
 ];
+
+const noInput = {};
 
 const useSection = (): AdminSection => {
   const route = useRoute();
   return route.id === "admin" ? route.section : "people";
+};
+
+/** The hub-wide prompt open on Hub settings, and its view. */
+const usePrompt = (): { prompt: string | null; view: SettingsView } => {
+  const route = useRoute();
+  return route.id === "admin" ? { prompt: route.prompt ?? null, view: route.view ?? "edit" } : { prompt: null, view: "edit" };
 };
 
 /** The machine whose page is open, on Machines. */
@@ -65,8 +76,12 @@ const Mark = ({ hub }: { hub: HubView }) =>
 
 export function AdminSidebar({ onBack }: { onBack: () => void }) {
   const section = useSection();
+  const { prompt } = usePrompt();
   const { id } = useHub();
   const hubs = useHubs();
+  const administers = useAdministers();
+  const setup = useToolQuery("setup_list", noInput, { enabled: administers });
+  const left = setup.data?.requiredLeft ?? 0;
   return (
     <Sidebar aria-label="Administration">
       <SidebarSection>
@@ -74,7 +89,18 @@ export function AdminSidebar({ onBack }: { onBack: () => void }) {
       </SidebarSection>
       <SidebarSection title="Administration">
         {SECTIONS.map((x) => (
-          <SidebarItem key={x.section} label={x.label} icon={x.icon} current={section === x.section} onClick={() => go(x.section, id)} />
+          <div key={x.section} className={s.navGroup}>
+            <SidebarItem
+              label={x.label}
+              icon={x.icon}
+              current={section === x.section && prompt === null}
+              trailing={x.section === "setup" && left > 0 ? <Text size="xs" tone="warning">{`${String(left)} left`}</Text> : undefined}
+              onClick={() => go(x.section, id)}
+            />
+            {x.section === "hub" && section === "hub" && administers ? (
+              <PromptNav selected={prompt} scope={HUB} onOpen={(p) => navigate({ id: "admin", section: "hub", prompt: p, at: id })} />
+            ) : null}
+          </div>
         ))}
       </SidebarSection>
       {hubs.length > 1 ? (
@@ -100,6 +126,7 @@ function HubChoice({ hub, current, onPick }: { hub: HubView; current: boolean; o
 export function AdminScreen() {
   const section = useSection();
   const machine = useMachine();
+  const prompt = usePrompt();
   const role = useHubRole();
   // A fresh snapshot (a machine that just joined brings one) drops hub_info's answer until it is read again: the page
   // stays as the last answer had it meanwhile, so what is open on it (a machine's line, waiting) isn't lost.
@@ -108,7 +135,7 @@ export function AdminScreen() {
   return (
     <div className={s.frame}>
       <Managing />
-      {page(section, machine, role.pending && settled !== undefined ? settled : role)}
+      {page(section, machine, prompt, role.pending && settled !== undefined ? settled : role)}
     </div>
   );
 }
@@ -137,7 +164,12 @@ function Managing() {
   );
 }
 
-function page(section: AdminSection, machine: string | undefined, { administers, me, pending, offline }: HubRoleView): ReactNode {
+function page(
+  section: AdminSection,
+  machine: string | undefined,
+  prompt: { prompt: string | null; view: SettingsView },
+  { administers, me, pending, offline }: HubRoleView,
+): ReactNode {
   if (!administers) {
     // A member who follows a link here sees why, and nothing else; with no hub, there is no one to ask yet.
     const [screen, text] = offline
@@ -157,20 +189,12 @@ function page(section: AdminSection, machine: string | undefined, { administers,
   switch (section) {
     case "people":
       return <People me={me} />;
-    case "invites":
-      return <Invites me={me} />;
     case "machines":
       return machine === undefined ? <Machines /> : <MachinePage machineId={machine} />;
-    case "claude":
-      return <ClaudeAdmin me={me} />;
+    case "connections":
+      return <Connections me={me} />;
     case "hub":
-      return <HubSettings />;
-    case "skills":
-      return <HubSkills />;
-    case "github":
-      return <AdminGithub />;
-    case "google":
-      return <AdminGoogle />;
+      return prompt.prompt === null ? <HubSettings /> : <Prompts where="admin" route={{ tab: "prompts", prompt: prompt.prompt, for: null, view: prompt.view }} />;
     case "setup":
       return <Setup />;
   }
@@ -178,14 +202,14 @@ function page(section: AdminSection, machine: string | undefined, { administers,
 
 /**
  * Adding machines to the hub (this computer, one the hub reaches over SSH, or any other), then its machines, each with
- * Repair (which opens in Add machine) and Remove, and a page of its own with its checklist.
+ * Repair (which opens in Add machine) and Remove, and a page of its own with its checklist; then their roles.
  */
 function Machines() {
   const [open, setOpen] = useState<{ view: View; at: number }>();
   return (
     <div className={s.scroll} data-screen="admin.machines">
       <div className={s.column}>
-        <PageHead title="Machines">The computers that run this hub's agents. Machine roles are in Hub settings.</PageHead>
+        <PageHead title="Machines">The computers that run this hub&apos;s agents.</PageHead>
         <AddMachine open={open} />
         <Separator />
         <MachineList
@@ -194,24 +218,53 @@ function Machines() {
             document.querySelector("section[aria-label='Add machine']")?.scrollIntoView({ block: "nearest" });
           }}
         />
+        <Separator />
+        <MachineRoles />
       </div>
     </div>
   );
 }
 
-/** Everything hub-wide: it reaches every project and machine, so only an owner or admin changes it. */
+/** What the hub itself connects to: its Claude API key, its GitHub App and its Google client, each set up once. */
+function Connections({ me }: { me: Person | undefined }) {
+  return (
+    <div className={s.scroll} data-screen="admin.connections">
+      <div className={s.column}>
+        <PageHead title="Connections">The hub&apos;s own accounts. Each person connects their own Claude and GitHub in Settings › Connections.</PageHead>
+        <ClaudeAdmin me={me} />
+        <AdminGithub />
+        <AdminGoogle />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Everything hub-wide: it reaches every project and machine, so only an owner or admin changes it, and the hub refuses
+ * anyone else (D209). Its prompts are listed under it in the sidebar; one opens in the editor in this page's place.
+ */
 function HubSettings() {
   return (
     <div className={s.scroll} data-screen="admin.hub">
       <div className={s.column}>
-        <PageHead title="Hub settings">What reaches every project and machine on this hub.</PageHead>
-        <HubCaps />
-        <Separator />
-        <TaskProfiles />
-        <Separator />
-        <MachineRoles />
-        <Separator />
-        <HubMemoryCaps />
+        <PageHead title="Hub settings">What reaches every project and machine on this hub. A project&apos;s own settings come after these.</PageHead>
+        <PagePart title="Agents" reveal="admin.hub.agents">
+          <HubCaps />
+          <Separator />
+          <TaskProfiles />
+          <Separator />
+          <HubMemoryCaps />
+        </PagePart>
+        <PagePart title="Instructions" reveal="admin.hub.instructions">
+          <HubInstructions />
+        </PagePart>
+        <PagePart title="MCP servers" reveal="admin.hub.mcp">
+          <HubMcpServers />
+        </PagePart>
+        <PagePart title="Skills" reveal="admin.hub.skills" intro="Every project's agents get them, after the project's repo's and its own.">
+          <HubSkills />
+        </PagePart>
+        <PagePart title="Prompts" reveal="admin.hub.prompts" intro="The texts fleetd sends every project's agents. Pick one under Hub settings in the sidebar to edit it; a project's own edits are in its settings." />
       </div>
     </div>
   );

@@ -20,7 +20,7 @@ import settings from "../settings/settings.module.css";
 type Ref = { machineId: string; projectId: string };
 
 const toAdmin = () => {
-  window.location.hash = toHash({ id: "admin", section: "google" });
+  window.location.hash = toHash({ id: "admin", section: "connections" });
 };
 
 /** The scopes granted, as Data access names them, past the account's own (openid, email). */

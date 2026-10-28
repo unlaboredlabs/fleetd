@@ -232,13 +232,15 @@ it("never offers an admin a change to the owner", async () => {
   expect(() => button("Remove", owner)).toThrow();
 });
 
-it("creates an invite with a name and role, copies its link, and revokes an open one", async () => {
-  window.location.hash = "#/admin/invites";
+it("creates an invite on People with a name and role, copies its link, and revokes an open one", async () => {
+  window.location.hash = "#/admin/people";
   await render({ me: sam, admin: true });
   expect(row("Dana Ito").textContent).toContain("Expires in 6 days.");
   expect(row("Dana Ito").textContent).toContain("Invited by you.");
 
-  // No name: nothing is sent.
+  // The form opens from Invite someone. No name: nothing is sent.
+  expect(host.querySelector("form[aria-label='Invite someone']")).toBeNull();
+  await click(button("Invite someone"));
   await click(button("Create invite link"));
   expect(host.textContent).toContain("Give them a name.");
   expect(sent("invite_create")).toEqual([]);

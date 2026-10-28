@@ -157,6 +157,22 @@ export function answerHub(f: Fixture, me: JsonObject = sam, admin = true, member
     ],
   });
   f.answer("hub_link_revoke", undefined, { link: link("hl_samhomea", "home", sam, "Sam's MacBook", { revokedAt: f.now }) });
+  // Hub settings' global MCP servers: GitHub's, its token sealed on every machine.
+  f.answer("mcp_servers_get", undefined, {
+    global: [
+      {
+        scope: { kind: "global" },
+        name: "github",
+        enabled: true,
+        roles: { lead: true, writers: true, reviewers: false },
+        transport: { type: "http", url: "https://api.githubcopilot.com/mcp/" },
+        headers: [{ name: "Authorization", kind: "secret", sealedOn: [{ machineId: "buildbox", fingerprint: "5ec2e7a1" }, { machineId: "devbox", fingerprint: "5ec2e7a1" }] }],
+        updatedAt: "2026-10-15T09:30:00.000Z",
+      },
+    ],
+    project: [],
+    userServers: true,
+  });
   return f;
 }
 
@@ -270,6 +286,8 @@ function oldHub(from: Fixture): Fixture {
   for (const tool of ["people_list", "invite_create", "invite_revoke", "person_set", "person_remove", "hub_links_get"]) {
     f.fail(tool, undefined, { code: "not_found", message: `No tool ${tool}.`, fix: "Use a tool name from the hub's MCP tool list." });
   }
+  // Its MCP servers are older than people: Hub settings shows them, none here.
+  f.answer("mcp_servers_get", undefined, { global: [], project: [], userServers: true });
   return f;
 }
 

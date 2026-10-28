@@ -23,7 +23,6 @@ export const PAGE_LABEL: Readonly<Record<Tab, string>> = {
   notifications: "Notifications",
   agents: "Agents",
   projects: "Projects",
-  mcp: "MCP servers",
   prompts: "Prompts",
   instructions: "Instructions",
   memory: "Memory",
@@ -69,10 +68,7 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   { key: "projects.profiles", label: "Task profiles", tab: "projects", keywords: ["profile", "medium", "high", "effort", "model", "override"] },
   { key: "projects.links", label: "Linked hubs", tab: "projects", keywords: ["hub link", "link key", "navi", "other hub"] },
   { key: "projects.delete", label: "Delete project", tab: "projects", keywords: ["remove", "delete", "forget"] },
-  page("mcp", ["mcp", "tools", "servers", "connections", "integrations"]),
-  { key: "mcp.servers", label: "Global MCP servers", tab: "mcp", keywords: ["mcp", "stdio", "http", "sse", "headers", "token", "test connection"] },
-  { key: "mcp.user", label: "Your own MCP servers", tab: "mcp", keywords: ["mcp", "claude.json", ".mcp.json", "strict"] },
-  page("instructions", ["custom instructions", "rules", "my text"]),
+  page("instructions", ["custom instructions", "rules", "my text", "project"]),
   page("memory", ["remember", "remembered", "user.md", "MEMORY.md", "forget", "preferences", "rules"]),
   page("automations", ["schedule", "cron", "webhook", "recurring", "run now", "trigger"]),
   page("skills", ["skill", "SKILL.md", "skills.sh", "workflow", "install", ".agents", ".claude"]),
@@ -115,10 +111,15 @@ const subscribe = (l: () => void) => {
   return () => listeners.delete(l);
 };
 
+/** The next page to show the element marked `key` (useReveal) scrolls to it and focuses it. */
+export function revealNext(key: string | null) {
+  wanted = key;
+  for (const l of listeners) l();
+}
+
 /** Opens an option: its page (or prompt), then focus on the option itself. */
 export function openOption(o: SettingsOption) {
-  wanted = o.prompt === undefined && o.key !== o.tab ? o.key : null;
-  for (const l of listeners) l();
+  revealNext(o.prompt === undefined && o.key !== o.tab ? o.key : null);
   window.location.hash = optionHref(o);
 }
 

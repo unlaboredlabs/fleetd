@@ -41,6 +41,11 @@ export const promptHref = (id: string): string => formatRoute({ tab: "prompts", 
 export function replaceRoute(r: RouteParts) {
   const next = formatRoute(r);
   last.set(r.tab, next);
+  replaceHash(next);
+}
+
+/** The same for any hash (Administration's hub-wide prompts). */
+export function replaceHash(next: string) {
   if (window.location.hash === next) return;
   window.history.replaceState(window.history.state, "", next);
   window.dispatchEvent(new Event("hashchange"));

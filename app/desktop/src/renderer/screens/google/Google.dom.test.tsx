@@ -279,11 +279,11 @@ describe("a Navi's Google", () => {
     expect(hasButton("Connect", google())).toBe(false);
   });
 
-  it("without a client, sends an admin to Administration › Google", async () => {
+  it("without a client, sends an admin to Administration › Connections", async () => {
     admin = true;
     await render(<IntegrationsSection projectRef={ref} />);
     await click(button("Set up Google", google()));
-    expect(window.location.hash).toBe("#/admin/google");
+    expect(window.location.hash).toBe("#/admin/connections");
   });
 
   it("says when the Navi's machine doesn't hold the client, and how to fix it", async () => {

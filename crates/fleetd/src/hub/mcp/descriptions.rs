@@ -106,7 +106,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "mcp_server_set",
-        "Human keys only. Add or replace an MCP server, global (operate on every machine) or a project's (operate on its machine). env (stdio) or headers (http, sse) is the whole list: a plain value carries value; a secret carries sealed, its value sealed on the client with crypto_box_seal to each machine's boxPubKey (a project server's: its machine; a global one's: every machine its agents run on); keep keeps a saved secret as it is. The hub relays each box to its node and keeps the fingerprint, never the value; missingOn names machines that were offline, whose agents go without the server until it is saved again. fleetd is fleetd's own server's name and can't be taken. Agents started from then on get it; a running one at its next start.",
+        "Human keys only. Add or replace an MCP server, global (admin on every machine: the hub's owners and admins) or a project's (operate on its machine). env (stdio) or headers (http, sse) is the whole list: a plain value carries value; a secret carries sealed, its value sealed on the client with crypto_box_seal to each machine's boxPubKey (a project server's: its machine; a global one's: every machine its agents run on); keep keeps a saved secret as it is. The hub relays each box to its node and keeps the fingerprint, never the value; missingOn names machines that were offline, whose agents go without the server until it is saved again. fleetd is fleetd's own server's name and can't be taken. Agents started from then on get it; a running one at its next start.",
     ),
     (
         "mcp_server_remove",
@@ -114,7 +114,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "mcp_settings_set",
-        "Human keys only, operate on every machine. userServers: whether agents also get the person's own MCP servers from their claude setup (~/.claude.json, a repo's .mcp.json). Off: claude runs with --strict-mcp-config, fleetd's servers only; fleetd's own tools are always there.",
+        "Human keys only, admin on every machine. userServers: whether agents also get the person's own MCP servers from their claude setup (~/.claude.json, a repo's .mcp.json). Off: claude runs with --strict-mcp-config, fleetd's servers only; fleetd's own tools are always there.",
     ),
     (
         "mcp_server_test",
@@ -362,7 +362,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "prompt_set",
-        "Save a prompt override, hub-wide (scope global) or for one project (scope project, with projectRef); id instructions holds the custom instructions appended to every lead and task. Warns (never refuses) when the text drops a placeholder or a safety rule; dryRun returns the warnings only (with reset, the ref that would be in effect) and never writes. reset true (without text) removes the override at that scope, so the next one down (project, global, shipped default) is in effect again, or deletes an edit to a retired prompt; a call with neither text nor reset is refused. New sessions get it at once; running ones keep the text they started with. Admin keys, or a person's device.",
+        "Save a prompt override, hub-wide (scope global) or for one project (scope project, with projectRef); id instructions holds the custom instructions appended to every lead and task. Warns (never refuses) when the text drops a placeholder or a safety rule; dryRun returns the warnings only (with reset, the ref that would be in effect) and never writes. reset true (without text) removes the override at that scope, so the next one down (project, global, shipped default) is in effect again, or deletes an edit to a retired prompt; a call with neither text nor reset is refused. New sessions get it at once; running ones keep the text they started with. Global: admin on every machine (the hub's owners and admins). Project: admin on its machine, or a person's device that operates there.",
     ),
     (
         "session_prompt_get",

@@ -159,7 +159,7 @@ async fn service_token(ep: &Endpoints, key: &str) -> Result<Zeroizing<String>, S
 /// notices and says each one's address and history id.
 pub async fn pull(home: &Path, ep: &Endpoints) -> Result<Vec<MailNotice>, String> {
     let pubsub: Pubsub = read(&pubsub_path(home))?.ok_or(
-        "this machine holds no Pub/Sub key: the admin saves it in Administration › Google",
+        "this machine holds no Pub/Sub key: the admin saves it in Administration › Connections › Google",
     )?;
     let token = service_token(ep, &pubsub.key).await?;
     let http = reqwest::Client::builder()
