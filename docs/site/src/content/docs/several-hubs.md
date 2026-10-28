@@ -54,6 +54,13 @@ Every hub counts toward what needs you:
 | Status | Has a section per hub, under its name. |
 | Commands (⌘K) | Lists every hub's projects, each with its hub's name beside its machine. |
 
+## Administration {#admin}
+
+Administration manages one hub at a time. With several hubs, it names that hub and its address above every page:
+"Managing Acme". The button to make an invite names it too: **Create invite link to Acme**. To manage another hub,
+pick it under **Hub** in Administration's sidebar. The section you're on stays open. Only the hubs where you're an
+owner or admin are listed.
+
 ## When a hub is out of reach {#offline}
 
 Each hub has its own row at the bottom of the sidebar, with its name and, when it isn't connected, its state:
