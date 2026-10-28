@@ -274,7 +274,7 @@ export const guides = (hub: string): ReadonlyArray<Guide> => {
       id: "claude",
       group: "Accounts",
       title: "Claude",
-      why: "Agents think with Claude: a hub API key for everyone, or each person's own subscription.",
+      why: "Agents think with Claude: a hub API key, or the owner's own subscription, for leads and unrequested work. Each person picks their own in Settings › Claude.",
       need: { kind: "required" },
       parts: [
         {
@@ -282,7 +282,7 @@ export const guides = (hub: string): ReadonlyArray<Guide> => {
           links: [{ label: "Claude Console › API keys", url: "https://console.anthropic.com/settings/keys" }],
           values: [
             { label: "Key name", value: name },
-            { label: "No key?", value: "Leave it empty: each person connects their own Claude subscription when they first start work.", plain: true },
+            { label: "No key?", value: "Leave it empty: leads run on your own subscription (connect it in Settings › Claude with the token claude setup-token prints), and each person connects theirs.", plain: true },
           ],
         },
       ],
@@ -291,9 +291,11 @@ export const guides = (hub: string): ReadonlyArray<Guide> => {
         { name: "endpoint", label: "Endpoint", optional: true, placeholder: "https://api.anthropic.com" },
       ],
       test: "Ask Claude for a one-word answer",
-      // Either is enough: with a hub key, machines need no login of their own (D186).
+      // Any is enough: with a hub key, or the owner's subscription sealed to the machines, they need no login of
+      // their own (D200).
       ways: [
         { label: "the hub's API key", checks: ["hub/claude_key"] },
+        { label: "the hub owner's subscription", checks: ["hub/claude_owner"] },
         { label: "every machine's own login", checks: ["*/claude_login"] },
       ],
     },

@@ -120,6 +120,7 @@ impl Runner for FakeRunner {
                 config_dir: None,
                 self_update: None,
                 sandbox: None,
+                account_overrides: None,
             }
         })
     }

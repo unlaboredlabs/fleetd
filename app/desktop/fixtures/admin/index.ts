@@ -1,7 +1,8 @@
 // Administration's fixtures: an owner's hub with three people and an invite waiting, seen by its owner (`admin-owner`),
 // by an admin (`admin-admin`, who may not touch the owner) and by a member (`admin-member`, who sees no Administration
 // at all). The people calls follow contracts PR #640 (people_list, invite_create, invite_revoke, person_set,
-// person_remove); hub_info names who this app's person is.
+// person_remove); hub_info names who this app's person is. `admin-claude-member`: Bob on a hub that keeps its Claude API key
+// for leads, with no subscription of his own.
 import { defineGroup } from "../kit/group.ts";
 import { Fixture, HUB } from "../kit/fixture.ts";
 import { isObject, type JsonObject } from "../kit/json.ts";
@@ -50,10 +51,72 @@ const people = (me: JsonObject): JsonObject => ({
 
 const hubInfo = (me: JsonObject, admin: boolean): JsonObject => ({ version: "0.9.0", protocol: 1, busy: [], admin, me, people: 4 });
 
+// Teams step 8 (contracts PR #744): the hub's API key on devbox and buildbox, tested; Sam's own subscription, which
+// leads fall back to; Alice on the hub's key by choice; Bob with no subscription; Sam's subscription paused on devbox.
+const sealedOn = [
+  { machineId: "buildbox", fingerprint: "4f2a91c0" },
+  { machineId: "devbox", fingerprint: "4f2a91c0" },
+];
+const tested = (at: string, ok = true): JsonObject => ({ at, machineId: "devbox", ok });
+const ownAccount = (p: JsonObject): JsonObject => ({ kind: "account", account: { kind: "person", personId: p["personId"] ?? "" } });
+const hubAccount: JsonObject = { kind: "account", account: { kind: "hub" } };
+const claudeOf = (membersUseHubApi: boolean): Record<string, JsonObject> => ({
+  [sam["personId"] as string]: {
+    person: ref(sam),
+    mayUseHubApi: true,
+    subscription: { sealedOn, connectedAt: "2026-10-12T09:30:00.000Z", lastTest: tested("2026-10-19T08:12:00.000Z") },
+    runsOn: ownAccount(sam),
+  },
+  [alice["personId"] as string]: { person: ref(alice), choice: "hub_api", mayUseHubApi: true, runsOn: hubAccount },
+  [bob["personId"] as string]: membersUseHubApi
+    ? { person: ref(bob), mayUseHubApi: true, runsOn: hubAccount }
+    : {
+        person: ref(bob),
+        mayUseHubApi: false,
+        runsOn: {
+          kind: "refused",
+          message: "Connect your Claude to start this order.",
+          fix: "Members may not use the hub's API on this hub: connect your subscription in Settings › Claude (paste the token `claude setup-token` prints).",
+        },
+      },
+  [dana["personId"] as string]: { person: ref(dana), mayUseHubApi: membersUseHubApi, runsOn: membersUseHubApi ? hubAccount : { kind: "refused", message: "Connect your Claude to start this order.", fix: "Open Settings › Claude." } },
+});
+const claudeAccounts = (me: JsonObject, admin: boolean, membersUseHubApi: boolean): JsonObject => {
+  const all = claudeOf(membersUseHubApi);
+  return {
+    hubApi: { sealedOn, updatedAt: "2026-10-12T09:20:00.000Z", updatedBy: ref(sam), lastTest: tested("2026-10-19T08:10:00.000Z") },
+    settings: { membersUseHubApi },
+    leadsRunOn: hubAccount,
+    me: all[me["personId"] as string] ?? null,
+    people: admin ? Object.values(all) : [],
+  };
+};
+const usageStatus: JsonObject = {
+  machines: [
+    {
+      machineId: "devbox",
+      login: "subscription",
+      breaker: { state: "closed" },
+      parked: { leads: 0, tasks: 0 },
+      accounts: [
+        { account: { kind: "hub" }, breaker: { state: "closed" }, parked: { leads: 0, tasks: 0 } },
+        {
+          account: { kind: "person", personId: sam["personId"] ?? "" },
+          breaker: { state: "open", since: "2026-10-19T09:40:00.000Z", until: "2026-10-19T14:00:00.000Z", class: "usage_limit", message: "Usage limit reached" },
+          parked: { leads: 0, tasks: 2 },
+        },
+      ],
+      lastEvents: [],
+    },
+  ],
+};
+
 /** The owner's hub as `me` sees it, with every write answered as the hub would. */
-function hub(from: Fixture, name: string, note: string, me: JsonObject, admin: boolean): Fixture {
+function hub(from: Fixture, name: string, note: string, me: JsonObject, admin: boolean, membersUseHubApi = true): Fixture {
   const f = Fixture.from(from, name, note);
   f.answer("hub_info", undefined, hubInfo(me, admin));
+  f.answer("claude_accounts_get", undefined, claudeAccounts(me, admin, membersUseHubApi));
+  f.answer("usage_status", undefined, usageStatus);
   f.answer("people_list", undefined, people(me));
   const eve = person("p_eeeeeeee", "Eve Park", "member", f.now);
   f.answer("invite_create", undefined, {
@@ -172,5 +235,7 @@ export default defineGroup({
     google(base("chat-empty"), "admin-google-polling", "Administration › Google with real-time mail set up, polling because devbox is offline", "polling"),
     google(base("chat-empty"), "admin-google-refused", "Administration › Google with a client Google doesn't know: Test says so", "refused"),
     hub(base("chat-empty"), "admin-member", "The same hub as Bob, a member: no Administration anywhere", bob, true),
+    // Members may not use the hub's key there, and Bob has connected no subscription: nothing to run his orders on.
+    hub(base("chat-empty"), "admin-claude-member", "The same hub as Bob, with the hub's key kept for leads: Bob must connect his own Claude", bob, true, false),
   ],
 });

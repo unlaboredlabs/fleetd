@@ -89,8 +89,19 @@ configuration**. They can switch at any time.
 - An agent keeps the account it started on for its whole life. A change applies to agents started after it.
 - Removing a person forgets their subscription on every machine.
 
-The app's screens for this (your settings, and Claude on the Administration page) come in a later release. The
-hub's tools are `claude_accounts_get`, `claude_hub_api_set`, `claude_hub_api_remove`, `claude_settings_set`,
+In the app:
+
+- **Settings › Claude** is each person's own. *In use* says what your orders and your Navi run on now, or "Connect
+  your Claude to start orders" with what to do. *Runs on* picks your subscription or the hub's API key; the hub's key
+  is offered only when you may use it. *Your subscription* takes the token: paste it and press Connect and test. The
+  app seals it on your computer to every machine and never shows it again. Test, Replace and Disconnect are beside it.
+- **Administration › Claude** is for owners and admins. *Hub API key* takes the key and an optional endpoint
+  (Save and test), then shows the machines that hold it, its last Test, and Test, Change and Remove. A change to the
+  endpoint alone keeps the saved key. *Members* is the switch. *Leads and unrequested work* says what they run on, and
+  whether the hub owner's subscription, their fallback, is connected. *Everyone's account* lists each person's way,
+  with any usage pause on their account.
+
+The hub's tools are `claude_accounts_get`, `claude_hub_api_set`, `claude_hub_api_remove`, `claude_settings_set`,
 `claude_subscription_set`, `claude_subscription_remove`, `claude_choice_set` and `claude_account_test`. See
 [Security](/docs/security#claude) for how keys and tokens are kept.
 

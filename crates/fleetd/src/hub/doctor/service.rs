@@ -88,6 +88,10 @@ pub trait DoctorFleet: Send + Sync {
     fn unowned_sessions(&self, _machine_id: &str) -> Vec<checks::UnownedSession> {
         Vec::new()
     }
+    /// The hub's Claude accounts (teams step 8), for the Claude checks; `None` while they can't be read.
+    fn claude_setup(&self) -> BoxFut<'_, Option<checks::ClaudeSetupView>> {
+        Box::pin(async { None })
+    }
 }
 
 pub struct DoctorDeps {
@@ -216,7 +220,7 @@ impl Doctor {
             uid: current_uid(),
             unit_suffix: config.unit_suffix.clone().unwrap_or_default(),
         };
-        vec![
+        let mut out = vec![
             checks::hub_reachable(
                 &format!("{own}/healthz"),
                 &reachable,
@@ -230,7 +234,12 @@ impl Doctor {
                 https.as_ref(),
             ),
             checks::repo_ci(&self.deps.fleet.repos_without_ci()),
-        ]
+        ];
+        if let Some(claude) = self.deps.fleet.claude_setup().await {
+            out.push(checks::claude_key(&claude));
+            out.push(checks::claude_owner(&claude));
+        }
+        out
     }
 
     async fn machine_checks(&self, machine: &MachineView) -> Vec<Entry> {
@@ -239,7 +248,7 @@ impl Doctor {
         let setup = config.machines.get(id);
         let fleet = &self.deps.fleet;
         let online = machine.status != "offline";
-        let (runner, usage, probe) = tokio::join!(
+        let (runner, usage, probe, claude) = tokio::join!(
             async {
                 if online {
                     fleet.runner_info(id).await
@@ -257,11 +266,14 @@ impl Doctor {
                     Ok(outcome) => Err(format!("{id}'s node did not probe: {}", outcome.message)),
                     Err(e) => Err(e),
                 }
-            }
+            },
+            fleet.claude_setup()
         );
         let mut out = vec![checks::machine_online(machine, setup, runner.as_ref())];
         if let Some(info) = &runner {
             out.extend(checks::runner_checks(id, info));
+            let configured = claude.as_ref().is_some_and(|c| c.configured);
+            out.extend(checks::claude_account_override(id, info, configured));
         }
         out.push(checks::commit_identity(
             id,

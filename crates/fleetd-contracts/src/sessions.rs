@@ -572,6 +572,10 @@ pub struct RunnerInfo {
     /// The OS sandbox a Navi runs in on this machine, and any gap in it. Absent from a node before it, or on a system
     /// fleetd has no sandbox for.
     pub sandbox: Option<NaviSandbox>,
+    /// The Claude credential and gateway variables (`claude_accounts::ACCOUNT_CLEARS`) the user settings in
+    /// `config_dir` set in their `env`, by name only. claude applies that `env` over its process environment, so on
+    /// this machine they would outrank the account a session runs on (teams step 8). Absent from a node before it.
+    pub account_overrides: Option<Vec<String>>,
 }
 
 /// What a Navi's OS sandbox is on a machine, in a person's words.

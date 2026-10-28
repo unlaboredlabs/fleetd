@@ -58,7 +58,7 @@ describe("setup steps", () => {
     expect(steps["notion"]?.status).toBe("todo");
   });
 
-  it("takes Claude as done either way: the hub's key with machines logged out, or every machine's own login", () => {
+  it("takes Claude as done any way: the hub's key or the owner's subscription with machines logged out, or every machine's own login", () => {
     const claude = (...checks: ReadonlyArray<DoctorCheck>) => byId(setupSteps("http://devbox:4790", checks))["claude"];
     const out = (machine: string) => check(`${machine}/claude_login`, "fail", `claude is logged out on ${machine}`);
     const ok = (machine: string) => check(`${machine}/claude_login`, "ok");
@@ -74,8 +74,15 @@ describe("setup steps", () => {
     // A key that fails wants a look, unless the machines' logins already do the job.
     expect(claude(check("hub/claude_key", "fail", "The key was revoked."), out("devbox"))).toMatchObject({ status: "look", said: "The key was revoked." });
     expect(claude(check("hub/claude_key", "fail"), ok("devbox"))).toMatchObject({ status: "done", way: "every machine's own login" });
+    // No key: the owner's subscription, tested, is enough with machines logged out; one that failed its Test wants a look.
+    const noKey = check("hub/claude_key", "unknown");
+    expect(claude(noKey, check("hub/claude_owner", "ok"), out("devbox"))).toMatchObject({ status: "done", way: "the hub owner's subscription" });
+    expect(claude(noKey, check("hub/claude_owner", "fail", "Sam Rivera's Claude subscription failed its Test on devbox."), out("devbox"))).toMatchObject({
+      status: "look",
+      said: "Sam Rivera's Claude subscription failed its Test on devbox.",
+    });
     // Neither set up yet.
-    expect(claude(check("hub/claude_key", "unknown"))).toMatchObject({ status: "todo" });
+    expect(claude(check("hub/claude_key", "unknown"), check("hub/claude_owner", "unknown"))).toMatchObject({ status: "todo" });
     expect(claude(check("hub/claude_key", "unknown"))).not.toHaveProperty("way");
   });
 

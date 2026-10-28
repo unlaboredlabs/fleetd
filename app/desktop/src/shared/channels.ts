@@ -83,6 +83,8 @@ export const IPC = {
   googleConnect: "google:connect",
   /** invoke() → void. Stops waiting for Google's answer to the connect under way, if any. */
   googleCancel: "google:cancel",
+  /** invoke(ClaudeAccountRequest) → CallOutcome. Main seals a Claude key or token to each machine's key, then calls claude_hub_api_set or claude_subscription_set. */
+  claudeAccountSubmit: "claude-account:submit",
   /** invoke(url) → OpenOutcome. Opens an http(s) link in the user's browser; refuses other schemes. */
   openExternal: "app:openExternal",
   /** main → renderer: (HubId, HubFrame) */

@@ -147,6 +147,31 @@ same checks. The tables below give each check’s id in brackets, such as <code 
 <td>Add a workflow that runs on pull requests. The waiting PRs go on by themselves once it exists.</td>
 </tr>
 <tr>
+<td>“The hub has no Claude API key.” <code dir="auto">[claude_key]</code></td>
+<td>Nothing is wrong: leads and unrequested work run on the hub owner’s subscription, else each machine’s own login.</td>
+<td>To give the hub a key: Administration › Claude.</td>
+</tr>
+<tr>
+<td>“The hub’s Claude API key failed its Test on devbox: …” <code dir="auto">[claude_key]</code></td>
+<td>The key was revoked, is out of credit, or the endpoint is wrong.</td>
+<td>Administration › Claude: Change, paste the key and endpoint again, then Save and test.</td>
+</tr>
+<tr>
+<td>“… isn’t on buildbox, so nothing runs on it there.” <code dir="auto">[claude_key]</code> <code dir="auto">[claude_owner]</code> !</td>
+<td>That machine was offline when the key or token was saved.</td>
+<td>Save it again while the machine is online.</td>
+</tr>
+<tr>
+<td>“… is saved but not tested yet.” <code dir="auto">[claude_key]</code> <code dir="auto">[claude_owner]</code></td>
+<td>No Test since it was saved.</td>
+<td>Press Test beside it.</td>
+</tr>
+<tr>
+<td>“Sam Rivera’s Claude subscription failed its Test on devbox: …” <code dir="auto">[claude_owner]</code></td>
+<td>The owner’s token expired or was revoked.</td>
+<td>The owner runs <code dir="auto">claude setup-token</code> again and pastes the token in Settings › Claude.</td>
+</tr>
+<tr>
 <td>“The hub has no address set up”, or <code dir="auto">setup.json</code> is unreadable <code dir="auto">[https]</code></td>
 <td><code dir="auto">~/.fleetd/hub/setup.json</code> is missing or broken.</td>
 <td>Same as above: <code dir="auto">fleetd init --url &lt;https address&gt;</code>.</td>
@@ -179,6 +204,11 @@ address stops answering, check where it points with <code dir="auto">tailscale s
 <td>“claude 2.1.302, not logged in, so its sessions can’t start” <code dir="auto">[claude_login]</code></td>
 <td><code dir="auto">claude</code> on that machine is logged out, or its login expired.</td>
 <td><code dir="auto">claude auth login</code> on that machine, or log in through your proxy.</td>
+</tr>
+<tr>
+<td>“~/.claude/settings.json on devbox sets ANTHROPIC_BASE_URL in its “env”, which claude applies over the Claude account fleetd gives each session there.” <code dir="auto">[claude_account_override]</code> !</td>
+<td>The hub runs work on <a href="/docs/people#claude">Claude accounts</a>, and that machine’s claude settings name a credential or gateway of their own, which would win over the account. Read only: fleetd never changes the file.</td>
+<td>Move those variables out of the settings’ <code dir="auto">"env"</code> (into <a href="/docs/config-and-files#claude-env">claude.env</a> for the machine’s own login), then restart the node.</td>
 </tr>
 <tr>
 <td>“claude is not installed on laptop” <code dir="auto">[claude_version]</code></td>
