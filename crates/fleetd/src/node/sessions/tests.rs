@@ -1203,7 +1203,7 @@ async fn a_removed_worktree_comes_back_at_the_same_path_when_the_session_resumes
     // Its own scratch dir under the node home, and its share of the CPUs, which its brief names.
     let scratch = super::share::scratch_dir(&dir.path().join("node"), "s1");
     assert!(scratch.is_dir());
-    for key in ["TMPDIR", "TMP", "TEMP"] {
+    for key in ["TMPDIR", "TMP", "TEMP", "CLAUDE_CODE_TMPDIR"] {
         assert_eq!(var(&spec, key).as_deref(), scratch.to_str());
     }
     let jobs = var(&spec, "CARGO_BUILD_JOBS").unwrap();

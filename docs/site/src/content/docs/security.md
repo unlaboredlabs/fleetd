@@ -154,7 +154,7 @@ in for a path, the real file and its copies are hidden.
 |---|---|---|
 | Also can't read | `$XDG_RUNTIME_DIR` (`/run/user/<uid>`): the user's D-Bus, systemd and SSH agent sockets, which would start commands outside. Their variables are unset. | `~/Library` whole: browser cookies, app tokens, keychain files. Claude Code reads its login through the keychain's daemon, not the files. |
 | Abstract sockets | Landlock scopes them (Linux 6.12 and later): nothing inside connects to one made outside, such as an X server's or a D-Bus bus's. On an older kernel they stay reachable, and the machine's Navi sandbox check says so. | Not used on macOS |
-| `/tmp` | Its own | The machine's, read-only. Its scratch dir is its `TMPDIR`. |
+| `/tmp` | Its own | The machine's, read-only. Its scratch dir is its `TMPDIR`, and Claude Code's own temp dir (`CLAUDE_CODE_TMPDIR`). |
 | Processes | Its own (`/proc`, a pid namespace): no other process, so no way back to the disk through one | Others are visible, as for any program |
 | Claude Code's shared state | Shell snapshots, todos, tasks, plans, `statsig`, `debug` and the paste cache get a private copy per session | Read-only: `sandbox-exec` can't give a private copy. A Mac Navi's todo list, plan files and shell snapshot may not save. |
 | Terminal | A session of its own (`--new-session`): it can't push keystrokes into the node's terminal | |

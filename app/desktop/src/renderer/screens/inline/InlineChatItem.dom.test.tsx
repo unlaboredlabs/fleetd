@@ -197,7 +197,7 @@ describe("a failed answer", () => {
     await settle();
     expect(hub.answers).toHaveLength(2);
     expect(host.querySelector("[role=alert]")).toBeNull();
-    expect(host.textContent).toContain("Approved, running…");
+    expect(host.textContent).toContain("ApprovedAn agent wanted to use Edit");
   });
 
   it("ends a wait that never answers, instead of spinning for ever", async () => {
@@ -304,7 +304,7 @@ describe("a request the hub reopens", () => {
     await refetched();
     await click(button("Approve"));
     await settle();
-    expect(host.textContent).toContain("Approved, running…");
+    expect(host.textContent).toContain("ApprovedAn agent wanted to use Edit");
 
     // The hub approved it, then reopened it: new evidence, no answeredAt.
     hub.requests.current = [request("Q10", "approved", undefined, "2026-10-19T10:31:00.000Z")];
@@ -317,7 +317,7 @@ describe("a request the hub reopens", () => {
       hub.send(updated("Q10", "open"));
     });
     await refetched();
-    expect(host.textContent).not.toContain("Approved, running…");
+    expect(host.textContent).not.toContain("ApprovedAn agent wanted to use Edit");
     expect(host.textContent).toContain(OFFLINE);
     expect(button("Approve again").disabled).toBe(false);
   });
@@ -402,12 +402,12 @@ describe("a request the hub reopens", () => {
     const hub = await render("Q10");
     await click(button("Approve"));
     await settle();
-    expect(host.textContent).toContain("Approved, running…");
+    expect(host.textContent).toContain("ApprovedAn agent wanted to use Edit");
     act(() => {
       hub.send(updated("Q10", "approved"));
     });
     await refetched();
-    expect(host.textContent).toContain("Approved, running…");
+    expect(host.textContent).toContain("ApprovedAn agent wanted to use Edit");
     expect(has("Approve")).toBe(false);
   });
 

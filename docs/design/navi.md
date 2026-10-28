@@ -422,7 +422,7 @@ it on `SessionSpec.sandbox`, and `ClaudeRunner::spawn` wraps the command in it (
 is one). Every other session's spec has none.
 
 - **The fence** (`navi_fence`), all paths with symlinks resolved:
-  - *write*: the folder; the session's scratch dir (`TMPDIR`); `<session dir>/agent-device`; in claude's config dir,
+  - *write*: the folder; the session's scratch dir (`TMPDIR`, and `CLAUDE_CODE_TMPDIR` for claude's own `claude-<uid>`); `<session dir>/agent-device`; in claude's config dir,
     the folder's `projects/<slug>` (its conversation, which a resume needs), `session-env/<id>`, `file-history/<id>`,
     and `.credentials.json` when it exists: a refresh rotates the token, and one claude couldn't save would log out
     every session on the machine.

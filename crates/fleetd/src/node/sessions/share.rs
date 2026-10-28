@@ -40,10 +40,12 @@ fn scratch_name(session_id: &str) -> String {
         .collect()
 }
 
-/// TMPDIR, TMP and TEMP, all at `dir`.
+/// TMPDIR, TMP and TEMP, all at `dir`, and claude's own temp root (`CLAUDE_CODE_TMPDIR`, under which it makes
+/// `claude-<uid>`), which it reads before TMPDIR. A Navi's sandbox lets it write nowhere else: on macOS a claude that
+/// fell back to `/private/tmp` failed every command with EPERM.
 pub fn scratch_env(dir: &Path) -> Vec<(String, String)> {
     let dir = dir.to_string_lossy();
-    ["TMPDIR", "TMP", "TEMP"]
+    ["TMPDIR", "TMP", "TEMP", "CLAUDE_CODE_TMPDIR"]
         .map(|key| (key.to_owned(), dir.clone().into_owned()))
         .into()
 }
@@ -141,7 +143,12 @@ mod tests {
         let path = dir.to_str().unwrap();
         assert_eq!(
             scratch_env(&dir),
-            env(&[("TMPDIR", path), ("TMP", path), ("TEMP", path)])
+            env(&[
+                ("TMPDIR", path),
+                ("TMP", path),
+                ("TEMP", path),
+                ("CLAUDE_CODE_TMPDIR", path)
+            ])
         );
         // The same id, the same dir, across node restarts.
         assert_eq!(
