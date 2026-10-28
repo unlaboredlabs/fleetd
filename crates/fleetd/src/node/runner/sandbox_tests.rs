@@ -444,6 +444,7 @@ fn a_navi_cant_read_the_token_store_logins_or_other_projects() {
         m.home.join(".Xauthority"),
         m.home.join(".npmrc"),
         m.home.join(".pgpass"),
+        m.home.join(".config/git/credentials"),
         m.claude.join("ide/1234.lock"),
         // A backup of claude's config, with the MCP servers its copy leaves out.
         m.home.join(".claude.json.backup.1792349295"),
@@ -481,7 +482,10 @@ fn a_navi_works_in_its_folder_as_usual() {
         "set -e
          cat notes.md
          mkdir -p drafts/2026 && echo plan > drafts/2026/plan.md && mv drafts/2026/plan.md drafts/ && rm -r drafts/2026
-         git init -q . && git add -A && git -c user.name=Ada -c user.email=ada@example.com commit -qm first
+         git init -q .
+         git add -A
+         git -c user.name=Ada -c user.email=ada@example.com commit -qm first
+         git config --file ~/.config/git/config --get core.autocrlf
          git log --oneline | wc -l
          echo s > \"$TMPDIR/scratch.txt\"
          cat '{mcp}'
@@ -516,7 +520,9 @@ fn a_navi_works_in_its_folder_as_usual() {
     let (ok, out) = m.run(&tool, &script);
     assert!(ok, "{out}");
     assert!(out.contains("hello") && out.contains("mcpServers"), "{out}");
-    assert!(m.folder.join(".git").is_dir());
+    // git runs with the user's own settings under ~/.config, on macOS too, where the rest of ~/.config is hidden.
+    assert!(out.contains("false"), "{out}");
+    assert!(m.folder.join(".git").is_dir(), "{out}");
     assert!(m.folder.join("drafts/plan.md").is_file());
     assert!(m.scratch.join("scratch.txt").is_file());
     // A token claude refreshed inside is saved for every session.

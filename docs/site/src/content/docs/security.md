@@ -122,7 +122,8 @@ in for a path, the real file and its copies are hidden.
 - Other projects' checkouts on the machine.
 - Claude Code's record of other sessions: `~/.claude/projects` (but its own), `history.jsonl`, `file-history`,
   `session-env` and `sessions`; its IDE connections (`ide`, whose lock files hold a token) and its `backups`.
-- Logins and keys: `~/.config`, `~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.docker`, `~/.kube`, `~/.password-store`,
+- Logins and keys: `~/.config` (but git's `config`, `ignore` and `attributes` in `~/.config/git`, never its
+  `credentials`), `~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.docker`, `~/.kube`, `~/.password-store`,
   `~/.local/share/keyrings`, `~/.netrc`, `~/.git-credentials`, `~/.npmrc`, `~/.pypirc`, `~/.cargo/credentials` and
   `credentials.toml`, `~/.android/adbkey`, `~/.mozilla`, `~/.pgpass`, `~/.vault-token`, `~/.azure`, `~/.terraform.d`,
   and `~/snap` (each snap's own data, logins included).

@@ -154,8 +154,10 @@ pub struct NaviPaths<'a> {
     pub path: Vec<PathBuf>,
 }
 
-/// In the user's home on Linux, read again inside its empty tmpfs: git's own settings. Nothing else of the home is
-/// there but the programs a Navi runs ([`home_programs`]) and the paths its fence names.
+/// In the user's home, read again: git's own settings, and rustup's toolchains. On Linux, inside the home's empty
+/// tmpfs, where nothing else is but the programs a Navi runs ([`home_programs`]) and the paths its fence names. On
+/// macOS, inside the hidden `~/.config`: git can't run when a config file it finds is unreadable, though one that
+/// isn't there is fine.
 const HOME_READ: &[&str] = &[
     ".gitconfig",
     ".config/git/config",
@@ -322,13 +324,13 @@ pub fn navi_fence(p: &NaviPaths) -> Fence {
             &fenced,
             &others,
         ));
-        show.extend(HOME_READ.iter().map(|f| user_home.join(f)));
         // Caches (claude's logs, a tool's downloads) written where every program looks, but its own.
         private.push((
             real(&p.session_dir.join("home-cache")),
             user_home.join(".cache"),
         ));
     }
+    show.extend(HOME_READ.iter().map(|f| user_home.join(f)));
     let claude_json = real(p.claude_json);
     // In the listed home there need be nothing under it: its copy stands where the real one would.
     let in_listed_home = home_listed && claude_json.parent() == Some(user_home.as_path());

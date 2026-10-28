@@ -454,7 +454,8 @@ is one). Every other session's spec has none.
     the install it lands in by the same rule; never an install that is, holds or sits in fleetd's dir, the node's
     home or another project's root, so `~/.fleetd/bin` comes back alone and a link into a project brings nothing),
     `HOME_READ` (`~/.gitconfig`, git's `~/.config/git/config`, `ignore` and `attributes` but never its
-    `credentials`, which `HIDDEN_IN_HOME` names too, and `~/.rustup`), the `.claude.json` copy (bound even where there
+    `credentials`, which `HIDDEN_IN_HOME` names too, and `~/.rustup`; read on macOS too, inside its hidden
+    `~/.config`, since git stops at a config file it can't read), the `.claude.json` copy (bound even where there
     is no real one) and a private `~/.cache` (`<session dir>/home-cache`). Hidden paths in the home are kept only inside what
     comes back, or equal to it (`~/.claude/projects`, `~/.cargo/credentials.toml`), and a shown path that is also hidden
     isn't shown; the rest are out of sight and not mounted over,
