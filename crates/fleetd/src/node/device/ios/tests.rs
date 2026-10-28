@@ -524,6 +524,48 @@ async fn set_devices(home: &std::path::Path) -> String {
     }
 }
 
+/// What the Mac is busy with, for the log: its load, the CPU each booted simulator in the set uses, and free memory.
+async fn host_load(home: &std::path::Path) -> String {
+    async fn out(program: &str, args: &[&str]) -> String {
+        tokio::process::Command::new(program)
+            .args(args)
+            .output()
+            .await
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_owned())
+            .unwrap_or_else(|e| format!("{program}: {e}"))
+    }
+    let ps = out("ps", &["-A", "-o", "pid=,ppid=,%cpu=,command="]).await;
+    let all: f64 = ps
+        .lines()
+        .filter_map(|l| l.split_whitespace().nth(2)?.parse::<f64>().ok())
+        .sum();
+    let simulators = match Simctl::new(super::set_dir(home)).devices().await {
+        Ok(devices) => devices
+            .iter()
+            .map(|d| match d.state.as_str() {
+                "Booted" => format!(
+                    "{} booted, {:.0}% CPU",
+                    d.name,
+                    pool::device_cpu(&ps, &d.udid)
+                ),
+                state => format!("{} {state}", d.name),
+            })
+            .collect::<Vec<_>>()
+            .join(", "),
+        Err(e) => e,
+    };
+    let memory = out("memory_pressure", &["-Q"]).await;
+    format!(
+        "load {} on {} CPUs, {all:.0}% CPU in all; {simulators}; {}",
+        out("sysctl", &["-n", "vm.loadavg"]).await,
+        out("sysctl", &["-n", "hw.ncpu"]).await,
+        memory
+            .lines()
+            .last()
+            .unwrap_or("memory_pressure said nothing")
+    )
+}
+
 async fn frame_after(
     frames: &mut tokio::sync::watch::Receiver<Option<Frame>>,
     seq: u64,
@@ -606,6 +648,12 @@ async fn an_agent_opens_settings_on_an_ios_session_and_its_recording_is_on_the_h
         desktops: None,
     };
 
+    // The pool refills behind a session, but not yet. GitHub's 3-vCPU, 7 GB macOS VM can't keep a second simulator
+    // booted beside the session's while agent-device's XCTest runner starts there: with the refill's clone just booted,
+    // the runner never reached its tests in 45 s, three starts in a row, and simctl's calls there timed out at 2, 10
+    // and 15 s; on the golden alone it listened 36 s after xcodebuild started. So the refill waits until agent-device
+    // is done here, and is measured then.
+    simulators.hold_refill(true);
     let started = call(
         &router,
         json!({ "op": "session_start", "purpose": "Check the Settings app", "kind": "ios" }),
@@ -631,33 +679,6 @@ async fn an_agent_opens_settings_on_an_ios_session_and_its_recording_is_on_the_h
         "one session at a time: {refused}"
     );
 
-    // The pool refills behind the session. On a small CI machine that has to finish first anyway: it can't boot the
-    // next clone and start agent-device's runner at once (agent-device's own xcrun calls time out at 15 s). Beside the
-    // session's simulator and its recording, GitHub's 3-vCPU runner took 114 to 343 s and at times longer, so the test
-    // waits as long as the pool gives a refill (a clone, a boot, then BOOT_TIMEOUT for it to finish) and only measures
-    // it: a boot that ran out of time is logged, and the pool tries again later (pool.rs's tests cover that).
-    let t = Instant::now();
-    let refill = 2 * simctl::CALL + pool::BOOT_TIMEOUT;
-    loop {
-        if simulators.warm() > 0 {
-            eprintln!("the pool refilled behind it: {} ms", ms(t.elapsed()));
-            break;
-        }
-        if let Some(why) = simulators.refill_failing() {
-            eprintln!(
-                "the pool's refill failed after {} ms; not asserted, this machine can't boot a second simulator \
-                 beside a session in time: {why}",
-                ms(t.elapsed())
-            );
-            break;
-        }
-        assert!(
-            t.elapsed() < refill + Duration::from_secs(30),
-            "the pool's refill neither finished nor failed in {} s",
-            t.elapsed().as_secs()
-        );
-        tokio::time::sleep(Duration::from_millis(200)).await;
-    }
     // The golden stays shut down once made: its agent-device daemon stopped the XCTest runner on its way out. A runner
     // left running relaunched itself, booted the golden again, and every refill's clone was refused (wrapper.rs).
     let golden = pool::find(&home).unwrap();
@@ -673,16 +694,10 @@ async fn an_agent_opens_settings_on_an_ios_session_and_its_recording_is_on_the_h
     let built = std::fs::metadata(&runner)
         .and_then(|m| m.modified())
         .unwrap();
+    eprintln!("before agent-device: {}", host_load(&home).await);
     let t = Instant::now();
-    let (mut ok, mut opened) = agent_device(&router, &["open", "com.apple.Preferences"]).await;
-    if !ok {
-        eprintln!(
-            "agent-device open failed once, trying again: {opened}\nsimulators: {}",
-            set_devices(&home).await
-        );
-        (ok, opened) = agent_device(&router, &["open", "com.apple.Preferences"]).await;
-    }
-    assert!(ok, "{opened}\nsimulators: {}", set_devices(&home).await);
+    let (ok, opened) = agent_device(&router, &["open", "com.apple.Preferences"]).await;
+    assert!(ok, "{opened}\n{}", host_load(&home).await);
     eprintln!(
         "agent-device's first command (the runner starts): {} ms",
         ms(t.elapsed())
@@ -691,20 +706,16 @@ async fn an_agent_opens_settings_on_an_ios_session_and_its_recording_is_on_the_h
         THREAD,
         &command_item("agent-device open com.apple.Preferences", &opened, ok),
     );
-    // The press needs agent-device's XCTest runner, started from the golden's build. Its start gets 45 s, which isn't
-    // always enough on GitHub's runner; agent-device then starts it again, as it is (wrapper.rs).
+    // The press goes through agent-device's XCTest runner, started from the golden's build.
     let t = Instant::now();
     let press = ["press", "label=\"General\"", "--settle"];
-    let (mut ok, mut pressed) = agent_device(&router, &press).await;
-    if !ok {
-        eprintln!(
-            "agent-device press failed once after {} ms, trying again: {pressed}\nsimulators: {}",
-            ms(t.elapsed()),
-            set_devices(&home).await
-        );
-        (ok, pressed) = agent_device(&router, &press).await;
-    }
-    assert!(ok, "{pressed}\nsimulators: {}", set_devices(&home).await);
+    let (ok, pressed) = agent_device(&router, &press).await;
+    assert!(
+        ok,
+        "{pressed}\nafter {} ms; {}",
+        ms(t.elapsed()),
+        host_load(&home).await
+    );
     eprintln!("agent-device press --settle: {} ms", ms(t.elapsed()));
     // No session builds the runner: a slow start once had agent-device delete it and build it again in the command.
     assert_eq!(
@@ -797,6 +808,35 @@ async fn an_agent_opens_settings_on_an_ios_session_and_its_recording_is_on_the_h
         simulators.live(THREAD).unwrap().control(),
         BrowserControl::Agent
     );
+
+    // agent-device is done: the pool refills behind the session now. Beside the session's simulator and its recording,
+    // GitHub's runner took 107 to 343 s and at times longer, so the test waits as long as the pool gives a refill (a
+    // clone, a boot, then BOOT_TIMEOUT for it to finish) and only measures it: a boot that ran out of time is logged,
+    // and the pool tries again later (pool.rs's tests cover that).
+    simulators.hold_refill(false);
+    let t = Instant::now();
+    let refill = 2 * simctl::CALL + pool::BOOT_TIMEOUT;
+    loop {
+        if simulators.warm() > 0 {
+            eprintln!("the pool refilled behind it: {} ms", ms(t.elapsed()));
+            break;
+        }
+        if let Some(why) = simulators.refill_failing() {
+            eprintln!(
+                "the pool's refill failed after {} ms; not asserted, this machine can't boot a second simulator \
+                 beside a session in time: {why}",
+                ms(t.elapsed())
+            );
+            break;
+        }
+        assert!(
+            t.elapsed() < refill + Duration::from_secs(30),
+            "the pool's refill neither finished nor failed in {} s",
+            t.elapsed().as_secs()
+        );
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    eprintln!("after the refill: {}", host_load(&home).await);
     tokio::time::sleep(Duration::from_millis(1500)).await;
 
     let ended = call(&router, json!({ "op": "session_end" })).await;
