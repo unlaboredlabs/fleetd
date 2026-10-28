@@ -53,6 +53,23 @@
   font-size: var(--text-xs);
 }
 
+/* Machines down: the warning's word, at the row's end, opening Machines. */
+.down {
+  flex: none;
+  min-height: var(--row);
+  padding: 0 var(--space-2);
+  border: none;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--warning);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+  transition: background var(--dur-quick) var(--ease-snap);
+}
+.down:hover {
+  background: var(--hover);
+}
+
 /* The hub's one dot, plain: no ring and no halo (ui/DESIGN.md), in a 12 px cell so it lines up with the rows' icons. */
 .dot {
   flex: none;
@@ -94,6 +111,19 @@
   margin: 0;
   color: var(--text);
   font-variant-numeric: tabular-nums;
+}
+
+/* The Machines line opens Machines: a link in the text's own size. */
+.factLink {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+.factLink:hover {
+  text-decoration: underline;
 }
 
 /* The address in full: it wraps rather than cut, and can be selected to copy. */

@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// The sidebar's Navi section: Meet Navi with none yet; the Navis pinned above the projects, numbered first; a Navi's
+// The sidebar's Navi section: one Meet Navi row with none yet; the Navis pinned above the projects, numbered first; a Navi's
 // right-click menu renames it (after a small dialog) or archives it at once, with Undo.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -65,7 +65,6 @@ const mount = (projects: SidebarProject[], jumpHints = false) => {
         <DataProvider layer={createDataLayer(hub)}>
           <Sidebar
             projects={projects.map((p) => ({ ...p, hub: "hub" }))}
-            machinesDown={0}
             screen={{ id: "status", at: "hub" }}
             jumpHints={jumpHints}
             collapsed={new Set()}
@@ -114,9 +113,10 @@ const rightClick = (el: HTMLElement) =>
   });
 
 describe("with no Navi yet", () => {
-  it("offers one quiet row to meet it, above the projects", () => {
+  it("offers one quiet row to meet it, with no heading, above the projects", () => {
     mount([STOREFRONT]);
-    expect(sections().slice(0, 2)).toEqual(["Navi", "ProjectsAdd"]);
+    expect(sections().slice(0, 2)).toEqual(["", "ProjectsAdd"]);
+    expect(host.querySelector("section")?.getAttribute("aria-label")).toBe("Navi");
     expect(host.textContent).not.toContain("New");
     act(() => button("Meet Navi").click());
     expect(went).toEqual([{ id: "navi" }]);

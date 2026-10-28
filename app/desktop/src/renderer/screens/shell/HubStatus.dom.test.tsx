@@ -2,7 +2,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { HubState } from "../../../shared/hub";
+import type { HubFrame, HubState } from "../../../shared/hub";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { TooltipProvider } from "../../ui/primitives/Tooltip";
@@ -103,4 +103,51 @@ it("changes hubs from Settings › Hubs, never #/onboarding, which a connected a
   open({ phase: "unpaired" });
   act(() => buttons().find((b) => b.textContent === "Pair with a hub")?.click());
   expect(window.location.hash).toBe("#/onboarding");
+});
+
+it("opens Machines from the popover always, and from \"N down\" while machines are down", async () => {
+  let listener: (frame: HubFrame) => void = () => undefined;
+  const machine = (name: string, status: "online" | "offline") => ({
+    machineId: name,
+    name,
+    nodeVersion: "1",
+    status,
+    lastSeenAt: "2026-10-26T09:00:00.000Z",
+    tags: [],
+    boxPubKey: "Az+6kf/abi0V7SO+sn4h++sIgyPoNDAneLBDFaJf3TA=",
+  });
+  const feed = async (machines: ReturnType<typeof machine>[]) => {
+    await act(async () => {
+      listener({ t: "state", state: { phase: "live", hub: HUB, protocol: 1 } });
+      listener({ t: "snapshot", snapshot: { cursor: 1, attention: [], projects: [], machines } });
+      await new Promise((r) => setTimeout(r, 0));
+    });
+  };
+  act(() => {
+    root.render(
+      <DataProvider layer={createDataLayer({ ...hubApi, subscribe: (l) => ((listener = l), () => undefined) })}>
+        <TooltipProvider>
+          <HubStatus hub={{ phase: "live", hub: HUB, protocol: 1 }} />
+        </TooltipProvider>
+      </DataProvider>,
+    );
+  });
+  const down = () => host.querySelector<HTMLButtonElement>("[data-opens='machines']");
+
+  // All online: no "N down", and the popover's Machines line still opens Machines.
+  await feed([machine("devbox", "online")]);
+  expect(down()).toBeNull();
+  act(() => host.querySelector<HTMLButtonElement>("[data-hub-status]")?.click());
+  const line = document.querySelector<HTMLButtonElement>("[aria-label='Hub'][role='dialog'] [data-opens='machines']");
+  expect(line?.textContent).toBe("1 of 1 online");
+  act(() => line?.click());
+  expect(parseHash(window.location.hash)).toEqual({ id: "machines" });
+  expect(document.querySelector("[aria-label='Hub'][role='dialog']")).toBeNull();
+  window.location.hash = "#/status";
+
+  await feed([machine("devbox", "online"), machine("buildbox", "offline"), machine("laptop", "offline")]);
+  expect(down()?.textContent).toBe("2 down");
+  expect(down()?.getAttribute("aria-label")).toBe("2 machines down: open Machines");
+  act(() => down()?.click());
+  expect(parseHash(window.location.hash)).toEqual({ id: "machines" });
 });

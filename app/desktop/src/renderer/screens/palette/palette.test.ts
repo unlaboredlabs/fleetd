@@ -1,8 +1,8 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { HubFrame } from "../../../shared/hub";
 import { AT, live, snapshot } from "../../src/data/fixtures.test-util";
 import { applyFrame, initialState } from "../../src/data/store";
-import { chatRoute, statusToggleTarget, themeCommands } from "./defaults";
+import { chatRoute, defaultCommands, statusToggleTarget, themeCommands } from "./defaults";
 import { currentProjectItem, projectItems } from "./projects";
 import { dispatchable } from "./keymap";
 import { boost, frecency, match, noteUse, rank, score } from "./rank";
@@ -222,6 +222,18 @@ describe("default navigation", () => {
     expect(statusToggleTarget("")).toBe("#/status");
     expect(statusToggleTarget("#/status")).toBe("back");
     expect(statusToggleTarget("#/statusx")).toBe("#/status");
+  });
+
+  it("keeps Machines, which has no sidebar row, and opens Agent time on the Factory", () => {
+    const location = { hash: "#/project/devbox/storefront" };
+    vi.stubGlobal("window", { location });
+    const byId = new Map(defaultCommands().map((c) => [c.id, c]));
+    byId.get("go:machines")?.run();
+    expect(location.hash).toBe("#/machines");
+    expect(byId.get("go:time")?.title).toBe("Agent time");
+    byId.get("go:time")?.run();
+    expect(location.hash).toBe("#/factory/time");
+    vi.unstubAllGlobals();
   });
 });
 

@@ -2454,27 +2454,27 @@ export const screens: readonly Screen[] = [
   // its insights. Each tab's root carries its own id, so the three are shot apart.
   {
     id: "time.timeline",
-    route: "#/time/order/W8",
+    route: "#/factory/time/order/W8",
     fixtures: ["typical", "long-text", "many-agents", "time-heavy", "empty"],
   },
   {
     id: "time.breakdown",
-    route: "#/time",
+    route: "#/factory/time",
     fixtures: ["typical", "long-text", "empty"],
   },
   // With no hub, the breakdown says so in words (time.breakdown.offline): a connection state, not an error page.
-  { id: "time.breakdown", route: "#/time", fixtures: ["hub-unreachable"] },
+  { id: "time.breakdown", route: "#/factory/time", fixtures: ["hub-unreachable"] },
   // The harness waits for the id before `open`, so the insights entry waits for the screen root, then opens the tab.
   {
     id: "time",
-    route: "#/time",
+    route: "#/factory/time",
     fixtures: ["typical", "long-text", "empty"],
     open: (page) => page.getByRole("tab", { name: "Insights" }).click(),
   },
   // A finding's spans, then one span's transcript with its item marked (the selected fill, no coloured edge).
   {
     id: "time",
-    route: "#/time/order/W8",
+    route: "#/factory/time/order/W8",
     fixtures: ["typical"],
     variant: "transcript",
     open: async (page) => {

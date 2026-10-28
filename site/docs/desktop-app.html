@@ -111,7 +111,7 @@ pair again with the new code.</p>
 <tbody>
 <tr>
 <td>Sidebar</td>
-<td>Your projects, each saying why it wants you: “reply”, “approve”, “secret” or “blocked”. Otherwise “CI red” while a check fails on main (which blocks nothing), or how many agents are working. A project in bold has a new message from its lead. Below them: Status, Time, Machines and Settings.</td>
+<td>Your projects, each saying why it wants you: “reply”, “approve”, “secret” or “blocked”. Otherwise “CI red” while a check fails on main (which blocks nothing), or how many agents are working. A project in bold has a new message from its lead. Below them: Status, Factory, Settings and, for admins, Administration. The hub’s row at the bottom says how many machines are down and opens Machines.</td>
 </tr>
 <tr>
 <td>The top row</td>
@@ -239,7 +239,7 @@ each item opens its agent or pull request in the panel. Click a row to open that
 requests.
 See <a href="/docs/status">Status</a>.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="time">Where time went</h2><a class="sl-anchor-link" href="#time"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Where time went”</span></a></div>
-<p>Open Time from the sidebar, the agents strip in a chat, or the command palette. It has three tabs:</p>
+<p>Open Factory › Agent time from the sidebar, the agents strip in a chat, or the command palette (Agent time). It has three tabs:</p>
 <table>
 <thead>
 <tr>
@@ -265,7 +265,7 @@ See <a href="/docs/status">Status</a>.</p>
 <p><img src="/docs/img/time.png" alt="Where a piece of work’s time went: a lane per agent, PR and CI check, the waits on you, the critical path underlined, and the legend."></p>
 <p>Times are in your own time zone. How to read it: <a href="/docs/time-inspector">Where time went</a>.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="machines">Machines</h2><a class="sl-anchor-link" href="#machines"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Machines”</span></a></div>
-<p>Open Machines from the sidebar or the command palette. The title shows how many agents run across the fleet
+<p>Open Machines from the hub’s row at the bottom of the sidebar (its Machines line, or “1 down” while a machine is down) or the command palette. The title shows how many agents run across the fleet
 (“agents 2 / 12”), beside Add project.</p>
 <p>Each machine is one row: its name, its state (online, degraded, or offline and when it was last seen), how many agents
 run there and how many projects it has. On the right, anything that wants a look: a recent sleep, Claude usage near

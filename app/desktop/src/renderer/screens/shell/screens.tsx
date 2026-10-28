@@ -2,6 +2,8 @@
 import { lazy, Suspense, type ReactNode } from "react";
 import type { Screen } from "./routes";
 import { ChatScreen } from "../chat";
+// Small, and in the title row of both its tabs: not a chunk of its own.
+import { FactoryTabs } from "../factory/FactoryTabs";
 
 // Each screen is its own chunk, loaded when its route first opens: the app starts by parsing the shell and the one
 // screen it shows, not all of them (startup time and idle memory, perf/budgets.ts).
@@ -31,7 +33,7 @@ export const screenPart = (screen: Screen): { key: string; words: string } => {
     case "factory":
       return { key: "factory", words: "Factory" };
     case "time":
-      return { key: "time", words: "Time" };
+      return { key: "time", words: "Agent time" };
     case "settings":
       return { key: "settings", words: "Settings" };
     case "admin":
@@ -76,11 +78,11 @@ function screenFor(screen: Screen): ReactNode {
     case "navi":
       return <NaviScreen />;
     case "factory":
-      return <FactoryScreen project={screen.project} />;
+      return <FactoryScreen project={screen.project} tabs={<FactoryTabs tab="output" />} />;
     case "machines":
       return <MachinesScreen />;
     case "time":
-      return <TimeScreen order={screen.orderId ?? undefined} />;
+      return <TimeScreen order={screen.orderId ?? undefined} tabs={<FactoryTabs tab="time" />} />;
     case "projects.add":
       return <AddProjectScreen />;
     case "settings":

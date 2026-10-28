@@ -2,7 +2,7 @@
 // time went. One filter bar over three tabs: the timeline (an order's lanes), the breakdown and the insights. Every
 // number is the hub's (`time_*` tools); the screen lays them out and says plainly where a figure is a bound, a split
 // or an approximation rather than a measurement (spec §2f).
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Button, Dot, FrameTitle, Tab, TabList, TabPanel, Tabs, Text, Truncate, copyText, cx, toast } from "../../ui";
 import { selectConnection } from "../../src/data/selectors";
 import { useData } from "../../src/data/react";
@@ -33,6 +33,8 @@ export interface TimeScreenProps {
   readonly now?: number;
   /** Filters to start from instead of the saved ones (fixtures). */
   readonly initialFilters?: Filters;
+  /** The Factory's tabs, this one Agent time (factory/FactoryTabs), first among the title row's controls. */
+  readonly tabs?: ReactNode;
 }
 
 
@@ -128,7 +130,7 @@ export function TimeScreen(props: TimeScreenProps) {
   const changeOrder = (o: string | undefined) => {
     setOrder(o);
     // The route follows, so back/forward and a reload keep the order; outside the router this changes nothing.
-    window.location.hash = o === undefined ? "#/time" : `#/time/order/${encodeURIComponent(o)}`;
+    window.location.hash = toHash({ id: "time", orderId: o ?? null });
     setView(undefined);
     setHighlight(undefined);
     setTab(o !== undefined ? "timeline" : tab === "timeline" ? "breakdown" : tab);
@@ -252,6 +254,7 @@ export function TimeScreen(props: TimeScreenProps) {
           </>
         }
       >
+        {props.tabs}
         {badge.length > 0 ? (
           <span className={cx(s.badge)}>
             <Dot color="var(--warning)" />

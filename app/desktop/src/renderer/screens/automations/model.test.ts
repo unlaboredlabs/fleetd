@@ -79,7 +79,7 @@ describe("the automation list", () => {
     const run = { runId: "ar_a1b2c3d4", automationId: nightly.automationId, trigger: "webhook", at: "2026-10-17T10:00:00.000Z", state: "skipped" } as const;
     expect(runNote({ ...run, why: "run ar_x is still going (W12 is open)" })).toBe("run ar_x is still going (W12 is open)");
     expect(runNote({ ...run, payloadBytes: 2048 })).toBe("Body of 2,048 bytes.");
-    expect(orderHref("W12")).toBe("#/time/order/W12");
+    expect(orderHref("W12")).toBe("#/factory/time/order/W12");
   });
 });
 

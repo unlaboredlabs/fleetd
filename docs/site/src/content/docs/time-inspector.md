@@ -42,7 +42,7 @@ stream on each machine and the hub's own events, with no extra model calls.
 
 | Where | How |
 |---|---|
-| Desktop app | Time in the sidebar, or expand the agents strip in a chat. See [The desktop app](/docs/desktop-app#time). |
+| Desktop app | Factory › Agent time in the sidebar, or expand the agents strip in a chat. See [The desktop app](/docs/desktop-app#time). |
 | Terminal, one piece of work | `fleetd time W41`, with its [workstream](/docs/glossary#workstream) id |
 | Terminal, one project | `fleetd time storefront` |
 | Terminal, the whole fleet | `fleetd time` |
