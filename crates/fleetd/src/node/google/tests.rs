@@ -1218,7 +1218,7 @@ async fn a_file_changed_since_its_card_or_never_on_one_is_not_sent() {
     )
     .await
     .unwrap_err();
-    assert!(none.contains("wasn't told the Navi's folder"), "{none}");
+    assert!(none.contains("restart this Navi's session"), "{none}");
     let writes = fake.lock().unwrap().seen[before..]
         .iter()
         .filter(|(method, ..)| method != "GET")
@@ -1245,6 +1245,38 @@ async fn a_draft_carries_its_files_unasked_and_sends_nothing() {
     let (meta, message) = uploaded(&seen, "/upload/gmail/v1/users/me/drafts");
     assert_eq!(meta, json!({ "message": { "threadId": "t1" } }));
     assert_eq!(parts_of(&message)[1].1, b"%PDF-1.7 the lease");
+    // A text file holding a key never goes, not even into a draft no one approved; nor in a send.
+    std::fs::write(
+        dir.path().join("navi/env.txt"),
+        "ANTHROPIC_API_KEY=sk-ant-abcdefghijklmnop0123\n",
+    )
+    .unwrap();
+    let before = fake.lock().unwrap().seen.len();
+    let key = tools::call(
+        &session,
+        "create_draft",
+        &json!({ "to": ["bo@vendor.test"], "body": "x", "attachments": ["lease.pdf", "env.txt"] }),
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        key.contains("env.txt looks like it holds a password, key or token"),
+        "{key}"
+    );
+    let pinned = files::sha256_hex(b"ANTHROPIC_API_KEY=sk-ant-abcdefghijklmnop0123\n");
+    let sent = tools::call(
+        &session,
+        "send_message",
+        &json!({ "to": ["bo@vendor.test"], "body": "x", "attachments": [{ "path": "env.txt", "sha256": pinned }] }),
+    )
+    .await
+    .unwrap_err();
+    assert!(sent.contains("Nothing was sent or saved"), "{sent}");
+    let writes = fake.lock().unwrap().seen[before..]
+        .iter()
+        .filter(|(method, ..)| method != "GET")
+        .count();
+    assert_eq!(writes, 0);
     // Not a list of paths: refused, nothing saved.
     let error = tools::call(
         &session,

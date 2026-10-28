@@ -61,7 +61,8 @@ A Navi attaches files from its own folder only. It names each by its path there,
 - **Typed by name.** Each file goes with the type its name gives: `application/pdf` for `.pdf`, `image/png` for
   `.png`, and so on. An unknown kind goes as `application/octet-stream`.
 
-A draft carries files the same way, from the same folder, without a card: it sends nothing. You check the files in
+A draft carries files the same way, from the same folder, without a card: it sends nothing. A text file holding what
+looks like a password, key or token is refused for a draft too, so it never reaches Drafts. You check the files in
 Drafts before you send it.
 
 What a read brings back from your mailbox, calendar or Drive comes back whole, as Google has it: no summary, no stripped

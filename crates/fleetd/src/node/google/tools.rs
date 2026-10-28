@@ -600,15 +600,16 @@ fn attached(input: &Value) -> Result<Vec<(String, Option<String>)>, String> {
 }
 
 /// The files an input attaches, read from the Navi's folder (node/google/files.rs). `approved`: a send or reply, whose
-/// card pinned each file's SHA-256: a file goes only with exactly the bytes the person approved.
+/// card pinned each file's SHA-256: a file goes only with exactly the bytes the person approved. A text file holding
+/// what looks like a credential never goes, not even into an unasked draft (D193).
 fn files_of(s: &Session, input: &Value, approved: bool) -> Result<Vec<files::File>, String> {
     let list = attached(input)?;
     if list.is_empty() {
         return Ok(Vec::new());
     }
     let folder = s.folder.as_deref().ok_or(
-        "this Google server wasn't told the Navi's folder, so it attaches no files: nothing was sent. Update fleetd \
-         on this machine.",
+        "this Google server started before it could attach files, so nothing was sent or saved. Tell the person to \
+         restart this Navi's session; the next one attaches files from your folder.",
     )?;
     let paths: Vec<&str> = list.iter().map(|(p, _)| p.as_str()).collect();
     let read = files::read_all(folder, &paths)?;
@@ -626,6 +627,13 @@ fn files_of(s: &Session, input: &Value, approved: bool) -> Result<Vec<files::Fil
                 ));
             }
             _ => {}
+        }
+        if crate::hub::integrations::policy::file_holds_credential(&f.bytes) {
+            return Err(format!(
+                "Blocked by fleetd: {path} looks like it holds a password, key or token, which never leaves through \
+                 an assistant, not even into a draft. Nothing was sent or saved. Leave the value out; a secret goes \
+                 through request_secret."
+            ));
         }
     }
     Ok(read)
