@@ -7,7 +7,7 @@ import type { MachineRolesEntry, NaviAsk, NaviAskOrder, ProjectSummary } from ".
 export const isNavi = (p: Pick<ProjectSummary, "kind">): boolean => p.kind === "assistant";
 
 /**
- * Yours (D213): a Navi belongs to the person who made it, and only they see and use it. The hub already lists no one
+ * Yours (D215): a Navi belongs to the person who made it, and only they see and use it. The hub already lists no one
  * else's; this keeps another's out of your lists all the same. One with no owner (a hub without people, or an older
  * hub) is yours, as before; one with an owner shows once the hub has said who you are.
  */

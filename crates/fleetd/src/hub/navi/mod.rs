@@ -9,7 +9,7 @@
 //! it), runs commands unasked (D208), and fetches or opens a site unasked only once the person allowed that site at its
 //! first visit or linked it in their own message (`sites`).
 //!
-//! Each Navi has an owner (D213, `owner`): only they see it and use it, and the hub refuses anyone else.
+//! Each Navi has an owner (D215, `owner`): only they see it and use it, and the hub refuses anyone else.
 //!
 //! An archived Navi keeps its chat, memory and folder; its lead is stopped and doesn't start again until it is brought
 //! back, and a message to it waits until then. Its factory bridge (messages to other projects' leads, the factory's

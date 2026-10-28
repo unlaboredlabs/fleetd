@@ -176,7 +176,7 @@ Paths are under `crates/fleetd/src/` unless shown otherwise.
   model"): lead, chat, memory, env and secrets, MCP servers, skills, automations, checklist and screens. A new
   top-level entity would mean re-plumbing all of them. A project gets them free, and the multi-repo work already makes
   a no-repo project valid.
-- **Whose it is (D213):** each Navi records the key that created it (`createdBy`: key id and name) and its owner, the
+- **Whose it is (D215):** each Navi records the key that created it (`createdBy`: key id and name) and its owner, the
   person behind that key. Only its owner sees it and uses it; §7, "Each Navi is its owner's", says how the hub holds
   to that.
 - **What makes it special** is small: an assistant prompt (`navi.start` instead of `lead.start`), the assistant role
@@ -378,7 +378,7 @@ bridge (`hub/navi/bridge`) and the integrations (`hub/integrations`) are separat
   cold lead), `auto_start` and `start_with` refuse it before returning a running lead, and `LeadWakes` drops its wakes.
   A chat message is held with the reason until it is back.
 
-### Each Navi is its owner's (D213)
+### Each Navi is its owner's (D215)
 - `navi_create` records the creating person as `owner_person`: the caller's person, else the hub's first owner for a
   key with no person (an agent key, minted only from the hub's home on its machine, whose user is the owner). A Navi
   made before owners went to its creating key's person, else the hub's owner (migration `navi_owner`); a hub with no

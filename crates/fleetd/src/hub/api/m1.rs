@@ -50,7 +50,7 @@ async fn events_wait(
         require(&caller, Role::Read, Some(machine_id))?;
     }
     let mut cursor = input.cursor.map_or_else(|| hub.events.head(), |c| c.get());
-    // Another person's Navi's events are theirs alone (D213).
+    // Another person's Navi's events are theirs alone (D215).
     let navis = crate::hub::navi::owner::others(&hub.db, &caller)?;
     let deadline = now_ms(hub.clock.as_ref()) + input.timeout_sec.get() * 1000;
     loop {

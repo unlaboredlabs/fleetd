@@ -1,4 +1,4 @@
-//! Each Navi is its owner's (D213), over a real hub and the fake node of `tests`: a teammate and an admin neither see
+//! Each Navi is its owner's (D215), over a real hub and the fake node of `tests`: a teammate and an admin neither see
 //! another person's Navi in a list nor reach it through a tool, and an admin deletes it only once its owner was removed.
 //! A hub without people reads as before; the migration gives each Navi its maker's person, else the hub's owner.
 use std::sync::Arc;
@@ -217,6 +217,45 @@ async fn only_its_owner_sees_and_uses_a_navi_and_an_admin_deletes_a_removed_pers
     .unwrap();
     refused(&hub, &bob_d, "hub_link_remove", json!({ "linkId": link })).await;
     refused(&hub, &cy_d, "hub_link_remove", json!({ "linkId": link })).await;
+
+    // An automation names no Navi either, but Ada's are Ann's alone: run, edit, pause, rotate, read or delete.
+    let made = ok(
+        &hub,
+        &ann_d,
+        "automation_create",
+        json!({ "projectRef": at(&ada), "name": "Morning mail", "prompt": "Sum up my new mail.",
+                "schedule": { "cron": "0 8 * * *", "tz": "UTC" }, "clientRequestId": "a1" }),
+    )
+    .await;
+    let auto = made["automation"]["automationId"].clone();
+    let by_id = [
+        (
+            "automation_update",
+            json!({ "automationId": auto, "name": "Mine now" }),
+        ),
+        (
+            "automation_pause",
+            json!({ "automationId": auto, "paused": true }),
+        ),
+        ("automation_rotate", json!({ "automationId": auto })),
+        ("automation_run", json!({ "automationId": auto })),
+        (
+            "automation_runs",
+            json!({ "automationId": auto, "limit": 10 }),
+        ),
+        ("automation_delete", json!({ "automationId": auto })),
+    ];
+    for (tool, input) in &by_id {
+        refused(&hub, &bob_d, tool, input.clone()).await;
+        refused(&hub, &cy_d, tool, input.clone()).await;
+    }
+    ok(
+        &hub,
+        &ann_d,
+        "automation_pause",
+        json!({ "automationId": auto, "paused": true }),
+    )
+    .await;
 
     // Every Navi tool refuses a teammate and an admin alike.
     for (tool, input) in tool_calls(&ada) {

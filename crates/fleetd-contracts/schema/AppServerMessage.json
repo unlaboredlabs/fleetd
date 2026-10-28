@@ -1714,7 +1714,7 @@
         },
         "owner": {
           "$ref": "#/$defs/PersonId",
-          "description": "A Navi's: the person it belongs to (D213), from the hub, which shows it and lets it be used by them alone.\nAbsent for other projects, on a hub without people, and from an older hub."
+          "description": "A Navi's: the person it belongs to (D215), from the hub, which shows it and lets it be used by them alone.\nAbsent for other projects, on a hub without people, and from an older hub."
         },
         "projectId": {
           "$ref": "#/$defs/ProjectId"

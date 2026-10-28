@@ -33,7 +33,7 @@ const grantedNames = (granted: ReadonlyArray<string>): string[] =>
 
 /**
  * You › Your accounts › Google: the Google account your Navi reads, and writes as when you say so. Each of your Navis
- * connects its own; with none yet there is nothing to connect. Another person's Navi isn't yours to connect (D213).
+ * connects its own; with none yet there is nothing to connect. Another person's Navi isn't yours to connect (D215).
  */
 export function YourGoogle() {
   const projects = useProjects();

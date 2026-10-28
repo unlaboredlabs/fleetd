@@ -125,7 +125,7 @@ pub struct ProjectSummary {
     /// recorded.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub created_by: Option<ProjectCreator>,
-    /// A Navi's: the person it belongs to (D213), from the hub, which shows it and lets it be used by them alone.
+    /// A Navi's: the person it belongs to (D215), from the hub, which shows it and lets it be used by them alone.
     /// Absent for other projects, on a hub without people, and from an older hub.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub owner: Option<crate::people::PersonId>,

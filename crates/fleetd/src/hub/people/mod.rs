@@ -276,7 +276,7 @@ pub fn ensure_owner_on(c: &Connection, name: &str, now: i64) -> Result<Person, S
         "UPDATE agent_keys SET person_id = ? WHERE kind = 'human' AND person_id IS NULL",
     )?
     .execute([owner.person_id.as_str()])?;
-    // A Navi from before people is the owner's too (D213).
+    // A Navi from before people is the owner's too (D215).
     crate::hub::navi::store::adopt(c, &owner.person_id)?;
     Ok(owner)
 }

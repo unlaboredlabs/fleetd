@@ -34,7 +34,7 @@ pub fn readable_projects(
     caller: &Caller,
     only: Option<&ProjectRef>,
 ) -> HashMap<ProjectRef, String> {
-    // Another person's Navi isn't the key's to read (D213).
+    // Another person's Navi isn't the key's to read (D215).
     let navis = match crate::hub::navi::owner::others(&hub.db, caller) {
         Ok(navis) => navis,
         Err(error) => {

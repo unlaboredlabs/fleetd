@@ -437,7 +437,7 @@ fn connect_text(account: &ClaudeAccount) -> &'static str {
     }
 }
 
-/// The person behind a Navi: its owner (D213, the person whose key made it), else the hub's owner (a Navi from a hub
+/// The person behind a Navi: its owner (D215, the person whose key made it), else the hub's owner (a Navi from a hub
 /// without people yet).
 fn navi_owner(
     db: &HubDb,

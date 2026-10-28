@@ -1,4 +1,4 @@
--- Each Navi has an owner (D213): the person behind the key that made it, else the hub's first owner. Only the owner
+-- Each Navi has an owner (D215): the person behind the key that made it, else the hub's first owner. Only the owner
 -- sees and manages it. A Navi from a hub with no people yet gets its owner at the hub's next start, which makes one
 -- (`people::ensure_owner_on`); until then it is nobody's, and it reads as before people.
 ALTER TABLE assistants ADD COLUMN owner_person TEXT;

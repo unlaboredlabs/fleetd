@@ -5465,7 +5465,7 @@ export type ProjectSummary = {
   lastActivityAt: Timestamp;
   machineId: MachineId;
   /**
-   * A Navi's: the person it belongs to (D213), from the hub, which shows it and lets it be used by them alone.
+   * A Navi's: the person it belongs to (D215), from the hub, which shows it and lets it be used by them alone.
    * Absent for other projects, on a hub without people, and from an older hub.
    */
   owner?: PersonId;

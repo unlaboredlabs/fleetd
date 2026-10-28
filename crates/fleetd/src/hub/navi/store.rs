@@ -12,7 +12,7 @@ pub struct Navi {
     pub created_by: ProjectCreator,
     pub created_ms: i64,
     pub archived_at: Option<Timestamp>,
-    /// The person it belongs to (D213); none on a hub without people.
+    /// The person it belongs to (D215); none on a hub without people.
     pub owner: Option<PersonId>,
 }
 

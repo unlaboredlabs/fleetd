@@ -10,7 +10,7 @@ The product questions (§10) are answered, and these decisions override anything
 
 1. **Projects are open to everyone on the hub by default**, with a switch to make one private. **Navis are always
    private** to their one person.
-2. **Each Navi is its owner's alone (D213, which replaces "admins can read people's Navis").** Only its owner sees it
+2. **Each Navi is its owner's alone (D215, which replaces "admins can read people's Navis").** Only its owner sees it
    and manages its accounts, hub links, allowed sites, settings, chat and approvals; the hub refuses everyone else,
    admins included. An admin may only delete the Navi of a person removed from the hub.
 3. **Accounts:**
@@ -271,7 +271,7 @@ the 186 call sites is the largest single piece of work (§8, step 3).
 ## 5. Per-person privacy
 
 ### 5.1 Navis
-- **A Navi is a private project with exactly one member, its owner (D213, built).** Every per-project system (chat,
+- **A Navi is a private project with exactly one member, its owner (D215, built).** Every per-project system (chat,
   memory, checklist, screens, MCP servers, env, automations) is keyed by `ProjectRef` (multi-repo.md "The model"), so
   one gate makes all of it private at once: the hub refuses any tool call that names another person's Navi
   (`hub/navi/owner.rs`), and its lists leave those Navis out. The Navi plan's §7 has the details.
@@ -429,7 +429,7 @@ events table today.
   records the person who started it (`startedBy`), for step 8.
 - **No project scoping yet:** everyone in the hub sees every project. That is fine for a small trusted team, the
   model `security.md:6` already describes.
-- Navis are the exception: each is its owner's alone (D213, §5.1).
+- Navis are the exception: each is its owner's alone (D215, §5.1).
 
 What step 1 adds, in the wire types (`crates/fleetd-contracts/src/people.rs`):
 - `Person` (`personId`, `name`, `role`, `createdAt`, `removedAt`), `HubRole` (owner, admin, member), `PersonRef`

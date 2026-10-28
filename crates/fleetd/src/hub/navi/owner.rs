@@ -1,9 +1,10 @@
-//! Each Navi is its owner's (D213): the person whose key made it, else the hub's first owner. Only they see it in a
+//! Each Navi is its owner's (D215): the person whose key made it, else the hub's first owner. Only they see it in a
 //! list or reach it through a tool: its chat, approvals, integrations, hub links, sites, settings, archive and delete.
 //! Anyone else is refused, an admin too, except to delete the Navi of a person since removed from the hub.
 //!
 //! The gate is one place: [`guard`] runs before every tool's handler and refuses a call that names another person's
-//! Navi, by its project, one of its threads or one of its requests. Lists leave those Navis out with [`others`].
+//! Navi, by its project, one of its threads, one of its requests or one of its automations. Lists leave those Navis
+//! out with [`others`].
 //!
 //! A key with no person (an agent key, minted only from the hub's home on its machine, whose user is the hub's owner)
 //! counts as the hub's owner. A Navi with no owner (a hub without people) is anyone's, as before people.
@@ -134,7 +135,8 @@ fn owner_removed(db: &HubDb, r: &ProjectRef) -> Result<bool, StoreError> {
 }
 
 /// The projects a call's input names, at any of its objects down to `depth`: a `machineId` with a `projectId`, or
-/// with a `threadId` (the thread's project), and a `requestId` (the project that asked).
+/// with a `threadId` (the thread's project), a `requestId` (the project that asked) and an `automationId` (the
+/// project it runs in).
 fn refs(
     c: &Connection,
     input: &Value,
@@ -161,6 +163,11 @@ fn refs(
             {
                 out.push(p);
             }
+            if let Some(id) = text("automationId")
+                && let Some(p) = automation_project(c, id)?
+            {
+                out.push(p);
+            }
             if depth > 0 {
                 for v in fields.values() {
                     refs(c, v, depth - 1, out)?;
@@ -183,6 +190,18 @@ fn thread_project(c: &Connection, m: &str, t: &str) -> Result<Option<ProjectRef>
         .query_row(params![m, t], |row| row.get(0))
         .optional()?;
     Ok(p.map(|p| ProjectRef {
+        machine_id: MachineId::unchecked(m),
+        project_id: ProjectId::unchecked(p),
+    }))
+}
+
+/// An automation's project.
+fn automation_project(c: &Connection, id: &str) -> Result<Option<ProjectRef>, StoreError> {
+    let row: Option<(String, String)> = c
+        .prepare_cached("SELECT machine_id, project_id FROM automations WHERE automation_id = ?")?
+        .query_row([id], |row| Ok((row.get(0)?, row.get(1)?)))
+        .optional()?;
+    Ok(row.map(|(m, p)| ProjectRef {
         machine_id: MachineId::unchecked(m),
         project_id: ProjectId::unchecked(p),
     }))

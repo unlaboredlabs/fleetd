@@ -160,7 +160,7 @@ impl Asker {
         }
     }
 
-    /// The Navis that aren't the asker's person's (D213): it neither sees nor reaches them.
+    /// The Navis that aren't the asker's person's (D215): it neither sees nor reaches them.
     fn others(&self, db: &HubDb) -> Result<HashSet<ProjectRef>, StoreError> {
         match self {
             Asker::Navi(from) => {
