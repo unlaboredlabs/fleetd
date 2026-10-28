@@ -127,9 +127,16 @@ pub(super) struct NextLabels {
 pub(super) struct HeadSkips {
     /// The annotation messages of its finished check runs, by run id: they never change.
     notes: HashMap<u64, Vec<String>>,
-    /// The workflow runs on it the train re-ran for a cancelled check (`rerun_cancelled_skips`): once each.
-    reran: HashSet<u64>,
+    /// The checks on it, by name, the train re-ran for being cancelled (`rerun_cancelled_skips`): once each.
+    reran: HashSet<String>,
+    /// The checks on it, by name, GitHub refused to re-run: how many times, and when the train may ask again.
+    refused: HashMap<String, (u32, i64)>,
 }
+
+/// How many times the train asks GitHub to re-run a cancelled check the batch skips before it stops asking.
+const RERUN_TRIES: u32 = 3;
+/// How long the train waits after GitHub refuses that re-run before it asks again, doubled on each refusal.
+const RERUN_BACKOFF_MS: i64 = 60_000;
 
 /// What putting the label on a PR came to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -560,9 +567,12 @@ impl Train {
     }
 
     /// A cancelled check the batch skips, or a cancelled job one of them needs, on head `sha` (`runs`, the newest of
-    /// each check): nothing re-runs it by itself, so the PR would never join a batch. The train re-runs the failed and
-    /// cancelled jobs of its workflow run once (the jobs that need them run again too), and says so; cancelled again
-    /// after that, it says the run needs a push or a re-run by hand. None when none is cancelled.
+    /// each check): nothing re-runs it by itself, so the PR would never join a batch. The train re-runs that job once,
+    /// with the jobs that need it, never the rest of its workflow run: a job that failed stays failed. It waits while
+    /// the workflow run has a job still going, as GitHub re-runs none until it is done. Cancelled again after that, it
+    /// says the check needs a push or a re-run by hand. GitHub refusing the re-run, it asks again after
+    /// `RERUN_BACKOFF_MS`, doubled each time, and after `RERUN_TRIES` refusals stops asking and says the same. None
+    /// when none is cancelled.
     pub(super) async fn rerun_cancelled_skips(
         &self,
         repo: &str,
@@ -588,46 +598,100 @@ impl Train {
             .map(|r| format!("`{}`", r.name))
             .collect::<Vec<_>>()
             .join(", ");
-        let mut again = false;
-        let mut re_ran = false;
-        let mut seen: Vec<u64> = Vec::new();
-        for run in cancelled.iter().filter_map(|r| r.workflow_run()) {
-            if seen.contains(&run) {
+        let now = self.now_ms();
+        // The workflow runs with a job still going, and those the train re-ran a job of in this pass.
+        let mut busy: HashSet<u64> = runs
+            .iter()
+            .filter(|r| r.status != "completed")
+            .filter_map(CheckRun::workflow_run)
+            .collect();
+        let (mut re_ran, mut again, mut gave_up, mut waiting, mut retrying) =
+            (false, false, false, false, false);
+        for r in &cancelled {
+            let (Some(run), Some(job)) = (r.workflow_run(), r.job()) else {
+                continue;
+            };
+            let (done, refused) = {
+                let heads = lock(&self.next_labels.heads);
+                let head = heads.get(&key);
+                (
+                    head.is_some_and(|h| h.reran.contains(&r.name)),
+                    head.and_then(|h| h.refused.get(&r.name)).copied(),
+                )
+            };
+            let tries = match refused {
+                _ if done => {
+                    again = true;
+                    continue;
+                }
+                Some((tries, _)) if tries >= RERUN_TRIES => {
+                    gave_up = true;
+                    continue;
+                }
+                Some((_, at)) if now < at => {
+                    retrying = true;
+                    continue;
+                }
+                Some((tries, _)) => tries,
+                None => 0,
+            };
+            if busy.contains(&run) {
+                waiting = true;
                 continue;
             }
-            seen.push(run);
-            let done = lock(&self.next_labels.heads)
-                .get(&key)
-                .is_some_and(|h| h.reran.contains(&run));
-            if done {
-                again = true;
-                continue;
-            }
-            match self.github.rerun_failed_jobs(repo, run).await {
+            match self.github.rerun_job(repo, job).await {
                 Ok(()) => {
                     tracing::info!(
                         repo,
                         sha,
-                        run,
-                        "train: re-ran a PR's cancelled checks the batch skips"
+                        job,
+                        "train: re-ran a PR's cancelled check the batch skips"
                     );
                     lock(&self.next_labels.heads)
                         .entry(key.clone())
                         .or_default()
                         .reran
-                        .insert(run);
+                        .insert(r.name.clone());
+                    busy.insert(run);
                     re_ran = true;
                 }
                 Err(e) => {
-                    tracing::warn!(repo, sha, run, error = %e.message, "train: cancelled checks not re-run");
+                    let tries = tries + 1;
+                    tracing::warn!(repo, sha, job, tries, error = %e.message, "train: cancelled check not re-run");
+                    lock(&self.next_labels.heads)
+                        .entry(key.clone())
+                        .or_default()
+                        .refused
+                        .insert(
+                            r.name.clone(),
+                            (tries, now + (RERUN_BACKOFF_MS << (tries - 1))),
+                        );
+                    if tries >= RERUN_TRIES {
+                        gave_up = true;
+                    } else {
+                        retrying = true;
+                    }
                 }
             }
         }
-        Some(if re_ran {
-            format!("its own head's {names} was cancelled; the train re-ran it")
+        Some(if gave_up {
+            format!(
+                "its own head's {names} was cancelled, and GitHub refused to re-run it {RERUN_TRIES} times: push \
+                 again or re-run it"
+            )
         } else if again {
             format!(
                 "its own head's {names} was cancelled again after the train re-ran it: push again or re-run it"
+            )
+        } else if re_ran {
+            format!("its own head's {names} was cancelled; the train re-ran it")
+        } else if waiting {
+            format!(
+                "its own head's {names} was cancelled; the train re-runs it once its workflow run is done"
+            )
+        } else if retrying {
+            format!(
+                "its own head's {names} was cancelled, and GitHub refused to re-run it: the train asks again"
             )
         } else {
             format!("its own head's {names} was cancelled, and the train could not re-run it")
