@@ -22,7 +22,7 @@ use super::github::{
 };
 use super::host::{BoxFut, TrainHost};
 use super::main_ci::{GithubSync, MainCi, ci_state};
-use super::next::upstreams;
+use super::next::{Reruns, upstreams};
 use super::records::{ChangeRecords, DRAFT, Db, HEAD_STATES, ListFilter, QUEUED_STATES, is_draft};
 use super::regen::Conflict;
 use super::rules::Refusal;
@@ -354,10 +354,7 @@ pub(super) fn required_checks(
     }
 }
 
-/// Per workflow run the train re-ran: how many times, and the newest cancelled check it saw then.
-type Reruns = HashMap<u64, (u32, f64)>;
-
-/// How many times the train re-runs one workflow run whose required checks read cancelled before it counts them red.
+/// How many times the train re-runs one job whose required check reads cancelled before it counts it red.
 const CANCELLED_RERUNS: u32 = 2;
 
 /// The checks on a head GitHub's ruleset may read as cancelled: in some workflow run, the newest run of a check
@@ -1176,8 +1173,8 @@ impl Train {
     /// `LABEL_HOLD_MS`, and tells the lead once when none came in that time. While the repo's workflows can't be read
     /// (`Gate::Unknown`), any skip holds for `LABEL_HOLD_MS` only. While some checks have been queued for
     /// `RUNNER_WAIT_MS`, `noted` (the Changes in this CI run) say they wait for runners. Never green while a check
-    /// `base` requires reads cancelled in some workflow run (`cancelled_required`): the train re-runs that run's jobs
-    /// and waits again, and a run still cancelled after `CANCELLED_RERUNS` re-runs is red.
+    /// `base` requires reads cancelled in some workflow run (`cancelled_required`): the train re-runs those jobs alone
+    /// and waits again, and a job still cancelled after `CANCELLED_RERUNS` re-runs is red.
     pub(super) async fn wait_ci(
         &self,
         change: &Change,
@@ -1295,8 +1292,7 @@ impl Train {
                     {
                         return Some(CiOutcome::Moved);
                     }
-                    if let Some(true) = self.rerun_cancelled(change, repo, &red, &mut reruns).await
-                    {
+                    if let Some(true) = self.rerun_cancelled(repo, &red, &all, &mut reruns).await {
                         start = self.now_ms();
                     }
                 }
@@ -1375,7 +1371,7 @@ impl Train {
                             }
                             // Re-runs spent, it waits for the timeout: cancelled is no failure (D191).
                             if let Some(true) = self
-                                .rerun_cancelled(change, repo, &cancelled, &mut reruns)
+                                .rerun_cancelled(repo, &cancelled, &all, &mut reruns)
                                 .await
                             {
                                 // The re-run's time is its own.
@@ -1492,43 +1488,22 @@ impl Train {
         }
     }
 
-    /// Re-runs the jobs of each workflow run in which a required check reads cancelled, unless the train already
-    /// re-ran it and GitHub doesn't show the re-run yet: whether it re-ran any. None when one can't be re-run: it isn't
-    /// a workflow run's, it was re-run `CANCELLED_RERUNS` times and is cancelled again, or GitHub refused.
+    /// Re-runs each job whose required check reads cancelled, on its own (`rerun_jobs`), unless the train already
+    /// re-ran it and GitHub doesn't show the re-run yet: whether it re-ran any. `runs` the checks on the head. None
+    /// when one can't be re-run: it isn't an Actions job, it was re-run `CANCELLED_RERUNS` times and is cancelled
+    /// again, or GitHub refused it `RERUN_TRIES` times.
     async fn rerun_cancelled(
         &self,
-        change: &Change,
         repo: &str,
         cancelled: &[CheckRun],
+        runs: &[CheckRun],
         reruns: &mut Reruns,
     ) -> Option<bool> {
-        let mut runs: Vec<(u64, f64)> = Vec::new();
-        for r in cancelled {
-            let run = r.workflow_run()?;
-            match runs.iter_mut().find(|(n, _)| *n == run) {
-                Some((_, id)) => *id = id.max(r.id),
-                None => runs.push((run, r.id)),
-            }
-        }
-        let mut re_ran = false;
-        for (run, newest) in runs {
-            let times = match reruns.get(&run) {
-                Some(&(_, seen)) if newest <= seen => continue,
-                Some(&(times, _)) => times,
-                None => 0,
-            };
-            if times >= CANCELLED_RERUNS {
-                return None;
-            }
-            if let Err(e) = self.github.rerun_failed_jobs(repo, run).await {
-                tracing::warn!(change_id = %change.change_id, run, error = %e.message, "train: cancelled run not re-run");
-                return None;
-            }
-            tracing::info!(change_id = %change.change_id, run, "train: re-ran a run whose required checks read cancelled");
-            reruns.insert(run, (times + 1, newest));
-            re_ran = true;
-        }
-        Some(re_ran)
+        let cancelled: Vec<&CheckRun> = cancelled.iter().collect();
+        let reran = self
+            .rerun_jobs(repo, &cancelled, runs, reruns, CANCELLED_RERUNS)
+            .await;
+        (!reran.unknown && !reran.spent && !reran.gave_up).then_some(reran.now)
     }
 
     /// Whether CI on a head has had its time, `runs` its last checks read and `start` when the train began waiting
@@ -2408,20 +2383,22 @@ impl Train {
                     self.wake_lead(&change.project_ref, line).await;
                 }
             }
-            Checks::Red(red) if all_cancelled(&red) => self.late_cancelled(change, &red).await,
+            Checks::Red(red) if all_cancelled(&red) => {
+                self.late_cancelled(change, &red, &runs).await
+            }
             Checks::Red(red) => self.ci_failed(change, &red, None).await,
             Checks::None | Checks::Pending => {}
         }
     }
 
-    /// A timed-out Change whose checks then read cancelled: their run is re-run, `CANCELLED_RERUNS` times at most, and
-    /// then it goes back to its author, so it never just sits (D191).
-    async fn late_cancelled(&self, change: &Change, cancelled: &[CheckRun]) {
+    /// A timed-out Change whose checks then read cancelled: their jobs are re-run, `CANCELLED_RERUNS` times at most,
+    /// and then it goes back to its author, so it never just sits (D191).
+    async fn late_cancelled(&self, change: &Change, cancelled: &[CheckRun], runs: &[CheckRun]) {
         let mut reruns = lock(&self.late_reruns)
             .remove(&change.change_id)
             .unwrap_or_default();
         let rerun = self
-            .rerun_cancelled(change, &change.repo, cancelled, &mut reruns)
+            .rerun_cancelled(&change.repo, cancelled, runs, &mut reruns)
             .await;
         lock(&self.late_reruns).insert(change.change_id.clone(), reruns);
         if rerun.is_some() {

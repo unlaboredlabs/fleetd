@@ -174,10 +174,8 @@ struct FakeGh {
     on_checks: Mutex<Option<Box<dyn Fn() + Send + Sync>>>,
     /// When set, the `check_runs` of every check-run read, whatever the head and `ci`.
     runs: Mutex<Option<Box<dyn Fn() -> Value + Send + Sync>>>,
-    /// The workflow runs whose failed jobs were re-run, in order.
+    /// The jobs the train asked to re-run, in order, refused or not.
     reruns: Arc<Mutex<Vec<u64>>>,
-    /// The jobs the train asked to re-run on their own, in order, refused or not.
-    job_reruns: Mutex<Vec<u64>>,
     /// GitHub refuses every re-run of one job.
     refuse_job_reruns: Mutex<bool>,
     /// The `check_runs` of one head, before `runs` and `ci`.
@@ -818,15 +816,11 @@ impl FakeGh {
                 ))
             }
             (["actions", "jobs", job, "rerun"], "POST") => {
-                self.job_reruns.lock().unwrap().push(job.parse().unwrap());
+                self.reruns.lock().unwrap().push(job.parse().unwrap());
                 if *self.refuse_job_reruns.lock().unwrap() {
                     return http_error(403, "Resource not accessible by integration");
                 }
-                ok(json!({}))
-            }
-            (["actions", "runs", run, "rerun-failed-jobs"], "POST") => {
-                self.reruns.lock().unwrap().push(run.parse().unwrap());
-                self.log.lock().unwrap().push(format!("rerun {run}"));
+                self.log.lock().unwrap().push(format!("rerun {job}"));
                 ok(json!({}))
             }
             (["statuses", sha], "POST") => {
@@ -1458,7 +1452,6 @@ impl Kit {
             on_checks: Mutex::default(),
             runs: Mutex::default(),
             reruns: Arc::default(),
-            job_reruns: Mutex::default(),
             refuse_job_reruns: Mutex::default(),
             head_runs: Mutex::default(),
             workflow_files: Mutex::default(),
@@ -2359,7 +2352,7 @@ async fn a_timed_out_change_whose_checks_read_cancelled_is_re_run_then_goes_to_i
         kit.train.step(REPO).await;
         assert!(timed_out_still(&kit, &change_id));
     }
-    assert_eq!(*kit.gh.reruns.lock().unwrap(), [1, 1]);
+    assert_eq!(*kit.gh.reruns.lock().unwrap(), [10, 11]);
     kit.train.step(REPO).await;
     let back = kit.get(&change_id);
     assert_eq!(
@@ -2374,6 +2367,47 @@ async fn a_timed_out_change_whose_checks_read_cancelled_is_re_run_then_goes_to_i
     kit.train.step(REPO).await;
     assert_eq!(kit.gh.reruns.lock().unwrap().len(), 2);
     assert!(kit.gh.merges.lock().unwrap().is_empty());
+}
+
+/// GitHub refusing to re-run a timed-out Change's cancelled job: the train asks again after a minute, then two, not on
+/// every pass, and after the third refusal the PR goes back to its author (D191).
+#[tokio::test(flavor = "multi_thread")]
+async fn a_refused_re_run_of_a_cancelled_check_backs_off_then_goes_to_its_author() {
+    let clock = Arc::new(Sleeps::default());
+    let kit = Kit::build(FakeCi::Actions, one_poll, false, clock.clone());
+    answer_checks(&kit, || {
+        vec![check(
+            "ci",
+            "in_progress",
+            None,
+            Some("2020-01-01T00:00:00Z"),
+        )]
+    });
+    let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")]);
+    let (_, change_id) = kit.author_task(Some(&pr)).await;
+    assert!(kit.train.step(REPO).await);
+    assert!(timed_out_still(&kit, &change_id));
+
+    *kit.gh.refuse_job_reruns.lock().unwrap() = true;
+    answer_checks(&kit, || vec![job(10, 1, "ci", "cancelled")]);
+    let asked = || kit.gh.reruns.lock().unwrap().len();
+    kit.train.step(REPO).await;
+    assert_eq!(asked(), 1);
+    kit.train.step(REPO).await;
+    assert_eq!(asked(), 1, "backing off");
+    assert!(timed_out_still(&kit, &change_id));
+    clock.sleep(Duration::from_secs(60)).await;
+    kit.train.step(REPO).await;
+    assert_eq!(asked(), 2);
+    assert!(timed_out_still(&kit, &change_id));
+    clock.sleep(Duration::from_secs(120)).await;
+    kit.train.step(REPO).await;
+    assert_eq!(asked(), 3);
+    let back = kit.get(&change_id);
+    assert_eq!(
+        (back.state, back.last_error.as_deref()),
+        (ChangeState::CiFailed, Some(super::service::CI_CANCELLED))
+    );
 }
 
 fn timed_out_still(kit: &Kit, change_id: &ChangeId) -> bool {
@@ -3533,13 +3567,13 @@ async fn a_required_check_cancelled_in_the_prs_own_run_is_re_run_before_the_merg
     let log = kit.gh.log.lock().unwrap().clone();
     let at = |line: &str| log.iter().position(|l| l == line);
     assert!(
-        at("rerun 1").is_some() && at("rerun 1") < at("merge #7"),
+        at("rerun 10").is_some() && at("rerun 10") < at("merge #7"),
         "{log:?}"
     );
     assert_eq!(
         *kit.gh.reruns.lock().unwrap(),
-        [1],
-        "only the cancelled run"
+        [10],
+        "only the cancelled job"
     );
 }
 
@@ -3582,7 +3616,7 @@ async fn the_train_never_merges_while_a_required_check_reads_cancelled() {
             .iter()
             .any(|l| l.starts_with("merge"))
     );
-    assert_eq!(*kit.gh.reruns.lock().unwrap(), [1, 1]);
+    assert_eq!(*kit.gh.reruns.lock().unwrap(), [10, 11]);
 }
 
 /// The author pushes while the train rebases their PR, which cancels CI on the train's head: the PR is never
@@ -5952,11 +5986,7 @@ async fn a_cancelled_check_the_batch_skips_is_re_run_once_and_the_pr_says_so() {
 
     assert!(kit.train.step(REPO).await);
     assert_eq!(members_of_batch(&kit), [7, 8]);
-    assert_eq!(*kit.gh.job_reruns.lock().unwrap(), [60, 61]);
-    assert!(
-        kit.gh.reruns.lock().unwrap().is_empty(),
-        "no whole run re-run"
-    );
+    assert_eq!(*kit.gh.reruns.lock().unwrap(), [60, 61]);
     assert_eq!(
         why(&prs[2]).as_deref(),
         Some(
@@ -5975,9 +6005,17 @@ async fn a_cancelled_check_the_batch_skips_is_re_run_once_and_the_pr_says_so() {
         )
     );
 
-    // Still cancelled on the next pass: no second re-run, and the PR says what to do.
+    // Its re-run cancelled too: no second re-run, and the PR says what to do.
+    kit.gh.head_runs.lock().unwrap().insert(
+        kit.head_of("scope"),
+        own(
+            run(3, "desktop-macos", Some("skipped")),
+            job(61, 71, "macos scope", Some("cancelled")),
+            run(2, "lint", Some("success")),
+        ),
+    );
     assert!(kit.train.step(REPO).await);
-    assert_eq!(kit.gh.job_reruns.lock().unwrap().len(), 2);
+    assert_eq!(kit.gh.reruns.lock().unwrap().len(), 2);
     assert_eq!(
         why(&prs[3]).as_deref(),
         Some(
@@ -5996,6 +6034,44 @@ async fn a_cancelled_check_the_batch_skips_is_re_run_once_and_the_pr_says_so() {
         .collect();
     assert!(heads.contains(&kit.head_of("scope")), "{heads:?}");
     assert!(!heads.iter().any(|h| merged.contains(h)), "{heads:?}");
+}
+
+/// A re-run GitHub doesn't show yet leaves the old cancelled check on the head: the train neither asks again nor says
+/// it was cancelled again, until a newer run of it reads cancelled.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_re_run_not_shown_yet_is_not_cancelled_again() {
+    use super::github::CheckRun;
+    use super::next::BatchSkip;
+    let kit = Kit::with(FakeCi::Actions, one_poll);
+    let runs = |id: u64| -> Vec<CheckRun> {
+        let mut cut = run(id, "desktop-macos", Some("cancelled"));
+        cut["html_url"] = json!(format!(
+            "https://github.com/{REPO}/actions/runs/50/job/{id}"
+        ));
+        serde_json::from_value(json!([run(1, "build", Some("success")), cut])).unwrap()
+    };
+    let batch = [BatchSkip {
+        name: "desktop-macos".into(),
+        needs: Vec::new(),
+    }];
+    let (kit, batch) = (&kit, &batch);
+    let pass = |runs: Vec<CheckRun>| async move {
+        kit.train
+            .rerun_cancelled_skips(REPO, "c0ffee", &runs, batch)
+            .await
+    };
+    let re_ran = "its own head's `desktop-macos` was cancelled; the train re-ran it";
+
+    assert_eq!(pass(runs(60)).await.as_deref(), Some(re_ran));
+    assert_eq!(pass(runs(60)).await.as_deref(), Some(re_ran));
+    assert_eq!(*kit.gh.reruns.lock().unwrap(), [60]);
+    assert_eq!(
+        pass(runs(70)).await.as_deref(),
+        Some(
+            "its own head's `desktop-macos` was cancelled again after the train re-ran it: push again or re-run it"
+        )
+    );
+    assert_eq!(*kit.gh.reruns.lock().unwrap(), [60]);
 }
 
 /// GitHub refusing to re-run a cancelled check the batch skips: the train doesn't ask again on every pass, but after
@@ -6020,7 +6096,7 @@ async fn a_refused_re_run_backs_off_and_stops_after_three_tries() {
         kit.train
             .rerun_cancelled_skips(REPO, "c0ffee", &runs, &batch)
     };
-    let asked = || kit.gh.job_reruns.lock().unwrap().len();
+    let asked = || kit.gh.reruns.lock().unwrap().len();
     let retrying = "its own head's `desktop-macos` was cancelled, and GitHub refused to re-run it: the train asks again";
 
     assert_eq!(pass().await.as_deref(), Some(retrying));
@@ -6044,7 +6120,6 @@ async fn a_refused_re_run_backs_off_and_stops_after_three_tries() {
     clock.sleep(Duration::from_secs(3600)).await;
     assert_eq!(pass().await.as_deref(), Some(gave_up));
     assert_eq!(asked(), 3, "no fourth try");
-    assert!(kit.gh.reruns.lock().unwrap().is_empty());
 }
 
 /// D204: a check the batch skips never ran on the merged tree before the merge, so main's run of it is watched, even one

@@ -697,17 +697,6 @@ impl TrainGitHub {
         Ok(combined.statuses)
     }
 
-    /// Re-runs the failed and cancelled jobs of workflow run `run`.
-    pub async fn rerun_failed_jobs(&self, repo: &str, run: u64) -> Result<(), GhError> {
-        self.json::<Value>(
-            "POST",
-            &format!("repos/{repo}/actions/runs/{run}/rerun-failed-jobs"),
-            &[],
-        )
-        .await
-        .map(|_| ())
-    }
-
     /// Re-runs Actions job `job` and the jobs that need it, and nothing else of its workflow run.
     pub async fn rerun_job(&self, repo: &str, job: u64) -> Result<(), GhError> {
         self.json::<Value>(
