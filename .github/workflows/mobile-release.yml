@@ -1,0 +1,187 @@
+name: Mobile release
+
+# Signed builds of the phone app, by hand (Actions › Mobile release › Run workflow), on GitHub runners only: no EAS,
+# no Expo service. Each platform signs only when its secrets are set (.github/release/mobile-sign.sh lists them), so
+# a fork without them still gets a debug-signed APK and skips iOS cleanly, without starting a macOS runner. The
+# guide: docs/site/src/content/docs/mobile.md (fleetd.sh/docs/mobile).
+#
+# Repository variables (not secrets): FLEETD_APP_ID, the bundle id and Android package (default sh.fleetd.app; a
+# signed iOS build needs the one its profile names); UPDATES_CERT_PEM, the code signing certificate for over-the-air
+# updates (D219; without it the app takes none).
+on:
+  workflow_dispatch:
+    inputs:
+      testflight:
+        description: Send the iOS build to TestFlight (needs the App Store Connect key)
+        type: boolean
+        default: false
+      channel:
+        description: Which over-the-air updates the build takes
+        type: choice
+        options: [edge, stable]
+        default: edge
+
+permissions:
+  contents: read
+
+env:
+  FLEETD_APP_ID: ${{ vars.FLEETD_APP_ID }}
+  FLEETD_UPDATES_CHANNEL: ${{ inputs.channel }}
+  FLEETD_BUILD_NUMBER: ${{ github.run_number }}
+
+jobs:
+  signing:
+    # Which platforms have their secrets, decided on Linux so a macOS runner starts only to sign.
+    name: signing
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      android: ${{ steps.secrets.outputs.android }}
+      ios: ${{ steps.secrets.outputs.ios }}
+      testflight: ${{ steps.secrets.outputs.testflight }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: secrets
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          IOS_CERT_P12_BASE64: ${{ secrets.IOS_CERT_P12_BASE64 }}
+          IOS_CERT_PASSWORD: ${{ secrets.IOS_CERT_PASSWORD }}
+          IOS_PROFILE_BASE64: ${{ secrets.IOS_PROFILE_BASE64 }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
+        run: |
+          echo "android=$(.github/release/mobile-sign.sh android-enabled)" | tee -a "$GITHUB_OUTPUT"
+          echo "ios=$(.github/release/mobile-sign.sh ios-enabled)" | tee -a "$GITHUB_OUTPUT"
+          echo "testflight=$(.github/release/mobile-sign.sh testflight-enabled)" | tee -a "$GITHUB_OUTPUT"
+
+  android:
+    # A release APK for installing directly and an app bundle (.aab) for a store, signed with the keystore; without
+    # it, the APK alone, debug-signed.
+    name: android
+    needs: signing
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: app/mobile
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/mobile/package-lock.json
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v5
+        with:
+          cache-read-only: true
+      - run: npm ci --no-audit --no-fund
+      - name: Update certificate
+        env:
+          UPDATES_CERT_PEM: ${{ vars.UPDATES_CERT_PEM }}
+        run: |
+          if [ -n "$UPDATES_CERT_PEM" ]; then
+            printf '%s\n' "$UPDATES_CERT_PEM" > "$RUNNER_TEMP/updates-cert.pem"
+            echo "FLEETD_UPDATES_CERT=$RUNNER_TEMP/updates-cert.pem" >> "$GITHUB_ENV"
+          fi
+      - run: npx expo prebuild --platform android --clean --no-install
+      - name: Build
+        working-directory: app/mobile/android
+        env:
+          SIGN: ${{ needs.signing.outputs.android }}
+        run: |
+          # The app bundle is for a store, which takes it signed only.
+          if [ "$SIGN" = true ]; then ./gradlew assembleRelease bundleRelease --no-daemon; else ./gradlew assembleRelease --no-daemon; fi
+      - name: Sign
+        if: needs.signing.outputs.android == 'true'
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          ../../.github/release/mobile-sign.sh android android/app/build/outputs/apk/release/app-release.apk \
+            android/app/build/outputs/bundle/release/app-release.aab
+      - name: Remove key material
+        if: always()
+        run: ../../.github/release/mobile-sign.sh cleanup
+      - uses: actions/upload-artifact@v7
+        with:
+          name: fleetd-android-release
+          path: |
+            app/mobile/android/app/build/outputs/apk/release/app-release.apk
+            app/mobile/android/app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+          retention-days: 30
+
+  ios:
+    # An App Store build signed with the distribution certificate and profile, sent to TestFlight when asked and the
+    # App Store Connect key is set, else kept as an .ipa.
+    name: ios
+    needs: signing
+    if: needs.signing.outputs.ios == 'true'
+    runs-on: macos-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: app/mobile
+    env:
+      IOS_CERT_P12_BASE64: ${{ secrets.IOS_CERT_P12_BASE64 }}
+      IOS_CERT_PASSWORD: ${{ secrets.IOS_CERT_PASSWORD }}
+      IOS_PROFILE_BASE64: ${{ secrets.IOS_PROFILE_BASE64 }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/mobile/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - name: Update certificate
+        env:
+          UPDATES_CERT_PEM: ${{ vars.UPDATES_CERT_PEM }}
+        run: |
+          if [ -n "$UPDATES_CERT_PEM" ]; then
+            printf '%s\n' "$UPDATES_CERT_PEM" > "$RUNNER_TEMP/updates-cert.pem"
+            echo "FLEETD_UPDATES_CERT=$RUNNER_TEMP/updates-cert.pem" >> "$GITHUB_ENV"
+          fi
+      - run: npx expo prebuild --platform ios --clean
+      - name: Signing keychain
+        run: |
+          ../../.github/release/mobile-sign.sh ios-keychain
+          ../../.github/release/mobile-sign.sh ios-project
+      - name: Archive
+        run: |
+          set -o pipefail
+          xcodebuild -workspace ios/fleetd.xcworkspace -scheme fleetd -configuration Release \
+            -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/fleetd.xcarchive" archive | tail -n 200
+      - name: Export
+        env:
+          TESTFLIGHT: ${{ inputs.testflight }}
+          DESTINATION: ${{ inputs.testflight && needs.signing.outputs.testflight == 'true' && 'upload' || 'export' }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
+        run: |
+          if [ "$TESTFLIGHT" = true ] && [ "$DESTINATION" = export ]; then
+            echo "::warning::No App Store Connect key: the .ipa is kept as an artifact, not sent to TestFlight."
+          fi
+          ../../.github/release/mobile-sign.sh ios-export "$RUNNER_TEMP/fleetd.xcarchive" "$RUNNER_TEMP/ipa" "$DESTINATION"
+      - name: Remove the signing keychain
+        if: always()
+        run: ../../.github/release/mobile-sign.sh cleanup
+      - uses: actions/upload-artifact@v7
+        with:
+          name: fleetd-ios-release
+          path: ${{ runner.temp }}/ipa
+          if-no-files-found: ignore
+          retention-days: 30

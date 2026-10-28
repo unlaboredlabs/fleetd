@@ -4,8 +4,8 @@
 import { execFileSync } from "node:child_process";
 
 const TOKENS = String.raw`\bforge\b|\bwynn\b|/home/wynn\b`;
-// "forge" is also an English verb; a line that uses it that way may stay.
-const ALLOW = [/\bforge (?:a|an|the|its|their)\b/iu];
+// "forge" is also an English verb, and node-forge an npm package (in app/mobile's lockfile); lines that use it so may stay.
+const ALLOW = [/\bforge (?:a|an|the|its|their)\b/iu, /^app\/mobile\/package-lock\.json:\d+:.*\bnode-forge\b/u];
 const SELF = ".github/personal-check.mjs";
 
 let out = "";

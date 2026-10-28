@@ -1,0 +1,37 @@
+{
+  "name": "fleetd-mobile",
+  "version": "0.1.0",
+  "description": "fleetd phone app: chats and approvals",
+  "license": "MIT",
+  "private": true,
+  "main": "index.ts",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "expo start",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "typecheck": "tsc --noEmit -p .",
+    "test": "vitest run",
+    "native": "expo prebuild --clean --no-install"
+  },
+  "dependencies": {
+    "expo": "~58.0.21",
+    "expo-build-properties": "~58.0.11",
+    "expo-device": "~58.0.5",
+    "expo-secure-store": "~58.0.2",
+    "expo-status-bar": "~58.0.4",
+    "expo-system-ui": "~58.0.7",
+    "expo-updates": "~58.0.19",
+    "react": "19.3.0",
+    "react-native": "0.88.1",
+    "react-native-safe-area-context": "~5.10.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "@types/react": "~19.3.0",
+    "typescript": "~6.0.3",
+    "vitest": "5.0.5"
+  }
+}
