@@ -77,7 +77,8 @@
 <ol>
 <li>Takes the next ready PR. A PR is ready once its review passes (see <a href="#review">Review</a>).</li>
 <li>Has GitHub rebase it onto its base branch, as <strong>Update branch</strong> with rebase does.</li>
-<li>Waits for its <a href="#fast-set">fast set</a> of checks on that exact commit (see <a href="#ci-time">How long CI may take</a>).</li>
+<li>Waits for its <a href="#fast-set">fast set</a> of checks on that exact commit, and for each check a batch
+<a href="#scarce-runners">skips</a> there too (see <a href="#ci-time">How long CI may take</a>).</li>
 <li>Posts the <code dir="auto">fleetd/train</code> status and squash-merges it, pinned to that commit.</li>
 </ol>
 <p>A PR already on the current base whose own commit already passed its fast set, every check of it reported, merges

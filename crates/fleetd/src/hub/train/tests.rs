@@ -5893,6 +5893,122 @@ async fn a_pr_joins_a_batch_only_once_its_own_head_passed_the_checks_the_batch_s
     );
 }
 
+/// D204, W152: a PR the train merges alone waits for the checks a batch skips on its own head, as a PR joining a batch
+/// does. #780 merged with `ios sessions` still running on its head, and #788 with `desktop-macos` queued: alone, the
+/// train waited only for the fast set, which they aren't in. Running, queued or failed holds it; so does one its
+/// `macos scope` passed without saying "no work for" it, whether GitHub hasn't created its run yet or it read skipped.
+/// Passed, or skipped by a scope that said so, it merges.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_pr_merged_alone_waits_for_its_own_heads_checks_the_batch_skips() {
+    let queued = || {
+        let mut queued = run(3, "desktop-macos", None);
+        queued["status"] = json!("queued");
+        Some(queued)
+    };
+    let (running, failed, unreported) = (
+        "it did not finish",
+        "desktop-macos (failure)",
+        "the check desktop-macos never reported",
+    );
+    // Its run, the `macos scope` run (40 says "no work for desktop-macos"), and why it is held: None when it merges.
+    for (desktop, scope, held) in [
+        (Some(run(3, "desktop-macos", None)), 39, Some(running)),
+        (queued(), 39, Some(running)),
+        (
+            Some(run(3, "desktop-macos", Some("failure"))),
+            39,
+            Some(failed),
+        ),
+        (Some(run(3, "desktop-macos", Some("success"))), 39, None),
+        (Some(run(3, "desktop-macos", Some("skipped"))), 40, None),
+        (None, 39, Some(unreported)),
+        (
+            Some(run(3, "desktop-macos", Some("skipped"))),
+            39,
+            Some(unreported),
+        ),
+    ] {
+        let kit = kit_on(&RepoCi {
+            required: &["build"],
+            fast: &[],
+            runs: || vec![run(1, "build", Some("success"))],
+        });
+        kit.gh.workflow_files.lock().unwrap().push((
+            "ci.yml",
+            "name: CI\non:\n  pull_request:\njobs:\n  build:\n    runs-on: ubuntu-latest\n  macos-scope:\n    \
+             name: macos scope\n    runs-on: ubuntu-latest\n  desktop-macos:\n    needs: macos-scope\n    \
+             if: ${{ !cancelled() && !endsWith(github.head_ref, 'train/batch') }}\n    runs-on: macos-latest\n",
+        ));
+        kit.gh
+            .annotations
+            .lock()
+            .unwrap()
+            .insert("40".into(), vec!["no work for desktop-macos"]);
+        let change = kit
+            .enqueue(kit.open_pr(7, "a", &[add("a.txt", "x\n")]))
+            .await;
+        let mut runs = vec![
+            run(1, "build", Some("success")),
+            run(scope, "macos scope", Some("success")),
+        ];
+        runs.extend(desktop.clone());
+        kit.gh
+            .head_runs
+            .lock()
+            .unwrap()
+            .insert(kit.head_of("a"), json!(runs));
+
+        assert!(kit.train.step(REPO).await);
+        let after = kit.get(&change.change_id);
+        let Some(held) = held else {
+            assert_eq!(after.state, ChangeState::Merged, "{desktop:?} {scope}");
+            continue;
+        };
+        assert!(merged_prs(&kit).is_empty(), "{desktop:?} {scope}");
+        assert_eq!(after.state, ChangeState::CiFailed, "{desktop:?} {scope}");
+        let why = after.last_error.unwrap_or_default();
+        assert!(why.contains(held), "{desktop:?} {scope}: {why}");
+    }
+}
+
+/// D158, W152: Linux QA blocks merges. With its shards in the fast set, as fleetd's `.fleetd/train.json` lists them, a
+/// PR merged alone waits for each: #787 merged while `qa (ubuntu-latest, 4/4)` still ran on its head, then failed.
+/// Running or failed holds it; passed, it merges.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_pr_merged_alone_waits_for_its_linux_qa_shards() {
+    for (shard, merges) in [
+        (None, false),
+        (Some("failure"), false),
+        (Some("success"), true),
+    ] {
+        let kit = kit_on(&RepoCi {
+            required: &["build"],
+            fast: &["qa (ubuntu-latest, 1/4)", "qa (ubuntu-latest, 4/4)"],
+            runs: || vec![run(1, "build", Some("success"))],
+        });
+        let change = kit
+            .enqueue(kit.open_pr(7, "a", &[add("a.txt", "x\n")]))
+            .await;
+        kit.gh.head_runs.lock().unwrap().insert(
+            kit.head_of("a"),
+            json!([
+                run(1, "build", Some("success")),
+                run(2, "qa (ubuntu-latest, 1/4)", Some("success")),
+                run(3, "qa (ubuntu-latest, 4/4)", shard),
+            ]),
+        );
+
+        assert!(kit.train.step(REPO).await);
+        let after = kit.get(&change.change_id);
+        if merges {
+            assert_eq!(after.state, ChangeState::Merged, "{shard:?}");
+            continue;
+        }
+        assert!(merged_prs(&kit).is_empty(), "{shard:?}");
+        assert_eq!(after.state, ChangeState::CiFailed, "{shard:?}");
+    }
+}
+
 /// A cancelled check the batch skips, or a cancelled `macos scope`, on a ready PR's own head: nothing would run it
 /// again, so the PR would wait forever. The train re-runs that job once, never the rest of its workflow run, so a job
 /// that failed beside it stays failed, and says so on the PR's line; cancelled again, it says to push or re-run it, and

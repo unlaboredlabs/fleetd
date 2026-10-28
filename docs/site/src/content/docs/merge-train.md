@@ -10,7 +10,8 @@ How fleetd merges pull requests. Only fleetd merges: each writer's PR goes on it
 
 1. Takes the next ready PR. A PR is ready once its review passes (see [Review](#review)).
 2. Has GitHub rebase it onto its base branch, as **Update branch** with rebase does.
-3. Waits for its [fast set](#fast-set) of checks on that exact commit (see [How long CI may take](#ci-time)).
+3. Waits for its [fast set](#fast-set) of checks on that exact commit, and for each check a batch
+   [skips](#scarce-runners) there too (see [How long CI may take](#ci-time)).
 4. Posts the `fleetd/train` status and squash-merges it, pinned to that commit.
 
 A PR already on the current base whose own commit already passed its fast set, every check of it reported, merges
