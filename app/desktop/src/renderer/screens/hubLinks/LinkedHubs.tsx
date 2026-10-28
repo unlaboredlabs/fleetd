@@ -1,4 +1,4 @@
-// A Navi's Linked hubs (Settings › Projects, for a Navi): the other hubs it reaches through hub links, each with the
+// A Navi's Linked hubs (Settings › You › Hubs, under Hub links, one per Navi): the other hubs it reaches through hub links, each with the
 // person it acts as there, the projects it is limited to, and whether it works, can't reach that hub or was revoked
 // there; Remove; and Link a hub, which takes a link key made on the other hub (Links to this hub, in its Settings ›
 // Hubs). The key goes to main, which seals it to this hub's own key (main/secret.ts) and calls hub_link_add: it
@@ -15,11 +15,12 @@ import { labelProblem, linkState, reachLine, readPasted, urlProblem } from "./mo
 import s from "../settings/settings.module.css";
 import a from "../admin/admin.module.css";
 
-export function LinkedHubs({ navi }: { navi: ProjectRef }) {
+/** `label`: with several Navis, which one reaches them ("Hubs Ada reaches"). */
+export function LinkedHubs({ navi, label = "Linked hubs" }: { navi: ProjectRef; label?: string }) {
   return (
     <Setting
-      reveal="projects.links"
-      label="Linked hubs"
+      reveal="hubs.linked"
+      label={label}
       help="Other hubs this Navi reaches: it opens and follows work in their projects, as the person who made the link there. Remove a link here, or revoke it on the other hub."
     >
       <LinkedBody navi={navi} />

@@ -138,7 +138,7 @@ const screen = () => host.querySelector("[data-screen]")?.getAttribute("data-scr
 
 it("has You and Projects for a member, with the picked project's five pages, and no Hub group", async () => {
   await render("#/settings/general", false);
-  expect(rows()).toEqual(["Back", "General", "Your accounts", "Hubs", "docs", "Project", "Agents", "Instructions & memory", "Automations", "Prompts"]);
+  expect(rows()).toEqual(["Back", "General", "Your accounts", "Your memory", "Hubs", "docs", "Project", "Agents", "Instructions & memory", "Automations", "Prompts"]);
   expect(nav()?.querySelector("section[aria-label='Hub']")).toBeNull();
   expect([...(nav()?.querySelectorAll("section") ?? [])].map((x) => x.querySelector("span")?.textContent ?? "")).toEqual(expect.arrayContaining(["You", "Projects"]));
 
@@ -176,18 +176,18 @@ it("keeps the picked project across a project's pages, and an older link on the 
   expect(window.location.hash).toBe("#/settings/projects?for=devbox/storefront");
 });
 
-it("puts your Claude and GitHub on Your accounts, and the paired hubs on Hubs, from old Connections links too", async () => {
+it("puts your Claude, GitHub and Navi's Google on Your accounts, and the paired hubs and hub links on Hubs, from old Connections links too", async () => {
   const parts = () => [...host.querySelectorAll<HTMLElement>("[data-part]")].map((p) => p.dataset["part"]);
   for (const hash of ["#/settings/claude", "#/settings/connections", "#/settings/accounts"]) {
     await render(hash, false);
     expect(screen(), hash).toBe("settings.accounts");
-    expect(parts()).toEqual(["claude", "github"]);
+    expect(parts()).toEqual(["claude", "github", "accounts.google"]);
     act(() => root.unmount());
     root = createRoot(host);
   }
   await render("#/settings/hubs", false);
   expect(screen()).toBe("settings.hubs");
-  expect(parts()).toEqual(["hubs.add"]);
+  expect(parts()).toEqual(["hubs.add", "hubs.hub-links"]);
 });
 
 it("shows a project's prompts under its Prompts, with no picker of its own", async () => {

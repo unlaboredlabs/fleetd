@@ -108,8 +108,8 @@ describe("Settings → Projects → Instructions & memory", () => {
     expect(restoreLine("- One.\n", { at: 5, raw: "- Six." })).toBe("- One.\n- Six.\n");
   });
 
-  it("is on a project's Instructions & memory, which search finds by what people call it", () => {
+  it("is yours on You › Your memory and a project's on its Instructions & memory, which search finds by what people call it", () => {
     expect(parseRoute("#/settings/memory?for=devbox/fleetd")).toMatchObject({ tab: "instructions", for: "devbox/fleetd" });
-    expect(searchSettings("remember").map((o) => o.label)).toEqual(["Memory"]);
+    expect(searchSettings("remember").map((o) => o.label)).toEqual(["Your memory", "Project memory"]);
   });
 });

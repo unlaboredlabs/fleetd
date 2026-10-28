@@ -1,7 +1,8 @@
-// Settings → Projects › Project (#/settings/projects?for=<machine>/<project>, the project picked in the sidebar): its
-// name, its repos (RepoSetting.tsx), its worktrees, its memory refresh, its agents' environment variables, a Navi's
-// integrations and linked hubs (hubLinks/LinkedHubs.tsx), its setup commands (SetupSetting.tsx), the merge train's
-// checks (TrainSetting.tsx), and deleting it. Reads project_settings_get; writes project_settings_set, project_env_set
+// Settings › Projects › Project (#/settings/projects?for=<machine>/<project>, the project picked in the sidebar): its
+// name, its repos with their default setup (RepoSetting.tsx, SetupSetting.tsx), its worktrees, its agents' environment
+// variables, a Navi's integrations (Notion and other servers; its Google is in You › Your accounts, its linked hubs in
+// You › Hubs), the merge train's checks (TrainSetting.tsx), and deleting it. Its memory refresh is on its Instructions
+// & memory. Reads project_settings_get; writes project_settings_set, project_env_set
 // (through main, which seals each secret to the project machine's key) and project_remove. A secret's value is
 // write-only: typed here once, sealed in main, and only its fingerprint ever comes back.
 import { useEffect, useState } from "react";
@@ -17,7 +18,6 @@ import { parseScope, projectRefOf, scopeKey, type Scope } from "./editor";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import { IntegrationsSection } from "./Integrations";
 import { isNavi } from "./integrationsModel";
-import { LinkedHubs } from "../hubLinks/LinkedHubs";
 import { NoProject, PageHead, Setting } from "./parts";
 import {
   countAfter,
@@ -35,7 +35,6 @@ import {
 import { RepoSetting } from "./RepoSetting";
 import { isOwn } from "./repoModel";
 import { replaceRoute, type SettingsRoute } from "./route";
-import { SetupSetting } from "./SetupSetting";
 import { TrainSetting } from "./TrainSetting";
 import s from "./settings.module.css";
 
@@ -136,8 +135,6 @@ function ProjectPage({ settings, refresh, onDeleted }: { settings: Settings; ref
       <Separator />
       <WorktreeSetting settings={settings} />
       <Separator />
-      <MemoryRefreshSetting settings={settings} />
-      <Separator />
       <EnvSetting env={settings.env} projectRef={ref} />
       <Separator />
       {navi ? (
@@ -146,14 +143,6 @@ function ProjectPage({ settings, refresh, onDeleted }: { settings: Settings; ref
           <Separator />
         </>
       ) : null}
-      {navi ? (
-        <>
-          <LinkedHubs navi={ref} />
-          <Separator />
-        </>
-      ) : null}
-      <SetupSetting settings={settings} />
-      <Separator />
       <TrainSetting settings={settings} />
       <Separator />
       <Setting reveal="projects.delete" label="Delete project" help="Stops its agents and removes it from fleetd, with its fleetd worktrees.">
@@ -289,10 +278,11 @@ function WorktreeSetting({ settings }: { settings: Settings }) {
   );
 }
 
-function MemoryRefreshSetting({ settings }: { settings: Settings }) {
+/** The nightly memory refresh's switch: on the project's Instructions & memory, beside the memory it tidies. */
+export function MemoryRefreshSetting({ settings }: { settings: Settings }) {
   const { busy, echo, save } = useSave();
   return (
-    <Setting reveal="projects.memory" label="Memory" help="What the lead remembers about this project, in its Instructions & memory.">
+    <Setting reveal="projects.memory" label="Refresh every night" help="The lead tidies this project's memory overnight.">
       <Switch
         label="Refresh memory every night"
         description="Around 4:00, on a day with chat or orders, the lead tidies the project's memory: it adds what it missed, merges overlaps and removes what no longer holds. One line in the chat lists the changes, each with Undo."

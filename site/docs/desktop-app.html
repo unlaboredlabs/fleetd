@@ -293,15 +293,19 @@ changes a teammate’s work outside your project is in Hub.</p>
 </tr>
 <tr>
 <td>You › Your accounts</td>
-<td><strong>Claude</strong>: which Claude account the orders you start and your Navi run on, your own subscription (paste the token <code dir="auto">claude setup-token</code> prints, then Connect and test) or the hub’s API key when the hub’s admins allow it (see <a href="/docs/people#claude">Claude accounts</a>). <strong>GitHub</strong>: the GitHub account your PRs open as.</td>
+<td><strong>Claude</strong>: which Claude account the orders you start and your Navi run on, your own subscription (paste the token <code dir="auto">claude setup-token</code> prints, then Connect and test) or the hub’s API key when the hub’s admins allow it (see <a href="/docs/people#claude">Claude accounts</a>). <strong>GitHub</strong>: the GitHub account your PRs open as. <strong>Google</strong>: the Google account your Navi reads Gmail, Calendar and Drive with, a row per Navi (see <a href="/docs/google">Google for Navi</a>).</td>
+</tr>
+<tr>
+<td>You › Your memory</td>
+<td>How you work, as the leads remember it: read by the agents of work you start and by your Navi, and edited only by you. See <a href="/docs/what-agents-are-told#memory">Memory</a>.</td>
 </tr>
 <tr>
 <td>You › Hubs</td>
-<td>Each hub this app is paired with, with its address, its connection, its name and colour, Pair again and Remove, and the <a href="/docs/navi#hub-links">links to it</a> made as you; Add a hub pairs one more (see <a href="/docs/several-hubs">Several hubs</a>).</td>
+<td>Each hub this app is paired with, with its address, its connection, its name and colour, Pair again and Remove; Add a hub pairs one more (see <a href="/docs/several-hubs">Several hubs</a>). Then <strong>Hub links</strong>, both halves in one place: the link keys made as you on each hub, and the other hubs your Navi reaches (see <a href="/docs/navi#hub-links">Hub links</a>).</td>
 </tr>
 <tr>
 <td>Projects</td>
-<td>One project, picked at the top of the group. <strong>Project</strong>: its name, repos, worktrees, memory refresh, its agents’ environment variables (plain and secret), its setup commands, the merge train’s checks, and deleting it; for a Navi, its integrations and linked hubs (see <a href="/docs/projects#settings">Project settings</a>). <strong>Agents</strong>: its <a href="/docs/projects#max-agents">max agents</a> (the slider applies when you let go, with Undo, and “Use the default” goes back), the <a href="/docs/projects#models">task profiles</a> its lead may use (the default is always checked), its own MCP servers and its <a href="/docs/skills">skills</a>. <strong>Instructions &amp; memory</strong>: its own instructions, added to its agents’ first message after the hub-wide ones, then what its leads remember: yours (“You”, every project’s), then the project’s. <strong>Automations</strong>: its <a href="/docs/automations">automations</a>. <strong>Prompts</strong>: the prompts fleetd sends its agents, listed under Prompts in the sidebar, to read and edit for this project, and any of its edits that no longer apply. A prompt with one text for the whole hub shows read only. See <a href="/docs/what-agents-are-told">What agents are told</a>.</td>
+<td>One project, picked at the top of the group. <strong>Project</strong>: its name, its repos with the default setup for those without their own, worktrees, its agents’ environment variables (plain and secret), the merge train’s checks, and deleting it; for a Navi, its integrations (see <a href="/docs/projects#settings">Project settings</a>). <strong>Agents</strong>: its <a href="/docs/projects#max-agents">max agents</a> (the slider applies when you let go, with Undo, and “Use the default” goes back), the <a href="/docs/projects#models">task profiles</a> its lead may use (the default is always checked), its own MCP servers and its <a href="/docs/skills">skills</a>. <strong>Instructions &amp; memory</strong>: its own instructions, added to its agents’ first message after the hub-wide ones, then what its leads remember about the project, and <strong>Refresh memory every night</strong>. <strong>Automations</strong>: its <a href="/docs/automations">automations</a>. <strong>Prompts</strong>: the prompts fleetd sends its agents, listed under Prompts in the sidebar, to read and edit for this project, and any of its edits that no longer apply. A prompt with one text for the whole hub shows read only. See <a href="/docs/what-agents-are-told">What agents are told</a>.</td>
 </tr>
 </tbody>
 </table>
@@ -320,7 +324,7 @@ hubs</a>, the group manages one at a time.</p>
 <tbody>
 <tr>
 <td>People</td>
-<td>Everyone on the hub, with their role and devices. Change a role in place, or remove someone: their devices are signed out at once, and what they did keeps their name. An admin can’t change or remove an owner, and nobody changes their own role here. Below, Invite someone: a name and a role (member or admin) make an invite link, shown once with Copy; their fleetd app opens it and joins as them, once, within 7 days. Then the invites still waiting, each with Revoke, and every hub link minted on the hub.</td>
+<td>Everyone on the hub, with their role, devices, and the Claude and GitHub their work runs on, with any usage pause. Change a role in place, or remove someone: their devices are signed out at once, and what they did keeps their name. An admin can’t change or remove an owner, and nobody changes their own role here. Below, Invite someone: a name and a role (member or admin) make an invite link, shown once with Copy; their fleetd app opens it and joins as them, once, within 7 days. Then the invites still waiting, each with Revoke, and every hub link minted on the hub.</td>
 </tr>
 <tr>
 <td>Machines</td>
@@ -336,7 +340,7 @@ hubs</a>, the group manages one at a time.</p>
 </tr>
 <tr>
 <td>Every project › Instructions &amp; memory</td>
-<td>The instructions for every project, and the <a href="/docs/what-agents-are-told#memory">memory caps</a>.</td>
+<td>The instructions for every project, the <a href="/docs/what-agents-are-told#memory">memory caps</a>, and <strong>Shared memory</strong>: the one memory every lead read before each person had their own, read by no agent now, to read and retire.</td>
 </tr>
 <tr>
 <td>Every project › Prompts</td>
@@ -344,7 +348,7 @@ hubs</a>, the group manages one at a time.</p>
 </tr>
 <tr>
 <td>Hub accounts</td>
-<td>What the hub itself connects to. <strong>Claude</strong>: the hub’s API key and optional endpoint, sealed to every machine, with Test; the switch “Members may use the hub’s API key”; what projects’ leads and unrequested work run on, with the hub owner’s subscription they fall back to; and each person’s account, with any usage pause (see <a href="/docs/people#claude">Claude accounts</a>). <strong>GitHub</strong>: the hub’s own <a href="/docs/github">GitHub App</a>. <strong>Google</strong>: the OAuth client for <a href="/docs/google#client">Google for Navi</a>, with the steps in Google Cloud Console, the Client ID and secret (sealed) and Test, then, optionally, <a href="/docs/google#pubsub">real-time mail</a>. <strong>Run guided setup again</strong> opens Setup.</td>
+<td>What the hub itself connects to. <strong>Claude</strong>: the hub’s API key and optional endpoint, sealed to every machine, with Test; the switch “Members may use the hub’s API key”; what projects’ leads and unrequested work run on, with the hub owner’s subscription they fall back to (see <a href="/docs/people#claude">Claude accounts</a>). <strong>GitHub</strong>: the hub’s own <a href="/docs/github">GitHub App</a>. <strong>Google</strong>: the OAuth client for <a href="/docs/google#client">Google for Navi</a>, with the steps in Google Cloud Console, the Client ID and secret (sealed) and Test, then, optionally, <a href="/docs/google#pubsub">real-time mail</a>. <strong>Run guided setup again</strong> opens Setup.</td>
 </tr>
 <tr>
 <td>Setup</td>

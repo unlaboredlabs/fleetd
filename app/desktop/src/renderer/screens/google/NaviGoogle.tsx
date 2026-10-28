@@ -1,5 +1,5 @@
-// A Navi's Google, the first row of its Integrations: Connect, Reconnect and Disconnect, the account and what it
-// granted. Connect hands over to main (window.fleetd.google.connect), which opens Google's consent page in the
+// Your Navi's Google, on You › Your accounts (YourGoogle, a row per Navi): Connect, Reconnect and Disconnect, the
+// account and what it granted. Connect hands over to main (window.fleetd.google.connect), which opens Google's consent page in the
 // browser and calls google_connect with the code it catches, so the page never holds a code or a token. Disconnect is
 // google_disconnect, which revokes at Google unless another Navi uses the account. Without the hub's OAuth client, an
 // admin is sent to Settings › Hub accounts › Google and anyone else told to ask one. Once connected, the person picks when new
@@ -8,12 +8,14 @@ import { useState, type ReactNode } from "react";
 import type { GoogleConnectOutput, GoogleDisconnectOutput, GoogleGetOutput, MailWake, MailWakeRule } from "../../../shared/contracts";
 import { lacksTool } from "../../src/data/errors";
 import { CallError } from "../../src/data/queries";
-import { useDataLayer, useToolQuery } from "../../src/data/react";
+import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import { Button, Dialog, Field, Input, Segmented, Text, Truncate } from "../../ui";
 import { useAdministers } from "../admin/role";
 import { toHash } from "../shell/routes";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
 import { revealNext } from "../settings/search";
+import { PagePart, useProjects } from "../settings/parts";
+import { isArchived, isNavi } from "../navi/model";
 import { dayWords, googleView, lapsedLine, listWords, mailModeLine, queryProblem, scopeFor, scopeName, type GoogleView } from "./model";
 import s from "./google.module.css";
 import settings from "../settings/settings.module.css";
@@ -28,6 +30,42 @@ const toAdmin = () => {
 /** The scopes granted, as Data access names them, past the account's own (openid, email). */
 const grantedNames = (granted: ReadonlyArray<string>): string[] =>
   granted.map(scopeName).filter((n) => n !== "openid" && n !== "email" && n !== "userinfo.email");
+
+/**
+ * You › Your accounts › Google: the Google account your Navi reads, and writes as when you say so. Each Navi on the hub
+ * connects its own; with none yet there is nothing to connect.
+ */
+export function YourGoogle() {
+  const projects = useProjects();
+  const navis = (projects ?? []).filter((p) => isNavi(p) && !isArchived(p));
+  return (
+    <PagePart title="Google" reveal="accounts.google" intro="The Google account your Navi reads Gmail, Calendar and Drive with. Anything it would send or change asks you first.">
+      {projects === undefined ? (
+        <Text tone="quiet">Loading…</Text>
+      ) : navis.length === 0 ? (
+        <Text tone="quiet">You have no Navi yet. Once you meet one, its Google connects here.</Text>
+      ) : (
+        navis.map((n) => (
+          <div key={`${n.machineId}/${n.projectId}`} className={settings.stack}>
+            {navis.length > 1 ? (
+              <Text size="sm" strong>
+                {n.title}
+              </Text>
+            ) : null}
+            <div role="list" aria-label={`${n.title}'s Google`} className={settings.integrations}>
+              <NaviGoogleRow projectRef={{ machineId: n.machineId, projectId: n.projectId }} />
+            </div>
+          </div>
+        ))
+      )}
+    </PagePart>
+  );
+}
+
+function NaviGoogleRow({ projectRef }: { projectRef: Ref }) {
+  const machine = useData((d) => d.machines[projectRef.machineId]?.name) ?? projectRef.machineId;
+  return <GoogleRow projectRef={projectRef} machine={machine} />;
+}
 
 export function GoogleRow({ projectRef, machine }: { projectRef: Ref; machine: string }) {
   const live = useLive();

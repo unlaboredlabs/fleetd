@@ -8,8 +8,8 @@ import type { GoogleClientRequest, GoogleConnectRequest, GooglePubsubRequest } f
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { UiProvider } from "../../ui";
-import { IntegrationsSection } from "../settings/Integrations";
 import { AdminGoogle } from "./AdminGoogle";
+import { YourGoogle } from "./NaviGoogle";
 import { SCOPES } from "./model";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -24,7 +24,9 @@ const CLIENT_ID = "418559210337-q8fj2v0c.apps.googleusercontent.com";
 const ref = { machineId: "devbox", projectId: "ada" };
 
 const machine = (machineId: string) => ({ machineId, name: machineId, nodeVersion: "1", status: "online" as const, lastSeenAt: AT, tags: [], boxPubKey: BOX });
-const snapshot: HubFrame = { t: "snapshot", snapshot: { cursor: 1, attention: [], machines: [machine("devbox"), machine("buildbox")], projects: [] } };
+// Ada, a Navi on devbox: its Google is on You › Your accounts.
+const ada = { ...ref, title: "Ada", kind: "assistant" as const, workspaceRoot: "/home/sam/navi/ada", threads: { running: 0, waiting: 0, idle: 0, failed: 0 }, lastActivityAt: AT };
+const snapshot: HubFrame = { t: "snapshot", snapshot: { cursor: 1, attention: [], machines: [machine("devbox"), machine("buildbox")], projects: [ada] } };
 
 const held = (...machines: string[]): GoogleClient => ({ clientId: CLIENT_ID, sealedOn: machines.map((machineId) => ({ machineId, fingerprint: "9c41e0b2" })), updatedAt: AT });
 const account = (patch: Partial<GoogleAccount> = {}): GoogleAccount => ({ projectRef: ref, email: "sam@example.com", scopes: [...SCOPES], connectedAt: AT, ...patch });
@@ -273,7 +275,7 @@ describe("Hub accounts › Google", () => {
 
 describe("a Navi's Google", () => {
   it("without a client, tells a member to ask an admin", async () => {
-    await render(<IntegrationsSection projectRef={ref} />);
+    await render(<YourGoogle />);
     expect(google().textContent).toContain("Ask an admin to set up Google");
     expect(hasButton("Set up Google", google())).toBe(false);
     expect(hasButton("Connect", google())).toBe(false);
@@ -281,14 +283,14 @@ describe("a Navi's Google", () => {
 
   it("without a client, sends an admin to Hub accounts", async () => {
     admin = true;
-    await render(<IntegrationsSection projectRef={ref} />);
+    await render(<YourGoogle />);
     await click(button("Set up Google", google()));
     expect(window.location.hash).toBe("#/settings/hub/accounts");
   });
 
   it("says when the Navi's machine doesn't hold the client, and how to fix it", async () => {
     client = held("buildbox");
-    await render(<IntegrationsSection projectRef={ref} />);
+    await render(<YourGoogle />);
     expect(google().textContent).toContain("devbox doesn't hold the hub's Google client");
     expect(google().textContent).toContain("Ask an admin to save it again while it is online.");
     expect(hasButton("Connect", google())).toBe(false);
@@ -296,7 +298,7 @@ describe("a Navi's Google", () => {
 
   it("connects through main: what Google will ask first, then the account and its scopes", async () => {
     client = held("devbox");
-    await render(<IntegrationsSection projectRef={ref} />);
+    await render(<YourGoogle />);
     await click(button("Connect", google()));
     expect(dialog().textContent).toContain("Drafts, sends and replies. It can't delete mail or change labels.");
     expect(dialog().textContent).toContain("Seeing a warning or an error on Google’s page?");
@@ -315,7 +317,7 @@ describe("a Navi's Google", () => {
   it("shows why a connect failed, with its fix, and lets the person try again; Cancel stops main waiting", async () => {
     client = held("devbox");
     connectAnswer = { ok: false, error: { code: "refused", message: "Google didn't connect: the consent page was cancelled.", fix: "Connect again and press Continue." } };
-    await render(<IntegrationsSection projectRef={ref} />);
+    await render(<YourGoogle />);
     await click(button("Connect", google()));
     await click(button("Continue in browser", dialog()));
     expect(dialog().querySelector('[role="alert"]')?.textContent).toBe("Google didn't connect: the consent page was cancelled. Connect again and press Continue.");
@@ -340,7 +342,7 @@ describe("a Navi's Google", () => {
   it("names a scope unticked at Google, and offers Reconnect", async () => {
     client = held("devbox");
     linked = account({ scopes: SCOPES.filter((x) => !x.endsWith("/drive")) });
-    await render(<IntegrationsSection projectRef={ref} />);
+    await render(<YourGoogle />);
     expect(google().textContent).toContain("Without Drive: unticked on Google's page.");
     await click(button("Reconnect", google()));
     expect(dialog().textContent).toContain("Reconnect Google");
@@ -349,7 +351,7 @@ describe("a Navi's Google", () => {
   it("a lapsed connection says why, and Reconnect leads", async () => {
     client = held("devbox");
     linked = account({ lapsed: "Google answered invalid_grant: the access was revoked" });
-    await render(<IntegrationsSection projectRef={ref} />);
+    await render(<YourGoogle />);
     const text = google().textContent;
     expect(text).toContain("Needs reconnecting");
     expect(text).toContain("Google stopped taking this connection: Google answered invalid_grant: the access was revoked.");
@@ -359,7 +361,7 @@ describe("a Navi's Google", () => {
   it("disconnects with google_disconnect, saying what it revokes, and shows the hub's word after", async () => {
     client = held("devbox");
     linked = account();
-    await render(<IntegrationsSection projectRef={ref} />);
+    await render(<YourGoogle />);
     await click(button("Disconnect", google()));
     expect(dialog().textContent).toContain("revokes its access at Google, unless another Navi uses sam@example.com");
     await click(button("Disconnect", dialog()));
@@ -370,12 +372,12 @@ describe("a Navi's Google", () => {
 
   it("shows the hub's error with its fix, and nothing on a hub too old for Google", async () => {
     getError = { ok: false, error: { code: "forbidden", message: "Not allowed.", fix: "Ask for operate on devbox." } };
-    await render(<IntegrationsSection projectRef={ref} />);
+    await render(<YourGoogle />);
     expect(google().querySelector('[role="alert"]')?.textContent).toBe("Not allowed. Ask for operate on devbox.");
     act(() => root.unmount());
     root = createRoot(host);
     getError = { ok: false, error: { code: "not_found", message: "No tool google_get." } };
-    await render(<IntegrationsSection projectRef={ref} />);
+    await render(<YourGoogle />);
     expect(document.querySelector('[role="listitem"][aria-label="Google"]')).toBeNull();
   });
 });
@@ -435,7 +437,7 @@ describe("real-time mail", () => {
     client = held("devbox");
     linked = account();
     mailMode = "push";
-    await render(<IntegrationsSection projectRef={ref} />);
+    await render(<YourGoogle />);
     const wake = google().querySelector<HTMLElement>('[role="group"][aria-label="New mail"]');
     if (wake === null) throw new Error("no mail wake");
     expect(button("Off", wake).getAttribute("aria-pressed")).toBe("true");
@@ -455,7 +457,7 @@ describe("real-time mail", () => {
   it("on a Navi: polling without real-time mail says so", async () => {
     client = held("devbox");
     linked = account({ mail: { rule: "query", query: "is:important" } });
-    await render(<IntegrationsSection projectRef={ref} />);
+    await render(<YourGoogle />);
     const wake = google().querySelector<HTMLElement>('[role="group"][aria-label="New mail"]');
     expect((wake?.querySelector('[aria-label="Gmail search"]') as HTMLInputElement | null)?.value).toBe("is:important");
     expect(wake?.textContent).toContain("By checking about every minute: real-time mail isn't set up on this hub.");

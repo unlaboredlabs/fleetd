@@ -2155,6 +2155,8 @@ export type GithubAppGetOutput = {
    */
   me?: GithubAccount;
   next?: string;
+  /** Everyone's connection, for an owner's or admin's device; empty otherwise. */
+  people?: PersonGithub[];
   /** What it asks for on each repository, as the manifest has it: `[name, read|write]`. */
   permissions: [string, string][];
   truncated?: boolean;
@@ -4368,6 +4370,12 @@ export type PersonClaude = {
   /** What the orders they start, and their Navi, run on now. */
   runsOn: ClaudeRunsOn;
   subscription?: ClaudeSubscription;
+};
+
+/** One person's GitHub, as an owner or admin sees it on People: absent `account` until they connect. */
+export type PersonGithub = {
+  account?: GithubAccount;
+  person: PersonRef;
 };
 
 export type PersonId = string;

@@ -6,12 +6,14 @@
 // shell shows SettingsSidebar in the sidebar's place while Settings is open.
 import { Automations } from "../automations";
 import { HubPage } from "../admin/HubPages";
+import { YourGoogle } from "../google/NaviGoogle";
 import { AgentsSettings } from "./Agents";
 import { ClaudeSettings } from "./Claude";
 import { General } from "./General";
 import { GithubSettings } from "./Github";
-import { HubsSettings } from "./Hubs";
+import { HubLinksSettings, HubsSettings } from "./Hubs";
 import { Instructions } from "./Instructions";
+import { YourMemory } from "./Memory";
 import { PageHead, useProjects } from "./parts";
 import { ProjectSettings } from "./Projects";
 import { Prompts } from "./Prompts";
@@ -36,6 +38,8 @@ export function SettingsScreen() {
         <General />
       ) : tab === "accounts" ? (
         <YourAccounts />
+      ) : tab === "your-memory" ? (
+        <YourMemoryPage />
       ) : tab === "hubs" ? (
         <Hubs />
       ) : tab === "projects" ? (
@@ -53,7 +57,7 @@ export function SettingsScreen() {
   );
 }
 
-/** The accounts your own work runs on: your Claude account and your GitHub. Nobody else's work uses them. */
+/** The accounts your own work runs on: your Claude account, your GitHub, and your Navi's Google. Nobody else's work uses them. */
 function YourAccounts() {
   return (
     <div className={s.scroll} data-screen="settings.accounts">
@@ -61,6 +65,19 @@ function YourAccounts() {
         <PageHead title="Your accounts">The accounts the work you start runs on. Nobody else&apos;s work ever uses them.</PageHead>
         <ClaudeSettings />
         <GithubSettings />
+        <YourGoogle />
+      </div>
+    </div>
+  );
+}
+
+/** What the leads remember about you: yours alone (D212). */
+function YourMemoryPage() {
+  return (
+    <div className={s.scroll} data-screen="settings.your-memory">
+      <div className={s.column}>
+        <PageHead title="Your memory">How you work, as the leads remember it when you correct them or set a rule. Edit or delete anything that is wrong.</PageHead>
+        <YourMemory />
       </div>
     </div>
   );
@@ -73,6 +90,7 @@ function Hubs() {
       <div className={s.column}>
         <PageHead title="Hubs">The hubs this app is paired with, and the links that let a Navi on another hub act as you.</PageHead>
         <HubsSettings />
+        <HubLinksSettings />
       </div>
     </div>
   );

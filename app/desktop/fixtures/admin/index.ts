@@ -160,6 +160,27 @@ export function answerHub(f: Fixture, me: JsonObject = sam, admin = true, member
   f.answer("hub_link_revoke", undefined, { link: link("hl_samhomea", "home", sam, "Sam's MacBook", { revokedAt: f.now }) });
   // Every project › Profiles: the hub's task profiles.
   f.answer("profiles_list", {}, profilesList());
+  // The hub's GitHub App, and everyone's connection through it, for People's rows: Sam's and Alice's connected,
+  // Bob's not yet. A member is answered with their own only.
+  const login = (l: string): JsonObject => ({ login: l, userId: l.length, connectedAt: "2026-10-18T09:20:00.000Z" });
+  f.answer("github_app_get", undefined, {
+    app: { appId: 1048576, slug: "fleetd-on-devbox", name: "fleetd on devbox", clientId: "Iv23liQ4fXk8w2ZsT0aB", owner: "acme", htmlUrl: "https://github.com/apps/fleetd-on-devbox", settingsUrl: "https://github.com/organizations/acme/settings/apps/fleetd-on-devbox", createdAt: "2026-10-18T09:00:00.000Z" },
+    permissions: [],
+    authorizeUrl: "https://github.com/login/oauth/authorize",
+    ...(me === sam ? { me: login("sam-rivera") } : {}),
+    people: admin
+      ? [
+          { person: ref(sam), account: login("sam-rivera") },
+          { person: ref(alice), account: login("alice-chen") },
+          { person: ref(bob) },
+        ]
+      : [],
+  });
+  // The hub's old shared memory (D212): no agent reads it; an admin reads it and retires it.
+  const shared = "# How the team works\n- Concise. State first.\n- Use pnpm, not npm.\n- Never estimate time.\n";
+  const sharedFile = (text: string): JsonObject => ({ scope: "user", text, chars: text.length, cap: 16000, notes: [] });
+  f.answer("memory_shared_get", undefined, { file: sharedFile(shared) });
+  f.answer("memory_shared_set", { text: "" }, { file: sharedFile("") });
   // Every project's global MCP servers: GitHub's, its token sealed on every machine.
   f.answer("mcp_servers_get", undefined, {
     global: [

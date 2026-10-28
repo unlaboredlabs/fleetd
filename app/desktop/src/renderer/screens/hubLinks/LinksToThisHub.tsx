@@ -1,4 +1,4 @@
-// Links to this hub (Settings › Hubs, under each hub): a person makes a link key that lets their Navi on another hub open and
+// Links to this hub (Settings › You › Hubs, under Hub links, one per paired hub): a person makes a link key that lets their Navi on another hub open and
 // follow work here, as them, optionally limited to chosen projects (hub_link_mint). The key is shown once, with this
 // hub's address another hub reaches (hub_info's url; typed here when the hub has none), to paste into that Navi's Linked
 // hubs. Below, the links made as them, each with Revoke. Even for an admin this lists only their own, and nothing until
@@ -21,11 +21,12 @@ import a from "../admin/admin.module.css";
 
 const noInput = {};
 
-export function LinksToThisHub() {
+/** `label`: with several hubs, which hub the links are to ("Links to Acme"). */
+export function LinksToThisHub({ label = "Links to this hub" }: { label?: string } = {}) {
   return (
     <Setting
       reveal="hubs.links"
-      label="Links to this hub"
+      label={label}
       help="A link key lets your Navi on another hub open and follow work here, as you. Paste it into that Navi’s Linked hubs; revoke it here at any time."
     >
       <LinksBody />

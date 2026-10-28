@@ -21,7 +21,7 @@ import { STEER_WORDS } from "../fixtures/agents/steers.ts";
 import { SESSION } from "../fixtures/sessions/ids.ts";
 import { CHAT_SENDS } from "../fixtures/composer/sends.ts";
 import { OFFLINE_SENDS } from "../fixtures/offline/sends.ts";
-import { ADA, ADA_ROUTE, TAXES_ROUTE } from "../fixtures/navi/ids.ts";
+import { ADA_ROUTE, TAXES_ROUTE } from "../fixtures/navi/ids.ts";
 
 /**
  * What the system answers when the app posts a notification: shown, or not supported. Nothing reaches the screen of
@@ -249,7 +249,7 @@ export const fixtures = [
   // Hub links (fixtures/navi): Ada's Linked hubs and Sam's links to this hub; and neither yet.
   "navi-links",
   "navi-links-none",
-  // Google on Ada's Integrations (fixtures/navi), a state each; Hub accounts › Google (fixtures/admin).
+  // Ada's Google on You › Your accounts (fixtures/navi), a state each; Hub accounts › Google (fixtures/admin).
   "navi-google-none",
   "navi-google-setup",
   "navi-google-ready",
@@ -2197,18 +2197,18 @@ export const screens: readonly Screen[] = [
       await page.getByRole("button", { name: "Undo" }).waitFor();
     },
   },
-  // Hub links (hubLinks/): a Navi's Linked hubs, working, can't reach and revoked there, and none yet; a person's
-  // Links to this hub, and a key just made, shown once. Hub › People's list of everyone's is on settings.hub.people.
+  // Hub links (hubLinks/, on You › Hubs): a Navi's Linked hubs, working, can't reach and revoked there, and none yet;
+  // a person's Links to this hub, and a key just made, shown once. Hub › People's list of everyone's is on settings.hub.people.
   {
-    id: "settings.projects",
-    route: `#/settings/projects?for=${ADA.machineId}/${ADA.projectId}`,
+    id: "settings.hubs",
+    route: "#/settings/hubs",
     fixtures: ["navi-links", "navi-links-none"],
     variant: "linked-hubs",
     open: (page) => page.getByRole("region", { name: "Linked hubs" }).scrollIntoViewIfNeeded(),
   },
   {
-    id: "settings.projects",
-    route: `#/settings/projects?for=${ADA.machineId}/${ADA.projectId}`,
+    id: "settings.hubs",
+    route: "#/settings/hubs",
     fixtures: ["navi-links-none"],
     variant: "link-a-hub",
     open: async (page) => {
@@ -2217,11 +2217,11 @@ export const screens: readonly Screen[] = [
       await region.getByRole("form", { name: "Link a hub" }).scrollIntoViewIfNeeded();
     },
   },
-  // Google on a Navi's Integrations (google/NaviGoogle.tsx): no client (a member, an admin), ready, connected, lapsed
+  // A Navi's Google on You › Your accounts (google/NaviGoogle.tsx): no client (a member, an admin), ready, connected, lapsed
   // and the Navi's machine not holding the client; then the connect dialog with its help open, and Disconnect's.
   {
-    id: "settings.projects",
-    route: `#/settings/projects?for=${ADA.machineId}/${ADA.projectId}`,
+    id: "settings.accounts",
+    route: "#/settings/accounts",
     fixtures: [
       "navi-google-none",
       "navi-google-setup",
@@ -2236,8 +2236,8 @@ export const screens: readonly Screen[] = [
     open: (page) => page.getByRole("listitem", { name: "Google" }).scrollIntoViewIfNeeded(),
   },
   {
-    id: "settings.projects",
-    route: `#/settings/projects?for=${ADA.machineId}/${ADA.projectId}`,
+    id: "settings.accounts",
+    route: "#/settings/accounts",
     fixtures: ["navi-google-ready"],
     variant: "google-connect",
     open: async (page) => {
@@ -2246,8 +2246,8 @@ export const screens: readonly Screen[] = [
     },
   },
   {
-    id: "settings.projects",
-    route: `#/settings/projects?for=${ADA.machineId}/${ADA.projectId}`,
+    id: "settings.accounts",
+    route: "#/settings/accounts",
     fixtures: ["navi-google-connected"],
     variant: "google-disconnect",
     open: (page) => page.getByRole("listitem", { name: "Google" }).getByRole("button", { name: "Disconnect", exact: true }).click(),
@@ -2287,7 +2287,8 @@ export const screens: readonly Screen[] = [
     variant: "search-none",
     open: (page) => page.getByRole("searchbox", { name: "Search settings" }).fill("zebra"),
   },
-  // Memory: user.md with what the lead remembered, then one project's MEMORY.md and a topic.
+  // Memory: yours (You › Your memory) with what the lead remembered, then one project's MEMORY.md and a topic.
+  { id: "settings.your-memory", route: "#/settings/your-memory", fixtures: ["typical", "empty", "hub-unreachable"] },
   { id: "settings.instructions", route: "#/settings/instructions", fixtures: ["typical", "empty", "hub-unreachable"], variant: "memory" },
   { id: "settings.instructions", route: "#/settings/instructions?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22", fixtures: ["typical", "long-text"], variant: "memory-project" },
   // An entry being edited in its card, and a topic open as text.
@@ -2305,8 +2306,8 @@ export const screens: readonly Screen[] = [
   },
   // A deleted entry, gone from its file, with Undo in the toast.
   {
-    id: "settings.instructions",
-    route: "#/settings/instructions",
+    id: "settings.your-memory",
+    route: "#/settings/your-memory",
     fixtures: ["typical"],
     variant: "memory-deleted",
     open: async (page) => {

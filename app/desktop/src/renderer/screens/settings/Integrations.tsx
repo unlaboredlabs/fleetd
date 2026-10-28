@@ -2,7 +2,8 @@
 // with the person's own integration token, and any other MCP server. Each is one of the Navi's MCP servers:
 // connecting seals the token or key in main to Navi's machine and saves it (mcp_server_set), then tests it at once
 // (mcp_server_test), which lists each tool by the hub's policy: read freely, ask each time, never. Disconnect is
-// mcp_server_remove, which also erases the key on the machine. Google is fleetd's own, first (google/NaviGoogle.tsx).
+// mcp_server_remove, which also erases the key on the machine. Its Google is fleetd's own, in You › Your accounts
+// (google/NaviGoogle.tsx).
 import { useState, type ReactNode } from "react";
 import { Button, Checkbox, Dialog, Field, InlineCode, Input, Radio, RadioGroup, Text, Textarea, Truncate } from "../../ui";
 import type { IntegrationKind, McpServer, McpTestResult } from "../../../shared/contracts";
@@ -12,7 +13,6 @@ import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import { byPolicy, connectionsOf, customRequest, DOCS, emptyNote, notionRequest, policyLine, suggestedReads, testProblem } from "./integrationsModel";
 import { emptyDraft, nameProblem, type Draft } from "./mcpModel";
-import { GoogleRow } from "../google/NaviGoogle";
 import { Setting } from "./parts";
 import s from "./settings.module.css";
 
@@ -74,7 +74,6 @@ export function IntegrationsSection({ projectRef }: { projectRef: Ref }) {
   return (
     <Setting reveal="projects.integrations" label="Integrations" help={help}>
       <div role="list" aria-label="Integrations" className={s.integrations}>
-        <GoogleRow projectRef={projectRef} machine={machine.name} />
         <Row
           kind="notion"
           title="Notion"

@@ -131,6 +131,15 @@ pub struct GithubAppTest {
     pub said: Line<1, 1000>,
 }
 
+/// One person's GitHub, as an owner or admin sees it on People: absent `account` until they connect.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PersonGithub {
+    pub person: crate::people::PersonRef,
+    pub account: Option<GithubAccount>,
+}
+
 /// A person's own GitHub account, as the hub keeps it: no token.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

@@ -1,15 +1,17 @@
-// Settings → Projects → Setup commands: what runs in each new worktree before its agent starts (install
-// dependencies, generate code), saved with project_settings_set. Each run shows on the agent's thread, a command at a
+// Settings › Projects › Project › Repos, Default setup: what runs in each new worktree of a repo with no setup of its
+// own before its agent starts (install dependencies, generate code), saved with project_settings_set. Each run shows on the agent's thread, a command at a
 // time with the end of its output; a failure fails the agent's start unless the project starts it anyway.
 import { useState } from "react";
 import { Button, Field, Input, Switch, Text, Textarea } from "../../ui";
 import type { ProjectSettings as Settings } from "../../../shared/contracts";
 import { errorText, useHubCall, useRefetch } from "./hub";
-import { Setting } from "./parts";
+import { useReveal } from "./search";
 import { changed, draftOf, SETUP_TIMEOUT_MAX_SEC, setupFrom, type SetupDraft } from "./setupModel";
 import s from "./settings.module.css";
 
-export function SetupSetting({ settings }: { settings: Settings }) {
+/** The project's setup, under its repos: each repo without its own runs it. */
+export function DefaultSetup({ settings }: { settings: Settings }) {
+  const ref = useReveal<HTMLElement>("projects.setup");
   const [draft, setDraft] = useState<SetupDraft>(() => draftOf(settings.setup));
   const [busy, setBusy] = useState(false);
   const [echo, setEcho] = useState<{ ok: boolean; text: string } | null>(null);
@@ -38,11 +40,16 @@ export function SetupSetting({ settings }: { settings: Settings }) {
     );
   };
   return (
-    <Setting
-      reveal="projects.setup"
-      label="Setup commands"
-      help="Run in each new worktree before its agent starts, with the project's variables: install dependencies, generate code. The output shows on the agent."
-    >
+    <section ref={ref} className={s.stack} aria-labelledby="default-setup" data-part="projects.setup">
+      <div className={s.settingLabel}>
+        <Text strong id="default-setup">
+          Default setup
+        </Text>
+        <Text size="xs" tone="quiet">
+          Runs in each new worktree of a repo without setup of its own, before its agent starts, with the project&apos;s variables: install
+          dependencies, generate code. The output shows on the agent.
+        </Text>
+      </div>
       <Field label="Commands" description="One a line, in order, each run with sh -c in the worktree. The first that fails stops the rest.">
         <Textarea
           mono
@@ -89,6 +96,6 @@ export function SetupSetting({ settings }: { settings: Settings }) {
           </Text>
         </div>
       ) : null}
-    </Setting>
+    </section>
   );
 }

@@ -61,6 +61,14 @@ const pages: Command[] = [
     run: () => go(tabHref("accounts")),
   },
   {
+    id: "go:settings.your-memory",
+    title: "Your memory",
+    detail: "How you work, as the leads remember it: yours alone",
+    group: "settings",
+    keywords: ["memory", "remember", "forget", "preferences"],
+    run: () => go(tabHref("your-memory")),
+  },
+  {
     id: "go:settings.hubs",
     title: "Hubs",
     detail: "The hubs this app is paired with, and their links",

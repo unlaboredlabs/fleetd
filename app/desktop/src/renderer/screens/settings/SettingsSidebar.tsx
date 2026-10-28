@@ -6,6 +6,7 @@
 import {
   ArrowLeft,
   BookText,
+  Brain,
   Bot,
   FolderGit2,
   KeyRound,
@@ -39,6 +40,7 @@ import s from "./settings.module.css";
 const YOU: ReadonlyArray<{ tab: Tab; icon: ReactNode }> = [
   { tab: "general", icon: <SlidersHorizontal /> },
   { tab: "accounts", icon: <UserRound /> },
+  { tab: "your-memory", icon: <Brain /> },
   { tab: "hubs", icon: <Network /> },
 ];
 

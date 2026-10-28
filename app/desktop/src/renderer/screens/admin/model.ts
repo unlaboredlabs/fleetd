@@ -1,7 +1,8 @@
 // The Hub group's rules, pure and tested: who sees the page, what each row of People offers the person looking at it,
 // and the invites still open. The hub enforces all of it again (people_list, person_set, person_remove); these only
 // keep the page from offering what it would refuse.
-import type { AgentKeyInfo, HubInfoOutput, HubRole, Invite, PeopleListOutput, Person } from "../../../shared/contracts";
+import type { AgentKeyInfo, GithubAccount, HubInfoOutput, HubRole, Invite, PeopleListOutput, Person, PersonClaude } from "../../../shared/contracts";
+import { theirRunsOn } from "../settings/claudeModel";
 
 /**
  * Whether this app's person administers the hub: an owner or admin whose device isn't capped below admin. A hub from
@@ -83,4 +84,21 @@ export function nameProblem(name: string): string | undefined {
   if (/[\r\n]/u.test(t)) return "One line.";
   if (Array.from(t).length > 80) return "80 characters at most.";
   return undefined;
+}
+
+/**
+ * A person's accounts on their People row, in one line: what the work they start runs on in Claude, and the GitHub
+ * their PRs open as. A part the hub doesn't say (an older hub, or no GitHub App yet) is left out; null when both are.
+ */
+export function accountsLine(claude: PersonClaude | undefined, github: { readonly account?: GithubAccount } | undefined, githubApp: boolean): string | null {
+  const parts: string[] = [];
+  if (claude !== undefined) {
+    const failed = claude.subscription?.lastTest?.ok === false && claude.runsOn.kind === "account" && claude.runsOn.account.kind !== "hub";
+    parts.push(`Claude: ${theirRunsOn(claude.runsOn)}${failed ? ", its last Test failed" : ""}`);
+  }
+  if (githubApp && github !== undefined) {
+    const a = github.account;
+    parts.push(`GitHub: ${a === undefined ? "not connected" : a.lapsed === true ? `${a.login}, to connect again` : a.login}`);
+  }
+  return parts.length === 0 ? null : parts.join(" · ");
 }

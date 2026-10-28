@@ -5,11 +5,12 @@
 // (D209). Saved with prompt_set on the registry id `instructions`, and pinned per session like every prompt.
 import { useEffect, useState } from "react";
 import { Button, Field, Text, Textarea } from "../../ui";
-import { INSTRUCTIONS, type PromptScope } from "./contracts";
+import { INSTRUCTIONS, type ProjectRef, type PromptScope } from "./contracts";
 import { parseScope, projectRefOf, scopeKey, shownDraft, type Draft, type Scope } from "./editor";
 import { useToolQuery } from "../../src/data/react";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import { Memory } from "./Memory";
+import { MemoryRefreshSetting } from "./Projects";
 import { NoProject, PageHead, PagePart, scopeName, useProjects } from "./parts";
 import { replaceRoute, type SettingsRoute } from "./route";
 import s from "./settings.module.css";
@@ -148,7 +149,7 @@ export function HubInstructions() {
 
 /**
  * Settings → Projects › Instructions & memory: the project's own instructions, sent to its agents after the hub-wide
- * ones, then what its leads remember (Memory.tsx), yours first.
+ * ones, then what its leads remember (Memory.tsx), and whether the lead tidies that every night.
  */
 export function Instructions({ route }: { route: SettingsRoute }) {
   const projects = useProjects();
@@ -178,7 +179,15 @@ export function Instructions({ route }: { route: SettingsRoute }) {
           )}
         </PagePart>
         <Memory project={project} />
+        {project === null ? null : <Refresh projectRef={project.ref} />}
       </div>
     </div>
   );
+}
+
+/** The nightly refresh's switch, read with the project's settings. */
+function Refresh({ projectRef }: { projectRef: ProjectRef }) {
+  const read = useToolQuery("project_settings_get", { machineId: projectRef.machineId, projectId: projectRef.projectId });
+  const settings = read.data?.settings;
+  return settings === undefined ? null : <MemoryRefreshSetting settings={settings} />;
 }
