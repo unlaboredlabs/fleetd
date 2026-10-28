@@ -10,7 +10,7 @@
 // A run goes on in the hub when the page closes; opening it again shows the run still going or the last one that
 // failed. Every step is a machine_add.step event, which reads machine_add_status again.
 //
-// One component with no page around it, so Administration › Machines and the hub's first-run setup (docs/design,
+// One component with no page around it, so Settings › Hub › Machines and the hub's first-run setup (docs/design,
 // its Machines step) show the same flow. Mount it only where the person is an owner or admin.
 import { useEffect, useState, type ReactNode } from "react";
 import type { MachineAddRun, MachineHost, MachineJoinOutput, SetupStep } from "../../../shared/contracts";
@@ -18,6 +18,7 @@ import type { JoinHere, ThisComputer } from "../../../shared/joinHere";
 import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import { Button, copyText, Field, InlineCode, Input, StateGlyph, Text } from "../../ui";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
+import { useReveal } from "../settings/search";
 import {
   glyphOf,
   hereLine,
@@ -110,6 +111,7 @@ export function AddMachine({ open }: { open?: { readonly view: View; readonly at
   const hosts = useToolQuery("machine_hosts", noInput);
   const hostName = useHostName();
   const join = useJoinHere();
+  const ref = useReveal<HTMLElement>("hub.add-machine");
   const ended = status.data?.runs.find((r) => r.state !== "running")?.runId ?? "";
   // Nothing about this computer is decided before the hub has said which computer it runs on.
   const info = useToolQuery("hub_info", noInput);
@@ -169,7 +171,7 @@ export function AddMachine({ open }: { open?: { readonly view: View; readonly at
   };
 
   return (
-    <section className={s.panel} aria-label="Add machine" data-state={shown.kind}>
+    <section ref={ref} className={s.panel} aria-label="Add machine" data-state={shown.kind}>
       {!live ? (
         <Text tone="quiet">Connect to the hub to add a machine.</Text>
       ) : shown.kind === "choose" ? (
@@ -594,7 +596,7 @@ function Line(props: { machineId: string | undefined; rejoin: boolean; onDone: (
       )}
       <div className={s.actions}>
         {state === "joined" ? (
-          <Button variant="primary" onClick={() => (window.location.hash = toHash({ id: "admin", section: "machines", machine: machineId }))}>
+          <Button variant="primary" onClick={() => (window.location.hash = toHash({ id: "settings", tab: "hub.machines", machine: machineId }))}>
             {`Open ${machineId}`}
           </Button>
         ) : null}

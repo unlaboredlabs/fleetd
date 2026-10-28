@@ -312,7 +312,7 @@ const google = (from: Fixture): Fixture[] => {
   const client = googleClient(from, ["devbox", "buildbox"]);
   return [
     googleNavi(from, "navi-google-none", "Google on a hub with no OAuth client yet, seen by a member: ask an admin.", { admin: false }),
-    googleNavi(from, "navi-google-setup", "Google on a hub with no OAuth client yet, seen by its owner: a link to Administration › Google.", { admin: true }),
+    googleNavi(from, "navi-google-setup", "Google on a hub with no OAuth client yet, seen by its owner: a link to Hub accounts › Google.", { admin: true }),
     googleNavi(from, "navi-google-ready", "The hub has a Google client; Ada isn't connected yet.", { admin: false, client }),
     googleNavi(from, "navi-google-connected", "Ada is connected to sam@example.com with every scope, and all new mail wakes it, by push; Home without Drive.", {
       admin: false,

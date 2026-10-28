@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // The setup screens on the hub's own answers (fixtures/setup/steps.json, written from hub/setup's catalog): only an
 // admin sees them, Test and Skip go to the hub and the step updates in place, each step opens where its result is
-// saved, the empty home is the welcome while a required step is left, and Administration's entry counts them.
+// saved, the empty home is the welcome while a required step is left, and Settings' entry counts them.
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -166,12 +166,12 @@ describe("setup", () => {
     expect([...document.querySelectorAll("button")].some((b) => b.textContent.trim() === "Skip for now")).toBe(false);
   });
 
-  it("opens where a step's result is saved: Claude's key on Administration, a subscription in Settings", async () => {
+  it("opens where a step's result is saved: Claude's key on Hub accounts, a subscription in Your accounts", async () => {
     await render(<SetupScreen view="claude" />);
-    await click(button("Open Administration › Connections"));
-    expect(window.location.hash).toContain("admin/connections");
-    await click(button("Open Settings › Connections"));
-    expect(window.location.hash).toContain("settings/connections");
+    await click(button("Open Hub accounts"));
+    expect(window.location.hash).toContain("settings/hub/accounts");
+    await click(button("Open Your accounts"));
+    expect(window.location.hash).toContain("settings/accounts");
   });
 
   it("is for admins only", async () => {

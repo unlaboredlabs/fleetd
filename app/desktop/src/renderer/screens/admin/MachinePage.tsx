@@ -1,4 +1,4 @@
-// Administration › Machines › one machine (#/admin/machines/<id>): what it needs once it has joined, as a checklist
+// Settings › Hub › Machines › one machine (#/settings/hub/machines/<id>): what it needs once it has joined, as a checklist
 // read from the hub's own checks (doctor_list, refetched on doctor.changed): claude installed and logged in, the git
 // identity its commits carry, GitHub access, and the sessions it can host. Each item that wants a look has its fix: a
 // command to copy, or for claude's login, Log in, which runs `claude auth login` on the machine through its node. The
@@ -27,7 +27,7 @@ export function MachinePage({ machineId }: { machineId: string }) {
   const checks = useToolQuery("doctor_list", allChecks);
   const layer = useDataLayer();
   const [rerunning, setRerunning] = useState(false);
-  const back = () => (window.location.hash = toHash({ id: "admin", section: "machines" }));
+  const back = () => (window.location.hash = toHash({ id: "settings", tab: "hub.machines" }));
 
   const rerun = async () => {
     setRerunning(true);
@@ -40,7 +40,7 @@ export function MachinePage({ machineId }: { machineId: string }) {
   const items = checks.data === undefined ? undefined : checklistOf(checks.data.checks, machineId);
   const status = machine === undefined ? undefined : machine.status === "online" ? "Online" : machine.status === "degraded" ? "Degraded" : "Offline";
   return (
-    <div className={s.scroll} data-screen="admin.machine">
+    <div className={s.scroll} data-screen="settings.hub.machine">
       <div className={s.column}>
         <span>
           <Button variant="link" size="sm" onClick={back}>

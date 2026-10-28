@@ -125,7 +125,7 @@ it("pairs the new hub under the name and colour picked, keeping the one it has, 
   await settle();
   expect(redeem).toHaveBeenCalledWith({ hub: "http://acme-hub:4790", code: "ABCD-2345", target: { label: "Acme", color: "amber" } });
   expect(forget).not.toHaveBeenCalled();
-  expect(window.location.hash).toBe("#/settings/connections");
+  expect(window.location.hash).toBe("#/settings/hubs");
 });
 
 it("asks for a name before it pairs: the label is the person's own, never a fixed choice", async () => {
@@ -144,5 +144,6 @@ it("Back to settings goes back to the hubs", async () => {
   await settle();
   click("Back to settings");
   await settle();
-  expect(host.querySelector("[data-part='hubs']")).not.toBeNull();
+  expect(host.querySelector("[data-part='hubs.add']")).not.toBeNull();
+  expect(window.location.hash).toBe("#/settings/hubs");
 });

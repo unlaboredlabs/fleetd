@@ -3967,7 +3967,7 @@
       "type": "object"
     },
     "ClaudeSettings": {
-      "description": "Hub-wide Claude settings (Administration).",
+      "description": "Hub-wide Claude settings (Settings › Hub accounts).",
       "properties": {
         "membersUseHubApi": {
           "description": "Members may run their work on the hub's API configuration (on by default). Off, each member connects their\nown subscription; it never affects owners and admins, projects' leads or work nobody started.",
@@ -7315,7 +7315,7 @@
           "type": "array"
         },
         "place": {
-          "description": "Where in the app the fields are saved, an Administration section (\"google\"), where the terminal can't seal\nthem.",
+          "description": "Where in the app the fields are saved, a Hub page of the app's Settings (\"google\"), where the terminal can't seal\nthem.",
           "type": "string"
         },
         "said": {
@@ -8805,7 +8805,7 @@
       ]
     },
     "MachineRolesEntry": {
-      "description": "A machine as Administration › Hub settings shows it: its roles, its session slots and what it can host.",
+      "description": "A machine as Settings › Hub › Machines shows it: its roles, its session slots and what it can host.",
       "properties": {
         "hosts": {
           "default": [],
@@ -14409,7 +14409,7 @@
       "type": "object"
     },
     "Profile": {
-      "description": "One task profile (Administration › Profiles): what an agent on it runs on. Exactly one is the hub's default, which\nevery project allows and the lead, every review and claude's helper calls run on.",
+      "description": "One task profile (Settings › Hub › Every project › Profiles): what an agent on it runs on. Exactly one is the hub's default, which\nevery project allows and the lead, every review and claude's helper calls run on.",
       "properties": {
         "default": {
           "type": "boolean"

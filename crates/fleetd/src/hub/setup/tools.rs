@@ -28,7 +28,7 @@ fn require_admin(caller: &Caller) -> Result<(), ToolError> {
     Err(error(
         ErrorCode::Forbidden,
         "The hub's setup is for its owners and admins: a key with admin on every machine.",
-        "Open Administration › Setup in the app, or run fleetd init on the hub.",
+        "Open Settings › Hub › Setup in the app, or run fleetd init on the hub.",
     ))
 }
 

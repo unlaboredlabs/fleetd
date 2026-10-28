@@ -173,7 +173,7 @@ pub struct PersonClaude {
     pub runs_on: ClaudeRunsOn,
 }
 
-/// Hub-wide Claude settings (Administration).
+/// Hub-wide Claude settings (Settings › Hub accounts).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ClaudeSettings {

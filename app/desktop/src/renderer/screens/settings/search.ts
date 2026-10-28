@@ -3,7 +3,7 @@
 // reveal is a one-shot "focus this option" that the page showing it takes up when it renders.
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import { ENTRIES } from "./catalog";
-import { promptHref, tabHref, type Tab } from "./route";
+import { isHubTab, promptHref, tabHref, type Tab } from "./route";
 
 export interface SettingsOption {
   /** Unique; also the reveal key the page's option registers with useReveal. */
@@ -17,19 +17,33 @@ export interface SettingsOption {
 
 export const PAGE_LABEL: Readonly<Record<Tab, string>> = {
   general: "General",
-  connections: "Connections",
+  accounts: "Your accounts",
+  hubs: "Hubs",
   projects: "Project",
   agents: "Agents",
   instructions: "Instructions & memory",
   automations: "Automations",
   prompts: "Prompts",
+  "hub.people": "People",
+  "hub.machines": "Machines",
+  "hub.profiles": "Profiles",
+  "hub.tools": "Tools & skills",
+  "hub.instructions": "Instructions & memory",
+  "hub.prompts": "Prompts",
+  "hub.accounts": "Hub accounts",
+  "hub.setup": "Setup",
 };
+
+/** Where a search result is, beside its name: the page, and for a Hub page its group, as the sidebar nests them. */
+export const pagePath = (tab: Tab): string =>
+  !isHubTab(tab) ? PAGE_LABEL[tab] : tab === "hub.profiles" || tab === "hub.tools" || tab === "hub.instructions" || tab === "hub.prompts" ? `Every project › ${PAGE_LABEL[tab]}` : `Hub › ${PAGE_LABEL[tab]}`;
 
 /** "Dock" is the Mac's word for it. (No window in the unit tests.) */
 export const BADGE = typeof window !== "undefined" && window.fleetd.platform === "darwin" ? "Dock badge" : "App icon badge";
 
 const page = (tab: Tab, keywords: ReadonlyArray<string>): SettingsOption => ({ key: tab, label: PAGE_LABEL[tab], tab, keywords });
 
+/** Every option, in the sidebar's order. The Hub group's are found only by its owners and admins (optionsFor). */
 export const OPTIONS: ReadonlyArray<SettingsOption> = [
   page("general", ["preferences"]),
   { key: "general.appearance", label: "Appearance", tab: "general", keywords: ["theme", "dark", "light", "mode", "match system"] },
@@ -39,18 +53,18 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   { key: "notifications.sound", label: "Sound", tab: "general", keywords: ["notifications", "mute", "silent"] },
   { key: "notifications.badge", label: BADGE, tab: "general", keywords: ["badge", "dock", "count", "app icon"] },
   { key: "notifications.test", label: "Test notification", tab: "general", keywords: ["notifications", "alerts", "try"] },
-  { key: "general.updates", label: "Version & updates", tab: "general", keywords: ["version", "update", "upgrade", "check for updates", "edge", "stable", "channel", "release", "what's new", "hub version", "machine version"] },
-  page("connections", ["accounts", "connect", "sign in"]),
-  { key: "hubs", label: "Hubs", tab: "connections", keywords: ["hub", "pair", "connection", "server", "personal", "work", "team", "company"] },
-  { key: "hubs.hub", label: "Hub", tab: "connections", keywords: ["pair", "connection", "disconnect", "key", "server", "rename", "name", "label", "colour", "color", "remove"] },
-  { key: "hubs.links", label: "Links to this hub", tab: "connections", keywords: ["hub link", "link key", "navi", "other hub", "revoke"] },
-  { key: "hubs.add", label: "Add a hub", tab: "connections", keywords: ["pair", "another hub", "second hub", "connect", "personal", "work"] },
-  { key: "claude", label: "Claude", tab: "connections", keywords: ["claude", "anthropic", "subscription", "account", "api key", "token", "setup-token", "billing", "plan"] },
-  { key: "claude.in-use", label: "Claude account in use", tab: "connections", keywords: ["claude", "account", "connect", "runs on"] },
-  { key: "claude.choice", label: "Runs on", tab: "connections", keywords: ["claude", "subscription", "hub api", "api key", "switch"] },
-  { key: "claude.subscription", label: "Your Claude subscription", tab: "connections", keywords: ["claude", "subscription", "token", "setup-token", "oauth", "connect", "test"] },
-  { key: "github", label: "GitHub", tab: "connections", keywords: ["github", "git", "pull request", "pr", "account", "sign in", "connect"] },
-  { key: "github.account", label: "Your GitHub", tab: "connections", keywords: ["github", "connect", "pr", "pull request", "sign in", "token"] },
+  { key: "general.updates", label: "Version", tab: "general", keywords: ["version", "update", "check for updates", "edge", "stable", "channel", "what's new", "up to date"] },
+  page("accounts", ["accounts", "connect", "sign in", "connections"]),
+  { key: "claude", label: "Claude", tab: "accounts", keywords: ["claude", "anthropic", "subscription", "account", "api key", "token", "setup-token", "billing", "plan"] },
+  { key: "claude.in-use", label: "Claude account in use", tab: "accounts", keywords: ["claude", "account", "connect", "runs on"] },
+  { key: "claude.choice", label: "Runs on", tab: "accounts", keywords: ["claude", "subscription", "hub api", "api key", "switch"] },
+  { key: "claude.subscription", label: "Your Claude subscription", tab: "accounts", keywords: ["claude", "subscription", "token", "setup-token", "oauth", "connect", "test"] },
+  { key: "github", label: "GitHub", tab: "accounts", keywords: ["github", "git", "pull request", "pr", "account", "sign in", "connect"] },
+  { key: "github.account", label: "Your GitHub", tab: "accounts", keywords: ["github", "connect", "pr", "pull request", "sign in", "token"] },
+  page("hubs", ["hub", "pair", "connection", "server", "personal", "work", "team", "company"]),
+  { key: "hubs.hub", label: "Hub", tab: "hubs", keywords: ["pair", "connection", "disconnect", "key", "server", "rename", "name", "label", "colour", "color", "remove"] },
+  { key: "hubs.links", label: "Links to this hub", tab: "hubs", keywords: ["hub link", "link key", "navi", "other hub", "revoke"] },
+  { key: "hubs.add", label: "Add a hub", tab: "hubs", keywords: ["pair", "another hub", "second hub", "connect", "personal", "work"] },
   page("projects", ["project settings", "repo", "repository"]),
   { key: "projects.name", label: "Project name", tab: "projects", keywords: ["rename", "title"] },
   { key: "projects.repos", label: "Repos", tab: "projects", keywords: ["repo", "repository", "remote", "base branch", "checkout", "preview", "folder"] },
@@ -59,11 +73,11 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   { key: "projects.env", label: "Environment variables", tab: "projects", keywords: ["env", ".env", "secrets", "api key", "token", "variables"] },
   { key: "projects.setup", label: "Setup commands", tab: "projects", keywords: ["setup", "install", "dependencies", "codegen", "worktree", "lockfile", "pnpm"] },
   { key: "projects.train", label: "Merge train", tab: "projects", keywords: ["merge", "train", "checks", "ci", "required", "fast", "after merge"] },
+  { key: "projects.integrations", label: "Integrations", tab: "projects", keywords: ["navi", "google", "gmail", "calendar", "notion", "connect"] },
   { key: "projects.links", label: "Linked hubs", tab: "projects", keywords: ["hub link", "link key", "navi", "other hub"] },
   { key: "projects.delete", label: "Delete project", tab: "projects", keywords: ["remove", "delete", "forget"] },
   page("agents", ["limit", "at once", "parallel"]),
-  { key: "agents.project", label: "Max agents", tab: "agents", keywords: ["limit", "at once", "parallel", "concurrency", "medium allowed"] },
-  { key: "agents.profiles", label: "Task profiles", tab: "agents", keywords: ["profile", "medium", "high", "effort", "model", "override"] },
+  { key: "agents.project", label: "Max agents", tab: "agents", keywords: ["limit", "at once", "parallel", "concurrency", "profiles allowed"] },
   { key: "projects.mcp", label: "Project MCP servers", tab: "agents", keywords: ["mcp", "tools", "servers", "connections", "integrations"] },
   { key: "agents.skills", label: "Skills", tab: "agents", keywords: ["skill", "SKILL.md", "skills.sh", "workflow", "install", ".agents", ".claude"] },
   page("instructions", ["custom instructions", "rules", "my text", "project"]),
@@ -71,7 +85,37 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   page("automations", ["schedule", "cron", "webhook", "recurring", "run now", "trigger"]),
   page("prompts", ["templates", "system prompt"]),
   ...Object.entries(ENTRIES).map(([id, e]) => ({ key: `prompt:${id}`, label: e.name, tab: "prompts" as const, keywords: ["prompt", id], prompt: id })),
+  page("hub.people", ["team", "roles", "admin", "owner", "member", "remove"]),
+  { key: "hub.invite", label: "Invite someone", tab: "hub.people", keywords: ["invite", "team", "join", "link", "add person"] },
+  { key: "hub.invites", label: "Waiting to join", tab: "hub.people", keywords: ["invites", "open", "pending", "revoke"] },
+  { key: "hub.links", label: "Hub links", tab: "hub.people", keywords: ["hub link", "link key", "navi", "other hub", "revoke", "everyone"] },
+  page("hub.machines", ["machine", "computer", "box", "repair", "remove", "devices"]),
+  { key: "hub.add-machine", label: "Add machine", tab: "hub.machines", keywords: ["machine", "ssh", "join", "computer", "this computer"] },
+  { key: "hub.roles", label: "Machine roles", tab: "hub.machines", keywords: ["role", "sessions", "at once", "browser", "android", "ios", "desktop", "hosts"] },
+  { key: "hub.caps", label: "Machine max agents", tab: "hub.machines", keywords: ["max agents", "whole fleet", "fleet cap", "machine cap", "limit", "at once", "all machines"] },
+  { key: "hub.updates", label: "Updates", tab: "hub.machines", keywords: ["update", "upgrade", "hub version", "machine version", "fleetd update", "release"] },
+  page("hub.profiles", ["task profiles", "profile", "model", "effort", "medium", "high", "every project"]),
+  page("hub.tools", ["every project", "hub-wide", "global"]),
+  { key: "hub.mcp", label: "MCP servers for every project", tab: "hub.tools", keywords: ["mcp", "tools", "servers", "global", "every project"] },
+  { key: "mcp.servers", label: "Global MCP servers", tab: "hub.tools", keywords: ["mcp", "tools", "servers", "global", "every project"] },
+  { key: "mcp.user", label: "Agents' own MCP servers", tab: "hub.tools", keywords: ["mcp", "own", "claude.json", ".mcp.json", "servers"] },
+  { key: "hub.skills", label: "Hub-wide skills", tab: "hub.tools", keywords: ["skill", "skills", "SKILL.md", "skills.sh", "global", "every project"] },
+  { key: "hub.instructions", label: "Instructions for every project", tab: "hub.instructions", keywords: ["custom instructions", "rules", "global", "hub-wide"] },
+  { key: "hub.memory-caps", label: "Memory caps", tab: "hub.instructions", keywords: ["memory", "cap", "limit", "lines", "size", "MEMORY.md", "user.md"] },
+  page("hub.prompts", ["templates", "system prompt", "hub-wide", "global", "every project"]),
+  page("hub.accounts", ["connections", "claude api key", "api key", "github app", "google client", "oauth", "gmail", "guided setup"]),
+  { key: "admin.claude", label: "Hub Claude API key", tab: "hub.accounts", keywords: ["claude", "api key", "anthropic", "endpoint", "leads", "members may use"] },
+  { key: "admin.claude.key", label: "Hub API key", tab: "hub.accounts", keywords: ["claude", "api key", "endpoint", "test", "anthropic"] },
+  { key: "admin.claude.members", label: "Members may use the hub's key", tab: "hub.accounts", keywords: ["claude", "api key", "members", "allow"] },
+  { key: "admin.claude.leads", label: "Leads and unrequested work", tab: "hub.accounts", keywords: ["claude", "lead", "automations", "train fixes", "runs on"] },
+  { key: "admin.claude.people", label: "Everyone's Claude account", tab: "hub.accounts", keywords: ["claude", "people", "subscription", "usage", "account"] },
+  { key: "admin.github", label: "GitHub App", tab: "hub.accounts", keywords: ["github", "app", "manifest", "installation", "webhook"] },
+  { key: "admin.google", label: "Google client", tab: "hub.accounts", keywords: ["google", "oauth", "client", "gmail", "calendar", "real-time mail", "pub/sub"] },
+  page("hub.setup", ["setup", "guided setup", "first run", "fleetd init", "steps", "checklist"]),
 ];
+
+/** What `administers` may find: everyone gets You and Projects; only an owner or admin, the Hub group too. */
+export const optionsFor = (administers: boolean): ReadonlyArray<SettingsOption> => (administers ? OPTIONS : OPTIONS.filter((o) => !isHubTab(o.tab)));
 
 const words = (q: string) => q.toLowerCase().split(/\s+/u).filter(Boolean);
 

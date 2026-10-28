@@ -144,7 +144,7 @@ pub const CAP_SELF_UPDATE: &str = "self_update";
 pub const CAP_CLAUDE_INSTALL: &str = "claude_install";
 
 /// `claude_login`: the node takes `node_action` `claude_login` and `claude_login_code`, and logs its Claude Code in with
-/// `claude auth login`, the person signing in on their own device (Administration › Machines).
+/// `claude auth login`, the person signing in on their own device (Settings › Hub › Machines).
 pub const CAP_CLAUDE_LOGIN: &str = "claude_login";
 
 /// `update_fetch`: the node takes `node_action` `fetch`, and downloads the hub's next build while the hub updates.

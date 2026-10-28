@@ -1,12 +1,13 @@
-// Administration's machine roles: what each machine is for (agents, sessions or both), how many browser and device
-// sessions it hosts at once, and what it can host, each in plain words as its node reported it. Hub-wide, so it lives on
-// Administration, not in Settings. Reads machine_roles; a change is a machine_roles_set call (an admin's), and the hub's
+// Hub › Machines' machine roles: what each machine is for (agents, sessions or both), how many browser and device
+// sessions it hosts at once, and what it can host, each in plain words as its node reported it. Hub-wide, so only its
+// owners and admins see it. Reads machine_roles; a change is a machine_roles_set call (an admin's), and the hub's
 // answer replaces the row.
 import { useState } from "react";
 import type { MachineRolesEntry } from "../../../shared/contracts";
 import { useToolQuery } from "../../src/data/react";
 import { Segmented, Select, Text } from "../../ui";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
+import { useReveal } from "./search";
 import { capChoices, choiceOf, hostName, hostsInOrder, hostsNote, ROLE_CHOICES, ROLE_HELP, rolesOf, sessionsLine, type RolesChoice } from "./machinesModel";
 import s from "./settings.module.css";
 
@@ -16,8 +17,9 @@ export function MachineRoles() {
   const live = useLive();
   const read = useToolQuery("machine_roles", noInput);
   const machines = read.data?.machines;
+  const ref = useReveal<HTMLElement>("hub.roles");
   return (
-    <section className={s.machineList} aria-labelledby="machine-roles">
+    <section ref={ref} className={s.machineList} aria-labelledby="machine-roles">
       <div className={s.settingLabel}>
         <Text strong id="machine-roles">
           Machine roles

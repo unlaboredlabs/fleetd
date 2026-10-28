@@ -166,21 +166,21 @@ pub fn unowned(checks: &[DoctorCheck], steps: &[HubSetupStep]) -> Vec<DoctorChec
         .collect()
 }
 
-/// Administration's sections, as the app names them; Claude's subscription way is a person's own, in Settings.
+/// The Hub pages of the app's Settings, as the app names them; Claude's subscription way is a person's own, under
+/// Your accounts.
 fn place_words(place: &str) -> String {
     let name = match place {
         "claude" => {
-            return "Administration › Connections › Claude for the hub's API key; Settings › Connections › Claude for your own subscription"
+            return "Settings › Hub accounts › Claude for the hub's API key; Settings › Your accounts › Claude for your own subscription"
                 .to_owned();
         }
-        "github" => "Connections › GitHub",
-        "google" => "Connections › Google",
-        "invites" => "People",
-        "machines" => "Machines",
-        "people" => "People",
+        "github" => "Hub accounts › GitHub",
+        "google" => "Hub accounts › Google",
+        "invites" | "people" => "Hub › People",
+        "machines" => "Hub › Machines",
         other => other,
     };
-    format!("Administration › {name}")
+    format!("Settings › {name}")
 }
 
 /// The step as a guide, for the terminal: why, its numbered parts (what to open, then what to fill in there, a value
@@ -390,7 +390,7 @@ mod tests {
             "{text}"
         );
         assert!(
-            text.contains("on Administration › Connections › Google"),
+            text.contains("on Settings › Hub accounts › Google"),
             "{text}"
         );
         assert!(
@@ -401,14 +401,14 @@ mod tests {
             .into_iter()
             .find(|s| s.id == SetupStepId::People)
             .unwrap();
-        assert!(guide(&people).contains("In the app: Administration › People."));
+        assert!(guide(&people).contains("In the app: Settings › Hub › People."));
         let claude = steps(&[])
             .into_iter()
             .find(|s| s.id == SetupStepId::Claude)
             .unwrap();
         assert!(
             guide(&claude).contains(
-                "In the app: Administration › Connections › Claude for the hub's API key; Settings › Connections › Claude for your own subscription."
+                "In the app: Settings › Hub accounts › Claude for the hub's API key; Settings › Your accounts › Claude for your own subscription."
             ),
             "{}",
             guide(&claude)

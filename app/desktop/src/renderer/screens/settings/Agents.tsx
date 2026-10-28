@@ -1,5 +1,5 @@
 // Max agents in the app: a project's slider in Settings → Projects › Agents (the panel's Agents tab links to it, "4
-// working · max 20"), with the rest of what its agents get, and each machine's and the fleet-wide cap, which are hub-wide and live on Administration's hub settings
+// working · max 20"), with the rest of what its agents get, and each machine's and the fleet-wide cap, which are hub-wide and live on Settings › Hub › Every project
 // (HubCaps). Reads the hub's slot state from the data layer's store; a slider applies when you let go (a cap_set call
 // through the layer), with Undo, and the hub's next slot state confirms it.
 import { Slider } from "radix-ui";
@@ -263,7 +263,7 @@ export function AgentsPanel(props: { projectRef: ProjectRef; slots: SlotState; t
 
 /**
  * Under a project's slider past its machine's cap: the machine holds it there. Machine caps are hub-wide, so an owner or
- * admin gets the way to them on Administration; everyone else, only the line.
+ * admin gets the way to them in Hub › Machines; everyone else, only the line.
  */
 function MachineHolds(props: { note: string | null }) {
   const administers = useAdministers();
@@ -274,8 +274,8 @@ function MachineHolds(props: { note: string | null }) {
         {props.note}
       </Text>
       {administers ? (
-        <Button size="sm" variant="quiet" onClick={() => (window.location.hash = toHash({ id: "admin", section: "hub" }))}>
-          Machine caps in Administration
+        <Button size="sm" variant="quiet" onClick={() => (window.location.hash = toHash({ id: "settings", tab: "hub.machines" }))}>
+          Machine caps in Hub › Machines
         </Button>
       ) : null}
     </div>
@@ -345,7 +345,7 @@ function MachinePanel({ machine: m, top }: { machine: MachineAgents; top: number
 }
 
 /**
- * Administration's caps: the whole fleet's, then each machine's. Both are hub-wide, so they live there and not in
+ * Hub › Machines' caps: the whole fleet's, then each machine's. Both are hub-wide, so they live there and not on a
  * Settings.
  */
 export function HubCaps() {

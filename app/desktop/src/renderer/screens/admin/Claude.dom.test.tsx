@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// Administration › Claude: the hub's key pasted goes to main to seal with its endpoint and is tested at once, never
+// Settings › Hub accounts › Claude: the hub's key pasted goes to main to seal with its endpoint and is tested at once, never
 // shown back; the members switch; what leads run on and the owner's subscription they fall back to; everyone's
 // account with a usage pause on one; and a member who follows the link sees none of it.
 import { act } from "react";
@@ -11,7 +11,7 @@ import type { ClaudeAccountRequest } from "../../../shared/ipc";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { UiProvider } from "../../ui";
-import { AdminScreen } from "./AdminScreen";
+import { SettingsScreen } from "../settings/SettingsScreen";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 vi.hoisted(() => {
@@ -83,7 +83,7 @@ beforeEach(() => {
   host = document.createElement("div");
   document.body.appendChild(host);
   root = createRoot(host);
-  window.location.hash = "#/admin/connections";
+  window.location.hash = "#/settings/hub/accounts";
 });
 afterEach(() => {
   act(() => root.unmount());
@@ -126,7 +126,7 @@ const render = async (accounts: ClaudeAccountsGetOutput, info: Partial<HubInfoOu
     root.render(
       <UiProvider>
         <DataProvider layer={createDataLayer(hub)}>
-          <AdminScreen />
+          <SettingsScreen />
         </DataProvider>
       </UiProvider>,
     );
@@ -181,7 +181,7 @@ const section = (label: string) => {
 
 it("saves the hub's key and endpoint sealed through main, tests it at once, and never shows it back", async () => {
   await render(noKey);
-  expect(host.querySelector("[data-screen='admin.connections']")).not.toBeNull();
+  expect(host.querySelector("[data-screen='settings.hub.accounts']")).not.toBeNull();
   expect(section("Leads and unrequested work").textContent).toContain("Each machine's own Claude login.");
   expect(section("Leads and unrequested work").textContent).toContain("The hub owner's subscription (yours) isn't connected.");
   await type("API key", KEY);
@@ -239,6 +239,6 @@ it("changes the endpoint alone, keeping the saved key, and removes the key once 
 
 it("shows a member who follows the link none of it, and reads nothing", async () => {
   await render(withKey, { me: bob, admin: false });
-  expect(host.querySelector("[data-screen='admin.denied']")).not.toBeNull();
+  expect(host.querySelector("[data-screen='settings.hub.denied']")).not.toBeNull();
   expect(sent("claude_accounts_get")).toEqual([]);
 });

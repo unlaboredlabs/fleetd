@@ -1,7 +1,7 @@
 // The sidebar's last line: a row naming the hub ("devbox") beside a plain dot, quiet while all is well and saying
 // so when it isn't ("Reconnecting…", "Offline", "Key refused"). Hovering shows the hub's address; clicking (or Enter)
 // opens the details: the address in full, the machines online, protocol and version, and what can be done from here
-// (Retry now, Hub settings, Disconnect), each only when it applies. A paired app adds or changes hubs from Settings ›
+// (Retry now, Settings › Hubs, Disconnect), each only when it applies. A paired app adds or changes hubs from Settings ›
 // Hubs, not #/onboarding: that page sends a connected app straight back to the board. With several hubs there is one
 // row per hub, each under its name and with its own state: one offline never hides another. While any of the hub's
 // machines is down the row says how many ("1 down"), which opens Machines, as the popover's Machines line always does:
@@ -131,7 +131,7 @@ export function HubStatus({ hub }: { hub: HubState }) {
                       if (HUB_OPTION !== undefined) openOption(several ? { ...HUB_OPTION, key: `hubs.${self.id}` } : HUB_OPTION);
                     }}
                   >
-                    Hub settings
+                    Settings › Hubs
                   </Button>
                 ) : (
                   <Button

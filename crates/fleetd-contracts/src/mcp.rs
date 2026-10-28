@@ -278,7 +278,7 @@ output!(ProjectSetOutput {
     profiles: List<ProfileName, 1, PROFILES_MAX>,
 });
 
-// profiles_list, profile_create, profile_update, profile_delete: the hub's task profiles (Administration › Profiles).
+// profiles_list, profile_create, profile_update, profile_delete: the hub's task profiles (Settings › Hub › Every project › Profiles).
 // Reading needs a key; the writes need an owner's or admin's human key (the handlers check).
 input!(ProfilesListInput {
     /// A project: also which profiles it allows.
@@ -1320,7 +1320,7 @@ output!(ProjectEnvSetOutput {
 });
 
 // mcp_servers_get, mcp_server_set, mcp_server_remove, mcp_settings_set, mcp_server_test: the MCP servers fleetd gives
-// its agents (Settings › MCP servers, and each project's MCP section).
+// its agents (Settings › Hub › Every project › Tools & skills, and each project's MCP section).
 input!(McpServersGetInput {
     /// Also this project's own servers.
     project: Option<ProjectRef>,
@@ -1833,8 +1833,8 @@ output!(BrowserRetentionSetOutput {
     retention: crate::browser::BrowserRetention,
 });
 
-// machine_roles: every machine's roles (agents, sessions), its session slots and what it can host (Administration ›
-// Hub settings).
+// machine_roles: every machine's roles (agents, sessions), its session slots and what it can host (Settings ›
+// Hub › Machines).
 input!(MachineRolesInput {});
 output!(MachineRolesOutput {
     machines: List<crate::machine_roles::MachineRolesEntry, 0, 1000>,
@@ -1874,7 +1874,7 @@ output!(MachineRolesSetOutput {
     machine: crate::machine_roles::MachineRolesEntry,
 });
 
-// machine_add_plan, machine_add, machine_add_status, machine_hosts, machine_remove: Administration > Machines, an
+// machine_add_plan, machine_add, machine_add_status, machine_hosts, machine_remove: Settings › Hub › Machines, an
 // owner's or admin's device only (the handlers check). machine_add is `fleetd machine add`, run by the hub.
 input!(
     #[serde(remote = "Self")]

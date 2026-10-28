@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
-// Settings in four pages (D209): General, Connections, Projects and Prompts in the sidebar; under Projects, while one
-// of its pages is open, the project picker and the picked project's Project, Agents, Instructions & memory and
-// Automations, each a click away and all of that one project. General's Version & updates says which fleetd this app,
+// Settings in one window (D211): You (General, Your accounts, Hubs) and Projects (the project picker and the picked
+// project's Project, Agents, Instructions & memory, Automations and Prompts, each a click away and all of that one
+// project) for everyone; the Hub group for owners and admins only (admin/Admin.dom.test.tsx). Old links land on the
+// page that has their option now. General's Version & updates says which fleetd this app,
 // the hub and each machine run, with Check for updates for everyone and the updates sheet for an owner or admin only.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -51,6 +52,9 @@ beforeEach(() => {
     fixture: null,
     app: { presence: () => Promise.resolve(true), notify: () => Promise.resolve(true) },
     pair: { store: () => new Promise(() => undefined) },
+    system: { hostName: () => Promise.resolve("devbox") },
+    // Add machine, on Hub › Machines: this computer isn't one of the hub's, and nothing is joining.
+    machines: { thisComputer: () => new Promise(() => undefined), joinHereState: () => new Promise(() => undefined), onJoinHere: () => () => undefined },
     updates: {
       subscribe: () => () => undefined,
       state: () => Promise.resolve({ current: "0.9.0", app: { kind: "idle" }, release: null }),
@@ -132,35 +136,30 @@ const click = async (el: HTMLElement) => {
 };
 const screen = () => host.querySelector("[data-screen]")?.getAttribute("data-screen");
 
-it("has four pages, and nests a project's four pages under Projects only while one is open", async () => {
+it("has You and Projects for a member, with the picked project's five pages, and no Hub group", async () => {
   await render("#/settings/general", false);
-  expect(rows()).toEqual(["Back", "General", "Connections", "Projects", "Prompts"]);
-  expect(nav()?.querySelector("[role='group'][aria-label='Project']")).toBeNull();
+  expect(rows()).toEqual(["Back", "General", "Your accounts", "Hubs", "docs", "Project", "Agents", "Instructions & memory", "Automations", "Prompts"]);
+  expect(nav()?.querySelector("section[aria-label='Hub']")).toBeNull();
+  expect([...(nav()?.querySelectorAll("section") ?? [])].map((x) => x.querySelector("span")?.textContent ?? "")).toEqual(expect.arrayContaining(["You", "Projects"]));
 
-  await click(button("Projects", nav() ?? document));
+  const group = nav()?.querySelector<HTMLElement>("[role='group'][aria-label='Project']");
+  await click(button("Project", group ?? document));
   expect(screen()).toBe("settings.projects");
   // The first project (by title), named in the route so a reload or a copied link lands on it.
   expect(window.location.hash).toBe("#/settings/projects?for=devbox/docs");
-  const group = nav()?.querySelector<HTMLElement>("[role='group'][aria-label='Project']");
-  // The picker, then the project's pages.
   expect(group?.querySelector("#settings-project")?.textContent).toContain("docs");
-  expect([...(group?.querySelectorAll("button:not(#settings-project)") ?? [])].map((b) => b.textContent.trim()).filter((t) => t !== "")).toEqual([
-    "Project",
-    "Agents",
-    "Instructions & memory",
-    "Automations",
-  ]);
 
   // Each of the project's pages is one click from there, on the same project.
   for (const [row, tab, data] of [
     ["Agents", "agents", "settings.agents"],
     ["Instructions & memory", "instructions", "settings.instructions"],
     ["Automations", "automations", "settings.automations"],
+    ["Prompts", "prompts", "settings.prompts"],
     ["Project", "projects", "settings.projects"],
   ]) {
     await click(button(row ?? "", group ?? document));
     expect(screen(), row).toBe(data);
-    expect(window.location.hash).toBe(`#/settings/${tab ?? ""}?for=devbox/docs`);
+    expect(window.location.hash, row).toMatch(new RegExp(`^#/settings/${tab ?? ""}\\?(.*&)?for=devbox/docs`, "u"));
   }
 });
 
@@ -173,33 +172,57 @@ it("keeps the picked project across a project's pages, and an older link on the 
   expect(window.location.hash).toBe("#/settings/agents?for=devbox/storefront");
   // Leaving the project's pages and coming back finds the same project.
   await click(button("General", nav() ?? document));
-  await click(button("Projects", nav() ?? document));
+  await click(button("Project", nav() ?? document));
   expect(window.location.hash).toBe("#/settings/projects?for=devbox/storefront");
 });
 
-it("puts your hubs, Claude and GitHub on Connections", async () => {
-  await render("#/settings/claude", false);
-  expect(screen()).toBe("settings.connections");
-  expect([...host.querySelectorAll<HTMLElement>("[data-part]")].map((p) => p.dataset["part"])).toEqual(["hubs", "claude", "github"]);
+it("puts your Claude and GitHub on Your accounts, and the paired hubs on Hubs, from old Connections links too", async () => {
+  const parts = () => [...host.querySelectorAll<HTMLElement>("[data-part]")].map((p) => p.dataset["part"]);
+  for (const hash of ["#/settings/claude", "#/settings/connections", "#/settings/accounts"]) {
+    await render(hash, false);
+    expect(screen(), hash).toBe("settings.accounts");
+    expect(parts()).toEqual(["claude", "github"]);
+    act(() => root.unmount());
+    root = createRoot(host);
+  }
+  await render("#/settings/hubs", false);
+  expect(screen()).toBe("settings.hubs");
+  expect(parts()).toEqual(["hubs.add"]);
 });
 
-it("says which fleetd this app, the hub and each machine run, with Check for updates for everyone and the sheet for an admin only", async () => {
+it("shows a project's prompts under its Prompts, with no picker of its own", async () => {
+  await render("#/settings/prompts?for=devbox/storefront", false);
+  expect(screen()).toBe("settings.prompts");
+  expect(host.querySelector("#prompts-scope")).toBeNull();
+  const group = nav()?.querySelector<HTMLElement>("[role='group'][aria-label='Project']");
+  expect(button("Prompts", group ?? document).getAttribute("aria-current")).toBe("page");
+  expect(group?.querySelector("#settings-project")?.textContent).toContain("storefront");
+});
+
+it("says which fleetd this app runs, with Check for updates, and the hub's standing in one read-only line; the update itself is on Hub › Machines", async () => {
   await render("#/settings/general", false);
   const part = host.querySelector<HTMLElement>("[data-part='general.updates']");
   expect(part).not.toBeNull();
   expect(part?.textContent).toContain("Stable channel");
   expect(part?.querySelector("[data-updates-part='app']")?.textContent).toContain("fleetd 0.9.0");
-  expect(part?.querySelector("[data-updates-row='devbox']")).not.toBeNull();
+  expect(part?.querySelector("[data-hub-standing]")?.textContent).toBe("The hub and its machines are up to date.");
   await click(button("Check for updates", part ?? document));
   expect(checks).toBe(1);
-  // A member updates no hub: no way to the sheet.
-  expect([...(part?.querySelectorAll("button") ?? [])].map((b) => b.textContent.trim())).not.toContain("Open updates…");
+  // A member updates no hub: no machine rows, no sheet and no way to one.
+  expect(part?.querySelector("[data-updates-row='devbox']")).toBeNull();
+  expect(part?.textContent).not.toContain("Update…");
+  expect(part?.textContent).not.toContain("Open updates…");
   expect([...host.querySelectorAll("[data-part]")].map((p) => p.getAttribute("data-part"))).toContain("notifications");
 
   act(() => root.unmount());
   root = createRoot(host);
   await render("#/settings/general", true);
   const mine = host.querySelector<HTMLElement>("[data-part='general.updates']");
-  await click(button("Open updates…", mine ?? document));
+  expect(mine?.textContent).not.toContain("Open updates…");
+  await click(button("Updates in Hub › Machines", mine ?? document));
+  expect(window.location.hash).toBe("#/settings/hub/machines");
+  const updates = host.querySelector<HTMLElement>("[data-part='hub.updates']");
+  expect(updates?.querySelector("[data-updates-row='devbox']")).not.toBeNull();
+  await click(button("Open updates…", updates ?? document));
   expect(host.querySelector("[data-sheet]")).not.toBeNull();
 });

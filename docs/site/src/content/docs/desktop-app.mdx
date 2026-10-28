@@ -49,7 +49,7 @@ To add another hub, or rename or remove one, open Settings (⌘,) → Hubs. See 
 
 | Part | Shows |
 |---|---|
-| Sidebar | Your projects, each saying why it wants you: "reply", "approve", "secret" or "blocked". Otherwise "CI red" while a check fails on main (which blocks nothing), or how many agents are working. A project in bold has a new message from its lead. Below them: Status, Factory, Settings and, for admins, Administration. The hub's row at the bottom says how many machines are down and opens Machines. |
+| Sidebar | Your projects, each saying why it wants you: "reply", "approve", "secret" or "blocked". Otherwise "CI red" while a check fails on main (which blocks nothing), or how many agents are working. A project in bold has a new message from its lead. Below them: Status, Factory and Settings, which for an admin says how many setup steps are left. The hub's row at the bottom says how many machines are down and opens Machines. |
 | The top row | The page's title and its controls, then the command palette (⌘K) and the panel's toggle. In a chat: the project's name, then only [what needs you](#chat), if anything. The panel starts at the window's top, so its tabs share this row. |
 | The chat | The selected project's conversation with its lead. |
 | The panel | Beside a chat, on the right: a tab each for the project's [agents](#agents), its [pull requests](/docs/chat#prs), its [merge train](#train), its [checklist](#checklist), its [activity](#activity) and its [decisions](#decisions). Open it with the toggle at the top right or ⌥⌘B. |
@@ -98,7 +98,7 @@ message back. The banner says why the hub doesn't answer and when the app tries 
 Approvals, secrets and Stop wait until the hub is back.
 
 Once you're connected again, a chat says "Last known" until its newest messages load; if they can't, it says so, with
-Retry. "Disconnect and forget key" in Settings → Connections → Hubs clears what the app kept for that hub, queued messages included.
+Retry. "Disconnect and forget key" in Settings › Hubs clears what the app kept for that hub, queued messages included.
 
 How to work with the lead: [Chat with the lead](/docs/chat).
 
@@ -188,45 +188,48 @@ Each machine is one row: its name, its state (online, degraded, or offline and w
 run there and how many projects it has. On the right, anything that wants a look: a recent sleep, Claude usage near
 its limit, a setup check that failed. A degraded machine says why under its name. Click a row to open it: load, memory,
 Claude usage, its fleetd version and tags, its projects (each with Open, Settings and Remove) and, for an owner or
-admin, Roles and screens, which goes to [Administration › Machines](#administration).
+admin, Roles and screens, which goes to [Settings › Hub › Machines](#hub).
 
 Under the machines, the [setup checks](/docs/machines#health) the hub ran: the ones that failed or warned, each with
 its fix (a command to copy, or Fix), then the rest a click away. Re-run runs them again.
 
 ## Settings {#settings}
 
-Open Settings with ⌘,. It is everyone's: nothing hub-wide is in it (that is [Administration](#administration)'s). It
-takes the sidebar's place; Back returns to where you were. Type in "Search settings" to find
-an option or a prompt by name, and press Enter to open the first match.
-
-Settings has four pages. While one of a project's pages is open, Projects shows a project picker and that project's
-four pages under it, and Prompts lists the prompts under it. Every option is at most two clicks from opening Settings.
-An older `#/settings/<page>` link opens the page that has its options now.
+Open Settings with ⌘, or the sidebar's Settings row. It takes the sidebar's place; Back returns to where you were. Type
+in "Search settings" to find an option or a prompt by name, and press Enter to open the first match. Its pages are in
+three groups: **You** and **Projects** for everyone, and **Hub** for the hub's owners and admins only. The rule: what
+changes a teammate's work outside your project is in Hub.
 
 | Page | Has |
 |---|---|
-| General | Appearance (light, dark, match system) and time in the app. **Notifications**: which alerts show (the lead asks you something, a command or secret waits, the lead finishes what you asked, a machine problem, anything else), whether they play a sound, the Dock badge, and a test. There is never an alert for the chat in front of you, and in quiet hours only urgent ones show. **Version & updates**: this app's version and channel with Check for updates, the hub's and each machine's fleetd and whether each is up to date; owners and admins also get the updates sheet, which updates the hub, then every machine, then this app. |
-| Connections | **Hubs**: each hub this app is paired with, with its address, its connection, its name and colour, Pair again and Remove; Add a hub pairs one more (see [Several hubs](/docs/several-hubs)). **Claude**: which Claude account the orders you start and your Navi run on, your own subscription (paste the token `claude setup-token` prints, then Connect and test) or the hub's API key when the hub's admins allow it (see [Claude accounts](/docs/people#claude)). **GitHub**: the GitHub account your PRs open as. |
-| Projects | One project, picked under Projects in the sidebar. **Project**: its name, repos, worktrees, memory refresh, its agents' environment variables (plain and secret), its setup commands, the merge train's checks, and deleting it; for a Navi, its integrations and linked hubs (see [Project settings](/docs/projects#settings)). **Agents**: its [max agents](/docs/projects#max-agents) (the slider applies when you let go, with Undo, and "Use the default" goes back), its Medium allowed switch, its task profiles' model and effort, its own MCP servers and its [skills](/docs/skills). **Instructions & memory**: its own instructions, added to its agents' first message after the hub-wide ones, then what its leads remember: yours ("You", every project's), then the project's. **Automations**: its [automations](/docs/automations). |
-| Prompts | The prompts fleetd sends a project's agents, listed under Prompts in the sidebar, to read and edit for that project, and any of its edits that no longer apply. A prompt with one text for the whole hub shows read only. See [What agents are told](/docs/what-agents-are-told). |
+| You › General | Appearance (light, dark, match system) and time in the app. **Notifications**: which alerts show (the lead asks you something, a command or secret waits, the lead finishes what you asked, a machine problem, anything else), whether they play a sound, the Dock badge, and a test. There is never an alert for the chat in front of you, and in quiet hours only urgent ones show. **Version**: this app's version and channel with Check for updates, and one read-only line saying whether the hub and its machines are up to date; owners and admins also get the way to Hub › Machines, where the update is. |
+| You › Your accounts | **Claude**: which Claude account the orders you start and your Navi run on, your own subscription (paste the token `claude setup-token` prints, then Connect and test) or the hub's API key when the hub's admins allow it (see [Claude accounts](/docs/people#claude)). **GitHub**: the GitHub account your PRs open as. |
+| You › Hubs | Each hub this app is paired with, with its address, its connection, its name and colour, Pair again and Remove, and the [links to it](/docs/navi#hub-links) made as you; Add a hub pairs one more (see [Several hubs](/docs/several-hubs)). |
+| Projects | One project, picked at the top of the group. **Project**: its name, repos, worktrees, memory refresh, its agents' environment variables (plain and secret), its setup commands, the merge train's checks, and deleting it; for a Navi, its integrations and linked hubs (see [Project settings](/docs/projects#settings)). **Agents**: its [max agents](/docs/projects#max-agents) (the slider applies when you let go, with Undo, and "Use the default" goes back), its Medium allowed switch, its task profiles' model and effort, its own MCP servers and its [skills](/docs/skills). **Instructions & memory**: its own instructions, added to its agents' first message after the hub-wide ones, then what its leads remember: yours ("You", every project's), then the project's. **Automations**: its [automations](/docs/automations). **Prompts**: the prompts fleetd sends its agents, listed under Prompts in the sidebar, to read and edit for this project, and any of its edits that no longer apply. A prompt with one text for the whole hub shows read only. See [What agents are told](/docs/what-agents-are-told). |
 
-## Administration {#administration}
+### Hub {#hub}
 
-Owners and admins of the hub see **Administration** in the sidebar, above Settings, and in the command palette. Nobody
-else sees it, and Settings and the other screens carry no admin controls. It takes the sidebar's place like Settings;
-Back returns to where you were. While a required setup step is left, the entry says how many (`1 to set up`) and opens
-on Setup, and a hub with no projects yet opens on setup's welcome in place of Get started.
+Owners and admins see the Hub group under Projects; nobody else sees it, and the hub refuses its changes from anyone
+else. While a required setup step is left, the sidebar's Settings row says how many (`2 left`) and opens on Hub ›
+Setup, and a hub with no projects yet opens on setup's welcome in place of Get started. With [several
+hubs](/docs/several-hubs#admin), the group manages one at a time.
 
-| Section | Has |
+| Page | Has |
 |---|---|
 | People | Everyone on the hub, with their role and devices. Change a role in place, or remove someone: their devices are signed out at once, and what they did keeps their name. An admin can't change or remove an owner, and nobody changes their own role here. Below, Invite someone: a name and a role (member or admin) make an invite link, shown once with Copy; their fleetd app opens it and joins as them, once, within 7 days. Then the invites still waiting, each with Revoke, and every hub link minted on the hub. |
-| Machines | Add machine, the hub's machines with Repair and Remove, each one's page with its checklist, and [machine roles](/docs/machines#roles). |
-| Connections | What the hub itself connects to. **Claude**: the hub's API key and optional endpoint, sealed to every machine, with Test; the switch "Members may use the hub's API key"; what projects' leads and unrequested work run on, with the hub owner's subscription they fall back to; and each person's account, with any usage pause (see [Claude accounts](/docs/people#claude)). **GitHub**: the hub's own [GitHub App](/docs/github). **Google**: the OAuth client for [Google for Navi](/docs/google#client), with the steps in Google Cloud Console, the Client ID and secret (sealed) and Test, then, optionally, [real-time mail](/docs/google#pubsub). |
-| Hub settings | What reaches every project and machine: the whole fleet's and each machine's [max agents](/docs/projects#max-agents), the two [task profiles](/docs/projects#models) with the model and effort behind each, the [memory caps](/docs/what-agents-are-told#memory), the instructions for every project, the global [MCP servers](/docs/mcp-servers) and whether agents also get their own, the hub-wide [skills](/docs/skills), and the hub-wide prompts, listed under Hub settings in the sidebar. The hub refuses these changes from anyone but an owner or admin. |
-| Setup | The hub's [setup steps](/docs/quick-start#setup-steps), the same as `fleetd init`'s: each with its status, why it matters, the values to paste and the pages to open, Test, and Skip for now. Its row says how many required steps are left. A step's result is saved where it lives: its button opens Administration › Connections, › People or › Machines, and for Claude also your own Settings › Connections › Claude. |
+| Machines | Add machine, the hub's machines with Repair and Remove, each one's page with its checklist, [machine roles](/docs/machines#roles), [max agents](/docs/projects#max-agents) for each machine and for all of them together, and **Updates**: the hub's and each machine's fleetd and whether each is up to date, with the updates sheet, which updates the hub, then every machine, then this app. |
+| Every project › Profiles | The two [task profiles](/docs/projects#models), with the model and effort behind each. |
+| Every project › Tools & skills | The global [MCP servers](/docs/mcp-servers) and whether agents also get their own, and the hub-wide [skills](/docs/skills). |
+| Every project › Instructions & memory | The instructions for every project, and the [memory caps](/docs/what-agents-are-told#memory). |
+| Every project › Prompts | The hub-wide prompts, listed under it in the sidebar. A project's own edits come after them. |
+| Hub accounts | What the hub itself connects to. **Claude**: the hub's API key and optional endpoint, sealed to every machine, with Test; the switch "Members may use the hub's API key"; what projects' leads and unrequested work run on, with the hub owner's subscription they fall back to; and each person's account, with any usage pause (see [Claude accounts](/docs/people#claude)). **GitHub**: the hub's own [GitHub App](/docs/github). **Google**: the OAuth client for [Google for Navi](/docs/google#client), with the steps in Google Cloud Console, the Client ID and secret (sealed) and Test, then, optionally, [real-time mail](/docs/google#pubsub). **Run guided setup again** opens Setup. |
+| Setup | Listed only while a required step is left. The hub's [setup steps](/docs/quick-start#setup-steps), the same as `fleetd init`'s: each with its status, why it matters, the values to paste and the pages to open, Test, and Skip for now. A step's result is saved where it lives: its button opens Hub accounts, People or Machines, and for Claude and GitHub also your own Your accounts. |
 
 On a hub from before people, a key with admin on every machine counts as an admin, and so does any key on a hub too
-old to say; People there says the hub needs updating, with Update the hub, and Hub settings work as before.
+old to say; People there says the hub needs updating, with Update the hub, and the other Hub pages work as before.
+
+Older links still work: `#/settings/<page>` and the former Administration's `#/admin/<page>` open the page that has
+their options now.
 
 ## Shortcuts {#shortcuts}
 

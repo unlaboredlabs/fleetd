@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// Administration › Machines: the machine list's Repair (over SSH, or a line that enrolls it again) and Remove (asked
+// Settings › Hub › Machines: the machine list's Repair (over SSH, or a line that enrolls it again) and Remove (asked
 // first, then gone), and a machine's page: its checklist read from the hub's checks, each item waiting until checked,
 // and Claude's login from the app, its code going to the hub once.
 import { act } from "react";
@@ -151,7 +151,7 @@ it("lists the machines, each with its page, Repair and Remove", async () => {
   // Online first, then by name.
   expect(names).toEqual(["builder-1", "devbox", "laptop"]);
   expect(row("laptop")?.textContent).toContain("Offline");
-  expect(row("laptop")?.querySelector("a")?.getAttribute("href")).toBe("#/admin/machines/laptop");
+  expect(row("laptop")?.querySelector("a")?.getAttribute("href")).toBe("#/settings/hub/machines/laptop");
 
   await click(rowButton("builder-1", "Repair"));
   await click(rowButton("laptop", "Repair"));

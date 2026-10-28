@@ -46,7 +46,7 @@ fn require_administrator(hub: &Hub, caller: &Caller) -> Result<Person, ToolError
         error(
             ErrorCode::Forbidden,
             "Only the hub's owners and admins invite people, change roles and remove people.",
-            "Ask an owner or admin of the hub, on the app's Administration page or with `fleetd invite` on the hub.",
+            "Ask an owner or admin of the hub, on the Hub pages of the app's Settings or with `fleetd invite` on the hub.",
         )
     })
 }

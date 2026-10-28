@@ -16,7 +16,7 @@ and any other repository still uses those logins.
 
 ## Create it {#create}
 
-On an owner's or admin's app: **Administration › Connections › GitHub**.
+On an owner's or admin's app: **Settings › Hub accounts › GitHub**.
 
 1. Choose where the App lives: your account, or an organization you administer.
 2. Check its name: by default "fleetd on" and the hub's name. App names are unique on GitHub, so GitHub asks for
@@ -79,7 +79,7 @@ Work the hub does on GitHub then appears as the App, `fleetd-on-devbox[bot]`.
 
 ## Your own GitHub {#connect}
 
-In **Settings › Connections › GitHub**, press **Connect GitHub** and authorize the App on GitHub's page. The app catches GitHub's
+In **Settings › Your accounts › GitHub**, press **Connect GitHub** and authorize the App on GitHub's page. The app catches GitHub's
 answer on this computer (`127.0.0.1`), and the hub keeps your token sealed and renews it. You never see it, and
 nobody else's work uses it.
 
@@ -95,7 +95,7 @@ The token reaches the order's agents as `GH_TOKEN`, one of the order's variables
 before it ends, and gone when the order closes. Each repo the order works in gets its own: the App's token for that
 repo's owner, and none in a repo the App doesn't reach, where `gh` uses the machine's own login.
 
-If GitHub stops taking your connection (revoked there, or unused for six months), Settings › Connections › GitHub says so, with
+If GitHub stops taking your connection (revoked there, or unused for six months), Settings › Your accounts › GitHub says so, with
 **Connect again**. **Disconnect** revokes the token at GitHub and forgets it. Your open orders' agents then hold a
 value GitHub refuses, so their `gh` fails (never falling back to the machine's login) and the order's lead asks you to
 connect again; they get your token back at their next turn once you do. GitHub lapsing your connection, or your
@@ -103,6 +103,6 @@ removal from the hub, does the same.
 
 ## Remove it {#remove}
 
-**Remove** on Administration › Connections › GitHub, or `fleetd github-app remove`, makes the hub forget the App and its keys, and everyone's connection through it. The
+**Remove** on Settings › Hub accounts › GitHub, or `fleetd github-app remove`, makes the hub forget the App and its keys, and everyone's connection through it. The
 hub's `gh` goes back to the machine's own login. GitHub keeps the App until you delete it under its settings' Advanced
 page.

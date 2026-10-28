@@ -21,7 +21,7 @@ export interface OnboardingProps {
   /** Pair the hub on screen again (`#/onboarding?another`, from Settings): the form stays up while it is connected. */
   readonly another?: boolean | undefined;
   /**
-   * Add a hub beside the ones paired (`#/onboarding?add`, from Settings › Connections › Hubs), under a name and colour the person
+   * Add a hub beside the ones paired (`#/onboarding?add`, from Settings › Hubs), under a name and colour the person
    * picks; a pairing link that comes while a hub is in use adds one too.
    */
   readonly add?: boolean | undefined;
@@ -178,7 +178,7 @@ function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }
 
   const done = useCallback(() => {
     // Drop a link's code from the route, so the screen follows the connection from here; a hub added goes to the list.
-    window.location.hash = adding ? "#/settings/connections" : "#/onboarding";
+    window.location.hash = adding ? "#/settings/hubs" : "#/onboarding";
   }, [adding]);
 
   const pair = useCallback(async (request: () => Promise<PairOutcome>) => {
@@ -338,7 +338,7 @@ function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }
           <Button
             variant="secondary"
             onClick={() => {
-              window.location.hash = "#/settings/connections";
+              window.location.hash = "#/settings/hubs";
             }}
           >
             Back to settings
@@ -359,7 +359,7 @@ function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }
           <Button
             variant="secondary"
             onClick={() => {
-              window.location.hash = "#/settings/connections";
+              window.location.hash = "#/settings/hubs";
             }}
           >
             {current === null ? "Back to settings" : "Keep this hub"}

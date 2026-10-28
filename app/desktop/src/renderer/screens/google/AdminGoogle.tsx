@@ -1,4 +1,4 @@
-// Administration › Connections › Google: the hub's Google OAuth client, which every Navi's Google connection goes through. The steps
+// Settings › Hub accounts › Google: the hub's Google OAuth client, which every Navi's Google connection goes through. The steps
 // in Google Cloud Console are the setup step's own (google/guide.ts googleParts), with google_get's scopes and redirect.
 // The client secret is sealed in main to each machine's key (secret.googleClient → google_client_set) and never comes
 // back; Test asks Google to redeem a code that can't work (google_client_test), and `invalid_grant` means it knows the

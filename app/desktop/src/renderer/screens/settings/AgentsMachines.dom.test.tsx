@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
-// Administration's machine caps: each machine's number and where it comes from, the slider that sets it and the way
+// Hub › Machines' caps: each machine's number and where it comes from, the slider that sets it and the way
 // back to auto; and Settings → Projects → Agents' project slider past its machine's cap, which says the machine holds it, with the
-// way to Administration for an owner or admin and nothing more for anyone else.
+// way to Hub › Machines for an owner or admin and nothing more for anyone else.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -83,7 +83,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-/** `page`: Administration's caps, or storefront's Settings → Projects › Agents. `admin`: what hub_info says of the key. */
+/** `page`: Hub › Machines' caps, or storefront's Settings → Projects › Agents. `admin`: what hub_info says of the key. */
 const render = async (page: "hub" | "settings" = "hub", admin?: boolean) => {
   let listener: (frame: HubFrame) => void = () => undefined;
   let now = slots;
@@ -183,16 +183,16 @@ it("takes a project's slider to the fleet cap and says when its machine holds it
   expect(thumb?.getAttribute("aria-valuemax")).toBe("50");
   expect(project.textContent).toContain("devbox runs at most 22 agents at once, so this project runs 22 until an admin raises devbox.");
   // A member sees the line only: no raise, no fleet or machine caps, nothing about admin keys.
-  expect([...project.querySelectorAll("button")].map((b) => b.textContent.trim())).not.toContain("Machine caps in Administration");
+  expect([...project.querySelectorAll("button")].map((b) => b.textContent.trim())).not.toContain("Machine caps in Hub › Machines");
   expect(host.querySelector("section[aria-labelledby='agents-fleet-label']")).toBeNull();
   expect(host.querySelector("section[aria-labelledby='agents-machines']")).toBeNull();
   expect(host.textContent).not.toContain("admin key");
   expect(calls).toEqual([]);
 });
 
-it("gives an owner or admin the way to the machine caps on Administration", async () => {
+it("gives an owner or admin the way to the machine caps on Hub › Machines", async () => {
   await render("settings", true);
   await act(async () => new Promise((r) => setTimeout(r, 0)));
-  await click(button(section("Max agents"), "Machine caps in Administration"));
-  expect(window.location.hash).toBe("#/admin/hub");
+  await click(button(section("Max agents"), "Machine caps in Hub › Machines"));
+  expect(window.location.hash).toBe("#/settings/hub/machines");
 });

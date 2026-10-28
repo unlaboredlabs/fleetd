@@ -120,7 +120,7 @@ describe("connecting a Navi to Google from the app", () => {
       opened = true;
       return Promise.resolve();
     });
-    expect(none.ok ? "" : none.error.fix).toContain("Administration › Google");
+    expect(none.ok ? "" : none.error.fix).toContain("Settings › Hub accounts › Google");
     expect(opened).toBe(false);
     expect(sent.some((x) => x.tool === "google_connect")).toBe(false);
   });

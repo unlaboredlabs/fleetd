@@ -49,13 +49,13 @@ fn may_change(caller: &Caller, scope: &McpScope) -> Result<(), ToolError> {
             ErrorCode::Forbidden,
             "Global MCP servers reach every teammate's agents: only the hub's owners and admins change them.",
         )
-        .with_fix("Ask an owner or admin (Administration › Hub settings), or add the server to one project in its settings."));
+        .with_fix("Ask an owner or admin (Settings › Hub › Every project › Tools & skills), or add the server to one project in its settings."));
     }
     Err(ToolError::new(
         ErrorCode::Forbidden,
         "Only a person changes the MCP servers agents get, with operate on every machine they reach.",
     )
-    .with_fix("Change them in the desktop app: Administration › Hub settings, or the project's settings."))
+    .with_fix("Change them in the desktop app: Settings › Hub › Every project › Tools & skills, or the project's settings."))
 }
 
 fn project_of(hub: &Hub, scope: &McpScope) -> Result<Option<ProjectRef>, ToolError> {

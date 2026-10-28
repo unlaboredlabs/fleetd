@@ -1,6 +1,6 @@
 //! `github_app_get` for everyone; `github_app_manifest`, `github_app_create`, `github_app_test` and
-//! `github_app_remove` for an owner's or admin's device (Administration › Connections › GitHub); `github_connect` and
-//! `github_disconnect` for a person's own devices (Settings › Connections › GitHub). No key, secret or token crosses any of them.
+//! `github_app_remove` for an owner's or admin's device (Settings › Hub accounts › GitHub); `github_connect` and
+//! `github_disconnect` for a person's own devices (Settings › Your accounts › GitHub). No key, secret or token crosses any of them.
 use std::sync::Arc;
 
 use fleetd_contracts::auth::Role;
@@ -40,7 +40,7 @@ fn me(hub: &Hub, caller: &Caller) -> Result<PersonId, ToolError> {
         error(
             ErrorCode::Forbidden,
             "Only a person connects their own GitHub, from one of their own devices.",
-            "Open Settings › Connections › GitHub in the desktop app.",
+            "Open Settings › Your accounts › GitHub in the desktop app.",
         )
     })
 }
@@ -50,7 +50,7 @@ fn require_administrator(hub: &Hub, caller: &Caller) -> Result<(), ToolError> {
         error(
             ErrorCode::Forbidden,
             "Only the hub's owners and admins set up the hub's GitHub App.",
-            "Ask an owner or admin; they set it up on the app's Administration page, or with `fleetd github-app create` on the hub machine.",
+            "Ask an owner or admin; they set it up on the Hub pages of the app's Settings, or with `fleetd github-app create` on the hub machine.",
         )
     })
 }
@@ -59,7 +59,7 @@ fn none_yet() -> ToolError {
     error(
         ErrorCode::NotFound,
         "This hub has no GitHub App yet.",
-        "Create one in Administration › Connections › GitHub.",
+        "Create one in Settings › Hub accounts › GitHub.",
     )
 }
 

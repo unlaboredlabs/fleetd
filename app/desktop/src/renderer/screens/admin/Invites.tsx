@@ -1,4 +1,4 @@
-// Administration → People's invites: a link for someone new (invite_create with a name and role), shown once with
+// Settings › Hub › People's invites: a link for someone new (invite_create with a name and role), shown once with
 // Copy, and the invites still open, each with Revoke (invite_revoke). The link is today's fleetd://pair link, bound to the person
 // and good for 7 days; their app opens it and pairs as them.
 import { UserPlus } from "lucide-react";
@@ -8,6 +8,7 @@ import { Button, copyText, Field, Input, Radio, RadioGroup, Text, Truncate } fro
 import { useHub, useSeveralHubs } from "../../src/data/react";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
 import { expiresLine, nameProblem, openInvites, ROLE_HELP, roleWord } from "./model";
+import { useReveal } from "../settings/search";
 import { usePeople } from "./usePeople";
 import s from "../settings/settings.module.css";
 import a from "./admin.module.css";
@@ -24,10 +25,13 @@ export function Invites({ me }: { me: Person | undefined }) {
   const [now] = useState(() => Date.now());
   const roleOf = (i: Invite): HubRole | undefined => read.data?.people.find((p) => p.personId === i.person.personId)?.role;
   const open = read.data === undefined ? [] : openInvites(read.data.invites);
+  const inviteForm = useReveal<HTMLElement>("hub.invite");
+  const inviteButton = useReveal<HTMLSpanElement>("hub.invite");
+  const waiting = useReveal<HTMLElement>("hub.invites");
   return (
     <>
       {inviting ? (
-        <section className={a.section} aria-labelledby="invite-someone">
+        <section ref={inviteForm} className={a.section} aria-labelledby="invite-someone">
           <Text strong id="invite-someone">
             Invite someone
           </Text>
@@ -38,14 +42,14 @@ export function Invites({ me }: { me: Person | undefined }) {
           {created === null ? null : <CreatedLink created={created} />}
         </section>
       ) : (
-        <span>
+        <span ref={inviteButton}>
           <Button icon={<UserPlus size={14} />} onClick={() => setInviting(true)}>
             Invite someone
           </Button>
         </span>
       )}
       {open.length === 0 && read.data !== undefined ? null : (
-        <section className={a.section} aria-labelledby="invites-open">
+        <section ref={waiting} className={a.section} aria-labelledby="invites-open">
           <Text strong id="invites-open">
             Waiting to join
           </Text>

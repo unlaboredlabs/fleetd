@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// The sidebar's rows under the lists: Status, Factory, Settings, then Administration for admins only. Time is the
+// The sidebar's rows under the lists: Status, Factory and Settings, with no Administration row (D211). Time is the
 // Factory's Agent time tab and Machines is reached from the hub's footer row, so neither has a row of its own.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -82,9 +82,9 @@ describe("the sidebar's rows", () => {
     expect(host.textContent).not.toContain("Machines");
   });
 
-  it("end with Administration, below Settings, for an admin only", () => {
+  it("end with Settings for an admin too: the hub's pages are Settings' Hub group", () => {
     mount({ admin: true });
-    expect(labels()).toEqual(["Status", "Factory", "Settings", "Administration"]);
+    expect(labels()).toEqual(["Status", "Factory", "Settings"]);
   });
 
   it("open the Factory on Output, and on Agent time for a hub without metrics", () => {

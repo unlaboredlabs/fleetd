@@ -1,4 +1,4 @@
-// Administration › Connections › GitHub: the hub's own GitHub App (D190), which does the hub's work on GitHub (the train's reads,
+// Settings › Hub accounts › GitHub: the hub's own GitHub App (D190), which does the hub's work on GitHub (the train's reads,
 // rebases, statuses and merges, and the PR pages) on the repositories it is installed on. Create GitHub App goes
 // through main (window.fleetd.github.createApp): it posts the hub's manifest to GitHub from a page on 127.0.0.1 and
 // hands GitHub's code to github_app_create, so the App's keys go from GitHub to the hub and never to this computer.

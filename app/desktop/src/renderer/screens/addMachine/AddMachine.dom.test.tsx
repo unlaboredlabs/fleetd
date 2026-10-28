@@ -229,7 +229,7 @@ it("gives any other machine one line to paste, and turns its wait into Joined on
   expect(waitLine()?.getAttribute("data-line")).toBe("joined");
   expect(waitLine()?.textContent).toBe("laptop joined.");
   await click("Open laptop");
-  expect(window.location.hash).toBe("#/admin/machines/laptop");
+  expect(window.location.hash).toBe("#/settings/hub/machines/laptop");
 });
 
 it("says when the code expired before the line ran, and makes a new one", async () => {

@@ -1,4 +1,4 @@
-//! MCP servers fleetd gives its agents (Settings › MCP servers in the desktop app): hub-wide ones for every project,
+//! MCP servers fleetd gives its agents (Settings › Hub › Every project › Tools & skills in the desktop app): hub-wide ones for every project,
 //! and a project's own, which replace a hub-wide one of the same name. Each is a stdio command or an HTTP or SSE URL,
 //! on or off, for the roles chosen (the lead, writers, reviewers), and reaches each agent's claude through the
 //! `--mcp-config` its node writes for it. fleetd's own tools server is always there and can't be replaced.

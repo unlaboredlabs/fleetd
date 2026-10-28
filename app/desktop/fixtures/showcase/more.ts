@@ -2,7 +2,7 @@
 // each made of another group's fixture rather than data of its own: Try it on #230 (fixtures/tryit), Navi with Ada and
 // Home above the projects, Ada woken by Gmail with a reply to approve that attaches two files and the order it asked
 // storefront for (fixtures/navi), and a second hub, Personal, beside this one in the sidebar (fixtures/sidebar).
-// Administration's people and invites are admin-owner's (fixtures/admin), and so are the people in checkout's chat, which
+// Hub › People's people and invites are admin-owner's (fixtures/admin), and so are the people in checkout's chat, which
 // the team shares: Sam writes from this app, Alice and Bob from theirs, and the lead answers them together. The nightly
 // memory refresh's line is in storefront's chat (index.ts), and its built-in row on the Automations page comes with
 // every fixture (fixtures/settings).

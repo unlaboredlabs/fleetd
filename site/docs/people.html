@@ -101,14 +101,14 @@ device paired before belongs to them, and the lead’s prompts don’t change.</
 </table>
 <p>A device never holds more than its person’s role allows. A member’s device operates on every machine, even one
 paired with <code dir="auto">admin</code>. Each device keeps its own cap too: a device paired <code dir="auto">--role read</code> stays read-only. Admin options
-live on the app’s Administration page, which only owners and admins see.</p>
+live on the Hub pages of the app’s Settings, which only owners and admins see.</p>
 <p>Every project is open to everyone on the hub for now. Private projects and per-project roles come later.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="invite">Invite someone</h2><a class="sl-anchor-link" href="#invite"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Invite someone”</span></a></div>
 <p>On the hub machine:</p>
 <div class="expressive-code"><link rel="stylesheet" href="/docs/_astro/ec.cqkp3.css"><script type="module" src="/docs/_astro/ec.0vx5m.js"></script><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="sh"><code><div class="ec-line"><div class="code"><span style="--0:#80A665;--1:#4B7231">fleetd</span><span style="--0:#DBD7CAEE;--1:#393A34"> </span><span style="--0:#C98A7D;--1:#96574A">invite</span><span style="--0:#DBD7CAEE;--1:#393A34"> </span><span style="--0:#C99076;--1:#995728">--name</span><span style="--0:#DBD7CAEE;--1:#393A34"> </span><span style="--0:#C98A7D;--1:#96574A">Alice</span><span style="--0:#DBD7CAEE;--1:#393A34">              </span><span style="--0:#818F81FE;--1:#636B63"># a member</span></div></div><div class="ec-line"><div class="code"><span style="--0:#80A665;--1:#4B7231">fleetd</span><span style="--0:#DBD7CAEE;--1:#393A34"> </span><span style="--0:#C98A7D;--1:#96574A">invite</span><span style="--0:#DBD7CAEE;--1:#393A34"> </span><span style="--0:#C99076;--1:#995728">--name</span><span style="--0:#DBD7CAEE;--1:#393A34"> </span><span style="--0:#C98A7D;--1:#96574A">Bob</span><span style="--0:#DBD7CAEE;--1:#393A34"> </span><span style="--0:#C99076;--1:#995728">--role</span><span style="--0:#DBD7CAEE;--1:#393A34"> </span><span style="--0:#C98A7D;--1:#96574A">admin</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="fleetd invite --name Alice              # a memberfleetd invite --name Bob --role admin"><div></div></button></div></figure></div>
 <p>It prints an invite link (<code dir="auto">fleetd://pair?…</code>), a code and the hub’s address. Send Alice the link, or the code and
 address to enter in the fleetd app. An invite works once, for 7 days. The device that redeems it gets a key of its
-own, which belongs to Alice. Owners and admins can also invite from the app’s Administration page.</p>
+own, which belongs to Alice. Owners and admins can also invite from the Hub pages of the app’s Settings.</p>
 <p>A new person needs a name. To pair one more device for someone already on the hub, invite them again by id:</p>
 <div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="sh"><code><div class="ec-line"><div class="code"><span style="--0:#80A665;--1:#4B7231">fleetd</span><span style="--0:#DBD7CAEE;--1:#393A34"> </span><span style="--0:#C98A7D;--1:#96574A">invite</span><span style="--0:#DBD7CAEE;--1:#393A34"> </span><span style="--0:#C99076;--1:#995728">--person</span><span style="--0:#DBD7CAEE;--1:#393A34"> </span><span style="--0:#C98A7D;--1:#96574A">p_abcd2345</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="fleetd invite --person p_abcd2345"><div></div></button></div></figure></div>
 <p><code dir="auto">fleetd pair</code> still pairs one more device for the hub’s owner, as before.</p>
@@ -180,14 +180,14 @@ configuration</strong>. They can switch at any time.</p>
 </table>
 <ul>
 <li><strong>The hub’s API configuration</strong> is a Claude API key and an optional custom endpoint (<code dir="auto">ANTHROPIC_BASE_URL</code>). An
-owner or admin sets it up on the Administration page. Agents get it as <code dir="auto">ANTHROPIC_API_KEY</code>.</li>
+owner or admin sets it up on the Hub pages of the app’s Settings. Agents get it as <code dir="auto">ANTHROPIC_API_KEY</code>.</li>
 <li><strong>A subscription</strong> is connected with the long-lived token that <code dir="auto">claude setup-token</code> prints. Run it on any computer
 signed in to your Claude account and connect it with <code dir="auto">claude_subscription_set</code> (your settings in the app, once its
 screen ships). Agents get it as <code dir="auto">CLAUDE_CODE_OAUTH_TOKEN</code>.</li>
 <li><strong>Test</strong> makes one tiny <code dir="auto">claude -p</code> call with the key or token, on a machine that holds it.</li>
 <li>With no choice made, your subscription is used once you connect one, on each machine that holds it; on a machine
 that doesn’t, your work there runs on the hub’s API. Choose your subscription to have it refused there instead.</li>
-<li><strong>Members may use the hub’s API</strong> is on by default. An owner or admin can turn it off on the Administration page;
+<li><strong>Members may use the hub’s API</strong> is on by default. An owner or admin can turn it off on the Hub pages of the app’s Settings;
 then each member connects their own subscription. It never affects owners, admins, leads or work nobody started.</li>
 <li>Someone with nothing to run on gets “Connect your Claude to start this order”, and no agent starts for them.
 <strong>One person’s subscription is never used for anyone else’s work.</strong></li>
@@ -199,11 +199,11 @@ for the reset. Everyone else’s carries on. <code dir="auto">usage_status</code
 </ul>
 <p>In the app:</p>
 <ul>
-<li><strong>Settings › Connections › Claude</strong> is each person’s own. <em>In use</em> says what your orders and your Navi run on now, or “Connect
+<li><strong>Settings › Your accounts › Claude</strong> is each person’s own. <em>In use</em> says what your orders and your Navi run on now, or “Connect
 your Claude to start orders” with what to do. <em>Runs on</em> picks your subscription or the hub’s API key; the hub’s key
 is offered only when you may use it. <em>Your subscription</em> takes the token: paste it and press Connect and test. The
 app seals it on your computer to every machine and never shows it again. Test, Replace and Disconnect are beside it.</li>
-<li><strong>Administration › Connections › Claude</strong> is for owners and admins. <em>Hub API key</em> takes the key and an optional endpoint
+<li><strong>Settings › Hub accounts › Claude</strong> is for owners and admins. <em>Hub API key</em> takes the key and an optional endpoint
 (Save and test), then shows the machines that hold it, its last Test, and Test, Change and Remove. A change to the
 endpoint alone keeps the saved key. <em>Members</em> is the switch. <em>Leads and unrequested work</em> says what they run on, and
 whether the hub owner’s subscription, their fallback, is connected. <em>Everyone’s account</em> lists each person’s way,

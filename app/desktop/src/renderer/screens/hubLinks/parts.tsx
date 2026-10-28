@@ -1,4 +1,4 @@
-// What Linked hubs, Links to this hub and Administration's hub links share: the word for a hub too old to link hubs,
+// What Linked hubs, Links to this hub and Hub › People's hub links share: the word for a hub too old to link hubs,
 // and a row for a link minted here, with Revoke (hub_link_revoke; the hub lets its person or an admin).
 import { useState } from "react";
 import type { IssuedLink, ProjectRef } from "../../../shared/contracts";
@@ -36,7 +36,7 @@ export const useTitleOf = (): ((p: ProjectRef) => string | undefined) => {
 
 /**
  * One link minted on this hub: what its person called the other hub, the projects it is limited to, when it was last
- * used, and Revoke. `who` adds its person (Administration lists everyone's).
+ * used, and Revoke. `who` adds its person (Hub › People lists everyone's).
  */
 export function IssuedRow({ link, now, who }: { link: IssuedLink; now: number; who?: boolean }) {
   const live = useLive();

@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// Administration's machine roles: each machine's roles, session slots and what it can host, read from machine_roles; a role
+// Hub › Machines' roles: each machine's roles, session slots and what it can host, read from machine_roles; a role
 // change goes out as machine_roles_set and the hub's line about it shows under the row.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";

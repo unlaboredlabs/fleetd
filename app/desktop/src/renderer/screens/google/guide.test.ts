@@ -5,7 +5,7 @@ import { cloudProject, googleParts, realtimeParts } from "./guide";
 const values = (parts: ReturnType<typeof googleParts>) => parts.flatMap((p) => p.values ?? []);
 const value = (parts: ReturnType<typeof googleParts>, label: string) => values(parts).find((v) => v.label === label);
 
-describe("Administration › Google's guide", () => {
+describe("Hub accounts › Google's guide", () => {
   it("is a Desktop app client with the loopback redirect and the hub's exact scopes, so a plain-HTTP hub works", () => {
     const parts = googleParts("http://devbox:4790");
     expect(value(parts, "Application type")?.value).toBe("Desktop app");

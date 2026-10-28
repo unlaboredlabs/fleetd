@@ -1432,7 +1432,7 @@ async fn setup(
     }
     let picked = ui.multi(
         list,
-        "Set up any of these now? (the app's Administration › Setup has them too)",
+        "Set up any of these now? (the app's Settings › Hub › Setup has them too)",
         &left,
         Vec::new(),
     )?;
@@ -1588,7 +1588,7 @@ pub async fn open_step(opts: InitOptions, id: SetupStepId, interactive: bool) ->
     };
     match walk(&opts, &ui, &mut list, &mut client, &step).await {
         Ok(SetupStatus::Done) => {
-            list.outro(&[], "Next: fleetd init lists what's left; the app's Administration › Setup has the same steps.");
+            list.outro(&[], "Next: fleetd init lists what's left; the app's Settings › Hub › Setup has the same steps.");
             0
         }
         Ok(_) => {

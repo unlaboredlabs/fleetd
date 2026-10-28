@@ -101,7 +101,7 @@ export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unk
   // Only the open panel's project has its checklist mounted.
   if (type === "checklist.changed") out.push({ tool: "checklist_get" });
   if (type === "skills.changed") out.push({ tool: "skills_list" });
-  // Someone invited, joined, renamed, given a role or removed: Administration's lists, and whether this person still
+  // Someone invited, joined, renamed, given a role or removed: the Hub group's lists, and whether this person still
   // administers (the sidebar's entry).
   // Setup's People step reads it too.
   if (type === "people.changed") out.push({ tool: "people_list" }, { tool: "hub_info" }, { tool: "setup_list" });
@@ -114,7 +114,7 @@ export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unk
   if (type === "doctor.changed") out.push({ tool: "doctor_list" }, { tool: "setup_list" });
   // Add machine: a run started, moved a step or ended.
   if (type === "machine_add.step") out.push({ tool: "machine_add_status" });
-  // Administration's machine roles: a machine coming and going, and a session starting or ending, move its rows.
+  // Hub › Machines' roles: a machine coming and going, and a session starting or ending, move its rows.
   if (type.startsWith("machine.") || type === "browser.session") out.push({ tool: "machine_roles" });
   // The hub's attention policy is a global decision. Only the open Decisions tab has its list mounted, so this
   // refetches one read.

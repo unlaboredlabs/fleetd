@@ -150,12 +150,12 @@ same checks. The tables below give each check’s id in brackets, such as <code 
 <tr>
 <td>“The hub has no Claude API key.” <code dir="auto">[claude_key]</code></td>
 <td>Nothing is wrong: leads and unrequested work run on the hub owner’s subscription, else each machine’s own login.</td>
-<td>To give the hub a key: Administration › Connections › Claude.</td>
+<td>To give the hub a key: Settings › Hub accounts › Claude.</td>
 </tr>
 <tr>
 <td>“The hub’s Claude API key failed its Test on devbox: …” <code dir="auto">[claude_key]</code></td>
 <td>The key was revoked, is out of credit, or the endpoint is wrong.</td>
-<td>Administration › Connections › Claude: Change, paste the key and endpoint again, then Save and test.</td>
+<td>Settings › Hub accounts › Claude: Change, paste the key and endpoint again, then Save and test.</td>
 </tr>
 <tr>
 <td>“… isn’t on buildbox, so nothing runs on it there.” <code dir="auto">[claude_key]</code> <code dir="auto">[claude_owner]</code> !</td>
@@ -170,7 +170,7 @@ same checks. The tables below give each check’s id in brackets, such as <code 
 <tr>
 <td>“Sam Rivera’s Claude subscription failed its Test on devbox: …” <code dir="auto">[claude_owner]</code></td>
 <td>The owner’s token expired or was revoked.</td>
-<td>The owner runs <code dir="auto">claude setup-token</code> again and pastes the token in Settings › Connections › Claude.</td>
+<td>The owner runs <code dir="auto">claude setup-token</code> again and pastes the token in Settings › Your accounts › Claude.</td>
 </tr>
 <tr>
 <td>“The hub has no address set up”, or <code dir="auto">setup.json</code> is unreadable <code dir="auto">[https]</code></td>

@@ -1,8 +1,8 @@
-// Links to this hub (Settings › Connections › Hubs, under each hub): a person makes a link key that lets their Navi on another hub open and
+// Links to this hub (Settings › Hubs, under each hub): a person makes a link key that lets their Navi on another hub open and
 // follow work here, as them, optionally limited to chosen projects (hub_link_mint). The key is shown once, with this
 // hub's address another hub reaches (hub_info's url; typed here when the hub has none), to paste into that Navi's Linked
 // hubs. Below, the links made as them, each with Revoke. Even for an admin this lists only their own, and nothing until
-// hub_info says who they are: everyone's is on Administration › People.
+// hub_info says who they are: everyone's is on Settings › Hub › People.
 import { useMemo, useState } from "react";
 import type { HubLinkMintOutput, ProjectRef } from "../../../shared/contracts";
 import { useData, useToolQuery } from "../../src/data/react";

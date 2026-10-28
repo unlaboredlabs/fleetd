@@ -1,8 +1,8 @@
 // The hub admin's setup (docs/design/setup.md): the steps the hub serves (setup_list), the same ones `fleetd init`
-// walks. #/setup is the first run: the welcome, the steps with one open beside them, and the end. Administration ›
+// walks. #/setup is the first run: the welcome, the steps with one open beside them, and the end. Settings › Hub ›
 // Setup shows the same steps (SetupSteps) on its page. Each step's status is the hub's, read from its checks; Test runs
 // that step's checks now (setup_test), Skip for now keeps it for later (setup_skip), and a step's result is saved
-// where it lives already (Administration › Google, › Claude, …), which its place opens. Only owners and admins see any
+// where it lives already (Settings › Hub accounts › Google, › Claude, …), which its place opens. Only owners and admins see any
 // of it.
 
 import { Check } from "lucide-react";
@@ -29,7 +29,7 @@ const go = (view: string | null) => {
 type Steps = { readonly steps: ReadonlyArray<SetupStep> } | { readonly problem: string; readonly old: boolean } | null;
 
 /**
- * Asks the hub for its steps again each time a setup view opens: what was saved elsewhere meanwhile (Administration ›
+ * Asks the hub for its steps again each time a setup view opens: what was saved elsewhere meanwhile (Settings › Hub ›
  * Claude, `fleetd init`) shows at once, rather than at the doctor's next run.
  */
 export function useFreshSetup(enabled = true) {
@@ -331,7 +331,7 @@ export function Welcome({ steps }: { steps: ReadonlyArray<SetupStep> }) {
         </Text>
         <Text as="p" tone="quiet">
           A few accounts and keys turn it into a factory. Each step says why, gives you the exact values to paste, and
-          checks your work. Your progress is saved; stop at any point and come back, here, in Administration › Setup or
+          checks your work. Your progress is saved; stop at any point and come back, here, in Settings › Hub › Setup or
           with fleetd init.
         </Text>
         <StepSummary title="Needed before agents can run" steps={required} />
@@ -381,7 +381,7 @@ function StepSummary({ title, steps, brief = false }: { title: string; steps: Re
   );
 }
 
-/** The end: what is ready, and what waits in Administration › Setup for when it is needed. */
+/** The end: what is ready, and what waits in Settings › Hub › Setup for when it is needed. */
 function Done({ steps }: { steps: ReadonlyArray<SetupStep> }) {
   const ready = steps.filter((st) => st.status === "done");
   const waiting = steps.filter((st) => st.status !== "done");
@@ -394,7 +394,7 @@ function Done({ steps }: { steps: ReadonlyArray<SetupStep> }) {
         </Text>
         <Text as="p" tone="quiet">
           {left === 0
-            ? "Add a project and say hi to its lead. What you left for later waits in Administration › Setup, and fleetd asks for it the first time it is needed."
+            ? "Add a project and say hi to its lead. What you left for later waits in Settings › Hub › Setup, and fleetd asks for it the first time it is needed."
             : `${left} required ${left === 1 ? "step is" : "steps are"} left before agents can run.`}
         </Text>
         <StepSummary title="Ready" steps={ready} brief />

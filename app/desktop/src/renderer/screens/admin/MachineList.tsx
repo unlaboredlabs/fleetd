@@ -1,4 +1,4 @@
-// Administration › Machines: the hub's machines, each a row between hairlines with its state, a link to its page
+// Settings › Hub › Machines: the hub's machines, each a row between hairlines with its state, a link to its page
 // (the checklist), Repair and Remove. Repair goes again over SSH when the hub reaches the machine, else it makes a
 // line that enrolls it again (machine_join with rejoin); Remove asks first, then runs machine_remove. The hub sends no
 // event when it forgets a machine, so a removed one leaves the list here at once and the store's next snapshot.
@@ -43,7 +43,7 @@ export function MachineList({ onRepair }: { onRepair: (r: Repair) => void }) {
             <div key={m.machineId} className={a.row} role="listitem" aria-label={m.name}>
               <div className={a.who}>
                 <div className={a.name}>
-                  <a className={a.machineLink} href={toHash({ id: "admin", section: "machines", machine: m.machineId })}>
+                  <a className={a.machineLink} href={toHash({ id: "settings", tab: "hub.machines", machine: m.machineId })}>
                     <Text strong>{m.name}</Text>
                   </a>
                   <Text size="xs" tone={m.status === "online" ? "quiet" : m.status === "degraded" ? "warning" : "danger"}>

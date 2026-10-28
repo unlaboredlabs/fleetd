@@ -1,5 +1,5 @@
-// MCP servers: HubMcpServers, the ones every project's agents get and whether they also get their own (Administration ›
-// Hub settings, owners and admins only, D209); and McpSection, a project's own servers on its Projects page. Reads
+// MCP servers: HubMcpServers, the ones every project's agents get and whether they also get their own (Settings ›
+// Hub › Every project › Tools & skills, owners and admins only, D209); and McpSection, a project's own servers on its Projects page. Reads
 // mcp_servers_get; saves through main (mcp_server_set, each secret sealed there to each machine's key), removes with
 // mcp_server_remove and tests with mcp_server_test. A secret's value is write-only: typed here once, sealed in main, never shown again.
 import { useState } from "react";
@@ -33,7 +33,7 @@ function useMachineIds(): string[] {
   return Object.keys(machines).sort();
 }
 
-/** Administration › Hub settings: the MCP servers every project's agents get, and whether they also get their own. */
+/** Settings › Hub › Every project: the MCP servers every project's agents get, and whether they also get their own. */
 export function HubMcpServers() {
   const live = useLive();
   const read = useToolQuery("mcp_servers_get", {}, { enabled: live });
@@ -127,13 +127,13 @@ export function McpSection({ projectRef }: { projectRef: Ref }) {
     >
       {integrations > 0 ? (
         <Text size="xs" tone="quiet">
-          {integrations === 1 ? "1 more is" : `${String(integrations)} more are`} under Integrations above.
+          {integrations === 1 ? "1 more is" : `${String(integrations)} more are`} under Integrations, on its Project page.
         </Text>
       ) : null}
       {globals.length > 0 ? (
         <div className={s.stack}>
           <Text size="xs" tone="quiet">
-            From Settings › MCP servers:
+            For every project, from Hub › Every project › Tools &amp; skills:
           </Text>
           {globals.map(({ server, replaced }) => (
             <Text key={server.name} size="sm" tone="quiet">

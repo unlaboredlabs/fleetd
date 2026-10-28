@@ -1,5 +1,5 @@
 // A hub's colour, picked: none, or one of the named colours (shared/hubs.ts), a small swatch each, the chosen one
-// ringed by a hairline. Settings › Connections › Hubs and Add a hub use it.
+// ringed by a hairline. Settings › Hubs and Add a hub use it.
 import { HUB_COLORS, type HubColor } from "../../../shared/hubs";
 import { Text } from "../../ui";
 import { HUB_COLOR } from "./hubColor";

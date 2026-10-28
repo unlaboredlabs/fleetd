@@ -105,17 +105,17 @@ You'll install fleetd, open a project in the desktop app, and tell its lead what
 Everything a hub admin sets up is one list of steps, the same in the terminal and the app. `fleetd init` lists them at
 its end, `fleetd doctor` lists them first, and `fleetd init --step <id>` opens one: why it matters, the values to paste
 (computed for your hub), the pages to open, then **Test** or **Later**. In the app, an admin's first run opens on
-them, and [Administration › Setup](/docs/desktop-app#administration) has them at any time. Each step's status comes from the hub's checks, so you can stop at any
+them, and [Settings › Hub › Setup](/docs/desktop-app#hub) has them at any time. Each step's status comes from the hub's checks, so you can stop at any
 point and pick up again later, from any of them.
 
 | Step | Id | Needed |
 |---|---|---|
 | Where the hub listens | `address` | Required. Plain HTTP is fine on your tailnet. |
 | Machines that run agents | `machines` | Required. |
-| Claude | `claude` | Required. The hub's API key on Administration › Connections › Claude, your subscription in Settings › Connections › Claude, or each machine's own `claude auth login`. |
-| GitHub | `github` | Before the first PR: the hub's GitHub App, made with one button on Administration › Connections › GitHub, then each person connects theirs in Settings › Connections › GitHub; or `gh auth login` on the hub. |
+| Claude | `claude` | Required. The hub's API key on Settings › Hub accounts › Claude, your subscription in Settings › Your accounts › Claude, or each machine's own `claude auth login`. |
+| GitHub | `github` | Before the first PR: the hub's GitHub App, made with one button on Settings › Hub accounts › GitHub, then each person connects theirs in Settings › Your accounts › GitHub; or `gh auth login` on the hub. |
 | Invite people | `people` | Optional. Done once someone you invited has joined. |
-| Google | `google` | Optional. The client is saved on Administration › Connections › Google; see [Google](/docs/google). |
+| Google | `google` | Optional. The client is saved on Settings › Hub accounts › Google; see [Google](/docs/google). |
 | Notion | `notion` | Optional. Each person connects their own, on their Navi. |
 
 Optional steps never block anything; **Later** keeps a step in the list. Secrets are never typed in the terminal: a

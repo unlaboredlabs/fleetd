@@ -430,7 +430,7 @@ whole fleet. The hub enforces all of them; the lead plans to them.</p>
 <td>Per machine</td>
 <td>Every project’s agents on the machine. Not the leads.</td>
 <td>Auto, what it fits: one per CPU less one in eight, and 2 GB of memory each after a quarter of it (4 to 16 GB) is left for the system, at most 64. An 8 GB laptop fits 2, a 32 GB one 12, a 60 GB one 22.</td>
-<td>Administration › Hub settings → Machines, up to the fleet cap; “Use auto” goes back. Owners and admins only. node.json’s <code dir="auto">memPerAgentGb</code> changes the 2 GB of auto.</td>
+<td>Settings › Hub › Machines → Max agents, up to the fleet cap; “Use auto” goes back. Owners and admins only. node.json’s <code dir="auto">memPerAgentGb</code> changes the 2 GB of auto.</td>
 </tr>
 <tr>
 <td>Per project: Max agents</td>
@@ -442,7 +442,7 @@ whole fleet. The hub enforces all of them; the lead plans to them.</p>
 <td>Fleet-wide</td>
 <td>Every project’s agents together. Not the leads.</td>
 <td>None: the machines’ caps added up</td>
-<td>Administration › Hub settings → Whole fleet. Owners and admins only. A fleet cap saved before stays until you change it.</td>
+<td>Settings › Hub › Machines → Max agents. Owners and admins only. A fleet cap saved before stays until you change it.</td>
 </tr>
 </tbody>
 </table>
@@ -557,7 +557,7 @@ profile.</p>
 </table>
 <div class="sl-heading-wrapper level-h3"><h3 id="profile-settings">What a profile runs on</h3><a class="sl-anchor-link" href="#profile-settings"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “What a profile runs on”</span></a></div>
 <p>A profile’s model is one of the models the hub’s Claude configuration offers: what the Models API lists on the hub’s
-API key when it has one (Administration › Connections), else fleetd’s own list of current Claude models. Its effort is
+API key when it has one (Settings › Hub accounts), else fleetd’s own list of current Claude models. Its effort is
 one Claude Code takes: low, medium, high, xhigh or max; a model without that level runs the nearest one below. Fast
 mode is Claude Code’s (<code dir="auto">"fastMode": true</code> in the session’s settings), only on the models that have it (Opus 5.5, Opus
 5 and Opus 4.8), at a higher price per token.</p>

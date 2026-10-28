@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
-// Administration with several hubs (docs/design/hubs.md): it says which hub it manages above every page, its sidebar
-// switches between the hubs this person administers (keeping the section), and an invite is made on the hub it
-// names, never on whichever hub some other screen had open. With one hub, none of it shows.
+// Settings' Hub group with several hubs (docs/design/hubs.md): it says which hub it manages above every page, the
+// group switches between the hubs this person administers (keeping the page), and an invite is made on the hub it
+// names, never on whichever hub some other screen had open. An old Administration link still lands on its hub. With
+// one hub, none of it shows.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -19,6 +20,8 @@ const fake = vi.hoisted(() => {
   const hubs = new Map<string, { listeners: Set<(frame: unknown) => void>; calls: Array<{ tool: string; input: unknown }> }>();
   // The role this app's person has on each hub (hub_info's `me`).
   const roles = new Map<string, "owner" | "admin" | "member">();
+  // Hubs from before hub_info: it isn't a tool there, and the app lets their keys try.
+  const old = new Set<string>();
   const of = (id: string) => {
     const held = hubs.get(id) ?? { listeners: new Set(), calls: [] };
     hubs.set(id, held);
@@ -30,6 +33,7 @@ const fake = vi.hoisted(() => {
     const me = { personId: "p_aaaaaaaa", name: "Sam Rivera", role: roles.get(id) ?? "member", createdAt: at };
     switch (tool) {
       case "hub_info":
+        if (old.has(id)) return undefined;
         return { version: "0.0.0", protocol: 1, busy: [], me };
       case "people_list":
         return { people: [me], devices: [], invites: [], me: me.personId };
@@ -86,7 +90,7 @@ const fake = vi.hoisted(() => {
     pair: { store: () => Promise.resolve(null), probe: (hub: string) => Promise.resolve({ answers: false, hub }), start: () => new Promise(() => undefined) },
     system: { hostName: () => Promise.resolve("devbox") },
   });
-  return { hubs, of, roles };
+  return { hubs, of, roles, old };
 });
 
 const send = (id: string, frame: HubFrame) => {
@@ -133,8 +137,8 @@ const mount = async (entries: HubEntry[]) => {
     up("a1b2", "https://hub.acme.example");
     up("c3d4", "http://club-hub:4790");
   });
-  // Administration's page and sidebar load in a chunk of their own.
-  await act(() => import("./AdminScreen"));
+  // Settings' pages and sidebar load in a chunk of their own.
+  await act(() => import("../settings/SettingsScreen"));
   await settle();
   await settle();
 };
@@ -170,6 +174,7 @@ beforeEach(() => {
   window.localStorage.clear();
   fake.hubs.clear();
   fake.roles.clear();
+  fake.old.clear();
   fake.roles.set("hub", "owner").set("a1b2", "admin").set("c3d4", "member");
 });
 afterEach(() => {
@@ -179,8 +184,8 @@ afterEach(() => {
 
 it("names the hub it manages, and lists to switch only the hubs this person administers", async () => {
   await mount(THREE);
-  await go("#/admin/people?at=a1b2");
-  expect(host.querySelector('[data-screen="admin.people"]')).not.toBeNull();
+  await go("#/settings/hub/people?at=a1b2");
+  expect(host.querySelector('[data-screen="settings.hub.people"]')).not.toBeNull();
   expect(managing()?.dataset["managing"]).toBe("a1b2");
   expect(managing()?.textContent).toContain("Acme");
   expect(managing()?.textContent).toContain("https://hub.acme.example");
@@ -193,7 +198,7 @@ it("names the hub it manages, and lists to switch only the hubs this person admi
 
 it("creates the invite on the hub it names, saying which, never on another", async () => {
   await mount(THREE);
-  // Another hub's screen was open last: Administration on Acme still acts on Acme.
+  // Another hub's screen was open last: an old Administration link to Acme still acts on Acme.
   await go("#/project/devbox/hub?at=hub");
   await go("#/admin/people?at=a1b2");
   await openInvite();
@@ -216,14 +221,14 @@ it("creates the invite on the hub it names, saying which, never on another", asy
   expect(calls("c3d4", "invite_create")).toEqual([]);
 });
 
-it("switches hub from its sidebar, keeping the section, and the page follows", async () => {
+it("switches hub from the Hub group, keeping the page, and the page follows", async () => {
   await mount(THREE);
-  await go("#/admin/people?at=a1b2");
+  await go("#/settings/hub/people?at=a1b2");
   const personal = host.querySelector<HTMLButtonElement>('[data-admin-hub="hub"]');
   act(() => personal?.click());
   await settle();
   await settle();
-  expect(window.location.hash).toBe("#/admin/people?at=hub");
+  expect(window.location.hash).toBe("#/settings/hub/people?at=hub");
   expect(managing()?.dataset["managing"]).toBe("hub");
   expect(managing()?.textContent).toContain("Personal");
   await openInvite();
@@ -232,10 +237,22 @@ it("switches hub from its sidebar, keeping the section, and the page follows", a
 
 it("with one hub, names none and offers no switch: the page is as it was", async () => {
   await mount([{ id: "hub", label: "devbox" }]);
-  await go("#/admin/people");
-  expect(host.querySelector('[data-screen="admin.people"]')).not.toBeNull();
+  await go("#/settings/hub/people");
+  expect(host.querySelector('[data-screen="settings.hub.people"]')).not.toBeNull();
   expect(managing()).toBeNull();
   expect(choices()).toEqual([]);
   await openInvite();
   expect(button("Create invite link")).toBeDefined();
+});
+
+it("settles with hubs from before hub_info: the Hub group shows once, and nobody asks hub_info in a loop", async () => {
+  fake.old.add("hub").add("a1b2");
+  await mount(THREE);
+  await go("#/settings/general?at=hub");
+  for (let i = 0; i < 5; i++) await settle();
+  const asked = calls("hub", "hub_info").length;
+  for (let i = 0; i < 5; i++) await settle();
+  expect(calls("hub", "hub_info").length).toBe(asked);
+  expect(asked).toBeLessThan(10);
+  expect(host.querySelector("nav[aria-label='Settings'] section[aria-label='Hub']")).not.toBeNull();
 });

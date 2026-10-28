@@ -6,7 +6,7 @@
 // code and the lead asks you to take over (QA takes over, types the code and hands back), the browser's recording lands
 // as the second PR's proof, #230 is tried on the web (Try it), and the train merges four PRs as one batch. Then QA
 // shows what else the app does (more.ts): the night's memory refresh in this chat and the Automations page, Ada (a
-// Navi) with a reply to approve, and Administration's people, with a second hub beside this one in the sidebar.
+// Navi) with a reply to approve, and Hub › People, with a second hub beside this one in the sidebar.
 //
 // The board, the PR list and the merge line move in STEPS: each step's rows carry its own updatedAt, and a "rows" frame
 // swaps one step's rows for the next one's (src/main/hub/fixture.ts) before the event that makes the app read them again.
@@ -550,7 +550,7 @@ const build = (base: Fixture, other: Fixture): Fixture => {
   // The screens' pages.
   WEB_PAGES.forEach(([ms, image, address], i) => at(ms, "browser_frame", frame(SCREEN.web, i + 1, image, "agent", address)));
   PHONE_PAGES.forEach(([ms, image], i) => at(ms, "browser_frame", frame(SCREEN.phone, i + 1, image, "agent")));
-  // Try it on #230, Ada, Administration and the second hub (more.ts).
+  // Try it on #230, Ada, Hub › People and the second hub (more.ts).
   const tryIt = tryItScene(f, REPO, 230);
   at(TRY_IT.page, "browser_frame", tryIt.first);
   at(TRY_IT.flip, "browser_frame", tryIt.flipped);

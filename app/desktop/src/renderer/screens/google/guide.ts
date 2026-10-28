@@ -1,4 +1,4 @@
-// Administration › Google's guide (google/AdminGoogle.tsx, google/AdminMail.tsx): the steps in Google Cloud Console for
+// Settings › Hub accounts › Google's guide (google/AdminGoogle.tsx, google/AdminMail.tsx): the steps in Google Cloud Console for
 // the hub's OAuth client, with google_get's scopes and redirect, and for Gmail in real time. The hub's setup step for
 // Google (hub/setup) gives the same parts and sends the admin here to save what comes back.
 
@@ -19,7 +19,7 @@ export const cloudProject = (hub: string): string => `fleetd-${new URL(hub.repla
 
 /**
  * The Google step's required parts, for this hub: the Cloud project, the APIs, the sign-in screen with the exact scopes
- * the hub asks for, and a Desktop app client with the loopback redirect. Administration › Google shows the same ones,
+ * the hub asks for, and a Desktop app client with the loopback redirect. Settings › Hub accounts › Google shows the same ones,
  * with google_get's scopes and redirect.
  */
 export const googleParts = (hub: string, scopes: ReadonlyArray<string> = SCOPES, redirect: string = REDIRECT): ReadonlyArray<GuidePart> => {
@@ -80,7 +80,7 @@ export const googleParts = (hub: string, scopes: ReadonlyArray<string> = SCOPES,
 
 /**
  * Real-time mail's parts, both optional: the topic Gmail tells and its subscription, then a service account that may
- * only read it, with its key. Administration › Google shows the same ones above its fields.
+ * only read it, with its key. Settings › Hub accounts › Google shows the same ones above its fields.
  */
 export const realtimeParts = (hub: string): ReadonlyArray<GuidePart> => {
   const project = cloudProject(hub);

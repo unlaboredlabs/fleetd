@@ -10,7 +10,7 @@ fleetd prompts list
 fleetd prompts show lead.start
 ```
 
-Every text fleetd sends a model is a prompt: listed in `fleetd prompts list`, in the app's Settings → Prompts, and in
+Every text fleetd sends a model is a prompt: listed in `fleetd prompts list`, in the app's Settings › a project › Prompts, and in
 the [table at the end of this page](#prompts). You can edit each one. What fleetd fills into them, such as the event
 lines a lead is woken with, is facts: see [Filled in by fleetd](#not-editable).
 
@@ -120,7 +120,7 @@ The [table below](#prompts) marks prompt-only rules.
 
 ## Edit a prompt {#edit}
 
-In the app: Settings → Prompts for one project's own texts, or Administration → Hub settings for the hub-wide ones
+In the app: Settings › a project › Prompts for one project's own texts, or Settings › Hub › Every project › Prompts for the hub-wide ones
 (owners and admins only: the hub refuses anyone else). Open a prompt from the list in the sidebar, edit it and Save. "Compare with default"
 shows your changes; "Reset to default" drops them.
 
@@ -154,7 +154,7 @@ Saving never refuses text that isn't empty, but it warns:
 
 ## Your own instructions {#instructions}
 
-In the app: Settings → Projects → Instructions & memory for one project's, and Administration → Hub settings for every project's (owners
+In the app: Settings › a project › Instructions & memory for one project's, and Settings › Hub › Every project › Instructions & memory for every project's (owners
 and admins only). On the hub machine:
 
 ```sh
@@ -187,7 +187,7 @@ others. When it remembers something in user scope, it goes to the memory of the 
 answering, and only that person can undo it. A lead opens a topic file when it needs one. Something remembered
 mid-session reaches the next session.
 
-Read, edit or delete your own memory and each project's in Settings → Projects → Instructions & memory. Nobody else
+Read, edit or delete your own memory and each project's in Settings › a project › Instructions & memory. Nobody else
 reads or edits yours, owners and admins included; an owner or admin can only delete the memory of someone removed from
 the hub. A hub from before people kept one shared `user.md`: its owner got a copy as their own memory, and the old
 file stays, read by no agent, as Shared memory, which an owner or admin reads and retires under Hub › Every project ›
@@ -196,7 +196,7 @@ Instructions & memory.
 The files are plain markdown in the hub's home (`memory/`, yours in `memory/people/`), in no repo. Each file has a
 cap, by default 16,000 characters for each person's memory and each `MEMORY.md`, 32,000 per topic and
 128,000 per project: a write past one is refused, and the lead merges entries instead. An owner or admin changes the caps
-under Memory caps in [Administration › Hub settings](/docs/desktop-app#administration) (or `memory_caps_set` with an
+under Memory caps in Settings › [Hub](/docs/desktop-app#hub) › Every project › Instructions & memory (or `memory_caps_set` with an
 admin key for every machine): 1,000 to 100,000
 per file, up to 400,000 per project. Memory never holds a secret.
 
@@ -252,7 +252,7 @@ listed by name and description as `fleetd:<name>`. It opens one with the Skill t
 
 Your version stays in use.
 
-- In Settings → Prompts, the prompt is marked `update`. "Review the update" shows both changes, and you pick Save
+- In a project's Prompts, the prompt is marked `update`. "Review the update" shows both changes, and you pick Save
   merged, Keep mine, or Use the new default.
 - On the hub, `fleetd prompts list` marks it `update`, and `fleetd prompts diff <id>` shows both changes.
 
@@ -261,7 +261,7 @@ Your version stays in use.
 A release can fold a prompt into another one or drop it. Your edit to it then stops applying, but fleetd keeps it and
 never moves it for you.
 
-1. Open Settings → Prompts. Under "Edits that no longer apply", each one says, for example, "Your edit to the lead's
+1. Open a project's Prompts in Settings. Under "Edits that no longer apply", each one says, for example, "Your edit to the lead's
    "task finished" note (hub-wide) no longer applies", why, and which prompt to copy it into.
 2. "Show your text" shows your old edit; "Copy your text" copies it.
 3. Paste what you still want into the prompt it names. If none takes its place, use your

@@ -1,4 +1,4 @@
-//! `machine_roles` and `machine_roles_set`: Administration › Hub settings and `fleetd machine set <id> --roles`.
+//! `machine_roles` and `machine_roles_set`: Settings › Hub › Machines and `fleetd machine set <id> --roles`.
 use std::sync::Arc;
 
 use fleetd_contracts::auth::Role;

@@ -40,10 +40,8 @@ const platform = window.fleetd.platform;
 
 const JUMPS = [1, 2, 3, 4, 5, 6, 7, 8, 9] as const;
 
-// Settings' own sidebar takes the projects' place while Settings is open; it ships in Settings' chunk. Administration's
-// does the same.
+// Settings' own sidebar takes the projects' place while Settings is open; it ships in Settings' chunk.
 const SettingsSidebar = lazy(() => import("../settings/SettingsScreen").then((m) => ({ default: m.SettingsSidebar })));
-const AdminSidebar = lazy(() => import("../admin/AdminScreen").then((m) => ({ default: m.AdminSidebar })));
 // The empty home: setup's welcome for an admin while a required step is left, else Get started.
 const FirstRun = lazy(() => import("../setup/FirstRun").then((m) => ({ default: m.FirstRun })));
 
@@ -151,12 +149,12 @@ function Frame({ route, hubs, sidebar }: { route: Routed; hubs: readonly HubView
     if (home !== null) navigate(home, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [homeRow?.key]);
-  // Where Settings' and Administration's Back returns: the last screen before either.
+  // Where Settings' Back returns: the last screen before it.
   const away = useRef<Screen>(HOME);
   useEffect(() => {
-    if (screen.id !== "settings" && screen.id !== "admin" && screen.id !== "onboarding") away.current = screen;
+    if (screen.id !== "settings" && screen.id !== "onboarding") away.current = screen;
   }, [screen]);
-  const back = useSettingsBack(screen.id === "settings" || screen.id === "admin" ? screen.id : null);
+  const back = useSettingsBack(screen.id === "settings");
   const administers = useAdministers();
 
   const open = screen.id === "project" ? screen.project : null;
@@ -228,13 +226,13 @@ function Frame({ route, hubs, sidebar }: { route: Routed; hubs: readonly HubView
         run: () => go({ id: "factory", project: null }),
       },
       {
-        id: "admin.open",
-        title: "Administration",
-        detail: "People, invites and hub-wide settings",
+        id: "hub.people",
+        title: "People",
+        detail: "Settings › Hub: who is on this hub, their roles, invites and hub links",
         group: "go-to",
-        keywords: ["people", "invite", "team", "roles", "admin", "fleet cap", "machine roles"],
+        keywords: ["people", "invite", "team", "roles", "admin", "administration", "hub"],
         enabled: () => chrome && administers,
-        run: () => go({ id: "admin", section: "people" }),
+        run: () => go({ id: "settings", tab: "hub.people" }),
       },
       { id: "sidebar.toggle", title: "Toggle sidebar", group: "actions", enabled: () => chrome, run: sidebar.toggle },
       { id: "panel.toggle", title: "Toggle the panel", group: "actions", keywords: ["panel", "right", "agents", "prs", "checklist"], enabled: () => chrome && open !== null, run: panel.toggle },
@@ -294,8 +292,8 @@ function Frame({ route, hubs, sidebar }: { route: Routed; hubs: readonly HubView
       <PanelLeft />
     </Button>
   );
-  // Settings' and Administration's pages are in their sidebars, so they show whatever the toggle says.
-  const settings = shown.id === "settings" || shown.id === "admin";
+  // Settings' pages are in its sidebar, so it shows whatever the toggle says.
+  const settings = shown.id === "settings";
   const showSidebar = chrome && (settings || !sidebar.hidden);
 
   const top = (
@@ -322,21 +320,12 @@ function Frame({ route, hubs, sidebar }: { route: Routed; hubs: readonly HubView
           !chrome ? undefined : settings ? (
             <Boundary key={shown.id} part="the sidebar">
               <Suspense fallback={null}>
-                {shown.id === "admin" ? (
-                  <AdminSidebar
-                    onBack={() => {
-                      back();
-                      go(away.current);
-                    }}
-                  />
-                ) : (
-                  <SettingsSidebar
-                    onBack={() => {
-                      back();
-                      go(away.current);
-                    }}
-                  />
-                )}
+                <SettingsSidebar
+                  onBack={() => {
+                    back();
+                    go(away.current);
+                  }}
+                />
               </Suspense>
             </Boundary>
           ) : showSidebar ? (
@@ -390,12 +379,10 @@ function UpdatesOf({ hubs, on }: { hubs: readonly HubView[]; on: HubId }) {
 }
 
 /**
- * Focus after Settings' (or Administration's) Back: the sidebar control that opened it, if that is how it was opened;
- * else the page title, unless the screen gave focus to something itself (the chat's message box). Returns what Back
- * calls first.
+ * Focus after Settings' Back: the sidebar control that opened it, if that is how it was opened; else the page title,
+ * unless the screen gave focus to something itself (the chat's message box). Returns what Back calls first.
  */
-function useSettingsBack(open: "settings" | "admin" | null): () => void {
-  const inSettings = open !== null;
+function useSettingsBack(inSettings: boolean): () => void {
   // The last element that had focus: by the time Settings shows, its opener has left the DOM.
   const last = useRef<Element | null>(null);
   useEffect(() => {
@@ -410,7 +397,7 @@ function useSettingsBack(open: "settings" | "admin" | null): () => void {
   const returning = useRef(false);
   useEffect(() => {
     if (inSettings) {
-      fromSidebar.current = last.current?.closest('[data-opens="settings"], [data-opens="admin"]')?.getAttribute("data-opens") ?? null;
+      fromSidebar.current = last.current?.closest('[data-opens="settings"]')?.getAttribute("data-opens") ?? null;
       return;
     }
     if (!returning.current) return;

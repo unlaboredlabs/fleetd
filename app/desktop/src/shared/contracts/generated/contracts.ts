@@ -1519,7 +1519,7 @@ export type ClaudeSealedOn = {
   machineId: MachineId;
 };
 
-/** Hub-wide Claude settings (Administration). */
+/** Hub-wide Claude settings (Settings › Hub accounts). */
 export type ClaudeSettings = {
   /**
    * Members may run their work on the hub's API configuration (on by default). Off, each member connects their
@@ -2710,7 +2710,7 @@ export type HubSetupStep = {
   need: SetupNeed;
   parts: SetupPart[];
   /**
-   * Where in the app the fields are saved, an Administration section ("google"), where the terminal can't seal
+   * Where in the app the fields are saved, a Hub page of the app's Settings ("google"), where the terminal can't seal
    * them.
    */
   place?: string;
@@ -3329,7 +3329,7 @@ export type MachineRepos = {
 /** What a machine is for. */
 export type MachineRole = "agents" | "sessions";
 
-/** A machine as Administration › Hub settings shows it: its roles, its session slots and what it can host. */
+/** A machine as Settings › Hub › Machines shows it: its roles, its session slots and what it can host. */
 export type MachineRolesEntry = {
   /** What it can host, as its node last reported; empty until it reports. */
   hosts?: HostCheck[];
@@ -4845,7 +4845,7 @@ export type PreviewsListOutput = {
 };
 
 /**
- * One task profile (Administration › Profiles): what an agent on it runs on. Exactly one is the hub's default, which
+ * One task profile (Settings › Hub › Every project › Profiles): what an agent on it runs on. Exactly one is the hub's default, which
  * every project allows and the lead, every review and claude's helper calls run on.
  */
 export type Profile = {

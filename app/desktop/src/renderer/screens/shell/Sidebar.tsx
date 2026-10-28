@@ -1,8 +1,9 @@
 // The sidebar: your Navis pinned on top (navi/model.ts), then the projects (each alphabetical, so none moves), each
 // opening its chat and saying why it wants you ("reply", "approve", "secret", "blocked") or how many agents work; a
 // chat with a message you haven't seen is bold. With no Navi yet, one quiet row offers to meet it (#/navi), with no
-// heading. Then four rows: Status, Factory (its Agent time tab too), Settings, and Administration for admins (a
-// project's agents and PRs are in the panel beside its chat); then any update to make, and the hub (HubStatus), which
+// heading. Then three rows: Status, Factory (its Agent time tab too) and Settings, which for an admin says how many
+// of the hub's required setup steps are left and opens on them (a project's agents and PRs are in the panel beside
+// its chat); then any update to make, and the hub (HubStatus), which
 // says how many machines are down and opens Machines. Holding ⌘ (Ctrl) shows jump numbers on the first nine rows, which ⌘1..9 open. A
 // project's right-click menu opens it or its settings, copies its path, or removes it (RemoveProjectDialog asks
 // first); a Navi's renames or archives it instead (Undo in the toast).
@@ -10,7 +11,7 @@
 // With several hubs (docs/design/hubs.md) the Navis of every hub stay on top, each saying its hub, and each hub's
 // projects are a group under its name, which collapses; the footer has a row per hub. With one, there is no name and
 // no group, as before.
-import { Activity, ChevronDown, ChevronRight, Factory, Plus, Settings, ShieldCheck, Sparkle } from "lucide-react";
+import { Activity, ChevronDown, ChevronRight, Factory, Plus, Settings, Sparkle } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { display, type ShortcutId } from "../../../shared/shortcuts";
 import { HubScope, useDataLayer, useHub, useHubs, useToolQuery } from "../../src/data/react";
@@ -62,7 +63,7 @@ export interface SidebarProps {
   readonly onToggleHub: (hub: string) => void;
   /** The hub reports metrics (or hasn't said yet): the Factory opens on Output, else on Agent time. */
   readonly factory: boolean;
-  /** This app's person is an owner or admin: Administration's entry shows, and for nobody else. */
+  /** This app's person is an owner or admin: Settings says what of the hub's setup is left, to nobody else. */
   readonly admin: boolean;
   readonly go: (screen: Screen) => void;
 }
@@ -72,20 +73,20 @@ const UNREAD = "New message from the lead";
 const noInput = {};
 
 /**
- * Administration's entry, for an owner or admin. While the hub's setup has a required step left it says how many,
- * and opens on Setup; a hub from before setup steps says nothing.
+ * Settings' entry. For an owner or admin, while the hub's setup has a required step left, it says how many and opens on
+ * Hub › Setup; a hub from before setup steps says nothing. Settings' Back returns focus here when this opened it.
  */
-function AdminEntry({ current, go }: { current: boolean; go: (screen: Screen) => void }) {
-  const setup = useToolQuery("setup_list", noInput);
-  const left = setup.data?.requiredLeft ?? 0;
+function SettingsEntry({ current, admin, trailing, go }: { current: boolean; admin: boolean; trailing: ReactNode; go: (screen: Screen) => void }) {
+  const setup = useToolQuery("setup_list", noInput, { enabled: admin });
+  const left = admin ? (setup.data?.requiredLeft ?? 0) : 0;
   return (
     <SidebarItem
-      label="Administration"
-      icon={<ShieldCheck />}
+      label="Settings"
+      icon={<Settings />}
       current={current}
-      data-opens="admin"
-      trailing={left > 0 ? <Text size="xs" tone="warning">{`${String(left)} to set up`}</Text> : undefined}
-      onClick={() => go({ id: "admin", section: left > 0 ? "setup" : "people" })}
+      data-opens="settings"
+      trailing={left > 0 ? <Text size="xs" tone="warning">{`${String(left)} left`}</Text> : trailing}
+      onClick={() => go({ id: "settings", tab: left > 0 ? "hub.setup" : "general" })}
     />
   );
 }
@@ -208,16 +209,7 @@ export function Sidebar({ projects, screen, jumpHints, collapsed, onToggleHub, f
           // A hub from before metrics has no ⌘; (factory/support.ts).
           factory ? kbd("factory.open") : undefined,
         )}
-        {/* Settings' and Administration's Back return focus here when this opened them. */}
-        <SidebarItem
-          label="Settings"
-          icon={<Settings />}
-          current={screen.id === "settings"}
-          trailing={kbd("settings.open")}
-          data-opens="settings"
-          onClick={() => go({ id: "settings", tab: "general" })}
-        />
-        {admin ? <AdminEntry current={screen.id === "admin"} go={go} /> : null}
+        <SettingsEntry current={screen.id === "settings"} admin={admin} trailing={kbd("settings.open")} go={go} />
       </SidebarSection>
     </Frame>
   );

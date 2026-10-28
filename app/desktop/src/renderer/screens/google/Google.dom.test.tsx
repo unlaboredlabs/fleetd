@@ -212,7 +212,7 @@ const region = (name: string) => {
   return r;
 };
 
-describe("Administration › Google", () => {
+describe("Hub accounts › Google", () => {
   it("without a client: the steps with the exact redirect and scopes, then the form", async () => {
     await render(<AdminGoogle />);
     expect(region("OAuth client").textContent).toContain("No client yet");
@@ -279,11 +279,11 @@ describe("a Navi's Google", () => {
     expect(hasButton("Connect", google())).toBe(false);
   });
 
-  it("without a client, sends an admin to Administration › Connections", async () => {
+  it("without a client, sends an admin to Hub accounts", async () => {
     admin = true;
     await render(<IntegrationsSection projectRef={ref} />);
     await click(button("Set up Google", google()));
-    expect(window.location.hash).toBe("#/admin/connections");
+    expect(window.location.hash).toBe("#/settings/hub/accounts");
   });
 
   it("says when the Navi's machine doesn't hold the client, and how to fix it", async () => {
@@ -383,7 +383,7 @@ describe("a Navi's Google", () => {
 const KEY = JSON.stringify({ type: "service_account", project_id: "fleetd-devbox", private_key: "-----BEGIN PRIVATE KEY-----never_in_a_hub_call", client_email: "fleetd-gmail-reader@fleetd-devbox.iam.gserviceaccount.com" });
 
 describe("real-time mail", () => {
-  it("in Administration: off until set up, the key sealed through main and never in a hub call", async () => {
+  it("in Hub accounts: off until set up, the key sealed through main and never in a hub call", async () => {
     client = held("devbox", "buildbox");
     await render(<AdminGoogle />);
     const mail = region("Real-time mail");
@@ -415,7 +415,7 @@ describe("real-time mail", () => {
     expect(mail.querySelector('[role="status"]')?.textContent).toContain("start watching their inbox within a minute");
   });
 
-  it("in Administration: push, or polling with why, and Turn off after asking", async () => {
+  it("in Hub accounts: push, or polling with why, and Turn off after asking", async () => {
     client = held("devbox");
     pubsub = { topic: "projects/fleetd-devbox/topics/fleetd-gmail", subscription: "projects/fleetd-devbox/subscriptions/fleetd-gmail-hub", machineId: "devbox", fingerprint: "71d03a5e" };
     mailMode = "polling";

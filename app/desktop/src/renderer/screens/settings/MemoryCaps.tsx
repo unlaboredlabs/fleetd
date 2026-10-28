@@ -1,4 +1,4 @@
-// Memory caps: how long each memory file may grow, hub-wide (memory_caps_set, an admin's write), on Administration's
+// Memory caps: how long each memory file may grow, hub-wide (memory_caps_set, an admin's write), on Settings › Hub ›
 // hub settings. The lead's `remember` and Settings → Projects → Instructions & memory's editors are held to what is set here.
 import { useState } from "react";
 import type { MemoryCaps as Caps } from "../../../shared/contracts";
@@ -10,7 +10,7 @@ import s from "./settings.module.css";
 
 const noInput = {};
 
-/** The caps as the hub has them now, read on their own: Administration has no memory page around them. */
+/** The caps as the hub has them now, read on their own: Every project's page has no memory list around them. */
 export function HubMemoryCaps() {
   const live = useLive();
   const read = useToolQuery("memory_get", noInput, { enabled: live });

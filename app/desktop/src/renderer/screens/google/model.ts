@@ -59,7 +59,7 @@ export const missingScopes = (asked: ReadonlyArray<string>, granted: ReadonlyArr
 
 /**
  * A Navi's Google connection, from google_get with its project:
- * - no-client: the hub has no OAuth client; an admin sets one up in Administration › Google.
+ * - no-client: the hub has no OAuth client; an admin sets one up in Settings › Hub accounts › Google.
  * - not-held: there is one, but the Navi's machine wasn't online to take its secret when it was saved.
  * - none: ready to connect.
  * - connected, and lapsed: Google stopped taking it (revoked, a Testing app's 7 days), so Reconnect.

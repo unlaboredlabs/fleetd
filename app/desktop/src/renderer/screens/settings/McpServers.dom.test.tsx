@@ -236,7 +236,7 @@ describe("a Navi's MCP section", () => {
     await render(<McpSection projectRef={{ machineId: "devbox", projectId: "p1" }} />);
     const own = document.querySelector('[role="list"][aria-label="MCP servers"]');
     expect(own).toBeNull();
-    expect(document.body.textContent).toContain("1 more is under Integrations above.");
+    expect(document.body.textContent).toContain("1 more is under Integrations, on its Project page.");
     await click(button("Add server"));
     const name = dialog().querySelector<HTMLInputElement>('input[placeholder="github"]');
     if (name === null) throw new Error("no name field");

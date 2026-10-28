@@ -46,7 +46,7 @@ pub const SETUP_USAGE: &str = r#"  init [--yes] [--home <dir>] [--listen <host:p
              and repairs the rest; --rejoin enrols again with a new code
   init --step <address|machines|claude|github|people|google|notion> [--home <dir>]
              open one of the hub's setup steps: why, the values to paste and the pages to open,
-             then Test it, or put it off for later. The app's Administration › Setup has the same
+             then Test it, or put it off for later. The app's Settings › Hub › Setup has the same
              steps
   doctor [--home <dir>]
              run every setup check on the hub now: the setup steps first, then each other

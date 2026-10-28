@@ -65,7 +65,7 @@ pub const PROFILES_MAX: usize = 50;
 /// A profile's row id: stays the same through a rename.
 pub type ProfileId = Positive;
 
-/// One task profile (Administration › Profiles): what an agent on it runs on. Exactly one is the hub's default, which
+/// One task profile (Settings › Hub › Every project › Profiles): what an agent on it runs on. Exactly one is the hub's default, which
 /// every project allows and the lead, every review and claude's helper calls run on.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

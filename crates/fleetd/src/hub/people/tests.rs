@@ -317,7 +317,7 @@ async fn members_cant_administer_and_a_promotion_reaches_the_device_their_invite
     assert_eq!(
         ok(&hub, &promoted, "hub_info", json!({})).await["admin"],
         true,
-        "the app shows the Administration page"
+        "the app shows the Hub pages of the app's Settings"
     );
     ok(
         &hub,

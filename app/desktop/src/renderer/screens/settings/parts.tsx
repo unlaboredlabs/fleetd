@@ -98,7 +98,7 @@ export function PageHead(props: { title: string; children?: ReactNode; aside?: R
 }
 
 /**
- * One part of a page that gathers several (Connections, Hub settings, General's Notifications): its heading and a line,
+ * One part of a page that gathers several (Your accounts, Tools & skills, General's Notifications): its heading and a line,
  * then its options. A search or a link for `reveal` lands on it.
  */
 export function PagePart(props: { title: string; reveal: string; intro?: ReactNode; aside?: ReactNode; children?: ReactNode }) {

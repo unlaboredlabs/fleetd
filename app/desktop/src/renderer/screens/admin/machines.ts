@@ -1,4 +1,4 @@
-// Administration › Machines, apart from React: how a machine's Repair goes, what Remove says it does, and the
+// Settings › Hub › Machines, apart from React: how a machine's Repair goes, what Remove says it does, and the
 // checklist a machine's page shows once it has joined, read from the hub's own checks (doctor_list).
 import type { DoctorCheck, DoctorFix, MachineHost } from "../../../shared/contracts";
 

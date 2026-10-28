@@ -1,10 +1,11 @@
-// Administration › People, Hub links: every link minted on this hub, each with the person it acts as, its limits,
+// Settings › Hub › People, Hub links: every link minted on this hub, each with the person it acts as, its limits,
 // when it was last used, and Revoke. Only an admin reads everyone's (hub_links_get answers a member with their own),
-// and only here: Settings › Connections › Hubs lists a person's own.
+// and only here: You › Hubs lists a person's own.
 import { useState } from "react";
 import { useToolQuery } from "../../src/data/react";
 import { Button, Text } from "../../ui";
 import { errorText, useLive } from "../settings/hub";
+import { useReveal } from "../settings/search";
 import { navigate } from "../shell/navigation";
 import { IssuedRow, lacksLinks, LinksNeedUpdate } from "./parts";
 import { sortIssued } from "./model";
@@ -18,8 +19,9 @@ export function AllLinks() {
   const read = useToolQuery("hub_links_get", noInput, { enabled: live });
   const [now] = useState(() => Date.now());
   const links = read.data === undefined ? [] : sortIssued(read.data.issued);
+  const ref = useReveal<HTMLElement>("hub.links");
   return (
-    <section className={a.section} aria-labelledby="admin-links">
+    <section ref={ref} className={a.section} aria-labelledby="admin-links">
       <div className={s.settingLabel}>
         <Text strong id="admin-links">
           Hub links
@@ -39,8 +41,8 @@ export function AllLinks() {
           <Text size="sm" tone="quiet">
             No links to this hub yet.
           </Text>
-          <Button size="sm" onClick={() => navigate({ id: "settings", tab: "connections" })}>
-            Make one in Settings
+          <Button size="sm" onClick={() => navigate({ id: "settings", tab: "hubs" })}>
+            Make one in You › Hubs
           </Button>
         </div>
       ) : (

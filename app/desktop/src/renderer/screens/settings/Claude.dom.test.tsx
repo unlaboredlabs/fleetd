@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// Settings › Connections › Claude: someone with nothing to run on is told to connect; a token pasted goes to main to seal (to
+// Settings › Your accounts › Claude: someone with nothing to run on is told to connect; a token pasted goes to main to seal (to
 // every machine with a box key) and is tested at once, and the page never shows it again; the choice between their
 // subscription and the hub's API key is offered only when the admin lets them; Test says what claude said.
 import { act } from "react";

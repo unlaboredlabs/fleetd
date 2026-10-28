@@ -1,4 +1,4 @@
-//! Claude Code's login from the app (Administration › Machines, W105). `node_action` `claude_login` starts `claude auth
+//! Claude Code's login from the app (Settings › Hub › Machines, W105). `node_action` `claude_login` starts `claude auth
 //! login` on a terminal of its own, with the runner's environment so the login lands where sessions read it, and
 //! answers with the sign-in URL it prints. The person signs in on their own device; the page shows a code, which
 //! `claude_login_code` types into the waiting login. Claude Code keeps the token it gets in its own config here:
