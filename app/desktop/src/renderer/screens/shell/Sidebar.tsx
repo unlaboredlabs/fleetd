@@ -1,15 +1,16 @@
 // The sidebar: your Navis pinned on top (navi/model.ts), then the projects (each alphabetical, so none moves), each
 // opening its chat and saying why it wants you ("reply", "approve", "secret", "blocked") or how many agents work; a
-// chat with a message you haven't seen is bold. With no Navi yet, one quiet row offers to meet it (#/navi). Then Status,
-// Factory, Time, Machines and Settings (a project's agents and PRs are in the panel beside its chat); then any update
-// to make, and the hub (HubStatus). Holding ⌘ (Ctrl) shows jump numbers on the first nine rows, which ⌘1..9 open. A
+// chat with a message you haven't seen is bold. With no Navi yet, one quiet row offers to meet it (#/navi), with no
+// heading. Then four rows: Status, Factory (its Agent time tab too), Settings, and Administration for admins (a
+// project's agents and PRs are in the panel beside its chat); then any update to make, and the hub (HubStatus), which
+// says how many machines are down and opens Machines. Holding ⌘ (Ctrl) shows jump numbers on the first nine rows, which ⌘1..9 open. A
 // project's right-click menu opens it or its settings, copies its path, or removes it (RemoveProjectDialog asks
 // first); a Navi's renames or archives it instead (Undo in the toast).
 //
 // With several hubs (docs/design/hubs.md) the Navis of every hub stay on top, each saying its hub, and each hub's
 // projects are a group under its name, which collapses; the footer has a row per hub. With one, there is no name and
 // no group, as before.
-import { Activity, ChevronDown, ChevronRight, Clock, Factory, Plus, Server, Settings, ShieldCheck, Sparkle } from "lucide-react";
+import { Activity, ChevronDown, ChevronRight, Factory, Plus, Settings, ShieldCheck, Sparkle } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { display, type ShortcutId } from "../../../shared/shortcuts";
 import { HubScope, useDataLayer, useHub, useHubs, useToolQuery } from "../../src/data/react";
@@ -53,15 +54,13 @@ const kbd = (id: ShortcutId): ReactNode => <Kbd>{display(id, platform)}</Kbd>;
 export interface SidebarProps {
   /** Every hub's rows, in sidebar order; undefined while the screen's hub's are loading. */
   readonly projects: ReadonlyArray<Placed> | undefined;
-  /** Machines not online on the screen's hub; undefined until known. */
-  readonly machinesDown: number | undefined;
   readonly screen: Routed;
   /** ⌘ (Ctrl) is held: show the jump numbers. */
   readonly jumpHints: boolean;
   /** The hub groups collapsed, by hub id (the frame keeps them: ⌘1–9 count only the rows on show). */
   readonly collapsed: ReadonlySet<string>;
   readonly onToggleHub: (hub: string) => void;
-  /** The hub reports metrics (or hasn't said yet): show the Factory. */
+  /** The hub reports metrics (or hasn't said yet): the Factory opens on Output, else on Agent time. */
   readonly factory: boolean;
   /** This app's person is an owner or admin: Administration's entry shows, and for nobody else. */
   readonly admin: boolean;
@@ -147,7 +146,7 @@ const trailing = (p: SidebarProject, jump: number | null, asOf: string | undefin
   );
 };
 
-export function Sidebar({ projects, machinesDown, screen, jumpHints, collapsed, onToggleHub, factory, admin, go }: SidebarProps) {
+export function Sidebar({ projects, screen, jumpHints, collapsed, onToggleHub, factory, admin, go }: SidebarProps) {
   const hubs = useHubs();
   const loaded = useHubRows();
   const nav = (label: string, icon: ReactNode, target: Screen, current: boolean, trailing?: ReactNode) => (
@@ -201,17 +200,15 @@ export function Sidebar({ projects, machinesDown, screen, jumpHints, collapsed, 
 
       <SidebarSection>
         {nav("Status", <Activity />, { id: "status" }, screen.id === "status", kbd("status.toggle"))}
-        {factory ? nav("Factory", <Factory />, { id: "factory", project: null }, screen.id === "factory", kbd("factory.open")) : null}
-        {nav("Time", <Clock />, { id: "time", orderId: null }, screen.id === "time")}
         {nav(
-          "Machines",
-          <Server />,
-          { id: "machines" },
-          screen.id === "machines",
-          machinesDown !== undefined && machinesDown > 0 ? <Text size="xs" tone="warning">{`${String(machinesDown)} down`}</Text> : undefined,
+          "Factory",
+          <Factory />,
+          factory ? { id: "factory", project: null } : { id: "time", orderId: null },
+          screen.id === "factory" || screen.id === "time",
+          // A hub from before metrics has no ⌘; (factory/support.ts).
+          factory ? kbd("factory.open") : undefined,
         )}
-        {/* Administration's and Settings' Back return focus here when this opened them. */}
-        {admin ? <AdminEntry current={screen.id === "admin"} go={go} /> : null}
+        {/* Settings' and Administration's Back return focus here when this opened them. */}
         <SidebarItem
           label="Settings"
           icon={<Settings />}
@@ -220,6 +217,7 @@ export function Sidebar({ projects, machinesDown, screen, jumpHints, collapsed, 
           data-opens="settings"
           onClick={() => go({ id: "settings", tab: "general" })}
         />
+        {admin ? <AdminEntry current={screen.id === "admin"} go={go} /> : null}
       </SidebarSection>
     </Frame>
   );
@@ -227,40 +225,41 @@ export function Sidebar({ projects, machinesDown, screen, jumpHints, collapsed, 
 
 /**
  * The Navis, every hub's, pinned above the projects; with several hubs each says its hub. With none yet, one quiet row
- * to meet Navi (on the hub of the screen you're on).
+ * to meet Navi (on the hub of the screen you're on), with no heading over it.
  */
 function NaviSection(props: { navis: ReadonlyArray<Placed>; named: boolean; screen: Routed; jumpOf: (p: Placed) => number | null; go: (screen: Screen) => void }) {
   const { navis, named, screen, go } = props;
   const hubs = useHubs();
+  if (navis.length === 0) {
+    return (
+      <SidebarSection label="Navi">
+        <SidebarItem label="Meet Navi" icon={<Sparkle />} current={screen.id === "navi"} onClick={() => go({ id: "navi" })} />
+      </SidebarSection>
+    );
+  }
   return (
     <SidebarSection
       title="Navi"
       action={
-        navis.length === 0 ? undefined : (
-          <Button variant="quiet" size="sm" icon={<Plus />} onClick={() => go({ id: "navi" })} aria-label="New Navi">
-            New
-          </Button>
-        )
+        <Button variant="quiet" size="sm" icon={<Plus />} onClick={() => go({ id: "navi" })} aria-label="New Navi">
+          New
+        </Button>
       }
     >
-      {navis.length === 0 ? (
-        <SidebarItem label="Meet Navi" icon={<Sparkle />} current={screen.id === "navi"} onClick={() => go({ id: "navi" })} />
-      ) : (
-        navis.map((p) => {
-          const hub = hubs.find((h) => h.id === p.hub);
-          return hub === undefined ? null : (
-            <HubScope key={p.key} hub={hub}>
-              <NaviRow
-                p={p}
-                named={named}
-                current={screen.id === "project" && screen.at === p.hub && sameProject(screen.project, p.project)}
-                jump={props.jumpOf(p)}
-                go={go}
-              />
-            </HubScope>
-          );
-        })
-      )}
+      {navis.map((p) => {
+        const hub = hubs.find((h) => h.id === p.hub);
+        return hub === undefined ? null : (
+          <HubScope key={p.key} hub={hub}>
+            <NaviRow
+              p={p}
+              named={named}
+              current={screen.id === "project" && screen.at === p.hub && sameProject(screen.project, p.project)}
+              jump={props.jumpOf(p)}
+              go={go}
+            />
+          </HubScope>
+        );
+      })}
     </SidebarSection>
   );
 }

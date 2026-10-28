@@ -27,7 +27,7 @@ const START_MS = 30_000;
 const SCREENS: ReadonlyArray<{ id: string; route: string; ready?: string }> = [
   { id: "chat", route: "#/" },
   { id: "status.fleet", route: "#/status", ready: '[data-screen="status.fleet"][data-phase="live"]' },
-  { id: "time.breakdown", route: "#/time" },
+  { id: "time.breakdown", route: "#/factory/time" },
   { id: "settings.general", route: "#/settings/general" },
 ];
 

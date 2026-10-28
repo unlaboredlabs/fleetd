@@ -78,7 +78,7 @@ function Entry() {
   const admin = useAdministers();
   return (
     <TooltipProvider>
-      <Sidebar projects={[]} machinesDown={0} screen={{ id: "status", at: "hub" }} jumpHints={false} collapsed={new Set()} onToggleHub={() => undefined} factory={false} admin={admin} go={() => undefined} />
+      <Sidebar projects={[]} screen={{ id: "status", at: "hub" }} jumpHints={false} collapsed={new Set()} onToggleHub={() => undefined} factory={false} admin={admin} go={() => undefined} />
     </TooltipProvider>
   );
 }

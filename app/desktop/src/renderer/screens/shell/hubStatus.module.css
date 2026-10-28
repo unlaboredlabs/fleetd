@@ -53,6 +53,23 @@
   font-size: var(--text-xs);
 }
 
+/* Machines down: the warning's word, at the row's end, opening Machines. */
+.down {
+  flex: none;
+  min-height: var(--row);
+  padding: 0 var(--space-2);
+  border: none;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--warning);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+  transition: background var(--dur-quick) var(--ease-snap);
+}
+.down:hover {
+  background: var(--hover);
+}
+
 /* The hub's one dot, plain: no ring and no halo (ui/DESIGN.md), in a 12 px cell so it lines up with the rows' icons. */
 .dot {
   flex: none;

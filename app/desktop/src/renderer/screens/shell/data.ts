@@ -4,7 +4,7 @@
 import { useEffect, useMemo } from "react";
 import { hubKey, useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import { markSeen, useSeen } from "../../src/data/seen";
-import { selectMachines, selectShownProjects } from "../../src/data/selectors";
+import { selectShownProjects } from "../../src/data/selectors";
 import { sidebarOrder } from "../navi/model";
 import { projectId, toSidebar, type SidebarProject } from "./model";
 import type { ProjectKey } from "./routes";
@@ -51,8 +51,3 @@ export const useSidebarProjects = (open: ProjectKey | null): ReadonlyArray<Sideb
   }, [rows, requests, blocked, warnings, seen, open]);
 };
 
-/** Machines not online, for the sidebar's Machines entry; undefined until known. */
-export const useMachinesDown = (): number | undefined => {
-  const machines = useData(selectMachines);
-  return useMemo(() => machines?.filter((m) => m.machine.status !== "online").length, [machines]);
-};

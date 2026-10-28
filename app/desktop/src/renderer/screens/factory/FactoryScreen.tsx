@@ -1,5 +1,5 @@
-// Factory (#/factory, D33): what came out of the projects and what it cost you. Status is "now", Time is "where
-// agent time went"; this is merges and the person's minutes, kept apart from agent minutes on purpose. One filter row
+// Factory (#/factory, D33): what came out of the projects and what it cost you, its Output tab. Status is "now", its
+// Agent time tab (time/) is "where agent time went"; this is merges and the person's minutes, kept apart from agent minutes on purpose. One filter row
 // scopes everything below it: four tiles, three charts on one shared day axis (merged by route, order to merged,
 // your minutes by source), then the projects table and the merge list, which hold every number the charts draw.
 // Every figure is the hub's (metrics_get); a repo the hub can't read says so and since when, never a silent zero.
@@ -32,6 +32,8 @@ export interface FactoryScreenProps {
   readonly now?: number;
   /** Filters to start from instead of the saved ones (tests). */
   readonly initialFilters?: Filters;
+  /** The Factory's tabs, this one Output (FactoryTabs), first among the title row's controls. */
+  readonly tabs?: ReactNode;
 }
 
 const OFFLINE = "Not connected to the hub. The figures come back when it reconnects.";
@@ -163,6 +165,7 @@ export function FactoryScreen(props: FactoryScreenProps) {
   return (
     <div className={cx(s.screen)} data-screen={state}>
       <FrameTitle title={title} detail="What came out, and what it cost you">
+        {props.tabs}
         {offline !== undefined && data !== undefined ? (
           <span role="status">
             <Text size="xs" tone="warning">
@@ -290,7 +293,7 @@ function SeenSheet({ open, onOpenChange, data }: { open: boolean; onOpenChange: 
           ))}
         </ul>
         <Text size="xs" tone="quiet">
-          Time agents spent waiting on you isn&apos;t in it: that is on the Time screen.
+          Time agents spent waiting on you isn&apos;t in it: that is on the Agent time tab.
         </Text>
       </div>
     </Dialog>

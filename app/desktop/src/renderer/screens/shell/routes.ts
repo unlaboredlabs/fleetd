@@ -1,6 +1,7 @@
 // The app's hash routes (binding for every screen; the QA harness navigates by setting location.hash). A project's
 // lead chat is the main surface, with its agents and PRs in the panel beside it (`/agents`, `/prs` after the
-// project, and every other tab of panel/tabs.ts likewise); Status, Factory, Time and Settings are secondary.
+// project, and every other tab of panel/tabs.ts likewise); Status, Factory (with its Agent time tab) and Settings are
+// secondary.
 // notes/electron-routes.md has the table. With several hubs, a route names its hub as `?at=<id>` (navigation.ts).
 import { HUB_ID, type HubId } from "../../../shared/hubs";
 import { isPanelTab, type PanelTab } from "../panel/tabs";
@@ -73,7 +74,10 @@ type ScreenOf =
   /** Merges and what they cost the person (D33), for one project (`?project=<machine>/<project>`) or (null) all. */
   | { readonly id: "factory"; readonly project: ProjectKey | null }
   | { readonly id: "machines" }
-  /** The time inspector, for one order or (null) the fleet. */
+  /**
+   * Factory's Agent time tab, the time inspector, for one order or (null) the fleet: `#/factory/time[/order/<id>]`.
+   * The old `#/time` links land on it.
+   */
   | { readonly id: "time"; readonly orderId: string | null }
   | { readonly id: "projects.add" }
   /** A tab; `prompt`, `for` ("<machine>/<project>") and `view` link one prompt, a project's texts or a prompt's update. */
@@ -131,6 +135,12 @@ const projectParam = (value: string | null): ProjectKey | null => {
   return { machineId: value.slice(0, at), projectId: value.slice(at + 1) };
 };
 
+/** `order/<id>` after the time inspector's path; anything else is the fleet. */
+const timeOf = (rest: ReadonlyArray<string>): ScreenOf => {
+  const [a, b] = rest;
+  return { id: "time", orderId: a === "order" && b !== undefined ? b : null };
+};
+
 const screenOf = (parts: ReadonlyArray<string>, query: URLSearchParams): ScreenOf => {
   const [head, a, b] = parts;
   switch (head) {
@@ -148,9 +158,11 @@ const screenOf = (parts: ReadonlyArray<string>, query: URLSearchParams): ScreenO
       return a === undefined || b === undefined || id === undefined ? HOME : { id: "session", project: { machineId: a, projectId: b }, session: id };
     }
     case "factory":
+      if (a === "time") return timeOf(parts.slice(2));
       return { id: "factory", project: projectParam(query.get("project")) };
     case "time":
-      return { id: "time", orderId: a === "order" && b !== undefined ? b : null };
+      // Time became Factory's Agent time tab; an older link still lands on it.
+      return timeOf(parts.slice(1));
     case "machines":
       return { id: head };
     case "projects":
@@ -212,7 +224,7 @@ const path = (screen: Screen): Array<string> => {
     case "project":
       return ["project", screen.project.machineId, screen.project.projectId, ...(screen.panel === undefined ? [] : panelPath(screen.panel))];
     case "time":
-      return screen.orderId === null ? ["time"] : ["time", "order", screen.orderId];
+      return screen.orderId === null ? ["factory", "time"] : ["factory", "time", "order", screen.orderId];
     case "projects.add":
       return ["projects", "add"];
     case "settings":

@@ -201,7 +201,7 @@ it("makes, edits, pauses, runs and deletes an automation and shows its runs with
   const after = card("Dependency check") as HTMLElement;
   await click(button("Runs", after));
   const link = after.querySelector("ul[aria-label='Runs'] a") as HTMLAnchorElement;
-  expect(link.getAttribute("href")).toBe("#/time/order/W7");
+  expect(link.getAttribute("href")).toBe("#/factory/time/order/W7");
   expect(after.querySelector("ul[aria-label='Runs']")?.textContent).toContain("Run now");
 
   // Pause and resume.

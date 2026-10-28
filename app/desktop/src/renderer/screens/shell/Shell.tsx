@@ -18,7 +18,7 @@ import { hubKey, HubScope, useData, useDataLayer, useHub, useHubs } from "../../
 import { selectNeedsYouTotal } from "../../src/data/selectors";
 import type { HubView } from "../../src/data/hubs";
 import { homeProject, nextWanting, projectId, routeOf, stepProject, type SidebarProject } from "./model";
-import { useMachinesDown, useSidebarProjects } from "./data";
+import { useSidebarProjects } from "./data";
 import { dropRows, publishRows, useHubRows } from "./hubRows";
 import { navigate, setRouteHubs, useRoute, type Routed } from "./navigation";
 import { PANEL_TABS, served } from "../panel/tabs";
@@ -121,7 +121,6 @@ function Frame({ route, hubs, sidebar }: { route: Routed; hubs: readonly HubView
   const features = useData((st) => st.features);
   const rows = useHubRows();
   const projects = usePlaced(hubs, route.at);
-  const machinesDown = useMachinesDown();
   // ⌘1–9 open the rows the sidebar numbers: those on show, a collapsed hub's left out.
   const [collapsed, toggleHub] = useCollapsedHubs();
   const onShow = projects === undefined ? undefined : shownRows(projects, collapsed, hubs.length > 1);
@@ -212,7 +211,8 @@ function Frame({ route, hubs, sidebar }: { route: Routed; hubs: readonly HubView
     if (next !== null) goTo(next);
   };
 
-  // A hub from before metrics has no Factory: its entry, menu item, command and shortcut go (factory/support.ts).
+  // A hub from before metrics has no Factory output: its menu item, command and shortcut go, and the sidebar's Factory
+  // opens on Agent time (factory/support.ts).
   const metrics = useMetricsSupport();
   const factory = metrics !== false;
 
@@ -341,7 +341,7 @@ function Frame({ route, hubs, sidebar }: { route: Routed; hubs: readonly HubView
             </Boundary>
           ) : showSidebar ? (
             <Boundary key="sidebar" part="the sidebar">
-              <Sidebar projects={projects} machinesDown={machinesDown} screen={{ ...screen, at: route.at }} jumpHints={modHeld} collapsed={collapsed} onToggleHub={toggleHub} factory={factory} admin={administers} go={go} />
+              <Sidebar projects={projects} screen={{ ...screen, at: route.at }} jumpHints={modHeld} collapsed={collapsed} onToggleHub={toggleHub} factory={factory} admin={administers} go={go} />
             </Boundary>
           ) : undefined
         }

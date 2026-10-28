@@ -49,7 +49,7 @@ To add another hub, or rename or remove one, open Settings (⌘,) → Hubs. See 
 
 | Part | Shows |
 |---|---|
-| Sidebar | Your projects, each saying why it wants you: "reply", "approve", "secret" or "blocked". Otherwise "CI red" while a check fails on main (which blocks nothing), or how many agents are working. A project in bold has a new message from its lead. Below them: Status, Time, Machines and Settings. |
+| Sidebar | Your projects, each saying why it wants you: "reply", "approve", "secret" or "blocked". Otherwise "CI red" while a check fails on main (which blocks nothing), or how many agents are working. A project in bold has a new message from its lead. Below them: Status, Factory, Settings and, for admins, Administration. The hub's row at the bottom says how many machines are down and opens Machines. |
 | The top row | The page's title and its controls, then the command palette (⌘K) and the panel's toggle. In a chat: the project's name, then only [what needs you](#chat), if anything. The panel starts at the window's top, so its tabs share this row. |
 | The chat | The selected project's conversation with its lead. |
 | The panel | Beside a chat, on the right: a tab each for the project's [agents](#agents), its [pull requests](/docs/chat#prs), its [merge train](#train), its [checklist](#checklist), its [activity](#activity) and its [decisions](#decisions). Open it with the toggle at the top right or ⌥⌘B. |
@@ -167,7 +167,7 @@ See [Status](/docs/status).
 
 ## Where time went {#time}
 
-Open Time from the sidebar, the agents strip in a chat, or the command palette. It has three tabs:
+Open Factory › Agent time from the sidebar, the agents strip in a chat, or the command palette (Agent time). It has three tabs:
 
 | Tab | Shows |
 |---|---|
@@ -181,7 +181,7 @@ Times are in your own time zone. How to read it: [Where time went](/docs/time-in
 
 ## Machines {#machines}
 
-Open Machines from the sidebar or the command palette. The title shows how many agents run across the fleet
+Open Machines from the hub's row at the bottom of the sidebar ("1 down" while a machine is down) or the command palette. The title shows how many agents run across the fleet
 ("agents 2 / 12"), beside Add project.
 
 Each machine is one row: its name, its state (online, degraded, or offline and when it was last seen), how many agents

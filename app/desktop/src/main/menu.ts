@@ -86,7 +86,7 @@ export const installMenu = (opener: Opener, help: { readonly revealLogs: () => v
       submenu: [
         item(opener, "status.toggle", "Status"),
         item(opener, "factory.open", "Factory"),
-        item(opener, "go:time", "Time"),
+        item(opener, "go:time", "Agent Time"),
         separator,
         item(opener, "palette.toggle", "Command Palette"),
         item(opener, "shortcuts.show", "Keyboard Shortcuts"),
