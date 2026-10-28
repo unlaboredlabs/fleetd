@@ -59,8 +59,8 @@ async fn a_navi_stays_signed_in_between_sessions_and_no_other_navi_or_agent_is()
     let Some(rig) = rig().await else { return };
     let (site, _site) = site().await;
     let broker = &rig.broker;
-    SessionHooks::navi(broker.as_ref(), ADA, "ada");
-    SessionHooks::navi(broker.as_ref(), BEE, "bee");
+    rig.navi(ADA, "ada");
+    rig.navi(BEE, "bee");
 
     assert_eq!(
         visit(broker, ADA, &format!("{site}/remember?user=ada")).await,
@@ -101,10 +101,10 @@ async fn one_browser_at_a_time_runs_on_a_navis_profile_and_forgetting_it_signs_t
     let Some(rig) = rig().await else { return };
     let (site, _site) = site().await;
     let broker = &rig.broker;
-    SessionHooks::navi(broker.as_ref(), ADA, "ada");
+    rig.navi(ADA, "ada");
     // Another chat of the same Navi.
     let ada_too = "th-navi-ada-2";
-    SessionHooks::navi(broker.as_ref(), ada_too, "ada");
+    rig.navi(ada_too, "ada");
     assert_eq!(
         visit(broker, ADA, &format!("{site}/remember?user=ada")).await,
         "Welcome ada"
@@ -153,7 +153,7 @@ async fn an_agent_session_that_ended_is_no_navis_and_a_screen_ending_keeps_it_on
     let Some(rig) = rig().await else { return };
     let (site, _site) = site().await;
     let broker = &rig.broker;
-    SessionHooks::navi(broker.as_ref(), ADA, "ada");
+    rig.navi(ADA, "ada");
     assert_eq!(
         visit(broker, ADA, &format!("{site}/remember?user=ada")).await,
         "Welcome ada"

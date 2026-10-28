@@ -1277,7 +1277,7 @@ async fn a_navis_kept_profile_keeps_no_filled_value_and_each_session_that_fills_
     let (site, _bodies, _site) = shop().await;
     let (_, vault_for) = fake(vec![format!("{site}/")]);
     rig.broker.set_vaults(vault_for);
-    SessionHooks::navi(rig.broker.as_ref(), THREAD, "ada");
+    rig.navi(THREAD, "ada");
     let start = || {
         call(
             &rig.broker,

@@ -80,8 +80,11 @@ const LAUNCH_TIMEOUT: Duration = Duration::from_secs(60);
 const MCP_TEST_TIMEOUT: Duration = Duration::from_secs(45);
 /// A Claude account's Test: the node gives its `claude -p` call 90 s.
 const CLAUDE_TEST_TIMEOUT: Duration = Duration::from_secs(100);
-/// The node first stops the project's claude processes and waits up to 12 s for them to exit.
-const REMOVE_TIMEOUT: Duration = Duration::from_secs(30);
+/// Forgetting a Navi's sign-ins: the node waits up to 20 s for the browser on its profile to close, then deletes it.
+const SIGNINS_TIMEOUT: Duration = Duration::from_secs(30);
+/// The node first stops the project's claude processes and waits up to 12 s for them to exit, then up to 10 s for its
+/// previews to end, removes its worktrees, and forgets a Navi's sign-ins ([`SIGNINS_TIMEOUT`]).
+const REMOVE_TIMEOUT: Duration = Duration::from_secs(70);
 /// The node's stop waits up to 25 s for claude to exit (its kill ladder, then a SIGKILL).
 const STOP_TIMEOUT: Duration = Duration::from_secs(40);
 /// The node keeps the last 2000 characters of the assistant's text on the summary; a shorter tail is the whole text.
@@ -2373,7 +2376,7 @@ impl Executors {
         let call = SessionCall::NaviSigninsForget {
             project_id: project_id.clone(),
         };
-        self.call(machine_id, NodeOperation::Project, call, REMOVE_TIMEOUT)
+        self.call(machine_id, NodeOperation::Project, call, SIGNINS_TIMEOUT)
             .await?;
         Ok(())
     }

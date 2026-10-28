@@ -26,7 +26,7 @@ const LAUNCH_TIMEOUT: Duration = Duration::from_secs(20);
 /// How long a Chrome on a kept profile has to close by itself, writing its cookies out, before it is killed.
 const CLOSE_WAIT: Duration = Duration::from_secs(5);
 /// How long forgetting a Navi's sign-ins waits for the browser on its profile to go.
-const WIPE_WAIT: Duration = Duration::from_secs(20);
+pub const WIPE_WAIT: Duration = Duration::from_secs(20);
 /// The page size sessions get, and the video's.
 pub const WIDTH: u32 = 1280;
 pub const HEIGHT: u32 = 800;
@@ -558,34 +558,50 @@ impl Kept {
         }
     }
 
-    fn lock_of(&self, navi: &str) -> Result<(PathBuf, Arc<tokio::sync::Mutex<()>>), String> {
-        let dir = kept_dir(&self.home, navi).ok_or_else(|| format!("{navi} is no Navi's name"))?;
-        let lock = self
-            .held
+    fn held(&self) -> std::sync::MutexGuard<'_, HashMap<String, Arc<tokio::sync::Mutex<()>>>> {
+        self.held
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .entry(navi.to_owned())
-            .or_default()
-            .clone();
-        Ok((dir, lock))
+    }
+
+    fn dir_of(&self, navi: &str) -> Result<PathBuf, String> {
+        kept_dir(&self.home, navi).ok_or_else(|| format!("{navi} is no Navi's name"))
     }
 
     /// The Navi's profile, unless a browser runs on it now (Err: why not).
     pub fn take(&self, navi: &str) -> Result<KeptLease, String> {
-        let (dir, lock) = self.lock_of(navi)?;
-        let held = lock
+        let dir = self.dir_of(navi)?;
+        // Locked under the map's lock: a wipe dropping the Navi's entry can't let a second lock in beside this one.
+        let held = self
+            .held()
+            .entry(navi.to_owned())
+            .or_default()
+            .clone()
             .try_lock_owned()
             .map_err(|_| "This Navi's browser is open in another of its sessions".to_owned())?;
         Ok(KeptLease { dir, _held: held })
     }
 
-    /// Deletes the Navi's profile, once the browser on it (ending now) has let go. Nothing there is no error.
+    /// Deletes the Navi's profile, once the browser on it (ending now) has let go, and forgets its lock until its next
+    /// browser. Nothing there is no error.
     pub async fn wipe(&self, navi: &str) -> Result<(), String> {
-        let (dir, lock) = self.lock_of(navi)?;
-        let _held = tokio::time::timeout(WIPE_WAIT, lock.lock_owned())
+        let dir = self.dir_of(navi)?;
+        let lock = self.held().entry(navi.to_owned()).or_default().clone();
+        let held = tokio::time::timeout(WIPE_WAIT, lock.clone().lock_owned())
             .await
             .map_err(|_| "its browser is still closing; try again in a minute".to_owned())?;
-        wipe_dir(&dir)
+        let wiped = wipe_dir(&dir);
+        let mut all = self.held();
+        if all.get(navi).is_some_and(|l| Arc::ptr_eq(l, &lock)) {
+            all.remove(navi);
+        }
+        drop(held);
+        wiped
+    }
+
+    #[cfg(test)]
+    fn locks(&self) -> usize {
+        self.held().len()
     }
 }
 
@@ -675,16 +691,20 @@ mod tests {
 
         // A wipe waits for the browser on it to let go.
         let wiping = tokio::spawn(async move {
-            let kept = kept;
-            kept.wipe("ada").await
+            kept.wipe("ada").await.unwrap();
+            kept
         });
         tokio::time::sleep(Duration::from_millis(50)).await;
         assert!(!wiping.is_finished());
         let dir = ada.dir.clone();
         drop(ada);
-        wiping.await.unwrap().unwrap();
+        let kept = wiping.await.unwrap();
         assert!(!dir.exists());
         drop(bee);
+        assert_eq!(kept.locks(), 1, "a wiped Navi's lock goes; Bee's stays");
+        kept.wipe("bee").await.unwrap();
+        assert_eq!(kept.locks(), 0);
+        assert!(kept.take("ada").is_ok(), "a wiped Navi starts again");
     }
 
     #[test]

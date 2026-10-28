@@ -151,9 +151,20 @@ async fn serve(tcp: tokio::net::TcpStream, proxy: Weak<Proxy>, broker: Weak<Brok
                     Some(Ok(Message::Close(_))) | None | Some(Err(_)) => break,
                     Some(Ok(_)) => continue,
                 };
-                let Ok(command) = serde_json::from_str::<Value>(&text) else {
+                let Ok(mut command) = serde_json::from_str::<Value>(&text) else {
                     continue;
                 };
+                // A Navi's session: nothing on this machine outside its folder.
+                if let Some(fence) = &session.fence {
+                    let id = command.get("id").cloned().unwrap_or(Value::Null);
+                    match fence.check(command).await {
+                        Ok(checked) => command = checked,
+                        Err(why) => {
+                            let _ = out.send(refused(&id, &why).to_string());
+                            continue;
+                        }
+                    }
+                }
                 // Before the input goes: what it is about to act on, for the action log and the replay.
                 if session.control() != fleetd_contracts::browser::BrowserControl::Human {
                     session.note_target(&command).await;
@@ -179,11 +190,41 @@ async fn serve(tcp: tokio::net::TcpStream, proxy: Weak<Proxy>, broker: Weak<Brok
 fn command_in(session: &Arc<Session>, command: Value, out: &mpsc::UnboundedSender<String>) {
     let id = command.get("id").cloned().unwrap_or(Value::Null);
     let method = command["method"].as_str().unwrap_or_default();
-    if command["sessionId"]
-        .as_str()
-        .is_some_and(|s| session.cdp.is_own(s))
+    // The broker's sessions, whether the command goes to one or names one (`Target.detachFromTarget`,
+    // `Target.sendMessageToTarget`), are as if they didn't exist.
+    if [&command["sessionId"], &command["params"]["sessionId"]]
+        .iter()
+        .any(|s| s.as_str().is_some_and(|s| session.cdp.is_own(s)))
     {
         let _ = out.send(refused(&id, "No session with given id").to_string());
+        return;
+    }
+    // A command wrapped in another (`Target.sendMessageToTarget`, the only way into a session that isn't flattened)
+    // would pass every check here unread: the fence, the sealed session's refusals. agent-browser flattens.
+    if method == "Target.sendMessageToTarget"
+        || (method == "Target.attachToTarget" && command["params"]["flatten"] != true)
+    {
+        let why = format!(
+            "{method} is refused here: attach with flatten: true and send each command with its sessionId."
+        );
+        let _ = out.send(refused(&id, &why).to_string());
+        return;
+    }
+    // The protocol handed to a page's script would carry commands past every check here too, the site's own as well.
+    if method == "Target.exposeDevToolsProtocol" {
+        let why = "Target.exposeDevToolsProtocol is refused here: a page's script would reach the browser around \
+                   fleetd's checks. Send each command yourself.";
+        let _ = out.send(refused(&id, why).to_string());
+        return;
+    }
+    // By target, a detach could take the broker's session on it rather than the driver's.
+    if method == "Target.detachFromTarget"
+        && command["params"]["targetId"]
+            .as_str()
+            .is_some_and(|t| session.cdp.is_own_target(t))
+    {
+        let why = "Target.detachFromTarget by targetId is refused here: detach your own session by its sessionId.";
+        let _ = out.send(refused(&id, why).to_string());
         return;
     }
     if let Some(why) = session.refusal(method, &command["params"]) {

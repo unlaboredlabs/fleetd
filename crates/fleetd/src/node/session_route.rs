@@ -266,6 +266,10 @@ async fn route(router: Arc<Router>, thread: String, frame: BrowserCallFrame) -> 
     if device {
         return device_start(&router, thread, frame).await;
     }
+    // A Navi's runs here: another machine has neither its profile nor its folder to fence it in.
+    if broker.is_navi(&thread) {
+        return local(&router, thread, frame).await;
+    }
     let ending = matches!(frame.call, BrowserCall::SessionEnd(_));
     let starting = matches!(frame.call, BrowserCall::SessionStart(_));
     // A fill of a session hosted elsewhere: read here, with this machine's token, and only the value goes, sealed.
@@ -499,10 +503,10 @@ impl SessionHooks for Router {
         (all.len() > known).then(|| crate::node::mask::Secrets(all))
     }
 
-    /// A Navi's browser runs here on its kept profile; one the hub places on another machine starts signed out.
-    fn navi(&self, thread: &str, navi: &str) {
+    /// A Navi's browser runs here, on its kept profile and inside its folder's fence: never on another machine.
+    fn navi(&self, thread: &str, navi: &str, folder: &std::path::Path) {
         if let Some(broker) = &self.broker {
-            broker.navi(thread, navi);
+            broker.navi(thread, navi, folder);
         }
     }
 
@@ -947,6 +951,21 @@ mod tests {
         .await;
         let error = answer.error.unwrap();
         assert_eq!(error.code, ErrorCode::MachineOffline, "{}", error.message);
+    }
+
+    /// A Navi's browser runs on its own node, inside its fence, even with a hub that places sessions: the hub isn't
+    /// asked, and the broker here answers (it has no browser yet).
+    #[tokio::test(start_paused = true)]
+    async fn a_navis_session_stays_here_whatever_the_hub_would_place() {
+        let home = tempfile::tempdir().unwrap();
+        let relay = LeadRelay::new();
+        relay.set_hub_caps(vec![HUB_CAP_SESSION_ROUTE.to_owned()]);
+        let broker = broker(home.path()).await;
+        SessionHooks::navi(broker.as_ref(), "th-1", "ada", home.path());
+        let answer = route(router(relay, Some(broker)), "th-1".into(), start()).await;
+        let error = answer.error.unwrap();
+        assert_ne!(error.code, ErrorCode::MachineOffline, "{}", error.message);
+        assert!(error.message.contains("browser"), "{}", error.message);
     }
 
     /// However a hosted session ends on this machine, its report of it makes this node forget its relay key.
