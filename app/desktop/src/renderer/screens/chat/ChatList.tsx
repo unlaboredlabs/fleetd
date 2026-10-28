@@ -232,19 +232,11 @@ const RowView = memo(function RowView(props: {
     case "event":
       // An agent's suggestion to try a PR: a line of its own, with Try it (screens/tryit), flagged to look at.
       if (r.item.message?.previewSuggestion !== undefined) return <Suggested item={r.item} project={project} />;
-      // The night's memory refresh: its counts, then each change with Undo.
+      // The night's memory refresh: its counts with Undo all, opening to each change with Undo.
       if (r.item.message?.memoryRefreshed !== undefined) {
         return (
           <div className={s.quietRow} data-entry="event">
-            <div className={s.event}>
-              <Text size="xs" tone="quiet">
-                {r.item.text}
-              </Text>
-              <span className={s.eventTime}>{shortClock(r.item.at)}</span>
-            </div>
-            <div className={s.event}>
-              <RefreshedChanges project={project} message={r.item.message} refreshed={r.item.message.memoryRefreshed} />
-            </div>
+            <RefreshedChanges project={project} message={r.item.message} refreshed={r.item.message.memoryRefreshed} at={shortClock(r.item.at)} />
           </div>
         );
       }

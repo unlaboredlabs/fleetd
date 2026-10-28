@@ -344,6 +344,61 @@
   color: var(--quiet);
   font-variant-numeric: tabular-nums;
 }
+/* A memory refresh's changes, opened under its line: one row each, left-aligned. */
+.changes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding-top: var(--space-1);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+}
+.change {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) auto;
+  column-gap: var(--space-2);
+  align-items: baseline;
+}
+.changeKind {
+  color: var(--quiet);
+}
+.changeText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.changeText:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+.clamp {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.changeFile {
+  color: var(--quiet);
+}
+.changeUndo {
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+}
+span.changeUndo {
+  color: var(--quiet);
+}
+.changeUndone .changeText {
+  color: var(--quiet);
+}
 .day {
   display: flex;
   align-items: center;

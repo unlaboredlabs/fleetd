@@ -2,7 +2,8 @@
 // says how long it has worked, what it is doing now (its live lane's open call) and what the turn did so far (the
 // hub's events since the lead started working). lead-planning is the usual case; lead-long has a long file name and
 // many events, to wrap; lead-counting has worked over an hour with nothing more known. lead-worked: the turn is over,
-// and the line under the reply says how long it took.
+// and the line under the reply says how long it took. lead-memory: the night's memory refresh line, after the lead's
+// reply, with the changes it made to MEMORY.md and a topic file.
 import { Fixture } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
 import { at } from "../kit/ids.ts";
@@ -91,6 +92,60 @@ function leadAtWork(f: Fixture, turn: Turn): Fixture {
   return f;
 }
 
+/** The night's memory refresh in storefront's chat: 3 entries added, 1 updated and 2 removed, one of them undone. */
+function memoryRefreshed(f: Fixture): Fixture {
+  const t = (s: number) => at(f.now, -s * 1000);
+  const msg = (seq: number, author: "human" | "lead" | "system", text: string, s: number, extra: JsonObject = {}): JsonObject => ({
+    messageId: `m${seq}`,
+    projectRef: STOREFRONT,
+    seq,
+    author,
+    text,
+    attachments: [],
+    createdAt: t(s),
+    state: "final",
+    ...(author === "human" ? { by: "laptop", clientRequestId: `seed-${seq}`, delivery: "turn" } : {}),
+    ...extra,
+  });
+  const memoryRefreshed: JsonObject = {
+    items: [
+      {
+        scope: "project",
+        text: "PR screenshots live in the private repo storefront-shots (main branch, one folder per task branch, embedded via blob/main/...?raw=true). Never push extra branches to storefront: Vercel deploys every branch, and each images-only branch failed a deployment.",
+        replaced: "PR screenshots live in the private repo storefront-shots (main branch, one folder per task branch); never push -shots branches to storefront, as Vercel builds them and fails.",
+      },
+      {
+        scope: "project",
+        text: "Never push extra branches to storefront: Vercel deploys every branch, and images-only `-shots` branches each failed a deployment.",
+        forgotten: true,
+        reason: "Merged into the storefront-shots entry.",
+      },
+      {
+        scope: "project",
+        topic: "deploys",
+        text: "The checkout rewrite plan is in /tmp/checkout-plan.md on devbox; copy it into docs/design if it's still needed.",
+        forgotten: true,
+        reason: "Every checkout stage has merged; the plan is no longer needed.",
+        undone: true,
+      },
+      { scope: "project", text: "`pnpm deploy` does nothing when staging already runs the newest build: restart it with `systemctl --user restart storefront`." },
+      { scope: "project", text: "Agents can't run real Stripe payments: those flows are tested against fakes. Say so when they land." },
+      { scope: "project", text: "Main's branch protection treats a skipped required check as passing." },
+    ],
+    undone: 1,
+  };
+  const messages = [
+    msg(1, "human", "Ship the receipts PR once its review is clean.", 9 * 3600),
+    msg(2, "lead", "Receipts merged. Nothing else is open on checkout.", 8 * 3600),
+    msg(3, "system", "Memory refreshed: +3 ~1 −2", 3600, { memoryRefreshed }),
+  ];
+  const state = setChatState(f, STOREFRONT, { needsYou: false, leadWorking: false, lastSeq: 3, lastMessageAt: t(3600) });
+  for (const { input } of f.answers("chat_history")) if (obj(input?.["projectRef"])["projectId"] === STOREFRONT.projectId) f.drop("chat_history", input);
+  f.answer("chat_history", { projectRef: STOREFRONT }, { messages, moreBefore: false, moreAfter: false, state });
+  f.answer("memory_undo", undefined, { ok: true });
+  return f;
+}
+
 export default defineGroup({
   fixtures: (base) => [
     leadAtWork(
@@ -116,5 +171,6 @@ export default defineGroup({
       Fixture.from(base("typical"), "lead-worked", "storefront's lead finished its turn: under its reply, how long it worked."),
       { orders: 1, agents: 3, startS: 460, replyS: 250, endS: 240 },
     ),
+    memoryRefreshed(Fixture.from(base("typical"), "lead-memory", "storefront's chat with the night's memory refresh line: 3 added, 1 updated, 2 removed.")),
   ],
 });

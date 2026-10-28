@@ -85,6 +85,8 @@ export const fixtures = [
   "lead-long",
   "lead-counting",
   "lead-worked",
+  // The night's memory refresh line: its summary, opened to its changes (fixtures/lead).
+  "lead-memory",
   // Group fixtures (fixtures/<group>/index.ts), named <group>-<what>.
   "projects-cloning",
   "projects-dropped",
@@ -497,6 +499,22 @@ export const screens: readonly Screen[] = [
   // The lead at work: under its reply, how long it has worked, what it is doing now and what its turn did so far;
   // lead-long wraps, lead-counting only counts; lead-worked: the turn is over, and the line says how long it took.
   { id: "chat", route: CHAT, fixtures: ["lead-planning", "lead-long", "lead-counting", "lead-worked"], variant: "activity" },
+  // The night's memory refresh: one summary line with Undo all, and opened, a row per change, one of them opened to
+  // what it was.
+  { id: "chat", route: CHAT, fixtures: ["lead-memory"], variant: "memory-refreshed" },
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["lead-memory"],
+    variant: "memory-refreshed-open",
+    open: async (page) => {
+      await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
+      await page.getByRole("button", { name: "Memory tidied: 3 added, 1 updated, 2 removed" }).click();
+      const changes = page.getByRole("list", { name: "Memory changes" });
+      await changes.getByRole("button", { name: /^PR screenshots live/u }).click();
+      await expect(changes.getByText(/^Was: /u)).toBeVisible();
+    },
+  },
   // The line above the box says what the lead waits on, and Show brings the open approval into view.
   {
     id: "chat",
