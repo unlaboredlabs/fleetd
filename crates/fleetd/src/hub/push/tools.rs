@@ -177,11 +177,48 @@ async fn push_relay_set(
         }
         Some(url.to_owned())
     };
+    let key_sealed = match (&url, &input.key) {
+        (Some(_), Some(sealed)) => Some(reseal(&hub, sealed.as_str())?),
+        _ => None,
+    };
+    let relay = url.map(|url| super::RelaySetting { url, key_sealed });
     hub.db
-        .transaction(|c| super::set_relay(c, url.as_deref()))?;
+        .transaction(|c| super::set_relay(c, relay.as_ref()))?;
     Ok(PushRelaySetOutput {
-        url,
+        key: relay.as_ref().is_some_and(|r| r.key_sealed.is_some()),
+        url: relay.map(|r| r.url),
         next: None,
         truncated: None,
     })
+}
+
+/// The relay's key, sealed to this hub's box key by the caller: opened to check it and trim a pasted newline, then
+/// sealed again to the hub.
+fn reseal(hub: &Hub, sealed: &str) -> Result<String, ToolError> {
+    let refused = || {
+        error(
+            ErrorCode::Invalid,
+            "The relay key wasn't sealed to this hub, or is empty.",
+            "Seal the relay's key to boxPubKey from hub_links_get, or run `fleetd push-relay set <url> --relay-key-file <path>`.",
+        )
+    };
+    let box_key = crate::hub::hub_links::box_key(hub).map_err(|e| {
+        tracing::error!(error = %e, "push: the hub's box key");
+        crate::hub::api::internal_error()
+    })?;
+    let plain = B64
+        .decode(sealed)
+        .ok()
+        .and_then(|s| box_key.open(&s))
+        .and_then(|p| String::from_utf8(p.to_vec()).ok())
+        .map(zeroize::Zeroizing::new)
+        .ok_or_else(refused)?;
+    let key = plain.trim();
+    if key.is_empty() || key.chars().any(char::is_whitespace) {
+        return Err(refused());
+    }
+    let resealed = box_key
+        .seal(key.as_bytes())
+        .ok_or_else(crate::hub::api::internal_error)?;
+    Ok(B64.encode(resealed))
 }

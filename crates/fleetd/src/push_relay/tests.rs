@@ -1,5 +1,6 @@
 //! The relay against fake APNs and FCM: the requests they get (headers, a provider token that verifies, the body
-//! with the ciphertext and nothing else), dead tokens answered `dead`, and the abuse limits.
+//! with the ciphertext and nothing else), dead tokens answered `dead`, a relay set up wrong answered `failed` rather
+//! than `dead`, the relay's key, and the abuse limits.
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -21,8 +22,9 @@ const RSA_KEY: &str = include_str!("../node/google/testdata/service-account-test
 /// What the fake upstream got: (path, headers, body).
 type Seen = Arc<Mutex<Vec<(String, HeaderMap, String)>>>;
 
-/// APNs, FCM and Google's token endpoint in one. APNs: token "gone" is 410, "bad" is 400 BadDeviceToken, "boom" is
-/// 500. FCM: token "gone" is 404 UNREGISTERED.
+/// APNs, FCM and Google's token endpoint in one. APNs: token "gone" is 410, "bad" is 400 BadDeviceToken, "notopic"
+/// 400 DeviceTokenNotForTopic, "badtopic" 400 BadTopic, "badjwt" 403 InvalidProviderToken, "boom" 500. FCM: token
+/// "gone" is 404 UNREGISTERED, "mismatch" 403 SENDER_ID_MISMATCH, "denied" 403 PERMISSION_DENIED, "nf" a bare 404.
 async fn upstream() -> (Seen, String) {
     let seen: Seen = Arc::default();
     let record = |seen: &Seen, path: String, headers: HeaderMap, body: String| {
@@ -37,6 +39,9 @@ async fn upstream() -> (Seen, String) {
                     match token.as_str() {
                         "gone" => (StatusCode::GONE, axum::Json(json!({ "reason": "Unregistered" }))),
                         "bad" => (StatusCode::BAD_REQUEST, axum::Json(json!({ "reason": "BadDeviceToken" }))),
+                        "notopic" => (StatusCode::BAD_REQUEST, axum::Json(json!({ "reason": "DeviceTokenNotForTopic" }))),
+                        "badtopic" => (StatusCode::BAD_REQUEST, axum::Json(json!({ "reason": "BadTopic" }))),
+                        "badjwt" => (StatusCode::FORBIDDEN, axum::Json(json!({ "reason": "InvalidProviderToken" }))),
                         "boom" => (StatusCode::INTERNAL_SERVER_ERROR, axum::Json(json!({ "reason": "InternalServerError" }))),
                         _ => (StatusCode::OK, axum::Json(json!({}))),
                     }
@@ -54,13 +59,24 @@ async fn upstream() -> (Seen, String) {
             "/v1/projects/{project}/messages:send",
             post(
                 move |State(seen): State<Seen>, Path(project): Path<String>, headers: HeaderMap, body: String| async move {
-                    let gone = body.contains("\"gone\"");
+                    let token = serde_json::from_str::<Value>(&body).unwrap()["message"]["token"]
+                        .as_str()
+                        .unwrap()
+                        .to_owned();
                     record(&seen, format!("/v1/projects/{project}/messages:send"), headers, body);
-                    if gone {
-                        let details = [json!({ "@type": "type.googleapis.com/google.firebase.fcm.v1.FcmError", "errorCode": "UNREGISTERED" })];
-                        (StatusCode::NOT_FOUND, axum::Json(json!({ "error": { "status": "NOT_FOUND", "details": details } })))
-                    } else {
-                        (StatusCode::OK, axum::Json(json!({ "name": format!("projects/{project}/messages/1") })))
+                    let error = |status: StatusCode, state: &str, code: Option<&str>| {
+                        let details: Vec<Value> = code
+                            .map(|c| json!({ "@type": "type.googleapis.com/google.firebase.fcm.v1.FcmError", "errorCode": c }))
+                            .into_iter()
+                            .collect();
+                        (status, axum::Json(json!({ "error": { "status": state, "details": details } })))
+                    };
+                    match token.as_str() {
+                        "gone" => error(StatusCode::NOT_FOUND, "NOT_FOUND", Some("UNREGISTERED")),
+                        "mismatch" => error(StatusCode::FORBIDDEN, "PERMISSION_DENIED", Some("SENDER_ID_MISMATCH")),
+                        "denied" => error(StatusCode::FORBIDDEN, "PERMISSION_DENIED", None),
+                        "nf" => error(StatusCode::NOT_FOUND, "NOT_FOUND", None),
+                        _ => (StatusCode::OK, axum::Json(json!({ "name": format!("projects/{project}/messages/1") }))),
                     }
                 },
             ),
@@ -90,6 +106,11 @@ fn p8() -> (String, Vec<u8>) {
 
 /// A relay with both platforms pointed at `upstream`, served; its URL and the APNs public key.
 async fn relay(upstream: &str) -> (String, Vec<u8>) {
+    relay_keyed(upstream, None).await
+}
+
+/// [`relay`], taking only requests with `key` when given.
+async fn relay_keyed(upstream: &str, key: Option<&str>) -> (String, Vec<u8>) {
     let (pem, public) = p8();
     let apns =
         apns::Apns::new(&pem, "KEY1234567", "TEAM123456", "dev.fleetd.app", upstream).unwrap();
@@ -100,7 +121,9 @@ async fn relay(upstream: &str) -> (String, Vec<u8>) {
     let fcm = fcm::Fcm::new(&account.to_string(), upstream).unwrap();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!("http://{}", listener.local_addr().unwrap());
-    let app = router(Arc::new(Relay::new(Some(apns), Some(fcm))));
+    let mut served = Relay::new(Some(apns), Some(fcm));
+    served.key = key.map(|k| zeroize::Zeroizing::new(k.to_owned()));
+    let app = router(Arc::new(served));
     tokio::spawn(async move { axum::serve(listener, app).await });
     (url, public)
 }
@@ -115,12 +138,17 @@ fn push(platform: PushPlatform, token: &str) -> RelayPush {
 }
 
 async fn send(relay: &str, body: &Value) -> (u16, Value) {
-    let answer = reqwest::Client::new()
+    send_keyed(relay, None, body).await
+}
+
+async fn send_keyed(relay: &str, key: Option<&str>, body: &Value) -> (u16, Value) {
+    let mut request = reqwest::Client::new()
         .post(format!("{relay}/v1/push"))
-        .json(body)
-        .send()
-        .await
-        .unwrap();
+        .json(body);
+    if let Some(key) = key {
+        request = request.bearer_auth(key);
+    }
+    let answer = request.send().await.unwrap();
     (
         answer.status().as_u16(),
         answer.json().await.unwrap_or_default(),
@@ -195,15 +223,15 @@ async fn apns_gets_a_mutable_alert_with_the_ciphertext_and_a_provider_token_that
     // And the hub reads the relay's answers.
     let http = reqwest::Client::new();
     assert_eq!(
-        crate::hub::push::post(&http, &relay, &push(PushPlatform::Ios, "aa11")).await,
+        crate::hub::push::post(&http, &relay, None, &push(PushPlatform::Ios, "aa11")).await,
         Outcome::Sent
     );
     assert_eq!(
-        crate::hub::push::post(&http, &relay, &push(PushPlatform::Ios, "gone")).await,
+        crate::hub::push::post(&http, &relay, None, &push(PushPlatform::Ios, "gone")).await,
         Outcome::Dead
     );
     assert!(matches!(
-        crate::hub::push::post(&http, &relay, &push(PushPlatform::Ios, "boom")).await,
+        crate::hub::push::post(&http, &relay, None, &push(PushPlatform::Ios, "boom")).await,
         Outcome::Failed(_)
     ));
 }
@@ -294,4 +322,111 @@ async fn the_relay_refuses_what_is_too_big_malformed_too_frequent_or_unconfigure
         .await
         .unwrap();
     assert_eq!(health, json!({ "ok": true, "apns": false, "fcm": false }));
+}
+
+#[tokio::test]
+async fn a_relay_set_up_wrong_fails_its_pushes_rather_than_calling_every_token_dead() {
+    let (_, up) = upstream().await;
+    let (relay, _) = relay(&up).await;
+    let answer = |token: &'static str, platform: PushPlatform| {
+        let relay = relay.clone();
+        async move { send(&relay, &json!(push(platform, token))).await }
+    };
+    let failed_with = |(status, body): (u16, Value), words: &str| {
+        assert_eq!(
+            (status, body["status"].as_str()),
+            (502, Some("failed")),
+            "{body}"
+        );
+        let error = body["error"].as_str().unwrap();
+        assert!(error.contains(words), "{error}");
+    };
+
+    // Before any push has gone through, a token APNs calls bad may be the relay's environment or bundle id.
+    failed_with(
+        answer("bad", PushPlatform::Ios).await,
+        "FLEETD_APNS_SANDBOX",
+    );
+    failed_with(
+        answer("notopic", PushPlatform::Ios).await,
+        "FLEETD_APNS_TOPIC",
+    );
+    failed_with(
+        answer("badtopic", PushPlatform::Ios).await,
+        "FLEETD_APNS_TOPIC",
+    );
+    failed_with(
+        answer("badjwt", PushPlatform::Ios).await,
+        "FLEETD_APNS_KEY_ID",
+    );
+    // 410 is that token alone, always.
+    assert_eq!(
+        answer("gone", PushPlatform::Ios).await.1,
+        json!({ "status": "dead" })
+    );
+    // Once one has gone through, the setup is right and a bad token is the token's.
+    assert_eq!(
+        answer("aa11", PushPlatform::Ios).await.1,
+        json!({ "status": "sent" })
+    );
+    assert_eq!(
+        answer("bad", PushPlatform::Ios).await.1,
+        json!({ "status": "dead" })
+    );
+    assert_eq!(
+        answer("notopic", PushPlatform::Ios).await.1,
+        json!({ "status": "dead" })
+    );
+    failed_with(
+        answer("badtopic", PushPlatform::Ios).await,
+        "FLEETD_APNS_TOPIC",
+    );
+
+    // FCM: only UNREGISTERED is the token's.
+    failed_with(
+        answer("mismatch", PushPlatform::Android).await,
+        "SENDER_ID_MISMATCH",
+    );
+    failed_with(
+        answer("denied", PushPlatform::Android).await,
+        "service account",
+    );
+    failed_with(answer("nf", PushPlatform::Android).await, "404");
+    assert_eq!(
+        answer("gone", PushPlatform::Android).await.1,
+        json!({ "status": "dead" })
+    );
+}
+
+#[tokio::test]
+async fn a_relay_with_a_key_takes_only_hubs_that_send_it() {
+    let (seen, up) = upstream().await;
+    let (relay, _) = relay_keyed(&up, Some("relay-key-1")).await;
+    let p = json!(push(PushPlatform::Ios, "aa11"));
+    let (status, refused) = send(&relay, &p).await;
+    assert_eq!((status, refused["status"].as_str()), (401, Some("failed")));
+    assert!(
+        refused["error"]
+            .as_str()
+            .unwrap()
+            .contains("--relay-key-file")
+    );
+    assert_eq!(send_keyed(&relay, Some("relay-key-2"), &p).await.0, 401);
+    assert!(seen.lock().unwrap().is_empty(), "nothing reached APNs");
+    assert_eq!(
+        send_keyed(&relay, Some("relay-key-1"), &p).await,
+        (200, json!({ "status": "sent" }))
+    );
+
+    // The hub sends its key as a bearer token.
+    let http = reqwest::Client::new();
+    let ios = push(PushPlatform::Ios, "aa11");
+    assert_eq!(
+        crate::hub::push::post(&http, &relay, Some("relay-key-1"), &ios).await,
+        Outcome::Sent
+    );
+    assert!(matches!(
+        crate::hub::push::post(&http, &relay, None, &ios).await,
+        Outcome::Failed(why) if why.starts_with("401")
+    ));
 }

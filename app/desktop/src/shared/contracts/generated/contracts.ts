@@ -5699,10 +5699,17 @@ export type PushDevicesListOutput = {
 export type PushPlatform = "ios" | "android";
 
 export type PushRelaySetInput = {
+  /**
+   * The relay's key (its FLEETD_PUSH_RELAY_KEY_FILE), sealed to this hub's boxPubKey (hub_links_get); the hub sends
+   * it as a bearer token. Absent: the relay takes no key.
+   */
+  key?: SealedSecret;
   url: string;
 };
 
 export type PushRelaySetOutput = {
+  /** The hub keeps a key for the relay. */
+  key: boolean;
   next?: string;
   truncated?: boolean;
   /** Absent: no relay, no notifications. */

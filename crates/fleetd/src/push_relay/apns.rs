@@ -2,7 +2,12 @@
 //! hour and refuses a new one more often than every 20). Each push is an alert with `mutable-content: 1`, so the app's
 //! Notification Service Extension decrypts `c` and shows the real text; the alert's own words are what shows if it
 //! can't.
+//!
+//! Only 410 (Unregistered) marks a token dead outright. BadDeviceToken and DeviceTokenNotForTopic are what every token
+//! gets when the relay has the wrong environment (`FLEETD_APNS_SANDBOX`) or bundle id, so they mark one dead only once
+//! a push has gone through since the relay started, which proves its setup right.
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use base64::Engine;
@@ -28,6 +33,8 @@ pub struct Apns {
     /// [`PRODUCTION`] or [`SANDBOX`] (a fake in tests).
     pub url: String,
     jwt: Mutex<Option<(Instant, String)>>,
+    /// A push went through: the environment, topic and key are right.
+    proven: AtomicBool,
 }
 
 impl Apns {
@@ -53,6 +60,7 @@ impl Apns {
             topic: topic.to_owned(),
             url: url.trim_end_matches('/').to_owned(),
             jwt: Mutex::new(None),
+            proven: AtomicBool::new(false),
         })
     }
 
@@ -131,6 +139,7 @@ impl Apns {
         };
         let status = answer.status().as_u16();
         if status == 200 {
+            self.proven.store(true, Ordering::Relaxed);
             return Delivery::Sent;
         }
         let reason = answer
@@ -139,11 +148,37 @@ impl Apns {
             .ok()
             .and_then(|b| b["reason"].as_str().map(str::to_owned))
             .unwrap_or_default();
+        let environment = if self.url == SANDBOX {
+            "sandbox"
+        } else {
+            "production"
+        };
         match (status, reason.as_str()) {
-            (410, _) | (400, "BadDeviceToken" | "DeviceTokenNotForTopic") => Delivery::Dead,
+            (410, _) => Delivery::Dead,
+            (400, "BadDeviceToken" | "DeviceTokenNotForTopic")
+                if self.proven.load(Ordering::Relaxed) =>
+            {
+                Delivery::Dead
+            }
+            (400, "BadDeviceToken" | "DeviceTokenNotForTopic") => Delivery::Failed(format!(
+                "APNs answered {reason} and no push has gone through yet: the relay sends to {environment} \
+                 (FLEETD_APNS_SANDBOX=1 for development builds, unset for TestFlight and the App Store) as {} \
+                 (FLEETD_APNS_TOPIC must be the app's bundle id)",
+                self.topic
+            )),
+            (400, "BadTopic" | "TopicDisallowed" | "MissingTopic") | (403, "TopicDisallowed") => {
+                Delivery::Failed(format!(
+                    "APNs refused the topic {} ({reason}): FLEETD_APNS_TOPIC must be the app's bundle id, \
+                     and the .p8 key must be from the same team",
+                    self.topic
+                ))
+            }
             (403, "ExpiredProviderToken" | "InvalidProviderToken") => {
                 *self.jwt.lock().unwrap() = None;
-                Delivery::Failed(format!("APNs refused the provider token ({reason})"))
+                Delivery::Failed(format!(
+                    "APNs refused the provider token ({reason}): FLEETD_APNS_KEY_ID and FLEETD_APNS_TEAM_ID must \
+                     be the .p8 key's"
+                ))
             }
             _ => Delivery::Failed(format!("APNs answered {status} {reason}")),
         }

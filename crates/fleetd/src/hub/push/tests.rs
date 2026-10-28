@@ -1,5 +1,6 @@
 //! Push over a real in-memory hub and a fake relay: a sealed payload opens with the device's secret key, each person's
-//! devices get only what is theirs, a dead token's device is dropped, and the tools keep phones to their person.
+//! devices get only what is theirs, a dead token's device is dropped but most of a person's phones never are at once,
+//! the relay's key is kept sealed and sent, and the tools keep phones to their person.
 use std::sync::{Arc, Mutex};
 
 use axum::http::StatusCode;
@@ -126,6 +127,8 @@ async fn phone(
 #[derive(Clone, Default)]
 struct FakeRelay {
     got: Arc<Mutex<Vec<RelayPush>>>,
+    /// Each push's Authorization header.
+    auth: Arc<Mutex<Vec<Option<String>>>>,
 }
 
 async fn fake_relay() -> (FakeRelay, String) {
@@ -133,18 +136,25 @@ async fn fake_relay() -> (FakeRelay, String) {
     let seen = relay.clone();
     let app = axum::Router::new().route(
         "/v1/push",
-        axum::routing::post(move |axum::Json(push): axum::Json<RelayPush>| {
-            let seen = seen.clone();
-            async move {
-                let dead = push.token.starts_with("dead");
-                seen.got.lock().unwrap().push(push);
-                axum::Json(if dead {
-                    RelayAnswer::Dead
-                } else {
-                    RelayAnswer::Sent
-                })
-            }
-        }),
+        axum::routing::post(
+            move |headers: axum::http::HeaderMap, axum::Json(push): axum::Json<RelayPush>| {
+                let seen = seen.clone();
+                async move {
+                    let dead = push.token.starts_with("dead");
+                    seen.got.lock().unwrap().push(push);
+                    seen.auth.lock().unwrap().push(
+                        headers
+                            .get("authorization")
+                            .map(|v| v.to_str().unwrap().to_owned()),
+                    );
+                    axum::Json(if dead {
+                        RelayAnswer::Dead
+                    } else {
+                        RelayAnswer::Sent
+                    })
+                }
+            },
+        ),
     );
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!("http://{}", listener.local_addr().unwrap());
@@ -420,6 +430,112 @@ async fn a_dead_token_drops_its_device_and_a_signed_out_one_gets_nothing() {
     lead_message(&hub, "app", 2, "Again.");
     let (_, _, sent) = step(&hub, &http, &mut follow, 0).await.unwrap();
     assert!(sent.is_empty());
+}
+
+#[tokio::test]
+async fn a_relay_that_calls_most_of_a_persons_phones_dead_at_once_drops_none() {
+    let (hub, _home) = hub();
+    let owner = owner_device(&hub);
+    let alice = member(&hub, &owner, "Alice", "alice-phone").await;
+    phone(&hub, &owner, "ios", "dead0001").await;
+    phone(&hub, &owner, "ios", "dead0002").await;
+    phone(&hub, &owner, "ios", "cc33").await;
+    phone(&hub, &alice, "android", "dead0003").await;
+    let (_, url) = fake_relay().await;
+    ok(&hub, &owner, "push_relay_set", json!({ "url": url })).await;
+    let http = reqwest::Client::new();
+    let mut follow = Follow::default();
+
+    // Two of the owner's three phones: more than half, so a relay set up wrong is likelier than two lost phones.
+    lead_message(&hub, "app", 1, "Done.");
+    let (_, _, sent) = step(&hub, &http, &mut follow, 0).await.unwrap();
+    let outcomes: Vec<&Outcome> = sent.iter().map(|(_, o)| o).collect();
+    assert!(
+        matches!(
+            outcomes[..],
+            [Outcome::Failed(_), Outcome::Failed(_), Outcome::Sent]
+        ),
+        "{outcomes:?}"
+    );
+    let Outcome::Failed(why) = outcomes[0] else {
+        unreachable!()
+    };
+    assert!(why.contains("2 of") && why.contains("kept them"), "{why}");
+    let listed = ok(&hub, &owner, "push_devices_list", json!({})).await;
+    assert_eq!(listed["devices"].as_array().unwrap().len(), 3);
+    // Logged once, not once a phone or a notification.
+    assert_eq!(follow.warned.len(), 1);
+    lead_message(&hub, "app", 2, "Again.");
+    step(&hub, &http, &mut follow, 0).await.unwrap();
+    assert_eq!(follow.warned.len(), 1);
+
+    // A person's only phone is all of them: kept too.
+    human_wrote(&hub, "app", 3, &alice);
+    let cursor = hub.events.head();
+    lead_message(&hub, "app", 4, "On it.");
+    let (_, _, sent) = step(&hub, &http, &mut follow, cursor).await.unwrap();
+    assert_eq!(sent.len(), 1, "{sent:?}");
+    assert!(
+        matches!(&sent[0].1, Outcome::Failed(why) if why.contains("1 of")),
+        "{sent:?}"
+    );
+    let alices = ok(&hub, &alice, "push_devices_list", json!({})).await;
+    assert_eq!(alices["devices"].as_array().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn the_relays_key_is_kept_sealed_and_sent_as_a_bearer_token() {
+    let (hub, _home) = hub();
+    let owner = owner_device(&hub);
+    phone(&hub, &owner, "ios", "aa11").await;
+    let (relay, url) = fake_relay().await;
+    let box_pub_key = ok(&hub, &owner, "hub_links_get", json!({})).await["boxPubKey"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let to_hub: [u8; 32] = B64.decode(&box_pub_key).unwrap().try_into().unwrap();
+    let set = ok(
+        &hub,
+        &owner,
+        "push_relay_set",
+        json!({ "url": url, "key": seal(&to_hub, b"relay-key-1\n") }),
+    )
+    .await;
+    assert_eq!(set["key"], true);
+    // Kept sealed, never in the clear.
+    let kept = hub.db.with(relay_setting).unwrap();
+    assert!(!kept.key_sealed.as_deref().unwrap().contains("relay-key-1"));
+
+    let http = reqwest::Client::new();
+    lead_message(&hub, "app", 1, "Done.");
+    let (_, _, sent) = step(&hub, &http, &mut Follow::default(), 0).await.unwrap();
+    assert_eq!(sent.len(), 1);
+    assert_eq!(
+        relay.auth.lock().unwrap().clone(),
+        [Some("Bearer relay-key-1".to_owned())]
+    );
+
+    // A key not sealed to this hub is refused; a URL set again without one sends none.
+    let elsewhere = crypto_box::SecretKey::generate(&mut crypto_box::aead::OsRng);
+    assert_eq!(
+        refused(
+            &hub,
+            &owner,
+            "push_relay_set",
+            json!({ "url": url, "key": seal(elsewhere.public_key().as_bytes(), b"relay-key-1") }),
+        )
+        .await,
+        ErrorCode::Invalid
+    );
+    let set = ok(&hub, &owner, "push_relay_set", json!({ "url": url })).await;
+    assert_eq!(set["key"], false);
+    lead_message(&hub, "app", 2, "Again.");
+    step(&hub, &http, &mut Follow::default(), 0).await.unwrap();
+    assert_eq!(relay.auth.lock().unwrap().last().unwrap(), &None);
+}
+
+fn relay_setting(c: &Connection) -> Result<RelaySetting, StoreError> {
+    Ok(relay(c)?.unwrap())
 }
 
 #[tokio::test]

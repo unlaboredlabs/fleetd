@@ -25,7 +25,7 @@ person, is refused.
 | `push_device_register` | `{platform: "ios"\|"android", token, publicKey, name}` | `{device, relay}` |
 | `push_devices_list` | `{}` | `{devices, relay}` |
 | `push_device_remove` | `{deviceId}` | `{device}` |
-| `push_relay_set` | `{url}` (empty: none) | `{url?}` |
+| `push_relay_set` | `{url, key?}` (empty URL: none) | `{url?, key}` |
 
 - `token`: the APNs device token as hex, or the FCM registration token.
 - `publicKey`: the phone's 32-byte X25519 public key in standard base64.
@@ -34,7 +34,10 @@ person, is refused.
 - Registering the same token again updates that device (a new key or name) and moves it to the caller's person. The
   app registers again whenever the OS gives it a new token, and removes the device when the person signs out.
 - At most 20 devices per person.
-- `push_relay_set` needs Admin on every machine: an owner or admin, or `fleetd push-relay set` on the hub.
+- `push_relay_set` needs Admin on every machine: an owner or admin, or `fleetd push-relay set` on the hub. `key` is
+  the relay's key sealed (`crypto_box_seal`) to the hub's `boxPubKey` from `hub_links_get`; the hub keeps it sealed
+  to itself and sends it as `Authorization: Bearer`. The call replaces the whole setting: a URL without `key` drops
+  the key. The output's `key` says whether one is kept.
 
 A device whose key is revoked (signed out under Settings › You), or whose person was removed, gets nothing.
 
@@ -110,7 +113,16 @@ push about the same request replaces it.
 |---|---|
 | 200 `{"status": "sent"}` | APNs or FCM took it. |
 | 200 `{"status": "dead"}` | APNs or FCM no longer knows the token. The hub drops the device. |
-| 400 / 413 / 429 / 502 / 503 `{"status": "failed", "error"}` | Malformed, too big (ciphertext over 3500 characters, body over 8 KB), more than 60 pushes a minute to one token, an upstream failure, or a platform the relay has no credentials for. |
+| 400 / 401 / 413 / 429 / 502 / 503 `{"status": "failed", "error"}` | Malformed, no or the wrong relay key, too big (ciphertext over 3500 characters, body over 8 KB), more than 60 pushes a minute to one token, an upstream failure, or a platform the relay has no credentials for. |
+
+`dead` is only an answer that means that token alone is gone: APNs 410 (Unregistered); APNs BadDeviceToken or
+DeviceTokenNotForTopic once a push has gone through since the relay started (before that they are what every token
+gets with the wrong `FLEETD_APNS_SANDBOX` or `FLEETD_APNS_TOPIC`); FCM UNREGISTERED. The relay's setup errors
+(BadTopic, TopicDisallowed, InvalidProviderToken, FCM SENDER_ID_MISMATCH, 401, 403, a 404 without UNREGISTERED) are
+`failed`, with what to fix in `error`. As a backstop, when one notification's answers would drop more than half of a
+person's devices, or their only one, the hub keeps them all. It logs each distinct failure once an hour at most.
+
+With `FLEETD_PUSH_RELAY_KEY_FILE` set, the relay refuses a request without `Authorization: Bearer <key>` (401).
 
 `GET /` answers `{"ok": true, "apns": bool, "fcm": bool}`.
 
@@ -134,7 +146,7 @@ grouped by project.
 The relay sees a token, the ciphertext, the collapse key and the platform. It keeps nothing past the request: the
 rate limit counts by a hash of the token. It logs no token or ciphertext. Its credentials come from files named in
 its environment, never the repo (`FLEETD_APNS_KEY_FILE`, `FLEETD_APNS_KEY_ID`, `FLEETD_APNS_TEAM_ID`,
-`FLEETD_APNS_TOPIC`, `FLEETD_APNS_SANDBOX`, `FLEETD_FCM_SERVICE_ACCOUNT`). How to run one:
+`FLEETD_APNS_TOPIC`, `FLEETD_APNS_SANDBOX`, `FLEETD_FCM_SERVICE_ACCOUNT`, `FLEETD_PUSH_RELAY_KEY_FILE`). How to run one:
 [docs/site phone-notifications](../site/src/content/docs/phone-notifications.md).
 
 ## Later

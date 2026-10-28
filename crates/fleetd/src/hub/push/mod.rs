@@ -2,8 +2,10 @@
 //! `push_devices`: a push token and an X25519 public key, tools.rs). [`run`] follows the event log and, for what the
 //! hub already marks as needing a person (an event with `attention`), a Navi's or a lead's final chat message, and an
 //! order that landed or stopped, seals a [`PushPayload`] to each of that person's devices and posts it to the hub's
-//! push relay (`fleetd push-relay`, crate::push_relay). The relay sees a token and ciphertext, never the content. A
-//! token the relay reports dead is dropped.
+//! push relay (`fleetd push-relay`, crate::push_relay), with the relay's key when it takes one. The relay sees a token
+//! and ciphertext, never the content. A token the relay reports dead is dropped, unless one notification would drop
+//! more than half of a person's phones that way: a relay set up wrong makes every token look dead, so those are kept
+//! and logged. Each failure is logged once an hour at most.
 //!
 //! Who an event is for: a Navi's, its owner; another project's, the person who last wrote in its chat, else the hub's
 //! owner; an event about no project, the hub's owners and admins.
@@ -12,7 +14,7 @@ pub mod tools;
 #[cfg(test)]
 mod tests;
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -40,6 +42,8 @@ use crate::push_relay::{RelayAnswer, RelayPush};
 const BODY_MAX: usize = 1000;
 /// Chat messages already sent, so a final message announced again isn't sent twice.
 const SENT_MEMORY: usize = 500;
+/// How long a failure logged stays quiet.
+const WARN_EVERY_MS: i64 = 60 * 60 * 1000;
 const RELAY_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// A device's id: "pd_" and 8 base32 characters.
@@ -130,21 +134,37 @@ pub fn remove(
     Ok(device)
 }
 
-/// The hub's push relay; None when none is set.
-pub fn relay(c: &Connection) -> Result<Option<String>, StoreError> {
-    Ok(c.prepare_cached("SELECT url FROM push_relay WHERE id = 1")?
-        .query_row([], |row| row.get::<_, String>(0))
-        .optional()?
-        .filter(|u| !u.is_empty()))
+/// The hub's push relay.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RelaySetting {
+    pub url: String,
+    /// The relay's key, sealed to the hub's box key (standard base64).
+    pub key_sealed: Option<String>,
 }
 
-pub fn set_relay(c: &Connection, url: Option<&str>) -> Result<(), StoreError> {
-    match url {
-        Some(url) => c
+/// The hub's push relay; None when none is set.
+pub fn relay(c: &Connection) -> Result<Option<RelaySetting>, StoreError> {
+    Ok(
+        c.prepare_cached("SELECT url, key_sealed FROM push_relay WHERE id = 1")?
+            .query_row([], |row| {
+                Ok(RelaySetting {
+                    url: row.get(0)?,
+                    key_sealed: row.get(1)?,
+                })
+            })
+            .optional()?
+            .filter(|r| !r.url.is_empty()),
+    )
+}
+
+pub fn set_relay(c: &Connection, relay: Option<&RelaySetting>) -> Result<(), StoreError> {
+    match relay {
+        Some(r) => c
             .prepare_cached(
-                "INSERT INTO push_relay (id, url) VALUES (1, ?) ON CONFLICT (id) DO UPDATE SET url = excluded.url",
+                "INSERT INTO push_relay (id, url, key_sealed) VALUES (1, ?, ?)
+                 ON CONFLICT (id) DO UPDATE SET url = excluded.url, key_sealed = excluded.key_sealed",
             )?
-            .execute([url])?,
+            .execute(params![r.url, r.key_sealed])?,
         None => c.prepare_cached("DELETE FROM push_relay")?.execute([])?,
     };
     Ok(())
@@ -412,10 +432,19 @@ pub enum Outcome {
     Failed(String),
 }
 
-/// Posts one sealed notification to the relay.
-pub async fn post(http: &reqwest::Client, relay: &str, push: &RelayPush) -> Outcome {
+/// Posts one sealed notification to the relay, with its key when it has one.
+pub async fn post(
+    http: &reqwest::Client,
+    relay: &str,
+    key: Option<&str>,
+    push: &RelayPush,
+) -> Outcome {
     let url = format!("{}/v1/push", relay.trim_end_matches('/'));
-    let answer = match http.post(&url).json(push).send().await {
+    let mut request = http.post(&url).json(push);
+    if let Some(key) = key {
+        request = request.bearer_auth(key);
+    }
+    let answer = match request.send().await {
         Ok(answer) => answer,
         Err(e) => return Outcome::Failed(format!("the relay can't be reached: {e}")),
     };
@@ -433,6 +462,8 @@ pub async fn post(http: &reqwest::Client, relay: &str, push: &RelayPush) -> Outc
 pub struct Follow {
     sent: HashSet<ChatMessageId>,
     order: VecDeque<ChatMessageId>,
+    /// Each failure logged, and when.
+    warned: HashMap<String, i64>,
 }
 
 impl Follow {
@@ -447,6 +478,19 @@ impl Follow {
         {
             self.sent.remove(&old);
         }
+        true
+    }
+
+    /// Logs `why` unless it was logged in the last hour: a relay set up wrong fails every push the same way, and the
+    /// log says it once, with what to fix. Never with a token or ciphertext. True when it logged.
+    fn warn_once(&mut self, why: String, now_ms: i64) -> bool {
+        self.warned
+            .retain(|_, at| now_ms.saturating_sub(*at) < WARN_EVERY_MS);
+        if self.warned.contains_key(&why) {
+            return false;
+        }
+        tracing::warn!("push: {why}");
+        self.warned.insert(why, now_ms);
         true
     }
 }
@@ -464,6 +508,21 @@ pub async fn step(
     let Some(relay) = hub.db.with(relay)? else {
         return Ok((page.cursor, page.more, outcomes));
     };
+    let key = match &relay.key_sealed {
+        None => None,
+        Some(sealed) => match open_key(hub, sealed) {
+            Some(key) => Some(key),
+            None => {
+                follow.warn_once(
+                    "the push relay's key can't be opened with this hub's box key: set it again with \
+                     `fleetd push-relay set <url> --relay-key-file <path>`"
+                        .into(),
+                    now_ms(hub.clock.as_ref()),
+                );
+                return Ok((page.cursor, page.more, outcomes));
+            }
+        },
+    };
     for event in &page.events {
         let Some(notice) = notice(hub, event)? else {
             continue;
@@ -475,6 +534,7 @@ pub async fn step(
         }
         let plain = payload_json(&notice.payload);
         for person in &notice.people {
+            let mut posted = Vec::new();
             for target in hub.db.with(|c| targets(c, person))? {
                 let push = RelayPush {
                     platform: target.platform,
@@ -482,31 +542,57 @@ pub async fn step(
                     ciphertext: seal(&target.public_key, &plain),
                     collapse_key: notice.collapse.clone(),
                 };
-                let outcome = post(http, &relay, &push).await;
-                let now = now_ms(hub.clock.as_ref());
+                let outcome =
+                    post(http, &relay.url, key.as_deref().map(String::as_str), &push).await;
+                posted.push((target.device_id, outcome));
+            }
+            // A relay set up wrong answers every token dead: one notification never drops most of a person's phones.
+            let dead = posted.iter().filter(|(_, o)| *o == Outcome::Dead).count();
+            if dead * 2 > posted.len() {
+                let why = format!(
+                    "the push relay says {dead} of {person}'s {} phones are gone at once: kept them, as a relay set \
+                     up wrong (APNs environment or bundle id, Firebase project) is the likelier cause; check its log",
+                    posted.len()
+                );
+                for (_, outcome) in &mut posted {
+                    if *outcome == Outcome::Dead {
+                        *outcome = Outcome::Failed(why.clone());
+                    }
+                }
+            }
+            let now = now_ms(hub.clock.as_ref());
+            for (device_id, outcome) in &posted {
+                if let Outcome::Failed(why) = outcome {
+                    follow.warn_once(why.clone(), now);
+                }
                 hub.db.with(|c| {
-                    match &outcome {
+                    match outcome {
                         Outcome::Sent => c
                             .prepare_cached(
                                 "UPDATE push_devices SET last_sent_ms = ? WHERE device_id = ?",
                             )?
-                            .execute(params![now, target.device_id])?,
+                            .execute(params![now, device_id])?,
                         Outcome::Dead => c
                             .prepare_cached("DELETE FROM push_devices WHERE device_id = ?")?
-                            .execute([&target.device_id])?,
-                        Outcome::Failed(why) => {
-                            // Never the token or the ciphertext.
-                            tracing::warn!(device = %target.device_id, "push not sent: {why}");
-                            0
-                        }
+                            .execute([device_id])?,
+                        Outcome::Failed(_) => 0,
                     };
                     Ok(())
                 })?;
-                outcomes.push((target.device_id, outcome));
             }
+            outcomes.extend(posted);
         }
     }
     Ok((page.cursor, page.more, outcomes))
+}
+
+/// The relay's key, opened with the hub's box key.
+fn open_key(hub: &Hub, sealed: &str) -> Option<zeroize::Zeroizing<String>> {
+    let sealed = B64.decode(sealed).ok()?;
+    let plain = crate::hub::hub_links::box_key(hub).ok()?.open(&sealed)?;
+    String::from_utf8(plain.to_vec())
+        .ok()
+        .map(zeroize::Zeroizing::new)
 }
 
 /// Follows the event log from its head at the hub's start: what happened while the hub was down is old news.
