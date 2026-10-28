@@ -80,6 +80,27 @@ an OS sandbox holds when a command finds a way around them. Only Navis run in it
 Both systems apply the same fence. These are the paths, with `~` the machine user's home and `~/.claude` Claude
 Code's config dir (or `$CLAUDE_CONFIG_DIR`).
 
+**On Linux the home is an allow-list.** A Navi's `~` is empty and read-only, and only these come back:
+
+- Its own folder and scratch dir, and its session's files from fleetd's directory (below).
+- Read-only: Claude Code's install (`~/.local/bin`, and `~/.local/share/claude/versions` that `claude` links to),
+  every directory on the session's `PATH` that is in the home (a `…/bin` as its whole install, so
+  `~/.nvm/versions/node/v22` for node and npm), the install a program there links to elsewhere in the home (uv's
+  Python with its library), `~/.claude` (but other sessions' records, below), `~/.gitconfig`, git's
+  `~/.config/git/config`, `ignore` and `attributes` (never its `credentials`), and `~/.rustup` for the toolchains
+  cargo's proxies run.
+- Never through the `PATH` or a link: fleetd's directory and another project's checkout. A `bin` whose install
+  would be one of them, or hold one, comes back alone (fleetd's own `~/.fleetd/bin`) or not at all, and a link
+  into one brings nothing back. Only what is on the `PATH`, or linked from it, comes back: a tool whose data sits
+  outside its install (most version managers but rustup) finds no data.
+- Its own copy of `~/.claude.json` (below), and `~/.claude/.credentials.json`, read and written.
+- `~/.cache`: its own, empty at first, kept with its session.
+
+Anything else in the home, such as notes, shell startup files, another session's temporary files, or a file made
+while it runs, isn't there at all. The list under **Can't read** still applies inside what comes back, for example
+`~/.cargo/credentials.toml` when `~/.cargo/bin` is on the `PATH`. On macOS the home is as the machine has it, minus
+the paths listed below.
+
 **Writes**, on both: its folder (except `.claude`, `.fleetd`, `.mcp.json` and `agent-browser.json` in it), its
 scratch dir, and Claude Code's files for its own session: its conversation in `~/.claude/projects/<its folder>`,
 `~/.claude/session-env/<session>`, `~/.claude/file-history/<session>`, and the login file
@@ -89,11 +110,11 @@ can't add hooks or MCP servers for other agents.
 
 **`~/.claude.json`** holds every MCP server's settings, with their tokens, and every project's history. On Linux a
 Navi gets its own copy in its place, made fresh at each start: without `mcpServers`, without `projects`, and without
-any key named like a secret but Claude Code's own login. What it writes there stays in its copy. On macOS, where
-nothing can stand in for a path, the real file is hidden. Its backups and other copies beside it
-(`~/.claude.json.backup.*`) are hidden on both.
+any key named like a secret but Claude Code's own login. What it writes there stays in its copy. Its backups and other
+copies beside it (`~/.claude.json.backup.*`) aren't in a Linux Navi's home at all. On macOS, where nothing can stand
+in for a path, the real file and its copies are hidden.
 
-**Can't read**, on both:
+**Can't read**, on both (on Linux, also anywhere else in the home):
 
 - fleetd's directory: the hub, the node, worktrees, secrets and integration tokens, Chrome's profiles. Only its own
   session's files are read again: its MCP config, settings and skills, the `fleetd` binary and the node's socket,
@@ -101,7 +122,8 @@ nothing can stand in for a path, the real file is hidden. Its backups and other 
 - Other projects' checkouts on the machine.
 - Claude Code's record of other sessions: `~/.claude/projects` (but its own), `history.jsonl`, `file-history`,
   `session-env` and `sessions`; its IDE connections (`ide`, whose lock files hold a token) and its `backups`.
-- Logins and keys: `~/.config`, `~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.docker`, `~/.kube`, `~/.password-store`,
+- Logins and keys: `~/.config` (but git's `config`, `ignore` and `attributes` in `~/.config/git`, never its
+  `credentials`), `~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.docker`, `~/.kube`, `~/.password-store`,
   `~/.local/share/keyrings`, `~/.netrc`, `~/.git-credentials`, `~/.npmrc`, `~/.pypirc`, `~/.cargo/credentials` and
   `credentials.toml`, `~/.android/adbkey`, `~/.mozilla`, `~/.pgpass`, `~/.vault-token`, `~/.azure`, `~/.terraform.d`,
   and `~/snap` (each snap's own data, logins included).
@@ -128,9 +150,9 @@ nothing can stand in for a path, the real file is hidden. Its backups and other 
   Navis can't run there (with how to install bubblewrap).
 - **What it doesn't cover.** The network is shared, as the site gate needs. On Linux before 6.12, abstract Unix
   sockets stay reachable, including an X server that accepts local connections without a cookie
-  (`xhost +si:localuser`, the GNOME default). fleetd's own screens don't listen there. Its folder, its session's MCP config (with its own servers' tokens) and
-  Claude Code's login are readable to it, since Claude Code needs them. Everything else on the machine is readable,
-  without writes.
+  (`xhost +si:localuser`, the GNOME default). fleetd's own screens don't listen there. Its folder, its session's
+  MCP config (with its own servers' tokens) and Claude Code's login are readable to it, since Claude Code needs them.
+  Outside the home (and on macOS, inside it but for the hidden paths) the machine is readable, without writes.
 
 ## Hub links {#hub-links}
 

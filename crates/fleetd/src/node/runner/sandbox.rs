@@ -76,6 +76,8 @@ const HIDDEN_IN_HOME: &[&str] = &[
     ".azure",
     ".terraform.d",
     ".local/share/fish/fish_history",
+    // git's credential store under XDG: tokens in plain text.
+    ".config/git/credentials",
 ];
 
 /// In the user's home on macOS: `~/Library` whole, where browsers keep cookies, apps their tokens, and the keychains
@@ -146,6 +148,85 @@ pub struct NaviPaths<'a> {
     pub runtime_dir: Option<&'a Path>,
     /// Every other project's root on this node.
     pub other_roots: Vec<PathBuf>,
+    /// The `claude` binary the node runs.
+    pub claude_bin: &'a Path,
+    /// The session's PATH: its programs in the home are read again (Linux).
+    pub path: Vec<PathBuf>,
+}
+
+/// In the user's home, read again: git's own settings, and rustup's toolchains. On Linux, inside the home's empty
+/// tmpfs, where nothing else is but the programs a Navi runs ([`home_programs`]) and the paths its fence names. On
+/// macOS, inside the hidden `~/.config`: git can't run when a config file it finds is unreadable, though one that
+/// isn't there is fine.
+const HOME_READ: &[&str] = &[
+    ".gitconfig",
+    ".config/git/config",
+    ".config/git/ignore",
+    ".config/git/attributes",
+    // rustup's toolchains, which the proxies in `~/.cargo/bin` run.
+    ".rustup",
+];
+
+/// The programs a Navi runs from the user's home, read-only: claude's binary; every PATH dir in the home, as its
+/// install when it is a `bin` (`~/.nvm/versions/node/v22` for its `bin`, so npm finds its modules), but `~/.local/bin`
+/// alone; and, for each program there that links elsewhere in the home, the install it lands in by the same rule
+/// (`~/.local/bin/claude` → `~/.local/share/claude/versions`). `fenced` (fleetd's dir and the node's home) and
+/// `others` (other projects' roots) never come back through it: no install that is, holds or sits in one, and no link
+/// into one. A PATH dir inside fleetd's dir (`~/.fleetd/bin`) comes back alone.
+fn home_programs(
+    home: &Path,
+    claude: &Path,
+    path: &[PathBuf],
+    fenced: &[PathBuf],
+    others: &[PathBuf],
+) -> Vec<PathBuf> {
+    let inside = |p: &Path| p.starts_with(home) && p != home;
+    let holds_or_is = |d: &Path| fenced.iter().chain(others).any(|f| f.starts_with(d));
+    let in_other = |d: &Path| others.iter().any(|o| d.starts_with(o));
+    let in_fenced = |d: &Path| fenced.iter().any(|f| d.starts_with(f));
+    // A dir that may come back on its own: in the home, and neither holding nor in anything fenced.
+    let may = |d: &Path| inside(d) && !holds_or_is(d) && !in_other(d) && !in_fenced(d);
+    // A dir of programs as it comes back: its install when it's a `bin` whose parent may (not `~/.local`), else itself.
+    let install = |dir: &Path| match (dir.file_name(), dir.parent()) {
+        (Some(name), Some(parent))
+            if name == "bin" && parent != home.join(".local") && may(parent) =>
+        {
+            Some(parent.to_owned())
+        }
+        _ => may(dir).then(|| dir.to_owned()),
+    };
+    let mut dirs = Vec::new();
+    let mut programs = vec![claude.to_owned()];
+    if may(claude) {
+        dirs.push(claude.to_owned());
+    }
+    for dir in path.iter().map(|d| real(d)).filter(|d| inside(d)) {
+        let back = match install(&dir) {
+            Some(back) => back,
+            // fleetd's own `bin` on the PATH: its programs, alone.
+            None if in_fenced(&dir) && !holds_or_is(&dir) && !in_other(&dir) => dir.clone(),
+            None => continue,
+        };
+        dirs.push(back);
+        programs.extend(
+            std::fs::read_dir(&dir)
+                .into_iter()
+                .flatten()
+                .flatten()
+                .map(|e| e.path()),
+        );
+    }
+    for program in programs {
+        let target = real(&program);
+        if target != program
+            && let Some(back) = target.parent().and_then(install)
+        {
+            dirs.push(back);
+        }
+    }
+    dirs.sort();
+    dirs.dedup();
+    dirs
 }
 
 /// `path` with symlinks resolved, through its nearest part that exists: the sandbox sees real paths, and a symlink
@@ -190,7 +271,7 @@ pub fn navi_fence(p: &NaviPaths) -> Fence {
     }
     // Its agent-device's daemon and logs.
     write.push(real(&p.session_dir.join("agent-device")));
-    let private = CLAUDE_SHARED
+    let mut private: Vec<(PathBuf, PathBuf)> = CLAUDE_SHARED
         .iter()
         .map(|d| (real(&p.session_dir.join("claude").join(d)), claude.join(d)))
         .collect();
@@ -223,8 +304,37 @@ pub fn navi_fence(p: &NaviPaths) -> Fence {
     let mut show = vec![real(p.session_dir), real(p.exe), real(p.socket), claude];
     show.extend(NODE_TOOLS.iter().map(|t| real(&p.node_home.join(t))));
     // Its own copy of claude's global config, without other tools' secrets, where there is one to stand in for.
+    // Linux: the home is an allow-list. It gets an empty tmpfs, and only what the fence names comes back, so nothing
+    // else there, made before the session or during it (another session's `.claude.json.tmp…`), is ever in sight.
+    let home_listed = cfg!(target_os = "linux");
+    if home_listed {
+        hide.push(user_home.clone());
+        let fenced = [real(p.fleetd_dir), real(p.node_home)];
+        // As hidden below: a root that holds the Navi's folder or the whole home isn't another project's here.
+        let others: Vec<PathBuf> = p
+            .other_roots
+            .iter()
+            .map(|r| real(r))
+            .filter(|r| !folder.starts_with(r) && !user_home.starts_with(r))
+            .collect();
+        show.extend(home_programs(
+            &user_home,
+            &real(p.claude_bin),
+            &p.path,
+            &fenced,
+            &others,
+        ));
+        // Caches (claude's logs, a tool's downloads) written where every program looks, but its own.
+        private.push((
+            real(&p.session_dir.join("home-cache")),
+            user_home.join(".cache"),
+        ));
+    }
+    show.extend(HOME_READ.iter().map(|f| user_home.join(f)));
     let claude_json = real(p.claude_json);
-    let config_copy = claude_json.is_file().then(|| {
+    // In the listed home there need be nothing under it: its copy stands where the real one would.
+    let in_listed_home = home_listed && claude_json.parent() == Some(user_home.as_path());
+    let config_copy = (claude_json.is_file() || in_listed_home).then(|| {
         (
             claude_json.clone(),
             real(&p.session_dir.join("claude").join(".claude.json")),
@@ -235,8 +345,13 @@ pub fn navi_fence(p: &NaviPaths) -> Fence {
     {
         hide.push(config.clone());
     }
-    // claude's backups and other copies of it beside it (`.claude.json.backup.<time>`), with the same MCP servers.
-    if let (Some(dir), Some(name)) = (claude_json.parent(), claude_json.file_name()) {
+    // claude's backups and other copies of it beside it (`.claude.json.backup.<time>`), with the same MCP servers,
+    // where the home isn't listed already.
+    if let (false, Some(dir), Some(name)) = (
+        in_listed_home,
+        claude_json.parent(),
+        claude_json.file_name(),
+    ) {
         let prefix = format!("{}.", name.to_string_lossy());
         hide.extend(
             std::fs::read_dir(dir)
@@ -246,6 +361,20 @@ pub fn navi_fence(p: &NaviPaths) -> Fence {
                 .filter(|e| e.file_name().to_string_lossy().starts_with(&prefix))
                 .map(|e| e.path()),
         );
+    }
+    // In the listed home, a hidden path matters only inside what comes back (`~/.claude/projects` in `~/.claude`,
+    // cargo's credentials in its install): the rest is out of sight already, and isn't mounted over.
+    if home_listed {
+        let back: Vec<&PathBuf> = show
+            .iter()
+            .chain(&write)
+            .chain(private.iter().map(|(_, to)| to))
+            .collect();
+        hide.retain(|h| {
+            !h.starts_with(&user_home) || *h == user_home || back.iter().any(|b| h.starts_with(b))
+        });
+        // A hidden path stays hidden: one shown as well isn't shown.
+        show.retain(|s| !hide.contains(s));
     }
     Fence {
         write,
