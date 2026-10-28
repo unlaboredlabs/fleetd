@@ -1,0 +1,90 @@
+import { describe, expect, it } from "vitest";
+import type { HumanRequest, ProjectSummary } from "./desktop";
+import { approvals, approvalView, lists } from "./lists";
+
+const AT = "2026-10-28T10:00:00Z";
+
+const project = (projectId: string, title: string, extra: Partial<ProjectSummary> = {}): ProjectSummary => ({
+  machineId: "m1",
+  projectId,
+  title,
+  workspaceRoot: `/home/devbox/${projectId}`,
+  lastActivityAt: AT,
+  threads: { running: 0, waiting: 0, failed: 0, idle: 0 },
+  ...extra,
+});
+
+const asked = (requestId: string, createdAt = AT): HumanRequest => ({
+  requestId,
+  kind: "approval",
+  state: "open",
+  projectRef: { machineId: "m1", projectId: "shop" },
+  createdAt,
+  text: "Deploy the fix",
+});
+
+const gated = (requestId: string, createdAt = AT): HumanRequest => ({
+  ...asked(requestId, createdAt),
+  gated: { argv: ["vercel", "deploy", "--prod"], class: "irreversible", reason: "Ship the checkout fix", timeoutSec: 600, cwd: "/home/devbox/shop" },
+});
+
+describe("lists", () => {
+  it("is undefined until the projects loaded", () => {
+    expect(lists({ projects: undefined, chatStates: {}, requests: undefined })).toBeUndefined();
+  });
+
+  it("leaves archived Navis out and sorts each group by title", () => {
+    const projects = {
+      "m1/b": project("b", "Bea", { kind: "assistant" }),
+      "m1/a": project("a", "Ada", { kind: "assistant" }),
+      "m1/old": project("old", "Old", { kind: "assistant", archivedAt: AT }),
+      "m1/shop": project("shop", "storefront"),
+    };
+    const out = lists({ projects, chatStates: {}, requests: [] });
+    expect(out?.navis.map((r) => r.project.title)).toEqual(["Ada", "Bea"]);
+    expect(out?.projects.map((r) => r.project.title)).toEqual(["storefront"]);
+  });
+});
+
+describe("approvals", () => {
+  it("lists open approvals oldest first, without secrets", () => {
+    const secret: HumanRequest = { ...asked("s1"), kind: "secret" };
+    const out = approvals([gated("r2", "2026-10-28T11:00:00Z"), gated("r1"), secret, { ...gated("r3"), state: "approved" }]);
+    expect(out.map((r) => r.requestId)).toEqual(["r1", "r2"]);
+  });
+
+  it("shows a gated command in full", () => {
+    expect(approvalView(gated("r1"), "storefront")).toEqual({
+      title: "storefront wants to run a command",
+      fields: [
+        { label: "Why", value: "Ship the checkout fix" },
+        { label: "Command", value: "vercel deploy --prod", mono: true },
+        { label: "In", value: "/home/devbox/shop", mono: true },
+        { label: "Kind", value: "irreversible" },
+        { label: "Asked", value: "Deploy the fix" },
+      ],
+    });
+  });
+
+  it("shows who an email reaches and what it says", () => {
+    const r: HumanRequest = {
+      ...asked("r1"),
+      permission: {
+        requestId: "p1",
+        threadId: "t1",
+        toolName: "mcp__gmail__send",
+        summary: "Send an email",
+        preview: { title: "Send an email", to: ["a@example.com", "b@example.com"], subject: "Lease", body: "Signed.", input: '{"to":["a@example.com"]}', integration: "google", server: "gmail", tool: "send", action: "send" },
+      },
+    };
+    const view = approvalView(r, "Ada");
+    expect(view.title).toBe("Ada wants to send an email");
+    expect(view.fields.map((f) => [f.label, f.value])).toEqual([
+      ["To", "a@example.com, b@example.com"],
+      ["Subject", "Lease"],
+      ["Body", "Signed."],
+      ["Input", '{"to":["a@example.com"]}'],
+      ["Asked", "Deploy the fix"],
+    ]);
+  });
+});

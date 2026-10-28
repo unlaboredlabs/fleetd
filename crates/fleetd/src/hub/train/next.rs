@@ -1075,10 +1075,25 @@ mod tests {
         let mut skipped = batch_skipped(&files);
         skipped.sort_by(|a, b| a.name.cmp(&b.name));
         let names: Vec<&str> = skipped.iter().map(|s| s.name.as_str()).collect();
-        assert_eq!(names, ["desktop-macos", "ios sessions", "rust (macos)"]);
-        // Each waits on the Linux job that decides whether it has work.
+        assert_eq!(
+            names,
+            [
+                "desktop-macos",
+                "ios sessions",
+                "mobile (ios)",
+                "rust (macos)"
+            ]
+        );
+        // Each waits on the Linux job of its workflow that decides whether it has work.
         assert!(
-            skipped.iter().all(|s| s.needs == ["macos scope"]),
+            skipped.iter().all(|s| {
+                let scope = if s.name == "mobile (ios)" {
+                    "mobile scope"
+                } else {
+                    "macos scope"
+                };
+                s.needs == [scope]
+            }),
             "{skipped:?}"
         );
     }

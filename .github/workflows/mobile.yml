@@ -1,0 +1,156 @@
+name: Mobile
+
+# The phone app (app/mobile): its checks, an Android APK on Linux and an iOS simulator build on macOS. No EAS and no
+# Expo service: `expo prebuild` makes the native projects, then gradle and xcodebuild build them. Signed builds are
+# mobile-release.yml's, by hand; nothing here reads a secret.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# As ci.yml: a newer push to a PR cancels its running build; main and the merge train's batch each get a group.
+concurrency:
+  group: >-
+    ${{ (github.ref == 'refs/heads/main' || endsWith(github.head_ref || github.ref, 'train/batch'))
+    && format('{0}-{1}', github.workflow, github.run_id)
+    || format('{0}-{1}', github.workflow, github.event.pull_request.number || github.ref) }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && !endsWith(github.head_ref || github.ref, 'train/batch') }}
+
+permissions:
+  contents: read
+
+jobs:
+  mobile-scope:
+    # Which jobs have work, decided on Linux, as ci.yml's macos scope: each job needs this one and is skipped (which
+    # passes, required or not) when its paths didn't change. The app's checks and the Android build also follow the
+    # desktop modules the app imports (app/mobile/src/desktop.ts); the iOS build only app/mobile itself: the same
+    # JavaScript is bundled for Android, so a desktop change that breaks it fails there, and no macOS runner starts
+    # for it. A manual run builds everything. "no work for mobile (ios)" is what the merge train reads to count that
+    # skip on a PR's head as passing.
+    name: mobile scope
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      app: ${{ steps.scope.outputs.app }}
+      ios: ${{ steps.scope.outputs.ios }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+      - id: scope
+        run: |
+          # A manual run builds everything: it is how a fork gets its own builds (docs: fleetd.sh/docs/mobile).
+          base=
+          if [ "$GITHUB_EVENT_NAME" != workflow_dispatch ]; then base=$(git rev-parse -q --verify HEAD^1 || true); fi
+          # scope <output> <check> <paths>: <output>=true when any of the paths, or this workflow, changed.
+          scope() {
+            out=$1
+            check=$2
+            shift 2
+            run=true
+            if [ -n "$base" ] && git diff --quiet "$base" HEAD -- "$@" .github/workflows/mobile.yml; then
+              run=false
+              echo "::notice::no work for $check"
+            fi
+            echo "$out=$run" | tee -a "$GITHUB_OUTPUT"
+          }
+          scope app "mobile" app/mobile app/desktop/src/shared app/desktop/src/renderer/src/data/chat.ts \
+            app/desktop/src/renderer/src/data/chat-contract.ts app/desktop/src/renderer/screens/navi/model.ts
+          scope ios "mobile (ios)" app/mobile
+
+  mobile:
+    # Types (with the desktop modules the app imports) and the client's unit tests.
+    name: mobile
+    needs: mobile-scope
+    if: ${{ !cancelled() && needs.mobile-scope.outputs.app != 'false' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: app/mobile
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/mobile/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm test
+
+  android:
+    # A release APK, debug-signed (installable with adb or by opening it on the phone), for arm64 phones and x86_64
+    # emulators.
+    name: mobile (android)
+    needs: mobile-scope
+    if: ${{ !cancelled() && needs.mobile-scope.outputs.app != 'false' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: app/mobile
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/mobile/package-lock.json
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v5
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+      - run: npm ci --no-audit --no-fund
+      - run: npx expo prebuild --platform android --clean --no-install
+      - name: Build
+        working-directory: app/mobile/android
+        run: ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a,x86_64
+      - uses: actions/upload-artifact@v7
+        with:
+          name: fleetd-android-apk
+          path: app/mobile/android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 14
+
+  ios:
+    # A Release build for the iOS simulator: no signing, the JavaScript bundled in. Only when app/mobile or this
+    # workflow changed (mobile scope); the merge train's batch skips it, as ci.yml's macOS jobs, and each PR's own head
+    # runs it first.
+    name: mobile (ios)
+    needs: mobile-scope
+    if: ${{ !cancelled() && !endsWith(github.head_ref, 'train/batch') && needs.mobile-scope.outputs.ios != 'false' }}
+    runs-on: macos-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: app/mobile
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/mobile/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      # Installs the pods too.
+      - run: npx expo prebuild --platform ios --clean
+      - name: Build
+        run: |
+          set -o pipefail
+          xcodebuild -workspace ios/fleetd.xcworkspace -scheme fleetd -configuration Release \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO build | tail -n 200
+      - name: Pack
+        run: ditto -c -k --keepParent build/Build/Products/Release-iphonesimulator/fleetd.app "$RUNNER_TEMP/fleetd-ios-simulator.zip"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: fleetd-ios-simulator
+          path: ${{ runner.temp }}/fleetd-ios-simulator.zip
+          if-no-files-found: error
+          retention-days: 14
