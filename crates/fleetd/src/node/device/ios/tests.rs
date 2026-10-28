@@ -113,6 +113,7 @@ fn the_doctor_hears_of_macs_with_xcode_and_of_macs_opted_in() {
         device_type_name: "iPhone 17".into(),
         scale: 3.0,
         agent_device: crate::node::device::agent_device::VERSION.into(),
+        xctestrun: "/n/runner/AgentDeviceRunner_iphonesimulator27.0-arm64.xctestrun".into(),
     };
     let ready = health_from(&off, Some(&golden), &idle, broken, || false)
         .map(|(h, _)| h)
@@ -659,14 +660,19 @@ async fn an_agent_opens_settings_on_an_ios_session_and_its_recording_is_on_the_h
     }
     // The golden stays shut down once made: its agent-device daemon stopped the XCTest runner on its way out. A runner
     // left running relaunched itself, booted the golden again, and every refill's clone was refused (wrapper.rs).
-    let golden = pool::find(&home).unwrap().udid;
+    let golden = pool::find(&home).unwrap();
     let devices = set_devices(&home).await;
     assert!(
-        devices.contains(&format!("{golden} Shutdown")),
-        "the golden {golden} is booted again: {devices}"
+        devices.contains(&format!("{} Shutdown", golden.udid)),
+        "the golden {} is booted again: {devices}",
+        golden.udid
     );
 
-    // The agent opens Settings and taps a row, with agent-device pointed at the session's clone.
+    // The agent opens Settings and taps a row, with agent-device pointed at the session's clone and the golden's runner.
+    let runner = golden.xctestrun;
+    let built = std::fs::metadata(&runner)
+        .and_then(|m| m.modified())
+        .unwrap();
     let t = Instant::now();
     let (mut ok, mut opened) = agent_device(&router, &["open", "com.apple.Preferences"]).await;
     if !ok {
@@ -686,8 +692,7 @@ async fn an_agent_opens_settings_on_an_ios_session_and_its_recording_is_on_the_h
         &command_item("agent-device open com.apple.Preferences", &opened, ok),
     );
     // The press needs agent-device's XCTest runner, started from the golden's build. Its start gets 45 s, which isn't
-    // always enough on GitHub's runner: agent-device then takes the build for a bad one, cleans it and builds it again
-    // (wrapper.rs's runner_dir), which can outlast the command. The second press finds it built.
+    // always enough on GitHub's runner; agent-device then starts it again, as it is (wrapper.rs).
     let t = Instant::now();
     let press = ["press", "label=\"General\"", "--settle"];
     let (mut ok, mut pressed) = agent_device(&router, &press).await;
@@ -701,6 +706,13 @@ async fn an_agent_opens_settings_on_an_ios_session_and_its_recording_is_on_the_h
     }
     assert!(ok, "{pressed}\nsimulators: {}", set_devices(&home).await);
     eprintln!("agent-device press --settle: {} ms", ms(t.elapsed()));
+    // No session builds the runner: a slow start once had agent-device delete it and build it again in the command.
+    assert_eq!(
+        std::fs::metadata(&runner).and_then(|m| m.modified()).ok(),
+        Some(built),
+        "the golden's runner {} was rebuilt or deleted",
+        runner.display()
+    );
     router.item(
         THREAD,
         &command_item(

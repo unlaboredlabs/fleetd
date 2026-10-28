@@ -347,6 +347,17 @@ jobs:
         run: cargo test --locked -p fleetd --lib node::device::ios -- --nocapture --test-threads=1 --skip probes
         env:
           FLEETD_TEST_IOS_HOME: ${{ runner.temp }}/fleetd-test-ios
+      # What agent-device's daemons did (the diagnostics log a failed command names, the runner's xcodebuild logs).
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-sessions-agent-device
+          path: |
+            ~/.agent-device/logs/
+            ${{ runner.temp }}/fleetd-test-ios/sessions/*/agent-device/
+            ${{ runner.temp }}/fleetd-test-ios/device/ios/prepare/
+          if-no-files-found: ignore
+          retention-days: 14
 
   darwin-deps:
     # The release cross-builds the darwin fleetd binaries on Linux, which breaks on any crate that links a macOS

@@ -13,10 +13,11 @@ pub fn bin_dir(home: &Path) -> PathBuf {
     super::ios_dir(home).join("bin")
 }
 
-/// Where agent-device's XCTest runner is built, once, for every session: in the package's own `.tmp`. A cached runner
-/// that doesn't connect in time (its start gets 45 s, which a slow Mac's first start can take) is cleaned and built
-/// again, and agent-device cleans a runner only there: anywhere else, it refuses and the command fails. It checks the
-/// path against the package's real path, so this is named by it.
+/// Where agent-device's XCTest runner is built, once, by the golden's prepare: in the package's own `.tmp`. A cached
+/// runner that doesn't connect in time (its start gets 45 s, which a slow Mac's first start can take) is cleaned and
+/// built again, and agent-device cleans a runner only there: anywhere else, it refuses and the command fails. It
+/// checks the path against the package's real path, so this is named by it. Sessions don't build: they start the
+/// golden's runner as an external one ([`wrapper_script`]).
 pub fn runner_dir(home: &Path) -> PathBuf {
     let package = agent_device::package_dir(home);
     std::fs::canonicalize(&package)
@@ -29,19 +30,19 @@ fn old_runner_dir(home: &Path) -> PathBuf {
     super::ios_dir(home).join("runner")
 }
 
-/// The wrapper, when it wraps the pinned package.
-pub fn find(home: &Path) -> Option<PathBuf> {
+/// The wrapper, when it wraps the pinned package and starts the runner `xctestrun`.
+pub fn find(home: &Path, xctestrun: &Path) -> Option<PathBuf> {
     let bin = bin_dir(home).join("agent-device");
     let script = std::fs::read_to_string(&bin).ok()?;
-    (script == wrapper_script(&agent_device::entry(home), home)).then_some(bin)
+    (script == wrapper_script(&agent_device::entry(home), home, Some(xctestrun))).then_some(bin)
 }
 
-/// Writes the wrapper for the installed package.
-pub fn install(home: &Path) -> Result<PathBuf, String> {
+/// Writes the wrapper for the installed package: without a runner while the golden's prepare builds one, then with it.
+pub fn install(home: &Path, xctestrun: Option<&Path>) -> Result<PathBuf, String> {
     let bin = bin_dir(home);
     std::fs::create_dir_all(&bin).map_err(|e| format!("cannot make {}: {e}", bin.display()))?;
     let wrapper = bin.join("agent-device");
-    let script = wrapper_script(&agent_device::entry(home), home);
+    let script = wrapper_script(&agent_device::entry(home), home, xctestrun);
     crate::node::secrets::write_atomic(&wrapper, script.as_bytes())
         .map_err(|e| format!("cannot write {}: {e}", wrapper.display()))?;
     std::fs::set_permissions(
@@ -58,9 +59,23 @@ pub fn install(home: &Path) -> Result<PathBuf, String> {
 /// default agent-device leaves it running for a next daemon to take over, and fleetd's daemons have none (each lives
 /// as long as its session, or the golden's prepare). The runner's xcodebuild left behind relaunches it after the
 /// simulator shuts down, which boots the simulator again: a golden booted again can't be cloned.
-pub fn wrapper_script(entry: &Path, home: &Path) -> String {
+///
+/// Once built, the runner (`xctestrun`) is given to agent-device as an external one. A runner from its own cache whose
+/// first start misses its 45 s is taken for a bad build: agent-device deletes it and builds it again inside the
+/// agent's command, minutes on a loaded Mac, so the command timed out and the next one found no runner and built
+/// again. An external runner is kept, and a slow start is only started again.
+pub fn wrapper_script(entry: &Path, home: &Path, xctestrun: Option<&Path>) -> String {
     let quote = |p: &Path| p.to_string_lossy().replace('\'', r"'\''");
     let paused = PAUSED.replace('\'', r"'\''");
+    let runner = quote(&runner_dir(home));
+    let external = xctestrun.map_or(String::new(), |xctestrun| {
+        format!(
+            "AGENT_DEVICE_IOS_XCTESTRUN_FILE='{}'\n\
+             AGENT_DEVICE_IOS_XCTEST_DERIVED_DATA_PATH='{runner}'\n\
+             export AGENT_DEVICE_IOS_XCTESTRUN_FILE AGENT_DEVICE_IOS_XCTEST_DERIVED_DATA_PATH\n",
+            quote(xctestrun)
+        )
+    });
     format!(
         "#!/bin/sh\n\
          # fleetd's: agent-device {VERSION}, pointed at this session's iOS simulator.\n\
@@ -72,11 +87,44 @@ pub fn wrapper_script(entry: &Path, home: &Path) -> String {
          AGENT_DEVICE_NO_UPDATE_NOTIFIER=1\n\
          export AGENT_DEVICE_IOS_SIMULATOR_DEVICE_SET AGENT_DEVICE_IOS_RUNNER_DERIVED_PATH AGENT_DEVICE_IOS_RUNNER_DETACH \
          AGENT_DEVICE_NO_UPDATE_NOTIFIER\n\
+         {external}\
          exec node '{entry}' \"$@\"\n",
         set = quote(&super::set_dir(home)),
-        runner = quote(&runner_dir(home)),
         entry = quote(entry),
     )
+}
+
+/// The runner agent-device built in [`runner_dir`] for the simulator: its newest `.xctestrun`, not the copies it writes
+/// beside it with one start's port (`AgentDeviceRunner.env.*`).
+pub fn built_xctestrun(home: &Path) -> Result<PathBuf, String> {
+    let dir = runner_dir(home);
+    let mut found: Vec<(std::time::SystemTime, PathBuf)> = Vec::new();
+    let mut dirs = vec![dir.clone()];
+    while let Some(next) = dirs.pop() {
+        for entry in std::fs::read_dir(&next).into_iter().flatten().flatten() {
+            let path = entry.path();
+            let name = entry.file_name().to_string_lossy().to_lowercase();
+            if path.is_dir() {
+                dirs.push(path);
+            } else if name.ends_with(".xctestrun")
+                && name.contains("iphonesimulator")
+                && !name.starts_with("agentdevicerunner.env.")
+            {
+                let modified = entry.metadata().and_then(|m| m.modified());
+                found.push((modified.unwrap_or(std::time::UNIX_EPOCH), path));
+            }
+        }
+    }
+    found
+        .into_iter()
+        .max()
+        .map(|(_, path)| path)
+        .ok_or_else(|| {
+            format!(
+                "agent-device built no simulator runner in {}",
+                dir.display()
+            )
+        })
 }
 
 /// Points the session's agent-device at its clone.
@@ -162,11 +210,18 @@ mod tests {
             &fake,
             "console.log('ran', process.argv.slice(2).join(' '), \
              process.env.AGENT_DEVICE_IOS_SIMULATOR_DEVICE_SET, process.env.AGENT_DEVICE_IOS_RUNNER_DERIVED_PATH, \
-             process.env.AGENT_DEVICE_IOS_RUNNER_DETACH)\n",
+             process.env.AGENT_DEVICE_IOS_RUNNER_DETACH, process.env.AGENT_DEVICE_IOS_XCTESTRUN_FILE, \
+             process.env.AGENT_DEVICE_IOS_XCTEST_DERIVED_DATA_PATH)\n",
         )
         .unwrap();
         let wrapper = dir.path().join("agent-device");
-        std::fs::write(&wrapper, wrapper_script(&fake, Path::new("/n"))).unwrap();
+        let xctestrun =
+            Path::new("/n/runner's/AgentDeviceRunner_iphonesimulator27.0-arm64.xctestrun");
+        std::fs::write(
+            &wrapper,
+            wrapper_script(&fake, Path::new("/n"), Some(xctestrun)),
+        )
+        .unwrap();
         std::fs::set_permissions(
             &wrapper,
             std::os::unix::fs::PermissionsExt::from_mode(0o755),
@@ -195,7 +250,9 @@ mod tests {
             assert_eq!(
                 String::from_utf8_lossy(&ran.stdout).trim(),
                 "ran open settings /n/device/ios/set \
-                 /n/device/agent-device/node_modules/agent-device/.tmp/fleetd-runner 0"
+                 /n/device/agent-device/node_modules/agent-device/.tmp/fleetd-runner 0 \
+                 /n/runner's/AgentDeviceRunner_iphonesimulator27.0-arm64.xctestrun \
+                 /n/device/agent-device/node_modules/agent-device/.tmp/fleetd-runner"
             );
         }
     }
@@ -211,17 +268,46 @@ mod tests {
         let tmp = std::fs::canonicalize(&package).unwrap().join(".tmp");
         assert_eq!(runner_dir(&home), tmp.join("fleetd-runner"));
         std::fs::create_dir_all(old_runner_dir(&home)).unwrap();
-        install(&home).unwrap();
+        install(&home, None).unwrap();
         assert!(!old_runner_dir(&home).exists(), "the old runner goes");
     }
 
     #[test]
-    fn the_wrapper_counts_only_when_it_wraps_this_install() {
+    fn the_wrapper_counts_only_when_it_wraps_this_install_and_its_runner() {
         let home = tempfile::tempdir().unwrap();
-        assert_eq!(find(home.path()), None);
-        let wrapper = install(home.path()).unwrap();
-        assert_eq!(find(home.path()), Some(wrapper.clone()));
+        let xctestrun = Path::new("/n/AgentDeviceRunner_iphonesimulator27.0-arm64.xctestrun");
+        assert_eq!(find(home.path(), xctestrun), None);
+        let wrapper = install(home.path(), None).unwrap();
+        assert_eq!(
+            find(home.path(), xctestrun),
+            None,
+            "still building its runner"
+        );
+        install(home.path(), Some(xctestrun)).unwrap();
+        assert_eq!(find(home.path(), xctestrun), Some(wrapper.clone()));
         std::fs::write(&wrapper, "#!/bin/sh\nexec node old.mjs\n").unwrap();
-        assert_eq!(find(home.path()), None, "an older wrapper is written again");
+        assert_eq!(
+            find(home.path(), xctestrun),
+            None,
+            "an older wrapper is written again"
+        );
+    }
+
+    #[test]
+    fn sessions_start_the_runner_built_for_the_simulator_not_a_starts_copy() {
+        let home = tempfile::tempdir().unwrap();
+        assert!(built_xctestrun(home.path()).is_err(), "nothing built");
+        let products = runner_dir(home.path()).join("Build/Products");
+        std::fs::create_dir_all(&products).unwrap();
+        let built = products.join("AgentDeviceRunner_iphonesimulator27.0-arm64.xctestrun");
+        std::fs::write(&built, "").unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        for copy in [
+            "AgentDeviceRunner.env.session-AAAA-1-x-4000.xctestrun",
+            "AgentDeviceRunner_macosx27.0-arm64.xctestrun",
+        ] {
+            std::fs::write(products.join(copy), "").unwrap();
+        }
+        assert_eq!(built_xctestrun(home.path()), Ok(built));
     }
 }
