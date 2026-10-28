@@ -127,6 +127,14 @@ describe("the chat's rows", () => {
     expect(latestLabel(rows([]), newestKey(rows([])))).toBe("Latest");
   });
 
+  it("count a teammate's message as new while scrolled up, and yours not", () => {
+    const by = (personId: string) => ({ person: { personId, name: personId } }) as ChatItem["message"];
+    const items = [item("a", "lead", at(19, 9)), item("b", "human", at(19, 9, 1), { message: by("P1") }), item("c", "human", at(19, 9, 2), { message: by("P2") })];
+    expect(latestLabel(rows(items, { me: "P1" }), "a")).toBe("1 new");
+    // A hub from before people: every human message is yours.
+    expect(latestLabel(rows(items), "a")).toBe("Latest");
+  });
+
   it("put the lead's activity after the newest item, never under a reply still streaming", () => {
     const r = rows([item("a", "lead", at(19, 9)), item("d", "system", at(19, 9, 3), { kind: "event", text: "#12 merged" })]);
     expect(rowIndexOf(r, "d")).toBe(3);

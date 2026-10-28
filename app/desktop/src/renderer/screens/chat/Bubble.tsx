@@ -31,7 +31,7 @@ import { Block } from "./blocks/Block";
 import { bubblesOf, isWide, quoteOf, TAPBACK_WORD, TAPBACKS, tapbackSend, type Bubble, type Tapback } from "./bubbles";
 import { MessageReceipt, ReceiptMarkView } from "./Composer";
 import { shortClock } from "./format";
-import { authorLabel, ENTER_MS, type Arrival, type Row } from "./model";
+import { authorLabel, ENTER_MS, isMineRow, type Arrival, type Row } from "./model";
 import { plainText } from "./plain";
 import { useLooked } from "./looked";
 import { markOf, useShown } from "./shown";
@@ -269,7 +269,7 @@ function TypingLine({ enter }: { enter: Arrival | undefined }) {
 export function MessageView({ row: r, mineLatest, enter }: { row: Extract<Row, { kind: "message" }>; mineLatest: boolean; enter?: Arrival | undefined }) {
   const i = r.item;
   const actions = useBubbleActions();
-  const mine = i.author === "human" && r.by === undefined;
+  const mine = isMineRow(r);
   const lead = i.author === "lead" && !r.history;
   const body = r.reply?.body;
   const bubbles = useMemo((): readonly Bubble[] => (body !== undefined ? [{ kind: "text", key: "0", text: body }] : bubblesOf(i)), [i, body]);

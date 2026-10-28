@@ -39,6 +39,18 @@ describe("what the lead waits on", () => {
     expect(waitingOn([item("a", "lead", QUESTIONS), item("h", "human", "public, literal"), item("b", "lead", "Shipped.")], LOADED, NOW, "UTC")).toBeUndefined();
   });
 
+  it("still waits on you after a teammate writes, in a chat the team shares", () => {
+    const by = (personId: string) => ({ message: { person: { personId, name: personId } } as ChatMessage });
+    const items = [item("s", "human", "ship it", at(19, 8), by("P1")), item("a", "lead", QUESTIONS), item("p", "human", "looks fine to me", at(19, 9, 3), by("P2"))];
+    expect(waitingOn(items, LOADED, NOW, "UTC", "P1")).toEqual({ what: "2 questions, asked at 09:02", targets: [{ id: "a", part: "0" }] });
+    // The teammate's own app: their message answered it.
+    expect(waitingOn(items, LOADED, NOW, "UTC", "P2")).toBeUndefined();
+    // A page not loaded can't hold the wait once you wrote; a teammate writing doesn't count.
+    expect(waitingOn([item("p", "human", "hi", at(19, 9), by("P2"))], OLDER, NOW, "UTC", "P1")).toEqual({ what: "a reply", targets: [] });
+    // A hub from before people: every human message is yours.
+    expect(waitingOn(items, LOADED, NOW, "UTC")).toBeUndefined();
+  });
+
   it("goes to an earlier question you haven't answered, past the lead's later status lines", () => {
     const items = [item("h", "human", "go"), item("a", "lead", QUESTIONS, at(19, 8, 30)), item("b", "lead", "Merged #12.", at(19, 9, 47)), item("c", "lead", "Done. Over to you.", at(19, 9, 50))];
     expect(waitingOn(items, LOADED, NOW, "UTC")).toEqual({ what: "2 questions, asked at 08:30", targets: [{ id: "a", part: "0" }] });

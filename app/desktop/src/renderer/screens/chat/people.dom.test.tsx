@@ -115,3 +115,23 @@ it("reads every human message as yours on a hub from before people", async () =>
   expect(shown()).toEqual(["-:mine", "-:mine", "-:theirs"]);
   expect(host.textContent).not.toContain("Priya Nair");
 });
+
+/** ↑ in the empty composer: the words it brings back. */
+const recalled = () => {
+  const box = host.querySelector("textarea");
+  if (box === null) throw new Error("no composer");
+  act(() => {
+    box.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true, cancelable: true }));
+  });
+  return box.value;
+};
+
+it("brings back your own last message on ↑, never a teammate's newer one", async () => {
+  await mount(SAM);
+  expect(recalled()).toBe("Can shoppers save their cart?");
+});
+
+it("brings back the last human message on ↑ on a hub from before people", async () => {
+  await mount(undefined);
+  expect(recalled()).toBe("And keep it on the iPhone app too.");
+});
