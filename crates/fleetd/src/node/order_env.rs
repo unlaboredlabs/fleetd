@@ -25,6 +25,15 @@ const DIR: &str = "order-env";
 /// One `deliver` at a time: each reads the file, changes it and writes it back.
 static WRITING: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+/// Counts the writes of any order's variables: a running session masks what its order holds again once it moves.
+static WRITES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// How many times any order's variables were written in this process: a session whose count moved since it last
+/// looked adds its order's values as they are now to what it masks, before its agent can have sourced them.
+pub fn writes() -> u64 {
+    WRITES.load(std::sync::atomic::Ordering::Acquire)
+}
+
 #[derive(Default, Serialize, Deserialize)]
 struct OrderFile {
     vars: BTreeMap<String, Value>,
@@ -72,13 +81,15 @@ fn push_quoted(out: &mut String, value: &str) {
     out.push('\'');
 }
 
-/// A name a shell takes in `export`.
+/// A name a shell takes in `export`, and one an agent's commands may get: never fleetd's or claude's own, nor the
+/// 1Password token, which is the node's alone (sessions leave it out at spawn too).
 fn exportable(name: &str) -> bool {
     let mut bytes = name.bytes();
-    bytes
+    let shell = bytes
         .next()
         .is_some_and(|b| b.is_ascii_alphabetic() || b == b'_')
-        && bytes.all(|b| b.is_ascii_alphanumeric() || b == b'_')
+        && bytes.all(|b| b.is_ascii_alphanumeric() || b == b'_');
+    shell && !env_name_reserved(name) && name != super::browser::onepassword::TOKEN_ENV
 }
 
 /// Writes the order's file and its script, each whole before it replaces the one before: a command never sources half
@@ -86,6 +97,8 @@ fn exportable(name: &str) -> bool {
 fn write_order(path: &Path, order: &OrderFile, shown: &str) -> Result<(), String> {
     let bytes = Zeroizing::new(serde_json::to_vec(order).map_err(|e| e.to_string())?);
     write_atomic(path, &bytes).map_err(|e| format!("cannot write {shown}: {}", io_why(&e)))?;
+    // Counted once the new values are readable for masking, and before any command can source them below.
+    WRITES.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
     // Sized up front, so no copy of a value is left behind unwiped as it grows.
     let size = order
         .vars
@@ -94,7 +107,7 @@ fn write_order(path: &Path, order: &OrderFile, shown: &str) -> Result<(), String
         .sum();
     let mut text = Zeroizing::new(String::with_capacity(size));
     for (name, value) in &order.vars {
-        if exportable(name) && !env_name_reserved(name) {
+        if exportable(name) {
             text.push_str("export ");
             text.push_str(name);
             text.push('=');
@@ -446,6 +459,15 @@ mod tests {
         deliver(home, "p", "W1", "ODD", odd.as_bytes()).unwrap();
         assert_eq!(sourced(&at, "ODD"), odd);
         assert_eq!(sourced(&at, "GH_TOKEN"), "token-two");
+        // The 1Password token is the node's alone: no command of an agent gets it, as no claude does at spawn.
+        let op = crate::node::browser::onepassword::TOKEN_ENV;
+        deliver(home, "p", "W1", op, b"ops_never_an_agents").unwrap();
+        assert_eq!(sourced(&at, op), "");
+        assert!(
+            !std::fs::read_to_string(file(home, "p", "W1").unwrap().with_extension("sh"))
+                .unwrap()
+                .contains("ops_never")
+        );
         let script = file(home, "p", "W1").unwrap().with_extension("sh");
         let mode = std::fs::metadata(&script).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode, 0o600);

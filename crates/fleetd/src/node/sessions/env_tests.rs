@@ -194,6 +194,66 @@ async fn a_renewed_github_token_reaches_a_running_agents_next_command() {
     assert!(!brief.contains("gh-token"));
 }
 
+/// A token renewed mid-turn reaches the agent's next command, so what that command prints is masked with it from then
+/// on: the turn started (its masker read the order's variables) before the token came, and prints it a minute later.
+#[tokio::test(start_paused = true)]
+async fn a_token_renewed_mid_turn_is_masked_in_what_the_agent_reports() {
+    let token = "gh-token-renewed-mid-turn-5be1";
+    let printed = format!("GH_TOKEN={token}\n");
+    // The recorded printenv turn, its tool's output and reply a minute after the run starts.
+    let lines: String = super::printenv_turn(&printed)
+        .lines()
+        .map(|line| {
+            let mut v: serde_json::Value = serde_json::from_str(line).unwrap();
+            let starts = matches!(
+                v["msg"]["type"].as_str(),
+                Some("command_lifecycle" | "system")
+            );
+            if v["dir"] == "out" && !starts {
+                v["ms"] = (v["ms"].as_u64().unwrap_or(0) + 60_000).into();
+            }
+            format!("{v}\n")
+        })
+        .collect();
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("node");
+    let mut runner = FakeRunner::from_lines(&lines);
+    runner.timed = true;
+    let mut node = hub(dir.path(), NodeStore::open_memory(10_000).unwrap(), runner).await;
+    node.project(dir.path()).await;
+    deliver(&home, "W1", "GH_TOKEN", "gh-token-first-0c4d");
+    node.ok(in_order("a", "W1", SessionWorkspace::Root)).await;
+    node.ok(SessionCall::Follow {
+        session_id: ThreadId::unchecked("a"),
+    })
+    .await;
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    deliver(&home, "W1", "GH_TOKEN", token);
+    let mut frames = Vec::new();
+    tokio::time::timeout(Duration::from_secs(600), async {
+        loop {
+            let raw = node.rx.recv().await.unwrap();
+            let done = matches!(serde_json::from_str(&raw).unwrap(), NodeToHub::MachineEvent(f)
+                if matches!(&f.event, MachineEvent::SessionUpdated(s)
+                    if s.active_run_id.is_none() && s.latest_run.as_ref().is_some_and(|r| r.id == "a-r1")));
+            frames.push(raw);
+            if done {
+                break;
+            }
+        }
+    })
+    .await
+    .expect("the run never settled");
+    assert_eq!(node.runner.spawned().len(), 1, "the same claude");
+    let frames = frames.join("\n");
+    assert!(frames.contains("***GH_TOKEN***"), "{frames}");
+    assert!(!frames.contains(token), "the renewed token left the node");
+    // Its fleetd calls mask it too, and the one it started with, for as long as it runs.
+    let held = node.service.call_secrets("a").unwrap();
+    assert!(held.0.iter().any(|(_, v)| v == token));
+    assert!(held.0.iter().any(|(_, v)| v == "gh-token-first-0c4d"));
+}
+
 /// The 1Password service account token, entered as an order variable, is the node's: no agent's environment holds
 /// it, its brief names it only as the node's and points at fill_credential, and it is still masked.
 #[tokio::test]

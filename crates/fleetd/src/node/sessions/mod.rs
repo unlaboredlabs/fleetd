@@ -2496,7 +2496,7 @@ impl SessionService {
         generation: u64,
         mut events: mpsc::Receiver<RunnerEvent>,
         exited: watch::Sender<bool>,
-        spawned: Arc<super::mask::Secrets>,
+        mut spawned: Arc<super::mask::Secrets>,
     ) {
         let mut delta: Option<(String, String)> = None;
         let mut flushed: Option<Instant> = None;
@@ -2507,6 +2507,7 @@ impl SessionService {
         let mut filled = super::mask::Secrets::default();
         // The secrets the process was started with, which it holds until it exits, and the project's as they are now,
         // read again at each run's start.
+        let mut order_writes = super::order_env::writes();
         let mut masker = self.masker(&id, &spawned, &filled);
         loop {
             let delta_due = delta
@@ -2548,12 +2549,20 @@ impl SessionService {
             if let Some(live) = self.st().live.get_mut(&id) {
                 live.last_active = Instant::now();
             }
+            // Its order's variables were written (a GitHub token renewed): its commands source them mid-turn, so what
+            // they say is masked with the new values from now on, and with the ones before for as long as it runs.
+            let writes = super::order_env::writes();
+            let renewed = writes != order_writes;
+            if renewed {
+                order_writes = writes;
+                spawned = self.held_with_order(&id, generation, &spawned);
+            }
             if let Some(browser) = self.inner.browser.get()
                 && let Some(more) = browser.filled_since(&id, filled.0.len())
             {
                 filled = more;
                 masker = self.masker(&id, &spawned, &filled);
-            } else if matches!(event, RunnerEvent::RunStarted { .. }) {
+            } else if renewed || matches!(event, RunnerEvent::RunStarted { .. }) {
                 masker = self.masker(&id, &spawned, &filled);
             }
             // Nothing the agent's session reports leaves this machine with a secret of its project in it.
@@ -2762,6 +2771,36 @@ impl SessionService {
         {
             self.st().thread(id, ThreadEvent::Usage { run_id, usage });
         }
+    }
+
+    /// The secrets a running session holds: those it was `spawned` with and its order's values as they are now, each a
+    /// command of its may have sourced since. Kept on its live process too, for its fleetd calls.
+    fn held_with_order(
+        &self,
+        id: &str,
+        generation: u64,
+        spawned: &Arc<super::mask::Secrets>,
+    ) -> Arc<super::mask::Secrets> {
+        let Ok(Some(row)) = self.store().session(id) else {
+            return spawned.clone();
+        };
+        let (order, _) = self.order_vars(&row);
+        let new: Vec<(String, String)> = order
+            .into_iter()
+            .filter(|(_, v)| !spawned.0.iter().any(|(_, s)| s == v))
+            .collect();
+        if new.is_empty() {
+            return spawned.clone();
+        }
+        let held = Arc::new(super::mask::Secrets(
+            spawned.0.iter().cloned().chain(new).collect(),
+        ));
+        if let Some(live) = self.st().live.get_mut(id)
+            && live.generation == generation
+        {
+            live.spawned = held.clone();
+        }
+        held
     }
 
     /// For masking what the session reports: the secrets its process was `spawned` with (a rotated or removed one is
