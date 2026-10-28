@@ -1,5 +1,6 @@
 // Whether this app's person sees Settings' Hub group: its sidebar rows, the palette's commands and the pages ask
 // here. Small and in the shell's chunk; the page is its own.
+import { useState } from "react";
 import type { Person } from "../../../shared/contracts";
 import { lacksTool } from "../../src/data/errors";
 import { CallError } from "../../src/data/queries";
@@ -37,3 +38,14 @@ export function useHubRole(): HubRoleView {
 }
 
 export const useAdministers = (): boolean => useHubRole().administers;
+
+/**
+ * The same, held at the last answer while hub_info is asked again: what shows or hides with it (Settings' Hub group,
+ * whose hub switcher asks each hub again as it mounts) never flips off and on with a refetch.
+ */
+export function useSettledAdministers(): boolean {
+  const role = useHubRole();
+  const [settled, setSettled] = useState(role.administers);
+  if (!role.pending && settled !== role.administers) setSettled(role.administers);
+  return role.pending ? settled : role.administers;
+}

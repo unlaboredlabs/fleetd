@@ -20,6 +20,8 @@ const fake = vi.hoisted(() => {
   const hubs = new Map<string, { listeners: Set<(frame: unknown) => void>; calls: Array<{ tool: string; input: unknown }> }>();
   // The role this app's person has on each hub (hub_info's `me`).
   const roles = new Map<string, "owner" | "admin" | "member">();
+  // Hubs from before hub_info: it isn't a tool there, and the app lets their keys try.
+  const old = new Set<string>();
   const of = (id: string) => {
     const held = hubs.get(id) ?? { listeners: new Set(), calls: [] };
     hubs.set(id, held);
@@ -31,6 +33,7 @@ const fake = vi.hoisted(() => {
     const me = { personId: "p_aaaaaaaa", name: "Sam Rivera", role: roles.get(id) ?? "member", createdAt: at };
     switch (tool) {
       case "hub_info":
+        if (old.has(id)) return undefined;
         return { version: "0.0.0", protocol: 1, busy: [], me };
       case "people_list":
         return { people: [me], devices: [], invites: [], me: me.personId };
@@ -87,7 +90,7 @@ const fake = vi.hoisted(() => {
     pair: { store: () => Promise.resolve(null), probe: (hub: string) => Promise.resolve({ answers: false, hub }), start: () => new Promise(() => undefined) },
     system: { hostName: () => Promise.resolve("devbox") },
   });
-  return { hubs, of, roles };
+  return { hubs, of, roles, old };
 });
 
 const send = (id: string, frame: HubFrame) => {
@@ -171,6 +174,7 @@ beforeEach(() => {
   window.localStorage.clear();
   fake.hubs.clear();
   fake.roles.clear();
+  fake.old.clear();
   fake.roles.set("hub", "owner").set("a1b2", "admin").set("c3d4", "member");
 });
 afterEach(() => {
@@ -239,4 +243,16 @@ it("with one hub, names none and offers no switch: the page is as it was", async
   expect(choices()).toEqual([]);
   await openInvite();
   expect(button("Create invite link")).toBeDefined();
+});
+
+it("settles with hubs from before hub_info: the Hub group shows once, and nobody asks hub_info in a loop", async () => {
+  fake.old.add("hub").add("a1b2");
+  await mount(THREE);
+  await go("#/settings/general?at=hub");
+  for (let i = 0; i < 5; i++) await settle();
+  const asked = calls("hub", "hub_info").length;
+  for (let i = 0; i < 5; i++) await settle();
+  expect(calls("hub", "hub_info").length).toBe(asked);
+  expect(asked).toBeLessThan(10);
+  expect(host.querySelector("nav[aria-label='Settings'] section[aria-label='Hub']")).not.toBeNull();
 });

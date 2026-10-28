@@ -26,7 +26,7 @@ import type { PromptSummary } from "./contracts";
 import { HUB, parseScope, projectRefOf, scopeKey, type Scope } from "./editor";
 import { HubScope, useHub, useHubs, useToolQuery } from "../../src/data/react";
 import { HubChoice } from "../admin/HubPages";
-import { useAdministers } from "../admin/role";
+import { useSettledAdministers } from "../admin/role";
 import { navigate } from "../shell/navigation";
 import type { HubTab } from "../shell/routes";
 import { errorText, useLive } from "./hub";
@@ -63,7 +63,7 @@ const noInput = {};
 
 export function SettingsSidebar({ onBack }: { onBack: () => void }) {
   const route = useSettingsRoute();
-  const administers = useAdministers();
+  const administers = useSettledAdministers();
   const [query, setQuery] = useState("");
   const results = searchSettings(query, optionsFor(administers));
   const searching = query.trim() !== "";
