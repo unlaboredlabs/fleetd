@@ -1,6 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "npx --yes pagefind@1.5.2 --site docs",
+  "buildCommand": "sh mobile-updates.sh fetch && npx --yes pagefind@1.5.2 --site docs",
+  "ignoreCommand": "sh mobile-updates.sh unchanged",
   "outputDirectory": ".",
   "cleanUrls": true,
   "github": {
@@ -20,6 +21,27 @@
   ],
   "rewrites": [
     {
+      "source": "/updates",
+      "has": [
+        {
+          "type": "header",
+          "key": "expo-channel-name",
+          "value": "^(?<channel>edge|stable)$"
+        },
+        {
+          "type": "header",
+          "key": "expo-runtime-version",
+          "value": "^(?<runtime>[A-Za-z0-9][A-Za-z0-9._-]{0,127})$"
+        },
+        {
+          "type": "header",
+          "key": "expo-platform",
+          "value": "^(?<platform>ios|android)$"
+        }
+      ],
+      "destination": "/updates/:channel/:runtime/:platform"
+    },
+    {
       "source": "/",
       "has": [
         {
@@ -36,6 +58,31 @@
     }
   ],
   "headers": [
+    {
+      "source": "/updates",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "multipart/mixed; boundary=fleetd-update"
+        },
+        {
+          "key": "expo-protocol-version",
+          "value": "1"
+        },
+        {
+          "key": "expo-sfv-version",
+          "value": "0"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "private, max-age=0"
+        },
+        {
+          "key": "Vary",
+          "value": "expo-channel-name, expo-runtime-version, expo-platform"
+        }
+      ]
+    },
     {
       "source": "/install.sh",
       "headers": [

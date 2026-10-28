@@ -9,11 +9,17 @@
 // - FLEETD_BUILD_NUMBER: the build's number (CFBundleVersion, versionCode), which each store upload must raise; the
 //   release workflow uses its run number.
 // - FLEETD_UPDATES_CERT: a code signing certificate (PEM) for over-the-air updates (D219). Without it the app takes no
-//   updates at all: an unsigned bundle is never loaded. FLEETD_UPDATES_CHANNEL (edge or stable, default edge) picks
-//   the static manifests published alongside fleetd's releases, per runtime version and platform.
+//   updates at all: an unsigned bundle is never loaded. FLEETD_UPDATES_CHANNEL (edge or stable, default edge) is the
+//   expo-channel-name it asks FLEETD_UPDATES_URL (default https://fleetd.sh/updates; a fork with its own certificate
+//   sets its own) for, with its runtime version and platform: scripts/updates.ts writes those manifests on each
+//   release, and site/vercel.json routes the headers to them.
 // - FLEETD_GOOGLE_SERVICES_FILE: the Firebase project's google-services.json, for FCM on Android. Without it the app
 //   builds and runs, and gets no notifications: Android gives it no push token.
 // - FLEETD_ANDROID_KEYSTORE: a keystore that signs release builds (plugins/android-signing.js), else debug-signed.
+//
+// The runtime version is the native fingerprint, which takes in this config (not the build number): the release's
+// update job (build-release.yml) resolves it with the same settings, so a build gets only bundles made for it, and a
+// native change, or another URL or channel, gives builds a runtime version older bundles don't match.
 //
 // Notifications use the platforms' own push, APNs and FCM, through `fleetd push-relay`, never Expo's push service
 // (docs/design/push.md). The iOS Notification Service Extension that opens them comes from plugins/notification-service.
@@ -24,10 +30,8 @@ const appId = process.env.FLEETD_APP_ID || "sh.fleetd.app";
 const updatesCert = process.env.FLEETD_UPDATES_CERT || undefined;
 const build = /^\d+$/u.test(process.env.FLEETD_BUILD_NUMBER ?? "") ? process.env.FLEETD_BUILD_NUMBER : undefined;
 const channel = process.env.FLEETD_UPDATES_CHANNEL === "stable" ? "stable" : "edge";
+const updatesUrl = process.env.FLEETD_UPDATES_URL || "https://fleetd.sh/updates";
 const googleServices = process.env.FLEETD_GOOGLE_SERVICES_FILE || undefined;
-
-/** The manifests' home: one URL per channel, which serves by the request's expo-runtime-version and expo-platform. */
-export const UPDATES_URL = `https://fleetd.sh/updates/${channel}`;
 
 export default ({ projectRoot }: ConfigContext): ExpoConfig => ({
   name: "fleetd",
@@ -43,7 +47,8 @@ export default ({ projectRoot }: ConfigContext): ExpoConfig => ({
   updates: updatesCert
     ? {
         enabled: true,
-        url: UPDATES_URL,
+        url: updatesUrl,
+        requestHeaders: { "expo-channel-name": channel },
         checkAutomatically: "ON_LOAD",
         fallbackToCacheTimeout: 0,
         // Expo reads it relative to the project.

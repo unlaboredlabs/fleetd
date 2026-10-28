@@ -7,8 +7,10 @@ name: Mobile release
 #
 # Repository variables (not secrets): FLEETD_APP_ID, the bundle id and Android package (default sh.fleetd.app; a
 # signed iOS build needs the one its profile names); UPDATES_CERT_PEM, the code signing certificate for over-the-air
-# updates (D219; without it the app takes none); GOOGLE_SERVICES_JSON, the Firebase project's google-services.json for
-# FCM (without it the Android app gets no notifications).
+# updates (D219; without it the app takes none); FLEETD_UPDATES_URL, where the app asks for them (default
+# https://fleetd.sh/updates, which serves this repository's releases' updates); GOOGLE_SERVICES_JSON, the Firebase
+# project's google-services.json for FCM (without it the Android app gets no notifications). build-release.yml
+# publishes the updates on each release, with the same variables (.github/release/mobile-env.sh).
 on:
   workflow_dispatch:
     inputs:
@@ -28,6 +30,7 @@ permissions:
 env:
   FLEETD_APP_ID: ${{ vars.FLEETD_APP_ID }}
   FLEETD_UPDATES_CHANNEL: ${{ inputs.channel }}
+  FLEETD_UPDATES_URL: ${{ vars.FLEETD_UPDATES_URL }}
   FLEETD_BUILD_NUMBER: ${{ github.run_number }}
 
 jobs:
@@ -86,24 +89,11 @@ jobs:
         with:
           cache-read-only: true
       - run: npm ci --no-audit --no-fund
-      - name: Update certificate
+      - name: Build settings
         env:
           UPDATES_CERT_PEM: ${{ vars.UPDATES_CERT_PEM }}
-        run: |
-          if [ -n "$UPDATES_CERT_PEM" ]; then
-            printf '%s\n' "$UPDATES_CERT_PEM" > "$RUNNER_TEMP/updates-cert.pem"
-            echo "FLEETD_UPDATES_CERT=$RUNNER_TEMP/updates-cert.pem" >> "$GITHUB_ENV"
-          fi
-      - name: Firebase config
-        env:
           GOOGLE_SERVICES_JSON: ${{ vars.GOOGLE_SERVICES_JSON }}
-        run: |
-          if [ -n "$GOOGLE_SERVICES_JSON" ]; then
-            printf '%s\n' "$GOOGLE_SERVICES_JSON" > "$RUNNER_TEMP/google-services.json"
-            echo "FLEETD_GOOGLE_SERVICES_FILE=$RUNNER_TEMP/google-services.json" >> "$GITHUB_ENV"
-          else
-            echo "::warning::No GOOGLE_SERVICES_JSON variable: the Android app gets no notifications."
-          fi
+        run: ../../.github/release/mobile-env.sh android
       - name: Keystore
         if: needs.signing.outputs.android == 'true'
         env:
@@ -163,14 +153,10 @@ jobs:
           cache: npm
           cache-dependency-path: app/mobile/package-lock.json
       - run: npm ci --no-audit --no-fund
-      - name: Update certificate
+      - name: Build settings
         env:
           UPDATES_CERT_PEM: ${{ vars.UPDATES_CERT_PEM }}
-        run: |
-          if [ -n "$UPDATES_CERT_PEM" ]; then
-            printf '%s\n' "$UPDATES_CERT_PEM" > "$RUNNER_TEMP/updates-cert.pem"
-            echo "FLEETD_UPDATES_CERT=$RUNNER_TEMP/updates-cert.pem" >> "$GITHUB_ENV"
-          fi
+        run: ../../.github/release/mobile-env.sh ios
       - run: npx expo prebuild --platform ios --clean
       - name: Signing keychain
         run: |
