@@ -196,6 +196,9 @@ async function main() {
         if (!listed) await callTool("events_wait", { cursor: await cursor(), timeoutSec: 3 });
         return listed ? true : undefined;
       });
+      // Mechanics scenarios' tasks run on medium (MECHANICS), which a new project allows only once it picks it.
+      const allowed = await callTool("project_set", { machineId, projectId, profiles: ["medium"] });
+      check(!allowed.isError, `project_set ${machineId}/${projectId} medium: ${JSON.stringify(allowed.body)}`);
       return projectId;
     };
 
@@ -283,6 +286,8 @@ async function main() {
         await callTool("events_wait", { cursor: await cursor(), timeoutSec: 2 });
         return undefined;
       });
+      const allowed = await callTool("project_set", { machineId: m.id, projectId, profiles: ["medium"] });
+      check(!allowed.isError, `project_set ${m.id}/${projectId} medium: ${JSON.stringify(allowed.body)}`);
       ok(`project_add ${m.id} ${m.repo} -> ${projectId}`);
     }
     for (const m of MACHINES) await waitLive(m.id);

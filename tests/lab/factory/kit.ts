@@ -172,6 +172,11 @@ export async function withFactory(dir: string, body: (f: Factory) => Promise<voi
     });
     projectId = added.projectId as string;
     const ref = { machineId: MACHINE, projectId };
+    // Its writers run on medium, which a new project allows only once it picks it.
+    await until("project_set medium", 60_000, async () => {
+      const out = await callTool("project_set", { ...ref, profiles: ["medium"] });
+      return out.isError ? (await sleep(500), undefined) : out.body;
+    });
     ok(`project ${ref.projectId}: ${project.root}, origin ${execFileSync("git", ["remote", "get-url", "origin"], { cwd: project.root, encoding: "utf8" }).trim()}`);
 
     const nodeSock = path.join(nodeHome, "node.sock");
