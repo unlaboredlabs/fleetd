@@ -307,9 +307,13 @@ pub fn secrets(home: &Path, dir: &Path) -> Vec<(String, String)> {
 }
 
 /// The entry for fleetd's own Google server (`fleetd google-mcp`, as the hub gives it for a Navi with an account):
-/// this node's binary, told where its home is and whose tokens to read; `Some(None)` when the node holds no tokens for
-/// the project. None for any other server.
-fn native_google(home: &Path, server: &McpSessionServer) -> Option<Option<Value>> {
+/// this node's binary, told where its home is, whose tokens to read and the folder its email attaches files from;
+/// `Some(None)` when the node holds no tokens for the project. None for any other server.
+fn native_google(
+    home: &Path,
+    folder: Option<&Path>,
+    server: &McpSessionServer,
+) -> Option<Option<Value>> {
     use fleetd_contracts::google::{GOOGLE_MCP_ARG, GOOGLE_SERVER};
     let McpTransport::Stdio { command, args } = &server.transport else {
         return None;
@@ -327,10 +331,20 @@ fn native_google(home: &Path, server: &McpSessionServer) -> Option<Option<Value>
     if !super::google::connected(home, project_id.as_str()) {
         return Some(None);
     }
+    let mut args = vec![
+        GOOGLE_MCP_ARG.to_owned(),
+        "--home".into(),
+        home.to_string_lossy().into_owned(),
+        "--project".into(),
+        project_id.to_string(),
+    ];
+    if let Some(folder) = folder {
+        args.extend(["--folder".into(), folder.to_string_lossy().into_owned()]);
+    }
     Some(Some(json!({
         "type": "stdio",
         "command": super::sessions::self_command(),
-        "args": [GOOGLE_MCP_ARG, "--home", home.to_string_lossy(), "--project", project_id.as_str()],
+        "args": args,
         "env": {},
     })))
 }
@@ -347,6 +361,7 @@ pub struct SessionMcp {
 /// left out, with a warning naming them), then fleetd's own server (`fleetd`), which no configured one can replace.
 pub fn session_config(
     home: &Path,
+    folder: Option<&Path>,
     kept: Option<&Kept>,
     fleetd: Option<Value>,
     session_id: &str,
@@ -361,7 +376,7 @@ pub fn session_config(
             .filter(|s| s.roles.has(kept.role))
             .filter(|s| !fleetd_contracts::mcp_servers::mcp_name_reserved(s.name.as_str()))
         {
-            if let Some(entry) = native_google(home, server) {
+            if let Some(entry) = native_google(home, folder, server) {
                 // Left out when this node holds no tokens for it: it would start only to fail every call.
                 if let Some(entry) = entry {
                     servers.insert(server.name.to_string(), entry);

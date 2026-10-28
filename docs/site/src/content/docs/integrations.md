@@ -21,7 +21,7 @@ The hub decides from a table of every tool, not the Navi. The model can't talk i
 | **Reads** | Search and read mail, list events, search Drive, read a file, search Notion, read a page; save a Gmail draft, which sends nothing (decision `navi.google-drafts-unasked`, D201) | Runs without asking. |
 | **Writes, sends, deletes, shares** | Send or reply to an email; create or change an event; upload or share a Drive file; change or trash a Notion page | Asks you in the chat, **every time**, with exactly what it would do. There is no "always allow". |
 | **Spending** | A custom server's `pay`, `purchase` or `checkout` tool | Asks you, marked **Costs money**, and asks once more before it runs. |
-| **Never** | Moving money between accounts (`transfer`, `send_money`, `send_transaction`), trading (`buy_stock`, `sell`, and any `place_order` or `submit_order`, a shop's or a restaurant's too), creating accounts in your name; sending or storing what looks like a password, key or token; a call too large to show on the card in full; an email with attachments, which [Google for Navi](/docs/google) doesn't support yet | Refused, even if you would approve it. The Navi is told to leave it to you. Place orders yourself, or through a screen you take over. |
+| **Never** | Moving money between accounts (`transfer`, `send_money`, `send_transaction`), trading (`buy_stock`, `sell`, and any `place_order` or `submit_order`, a shop's or a restaurant's too), creating accounts in your name; sending or storing what looks like a password, key or token, a file's text included; a call too large to show on the card in full; an email attaching a file from outside the Navi's folder ([Google for Navi](/docs/google#attachments)) | Refused, even if you would approve it. The Navi is told to leave it to you. Place orders yourself, or through a screen you take over. |
 
 A tool the table doesn't know asks. That covers a tool added to an integration later, a custom server's tools and the MCP
 servers in your own claude setup.
@@ -38,6 +38,7 @@ it is a summary the Navi wrote.
 | To, Cc, Bcc | Every recipient, as the tool gets them. An address outside the From account's domain says "outside example.com" after it; Bcc says "hidden from the others". An event's guests are its To. |
 | Reaches | Who gets it when the tool picks them, as a reply does: "That message's sender", or "Everyone on that message". |
 | Subject or Title | The email's subject, the event's or the page's title. |
+| Attached | Each file, with its size and type: "lease.pdf 120 KB · PDF". |
 | When | An event's start and end. |
 | On | The message, event, page or file it acts on. |
 | Body | The whole text that goes out or goes in, under a hairline. A long one folds, with **Show all** in place. |

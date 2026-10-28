@@ -218,6 +218,13 @@ pub trait ApprovalHub: Send + Sync {
     /// For a Navi, whether it may fetch and open `site` without asking (false with no site); `None` for any other
     /// project.
     fn navi_site(&self, project: &ProjectRef, site: Option<&str>) -> BoxFut<'_, Option<bool>>;
+    /// The files at `paths` in the Navi's folder that its email attaches, as its node reads them for the card.
+    /// `Err`: the refusal the Navi reads (outside its folder, missing, past Gmail's size, its node offline or too old).
+    fn mail_files(
+        &self,
+        project: &ProjectRef,
+        paths: Vec<String>,
+    ) -> BoxFut<'_, Result<Vec<fleetd_contracts::google::MailFile>, String>>;
     /// A person approved a Navi's first visit to `site`: from now on it fetches and opens it without asking.
     fn navi_site_allow(&self, project: &ProjectRef, site: &str, by: &str) -> BoxFut<'_, ()>;
     /// Saves an approved preview setting as the project's `preview`. `Err`: why it could not.

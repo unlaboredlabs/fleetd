@@ -46,7 +46,7 @@ export const domainOf = (address: string): string | undefined => {
 
 export interface PreviewValue {
   readonly text: string;
-  /** Quiet words after it: "outside example.com", "120 KB · from Drive". */
+  /** Quiet words after it: "outside example.com", "120 KB · PDF", "from Drive". */
   readonly note?: string;
 }
 
@@ -61,8 +61,34 @@ export interface PreviewRow {
 export const sizeText = (bytes: number): string =>
   bytes >= 1_000_000 ? `${(bytes / 1_000_000).toFixed(1)} MB` : bytes >= 1000 ? `${String(Math.round(bytes / 1000))} KB` : `${String(bytes)} bytes`;
 
+const TYPE_WORDS: Readonly<Record<string, string>> = {
+  "application/pdf": "PDF",
+  "application/zip": "ZIP archive",
+  "application/msword": "Word document",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "Word document",
+  "application/vnd.ms-excel": "Excel spreadsheet",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "Excel spreadsheet",
+  "application/vnd.ms-powerpoint": "PowerPoint",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation": "PowerPoint",
+  "application/octet-stream": "file",
+  "text/plain": "text",
+  "text/csv": "CSV",
+  "text/calendar": "calendar invite",
+};
+
+/** A file's type in a word or two: "PDF", "PNG image", "Word document"; an unknown one as the email names it. */
+export const typeText = (mime: string): string => {
+  const known = TYPE_WORDS[mime];
+  if (known !== undefined) return known;
+  const [kind, sub] = mime.split("/");
+  const name = (sub ?? "").replace(/\+.*$/u, "").toUpperCase();
+  return (kind === "image" || kind === "video" || kind === "audio") && name !== "" ? `${name} ${kind}` : mime;
+};
+
 const attachment = (a: PreviewAttachment): PreviewValue => {
-  const note = [a.bytes === undefined ? undefined : sizeText(a.bytes), a.from].filter((x): x is string => x !== undefined).join(" · ");
+  const note = [a.bytes === undefined ? undefined : sizeText(a.bytes), a.mime === undefined ? undefined : typeText(a.mime), a.from]
+    .filter((x): x is string => x !== undefined)
+    .join(" · ");
   return note === "" ? { text: a.name } : { text: a.name, note };
 };
 

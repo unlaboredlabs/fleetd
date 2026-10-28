@@ -1,5 +1,5 @@
 {
-  "note": "A Navi's integration approvals (hub/integrations): an email to send with every recipient, a Bcc, an outside address and a Drive file; a Notion page to trash; and an email already approved, folded. devbox; no personal data.",
+  "note": "A Navi's integration approvals (hub/integrations): an email to send with every recipient, a Bcc, an outside address and two files from its folder; a Notion page to trash; and an email already approved, folded. devbox; no personal data.",
   "items": [
     {
       "kind": "command_approval",
@@ -27,14 +27,20 @@
           ],
           "subject": "Lunch on Tuesday",
           "body": "Hi Ana,\n\nTuesday at 12:30 at the usual place? I'll book a table.\n\nNavi, for Sam",
-          "input": "{\n  \"account\": \"me@example.com\",\n  \"to\": \"Ana Ruiz <ana@example.com>, bo@example.com.au\",\n  \"cc\": [\n    \"cy@example.com\"\n  ],\n  \"bcc\": [\n    \"sam@example.com\"\n  ],\n  \"subject\": \"Lunch on Tuesday\",\n  \"body\": \"Hi Ana,\\n\\nTuesday at 12:30 at the usual place? I'll book a table.\\n\\nNavi, for Sam\",\n  \"attachments\": [\n    {\n      \"drive_file_id\": \"1AbC\",\n      \"filename\": \"menu.pdf\"\n    }\n  ]\n}",
+          "input": "{\n  \"account\": \"me@example.com\",\n  \"to\": \"Ana Ruiz <ana@example.com>, bo@example.com.au\",\n  \"cc\": [\n    \"cy@example.com\"\n  ],\n  \"bcc\": [\n    \"sam@example.com\"\n  ],\n  \"subject\": \"Lunch on Tuesday\",\n  \"body\": \"Hi Ana,\\n\\nTuesday at 12:30 at the usual place? I'll book a table.\\n\\nNavi, for Sam\",\n  \"attachments\": [\n    {\n      \"path\": \"menu.pdf\",\n      \"sha256\": \"9f2c00000000000000000000000000000000000000000000000000000000a1b2\"\n    },\n    {\n      \"path\": \"maps/table.png\",\n      \"sha256\": \"5e7d00000000000000000000000000000000000000000000000000000000c3d4\"\n    }\n  ]\n}",
           "bcc": [
             "sam@example.com"
           ],
           "attachments": [
             {
               "name": "menu.pdf",
-              "from": "from Drive"
+              "bytes": 184200,
+              "mime": "application/pdf"
+            },
+            {
+              "name": "table.png",
+              "bytes": 42800,
+              "mime": "image/png"
             }
           ]
         }

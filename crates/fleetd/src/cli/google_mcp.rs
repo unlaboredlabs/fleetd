@@ -1,5 +1,6 @@
-//! `fleetd google-mcp --home <node home> --project <id>`: a Navi's Google tools (node/google/tools.rs), served over
-//! stdio, one JSON-RPC message per line. The node puts it in a Navi lead's `--mcp-config` when the Navi has a Google
+//! `fleetd google-mcp --home <node home> --project <id> [--folder <the Navi's folder>]`: a Navi's Google tools
+//! (node/google/tools.rs), served over stdio, one JSON-RPC message per line. Its email attaches files from `--folder`
+//! only, and none without it. The node puts it in a Navi lead's `--mcp-config` when the Navi has a Google
 //! account (node/mcp_servers.rs), as the server `google`; it reads the Navi's tokens from the node's home, never from
 //! its arguments or environment, so no token is in the session's config. The hub's policy answers each call's
 //! permission prompt before it gets here (hub/integrations).
@@ -60,7 +61,9 @@ pub fn run(argv: &[String]) -> u8 {
             .cloned()
     };
     let (Some(home), Some(project)) = (flag("--home"), flag("--project")) else {
-        eprintln!("usage: fleetd google-mcp --home <node home> --project <project id>");
+        eprintln!(
+            "usage: fleetd google-mcp --home <node home> --project <project id> [--folder <navi folder>]"
+        );
         return 2;
     };
     let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
@@ -69,7 +72,10 @@ pub fn run(argv: &[String]) -> u8 {
     else {
         return 1;
     };
-    let session = Session::new(PathBuf::from(home), project, Endpoints::default());
+    let session = Session {
+        folder: flag("--folder").map(PathBuf::from),
+        ..Session::new(PathBuf::from(home), project, Endpoints::default())
+    };
     let stdin = std::io::stdin();
     let mut stdout = std::io::stdout();
     for line in stdin.lock().lines() {

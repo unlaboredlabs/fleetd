@@ -604,8 +604,11 @@ searched too, so a key can't go out as a tiny file. An ask is also blocked when 
 doesn't fit the card (100,000 characters). Nothing is ever "always allowed".
 
 **The card.** `ToolPreview` carries the account, every To/Cc/Bcc, an audience line when the tool picks recipients
-itself, the subject or title, the time, the attachments (name, size, source), the target and the whole body, all read
-from the input the tool runs with, plus that input as JSON. The app names the Navi ("Ada wants to send an email"), marks
+itself, the subject or title, the time, the attachments (name, size, type, source), the target and the whole body, all
+read from the input the tool runs with, plus that input as JSON. A Gmail send's or reply's files are paths in the Navi's
+folder: the policy answers `Verdict::Files`, the relay has the Navi's node read them (`GoogleCall::MailFiles`, inside
+the folder only, at most 20 files and 25 MB), lists each on the card, refuses a text file holding a credential, and
+rewrites the approved input to pin each file's SHA-256, which `google-mcp` checks before it sends. The app names the Navi ("Ada wants to send an email"), marks
 an address outside the account's domain and Bcc, puts its one warning word only on a share, delete or spend, names the
 act on its buttons (Send it / Don't send), and once answered folds to what was decided ("Approved: send an email to …"),
 never "Sent": the hub knows the answer, not the tool's result.

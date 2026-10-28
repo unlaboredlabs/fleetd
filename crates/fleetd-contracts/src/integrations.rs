@@ -89,8 +89,10 @@ pub const PREVIEW_INPUT_MAX: usize = 100_000;
 pub struct PreviewAttachment {
     /// The name the recipient sees: "tenant-form.pdf", or what the file is when the tool names it by id.
     pub name: Line<1, 300>,
-    /// Its size, when its bytes are in the input.
+    /// Its size, when its bytes are in the input or the Navi's node read the file.
     pub bytes: Option<u64>,
+    /// Its type, as the email names it: "application/pdf".
+    pub mime: Option<Line<1, 200>>,
     /// Where it comes from, when not from the input: "from Drive", "from message 18c2".
     pub from: Option<Line<1, 200>>,
 }

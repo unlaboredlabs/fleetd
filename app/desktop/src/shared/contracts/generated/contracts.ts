@@ -4400,10 +4400,12 @@ export type PreviewAsker = {
 
 /** A file an asking tool attaches, as its input names it. */
 export type PreviewAttachment = {
-  /** Its size, when its bytes are in the input. */
+  /** Its size, when its bytes are in the input or the Navi's node read the file. */
   bytes?: number;
   /** Where it comes from, when not from the input: "from Drive", "from message 18c2". */
   from?: string;
+  /** Its type, as the email names it: "application/pdf". */
+  mime?: string;
   /** The name the recipient sees: "tenant-form.pdf", or what the file is when the tool names it by id. */
   name: string;
 };

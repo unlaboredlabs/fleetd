@@ -4,6 +4,7 @@
 //! for tokens, revokes them on disconnect, and `fleetd google-mcp` (cli/google_mcp.rs) reads them here to serve the
 //! Navi's Gmail, Calendar and Drive tools ([`tools`]), refreshing the access token in place. No token or secret leaves
 //! these files: errors name what failed, never a value.
+pub mod files;
 pub mod mail;
 pub mod tools;
 
@@ -395,12 +396,13 @@ pub async fn disconnect(
     Ok(revoked)
 }
 
-/// The node's answer to the hub's `google` call.
+/// The node's answer to the hub's `google` call. `folder`: the project's, for a call that reads in it.
 pub async fn answer(
     home: &Path,
     ep: &Endpoints,
     call: GoogleCall,
     box_key: Option<&NodeBoxKey>,
+    folder: Option<PathBuf>,
 ) -> Result<GoogleAnswer, String> {
     Ok(match call {
         GoogleCall::ClientSet { client_id, sealed } => GoogleAnswer::ClientSaved {
@@ -473,6 +475,14 @@ pub async fn answer(
                 more: (checked.more > 0).then_some(checked.more as u32),
             }
         }
+        GoogleCall::MailFiles { paths, .. } => {
+            let folder = folder.ok_or("the project has no folder on this machine")?;
+            GoogleAnswer::MailFiles {
+                files: tokio::task::spawn_blocking(move || files::inspect(&folder, &paths))
+                    .await
+                    .map_err(|e| e.to_string())??,
+            }
+        }
     })
 }
 
@@ -494,6 +504,8 @@ pub fn status(home: &Path, project_id: &str) -> Result<(bool, Option<String>), S
 pub struct Session {
     pub home: PathBuf,
     pub project_id: String,
+    /// The Navi's folder, the only place its email attaches files from ([`files`]); none: it attaches none.
+    pub folder: Option<PathBuf>,
     pub ep: Endpoints,
     pub http: reqwest::Client,
 }
@@ -503,6 +515,7 @@ impl Session {
         Session {
             home,
             project_id,
+            folder: None,
             ep,
             http: http(),
         }
