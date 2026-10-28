@@ -254,7 +254,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "profile_update",
-        "Change a task profile by id (an owner's or admin's human key): its name, note, model, effort, fast mode, or default: true to make it the default the lead, every review and helper calls run on. New agents follow it from their next start; running ones keep theirs. A model without fast mode turns fast off. Setting the model again clears a refusal.",
+        "Change a task profile by id (an owner's or admin's human key): its name, note, model, effort, fast mode, or default: true to make it the default the lead, every review and helper calls run on. New agents follow it from their next start; running ones keep theirs. A model without fast mode turns fast off. Setting the model again clears a refusal. A rename moves the tasks not yet ended with it.",
     ),
     (
         "profile_delete",

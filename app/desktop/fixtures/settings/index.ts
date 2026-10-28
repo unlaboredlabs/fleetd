@@ -7,6 +7,7 @@ import { defineGroup, SHARED } from "../kit/group.ts";
 import { Fixture } from "../kit/fixture.ts";
 import { asText, clone, isObject, type JsonObject, type JsonValue } from "../kit/json.ts";
 import { PROJECTS, PromptHub, type RegistryEntry } from "./promptHub.ts";
+import { profilesList } from "./profiles.ts";
 import { skills } from "./skills.ts";
 
 const registry = (
@@ -25,35 +26,6 @@ const projectSummary = (p: (typeof PROJECTS)[number]): JsonObject => ({
   workspaceRoot: `/home/dev/src/${p.projectId}`,
   threads: { running: 1, waiting: 0, idle: 2, failed: 0 },
   lastActivityAt: "2026-10-19T10:21:00.000Z",
-});
-
-const PROFILE_AT = "2026-10-19T10:00:00.000Z";
-
-/** The hub's profiles: high (the default), medium as migrated, and a fast one on Opus. */
-const PROFILES: JsonObject[] = [
-  { id: 1, name: "high", note: "The default: design, architecture and anything subtle. When in doubt, this one.", model: "claude-opus-5-5", effort: "high", fast: false, default: true, updatedAt: PROFILE_AT },
-  { id: 2, name: "medium", note: "Only for mechanical work: dead-code deletions, renames, doc fixes, plain wiring, cleanup.", model: "claude-opus-5-5", effort: "medium", fast: false, default: false, updatedAt: PROFILE_AT },
-  { id: 3, name: "quick", note: "Small, clear fixes where speed matters.", model: "claude-opus-5-5", effort: "low", fast: true, default: false, updatedAt: PROFILE_AT },
-];
-
-/** fleetd's own model list, as a hub without an API key answers. */
-const MODELS: JsonObject[] = [
-  ["claude-opus-5-5", "Claude Opus 5.5", true],
-  ["claude-fable-5-1", "Claude Fable 5.1", false],
-  ["claude-sonnet-5-5", "Claude Sonnet 5.5", false],
-  ["claude-haiku-5-5", "Claude Haiku 5.5", false],
-  ["claude-fable-5", "Claude Fable 5", false],
-  ["claude-opus-5", "Claude Opus 5", true],
-  ["claude-sonnet-5", "Claude Sonnet 5", false],
-  ["claude-opus-4-8", "Claude Opus 4.8", true],
-].map(([id, displayName, fast]) => ({ id, displayName, fast }) as JsonObject);
-
-const profilesList = (allowed?: string[]): JsonObject => ({
-  profiles: PROFILES,
-  models: MODELS,
-  modelsFrom: "builtin",
-  efforts: ["low", "medium", "high", "xhigh", "max"],
-  ...(allowed === undefined ? {} : { allowed }),
 });
 
 /**

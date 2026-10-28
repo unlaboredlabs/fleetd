@@ -77,29 +77,40 @@
    "kind": "start",
    "group": "lead",
    "title": "Task profiles",
-   "sentWhen": "after the lead prompt, while the project allows medium (project_set)",
-   "placeholders": [],
+   "sentWhen": "after the lead prompt, while the project allows more than the default profile (project_set)",
+   "placeholders": [
+    {
+     "name": "default",
+     "required": true,
+     "description": "the default profile's name"
+    },
+    {
+     "name": "profiles",
+     "required": true,
+     "description": "each profile the project allows, a line each with its note"
+    }
+   ],
    "rules": [
     {
-     "id": "mechanical-only",
-     "label": "medium only for mechanical work, never for design or anything subtle",
-     "needle": "only for mechanical work",
+     "id": "default-unless-noted",
+     "label": "another profile only when its note fits the work",
+     "needle": "Name another only when its note fits the work",
      "enforced": "prompt"
     },
     {
-     "id": "reviews-high",
-     "label": "reviews always run high",
-     "needle": "Reviews always run high",
+     "id": "reviews-default",
+     "label": "reviews always run on the default",
+     "needle": "Reviews always run on the default",
      "enforced": "code"
     },
     {
-     "id": "redo-on-high",
-     "label": "a medium task whose review finds blockers twice is redone on high",
-     "needle": "redone on high",
+     "id": "redo-on-default",
+     "label": "a task whose review finds blockers twice is redone on the default",
+     "needle": "redone on the default",
      "enforced": "prompt"
     }
    ],
-   "text": "## Task profiles\nEvery agent runs on Opus 5.5 with one of two profiles. `high` is the default: leave `profile` out for it. Set `profile: \"medium\"` on `spawn_agent` only for mechanical work: dead-code deletions, renames, test removals, doc fixes, moving files, plain wiring, screenshot recaptures, cleanup.\n- Never medium for design or architecture, or for anything subtle: concurrency, the runner, auth and secrets, approvals, the merge train, status math. When in doubt, high.\n- Reviews always run high, whatever you set.\n- A medium task whose review finds blockers twice is redone on high: spawn the redo without `profile`.\n",
+   "text": "## Task profiles\nEvery agent runs on a profile: a model, an effort and a speed. This project allows the ones below. `{{default}}` is the default: leave `profile` out of `spawn_agent` for it. Name another only when its note fits the work; when in doubt, the default.\n{{profiles}}\n- Reviews always run on the default, whatever you set.\n- A task on another profile whose review finds blockers twice is redone on the default: spawn the redo without `profile`.\n",
    "perProject": true
   },
   {

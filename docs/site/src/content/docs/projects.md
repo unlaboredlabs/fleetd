@@ -358,8 +358,8 @@ profile.
 
 | To change | Do |
 |---|---|
-| Which profiles a project allows | `fleetd project set <machine>/<project> --profiles medium,quick` (`none`: the default alone). |
-| A profile's model, effort, fast mode or note, or which is the default | `fleetd project profile <name> --model claude-sonnet-5-5 --effort xhigh` (owners and admins). A name that doesn't exist yet makes a new profile; `--delete` removes one. |
+| Which profiles a project allows | Settings → Projects → Agents → **Allowed profiles**: a checkbox each, the default checked for good. Or `fleetd project set <machine>/<project> --profiles medium,quick` (`none`: the default alone). |
+| A profile's model, effort, fast mode or note, or which is the default | Settings → Hub → Every project → **Profiles** (owners and admins): New profile, Edit and Delete. Or `fleetd project profile <name> --model claude-sonnet-5-5 --effort xhigh`: a name that doesn't exist yet makes a new profile; `--delete` removes one. |
 | How the lead picks | Edit the **Task profiles** prompt (`lead.profiles`) like any [prompt](/docs/what-agents-are-told), or a profile's note. It takes effect at the lead's next start. |
 
 ### What a profile runs on {#profile-settings}
@@ -382,7 +382,7 @@ quick      claude-opus-5-5 at low (fast, not allowed)
 
 From an MCP client, `profiles_list`, `profile_create`, `profile_update`, `profile_delete` and `project_set` do the
 same. The default can't be deleted, only replaced; nor can a profile a task not yet ended runs on. A renamed profile
-keeps its tasks: their history shows the name they ran on.
+keeps its tasks: the ones not yet ended move to the new name, ended ones show the name they ran on.
 
 A change applies to agents started after it. Agents already running keep the model and effort they started on, and
 each agent's usage, time and lane report the model it really ran on. A node older than the hub runs effort `xhigh` as high, and

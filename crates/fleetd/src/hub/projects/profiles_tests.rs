@@ -446,6 +446,36 @@ async fn profiles_are_created_changed_and_deleted_with_clear_refusals() {
             .unwrap_err(),
     );
     assert!(e.contains("small is in use by T1"), "{e}");
+    // A rename takes the task with it: it starts again on the renamed profile, and delete still sees it.
+    call(
+        &hub,
+        &admin,
+        "profile_update",
+        json!({ "id": id, "name": "tiny" }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        launch(&hub, &mut launches, "p1", "tiny").await.1,
+        some("claude-sonnet-5-5")
+    );
+    let profile_of_t1: String = hub
+        .db
+        .with(|c| {
+            Ok(c.query_row(
+                "SELECT json_extract(data, '$.profile') FROM tasks",
+                [],
+                |r| r.get(0),
+            )?)
+        })
+        .unwrap();
+    assert_eq!(profile_of_t1, "tiny");
+    let e = refusal(
+        call(&hub, &admin, "profile_delete", json!({ "id": id }))
+            .await
+            .unwrap_err(),
+    );
+    assert!(e.contains("tiny is in use by T1"), "{e}");
     hub.db
         .with(|c| {
             c.execute("UPDATE tasks SET state = 'done'", [])?;

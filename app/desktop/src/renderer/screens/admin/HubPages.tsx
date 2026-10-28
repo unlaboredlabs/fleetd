@@ -19,6 +19,7 @@ import { HubMemoryCaps } from "../settings/MemoryCaps";
 import { HubInstructions } from "../settings/Instructions";
 import { HubMcpServers } from "../settings/McpServers";
 import { PagePart, PageHead } from "../settings/parts";
+import { ProfilesEditor } from "../settings/Profiles";
 import { Prompts } from "../settings/Prompts";
 import type { SettingsRoute } from "../settings/route";
 import { HubSkills } from "../settings/Skills";
@@ -28,7 +29,7 @@ import { progressLine, SetupSteps, useSetupSteps } from "../setup/SetupScreen";
 import { navigate } from "../shell/navigation";
 import { useUpdatesView } from "../updates/hooks";
 import { setUpdatesOpen } from "../updates/state";
-import { HubSection, Line } from "../updates/UpdatesSheet";
+import { HubSection } from "../updates/UpdatesSheet";
 import type { HubTab } from "../shell/routes";
 import { ClaudeAdmin } from "./Claude";
 import { MachineList } from "./MachineList";
@@ -184,17 +185,17 @@ function Updates() {
 }
 
 /**
- * Every project › Profiles: the task profiles every project's agents run on, each a model, an effort and a note, and
- * the hub's default. Their editor comes with the Profiles page (W146); until then the line says where they change.
+ * Every project › Profiles: the task profiles every project's agents run on, each a model, an effort, fast mode and a
+ * note, and the hub's default; each project picks which it allows on its Agents page.
  */
 function Profiles() {
   return (
     <div className={s.scroll} data-screen="settings.hub.profiles">
       <div className={s.column}>
-        <PageHead title="Profiles">The task profiles every project&apos;s agents run on: a model, an effort and a note each.</PageHead>
-        <Text tone="quiet">
-          <Line text="Change them on the hub with `fleetd project profile <name> --model … --effort …`; a project picks which it allows with `fleetd project set <machine>/<project> --profiles …`." />
-        </Text>
+        <PageHead title="Profiles">
+          What agents run on: a model, a reasoning level and fast mode each, with a note the lead picks by. Every project allows the default; it picks the others on its Agents page.
+        </PageHead>
+        <ProfilesEditor />
       </div>
     </div>
   );

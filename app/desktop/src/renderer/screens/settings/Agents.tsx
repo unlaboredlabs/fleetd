@@ -28,7 +28,8 @@ import { errorText, useHubCall, useLive } from "./hub";
 import { useFocusProjectSlider } from "./focusProject";
 import { parseScope, projectRefOf } from "./editor";
 import { McpSection } from "./McpServers";
-import { NoProject, PageHead, scopeName, useProjects } from "./parts";
+import { AllowedProfiles } from "./Profiles";
+import { NoProject, PageHead, scopeName, Setting, useProjects } from "./parts";
 import { replaceRoute, type SettingsRoute } from "./route";
 import { ProjectSkills } from "./Skills";
 import { useAdministers } from "../admin/role";
@@ -362,7 +363,7 @@ export function HubCaps() {
 }
 
 /**
- * Settings → Projects › Agents: one project's max agents, its own MCP servers and its skills.
+ * Settings → Projects › Agents: one project's max agents, the task profiles it allows, its own MCP servers and its skills.
  */
 export function AgentsSettings({ route }: { route: SettingsRoute }) {
   const slots = useSlots();
@@ -389,6 +390,14 @@ export function AgentsSettings({ route }: { route: SettingsRoute }) {
             <section ref={perProject} className={s.agentsList} aria-label="Max agents" tabIndex={-1}>
               {slots ? <AgentsPanel projectRef={ref} slots={slots} /> : <Text tone="quiet">Loading…</Text>}
             </section>
+            <Separator />
+            <Setting
+              reveal="agents.profiles"
+              label="Allowed profiles"
+              help="The task profiles its lead may run agents on. The hub's default is always allowed; the hub's admins make profiles in Settings › Hub › Every project › Profiles."
+            >
+              <AllowedProfiles projectRef={ref} />
+            </Setting>
             <Separator />
             <McpSection projectRef={ref} />
             <Separator />
