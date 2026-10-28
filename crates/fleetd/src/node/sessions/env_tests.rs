@@ -129,6 +129,71 @@ async fn an_order_variable_reaches_only_that_orders_agents_from_their_next_turn(
     assert_eq!(var(&last, "DB_URL"), None);
 }
 
+/// The bug of #782: the hub renews an order's `GH_TOKEN` while its agent is mid-turn (a person's refresh ends the
+/// old one at GitHub at once). The agent's claude runs its `CLAUDE_ENV_FILE` ahead of every Bash command, and that
+/// sources the order's variables as they are then: its next command has the new token, with no new claude. Its brief
+/// says never to fall back to the machine's own gh login; a session in no order gets no such file.
+#[tokio::test]
+async fn a_renewed_github_token_reaches_a_running_agents_next_command() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("node");
+    let mut node = hub(
+        dir.path(),
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::fixture("init-partial-two-turns"),
+    )
+    .await;
+    node.project(dir.path()).await;
+    node.ok(in_order("a", "W1", SessionWorkspace::Root)).await;
+    node.settled("a-r1").await;
+    node.ok(launch(
+        "plain",
+        RuntimeMode::FullAccess,
+        SessionWorkspace::Root,
+    ))
+    .await;
+    node.settled("r1").await;
+    let spawned = node.runner.spawned();
+    assert_eq!(var(&spawned[1], "CLAUDE_ENV_FILE"), None);
+    let env_file = PathBuf::from(var(&spawned[0], "CLAUDE_ENV_FILE").unwrap());
+    // A Bash command of the running agent, as claude runs it: the env file first.
+    let command = |name: &str| {
+        let out = std::process::Command::new("sh")
+            .arg("-c")
+            .arg(format!(". '{}'; printf %s \"${name}\"", env_file.display()))
+            .env_clear()
+            .output()
+            .unwrap();
+        String::from_utf8(out.stdout).unwrap()
+    };
+    assert_eq!(command("GH_TOKEN"), "");
+    deliver(&home, "W1", "GH_TOKEN", "gh-token-first-7f3a");
+    assert_eq!(command("GH_TOKEN"), "gh-token-first-7f3a");
+    deliver(&home, "W1", "GH_TOKEN", "gh-token-renewed-91c2");
+    assert_eq!(command("GH_TOKEN"), "gh-token-renewed-91c2");
+    assert_eq!(node.runner.spawned().len(), 2, "no new claude for it");
+    assert!(
+        !std::fs::read_to_string(&env_file)
+            .unwrap()
+            .contains("gh-token")
+    );
+    // A new agent of the order is told what to do when GitHub refuses it.
+    node.ok(in_order("d", "W1", SessionWorkspace::Root)).await;
+    node.settled("d-r1").await;
+    let brief = node
+        .service
+        .store()
+        .message("d", "d-r1")
+        .unwrap()
+        .unwrap()
+        .text;
+    assert!(
+        brief.contains("never unset it or push with the machine's own gh login: ask_lead"),
+        "{brief}"
+    );
+    assert!(!brief.contains("gh-token"));
+}
+
 /// The 1Password service account token, entered as an order variable, is the node's: no agent's environment holds
 /// it, its brief names it only as the node's and points at fill_credential, and it is still masked.
 #[tokio::test]

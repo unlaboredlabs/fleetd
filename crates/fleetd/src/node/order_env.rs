@@ -1,9 +1,12 @@
 //! An order's variables: secrets a person entered for one order's agents (`order:<machine>:<order id>` sinks), kept
 //! by the node in `<node home>/order-env/<project>/<order>.json` and added, on top of the project's own
 //! (project_env.rs), to every claude the node starts for a session of that order. A session already running gets
-//! them at its next turn, when the node starts its claude again (sessions `ensure_live`). They go when the order
-//! closes (`order_env_drop`). Kept as project variables are: the file is written atomically at mode 0600 in 0700
-//! directories, plaintext buffers are wiped, and errors name a variable, never a value.
+//! them before its next command: beside the file the node keeps them as a shell script (`<order>.sh`), which each of
+//! the order's sessions sources ahead of every Bash command (claude's `CLAUDE_ENV_FILE`, [`env_file`]), so a token the
+//! hub renews mid-turn reaches agents at once; its claude also starts again with them at its next turn (sessions
+//! `ensure_live`). They go when the order closes (`order_env_drop`). Kept as project variables are: both files are
+//! written atomically (written whole, then renamed) at mode 0600 in 0700 directories, plaintext buffers are wiped, and
+//! errors name a variable, never a value.
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -50,6 +53,86 @@ fn file(home: &Path, project_id: &str, order_id: &str) -> Option<PathBuf> {
             .join(project_id)
             .join(format!("{order_id}.json"))
     })
+}
+
+/// The order's variables as a shell script, beside its file.
+fn script(path: &Path) -> PathBuf {
+    path.with_extension("sh")
+}
+
+/// Adds `value` to `out` quoted for a shell: in single quotes, each of its own as `'\''`.
+fn push_quoted(out: &mut String, value: &str) {
+    out.push('\'');
+    for c in value.chars() {
+        match c {
+            '\'' => out.push_str("'\\''"),
+            c => out.push(c),
+        }
+    }
+    out.push('\'');
+}
+
+/// A name a shell takes in `export`.
+fn exportable(name: &str) -> bool {
+    let mut bytes = name.bytes();
+    bytes
+        .next()
+        .is_some_and(|b| b.is_ascii_alphabetic() || b == b'_')
+        && bytes.all(|b| b.is_ascii_alphanumeric() || b == b'_')
+}
+
+/// Writes the order's file and its script, each whole before it replaces the one before: a command never sources half
+/// a token.
+fn write_order(path: &Path, order: &OrderFile, shown: &str) -> Result<(), String> {
+    let bytes = Zeroizing::new(serde_json::to_vec(order).map_err(|e| e.to_string())?);
+    write_atomic(path, &bytes).map_err(|e| format!("cannot write {shown}: {}", io_why(&e)))?;
+    // Sized up front, so no copy of a value is left behind unwiped as it grows.
+    let size = order
+        .vars
+        .iter()
+        .map(|(n, v)| n.len() + 4 * v.0.len() + 12)
+        .sum();
+    let mut text = Zeroizing::new(String::with_capacity(size));
+    for (name, value) in &order.vars {
+        if exportable(name) && !env_name_reserved(name) {
+            text.push_str("export ");
+            text.push_str(name);
+            text.push('=');
+            push_quoted(&mut text, &value.0);
+            text.push('\n');
+        }
+    }
+    write_atomic(&script(path), text.as_bytes()).map_err(|e| {
+        format!(
+            "cannot write {}: {}",
+            shown.replace(".json", ".sh"),
+            io_why(&e)
+        )
+    })
+}
+
+/// Removes the order's file and its script.
+fn remove_order(path: &Path, shown: &str) -> Result<(), String> {
+    for file in [script(path), path.to_path_buf()] {
+        if let Err(e) = std::fs::remove_file(&file)
+            && e.kind() != std::io::ErrorKind::NotFound
+        {
+            return Err(format!("cannot remove {shown}: {}", io_why(&e)));
+        }
+    }
+    Ok(())
+}
+
+/// What a session of the order is given as `CLAUDE_ENV_FILE`: one line, the same for its whole life, that sources the
+/// order's script as it is when each Bash command runs (claude reads this file once and runs it ahead of every
+/// command). It holds no value.
+pub fn env_file(home: &Path, project_id: &str, order_id: &str) -> Option<String> {
+    let mut at = String::new();
+    push_quoted(
+        &mut at,
+        &script(&file(home, project_id, order_id)?).to_string_lossy(),
+    );
+    Some(format!("if [ -r {at} ]; then . {at}; fi\n"))
 }
 
 fn read_file(path: &Path) -> std::io::Result<(OrderFile, Zeroizing<Vec<u8>>)> {
@@ -126,8 +209,7 @@ pub fn deliver(
     super::config::mkdir_private(&home.join(DIR))
         .and_then(|()| super::config::mkdir_private(dir))
         .map_err(|e| format!("cannot make {DIR}: {}", io_why(&e)))?;
-    let bytes = Zeroizing::new(serde_json::to_vec(&order).map_err(|e| e.to_string())?);
-    write_atomic(&path, &bytes).map_err(|e| format!("cannot write {shown}: {}", io_why(&e)))
+    write_order(&path, &order, &shown)
 }
 
 /// The size of what one of the order's sessions is given: the project's values, each replaced by the order's of the
@@ -158,6 +240,9 @@ pub fn largest_with(home: &Path, project_id: &str, project: &Vars) -> Result<(),
         return Ok(());
     };
     for entry in entries.flatten() {
+        if entry.path().extension().is_none_or(|x| x != "json") {
+            continue;
+        }
         let Ok((order, _)) = read_file(&entry.path()) else {
             continue;
         };
@@ -241,13 +326,7 @@ pub fn forget(home: &Path, project_id: &str, order_id: &str) -> Result<(), Strin
     let _writing = WRITING
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    match std::fs::remove_file(&path) {
-        Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(format!(
-            "cannot remove {DIR}/{project_id}/{order_id}.json: {}",
-            io_why(&e)
-        )),
-        _ => Ok(()),
-    }
+    remove_order(&path, &format!("{DIR}/{project_id}/{order_id}.json"))
 }
 
 /// Forgets one of the order's variables: one the hub could not record. With `fingerprint`, only while its value is
@@ -275,15 +354,9 @@ pub fn forget_one(
         return Ok(());
     }
     if order.vars.is_empty() {
-        return match std::fs::remove_file(&path) {
-            Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
-                Err(format!("cannot remove {shown}: {}", io_why(&e)))
-            }
-            _ => Ok(()),
-        };
+        return remove_order(&path, &shown);
     }
-    let bytes = Zeroizing::new(serde_json::to_vec(&order).map_err(|e| e.to_string())?);
-    write_atomic(&path, &bytes).map_err(|e| format!("cannot write {shown}: {}", io_why(&e)))
+    write_order(&path, &order, &shown)
 }
 
 /// Forgets every order's variables of the project, when the project goes.
@@ -337,6 +410,62 @@ mod tests {
         forget(home, "p", "W1").unwrap();
         assert_eq!(for_spawn(home, "p", "W1"), (Vec::new(), None));
         forget(home, "p", "W1").unwrap();
+    }
+
+    /// What a Bash command of the order's session sees as `name`, its claude's `CLAUDE_ENV_FILE` run ahead of it.
+    fn sourced(env_file: &Path, name: &str) -> String {
+        let out = std::process::Command::new("sh")
+            .arg("-c")
+            .arg(format!(". '{}'; printf %s \"${name}\"", env_file.display()))
+            .env_clear()
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8(out.stdout).unwrap()
+    }
+
+    #[test]
+    fn a_running_session_sources_each_new_value_before_its_next_command() {
+        let home = tempfile::tempdir().unwrap();
+        let home = home.path();
+        // What the session is given at its spawn, before its order holds anything: it never changes after.
+        let at = home.join("order-env.sh");
+        std::fs::write(&at, env_file(home, "p", "W1").unwrap()).unwrap();
+        assert_eq!(sourced(&at, "GH_TOKEN"), "");
+        deliver(home, "p", "W1", "GH_TOKEN", b"token-one").unwrap();
+        assert_eq!(sourced(&at, "GH_TOKEN"), "token-one");
+        // Renewed mid-turn: the next command has the new one.
+        deliver(home, "p", "W1", "GH_TOKEN", b"token-two").unwrap();
+        assert_eq!(sourced(&at, "GH_TOKEN"), "token-two");
+        // Any value a shell could misread comes as it is.
+        let odd = "it's $HOME `id`\nline two \\ \"q\"";
+        deliver(home, "p", "W1", "ODD", odd.as_bytes()).unwrap();
+        assert_eq!(sourced(&at, "ODD"), odd);
+        assert_eq!(sourced(&at, "GH_TOKEN"), "token-two");
+        let script = file(home, "p", "W1").unwrap().with_extension("sh");
+        let mode = std::fs::metadata(&script).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
+        // No temporary file is left beside it: each write was whole, then renamed over the last.
+        let names: Vec<_> = std::fs::read_dir(script.parent().unwrap())
+            .unwrap()
+            .map(|e| e.unwrap().file_name().into_string().unwrap())
+            .collect();
+        assert_eq!(names.len(), 2, "{names:?}");
+        // The session's own file names the script, never a value.
+        assert!(!std::fs::read_to_string(&at).unwrap().contains("token-"));
+        // Dropped, and gone with the order.
+        let two = crate::node::secrets::fingerprint_of(b"token-two");
+        forget_one(home, "p", "W1", "GH_TOKEN", Some(&two)).unwrap();
+        assert_eq!(sourced(&at, "GH_TOKEN"), "");
+        forget(home, "p", "W1").unwrap();
+        assert!(!script.exists());
+        assert_eq!(sourced(&at, "ODD"), "");
+        // An order id that names no plain file gets none.
+        assert!(env_file(home, "p", "../W1").is_none());
     }
 
     #[test]

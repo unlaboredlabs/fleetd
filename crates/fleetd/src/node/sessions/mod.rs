@@ -44,8 +44,8 @@ use tokio::time::Instant;
 
 use super::runner::claude::{self, failure, setup};
 use super::runner::claude::{
-    ALWAYS_DISALLOWED, AUTO_MEMORY_OFF_ENV, DEFAULT_ENV, HELPER_MODEL_ENV, PROMPT_CACHE_TTL_VARS,
-    SESSION_ENV, default_cache_ttl, subagents_off_settings_env,
+    ALWAYS_DISALLOWED, AUTO_MEMORY_OFF_ENV, DEFAULT_ENV, HELPER_MODEL_ENV, ORDER_ENV_FILE_ENV,
+    PROMPT_CACHE_TTL_VARS, SESSION_ENV, default_cache_ttl, subagents_off_settings_env,
 };
 use super::runner::sandbox;
 use super::runner::{
@@ -2323,6 +2323,19 @@ impl SessionService {
                 row.summary.project_id.to_string(),
             ),
         ]);
+        // Its order's variables as they are at each Bash command, not only as its claude started: a GitHub token the
+        // hub renews mid-turn reaches the agent's next command. The file names the order's script, no value.
+        env.retain(|(k, _)| k != ORDER_ENV_FILE_ENV);
+        if let Some(sourced) = row.local.order_id.as_deref().and_then(|order| {
+            super::order_env::env_file(&config.home, row.summary.project_id.as_str(), order)
+        }) {
+            let at = dir.join("order-env.sh");
+            std::fs::write(&at, sourced)?;
+            env.push((
+                ORDER_ENV_FILE_ENV.to_owned(),
+                at.to_string_lossy().into_owned(),
+            ));
+        }
         let (key, value) = AUTO_MEMORY_OFF_ENV;
         env.retain(|(k, _)| k != key);
         env.push((key.to_owned(), value.to_owned()));

@@ -247,6 +247,11 @@ fn said(status: reqwest::StatusCode, body: &Value) -> String {
         .unwrap_or_else(|| format!("HTTP {}", status.as_u16()))
 }
 
+/// Whether a [`GithubApps::call`] failed for GitHub not answering (unreachable, or a 5xx), not for refusing.
+fn unanswered(error: &str) -> bool {
+    error.starts_with("GitHub can't be reached") || error.starts_with("GitHub refused (5")
+}
+
 /// GitHub's RFC 3339 `expires_at`, in milliseconds.
 fn expires_ms(body: &Value) -> Option<i64> {
     crate::hub::store::parse_ms(body["expires_at"].as_str()?)
@@ -461,7 +466,9 @@ impl GithubApps {
 
     /// Reads the App's installations, mints each one's token and reads the repositories each reaches, without the
     /// cache's lock: a slow GitHub holds up no `gh` run meanwhile. An installation GitHub refuses (suspended, or
-    /// uninstalled mid-read) is left out and said, and the others are kept.
+    /// uninstalled mid-read) is left out and said, and the others are kept. One GitHub fails to answer for (down, or a
+    /// 5xx) fails the read, so what was read before stays: left out, its orders would lose their token and `gh` fall
+    /// back to the machine's own login.
     async fn read_installs(
         &self,
         app: &GithubApp,
@@ -513,6 +520,7 @@ impl GithubApps {
             .await;
             let (token, repos, count) = match read {
                 Ok(read) => read,
+                Err(e) if unanswered(&e) => return Err(e),
                 Err(e) => {
                     tracing::warn!("github app: installation on {account} not read: {e}");
                     skipped.push(format!("{account} ({e})"));

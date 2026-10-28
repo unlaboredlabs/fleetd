@@ -41,6 +41,11 @@ struct Fake {
     issued: usize,
     /// GitHub no longer takes refresh tokens (revoked).
     refuse_refresh: bool,
+    /// The refresh tokens GitHub still takes, one per person: each refresh ends its pair, as GitHub does, and makes a
+    /// new one.
+    live_refresh: Vec<String>,
+    /// GitHub can't be reached: it mints and refreshes nothing.
+    down: bool,
     /// Grants revoked.
     revoked: usize,
 }
@@ -138,6 +143,9 @@ async fn access_token(
     headers: HeaderMap,
 ) -> Response {
     let mut fake = s.fake.lock().unwrap();
+    if fake.down {
+        return refused(StatusCode::SERVICE_UNAVAILABLE, "Unicorn");
+    }
     if !verified(&headers) {
         fake.bad_jwts += 1;
         return refused(
@@ -181,9 +189,15 @@ async fn user_token(
     if field("client_id") != "Iv23liTEST" || field("client_secret") != CLIENT_SECRET {
         return axum::Json(json!({ "error": "incorrect_client_credentials" })).into_response();
     }
+    if fake.down {
+        return refused(StatusCode::SERVICE_UNAVAILABLE, "Unicorn");
+    }
     let ok = match field("grant_type") {
         "refresh_token" => {
-            !fake.refuse_refresh && field("refresh_token") == format!("ghr_{}", fake.issued)
+            let given = field("refresh_token");
+            let live = fake.live_refresh.iter().any(|r| r == given);
+            fake.live_refresh.retain(|r| r != given);
+            !fake.refuse_refresh && live
         }
         _ => {
             field("code") == "good-user-code"
@@ -197,6 +211,7 @@ async fn user_token(
     }
     fake.issued += 1;
     let n = fake.issued;
+    fake.live_refresh.push(format!("ghr_{n}"));
     axum::Json(json!({
         "access_token": format!("ghu_{n}"), "expires_in": 28800,
         "refresh_token": format!("ghr_{n}"), "refresh_token_expires_in": 15_811_200, "token_type": "bearer",
@@ -1529,4 +1544,189 @@ async fn removing_the_app_takes_back_what_it_handed_to_orders() {
         [(order.to_string(), Some("ab12cd34".into()))]
     );
     assert!(super::sessions::kept(&lab.hub).is_empty());
+}
+
+/// What devbox's node holds now as the order's `GH_TOKEN`: the last value it was handed for it.
+fn held(
+    link: &Mutex<Vec<(String, String, String, String)>>,
+    order: &fleetd_contracts::ledger::WorkstreamId,
+) -> String {
+    let sink = format!("order:devbox:{order}");
+    link.lock()
+        .unwrap()
+        .iter()
+        .rev()
+        .find(|(s, _, name, _)| *s == sink && name == "GH_TOKEN")
+        .map(|(_, _, _, value)| value.clone())
+        .unwrap_or_default()
+}
+
+fn now_of(lab: &Lab) -> i64 {
+    crate::hub::store::now_ms(lab.clock.as_ref() as &dyn Clock)
+}
+
+/// The bug of #782: a running order's token ended under its agents. Each order's is renewed before its end and its node
+/// handed the new one, for the App's (an hour) and a person's (eight hours, whose refresh ends the one before at
+/// GitHub, so every order of theirs gets it in the same sweep). A person who left the hub is never renewed.
+#[tokio::test]
+async fn an_orders_token_is_renewed_before_it_ends_and_its_node_gets_it_but_a_revoked_persons_never()
+ {
+    use super::sessions::{BLOCKED_TOKEN, deliver, kept, renew};
+    let lab = lab().await;
+    created(&lab).await;
+    let sam = admin(&lab.hub);
+    call(&lab.hub, &sam, "github_app_test", json!({}))
+        .await
+        .unwrap();
+    let bob = member(&lab.hub);
+    connect(&lab, &sam).await.unwrap();
+    connect(&lab, &bob).await.unwrap();
+    let sams = sam.person.clone().unwrap().person_id;
+    let bobs = bob.person.clone().unwrap().person_id;
+    let (r, first) = order_on_acme(&lab.hub, Some(&sams));
+    let (_, second) = order_on_acme(&lab.hub, Some(&sams));
+    let (_, bob_order) = order_on_acme(&lab.hub, Some(&bobs));
+    let (_, nobody) = order_on_acme(&lab.hub, None);
+    let link = fake_link(&lab.hub, "devbox").await;
+    for order in [&first, &second, &bob_order, &nobody] {
+        deliver(&lab.hub, &r, order, None, true).await.unwrap();
+    }
+    let start = now_of(&lab);
+    assert_eq!(
+        [&first, &second, &bob_order].map(|o| held(&link, o)),
+        ["ghu_1", "ghu_1", "ghu_2"]
+    );
+    let app_first = held(&link, &nobody);
+    assert!(app_first.starts_with("ghs_7_"), "{app_first}");
+    // Bob leaves the hub: his token is revoked and his order's agents blocked.
+    call(
+        &lab.hub,
+        &sam,
+        "person_remove",
+        json!({ "personId": bobs.as_str() }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(held(&link, &bob_order), BLOCKED_TOKEN);
+    // 31 minutes in, the App's token has 29 left: the sweep mints another and its node has it before the first ends.
+    lab.clock.advance(Duration::from_secs(31 * 60));
+    renew(&lab.hub).await;
+    let app_second = held(&link, &nobody);
+    assert!(
+        app_second.starts_with("ghs_7_") && app_second != app_first,
+        "{app_second}"
+    );
+    assert!(now_of(&lab) < start + 60 * 60_000);
+    // Six hours in, Sam's has under two left: refreshed once, and both of Sam's orders hold the new one, two hours
+    // before the first would have ended.
+    lab.clock.advance(Duration::from_secs(5 * 3600 + 30 * 60));
+    let handed_before = link.lock().unwrap().len();
+    renew(&lab.hub).await;
+    assert_eq!(
+        [&first, &second].map(|o| held(&link, o)),
+        ["ghu_3", "ghu_3"]
+    );
+    assert!(now_of(&lab) < start + 8 * 3600 * 1000 - 3600 * 1000);
+    assert_eq!(
+        lab.fake.lock().unwrap().issued,
+        3,
+        "refreshed more than once"
+    );
+    // Bob's never: his order's agents still hold the placeholder, and no token of his was handed out again.
+    let since: Vec<_> = link.lock().unwrap()[handed_before..]
+        .iter()
+        .map(|(sink, _, _, value)| (sink.clone(), value.starts_with("ghu_")))
+        .collect();
+    assert!(
+        !since.contains(&(format!("order:devbox:{bob_order}"), true)),
+        "{since:?}"
+    );
+    assert_eq!(held(&link, &bob_order), BLOCKED_TOKEN);
+    let blocked: Vec<_> = kept(&lab.hub)
+        .into_iter()
+        .filter(|k| k.blocked)
+        .map(|k| k.order)
+        .collect();
+    assert_eq!(blocked, [bob_order]);
+}
+
+/// A launch that refreshes a person's token (its old one too close to its end for a new task) ends the old one at
+/// GitHub: every other order of theirs gets the new one then, not at the next sweep.
+#[tokio::test]
+async fn a_persons_token_refreshed_at_a_launch_reaches_their_other_orders_at_once() {
+    use super::sessions::{deliver, kept};
+    let lab = lab().await;
+    created(&lab).await;
+    let sam = admin(&lab.hub);
+    call(&lab.hub, &sam, "github_app_test", json!({}))
+        .await
+        .unwrap();
+    connect(&lab, &sam).await.unwrap();
+    let person = sam.person.clone().unwrap().person_id;
+    let (r, first) = order_on_acme(&lab.hub, Some(&person));
+    let (_, second) = order_on_acme(&lab.hub, Some(&person));
+    let link = fake_link(&lab.hub, "devbox").await;
+    deliver(&lab.hub, &r, &first, None, true).await.unwrap();
+    deliver(&lab.hub, &r, &second, None, true).await.unwrap();
+    lab.clock.advance(Duration::from_secs(6 * 3600 + 60));
+    deliver(&lab.hub, &r, &first, None, true).await.unwrap();
+    assert_eq!(
+        [&first, &second].map(|o| held(&link, o)),
+        ["ghu_2", "ghu_2"]
+    );
+    let ends: Vec<_> = kept(&lab.hub).iter().map(|k| k.expires_ms).collect();
+    assert_eq!(ends[0], ends[1]);
+}
+
+/// GitHub can't be reached while an order runs: its token isn't renewed, and once it ends its agents hold a
+/// placeholder GitHub refuses, never nothing (which would put `gh` on the machine's own login), and the lead is told.
+/// Once GitHub answers again, the next sweep renews it.
+#[tokio::test]
+async fn a_token_that_ends_unrenewed_is_replaced_and_the_lead_told_never_the_machines_login() {
+    use super::sessions::{UNRENEWED_TOKEN, deliver, kept, renew};
+    let lab = lab().await;
+    created(&lab).await;
+    let sam = admin(&lab.hub);
+    call(&lab.hub, &sam, "github_app_test", json!({}))
+        .await
+        .unwrap();
+    connect(&lab, &sam).await.unwrap();
+    let person = sam.person.clone().unwrap().person_id;
+    let (r, sams) = order_on_acme(&lab.hub, Some(&person));
+    let (_, nobody) = order_on_acme(&lab.hub, None);
+    let link = fake_link(&lab.hub, "devbox").await;
+    let calls = fake_node(&lab.hub).await;
+    deliver(&lab.hub, &r, &sams, None, true).await.unwrap();
+    deliver(&lab.hub, &r, &nobody, None, true).await.unwrap();
+    let app_first = held(&link, &nobody);
+    lab.fake.lock().unwrap().down = true;
+    // Due but not ended: the agents keep the token they have.
+    lab.clock.advance(Duration::from_secs(31 * 60));
+    renew(&lab.hub).await;
+    assert_eq!(held(&link, &nobody), app_first);
+    assert!(kept(&lab.hub).iter().all(|k| !k.blocked));
+    assert!(!lab.hub.leads.wakes.pending(&r));
+    // Ended: the App's is replaced, and the lead hears why and what fixes it.
+    lab.clock.advance(Duration::from_secs(30 * 60));
+    renew(&lab.hub).await;
+    assert_eq!(held(&link, &nobody), UNRENEWED_TOKEN);
+    assert!(lab.hub.leads.wakes.pending(&r));
+    // Sam's, eight hours on, the same.
+    lab.clock.advance(Duration::from_secs(7 * 3600));
+    renew(&lab.hub).await;
+    assert_eq!(held(&link, &sams), UNRENEWED_TOKEN);
+    assert!(kept(&lab.hub).iter().all(|k| k.blocked));
+    // Never withdrawn: that would leave `gh` on the machine's login.
+    assert!(drops(&calls).is_empty(), "{:?}", drops(&calls));
+    // A later sweep, still down, hands out nothing more.
+    let handed = link.lock().unwrap().len();
+    renew(&lab.hub).await;
+    assert_eq!(link.lock().unwrap().len(), handed);
+    // GitHub is back: the next sweep renews both.
+    lab.fake.lock().unwrap().down = false;
+    lab.clock.advance(Duration::from_secs(2 * 60));
+    renew(&lab.hub).await;
+    assert_eq!(held(&link, &sams), "ghu_2");
+    assert!(held(&link, &nobody).starts_with("ghs_7_"));
+    assert!(kept(&lab.hub).iter().all(|k| !k.blocked));
 }

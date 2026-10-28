@@ -399,6 +399,10 @@ pub fn runtime_tools(rules: &[String]) -> Vec<String> {
     tools
 }
 
+/// A script claude reads once and runs ahead of every Bash command: what an order's session sources its order's
+/// variables through, so a value renewed mid-turn reaches its next command (node/order_env.rs).
+pub const ORDER_ENV_FILE_ENV: &str = "CLAUDE_ENV_FILE";
+
 /// Claude's auto memory is off in every claude fleetd starts, whatever the user's settings say: fleetd owns an
 /// agent's context (briefs, decisions, instructions), and a memory claude keeps per cwd would carry stale, unreviewed
 /// notes from one agent's worktree to the next. Both knobs, since either alone has been ignored by some claude
