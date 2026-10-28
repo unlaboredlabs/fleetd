@@ -31,15 +31,24 @@ export type Chunk =
   | { readonly take: Take; readonly end: true }
   | { readonly take: Take; readonly error: string };
 
+export interface Timing {
+  readonly frames: number;
+  readonly firstFrame: number | null;
+  readonly encoding: number | null;
+}
+
 export interface RecorderApi {
   /** Resolves with the container MediaRecorder chose; rejects when the window can't be captured. */
   start(options: RecorderStart): Promise<string>;
   clipStart(): void;
-  stop(take: Take): void;
+  /** Stops `take` once its encoder has delivered a frame (or after a wait for one): a stop before that is empty. */
+  stop(take: Take): Promise<void>;
   /** Everything encoded since the last call, in order. */
   drain(): Promise<ReadonlyArray<Chunk>>;
   /** The window's focus, which greys the traffic lights out as macOS does. */
   setActive(active: boolean): void;
+  /** Frames captured so far, and the seconds from start to the first frame and to the encoder's first bytes. */
+  timing(): Timing;
   /** The current frame as PNG, lights included; null before the first frame. */
   still(): Promise<Uint8Array | null>;
 }
