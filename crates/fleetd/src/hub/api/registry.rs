@@ -58,8 +58,9 @@ pub struct Registry {
 
 impl Registry {
     /// Registers `name` with a typed handler: the input decodes from the call's JSON (missing arguments are `{}`)
-    /// with the contract's defaults and checks, then the key must hold the tool's role from the contracts table,
-    /// then the handler runs and its output is encoded. Replaces an earlier registration of `name`.
+    /// with the contract's defaults and checks, then the key must hold the tool's role from the contracts table and
+    /// the input may name no other person's Navi (`navi::owner::guard`), then the handler runs and its output is
+    /// encoded. Replaces an earlier registration of `name`.
     ///
     /// Panics if `name` is not in the contracts tool table: that is a programming error caught at startup.
     pub fn add<I, O, F, Fut>(&mut self, name: &'static str, handler: F)
@@ -74,9 +75,11 @@ impl Registry {
         let erased: Handler = Arc::new(move |hub, caller, input| {
             let handler = handler.clone();
             Box::pin(async move {
-                let input: I =
-                    serde_json::from_value(input).map_err(|e| CallError::Invalid(e.to_string()))?;
+                let decoded =
+                    I::deserialize(&input).map_err(|e| CallError::Invalid(e.to_string()))?;
                 require(&caller, scope, None)?;
+                crate::hub::navi::owner::guard(&hub, &caller, name, &input)?;
+                let input = decoded;
                 let output = handler(hub, caller, input).await?;
                 serde_json::to_value(output)
                     .map_err(|e| CallError::Tool(ToolError::from(StoreError::from(e))))
@@ -92,7 +95,7 @@ impl Registry {
     }
 
     /// Registers `name` with a handler that takes the raw JSON input and decodes it itself; the role check from the
-    /// contracts table still runs first. chat_stop uses it to check the key before the input.
+    /// contracts table and the Navi owner's gate still run first. chat_stop uses it to check the key before the input.
     pub fn add_raw<F, Fut>(&mut self, name: &'static str, handler: F)
     where
         F: Fn(Arc<Hub>, Caller, Value) -> Fut + Send + Sync + 'static,
@@ -104,6 +107,7 @@ impl Registry {
             let handler = handler.clone();
             Box::pin(async move {
                 require(&caller, scope, None)?;
+                crate::hub::navi::owner::guard(&hub, &caller, name, &input)?;
                 Ok(handler(hub, caller, input).await?)
             })
         });

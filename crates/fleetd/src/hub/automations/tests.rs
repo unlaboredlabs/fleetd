@@ -448,6 +448,7 @@ fn full_hub(home: &std::path::Path) -> (Arc<crate::hub::api::Hub>, ProjectRef) {
                 repos: Vec::new(),
                 kind: None,
                 created_by: None,
+                owner: None,
                 archived_at: None,
             }],
         )

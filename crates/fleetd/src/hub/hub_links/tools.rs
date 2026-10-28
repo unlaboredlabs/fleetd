@@ -38,10 +38,17 @@ fn person_only(caller: &Caller) -> Result<(), ToolError> {
     .with_fix("Do it in the desktop app."))
 }
 
-/// Only the Navi's owner, whoever made it (its person, or its device on a hub without people), or an admin changes
-/// the Navi's links: a link acts as someone on another hub, and a Navi is its owner's.
+/// Only the Navi's owner changes its links: a link acts as someone on another hub, and a Navi is its owner's (D215),
+/// admins included. `hub_link_remove` names only the link, which the registry's gate can't trace to its Navi, so this
+/// checks the owner itself. A Navi with no owner (a hub without people): the device that made it, or an admin.
 fn may_manage(hub: &Hub, caller: &Caller, navi: &ProjectRef) -> Result<(), ToolError> {
     require(caller, Role::Operate, Some(&navi.machine_id))?;
+    if crate::hub::navi::of(&hub.db, navi)?.is_some_and(|n| n.owner.is_some()) {
+        return match crate::hub::navi::owner::may_use(&hub.db, caller, navi)? {
+            true => Ok(()),
+            false => Err(crate::hub::navi::owner::refused(navi)),
+        };
+    }
     if allows_everywhere(caller, Role::Admin) {
         return Ok(());
     }

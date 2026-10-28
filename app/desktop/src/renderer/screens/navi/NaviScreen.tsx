@@ -7,11 +7,12 @@ import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import { selectProjects } from "../../src/data/selectors";
 import { projectKey } from "../../src/data/store";
 import { Button, Field, FrameTitle, Input, Radio, RadioGroup, Text } from "../../ui";
+import { useHubRole } from "../admin/role";
 import { HubText } from "../projects/HubText";
 import { navigate } from "../shell/navigation";
 import { when } from "../status/view";
 import { archiveNavi } from "./actions";
-import { canHost, firstHome, isArchived, isNavi, NAME_MAX, nameProblem, naviHomes } from "./model";
+import { canHost, firstHome, isArchived, isNavi, isYours, NAME_MAX, nameProblem, naviHomes } from "./model";
 import type { MachineRolesEntry, ProjectSummary } from "../../../shared/contracts";
 import s from "./navi.module.css";
 
@@ -24,7 +25,8 @@ const open = (p: ProjectSummary) => navigate({ id: "project", project: { machine
 
 export function NaviScreen() {
   const projects = useData(selectProjects);
-  const navis = useMemo(() => projects?.filter((p) => isNavi(p)), [projects]);
+  const me = useHubRole().me?.personId;
+  const navis = useMemo(() => projects?.filter((p) => isNavi(p) && isYours(p, me)), [projects, me]);
   const active = navis?.filter((p) => !isArchived(p));
   const archived = navis?.filter(isArchived);
   const state = navis === undefined ? "navi.loading" : active?.length === 0 ? "navi.empty" : "navi";

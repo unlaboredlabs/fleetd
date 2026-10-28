@@ -63,8 +63,10 @@ fn with_repos(
     project.repos = crate::hub::repos::store::of(conn, &r)?;
     let navi = crate::hub::navi::store::of(conn, &r)?;
     project.kind = navi.as_ref().map(|_| ProjectKind::Assistant);
-    (project.created_by, project.archived_at) =
-        navi.map_or((None, None), |n| (Some(n.created_by), n.archived_at));
+    (project.created_by, project.archived_at, project.owner) = navi
+        .map_or((None, None, None), |n| {
+            (Some(n.created_by), n.archived_at, n.owner)
+        });
     Ok(project)
 }
 
@@ -167,6 +169,7 @@ impl HubStore {
                     kind: None,
                     created_by: None,
                     archived_at: None,
+                    owner: None,
                     ..project.clone()
                 };
                 stmt.execute(params![

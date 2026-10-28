@@ -5,6 +5,10 @@
       "pattern": "^[a-z0-9-]{1,32}$",
       "type": "string"
     },
+    "PersonId": {
+      "pattern": "^p_[a-z2-7]{8}$",
+      "type": "string"
+    },
     "ProjectCreator": {
       "description": "The key a project was created with: its id, and the person's or device's name the key carries.",
       "properties": {
@@ -94,7 +98,7 @@
         },
         "createdBy": {
           "$ref": "#/$defs/ProjectCreator",
-          "description": "A Navi's: the key that created it, from the hub. Recorded for per-person Navis later; nothing filters on it\nyet. Absent for other projects, and for a Navi made before it was recorded."
+          "description": "A Navi's: the key that created it, from the hub. Absent for other projects, and for a Navi made before it was\nrecorded."
         },
         "kind": {
           "$ref": "#/$defs/ProjectKind",
@@ -105,6 +109,10 @@
         },
         "machineId": {
           "$ref": "#/$defs/MachineId"
+        },
+        "owner": {
+          "$ref": "#/$defs/PersonId",
+          "description": "A Navi's: the person it belongs to (D215), from the hub, which shows it and lets it be used by them alone.\nAbsent for other projects, on a hub without people, and from an older hub."
         },
         "projectId": {
           "$ref": "#/$defs/ProjectId"

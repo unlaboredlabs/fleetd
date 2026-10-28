@@ -53,9 +53,12 @@ impl Status {
                 r
             }
         };
+        let navis = crate::hub::navi::owner::others(&hub.db, caller)?;
         Ok(all
             .into_iter()
-            .filter(|r| readable(caller, &r.project_ref.machine_id))
+            .filter(|r| {
+                readable(caller, &r.project_ref.machine_id) && !navis.contains(&r.project_ref)
+            })
             .collect())
     }
 

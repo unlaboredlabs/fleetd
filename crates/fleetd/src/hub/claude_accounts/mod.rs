@@ -437,26 +437,14 @@ fn connect_text(account: &ClaudeAccount) -> &'static str {
     }
 }
 
-/// The person behind a Navi: whoever's key made it, else the hub's owner (a Navi from before people was theirs).
+/// The person behind a Navi: its owner (D215, the person whose key made it), else the hub's owner (a Navi from a hub
+/// without people yet).
 fn navi_owner(
     db: &HubDb,
     r: &ProjectRef,
     owner: Option<&PersonId>,
 ) -> Result<Option<PersonId>, StoreError> {
-    let person: Option<Option<String>> = db.with(|c| {
-        Ok(c.query_row(
-            "SELECT k.person_id FROM assistants a LEFT JOIN agent_keys k ON k.key_id = a.created_by_key
-             WHERE a.machine_id = ? AND a.project_id = ?",
-            params![r.machine_id.as_str(), r.project_id.as_str()],
-            |row| row.get(0),
-        )
-        .optional()?)
-    })?;
-    Ok(match person {
-        None => None,
-        Some(Some(id)) => PersonId::new(id).ok().or_else(|| owner.cloned()),
-        Some(None) => owner.cloned(),
-    })
+    Ok(crate::hub::navi::of(db, r)?.and_then(|navi| navi.owner.or_else(|| owner.cloned())))
 }
 
 /// Whose work a task of `order` in project `r` is: a Navi's owner's in a Navi, else the person who started the

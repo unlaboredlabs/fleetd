@@ -350,7 +350,9 @@ pub fn focus_lanes(hub: &Hub, caller: &Caller, id: &WorkstreamId) -> Vec<LaneNow
         return Vec::new();
     };
     let project = w.project_ref;
-    if !allows(caller, Role::Read, Some(&project.machine_id)) {
+    if !allows(caller, Role::Read, Some(&project.machine_id))
+        || !crate::hub::navi::owner::may_use(&hub.db, caller, &project).unwrap_or(false)
+    {
         return Vec::new();
     }
     let cutoff = iso_ms(now_ms(hub.clock.as_ref()) - ENDED_GRACE_MS);
@@ -411,6 +413,9 @@ pub fn agent_lanes(hub: &Hub, caller: &Caller, lane_id: &str) -> Vec<LaneNow> {
             machine_id,
             project_id,
         };
+        if !crate::hub::navi::owner::may_use(&hub.db, caller, &project).unwrap_or(false) {
+            return Vec::new();
+        }
         return lead_lanes(hub, &HashSet::from([project]), true);
     }
     let Ok(task_id) = fleetd_contracts::tasks::TaskId::new(lane_id) else {

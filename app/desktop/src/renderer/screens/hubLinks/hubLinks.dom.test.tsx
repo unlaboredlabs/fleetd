@@ -2,7 +2,7 @@
 // Hub links in the app: a Navi's Linked hubs (none yet; working, can't reach and revoked there; a key pasted with its
 // address, sealed in main and never in a hub call; removed), a person's Links to this hub (none yet; a key made for
 // chosen projects, shown once and copied with the address; only their own even for an admin; revoked), Hub › People's
-// list of everyone's, and a hub too old to link hubs.
+// list of everyone's, a hub too old to link hubs, and You › Hubs listing the linked hubs of the person's own Navis only.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -12,6 +12,7 @@ import type { HubLinkRequest } from "../../../shared/ipc";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { UiProvider } from "../../ui";
+import { HubLinksSettings } from "../settings/Hubs";
 import { AllLinks } from "./AllLinks";
 import { LinkedHubs } from "./LinkedHubs";
 import { LinksToThisHub } from "./LinksToThisHub";
@@ -62,6 +63,8 @@ let old: boolean;
 let reachable: string | undefined;
 /** Holds hub_info's answer until released. */
 let info: Promise<void>;
+/** Navis in the snapshot besides Ada, which has no owner. */
+let navis: Array<{ ref: typeof NAVI; title: string; owner: string }>;
 
 beforeEach(() => {
   host = document.createElement("div");
@@ -73,6 +76,7 @@ beforeEach(() => {
   old = false;
   reachable = "https://hub.devbox.example";
   info = Promise.resolve();
+  navis = [];
   answer = { links: [], issued: [], boxPubKey: BOX };
   vi.stubGlobal("fleetd", {
     platform: "linux",
@@ -138,7 +142,12 @@ const render = async (page: React.ReactNode) => {
     const project = (ref: typeof SHOP, title: string, kind?: string) => ({ ...ref, title, workspaceRoot: `/home/dev/${ref.projectId}`, lastActivityAt: AT, threads: { failed: 0, idle: 0, running: 0, waiting: 0 }, ...(kind ? { kind } : {}) });
     listener({
       t: "snapshot",
-      snapshot: { cursor: 1, attention: [], machines: [], projects: [project(SHOP, "Shop"), project(BILLING, "Billing"), project(NAVI, "Ada", "assistant")] },
+      snapshot: {
+        cursor: 1,
+        attention: [],
+        machines: [],
+        projects: [project(SHOP, "Shop"), project(BILLING, "Billing"), project(NAVI, "Ada", "assistant"), ...navis.map((n) => ({ ...project(n.ref, n.title, "assistant"), owner: n.owner }))],
+      },
     });
     await new Promise((r) => setTimeout(r, 0));
   });
@@ -346,5 +355,21 @@ describe("Hub › People's hub links", () => {
     await render(<AllLinks />);
     expect(text()).toContain("No links to this hub yet.");
     expect(button("Make one in You › Hubs")).toBeTruthy();
+  });
+});
+
+describe("You › Hubs › Hub links", () => {
+  it("lists the linked hubs of the person's own Navis, never a teammate's", async () => {
+    navis = [
+      { ref: { machineId: "devbox", projectId: "bee" }, title: "Bee", owner: SAM.personId },
+      { ref: { machineId: "devbox", projectId: "cal" }, title: "Cal", owner: ALEX.personId },
+    ];
+    await render(<HubLinksSettings />);
+    // Ada, made before people, and Cal are Alex's; Bee is Sam's.
+    expect(text()).toContain("Hubs Ada reaches");
+    expect(text()).toContain("Hubs Cal reaches");
+    expect(text()).not.toContain("Bee");
+    const asked = calls.filter((c) => c.tool === "hub_links_get").map((c) => (c.input as { navi?: { projectId: string } }).navi?.projectId);
+    expect(asked).not.toContain("bee");
   });
 });

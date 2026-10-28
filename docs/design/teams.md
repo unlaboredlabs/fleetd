@@ -10,7 +10,9 @@ The product questions (§10) are answered, and these decisions override anything
 
 1. **Projects are open to everyone on the hub by default**, with a switch to make one private. **Navis are always
    private** to their one person.
-2. **Hub admins can read people's Navis.** Navis are private between members, not from the hub's admins.
+2. **Each Navi is its owner's alone (D215, which replaces "admins can read people's Navis").** Only its owner sees it
+   and manages its accounts, hub links, allowed sites, settings, chat and approvals; the hub refuses everyone else,
+   admins included. An admin may only delete the Navi of a person removed from the hub.
 3. **Accounts:**
    - **Claude: each person chooses** (D200), in their own settings, and can switch at any time:
      - **their own Claude subscription**, connected from the app with a long-lived token (what `claude setup-token`
@@ -187,7 +189,7 @@ capping a member's devices to read.
 | Live view, takeover, recordings of a project | | | ✓ | ✓ | Project members only, never "read on the machine" |
 | See an **open** project, read its chat | ✓ | ✓ | ✓ | ✓ any member of the hub | Like Slack's public channels; joining is one click |
 | See a **private** project | | | ✓ | ✓ | Its members only |
-| See someone's Navi | ✓ | ✓ | | | Its one person, and the hub's owners and admins (Decided, 2). No other member |
+| See someone's Navi | | | | | Its one person only (Decided, 2). An admin may delete a removed person's Navi |
 
 How it is enforced: `Caller` gains the person (loaded at `Auth::verify`, `hub/auth/mod.rs:246`), and a
 `require_project(caller, action, project)` replaces `require(caller, role, machine)` wherever a project is named.
@@ -269,13 +271,14 @@ the 186 call sites is the largest single piece of work (§8, step 3).
 ## 5. Per-person privacy
 
 ### 5.1 Navis
-- **A Navi is a private project with exactly one member.** Every per-project system (chat, memory, checklist,
-  screens, MCP servers, env, automations) is keyed by `ProjectRef` (multi-repo.md "The model"), so project membership
-  makes all of it private at once. No Navi-specific privacy code is needed beyond step 3.
+- **A Navi is a private project with exactly one member, its owner (D215, built).** Every per-project system (chat,
+  memory, checklist, screens, MCP servers, env, automations) is keyed by `ProjectRef` (multi-repo.md "The model"), so
+  one gate makes all of it private at once: the hub refuses any tool call that names another person's Navi
+  (`hub/navi/owner.rs`), and its lists leave those Navis out. The Navi plan's §7 has the details.
 - Each person gets **"Create my Navi"**. Its directory is under the hub home's `people/<handle>/navi` or on a
   machine the person chooses, ideally their own laptop's node.
 - **The factory bridge acts as its person** (Navi plan §3.8):
-  - `factory_status` shows only the projects that person is a member of.
+  - `factory_status` shows only the projects that person is a member of, and never another person's Navi (built).
   - `project_message` writes into another project as an agent, labelled "Navi (Alice)", which is input and never
     an approval (`chat.rs:55-57`). It is allowed only in projects where Alice is a member.
   - A Navi never answers an approval, a secret or a takeover anywhere.
@@ -426,7 +429,7 @@ events table today.
   records the person who started it (`startedBy`), for step 8.
 - **No project scoping yet:** everyone in the hub sees every project. That is fine for a small trusted team, the
   model `security.md:6` already describes.
-- Navi stays owner-only until step 3.
+- Navis are the exception: each is its owner's alone (D215, §5.1).
 
 What step 1 adds, in the wire types (`crates/fleetd-contracts/src/people.rs`):
 - `Person` (`personId`, `name`, `role`, `createdAt`, `removedAt`), `HubRole` (owner, admin, member), `PersonRef`

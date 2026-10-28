@@ -61,7 +61,8 @@ revokes all their devices at once.
 
 Chat messages, approvals, secrets, decisions and checklist changes record the person, next to the device as
 before. All projects are open to everyone on the hub, so give a hub only to people you trust with every project on
-it. The hub's operator, and any agent on the hub machine, can read the hub's database: fleetd records who did what,
+it. Navis are the exception: the hub shows and serves each only to its owner, admins included (only deleting a
+removed person's Navi is an admin's). The hub's operator, and any agent on the hub machine, can read the hub's database: fleetd records who did what,
 but it keeps nothing private from them.
 
 ## Claude accounts {#claude}
@@ -185,7 +186,7 @@ into a team hub. You make it on the hub it reaches and add it to the Navi on the
 | Its messages are never your answer | They go into the project's chat as "*you* via *label* Navi", an agent's input, like any Navi message. Approvals, secrets and merges still need you there. |
 | The other hub sees only the requests | Not the Navi, its chat or its title. |
 | The key stays sealed | The app seals it to the Navi's hub, which opens it only to call the other hub. Nothing shows it again. |
-| A person names the host it calls | `hub_link_add` makes the Navi's hub contact the URL that a person with operate gives it. Only the Navi's owner or an admin adds or removes a Navi's links. |
+| A person names the host it calls | `hub_link_add` makes the Navi's hub contact the URL that a person with operate gives it. Only the Navi's owner adds or removes its links. |
 | Only the Navi's hub calls out | It must reach the other hub over HTTPS or a tailnet; plain HTTP elsewhere is refused. When it can't reach it, the Navi and the link say "Can't reach *label*" with the reason. |
 | Revoke from either side | Removing it on the Navi's hub deletes the key at once and revokes it on the other hub when that answers. Revoking it on the other hub refuses its next call. A link unused for 90 days expires. |
 

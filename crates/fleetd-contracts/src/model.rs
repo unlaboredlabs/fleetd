@@ -121,10 +121,14 @@ pub struct ProjectSummary {
     /// from an older hub.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kind: Option<ProjectKind>,
-    /// A Navi's: the key that created it, from the hub. Recorded for per-person Navis later; nothing filters on it
-    /// yet. Absent for other projects, and for a Navi made before it was recorded.
+    /// A Navi's: the key that created it, from the hub. Absent for other projects, and for a Navi made before it was
+    /// recorded.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub created_by: Option<ProjectCreator>,
+    /// A Navi's: the person it belongs to (D215), from the hub, which shows it and lets it be used by them alone.
+    /// Absent for other projects, on a hub without people, and from an older hub.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner: Option<crate::people::PersonId>,
     /// A Navi's: when it was archived. An archived Navi keeps its chat, memory and folder, and its lead doesn't
     /// start until it is brought back (`navi_archive` with `archived: false`).
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -22,7 +22,8 @@ A device never holds more than its person's role allows. A member's device opera
 paired with `admin`. Each device keeps its own cap too: a device paired `--role read` stays read-only. Admin options
 live on the Hub pages of the app's Settings, which only owners and admins see.
 
-Every project is open to everyone on the hub for now. Private projects and per-project roles come later.
+Every project is open to everyone on the hub for now. Private projects and per-project roles come later. A
+[Navi](/docs/navi#yours) is the exception: only the person who made it sees and uses it, admins included.
 
 ## Invite someone {#invite}
 

@@ -513,6 +513,7 @@ async fn whose_work_an_order_a_lead_and_a_navi_are() {
                     key_id: key.key_id.to_string(),
                     name: "desk".into(),
                 },
+                Some(&bob),
                 0,
             )?;
             Ok(())

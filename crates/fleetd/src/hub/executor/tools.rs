@@ -136,9 +136,14 @@ fn attention(hub: &Hub, caller: &Caller, head: i64) -> Result<Vec<Value>, ToolEr
         .collect();
     let mut cursor = (head - ATTENTION_LOOKBACK).max(0);
     let mut latest: Vec<Value> = vec![];
+    let navis = crate::hub::navi::owner::others(&hub.db, caller)?;
     loop {
         let page = hub.events.page(cursor, Some(&types), None)?;
-        for e in page.events.iter().filter(|e| can_read(caller, e)) {
+        for e in page
+            .events
+            .iter()
+            .filter(|e| can_read(caller, e) && !crate::hub::navi::owner::about(&navis, e))
+        {
             latest.push(serde_json::to_value(e).unwrap_or_default());
         }
         if latest.len() > limits::ATTENTION {
@@ -163,11 +168,12 @@ async fn fleetd_status(
         .into_iter()
         .filter(|m| readable(&caller, &m.machine_id))
         .collect();
+    let navis = crate::hub::navi::owner::others(&hub.db, &caller)?;
     let mut projects: Vec<_> = hub
         .store
         .projects_shown(None, None)?
         .into_iter()
-        .filter(|p| readable(&caller, &p.machine_id))
+        .filter(|p| readable(&caller, &p.machine_id) && !crate::hub::navi::owner::among(&navis, p))
         .collect();
     projects.sort_by(|a, b| b.last_activity_at.cmp(&a.last_activity_at));
     let shown = cap(projects, limits::PROJECTS);
@@ -198,11 +204,12 @@ fn projects_list(
     if let Some(machine_id) = machine_id {
         require(caller, Role::Read, Some(machine_id))?;
     }
+    let navis = crate::hub::navi::owner::others(&hub.db, caller)?;
     let projects: Vec<_> = hub
         .store
         .projects_shown(machine_id, query)?
         .into_iter()
-        .filter(|p| readable(caller, &p.machine_id))
+        .filter(|p| readable(caller, &p.machine_id) && !crate::hub::navi::owner::among(&navis, p))
         .collect();
     let shown = cap(projects, limits::PROJECTS);
     let mut out = json!({ "projects": shown.items });

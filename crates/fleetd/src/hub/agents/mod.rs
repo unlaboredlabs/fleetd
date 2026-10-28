@@ -34,6 +34,15 @@ pub fn readable_projects(
     caller: &Caller,
     only: Option<&ProjectRef>,
 ) -> HashMap<ProjectRef, String> {
+    // Another person's Navi isn't the key's to read (D215).
+    let navis = match crate::hub::navi::owner::others(&hub.db, caller) {
+        Ok(navis) => navis,
+        Err(error) => {
+            tracing::warn!(%error, "agents: Navi owners not read");
+            return HashMap::new();
+        }
+    };
+    let among = crate::hub::navi::owner::among;
     hub.store
         .projects_list(only.map(|r| &r.machine_id), None)
         .unwrap_or_else(|error| {
@@ -41,7 +50,7 @@ pub fn readable_projects(
             Vec::new()
         })
         .into_iter()
-        .filter(|p| allows(caller, Role::Read, Some(&p.machine_id)))
+        .filter(|p| allows(caller, Role::Read, Some(&p.machine_id)) && !among(&navis, p))
         .map(|p| {
             (
                 ProjectRef {

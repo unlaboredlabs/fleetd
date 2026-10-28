@@ -1,6 +1,8 @@
-//! The `assistants` table: one row per Navi, the project it is, the key that made it and when it was archived.
+//! The `assistants` table: one row per Navi, the project it is, the key that made it, its owner and when it was
+//! archived.
 use fleetd_contracts::ids::{ProjectRef, Timestamp};
 use fleetd_contracts::model::ProjectCreator;
+use fleetd_contracts::people::PersonId;
 use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::hub::store::iso_ms;
@@ -10,11 +12,13 @@ pub struct Navi {
     pub created_by: ProjectCreator,
     pub created_ms: i64,
     pub archived_at: Option<Timestamp>,
+    /// The person it belongs to (D215); none on a hub without people.
+    pub owner: Option<PersonId>,
 }
 
 pub fn of(db: &Connection, r: &ProjectRef) -> rusqlite::Result<Option<Navi>> {
     db.prepare_cached(
-        "SELECT created_by_key, created_by_name, created_ms, archived_ms FROM assistants
+        "SELECT created_by_key, created_by_name, created_ms, archived_ms, owner_person FROM assistants
          WHERE machine_id = ? AND project_id = ?",
     )?
     .query_row(
@@ -27,6 +31,7 @@ pub fn of(db: &Connection, r: &ProjectRef) -> rusqlite::Result<Option<Navi>> {
                 },
                 created_ms: row.get(2)?,
                 archived_at: row.get::<_, Option<i64>>(3)?.map(|ms| iso_ms(ms).into()),
+                owner: row.get::<_, Option<String>>(4)?.map(PersonId::unchecked),
             })
         },
     )
@@ -37,13 +42,21 @@ pub fn put(
     db: &Connection,
     r: &ProjectRef,
     by: &ProjectCreator,
+    owner: Option<&PersonId>,
     at_ms: i64,
 ) -> rusqlite::Result<()> {
     db.prepare_cached(
-        "INSERT INTO assistants (machine_id, project_id, created_ms, created_by_key, created_by_name)
-         VALUES (?, ?, ?, ?, ?) ON CONFLICT (machine_id, project_id) DO NOTHING",
+        "INSERT INTO assistants (machine_id, project_id, created_ms, created_by_key, created_by_name, owner_person)
+         VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (machine_id, project_id) DO NOTHING",
     )?
-    .execute(params![r.machine_id.as_str(), r.project_id.as_str(), at_ms, by.key_id, by.name])?;
+    .execute(params![
+        r.machine_id.as_str(),
+        r.project_id.as_str(),
+        at_ms,
+        by.key_id,
+        by.name,
+        owner.map(PersonId::as_str)
+    ])?;
     Ok(())
 }
 
@@ -74,6 +87,28 @@ pub fn all(db: &Connection) -> rusqlite::Result<Vec<ProjectRef>> {
         })
     })?;
     rows.collect()
+}
+
+/// The Navis with an owner other than `person` (every owned one for `None`): those a caller may not see or use.
+pub fn others(db: &Connection, person: Option<&PersonId>) -> rusqlite::Result<Vec<ProjectRef>> {
+    let mut stmt = db.prepare_cached(
+        "SELECT machine_id, project_id FROM assistants
+         WHERE owner_person IS NOT NULL AND (?1 IS NULL OR owner_person != ?1)",
+    )?;
+    let rows = stmt.query_map([person.map(PersonId::as_str)], |row| {
+        Ok(ProjectRef {
+            machine_id: fleetd_contracts::ids::MachineId::unchecked(row.get::<_, String>(0)?),
+            project_id: fleetd_contracts::ids::ProjectId::unchecked(row.get::<_, String>(1)?),
+        })
+    })?;
+    rows.collect()
+}
+
+/// Gives every Navi with no owner to `person`: a hub's first owner takes the Navis from before people.
+pub fn adopt(db: &Connection, person: &PersonId) -> rusqlite::Result<()> {
+    db.prepare_cached("UPDATE assistants SET owner_person = ? WHERE owner_person IS NULL")?
+        .execute([person.as_str()])?;
+    Ok(())
 }
 
 /// Whether the Navi may fetch and open `site` without asking.

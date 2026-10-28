@@ -245,6 +245,15 @@ impl Session {
                     self.send(error_frame(&refused, None));
                     return After::Continue;
                 }
+                // Another person's Navi's chat is theirs alone (D215).
+                if !crate::hub::navi::owner::may_use(&self.hub.db, &info, &project).unwrap_or(false)
+                {
+                    self.send(error_frame(
+                        &crate::hub::navi::owner::refused(&project),
+                        None,
+                    ));
+                    return After::Continue;
+                }
                 let mut deltas = self.hub.chat.subscribe();
                 let out = self.out.clone();
                 self.chat = Some(tokio::spawn(async move {

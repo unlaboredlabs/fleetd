@@ -5453,8 +5453,8 @@ export type ProjectSummary = {
    */
   archivedAt?: Timestamp;
   /**
-   * A Navi's: the key that created it, from the hub. Recorded for per-person Navis later; nothing filters on it
-   * yet. Absent for other projects, and for a Navi made before it was recorded.
+   * A Navi's: the key that created it, from the hub. Absent for other projects, and for a Navi made before it was
+   * recorded.
    */
   createdBy?: ProjectCreator;
   /**
@@ -5464,6 +5464,11 @@ export type ProjectSummary = {
   kind?: ProjectKind;
   lastActivityAt: Timestamp;
   machineId: MachineId;
+  /**
+   * A Navi's: the person it belongs to (D215), from the hub, which shows it and lets it be used by them alone.
+   * Absent for other projects, on a hub without people, and from an older hub.
+   */
+  owner?: PersonId;
   projectId: ProjectId;
   /** The git repos it holds, from the hub; none for a plain directory, from a node, and from an older hub. */
   repos?: ProjectRepo[];

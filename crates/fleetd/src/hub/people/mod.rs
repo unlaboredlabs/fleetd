@@ -88,7 +88,7 @@ pub fn get_on(c: &Connection, id: &str) -> Result<Option<Person>, StoreError> {
 }
 
 /// The first owner still on the hub.
-fn owner_on(c: &Connection) -> Result<Option<Person>, StoreError> {
+pub fn owner_on(c: &Connection) -> Result<Option<Person>, StoreError> {
     Ok(c.prepare_cached(&format!(
         "SELECT {COLUMNS} FROM people WHERE role = 'owner' AND removed_ms IS NULL ORDER BY created_ms, rowid LIMIT 1"
     ))?
@@ -118,8 +118,8 @@ impl People {
         now_ms(self.clock.as_ref())
     }
 
-    /// The hub's owner, made from the machine's user when the hub has none; every human key with no person binds to
-    /// it. Idempotent: the hub runs it at each start, and a human key made without a person runs it too.
+    /// The hub's owner, made from the machine's user when the hub has none; every human key and Navi with no person
+    /// binds to it. Idempotent: the hub runs it at each start, and a human key made without a person runs it too.
     pub fn ensure_owner(&self) -> Result<Person, StoreError> {
         let now = self.now();
         let name = machine_user();
@@ -276,6 +276,8 @@ pub fn ensure_owner_on(c: &Connection, name: &str, now: i64) -> Result<Person, S
         "UPDATE agent_keys SET person_id = ? WHERE kind = 'human' AND person_id IS NULL",
     )?
     .execute([owner.person_id.as_str()])?;
+    // A Navi from before people is the owner's too (D215).
+    crate::hub::navi::store::adopt(c, &owner.person_id)?;
     Ok(owner)
 }
 

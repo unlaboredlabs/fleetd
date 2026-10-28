@@ -10,7 +10,8 @@ import { Button, Dialog, Dot, Field, Input, Truncate } from "../../ui";
 import { HubScope, useData, useHub, useHubs } from "../../src/data/react";
 import { LinkedHubs } from "../hubLinks/LinkedHubs";
 import { LinksToThisHub } from "../hubLinks/LinksToThisHub";
-import { isArchived, isNavi } from "../navi/model";
+import { useHubRole } from "../admin/role";
+import { yourNavis } from "../navi/model";
 import { useKeyStore } from "../onboarding";
 import { sentence } from "../onboarding/form";
 import { Prose } from "../onboarding/Prose";
@@ -54,12 +55,13 @@ export function HubsSettings() {
 
 /**
  * Hub links, both halves in one place: the link keys made as you on each paired hub, which let your Navi elsewhere act
- * here, then the other hubs your Navi on this hub reaches through keys made there.
+ * here, then the other hubs each of your Navis on this hub reaches through keys made there.
  */
 export function HubLinksSettings() {
   const hubs = useHubs();
   const projects = useProjects();
-  const navis = (projects ?? []).filter((p) => isNavi(p) && !isArchived(p));
+  const me = useHubRole().me?.personId;
+  const navis = yourNavis(projects ?? [], me);
   return (
     <PagePart title="Hub links" reveal="hubs.hub-links" intro="Keys that let a Navi on one hub open and follow work on another, as the person who made them.">
       {hubs.map((hub) => (

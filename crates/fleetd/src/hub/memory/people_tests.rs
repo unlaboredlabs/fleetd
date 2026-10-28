@@ -148,6 +148,7 @@ fn navi(hub: &Hub, key: &Caller, id: &str) -> ProjectRef {
                     key_id: key.key_id.to_string(),
                     name: "desk".into(),
                 },
+                key.person.as_ref().map(|p| &p.person_id),
                 0,
             )?;
             Ok(())

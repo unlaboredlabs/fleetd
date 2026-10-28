@@ -12,6 +12,7 @@
 //! the link here. Its asks go into chats as "<person> via <label> Navi", reach only the link's projects, and what
 //! happens to them goes out on the link's feed instead of a wake. A Navi here names a linked hub with `hub`, and the
 //! calls go there (`hub_links::client`).
+use std::collections::HashSet;
 use std::sync::{Arc, Weak};
 
 use fleetd_contracts::checklist::TodoState;
@@ -159,6 +160,19 @@ impl Asker {
         }
     }
 
+    /// The Navis that aren't the asker's person's (D215): it neither sees nor reaches them.
+    fn others(&self, db: &HubDb) -> Result<HashSet<ProjectRef>, StoreError> {
+        match self {
+            Asker::Navi(from) => {
+                let owner = super::of(db, from)?.and_then(|n| n.owner);
+                super::owner::others_of(db, owner.as_ref(), false)
+            }
+            Asker::Link(link) => {
+                super::owner::others_of(db, link.person.as_ref().map(|p| &p.person_id), true)
+            }
+        }
+    }
+
     /// The asker reaches the project: not a Navi's own, and one of a link's projects.
     fn reaches(&self, p: &ProjectRef) -> bool {
         match self {
@@ -168,16 +182,16 @@ impl Asker {
     }
 }
 
-/// The project `name` names, by project id or title, other than the caller's own. One person owns every project on a
-/// hub today, so any other project is the caller's to message; company Navi brings owners. A link reaches only its
-/// projects, among those its device reads.
+/// The project `name` names, by project id or title, other than the caller's own. Every project on the hub but
+/// another person's Navi is the caller's to message. A link reaches only its projects, among those its device reads.
 fn target(hub: &Hub, asker: &Asker, name: &str) -> Result<ProjectSummary, McpToolError> {
+    let navis = asker.others(&hub.db).map_err(failed)?;
     let all: Vec<ProjectSummary> = hub
         .store
         .projects_shown(None, None)
         .map_err(failed)?
         .into_iter()
-        .filter(|p| asker.sees(&project_ref(p)))
+        .filter(|p| asker.sees(&project_ref(p)) && !navis.contains(&project_ref(p)))
         .collect();
     let by_id: Vec<_> = all
         .iter()
@@ -337,10 +351,11 @@ pub fn factory_status(
         McpToolError::new(ErrorCode::Failed, "The hub failed to answer that request.")
     })?;
     let asks = asks_of(&hub.db, asker).map_err(failed)?;
+    let navis = asker.others(&hub.db).map_err(failed)?;
     let mut projects = Vec::new();
     for row in rows {
         let r = &row.project_ref;
-        if !asker.reaches(r) || only.as_ref().is_some_and(|o| o != r) {
+        if !asker.reaches(r) || navis.contains(r) || only.as_ref().is_some_and(|o| o != r) {
             continue;
         }
         let orders = hub
