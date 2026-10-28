@@ -355,11 +355,12 @@ pub fn uncommitted(path: &Path) -> Result<bool, GitError> {
 /// own directory under the node home), uncommitted changes and build output included, and git's record of one whose
 /// directory is already gone; then `dir` itself. Nothing else git records is touched (no `git worktree prune`, which
 /// would also drop the records of the person's own worktrees that are missing for now). Branches stay, so every
-/// commit stays reachable, and nothing in the checkout's working tree changes. With the checkout itself gone, only
-/// `dir` goes. Returns how many worktrees it removed.
+/// commit stays reachable, and nothing in the checkout's working tree changes. With the checkout itself gone, or a
+/// root that isn't a git repository (a Navi's folder, any plain folder), only `dir` goes. Returns how many worktrees
+/// it removed.
 pub fn remove_all(root: &Path, dir: &Path) -> Result<usize, GitError> {
     let mut removed = 0;
-    if root.is_dir() {
+    if root.is_dir() && git(root, &["rev-parse", "--git-dir"]).is_ok() {
         let real = dir.canonicalize().ok();
         let list = git(root, &["worktree", "list", "--porcelain"])?;
         let ours: Vec<&str> = list

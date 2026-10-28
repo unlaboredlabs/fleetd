@@ -261,7 +261,9 @@ describe("Settings → Projects", () => {
   });
 
   it("deletes only once the name is typed, names the worktree with uncommitted changes, and removes the worktrees", async () => {
+    repos = [web];
     await render();
+    expect(document.body.textContent).toContain("Its checkout, its branches and its pull requests stay as they are.");
     await click(button("Delete project…"));
     expect(dialog().textContent).toContain("fleetd/T1-cart");
     expect(dialog().textContent).not.toContain("fleetd/T2-tax");
@@ -274,6 +276,25 @@ describe("Settings → Projects", () => {
     expect(button("Delete project").disabled).toBe(true);
     await type(field, "storefront");
     expect(button("Delete project").disabled).toBe(false);
+    await click(button("Delete project"));
+    await settle();
+    expect(calls.find((c) => c.tool === "project_remove")?.input).toEqual({ machineId: "devbox", projectId: "p1", removeWorktrees: true });
+  });
+
+  it("says a plain folder's delete, a Navi's among them, keeps its folder, with no checkout, branches or pull requests", async () => {
+    // No repo of its own: a folder, not a git repo.
+    const folder = "/home/w/.fleetd/node/navi/adri";
+    answers = [{ ...settings, title: "Adri", workspaceRoot: folder, worktrees: { dir: "/home/w/.fleetd/node/worktrees/p1", worktrees: [] } }];
+    await render();
+    expect(document.body.textContent).toContain("Its folder stays as it is.");
+    await click(button("Delete project…"));
+    const text = dialog().textContent;
+    expect(text).toContain("Delete Adri?");
+    expect(text).toContain(`Its agents stop now and fleetd forgets it and its settings. Its folder at ${folder} stays as it is`);
+    expect(text).not.toMatch(/checkout|branch|pull request|worktree/i);
+    const field = dialog().querySelector("input");
+    if (field === null) throw new Error("no confirm field");
+    await type(field, "Adri");
     await click(button("Delete project"));
     await settle();
     expect(calls.find((c) => c.tool === "project_remove")?.input).toEqual({ machineId: "devbox", projectId: "p1", removeWorktrees: true });
