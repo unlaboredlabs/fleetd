@@ -1,7 +1,8 @@
 // The fleetd.sh page may only promise what fleetd has. Run by CI's `site` job from the repo root:
 //   node .github/site-check.mjs <file holding `fleetd help` output>
 // Fails on an index.* at the root of site/, on a vercel.json rewrite or redirect that lands on no file (or `/` not
-// serving home.html to a browser and install.sh to curl), on a line of site/.stale-terms in the page's text or the docs' sources
+// serving home.html to a browser and install.sh to curl; the phone app's update manifests, which the Vercel build
+// fetches, are left out), on a line of site/.stale-terms in the page's text or the docs' sources
 // (docs/site/src/content/docs/**/*.md and .mdx), and on a `fleetd <command>` written as code that `fleetd help` doesn't list.
 // Capture blocks (home.html's markers, the docs' ```console capture=NAME) are fleetd's own output
 // (tests/lab/site-capture.ts), so the command check skips them; the stale terms still apply there, since a block nobody
@@ -46,6 +47,9 @@ function served(urlPath) {
 for (const [kind, rules] of [["rewrites", vercel.rewrites ?? []], ["redirects", vercel.redirects ?? []]]) {
   for (const { source, destination } of rules) {
     if (!destination.startsWith("/")) continue;
+    // The phone app's update manifests: the Vercel build unpacks them from the releases (site/mobile-updates.sh), and
+    // app/mobile/scripts/updates.test.ts checks the route against the files the release writes.
+    if (destination.startsWith("/updates/")) continue;
     const { error } = served(destination);
     if (error) errors.push(`site/vercel.json: ${kind} ${source} -> ${destination}: ${error}`);
   }

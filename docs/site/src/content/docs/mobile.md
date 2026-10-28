@@ -1,6 +1,6 @@
 ---
 title: Phone app
-description: Chat with your Navis and projects and answer approvals from your phone. Build and sign it yourself, for iPhone and Android phones, on GitHub's runners.
+description: Chat with your Navis and projects and answer approvals from your phone. Build and sign it yourself, for iPhone and Android phones, on GitHub's runners, and update it over the air.
 ---
 
 The phone app connects to your [hub](/docs/glossary#hub) as the desktop app does, with its own key. It shows your
@@ -113,12 +113,65 @@ one team, so you can't sign `sh.fleetd.app`. Tick **Send the iOS build to TestFl
 Store Connect key, the signed `.ipa` is kept as the `fleetd-ios-release` artifact instead. Each run's number is the
 build number, which every upload must raise.
 
-### Over-the-air updates {#updates}
+## Over-the-air updates {#updates}
 
-Builds take JavaScript updates over the air only when you set the repository variable `UPDATES_CERT_PEM` to a code
-signing certificate. The app then loads only bundles signed with its key, for its own native build, from the channel
-you pick when you run the workflow (Edge or Stable). Without it, the app takes no updates and changes only when you
-install a new build.
+A build made with a code signing certificate updates its JavaScript over the air: its screens, chats and approvals.
+A native change, such as a new native module or an Expo SDK upgrade, still needs a new build. A build without a
+certificate takes no updates and changes only when you install a new one. The workflows' builds have no certificate
+until you [set one up](#own-updates).
+
+1. On every fleetd release, the release workflow (`build-release.yml`) exports the app's JavaScript, signs a
+   manifest for each platform with the code signing key, and puts them on the release as `mobile-updates.tar.gz`.
+2. fleetd.sh unpacks them and serves them at `https://fleetd.sh/updates`. It picks the manifest by the headers the app
+   sends: its channel (`expo-channel-name`), its runtime version (`expo-runtime-version`) and its platform
+   (`expo-platform`).
+3. The app checks when it starts and runs a new bundle from its next start. It loads only a bundle signed with its
+   certificate's key and made for its runtime version. Anything else, or no answer, leaves it on the bundle it has.
+
+The runtime version is a fingerprint of the app's native side and its build settings. A build whose native code
+differs gets a different one, so it never loads a bundle made for another. **Mobile release** fails a build with a
+certificate whose runtime version isn't the one releases publish its commit's updates for.
+
+### Channels {#channels}
+
+Pick a build's channel with **Which over-the-air updates the build takes** when you run **Mobile release**.
+
+| Channel | Updates from |
+|---|---|
+| `edge` | Every merge to `main`, with the [Edge](/docs/updating-and-uninstall#channels) release. A merge that leaves the JavaScript as it was publishes nothing new. |
+| `stable` | Each tagged release. |
+
+### Publish your own {#own-updates}
+
+A fork signs its own updates and serves them from its own address. Builds with your certificate reject updates
+signed with any other key, so they take none from fleetd.sh.
+
+1. Make a key and a certificate once, in `app/mobile` of your fork's checkout, with Node.js 24:
+
+   ```sh
+   npm ci
+   npm exec -- expo-updates codesigning:generate --key-output-directory keys --certificate-output-directory certs --certificate-validity-duration-years 10 --certificate-common-name "My fleetd"
+   ```
+
+   git ignores both files (`*.pem`). Keep the key safe: builds made with the certificate trust only it. Skip the
+   `codesigning:configure` it suggests; the workflows pass the certificate to the build.
+2. In your fork's Settings › Secrets and variables › Actions, set:
+
+   | Name | Kind | Value |
+   |---|---|---|
+   | `UPDATES_PRIVATE_KEY_PEM` | Secret | The contents of `keys/private-key.pem` |
+   | `UPDATES_CERT_PEM` | Variable | The contents of `certs/certificate.pem` |
+   | `FLEETD_UPDATES_URL` | Variable | Your site's update URL, such as `https://fleetd.example.com/updates` |
+   | `SITE_DEPLOY_HOOK` | Secret | Optional: a Vercel deploy hook for your site, so a release's updates go live when it's out, not with the site's next deploy |
+
+3. Serve them: deploy your fork's `site/` to Vercel as its `README.md` says. Its build fetches the updates from your
+   fork's releases, and its `vercel.json` routes the app's requests. Another host works too if it serves
+   `updates/<channel>/<runtime version>/<platform>` from the unpacked tarballs for those three headers, with the
+   response headers `vercel.json` sets.
+4. Run **Mobile release** for builds with your certificate. Each release from then on publishes their updates.
+
+A release without the key publishes no updates and passes. The update URL, the channel and the certificate are fixed
+when the app is built: a build you already installed keeps asking where it was built to ask.
 
 ## Not yet {#not-yet}
 

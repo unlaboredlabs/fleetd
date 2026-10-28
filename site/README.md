@@ -156,16 +156,35 @@ $ fleetd doctor
 - **Import** the GitHub repo `unlaboredlabs/fleetd`.
 - **Root Directory:** `site`
 - **Framework Preset:** Other
-- **Build Command:** Override on, left empty; `buildCommand` in `vercel.json` takes precedence and runs Pagefind
+- **Build Command:** Override on, left empty; `buildCommand` in `vercel.json` takes precedence. It unpacks the phone
+  app's over-the-air updates from the releases into `updates/` (`mobile-updates.sh fetch`, below), then runs Pagefind
   1.5.2 on `docs/`, writing the docs' search index. Bump that version with the `pagefind` in
   `docs/site/package-lock.json`, so the deployed index matches a local build.
 - **Output Directory:** leave the default; `outputDirectory` in `vercel.json` is `.`, the root directory as is (with a
   build command, Vercel would otherwise look for a `public/` folder and fail)
 - **Install Command:** Override on, left empty
 - **Production Branch:** `main`
-- **Ignored Build Step** (Settings → Git): `git diff --quiet HEAD^ HEAD -- .`, so commits that don't touch `site/`
-  don't deploy. (Vercel runs it from the root directory; exit code 0 skips the build.)
+- **Ignored Build Step** (Settings → Git): leave it; `ignoreCommand` in `vercel.json` takes precedence. It runs
+  `mobile-updates.sh unchanged`, which skips a build (exit code 0) when the commit doesn't touch `site/` and, for
+  production, fleetd.sh already serves each channel's current updates. Vercel runs it from the root directory.
+- **Deploy Hook** (Settings → Git): one for `main`, saved as the repository's `SITE_DEPLOY_HOOK` Actions secret. A
+  release calls it once it has published new phone app updates; without it they go live with the next deploy.
 - **Domains:** `fleetd.sh` (production), and `www.fleetd.sh` redirecting to `fleetd.sh`.
+
+## Phone app updates
+
+`/updates` serves the phone app's over-the-air update manifests (fleetd.sh/docs/mobile#updates). Each release puts
+its channel's on its GitHub release as `mobile-updates.tar.gz` (`build-release.yml`); `mobile-updates.sh fetch`
+unpacks edge's and the latest stable's into `updates/edge/` and `updates/stable/`, which git never holds. A
+`vercel.json` rewrite sends a request with the `expo-channel-name`, `expo-runtime-version` and `expo-platform`
+headers to `updates/<channel>/<runtime version>/<platform>`, a signed multipart body, and the `/updates` headers rule
+names its boundary and the expo-updates protocol version. A runtime version without a manifest gets a 404, and the app
+keeps the bundle it has. `app/mobile/scripts/updates.test.ts` checks the route against the files a release writes.
+
+```sh
+curl -sD - -o /dev/null https://<deployment>/updates -H 'expo-channel-name: edge' -H 'expo-platform: ios' \
+  -H "expo-runtime-version: $(curl -fsS https://<deployment>/updates/edge/updates.txt | awk '$1 == "ios" { print $2 }')"
+```
 
 ## Check a deployment
 
