@@ -128,8 +128,28 @@ function oldHub(from: Fixture): Fixture {
 
 // Each is built on chat-empty (three projects, two machines, their slots and roles; a few hundred KB), not on typical:
 // every fixture stays in memory until the build writes them all, and typical's chats are megabytes a copy.
+/**
+ * Two hubs Sam administers, Personal and Acme, and a third, Club, where Sam is a member (docs/design/hubs.md):
+ * Administration names the hub it manages and switches between the first two only.
+ */
+function hubs(base: (name: "chat-empty") => Fixture): Fixture {
+  const f = hub(base("chat-empty"), "admin-hubs", "Sam owns Personal, is an admin on Acme and a member on Club; Administration manages one at a time", sam, true);
+  f.label = "Personal";
+  f.color = "green";
+  const acme = hub(base("chat-empty"), "admin-hubs-acme", "Acme, where Sam is an admin", { ...sam, role: "admin" }, true);
+  acme.state = { phase: "live", hub: "https://hub.acme.example", protocol: f.state.phase === "live" ? f.state.protocol : 1 };
+  const club = hub(base("chat-empty"), "admin-hubs-club", "Club, where Sam is a member", { ...sam, role: "member" }, true);
+  club.state = { phase: "live", hub: "http://club-hub:4790", protocol: f.state.phase === "live" ? f.state.protocol : 1 };
+  f.hubs = [
+    { label: "Acme", color: "amber", fixture: acme },
+    { label: "Club", fixture: club },
+  ];
+  return f;
+}
+
 export default defineGroup({
   fixtures: (base) => [
+    hubs(base),
     oldHub(base("chat-empty")),
     hub(base("chat-empty"), "admin-owner", "Sam owns the hub: Alice is an admin, Bob a member, and Dana's invite waits", sam, true),
     hub(base("chat-empty"), "admin-admin", "The same hub as Alice, an admin: Sam the owner is out of her reach", alice, true),

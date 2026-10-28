@@ -150,6 +150,9 @@ pub const CHECKS_START_WAIT: Duration = Duration::from_secs(15 * 60);
 pub const CI_RUNNING_TIMEOUT: Duration = Duration::from_secs(45 * 60);
 /// How long a head's checks may all wait for runners: queued time is not running time, but it ends (D128).
 pub const CI_QUEUE_CEILING: Duration = Duration::from_secs(2 * 60 * 60);
+/// How long every check on a head may have finished without a check its project or repo added to the fast set before
+/// the train says that check never ran (`Stall::NeverRan`): a workflow that starts late starts within it.
+pub const NEVER_RAN_WAIT: Duration = Duration::from_secs(5 * 60);
 /// The start of `last_error` on a Change whose CI timed out rather than went red: the train keeps reading its head's
 /// checks, and puts it back in the queue when they finish green.
 pub(super) const CI_TIMED_OUT: &str = "CI timed out";
@@ -430,6 +433,9 @@ pub(super) enum Stall {
     /// Its checks finished green, but these checks of its fast set never reported, within `ci_timeout` of its first
     /// check's start; whether they are all ones the base requires.
     Unreported(Vec<String>, Required),
+    /// Every check on it finished and passed `NEVER_RAN_WAIT` ago, but these checks the project or the repo added to its
+    /// fast set never ran: their jobs were renamed or removed.
+    NeverRan(Vec<String>),
 }
 
 /// Whether checks that never reported are all ones the base requires, or include ones the repo added to its fast set.
@@ -511,6 +517,8 @@ pub struct Train {
     pub(super) sync: GithubSync,
     /// The follower and every repo loop, aborted by `stop`.
     tasks: Mutex<Vec<tokio::task::JoinHandle<()>>>,
+    /// Each repo and base's `.fleetd/train.json` and when it was read (`repo_checks`).
+    pub(super) repo_checks: Mutex<HashMap<(String, String), super::repo_checks::Cached>>,
     /// Each repo and base's `.fleetd/regenerate.json` and when it was read (`regen`).
     pub(super) regen_configs: Mutex<HashMap<(String, String), super::regen::Cached>>,
     /// Per Change and head, where its regeneration stands. Kept in memory: after a restart a conflict is tried again.
@@ -572,6 +580,7 @@ impl Train {
             next_labels: Default::default(),
             sync: GithubSync::default(),
             tasks: Mutex::default(),
+            repo_checks: Mutex::default(),
             regen_configs: Mutex::default(),
             regens: Mutex::default(),
             migrations_read: Mutex::default(),
@@ -1104,6 +1113,15 @@ impl Train {
                     names.join(", "),
                     min(self.options.ci_timeout)
                 ),
+                Stall::NeverRan(names) => format!(
+                    "the check{} {} never ran, and every other check finished and passed {} min ago. The project's train \
+                     settings or the repo's {} name {}: if a job was renamed or removed, fix the name there",
+                    if names.len() == 1 { "" } else { "s" },
+                    names.join(", "),
+                    min(NEVER_RAN_WAIT),
+                    super::repo_checks::PATH,
+                    if names.len() == 1 { "it" } else { "them" },
+                ),
             };
             format!("{CI_TIMED_OUT} on {}: {what}", short(&change.head_sha))
         } else {
@@ -1227,6 +1245,8 @@ impl Train {
         // The newest cancelled check the PR's head was read for (`superseded`).
         let mut cancel_read = 0.0;
         let (mut tried_label, mut told) = (start, false);
+        // Since when every check on the head has read finished while checks added to its fast set never ran.
+        let mut finished_without: Option<i64> = None;
         loop {
             let mut all = Vec::new();
             // The checks of the fast set that have neither a run nor a status on `sha` while every other is green, and
@@ -1369,6 +1389,23 @@ impl Train {
             }
             if until.is_some_and(|until| self.now_ms() >= until) {
                 return None;
+            }
+            // An added check that never ran once all the others are done is a job renamed or removed: no wait to the
+            // CI timeout will bring it. A required one is GitHub's to wait for, so it times out as before.
+            let never_ran: Vec<String> = unreported
+                .iter()
+                .filter(|n| !base_requires.contains(n))
+                .cloned()
+                .collect();
+            let finished = !all.is_empty() && all.iter().all(|r| r.status == "completed");
+            let now = self.now_ms();
+            finished_without =
+                (finished && !never_ran.is_empty()).then(|| finished_without.unwrap_or(now));
+            if finished_without
+                .is_some_and(|since| now - since >= NEVER_RAN_WAIT.as_millis() as i64)
+            {
+                self.check_spans(change, sha, &last);
+                return Some(CiOutcome::Timeout(Stall::NeverRan(never_ran)));
             }
             if let Some(stall) = self.stalled(&last, start) {
                 self.check_spans(change, sha, &last);
@@ -1538,13 +1575,18 @@ impl Train {
         Ok(!ci.workflows.is_empty() || ci.required_checks.iter().any(|c| c != TRAIN_CONTEXT))
     }
 
-    /// The fast set of a head into `base`: its required checks and the repo's own. None while the base's rules or the
-    /// settings of the project that owns the repo's train can't be read: then every check counts.
+    /// The fast set of a head into `base`: its required checks and the repo's own, from the settings of the project
+    /// that owns the repo's train and the base's `.fleetd/train.json`. None while the base's rules, those settings or
+    /// that file can't be read: then every check counts.
     pub(super) async fn fast(&self, repo: &str, base: &str) -> Option<Fast> {
         let required = self.ci_config(repo, base).await.ok()?.required_checks;
         let train = self.records.train(repo)?;
         let checkout = self.train_checkout(repo, &train.project_ref);
-        Some(Fast::new(&required, self.host.train_settings(&checkout)?))
+        let settings = self.host.train_settings(&checkout)?;
+        Some(Fast::new(
+            &required,
+            settings.with(&self.repo_checks(repo, base).await?),
+        ))
     }
 
     /// `base`'s CI config, read at most every `CI_CONFIG_TTL_MS`.

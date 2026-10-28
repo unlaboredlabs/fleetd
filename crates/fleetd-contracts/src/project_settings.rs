@@ -227,6 +227,25 @@ impl TrainSettings {
     pub fn after_merge_only(&self, name: &str) -> bool {
         self.after_merge.iter().any(|a| a.as_str() == name)
     }
+
+    /// These settings with `other`'s checks added to each list: a repo's `.fleetd/train.json` to its project's.
+    pub fn with(self, other: &TrainSettings) -> TrainSettings {
+        let join =
+            |mine: crate::prim::UniqueList<CheckName, 0, TRAIN_CHECKS_MAX>,
+             theirs: &crate::prim::UniqueList<CheckName, 0, TRAIN_CHECKS_MAX>| {
+                let mut out = mine.into_inner();
+                for c in theirs.iter() {
+                    if !out.contains(c) {
+                        out.push(c.clone());
+                    }
+                }
+                crate::prim::UniqueList::unchecked(out)
+            };
+        TrainSettings {
+            fast_checks: join(self.fast_checks, &other.fast_checks),
+            after_merge: join(self.after_merge, &other.after_merge),
+        }
+    }
 }
 
 /// One fleetd worktree of the project on its node, under `<node home>/worktrees/<project>/`.

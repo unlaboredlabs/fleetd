@@ -38,14 +38,17 @@ To keep a PR off the train, [hold it](#hold).
 The train waits only for the repo's fast set, the same way in every repo:
 
 - the checks the base branch requires, read from its ruleset or branch protection;
-- the checks you add in the project's settings.
+- the checks you add in the project's settings;
+- the checks the repo lists in `.fleetd/train.json` on the base branch.
 
-Each check of the fast set is waited for until it reports, however late its workflow starts; one that never reports
-times out by name. The train never waits for any other check. A check outside the fast set that has already failed
-when the fast set is green still stops the merge, unless you mark it **after merge only**. A required check is always
-in the fast set, since GitHub won't merge without it. A cancelled run of a check that isn't required doesn't count.
-With no required check and none added, the train waits for every check, so such a repo still merges only on green
-CI. When the train can't read the base's rules or the project's settings, it also waits for every check.
+Each check of the fast set is waited for until it reports, however late its workflow starts; a required one that never
+reports times out by name. One you or the repo added that still hasn't run 5 minutes after every other check finished
+is named then: its job was most likely renamed or removed, so fix the name in the list. The train never waits for any
+other check. A check outside the fast set that has already failed when the fast set is green still stops the merge,
+unless you mark it **after merge only**. A required check is always in the fast set, since GitHub won't merge without
+it. A cancelled run of a check that isn't required doesn't count. With no required check and none added, the train
+waits for every check, so such a repo still merges only on green CI. When the train can't read the base's rules, the
+project's settings or the repo's `.fleetd/train.json`, it also waits for every check.
 
 Set the checks in the desktop app under **Settings › Projects › Merge train**, with the `project_settings_set` tool
 (`train`), or from a terminal:
@@ -58,6 +61,19 @@ Each option may repeat, and replaces its list; `none` empties it. The train uses
 
 The checks are the repo's, not the project's: in a project with [several repos](#repos), name the repo
 (`project_settings_set` with `repo`) to set its own.
+
+A repo can also keep the list next to its workflows, so a renamed job and its name change in one pull request. The
+train reads `.fleetd/train.json` from the base branch every 10 minutes at most, and adds its lists to the project's:
+
+```json
+{
+  "fastChecks": ["lint", "docs"],
+  "afterMerge": ["e2e (macos-latest)"]
+}
+```
+
+Both keys are optional, and there may be no other key. A file the train can't read or use makes it wait for every
+check until the file is fixed.
 
 ## After the merge {#after-merge}
 
@@ -257,8 +273,10 @@ default types, or with `opened` and `synchronize`). For each one:
 - A PR joins a batch only once that check passed on its own commit, or skipped for want of work (below). Until then it
   stays out and says why: "its own head's `macos` still running", "… failed", or "its own head hasn't reported `macos`
   yet". Nothing else would run a cancelled one again, so when that check, or a job it needs, reads cancelled, the train
-  re-runs the cancelled jobs of that workflow run once and says so: "its own head's `macos` was cancelled; the train
-  re-ran it". Cancelled again, it says to push again or re-run it by hand.
+  re-runs that one job once, with the jobs that need it, and says so: "its own head's `macos` was cancelled; the train
+  re-ran it". It never re-runs the rest of the workflow run, so a job that failed there stays failed, and it waits
+  while a job of that run is still going. Cancelled again, it says to push again or re-run it by hand. If GitHub
+  refuses the re-run, the train asks again after a minute, then two, and after the third refusal says the same.
 - On the batch PR it reads skipped, which counts as passing, so the batch never waits for it. A skipped job still
   reports, so it can stay a required check.
 - `main` still runs it after each merge, where a failure opens a fix order like any [check after the merge](#after-merge).

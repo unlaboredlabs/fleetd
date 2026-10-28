@@ -3,10 +3,15 @@
 // with its checklist), Hub settings (everything hub-wide that used to sit in
 // Settings: the fleet and machine caps, machine roles, task profiles and memory caps), Skills (the hub-wide ones), Google
 // (the hub's OAuth client for Navis, google/AdminGoogle.tsx) and Setup. The shell shows AdminSidebar in the sidebar's
-// place while it is open, as it does Settings'.
+// place while it is open, as it does Settings'. With several hubs (docs/design/hubs.md) it manages one hub at a time,
+// named above every page, and its sidebar switches between the hubs this person administers: nothing here acts on a
+// hub the page doesn't name.
 import { ArrowLeft, KeyRound, ListChecks, Server, SlidersHorizontal, Sparkles, UserPlus, Users } from "lucide-react";
 import { useState, type ReactNode } from "react";
-import { Button, Separator, Sidebar, SidebarItem, SidebarSection, Text } from "../../ui";
+import { Button, Separator, Sidebar, SidebarItem, SidebarSection, Text, Truncate } from "../../ui";
+import type { HubView } from "../../src/data/hubs";
+import { HubScope, useData, useHub, useHubs, useSeveralHubs } from "../../src/data/react";
+import { HUB_COLOR } from "../shell/hubColor";
 import { AddMachine, type View } from "../addMachine";
 import { HubCaps, TaskProfiles } from "../settings/Agents";
 import { MachineRoles } from "../settings/MachineRoles";
@@ -14,14 +19,15 @@ import { HubMemoryCaps } from "../settings/MemoryCaps";
 import { PageHead } from "../settings/parts";
 import { HubSkills } from "../settings/Skills";
 import { AdminGoogle } from "../google/AdminGoogle";
-import { useRoute } from "../shell/navigation";
+import { navigate, useRoute } from "../shell/navigation";
 import { toHash, type AdminSection } from "../shell/routes";
 import { Invites } from "./Invites";
 import { MachineList } from "./MachineList";
 import { MachinePage } from "./MachinePage";
 import { People } from "./People";
-import { useHubRole, type HubRoleView } from "./role";
+import { useAdministers, useHubRole, type HubRoleView } from "./role";
 import s from "../settings/settings.module.css";
+import a from "./admin.module.css";
 
 const SECTIONS: ReadonlyArray<{ section: AdminSection; label: string; icon: ReactNode }> = [
   { section: "people", label: "People", icon: <Users /> },
@@ -44,12 +50,17 @@ const useMachine = (): string | undefined => {
   return route.id === "admin" ? route.machine : undefined;
 };
 
-const go = (section: AdminSection) => {
-  window.location.hash = toHash({ id: "admin", section });
-};
+/** A section of Administration on hub `at`, named in the route: never the hub some other screen had open. */
+const go = (section: AdminSection, at: string) => navigate({ id: "admin", section, at });
+
+/** A hub's colour as a small mark before its name; none without a colour. */
+const Mark = ({ hub }: { hub: HubView }) =>
+  hub.color === undefined ? null : <span className={a.hubMark} style={{ background: HUB_COLOR[hub.color] }} aria-hidden />;
 
 export function AdminSidebar({ onBack }: { onBack: () => void }) {
   const section = useSection();
+  const { id } = useHub();
+  const hubs = useHubs();
   return (
     <Sidebar aria-label="Administration">
       <SidebarSection>
@@ -57,11 +68,27 @@ export function AdminSidebar({ onBack }: { onBack: () => void }) {
       </SidebarSection>
       <SidebarSection title="Administration">
         {SECTIONS.map((x) => (
-          <SidebarItem key={x.section} label={x.label} icon={x.icon} current={section === x.section} onClick={() => go(x.section)} />
+          <SidebarItem key={x.section} label={x.label} icon={x.icon} current={section === x.section} onClick={() => go(x.section, id)} />
         ))}
       </SidebarSection>
+      {hubs.length > 1 ? (
+        <SidebarSection title="Hub" label="Hub to manage">
+          {hubs.map((hub) => (
+            <HubScope key={hub.id} hub={hub}>
+              <HubChoice hub={hub} current={hub.id === id} onPick={() => go(section, hub.id)} />
+            </HubScope>
+          ))}
+        </SidebarSection>
+      ) : null}
     </Sidebar>
   );
+}
+
+/** A hub to manage: listed when this person administers it there (and the one managed now, whatever its answer). */
+function HubChoice({ hub, current, onPick }: { hub: HubView; current: boolean; onPick: () => void }) {
+  const administers = useAdministers();
+  if (!administers && !current) return null;
+  return <SidebarItem label={hub.label} icon={<Mark hub={hub} />} current={current} data-admin-hub={hub.id} onClick={onPick} />;
 }
 
 export function AdminScreen() {
@@ -72,7 +99,36 @@ export function AdminScreen() {
   // stays as the last answer had it meanwhile, so what is open on it (a machine's line, waiting) isn't lost.
   const [settled, setSettled] = useState<HubRoleView>();
   if (!role.pending && (settled?.administers !== role.administers || settled.me !== role.me || settled.offline !== role.offline)) setSettled(role);
-  return <div className={s.frame}>{page(section, machine, role.pending && settled !== undefined ? settled : role)}</div>;
+  return (
+    <div className={s.frame}>
+      <Managing />
+      {page(section, machine, role.pending && settled !== undefined ? settled : role)}
+    </div>
+  );
+}
+
+/** With several hubs, the one every page here acts on, by name and address, above the page. */
+function Managing() {
+  const several = useSeveralHubs();
+  const hub = useHub();
+  const state = useData((st) => st.hub);
+  if (!several) return null;
+  return (
+    <div className={a.managing} role="note" aria-label={`Managing ${hub.label}`} data-managing={hub.id}>
+      <Text size="sm" tone="quiet">
+        Managing
+      </Text>
+      <Mark hub={hub} />
+      <Text size="sm" strong>
+        {hub.label}
+      </Text>
+      {state.phase === "unpaired" ? null : (
+        <Truncate size="xs" tone="quiet" mono>
+          {state.hub}
+        </Truncate>
+      )}
+    </div>
+  );
 }
 
 function page(section: AdminSection, machine: string | undefined, { administers, me, pending, offline }: HubRoleView): ReactNode {

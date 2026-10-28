@@ -214,6 +214,13 @@ impl CheckRun {
         let (_, rest) = url.split_once("/actions/runs/")?;
         rest.split('/').next()?.parse().ok()
     }
+
+    /// The Actions job behind it, from its page (`.../job/<job>`): what a re-run of only this check takes.
+    pub fn job(&self) -> Option<u64> {
+        let url = self.html_url.as_deref()?;
+        let (_, rest) = url.split_once("/job/")?;
+        rest.split(['/', '?', '#']).next()?.parse().ok()
+    }
 }
 
 /// The latest run of each check in `runs`. A re-run adds a newer run with the same name; only the newest counts. Map
@@ -695,6 +702,17 @@ impl TrainGitHub {
         self.json::<Value>(
             "POST",
             &format!("repos/{repo}/actions/runs/{run}/rerun-failed-jobs"),
+            &[],
+        )
+        .await
+        .map(|_| ())
+    }
+
+    /// Re-runs Actions job `job` and the jobs that need it, and nothing else of its workflow run.
+    pub async fn rerun_job(&self, repo: &str, job: u64) -> Result<(), GhError> {
+        self.json::<Value>(
+            "POST",
+            &format!("repos/{repo}/actions/jobs/{job}/rerun"),
             &[],
         )
         .await

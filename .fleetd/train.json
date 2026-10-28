@@ -1,0 +1,3 @@
+{
+  "fastChecks": ["rust-lint", "rust-docs", "site", "desktop"]
+}

@@ -176,6 +176,10 @@ struct FakeGh {
     runs: Mutex<Option<Box<dyn Fn() -> Value + Send + Sync>>>,
     /// The workflow runs whose failed jobs were re-run, in order.
     reruns: Arc<Mutex<Vec<u64>>>,
+    /// The jobs the train asked to re-run on their own, in order, refused or not.
+    job_reruns: Mutex<Vec<u64>>,
+    /// GitHub refuses every re-run of one job.
+    refuse_job_reruns: Mutex<bool>,
     /// The `check_runs` of one head, before `runs` and `ci`.
     head_runs: Mutex<HashMap<String, Value>>,
     /// The checks main requires through a ruleset, when set: in place of what `ci` requires.
@@ -813,6 +817,13 @@ impl FakeGh {
                         .collect(),
                 ))
             }
+            (["actions", "jobs", job, "rerun"], "POST") => {
+                self.job_reruns.lock().unwrap().push(job.parse().unwrap());
+                if *self.refuse_job_reruns.lock().unwrap() {
+                    return http_error(403, "Resource not accessible by integration");
+                }
+                ok(json!({}))
+            }
             (["actions", "runs", run, "rerun-failed-jobs"], "POST") => {
                 self.reruns.lock().unwrap().push(run.parse().unwrap());
                 self.log.lock().unwrap().push(format!("rerun {run}"));
@@ -1447,6 +1458,8 @@ impl Kit {
             on_checks: Mutex::default(),
             runs: Mutex::default(),
             reruns: Arc::default(),
+            job_reruns: Mutex::default(),
+            refuse_job_reruns: Mutex::default(),
             head_runs: Mutex::default(),
             workflow_files: Mutex::default(),
             annotations: Mutex::default(),
@@ -5536,6 +5549,116 @@ async fn unreadable_train_settings_wait_for_every_check() {
     assert!(merged_prs(&kit).is_empty());
 }
 
+/// W127: #743 merged while its `site` check was still running, behind another job, and turned main red: the base
+/// requires only `build`. A check the repo's `.fleetd/train.json` lists is waited for like a required one: red stops
+/// the merge, skipped by its `if:` passes, and still running holds it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_check_the_repo_lists_in_its_train_file_gates_the_merge() {
+    let kit = kit_on(&REPOS[0]);
+    let file = json!({ "fastChecks": ["site"] }).to_string();
+    kit.commit("main", &[(".fleetd/train.json", Some(&file))], None);
+    let with_site = |site: Option<&'static str>| {
+        move || {
+            vec![
+                run(1, "build", Some("success")),
+                run(2, "site", site),
+                run(3, "e2e (macos-latest)", None),
+            ]
+        }
+    };
+
+    answer_checks(&kit, with_site(Some("failure")));
+    let a = kit
+        .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
+        .await;
+    assert!(kit.train.step(REPO).await);
+    let stopped = kit.get(&a.change_id);
+    assert_eq!(stopped.state, ChangeState::CiFailed);
+    assert!(
+        stopped
+            .last_error
+            .as_deref()
+            .unwrap()
+            .contains("site (failure)"),
+        "{:?}",
+        stopped.last_error
+    );
+
+    // Still running: the train waits for it, here until its (zero) timeout.
+    answer_checks(&kit, with_site(None));
+    let b = kit
+        .enqueue(kit.open_pr(8, "b", &[add("b1.txt", "b\n")]))
+        .await;
+    assert!(kit.train.step(REPO).await);
+    let waited = kit.get(&b.change_id);
+    assert_eq!(waited.state, ChangeState::CiFailed);
+    assert!(
+        waited
+            .last_error
+            .as_deref()
+            .unwrap()
+            .starts_with("CI timed out"),
+        "{:?}",
+        waited.last_error
+    );
+
+    answer_checks(&kit, with_site(Some("skipped")));
+    let c = kit
+        .enqueue(kit.open_pr(9, "c", &[add("c1.txt", "c\n")]))
+        .await;
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(state_of(&kit, &c), ChangeState::Merged);
+    assert_eq!(state_of(&kit, &a), ChangeState::CiFailed);
+}
+
+/// W127: a check the repo lists that no run has (its job renamed or removed) is named soon after every other check
+/// finished, and the lead hears of it, rather than held to the CI timeout. A required one waits as before.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_listed_check_that_never_runs_is_named_once_the_others_finish() {
+    let clock = Arc::new(Sleeps::default());
+    let kit = Kit::on_clock(FakeCi::Required, clock.clone());
+    let file = json!({ "fastChecks": ["site"] }).to_string();
+    kit.commit("main", &[(".fleetd/train.json", Some(&file))], None);
+    answer_checks(&kit, || {
+        vec![job(1, 1, "build", "success"), job(2, 1, "lint", "success")]
+    });
+    let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")]);
+    let (_, change_id) = kit.author_task(Some(&pr)).await;
+
+    kit.train.step(REPO).await;
+    let parked = kit.get(&change_id);
+    assert_eq!(parked.state, ChangeState::CiFailed);
+    let options = TrainOptions::default();
+    assert!(
+        slept(&clock) <= super::service::NEVER_RAN_WAIT + options.poll_interval,
+        "held {:?}",
+        slept(&clock)
+    );
+    let why = parked.last_error.unwrap();
+    assert!(
+        why.contains(
+            "the check site never ran, and every other check finished and passed 5 min ago"
+        ) && why.contains(".fleetd/train.json name it"),
+        "{why:?}"
+    );
+    assert!(kit.gh.merges.lock().unwrap().is_empty());
+}
+
+/// A train file the train can't use is no license to skip checks: it waits for every check, as with unreadable
+/// settings.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_train_file_it_cannot_use_waits_for_every_check() {
+    let kit = kit_on(&REPOS[0]);
+    let file = json!({ "fastCheck": ["site"] }).to_string();
+    kit.commit("main", &[(".fleetd/train.json", Some(&file))], None);
+    let a = kit
+        .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
+        .await;
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(state_of(&kit, &a), ChangeState::CiFailed);
+    assert!(merged_prs(&kit).is_empty());
+}
+
 /// W54: each pass says why each ready PR was left out of the batch, on its Change and in the train's line, in plain
 /// words; once it can join, the reason goes.
 #[tokio::test(flavor = "multi_thread")]
@@ -5737,9 +5860,10 @@ async fn a_pr_joins_a_batch_only_once_its_own_head_passed_the_checks_the_batch_s
 }
 
 /// A cancelled check the batch skips, or a cancelled `macos scope`, on a ready PR's own head: nothing would run it
-/// again, so the PR would wait forever. The train re-runs that workflow run once and says so on the PR's line;
-/// cancelled again, it says to push or re-run it, and re-runs nothing more. What it read of a head goes once the head
-/// leaves the line.
+/// again, so the PR would wait forever. The train re-runs that job once, never the rest of its workflow run, so a job
+/// that failed beside it stays failed, and says so on the PR's line; cancelled again, it says to push or re-run it, and
+/// re-runs nothing more. While its workflow run still has a job going, it waits. What it read of a head goes once the
+/// head leaves the line.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_cancelled_check_the_batch_skips_is_re_run_once_and_the_pr_says_so() {
     let kit = kit_on(&RepoCi {
@@ -5758,16 +5882,26 @@ async fn a_cancelled_check_the_batch_skips_is_re_run_once_and_the_pr_says_so() {
          name: macos scope\n    runs-on: ubuntu-latest\n  desktop-macos:\n    needs: macos-scope\n    \
          if: ${{ !cancelled() && !endsWith(github.head_ref, 'train/batch') }}\n    runs-on: macos-latest\n",
     ));
-    let own =
-        |desktop: Value, scope: Value| json!([run(1, "build", Some("success")), desktop, scope]);
+    // A job of workflow run `run`.
+    let job = |workflow: u64, id: u64, name: &str, conclusion: Option<&str>| {
+        let mut job = run(id, name, conclusion);
+        job["html_url"] = json!(format!(
+            "https://github.com/{REPO}/actions/runs/{workflow}/job/{id}"
+        ));
+        job
+    };
+    let own = |desktop: Value, scope: Value, other: Value| {
+        json!([run(1, "build", Some("success")), desktop, scope, other])
+    };
     let mut prs = Vec::new();
-    for (n, branch, file, desktop, scope) in [
+    for (n, branch, file, desktop, scope, other) in [
         (
             7,
             "a",
             "a.txt",
             run(3, "desktop-macos", Some("success")),
             run(39, "macos scope", Some("success")),
+            run(2, "lint", Some("success")),
         ),
         (
             8,
@@ -5775,13 +5909,16 @@ async fn a_cancelled_check_the_batch_skips_is_re_run_once_and_the_pr_says_so() {
             "b.txt",
             run(3, "desktop-macos", Some("success")),
             run(39, "macos scope", Some("success")),
+            run(2, "lint", Some("success")),
         ),
         (
             9,
             "cut",
             "cut.txt",
-            run(60, "desktop-macos", Some("cancelled")),
-            run(39, "macos scope", Some("success")),
+            job(50, 60, "desktop-macos", Some("cancelled")),
+            job(50, 39, "macos scope", Some("success")),
+            // Failed in the same workflow run: no re-run of the cancelled check runs it again.
+            job(50, 62, "lint", Some("failure")),
         ),
         (
             10,
@@ -5789,6 +5926,15 @@ async fn a_cancelled_check_the_batch_skips_is_re_run_once_and_the_pr_says_so() {
             "scope.txt",
             run(3, "desktop-macos", Some("skipped")),
             run(61, "macos scope", Some("cancelled")),
+            run(2, "lint", Some("success")),
+        ),
+        (
+            11,
+            "busy",
+            "busy.txt",
+            job(51, 63, "desktop-macos", Some("cancelled")),
+            job(51, 39, "macos scope", Some("success")),
+            job(51, 64, "lint", None),
         ),
     ] {
         let change = kit
@@ -5798,7 +5944,7 @@ async fn a_cancelled_check_the_batch_skips_is_re_run_once_and_the_pr_says_so() {
             .head_runs
             .lock()
             .unwrap()
-            .insert(kit.head_of(branch), own(desktop, scope));
+            .insert(kit.head_of(branch), own(desktop, scope, other));
         prs.push(change);
     }
     let merged = [kit.head_of("a"), kit.head_of("b")];
@@ -5806,7 +5952,11 @@ async fn a_cancelled_check_the_batch_skips_is_re_run_once_and_the_pr_says_so() {
 
     assert!(kit.train.step(REPO).await);
     assert_eq!(members_of_batch(&kit), [7, 8]);
-    assert_eq!(*kit.gh.reruns.lock().unwrap(), [60, 61]);
+    assert_eq!(*kit.gh.job_reruns.lock().unwrap(), [60, 61]);
+    assert!(
+        kit.gh.reruns.lock().unwrap().is_empty(),
+        "no whole run re-run"
+    );
     assert_eq!(
         why(&prs[2]).as_deref(),
         Some(
@@ -5817,10 +5967,17 @@ async fn a_cancelled_check_the_batch_skips_is_re_run_once_and_the_pr_says_so() {
         why(&prs[3]).as_deref(),
         Some("not in this batch: its own head's `macos scope` was cancelled; the train re-ran it")
     );
+    assert_eq!(
+        why(&prs[4]).as_deref(),
+        Some(
+            "not in this batch: its own head's `desktop-macos` was cancelled; the train re-runs it once its \
+             workflow run is done"
+        )
+    );
 
     // Still cancelled on the next pass: no second re-run, and the PR says what to do.
     assert!(kit.train.step(REPO).await);
-    assert_eq!(kit.gh.reruns.lock().unwrap().len(), 2);
+    assert_eq!(kit.gh.job_reruns.lock().unwrap().len(), 2);
     assert_eq!(
         why(&prs[3]).as_deref(),
         Some(
@@ -5839,6 +5996,55 @@ async fn a_cancelled_check_the_batch_skips_is_re_run_once_and_the_pr_says_so() {
         .collect();
     assert!(heads.contains(&kit.head_of("scope")), "{heads:?}");
     assert!(!heads.iter().any(|h| merged.contains(h)), "{heads:?}");
+}
+
+/// GitHub refusing to re-run a cancelled check the batch skips: the train doesn't ask again on every pass, but after
+/// a minute, then two, and after its third refusal stops asking and says to push or re-run it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_refused_re_run_backs_off_and_stops_after_three_tries() {
+    use super::github::CheckRun;
+    use super::next::BatchSkip;
+    let clock = Arc::new(Sleeps::default());
+    let kit = Kit::on_clock(FakeCi::Actions, clock.clone());
+    *kit.gh.refuse_job_reruns.lock().unwrap() = true;
+    let runs: Vec<CheckRun> = serde_json::from_value(json!([
+        run(1, "build", Some("success")),
+        run(60, "desktop-macos", Some("cancelled"))
+    ]))
+    .unwrap();
+    let batch = [BatchSkip {
+        name: "desktop-macos".into(),
+        needs: Vec::new(),
+    }];
+    let pass = || {
+        kit.train
+            .rerun_cancelled_skips(REPO, "c0ffee", &runs, &batch)
+    };
+    let asked = || kit.gh.job_reruns.lock().unwrap().len();
+    let retrying = "its own head's `desktop-macos` was cancelled, and GitHub refused to re-run it: the train asks again";
+
+    assert_eq!(pass().await.as_deref(), Some(retrying));
+    assert_eq!(asked(), 1);
+    // Backing off: the next pass asks nothing.
+    assert_eq!(pass().await.as_deref(), Some(retrying));
+    assert_eq!(asked(), 1);
+
+    clock.sleep(Duration::from_secs(60)).await;
+    assert_eq!(pass().await.as_deref(), Some(retrying));
+    assert_eq!(asked(), 2);
+    clock.sleep(Duration::from_secs(60)).await;
+    pass().await;
+    assert_eq!(asked(), 2, "the second wait is two minutes");
+    clock.sleep(Duration::from_secs(60)).await;
+    let gave_up = "its own head's `desktop-macos` was cancelled, and GitHub refused to re-run it 3 times: push again \
+                   or re-run it";
+    assert_eq!(pass().await.as_deref(), Some(gave_up));
+    assert_eq!(asked(), 3);
+
+    clock.sleep(Duration::from_secs(3600)).await;
+    assert_eq!(pass().await.as_deref(), Some(gave_up));
+    assert_eq!(asked(), 3, "no fourth try");
+    assert!(kit.gh.reruns.lock().unwrap().is_empty());
 }
 
 /// D204: a check the batch skips never ran on the merged tree before the merge, so main's run of it is watched, even one

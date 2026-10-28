@@ -62,6 +62,16 @@ npm ci --prefix docs/site
 npm run build --prefix docs/site
 ```
 
+Before opening a PR that touches `docs/site/` or `site/`, run the `site` job's checks too: the merge train waits for
+that job (`.fleetd/train.json`), so a red one sends the PR back.
+
+```sh
+cargo run -q -p fleetd -- help > "$TMPDIR/fleetd-help.txt"
+node .github/site-check.mjs "$TMPDIR/fleetd-help.txt"   # stale terms, commands fleetd help doesn't list
+node .github/personal-check.mjs                          # no maintainer's host, login or home directory
+node .github/docs-links.mjs                              # every internal link and anchor resolves
+```
+
 CI fails while the generated pages or `site/docs/` are out of date, or while `site/docs/pagefind` is tracked. To read
 the docs locally with clean URLs, run `node .github/docs-serve.mjs` and open http://127.0.0.1:4791/docs (search
 works once a build has written the ignored index), or `npm run dev --prefix docs/site` while writing.

@@ -113,7 +113,19 @@ screenshots and real setup output. A change that alters what the app shows or wh
 init` or `fleetd machine add` prints reruns `tests/lab/site-capture.ts` and commits the updated `site/` in the same
 PR (see `site/README.md`); `node tests/lab/site-capture.ts --docs` recaptures only the docs' output blocks. A change
 that removes something the site mentions adds it to `site/.stale-terms`, which CI checks the page and the docs'
-sources against. A new or renamed command shows up in the docs' CLI reference by itself.
+sources against. A new or renamed command shows up in the docs' CLI reference by itself. Before opening a PR that
+touches `docs/site/` or `site/`, run `.github/site-check.mjs` and the `site` job's other checks (`site/README.md`,
+Docs): the merge train waits for that job.
+
+## The merge train's checks
+
+The train waits for the checks `main` requires (`rust (linux)`, `rust (macos)`, `darwin-deps`) and for the jobs
+`.fleetd/train.json` lists (`fastChecks`). List only Linux jobs of `ci.yml` that finish within `rust (linux)`'s time,
+so merges don't get slower, and that pass or fail the same way every run: never a macOS job (batches skip those,
+D204), nor one that reaches the network. A test (`hub::train::repo_checks`) fails when the file names a job `ci.yml`
+doesn't have or one that doesn't run on Linux. The train reads the list from `main`, so a PR whose head has no run of a
+listed job is refused once its other checks finish: to rename a listed job, first take it off the list in a PR of its
+own, then rename it and list the new name.
 
 ## Hub migrations
 
