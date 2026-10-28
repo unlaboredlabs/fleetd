@@ -1,66 +1,38 @@
-// fleetd.sh's showcase: the app on fixtures/showcase, recorded while a busy storefront takes one request from the
-// message to the merge, then through what else the app does (the night's memory refresh, automations, a Navi, the
-// team), in the light and the dark theme. `pnpm fixtures && pnpm qa:build && pnpm site:showcase` writes
-// site/showcase-<theme>.webm, its H.264 twin site/showcase-<theme>.mp4 and its poster, site/showcase-<theme>.jpg (a
-// busy moment: the phone's screen yours, its code typed), each with a -small twin for small screens, over the files in
-// the repo, and each step's start in the video, in seconds, to site/showcase.json: the page marks the step that is
-// playing.
+// fleetd.sh's clips: the app on fixtures/showcase, recorded a few seconds at a time, one clip for each of the landing
+// page's sections, in the light and the dark theme. `pnpm fixtures && pnpm qa:build && pnpm site:showcase` writes, for
+// each clip, site/showcase-<clip>-<theme>.webm, its H.264 twin site/showcase-<clip>-<theme>.mp4 and its poster,
+// site/showcase-<clip>-<theme>.jpg, each with a -small twin for small screens, over the files in the repo.
 //
-// It runs at a person's pace with nothing idle: QA types the request at once, then moves through the views as the
-// story goes (Screens, the browser, the phone, Take over and the code, Hand back, Try it on #230, the merge line), and
-// on once it merged: the chat's memory refresh line opened, Automations, Ada and its Send it, Administration's people
-// and invites, and back to Agents.
-// The video loops: its last moments fade into its first, which the encode then leaves out, so the end runs into the
+// - lead: you ask storefront's lead, it splits the work into three writers and #231 opens; cut to the merge line as
+//   the train merges four PRs as one batch.
+// - team: checkout's chat, which the team shares: Sam asks, Alice adds hers, the lead answers the two of them.
+// - screens: an agent's live browser; cut to the iPhone's sign-in asking for you, Take over, the code, Hand back.
+// - navi: Ada, a Navi, woken by mail with a reply that waits on you; Send it, and it went.
+//
+// Each clip is one run of the app at a person's pace, from which it keeps its takes, a few seconds each, cut together
+// tight; what QA does between them (taking the phone over for the lead's clip, opening the phone for the screens') is
+// left out. Each clip loops: its last moments fade into the moments before its first take, so the end runs into the
 // start without a cut.
 //
 // The frames are the window's own (CDP's screencast), with motion on: the app's beat, its entrances and the typing.
 // They are spaced out to a steady 25 fps, then encoded as VP9 by the ffmpeg Playwright installs for its own videos
 // (`pnpm exec playwright install ffmpeg`; FFMPEG=<path> to use another), and as H.264 by the app's WebCodecs encoder.
 import { spawnSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
-import { type Page, test } from "@playwright/test";
+import { type ElectronApplication, type Page, test } from "@playwright/test";
 import { CODE } from "../fixtures/showcase/pages.ts";
 import { DIGIT_MS, REQUEST, STEPS } from "../fixtures/showcase/index.ts";
+import { TEAM_REQUEST, TEAM_STEPS } from "../fixtures/showcase/more.ts";
 import { appMain, desktopDir, fixtureMeta, fixturesDir, launch, settle, setView, show } from "./harness.ts";
 
 const repo = path.resolve(desktopDir, "../..");
 const STOREFRONT = "devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22";
 const CHAT = `#/project/${STOREFRONT}`;
 const FPS = 25;
-/** The loop's fade, in frames: the last ones fade into the first ones, which the video then starts after. */
+/** The loop's fade, in frames: the last ones fade into the ones before the first take. */
 const FADE = 15;
-// When QA moves, in ms after the send: to Screens once the two screens are up, into the browser's, back out and into
-// the phone's once it has booted, Take over once the lead asks, Hand back once the code is in, out again as the
-// browser's recording lands, into #230 and its Try it, to the merge line as the batch starts; once it merged, up the
-// chat to the night's memory refresh and open it, to Automations, to Ada and Send it, to Administration's people and
-// invites, and back to the storefront's Agents.
-const QA = {
-  screens: STEPS.screens + 600,
-  web: STEPS.screens + 1200,
-  allScreens: 9600,
-  phone: 10_200,
-  takeOver: STEPS.phoneAsks + 1200,
-  handBack: STEPS.phoneAsks + 3400,
-  back: STEPS.pr232 + 500,
-  shipping: 20_300,
-  pr230: 20_800,
-  tryIt: 21_300,
-  line: STEPS.batch,
-  memory: STEPS.merged + 1000,
-  memoryOpen: STEPS.merged + 1400,
-  automations: STEPS.merged + 3000,
-  back2: STEPS.merged + 4800,
-  navi: STEPS.merged + 5100,
-  send: STEPS.merged + 6600,
-  admin: STEPS.merged + 8200,
-  invites: STEPS.merged + 9400,
-  agents: STEPS.merged + 10_600,
-  end: STEPS.end,
-} as const;
-/** The poster's moment: the phone yours, its code typed, the rest of the floor still at work. */
-const POSTER = QA.takeOver + DIGIT_MS.first + CODE.length * DIGIT_MS.every + 200;
 
 /** The request a few keys at a time, as a quick typist's keys land on the frames: about 1.2 s for the whole of it. */
 const BURST = 3;
@@ -274,9 +246,6 @@ async function poster(page: Page, jpeg: Buffer, scale: number, quality: number, 
   writeFileSync(file, Buffer.from(out, "base64"));
 }
 
-/** Opens `route` as a link would. */
-const go = (page: Page, route: string) => page.evaluate((r) => (window.location.hash = r), route);
-
 /** Clicks what `target` finds, then leaves no hover or focus ring behind. */
 async function press(page: Page, target: ReturnType<Page["locator"]>) {
   await target.first().click();
@@ -284,159 +253,191 @@ async function press(page: Page, target: ReturnType<Page["locator"]>) {
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
 }
 
-for (const theme of ["light", "dark"] as const) {
-  test(`showcase ${theme}`, async () => {
-    test.setTimeout(180_000);
-    // A running clock from the fixture's "now": QA's fixed one never moves, and the merge line redraws only when a
-    // read's answer is newer than the last (TrainPane's dataUpdatedAt stamp).
-    const { app, page, settled, close } = await launch("showcase-order", appMain, { realClock: true });
-    try {
-      const { now } = fixtureMeta(path.join(fixturesDir, "showcase-order.json"));
-      await page.clock.install({ time: new Date(now ?? Date.now()) });
-      await page.reload();
-      await setView(app, page, "medium", theme);
-      await show(page, "chat", `${CHAT}/agents`);
-      await settled();
-      // As on the site's shots (site.spec.ts): no sample-data banner or chip.
-      // The hubs' rows name the two hubs, Acme and Personal, rather than sample data: they stay.
-      await hideByClass(page, '[role="status"]', "Sample data, not connected", "display: none");
-      await page.emulateMedia({ colorScheme: theme, reducedMotion: "no-preference" });
-      await settle(page);
+/** What a clip's run hands back: its takes, each [from, to] in this machine's ms, and its poster's moment. */
+interface Run {
+  readonly takes: ReadonlyArray<readonly [number, number]>;
+  readonly poster: number;
+}
 
-      const frames: Array<{ at: number; jpeg: Buffer }> = [];
-      const cdp = await page.context().newCDPSession(page);
-      cdp.on("Page.screencastFrame", ({ data, sessionId }) => {
-        frames.push({ at: Date.now(), jpeg: Buffer.from(data, "base64") });
-        void cdp.send("Page.screencastFrameAck", { sessionId }).catch(() => {});
-      });
-      await cdp.send("Page.startScreencast", { format: "jpeg", quality: 92, everyNthFrame: 1 });
-      const start = Date.now();
-      // The fade's frames come first; the video starts after them, on the first frame with a key typed.
-      await sleepUntil(start + (FADE * 1000) / FPS);
+/** A clip's run: QA at work in the app, from `start` (the screencast is up and the fade's frames are in). */
+type Script = (page: Page, start: number) => Promise<Run>;
 
-      const composer = page.locator("[data-composer] textarea");
-      await composer.click();
-      let typing = 0;
-      for (let i = 0; i < REQUEST.length; i += BURST) {
-        const next = Date.now() + BURST_MS;
-        await page.keyboard.insertText(REQUEST.slice(i, i + BURST));
-        if (typing === 0) typing = Date.now();
-        await sleepUntil(next);
-      }
-      await sleepUntil(Date.now() + 150);
-      await page.keyboard.press("Enter");
-      const sent = Date.now();
-      const tab = (name: RegExp) => page.getByRole("tab", { name }).or(page.getByRole("radio", { name }));
-      // A sidebar's row: the app's and Administration's.
-      const item = (name: string | RegExp) => page.getByRole("button", { name }).or(page.getByRole("link", { name }));
+const tab = (page: Page, name: RegExp) => page.getByRole("tab", { name }).or(page.getByRole("radio", { name }));
+/** A sidebar's row. */
+const item = (page: Page, name: string | RegExp) => page.getByRole("button", { name }).or(page.getByRole("link", { name }));
 
-      await sleepUntil(sent + QA.screens);
-      await press(page, tab(/^Screens/u));
-      await sleepUntil(sent + QA.web);
-      await press(page, page.getByRole("link", { name: /signed-in shopper/u }));
-      await sleepUntil(sent + QA.allScreens);
-      await press(page, page.getByText("All screens"));
-      await sleepUntil(sent + QA.phone);
-      await press(page, page.getByRole("link", { name: /iPhone app/u }));
-      await sleepUntil(sent + QA.takeOver);
-      await press(page, page.getByRole("button", { name: "Take over", exact: true }));
-      // The keys go to the page, a digit as each shows.
-      for (const [k, digit] of Array.from(CODE).entries()) {
-        await sleepUntil(sent + QA.takeOver + DIGIT_MS.first + k * DIGIT_MS.every - 120);
-        await page.keyboard.type(digit);
-      }
-      await sleepUntil(sent + QA.handBack);
-      await press(page, page.getByRole("button", { name: /^Hand back/u }));
-      await sleepUntil(sent + QA.back);
-      await press(page, page.getByText("All screens"));
-      await sleepUntil(sent + QA.shipping);
-      await press(page, tab(/^Shipping/u));
-      await sleepUntil(sent + QA.pr230);
-      await press(page, page.getByText("Checkout buttons in German and Dutch"));
-      await sleepUntil(sent + QA.tryIt);
-      await press(page, page.getByRole("tab", { name: "Try it" }));
-      await sleepUntil(sent + QA.line);
-      await press(page, tab(/^Merge line/u));
-      // Up the chat to last night's memory refresh, and open it.
-      await sleepUntil(sent + QA.memory);
-      const chat = page.locator('[data-screen^="chat"]').first();
-      const memory = page.getByRole("button", { name: /^Memory tidied/u });
-      await chat.hover();
-      for (let i = 0; i < 4 && !(await memory.isVisible()); i++) await page.mouse.wheel(0, -1200);
-      await sleepUntil(sent + QA.memoryOpen);
-      await press(page, memory);
-      // Automations, storefront's: its own and the nightly refresh's built-in row.
-      await sleepUntil(sent + QA.automations);
-      await go(page, `#/settings/automations?for=${STOREFRONT}`);
-      // Back, then Ada: Gmail woke it, and its reply with two files waits on you.
-      await sleepUntil(sent + QA.back2);
-      await press(page, page.getByRole("button", { name: "Back" }));
-      await sleepUntil(sent + QA.navi);
-      await press(page, item(/^Ada\b/u));
-      await sleepUntil(sent + QA.send);
-      await press(page, page.getByRole("button", { name: "Send it" }));
-      // Administration: the hub's people, then its invites.
-      await sleepUntil(sent + QA.admin);
-      await press(page, item("Administration"));
-      await sleepUntil(sent + QA.invites);
-      await press(page, item(/^Invites/u));
-      // Back to storefront's Agents, and in it its agents rather than the Screens it showed last: the floor as the
-      // video starts.
-      await sleepUntil(sent + QA.agents);
-      await go(page, `${CHAT}/agents`);
-      await sleepUntil(sent + QA.agents + 300);
-      await press(page, tab(/^Agents/u).last());
-      await sleepUntil(sent + QA.end);
-      await cdp.send("Page.stopScreencast");
-      const end = Date.now();
-      if (frames.length < 10) throw new Error(`the screencast sent ${frames.length} frames`);
+/**
+ * Types `text` into the chat's composer as a quick typist would, and sends it. `typing` is the first frame with a key
+ * typed in it, where a clip that opens on the ask starts.
+ */
+async function ask(page: Page, text: string, frames: ReadonlyArray<{ at: number }>): Promise<{ typing: number; sent: number }> {
+  await page.locator("[data-composer] textarea").click();
+  let typed = 0;
+  for (let i = 0; i < text.length; i += BURST) {
+    const next = Date.now() + BURST_MS;
+    await page.keyboard.insertText(text.slice(i, i + BURST));
+    if (typed === 0) typed = Date.now();
+    await sleepUntil(next);
+  }
+  await sleepUntil(Date.now() + 150);
+  await page.keyboard.press("Enter");
+  const sent = Date.now();
+  return { typing: frames.find((x) => x.at > typed)?.at ?? typed, sent };
+}
 
-      // A steady rate: each tick shows the newest frame by then. The screencast sends one only when something drew.
-      const ticks: Buffer[] = [];
-      for (let t = start; t <= end; t += 1000 / FPS) {
-        const frame = frames.findLast((x) => x.at <= t) ?? frames[0];
-        if (frame) ticks.push(frame.jpeg);
-      }
-      const first = frames.find((x) => x.at > typing)?.at ?? typing;
-      const video = await looped(page, ticks, Math.max(FADE, Math.ceil(((first - start) * FPS) / 1000)));
-      const out = path.join(repo, "site", `showcase-${theme}`);
-      // The poster, lighter than a screencast frame: the page shows it until the video plays, and instead of it with
-      // reduced motion.
-      const still = frames.findLast((x) => x.at <= sent + POSTER)?.jpeg;
-      if (still === undefined) throw new Error("no frame for the poster");
-      await poster(page, still, 1, 0.78, `${out}.jpg`);
-      await poster(page, still, 0.5, 0.8, `${out}-small.jpg`);
-      // Seconds into the video, which starts as the typing shows.
-      const at = (ms: number) => Math.max(0, Math.round((ms - first) / 100) / 10);
-      const chapters = path.join(repo, "site", "showcase.json");
-      const all = existsSync(chapters) ? (JSON.parse(readFileSync(chapters, "utf8")) as Record<string, unknown>) : {};
-      all[theme] = {
-        ask: at(typing),
-        plan: at(sent + STEPS.reply - 500),
-        build: at(sent + STEPS.split + 600),
-        screens: at(sent + QA.web),
-        merge: at(sent + QA.line),
-        night: at(sent + QA.memory),
-        navi: at(sent + QA.back2),
-        team: at(sent + QA.admin),
-        end: Math.round((video.length / FPS) * 10) / 10,
-      };
-      writeFileSync(chapters, `${JSON.stringify(all, null, 2)}\n`);
-      // Two sizes: 1440 px tall for a wide screen at 2x, 720 for a small screen's (the page picks by the frame's pixels).
-      for (const [height, file] of [[1440, `${out}.webm`], [720, `${out}-small.webm`]] as const) {
-        const run = spawnSync(
-          ffmpeg(),
-          ["-y", "-loglevel", "error", "-f", "image2pipe", "-framerate", String(FPS), "-c:v", "mjpeg", "-i", "pipe:0", "-vf", `scale=-2:${String(height)}:flags=lanczos`, "-c:v", "libvpx-vp9", "-pix_fmt", "yuv420p", "-crf", height === 720 ? "34" : "38", "-b:v", "0", "-row-mt", "1", "-deadline", "good", "-cpu-used", "2", "-an", file],
-          { input: Buffer.concat(video), maxBuffer: 1 << 30 },
-        );
-        if (run.status !== 0) throw new Error(`ffmpeg failed: ${String(run.stderr)}`);
-      }
-      // And as H.264, for Safari on an older iPhone or Mac.
-      // H.264 level 4.2 holds at most 8,704 macroblocks a frame: 1792x1152 (8,064) is the widest 14:9 under it.
-      await mp4(page, video, { width: 1792, height: 1152 }, "avc1.64002A", 42, 1_400_000, `${out}.mp4`);
-      await mp4(page, video, { width: 1120, height: 720 }, "avc1.64001F", 31, 700_000, `${out}-small.mp4`);
-    } finally {
-      await close();
+/** The phone's code, a digit as each shows after Take over. */
+async function typeCode(page: Page, takenAt: number) {
+  for (const [k, digit] of Array.from(CODE).entries()) {
+    await sleepUntil(takenAt + DIGIT_MS.first + k * DIGIT_MS.every - 120);
+    await page.keyboard.type(digit);
+  }
+}
+
+/** The clips, in the page's order. */
+const clips = (frames: ReadonlyArray<{ at: number }>): Record<"lead" | "team" | "screens" | "navi", Script> => ({
+  // The ask, the lead's split and its three writers, #231 up; then the merge line as the batch goes through CI and
+  // merges. Between them QA takes the phone over and hands it back, as the screens clip shows, so the order runs on.
+  lead: async (page) => {
+    const { typing, sent } = await ask(page, REQUEST, frames);
+    await sleepUntil(sent + STEPS.screens + 600);
+    await press(page, tab(page, /^Screens/u));
+    await sleepUntil(sent + 10_200);
+    await press(page, page.getByRole("link", { name: /iPhone app/u }));
+    await sleepUntil(sent + STEPS.phoneAsks + 1200);
+    await press(page, page.getByRole("button", { name: "Take over", exact: true }));
+    await typeCode(page, sent + STEPS.phoneAsks + 1200);
+    await sleepUntil(sent + STEPS.phoneAsks + 3400);
+    await press(page, page.getByRole("button", { name: /^Hand back/u }));
+    await sleepUntil(sent + STEPS.batch - 1400);
+    await press(page, tab(page, /^Shipping/u));
+    await sleepUntil(sent + STEPS.batch - 800);
+    await press(page, tab(page, /^Merge line/u));
+    await sleepUntil(sent + STEPS.merged + 2200);
+    return { takes: [[typing, sent + 4900], [sent + STEPS.batch - 500, sent + STEPS.merged + 2200]], poster: sent + 4700 };
+  },
+  // checkout's chat: Sam's ask, Alice's beside it, and the lead's answer to both.
+  team: async (page) => {
+    const { typing, sent } = await ask(page, TEAM_REQUEST, frames);
+    await sleepUntil(sent + TEAM_STEPS.said + 1800);
+    return { takes: [[typing, sent + TEAM_STEPS.said + 1800]], poster: sent + TEAM_STEPS.said + 1000 };
+  },
+  // The web writer's browser, live; then the phone asks for you, and you take it over, type the code and hand back.
+  screens: async (page) => {
+    const { sent } = await ask(page, REQUEST, frames);
+    await sleepUntil(sent + STEPS.screens + 300);
+    await press(page, tab(page, /^Screens/u));
+    await sleepUntil(sent + STEPS.screens + 800);
+    await press(page, page.getByRole("link", { name: /signed-in shopper/u }));
+    await sleepUntil(sent + 9600);
+    await press(page, page.getByText("All screens"));
+    await sleepUntil(sent + 10_200);
+    await press(page, page.getByRole("link", { name: /iPhone app/u }));
+    const takeOver = sent + STEPS.phoneAsks + 1200;
+    await sleepUntil(takeOver);
+    await press(page, page.getByRole("button", { name: "Take over", exact: true }));
+    await typeCode(page, takeOver);
+    await sleepUntil(sent + STEPS.phoneAsks + 3400);
+    await press(page, page.getByRole("button", { name: /^Hand back/u }));
+    await sleepUntil(sent + STEPS.phoneAsks + 4800);
+    return {
+      takes: [[sent + STEPS.screens + 1000, sent + 9300], [sent + STEPS.phoneAsks - 300, sent + STEPS.phoneAsks + 4800]],
+      poster: takeOver + DIGIT_MS.first + CODE.length * DIGIT_MS.every + 200,
+    };
+  },
+  // From storefront to Ada: Marta's mail woke it, and its reply with both files waits on you. Send it, and it went.
+  navi: async (page, start) => {
+    await sleepUntil(start + 700);
+    await press(page, item(page, /^Ada\b/u));
+    await sleepUntil(start + 2900);
+    await press(page, page.getByRole("button", { name: "Send it" }));
+    await sleepUntil(start + 5000);
+    return { takes: [[start, start + 5000]], poster: start + 2500 };
+  },
+});
+
+/** Where each clip opens, after the storefront's Agents. */
+const opening: Partial<Record<keyof ReturnType<typeof clips>, (page: Page) => Promise<void>>> = {
+  // checkout's chat, the panel hidden: the clip is the conversation.
+  team: async (page) => {
+    await press(page, item(page, /^checkout\b/u));
+    await page.locator("[data-composer] textarea").waitFor({ state: "visible", timeout: 10_000 });
+    await press(page, page.getByRole("button", { name: "Hide the panel" }));
+  },
+};
+
+async function record(app: ElectronApplication, page: Page, settled: () => Promise<void>, clip: keyof ReturnType<typeof clips>, theme: "light" | "dark") {
+  // A running clock from the fixture's "now": QA's fixed one never moves, and the merge line redraws only when a read's
+  // answer is newer than the last (TrainPane's dataUpdatedAt stamp).
+  const { now } = fixtureMeta(path.join(fixturesDir, "showcase-order.json"));
+  await page.clock.install({ time: new Date(now ?? Date.now()) });
+  await page.reload();
+  await setView(app, page, "medium", theme);
+  await show(page, "chat", `${CHAT}/agents`);
+  await settled();
+  // As on the site's shots (site.spec.ts): no sample-data banner or chip.
+  // The hubs' rows name the two hubs, Acme and Personal, rather than sample data: they stay.
+  await hideByClass(page, '[role="status"]', "Sample data, not connected", "display: none");
+  await page.emulateMedia({ colorScheme: theme, reducedMotion: "no-preference" });
+  await opening[clip]?.(page);
+  await settle(page);
+
+  const frames: Array<{ at: number; jpeg: Buffer }> = [];
+  const cdp = await page.context().newCDPSession(page);
+  cdp.on("Page.screencastFrame", ({ data, sessionId }) => {
+    frames.push({ at: Date.now(), jpeg: Buffer.from(data, "base64") });
+    void cdp.send("Page.screencastFrameAck", { sessionId }).catch(() => {});
+  });
+  await cdp.send("Page.startScreencast", { format: "jpeg", quality: 92, everyNthFrame: 1 });
+  // The fade's frames come first.
+  const start = Date.now() + (FADE * 1000) / FPS;
+  await sleepUntil(start);
+  const run = await clips(frames)[clip](page, start);
+  await cdp.send("Page.stopScreencast");
+  if (frames.length < 10) throw new Error(`the screencast sent ${String(frames.length)} frames`);
+
+  // A steady rate: each tick shows the newest frame by then. The screencast sends one only when something drew. The
+  // first take starts the fade's frames early, which the video then starts after.
+  const at = (t: number) => (frames.findLast((x) => x.at <= t) ?? frames[0])?.jpeg;
+  const ticks: Buffer[] = [];
+  run.takes.forEach(([from, to], n) => {
+    for (let t = n === 0 ? from - (FADE * 1000) / FPS : from; t <= to; t += 1000 / FPS) {
+      const jpeg = at(t);
+      if (jpeg) ticks.push(jpeg);
     }
   });
+  const video = await looped(page, ticks, FADE);
+  const out = path.join(repo, "site", `showcase-${clip}-${theme}`);
+  // The poster, lighter than a screencast frame: the page shows it until the video plays, and instead of it with
+  // reduced motion.
+  const still = frames.findLast((x) => x.at <= run.poster)?.jpeg;
+  if (still === undefined) throw new Error("no frame for the poster");
+  await poster(page, still, 1, 0.78, `${out}.jpg`);
+  await poster(page, still, 0.5, 0.8, `${out}-small.jpg`);
+  // Two sizes: 1440 px tall for a wide screen at 2x, 720 for a small screen's (the page picks by the frame's pixels).
+  for (const [height, file] of [[1440, `${out}.webm`], [720, `${out}-small.webm`]] as const) {
+    const encode = spawnSync(
+      ffmpeg(),
+      ["-y", "-loglevel", "error", "-f", "image2pipe", "-framerate", String(FPS), "-c:v", "mjpeg", "-i", "pipe:0", "-vf", `scale=-2:${String(height)}:flags=lanczos`, "-c:v", "libvpx-vp9", "-pix_fmt", "yuv420p", "-crf", height === 720 ? "34" : "38", "-b:v", "0", "-row-mt", "1", "-deadline", "good", "-cpu-used", "2", "-an", file],
+      { input: Buffer.concat(video), maxBuffer: 1 << 30 },
+    );
+    if (encode.status !== 0) throw new Error(`ffmpeg failed: ${String(encode.stderr)}`);
+  }
+  // And as H.264, for Safari on an older iPhone or Mac.
+  // H.264 level 4.2 holds at most 8,704 macroblocks a frame: 1792x1152 (8,064) is the widest 14:9 under it.
+  await mp4(page, video, { width: 1792, height: 1152 }, "avc1.64002A", 42, 1_400_000, `${out}.mp4`);
+  await mp4(page, video, { width: 1120, height: 720 }, "avc1.64001F", 31, 700_000, `${out}-small.mp4`);
+}
+
+for (const clip of ["lead", "team", "screens", "navi"] as const) {
+  for (const theme of ["light", "dark"] as const) {
+    test(`showcase ${clip} ${theme}`, async () => {
+      test.setTimeout(120_000);
+      const { app, page, settled, close } = await launch("showcase-order", appMain, { realClock: true });
+      try {
+        await record(app, page, settled, clip, theme);
+      } finally {
+        await close();
+      }
+    });
+  }
 }

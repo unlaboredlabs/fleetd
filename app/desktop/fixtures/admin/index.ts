@@ -16,6 +16,8 @@ const sam = person("p_aaaaaaaa", "Sam Rivera", "owner", "2026-09-01T08:00:00.000
 const alice = person("p_bbbbbbbb", "Alice Chen", "admin");
 const bob = person("p_cccccccc", "Bob Okafor", "member", "2026-10-14T16:20:00.000Z");
 const dana = person("p_dddddddd", "Dana Ito", "member", "2026-10-18T11:00:00.000Z");
+/** The people as a chat message names them (ChatMessage.person): Sam is the app's, the others write from theirs. */
+export const PEOPLE = { sam: ref(sam), alice: ref(alice), bob: ref(bob) } as const;
 
 const device = (keyId: string, name: string, p: JsonObject, lastUsedAt: string): JsonObject => ({
   keyId,

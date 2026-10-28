@@ -1,7 +1,7 @@
 # fleetd
 
-<!-- The showcase's poster; the recording itself plays on https://fleetd.sh (site/README.md). -->
-[![The fleetd app on a busy storefront: seven agents at work, the lead splitting a request to save carts across the web and the iPhone app, and the panel showing the iPhone simulator's screen with you in control, typing the sign-in code the app texted](site/showcase-light.jpg)](https://fleetd.sh)
+<!-- The lead clip's poster; the clips themselves play on https://fleetd.sh (site/README.md). -->
+[![The fleetd app on a busy storefront: you asked to save carts across the web and the iPhone app, the lead split it into three parts, each with its own writer, and #231 is up with a reviewer on it; the panel lists ten agents at work on four orders](site/showcase-lead-light.jpg)](https://fleetd.sh)
 
 fleetd runs Claude Code on your machines: you type what you want, and it plans the work, runs the agents, opens pull
 requests it has checked, and asks you only about real decisions.

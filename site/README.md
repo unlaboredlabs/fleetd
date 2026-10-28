@@ -1,46 +1,46 @@
 # fleetd.sh
 
 The static site behind `curl -fsSL https://fleetd.sh | sh`. `vercel.json` serves `install.sh` at `/` to curl, Wget and
-fetch user agents and `home.html` to everyone else. `install.sh` is also at `/install.sh` for reading first. `home.html` is the landing page, in light and dark after the
-reader's system; its showcase recording (`showcase-*.webm`), app screenshots (`chat-*.png`) and transcripts are real
-fleetd output, `fleetd.txt` is its plain-text twin (not `index.txt`: Vercel would serve that at `/` and break the curl rewrite) for agents, and `fonts/`
+fetch user agents and `home.html` to everyone else. `install.sh` is also at `/install.sh` for reading first. `home.html` is the landing page: a hero
+with the install line, then four short sections, each with its own clip of the app (`showcase-*`). It is dark until
+the reader picks Light in the header; the choice is kept under the docs' `starlight-theme` key, where anything but
+`light` (the docs' Auto included) reads as dark. `fleetd.txt` is its plain-text twin (not `index.txt`: Vercel would serve that at `/` and break the curl rewrite) for agents, and `fonts/`
 holds the self-hosted IBM Plex Sans and Lilex (both SIL OFL, licences alongside).
 
 There is deliberately no `index.html` at the root: Vercel serves files before applying rewrites, so an `index.html`
 would win over the user-agent rewrite at `/`. `docs/index.html` is `/docs` and fine. `cleanUrls` serves
 `docs/<page>.html` at `/docs/<page>`.
 
-## Refreshing the captures
+## Refreshing the clips
 
-The app screenshots (`chat-approve.png` and `chat-secret.png` under "What keeps it trustworthy", each with a `-dark`
-twin the page shows in dark mode) and the app shots in the docs (`docs/site/public/img/`) are the app's screens on
-E3b's fixtures, which are sanitized lab hub traffic (`app/desktop/fixtures`), at 1400x900@2x, without the sample-data
-banner. `app/desktop/qa/site.ts` lists them; `pnpm fixtures && pnpm qa:build && pnpm site:shots` in `app/desktop` writes
-them in place. Re-shoot them when what those screens show changes, and keep the captions and alt texts (on the page, in
-`fleetd.txt` and in the docs) true to the picture.
+Each section of `home.html` has its own clip, a few seconds of the app on the `showcase-order` fixture
+(`app/desktop/fixtures/showcase`), its takes cut together tight and its end fading into its start, so it loops without
+a cut:
 
-The showcase under the hero is the app recorded while a busy storefront takes one request from the message to the
-merge, on the `showcase-order` fixture (`app/desktop/fixtures/showcase`): seven agents already at work on other orders,
-the lead splitting the request into three parts, a live browser screen and an iPhone simulator testing them, you
-taking over the iPhone to type a sign-in code and handing back, the browser's recording landing as a PR's proof, another
-PR tried on the web with Try it, and the train merging four PRs as one batch; then a quick look around: the night's
-memory refresh line opened in the chat, the Automations page with its built-in nightly row, Ada (a Navi) woken by mail
-with a two-attachment reply you send, and Administration's people and invites, with two hubs in the sidebar. Each of
-those is another group's fixture (`fixtures/showcase/more.ts`). Something happens every second or so, and its end fades
-into its start, so it loops without a cut. It is `showcase-light.webm` and `showcase-dark.webm` (VP9, 2240x1440,
-25 fps) with H.264 `.mp4` twins for browsers without VP9 (1792x1152 at level 4.0, the most a 14:9 frame gets under level 4.2, which older iPhones
-and iPads decode; encoded frame by frame by the app's WebCodecs, so nothing is dropped), their posters
-`showcase-light.jpg` and `showcase-dark.jpg` (a busy moment: the iPhone's screen yours, its code typed), a half-size
-`-small` twin of each for small screens, and `showcase.json`, when each of the page's eight steps starts in the video.
-`pnpm fixtures && pnpm qa:build && pnpm site:showcase` in `app/desktop` records them in place
-(`app/desktop/qa/showcase.spec.ts`; it needs Playwright's ffmpeg, `pnpm exec playwright install ffmpeg` in
-`app/desktop`); the screens' pages are `fixtures/showcase/media/`, drawn by `node fixtures/showcase/media.ts`. The page
-shows the poster first and plays the recording as soon as the frame is on screen, the half-size one on a small screen;
-with reduced motion it keeps the poster until Play. Record it again when those screens change, and keep the alt text,
-the steps and the caption true to it.
+| clip | section | shows |
+|---|---|---|
+| `lead` | Ask the lead; it lands the PRs | you ask storefront's lead, it splits the request between three writers and #231 opens; then the merge line as four PRs merge as one batch |
+| `team` | Your team in one chat | checkout's chat: Bob's earlier request, Sam's ask, Alice's beside it under her name, and the lead answering both |
+| `screens` | Watch an agent's screen, and take over | a writer's live browser; then the iPhone simulator's sign-in asking for you, Take over, the code, Hand back |
+| `navi` | Navi, your own assistant | Ada, woken by Marta's mail, with a reply that waits on you; Send it, and it went |
 
-The `<!-- capture:NAME -->` blocks in `home.html` and the same blocks in `fleetd.txt` (found there by the shape of
-fleetd's output, so the twin carries no markers) come from one command, run from the repo root:
+Each is `showcase-<clip>-<theme>.webm` (VP9, 2240x1440, 25 fps) with an H.264 `.mp4` twin for browsers without VP9
+(1792x1152 at level 4.2 at most, which older iPhones and iPads decode; encoded frame by frame by the app's WebCodecs,
+so nothing is dropped), its poster `showcase-<clip>-<theme>.jpg`, and a half-size `-small` twin of each for small
+screens, in `light` and `dark`. `pnpm fixtures && pnpm qa:build && pnpm site:showcase` in `app/desktop` records them in
+place (`app/desktop/qa/showcase.spec.ts`, one test per clip and theme, `-g "showcase team"` for one; it needs
+Playwright's ffmpeg, `pnpm exec playwright install ffmpeg` in `app/desktop`); the screens' pages are
+`fixtures/showcase/media/`, drawn by `node fixtures/showcase/media.ts`. The page shows each poster first and plays its
+clip once the frame is near the screen, the half-size one on a small screen; with reduced motion it keeps the poster
+until Play. Record a clip again when what it shows changes, and keep its section's words and alt text true to it.
+
+The app shots in the docs (`docs/site/public/img/`) are the app's screens on E3b's fixtures, which are sanitized lab
+hub traffic (`app/desktop/fixtures`), at 1400x900@2x, without the sample-data banner. `app/desktop/qa/site.ts` lists
+them; `pnpm fixtures && pnpm qa:build && pnpm site:shots` in `app/desktop` writes them in place. Re-shoot them when what
+those screens show changes, and keep the captions and alt texts true to the picture.
+
+The docs' setup transcripts, a `console` block named `capture=init` or `capture=machine-add`, come from one command,
+run from the repo root:
 
 ```sh
 cargo build --release --locked -p fleetd && npm ci --prefix tests/lab
@@ -50,7 +50,7 @@ node tests/lab/site-capture.ts
 It runs the `fleetd init --yes --no-service` wizard and `fleetd machine add builder-1 --dry-run` in a throwaway HOME
 with your claude and gh logins copied in. This machine's tailnet name and addresses become `hub.your-tailnet.ts.net` and `<tailnet-ip>`, the gh login
 `demo`, and it refuses to write text that still names this machine, its home or lab paths, a non-loopback address or
-a key. Review the result with `git diff site/`.
+a key. It rebuilds `site/docs`; review the result with `git diff docs/site site/docs`.
 
 ## Docs (fleetd.sh/docs)
 

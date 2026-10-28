@@ -22,7 +22,7 @@ import { changesAnswers } from "../../src/renderer/screens/train/fixture.ts";
 import { MEMORY_REFRESHED } from "../lead/index.ts";
 import { answerHub } from "../admin/index.ts";
 import { CODE, PHONE_FRAME } from "./pages.ts";
-import { hubsScene, naviScene, tryItScene } from "./more.ts";
+import { hubsScene, naviScene, teamScene, tryItScene } from "./more.ts";
 
 export const REQUEST = "Let shoppers save their cart and pick it up on the web or the iPhone app.";
 
@@ -556,6 +556,7 @@ const build = (base: Fixture, other: Fixture): Fixture => {
   at(TRY_IT.flip, "browser_frame", tryIt.flipped);
   naviScene(f, ref);
   answerHub(f);
+  teamScene(f);
   hubsScene(f, other);
 
   f.answer("chat_send", { text: REQUEST }, { message: message(FIRST, "human", REQUEST, "final", 0, { by: "laptop", clientRequestId: "showcase-1", delivery: "turn" }) });

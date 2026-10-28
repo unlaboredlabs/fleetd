@@ -109,9 +109,10 @@ started, so it is safe to run next to a fleetd you use day to day.
 `site/` is fleetd.sh: the landing page and the docs at `/docs`, built from `docs/site/` with Starlight
 (`npm run build --prefix docs/site`, then commit `site/docs`; CI fails while it is out of date). Its search index,
 `site/docs/pagefind`, is ignored, not committed: the Vercel build generates it. The site shows real app
-screenshots and real setup output. A change that alters what the app shows or what `fleetd
-init` or `fleetd machine add` prints reruns `tests/lab/site-capture.ts` and commits the updated `site/` in the same
-PR (see `site/README.md`); `node tests/lab/site-capture.ts --docs` recaptures only the docs' output blocks. A change
+screenshots and real setup output. A change that alters what the app shows re-records the clips or shots it changes, and one that alters what `fleetd
+init` or `fleetd machine add` prints reruns `tests/lab/site-capture.ts`, committing the updated `site/` in the same
+PR (see `site/README.md`); `node tests/lab/site-capture.ts --docs` recaptures the docs' output blocks without its
+publishing check. A change
 that removes something the site mentions adds it to `site/.stale-terms`, which CI checks the page and the docs'
 sources against. A new or renamed command shows up in the docs' CLI reference by itself. Before opening a PR that
 touches `docs/site/` or `site/`, run `.github/site-check.mjs` and the `site` job's other checks (`site/README.md`,

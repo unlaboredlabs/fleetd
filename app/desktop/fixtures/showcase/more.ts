@@ -2,12 +2,15 @@
 // each made of another group's fixture rather than data of its own: Try it on #230 (fixtures/tryit), Navi with Ada and
 // Home above the projects, Ada woken by Gmail with a reply to approve that attaches two files and the order it asked
 // storefront for (fixtures/navi), and a second hub, Personal, beside this one in the sidebar (fixtures/sidebar).
-// Administration's people and invites are admin-owner's (fixtures/admin); the nightly memory refresh's line is in
-// storefront's chat (index.ts), and its built-in row on the Automations page comes with every fixture (fixtures/settings).
+// Administration's people and invites are admin-owner's (fixtures/admin), and so are the people in checkout's chat, which
+// the team shares: Sam writes from this app, Alice and Bob from theirs, and the lead answers them together. The nightly
+// memory refresh's line is in storefront's chat (index.ts), and its built-in row on the Automations page comes with
+// every fixture (fixtures/settings).
 import type { Fixture } from "../kit/fixture.ts";
 import { writeChat, type Ref } from "../kit/chat.ts";
-import { isObject, type JsonObject } from "../kit/json.ts";
-import { arr } from "../kit/stress.ts";
+import { asText, isObject, type JsonObject } from "../kit/json.ts";
+import { arr, obj } from "../kit/stress.ts";
+import { PEOPLE } from "../admin/index.ts";
 import { navi, sendApproval } from "../navi/index.ts";
 import { ADA, HOME } from "../navi/ids.ts";
 import { retitle } from "../sidebar/index.ts";
@@ -120,4 +123,62 @@ export const hubsScene = (f: Fixture, other: Fixture): void => {
   f.label = "Acme";
   f.color = "amber";
   f.hubs = [{ label: "Personal", color: "green", fixture: other }];
+};
+
+/** What Sam asks checkout's lead, with Alice and Bob in the same chat. */
+export const TEAM_REQUEST = "Can we add Apple Pay to the app’s checkout?";
+/** After Sam's send: Alice's message lands, then the lead's answer to both of them streams in. */
+export const TEAM_STEPS = { alice: 1400, lead: 2900, said: 3800 } as const;
+
+/**
+ * checkout's chat, which the team shares: Bob's request from earlier and the lead's answer to it. Sam's send plays the
+ * rest: Alice adds hers, and the lead answers the two of them in one reply.
+ */
+export const teamScene = (f: Fixture): void => {
+  const p = arr(f.snapshot?.["projects"]).map(obj).find((x) => x["title"] === "checkout");
+  if (p === undefined) throw new Error("the showcase's hub has no checkout project");
+  const ref: Ref = { machineId: asText(p["machineId"]), projectId: asText(p["projectId"]) };
+  // Its main is green here: the clip is about the chat.
+  for (const row of arr(obj(f.output("status_get", {}))["rows"]).map(obj)) if (row["title"] === "checkout") delete row["warning"];
+  const earlier = writeChat(f, ref, [
+    { author: "human", text: "Receipts should show the store’s VAT number.", minutesAgo: 48 },
+    { author: "lead", text: "Bob, done: #84 merged an hour ago, and receipts show the VAT number under the total.", minutesAgo: 47 },
+  ]);
+  const [bob] = earlier;
+  if (bob !== undefined) bob["person"] = { ...PEOPLE.bob };
+  const projectRef = { ...ref };
+  const iso = (ms: number) => new Date(Date.parse(f.now) + ms).toISOString();
+  let seq = earlier.length;
+  const message = (n: number, author: "human" | "lead", text: string, state: "final" | "streaming", ms: number, over: JsonObject = {}): JsonObject => ({
+    messageId: `m${String(n)}`,
+    projectRef: { ...projectRef },
+    seq: n,
+    author,
+    text,
+    attachments: [],
+    createdAt: iso(ms),
+    state,
+    ...over,
+  });
+  let events = 800;
+  const event = (type: string, summary: string, data: JsonObject): JsonObject => ({ seq: ++events, at: f.now, type, summary, ...ref, data });
+  const said = (m: JsonObject) => event("chat.message", "In the chat", { projectRef: { ...projectRef }, messageId: m["messageId"] ?? "", seq: m["seq"] ?? 0, author: m["author"] ?? "", state: m["state"] ?? "", message: m });
+  const mine = message(++seq, "human", TEAM_REQUEST, "final", 0, { by: "laptop", clientRequestId: "showcase-team", delivery: "turn", person: { ...PEOPLE.sam } });
+  const alice = message(++seq, "human", "If we do, keep card entry as the fallback: half our shoppers don’t have it set up.", "final", TEAM_STEPS.alice, { by: "ThinkPad", delivery: "steer", person: { ...PEOPLE.alice } });
+  const reply = "Sam, Alice: one order for both. Apple Pay at checkout, with card entry kept as the fallback. A writer starts on it now.";
+  const lead = ++seq;
+  const waiting = (leadWorking: boolean): JsonObject => event("chat.waiting", "The lead's turn", { projectRef: { ...projectRef }, needsYou: false, leadWorking, lastSeq: seq, lastMessageAt: f.now });
+  f.answer("chat_send", { text: TEAM_REQUEST }, { message: mine });
+  f.then("chat_send", { text: TEAM_REQUEST }, {
+    frames: [
+      { ms: 0, kind: "event", payload: waiting(true) },
+      { ms: TEAM_STEPS.alice, kind: "event", payload: said(alice) },
+      { ms: TEAM_STEPS.lead, kind: "event", payload: said(message(lead, "lead", "", "streaming", TEAM_STEPS.lead)) },
+      { ms: TEAM_STEPS.said, kind: "event", payload: said(message(lead, "lead", reply, "final", TEAM_STEPS.said)) },
+      { ms: TEAM_STEPS.said + 100, kind: "event", payload: waiting(false) },
+    ],
+  });
+  // Reads after the newest message, as the app makes once one lands: nothing more.
+  const state = { projectRef: { ...projectRef }, needsYou: false, leadWorking: false, lastSeq: lead, lastMessageAt: f.now };
+  for (let after = 0; after <= lead; after++) f.answer("chat_history", { projectRef: { ...projectRef }, after }, { messages: [], moreBefore: after > 0, moreAfter: false, state });
 };
