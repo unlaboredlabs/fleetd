@@ -1,6 +1,7 @@
 // Removing a project: project_remove stops its claude processes and forgets it; its files, branches and worktrees
 // stay. Opened from a project's menu on the Machines screen. Settings → Projects opens it to delete: the name typed to
-// confirm, and its fleetd worktrees removed too (`removeWorktrees`), never its checkout, branches or PRs.
+// confirm, and its fleetd worktrees removed too (`removeWorktrees`), never its checkout, branches or PRs. A Navi or any
+// plain folder has none of those: its delete says only that its agents stop, fleetd forgets it, and its folder stays.
 
 import { useState } from "react";
 import { Button, Dialog, Field, Input, Text, toast } from "../../ui";
@@ -13,8 +14,14 @@ export interface RemoveTarget {
   readonly projectId: string;
   readonly title: string;
   readonly path: string;
-  /** A delete: its worktrees go too, once its name is typed. `unsaved` are those holding uncommitted changes. */
-  readonly deleting?: { readonly unsaved: ReadonlyArray<{ readonly path: string; readonly branch?: string | undefined }> };
+  /**
+   * A delete: its worktrees go too, once its name is typed. `unsaved` are those holding uncommitted changes; `plain`
+   * is a project that is a folder rather than a git repo (a Navi's), with no checkout, branches or pull requests.
+   */
+  readonly deleting?: {
+    readonly unsaved: ReadonlyArray<{ readonly path: string; readonly branch?: string | undefined }>;
+    readonly plain?: boolean;
+  };
 }
 
 /** The delete's confirm: the project's name exactly, around spaces. */
@@ -49,7 +56,11 @@ export function RemoveProjectDialog({ project, onClose, onRemoved }: { project: 
     // The way back in: the folder is still there, so adding it again is one click.
     toast({
       title: p.deleting ? `${p.title} deleted from fleetd` : `${p.title} removed from ${machine}`,
-      description: p.deleting ? `Its checkout and branches stay on ${machine}.` : "Its files, branches and worktrees stay.",
+      description: p.deleting
+        ? p.deleting.plain
+          ? `Its folder stays on ${machine}.`
+          : `Its checkout and branches stay on ${machine}.`
+        : "Its files, branches and worktrees stay.",
       action: { label: "Add it again", onClick: () => openAddProject({ text: p.path, machine: p.machineId }) },
     });
   };
@@ -64,7 +75,9 @@ export function RemoveProjectDialog({ project, onClose, onRemoved }: { project: 
       title={project ? (deleting ? `Delete ${project.title}?` : `Remove ${project.title} from ${machine}?`) : ""}
       description={
         deleting
-          ? `Its agents stop now, fleetd forgets it and its settings, and the worktrees its agents worked in are removed. Its checkout at ${project.path}, its branches and its pull requests stay as they are.`
+          ? deleting.plain
+            ? `Its agents stop now and fleetd forgets it and its settings. Its folder at ${project.path} stays as it is, with everything in it.`
+            : `Its agents stop now, fleetd forgets it and its settings, and the worktrees its agents worked in are removed. Its checkout at ${project.path}, its branches and its pull requests stay as they are.`
           : "Its agents stop now. Its files, branches and worktrees stay on the machine; you can add the folder again any time."
       }
       footer={

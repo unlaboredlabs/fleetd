@@ -31,6 +31,7 @@ import {
   type PastedVar,
 } from "./projectModel";
 import { RepoSetting } from "./RepoSetting";
+import { isOwn } from "./repoModel";
 import { replaceRoute, type SettingsRoute } from "./route";
 import { SetupSetting } from "./SetupSetting";
 import { TrainSetting } from "./TrainSetting";
@@ -110,7 +111,10 @@ export function ProjectSettings({ route }: { route: SettingsRoute }) {
  */
 function ProjectPage({ settings, refresh, onDeleted }: { settings: Settings; refresh: () => Promise<Settings | undefined>; onDeleted: () => void }) {
   const ref = { machineId: settings.machineId, projectId: settings.projectId };
-  const navi = isNavi(useData((d) => d.projects[projectKey(ref)]));
+  const summary = useData((d) => d.projects[projectKey(ref)]);
+  const navi = isNavi(summary);
+  // A folder rather than a git repo: the hub knows no repo of its own (a Navi's never has one).
+  const plain = navi || !(summary?.repos ?? []).some((r) => isOwn(r, ref));
   const [deleting, setDeleting] = useState<RemoveTarget | null>(null);
   const [checking, setChecking] = useState(false);
   const [blocked, setBlocked] = useState<string | null>(null);
@@ -128,7 +132,7 @@ function ProjectPage({ settings, refresh, onDeleted }: { settings: Settings; ref
       ...ref,
       title: fresh.title,
       path: fresh.workspaceRoot,
-      deleting: { unsaved: unsavedWorktrees(fresh).map((w) => ({ path: w.path, branch: w.branch })) },
+      deleting: { unsaved: unsavedWorktrees(fresh).map((w) => ({ path: w.path, branch: w.branch })), plain },
     });
   };
   return (
@@ -171,7 +175,7 @@ function ProjectPage({ settings, refresh, onDeleted }: { settings: Settings; ref
       <Separator />
       <Setting reveal="projects.delete" label="Delete project" help="Stops its agents and removes it from fleetd, with its fleetd worktrees.">
         <Text size="sm" tone="quiet">
-          Its checkout, its branches and its pull requests stay as they are.
+          {plain ? "Its folder stays as it is." : "Its checkout, its branches and its pull requests stay as they are."}
         </Text>
         <div className={s.inline}>
           <Button variant="danger" disabled={unknown !== null || checking} onClick={() => void open()}>

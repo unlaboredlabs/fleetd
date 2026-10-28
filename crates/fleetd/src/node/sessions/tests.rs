@@ -2261,6 +2261,51 @@ async fn project_env_reaches_a_new_session_and_deleting_the_project_leaves_the_c
     assert!(crate::node::project_env::vars(&home, "p1").is_empty());
 }
 
+/// A project whose root is a plain folder, not a git repository (a Navi's): deleting it with its worktrees stops its
+/// claude, removes fleetd's own directory for it and forgets it, with no git worktree cleanup to fail; its folder
+/// stays as it was.
+#[tokio::test]
+async fn deleting_a_plain_folder_project_with_its_worktrees_skips_git() {
+    let dir = tempfile::tempdir().unwrap();
+    let folder = dir.path().join("navi/adri");
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::write(folder.join("notes.md"), "mine\n").unwrap();
+    let home = dir.path().join("node");
+    let mut hub = hub(
+        dir.path(),
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::fixture("permission-allow"),
+    )
+    .await;
+    hub.project(&folder).await;
+    hub.ok(launch(
+        "s1",
+        RuntimeMode::ApprovalRequired,
+        SessionWorkspace::Root,
+    ))
+    .await;
+    hub.summary(|s| s.status == SessionStatus::Waiting).await;
+    let leftover = home.join("worktrees/p1/T1");
+    std::fs::create_dir_all(&leftover).unwrap();
+
+    let remove = || SessionCall::ProjectRemove {
+        project_id: ProjectId::unchecked("p1"),
+        remove_worktrees: true,
+    };
+    assert_eq!(hub.ok(remove()).await, SessionOutput::Done);
+    assert_eq!(hub.settled("r1").await.status, SessionStatus::Interrupted);
+    assert!(!home.join("worktrees/p1").exists());
+    assert_eq!(
+        std::fs::read_to_string(folder.join("notes.md")).unwrap(),
+        "mine\n"
+    );
+    assert!(!folder.join(".git").exists());
+    let SessionResult::Err(gone) = hub.call(remove()).await else {
+        panic!("removed the same project twice")
+    };
+    assert_eq!(gone.code, SessionErrorCode::NotFound);
+}
+
 /// The recorded `echo hi` turn, as a `printenv` that prints `printed` and a reply that repeats it.
 fn printenv_turn(printed: &str) -> String {
     fn swap(v: &mut serde_json::Value, printed: &str) {
