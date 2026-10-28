@@ -102,8 +102,8 @@ figcaption b{color:var(--ink);font-weight:500}
 .play{position:absolute;right:10px;bottom:10px;font:500 13px/1 var(--sans);color:var(--ink);background:var(--paper);border:1px solid var(--rule);border-radius:4px;padding:6px 9px;cursor:pointer;opacity:0;visibility:hidden}
 .show .on .play,.show .ready .play{opacity:1;visibility:visible}
 .play:hover{border-color:var(--ink)}
-.line{list-style:none;margin:20px 0 0;padding:0;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:0 clamp(14px,1.8vw,28px);counter-reset:s}
-.line li{border-top:1px solid var(--rule);padding:12px 0 0;counter-increment:s;color:var(--grey)}
+.line{list-style:none;margin:20px 0 0;padding:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0 clamp(14px,1.8vw,28px);counter-reset:s}
+.line li{border-top:1px solid var(--rule);padding:12px 0 16px;counter-increment:s;color:var(--grey)}
 .line b{display:block;font-size:15px;line-height:1.35;font-weight:500;color:var(--ink)}
 .line b::before{content:counter(s);display:inline-block;width:1.4em;color:var(--faint);font-variant-numeric:tabular-nums}
 .line p{font-size:14px;margin-top:3px}
@@ -152,8 +152,7 @@ summary:hover{color:var(--ink)}
   .hero,.head{grid-template-columns:minmax(0,1fr)}
   .install{max-width:36em}
   .feats,.docs{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .line{grid-template-columns:repeat(3,minmax(0,1fr));gap:0 20px}
-  .line li{padding-bottom:16px}
+  .line{grid-template-columns:repeat(2,minmax(0,1fr));gap:0 20px}
 }
 @media (max-width:640px){
   body{font-size:16px}
@@ -212,7 +211,7 @@ summary:hover{color:var(--ink)}
   <div class="shot" id="show">
     <picture>
       <source srcset="/showcase-dark-small.jpg 1400w, /showcase-dark.jpg 2800w" sizes="(min-width: 1240px) 1112px, calc(100vw - 2 * clamp(20px, 4.4vw, 64px))" media="(prefers-color-scheme: dark)">
-      <img src="/showcase-light.jpg" srcset="/showcase-light-small.jpg 1400w, /showcase-light.jpg 2800w" sizes="(min-width: 1240px) 1112px, calc(100vw - 2 * clamp(20px, 4.4vw, 64px))" width="2800" height="1800" fetchpriority="high" alt="The fleetd app on the storefront project, with seven agents at work on four orders. You asked to let shoppers save their cart and pick it up on the web or the iPhone app; the lead split it into three parts, each with its own writer, said #231 is up with a reviewer on it, then that the iPhone app’s sign-in texts a code to a test number and asked you to take over its screen. The panel shows that screen: an iPhone simulator on the app’s sign-in code page, the code 418093 typed in, its bar saying you’re in control, and Hand back under it.">
+      <img src="/showcase-light.jpg" srcset="/showcase-light-small.jpg 1400w, /showcase-light.jpg 2800w" sizes="(min-width: 1240px) 1112px, calc(100vw - 2 * clamp(20px, 4.4vw, 64px))" width="2800" height="1800" fetchpriority="high" alt="The fleetd app on the storefront project, with seven agents at work on four orders. You asked to let shoppers save their cart and pick it up on the web or the iPhone app; the lead split it into three parts, each with its own writer, said #231 is up with a reviewer on it, then that the iPhone app’s sign-in texts a code to a test number and asked you to take over its screen. The panel shows that screen: an iPhone simulator on the app’s sign-in code page, the code 418093 typed in, its bar saying you’re in control, and Hand back under it. The sidebar holds two Navis, Ada and Home, above the projects of two hubs, Acme and Personal.">
     </picture>
     <video muted loop playsinline preload="none" disablepictureinpicture aria-hidden="true" tabindex="-1" data-src="/showcase-"></video>
     <button class="play" type="button" aria-controls="show">Pause</button>
@@ -221,10 +220,13 @@ summary:hover{color:var(--ink)}
     <li data-step="ask"><b>You ask</b><p>Say what you want in the project’s chat.</p></li>
     <li data-step="plan"><b>The lead splits it</b><p>Into parts, each with its own agent.</p></li>
     <li data-step="build"><b>Agents build</b><p>In parallel, beside the other orders.</p></li>
-    <li data-step="screens"><b>Screens test it</b><p>A browser and an iPhone, live; take over any time.</p></li>
+    <li data-step="screens"><b>Screens test it</b><p>A browser and an iPhone, live; take over, or try the PR yourself.</p></li>
     <li data-step="merge"><b>The train merges</b><p>Reviewed PRs, in batches, on green CI.</p></li>
+    <li data-step="night"><b>It tidies at night</b><p>Each lead’s memory refreshed nightly; automations on a schedule.</p></li>
+    <li data-step="navi"><b>Navi runs errands</b><p>Your own assistant: mail wakes it, and it sends only once you approve.</p></li>
+    <li data-step="team"><b>Your team</b><p>People and invites, and several hubs in one app.</p></li>
   </ol>
-  <figcaption id="show-cap"><b>A busy storefront takes one more request, from the message to a merged batch.</b> Recorded from the fleetd app on sample data, with the waits cut short: a real change takes minutes to hours, and you can close the app meanwhile.</figcaption>
+  <figcaption id="show-cap"><b>A busy storefront takes one more request, from the message to a merged batch, then a look around: the night’s memory refresh, a Navi, and the team.</b> Recorded from the fleetd app on sample data, with the waits cut short: a real change takes minutes to hours, and you can close the app meanwhile.</figcaption>
 </figure>
 
 <section class="w sec" aria-labelledby="line-h">

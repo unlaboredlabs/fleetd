@@ -15,7 +15,8 @@ import { arr } from "../kit/stress.ts";
 
 const CREATOR = { keyId: "k-laptop", name: "laptop" };
 
-const navi = (f: Fixture, ref: Ref, title: string, folder: string, archivedAgoMs?: number): JsonObject => ({
+/** A Navi as the snapshot lists it beside the projects (the showcase's too). */
+export const navi = (f: Fixture, ref: Ref, title: string, folder: string, archivedAgoMs?: number): JsonObject => ({
   machineId: ref.machineId,
   projectId: ref.projectId,
   title,
@@ -43,29 +44,47 @@ const EMAIL = {
   body: BODY,
 };
 
-/** Ada's send, as the hub files it: the tool's input, and the preview the integrations policy reads from it. */
-const approval = (): JsonObject => ({
-  kind: "command_approval",
-  machineId: ADA.machineId,
-  state: "open",
-  permission: {
-    requestId: "perm-ada-1",
-    threadId: uuid("navi ada thread"),
-    toolName: "mcp__google__send_message",
-    summary: `Send an email to ${EMAIL.to.join(", ")}, cc ${EMAIL.cc.join(", ")}: “${EMAIL.subject}”`,
-    input: { account: "sam@example.com", ...EMAIL },
-    preview: {
-      integration: "google",
-      server: "google",
-      tool: "send_message",
-      action: "send",
-      title: "Send an email",
-      account: "sam@example.com",
-      ...EMAIL,
-      input: JSON.stringify({ account: "sam@example.com", ...EMAIL }, null, 2),
+/** An email a Navi sends: who to, its subject and body, and the files it attaches. */
+export interface Email {
+  readonly to: string[];
+  readonly cc?: string[];
+  readonly subject: string;
+  readonly body: string;
+  readonly attachments?: JsonObject[];
+}
+
+/**
+ * A Navi's send, as the hub files it: the tool's input, and the preview the integrations policy reads from it. Ada's
+ * reply to Ana here; the showcase's reply with two files attached.
+ */
+export const sendApproval = (navi: Ref, name: string, email: Email = EMAIL, account = "sam@example.com"): JsonObject => {
+  const { attachments, ...mail } = email;
+  const input = { account, ...mail, ...(attachments === undefined ? {} : { attachments: attachments.map((a) => a["name"] ?? "") }) };
+  const cc = mail.cc === undefined ? "" : `, cc ${mail.cc.join(", ")}`;
+  return {
+    kind: "command_approval",
+    machineId: navi.machineId,
+    state: "open",
+    permission: {
+      requestId: `perm-${name}-1`,
+      threadId: uuid(`navi ${name} thread`),
+      toolName: "mcp__google__send_message",
+      summary: `Send an email to ${mail.to.join(", ")}${cc}: “${mail.subject}”`,
+      input,
+      preview: {
+        integration: "google",
+        server: "google",
+        tool: "send_message",
+        action: "send",
+        title: "Send an email",
+        account,
+        ...mail,
+        ...(attachments === undefined ? {} : { attachments: attachments.map((a) => ({ ...a })) }),
+        input: JSON.stringify(input, null, 2),
+      },
     },
-  },
-});
+  };
+};
 
 const two = (base: Fixture): Fixture => {
   const f = Fixture.from(base, "navi-two", "Navi: Ada and Home above the projects, Taxes archived; Ada asks to send an email and follows work it asked for.");
@@ -79,7 +98,7 @@ const two = (base: Fixture): Fixture => {
     [
       { author: "human", text: "Ana asked about lunch on Tuesday. Say yes, 12:30 at the usual place." },
       { author: "lead", text: "Tuesday 12:30 is free on your calendar. Here's the reply; it goes out once you approve it." },
-      { author: "lead", text: "", item: approval() },
+      { author: "lead", text: "", item: sendApproval(ADA, "ada") },
       { author: "human", text: "And ask the storefront lead to let people save their cart for later." },
       { author: "lead", text: "Asked storefront's lead (N3). Its lead opened order W12, *Saved carts*, and it's under way. I'll tell you when it lands." },
     ],

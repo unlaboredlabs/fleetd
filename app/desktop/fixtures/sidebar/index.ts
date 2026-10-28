@@ -51,8 +51,8 @@ const reasons = (base: Fixture): Fixture => {
   return f;
 };
 
-/** Every project's title in `f` renamed by `titles`, wherever a row names it beside its project. */
-const retitle = (f: Fixture, titles: Readonly<Record<string, string>>): void => {
+/** Every project's title in `f` renamed by `titles`, wherever a row names it beside its project (the showcase's too). */
+export const retitle = (f: Fixture, titles: Readonly<Record<string, string>>): void => {
   const walk = (v: JsonValue | undefined): void => {
     if (Array.isArray(v)) return v.forEach(walk);
     if (!isObject(v)) return;

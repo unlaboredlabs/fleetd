@@ -4,15 +4,21 @@
     "plan": 2,
     "build": 3.2,
     "screens": 7.4,
-    "merge": 23.4,
-    "end": 28.8
+    "merge": 23.8,
+    "night": 27.2,
+    "navi": 31,
+    "team": 34.4,
+    "end": 38.2
   },
   "dark": {
     "ask": 0,
-    "plan": 2.1,
-    "build": 3.3,
-    "screens": 7.5,
-    "merge": 23.5,
-    "end": 28.9
+    "plan": 2,
+    "build": 3.2,
+    "screens": 7.4,
+    "merge": 23.8,
+    "night": 27.2,
+    "navi": 31,
+    "team": 34.4,
+    "end": 38.2
   }
 }

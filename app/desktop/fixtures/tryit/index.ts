@@ -77,8 +77,11 @@ const starting = (f: Fixture, at: number): JsonObject => {
   const { head: _head, ...rest } = previewOf(f, "starting", { steps: stepsAt(at), startedAt: iso(f, 0) });
   return at === 0 ? rest : { ...rest, head: HEAD };
 };
-/** Ready `tookMs` after it started, `startedAgoMs` before now (negative: it starts that long from now). */
-const ready = (f: Fixture, startedAgoMs = 52_000, tookMs = 46_000): JsonObject =>
+/**
+ * Ready `tookMs` after it started, `startedAgoMs` before now (negative: it starts that long from now). The showcase
+ * gives it its own PR (`of`, `head`).
+ */
+export const ready = (f: Fixture, startedAgoMs = 52_000, tookMs = 46_000): JsonObject =>
   previewOf(f, "ready", {
     startedAt: iso(f, -startedAgoMs),
     readyAt: iso(f, -startedAgoMs + tookMs),
@@ -106,7 +109,7 @@ const suggestion = (f: Fixture): JsonObject => ({
 });
 
 /** The preview's page: the checkout in Dutch or German, as the session it shows in streams it. */
-const frame = (seq: number, lang: "de" | "nl"): JsonObject => ({
+export const frame = (seq: number, lang: "de" | "nl"): JsonObject => ({
   sessionId: SESSION,
   seq,
   jpegB64: jpeg(lang === "de" ? "checkoutDe" : "checkoutNl"),
@@ -125,7 +128,7 @@ const stateEvent = (f: Fixture, state: string): JsonObject => {
 const rowsOf = (row: JsonObject) => ({ tool: "previews_list", field: "previews", where: { previewId: PREVIEW, state: row["state"] ?? "", steps: row["steps"] ?? [] } });
 
 /** previews_list's answer, `rows` hidden until a frame shows them; and what Try it's other tools answer. */
-const answerPreviews = (f: Fixture, rows: readonly JsonObject[], opts: { readonly hidden?: readonly JsonObject[]; readonly suggest?: boolean; readonly canStart?: boolean } = {}): void => {
+export const answerPreviews = (f: Fixture, rows: readonly JsonObject[], opts: { readonly hidden?: readonly JsonObject[]; readonly suggest?: boolean; readonly canStart?: boolean } = {}): void => {
   const projectRef = firstProject(f);
   f.answer("previews_list", { projectRef }, { previews: [...rows], suggestions: opts.suggest === true ? [suggestion(f)] : [], ...(opts.canStart === undefined ? {} : { canStart: opts.canStart }) });
   for (const r of opts.hidden ?? []) f.hidden.push(rowsOf(r));

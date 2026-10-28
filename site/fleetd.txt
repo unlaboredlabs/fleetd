@@ -18,7 +18,8 @@ Docs:   https://fleetd.sh/docs
 GitHub: https://github.com/unlaboredlabs/fleetd
 
 
-A BUSY STOREFRONT TAKES ONE MORE REQUEST, FROM THE MESSAGE TO A MERGED BATCH
+A BUSY STOREFRONT TAKES ONE MORE REQUEST, FROM THE MESSAGE TO A MERGED BATCH,
+THEN A LOOK AROUND: THE NIGHT'S MEMORY REFRESH, A NAVI, AND THE TEAM
 A recording of the fleetd app on sample data, with the waits cut short: a real
 change takes minutes to hours, and you can close the app meanwhile.
 Video: showcase-light.webm, showcase-dark.webm (H.264: showcase-light.mp4,
@@ -27,8 +28,14 @@ showcase-dark.mp4). Still: showcase-light.jpg
   1  You ask             Say what you want in the project's chat.
   2  The lead splits it  Into parts, each with its own agent.
   3  Agents build        In parallel, beside the other orders.
-  4  Screens test it     A browser and an iPhone, live; take over any time.
+  4  Screens test it     A browser and an iPhone, live; take over, or try the
+                         PR yourself.
   5  The train merges    Reviewed PRs, in batches, on green CI.
+  6  It tidies at night  Each lead's memory refreshed nightly; automations on
+                         a schedule.
+  7  Navi runs errands   Your own assistant: mail wakes it, and it sends only
+                         once you approve.
+  8  Your team           People and invites, and several hubs in one app.
 
   Seven agents are already at work on storefront's other orders.
   You:   Let shoppers save their cart and pick it up on the web or the iPhone
@@ -48,8 +55,22 @@ showcase-dark.mp4). Still: showcase-light.jpg
   Lead:  #232 is up: the web cart, with its screen's recording on the PR as
          proof: a shopper signs in, adds a shirt, and the cart is saved to
          their account.
+         (You open #230, the checkout in German and Dutch, and Try it: the
+         PR's checkout runs as a page you drive, in Dutch, then German.)
   Lead:  #230 to #233 merged as one batch. Saved carts now follow shoppers
          between the web and the iPhone app.
+
+  Then a look around the app:
+  - Last night's line in the chat, "Memory tidied: 3 added, 1 updated, 2
+    removed", opens to each change, each with Undo. Automations lists
+    storefront's own (a weekday dependency check, error alert triage, monthly
+    release notes) and the built-in nightly memory refresh.
+  - Ada, a Navi above the projects: new mail from Marta woke it, and its reply
+    with the signed tenant form and a payslip attached waits on you. You press
+    Send it, and Ada says it went. Beside the chat, the order it asked
+    storefront's lead for, W18, in progress.
+  - Administration: the hub's people (an owner, an admin, a member, an invite
+    waiting) and its invites. The sidebar holds two hubs, Acme and Personal.
 
 
 THE WHOLE LINE, NOT ONE MORE CHAT WINDOW
