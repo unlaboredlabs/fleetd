@@ -56,6 +56,7 @@ On each repository it is installed on:
 |---|---|---|
 | Contents | write | Rebase and merge branches |
 | Pull requests | write | Read, update and merge PRs |
+| Issues | write | Find and label PRs (`fleetd:next`): labels go through the issues endpoints |
 | Workflows | write | Merge changes to `.github/workflows` |
 | Commit statuses | write | Post `fleetd/train` |
 | Actions | write | Re-run CI |

@@ -6,8 +6,8 @@
 //!
 //! [`GithubApps::token_for`] gives the hub's `gh` an installation token for a repository the App is installed on
 //! ([`gh::AppGh`]): it signs a JWT with the private key, reads the App's installations every few minutes, and mints
-//! each installation's token an hour at a time. Anything else, or any failure, leaves `gh` on the hub machine's own
-//! login, as before the App.
+//! each installation's token an hour at a time. Any other repository, or no token to be had, leaves `gh` on the hub
+//! machine's own login, as before the App; so does a run GitHub refuses to the App itself (gh.rs).
 pub mod gh;
 #[cfg(test)]
 mod tests;
@@ -214,6 +214,8 @@ pub struct GithubApps {
     clock: Arc<dyn Clock>,
     ep: RwLock<Endpoints>,
     cache: tokio::sync::Mutex<Cache>,
+    /// One read of the installations at a time.
+    refreshing: tokio::sync::Mutex<()>,
 }
 
 fn http() -> reqwest::Client {
@@ -284,6 +286,7 @@ impl GithubApps {
             clock,
             ep: RwLock::new(Endpoints::default()),
             cache: tokio::sync::Mutex::new(Cache::default()),
+            refreshing: tokio::sync::Mutex::new(()),
         })
     }
 
@@ -442,14 +445,14 @@ impl GithubApps {
         }
     }
 
-    /// Reads the App's installations, mints each one's token and reads the repositories each reaches; keeps what it
-    /// read on the App.
-    async fn refresh(
+    /// Reads the App's installations, mints each one's token and reads the repositories each reaches, without the
+    /// cache's lock: a slow GitHub holds up no `gh` run meanwhile. An installation GitHub refuses (suspended, or
+    /// uninstalled mid-read) is left out and said, and the others are kept.
+    async fn read_installs(
         &self,
-        cache: &mut Cache,
         app: &GithubApp,
         pem: &str,
-    ) -> Result<GithubApp, String> {
+    ) -> Result<(Vec<Install>, GithubApp, Vec<String>), String> {
         let jwt = self.jwt_for(app, pem)?;
         let listed = self
             .call(
@@ -460,6 +463,7 @@ impl GithubApps {
             .await?;
         let mut installs = Vec::new();
         let mut seen = Vec::new();
+        let mut skipped = Vec::new();
         for i in listed.as_array().map(Vec::as_slice).unwrap_or_default() {
             let Some(id) = i["id"].as_i64() else { continue };
             let account = i["account"]["login"]
@@ -467,28 +471,40 @@ impl GithubApps {
                 .unwrap_or_default()
                 .to_owned();
             let all = i["repository_selection"].as_str() == Some("all");
-            let token = self.mint(&jwt, id).await?;
-            let mut repos = Vec::new();
-            let mut count = 0;
-            for page in 1..=REPO_PAGES {
-                let path = format!("/installation/repositories?per_page=100&page={page}");
-                let body = self
-                    .call(reqwest::Method::GET, &path, Some(token.value.as_str()))
-                    .await?;
-                count = body["total_count"].as_i64().unwrap_or_default();
-                let names: Vec<String> = body["repositories"]
-                    .as_array()
-                    .map(Vec::as_slice)
-                    .unwrap_or_default()
-                    .iter()
-                    .filter_map(|r| r["full_name"].as_str().map(str::to_owned))
-                    .collect();
-                let last = names.len() < 100;
-                repos.extend(names);
-                if last || all {
-                    break;
+            let read = async {
+                let token = self.mint(&jwt, id).await?;
+                let mut repos = Vec::new();
+                let mut count = 0;
+                for page in 1..=REPO_PAGES {
+                    let path = format!("/installation/repositories?per_page=100&page={page}");
+                    let body = self
+                        .call(reqwest::Method::GET, &path, Some(token.value.as_str()))
+                        .await?;
+                    count = body["total_count"].as_i64().unwrap_or_default();
+                    let names: Vec<String> = body["repositories"]
+                        .as_array()
+                        .map(Vec::as_slice)
+                        .unwrap_or_default()
+                        .iter()
+                        .filter_map(|r| r["full_name"].as_str().map(str::to_owned))
+                        .collect();
+                    let last = names.len() < 100;
+                    repos.extend(names);
+                    if last || all {
+                        break;
+                    }
                 }
+                Ok::<_, String>((token, repos, count))
             }
+            .await;
+            let (token, repos, count) = match read {
+                Ok(read) => read,
+                Err(e) => {
+                    tracing::warn!("github app: installation on {account} not read: {e}");
+                    skipped.push(format!("{account} ({e})"));
+                    continue;
+                }
+            };
             seen.push(GithubInstallation {
                 installation_id: id,
                 account: Line::unchecked(account.clone()),
@@ -512,20 +528,24 @@ impl GithubApps {
                 token: Some(token),
             });
         }
-        *cache = Cache {
-            app_id: Some(app.app_id),
-            read_ms: self.now_ms(),
-            failed_ms: None,
-            installs,
-        };
         let read = GithubApp {
             installations: seen,
             ..app.clone()
         };
-        if let Err(e) = self.db.github_app().update(&read) {
+        Ok((installs, read, skipped))
+    }
+
+    /// Keeps what [`Self::read_installs`] read: in the cache, and on the App.
+    async fn keep(&self, app_id: i64, installs: Vec<Install>, read: &GithubApp) {
+        *self.cache.lock().await = Cache {
+            app_id: Some(app_id),
+            read_ms: self.now_ms(),
+            failed_ms: None,
+            installs,
+        };
+        if let Err(e) = self.db.github_app().update(read) {
             tracing::warn!(error = %e, "github app: installations not kept");
         }
-        Ok(read)
     }
 
     /// An installation token for `repo` (`owner/name`) when the App is installed on it; none otherwise, or when
@@ -533,11 +553,10 @@ impl GithubApps {
     pub async fn token_for(&self, repo: &str) -> Option<Zeroizing<String>> {
         let repo = repo.to_lowercase();
         let (owner, _) = repo.split_once('/')?;
-        let mut cache = self.cache.lock().await;
-        let opened = match self.opened() {
+        let (app, pem) = match self.opened() {
             Ok(Some(o)) => o,
             Ok(None) => {
-                *cache = Cache::default();
+                *self.cache.lock().await = Cache::default();
                 return None;
             }
             Err(e) => {
@@ -545,70 +564,87 @@ impl GithubApps {
                 return None;
             }
         };
-        let (app, pem) = opened;
         let now = self.now_ms();
-        let stale = cache.app_id != Some(app.app_id) || now - cache.read_ms > REFRESH_MS;
-        let resting = cache.failed_ms.is_some_and(|at| now - at < RETRY_MS);
-        if stale
-            && !resting
-            && let Err(e) = self.refresh(&mut cache, &app, &pem).await
-        {
-            tracing::warn!("github app: installations not read: {e}");
-            cache.failed_ms = Some(now);
-        }
-        if cache.app_id != Some(app.app_id) {
-            return None;
-        }
-        let at = cache
-            .installs
-            .iter()
-            .position(|i| i.account == owner && (i.all || i.repos.contains(&repo)))?;
-        let fresh = cache.installs[at]
-            .token
-            .as_ref()
-            .is_some_and(|t| t.expires_ms - now > TOKEN_MARGIN_MS);
-        if !fresh {
-            let minted = match self.jwt_for(&app, &pem) {
-                Ok(jwt) => self.mint(&jwt, cache.installs[at].id).await,
-                Err(e) => Err(e),
-            };
-            match minted {
-                Ok(t) => cache.installs[at].token = Some(t),
+        let due = {
+            let cache = self.cache.lock().await;
+            let stale = cache.app_id != Some(app.app_id) || now - cache.read_ms > REFRESH_MS;
+            stale && !cache.failed_ms.is_some_and(|at| now - at < RETRY_MS)
+        };
+        // One read at a time; the others go on with what the cache holds, or the machine's login.
+        if due && let Ok(_one) = self.refreshing.try_lock() {
+            match self.read_installs(&app, &pem).await {
+                Ok((installs, read, _)) => self.keep(app.app_id, installs, &read).await,
                 Err(e) => {
-                    tracing::warn!("github app: no token for {repo}: {e}");
-                    cache.installs[at].token = None;
-                    return None;
+                    tracing::warn!("github app: installations not read: {e}");
+                    self.cache.lock().await.failed_ms = Some(now);
                 }
             }
         }
-        cache.installs[at]
-            .token
-            .as_ref()
-            .map(|t| Zeroizing::new(t.value.to_string()))
+        let id = {
+            let cache = self.cache.lock().await;
+            if cache.app_id != Some(app.app_id) {
+                return None;
+            }
+            let install = cache
+                .installs
+                .iter()
+                .find(|i| i.account == owner && (i.all || i.repos.contains(&repo)))?;
+            match &install.token {
+                Some(t) if t.expires_ms - now > TOKEN_MARGIN_MS => {
+                    return Some(Zeroizing::new(t.value.to_string()));
+                }
+                _ => install.id,
+            }
+        };
+        let minted = match self.jwt_for(&app, &pem) {
+            Ok(jwt) => self.mint(&jwt, id).await,
+            Err(e) => Err(e),
+        };
+        let mut cache = self.cache.lock().await;
+        let install = cache.installs.iter_mut().find(|i| i.id == id)?;
+        match minted {
+            Ok(t) => {
+                let value = Zeroizing::new(t.value.to_string());
+                install.token = Some(t);
+                Some(value)
+            }
+            Err(e) => {
+                tracing::warn!("github app: no token for {repo}: {e}");
+                install.token = None;
+                None
+            }
+        }
     }
 
     /// Tests the App: GitHub knows it and takes its key, and where it is installed, with a token minted for each
     /// installation. Keeps and returns what it found, with a line that says it.
     pub async fn test(&self) -> Result<Option<GithubApp>, String> {
-        let mut cache = self.cache.lock().await;
+        let _one = self.refreshing.lock().await;
         let Some((app, pem)) = self.opened()? else {
             return Ok(None);
         };
         let checked = async {
             let jwt = self.jwt_for(&app, &pem)?;
             self.call(reqwest::Method::GET, "/app", Some(&jwt)).await?;
-            self.refresh(&mut cache, &app, &pem).await
+            self.read_installs(&app, &pem).await
         }
         .await;
         let at = Timestamp(iso_ms(self.now_ms()));
         let (mut app, ok, said) = match checked {
-            Ok(read) => {
-                let line = installed_line(&read);
-                let ok = !read.installations.is_empty();
+            Ok((installs, read, skipped)) => {
+                self.keep(app.app_id, installs, &read).await;
+                let mut line = installed_line(&read);
+                if !skipped.is_empty() {
+                    line.push_str(&format!(
+                        " GitHub refused its installation on {}.",
+                        skipped.join(", ")
+                    ));
+                }
+                let ok = !read.installations.is_empty() && skipped.is_empty();
                 (read, ok, line)
             }
             Err(e) => {
-                cache.failed_ms = Some(self.now_ms());
+                self.cache.lock().await.failed_ms = Some(self.now_ms());
                 (app, false, format!("{e}."))
             }
         };

@@ -218,8 +218,8 @@ no `gh auth` on the hub.
    - the homepage (the hub), and `callback_urls: [http://127.0.0.1/github/callback]` for people's sign-in later;
    - `redirect_url: http://127.0.0.1:<port>/created`, the loopback page;
    - `public: false`;
-   - the permissions: contents, pull requests, workflows, statuses and actions write (statuses for `fleetd/train`,
-     actions for re-runs); checks and metadata read;
+   - the permissions: contents, pull requests, issues, workflows, statuses and actions write (issues for the
+     `fleetd:next` label, statuses for `fleetd/train`, actions for re-runs); checks and metadata read;
    - no webhook: the hub polls (D192).
 
    The admin checks the name and presses Create. GitHub redirects to the loopback page with a code, and the app hands

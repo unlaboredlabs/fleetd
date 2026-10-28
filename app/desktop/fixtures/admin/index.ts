@@ -229,6 +229,7 @@ function github(from: Fixture, name: string, note: string, app: "none" | "create
   const permissions = [
     ["contents", "write"],
     ["pull_requests", "write"],
+    ["issues", "write"],
     ["workflows", "write"],
     ["statuses", "write"],
     ["actions", "write"],

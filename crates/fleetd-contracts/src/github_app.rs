@@ -16,11 +16,14 @@ use crate::ids::Timestamp;
 use crate::prim::Line;
 
 /// What the App asks for on each repository it is installed on, as the manifest's `default_permissions`: contents and
-/// pull requests to rebase and merge, workflows to merge changes to `.github/workflows`, statuses to post
-/// `fleetd/train`, actions to re-run CI, and checks to read it. Metadata is always read.
+/// pull requests to rebase and merge, issues to find and label PRs (`fleetd:next`: labels and the labelled list go
+/// through the issues endpoints), workflows to merge changes to `.github/workflows`, statuses to post `fleetd/train`,
+/// actions to re-run CI, and checks to read it. Metadata is always read. A test holds the train's and PR pages' API
+/// calls to this list (hub/github_app/tests.rs).
 pub const GITHUB_APP_PERMISSIONS: &[(&str, &str)] = &[
     ("contents", "write"),
     ("pull_requests", "write"),
+    ("issues", "write"),
     ("workflows", "write"),
     ("statuses", "write"),
     ("actions", "write"),

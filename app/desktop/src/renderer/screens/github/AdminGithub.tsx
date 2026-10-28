@@ -26,6 +26,7 @@ const noInput = {};
 const PERMISSION_WORDS: Record<string, string> = {
   contents: "Contents: rebase and merge branches",
   pull_requests: "Pull requests: read, update and merge them",
+  issues: "Issues: find and label PRs (fleetd:next)",
   workflows: "Workflows: merge changes to .github/workflows",
   statuses: "Commit statuses: post fleetd/train",
   actions: "Actions: re-run CI",

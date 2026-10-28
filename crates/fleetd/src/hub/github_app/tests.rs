@@ -13,6 +13,7 @@ use axum::routing::{get, post};
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use fleetd_contracts::auth::{Grant, KeyKind};
+use fleetd_contracts::github_app::GITHUB_APP_PERMISSIONS;
 use fleetd_contracts::people::{HubRole, PersonId, PersonName};
 use serde_json::{Value, json};
 
@@ -288,7 +289,7 @@ fn the_manifest_asks_for_what_the_train_needs_and_sets_no_webhook() {
     assert_eq!(
         m["default_permissions"],
         json!({
-            "contents": "write", "pull_requests": "write", "workflows": "write", "statuses": "write",
+            "contents": "write", "pull_requests": "write", "issues": "write", "workflows": "write", "statuses": "write",
             "actions": "write", "checks": "read", "metadata": "read",
         })
     );
@@ -547,7 +548,12 @@ async fn gh_runs_as_the_app_on_its_repositories_and_on_its_own_login_elsewhere()
     created(&lab).await;
     let dir = tempfile::tempdir().unwrap();
     let script = dir.path().join("gh");
-    std::fs::write(&script, "#!/bin/sh\nprintf '%s' \"$GH_TOKEN\"\n").unwrap();
+    // As GitHub answers an App on a path it may not take: refused with its token, fine on the machine's login.
+    std::fs::write(
+        &script,
+        "#!/bin/sh\ncase \"$*\" in *protected*) if [ \"${GH_TOKEN#ghs_}\" != \"$GH_TOKEN\" ]; then echo 'HTTP 403: Resource not accessible by integration' >&2; exit 1; fi; echo machine; exit 0;; esac\nprintf '%s' \"$GH_TOKEN\"\n",
+    )
+    .unwrap();
     std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
     let gh = AppGh::with_program(lab.hub.github_app.clone(), script.to_string_lossy());
     let args = |a: &[&str]| a.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
@@ -567,4 +573,82 @@ async fn gh_runs_as_the_app_on_its_repositories_and_on_its_own_login_elsewhere()
     );
     let user = gh.run(args(&["api", "user"])).await.unwrap();
     assert!(!user.stdout.starts_with("ghs_"));
+    // Refused to the App: once more on the machine's login.
+    let refused = gh
+        .run(args(&["api", "repos/acme/web/branches/main/protected"]))
+        .await
+        .unwrap();
+    assert_eq!((refused.exit_code, refused.stdout.trim()), (0, "machine"));
+}
+
+/// What each REST path the hub's gh calls needs of a GitHub App, by its first segment after the repository (and, under
+/// `commits/{sha}`, the next one), from GitHub's "Permissions required for GitHub Apps". Labels and a PR's comments
+/// go through the issues endpoints.
+const NEEDS: &[(&str, &str, &str)] = &[
+    ("pulls", "pull_requests", "write"),
+    ("issues", "issues", "write"),
+    ("labels", "issues", "write"),
+    ("contents", "contents", "read"),
+    ("git", "contents", "write"),
+    ("compare", "contents", "read"),
+    ("merges", "contents", "write"),
+    ("branches", "contents", "read"),
+    ("commits", "contents", "read"),
+    ("commits/status", "statuses", "read"),
+    ("commits/check-runs", "checks", "read"),
+    ("commits/pulls", "pull_requests", "read"),
+    ("statuses", "statuses", "write"),
+    ("check-runs", "checks", "read"),
+    ("actions", "actions", "write"),
+    ("rules", "metadata", "read"),
+];
+
+#[test]
+fn the_manifest_asks_for_everything_the_hubs_github_calls_need() {
+    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/hub");
+    // Every area whose gh runs as the App (serve/mod.rs: the train with its reviews, and the PR pages).
+    let mut text = String::new();
+    for dir in ["train", "prs", "reviews"] {
+        for entry in std::fs::read_dir(src.join(dir)).unwrap() {
+            let path = entry.unwrap().path();
+            if path.extension().is_some_and(|e| e == "rs")
+                && !path.file_name().unwrap().to_string_lossy().contains("test")
+            {
+                text.push_str(&std::fs::read_to_string(&path).unwrap());
+            }
+        }
+    }
+    let path =
+        regex::Regex::new(r"repos/\{[a-z_.]*\}/([a-z_-]+)(?:/\{[^}]*\})?(?:/([a-z_-]+))?").unwrap();
+    let granted = |name: &str, level: &str| {
+        GITHUB_APP_PERMISSIONS
+            .iter()
+            .any(|(k, v)| *k == name && (*v == level || *v == "write"))
+    };
+    let mut seen = 0;
+    for m in path.captures_iter(&text) {
+        let first = &m[1];
+        let key = match (first, m.get(2)) {
+            ("commits", Some(next)) => format!("commits/{}", next.as_str()),
+            _ => first.to_owned(),
+        };
+        let Some((_, name, level)) = NEEDS.iter().find(|(k, _, _)| *k == key) else {
+            panic!(
+                "the hub calls {} on GitHub: say what it needs in NEEDS",
+                &m[0]
+            );
+        };
+        assert!(
+            granted(name, level),
+            "{} needs {name}: {level}, which the App's manifest doesn't ask for",
+            &m[0]
+        );
+        seen += 1;
+    }
+    assert!(
+        seen > 20,
+        "only {seen} GitHub paths found: the scan missed them"
+    );
+    // The labelled PRs (fleetd:next) are listed through the issues endpoint.
+    assert!(granted("issues", "write"));
 }

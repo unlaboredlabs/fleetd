@@ -1,6 +1,8 @@
 //! The hub's `gh`, as the App where it can: each run about a repository the App is installed on gets that
 //! installation's token in `GH_TOKEN`; any other run, or one while GitHub can't mint a token, uses the hub machine's
-//! own `gh` login, as before the App.
+//! own `gh` login, as before the App. A run GitHub refuses to the App itself ("Resource not accessible by
+//! integration": a permission it lacks, a branch rule that leaves it out) runs once more on the machine's login; any
+//! other failure is the run's own.
 use std::sync::Arc;
 
 use super::GithubApps;
@@ -33,9 +35,25 @@ impl GhRunner for AppGh {
                 Some(repo) => self.apps.token_for(&repo).await,
                 None => None,
             };
-            run_gh(&self.program, args, token.as_ref().map(|t| t.as_str())).await
+            let Some(token) = token else {
+                return run_gh(&self.program, args, None).await;
+            };
+            let out = run_gh(&self.program, args.clone(), Some(token.as_str())).await?;
+            if out.exit_code != 0 && (refused_app(&out.stderr) || refused_app(&out.stdout)) {
+                tracing::warn!(
+                    "github app: GitHub refused the App on gh {}; running it on the machine's login",
+                    args.first().map(String::as_str).unwrap_or_default()
+                );
+                return run_gh(&self.program, args, None).await;
+            }
+            Ok(out)
         })
     }
+}
+
+/// GitHub's words when an App's token may not do what was asked.
+fn refused_app(text: &str) -> bool {
+    text.contains("Resource not accessible by integration")
 }
 
 /// The repository (`owner/name`) a `gh` run is about, as the hub's calls name it: `--repo`/`-R`, a `repos/<owner>/

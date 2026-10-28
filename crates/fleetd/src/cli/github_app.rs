@@ -75,6 +75,11 @@ pub async fn github_app_command(argv: &[String]) -> u8 {
     let result = match v.positionals.first().map(String::as_str) {
         None => show(&apps).map(|()| 0),
         Some("create") => {
+            if let Some(org) = v.str("org")
+                && fleetd_contracts::github_app::GithubLogin::new(org).is_err()
+            {
+                return usage("--org takes an organization's login, as in github.com/<login>");
+            }
             let port = match v.str("port").map(str::parse::<u16>).transpose() {
                 Ok(p) => p.unwrap_or(0),
                 Err(_) => return usage("--port takes a port number"),
@@ -211,7 +216,11 @@ async fn created(State(p): State<Page>, Query(back): Query<Back>) -> Html<String
             "Go back to the terminal and run it again.",
         );
     }
-    let Some(code) = back.code.filter(|c| !c.is_empty()) else {
+    // The same check github_app_create's input makes.
+    let Some(code) = back
+        .code
+        .filter(|c| fleetd_contracts::github_app::GithubManifestCode::new(c.as_str()).is_ok())
+    else {
         return landing(
             "No App was created",
             "GitHub sent no code. Go back to the terminal.",
