@@ -204,6 +204,20 @@ async fn only_its_owner_sees_and_uses_a_navi_and_an_admin_deletes_a_removed_pers
     )
     .await;
 
+    // A link names no Navi, but removing one of Ada's is Ann's alone.
+    let link = crate::hub::hub_links::keep(
+        &hub,
+        &serde_json::from_value(at(&ada)).unwrap(),
+        &serde_json::from_value(json!("work")).unwrap(),
+        "http://127.0.0.1:9",
+        b"sealed",
+        0,
+    )
+    .unwrap()
+    .unwrap();
+    refused(&hub, &bob_d, "hub_link_remove", json!({ "linkId": link })).await;
+    refused(&hub, &cy_d, "hub_link_remove", json!({ "linkId": link })).await;
+
     // Every Navi tool refuses a teammate and an admin alike.
     for (tool, input) in tool_calls(&ada) {
         refused(&hub, &bob_d, tool, input.clone()).await;
@@ -219,6 +233,7 @@ async fn only_its_owner_sees_and_uses_a_navi_and_an_admin_deletes_a_removed_pers
     .await;
     assert_eq!(renamed["navi"]["title"], "Ada 2");
     ok(&hub, &ann_d, "navi_sites", at(&ada)).await;
+    ok(&hub, &ann_d, "hub_link_remove", json!({ "linkId": link })).await;
 
     // Once Bob is removed, an admin deletes his Navi, and does nothing else with it.
     people(&hub).remove(&bob).unwrap();
