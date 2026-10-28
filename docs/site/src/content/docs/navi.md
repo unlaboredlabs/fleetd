@@ -196,6 +196,14 @@ A Navi keeps your private life (family, health, money, accounts) in its own memo
 The agents of every piece of work you start read your user memory, so it holds only how you like to work. The nightly refresh tidies a Navi's memory as
 it does any project's.
 
+## Earlier in the chat {#earlier}
+
+A Navi's new session sees only the latest part of its chat, but the hub keeps all of it. When you mention something
+from before ("the dentist I told you about", "what we settled last week"), the Navi searches the whole chat by words,
+within dates when you give them, and reads the messages around what it finds. It reads only its own chat, never
+another project's or another person's Navi's. The tools are `chat_search` and `chat_read`, in
+[Agent tools](/docs/reference/agent-tools).
+
 ## For the app and other clients
 
 Navis are MCP tools on the hub: `navi_create {name, machineId?}`, `navi_list {archived?, machineId?}`,

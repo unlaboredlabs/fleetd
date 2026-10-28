@@ -5,11 +5,12 @@ use serde::{Deserialize, Serialize};
 use serde_with::skip_serializing_none;
 
 use crate::brand;
+use crate::chat::{ChatAuthor, ChatMessageId};
 use crate::checklist::TodoItem;
 use crate::hub_links::{HubLabel, LinkedHub};
 use crate::ids::{ProjectRef, Timestamp};
 use crate::ledger::{IntakeText, WorkstreamId, WorkstreamState};
-use crate::prim::{Count, Line};
+use crate::prim::{Count, Int, Line};
 use crate::status::{LastMerged, ProjectRowState};
 
 brand!(
@@ -106,6 +107,76 @@ pub struct FactoryAsk {
     pub text: String,
     pub at: Timestamp,
     pub orders: Vec<WorkstreamId>,
+}
+
+/// Hits `chat_search` returns per page, newest first.
+pub const CHAT_SEARCH_PAGE: usize = 20;
+/// Messages `chat_read` returns at most on each side of the one it reads around.
+pub const CHAT_READ_SIDE_MAX: i64 = 10;
+
+/// `chat_search`: a Navi searches its own chat, all of it, by words.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ChatSearchCall {
+    /// The words a message holds, every one of them, in any order and case: "dentist saturday".
+    pub words: Line<1, 200>,
+    /// From this day (2026-10-20) or time (2026-10-20T09:00:00Z), in UTC. Absent: from the chat's start.
+    pub from: Option<Line<10, 40>>,
+    /// Up to this day, all of it, or this time, in UTC. Absent: up to now.
+    pub to: Option<Line<10, 40>>,
+    /// The next page: the hits older than this message, the last one of the page before.
+    pub before: Option<ChatMessageId>,
+}
+
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ChatSearchResult {
+    /// Newest first, each text cut around the first of the words.
+    pub messages: Vec<RecalledMessage>,
+    /// Older hits are left: pass the last message's id as `before`.
+    pub more: Option<bool>,
+    pub next: Option<String>,
+}
+
+/// `chat_read`: the messages around one of a Navi's own chat, in order.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatReadCall {
+    /// The message, by its id from chat_search.
+    pub message_id: ChatMessageId,
+    /// How many messages before it; absent, 5.
+    pub before: Option<Int<0, CHAT_READ_SIDE_MAX>>,
+    /// How many after it; absent, 5.
+    pub after: Option<Int<0, CHAT_READ_SIDE_MAX>>,
+}
+
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatReadResult {
+    /// Oldest first, the one asked for among them.
+    pub messages: Vec<RecalledMessage>,
+    /// The chat goes on before the first of them, and after the last.
+    pub more_before: bool,
+    pub more_after: bool,
+    pub next: Option<String>,
+}
+
+/// One message of a Navi's chat, as it reads it back.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct RecalledMessage {
+    pub message_id: ChatMessageId,
+    pub at: Timestamp,
+    /// human: the person; lead: the Navi itself; agent: an agent or integration writing in; system: fleetd.
+    pub author: ChatAuthor,
+    /// The name it was written under: the person's device, or the agent's.
+    pub by: Option<String>,
+    pub text: String,
+    /// The text was cut; chat_read with before and after 0 reads it whole.
+    pub cut: Option<bool>,
 }
 
 /// The most asks `navi_asks` returns, newest first.

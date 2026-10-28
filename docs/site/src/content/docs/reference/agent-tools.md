@@ -69,6 +69,8 @@ Every lead gets these.
 | [`skill_install`](#skill_install) | Install skills (SKILL.md workflows) from a skills.sh source (owner/repo, owner/repo@skill, a GitHub URL) for this project (scope project; global skills take an admin, so the human installs those); pinned to the commit fetched, and the human updates it from Settings > Skills. | No |
 | [`project_message`](#project_message) | A Navi's call: write to another project's lead in its chat, as this Navi, never as the person: "please add X", or a question. | No |
 | [`factory_status`](#factory_status) | A Navi's call: the other projects in one read, or the one named: each one's state (working, waiting on the person, blocked, idle), a red main, running agents, open orders, its checklist not done, its last merge and merges over 7 days, and this Navi's asks to it with the orders opened for them, plus the hubs this Navi is linked to. | No |
+| [`chat_search`](#chat_search) | A Navi's call: search your own chat, all of it, back to its start, for the messages holding every one of words (any order and case), optionally from and to a day (2026-10-20) or time, in UTC. | No |
+| [`chat_read`](#chat_read) | A Navi's call: read the messages around one of your own chat by its id from chat_search, oldest first: before and after say how many on each side (5 when absent, at most 10). | No |
 | [`usage_resume`](#usage_resume) | Lift the usage pause on your project's machine now and send every agent parked there "continue": only once you know its login has capacity again (the human says so, or a turn of yours just went through). | No |
 | [`change_enqueue`](#change_enqueue) | Put a PR no task's result put there on its repo's merge train; only the train merges. | No |
 | [`review_read`](#review_read) | Read every finding of the latest reviews of your PRs, blocking and non-blocking, in full, each with path:line. | No |
@@ -703,6 +705,52 @@ A Navi's call: the other projects in one read, or the one named: each one's stat
   "name": "factory_status",
   "arguments": {
     "project": "storefront"
+  }
+}
+```
+
+### chat_search
+
+A Navi's call: search your own chat, all of it, back to its start, for the messages holding every one of words (any order and case), optionally from and to a day (2026-10-20) or time, in UTC. Newest first, 20 a page, each with its id, time, author (human is the person, lead is you) and its text around the words; before (the last id of a page) reads the next. Only this chat, never another's. Read-only.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `before` | string | no | The next page: the hits older than this message, the last one of the page before. |
+| `from` | string | no | From this day (2026-10-20) or time (2026-10-20T09:00:00Z), in UTC. Absent: from the chat's start. At most 40 characters. |
+| `to` | string | no | Up to this day, all of it, or this time, in UTC. Absent: up to now. At most 40 characters. |
+| `words` | string | yes | The words a message holds, every one of them, in any order and case: "dentist saturday". At most 200 characters. |
+
+**Who may call:** a lead, checked by the hub. **Needs a human:** no.
+
+```json
+{
+  "name": "chat_search",
+  "arguments": {
+    "from": "2026-10-01",
+    "words": "dentist saturday"
+  }
+}
+```
+
+### chat_read
+
+A Navi's call: read the messages around one of your own chat by its id from chat_search, oldest first: before and after say how many on each side (5 when absent, at most 10). With both 0 it reads that one message whole. Read-only.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `after` | integer | no | How many after it; absent, 5. 0 to 10. |
+| `before` | integer | no | How many messages before it; absent, 5. 0 to 10. |
+| `messageId` | string | yes | The message, by its id from chat_search. |
+
+**Who may call:** a lead, checked by the hub. **Needs a human:** no.
+
+```json
+{
+  "name": "chat_read",
+  "arguments": {
+    "after": 3,
+    "before": 3,
+    "messageId": "m412"
   }
 }
 ```

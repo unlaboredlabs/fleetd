@@ -810,6 +810,117 @@ impl Chat {
         })
     }
 
+    /// The messages of `r`'s chat whose text holds every one of `words` (SQLite's LIKE: any case of ASCII letters),
+    /// newest first: before the one at seq `before`, created from `from_ms` up to `to_ms`, at most `limit`, and
+    /// whether more match past them.
+    pub fn search(
+        &self,
+        r: &ProjectRef,
+        words: &[&str],
+        from_ms: Option<i64>,
+        to_ms: Option<i64>,
+        before: Option<i64>,
+        limit: usize,
+    ) -> Result<(Vec<ChatMessage>, bool), StoreError> {
+        use rusqlite::types::Value;
+        let mut sql =
+            "SELECT data FROM chat_messages WHERE machine_id = ? AND project_id = ? AND seq < ?
+                       AND created_ms >= ? AND created_ms <= ?"
+                .to_owned();
+        let mut args: Vec<Value> = vec![
+            r.machine_id.to_string().into(),
+            r.project_id.to_string().into(),
+            before.unwrap_or(i64::MAX).into(),
+            from_ms.unwrap_or(i64::MIN).into(),
+            to_ms.unwrap_or(i64::MAX).into(),
+        ];
+        for word in words {
+            sql.push_str(" AND json_extract(data, '$.text') LIKE ? ESCAPE '\\'");
+            let escaped = word
+                .replace('\\', "\\\\")
+                .replace('%', "\\%")
+                .replace('_', "\\_");
+            args.push(format!("%{escaped}%").into());
+        }
+        sql.push_str(" ORDER BY seq DESC LIMIT ?");
+        args.push((limit as i64 + 1).into());
+        self.db.with(|c| {
+            let mut rows: Vec<ChatMessage> = c
+                .prepare(&sql)?
+                .query_map(rusqlite::params_from_iter(args.iter()), |row| {
+                    row.get::<_, String>(0)
+                })?
+                .map(|d| Ok(serde_json::from_str(&d?)?))
+                .collect::<Result<_, StoreError>>()?;
+            let more = rows.len() > limit;
+            rows.truncate(limit);
+            Ok((rows, more))
+        })
+    }
+
+    /// The seq of message `id` ("m<n>") when it is one of `r`'s chat.
+    pub fn seq_in(&self, r: &ProjectRef, id: &str) -> Result<Option<i64>, StoreError> {
+        let Some(n) = id.strip_prefix('m').and_then(|n| n.parse::<i64>().ok()) else {
+            return Ok(None);
+        };
+        self.db.with(|c| {
+            Ok(c.query_row(
+                "SELECT seq FROM chat_messages WHERE n = ?1 AND machine_id = ?2 AND project_id = ?3",
+                params![n, r.machine_id.as_str(), r.project_id.as_str()],
+                |row| row.get(0),
+            )
+            .optional()?)
+        })
+    }
+
+    /// The message at `seq` of `r`'s chat with up to `before` messages before it and `after` after it, oldest first,
+    /// and whether the chat goes on past them each way.
+    pub fn around(
+        &self,
+        r: &ProjectRef,
+        seq: i64,
+        before: usize,
+        after: usize,
+    ) -> Result<(Vec<ChatMessage>, bool, bool), StoreError> {
+        self.db.with(|c| {
+            let (m, p) = (r.machine_id.as_str(), r.project_id.as_str());
+            let read = |sql: &str, limit: usize| -> Result<Vec<(i64, String)>, StoreError> {
+                Ok(c.prepare_cached(sql)?
+                    .query_map(params![m, p, seq, limit as i64], |row| {
+                        Ok((row.get(0)?, row.get(1)?))
+                    })?
+                    .collect::<rusqlite::Result<_>>()?)
+            };
+            let mut rows = read(
+                "SELECT seq, data FROM chat_messages WHERE machine_id = ?1 AND project_id = ?2 AND seq <= ?3
+                 ORDER BY seq DESC LIMIT ?4",
+                before + 1,
+            )?;
+            rows.reverse();
+            rows.extend(read(
+                "SELECT seq, data FROM chat_messages WHERE machine_id = ?1 AND project_id = ?2 AND seq > ?3
+                 ORDER BY seq ASC LIMIT ?4",
+                after,
+            )?);
+            let beyond = |sql: &str, at: i64| -> rusqlite::Result<bool> {
+                c.query_row(sql, params![m, p, at], |row| row.get(0))
+            };
+            let more_before = beyond(
+                "SELECT EXISTS (SELECT 1 FROM chat_messages WHERE machine_id = ?1 AND project_id = ?2 AND seq < ?3)",
+                rows.first().map_or(seq, |(s, _)| *s),
+            )?;
+            let more_after = beyond(
+                "SELECT EXISTS (SELECT 1 FROM chat_messages WHERE machine_id = ?1 AND project_id = ?2 AND seq > ?3)",
+                rows.last().map_or(seq, |(s, _)| *s),
+            )?;
+            let messages = rows
+                .into_iter()
+                .map(|(_, d)| serde_json::from_str(&d))
+                .collect::<Result<Vec<ChatMessage>, _>>()?;
+            Ok((messages, more_before, more_after))
+        })
+    }
+
     /// The project's chat state; `lead_working` is the lead's own (the flow reads it off its thread).
     pub fn state(
         &self,
