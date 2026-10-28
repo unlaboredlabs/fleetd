@@ -72,12 +72,14 @@ pub fn golden_path(home: &Path) -> PathBuf {
     super::ios_dir(home).join("golden.json")
 }
 
-/// The golden, when it was made for the pinned agent-device and the wrapper is there.
+/// The golden, when it was made for the pinned agent-device and the wrapper and its runner are there: without the
+/// runner every session's agent-device fails to start, so the golden is made again.
 pub fn find(home: &Path) -> Option<Golden> {
     let golden: Golden = serde_json::from_slice(&std::fs::read(golden_path(home)).ok()?).ok()?;
     (golden.agent_device == agent_device::VERSION
         && agent_device::find(home).is_some()
-        && wrapper::find(home, &golden.xctestrun).is_some())
+        && wrapper::find(home, &golden.xctestrun).is_some()
+        && golden.xctestrun.is_file())
     .then_some(golden)
 }
 
@@ -694,5 +696,44 @@ mod tests {
         )
         .unwrap();
         assert_eq!(find(home.path()), None, "agent-device isn't installed");
+    }
+
+    #[test]
+    fn a_golden_whose_runner_is_gone_is_made_again() {
+        let home = tempfile::tempdir().unwrap();
+        let install = agent_device::install_dir(home.path());
+        std::fs::create_dir_all(agent_device::bin_dir(home.path())).unwrap();
+        std::fs::write(install.join("VERSION"), agent_device::VERSION).unwrap();
+        std::fs::write(agent_device::bin_dir(home.path()).join("agent-device"), "").unwrap();
+        let entry = agent_device::entry(home.path());
+        std::fs::create_dir_all(entry.parent().unwrap()).unwrap();
+        std::fs::write(&entry, "").unwrap();
+        let products = home.path().join("runner/Build/Products");
+        std::fs::create_dir_all(&products).unwrap();
+        let xctestrun = products.join("AgentDeviceRunner_iphonesimulator27.0-arm64.xctestrun");
+        std::fs::write(&xctestrun, "").unwrap();
+        wrapper::install(home.path(), Some(&xctestrun)).unwrap();
+        let golden = Golden {
+            udid: "AAAA-1".into(),
+            runtime: "com.apple.CoreSimulator.SimRuntime.iOS-27-0".into(),
+            runtime_name: "iOS 27.0".into(),
+            device_type: "com.apple.CoreSimulator.SimDeviceType.iPhone-17".into(),
+            device_type_name: "iPhone 17".into(),
+            scale: 3.0,
+            agent_device: agent_device::VERSION.into(),
+            xctestrun: xctestrun.clone(),
+        };
+        std::fs::write(
+            golden_path(home.path()),
+            serde_json::to_vec(&golden).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(find(home.path()), Some(golden));
+        std::fs::remove_file(&xctestrun).unwrap();
+        assert_eq!(
+            find(home.path()),
+            None,
+            "every session would fail to start the runner"
+        );
     }
 }
