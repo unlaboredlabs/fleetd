@@ -98,7 +98,9 @@ export default ({ projectRoot }: ConfigContext): ExpoConfig => ({
     // The mark on a plain ground, white or black as the phone is.
     ["expo-splash-screen", { image: "./assets/splash-icon.png", imageWidth: 112, backgroundColor: "#ffffff", dark: { image: "./assets/splash-icon.png", backgroundColor: "#000000" } }],
     // Scans the hub's pairing QR code (D232); no recording, so no microphone.
-    ["expo-camera", { cameraPermission: "fleetd scans the QR code your hub shows, to pair this phone with it.", microphonePermission: false, recordAudioAndroid: false }],
+    ["expo-camera", { cameraPermission: "fleetd scans the QR code your hub shows, to pair this phone with it, and takes photos you send in a chat.", microphonePermission: false, recordAudioAndroid: false }],
+    // Photos and files sent in a chat go to your hub (attachment_put). No microphone: no video with sound.
+    ["expo-image-picker", { photosPermission: "fleetd sends the photos you pick to a chat on your hub.", cameraPermission: "fleetd takes photos you send in a chat.", microphonePermission: false }],
     "./plugins/notification-service",
     "./plugins/android-signing",
   ],

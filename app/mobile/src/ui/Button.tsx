@@ -1,7 +1,9 @@
 // iOS's buttons: filled (the one primary action), tinted (a secondary one), and plain text. Destructive turns any of
 // them red. Large is a full-width 50-point button, as at the bottom of a sheet; every size keeps a 44-point target.
+// On iOS 26 a filled button is prominent Liquid Glass in its color, as the system's own.
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { shape, space, TOUCH, type, useTheme } from "../theme";
+import { Glass, liquidGlass } from "./Glass";
 import { Icon, type IconName } from "./Icon";
 
 export function Button({
@@ -33,7 +35,9 @@ export function Button({
   const fill = off && kind !== "plain" ? t.fillQuiet : kind === "filled" ? hue : kind === "tinted" ? (destructive ? t.dangerSoft : t.accentSoft) : "transparent";
   const ink = off ? t.tertiary : kind === "filled" ? t.onAccent : hue;
   const height = size === "large" ? 50 : size === "medium" ? TOUCH : 34;
-  return (
+  const radius = shape.capsule || size === "small" ? height / 2 : size === "large" ? 14 : 12;
+  const glass = liquidGlass && kind === "filled" && !off;
+  const button = (
     <Pressable
       accessibilityRole="button"
       // The words alone: VoiceOver would read the symbol's name too.
@@ -44,10 +48,10 @@ export function Button({
       hitSlop={size === "small" ? 5 : 0}
       style={({ pressed }) => [
         styles.base,
-        { minHeight: height, borderRadius: shape.capsule || size === "small" ? height / 2 : size === "large" ? 14 : 12, backgroundColor: fill },
+        { minHeight: height, borderRadius: radius, backgroundColor: glass ? "transparent" : fill },
         kind === "plain" ? styles.plain : { paddingHorizontal: size === "small" ? 14 : space.lg },
-        grow && styles.grow,
-        size === "large" && styles.wide,
+        !glass && grow && styles.grow,
+        !glass && size === "large" && styles.wide,
         pressed && styles.pressed,
       ]}
     >
@@ -62,6 +66,12 @@ export function Button({
         </View>
       )}
     </Pressable>
+  );
+  if (!glass) return button;
+  return (
+    <Glass interactive tint={hue} style={[{ borderRadius: radius }, grow && styles.grow, size === "large" && styles.wide]}>
+      {button}
+    </Glass>
   );
 }
 

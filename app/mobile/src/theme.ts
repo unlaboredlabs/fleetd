@@ -34,6 +34,12 @@ export interface Palette {
   readonly success: string;
   /** Avatars' colors, picked by name. */
   readonly tints: readonly string[];
+  /** Floating chrome where there is no glass (Android): the bar's material, nearly opaque. */
+  readonly chrome: string;
+  /** A muted chat's count: systemGray2, a step quieter than the accent. */
+  readonly muted: string;
+  /** Behind the chat's thread, where bubbles sit. */
+  readonly thread: string;
 }
 
 const light: Palette = {
@@ -58,6 +64,9 @@ const light: Palette = {
   warningSoft: "rgba(255,149,0,0.12)",
   success: "#34C759",
   tints: ["#007AFF", "#34C759", "#FF9500", "#AF52DE", "#FF2D55", "#30B0C7", "#5856D6", "#A2845E", "#00C7BE", "#FF3B30"],
+  chrome: "rgba(249,249,249,0.94)",
+  muted: "#AEAEB2",
+  thread: "#FFFFFF",
 };
 
 const dark: Palette = {
@@ -82,6 +91,9 @@ const dark: Palette = {
   warningSoft: "rgba(255,159,10,0.18)",
   success: "#30D158",
   tints: ["#0A84FF", "#30D158", "#FF9F0A", "#BF5AF2", "#FF375F", "#40C8E0", "#5E5CE6", "#AC8E68", "#66D4CF", "#FF453A"],
+  chrome: "rgba(22,22,24,0.94)",
+  muted: "#636366",
+  thread: "#000000",
 };
 
 export const useTheme = (): Palette => (useColorScheme() === "dark" ? dark : light);
@@ -89,6 +101,7 @@ export const useTheme = (): Palette => (useColorScheme() === "dark" ? dark : lig
 /** Apple's type scale at the default size (Large), with its tracking. */
 export const type = {
   largeTitle: { fontSize: 34, lineHeight: 41, fontWeight: "700", letterSpacing: 0.4 },
+  title1: { fontSize: 28, lineHeight: 34, fontWeight: "700", letterSpacing: 0.38 },
   title2: { fontSize: 22, lineHeight: 28, fontWeight: "700", letterSpacing: -0.26 },
   title3: { fontSize: 20, lineHeight: 25, fontWeight: "600", letterSpacing: -0.45 },
   headline: { fontSize: 17, lineHeight: 22, fontWeight: "600", letterSpacing: -0.43 },

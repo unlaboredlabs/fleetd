@@ -1,7 +1,10 @@
-// Approvals: every open one, oldest first (the one a tapped notification named on top), each a card to answer.
-// Pulling down reads them again.
+// Approvals: every open one, oldest first (the one a tapped notification named on top), each a card to answer. An
+// answered card fades where it stood and the rest close up; a new one rises in (ui/motion.ts). Pulling down reads
+// them again.
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { FlatList, RefreshControl, StyleSheet, View } from "react-native";
+import { useMemo, useRef } from "react";
+import { RefreshControl, StyleSheet, View } from "react-native";
+import Animated from "react-native-reanimated";
 import { isNavi } from "../desktop";
 import { useHub, type ApprovalsParams } from "../hubContext";
 import { approvals } from "../lists";
@@ -9,19 +12,29 @@ import { keyOf } from "../store";
 import { space, useTheme } from "../theme";
 import { Card } from "../ui/Card";
 import { SkeletonBlock } from "../ui/Skeleton";
-import { ConnectionLine, EmptyState } from "../ui/States";
-import { useAnimatedRows } from "../ui/motion";
+import { haptics } from "../ui/haptics";
+import { rowIn, rowMove, rowOut, useReduceMotion } from "../ui/motion";
+import { ConnectionBanner, EmptyState } from "../ui/States";
 import { ApprovalCard } from "./ApprovalCard";
 import { useRefreshing } from "./refresh";
 
 export function Approvals({ route }: NativeStackScreenProps<ApprovalsParams, "Approvals">) {
   const t = useTheme();
+  const reduce = useReduceMotion();
   const { state, session, pairAgain } = useHub();
   const refreshing = useRefreshing(state.requests, state.hub.phase);
   const focus = route.params?.focus;
   const listed = approvals(state.requests);
   const open = [...listed.filter((r) => r.requestId === focus), ...listed.filter((r) => r.requestId !== focus)];
-  useAnimatedRows(open.map((r) => r.requestId).join(" "));
+  // Asked while the list was on screen: rises in. What it opened with shows still.
+  const known = useRef<ReadonlySet<string> | null>(null);
+  const ids = open.map((r) => r.requestId).join("\n");
+  const fresh = useMemo(() => {
+    const now = new Set(ids === "" ? [] : ids.split("\n"));
+    const out = known.current === null ? new Set<string>() : new Set([...now].filter((id) => !known.current?.has(id)));
+    if (state.requests !== undefined) known.current = now;
+    return out;
+  }, [ids, state.requests]);
   const empty =
     state.requests === undefined && state.hub.phase === "live" ? (
       <View style={styles.cards}>
@@ -49,17 +62,28 @@ export function Approvals({ route }: NativeStackScreenProps<ApprovalsParams, "Ap
       <EmptyState icon="doneAll" title="All Caught Up" body="When a Navi or a lead asks before it acts, it shows up here." />
     );
   return (
-    <FlatList
+    <Animated.FlatList
       data={open}
+      {...(reduce ? {} : { itemLayoutAnimation: rowMove })}
       keyExtractor={(r) => r.requestId}
       contentInsetAdjustmentBehavior="automatic"
       contentContainerStyle={[styles.cards, { paddingBottom: space.lg, flexGrow: 1 }]}
-      refreshControl={<RefreshControl refreshing={refreshing.on} onRefresh={() => refreshing.start(() => session.refresh())} tintColor={t.secondary} />}
-      ListHeaderComponent={<ConnectionLine state={state.hub} onPairAgain={pairAgain} />}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing.on}
+          onRefresh={() => {
+            haptics.tap();
+            refreshing.start(() => session.refresh());
+          }}
+          tintColor={t.secondary}
+        />
+      }
+      ListHeaderComponent={<ConnectionBanner state={state.hub} onPairAgain={pairAgain} />}
       ListEmptyComponent={empty}
       renderItem={({ item }) => {
         const project = state.projects?.[keyOf(item.projectRef)];
         return (
+          <Animated.View {...(fresh.has(item.requestId) ? { entering: rowIn(reduce) } : {})} exiting={rowOut}>
           <ApprovalCard
             request={item}
             projectTitle={project?.title}
@@ -69,6 +93,7 @@ export function Approvals({ route }: NativeStackScreenProps<ApprovalsParams, "Ap
             onAnswer={(d) => void session.answer(item.requestId, d)}
             on="grouped"
           />
+          </Animated.View>
         );
       }}
     />

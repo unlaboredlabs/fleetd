@@ -31,7 +31,8 @@ export type TabParams = {
 };
 export type RootParams = {
   Home: NavigatorScreenParams<TabParams> | undefined;
-  Chat: { key: Key };
+  /** `messageId`: a search hit, scrolled to and lit for a moment. */
+  Chat: { key: Key; messageId?: string };
 } & ManageParams;
 /** A project's and a Navi's own screens (screens/manage): made from the Chats list's +, opened from a chat's header. */
 export type ManageParams = {

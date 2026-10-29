@@ -14,6 +14,7 @@ import { StatusBar } from "expo-status-bar";
 import * as SystemUI from "expo-system-ui";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { ActionSheetIOS, Alert, AppState, Linking, Platform, StyleSheet, View } from "react-native";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { webSocketTransport } from "./src/hub/socket";
 import type { Paired } from "./src/hub/pair";
@@ -98,6 +99,7 @@ export default function App() {
     void SystemUI.setBackgroundColorAsync(t.bg).catch(() => undefined);
   }, [t.bg]);
   return (
+    <GestureHandlerRootView style={styles.fill}>
     <SafeAreaProvider>
       <StatusBar style="auto" />
       <View style={[styles.fill, { backgroundColor: t.bg }]}>
@@ -119,6 +121,7 @@ export default function App() {
         )}
       </View>
     </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
 

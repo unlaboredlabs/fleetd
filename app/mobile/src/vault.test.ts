@@ -11,7 +11,7 @@ vi.mock("expo-secure-store", () => ({
 }));
 vi.mock("expo-crypto", () => ({ getRandomBytes: (n: number) => new Uint8Array(randomBytes(n)) }));
 
-const { forgetPaired, forgetPush, loadPaired, loadPushDevice, loadPushKeys, pairWith, pushKeys, savePushDevice } = await import("./vault");
+const { forgetPaired, forgetPush, loadPaired, loadPushDevice, loadPushKeys, pairWith, pushKeys, saveMuted, savePushDevice } = await import("./vault");
 const { toBase64 } = await import("./seal");
 
 beforeEach(() => store.clear());
@@ -34,5 +34,14 @@ describe("the notification key pair", () => {
     await Promise.all([forgetPaired(), forgetPush()]);
     expect(await loadPushKeys()).toBeNull();
     expect(await loadPaired()).toBeNull();
+  });
+});
+
+describe("the muted chats", () => {
+  it("are a JSON array beside the notification key, where the extension reads them", async () => {
+    await saveMuted(["devbox/ada", "devbox/shop"]);
+    expect(store.get("fleetd.push/fleetd.muted-chats")).toBe('["devbox/ada","devbox/shop"]');
+    await saveMuted([]);
+    expect(store.get("fleetd.push/fleetd.muted-chats")).toBe("[]");
   });
 });
