@@ -12,7 +12,7 @@ use tokio::sync::broadcast;
 
 use fleetd_contracts::auth::Role;
 use fleetd_contracts::browser::{
-    BrowserControl, BrowserInput, BrowserInputFrame, BrowserSessionState,
+    BrowserControl, BrowserInput, BrowserInputFrame, BrowserSession, BrowserSessionState,
 };
 use fleetd_contracts::mcp::ErrorCode;
 use fleetd_contracts::node_link::CAP_BROWSER;
@@ -225,11 +225,20 @@ fn no_session(id: &BrowserSessionId) -> ToolError {
         .with_fix("Call browser_sessions for the project's screens.")
 }
 
-/// The app's `browser_watch` of a live session: any key that can read its machine.
+/// The machine a session runs on: the one hosting it for an agent elsewhere, else its agent's (its project's). Its
+/// live view, a person's input and takeover go there, and only its frames reach the session's watchers.
+pub fn runs_on(hub: &Hub, session: &BrowserSession) -> Result<MachineId, ToolError> {
+    let id = session.session_id.as_str();
+    Ok(hub
+        .db
+        .with(|c| crate::hub::machine_roles::runner_of(c, id))?
+        .unwrap_or_else(|| session.project_ref.machine_id.clone()))
+}
+
+/// The app's `browser_watch` of a live session: any key that can read its project's machine.
 pub fn start_watch(hub: &Hub, caller: &Caller, id: &BrowserSessionId) -> Result<Watch, ToolError> {
     let session = super::get(&hub.db, id)?.ok_or_else(|| no_session(id))?;
-    let machine = &session.project_ref.machine_id;
-    if require(caller, Role::Read, Some(machine)).is_err() {
+    if require(caller, Role::Read, Some(&session.project_ref.machine_id)).is_err() {
         return Err(no_session(id));
     }
     if session.state != BrowserSessionState::Live {
@@ -242,6 +251,7 @@ pub fn start_watch(hub: &Hub, caller: &Caller, id: &BrowserSessionId) -> Result<
         )
         .with_fix("Read its files with browser_recording_get."));
     }
+    let machine = &runs_on(hub, &session)?;
     if !hub.link.node_can(machine, CAP_BROWSER) {
         return Err(ToolError::new(
             ErrorCode::MachineOffline,
@@ -278,6 +288,7 @@ pub fn input(
         )
         .with_fix("Take it over first with browser_control control human."));
     }
+    let machine = &runs_on(hub, &session)?;
     let frame = HubToNode::BrowserInput(BrowserInputFrame {
         session_id: id.clone(),
         input,

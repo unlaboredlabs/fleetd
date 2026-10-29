@@ -99,6 +99,8 @@ export interface BrowserSession {
   readonly agent: { readonly laneId: string; readonly title: string; readonly role?: AgentRole };
   /** Why the agent opened it, in its words. */
   readonly purpose: string;
+  /** What it shows, when not a browser: an Android emulator, an iOS simulator or a Linux desktop. */
+  readonly kind?: "android" | "ios" | "linux_desktop";
   readonly state: SessionState;
   readonly startedAt: string;
   readonly endedAt?: string;
@@ -114,6 +116,20 @@ export interface BrowserSession {
   /** Why it was lost, or what its recording lacks. */
   readonly note?: string;
 }
+
+/** What a live screen says until its first frame comes: a browser's page, or the device it shows. */
+export const waitingFor = (s: Pick<BrowserSession, "kind">): string => {
+  switch (s.kind) {
+    case "ios":
+      return "Waiting for the simulator…";
+    case "android":
+      return "Waiting for the emulator…";
+    case "linux_desktop":
+      return "Waiting for the desktop…";
+    default:
+      return "Waiting for the page…";
+  }
+};
 
 export const STATE_WORD: Readonly<Record<SessionState, string>> = {
   starting: "starting",

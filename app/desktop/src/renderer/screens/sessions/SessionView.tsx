@@ -30,6 +30,7 @@ import {
   STATE_WORD,
   TARGET_WORD,
   FRAME,
+  waitingFor,
   type BrowserSession,
   type FrameBox,
   type PageSnapshot,
@@ -190,7 +191,7 @@ function Live({ session: x, windowed }: { session: BrowserSession; windowed: boo
           away={away}
           pageRef={page}
           input={input}
-          caption={away ? "It shows in its own window." : "Waiting for the page…"}
+          caption={away ? "It shows in its own window." : waitingFor(x)}
         />
         <div className={s.control}>
           <span className={s.nowLine}>

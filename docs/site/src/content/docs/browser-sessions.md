@@ -273,8 +273,9 @@ storage work as for a browser screen.
 An agent on a machine without iOS screens, such as a Linux devbox, gets one on a Mac that hosts them, placed by the
 hub as any [screen on another machine](/docs/machines#roles). It drives it the same way: while the screen is open, an
 `agent-device` first on its `PATH` sends each command through the hub to the Mac. The Mac's node runs the real
-agent-device on the screen's clone and sends back its output and exit code. The action log, the recording, takeover,
-the idle timeout and `session_end` work as on the Mac.
+agent-device on the screen's clone and sends back its output and exit code. The action log, the recording, live view,
+takeover, the idle timeout and `session_end` work as on the Mac: the hub sends a person's watch, takeover and taps
+straight to the Mac, and only the Mac's frames reach them.
 
 - **Files go both ways, inside the worktree.** A file a command reads (`install build/fleetd.zip`, a `push` payload)
   goes from the agent's worktree to the Mac first, 4 MiB at a time, up to 64 MiB per command. A folder doesn't go:

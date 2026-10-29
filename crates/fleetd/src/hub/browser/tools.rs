@@ -74,6 +74,7 @@ async fn browser_control(
         (BrowserControlTo::Agent, now) => now,
     };
     if next != session.control {
+        let machine = super::live::runs_on(&hub, &session)?;
         if !hub.link.node_can(&machine, CAP_BROWSER) {
             return Err(ToolError::new(
                 ErrorCode::MachineOffline,
