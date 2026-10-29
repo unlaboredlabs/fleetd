@@ -43,5 +43,23 @@ if Payload.parse(Data("{\"v\":2,\"title\":\"x\",\"body\":\"y\"}".utf8)) != nil {
   print("a newer version parsed")
   failures += 1
 }
+// The buttons and the badge: Approve and Deny only where the hub marked them and never for an urgent request.
+let marked: [(String, String?)] = [
+  (#"{"kind":"approval","requestId":"Q1","category":"approve"}"#, "fleetd.approve"),
+  (#"{"kind":"approval","requestId":"Q1","category":"approve","urgent":true}"#, "fleetd.review"),
+  (#"{"kind":"approval","requestId":"Q1","category":"review"}"#, "fleetd.review"),
+  (#"{"kind":"approval","category":"approve"}"#, nil),
+  (#"{"kind":"message","machineId":"devbox","projectId":"navi","category":"reply"}"#, "fleetd.reply"),
+  (#"{"kind":"message","category":"reply"}"#, nil),
+  (#"{"kind":"order","category":"bounce"}"#, nil),
+]
+for (fields, want) in marked {
+  let json = "{\"v\":1,\"title\":\"Ada\",\"body\":\"Hi\",\"badge\":3," + fields.dropFirst()
+  let p = Payload.parse(Data(json.utf8))
+  if p?.category != want || p?.badge != 3 {
+    print("\(fields): category \(p?.category ?? "nil"), badge \(p?.badge.map(String.init) ?? "nil")")
+    failures += 1
+  }
+}
 if failures > 0 { exit(1) }
 print("The hub's sealed boxes open.")

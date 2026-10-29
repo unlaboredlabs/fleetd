@@ -10315,6 +10315,12 @@
         "prompt_set.output": {
           "$ref": "#/$defs/PromptSetOutput"
         },
+        "push_badge.input": {
+          "$ref": "#/$defs/PushBadgeInput"
+        },
+        "push_badge.output": {
+          "$ref": "#/$defs/PushBadgeOutput"
+        },
         "push_device_register.input": {
           "$ref": "#/$defs/PushDeviceRegisterInput"
         },
@@ -10803,6 +10809,8 @@
         "prompt_get.output",
         "prompt_set.input",
         "prompt_set.output",
+        "push_badge.input",
+        "push_badge.output",
         "push_device_register.input",
         "push_device_register.output",
         "push_device_remove.input",
@@ -16501,6 +16509,28 @@
     "PubsubTopic": {
       "pattern": "^projects/[a-z][a-z0-9-]{4,28}[a-z0-9]/topics/[A-Za-z][A-Za-z0-9._~+%-]{2,254}$",
       "type": "string"
+    },
+    "PushBadgeInput": {
+      "type": "object"
+    },
+    "PushBadgeOutput": {
+      "properties": {
+        "badge": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "badge"
+      ],
+      "type": "object"
     },
     "PushDevice": {
       "description": "A phone that gets its person's notifications. Its token and key stay on the hub.",

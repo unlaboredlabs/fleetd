@@ -1,14 +1,14 @@
-//! The push tools: push_device_register, push_devices_list and push_device_remove for a person's own phones (a human
-//! key with a person), and push_relay_set for a key with Admin on every machine.
+//! The push tools: push_device_register, push_devices_list, push_device_remove and push_badge for a person's own phones
+//! (a human key with a person), and push_relay_set for a key with Admin on every machine.
 use std::sync::Arc;
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
 use fleetd_contracts::auth::Role;
 use fleetd_contracts::mcp::{
-    ErrorCode, PushDeviceRegisterInput, PushDeviceRegisterOutput, PushDeviceRemoveInput,
-    PushDeviceRemoveOutput, PushDevicesListInput, PushDevicesListOutput, PushRelaySetInput,
-    PushRelaySetOutput,
+    ErrorCode, PushBadgeInput, PushBadgeOutput, PushDeviceRegisterInput, PushDeviceRegisterOutput,
+    PushDeviceRemoveInput, PushDeviceRemoveOutput, PushDevicesListInput, PushDevicesListOutput,
+    PushRelaySetInput, PushRelaySetOutput,
 };
 use fleetd_contracts::people::PersonId;
 use fleetd_contracts::prim::List;
@@ -21,6 +21,7 @@ pub fn register(tools: &mut Registry) {
     tools.add("push_device_register", push_device_register);
     tools.add("push_devices_list", push_devices_list);
     tools.add("push_device_remove", push_device_remove);
+    tools.add("push_badge", push_badge);
     tools.add("push_relay_set", push_relay_set);
 }
 
@@ -126,6 +127,19 @@ async fn push_devices_list(
     Ok(PushDevicesListOutput {
         devices: List::unchecked(devices),
         relay,
+        next: None,
+        truncated: None,
+    })
+}
+
+async fn push_badge(
+    hub: Arc<Hub>,
+    caller: Caller,
+    _input: PushBadgeInput,
+) -> Result<PushBadgeOutput, ToolError> {
+    let me = person(&caller)?;
+    Ok(PushBadgeOutput {
+        badge: super::badge(&hub, &me)?,
         next: None,
         truncated: None,
     })

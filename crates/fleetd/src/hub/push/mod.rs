@@ -9,6 +9,10 @@
 //!
 //! Who an event is for: a Navi's, its owner; another project's, the person who last wrote in its chat, else the hub's
 //! owner; an event about no project, the hub's owners and admins.
+//!
+//! Each payload says what the person can do from the notification ([`PushCategory`]: approve or deny an approval
+//! whose whole command is its body, review one in the app, reply to a message) and carries their badge ([`badge`]),
+//! so the actions and the count stay sealed with the rest.
 pub mod tools;
 
 #[cfg(test)]
@@ -25,10 +29,11 @@ use fleetd_contracts::chat::{
 };
 use fleetd_contracts::events::{Attention, HubEvent, HubEventType};
 use fleetd_contracts::ids::ProjectRef;
+use fleetd_contracts::ledger::{GatedClass, HumanRequest, RequestKind, RequestState};
 use fleetd_contracts::people::PersonId;
 use fleetd_contracts::prim::Line;
 use fleetd_contracts::push::{
-    PUSH_PAYLOAD_MAX, PushDevice, PushDeviceId, PushKind, PushPayload, PushPlatform,
+    PUSH_PAYLOAD_MAX, PushCategory, PushDevice, PushDeviceId, PushKind, PushPayload, PushPlatform,
 };
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::Value;
@@ -255,11 +260,16 @@ pub fn seal(public_key: &[u8; 32], plain: &[u8]) -> String {
     B64.encode(sealed)
 }
 
-/// The payload's JSON, its body cut until it fits [`PUSH_PAYLOAD_MAX`].
+/// The payload's JSON, its body cut until it fits [`PUSH_PAYLOAD_MAX`]. An approval whose body had to be cut is no
+/// longer its whole command, so it is reviewed in the app rather than approved from the notification.
 pub fn payload_json(payload: &PushPayload) -> Vec<u8> {
     let mut payload = payload.clone();
+    let whole = payload.body.clone();
     payload.body = cut(&payload.body, BODY_MAX);
     loop {
+        if payload.category == Some(PushCategory::Approve) && payload.body != whole {
+            payload.category = Some(PushCategory::Review);
+        }
         let json = serde_json::to_vec(&payload).unwrap_or_default();
         let chars = payload.body.chars().count();
         if json.len() <= PUSH_PAYLOAD_MAX || chars == 0 {
@@ -337,6 +347,70 @@ fn final_lead_message(hub: &Hub, event: &HubEvent, r: &ProjectRef) -> Option<Cha
         .and_then(|d| serde_json::from_str(&d).ok())
 }
 
+/// An approval's body and what the notification may do about it. The body is why the lead asks, then exactly what
+/// runs or is reached. Approve and Deny show only when that is whole on one line, and it is none of money, an
+/// irreversible command, an integration's send or change (its card shows exactly who and what, D183/D193) or a preview
+/// setting: those are reviewed in the app. A secret is entered in the app, so it gets no action.
+fn approval_notice(r: &HumanRequest) -> (String, Option<PushCategory>) {
+    let why = r.text.as_str().trim().trim_end_matches(['.', ':']);
+    let (what, answerable) = match (&r.gated, &r.permission) {
+        (Some(g), _) => (
+            crate::hub::approvals::shown_argv(&g.argv.iter().cloned().collect::<Vec<_>>()),
+            !matches!(g.class, GatedClass::Money | GatedClass::Irreversible),
+        ),
+        (_, Some(p)) => (
+            format!("{} {}", p.tool_name, p.summary.as_str()),
+            p.preview.is_none(),
+        ),
+        _ => (String::new(), false),
+    };
+    if r.kind == RequestKind::Secret {
+        return (why.to_owned(), None);
+    }
+    let exact = !what.trim().is_empty() && cut(&what, BODY_MAX) == what;
+    let body = if what.is_empty() {
+        why.to_owned()
+    } else {
+        format!("{why}: {what}")
+    };
+    let category = if answerable && exact {
+        PushCategory::Approve
+    } else {
+        PushCategory::Review
+    };
+    (body, Some(category))
+}
+
+/// The app icon's badge for `person`: each open request and each chat waiting on them with none open, of the projects
+/// whose notifications are theirs ([`recipients`]). A chat's open item already makes it wait, so it counts once.
+pub fn badge(hub: &Hub, person: &PersonId) -> Result<u32, StoreError> {
+    let open = crate::hub::approvals::store::Requests::new(hub.db.clone()).list(
+        &crate::hub::approvals::store::RequestFilter {
+            project_ref: None,
+            states: Some(vec![RequestState::Open]),
+            kind: None,
+            limit: 1000,
+        },
+    )?;
+    let mut count = 0;
+    for project in hub.store.projects_shown(None, None)? {
+        let r = ProjectRef {
+            machine_id: project.machine_id,
+            project_id: project.project_id,
+        };
+        if !hub.db.with(|c| recipients(c, Some(&r)))?.contains(person) {
+            continue;
+        }
+        let requests = open.iter().filter(|q| q.project_ref == r).count() as u32;
+        count += if requests > 0 {
+            requests
+        } else {
+            u32::from(hub.chat.state(&r, false)?.needs_you)
+        };
+    }
+    Ok(count)
+}
+
 /// The notification `event` makes, if it is one a person is pushed for.
 pub fn notice(hub: &Hub, event: &HubEvent) -> Result<Option<Notice>, StoreError> {
     let project = project_of(event);
@@ -345,6 +419,7 @@ pub fn notice(hub: &Hub, event: &HubEvent) -> Result<Option<Notice>, StoreError>
     let mut message_id = None;
     let mut request_id = None;
     let mut collapse = None;
+    let mut category = None;
     let (kind, body) = match event.r#type {
         HubEventType::ChatMessage => {
             let Some(r) = &project else { return Ok(None) };
@@ -356,6 +431,7 @@ pub fn notice(hub: &Hub, event: &HubEvent) -> Result<Option<Notice>, StoreError>
                 return Ok(None);
             }
             message_id = Some(m.message_id.clone());
+            category = Some(PushCategory::Reply);
             (PushKind::Message, m.text.as_str().to_owned())
         }
         HubEventType::WorkstreamDone => (PushKind::Order, event.summary.to_string()),
@@ -368,7 +444,19 @@ pub fn notice(hub: &Hub, event: &HubEvent) -> Result<Option<Notice>, StoreError>
             {
                 request_id = Some(ChatRequestId::unchecked(id));
                 collapse = Some(collapse_key(&format!("request/{id}")));
-                (PushKind::Approval, event.summary.to_string())
+                let body = match hub
+                    .approvals
+                    .get(id)
+                    .filter(|r| r.state == RequestState::Open)
+                {
+                    Some(r) => {
+                        let (body, c) = approval_notice(&r);
+                        category = c;
+                        body
+                    }
+                    None => event.summary.to_string(),
+                };
+                (PushKind::Approval, body)
             } else {
                 (PushKind::Alert, event.summary.to_string())
             }
@@ -404,6 +492,9 @@ pub fn notice(hub: &Hub, event: &HubEvent) -> Result<Option<Notice>, StoreError>
             request_id,
             urgent: urgent.then_some(true),
             quiet: quiet.then_some(true),
+            category,
+            // Each person's, set as it is sent.
+            badge: None,
             at: event.at.clone(),
         },
         people,
@@ -589,8 +680,14 @@ pub async fn step(
         {
             continue;
         }
-        let plain = payload_json(&notice.payload);
         for person in &notice.people {
+            // A count that can't be read leaves the badge as it was rather than holding the notification back.
+            let plain = payload_json(&PushPayload {
+                badge: badge(hub, person)
+                    .inspect_err(|e| tracing::warn!(error = %e, "push: badge not counted"))
+                    .ok(),
+                ..notice.payload.clone()
+            });
             let mut posted = Vec::new();
             for target in hub.db.with(|c| targets(c, person))? {
                 let push = RelayPush {

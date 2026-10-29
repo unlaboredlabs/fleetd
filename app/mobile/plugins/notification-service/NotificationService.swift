@@ -1,7 +1,8 @@
 // The Notification Service Extension (docs/design/push.md, D218). The relay's APNs alert says only "fleetd: New
 // activity", with the sealed payload in `c` and mutable-content, so iOS hands it here before it shows: this opens
 // `c` with the phone's secret key, from the keychain group it shares with the app (src/vault.ts), and sets the title,
-// the body and the thread (one per chat), drops the sound inside quiet hours and makes an urgent one time-sensitive.
+// the body and the thread (one per chat, so a chat's notifications stack), the buttons (a category the app registers)
+// and the app icon's badge, drops the sound inside quiet hours and makes an urgent one time-sensitive.
 // Anything it can't open shows the generic text (Payload.swift), set here rather than kept from what came, and
 // nothing else of it.
 import Foundation
@@ -22,6 +23,8 @@ final class NotificationService: UNNotificationServiceExtension {
     content.body = shown.body
     content.attachments = []
     if let thread = shown.thread { content.threadIdentifier = thread }
+    content.categoryIdentifier = shown.category ?? ""
+    if let badge = shown.badge { content.badge = NSNumber(value: badge) }
     if shown.quiet { content.sound = nil }
     if shown.urgent, #available(iOS 15.0, *) { content.interruptionLevel = .timeSensitive }
     contentHandler(content)
