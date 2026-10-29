@@ -72,6 +72,14 @@ struct Problem: Equatable, Error {
     )
   }
 
+  static func unreadable(_ name: String) -> Problem {
+    Problem(title: "Can't read \(name)", message: "It isn't an image fleetd can read. Share it as a PNG or JPEG.", retry: false, symbol: "photo")
+  }
+
+  static func tooLarge(_ why: String) -> Problem {
+    Problem(title: "Too large to send", message: why, retry: false, symbol: "photo")
+  }
+
   static func hub(code: String, message: String, fix: String?) -> Problem {
     Problem(title: "The hub didn't take it", message: [message, fix].compactMap { $0 }.joined(separator: " "), retry: true, symbol: "exclamationmark.triangle")
   }
@@ -203,6 +211,12 @@ enum Mime: String {
   }
 }
 
+/// The preview's thumbnails, decoded from the files at this many pixels at most: one image fills the card (200 pt
+/// at 3x), several sit in a row of 96 pt squares: 20 of those are about 7 MB together, decoded.
+enum Thumbnail {
+  static func side(images: Int) -> Int { images == 1 ? 600 : 300 }
+}
+
 /// One file to upload.
 struct Upload: Equatable {
   let name: String
@@ -217,10 +231,11 @@ struct Upload: Equatable {
     return "\(stem).\(mime.ext)"
   }
 
-  /// The pieces it goes up in: all but the last with attachment_part, the last with attachment_put.
-  var pieces: [Data] {
-    if data.isEmpty { return [data] }
-    return stride(from: 0, to: data.count, by: Limits.pieceBytes).map { data.subdata(in: $0..<min($0 + Limits.pieceBytes, data.count)) }
+  /// The byte ranges it goes up in, each read only as it goes: all but the last with attachment_part, the last with
+  /// attachment_put.
+  var pieceRanges: [Range<Int>] {
+    if data.isEmpty { return [0..<0] }
+    return stride(from: 0, to: data.count, by: Limits.pieceBytes).map { $0..<min($0 + Limits.pieceBytes, data.count) }
   }
 
   /// Why the hub won't take it, or nil.

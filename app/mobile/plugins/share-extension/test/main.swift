@@ -79,10 +79,14 @@ check(Upload.name(String(repeating: "a", count: 300), mime: .png, index: 0).coun
 let piece = Limits.pieceBytes
 for (size, counts) in [(0, [0]), (10, [10]), (piece, [piece]), (piece + 1, [piece, 1]), (2 * piece + 5, [piece, piece, 5])] {
   let up = Upload(name: "a.png", mime: .png, data: Data(count: size))
-  check(up.pieces.map(\.count) == counts, "pieces of \(size): \(up.pieces.map(\.count))")
-  check(up.pieces.reduce(Data(), +) == up.data, "pieces of \(size) join")
+  check(up.pieceRanges.map(\.count) == counts, "pieces of \(size): \(up.pieceRanges.map(\.count))")
+  check(up.pieceRanges.map { up.data.subdata(in: $0) }.reduce(Data(), +) == up.data, "pieces of \(size) join")
 }
 check(Upload(name: "a.png", mime: .png, data: Data(count: Limits.fileBytes)).tooLarge == nil, "25 MB is allowed")
+// Thumbnails stay small: 20 of them, decoded at their largest, under 8 MB together.
+check(Thumbnail.side(images: 1) * Thumbnail.side(images: 1) * 4 < 2 * 1_048_576, "one thumbnail")
+check(20 * Thumbnail.side(images: 20) * Thumbnail.side(images: 20) * 4 < 8 * 1_048_576, "20 thumbnails")
+check(!Problem.tooLarge("x").retry && !Problem.unreadable("IMG_1.HEIC").retry, "a file problem offers a retry")
 check(Upload(name: "big.png", mime: .png, data: Data(count: Limits.fileBytes + 1)).tooLarge == "big.png is 25.0 MB; fleetd takes files up to 25 MB.", "over 25 MB")
 
 // The message.
