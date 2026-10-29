@@ -65,7 +65,11 @@ jobs:
           }
           scope app "mobile" app/mobile app/desktop/src/shared app/desktop/src/renderer/src/data/chat.ts \
             app/desktop/src/renderer/src/data/chat-contract.ts app/desktop/src/renderer/screens/navi/model.ts \
-            app/desktop/src/renderer/screens/updates/model.ts app/desktop/src/renderer/screens/updates/flow.ts site/vercel.json
+            app/desktop/src/renderer/screens/updates/model.ts app/desktop/src/renderer/screens/updates/flow.ts \
+            app/desktop/src/renderer/screens/projects/source.ts app/desktop/src/renderer/screens/projects/discovery.ts \
+            app/desktop/src/renderer/screens/projects/flow.ts app/desktop/src/renderer/screens/projects/contracts.ts \
+            app/desktop/src/renderer/screens/settings/profilesModel.ts app/desktop/src/renderer/screens/settings/projectModel.ts \
+            site/vercel.json
           scope ios "mobile (ios)" app/mobile
 
   mobile:
