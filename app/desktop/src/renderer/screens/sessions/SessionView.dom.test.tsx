@@ -25,6 +25,7 @@ const row = (sessionId: string, more: Record<string, unknown>) => ({
 });
 const SESSIONS = [
   row("bs-live", {}),
+  row("bs-ios", { kind: "ios" }),
   row("bs-ended", { state: "recorded", endedAt: "2026-10-19T10:00:09.000Z", files: [{ file: "actions", bytes: 1 }], note: "no video: this machine has no ffmpeg" }),
 ];
 // Its steps, as actions.jsonl has them.
@@ -97,6 +98,16 @@ it("shows a live screen's page the full width, with no Steps beside it", async (
   expect(stepsToggle()).toBeUndefined();
   expect(stepsList()).toBeNull();
   expect(host.textContent).not.toContain("Its steps show here");
+});
+
+it("says what a live screen waits for until its first frame: a browser's page, an iOS screen's simulator", async () => {
+  await mount("bs-live");
+  expect(host.textContent).toContain("Waiting for the page…");
+  act(() => root?.unmount());
+  root = undefined;
+  await mount("bs-ios");
+  expect(host.textContent).toContain("Waiting for the simulator…");
+  expect(host.textContent).not.toContain("Waiting for the page");
 });
 
 it("plays an ended screen's recording the full width, its steps behind Steps, closed until opened and closed again", async () => {

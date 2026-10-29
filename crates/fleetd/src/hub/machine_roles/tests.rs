@@ -375,6 +375,117 @@ async fn an_agents_device_steps_reach_its_own_screen_and_no_one_elses() {
     assert!(seen.try_recv().is_err(), "nothing reached mac1 for th-2");
 }
 
+/// The next frame a node's link gets from the hub.
+async fn heard(link: &mut mpsc::UnboundedReceiver<HubToNode>) -> HubToNode {
+    tokio::time::timeout(std::time::Duration::from_secs(5), link.recv())
+        .await
+        .expect("the node hears of it")
+        .unwrap()
+}
+
+/// A person watching an iOS screen mac1 hosts for an agent on devbox: the watch goes to mac1 (the session's row names
+/// devbox), mac1's frames reach the watcher, and a takeover and its taps go to mac1 too.
+#[tokio::test]
+async fn a_hosted_screen_shows_live_from_its_runner_and_takes_a_persons_taps() {
+    use fleetd_contracts::browser::{BrowserControl, BrowserSessionId};
+    use fleetd_contracts::node_link::CAP_BROWSER;
+    let (hub, _home) = hub();
+    let _devbox = remote(&hub);
+    let (_link, mut seen) = mac1_node(&hub);
+    route(&hub, "th-1", SessionHost::Ios, start())
+        .await
+        .unwrap();
+    let (key, _) = seen.recv().await.unwrap();
+    let caps = [CAP_SESSION_HOST, CAP_SESSION_SEAL, CAP_BROWSER];
+    let mut mac1 = hub.link.test_link(&mid("mac1"), &caps);
+    let mut devbox = hub.link.test_link(&mid("devbox"), &caps);
+    // mac1 reports the screen in the agent's name, as its node does.
+    let report = |control: &str| -> fleetd_contracts::lead_calls::LeadCallFrame {
+        serde_json::from_value(json!({
+            "id": "browser", "cwd": "/work/app", "threadId": key,
+            "call": {
+                "op": "browser_session", "sessionId": SESSION, "kind": "ios", "threadId": key,
+                "purpose": "Check the signup form", "state": "live", "control": control,
+                "startedAt": crate::hub::store::iso_ms(NOW_MS as i64),
+            },
+        }))
+        .unwrap()
+    };
+    let answer = hub
+        .link
+        .answer_lead_call(&mid("mac1"), report("agent"))
+        .await;
+    assert!(answer.error.is_none(), "{:?}", answer.error);
+    let id = BrowserSessionId::unchecked(SESSION);
+    let stored = crate::hub::browser::get(&hub.db, &id).unwrap().unwrap();
+    assert_eq!(stored.project_ref.machine_id, mid("devbox"));
+
+    let person = Caller {
+        kind: Some(fleetd_contracts::auth::KeyKind::Human),
+        ..admin()
+    };
+    let mut watch = crate::hub::browser::live::start_watch(&hub, &person, &id).unwrap();
+    match heard(&mut mac1).await {
+        HubToNode::BrowserWatch(w) => assert!(w.on && w.session_id == id),
+        other => panic!("not a watch: {other:?}"),
+    }
+    // Only mac1's frames are this screen's.
+    let frame = |seq: u64| {
+        serde_json::from_value(json!({
+            "sessionId": SESSION, "seq": seq, "jpegB64": "AA==", "width": 4, "height": 3, "control": "agent",
+        }))
+        .unwrap()
+    };
+    hub.link.browser_frame(&mid("devbox"), frame(1));
+    hub.link.browser_frame(&mid("mac1"), frame(2));
+    assert_eq!(watch.frames.recv().await.unwrap().seq, 2);
+    assert!(watch.frames.try_recv().is_err());
+
+    // A takeover goes to mac1, which says a person has control; then their tap goes there.
+    let registry = crate::hub::api::registry();
+    let take = registry.call(
+        &hub,
+        &person,
+        "browser_control",
+        json!({ "sessionId": SESSION, "control": "human" }),
+    );
+    let node = async {
+        match heard(&mut mac1).await {
+            HubToNode::BrowserControl(c) => assert_eq!(c.session_id, id),
+            other => panic!("not a takeover: {other:?}"),
+        }
+        let answer = hub
+            .link
+            .answer_lead_call(&mid("mac1"), report("human"))
+            .await;
+        assert!(answer.error.is_none(), "{:?}", answer.error);
+    };
+    let (taken, ()) = tokio::join!(take, node);
+    assert_eq!(taken.unwrap()["session"]["control"], "human");
+    let tap = serde_json::from_value(
+        json!({ "kind": "mouse", "action": "pressed", "x": 10.0, "y": 20.0, "button": "left" }),
+    )
+    .unwrap();
+    crate::hub::browser::live::input(&hub, &person, &id, tap).unwrap();
+    match heard(&mut mac1).await {
+        HubToNode::BrowserInput(i) => assert_eq!(i.session_id, id),
+        other => panic!("not input: {other:?}"),
+    }
+    assert_eq!(
+        crate::hub::browser::get(&hub.db, &id)
+            .unwrap()
+            .unwrap()
+            .control,
+        BrowserControl::Human
+    );
+    drop(watch);
+    match heard(&mut mac1).await {
+        HubToNode::BrowserWatch(w) => assert!(!w.on),
+        other => panic!("not the watch's end: {other:?}"),
+    }
+    assert!(devbox.try_recv().is_err(), "nothing went to devbox");
+}
+
 #[tokio::test]
 async fn a_machine_without_the_sessions_role_sends_its_sessions_elsewhere() {
     let (hub, _home) = hub();

@@ -539,6 +539,19 @@ pub fn hosted(c: &Connection, key: &str) -> Result<Option<Place>, StoreError> {
     .optional()?)
 }
 
+/// The machine that hosts session `session_id` for an agent on another one; None for a session on its agent's own
+/// machine. Its row says the agent's machine, so live view and takeover ask this first.
+pub fn runner_of(c: &Connection, session_id: &str) -> Result<Option<MachineId>, StoreError> {
+    Ok(c.query_row(
+        "SELECT runner_id FROM session_places WHERE session_id = ?1 AND hosted = 1
+           ORDER BY started_ms DESC LIMIT 1",
+        [session_id],
+        |r| r.get::<_, String>(0),
+    )
+    .optional()?
+    .map(MachineId::unchecked))
+}
+
 /// A hosted start that answered: its session, and the SHA-256 of its relay token.
 pub fn set_session(
     c: &Connection,

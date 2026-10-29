@@ -368,8 +368,9 @@ while someone watches. Their taps, drags, scrolls and typing go through agent-de
 <p>An agent on a machine without iOS screens, such as a Linux devbox, gets one on a Mac that hosts them, placed by the
 hub as any <a href="/docs/machines#roles">screen on another machine</a>. It drives it the same way: while the screen is open, an
 <code dir="auto">agent-device</code> first on its <code dir="auto">PATH</code> sends each command through the hub to the Mac. The Mac’s node runs the real
-agent-device on the screen’s clone and sends back its output and exit code. The action log, the recording, takeover,
-the idle timeout and <code dir="auto">session_end</code> work as on the Mac.</p>
+agent-device on the screen’s clone and sends back its output and exit code. The action log, the recording, live view,
+takeover, the idle timeout and <code dir="auto">session_end</code> work as on the Mac: the hub sends a person’s watch, takeover and taps
+straight to the Mac, and only the Mac’s frames reach them.</p>
 <ul>
 <li><strong>Files go both ways, inside the worktree.</strong> A file a command reads (<code dir="auto">install build/fleetd.zip</code>, a <code dir="auto">push</code> payload)
 goes from the agent’s worktree to the Mac first, 4 MiB at a time, up to 64 MiB per command. A folder doesn’t go:
