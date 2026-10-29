@@ -1,5 +1,5 @@
-// Settings, as iOS's own: the hub this phone is paired with, its notifications, this phone and its app, and
-// Disconnect, which asks first.
+// Settings, as iOS's own: the hub this phone is paired with, for an admin its update, its notifications, this phone
+// and its app, and Disconnect, which asks first.
 import { useFocusEffect } from "@react-navigation/native";
 import Constants from "expo-constants";
 import * as Device from "expo-device";
@@ -8,10 +8,11 @@ import * as Updates from "expo-updates";
 import { useCallback, useState } from "react";
 import { Linking, ScrollView } from "react-native";
 import { useHub } from "../hubContext";
+import { pushDeps } from "../notifications";
 import { space, useTheme } from "../theme";
 import { ListRow, ListSection } from "../ui/List";
 import { ConnectionLine } from "../ui/States";
-import { useTabBarInset } from "./layout";
+import { UpdateFleetd } from "./UpdateFleetd";
 
 const statusOf = (phase: string): string =>
   phase === "live" ? "Connected" : phase === "connecting" ? "Connecting…" : phase === "retrying" ? "Reconnecting…" : phase === "refused" ? "Key refused" : "Not connected";
@@ -26,38 +27,45 @@ const updateWords = (): string => {
 export function Settings() {
   const t = useTheme();
   const { paired, state, disconnect, pairAgain } = useHub();
-  const bottom = useTabBarInset();
   const [notifications, setNotifications] = useState<string | undefined>(undefined);
   // Read again each time the tab shows: the person may have changed it in iOS Settings meanwhile.
-  useFocusEffect(
-    useCallback(() => {
-      void Notifications.getPermissionsAsync()
-        .then((p) => setNotifications(p.granted ? "On" : p.canAskAgain ? "Not asked yet" : "Off"))
-        .catch(() => setNotifications(undefined));
-    }, []),
-  );
+  const read = useCallback(() => {
+    void Notifications.getPermissionsAsync()
+      .then((p) => setNotifications(p.granted ? "On" : p.canAskAgain ? "Not asked yet" : "Off"))
+      .catch(() => setNotifications(undefined));
+  }, []);
+  useFocusEffect(read);
+  // Never asked: asks here (its new token registers the phone with the hub); else iOS Settings is where it changes.
+  const onNotifications = () => {
+    if (notifications !== "Not asked yet") return void Linking.openSettings();
+    void pushDeps
+      .token()
+      .catch(() => null)
+      .then(read);
+  };
   const hub = state.hub;
   const version = Constants.expoConfig?.version;
   return (
-    <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ paddingBottom: bottom + space.xxl }} scrollIndicatorInsets={{ bottom }}>
+    <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ paddingBottom: space.xxl }}>
       <ConnectionLine state={hub} onPairAgain={pairAgain} />
       <ListSection header="Hub">
         <ListRow icon="server" title="Name" value={paired.hubName} />
         <ListRow icon="link" tint={t.tints[5]} title="Address" value={paired.hub} selectable />
         <ListRow
-          icon="update"
+          icon="status"
           tint={hub.phase === "live" ? t.success : t.warning}
           title="Status"
           value={hub.phase === "live" && hub.version !== undefined ? `${statusOf(hub.phase)} · ${hub.version}` : statusOf(hub.phase)}
         />
       </ListSection>
+      <UpdateFleetd />
       <ListSection header="Notifications" footer="The hub seals each notification to this phone's own key, so only this phone can read it.">
-        <ListRow icon="bell" tint={t.danger} title="Notifications" value={notifications} onPress={() => void Linking.openSettings()} />
+        <ListRow icon="bell" tint={t.danger} title="Notifications" value={notifications} onPress={onNotifications} />
       </ListSection>
       <ListSection header="This phone">
         <ListRow icon="phone" tint="#8E8E93" title="Name" value={Device.deviceName ?? undefined} />
-        <ListRow icon="sparkles" tint={t.tints[3]} title="App version" value={version} selectable />
-        <ListRow icon="update" tint={t.tints[6]} title="Update" value={updateWords()} />
+        <ListRow icon="info" tint="#8E8E93" title="App version" value={version} selectable />
+        <ListRow icon="update" tint={t.tints[1]} title="App update" value={updateWords()} />
       </ListSection>
       <ListSection footer={`Signs this phone out of ${paired.hubName}. Pairing again takes a new code.`}>
         <ListRow title="Disconnect" destructive onPress={disconnect} chevron={false} />

@@ -6,16 +6,23 @@ description: Chat with your Navis and projects and answer approvals from your ph
 The phone app connects to your [hub](/docs/glossary#hub) as the desktop app does, with its own key. It shows your
 [Navis](/docs/navi) and projects, with what needs you on top, their chats, live as the lead writes, and the
 [approvals](/docs/approvals-and-secrets) waiting on you, each with everything it would do. Its notifications show the
-full text, end-to-end encrypted. Settings, secrets and the hub's admin pages stay in the desktop app.
+full text, end-to-end encrypted. An admin can also update fleetd from it. Settings, secrets and the hub's other admin
+pages stay in the desktop app.
 
 fleetd doesn't publish the app in Apple's or Google's stores yet. You build it from the repository on GitHub's
 runners: no Expo account and no EAS.
 
 ## Pair it {#pair}
 
-1. On the hub, run `fleetd pair` and keep the code it prints.
-2. In the app, tap **Connect to a Hub** (or **Paste a Pairing Code**, with the code copied), enter the hub's address,
-   such as `http://devbox:4790`, and the code. Tap **Connect**.
+1. On the hub, run `fleetd pair`, or pair a phone from the desktop app. Either shows a QR code and a one-time code.
+2. In the app, tap **Scan QR Code** and point the camera at it: the phone pairs at once. The iPhone's Camera app works
+   too: scanning the code opens fleetd, which asks **Connect to** the hub first.
+
+Without a camera, tap **Enter Code Manually**, enter the hub's address, such as `http://devbox:4790`, and the code (or
+tap **Paste** with the code or the QR code's link copied), and tap **Connect**. A code works once, for 15 minutes.
+
+The QR code holds a link, `fleetd://pair?hub=<the hub's address>&code=<the code>`. Opened any other way than the app's
+own scanner (the Camera app, a page, a message), it names the hub and asks before pairing, as anyone can send one.
 
 The key stays in the phone's secure storage (the Keychain on iOS, the Keystore on Android). **Disconnect**, in the
 app's Settings tab, asks first,
@@ -25,6 +32,13 @@ can't be reached, you can forget it anyway and sign the phone out later under Se
 Hubs on a tailnet often answer plain HTTP. The app allows that on both platforms, so turn Tailscale on in the phone
 and use the hub's tailnet name or address: `devbox`, `devbox.<tailnet>.ts.net` or its `100.x` address. A hub at any
 other address works over plain HTTP too.
+
+## Update fleetd {#update}
+
+An admin sees **Update** in Settings when the hub has a newer fleetd ready, or a machine runs an older one than the
+hub. It does what the desktop app's Update does: the hub updates itself, then every machine, and the app follows it
+live, machine by machine, to the outcome. A machine that failed or was put back gets **Retry**. Members don't see it,
+and the hub refuses them anyway.
 
 ## Notifications {#notifications}
 
@@ -67,6 +81,10 @@ relay and push credentials: an APNs key for your bundle id on the relay, and you
 |---|---|
 | `fleetd-android-apk` | A release APK, debug-signed. Open it on an Android phone, or `adb install app-release.apk`. |
 | `fleetd-ios-simulator` | The app for the iOS simulator. Unzip it and `xcrun simctl install booted fleetd.app`. |
+
+To try changes on a simulator without a build each time, run the workflow with **metro** set to a Metro server the
+simulator reaches, such as `100.64.0.5:8093`, and run `npm exec -- expo start --port 8093` in `app/mobile` there. That run
+builds a Debug app that loads its JavaScript from that server.
 
 The workflow runs `expo prebuild`, then gradle on an Ubuntu runner and xcodebuild on a macOS runner. On pull requests
 and on `main`, the app's checks and the Android build run when `app/mobile`, the workflow, or a desktop module the app

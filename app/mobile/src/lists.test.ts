@@ -33,7 +33,7 @@ describe("lists", () => {
     expect(lists({ projects: undefined, chatStates: {}, requests: undefined })).toBeUndefined();
   });
 
-  it("leaves archived Navis out and sorts each group by title", () => {
+  it("leaves archived Navis out and sorts each group by title when none spoke later", () => {
     const projects = {
       "m1/b": project("b", "Bea", { kind: "assistant" }),
       "m1/a": project("a", "Ada", { kind: "assistant" }),
@@ -67,6 +67,33 @@ describe("lists", () => {
   });
 });
 
+describe("lists' order and previews", () => {
+  const message = (projectId: string, seq: number, author: string, text: string) => ({
+    messageId: `${projectId}-${String(seq)}`,
+    projectRef: { machineId: "m1", projectId },
+    seq,
+    author,
+    text,
+    state: "final",
+    createdAt: AT,
+  });
+
+  it("puts who spoke last first, as Messages does", () => {
+    const projects = {
+      "m1/a": project("a", "Ada", { kind: "assistant", lastActivityAt: "2026-10-28T09:00:00Z" }),
+      "m1/b": project("b", "Bea", { kind: "assistant", lastActivityAt: "2026-10-28T08:00:00Z" }),
+    };
+    const chatStates = { "m1/b": { projectRef: { machineId: "m1", projectId: "b" }, lastSeq: 4, leadWorking: false, needsYou: false, lastMessageAt: "2026-10-28T11:00:00Z" } };
+    expect(lists({ projects, chatStates, requests: [] })?.navis.map((r) => r.project.title)).toEqual(["Bea", "Ada"]);
+  });
+
+  it("previews a chat not opened yet from its newest messages", () => {
+    const projects = { "m1/a": project("a", "Ada", { kind: "assistant" }) };
+    const latest = { "m1/a": [message("a", 7, "human", "Lunch on Tuesday?"), message("a", 8, "lead", "Booked it for **12:30**.")] };
+    expect(lists({ projects, chatStates: {}, requests: [], latest })?.navis.map((r) => r.preview)).toEqual(["Booked it for 12:30."]);
+  });
+});
+
 describe("approvals", () => {
   it("lists open approvals oldest first, without secrets", () => {
     const secret: HumanRequest = { ...asked("s1"), kind: "secret" };
@@ -81,7 +108,7 @@ describe("approvals", () => {
       wants: "wants to run a command",
       risk: "irreversible",
       fields: [
-        { label: "Why", value: "Ship the checkout fix" },
+        { label: "Why", value: "Ship the checkout fix", prose: true },
         { label: "Command", value: "vercel deploy --prod", mono: true },
         { label: "In", value: "/home/devbox/shop", mono: true, more: true },
         { label: "Kind", value: "irreversible", more: true },
@@ -125,5 +152,24 @@ describe("approvals", () => {
       ["Input", '{"to":["a@example.com"]}'],
       ["Asked", "Deploy the fix"],
     ]);
+  });
+
+  it("keeps what an email says exactly as it goes out, backticks too; only the asker's why draws code", () => {
+    const body = "Run `npm ci` first, then ``` the rest.";
+    const r: HumanRequest = {
+      ...asked("r1"),
+      permission: {
+        requestId: "p1",
+        threadId: "t1",
+        toolName: "mcp__gmail__send",
+        summary: "Send an email",
+        preview: { title: "Send an email", to: ["`a`@example.com"], subject: "The `deploy` step", body, input: "{}", integration: "google", server: "gmail", tool: "send", action: "send" },
+      },
+    };
+    const fields = approvalView(r, "Ada").fields;
+    expect(fields.find((f) => f.label === "Body")).toEqual({ label: "Body", value: body });
+    expect(fields.find((f) => f.label === "Subject")).toEqual({ label: "Subject", value: "The `deploy` step" });
+    expect(fields.some((f) => f.prose === true)).toBe(false);
+    expect(approvalView(gated("r2"), "storefront").fields.filter((f) => f.prose === true).map((f) => f.label)).toEqual(["Why"]);
   });
 });

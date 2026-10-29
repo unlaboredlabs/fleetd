@@ -106,6 +106,12 @@ export const space = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32 } as const;
 /** Apple's minimum touch target. */
 export const TOUCH = 44;
 
+/** iOS 26 and later: rounder grouped lists and cards, taller rows, and capsule buttons, as its own apps draw them. */
+const ios26 = Platform.OS === "ios" && Number.parseInt(String(Platform.Version), 10) >= 26;
+
+/** A grouped list's (and a card's) corner, a row's height, and whether a big button is a capsule. */
+export const shape = { group: ios26 ? 26 : 12, card: ios26 ? 26 : 18, row: ios26 ? 52 : TOUCH, capsule: ios26 } as const;
+
 export const mono = Platform.select({ ios: "Menlo", default: "monospace" });
 
 export const navigationTheme = (p: Palette): NavigationTheme => {

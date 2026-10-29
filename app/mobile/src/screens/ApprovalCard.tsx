@@ -71,7 +71,7 @@ export function ApprovalCard({
             <View key={f.label} style={styles.field}>
               <Text style={[type.footnote, { color: t.secondary }]}>{f.label}</Text>
               <Text style={[f.mono === true ? styles.mono : type.subhead, { color: t.label }]} selectable>
-                {f.value}
+                {f.prose === true ? <WithCode text={f.value} /> : f.value}
               </Text>
             </View>
           ))}
@@ -125,6 +125,24 @@ export function ApprovalCard({
   );
 }
 
+/** The asker's own words (why) with their `code` spans drawn in monospace. Never for what goes out: that shows as is. */
+function WithCode({ text }: { text: string }) {
+  const parts = text.split(/(`[^`\n]+`)/u);
+  return (
+    <>
+      {parts.map((p, i) =>
+        i % 2 === 1 ? (
+          <Text key={i} style={styles.inlineCode}>
+            {p.slice(1, -1)}
+          </Text>
+        ) : (
+          p
+        ),
+      )}
+    </>
+  );
+}
+
 const styles = StyleSheet.create({
   head: { flexDirection: "row", alignItems: "center", gap: space.md },
   who: { flex: 1, gap: 1 },
@@ -135,6 +153,7 @@ const styles = StyleSheet.create({
   fields: { gap: space.md },
   field: { gap: 2 },
   mono: { fontFamily: mono, fontSize: 14, lineHeight: 19 },
+  inlineCode: { fontFamily: mono, fontSize: 14 },
   details: { flexDirection: "row", alignItems: "center", gap: 4, alignSelf: "flex-start", minHeight: 28 },
   flip: { transform: [{ rotate: "180deg" }] },
   actions: { flexDirection: "row", gap: space.md, marginTop: space.xs },

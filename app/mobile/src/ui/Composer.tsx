@@ -1,28 +1,30 @@
-// iMessage's composer: a pill to write in and a round send button inside it, on a translucent bar over the thread,
-// above the keyboard and clear of the home indicator. Return makes a new line; the button sends.
-import { BlurView } from "expo-blur";
-import { useState } from "react";
-import { Platform, Pressable, StyleSheet, TextInput, View } from "react-native";
+// iMessage's composer: a pill to write in on the chat's own ground, above the keyboard and clear of the home
+// indicator, with a round send button that shows once there is something to send. Return makes a new line; the
+// button sends.
+import { useEffect, useRef, useState } from "react";
+import { Animated, Platform, Pressable, StyleSheet, TextInput, View } from "react-native";
 import { space, type, useTheme } from "../theme";
+import { haptics } from "./haptics";
 import { Icon } from "./Icon";
 
 export function Composer({ onSend, bottomInset, placeholder = "Message" }: { onSend: (text: string) => void; bottomInset: number; placeholder?: string }) {
   const t = useTheme();
   const [text, setText] = useState("");
   const ready = text.trim() !== "";
+  // The send button grows in as the first letter is typed, and out when the text is gone.
+  const shown = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.spring(shown, { toValue: ready ? 1 : 0, useNativeDriver: Platform.OS !== "web", speed: 40, bounciness: 6 }).start();
+  }, [ready, shown]);
   const send = () => {
     if (!ready) return;
+    haptics.tap();
     onSend(text);
     setText("");
   };
   return (
-    <View style={[styles.bar, { paddingBottom: Math.max(bottomInset, space.sm) }]}>
-      {Platform.OS === "ios" ? (
-        <BlurView tint="systemChromeMaterial" intensity={100} style={StyleSheet.absoluteFill} />
-      ) : (
-        <View style={[StyleSheet.absoluteFill, { backgroundColor: t.bg }]} />
-      )}
-      <View style={[styles.pill, { borderColor: t.separator, backgroundColor: t.dark ? "rgba(0,0,0,0.25)" : "rgba(255,255,255,0.7)" }]}>
+    <View style={[styles.bar, { paddingBottom: Math.max(bottomInset, space.sm), backgroundColor: t.bg }]}>
+      <View style={[styles.pill, { borderColor: t.separator, backgroundColor: t.dark ? t.cell : t.bg }]}>
         <TextInput
           style={[type.body, styles.input, { color: t.label }]}
           value={text}
@@ -35,34 +37,37 @@ export function Composer({ onSend, bottomInset, placeholder = "Message" }: { onS
           accessibilityLabel="Message"
           keyboardAppearance={t.dark ? "dark" : "light"}
         />
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Send"
-          accessibilityState={{ disabled: !ready }}
-          disabled={!ready}
-          onPress={send}
-          hitSlop={8}
-          style={({ pressed }) => [styles.send, { backgroundColor: ready ? t.accent : t.fill }, pressed && styles.pressed]}
-        >
-          <Icon name="send" size={16} color="#FFFFFF" weight="bold" />
-        </Pressable>
+        <Animated.View style={[styles.sendSlot, { opacity: shown, transform: [{ scale: shown }] }]} pointerEvents={ready ? "auto" : "none"}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Send"
+            accessibilityElementsHidden={!ready}
+            importantForAccessibility={ready ? "yes" : "no-hide-descendants"}
+            onPress={send}
+            hitSlop={8}
+            style={({ pressed }) => [styles.send, { backgroundColor: t.accent }, pressed && styles.pressed]}
+          >
+            <Icon name="send" size={16} color="#FFFFFF" weight="bold" />
+          </Pressable>
+        </Animated.View>
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  bar: { paddingHorizontal: space.md, paddingTop: 7, overflow: "hidden" },
+  bar: { paddingHorizontal: space.md, paddingTop: space.sm },
   pill: {
     flexDirection: "row",
     alignItems: "flex-end",
-    minHeight: 36,
-    borderRadius: 18,
+    minHeight: 38,
+    borderRadius: 19,
     borderWidth: StyleSheet.hairlineWidth,
     paddingLeft: 14,
-    paddingRight: 3,
+    paddingRight: 4,
   },
-  input: { flex: 1, maxHeight: 132, paddingTop: 7, paddingBottom: 7, marginRight: space.xs },
-  send: { width: 30, height: 30, borderRadius: 15, alignItems: "center", justifyContent: "center", marginBottom: 2 },
+  input: { flex: 1, maxHeight: 140, paddingTop: 8, paddingBottom: 8, marginRight: space.xs },
+  sendSlot: { marginBottom: 4 },
+  send: { width: 30, height: 30, borderRadius: 15, alignItems: "center", justifyContent: "center" },
   pressed: { opacity: 0.7 },
 });

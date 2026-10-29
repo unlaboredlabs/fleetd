@@ -34,9 +34,18 @@ const SYMBOLS = {
   qr: ["qrcode", "qr_code"],
   link: ["link", "link"],
   paste: ["doc.on.clipboard", "content_paste"],
+  scan: ["qrcode.viewfinder", "qr_code_scanner"],
+  keyboard: ["keyboard", "keyboard"],
+  close: ["xmark", "close"],
+  camera: ["camera.fill", "photo_camera"],
+  status: ["antenna.radiowaves.left.and.right", "sensors"],
+  info: ["info", "info"],
 } as const satisfies Record<string, readonly [Extract<SymbolViewProps["name"], string>, AndroidSymbol]>;
 
 export type IconName = keyof typeof SYMBOLS;
+
+/** The SF Symbol's name, for what iOS draws itself (the tab bar). */
+export const sfSymbol = (name: IconName): (typeof SYMBOLS)[IconName][0] => SYMBOLS[name][0];
 
 export function Icon({
   name,

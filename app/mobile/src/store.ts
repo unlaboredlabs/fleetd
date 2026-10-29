@@ -15,8 +15,10 @@ import {
   type CallResult,
   type Chat,
   type ChatHistoryOutput,
+  type ChatMessage,
   type ChatMessageEventData,
   type ChatSend,
+  type FleetStatus,
   type HubError,
   type HubEvent,
   type HubState,
@@ -25,6 +27,8 @@ import {
   type ProjectRef,
   type ProjectSummary,
 } from "./desktop";
+
+export type Machine = FleetStatus["machines"][number];
 
 /** "machineId/projectId". */
 export type Key = string;
@@ -41,8 +45,14 @@ export interface State {
   /** Undefined until the first snapshot. */
   readonly projects: Readonly<Record<Key, ProjectSummary>> | undefined;
   readonly chatStates: Readonly<Record<Key, ProjectChatState>>;
+  /** The hub's machines, from the snapshot: what an update goes through. */
+  readonly machines: readonly Machine[];
+  /** Whether this phone's person is the hub's admin (hub_info), who can update it; undefined until read. */
+  readonly admin: boolean | undefined;
   readonly chats: Readonly<Record<Key, Chat>>;
   readonly sends: Readonly<Record<Key, readonly ChatSend[]>>;
+  /** Each chat's newest few messages, read after each snapshot and kept by events: the chats list's previews. */
+  readonly latest: Readonly<Record<Key, readonly ChatMessage[]>>;
   /** The open requests (requests_list); undefined until read on this connection. */
   readonly requests: readonly HumanRequest[] | undefined;
   /** Approvals answered from here and on their way, by requestId. */
@@ -55,8 +65,11 @@ export const initial = (hub: HubState): State => ({
   hub,
   projects: undefined,
   chatStates: {},
+  machines: [],
+  admin: undefined,
   chats: {},
   sends: {},
+  latest: {},
   requests: undefined,
   answering: {},
   answerErrors: {},
@@ -67,6 +80,8 @@ export type Action =
   | { readonly t: "chat_open"; readonly key: Key }
   | { readonly t: "history"; readonly key: Key; readonly page: ChatHistoryOutput; readonly direction: "latest" | "older" }
   | { readonly t: "history_failed"; readonly key: Key; readonly error: HubError }
+  | { readonly t: "latest"; readonly key: Key; readonly messages: readonly ChatMessage[] }
+  | { readonly t: "admin"; readonly admin: boolean }
   | { readonly t: "send"; readonly key: Key; readonly row: ChatSend }
   | { readonly t: "sent"; readonly key: Key; readonly clientRequestId: string; readonly result: CallResult; readonly leadWaiting?: string | undefined }
   | { readonly t: "requests"; readonly requests: readonly HumanRequest[] }
@@ -76,6 +91,16 @@ export type Action =
 const chatOf = (s: State, key: Key): Chat => s.chats[key] ?? emptyChat;
 
 const withChat = (s: State, key: Key, chat: Chat): State => (chat === s.chats[key] ? s : { ...s, chats: { ...s.chats, [key]: chat } });
+
+/** The newest messages kept for a chat's preview. */
+export const LATEST = 3;
+
+const withLatest = (s: State, key: Key, messages: readonly ChatMessage[]): State => {
+  const known = s.latest[key] ?? [];
+  const merged = new Map([...known, ...messages].map((m) => [m.messageId, m]));
+  const newest = [...merged.values()].sort((x, y) => x.seq - y.seq).slice(-LATEST);
+  return { ...s, latest: { ...s.latest, [key]: newest } };
+};
 
 const without = <T>(map: Readonly<Record<string, T>>, key: string): Readonly<Record<string, T>> =>
   key in map ? Object.fromEntries(Object.entries(map).filter(([k]) => k !== key)) : map;
@@ -90,6 +115,10 @@ export const reduce = (s: State, a: Action): State => {
       return withChat(s, a.key, applyHistory(chatOf(s, a.key), a.page, a.direction));
     case "history_failed":
       return withChat(s, a.key, { ...chatOf(s, a.key), error: a.error, loadingOlder: false });
+    case "latest":
+      return withLatest(s, a.key, a.messages);
+    case "admin":
+      return s.admin === a.admin ? s : { ...s, admin: a.admin };
     case "send": {
       const sends = upsertSend(s.sends[a.key] ?? [], a.row);
       return { ...s, sends: { ...s.sends, [a.key]: sends } };
@@ -135,6 +164,7 @@ const applyFrame = (s: State, frame: HubFrame, nowMs: number): State => {
       return {
         ...s,
         projects: Object.fromEntries(snap.projects.map((p) => [keyOf(p), p])),
+        machines: snap.machines,
         chatStates: Object.fromEntries((snap.chats ?? []).map((c) => [keyOf(c.projectRef), c])),
       };
     }
@@ -164,7 +194,7 @@ const applyEvent = (s: State, event: HubEvent): State => {
   const base = known === undefined || data.seq <= known.lastSeq ? s : { ...s, chatStates: { ...s.chatStates, [key]: { ...known, lastSeq: data.seq } } };
   const chat = base.chats[key];
   const message = data.message;
-  if (chat === undefined) return base;
+  if (chat === undefined) return message === undefined ? base : withLatest(base, key, [message]);
   if (message === undefined) {
     // Too big for the event: the session reads it by seq (missingSeqs).
     return chat.missing.includes(data.seq) ? base : withChat(base, key, { ...chat, missing: [...chat.missing, data.seq] });

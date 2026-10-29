@@ -2,8 +2,8 @@
 // uppercase header above and a footnote below. A row has an optional colored icon tile, a title, a value on the right
 // and a chevron when it opens something.
 import { Children, Fragment, isValidElement, type ReactNode } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
-import { space, TOUCH, type, useTheme } from "../theme";
+import { Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { shape, space, type, useTheme } from "../theme";
 import { Icon, type IconName } from "./Icon";
 
 export function ListSection({ header, footer, children }: { header?: string; footer?: string; children: ReactNode }) {
@@ -31,7 +31,9 @@ export function ListSection({ header, footer, children }: { header?: string; foo
 
 export function ListRow({
   title,
+  detail,
   value,
+  valueColor,
   icon,
   tint,
   onPress,
@@ -41,7 +43,10 @@ export function ListRow({
   accessory,
 }: {
   title: string;
+  /** A line under the title: why, where it failed. */
+  detail?: string | undefined;
   value?: string | undefined;
+  valueColor?: string | undefined;
   icon?: IconName;
   /** The icon tile's color; the accent when unset. */
   tint?: string | undefined;
@@ -53,6 +58,8 @@ export function ListRow({
   accessory?: ReactNode;
 }) {
   const t = useTheme();
+  // At the accessibility text sizes the value goes under the title, as iOS Settings does, rather than be cut short.
+  const stacked = useWindowDimensions().fontScale >= 1.35 && value !== undefined && detail === undefined;
   const body = (pressed: boolean) => (
     <View style={[styles.row, pressed && { backgroundColor: t.fillQuiet }]}>
       {icon === undefined ? null : (
@@ -60,11 +67,27 @@ export function ListRow({
           <Icon name={icon} size={17} color="#FFFFFF" weight="medium" />
         </View>
       )}
-      <Text style={[type.body, value === undefined ? styles.grow : styles.title, { color: destructive ? t.danger : t.label }]} numberOfLines={1}>
-        {title}
-      </Text>
-      {value === undefined ? null : (
-        <Text style={[type.body, styles.value, { color: t.secondary }]} numberOfLines={1} selectable={selectable} ellipsizeMode="middle">
+      {stacked ? (
+        <View style={styles.grow}>
+          <Text style={[type.body, { color: destructive ? t.danger : t.label }]}>{title}</Text>
+          <Text style={[type.body, { color: valueColor ?? t.secondary }]} selectable={selectable}>
+            {value}
+          </Text>
+        </View>
+      ) : detail === undefined ? (
+        <Text style={[type.body, value === undefined ? styles.grow : styles.title, { color: destructive ? t.danger : t.label }]} numberOfLines={1}>
+          {title}
+        </Text>
+      ) : (
+        <View style={styles.grow}>
+          <Text style={[type.body, { color: destructive ? t.danger : t.label }]} numberOfLines={1}>
+            {title}
+          </Text>
+          <Text style={[type.footnote, { color: t.secondary }]}>{detail}</Text>
+        </View>
+      )}
+      {value === undefined || stacked ? null : (
+        <Text style={[type.body, detail === undefined ? styles.value : null, { color: valueColor ?? t.secondary }]} numberOfLines={1} selectable={selectable} ellipsizeMode="middle">
           {value}
         </Text>
       )}
@@ -84,9 +107,9 @@ const styles = StyleSheet.create({
   section: { marginHorizontal: space.lg, marginTop: space.xl },
   header: { paddingHorizontal: space.lg, paddingBottom: 7 },
   footer: { paddingHorizontal: space.lg, paddingTop: 7 },
-  group: { borderRadius: 12, overflow: "hidden" },
+  group: { borderRadius: shape.group, borderCurve: "continuous", overflow: "hidden" },
   separator: { height: StyleSheet.hairlineWidth },
-  row: { flexDirection: "row", alignItems: "center", gap: space.md, minHeight: TOUCH, paddingHorizontal: space.lg, paddingVertical: 11 },
+  row: { flexDirection: "row", alignItems: "center", gap: space.md, minHeight: shape.row, paddingHorizontal: space.lg, paddingVertical: 11 },
   tile: { width: 29, height: 29, borderRadius: 7, alignItems: "center", justifyContent: "center" },
   title: { flexShrink: 0, maxWidth: "60%" },
   grow: { flex: 1 },

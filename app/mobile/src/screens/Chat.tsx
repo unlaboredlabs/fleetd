@@ -29,7 +29,11 @@ export const chatOptions = (t: Palette): NativeStackNavigationOptions => ({
   headerBackButtonDisplayMode: "minimal",
   headerTintColor: t.accent,
   headerTitleAlign: "center",
-  ...(Platform.OS === "ios" ? { headerTransparent: true, headerBlurEffect: "systemChromeMaterial" } : { headerStyle: { backgroundColor: t.bg } }),
+  // A blurred bar over the thread, which scrolls under it: the list is upside down, so iOS 26's own edge effects
+  // would land on the wrong ends; they're off.
+  ...(Platform.OS === "ios"
+    ? { headerTransparent: true, headerBlurEffect: "systemChromeMaterial", scrollEdgeEffects: { top: "hidden", bottom: "hidden" } }
+    : { headerStyle: { backgroundColor: t.bg } }),
 });
 
 /** Whether the keyboard is up: the composer then sits on it, not on the home indicator's inset. */
@@ -72,7 +76,9 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
 
   const title = project?.title ?? "Chat";
   const link = connectionWords(state.hub);
-  const status = link?.text ?? (working ? "Working…" : chatState?.needsYou === true ? "Waiting for you" : undefined);
+  // Always a line under the name, as Telegram's "online": the title never jumps when the lead starts or stops.
+  const quiet = project === undefined ? undefined : isNavi(project) ? "Navi" : `on ${project.machineId}`;
+  const status = link?.text ?? (working ? "Working…" : chatState?.needsYou === true ? "Waiting for you" : quiet);
   useEffect(() => {
     navigation.setOptions({
       headerTitle: () => <ChatTitle title={title} navi={project !== undefined && isNavi(project)} status={status} />,
@@ -80,9 +86,13 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
     });
   }, [navigation, title, project, status]);
 
+  const list = useRef<FlatList<ThreadRow>>(null);
+  // What you send shows at once, as in Messages, wherever the thread was scrolled to (the list is upside down: 0 is
+  // the newest).
   const send = (body: string) => {
     if (body.trim() === "") return;
     session.send(chatKey, body);
+    list.current?.scrollToOffset({ offset: 0, animated: true });
   };
 
   const loading = !chat.loaded && chat.cached !== true;
@@ -90,6 +100,7 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   return (
     <KeyboardAvoidingView style={[styles.fill, { backgroundColor: t.bg }]} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <FlatList
+        ref={list}
         inverted
         data={loading && items.length === 0 ? [] : newestFirst}
         keyExtractor={(r) => r.id}
@@ -101,6 +112,7 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
         scrollIndicatorInsets={{ top: 0, bottom: top }}
         onEndReached={() => void session.loadOlder(chatKey)}
         ListHeaderComponent={<View style={styles.bottomGap} />}
+        {...(loading ? {} : { ListEmptyComponent: <EmptyThread title={title} navi={project !== undefined && isNavi(project)} /> })}
         // The list is upside down: its footer is the top, under the translucent header.
         ListFooterComponent={
           <View style={{ paddingTop: top }}>
@@ -112,6 +124,18 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
       {chat.error === undefined ? null : <Text style={[type.footnote, styles.error, { color: t.danger }]}>{chat.error.message}</Text>}
       <Composer onSend={send} bottomInset={keyboardUp ? 0 : insets.bottom} />
     </KeyboardAvoidingView>
+  );
+}
+
+/** A chat with nothing in it yet: who it is, and that it starts here. Turned upright: the list is upside down. */
+function EmptyThread({ title, navi }: { title: string; navi: boolean }) {
+  const t = useTheme();
+  return (
+    <View style={styles.emptyThread}>
+      <Avatar name={title} navi={navi} size={72} />
+      <Text style={[type.title3, { color: t.label }]}>{title}</Text>
+      <Text style={[type.subhead, styles.center, { color: t.secondary }]}>{navi ? "No messages yet. Ask it anything." : "No messages yet. Tell the lead what to work on."}</Text>
+    </View>
   );
 }
 
@@ -256,7 +280,7 @@ function BubbleView({ bubble, tail, canAnswer, onAnswer }: { bubble: BubbleData;
     case "ask":
       return (
         <View style={styles.ask}>
-          <Bubble side="them" tail={tail && !canAnswer}>
+          <Bubble side="them" tail={tail}>
             <Markdown text={bubble.question} ink={t.label} />
           </Bubble>
           {canAnswer ? (
@@ -374,7 +398,9 @@ function TypingDots() {
 
 const styles = StyleSheet.create({
   fill: { flex: 1 },
-  list: { paddingHorizontal: space.md + 2 },
+  list: { paddingHorizontal: space.md + 2, flexGrow: 1 },
+  emptyThread: { flex: 1, alignItems: "center", justifyContent: "center", gap: space.sm, paddingHorizontal: space.xxl, transform: [{ scaleY: -1 }] },
+  center: { textAlign: "center" },
   bottomGap: { height: space.sm },
   older: { paddingVertical: space.md },
   error: { paddingHorizontal: space.lg, paddingVertical: space.xs, textAlign: "center" },

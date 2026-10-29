@@ -22,6 +22,9 @@
 // update job (build-release.yml) resolves it with the same settings, so a build gets only bundles made for it, and a
 // native change, or another URL or channel, gives builds a runtime version older bundles don't match.
 //
+// `scheme` registers fleetd:// links: a pairing QR code (`fleetd://pair?hub=…&code=…`) scanned with iOS's Camera opens
+// the app, which pairs with it.
+//
 // Notifications use the platforms' own push, APNs and FCM, through `fleetd push-relay`, never Expo's push service
 // (docs/design/push.md). The iOS Notification Service Extension that opens them comes from plugins/notification-service.
 import { relative, resolve } from "node:path";
@@ -44,6 +47,9 @@ export default ({ projectRoot }: ConfigContext): ExpoConfig => ({
   // Light and dark follow the phone's setting; App.tsx sets the root view's color to match (expo-system-ui).
   userInterfaceStyle: "automatic",
   backgroundColor: "#000000",
+  // tsconfig.json's `paths` are for the typechecker alone (the desktop modules find React's types there): Metro
+  // resolves React itself (metro.config.js).
+  experiments: { tsconfigPaths: false },
   // A bundle runs only on the native build it was made for: the fingerprint changes with any native dependency.
   runtimeVersion: { policy: "fingerprint" },
   updates: updatesCert
@@ -60,6 +66,8 @@ export default ({ projectRoot }: ConfigContext): ExpoConfig => ({
     : { enabled: false },
   ios: {
     bundleIdentifier: appId,
+    // iOS 18's appearances; every icon is rendered from fleetd's mark (site/icon.svg) by `npm run icons`.
+    icon: { light: "./assets/icon.png", dark: "./assets/icon-dark.png", tinted: "./assets/icon-tinted.png" },
     ...(build === undefined ? {} : { buildNumber: build }),
     supportsTablet: true,
     infoPlist: {
@@ -74,7 +82,7 @@ export default ({ projectRoot }: ConfigContext): ExpoConfig => ({
     package: appId,
     ...(build === undefined ? {} : { versionCode: Number(build) }),
     adaptiveIcon: {
-      backgroundColor: "#1c1c1b",
+      backgroundColor: "#1b1c1f",
       foregroundImage: "./assets/android-icon-foreground.png",
       backgroundImage: "./assets/android-icon-background.png",
       monochromeImage: "./assets/android-icon-monochrome.png",
@@ -86,7 +94,11 @@ export default ({ projectRoot }: ConfigContext): ExpoConfig => ({
     "expo-secure-store",
     ["expo-build-properties", { android: { usesCleartextTraffic: true } }],
     // A signed build is a store's (TestFlight, the App Store), whose APNs is production; the relay picks the matching one.
-    ["expo-notifications", { mode: "production", icon: "./assets/android-icon-monochrome.png", color: "#1c1c1b", defaultChannel: "other" }],
+    ["expo-notifications", { mode: "production", icon: "./assets/notification-icon.png", color: "#6ea8fe", defaultChannel: "other" }],
+    // The mark on a plain ground, white or black as the phone is.
+    ["expo-splash-screen", { image: "./assets/splash-icon.png", imageWidth: 112, backgroundColor: "#ffffff", dark: { image: "./assets/splash-icon.png", backgroundColor: "#000000" } }],
+    // Scans the hub's pairing QR code (D232); no recording, so no microphone.
+    ["expo-camera", { cameraPermission: "fleetd scans the QR code your hub shows, to pair this phone with it.", microphonePermission: false, recordAudioAndroid: false }],
     "./plugins/notification-service",
     "./plugins/android-signing",
   ],
