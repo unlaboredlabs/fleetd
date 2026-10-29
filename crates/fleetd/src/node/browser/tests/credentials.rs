@@ -205,7 +205,9 @@ async fn shop() -> (String, Arc<Mutex<Vec<String>>>, AbortOnDrop) {
     (base, bodies, AbortOnDrop(serving))
 }
 
+/// Opens `url` on the page, with its page events on, so [`wait_title`] can follow the navigations after it.
 async fn open(driver: &mut Driver, page: &str, url: &str) {
+    driver.ok(Some(page), "Page.enable", json!({})).await;
     driver
         .ok(Some(page), "Page.navigate", json!({ "url": url }))
         .await;
@@ -217,13 +219,32 @@ async fn open(driver: &mut Driver, page: &str, url: &str) {
         .await;
 }
 
-/// Waits for the page's title through `document.title`, agent-browser's own `get title`, which a sealed session runs.
-async fn wait_title(driver: &mut Driver, page: &str, title: &str) {
-    let deadline = Instant::now() + Duration::from_secs(15);
-    while driver.eval(page, "document.title").await != title {
-        assert!(Instant::now() < deadline, "never titled {title}");
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    }
+/// Waits for the page, after [`open`], to navigate to `path` and load it, then checks its title through
+/// `document.title`, agent-browser's own `get title`, which a sealed session runs. A read while Chrome swaps documents
+/// (a submit navigating) is answered "Inspected target navigated or closed", so the title is read only once the new
+/// document has fired its load event.
+async fn wait_title(driver: &mut Driver, page: &str, path: &str, title: &str) {
+    let mut seen = 0;
+    let navigated = driver
+        .event(&mut seen, |e| {
+            e["sessionId"] == page
+                && e["method"] == "Page.frameNavigated"
+                && e["params"]["frame"]["parentId"].is_null()
+                && e["params"]["frame"]["url"]
+                    .as_str()
+                    .is_some_and(|u| u.ends_with(path))
+        })
+        .await;
+    driver
+        .event(&mut seen, |e| {
+            e["sessionId"] == page && e["method"] == "Page.loadEventFired"
+        })
+        .await;
+    assert_eq!(
+        driver.eval(page, "document.title").await,
+        title,
+        "{navigated}"
+    );
 }
 
 async fn fill(rig: &Rig, reference: &str, target: &str, submit: Option<bool>) -> Value {
@@ -274,7 +295,7 @@ async fn a_login_filled_from_1password_never_reaches_the_agent_the_recording_or_
         "{password}"
     );
     heard.push_str(&format!("{user}{password}"));
-    wait_title(&mut driver, &page, "Welcome").await;
+    wait_title(&mut driver, &page, "/login", "Welcome").await;
     rig.broker
         .item(THREAD, &command_item("agent-browser get title", "Welcome"));
 
@@ -479,7 +500,7 @@ async fn a_login_filled_from_1password_never_reaches_the_agent_the_recording_or_
         }
         driver.ok(Some(&page), "Input.dispatchKeyEvent", key).await;
     }
-    wait_title(&mut driver, &page, "Verified").await;
+    wait_title(&mut driver, &page, "/otp", "Verified").await;
     heard.push_str(&serde_json::to_string(&driver.events).unwrap());
     // An agent-browser command whose output held a value anyway: logged scrubbed.
     rig.broker.item(
@@ -1041,7 +1062,7 @@ async fn a_filled_field_cant_be_moved_to_a_form_that_sends_elsewhere() {
         }
         driver.ok(Some(&page), "Input.dispatchKeyEvent", key).await;
     }
-    wait_title(&mut driver, &page, "Stolen").await;
+    wait_title(&mut driver, &page, "/steal", "Stolen").await;
     let bodies = bodies.lock().unwrap().clone();
     assert_eq!(
         bodies,
@@ -1298,7 +1319,7 @@ async fn a_navis_kept_profile_keeps_no_filled_value_and_each_session_that_fills_
     open(&mut driver, &page, &site).await;
     assert!(fill(&rig, USER_REF, "#user", Some(false)).await["result"].is_object());
     assert!(fill(&rig, PASSWORD_REF, "#pw", None).await["result"].is_object());
-    wait_title(&mut driver, &page, "Welcome").await;
+    wait_title(&mut driver, &page, "/login", "Welcome").await;
     let answer = read(&mut driver, &page, "#echo").await;
     assert!(sealed(&answer), "{answer}");
     drop(driver);
