@@ -1,7 +1,8 @@
 // The app's Expo config. Native projects are generated from it (`expo prebuild`) on each build, never kept in git.
 //
 // Hubs are often plain HTTP on a tailnet, at any address, so cleartext is allowed everywhere: ATS's arbitrary loads on
-// iOS, usesCleartextTraffic on Android. The key goes over that link as the desktop app's does.
+// iOS (scripts/ats.ts checks nothing cancels it), usesCleartextTraffic on Android. The key goes over that link as the
+// desktop app's does.
 //
 // Builds read these from the environment:
 // - FLEETD_APP_ID: the bundle id and Android package (default sh.fleetd.app). A self-built, signed app needs its own:
@@ -62,7 +63,9 @@ export default ({ projectRoot }: ConfigContext): ExpoConfig => ({
     ...(build === undefined ? {} : { buildNumber: build }),
     supportsTablet: true,
     infoPlist: {
-      NSAppTransportSecurity: { NSAllowsArbitraryLoads: true, NSAllowsLocalNetworking: true },
+      // Arbitrary loads alone: NSAllowsLocalNetworking, NSAllowsArbitraryLoadsForMedia or
+      // NSAllowsArbitraryLoadsInWebContent would make iOS ignore it, and an exception domain overrides it for its hosts.
+      NSAppTransportSecurity: { NSAllowsArbitraryLoads: true },
       NSLocalNetworkUsageDescription: "fleetd connects to your hub on your network.",
       ITSAppUsesNonExemptEncryption: false,
     },

@@ -205,6 +205,11 @@ jobs:
           set -o pipefail
           xcodebuild -workspace ios/fleetd.xcworkspace -scheme fleetd -configuration Release \
             -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/fleetd.xcarchive" archive | tail -n 200
+      - name: App Transport Security
+        # As the mobile (ios) check, on the Info.plist this build ships: plain HTTP to a hub at any address.
+        run: |
+          plutil -convert json -o "$RUNNER_TEMP/Info.json" "$RUNNER_TEMP/fleetd.xcarchive/Products/Applications/fleetd.app/Info.plist"
+          node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/ats.ts "$RUNNER_TEMP/Info.json"
       - name: Runtime version
         # The update job resolves iOS's on Linux; this build's, embedded on macOS, must be the same.
         if: env.FLEETD_UPDATES_CERT != ''
