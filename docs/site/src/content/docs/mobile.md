@@ -103,6 +103,8 @@ Nothing readable: not the title, the text or which chat it is about. Apple and G
 - Android sorts them into channels, each of which you can mute in the system's settings: Chats, Approvals, Orders and
   alerts, Quiet hours. One notification per chat, replaced by the next.
 - Tapping one opens its chat, or Approvals with that request on top.
+- Press and hold one to act on it without opening the app: Approve or Deny an approval, Reply to a message. The app
+  icon's badge counts what needs you. See [Act from a notification](/docs/phone-notifications#actions).
 
 The published app needs nothing set up: hubs send through push.fleetd.sh. An app you build yourself needs your own
 relay and push credentials: an APNs key for your bundle id on the relay, and your Firebase project's

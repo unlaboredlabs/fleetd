@@ -47,6 +47,13 @@ struct Payload: Equatable {
     )
   }
 
+  /// Muted on this phone: its chat is in `chats`, and it isn't urgent (money or irreversible), which always alerts.
+  /// The badge stays the hub's.
+  func muted(in chats: Set<String>) -> Bool {
+    guard let thread, chats.contains(thread) else { return false }
+    return !urgent
+  }
+
   /// categoryOf in src/push.ts: Approve and Deny only where the hub marked them, never for an urgent one (money or
   /// irreversible), which is reviewed in the app on its full card (D183/D193); Reply on a chat's message.
   static func category(_ p: [String: Any], thread: String?, urgent: Bool) -> String? {

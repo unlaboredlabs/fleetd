@@ -12,6 +12,29 @@ through a **push relay** that holds the publisher's credentials. For the publish
 `https://push.fleetd.sh`, and every hub uses it out of the box: pair the phone, allow notifications, and they arrive.
 There is nothing to set up and no key.
 
+## Act from a notification {#actions}
+
+Press and hold a notification, or swipe it left on the lock screen and tap **Options**, to act without opening the app:
+
+| Notification | Buttons |
+|---|---|
+| An approval of a command or a tool prompt | **Approve**, **Deny** |
+| Money, an irreversible command, an email or anything else a Navi sends or shares | **Review**, which opens its full card in the app |
+| A Navi's or a lead's message | **Reply**, which sends your text into that chat |
+| A secret, an order, an alert | none: tap it to open the app |
+
+- Approve, Deny and Reply ask you to unlock the phone first: they act with the phone's own key.
+- Approve shows only when the notification holds the whole command, exactly as the card would. Anything longer, or
+  anything that spends money, can't be undone or reaches someone, opens the card in the app instead.
+- The outcome replaces the notification, without a sound: "Approved: …", or why it wasn't, such as "Already answered
+  on the desktop". A sent reply just disappears.
+- The app icon's badge counts what needs you: each open approval or secret, plus each chat waiting for your reply.
+  Every notification brings the new count, and the app sets it again after you act.
+- A chat's notifications stack together, as in Messages.
+
+The buttons, the badge and the text are sealed with the rest of the notification: the relay sees nothing more. A phone
+app from before this shows the same notifications without buttons until it updates.
+
 ## What the relay sees {#sees}
 
 - **It sees**: your phone's device token, the size of each sealed notification, when it was sent, and the IP address

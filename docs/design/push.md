@@ -26,6 +26,7 @@ person, is refused.
 | `push_device_register` | `{platform: "ios"\|"android", token, publicKey, name}` | `{device, relay}` |
 | `push_devices_list` | `{}` | `{devices, relay}` |
 | `push_device_remove` | `{deviceId}` | `{device}` |
+| `push_badge` | `{}` | `{badge}` |
 | `push_relay_set` | `{url, key?}` (empty URL: off) | `{url?, key, default}` |
 
 - `token`: the APNs device token as hex, or the FCM registration token.
@@ -34,6 +35,8 @@ person, is refused.
 - `relay`: whether the hub sends notifications: true with the default relay, false once an admin turned them off.
 - Registering the same token again updates that device (a new key or name) and moves it to the caller's person. The
   app registers again whenever the OS gives it a new token, and removes the device when the person signs out.
+- `badge`: the number each notification carries in its own `badge` (below). The app reads it after acting from a
+  notification and as it goes to the background, so the icon clears as the person acts.
 - At most 20 devices per person.
 - `push_relay_set` needs Admin on every machine: an owner or admin, or `fleetd push-relay set` on the hub. `key` is
   the relay's key sealed (`crypto_box_seal`) to the hub's `boxPubKey` from `hub_links_get`; the hub keeps it sealed
@@ -91,7 +94,7 @@ APNs and FCM. The hub cuts `body` to fit.
 
 | Field | |
 |---|---|
-| `v` | 1. A phone shows its generic text for a version it doesn't know. |
+| `v` | 1. A phone shows its generic text for a version it doesn't know. Version 1 only gains optional fields: a phone ignores one it doesn't know, so an older app shows the same notification without its buttons or badge. `v` changes only for a payload an older app would show wrongly. |
 | `kind` | `message` (a Navi's or lead's chat message), `approval` (a request waiting for an answer), `order` (an order landed or stopped), `alert` (anything else marked for the person). An app shows an unknown kind as `alert`. |
 | `title` | The Navi's or project's title, or "fleetd". |
 | `body` | The message's text on one line, or the event's summary. |
@@ -101,7 +104,31 @@ APNs and FCM. The hub cuts `body` to fit.
 | `requestId` | `approval`: the request (`Q…`) to answer with `approval_answer`. |
 | `urgent` | `true` for money or irreversible commands: show it even in a Focus (iOS `time-sensitive`). |
 | `quiet` | `true` inside the hub's quiet hours (`policy.quiet_hours`): show it without a sound. |
+| `category` | What the notification's buttons do: `approve` (Approve and Deny), `review` (open the approval's card), `reply` (a text reply into the chat). Absent: only open it. |
+| `badge` | How many things need the person now: each open request, plus each chat waiting on them with none open, of the projects whose notifications are theirs. The app icon's badge. |
 | `at` | When the event happened. |
+
+## Acting from a notification
+
+The hub picks each notification's `category`, inside the sealed payload, so the relay learns nothing new:
+
+- **Approve and Deny** (`approve`): an approval whose body is the lead's reason, then exactly what runs (the command
+  as the card shows it, or the tool and its summary), whole and uncut. Not for money or irreversible commands, an
+  integration's send or change, or a preview setting: those get **Review** (`review`), which opens the app on the
+  full card, as D183 and D193 ask. A body cut to fit is no longer exact, so it gets Review too. A secret gets no
+  button: it is entered in the app.
+- **Reply** (`reply`): a Navi's or a lead's message. The text goes into that chat with `chat_send`.
+
+The phone registers three categories (`CATEGORIES` in `src/push.ts`): `fleetd.approve`, `fleetd.review` and
+`fleetd.reply`. It never trusts `approve` on an `urgent` payload: that shows Review whatever the hub said, in the
+extension and in the app. Every button that calls the hub needs the phone unlocked (`authenticationRequired`): it
+acts with the phone's own key, which the Keychain gives out only then. The app does the action on a connection of its
+own, since iOS may have started it in the background just for the button. Then it shows the outcome in place of the
+notification, without a sound ("Approved: …", "Not denied: Already answered…"), and sets the badge from
+`push_badge`. A sent reply just disappears, as in Messages.
+
+Notifications stack per chat: iOS's thread is `machineId/projectId`, and the categories' summary reads "3 more
+messages" or "3 more approvals". Android keeps one notification per chat and one per request.
 
 ## What is pushed, and to whom
 
@@ -155,13 +182,16 @@ source is the TCP peer; when the peer is loopback (Caddy in front of the relay o
 ```
 
 The Notification Service Extension opens `c` and sets the title and body. It sets `threadIdentifier` to
-`machineId/projectId`, drops the sound when `quiet`, and sets the interruption level to time-sensitive when
-`urgent`. If it can't open the payload (another key, a newer version, a stranger who knows the token and posted to
-the relay), it sets the generic title and body itself (`Payload.swift`) and shows nothing of what came.
+`machineId/projectId`, the category from `category` (as above), the badge from `badge`, drops the sound when `quiet`,
+and sets the interruption level to time-sensitive when `urgent`. A chat muted on the phone (the app's keychain item
+`fleetd.muted-chats`, a JSON array of `machineId/projectId`, in the group the extension shares) arrives without a
+sound and passive, except an `urgent` one, which always alerts; its badge is still the hub's. If it can't open the
+payload (another key, a newer version, a stranger who knows the token and posted to the relay), it sets the generic
+title and body itself (`Payload.swift`) and shows nothing of what came.
 
 **Android.** The relay sends an FCM HTTP v1 data message (`android.priority: high`, `collapse_key` when given) whose
 only data is `c`. The app's messaging service opens it and posts the notification itself, one notification per chat
-grouped by project. One that doesn't open shows nothing.
+grouped by project, with the same buttons and badge. One that doesn't open shows nothing.
 
 ## The relay sees
 
