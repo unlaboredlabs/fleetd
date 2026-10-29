@@ -54,7 +54,15 @@ pub fn install(home: &Path, xctestrun: Option<&Path>) -> Result<PathBuf, String>
     Ok(wrapper)
 }
 
-/// The wrapper: refuses while the session's control file says a person has the simulator, else runs agent-device on
+/// While a session's own agent-device starts its XCTest runner (session.rs), this file holds the pid of the `prepare`
+/// doing it, and the wrapper waits for it to end before it runs anything: a command that needs the runner meanwhile would
+/// give a start its own 45 s, and a start that takes longer was given up on, the one it made again too.
+pub fn starting_path(home: &Path, thread: &str) -> PathBuf {
+    home.join("sessions").join(thread).join("runner-starting")
+}
+
+/// The wrapper: refuses while the session's control file says a person has the simulator, waits while the session's
+/// runner starts ([`starting_path`]), else runs agent-device on
 /// the node's simulator set with the runner the golden built. A daemon that is stopped stops its XCTest runner: by
 /// default agent-device leaves it running for a next daemon to take over, and fleetd's daemons have none (each lives
 /// as long as its session, or the golden's prepare). The runner's xcodebuild left behind relaunches it after the
@@ -81,6 +89,9 @@ pub fn wrapper_script(entry: &Path, home: &Path, xctestrun: Option<&Path>) -> St
          # fleetd's: agent-device {VERSION}, pointed at this session's iOS simulator.\n\
          if [ -n \"$FLEETD_DEVICE_CONTROL\" ] && [ -e \"$FLEETD_DEVICE_CONTROL\" ]; then\n  \
          echo '{paused}' >&2\n  exit 75\nfi\n\
+         if [ -n \"$FLEETD_RUNNER_STARTING\" ]; then\n  \
+         while pid=$(cat \"$FLEETD_RUNNER_STARTING\" 2>/dev/null) && [ -n \"$pid\" ] && kill -0 \"$pid\" 2>/dev/null; do sleep 1; done\n\
+         fi\n\
          AGENT_DEVICE_IOS_SIMULATOR_DEVICE_SET='{set}'\n\
          AGENT_DEVICE_IOS_RUNNER_DERIVED_PATH='{runner}'\n\
          AGENT_DEVICE_IOS_RUNNER_DETACH=0\n\
@@ -136,9 +147,13 @@ pub fn write_config(home: &Path, thread: &str, udid: &str) -> std::io::Result<()
 }
 
 /// What a session's claude gets in its environment: the wrapper first on PATH (it alone), its own agent-device home
-/// and state, and the control file the wrapper checks.
+/// and state, and the control and runner-starting files the wrapper checks.
 pub fn env(home: &Path, thread: &str, path: Option<&str>) -> Vec<(String, String)> {
     let mut env = agent_device::env(home, thread, path);
+    env.push((
+        "FLEETD_RUNNER_STARTING".to_owned(),
+        starting_path(home, thread).to_string_lossy().into_owned(),
+    ));
     let android = agent_device::bin_dir(home).to_string_lossy().into_owned();
     let ios = bin_dir(home).to_string_lossy().into_owned();
     for (key, value) in &mut env {
@@ -168,7 +183,11 @@ mod tests {
             get("FLEETD_DEVICE_CONTROL"),
             Some("/n/sessions/s1/device-control")
         );
-        assert_eq!(env.len(), 4, "nothing else: {env:?}");
+        assert_eq!(
+            get("FLEETD_RUNNER_STARTING"),
+            Some("/n/sessions/s1/runner-starting")
+        );
+        assert_eq!(env.len(), 5, "nothing else: {env:?}");
         let alone = super::env(Path::new("/n"), "s1", None);
         assert_eq!(
             alone
@@ -255,6 +274,56 @@ mod tests {
                  /n/device/agent-device/node_modules/agent-device/.tmp/fleetd-runner"
             );
         }
+    }
+
+    #[test]
+    fn the_wrapper_waits_while_the_sessions_runner_starts() {
+        let dir = tempfile::tempdir().unwrap();
+        let wrapper = dir.path().join("agent-device");
+        let entry = dir.path().join("none.mjs");
+        std::fs::write(&wrapper, wrapper_script(&entry, Path::new("/n"), None)).unwrap();
+        std::fs::set_permissions(
+            &wrapper,
+            std::os::unix::fs::PermissionsExt::from_mode(0o755),
+        )
+        .unwrap();
+        let starting = dir.path().join("runner-starting");
+        // When the wrapper ended: it waits for nothing gone, so a run that hangs past a minute fails. Not timed
+        // otherwise: on a loaded Mac node alone takes seconds to start.
+        let run = || {
+            let mut child = std::process::Command::new(&wrapper)
+                .arg("snapshot")
+                .env("FLEETD_RUNNER_STARTING", &starting)
+                .env_remove("FLEETD_DEVICE_CONTROL")
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+                .unwrap();
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+            while child.try_wait().unwrap().is_none() {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "the wrapper still waits"
+                );
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            std::time::Instant::now()
+        };
+        run();
+        // A prepare under way: the command runs only after it ended. It is reaped as it ends, as the node's is.
+        let mut prepare = std::process::Command::new("sleep")
+            .arg("2")
+            .spawn()
+            .unwrap();
+        std::fs::write(&starting, prepare.id().to_string()).unwrap();
+        let reaped = std::thread::spawn(move || {
+            prepare.wait().unwrap();
+            std::time::Instant::now()
+        });
+        let ended = run();
+        assert!(ended >= reaped.join().unwrap(), "it waited for the prepare");
+        // A prepare gone (a node that stopped) holds nothing back.
+        run();
     }
 
     #[test]

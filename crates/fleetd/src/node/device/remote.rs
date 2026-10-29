@@ -27,8 +27,13 @@ pub const PIECE: usize = 4 << 20;
 pub const FILE_MAX: u64 = 64 << 20;
 /// The most of a command's stdout, and of its stderr, that comes back.
 pub const OUTPUT_MAX: usize = 1 << 20;
-/// How long a command may run on the screen's node: a first command in a fresh clone starts its runner.
+/// How long a command may run on the screen's node.
 pub const RUN_WAIT: Duration = Duration::from_secs(100);
+/// What the screen's node answers, with exit code 75, while the screen's XCTest runner is still starting (it can take
+/// minutes, past what a command may wait on the way): the agent's `fleetd agent-device` sends the command again until
+/// it runs, so it waits for the runner instead of starting one of its own.
+pub const RUNNER_STARTING: &str =
+    "fleetd: the screen's XCTest runner is still starting; the command waits for it.\n";
 
 /// What the screen's node says when a command is refused.
 const ONLY: &str =
@@ -1045,6 +1050,18 @@ impl Work {
             stderr,
             exit_code,
             files: self.written(),
+        }
+    }
+
+    /// A checked command held back unrun, with exit code 75 and `stderr`: the files sent for it go, as a run's do, so
+    /// the agent's node sends them again with the command and they never pile up past [`FILE_MAX`].
+    pub fn held_back(&self, stderr: &str) -> Ran {
+        let _ = std::fs::remove_dir_all(self.dir.join("in"));
+        Ran {
+            stdout: String::new(),
+            stderr: stderr.to_owned(),
+            exit_code: 75,
+            files: Vec::new(),
         }
     }
 

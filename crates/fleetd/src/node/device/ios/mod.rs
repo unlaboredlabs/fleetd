@@ -658,6 +658,7 @@ impl Simulators {
             )
         })?;
         lock(&self.sessions).insert(thread.clone(), session.clone());
+        session.start_runner();
         session.step(
             "session_start",
             json!({
@@ -722,6 +723,12 @@ impl Simulators {
             return work.step(call).map(BrowserCallResult::Device);
         };
         work.check(&args, self.config.remote_install != Some(false))?;
+        if session.runner_starting() {
+            session.touch();
+            return Ok(BrowserCallResult::Device(
+                work.held_back(remote::RUNNER_STARTING).done(),
+            ));
+        }
         let program = wrapper::bin_dir(&self.home).join("agent-device");
         let path = std::env::var("PATH").ok();
         let env = wrapper::env(&self.home, thread, path.as_deref());

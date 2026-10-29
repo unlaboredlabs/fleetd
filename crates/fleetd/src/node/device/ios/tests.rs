@@ -512,6 +512,38 @@ async fn agent_device(router: &Router, args: &[&str]) -> (bool, String) {
     (out.status.success(), text)
 }
 
+/// The XCTest runners started on simulator `udid`: each is an xcodebuild `test-without-building` naming it.
+fn runners(udid: &str) -> Vec<String> {
+    let ps = std::process::Command::new("ps")
+        .args(["-A", "-o", "pid=,command="])
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+        .unwrap_or_default();
+    ps.lines()
+        .filter(|l| {
+            l.contains("xcodebuild") && l.contains("test-without-building") && l.contains(udid)
+        })
+        .map(|l| l.trim().chars().take(200).collect())
+        .collect()
+}
+
+/// That simulator `udid` has one XCTest runner, the one its session's agent-device started ahead: a command that came
+/// while it started waited for it rather than start another.
+fn one_runner(udid: &str) {
+    let found = runners(udid);
+    assert_eq!(found.len(), 1, "{udid}'s runners: {found:#?}");
+}
+
+/// Runs a session test's `body`, then ends the node's simulators even when it failed: the hosted screen's test, failing,
+/// once left its clone being deleted and its agent-device daemon running into the next test (main's run 40885901242).
+async fn ending(simulators: &Arc<Simulators>, body: impl Future<Output = ()> + Send + 'static) {
+    let ran = tokio::spawn(body).await;
+    simulators.shutdown().await;
+    if let Err(e) = ran {
+        std::panic::resume_unwind(e.into_panic());
+    }
+}
+
 /// The node's simulators and their states, for a failure's log: whether the session's clone is still there.
 async fn set_devices(home: &std::path::Path) -> String {
     match Simctl::new(super::set_dir(home)).devices().await {
@@ -566,7 +598,9 @@ async fn host_load(home: &std::path::Path) -> String {
     )
 }
 
+/// The live view's next frame after `seq`, within `within`; else a failure that says what the Mac in `home` is busy with.
 async fn frame_after(
+    home: &std::path::Path,
     frames: &mut tokio::sync::watch::Receiver<Option<Frame>>,
     seq: u64,
     within: Duration,
@@ -579,8 +613,32 @@ async fn frame_after(
             return frame;
         }
         let left = deadline.saturating_duration_since(Instant::now());
-        assert!(!left.is_zero(), "no frame after {seq}");
+        if left.is_zero() {
+            panic!(
+                "no frame after {seq} in {} s; {}",
+                within.as_secs(),
+                host_load(home).await
+            );
+        }
         let _ = tokio::time::timeout(left, frames.changed()).await;
+    }
+}
+
+/// The session as the hub lists it, once the node's report (sent in the background) is there.
+async fn wait_listed(hub: &TestHub, id: &str) -> Value {
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        let listed = sessions(hub).await;
+        if let Some(s) = listed["sessions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["sessionId"] == id)
+        {
+            return s.clone();
+        }
+        assert!(Instant::now() < deadline, "not listed: {listed}");
+        tokio::time::sleep(Duration::from_millis(200)).await;
     }
 }
 
@@ -628,6 +686,10 @@ async fn an_agent_opens_settings_on_an_ios_session_and_its_recording_is_on_the_h
         Arc::new(|_| Ok(Secrets::default())),
     )
     .await;
+    ending(&simulators, settings_session(home, hub, simulators.clone())).await;
+}
+
+async fn settings_session(home: PathBuf, hub: Arc<TestHub>, simulators: Arc<Simulators>) {
     let t = Instant::now();
     while simulators.warm() == 0 {
         assert!(
@@ -668,8 +730,12 @@ async fn an_agent_opens_settings_on_an_ios_session_and_its_recording_is_on_the_h
     assert!(start_ms < 10_000, "{start_ms} ms");
     let udid = result["udid"].as_str().unwrap().to_owned();
     eprintln!("the session's clone: {udid}");
-    let live = sessions(&hub).await;
-    assert_eq!(live["sessions"][0]["kind"], "ios", "{live}");
+    assert!(
+        super::wrapper::starting_path(&home, THREAD).exists(),
+        "the session's runner starts ahead"
+    );
+    let live = wait_listed(&hub, &id).await;
+    assert_eq!(live["kind"], "ios", "{live}");
     let refused = call(&router, json!({ "op": "session_start", "purpose": "Shop" })).await;
     assert!(
         refused["error"]["message"]
@@ -717,6 +783,7 @@ async fn an_agent_opens_settings_on_an_ios_session_and_its_recording_is_on_the_h
         host_load(&home).await
     );
     eprintln!("agent-device press --settle: {} ms", ms(t.elapsed()));
+    one_runner(&udid);
     // No session builds the runner: a slow start once had agent-device delete it and build it again in the command.
     assert_eq!(
         std::fs::metadata(&runner).and_then(|m| m.modified()).ok(),
@@ -736,7 +803,7 @@ async fn an_agent_opens_settings_on_an_ios_session_and_its_recording_is_on_the_h
     // A person watches and takes over: the agent's agent-device waits, the person's Home reaches the simulator.
     let mut frames = simulators.frames(&id).expect("live");
     let t = Instant::now();
-    let first = frame_after(&mut frames, 0, Duration::from_secs(15)).await;
+    let first = frame_after(&home, &mut frames, 0, Duration::from_secs(15)).await;
     eprintln!(
         "live view: first frame after {} ms, {}x{} px, {} KB",
         ms(t.elapsed()),
@@ -749,7 +816,7 @@ async fn an_agent_opens_settings_on_an_ios_session_and_its_recording_is_on_the_h
     let t = Instant::now();
     let mut last = first.seq;
     while last == first.seq || t.elapsed() < Duration::from_secs(10) {
-        last = frame_after(&mut frames, last, Duration::from_secs(30))
+        last = frame_after(&home, &mut frames, last, Duration::from_secs(30))
             .await
             .seq;
     }
@@ -779,7 +846,7 @@ async fn an_agent_opens_settings_on_an_ios_session_and_its_recording_is_on_the_h
     assert!(simulators.input(&id, &home_key(false)));
     let mut seen = before.seq;
     loop {
-        let frame = frame_after(&mut frames, seen, Duration::from_secs(30)).await;
+        let frame = frame_after(&home, &mut frames, seen, Duration::from_secs(30)).await;
         if frame.jpeg != before.jpeg {
             break;
         }
@@ -896,7 +963,6 @@ async fn an_agent_opens_settings_on_an_ios_session_and_its_recording_is_on_the_h
         tools.len(),
         mp4.len() / 1024
     );
-    simulators.shutdown().await;
 }
 
 /// A screen this Mac hosts for an agent on another machine (node/device/remote.rs): its agent-device commands run on
@@ -904,12 +970,10 @@ async fn an_agent_opens_settings_on_an_ios_session_and_its_recording_is_on_the_h
 /// device is refused; a person's control holds the commands back until they hand it back; its end takes the folder.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_screen_hosted_for_an_agent_elsewhere_runs_its_agent_device_commands() {
-    use base64::Engine;
     if let Some(why) = no_xcode() {
         eprintln!("skipped: {why}");
         return;
     }
-    const KEY: &str = "H0123456789abcdef0123456789abcdef";
     let home = install_home();
     if pool::find(&home).is_none() {
         pool::prepare(&home, None).await.unwrap();
@@ -923,6 +987,12 @@ async fn a_screen_hosted_for_an_agent_elsewhere_runs_its_agent_device_commands()
         Arc::new(|_| Ok(Secrets::default())),
     )
     .await;
+    ending(&simulators, hosted_screen(home, hub, simulators.clone())).await;
+}
+
+async fn hosted_screen(home: PathBuf, hub: Arc<TestHub>, simulators: Arc<Simulators>) {
+    use base64::Engine;
+    const KEY: &str = "H0123456789abcdef0123456789abcdef";
     let t = Instant::now();
     while simulators.warm() == 0 {
         assert!(
@@ -947,13 +1017,31 @@ async fn a_screen_hosted_for_an_agent_elsewhere_runs_its_agent_device_commands()
         let router = &router;
         async move { serde_json::to_value(router.handle(KEY.to_owned(), frame).await).unwrap() }
     };
-    let device = |args: &[&str]| handle(json!({ "op": "device", "step": "run", "args": args }));
+    // As the agent's `fleetd agent-device` does, a command held back while the screen's runner starts is sent again.
+    let device = |args: &[&str]| {
+        let call = json!({ "op": "device", "step": "run", "args": args });
+        let handle = &handle;
+        async move {
+            let t = Instant::now();
+            loop {
+                let ran = handle(call.clone()).await;
+                let starting = ran["result"]["exitCode"] == 75
+                    && ran["result"]["stderr"] == crate::node::device::remote::RUNNER_STARTING;
+                if !starting || t.elapsed() > super::session::RUNNER_START + Duration::from_secs(60)
+                {
+                    return ran;
+                }
+                tokio::time::sleep(Duration::from_secs(5)).await;
+            }
+        }
+    };
     let started =
         handle(json!({ "op": "session_start", "purpose": "The phone app", "kind": "ios" })).await;
     let id = started["result"]["sessionId"]
         .as_str()
         .expect("started")
         .to_owned();
+    let udid = started["result"]["udid"].as_str().unwrap().to_owned();
 
     let t = Instant::now();
     let opened = device(&["open", "com.apple.Preferences"]).await;
@@ -985,6 +1073,7 @@ async fn a_screen_hosted_for_an_agent_elsewhere_runs_its_agent_device_commands()
     simulators.set_control(&id, BrowserControl::HandingBack, "human:desk");
     let after = device(&["snapshot", "-i"]).await;
     assert_eq!(after["result"]["exitCode"], 0, "{after}");
+    one_runner(&udid);
     assert_eq!(
         simulators.live(KEY).unwrap().control(),
         BrowserControl::Agent
@@ -999,5 +1088,4 @@ async fn a_screen_hosted_for_an_agent_elsewhere_runs_its_agent_device_commands()
         actions.contains("agent-device screenshot out/1-home.png"),
         "{actions}"
     );
-    simulators.shutdown().await;
 }
