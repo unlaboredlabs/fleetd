@@ -431,7 +431,7 @@ impl Simulators {
                 let this = simulators.clone();
                 tokio::spawn(async move {
                     let simctl = Simctl::new(set_dir(&this.home));
-                    let cleared = pool::clear(&simctl, Some(&golden.udid)).await;
+                    let cleared = pool::clear(&this.home, &simctl, Some(&golden.udid)).await;
                     if cleared > 0 {
                         tracing::info!(cleared, "iOS simulators a stopped node left were deleted");
                     }
@@ -494,6 +494,7 @@ impl Simulators {
     /// Makes the pool and starts filling it.
     fn ready(&self, golden: Golden) {
         let pool = Pool::new(
+            self.home.clone(),
             Simctl::new(set_dir(&self.home)),
             golden,
             self.config.pool.unwrap_or(1),

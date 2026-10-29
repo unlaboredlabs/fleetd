@@ -14,7 +14,7 @@ use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, AsyncRead, BufReader};
 use tokio::sync::watch;
 
-use super::pool::Lent;
+use super::pool::{self, Lent};
 use super::screen::{Hands, Runner, Screen};
 use super::simctl::Simctl;
 use crate::node::browser::record::{self, Meta, Scrub};
@@ -347,8 +347,8 @@ impl Session {
         seq
     }
 
-    /// Finishes the video, stops the live view and deletes the clone with everything done in it. Returns the files
-    /// there are.
+    /// Finishes the video, stops the live view and the session's agent-device daemon, and deletes the clone with
+    /// everything done in it and its runner, which the daemon leaves leased (wrapper.rs). Returns the files there are.
     pub async fn close(&self) -> Vec<(RecordingFile, u64)> {
         self.screen.stop();
         let recorder = lock(&self.recorder).take();
@@ -358,8 +358,9 @@ impl Session {
             let _ = std::fs::remove_file(self.dir.join(RecordingFile::VideoMp4.file_name()));
             self.set_note(format!("no video: {why}"));
         }
-        lock(&self.lent).take();
+        pool::stop_daemon(&agent_device::session_dir(&self.home, &self.thread).join("state")).await;
         agent_device::release(&self.home, &self.thread);
+        lock(&self.lent).take();
         let actions = self.dir.join(RecordingFile::Actions.file_name());
         if let Err(e) = record::scrub_file(&actions, &self.scrub) {
             tracing::warn!(session = %self.id, error = %e, "recording not scrubbed");
