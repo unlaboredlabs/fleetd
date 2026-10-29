@@ -9,6 +9,13 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      metro:
+        description: >-
+          A Metro server (host:port) the iOS simulator build loads its JavaScript from: a Debug build, for trying
+          changes on a simulator with `expo start` on that host. Empty: the Release build, the JavaScript bundled in.
+        required: false
+        default: ""
 
 # As ci.yml: a newer push to a PR cancels its running build; main and the merge train's batch each get a group.
 concurrency:
@@ -120,7 +127,8 @@ jobs:
 
   ios:
     # A Release build for the iOS simulator, its Notification Service Extension embedded: no signing, the JavaScript
-    # bundled in. First, the extension's crypto against the hub's sealed boxes. Only when app/mobile or this
+    # bundled in. A manual run with a Metro address builds Debug instead, which loads the JavaScript from there (its
+    # ip.txt, which a copy can be given another address in). First, the extension's crypto against the hub's sealed boxes. Only when app/mobile or this
     # workflow changed (mobile scope); the merge train's batch skips it, as ci.yml's macOS jobs, and each PR's own head
     # runs it first.
     name: mobile (ios)
@@ -128,6 +136,9 @@ jobs:
     if: ${{ !cancelled() && !endsWith(github.head_ref, 'train/batch') && needs.mobile-scope.outputs.ios != 'false' }}
     runs-on: macos-latest
     timeout-minutes: 60
+    env:
+      METRO: ${{ inputs.metro }}
+      CONFIGURATION: ${{ inputs.metro != '' && 'Debug' || 'Release' }}
     defaults:
       run:
         working-directory: app/mobile
@@ -150,18 +161,21 @@ jobs:
       - name: Build
         run: |
           set -o pipefail
-          xcodebuild -workspace ios/fleetd.xcworkspace -scheme fleetd -configuration Release \
+          xcodebuild -workspace ios/fleetd.xcworkspace -scheme fleetd -configuration "$CONFIGURATION" \
             -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO build | tail -n 200
-          appex=build/Build/Products/Release-iphonesimulator/fleetd.app/PlugIns/FleetdNotifications.appex
+          app=build/Build/Products/$CONFIGURATION-iphonesimulator/fleetd.app
+          appex=$app/PlugIns/FleetdNotifications.appex
           test -x "$appex/FleetdNotifications" || { echo "::error::the app has no Notification Service Extension"; exit 1; }
+          # Where a Debug build finds Metro (React Native's RCTBundleURLProvider reads it); none for a simulator otherwise.
+          if [ -n "$METRO" ]; then printf '%s\n' "$METRO" > "$app/ip.txt"; fi
       - name: App Transport Security
         # The built app's own Info.plist lets plain HTTP reach a hub at any address: arbitrary loads, nothing cancelling them.
         run: |
-          plutil -convert json -o "$RUNNER_TEMP/Info.json" build/Build/Products/Release-iphonesimulator/fleetd.app/Info.plist
+          plutil -convert json -o "$RUNNER_TEMP/Info.json" "build/Build/Products/$CONFIGURATION-iphonesimulator/fleetd.app/Info.plist"
           node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/ats.ts "$RUNNER_TEMP/Info.json"
       - name: Pack
-        run: ditto -c -k --keepParent build/Build/Products/Release-iphonesimulator/fleetd.app "$RUNNER_TEMP/fleetd-ios-simulator.zip"
+        run: ditto -c -k --keepParent "build/Build/Products/$CONFIGURATION-iphonesimulator/fleetd.app" "$RUNNER_TEMP/fleetd-ios-simulator.zip"
       - uses: actions/upload-artifact@v7
         with:
           name: fleetd-ios-simulator
