@@ -303,6 +303,17 @@ describe("a notification's buttons", () => {
     expect(hub.link.closed).toBe(true);
   });
 
+  it("say so when the approved command didn't run, as its machine was offline", async () => {
+    const hub = fakeHub();
+    const out = act({ t: "approve", requestId: "Q3", route }, push, { hub: "http://devbox:4790", key: "fld_phone", transport: hub.transport }, () => "c1");
+    hub.ready();
+    await flush();
+    hub.answer("approval_answer", { request: { requestId: "Q3", state: "open", evidence: "not run: devbox's node was offline when human:phone approved it" } });
+    await flush();
+    hub.answer("push_badge", { badge: 2 });
+    expect(await out).toEqual({ followUp: { title: "app", body: "Not run: devbox's node was offline when human:phone approved it", route }, badge: 2 });
+  });
+
   it("deny, and say why when the hub refused", async () => {
     const hub = fakeHub();
     const out = act({ t: "deny", requestId: "Q3", route }, push, { hub: "http://devbox:4790", key: "fld_phone", transport: hub.transport }, () => "c1");

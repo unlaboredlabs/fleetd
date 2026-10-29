@@ -124,6 +124,17 @@ const show = (identifier: string, { followUp, badge }: Acted): void => {
   });
 };
 
+/** The buttons, one category at a time: each call reads the registered set and writes it back, so calls at once keep only the last. */
+const categories = async (): Promise<void> => {
+  for (const [id, actions] of Object.entries(CATEGORIES)) {
+    await Notifications.setNotificationCategoryAsync(
+      id,
+      actions.map((a) => ({ ...a, options: { ...a.options } })),
+      { categorySummaryFormat: CATEGORY_SUMMARIES[id as keyof typeof CATEGORIES] },
+    );
+  }
+};
+
 /** The badge again from the hub: as the app goes behind, after the person acted in it. */
 const refreshBadge = async (): Promise<void> => {
   const hub = await link();
@@ -153,13 +164,7 @@ export const setUpNotifications = (): void => {
       return { shouldShowBanner: show, shouldShowList: show, shouldPlaySound: show && n.request.content.sound !== null, shouldSetBadge: true };
     },
   });
-  for (const [id, actions] of Object.entries(CATEGORIES)) {
-    void Notifications.setNotificationCategoryAsync(
-      id,
-      actions.map((a) => ({ ...a, options: { ...a.options } })),
-      { categorySummaryFormat: CATEGORY_SUMMARIES[id as keyof typeof CATEGORIES] },
-    );
-  }
+  void categories();
   Notifications.addNotificationResponseReceivedListener((r) => void onResponse(r));
   const last = Notifications.getLastNotificationResponse();
   if (last !== null && last !== undefined) void onResponse(last);

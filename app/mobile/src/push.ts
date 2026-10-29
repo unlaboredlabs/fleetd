@@ -358,6 +358,12 @@ export const act = async (a: Act, p: PushPayload, link: HubLink, newId: () => st
   if (a.t === "reply") {
     return outcome.ok ? { followUp: null, ...badge } : { followUp: { title, body: `Your reply wasn't sent: ${outcome.error.message}`, route: { t: "chat", key: a.key } }, ...badge };
   }
+  // An approved command whose machine couldn't take it goes back to open, with why in its evidence.
+  const reopened = outcome.ok && "request" in outcome.output && outcome.output.request.state === "open";
+  if (reopened) {
+    const why = outcome.output.request.evidence ?? "not run: approve it again in fleetd";
+    return { followUp: { title, body: `${why.charAt(0).toUpperCase()}${why.slice(1)}`, route: a.route }, ...badge };
+  }
   if (outcome.ok) return { followUp: { title, body: `${a.t === "approve" ? "Approved" : "Denied"}: ${p.body}`, route: a.route }, ...badge };
   return { followUp: { title, body: `Not ${a.t === "approve" ? "approved" : "denied"}: ${outcome.error.message}`, route: a.route }, ...badge };
 };
