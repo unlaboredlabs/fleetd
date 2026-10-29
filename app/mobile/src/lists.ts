@@ -95,6 +95,8 @@ export interface ChatRow extends Row {
   readonly unread: number;
   /** Marked unread by hand: a dot with no count. */
   readonly markedUnread: boolean;
+  /** The chat's newest seq, as the hub says: what Mark as Read reads up to. */
+  readonly lastSeq: number;
 }
 
 /**
@@ -114,6 +116,7 @@ export const chatList = (s: Parameters<typeof lists>[0], prefs: Prefs, filter: F
         muted: prefs.muted.includes(r.key),
         unread: unreadCount(prefs, r.key, s.chatStates[r.key]?.lastSeq, held),
         markedUnread: prefs.unread.includes(r.key),
+        lastSeq: s.chatStates[r.key]?.lastSeq ?? 0,
       };
     })
     .sort((a, b) => (a.pinned && b.pinned ? prefs.pinned.indexOf(a.key) - prefs.pinned.indexOf(b.key) : a.pinned ? -1 : b.pinned ? 1 : byRecent(a, b)));

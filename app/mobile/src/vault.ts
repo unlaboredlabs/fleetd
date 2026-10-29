@@ -49,9 +49,10 @@ export const savePushDevice = (deviceId: string): Promise<void> => SecureStore.s
 export const loadPushDevice = (): Promise<string | null> => SecureStore.getItemAsync(DEVICE, PUSH);
 
 /**
- * The chats muted on this phone (prefs.ts), where the Notification Service Extension reads them to keep their
- * notifications quiet: account "fleetd.muted-chats" beside the notification key (service "fleetd.push:no-auth", the
- * shared access group), a JSON array of "machineId/projectId". Written each time Mute changes.
+ * The chats muted on this phone (prefs.ts), for the Notification Service Extension: account "fleetd.muted-chats" beside
+ * the notification key (service "fleetd.push:no-auth", the shared access group), a JSON array of "machineId/projectId",
+ * written each time Mute changes. The extension reads it once the notification-actions change (W182, T1251) lands;
+ * until then Mute only greys the chat's count in the app, and its notifications still alert.
  */
 export const MUTED = "fleetd.muted-chats";
 

@@ -197,7 +197,7 @@ describe("chatList", () => {
     const prefs = { ...noPrefs, read: { "m1/a": 3, "m1/b": 2 }, muted: ["m1/a"], unread: ["m1/shop"] };
     const rows = chatList(s, prefs);
     const a = rows?.find((r) => r.key === "m1/a");
-    expect([a?.unread, a?.muted]).toEqual([2, true]);
+    expect([a?.unread, a?.muted, a?.lastSeq]).toEqual([2, true, 5]);
     expect(chatList(s, prefs, "unread")?.map((r) => r.key)).toEqual(["m1/shop", "m1/a"]);
     expect(chatList(s, prefs, "navis")?.map((r) => r.key)).toEqual(["m1/b", "m1/a"]);
     expect(chatList(s, prefs, "projects")?.map((r) => r.key)).toEqual(["m1/shop"]);

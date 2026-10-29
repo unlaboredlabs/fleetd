@@ -1,6 +1,7 @@
 // This phone's chat prefs (prefs.ts) on disk, as one small JSON file in the app's documents, and the hook the screens
 // read them with. Written after each change; a file that can't be read starts from nothing. The muted chats also go to
-// the keychain, where the Notification Service Extension reads them (vault.ts saveMuted).
+// the keychain for the Notification Service Extension (vault.ts saveMuted), which reads them once the
+// notification-actions change lands; until then Mute only affects the count in the app.
 import { File, Paths } from "expo-file-system";
 import { useSyncExternalStore } from "react";
 import { noPrefs, parsePrefs, reducePrefs, type Prefs, type PrefsAction } from "./prefs";

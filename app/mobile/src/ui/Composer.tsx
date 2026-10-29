@@ -85,10 +85,24 @@ export function Composer({
 
   const send = () => {
     if (!ready) return;
-    haptics.tap();
-    onSend(text, files.flatMap((f) => (f.ref === undefined ? [] : [f.ref])));
-    setText("");
-    setFiles([]);
+    const go = () => {
+      haptics.tap();
+      onSend(text, files.flatMap((f) => (f.ref === undefined ? [] : [f.ref])));
+      setText("");
+      setFiles([]);
+    };
+    // A file the hub didn't take never goes quietly: the message waits for a yes.
+    const failed = files.filter((f) => f.error !== undefined);
+    if (failed.length === 0) return go();
+    haptics.warning();
+    Alert.alert(
+      failed.length === 1 ? `${failed[0]?.name ?? "A file"} wasn't attached` : `${String(failed.length)} files weren't attached`,
+      `${failed.map((f) => f.error).join("\n")}\n\nSend the message without ${failed.length === 1 ? "it" : "them"}?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Send", onPress: go },
+      ],
+    );
   };
 
   const set = (id: number, change: Partial<Attaching>) => setFiles((now) => now.map((f) => (f.id === id ? { ...f, ...change } : f)));

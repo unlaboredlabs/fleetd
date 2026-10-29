@@ -6,12 +6,13 @@
 import { useNavigation, type NavigationProp } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useLayoutEffect, useMemo, useRef, useState, type ComponentRef, type ReactNode } from "react";
-import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import ReanimatedSwipeable, { type SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 import Animated from "react-native-reanimated";
 import { listTime } from "../chatView";
 import { useHub, type RootParams } from "../hubContext";
 import { chatList, type ChatRow, type Filter } from "../lists";
+import { MAX_PINNED } from "../prefs";
 import { dispatchPrefs, usePrefs } from "../prefsStore";
 import { matchesName, queryOf, searchMessages, type MessageHit } from "../search";
 import type { ChatMessage } from "../desktop";
@@ -201,17 +202,25 @@ function Filters({ value, onChange, unread }: { value: Filter; onChange: (f: Fil
   );
 }
 
-/** What can be done to a chat from the list: swiped, held, or with VoiceOver's actions. */
-const rowActions = (row: ChatRow): ReadonlyArray<MenuItem & { readonly color: "accent" | "success" | "warning" }> => {
+/**
+ * What can be done to a chat from the list: swiped, held, or with VoiceOver's actions. Read is up to the chat's newest
+ * message, so what comes after counts again. A pin past the most says why it didn't take.
+ */
+const rowActions = (row: ChatRow, pinsFull: boolean): ReadonlyArray<MenuItem & { readonly color: "accent" | "success" | "warning" }> => {
   const unread = row.unread > 0 || row.markedUnread;
+  const pin = () => {
+    if (row.pinned || !pinsFull) return dispatchPrefs({ t: "pin", key: row.key, on: !row.pinned });
+    haptics.warning();
+    Alert.alert(`You can pin up to ${String(MAX_PINNED)} chats`, "Unpin one to pin this one.");
+  };
   return [
     {
       label: unread ? "Mark as Read" : "Mark as Unread",
       icon: unread ? "read" : "unread",
       color: "accent",
-      onPress: () => dispatchPrefs(unread ? { t: "read", key: row.key, seq: Number.MAX_SAFE_INTEGER } : { t: "unread", key: row.key }),
+      onPress: () => dispatchPrefs(unread ? { t: "read", key: row.key, seq: row.lastSeq } : { t: "unread", key: row.key }),
     },
-    { label: row.pinned ? "Unpin" : "Pin", icon: row.pinned ? "unpin" : "pin", color: "success", onPress: () => dispatchPrefs({ t: "pin", key: row.key, on: !row.pinned }) },
+    { label: row.pinned ? "Unpin" : "Pin", icon: row.pinned ? "unpin" : "pin", color: "success", onPress: pin },
     { label: row.muted ? "Unmute" : "Mute", icon: row.muted ? "unmute" : "mute", color: "warning", onPress: () => dispatchPrefs({ t: "mute", key: row.key, on: !row.muted }) },
   ];
 };
@@ -221,7 +230,7 @@ function SwipeRow({ row, separator, onPress, onHold }: { row: ChatRow; separator
   const t = useTheme();
   const ref = useRef<ComponentRef<typeof View>>(null);
   const swipe = useRef<SwipeableMethods>(null);
-  const acts = rowActions(row);
+  const acts = rowActions(row, usePrefs().pinned.length >= MAX_PINNED);
   const [read, pin, mute] = acts as [(typeof acts)[number], (typeof acts)[number], (typeof acts)[number]];
   const tone = { accent: t.accent, success: t.success, warning: t.warning } as const;
   const button = (a: (typeof acts)[number]) => (

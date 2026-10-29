@@ -54,6 +54,12 @@ describe("unreadCount", () => {
     expect(unreadCount(p, "a", 6, [msg(4), msg(5), msg(6)])).toBe(3);
   });
 
+  it("counts again what comes after a chat was marked read up to its newest", () => {
+    const read = reducePrefs(p, { t: "read", key: "a", seq: 6 });
+    expect(unreadCount(read, "a", 6, [msg(4), msg(5), msg(6)])).toBe(0);
+    expect(unreadCount(read, "a", 8, [msg(4), msg(5), msg(6), msg(7), msg(8)])).toBe(2);
+  });
+
   it("counts messages past what the phone holds", () => {
     expect(unreadCount(p, "a", 8, [msg(4)])).toBe(5);
   });
