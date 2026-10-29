@@ -39,6 +39,12 @@ describe("hidden characters on an approval card", () => {
       ["variation selector on a letter", "a️b", "a⟨U+FE0F⟩b"],
       ["variation selector 1", "a︀", "a⟨U+FE00⟩"],
       ["tag characters", "ls\u{E0041}\u{E0042}", "ls⟨U+E0041⟩⟨U+E0042⟩"],
+      // Invisible format characters beyond push::plain's list.
+      ["inhibit symmetric swapping", "\u206Ex", "⟨U+206E⟩x"],
+      ["nominal digit shapes", "1\u206F2", "1⟨U+206F⟩2"],
+      ["interlinear annotation", "rm \uFFF9-rf ~\uFFFAsafe\uFFFB", "rm ⟨U+FFF9⟩-rf ~⟨U+FFFA⟩safe⟨U+FFFB⟩"],
+      ["shorthand format", "a\u{1BCA0}b", "a⟨U+1BCA0⟩b"],
+      ["musical format", "a\u{1D173}b\u{1D17A}", "a⟨U+1D173⟩b⟨U+1D17A⟩"],
     ];
     for (const [what, text, shown] of cases) {
       expect(marked(text), what).toBe(shown);

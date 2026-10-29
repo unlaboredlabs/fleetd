@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { HumanRequest, ProjectSummary, ToolPreview } from "./desktop";
-import { approvals, approvalView, chatList, lists } from "./lists";
+import { approvals, approvalView, chatList, fieldCopy, lists } from "./lists";
+import { exactRuns } from "./exact";
 import { noPrefs } from "./prefs";
 
 const AT = "2026-10-28T10:00:00Z";
@@ -239,6 +240,33 @@ describe("an approval whose fields hide or reorder text", () => {
     expect(approvalView(send({ input: '{"to":"a@example.com\u202E"}' }), "Ada").hidden).toBe(true);
     // A subject's \n is hidden; a body's breaks its line.
     expect(approvalView(send({ subject: "Lease\nBcc: x@example.com" }), "Ada").hidden).toBe(true);
+  });
+
+  it("copies each field's exact text, never the marks and isolates it is drawn with", () => {
+    const body = "Paid.\u2028Bank details\n\nSam\u{E0049}";
+    const r: HumanRequest = {
+      ...asked("r1"),
+      text: "Send it \u202Enow",
+      permission: {
+        requestId: "p1",
+        threadId: "t1",
+        toolName: "mcp__gmail__send",
+        summary: "Send an email",
+        preview: { title: "Send an email", to: ["a@exa\u200Bmple.com"], subject: "Invoice \u2067paid\u2069", body, input: '{"to":"a@example.com\u202E"}', integration: "google", server: "gmail", tool: "send", action: "send" },
+      },
+    };
+    const fields = approvalView(r, "Ada").fields;
+    const raw: Record<string, string> = { To: "a@exa\u200Bmple.com", Subject: "Invoice \u2067paid\u2069", Body: body, Input: '{"to":"a@example.com\u202E"}', Asked: "Send it \u202Enow" };
+    for (const f of fields) {
+      expect(fieldCopy(f), f.label).toBe(raw[f.label] ?? f.value);
+      // What the card draws differs: it holds the marks and isolates the copy leaves out.
+      const drawn = exactRuns(f.value, { lines: f.lines === true }).map((x) => x.text).join("");
+      expect(drawn, f.label).not.toBe(fieldCopy(f));
+      expect(fieldCopy(f), f.label).not.toMatch(/⟨U\+/u);
+    }
+    // A command copies as the desktop's Copy does: its raw words, quoted where they need it, nothing added.
+    const command = approvalView({ ...asked("r2"), gated: { argv: ["rm", "\u202E~ fr- mr\u202C", "שלום.txt"], class: "irreversible", reason: "x", timeoutSec: 60 } }, "s").fields.find((f) => f.label === "Command");
+    expect(command === undefined ? undefined : fieldCopy(command)).toBe("rm '\u202E~ fr- mr\u202C' 'שלום.txt'");
   });
 
   it("shows accents, emoji, CJK, Arabic, Hebrew and Persian as written", () => {

@@ -1,9 +1,10 @@
 // What an approval card shows of a character that hides or reorders text: a visible mark such as ⟨U+202E⟩ in its
 // place, so what a person reads is what runs or goes out (D183/D193). The characters are those the hub's
-// push::plain refuses on a notification that offers Approve, so the hub, the notification and the cards agree. Shared
-// by the desktop's cards and the phone's (app/mobile/src/desktop.ts); only how a text shows changes, never the text.
+// push::plain refuses on a notification that offers Approve, plus the invisible format characters below that it
+// lacks yet, so the hub, the notification and the cards agree once it gains them. Shared by the desktop's cards and
+// the phone's (app/mobile/src/desktop.ts); only how a text shows changes, never the text.
 
-/** Whether `c`, one code point, hides or reorders text: as push::plain's class, character for character. */
+/** Whether `c`, one code point, hides or reorders text: push::plain's class and other invisible format characters. */
 export const isHidden = (c: string): boolean => {
   const n = c.codePointAt(0) ?? 0;
   return (
@@ -34,7 +35,13 @@ export const isHidden = (c: string): boolean => {
     n === 0x17b4 ||
     n === 0x17b5 ||
     (n >= 0xfe00 && n <= 0xfe0f) ||
-    (n >= 0xe0000 && n <= 0xe007f)
+    (n >= 0xe0000 && n <= 0xe007f) ||
+    // Invisible format characters push::plain doesn't list yet: the deprecated shaping and digit controls, the
+    // interlinear annotation marks (which can hide text), the shorthand format controls and musical format controls.
+    (n >= 0x206a && n <= 0x206f) ||
+    (n >= 0xfff9 && n <= 0xfffb) ||
+    (n >= 0x1bca0 && n <= 0x1bca3) ||
+    (n >= 0x1d173 && n <= 0x1d17a)
   );
 };
 

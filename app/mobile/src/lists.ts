@@ -167,6 +167,12 @@ export interface ApprovalField {
   readonly words?: readonly string[];
 }
 
+/**
+ * What Copy gives for a field: its exact text (a command's words quoted, as the desktop copies it), never the marks
+ * and isolates the card draws it with.
+ */
+export const fieldCopy = (f: ApprovalField): string => f.value;
+
 const list = (xs: readonly string[] | undefined): string | undefined => (xs === undefined || xs.length === 0 ? undefined : xs.join(", "));
 
 export const approvalView = (r: HumanRequest, projectTitle: string | undefined): ApprovalView => {

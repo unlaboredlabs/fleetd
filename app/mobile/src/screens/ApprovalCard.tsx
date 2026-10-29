@@ -3,12 +3,13 @@
 // Details, and Approve and Deny. Money, irreversible and secret-using asks say so in a quiet line. A character that
 // hides or reorders text shows as its mark (⟨U+202E⟩), each field isolated, under a line saying so. Used in the
 // Approvals list and inline in a chat.
-import { useState } from "react";
+import * as Clipboard from "expo-clipboard";
+import { useEffect, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { listTime } from "../chatView";
 import { HIDDEN_WARNING, marked, type HubError, type HumanRequest } from "../desktop";
 import { exactRuns, FSI, markRuns, PDI, type Run } from "../exact";
-import { approvalView, type ApprovalField, type ApprovalView } from "../lists";
+import { approvalView, fieldCopy, type ApprovalField, type ApprovalView } from "../lists";
 import { mono, space, type, useTheme } from "../theme";
 import { Avatar } from "../ui/Avatar";
 import { Button } from "../ui/Button";
@@ -78,12 +79,7 @@ export function ApprovalCard({
       {shown.length === 0 ? null : (
         <View style={styles.fields}>
           {shown.map((f) => (
-            <View key={f.label} style={styles.field}>
-              <Text style={[type.footnote, { color: t.secondary }]}>{f.label}</Text>
-              <Text style={[f.mono === true ? styles.mono : type.subhead, { color: t.label }]} selectable>
-                <Value field={f} />
-              </Text>
-            </View>
+            <Field key={f.label} field={f} />
           ))}
         </View>
       )}
@@ -132,6 +128,33 @@ export function ApprovalCard({
         />
       </View>
     </Card>
+  );
+}
+
+/**
+ * One field: its label, then its value as drawn. The drawn text holds marks and isolates, so it isn't selectable; a
+ * long press copies the exact text instead (fieldCopy), as the desktop's Copy does.
+ */
+function Field({ field: f }: { field: ApprovalField }) {
+  const t = useTheme();
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(false), 1600);
+    return () => clearTimeout(timer);
+  }, [copied]);
+  const copy = () => {
+    void Clipboard.setStringAsync(fieldCopy(f));
+    haptics.success();
+    setCopied(true);
+  };
+  return (
+    <Pressable style={styles.field} onLongPress={copy} delayLongPress={300} accessibilityHint="Touch and hold to copy it exactly">
+      <Text style={[type.footnote, { color: t.secondary }]}>{copied ? `${f.label} · Copied` : f.label}</Text>
+      <Text style={[f.mono === true ? styles.mono : type.subhead, { color: t.label }]}>
+        <Value field={f} />
+      </Text>
+    </Pressable>
   );
 }
 
