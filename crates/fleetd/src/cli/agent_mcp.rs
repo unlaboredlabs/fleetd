@@ -16,7 +16,7 @@ use fleetd_contracts::browser::{
     BrowserCall, DesktopCall, FillCredentialCall, RequestTakeoverCall, SessionEndCall,
     SessionStartCall,
 };
-use fleetd_contracts::chat::NudgeCall;
+use fleetd_contracts::chat::{ChatImageCall, NudgeCall};
 use fleetd_contracts::checklist::ChecklistCall;
 use fleetd_contracts::lead_calls::{
     AskLeadCall, BriefCreateCall, BriefReadCall, ChangeEnqueueCall, CloseCall, DecideCall,
@@ -415,6 +415,19 @@ static TOOLS: &[Tool] = &[
         )
     }
     .needs("A person approves the proposed setting in chat before it is saved."),
+    Tool {
+        worker: true,
+        ..lead(
+            "chat_image",
+            "chat_image",
+            "Put an image you made in this project's chat: use it for screenshots of UI changes, instead of a link. \
+             path is a png, jpeg, webp or gif file inside your working directory (relative, or absolute inside it; \
+             nothing outside it is read), at most 25 MiB. Returns its attachmentId. A lead shows it in its message \
+             with an image block ({\"v\":1,\"kind\":\"image\",\"attachmentId\":\"F12\",\"caption\":\"…\"}); a task \
+             puts the id in its result for its lead to show. Unshown, it is deleted after 24 h.",
+            inline_schema::<ChatImageCall>,
+        )
+    },
     lead(
         "preview_start",
         "preview_start",
@@ -956,7 +969,8 @@ mod tests {
     }
 
     #[test]
-    fn a_worker_sees_only_report_ask_lead_its_brief_decisions_reviews_previews_and_browser() {
+    fn a_worker_sees_only_report_ask_lead_its_brief_decisions_reviews_previews_images_and_browser()
+    {
         assert_eq!(
             names(Role::Worker),
             [
@@ -967,6 +981,7 @@ mod tests {
                 "review_read",
                 "preview_suggest",
                 "preview_config_propose",
+                "chat_image",
                 "session_start",
                 "desktop",
                 "session_end",
@@ -998,6 +1013,7 @@ mod tests {
             "review_read",
             "preview_suggest",
             "preview_config_propose",
+            "chat_image",
             "preview_start",
         ] {
             assert!(lead.contains(&tool.to_owned()), "{tool}");

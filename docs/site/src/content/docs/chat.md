@@ -114,6 +114,11 @@ checklist, an image, or a question with buttons. Tapping a button sends your ans
 can answer it. To change how it talks, edit the **Voice** prompt (`lead.voice`) like any
 [prompt](/docs/what-agents-are-told). Commit messages, PR bodies and agents' briefs stay plain whatever the voice.
 
+An image can be one the lead or its agents made, such as a screenshot of a UI change: they upload it with
+[`chat_image`](/docs/reference/agent-tools#chat_image), which reads only a png, jpeg, webp or gif file (checked by its
+bytes, at most 25 MiB) inside the agent's own worktree or working directory, never anywhere else on the machine. The
+image belongs to that project: only its chat shows it. One the lead never shows is deleted after 24 hours.
+
 It stays quiet on routine progress: a rebase, a review passing, CI starting, a PR queued or an agent resuming posts
 nothing (the panel's Activity tab shows those). It writes when you must act or decide, when something you asked about
 lands, fails or is blocked, when a check on main stays red, and to answer you. What lands together comes in one short

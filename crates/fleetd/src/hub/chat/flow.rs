@@ -47,7 +47,7 @@ fn store_error(e: StoreError) -> ToolError {
     crate::hub::api::internal_error()
 }
 
-pub(super) fn lead_thread(hub: &Hub, r: &ProjectRef) -> Option<ThreadRef> {
+pub(crate) fn lead_thread(hub: &Hub, r: &ProjectRef) -> Option<ThreadRef> {
     let lead = hub.leads.records.lead_get(r).ok()??;
     Some(ThreadRef {
         machine_id: r.machine_id.clone(),

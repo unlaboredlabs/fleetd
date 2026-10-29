@@ -178,6 +178,10 @@ words aren’t the best fit it sends a block instead: a chart, a table, a diff, 
 checklist, an image, or a question with buttons. Tapping a button sends your answer as a chat message, so only you
 can answer it. To change how it talks, edit the <strong>Voice</strong> prompt (<code dir="auto">lead.voice</code>) like any
 <a href="/docs/what-agents-are-told">prompt</a>. Commit messages, PR bodies and agents’ briefs stay plain whatever the voice.</p>
+<p>An image can be one the lead or its agents made, such as a screenshot of a UI change: they upload it with
+<a href="/docs/reference/agent-tools#chat_image"><code dir="auto">chat_image</code></a>, which reads only a png, jpeg, webp or gif file (checked by its
+bytes, at most 25 MiB) inside the agent’s own worktree or working directory, never anywhere else on the machine. The
+image belongs to that project: only its chat shows it. One the lead never shows is deleted after 24 hours.</p>
 <p>It stays quiet on routine progress: a rebase, a review passing, CI starting, a PR queued or an agent resuming posts
 nothing (the panel’s Activity tab shows those). It writes when you must act or decide, when something you asked about
 lands, fails or is blocked, when a check on main stays red, and to answer you. What lands together comes in one short

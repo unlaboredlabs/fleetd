@@ -719,6 +719,7 @@ fn example(role: Role, tool: &str) -> Option<Value> {
             "prUrl": "https://github.com/acme/storefront/pull/7",
             "why": "The checkout's buttons read differently in German and Dutch",
         }),
+        (_, "chat_image") => json!({ "path": "shots/checkout-after.png" }),
         (_, "preview_config_propose") => json!({
             "config": { "web": {
                 "setup": ["pnpm install --frozen-lockfile"],

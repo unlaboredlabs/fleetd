@@ -21,8 +21,9 @@ pub fn max_open_tasks(max_agents: i64) -> usize {
 }
 
 /// The calls a task's agent makes: its review verdict (`report`), a question for its lead, reading its brief, its
-/// project's decisions and its PRs' reviews, and Try it's suggestion and proposed setting (never a preview's start:
-/// only the person or a lead answering them starts one, D161). Only a lead closes work.
+/// project's decisions and its PRs' reviews, Try it's suggestion and proposed setting (never a preview's start:
+/// only the person or a lead answering them starts one, D161), and an image for its lead to show. Only a lead closes
+/// work.
 pub const WORKER_OPS: &[&str] = &[
     "review_verdict",
     "ask_lead",
@@ -31,6 +32,7 @@ pub const WORKER_OPS: &[&str] = &[
     "review_read",
     "preview_suggest",
     "preview_config_propose",
+    "chat_image",
 ];
 /// The calls a task's node makes for it: its browser sessions (node/browser).
 pub const NODE_OPS: &[&str] = &[
@@ -101,8 +103,8 @@ pub fn check(agent: &CallerAgent, op: &str) -> Result<(), McpToolError> {
                 .with_fix(
                     "A task reports its review verdict (report), asks its lead (ask_lead), reads its brief \
                      (brief_read), decisions (decisions_search) and its PRs' reviews (review_read), and may suggest \
-                     the person try its PR (preview_suggest) or propose how to run it (preview_config_propose). Put \
-                     anything else in your result or ask your lead.",
+                     the person try its PR (preview_suggest), propose how to run it (preview_config_propose) or upload \
+                     an image for your lead to show (chat_image). Put anything else in your result or ask your lead.",
                 ));
             }
             Ok(())

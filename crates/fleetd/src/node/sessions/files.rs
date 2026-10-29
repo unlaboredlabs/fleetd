@@ -1,6 +1,10 @@
-//! Project files for the app: the file list behind @-mentions, and attachments written under `.fleetd/attachments/`.
+//! Project files for the app: the file list behind @-mentions, attachments written under `.fleetd/attachments/`, and
+//! the images a session shows in its chat (`read_image`).
 use std::path::{Component, Path};
 use std::process::Command;
+
+use fleetd_contracts::mcp::{ATTACHMENT_MAX_BYTES, AttachmentMime};
+use fleetd_contracts::sessions::IMAGE_PIECE_BYTES;
 
 /// Where attachments go, repo-relative; kept out of git through `.git/info/exclude`.
 pub const ATTACHMENTS_DIR: &str = ".fleetd/attachments/";
@@ -168,6 +172,89 @@ pub fn put_file(root: &Path, rel_path: &str, bytes: &[u8]) -> Result<(), String>
     exclude_attachments(root)
 }
 
+fn mime_of_extension(path: &Path) -> Option<AttachmentMime> {
+    let ext = path.extension()?.to_str()?.to_ascii_lowercase();
+    match ext.as_str() {
+        "png" => Some(AttachmentMime::Png),
+        "jpg" | "jpeg" => Some(AttachmentMime::Jpeg),
+        "gif" => Some(AttachmentMime::Gif),
+        "webp" => Some(AttachmentMime::Webp),
+        _ => None,
+    }
+}
+
+/// One image a session made, read for its chat: its name, type, whole size and the piece from `offset`. `path` is
+/// relative to `root` (the session's working directory) or absolute; after `..` and every symlink are resolved it
+/// must still lie under `root`, and it must be a png, jpeg, webp or gif by its extension and its bytes alike, at most
+/// [`ATTACHMENT_MAX_BYTES`]. Nothing else on the machine is ever read.
+pub fn read_image(
+    root: &Path,
+    path: &str,
+    offset: u64,
+) -> Result<(String, AttachmentMime, u64, Vec<u8>), String> {
+    use std::io::{Read, Seek};
+    use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+
+    let root = root.canonicalize().map_err(|e| {
+        format!(
+            "your working directory {} is not readable: {e}",
+            root.display()
+        )
+    })?;
+    let real = root
+        .join(path)
+        .canonicalize()
+        .map_err(|e| format!("{path} is not readable here: {e}"))?;
+    if !real.starts_with(&root) {
+        return Err(format!(
+            "{path} is outside your working directory {}: only an image you made there can go in the chat",
+            root.display()
+        ));
+    }
+    let Some(by_name) = mime_of_extension(&real) else {
+        return Err(format!("{path} is not a .png, .jpg, .webp or .gif image"));
+    };
+    // Opened without following a last symlink, and checked to be the file just resolved: a link swapped in since
+    // cannot send the read elsewhere.
+    let mut file = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(nix::fcntl::OFlag::O_NOFOLLOW.bits())
+        .open(&real)
+        .map_err(|e| format!("{path} is not readable here: {e}"))?;
+    let (opened, named) = (
+        file.metadata().map_err(|e| e.to_string())?,
+        std::fs::symlink_metadata(&real).map_err(|e| e.to_string())?,
+    );
+    if !opened.is_file() || (opened.dev(), opened.ino()) != (named.dev(), named.ino()) {
+        return Err(format!("{path} is not a plain file"));
+    }
+    let bytes = opened.len();
+    if bytes > ATTACHMENT_MAX_BYTES as u64 {
+        return Err(format!(
+            "{path} is {bytes} bytes; a chat image is at most {} MiB",
+            ATTACHMENT_MAX_BYTES / (1024 * 1024)
+        ));
+    }
+    let mut head = [0u8; 12];
+    let n = file.read(&mut head).map_err(|e| e.to_string())?;
+    if AttachmentMime::of_image(&head[..n]) != Some(by_name) {
+        return Err(format!(
+            "{path} does not hold the image its name says: only png, jpeg, webp and gif images go in the chat"
+        ));
+    }
+    file.seek(std::io::SeekFrom::Start(offset))
+        .map_err(|e| e.to_string())?;
+    let mut piece = Vec::new();
+    file.take(IMAGE_PIECE_BYTES as u64)
+        .read_to_end(&mut piece)
+        .map_err(|e| e.to_string())?;
+    let name = real
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    Ok((name, by_name, bytes, piece))
+}
+
 fn exclude_attachments(root: &Path) -> Result<(), String> {
     let out = Command::new("git")
         .arg("-C")
@@ -296,6 +383,73 @@ mod tests {
         put_file(&repo4, ".fleetd/attachments/W1/x.txt", b"x").unwrap();
         assert!(!outside.join("target").exists());
         for d in [outside, repo, repo2, repo3, repo4] {
+            std::fs::remove_dir_all(d).unwrap();
+        }
+    }
+
+    const PNG: &[u8] = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR";
+
+    /// A chat image is read only from inside the session's working directory, `..` and symlinks resolved first, and
+    /// only when its name and its bytes both say png, jpeg, webp or gif.
+    #[test]
+    fn a_chat_image_comes_only_from_the_working_directory_and_only_as_an_image() {
+        use std::os::unix::fs::symlink;
+        let outside = scratch("image-outside");
+        std::fs::write(outside.join("key.png"), PNG).unwrap();
+        let root = scratch("image-root");
+        std::fs::create_dir_all(root.join("shots")).unwrap();
+        std::fs::write(root.join("shots/after.png"), PNG).unwrap();
+        let (name, mime, bytes, piece) = read_image(&root, "shots/after.png", 0).unwrap();
+        assert_eq!(
+            (name.as_str(), mime, bytes, piece.as_slice()),
+            ("after.png", AttachmentMime::Png, PNG.len() as u64, PNG)
+        );
+        let absolute = root.join("shots/after.png").display().to_string();
+        assert!(read_image(&root, &absolute, 0).is_ok());
+        assert_eq!(
+            read_image(&root, "shots/after.png", 4).unwrap().3,
+            &PNG[4..]
+        );
+
+        // Outside: an absolute path, `..`, a symlinked file or directory leading out.
+        let outside_png = outside.join("key.png").display().to_string();
+        let name = outside.file_name().unwrap().to_string_lossy().into_owned();
+        symlink(outside.join("key.png"), root.join("linked.png")).unwrap();
+        symlink(&outside, root.join("linked")).unwrap();
+        for path in [
+            outside_png,
+            format!("../{name}/key.png"),
+            "shots/../../".to_owned() + &name + "/key.png",
+            "linked.png".to_owned(),
+            "linked/key.png".to_owned(),
+        ] {
+            let err = read_image(&root, &path, 0).unwrap_err();
+            assert!(
+                err.contains("outside your working directory"),
+                "{path}: {err}"
+            );
+        }
+
+        // Not an image: by its name, or by its bytes whatever its name says.
+        std::fs::write(
+            root.join("id_ed25519"),
+            b"-----BEGIN OPENSSH PRIVATE KEY-----",
+        )
+        .unwrap();
+        std::fs::write(root.join("key.png"), b"-----BEGIN OPENSSH PRIVATE KEY-----").unwrap();
+        std::fs::write(root.join("shot.svg"), b"<svg onload=alert(1)>").unwrap();
+        std::fs::write(root.join("jpeg.png"), b"\xff\xd8\xff\xe0 a jpeg named png").unwrap();
+        for path in ["id_ed25519", "shot.svg"] {
+            let err = read_image(&root, path, 0).unwrap_err();
+            assert!(err.contains("is not a .png"), "{path}: {err}");
+        }
+        for path in ["key.png", "jpeg.png"] {
+            let err = read_image(&root, path, 0).unwrap_err();
+            assert!(err.contains("does not hold the image"), "{path}: {err}");
+        }
+        assert!(read_image(&root, "shots", 0).is_err(), "a directory");
+        assert!(read_image(&root, "missing.png", 0).is_err());
+        for d in [outside, root] {
             std::fs::remove_dir_all(d).unwrap();
         }
     }
