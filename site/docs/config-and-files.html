@@ -168,7 +168,7 @@ after you change it.</p>
 </tr>
 <tr>
 <td><code dir="auto">ios</code></td>
-<td>How this Mac runs <a href="/docs/browser-sessions#ios-setup">iOS screens</a>: <code dir="auto">enabled</code>, <code dir="auto">pool</code>, <code dir="auto">idleMinutes</code>, <code dir="auto">deviceType</code>.</td>
+<td>How this Mac runs <a href="/docs/browser-sessions#ios-setup">iOS screens</a>: <code dir="auto">enabled</code>, <code dir="auto">pool</code>, <code dir="auto">idleMinutes</code>, <code dir="auto">deviceType</code>, <code dir="auto">remoteInstall</code>.</td>
 </tr>
 <tr>
 <td><code dir="auto">desktop</code></td>
@@ -214,6 +214,10 @@ after you change it.</p>
 <tr>
 <td>agent-device on <code dir="auto">PATH</code> (it alone: the node’s simulator set and runner stay inside it), its <code dir="auto">AGENT_DEVICE_*</code> variables and its skill, on a Mac with iOS screens</td>
 <td>A lead’s and a task’s <a href="/docs/browser-sessions#ios">iOS screen</a>.</td>
+</tr>
+<tr>
+<td>A folder first on <code dir="auto">PATH</code> that holds a forwarding agent-device only while the session’s iOS screen runs on another machine</td>
+<td>A lead’s and a task’s <a href="/docs/browser-sessions#ios-elsewhere">iOS screen elsewhere</a>.</td>
 </tr>
 </tbody>
 </table>

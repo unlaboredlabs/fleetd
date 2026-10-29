@@ -11,6 +11,7 @@ pub mod agent_device;
 pub mod emulator;
 pub mod ios;
 pub mod live;
+pub mod remote;
 pub mod scrcpy;
 pub mod sdk;
 pub mod session;
@@ -810,6 +811,16 @@ impl Router {
                 .as_ref()
                 .map_or(SessionKind::Browser, |(kind, _)| *kind),
         };
+        if let BrowserCall::Device(_) = &frame.call
+            && open.is_none()
+        {
+            let error = refuse(
+                ErrorCode::NotFound,
+                "No iOS session is open.",
+                "start one with session_start kind ios",
+            );
+            return result_frame(&frame, Err(error));
+        }
         if let BrowserCall::SessionStart(_) = &frame.call
             && let Some((other, id)) = open.filter(|(other, _)| *other != kind)
         {
@@ -866,7 +877,8 @@ impl Router {
             BrowserCall::SessionEnd(_) => devices.session_end(&thread).await,
             BrowserCall::FillCredential(_)
             | BrowserCall::RequestTakeover(_)
-            | BrowserCall::Desktop(_) => Err(refuse(
+            | BrowserCall::Desktop(_)
+            | BrowserCall::Device(_) => Err(refuse(
                 ErrorCode::Invalid,
                 format!(
                     "{} is not available in Android sessions yet.",
@@ -907,6 +919,11 @@ impl Router {
                 "fill_credential is for browser sessions.",
                 "do without it and say so in your result",
             )),
+            BrowserCall::Device(_) => Err(refuse(
+                ErrorCode::Invalid,
+                "agent-device drives iOS screens, and this is a desktop session.",
+                "use the desktop tool",
+            )),
         };
         result_frame(&frame, outcome)
     }
@@ -929,6 +946,7 @@ impl Router {
                     .await
             }
             BrowserCall::SessionEnd(_) => simulators.session_end(&thread).await,
+            BrowserCall::Device(call) => simulators.device(&thread, call.clone()).await,
             BrowserCall::FillCredential(_)
             | BrowserCall::RequestTakeover(_)
             | BrowserCall::Desktop(_) => Err(refuse(

@@ -8,9 +8,13 @@
 //! A session placed elsewhere is driven through the hub's relay: this node's proxy pipes the agent's driver there
 //! (node/relay.rs), and each finished command that drove it goes to the runner for its recording (`session_step`).
 //!
+//! An iOS screen placed elsewhere is driven by its agent's agent-device commands instead, each sent through the hub to
+//! the runner, sealed with the session's relay key (node/device/remote.rs).
+//!
 //! The other side: a session the hub placed on this machine for an agent elsewhere comes in as `session_host` (the
 //! node link), answered by the broker under the key the hub gave it ([`host_masker`]).
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -21,9 +25,9 @@ use zeroize::Zeroize;
 
 use fleetd_contracts::browser::{
     BrowserCall, BrowserCallFrame, BrowserCallResult, BrowserResultFrame, BrowserSessionState,
-    SessionKind,
+    DeviceCall, DeviceDone, DeviceFile, SessionKind,
 };
-use fleetd_contracts::ids::ThreadId;
+use fleetd_contracts::ids::{MachineId, ThreadId};
 use fleetd_contracts::lead_calls::{LeadCall, LeadCallFrame, LeadCallResult};
 use fleetd_contracts::machine_roles::SessionHostResult;
 use fleetd_contracts::machine_roles::{
@@ -40,7 +44,8 @@ use super::browser::credentials;
 use super::browser::onepassword::{Credential, TOKEN_ENV};
 use super::browser::upload::{HubCalls, HubFuture};
 use super::browser::{Broker, BrowserHandler, SecretsFor, SessionHooks, drives_browser};
-use super::desktop::Desktops;
+use super::desktop::{Desktops, WorktreeFor};
+use super::device::remote::{self as remote_device, Remote as RemoteDevice, Remotes};
 use super::device::{self, Devices};
 use super::identity::NodeBoxKey;
 use super::lead::{LeadRelay, MaskFor};
@@ -77,6 +82,12 @@ pub struct Router {
     pub filled_elsewhere: FilledElsewhere,
     /// The id of each agent session's browser hosted on another machine, as its start answered.
     pub hosted_ids: HostedIds,
+    /// The node's home: an agent's forwarding agent-device goes there.
+    pub home: PathBuf,
+    /// Each agent session's worktree: the files its commands for an iOS screen elsewhere read and write stay in it.
+    pub worktree_of: WorktreeFor,
+    /// The agent sessions whose iOS screen runs on another machine.
+    pub remotes: Remotes,
 }
 
 /// Agent session -> the id of its browser hosted elsewhere.
@@ -93,6 +104,26 @@ impl Router {
         tokio::spawn(async move {
             if let Some(error) = route(router, thread, end).await.error {
                 tracing::info!(error = %error.message, "hosted session not ended");
+            }
+        });
+    }
+
+    /// The agent session's iOS screen on another machine is gone: so is its forwarding agent-device.
+    fn forget_device(&self, thread: &str) {
+        self.remotes.lock().remove(thread);
+        remote_device::remove_forwarder(&self.home, thread);
+    }
+
+    /// Ends the agent session's iOS screen on another machine, through the hub, as its `session_end` would.
+    fn end_device(&self, thread: &str) {
+        let end: BrowserCallFrame = serde_json::from_value(json!({
+            "id": "ended", "cwd": "/", "call": { "op": "session_end" },
+        }))
+        .expect("a session_end frame");
+        let (router, thread) = (Arc::new(self.clone()), thread.to_owned());
+        tokio::spawn(async move {
+            if let Some(error) = route(router, thread, end).await.error {
+                tracing::info!(error = %error.message, "iOS screen elsewhere not ended");
             }
         });
     }
@@ -252,6 +283,19 @@ async fn ask(
 }
 
 async fn route(router: Arc<Router>, thread: String, frame: BrowserCallFrame) -> BrowserResultFrame {
+    if router.remotes.has(&thread) {
+        return device_elsewhere(&router, thread, frame).await;
+    }
+    if let BrowserCall::Device(_) = &frame.call {
+        return error_frame(
+            &frame.id,
+            McpToolError::new(
+                ErrorCode::NotFound,
+                "No iOS screen of yours runs on another machine.",
+            )
+            .with_fix("start one with session_start kind ios"),
+        );
+    }
     if router.here().live(&thread) || !router.relay.hub_can(HUB_CAP_SESSION_ROUTE) {
         return local(&router, thread, frame).await;
     }
@@ -423,9 +467,10 @@ async fn sealed_fill(
     })
 }
 
-/// An Android or iOS `session_start`: on this machine when the hub places it here. agent-device drives an emulator
-/// over adb and a simulator over simctl and its XCTest runner, neither of which crosses the hub's relay yet, so one the
-/// hub would place elsewhere is refused before anything starts there (nothing is sealed for it).
+/// An Android or iOS `session_start`: on this machine when the hub places it here. An iOS one placed elsewhere starts
+/// there once the session's secrets and relay key are sealed to the runner, and the agent's agent-device commands
+/// follow it ([`device_elsewhere`]). agent-device drives an emulator over adb, which crosses no machine yet, so an
+/// Android one the hub would place elsewhere is refused before anything starts there (nothing is sealed for it).
 async fn device_start(
     router: &Arc<Router>,
     thread: String,
@@ -452,6 +497,12 @@ async fn device_start(
     };
     match ask(router, &thread, &frame, None).await {
         Ok(routed) if routed.here => local(router, thread, frame).await,
+        Ok(SessionRouteResult {
+            answer: None,
+            seal_to: Some(to),
+            runner,
+            ..
+        }) if kind == "iOS" => ios_start(router, thread, frame, &to, runner).await,
         // Placed elsewhere and already started there (a hub that doesn't ask for a seal first): end it there.
         Ok(routed) if routed.answer.is_some() => {
             let end: BrowserCallFrame = serde_json::from_value(json!({
@@ -466,6 +517,348 @@ async fn device_start(
     }
 }
 
+/// An iOS `session_start` placed on `runner`: started there with the session's secrets and a relay key sealed to it,
+/// and a forwarding agent-device first on the agent's PATH from now on.
+async fn ios_start(
+    router: &Arc<Router>,
+    thread: String,
+    frame: BrowserCallFrame,
+    to: &BoxPublicKey,
+    runner: MachineId,
+) -> BrowserResultFrame {
+    let key = super::relay::new_key();
+    let data = match seal_for(router, &thread, to, &key).await {
+        Ok(data) => data,
+        Err(why) => {
+            return error_frame(
+                &frame.id,
+                McpToolError::new(
+                    ErrorCode::Failed,
+                    format!("The node could not seal this session's secrets for {runner} ({why})."),
+                )
+                .with_fix("try again; if it keeps failing, check the node's log"),
+            );
+        }
+    };
+    let sealed = SealedForRunner {
+        runner: runner.clone(),
+        data_b64: NonEmpty::unchecked(data),
+    };
+    let routed = match ask(router, &thread, &frame, Some(sealed)).await {
+        Ok(routed) => routed,
+        Err(error) => return error_frame(&frame.id, error),
+    };
+    if routed.here {
+        return local(router, thread, frame).await;
+    }
+    let Some(mut answer) = routed.answer else {
+        return error_frame(
+            &frame.id,
+            McpToolError::new(
+                ErrorCode::Failed,
+                "the hub placed the session but sent no answer",
+            )
+            .with_fix("try again"),
+        );
+    };
+    answer.id = frame.id.clone();
+    let Some(BrowserCallResult::SessionStart(started)) = &answer.result else {
+        return answer;
+    };
+    let exe = super::sessions::self_command();
+    if let Err(e) = remote_device::install_forwarder(&router.home, &thread, &exe) {
+        let end: BrowserCallFrame = serde_json::from_value(json!({
+            "id": "no-forwarder", "cwd": frame.cwd, "call": { "op": "session_end" },
+        }))
+        .expect("a session_end frame");
+        let _ = ask(router, &thread, &end, None).await;
+        return error_frame(
+            &frame.id,
+            McpToolError::new(
+                ErrorCode::Failed,
+                format!("The node could not put agent-device on your PATH for the screen on {runner}: {e}."),
+            )
+            .with_fix("try session_start again; if it keeps failing, say so in your result"),
+        );
+    }
+    router.remotes.lock().insert(
+        thread,
+        RemoteDevice::new(started.session_id.to_string(), key),
+    );
+    answer
+}
+
+/// A call of an agent whose iOS screen runs on another machine: its agent-device commands run there ([`run_elsewhere`]),
+/// and its other session calls go there too. Whatever ends the screen there takes its forwarding agent-device away
+/// here.
+async fn device_elsewhere(
+    router: &Arc<Router>,
+    thread: String,
+    frame: BrowserCallFrame,
+) -> BrowserResultFrame {
+    let id = frame.id.clone();
+    let answered = |outcome: Result<BrowserResultFrame, McpToolError>| match outcome {
+        Ok(mut answer) => {
+            answer.id = id.clone();
+            answer
+        }
+        Err(error) => error_frame(&id, error),
+    };
+    match &frame.call {
+        BrowserCall::Device(DeviceCall::Run { args }) => {
+            let args = args.clone();
+            match run_elsewhere(router, &thread, &frame, &args).await {
+                Ok(done) => serde_json::from_value(json!({
+                    "id": id, "result": BrowserCallResult::Device(done),
+                }))
+                .expect("a result frame"),
+                Err(error) => error_frame(&id, error),
+            }
+        }
+        BrowserCall::Device(_) => error_frame(
+            &id,
+            McpToolError::new(
+                ErrorCode::Forbidden,
+                "A screen's files are the node's to send: run agent-device with them instead.",
+            ),
+        ),
+        BrowserCall::SessionEnd(_) => {
+            let answer = forward_device(router, &thread, frame.clone()).await;
+            router.forget_device(&thread);
+            answered(answer)
+        }
+        _ => answered(forward_device(router, &thread, frame.clone()).await),
+    }
+}
+
+/// One call for the agent's iOS screen on another machine, through the hub. One the hub no longer has anywhere ended
+/// there (idle, a person, its machine gone).
+async fn forward_device(
+    router: &Router,
+    thread: &str,
+    frame: BrowserCallFrame,
+) -> Result<BrowserResultFrame, McpToolError> {
+    let routed = ask(router, thread, &frame, None).await?;
+    if routed.here {
+        router.forget_device(thread);
+        return Err(McpToolError::new(
+            ErrorCode::NotFound,
+            "Your iOS screen on another machine has ended.",
+        )
+        .with_fix("start another with session_start kind ios if you still need one"));
+    }
+    routed.answer.ok_or_else(|| {
+        McpToolError::new(ErrorCode::Failed, "the hub sent no answer for the screen")
+            .with_fix("try again")
+    })
+}
+
+/// One sealed step of an agent-device command for the screen on another machine.
+async fn device_step(
+    router: &Router,
+    thread: &str,
+    frame: &BrowserCallFrame,
+    call: DeviceCall,
+) -> Result<DeviceDone, McpToolError> {
+    let (key, count) = {
+        let mut remotes = router.remotes.lock();
+        let remote = remotes.get_mut(thread).ok_or_else(|| {
+            McpToolError::new(
+                ErrorCode::NotFound,
+                "Your iOS screen on another machine has ended.",
+            )
+        })?;
+        remote.count += 1;
+        (remote.relay_key.clone(), remote.count)
+    };
+    let mut step = frame.clone();
+    step.call = BrowserCall::Device(remote_device::seal_call(&key, count, &call));
+    let answer = forward_device(router, thread, step).await?;
+    match (answer.result, answer.error) {
+        (Some(BrowserCallResult::Device(done)), _) => remote_device::open_done(&key, count, done)
+            .ok_or_else(|| {
+                McpToolError::new(
+                    ErrorCode::Failed,
+                    "The screen's answer did not open with this session's key.",
+                )
+                .with_fix("try again; if it keeps failing, end the session and start another")
+            }),
+        (_, Some(error)) => Err(error),
+        _ => Err(McpToolError::new(
+            ErrorCode::Failed,
+            "the screen's node answered with another call's result",
+        )),
+    }
+}
+
+/// An agent-device command of the agent's for its screen on another machine: the files it reads go from the worktree
+/// first, it runs there, and the files it wrote come back into the worktree. One command at a time per agent session.
+async fn run_elsewhere(
+    router: &Arc<Router>,
+    thread: &str,
+    frame: &BrowserCallFrame,
+    args: &[String],
+) -> Result<DeviceDone, McpToolError> {
+    let turn = router
+        .remotes
+        .lock()
+        .get(thread)
+        .map(|r| r.turn.clone())
+        .ok_or_else(|| {
+            McpToolError::new(
+                ErrorCode::NotFound,
+                "Your iOS screen on another machine has ended.",
+            )
+        })?;
+    let _turn = turn.lock().await;
+    let worktree = {
+        let (worktree_of, thread) = (router.worktree_of.clone(), thread.to_owned());
+        tokio::task::spawn_blocking(move || worktree_of(&thread))
+            .await
+            .ok()
+            .flatten()
+    }
+    .ok_or_else(|| {
+        McpToolError::new(
+            ErrorCode::Failed,
+            "The node doesn't know this session's worktree.",
+        )
+        .with_fix("say so in your result")
+    })?;
+    let mut seq = router.remotes.lock().get(thread).map_or(0, |r| r.seq);
+    let mapped = remote_device::map(args, Path::new(frame.cwd.as_str()), &worktree, &mut seq)?;
+    if let Some(remote) = router.remotes.lock().get_mut(thread) {
+        remote.seq = seq;
+    }
+    for input in &mapped.inputs {
+        let bytes = tokio::fs::read(&input.path).await.map_err(|e| {
+            McpToolError::new(
+                ErrorCode::Failed,
+                format!("{} can't be read: {e}.", input.shown),
+            )
+        })?;
+        let mut offset = 0u64;
+        let mut pieces = bytes.chunks(remote_device::PIECE).peekable();
+        if pieces.peek().is_none() {
+            device_step(
+                router,
+                thread,
+                frame,
+                DeviceCall::Put {
+                    name: input.name.clone(),
+                    offset,
+                    data_b64: String::new(),
+                },
+            )
+            .await?;
+        }
+        for piece in pieces {
+            let call = DeviceCall::Put {
+                name: input.name.clone(),
+                offset,
+                data_b64: B64.encode(piece),
+            };
+            device_step(router, thread, frame, call).await?;
+            offset += piece.len() as u64;
+        }
+    }
+    let run = DeviceCall::Run {
+        args: mapped.args.clone(),
+    };
+    let DeviceDone::Run {
+        stdout,
+        stderr,
+        exit_code,
+        files,
+    } = device_step(router, thread, frame, run).await?
+    else {
+        return Err(McpToolError::new(
+            ErrorCode::Failed,
+            "the screen's node answered the command with another step's answer",
+        ));
+    };
+    if let Some(remote) = router.remotes.lock().get_mut(thread) {
+        for output in &mapped.outputs {
+            remote.outputs.insert(output.name.clone(), output.clone());
+        }
+    }
+    let mut notes = String::new();
+    let mut back: Vec<(remote_device::Local, u64)> = Vec::new();
+    for file in files {
+        let local = router
+            .remotes
+            .lock()
+            .get_mut(thread)
+            .and_then(|r| r.outputs.remove(&file.name));
+        let Some(local) = local else {
+            continue;
+        };
+        match fetch(router, thread, frame, &file.name).await {
+            Ok(bytes) => match remote_device::write_output(&worktree, &local.path, &bytes) {
+                Ok(()) => back.push((local, bytes.len() as u64)),
+                Err(why) => {
+                    notes.push_str(&format!("fleetd: {} was not written: {why}\n", local.shown))
+                }
+            },
+            Err(error) => notes.push_str(&format!(
+                "fleetd: {} did not come back: {}\n",
+                local.shown, error.message
+            )),
+        }
+    }
+    let named: Vec<&remote_device::Local> = mapped
+        .inputs
+        .iter()
+        .chain(&mapped.outputs)
+        .chain(back.iter().map(|(l, _)| l))
+        .collect();
+    Ok(DeviceDone::Run {
+        stdout: remote_device::shown_back(&stdout, &named),
+        stderr: remote_device::shown_back(&stderr, &named) + &notes,
+        exit_code,
+        files: back
+            .iter()
+            .map(|(local, bytes)| DeviceFile {
+                name: local.shown.clone(),
+                bytes: *bytes,
+            })
+            .collect(),
+    })
+}
+
+/// A file the command wrote on the screen's node, a piece at a time.
+async fn fetch(
+    router: &Router,
+    thread: &str,
+    frame: &BrowserCallFrame,
+    name: &str,
+) -> Result<Vec<u8>, McpToolError> {
+    let mut bytes = Vec::new();
+    loop {
+        let call = DeviceCall::Get {
+            name: name.to_owned(),
+            offset: bytes.len() as u64,
+        };
+        let DeviceDone::Get { data_b64, total } = device_step(router, thread, frame, call).await?
+        else {
+            return Err(McpToolError::new(ErrorCode::Failed, "not a file's piece"));
+        };
+        let piece = B64
+            .decode(data_b64)
+            .map_err(|e| McpToolError::new(ErrorCode::Failed, format!("not base64: {e}")))?;
+        if total > remote_device::FILE_MAX || (piece.is_empty() && (bytes.len() as u64) < total) {
+            return Err(McpToolError::new(
+                ErrorCode::Failed,
+                "the file is too large, or stopped short",
+            ));
+        }
+        bytes.extend(piece);
+        if bytes.len() as u64 >= total {
+            return Ok(bytes);
+        }
+    }
+}
+
 /// The lead socket's handler for an agent's session tools.
 pub fn routed(router: Arc<Router>) -> BrowserHandler {
     Arc::new(move |thread, frame| Box::pin(route(router.clone(), thread, frame)))
@@ -477,9 +870,24 @@ const STEP_OUTPUT: usize = 64 * 1024;
 /// The broker's session hooks, and a step of a session hosted on another machine handed to the hub for that machine's
 /// recording: a line in its action log and the page after it in its trace, as a session here records them.
 impl SessionHooks for Router {
-    /// agent-browser's and agent-device's (node/device).
+    /// agent-browser's and agent-device's (node/device), and first of all on the PATH the folder that holds the
+    /// forwarding agent-device while the session's iOS screen runs on another machine (and isn't there otherwise).
     fn env(&self, thread: &str, path: Option<&str>) -> Vec<(String, String)> {
-        self.here().env(thread, path)
+        let mut env = self.here().env(thread, path);
+        let forwarder = remote_device::bin_dir(&self.home, thread)
+            .to_string_lossy()
+            .into_owned();
+        match env.iter_mut().find(|(k, _)| k == "PATH") {
+            Some((_, value)) => *value = format!("{forwarder}:{value}"),
+            None => env.push((
+                "PATH".to_owned(),
+                match path.filter(|p| !p.is_empty()) {
+                    Some(path) => format!("{forwarder}:{path}"),
+                    None => forwarder,
+                },
+            )),
+        }
+        env
     }
 
     fn plugin_dirs(&self) -> Vec<std::path::PathBuf> {
@@ -517,6 +925,9 @@ impl SessionHooks for Router {
     /// The agent's claude exited: its session ends, here or on the machine hosting it.
     fn ended(&self, thread: &str) {
         self.filled_elsewhere.lock().remove(thread);
+        if self.remotes.has(thread) {
+            self.end_device(thread);
+        }
         if let Some(devices) = &self.devices {
             devices.ended(thread);
         }
@@ -541,6 +952,15 @@ impl SessionHooks for Router {
     /// Its screen here if it is `session`; else its browser hosted elsewhere, if that is `session`.
     fn screen_ended(&self, thread: &str, session: &str) {
         if self.here().end_screen(thread, session) {
+            return;
+        }
+        let device = self
+            .remotes
+            .lock()
+            .get(thread)
+            .is_some_and(|r| r.session_id == session);
+        if device {
+            self.end_device(thread);
             return;
         }
         let hosted = self
@@ -636,6 +1056,8 @@ pub struct Hosted(Arc<Mutex<HashMap<String, HostedSession>>>);
 struct HostedSession {
     secrets: Option<Secrets>,
     relay_key: zeroize::Zeroizing<[u8; 32]>,
+    /// The agent's last sealed device step: each must come after it.
+    device_count: u64,
 }
 
 impl Hosted {
@@ -758,9 +1180,49 @@ pub async fn host(
                     HostedSession {
                         secrets: Some(Secrets(seal.secrets.clone())),
                         relay_key: zeroize::Zeroizing::new(relay_key),
+                        device_count: 0,
                     },
                 );
             }
+            // A device step runs only sealed by the agent's node, after its last: never one the hub made up or played
+            // again. Its answer goes back sealed.
+            let mut host = host;
+            let device = match &host.frame.call {
+                BrowserCall::Device(DeviceCall::Sealed { count, data_b64 }) => {
+                    let count = *count;
+                    let opened = {
+                        let mut all = hosted.lock();
+                        all.get_mut(&key)
+                            .filter(|h| count > h.device_count)
+                            .and_then(|h| {
+                                let call = remote_device::open_call(&h.relay_key, count, data_b64)?;
+                                h.device_count = count;
+                                Some((call, h.relay_key.clone()))
+                            })
+                    };
+                    let Some((call, relay_key)) = opened else {
+                        return Some(SessionHostResult {
+                            id: host.id,
+                            frame: refuse(
+                                &host.frame.id,
+                                "the device step did not open with this session's key, or came again",
+                            ),
+                        });
+                    };
+                    host.frame.call = BrowserCall::Device(call);
+                    Some((count, relay_key))
+                }
+                BrowserCall::Device(_) => {
+                    return Some(SessionHostResult {
+                        id: host.id,
+                        frame: refuse(
+                            &host.frame.id,
+                            "device steps come sealed by the agent's node",
+                        ),
+                    });
+                }
+                _ => None,
+            };
             // A fill comes with the value the agent's node read, sealed to this node: filled under #552's checks (the
             // item's own sites, reads sealed after it) and wiped.
             let given = match &host.frame.call {
@@ -793,6 +1255,12 @@ pub async fn host(
                     (None, None) => unreachable!("checked: one of them is here"),
                 },
             };
+            let mut frame = frame;
+            if let (Some((count, relay_key)), Some(BrowserCallResult::Device(done))) =
+                (&device, &mut frame.result)
+            {
+                *done = remote_device::seal_done(relay_key, *count, done);
+            }
             match call {
                 // The broker read them at the start: they leave this node's memory now.
                 "session_start" if frame.result.is_some() => {
@@ -838,11 +1306,19 @@ pub fn host_masker(session: &str) -> Option<Masker> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::Value;
 
     #[test]
     fn the_node_waits_past_the_hub_and_its_cancel() {
         use crate::hub::machine_roles::calls::{CANCEL_WAIT, START_WAIT};
         assert!(ROUTE_WAIT >= START_WAIT + CANCEL_WAIT + Duration::from_secs(30));
+    }
+
+    #[test]
+    fn a_device_command_ends_on_its_machine_before_the_hub_or_the_node_stop_waiting() {
+        use crate::hub::machine_roles::calls::DEVICE_WAIT;
+        assert!(remote_device::RUN_WAIT + Duration::from_secs(5) <= DEVICE_WAIT);
+        assert!(DEVICE_WAIT + Duration::from_secs(30) <= ROUTE_WAIT);
     }
 
     struct NoHub;
@@ -865,6 +1341,9 @@ mod tests {
             mask_for: Arc::new(|_| Ok(Masker::new(&[]))),
             filled_elsewhere: FilledElsewhere::default(),
             hosted_ids: Default::default(),
+            home: PathBuf::from("/nonexistent/node"),
+            worktree_of: Arc::new(|_| None),
+            remotes: Remotes::default(),
         })
     }
 
@@ -978,6 +1457,7 @@ mod tests {
             HostedSession {
                 secrets: None,
                 relay_key: zeroize::Zeroizing::new([7; 32]),
+                device_count: 0,
             },
         );
         let calls = hosted.watch(Arc::new(NoHub));
@@ -1006,6 +1486,7 @@ mod tests {
             HostedSession {
                 secrets: Some(Secrets(vec![("SHOP_PASSWORD".into(), "hunter2".into())])),
                 relay_key: zeroize::Zeroizing::new([7; 32]),
+                device_count: 0,
             },
         );
         let secrets_for =
@@ -1025,6 +1506,286 @@ mod tests {
                 .0
                 .is_empty()
         );
+    }
+
+    const HOST_KEY: &str = "H0123456789abcdef0123456789abcdef";
+    const SCREEN: &str = "B0123456789abcdef0123456789abcdef";
+
+    fn host_frame(call: Value) -> HubToNode {
+        serde_json::from_value(json!({
+            "t": "session_host", "id": "h1", "hostKey": HOST_KEY,
+            "frame": { "id": "1", "cwd": "/work/app", "call": call },
+        }))
+        .unwrap()
+    }
+
+    /// The screen's node runs a device step only sealed with its session's relay key, and each only once: the hub
+    /// can neither make one up nor play one again.
+    #[tokio::test]
+    async fn a_device_step_runs_only_sealed_by_the_agents_node_and_only_once() {
+        let hosted = Hosted::default();
+        hosted.lock().insert(
+            HOST_KEY.to_owned(),
+            HostedSession {
+                secrets: None,
+                relay_key: zeroize::Zeroizing::new([7; 32]),
+                device_count: 0,
+            },
+        );
+        let sessions = Arc::new(device::Router {
+            browser: None,
+            devices: None,
+            ios: None,
+            live: Default::default(),
+            desktops: None,
+        });
+        let send = |call: DeviceCall| {
+            let (sessions, hosted) = (sessions.clone(), hosted.clone());
+            async move {
+                let call = serde_json::to_value(BrowserCall::Device(call)).unwrap();
+                host(
+                    None,
+                    Some(sessions),
+                    "http://devbox:4790",
+                    host_frame(call),
+                    &hosted,
+                    None,
+                )
+                .await
+                .unwrap()
+                .frame
+                .error
+                .unwrap()
+                .message
+            }
+        };
+        let run = DeviceCall::Run {
+            args: vec!["snapshot".into()],
+        };
+        assert!(send(run.clone()).await.contains("come sealed"));
+        let wrong_key = remote_device::seal_call(&[8; 32], 1, &run);
+        assert!(send(wrong_key).await.contains("did not open"));
+        // Opened, it reaches the screen's sessions (none here, so none is open).
+        let sealed = remote_device::seal_call(&[7; 32], 1, &run);
+        assert_eq!(send(sealed.clone()).await, "No iOS session is open.");
+        assert!(send(sealed).await.contains("came again"));
+        assert_eq!(
+            send(remote_device::seal_call(&[7; 32], 2, &run)).await,
+            "No iOS session is open."
+        );
+    }
+
+    /// A hub whose runner hosts the agent's iOS screen: each device step is opened with the session's relay key and
+    /// done in `work` with `program`, as the runner's node does, and its answer sealed back. The ops it got, in order.
+    fn screen_elsewhere(
+        relay: &LeadRelay,
+        key: [u8; 32],
+        work: remote_device::Work,
+        program: PathBuf,
+    ) -> (crate::node::lead::Attached, Arc<Mutex<Vec<String>>>) {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+        let attached = relay.attach(tx);
+        let ops: Arc<Mutex<Vec<String>>> = Arc::default();
+        let (relay, seen) = (relay.clone(), ops.clone());
+        tokio::spawn(async move {
+            let mut last = 0;
+            while let Some(line) = rx.recv().await {
+                let Ok(fleetd_contracts::node_link::NodeToHub::LeadCall(frame)) =
+                    serde_json::from_str(&line)
+                else {
+                    continue;
+                };
+                let LeadCall::SessionRoute(routed) = frame.call else {
+                    continue;
+                };
+                let answer = match routed.frame.call {
+                    BrowserCall::Device(DeviceCall::Sealed { count, data_b64 }) => {
+                        assert!(count > last, "steps in order");
+                        last = count;
+                        let call = remote_device::open_call(&key, count, &data_b64)
+                            .expect("sealed with the key");
+                        seen.lock().unwrap().push(match &call {
+                            DeviceCall::Run { args } => format!("run {}", args.join(" ")),
+                            DeviceCall::Put { name, offset, .. } => format!("put {name} {offset}"),
+                            DeviceCall::Get { name, offset } => format!("get {name} {offset}"),
+                            DeviceCall::Sealed { .. } => unreachable!(),
+                        });
+                        let done = match call {
+                            DeviceCall::Run { args } => match work.check(&args, true) {
+                                Ok(()) => Ok(work
+                                    .run(&program, &[], &args, remote_device::RUN_WAIT)
+                                    .await
+                                    .done()),
+                                Err(e) => Err(e),
+                            },
+                            other => work.step(other),
+                        };
+                        match done {
+                            Ok(done) => json!({ "id": "1", "result": {
+                                "op": "device", "step": "sealed",
+                                "dataB64": match remote_device::seal_done(&key, count, &done) {
+                                    DeviceDone::Sealed { data_b64 } => data_b64,
+                                    _ => unreachable!(),
+                                },
+                            }}),
+                            Err(e) => json!({ "id": "1", "error": e }),
+                        }
+                    }
+                    BrowserCall::SessionEnd(_) => {
+                        seen.lock().unwrap().push("session_end".into());
+                        json!({ "id": "1", "result": {
+                            "op": "session_end", "sessionId": SCREEN, "kind": "ios", "files": [],
+                        }})
+                    }
+                    other => panic!("not for the screen: {other:?}"),
+                };
+                relay.resolve(
+                    serde_json::from_value(json!({
+                        "id": frame.id,
+                        "result": { "op": "session_route", "runner": "mac1", "here": false, "answer": answer },
+                    }))
+                    .unwrap(),
+                );
+            }
+        });
+        (attached, ops)
+    }
+
+    /// An agent on devbox drives its iOS screen on mac1 with agent-device: its app goes from its worktree, in pieces;
+    /// the command runs there; the screenshot it took comes back into the worktree under the name it gave. Anything
+    /// else is refused before a step leaves, and the screen's end takes the forwarding agent-device away.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn an_agents_command_for_its_ios_screen_elsewhere_runs_there_with_its_files() {
+        const THREAD: &str = "th-agent-1";
+        let dir = tempfile::tempdir().unwrap();
+        let (home, worktree, mac) = (
+            dir.path().join("node"),
+            dir.path().join("work"),
+            dir.path().join("mac"),
+        );
+        std::fs::create_dir_all(worktree.join("build")).unwrap();
+        let app = vec![b'z'; remote_device::PIECE + 5];
+        std::fs::write(worktree.join("build/app.zip"), &app).unwrap();
+        let program = dir.path().join("agent-device");
+        std::fs::write(
+            &program,
+            "#!/bin/sh\n\
+             case \"$1\" in\n\
+             install) echo \"Installed $2: $(wc -c < \"$2\" | tr -d ' ') bytes\";;\n\
+             screenshot) printf PNG > \"$2\"; echo \"Saved $2\";;\n\
+             *) echo \"ran $*\";;\n\
+             esac\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(
+            &program,
+            std::os::unix::fs::PermissionsExt::from_mode(0o755),
+        )
+        .unwrap();
+        let key = [9u8; 32];
+        let relay = LeadRelay::new();
+        let (_link, ops) = screen_elsewhere(
+            &relay,
+            key,
+            remote_device::Work::at(&mac, HOST_KEY),
+            program,
+        );
+        let mut router = router(relay, None);
+        let tree = worktree.clone();
+        let r = Arc::get_mut(&mut router).unwrap();
+        r.home = home.clone();
+        r.worktree_of = Arc::new(move |_| Some(tree.clone()));
+        router.remotes.lock().insert(
+            THREAD.to_owned(),
+            RemoteDevice::new(SCREEN.into(), zeroize::Zeroizing::new(key)),
+        );
+        remote_device::install_forwarder(&home, THREAD, "/n/bin/fleetd-agent-1").unwrap();
+        let env = SessionHooks::env(router.as_ref(), THREAD, Some("/usr/bin"));
+        let path = &env.iter().find(|(k, _)| k == "PATH").unwrap().1;
+        assert!(
+            path.starts_with(&format!(
+                "{}:",
+                remote_device::bin_dir(&home, THREAD).display()
+            )),
+            "the forwarder first: {path}"
+        );
+        let call = |call: Value, cwd: &Path| {
+            let frame: BrowserCallFrame = serde_json::from_value(json!({
+                "id": "c1", "cwd": cwd, "threadId": THREAD, "call": call,
+            }))
+            .unwrap();
+            let router = router.clone();
+            async move { serde_json::to_value(route(router, THREAD.to_owned(), frame).await).unwrap() }
+        };
+        let run = |args: &[&str]| json!({ "op": "device", "step": "run", "args": args });
+
+        let installed = call(run(&["install", "app.zip"]), &worktree.join("build")).await;
+        assert_eq!(
+            installed["result"]["stdout"],
+            format!("Installed app.zip: {} bytes\n", app.len()),
+            "{installed}"
+        );
+        let shot = call(run(&["screenshot", "shots/home.png"]), &worktree).await;
+        assert_eq!(shot["result"]["stdout"], "Saved shots/home.png\n", "{shot}");
+        assert_eq!(
+            shot["result"]["files"],
+            json!([{ "name": "shots/home.png", "bytes": 3 }])
+        );
+        assert_eq!(
+            std::fs::read(worktree.join("shots/home.png")).unwrap(),
+            b"PNG"
+        );
+        assert_eq!(
+            *ops.lock().unwrap(),
+            vec![
+                "put 1-app.zip 0".to_owned(),
+                format!("put 1-app.zip {}", remote_device::PIECE),
+                "run install in/1-app.zip".to_owned(),
+                "run screenshot out/2-home.png".to_owned(),
+                "get 2-home.png 0".to_owned(),
+            ]
+        );
+
+        // Refused on devbox, before anything goes: a file outside the worktree, a command that doesn't drive the
+        // screen, a file step of the agent's own.
+        let outside = call(run(&["install", "/etc/hosts"]), &worktree).await;
+        assert!(
+            outside["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("outside your worktree"),
+            "{outside}"
+        );
+        let shell = call(run(&["batch", "--steps", "[]"]), &worktree).await;
+        assert!(
+            shell["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("doesn't run here"),
+            "{shell}"
+        );
+        let put = call(
+            json!({ "op": "device", "step": "put", "name": "x", "offset": 0, "dataB64": "" }),
+            &worktree,
+        )
+        .await;
+        assert_eq!(put["error"]["code"], "forbidden", "{put}");
+        assert_eq!(ops.lock().unwrap().len(), 5, "none of them reached mac1");
+
+        // The agent's claude exits: the screen ends there, and its forwarder goes here.
+        SessionHooks::ended(router.as_ref(), THREAD);
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while router.remotes.has(THREAD) {
+            assert!(std::time::Instant::now() < deadline, "not ended");
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert_eq!(
+            ops.lock().unwrap().last().map(String::as_str),
+            Some("session_end")
+        );
+        assert!(!remote_device::bin_dir(&home, THREAD).exists());
+        let after = call(run(&["snapshot"]), &worktree).await;
+        assert_eq!(after["error"]["code"], "not_found", "{after}");
     }
 
     #[test]

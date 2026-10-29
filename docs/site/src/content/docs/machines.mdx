@@ -323,6 +323,10 @@ A screen on another machine works as one on the agent's own:
   logs none of it.
 - **Its steps are recorded there.** Each `agent-browser` command that drove it goes into the hosting machine's
   recording, with the page after it, masked on the agent's machine first.
+- **An iOS screen's commands go sealed.** The agent's `agent-device` commands, and the files they read and write, go
+  through the hub sealed with the same key, and the Mac runs only agent-device commands that drive that screen
+  ([iOS screens from another machine](/docs/browser-sessions#ios-elsewhere)). Android screens stay on their agent's
+  machine for now.
 
 Only machines whose fleetd seals and opens these boxes take part. An agent on a machine with browser screens turned
 off can't start one anywhere: it has no proxy to drive it through.

@@ -898,3 +898,106 @@ async fn an_agent_opens_settings_on_an_ios_session_and_its_recording_is_on_the_h
     );
     simulators.shutdown().await;
 }
+
+/// A screen this Mac hosts for an agent on another machine (node/device/remote.rs): its agent-device commands run on
+/// its own clone, in its own folder, and log as the agent's own would; its screenshot comes back; a selector of another
+/// device is refused; a person's control holds the commands back until they hand it back; its end takes the folder.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_screen_hosted_for_an_agent_elsewhere_runs_its_agent_device_commands() {
+    use base64::Engine;
+    if let Some(why) = no_xcode() {
+        eprintln!("skipped: {why}");
+        return;
+    }
+    const KEY: &str = "H0123456789abcdef0123456789abcdef";
+    let home = install_home();
+    if pool::find(&home).is_none() {
+        pool::prepare(&home, None).await.unwrap();
+    }
+    let hub_home = tempfile::tempdir().unwrap();
+    let hub = hub(hub_home.path());
+    let simulators = Simulators::start(
+        &home,
+        opted_in(),
+        hub.clone(),
+        Arc::new(|_| Ok(Secrets::default())),
+    )
+    .await;
+    let t = Instant::now();
+    while simulators.warm() == 0 {
+        assert!(
+            t.elapsed() < Duration::from_secs(300),
+            "the pool booted no clone"
+        );
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    // One simulator at a time on CI's VM, as in the session above.
+    simulators.hold_refill(true);
+    let router = Router {
+        browser: None,
+        devices: None,
+        ios: Some(simulators.clone()),
+        live: Default::default(),
+        desktops: None,
+    };
+    let handle = |call: Value| {
+        let frame: BrowserCallFrame =
+            serde_json::from_value(json!({ "id": "h1", "cwd": "/work/app", "call": call }))
+                .unwrap();
+        let router = &router;
+        async move { serde_json::to_value(router.handle(KEY.to_owned(), frame).await).unwrap() }
+    };
+    let device = |args: &[&str]| handle(json!({ "op": "device", "step": "run", "args": args }));
+    let started =
+        handle(json!({ "op": "session_start", "purpose": "The phone app", "kind": "ios" })).await;
+    let id = started["result"]["sessionId"]
+        .as_str()
+        .expect("started")
+        .to_owned();
+
+    let t = Instant::now();
+    let opened = device(&["open", "com.apple.Preferences"]).await;
+    assert_eq!(opened["result"]["exitCode"], 0, "{opened}");
+    eprintln!("a hosted screen's first command: {} ms", ms(t.elapsed()));
+    let shot = device(&["screenshot", "out/1-home.png"]).await;
+    assert_eq!(shot["result"]["exitCode"], 0, "{shot}");
+    assert_eq!(shot["result"]["files"][0]["name"], "1-home.png", "{shot}");
+    let got =
+        handle(json!({ "op": "device", "step": "get", "name": "1-home.png", "offset": 0 })).await;
+    let png = base64::engine::general_purpose::STANDARD
+        .decode(got["result"]["dataB64"].as_str().expect("a piece"))
+        .unwrap();
+    assert_eq!(png.get(..4), Some(&b"\x89PNG"[..]));
+
+    let golden = pool::find(&home).unwrap();
+    let elsewhere = device(&["snapshot", "--udid", &golden.udid]).await;
+    assert_eq!(elsewhere["error"]["code"], "invalid", "{elsewhere}");
+
+    simulators.set_control(&id, BrowserControl::Human, "human:desk");
+    let paused = device(&["snapshot", "-i"]).await;
+    assert_eq!(paused["result"]["exitCode"], 75, "{paused}");
+    assert!(
+        paused["result"]["stderr"]
+            .as_str()
+            .unwrap()
+            .contains("A person has control")
+    );
+    simulators.set_control(&id, BrowserControl::HandingBack, "human:desk");
+    let after = device(&["snapshot", "-i"]).await;
+    assert_eq!(after["result"]["exitCode"], 0, "{after}");
+    assert_eq!(
+        simulators.live(KEY).unwrap().control(),
+        BrowserControl::Agent
+    );
+
+    let ended = handle(json!({ "op": "session_end" })).await;
+    assert_eq!(ended["result"]["kind"], "ios", "{ended}");
+    assert!(!home.join("sessions").join(KEY).join("device-work").exists());
+    wait_recorded(&hub, &id).await;
+    let actions = String::from_utf8(read_file(&hub, &id, "actions").await).unwrap();
+    assert!(
+        actions.contains("agent-device screenshot out/1-home.png"),
+        "{actions}"
+    );
+    simulators.shutdown().await;
+}

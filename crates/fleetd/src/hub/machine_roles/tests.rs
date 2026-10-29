@@ -217,6 +217,7 @@ fn mac1_node(
                     started += 1;
                     json!({ "op": "session_start", "sessionId": id, "cdp": "ws://127.0.0.1:1/x", "startMs": 5 })
                 }
+                "device" => json!({ "op": "device", "step": "sealed", "dataB64": "c2VhbGVk" }),
                 _ => json!({ "op": "session_end", "sessionId": SESSION, "files": [] }),
             };
             let _ = seen_tx.send((host.host_key.to_string(), op.to_owned()));
@@ -335,6 +336,43 @@ async fn a_session_its_machine_cannot_host_goes_to_one_that_can_and_its_calls_fo
         .with(|c| super::live_on(c, &mid("mac1"), NOW_MS as i64))
         .unwrap();
     assert_eq!(live, 0);
+}
+
+/// An agent's agent-device steps go to its own iOS screen's runner, as they came; another agent session's go nowhere,
+/// whatever they say: the hub knows a screen by the session that started it.
+#[tokio::test]
+async fn an_agents_device_steps_reach_its_own_screen_and_no_one_elses() {
+    let (hub, _home) = hub();
+    let _devbox = remote(&hub);
+    let (_link, mut seen) = mac1_node(&hub);
+    let routed = route(&hub, "th-1", SessionHost::Ios, start())
+        .await
+        .unwrap();
+    assert_eq!(routed.runner, mid("mac1"));
+    let (key, _) = seen.recv().await.unwrap();
+    let step = json!({ "op": "device", "step": "sealed", "count": 1, "dataB64": "b3BhcXVl" });
+    let own = route(&hub, "th-1", SessionHost::Browser, step.clone())
+        .await
+        .unwrap();
+    assert!(!own.here);
+    assert_eq!(
+        own.answer.unwrap().result,
+        Some(
+            serde_json::from_value(
+                json!({ "op": "device", "step": "sealed", "dataB64": "c2VhbGVk" })
+            )
+            .unwrap()
+        )
+    );
+    assert_eq!(seen.recv().await.unwrap(), (key, "device".to_owned()));
+    let other = route(&hub, "th-2", SessionHost::Browser, step)
+        .await
+        .unwrap();
+    assert!(
+        other.here,
+        "not placed anywhere for th-2: its own node's to refuse"
+    );
+    assert!(seen.try_recv().is_err(), "nothing reached mac1 for th-2");
 }
 
 #[tokio::test]

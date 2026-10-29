@@ -285,7 +285,8 @@ async fn run_node(
             device::ios::Simulators::start(
                 home,
                 ios_config,
-                Arc::new(browser::upload::RelayHub(relay.clone())),
+                // A hosted screen's sealed secrets and relay key go once it reports itself ended, as a browser's do.
+                hosted.watch(Arc::new(browser::upload::RelayHub(relay.clone()))),
                 secrets_for.clone(),
             )
             .await,
@@ -331,7 +332,15 @@ async fn run_node(
         mask_for: mask_for.clone(),
         filled_elsewhere: session_route::FilledElsewhere::default(),
         hosted_ids: Default::default(),
+        home: home.to_path_buf(),
+        worktree_of: {
+            let sessions = node_sessions.clone();
+            Arc::new(move |thread| sessions.session_cwd(thread))
+        },
+        remotes: Default::default(),
     });
+    // Forwarders and screen folders a stopped node left: their screens went with it.
+    device::remote::sweep(home);
     if sessions_router.is_some() {
         node_sessions.set_browser(router.clone());
     }
