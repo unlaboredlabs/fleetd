@@ -1,5 +1,6 @@
-// One open approval as one calm card: who asks and what, the fields that decide it, the rest (every field, in full)
-// behind Details, and Approve and Deny. Money, irreversible and secret-using asks say so in a quiet line. Used in the
+// One open approval as one calm card: who asks and what, every field that decides it in full (what runs, who it
+// reaches, as whom, what it says: the card is what the person approves), context such as where a command runs behind
+// Details, and Approve and Deny. Money, irreversible and secret-using asks say so in a quiet line. Used in the
 // Approvals list and inline in a chat.
 import { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
@@ -19,9 +20,6 @@ const RISK: Record<NonNullable<ApprovalView["risk"]>, { icon: IconName; text: st
   irreversible: { icon: "irreversible", text: "Can't be undone" },
   credential: { icon: "credential", text: "Uses a secret" },
 };
-
-/** The lines a long value shows before Details. */
-const CLAMP = 4;
 
 export function ApprovalCard({
   request,
@@ -46,7 +44,7 @@ export function ApprovalCard({
   const view = approvalView(request, projectTitle);
   const risk = view.risk === undefined ? undefined : RISK[view.risk];
   const shown = view.fields.filter((f) => open || f.more !== true);
-  const hidden = view.fields.length - view.fields.filter((f) => f.more !== true).length;
+  const hidden = view.fields.some((f) => f.more === true);
   return (
     <Card on={on}>
       <View style={styles.head} accessible accessibilityLabel={`${view.title}${risk === undefined ? "" : `. ${risk.text}`}`}>
@@ -72,14 +70,14 @@ export function ApprovalCard({
           {shown.map((f) => (
             <View key={f.label} style={styles.field}>
               <Text style={[type.footnote, { color: t.secondary }]}>{f.label}</Text>
-              <Text style={[f.mono === true ? styles.mono : type.subhead, { color: t.label }]} numberOfLines={open ? undefined : CLAMP} selectable>
+              <Text style={[f.mono === true ? styles.mono : type.subhead, { color: t.label }]} selectable>
                 {f.value}
               </Text>
             </View>
           ))}
         </View>
       )}
-      {hidden === 0 && !view.fields.some((f) => f.value.length > 160 || f.value.split("\n").length > CLAMP) ? null : (
+      {!hidden ? null : (
         <Pressable
           accessibilityRole="button"
           accessibilityState={{ expanded: open }}

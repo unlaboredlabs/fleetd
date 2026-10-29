@@ -91,7 +91,11 @@ export interface ApprovalView {
   readonly wants: string;
   /** Marked on the card: it spends money, can't be undone, or uses a secret. */
   readonly risk: "money" | "irreversible" | "credential" | undefined;
-  /** `more`: shown under Details, not on the card's face. */
+  /**
+   * `more`: context shown under Details (where a command runs, its kind, a tool's raw input). Everything that decides
+   * the answer (what runs, who it reaches, as whom, what it says) is always on the card's face, in full: the card is
+   * what the person approves.
+   */
   readonly fields: ReadonlyArray<{ readonly label: string; readonly value: string; readonly mono?: boolean; readonly more?: boolean }>;
 }
 
@@ -113,12 +117,12 @@ export const approvalView = (r: HumanRequest, projectTitle: string | undefined):
     add("Command", r.gated.argv.join(" "), { mono: true });
     add("In", r.gated.cwd, { mono: true, more: true });
     add("Kind", r.gated.class, { more: true });
-    add("Secrets", list(r.gated.secretEnv?.map((e) => e.name)), { more: true });
+    add("Secrets", list(r.gated.secretEnv?.map((e) => e.name)));
   } else if (preview !== undefined) {
     // The hub words it to follow "<the Navi> wants to": "Send an email".
     wants = `wants to ${preview.title.charAt(0).toLowerCase()}${preview.title.slice(1)}`;
     risk = preview.action === "spend" ? "money" : preview.action === "delete" ? "irreversible" : undefined;
-    add("As", preview.account, { more: true });
+    add("As", preview.account);
     add("To", list(preview.to));
     add("Cc", list(preview.cc));
     add("Bcc", list(preview.bcc));
@@ -139,6 +143,6 @@ export const approvalView = (r: HumanRequest, projectTitle: string | undefined):
   } else {
     wants = "asks for approval";
   }
-  add("Asked", r.text, { more: fields.some((f) => f.more !== true) });
+  add("Asked", r.text);
   return { title: `${who} ${wants}`, who, wants, risk, fields };
 };

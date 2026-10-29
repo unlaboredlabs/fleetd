@@ -85,7 +85,7 @@ describe("approvals", () => {
         { label: "Command", value: "vercel deploy --prod", mono: true },
         { label: "In", value: "/home/devbox/shop", mono: true, more: true },
         { label: "Kind", value: "irreversible", more: true },
-        { label: "Asked", value: "Deploy the fix", more: true },
+        { label: "Asked", value: "Deploy the fix" },
       ],
     });
   });
@@ -98,14 +98,15 @@ describe("approvals", () => {
         threadId: "t1",
         toolName: "mcp__gmail__send",
         summary: "Send an email",
-        preview: { title: "Send an email", to: ["a@example.com", "b@example.com"], subject: "Lease", body: "Signed.", input: '{"to":["a@example.com"]}', integration: "google", server: "gmail", tool: "send", action: "send" },
+        preview: { title: "Send an email", account: "sam@example.com", to: ["a@example.com", "b@example.com"], subject: "Lease", body: "Signed.", input: '{"to":["a@example.com"]}', integration: "google", server: "gmail", tool: "send", action: "send" },
       },
     };
     const view = approvalView(r, "Ada");
     expect(view.title).toBe("Ada wants to send an email");
     expect(view.risk).toBeUndefined();
-    expect(view.fields.filter((f) => f.more === true).map((f) => f.label)).toEqual(["Input", "Asked"]);
+    expect(view.fields.filter((f) => f.more === true).map((f) => f.label)).toEqual(["Input"]);
     expect(view.fields.map((f) => [f.label, f.value])).toEqual([
+      ["As", "sam@example.com"],
       ["To", "a@example.com, b@example.com"],
       ["Subject", "Lease"],
       ["Body", "Signed."],
