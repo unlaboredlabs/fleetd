@@ -2291,7 +2291,7 @@ export const screens: readonly Screen[] = [
     open: (page) => page.getByRole("searchbox", { name: "Search settings" }).fill("zebra"),
   },
   // Your devices: Sam's own two, then Pair a phone's QR with the address and code under it.
-  { id: "settings.devices", route: "#/settings/devices", fixtures: ["admin-owner", "empty", "hub-unreachable"] },
+  { id: "settings.devices", route: "#/settings/devices", fixtures: ["admin-owner", "admin-member", "hub-unreachable"] },
   {
     id: "settings.devices",
     route: "#/settings/devices",
