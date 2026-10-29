@@ -4,7 +4,8 @@ D218. Phone notifications show the full text, like a chat app's, and only the ph
 X25519 key pair when it pairs and registers its push token and public key with the hub. The hub seals each
 notification to that key and posts the ciphertext to a push relay. The relay is `fleetd push-relay`: open source,
 run by whoever holds the app's Apple and Firebase credentials. It forwards the ciphertext to APNs or FCM without
-reading it. On the phone, the iOS Notification Service Extension or the Android message handler opens it and shows
+reading it. For the published app (sh.fleetd.app) that relay is `https://push.fleetd.sh`, and every hub sends there
+until told otherwise (D225). On the phone, the iOS Notification Service Extension or the Android message handler opens it and shows
 it.
 
 ```text
@@ -25,19 +26,35 @@ person, is refused.
 | `push_device_register` | `{platform: "ios"\|"android", token, publicKey, name}` | `{device, relay}` |
 | `push_devices_list` | `{}` | `{devices, relay}` |
 | `push_device_remove` | `{deviceId}` | `{device}` |
-| `push_relay_set` | `{url, key?}` (empty URL: none) | `{url?, key}` |
+| `push_relay_set` | `{url, key?}` (empty URL: off) | `{url?, key, default}` |
 
 - `token`: the APNs device token as hex, or the FCM registration token.
 - `publicKey`: the phone's 32-byte X25519 public key in standard base64.
 - `device`: `{deviceId: "pd_…", platform, name, createdAt, lastSentAt?}`. The token and key are never returned.
-- `relay`: whether the hub has a relay set. Without one it sends nothing.
+- `relay`: whether the hub sends notifications: true with the default relay, false once an admin turned them off.
 - Registering the same token again updates that device (a new key or name) and moves it to the caller's person. The
   app registers again whenever the OS gives it a new token, and removes the device when the person signs out.
 - At most 20 devices per person.
 - `push_relay_set` needs Admin on every machine: an owner or admin, or `fleetd push-relay set` on the hub. `key` is
   the relay's key sealed (`crypto_box_seal`) to the hub's `boxPubKey` from `hub_links_get`; the hub keeps it sealed
   to itself and sends it as `Authorization: Bearer`. The call replaces the whole setting: a URL without `key` drops
-  the key. The output's `key` says whether one is kept.
+  the key. The output's `key` says whether one is kept, `default` whether the default relay applies.
+
+## The relay setting
+
+One row in `push_relay`, three states:
+
+| Row | The hub sends to |
+|---|---|
+| none (never set) | `https://push.fleetd.sh` (`DEFAULT_RELAY` in `hub/push/mod.rs`), with no key |
+| `url = ''` (`set off`) | nobody. Kept in the database, so it outlasts a restart |
+| a URL, maybe a sealed key | that relay, with that key |
+
+`set https://push.fleetd.sh` without a key deletes the row, so the hub follows the default again. Whatever is set,
+the hub sends push.fleetd.sh no key and reaches it over https only: `push_relay_set` refuses `http://` or a key for
+that host, and a row that says otherwise sends nothing and logs why. A hub that ran `set off` before D225 has no row
+and now uses the default; run `set off` again. There is no per-hub binding of a phone to its hub (Nextcloud's push
+proxy has one): only if the public relay is ever abused.
 
 A device whose key is revoked (signed out under Settings › You), or whose person was removed, gets nothing.
 
@@ -49,8 +66,9 @@ A device whose key is revoked (signed out under Settings › You), or whose pers
 - The hub seals with `crypto_box_seal`: an ephemeral X25519 key, XSalsa20-Poly1305, and the nonce from
   BLAKE2b(ephemeral key ‖ device key). The phone opens it with `crypto_box_seal_open`. The sealed box is the
   plaintext plus 48 bytes, sent as standard base64.
-- A phone paired with several hubs uses one key pair per hub, or the same one for all. The payload's `hub` says
-  which hub sent it.
+- A key pair is one hub's. The phone pairs with one hub at a time, makes a new pair at each pairing and deletes it
+  at Disconnect (`pairWith` and `forgetPush` in `src/vault.ts`), so no hub it was paired with before can seal a
+  notification that opens there and claims to come from another. The payload's `hub` says which hub sent it.
 
 ## The payload
 
@@ -113,7 +131,7 @@ push about the same request replaces it.
 |---|---|
 | 200 `{"status": "sent"}` | APNs or FCM took it. |
 | 200 `{"status": "dead"}` | APNs or FCM no longer knows the token. The hub drops the device. |
-| 400 / 401 / 413 / 429 / 502 / 503 `{"status": "failed", "error"}` | Malformed, no or the wrong relay key, too big (ciphertext over 3500 characters, body over 8 KB), more than 60 pushes a minute to one token, an upstream failure, or a platform the relay has no credentials for. |
+| 400 / 401 / 413 / 429 / 502 / 503 `{"status": "failed", "error"}` | Malformed, no or the wrong relay key, too big (ciphertext over 3500 characters, body over 8 KB), more than 60 pushes a minute to one token or 600 from one IP address, an upstream failure, or a platform the relay has no credentials for. |
 
 `dead` is only an answer that means that token alone is gone: APNs 410 (Unregistered); APNs BadDeviceToken or
 DeviceTokenNotForTopic once a push has gone through since the relay started (before that they are what every token
@@ -123,6 +141,9 @@ gets with the wrong `FLEETD_APNS_SANDBOX` or `FLEETD_APNS_TOPIC`); FCM UNREGISTE
 person's devices, or their only one, the hub keeps them all. It logs each distinct failure once an hour at most.
 
 With `FLEETD_PUSH_RELAY_KEY_FILE` set, the relay refuses a request without `Authorization: Bearer <key>` (401).
+push.fleetd.sh runs without one: anyone may post to it, so it counts pushes per source IP as well as per token. The
+source is the TCP peer; when the peer is loopback (Caddy in front of the relay on the same machine) it is the last
+`X-Forwarded-For` entry, the one the proxy added. A header from any other peer is ignored.
 
 `GET /` answers `{"ok": true, "apns": bool, "fcm": bool}`.
 
@@ -135,16 +156,20 @@ With `FLEETD_PUSH_RELAY_KEY_FILE` set, the relay refuses a request without `Auth
 
 The Notification Service Extension opens `c` and sets the title and body. It sets `threadIdentifier` to
 `machineId/projectId`, drops the sound when `quiet`, and sets the interruption level to time-sensitive when
-`urgent`. If it can't open the payload, the generic alert shows.
+`urgent`. If it can't open the payload (another key, a newer version, a stranger who knows the token and posted to
+the relay), it sets the generic title and body itself (`Payload.swift`) and shows nothing of what came.
 
 **Android.** The relay sends an FCM HTTP v1 data message (`android.priority: high`, `collapse_key` when given) whose
 only data is `c`. The app's messaging service opens it and posts the notification itself, one notification per chat
-grouped by project.
+grouped by project. One that doesn't open shows nothing.
 
 ## The relay sees
 
-The relay sees a token, the ciphertext, the collapse key and the platform. It keeps nothing past the request: the
-rate limit counts by a hash of the token. It logs no token or ciphertext. Its credentials come from files named in
+The relay operator sees the device token, the ciphertext and its size, the collapse key, the platform, when each push
+was sent and the IP address of the hub that sent it. It can't see any content: not the title, the body, the project,
+the person or the hub's URL. It keeps nothing past the request: the rate limits count by a hash of the token and of
+the source address. It logs no token or ciphertext. A stranger who knows a device token can post to the relay but
+can't seal anything the phone opens: iOS shows at most the generic "fleetd: New activity", Android nothing. Its credentials come from files named in
 its environment, never the repo (`FLEETD_APNS_KEY_FILE`, `FLEETD_APNS_KEY_ID`, `FLEETD_APNS_TEAM_ID`,
 `FLEETD_APNS_TOPIC`, `FLEETD_APNS_SANDBOX`, `FLEETD_FCM_SERVICE_ACCOUNT`, `FLEETD_PUSH_RELAY_KEY_FILE`). How to run one:
 [docs/site phone-notifications](../site/src/content/docs/phone-notifications.md).
@@ -158,6 +183,12 @@ group it shares with the app. On Android, `src/notifications.ts` handles each FC
 and posts the notification on a channel per kind (`quiet` for quiet hours), one per chat or request. Both open the
 hub's own sealed boxes in their tests (`src/push.fixture.json`). Disconnect calls `push_device_remove`, then
 `device_revoke` for the phone's own key.
+
+## Running your own
+
+Someone building the app under their own bundle ID can't use push.fleetd.sh: it holds only sh.fleetd.app's keys.
+They run `fleetd push-relay` with their own credentials, with `FLEETD_PUSH_RELAY_KEY_FILE` whenever it is reachable
+beyond localhost, and point their hubs at it with `fleetd push-relay set <url> --relay-key-file <path>`.
 
 ## Later
 

@@ -5672,7 +5672,10 @@ export type PushDeviceRegisterInput = {
 export type PushDeviceRegisterOutput = {
   device: PushDevice;
   next?: string;
-  /** The hub has a push relay set: without one it sends nothing. */
+  /**
+   * The hub sends phone notifications: through its relay, push.fleetd.sh unless one is set. False when an admin
+   * turned them off.
+   */
   relay: boolean;
   truncated?: boolean;
 };
@@ -5708,6 +5711,8 @@ export type PushRelaySetInput = {
 };
 
 export type PushRelaySetOutput = {
+  /** The hub uses the default relay, https://push.fleetd.sh. */
+  default: boolean;
   /** The hub keeps a key for the relay. */
   key: boolean;
   next?: string;

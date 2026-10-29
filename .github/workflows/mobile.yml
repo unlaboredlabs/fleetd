@@ -140,7 +140,8 @@ jobs:
           cache-dependency-path: app/mobile/package-lock.json
       - name: Extension crypto
         run: |
-          swiftc -O plugins/notification-service/Sealed.swift plugins/notification-service/test/main.swift \
+          swiftc -O plugins/notification-service/Sealed.swift plugins/notification-service/Payload.swift \
+            plugins/notification-service/test/main.swift \
             -o "$RUNNER_TEMP/sealed-test"
           "$RUNNER_TEMP/sealed-test" src/push.fixture.json
       - run: npm ci --no-audit --no-fund

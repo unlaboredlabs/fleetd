@@ -89,7 +89,10 @@ async fn push_device_register(
                 },
                 now,
             )?;
-            Ok(Ok((device, super::relay(c)?.is_some())))
+            Ok(Ok((
+                device,
+                super::relay(c, super::DEFAULT_RELAY)?.is_some(),
+            )))
         })?
         .map_err(|()| {
             error(
@@ -102,7 +105,7 @@ async fn push_device_register(
         device,
         relay,
         next: (!relay).then(|| {
-            "The hub has no push relay yet: an owner or admin sets one with push_relay_set.".into()
+            "Phone notifications are off on this hub: an owner or admin turns them on with push_relay_set.".into()
         }),
         truncated: None,
     })
@@ -114,9 +117,12 @@ async fn push_devices_list(
     _input: PushDevicesListInput,
 ) -> Result<PushDevicesListOutput, ToolError> {
     let me = person(&caller)?;
-    let (devices, relay) = hub
-        .db
-        .with(|c| Ok((super::list(c, &me)?, super::relay(c)?.is_some())))?;
+    let (devices, relay) = hub.db.with(|c| {
+        Ok((
+            super::list(c, &me)?,
+            super::relay(c, super::DEFAULT_RELAY)?.is_some(),
+        ))
+    })?;
     Ok(PushDevicesListOutput {
         devices: List::unchecked(devices),
         relay,
@@ -175,17 +181,42 @@ async fn push_relay_set(
                 "Give the relay's address, such as https://push.example.com or http://devbox:4795.",
             ));
         }
+        // The public relay takes no key, and nothing goes to it in the clear.
+        if super::default_host(url) && (!url.starts_with("https://") || input.key.is_some()) {
+            return Err(error(
+                ErrorCode::Invalid,
+                format!(
+                    "{} takes pushes over https, without a key.",
+                    super::DEFAULT_RELAY
+                ),
+                format!("Set {} without a relay key.", super::DEFAULT_RELAY),
+            ));
+        }
         Some(url.to_owned())
     };
     let key_sealed = match (&url, &input.key) {
         (Some(_), Some(sealed)) => Some(reseal(&hub, sealed.as_str())?),
         _ => None,
     };
-    let relay = url.map(|url| super::RelaySetting { url, key_sealed });
-    hub.db
-        .transaction(|c| super::set_relay(c, relay.as_ref()))?;
+    // Off is kept as an empty URL, so it outlasts a restart; the default relay without a key is kept as no setting,
+    // so it follows DEFAULT_RELAY.
+    let relay = match url {
+        None => Some(super::RelaySetting {
+            url: String::new(),
+            key_sealed: None,
+        }),
+        Some(url) if url == super::DEFAULT_RELAY && key_sealed.is_none() => None,
+        Some(url) => Some(super::RelaySetting { url, key_sealed }),
+    };
+    let relay = hub.db.transaction(|c| {
+        super::set_relay(c, relay.as_ref())?;
+        super::relay(c, super::DEFAULT_RELAY)
+    })?;
     Ok(PushRelaySetOutput {
         key: relay.as_ref().is_some_and(|r| r.key_sealed.is_some()),
+        default: relay
+            .as_ref()
+            .is_some_and(|r| r.url == super::DEFAULT_RELAY && r.key_sealed.is_none()),
         url: relay.map(|r| r.url),
         next: None,
         truncated: None,

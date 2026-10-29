@@ -32,22 +32,27 @@ lead's message, an approval waiting for you, an order that landed or stopped.
    Keychain, shared only with the app's notification extension; on Android, in storage encrypted with a Keystore key.
 2. The app registers the phone's push token, from Apple's or Google's own push service (not Expo's), and its public
    key with the hub. It registers again whenever the phone gets a new token.
-3. The hub seals each notification to that key and sends the ciphertext through your
-   [push relay](/docs/phone-notifications), which passes it to Apple or Google.
+3. The hub seals each notification to that key and sends the ciphertext through the
+   [push relay](/docs/phone-notifications), `https://push.fleetd.sh` unless the hub sets another, which passes it
+   to Apple or Google.
 4. On the phone, the iOS notification extension or the Android app opens it and shows it.
 
-**What the relay sees:** the phone's push token, the ciphertext and its size. Nothing readable: not the title, the
-text or which chat it is about. Apple and Google see the same, plus a generic "fleetd: New activity" on iOS.
+**What the relay sees:** the phone's push token, the ciphertext's size, when it was sent and the hub's IP address.
+Nothing readable: not the title, the text or which chat it is about. Apple and Google see the same, plus a generic
+"fleetd: New activity" on iOS.
 
-- A notification the phone can't open (another key, a newer hub) shows "fleetd: New activity".
+- A notification the phone can't open (another hub's key, a newer hub, a stranger with the token) shows only "fleetd:
+  New activity" on iOS and nothing on Android.
 - During the hub's quiet hours, it arrives without a sound. On iOS, an urgent one (money, irreversible commands) is
   time-sensitive and shows during a Focus.
 - Android sorts them into channels, each of which you can mute in the system's settings: Chats, Approvals, Orders and
   alerts, Quiet hours. One notification per chat, replaced by the next.
 - Tapping one opens its chat, or Approvals with that request on top.
 
-The hub needs a relay set, and the app needs your push credentials when you build it: an APNs key for your bundle id
-on the relay, and your Firebase project's `google-services.json` for the Android build (below).
+The published app needs nothing set up: hubs send through push.fleetd.sh. An app you build yourself needs your own
+relay and push credentials: an APNs key for your bundle id on the relay, and your Firebase project's
+`google-services.json` for the Android build (below). See
+[Run your own relay](/docs/phone-notifications#own).
 
 ## Build it on GitHub {#build}
 

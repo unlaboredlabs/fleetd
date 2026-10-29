@@ -142,18 +142,14 @@ export interface Shown {
   readonly route?: Route;
 }
 
-/** What shows when a notification can't be opened: the relay's own generic alert. */
-export const GENERIC: Shown = { title: "fleetd", body: "New activity", channel: "other", urgent: false };
-
 export const routeOf = (p: PushPayload): Route | undefined => {
   const key = p.machineId !== undefined && p.projectId !== undefined ? keyOf({ machineId: p.machineId, projectId: p.projectId }) : undefined;
   if (p.kind === "approval" && p.requestId !== undefined) return key === undefined ? { t: "approval", requestId: p.requestId } : { t: "approval", requestId: p.requestId, key };
   return key === undefined ? undefined : { t: "chat", key };
 };
 
-/** The notification Android posts for a payload (iOS's extension does the same in Swift); GENERIC when it didn't open. */
-export const shownOf = (p: PushPayload | null): Shown => {
-  if (p === null) return GENERIC;
+/** The notification Android posts for a payload (iOS's extension does the same in Swift). */
+export const shownOf = (p: PushPayload): Shown => {
   const route = routeOf(p);
   const channel: Channel = p.quiet === true ? "quiet" : p.kind === "message" ? "chats" : p.kind === "approval" ? "approvals" : "other";
   const id = route?.t === "approval" ? `approval:${route.requestId}` : p.kind === "message" && route !== undefined ? `chat:${route.key}` : undefined;
@@ -165,6 +161,16 @@ export const shownOf = (p: PushPayload | null): Shown => {
     ...(id === undefined ? {} : { id }),
     ...(route === undefined ? {} : { route }),
   };
+};
+
+/**
+ * What Android posts for an FCM data message: null, so nothing shows, when it carries no `c` or `c` doesn't open with
+ * this phone's keys (another hub's, a newer version, or anyone who has the token and posts to the public relay).
+ */
+export const androidShown = (data: unknown, keys: KeyPair | null): Shown | null => {
+  const sealed = sealedOf(data);
+  const payload = sealed === undefined || keys === null ? null : openPayload(sealed, keys);
+  return payload === null ? null : shownOf(payload);
 };
 
 const routeFrom = (v: unknown): Route | undefined => {

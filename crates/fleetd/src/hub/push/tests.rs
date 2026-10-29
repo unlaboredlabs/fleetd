@@ -23,18 +23,18 @@ const AT: &str = "2026-10-19T10:00:00.000Z";
 
 fn hub() -> (Arc<Hub>, tempfile::TempDir) {
     let home = tempfile::tempdir().unwrap();
+    (hub_on(HubDb::open_memory().unwrap(), &home), home)
+}
+
+/// A hub over `db`, its home in `home`: the same home again is the same hub after a restart.
+fn hub_on(db: Arc<HubDb>, home: &tempfile::TempDir) -> Arc<Hub> {
     let config = HubConfig {
         home: home.path().to_path_buf(),
         listen: Listen::default(),
         url: Some("http://devbox:4790".into()),
         queue_ttl_sec: None,
     };
-    let hub = crate::hub::serve::build_on(
-        HubDb::open_memory().unwrap(),
-        config,
-        ManualClock::at(1_792_000_000_000),
-    )
-    .unwrap();
+    let hub = crate::hub::serve::build_on(db, config, ManualClock::at(1_792_000_000_000)).unwrap();
     let project = |id: &str, title: &str| -> fleetd_contracts::model::ProjectSummary {
         serde_json::from_value(json!({
             "machineId": "devbox", "projectId": id, "title": title, "workspaceRoot": format!("/work/{id}"),
@@ -48,7 +48,7 @@ fn hub() -> (Arc<Hub>, tempfile::TempDir) {
             &[project("app", "app"), project("navi", "Ada")],
         )
         .unwrap();
-    (hub, home)
+    hub
 }
 
 fn redeem(hub: &Hub, code: &str, device: &str) -> Caller {
@@ -425,7 +425,7 @@ async fn a_dead_token_drops_its_device_and_a_signed_out_one_gets_nothing() {
     assert!(listed["devices"][0]["lastSentAt"].is_string());
     assert_eq!(listed["relay"], true);
 
-    // Without a relay nothing is sent.
+    // Turned off, nothing is sent.
     ok(&hub, &owner, "push_relay_set", json!({ "url": "" })).await;
     lead_message(&hub, "app", 2, "Again.");
     let (_, _, sent) = step(&hub, &http, &mut follow, 0).await.unwrap();
@@ -535,7 +535,7 @@ async fn the_relays_key_is_kept_sealed_and_sent_as_a_bearer_token() {
 }
 
 fn relay_setting(c: &Connection) -> Result<RelaySetting, StoreError> {
-    Ok(relay(c)?.unwrap())
+    Ok(relay(c, DEFAULT_RELAY)?.unwrap())
 }
 
 #[tokio::test]
@@ -544,8 +544,9 @@ async fn phones_are_their_persons_and_the_relay_is_an_admins() {
     let owner = owner_device(&hub);
     let alice = member(&hub, &owner, "Alice", "alice-phone").await;
     let (_, mine) = phone(&hub, &owner, "ios", "ee55").await;
-    assert_eq!(mine["relay"], false);
-    assert!(mine["next"].as_str().unwrap().contains("push_relay_set"));
+    // Never set, the default relay sends.
+    assert_eq!(mine["relay"], true);
+    assert!(mine["next"].is_null());
     let id = mine["device"]["deviceId"].as_str().unwrap().to_owned();
     assert!(id.starts_with("pd_"));
 
@@ -632,4 +633,157 @@ async fn phones_are_their_persons_and_the_relay_is_an_admins() {
     )
     .await;
     assert_eq!(set["url"], "https://push.example.com");
+}
+
+/// The hub's Follow with the default relay at `url`, a fake standing in for push.fleetd.sh.
+fn follow_with_default(url: &str) -> Follow {
+    Follow {
+        default_relay: url.to_owned(),
+        ..Follow::default()
+    }
+}
+
+#[tokio::test]
+async fn a_hub_with_no_relay_set_sends_to_the_default_without_a_key() {
+    let (hub, _home) = hub();
+    let owner = owner_device(&hub);
+    let (_, registered) = phone(&hub, &owner, "ios", "aa11").await;
+    assert_eq!(registered["relay"], true);
+    assert_eq!(
+        ok(&hub, &owner, "push_devices_list", json!({})).await["relay"],
+        true
+    );
+    assert_eq!(hub.db.with(|c| relay(c, DEFAULT_RELAY)).unwrap(), {
+        Some(RelaySetting {
+            url: "https://push.fleetd.sh".into(),
+            key_sealed: None,
+        })
+    });
+    let (fake, url) = fake_relay().await;
+    let http = reqwest::Client::new();
+    lead_message(&hub, "app", 1, "Done.");
+    let (_, _, sent) = step(&hub, &http, &mut follow_with_default(&url), 0)
+        .await
+        .unwrap();
+    assert_eq!(sent.len(), 1);
+    assert_eq!(fake.got.lock().unwrap()[0].token, "aa11");
+    assert_eq!(fake.auth.lock().unwrap().clone(), [None]);
+
+    // A relay set overrides it, with or without a key; the default URL without a key is the default again.
+    let (other, other_url) = fake_relay().await;
+    let set = ok(&hub, &owner, "push_relay_set", json!({ "url": other_url })).await;
+    assert_eq!(
+        (set["url"].as_str(), set["default"].as_bool()),
+        (Some(other_url.as_str()), Some(false))
+    );
+    lead_message(&hub, "app", 2, "Again.");
+    step(&hub, &http, &mut follow_with_default(&url), 0)
+        .await
+        .unwrap();
+    assert_eq!(other.got.lock().unwrap().len(), 2);
+    assert_eq!(fake.got.lock().unwrap().len(), 1);
+    let set = ok(
+        &hub,
+        &owner,
+        "push_relay_set",
+        json!({ "url": "https://push.fleetd.sh/" }),
+    )
+    .await;
+    assert_eq!(
+        set,
+        json!({ "url": "https://push.fleetd.sh", "key": false, "default": true })
+    );
+    assert_eq!(
+        hub.db
+            .with(
+                |c| Ok(c.query_row("SELECT count(*) FROM push_relay", [], |r| r
+                    .get::<_, i64>(0))?)
+            )
+            .unwrap(),
+        0
+    );
+}
+
+#[tokio::test]
+async fn pushes_turned_off_stay_off_after_a_restart() {
+    let home = tempfile::tempdir().unwrap();
+    let data = tempfile::tempdir().unwrap();
+    let hub = hub_on(HubDb::open(data.path()).unwrap(), &home);
+    let owner = owner_device(&hub);
+    phone(&hub, &owner, "ios", "aa11").await;
+    let off = ok(&hub, &owner, "push_relay_set", json!({ "url": "" })).await;
+    assert_eq!(off, json!({ "key": false, "default": false }));
+    assert_eq!(
+        ok(&hub, &owner, "push_devices_list", json!({})).await["relay"],
+        false
+    );
+    drop(hub);
+
+    let hub = hub_on(HubDb::open(data.path()).unwrap(), &home);
+    let (fake, url) = fake_relay().await;
+    lead_message(&hub, "app", 1, "Done.");
+    let (_, _, sent) = step(
+        &hub,
+        &reqwest::Client::new(),
+        &mut follow_with_default(&url),
+        0,
+    )
+    .await
+    .unwrap();
+    assert!(sent.is_empty());
+    assert!(fake.got.lock().unwrap().is_empty());
+    let (_, registered) = phone(&hub, &owner, "ios", "bb22").await;
+    assert_eq!(registered["relay"], false);
+    assert!(registered["next"].as_str().unwrap().contains("off"));
+}
+
+#[tokio::test]
+async fn the_default_relay_gets_no_key_and_nothing_in_the_clear() {
+    let (hub, _home) = hub();
+    let owner = owner_device(&hub);
+    let box_pub_key = ok(&hub, &owner, "hub_links_get", json!({})).await["boxPubKey"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let to_hub: [u8; 32] = B64.decode(&box_pub_key).unwrap().try_into().unwrap();
+    for url in ["http://push.fleetd.sh", "https://PUSH.fleetd.sh/"] {
+        let input = if url.starts_with("http:") {
+            json!({ "url": url })
+        } else {
+            json!({ "url": url, "key": seal(&to_hub, b"relay-key-1") })
+        };
+        assert_eq!(
+            refused(&hub, &owner, "push_relay_set", input).await,
+            ErrorCode::Invalid,
+            "{url}"
+        );
+    }
+
+    // A setting kept from before (or written by hand) is still never sent a key, nor sent to over http.
+    let kept = |url: &str| RelaySetting {
+        url: url.into(),
+        key_sealed: Some("c2VhbGVk".into()),
+    };
+    assert_eq!(sendable(&kept("https://push.fleetd.sh")), Ok(None));
+    assert_eq!(sendable(&kept("https://push.fleetd.sh:443/x")), Ok(None));
+    assert!(sendable(&kept("http://push.fleetd.sh")).is_err());
+    assert_eq!(
+        sendable(&kept("https://push.example.com")),
+        Ok(Some("c2VhbGVk"))
+    );
+    assert_eq!(
+        sendable(&kept("https://push.fleetd.sh.example.com")),
+        Ok(Some("c2VhbGVk"))
+    );
+    hub.db
+        .with(|c| set_relay(c, Some(&kept("http://push.fleetd.sh"))))
+        .unwrap();
+    phone(&hub, &owner, "ios", "aa11").await;
+    lead_message(&hub, "app", 1, "Done.");
+    let mut follow = Follow::default();
+    let (_, _, sent) = step(&hub, &reqwest::Client::new(), &mut follow, 0)
+        .await
+        .unwrap();
+    assert!(sent.is_empty());
+    assert!(follow.warned.keys().any(|w| w.contains("https only")));
 }

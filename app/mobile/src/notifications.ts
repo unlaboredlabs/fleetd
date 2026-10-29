@@ -7,7 +7,7 @@ import * as Notifications from "expo-notifications";
 import * as TaskManager from "expo-task-manager";
 import { useEffect } from "react";
 import { Platform } from "react-native";
-import { CHANNELS, openPayload, sealedOf, shownOf, tapRoute, type Channel, type PushDeps, type Route, type Shown } from "./push";
+import { androidShown, CHANNELS, tapRoute, type Channel, type PushDeps, type Route, type Shown } from "./push";
 import { loadPushDevice, loadPushKeys, pushKeys, savePushDevice } from "./vault";
 
 const TASK = "fleetd-push";
@@ -58,13 +58,11 @@ const post = async (shown: Shown): Promise<void> => {
 };
 
 // Android: every FCM data message, in the foreground, in the background or with the app closed. Its only data is
-// `c`; one that doesn't open (another key, a newer version) shows the generic text, as iOS does.
+// `c`; one that doesn't open (another key, a newer version, a stranger with the token) shows nothing.
 TaskManager.defineTask<Notifications.NotificationTaskPayload>(TASK, async ({ data }) => {
   if (Platform.OS !== "android" || "actionIdentifier" in data) return;
-  const sealed = sealedOf(data);
-  if (sealed === undefined) return;
-  const keys = await loadPushKeys();
-  await post(shownOf(keys === null ? null : openPayload(sealed, keys)));
+  const shown = androidShown(data, await loadPushKeys());
+  if (shown !== null) await post(shown);
 });
 
 /** At launch: the background task, and what the app shows while it is open (what the task posted; not the raw data message). */

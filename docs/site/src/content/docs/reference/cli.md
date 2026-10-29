@@ -492,7 +492,7 @@ your custom instructions, appended to every lead and task
 fleetd push-relay [--listen 127.0.0.1:4795]
 ```
 
-forward hubs' sealed phone notifications to APNs and FCM with your own credentials: FLEETD\_APNS\_KEY\_FILE (a .p8), FLEETD\_APNS\_KEY\_ID, FLEETD\_APNS\_TEAM\_ID, FLEETD\_APNS\_TOPIC (the app's bundle id), FLEETD\_APNS\_SANDBOX=1 for development builds; FLEETD\_FCM\_SERVICE\_ACCOUNT (a Firebase service account's JSON key). FLEETD\_PUSH\_RELAY\_KEY\_FILE (a file holding a key): take only hubs that send it. It never reads, keeps or logs a notification
+forward hubs' sealed phone notifications to APNs and FCM with your own credentials: FLEETD\_APNS\_KEY\_FILE (a .p8), FLEETD\_APNS\_KEY\_ID, FLEETD\_APNS\_TEAM\_ID, FLEETD\_APNS\_TOPIC (the app's bundle id), FLEETD\_APNS\_SANDBOX=1 for development builds; FLEETD\_FCM\_SERVICE\_ACCOUNT (a Firebase service account's JSON key). FLEETD\_PUSH\_RELAY\_KEY\_FILE (a file holding a key): take only hubs that send it; set one when the relay is reachable beyond this machine. It never reads, keeps or logs a notification. Run your own only for an app you build yourself
 
 ### fleetd push-relay set {#push-relay-set}
 
@@ -500,7 +500,7 @@ forward hubs' sealed phone notifications to APNs and FCM with your own credentia
 fleetd push-relay set <url|off> [--relay-key-file <path>] [--hub <url> --key-file <path> | --home <dir>]
 ```
 
-send this hub's phone notifications through the relay at \<url\>, with the key in `--relay-key-file` when the relay takes one, sealed to the hub; off sends none (admin key on every machine)
+hubs send phone notifications through https://push.fleetd.sh, the relay for the published app, without a key. \<url\> sends them through your own relay instead, with the key in `--relay-key-file` when it takes one, sealed to the hub; https://push.fleetd.sh goes back to the default; off sends none (admin key on every machine)
 
 ### fleetd time {#time}
 

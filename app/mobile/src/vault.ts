@@ -52,3 +52,11 @@ export const forgetPush = async (): Promise<void> => {
   await SecureStore.deleteItemAsync(SECRET_KEY, PUSH);
   await SecureStore.deleteItemAsync(DEVICE, PUSH);
 };
+
+/**
+ * Keeps a newly paired hub, with a new notification key pair: a key pair is one hub's, so no hub this phone was paired
+ * with before can seal a notification that opens here (and claim to come from another).
+ */
+export const pairWith = async (paired: Paired): Promise<void> => {
+  await Promise.all([savePaired(paired), forgetPush().then(pushKeys)]);
+};
