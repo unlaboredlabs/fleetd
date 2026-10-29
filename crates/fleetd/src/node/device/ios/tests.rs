@@ -522,17 +522,70 @@ const WARM_MAX: Duration = Duration::from_secs(
     pool::BOOT_TIMEOUT.as_secs() + pool::RUNNER_START.as_secs() + 60 + pool::DAEMON_EXIT.as_secs(),
 );
 
+/// The runner the pool started on a clone, and what the pool's agent-device daemon said as it stopped.
+struct PoolRunner {
+    lease: super::wrapper::Lease,
+    said: String,
+}
+
 /// That the clone a session got from the pool has its XCTest runner up, as the pool started it: leased, its xcodebuild
 /// running and the runner listening, so the agent's first command doesn't wait for it to start.
-fn runner_up(home: &std::path::Path, udid: &str) -> Result<(), String> {
+fn runner_up(home: &std::path::Path, udid: &str) -> Result<PoolRunner, String> {
     let lease =
         super::wrapper::lease(home, udid).ok_or_else(|| format!("no runner lease for {udid}"))?;
     nix::sys::signal::kill(nix::unistd::Pid::from_raw(lease.pid), None)
         .map_err(|e| format!("the runner's xcodebuild {} is gone: {e}", lease.pid))?;
     let at = std::net::SocketAddr::from(([127, 0, 0, 1], lease.port));
     std::net::TcpStream::connect_timeout(&at, Duration::from_secs(5))
-        .map(drop)
-        .map_err(|e| format!("the runner doesn't listen on {at}: {e}"))
+        .map_err(|e| format!("the runner doesn't listen on {at}: {e}"))?;
+    let said = runner_lines(&pool::warm_dir(home, udid).join("state"));
+    Ok(PoolRunner { lease, said })
+}
+
+/// That the session's agent-device, after a command that needs the runner, runs the one the pool started rather than a
+/// start of its own: the lease still names the pool's xcodebuild. Else what the daemons said of the runner's lease.
+fn runner_taken_over(
+    home: &std::path::Path,
+    thread: &str,
+    udid: &str,
+    pool: &PoolRunner,
+) -> Result<(), String> {
+    let now = super::wrapper::lease(home, udid);
+    if now.as_ref().map(|l| l.pid) == Some(pool.lease.pid) {
+        return Ok(());
+    }
+    Err(format!(
+        "the session's agent-device didn't take over the pool's runner {:?}; the lease is now {:?}: {}\n\
+         the pool's daemon:\n{}\nthe session's daemon:\n{}",
+        pool.lease,
+        now,
+        std::fs::read_to_string(super::wrapper::lease_path(home, udid)).unwrap_or_default(),
+        pool.said,
+        runner_lines(&crate::node::device::agent_device::session_dir(home, thread).join("state"))
+    ))
+}
+
+/// The lines of an agent-device daemon's logs under `state` that are about its runner's lease: its detach, an adoption
+/// or why not.
+fn runner_lines(state: &std::path::Path) -> String {
+    let mut lines = Vec::new();
+    let mut dirs = vec![state.to_owned()];
+    while let Some(dir) = dirs.pop() {
+        for entry in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                dirs.push(path);
+                continue;
+            }
+            let text = std::fs::read_to_string(&path).unwrap_or_default();
+            lines.extend(
+                text.lines()
+                    .filter(|l| l.contains("lease") || l.contains("detach") || l.contains("adopt"))
+                    .map(|l| l.chars().take(600).collect::<String>()),
+            );
+        }
+    }
+    lines.join("\n")
 }
 
 /// Runs a session test's `body`, then ends the node's simulators even when it failed: the hosted screen's test, failing,
@@ -720,7 +773,7 @@ async fn settings_session(home: PathBuf, hub: Arc<TestHub>, simulators: Arc<Simu
     assert!(start_ms < 10_000, "{start_ms} ms");
     let udid = result["udid"].as_str().unwrap().to_owned();
     eprintln!("the session's clone: {udid}");
-    runner_up(&home, &udid).unwrap();
+    let pool_runner = runner_up(&home, &udid).unwrap();
     let live = wait_listed(&hub, &id).await;
     assert_eq!(live["kind"], "ios", "{live}");
     let refused = call(&router, json!({ "op": "session_start", "purpose": "Shop" })).await;
@@ -770,6 +823,7 @@ async fn settings_session(home: PathBuf, hub: Arc<TestHub>, simulators: Arc<Simu
         host_load(&home).await
     );
     eprintln!("agent-device press --settle: {} ms", ms(t.elapsed()));
+    runner_taken_over(&home, THREAD, &udid, &pool_runner).unwrap();
     // No session builds the runner: a slow start once had agent-device delete it and build it again in the command.
     assert_eq!(
         std::fs::metadata(&runner).and_then(|m| m.modified()).ok(),
@@ -1007,7 +1061,8 @@ async fn hosted_screen(home: PathBuf, hub: Arc<TestHub>, simulators: Arc<Simulat
         .as_str()
         .expect("started")
         .to_owned();
-    runner_up(&home, started["result"]["udid"].as_str().unwrap()).unwrap();
+    let udid = started["result"]["udid"].as_str().unwrap().to_owned();
+    let pool_runner = runner_up(&home, &udid).unwrap();
 
     let t = Instant::now();
     let opened = device(&["open", "com.apple.Preferences"]).await;
@@ -1039,6 +1094,7 @@ async fn hosted_screen(home: PathBuf, hub: Arc<TestHub>, simulators: Arc<Simulat
     simulators.set_control(&id, BrowserControl::HandingBack, "human:desk");
     let after = device(&["snapshot", "-i"]).await;
     assert_eq!(after["result"]["exitCode"], 0, "{after}");
+    runner_taken_over(&home, KEY, &udid, &pool_runner).unwrap();
     assert_eq!(
         simulators.live(KEY).unwrap().control(),
         BrowserControl::Agent

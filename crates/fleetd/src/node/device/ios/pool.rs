@@ -260,7 +260,7 @@ async fn runner(
 
 /// Where the pool's agent-device starts a clone's runner. It stays while the clone does: the session's daemon takes the
 /// runner over only while the state directory of the daemon that leased it is there.
-fn warm_dir(home: &Path, udid: &str) -> PathBuf {
+pub fn warm_dir(home: &Path, udid: &str) -> PathBuf {
     super::ios_dir(home).join("warm").join(udid)
 }
 

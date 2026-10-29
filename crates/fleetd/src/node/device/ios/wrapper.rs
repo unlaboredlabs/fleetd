@@ -52,7 +52,7 @@ pub fn lease(home: &Path, udid: &str) -> Option<Lease> {
 }
 
 /// agent-device names a lease by the udid, with anything but `[A-Za-z0-9._-]` a dash.
-fn lease_path(home: &Path, udid: &str) -> PathBuf {
+pub fn lease_path(home: &Path, udid: &str) -> PathBuf {
     let name: String = udid
         .chars()
         .map(|c| {
