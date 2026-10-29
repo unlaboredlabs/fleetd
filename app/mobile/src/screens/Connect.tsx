@@ -61,7 +61,7 @@ export function Welcome({ navigation, note }: NativeStackScreenProps<PairParams,
   );
 }
 
-export function Pair({ route, onPaired }: NativeStackScreenProps<PairParams, "Pair"> & { onPaired: (paired: Paired) => void }) {
+export function Pair({ route, onPaired }: NativeStackScreenProps<PairParams, "Pair"> & { onPaired: (paired: Paired) => Promise<void> }) {
   const t = useTheme();
   const insets = useSafeAreaInsets();
   const headerHeight = useHeaderHeight();
@@ -77,14 +77,20 @@ export function Pair({ route, onPaired }: NativeStackScreenProps<PairParams, "Pa
     setBusy(true);
     setFailure(null);
     const result = await pair(fetch, hub, code, deviceName());
-    setBusy(false);
-    if (result.ok) {
+    // The key kept in the keychain, or it isn't paired: a hub's code works once.
+    const failure = result.ok
+      ? await onPaired(result.paired).then(
+          () => null,
+          (): PairFailure => ({ code: "", message: "This phone couldn't keep the hub's key in its keychain.", fix: "Run fleetd pair on the hub again and type the new code." }),
+        )
+      : result.failure;
+    if (failure === null) {
       haptics.success();
-      onPaired(result.paired);
-    } else {
-      haptics.warning();
-      setFailure(result.failure);
+      return;
     }
+    setBusy(false);
+    haptics.warning();
+    setFailure(failure);
   };
 
   const field = { ...type.body, color: t.label };

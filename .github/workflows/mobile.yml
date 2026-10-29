@@ -126,11 +126,11 @@ jobs:
           retention-days: 14
 
   ios:
-    # A Release build for the iOS simulator, its Notification Service Extension embedded: no signing, the JavaScript
-    # bundled in. A manual run with a Metro address builds Debug instead, which loads the JavaScript from there (its
-    # ip.txt, which a copy can be given another address in). First, the extension's crypto against the hub's sealed boxes. Only when app/mobile or this
-    # workflow changed (mobile scope); the merge train's batch skips it, as ci.yml's macOS jobs, and each PR's own head
-    # runs it first.
+    # A Release build for the iOS simulator, its Notification Service Extension embedded, signed to run locally (no
+    # team: the keychain needs its entitlements even on a simulator), the JavaScript bundled in. A manual run with a
+    # Metro address builds Debug instead, which loads the JavaScript from there. First, the extension's crypto against
+    # the hub's sealed boxes. Only when app/mobile or this workflow changed (mobile scope); the merge train's batch
+    # skips it, as ci.yml's macOS jobs, and each PR's own head runs it first.
     name: mobile (ios)
     needs: mobile-scope
     if: ${{ !cancelled() && !endsWith(github.head_ref, 'train/batch') && needs.mobile-scope.outputs.ios != 'false' }}
@@ -163,12 +163,18 @@ jobs:
           set -o pipefail
           xcodebuild -workspace ios/fleetd.xcworkspace -scheme fleetd -configuration "$CONFIGURATION" \
             -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath build \
-            CODE_SIGNING_ALLOWED=NO build | tail -n 200
+            CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM= build | tail -n 200
           app=build/Build/Products/$CONFIGURATION-iphonesimulator/fleetd.app
           appex=$app/PlugIns/FleetdNotifications.appex
           test -x "$appex/FleetdNotifications" || { echo "::error::the app has no Notification Service Extension"; exit 1; }
-          # Where a Debug build finds Metro (React Native's RCTBundleURLProvider reads it); none for a simulator otherwise.
-          if [ -n "$METRO" ]; then printf '%s\n' "$METRO" > "$app/ip.txt"; fi
+          # Signed to run locally, with its entitlements: without the keychain group, secure storage fails on a simulator.
+          codesign -d --entitlements - --xml "$app" 2>/dev/null | grep -q keychain-access-groups \
+            || { echo "::error::the app is signed without its keychain group"; exit 1; }
+          # Where a Debug build finds Metro (React Native's RCTBundleURLProvider reads it), sealed in by signing again.
+          if [ -n "$METRO" ]; then
+            printf '%s\n' "$METRO" > "$app/ip.txt"
+            codesign --force --sign - --preserve-metadata=entitlements "$app"
+          fi
       - name: App Transport Security
         # The built app's own Info.plist lets plain HTTP reach a hub at any address: arbitrary loads, nothing cancelling them.
         run: |

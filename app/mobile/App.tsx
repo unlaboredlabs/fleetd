@@ -37,8 +37,11 @@ export default function App() {
   // Undefined while secure storage is read.
   const [paired, setPaired] = useState<Paired | null | undefined>(undefined);
   const [note, setNote] = useState<string | undefined>(undefined);
+  // Storage that can't be read pairs again, rather than leave a blank screen.
   useEffect(() => {
-    void loadPaired().then(setPaired);
+    void loadPaired()
+      .catch(() => null)
+      .then(setPaired);
   }, []);
   const forget = useCallback((why?: string) => {
     setNote(why);
@@ -57,9 +60,10 @@ export default function App() {
           <NavigationContainer theme={theme}>
             <Pairing
               note={note}
-              onPaired={(p) => {
+              onPaired={async (p) => {
+                await pairWith(p);
                 setNote(undefined);
-                void pairWith(p).then(() => setPaired(p));
+                setPaired(p);
               }}
             />
           </NavigationContainer>
@@ -85,7 +89,7 @@ const largeTitle = (t: Palette): NativeStackNavigationOptions => ({
 
 const PairStack = createNativeStackNavigator<PairParams>();
 
-function Pairing({ note, onPaired }: { note: string | undefined; onPaired: (p: Paired) => void }) {
+function Pairing({ note, onPaired }: { note: string | undefined; onPaired: (p: Paired) => Promise<void> }) {
   const t = useTheme();
   return (
     <PairStack.Navigator screenOptions={{ headerTintColor: t.accent, headerTitleStyle: { color: t.label }, headerShadowVisible: false, headerStyle: { backgroundColor: t.grouped }, contentStyle: { backgroundColor: t.grouped } }}>
