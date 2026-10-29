@@ -365,3 +365,29 @@ async fn a_phone_code_expires_after_15_minutes_and_gives_no_more_than_the_caller
     let phone = hub.auth.verify(paired["key"].as_str().unwrap()).unwrap();
     assert_eq!(phone.grants[0].role, Role::Operate);
 }
+
+#[tokio::test]
+async fn a_key_limited_to_some_machines_cannot_pair_a_phone_that_reaches_them_all() {
+    let (hub, _clock, _home) = hub_at(Some("http://192.168.1.20:4790"));
+    let grant = Grant {
+        role: Role::Operate,
+        machines: GrantMachines::Only(vec![fleetd_contracts::ids::MachineId::unchecked("m1")]),
+    };
+    let CreatedKey { key, .. } = hub
+        .auth
+        .create_key_for("x", &[grant], KeyKind::Human, None)
+        .unwrap();
+    let limited = hub.auth.verify(&key).unwrap();
+    assert!(limited.person.is_some());
+    let codes = |hub: &Hub| -> i64 {
+        hub.db
+            .with(|c| Ok(c.query_row("SELECT COUNT(*) FROM pair_codes", [], |r| r.get(0))?))
+            .unwrap()
+    };
+    let before = codes(&hub);
+    let refused = pair_a_phone(&hub, &limited, "http://192.168.1.20:4790")
+        .await
+        .unwrap_err();
+    assert_eq!(refused.code, fleetd_contracts::mcp::ErrorCode::Forbidden);
+    assert_eq!(codes(&hub), before);
+}

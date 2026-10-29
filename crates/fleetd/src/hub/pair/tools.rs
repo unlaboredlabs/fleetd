@@ -14,12 +14,12 @@ pub fn register(tools: &mut Registry) {
     tools.add("pair_code_create", pair_code_create);
 }
 
-/// The most the caller's key may do on every machine: the paired device gets no more.
-fn role_everywhere(caller: &Caller) -> Role {
-    [Role::Admin, Role::Operate]
+/// The most the caller's key may do on every machine: the paired device gets no more. None for a key limited to
+/// some machines, whose phone would reach the others.
+fn role_everywhere(caller: &Caller) -> Option<Role> {
+    [Role::Admin, Role::Operate, Role::Read]
         .into_iter()
         .find(|&role| allows_everywhere(caller, role))
-        .unwrap_or(Role::Read)
 }
 
 /// Where a phone reaches the hub: the address the app reaches it at, else the hub's own (its `--url`, the one setup
@@ -55,6 +55,13 @@ async fn pair_code_create(
                 "Open Pair a phone in the fleetd app, or run `fleetd pair` on the hub.",
             )
         })?;
+    let role = role_everywhere(&caller).ok_or_else(|| {
+        error(
+            ErrorCode::Forbidden,
+            "This device's key reaches only some machines, and a phone paired from it would reach them all.",
+            "Pair the phone from a device with a key for every machine, or run `fleetd pair` on the hub.",
+        )
+    })?;
     let app_url = input.hub_url.as_ref().map(|url| url.as_str());
     let hub_url = phone_hub_url(&hub, app_url).ok_or_else(|| {
         error(
@@ -66,8 +73,8 @@ async fn pair_code_create(
             loopback_only_fix(),
         )
     })?;
-    let minted = PairCodes::new(hub.db.clone(), hub.clock.clone())
-        .create_for(&person.person_id, role_everywhere(&caller))?;
+    let minted =
+        PairCodes::new(hub.db.clone(), hub.clock.clone()).create_for(&person.person_id, role)?;
     Ok(PairCodeCreateOutput {
         link: deep_link(&hub_url, &minted.code),
         code: minted.code,

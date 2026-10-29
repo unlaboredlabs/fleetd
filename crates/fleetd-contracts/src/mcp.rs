@@ -2334,7 +2334,7 @@ output!(InviteCreateOutput {
 
 // pair_code_create: a person's device mints a one-time code (15 min) that pairs one more device of theirs, as
 // `fleetd pair` does on the hub: the app's Pair a phone shows its link as a QR. The device gets the caller's own role
-// on every machine, never more. `hubUrl` is where the app reaches the hub; the link carries it unless it is a
+// on every machine, never more; a key limited to some machines is refused. `hubUrl` is where the app reaches the hub; the link carries it unless it is a
 // loopback address, else the hub's own address a phone can reach. A hub with only loopback addresses is refused.
 input!(PairCodeCreateInput {
     hub_url: Option<Line<1, 2048>>,
