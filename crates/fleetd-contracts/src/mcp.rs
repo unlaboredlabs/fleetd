@@ -2332,6 +2332,23 @@ output!(InviteCreateOutput {
     hub_url: String,
 });
 
+// pair_code_create: a person's device mints a one-time code (15 min) that pairs one more device of theirs, as
+// `fleetd pair` does on the hub: the app's Pair a phone shows its link as a QR. The device gets the caller's own role
+// on every machine, never more. `hubUrl` is where the app reaches the hub; the link carries it unless it is a
+// loopback address, else the hub's own address a phone can reach. A hub with only loopback addresses is refused.
+input!(PairCodeCreateInput {
+    hub_url: Option<Line<1, 2048>>,
+});
+output!(PairCodeCreateOutput {
+    /// `XXXX-XXXX`, single use: entered in the phone's pairing screen with `hubUrl`.
+    code: String,
+    /// `fleetd://pair?hub=<hubUrl, URL-encoded>&code=<code>`, shown as the QR.
+    link: String,
+    /// Where the phone reaches the hub: never a loopback address.
+    hub_url: String,
+    expires_at: Timestamp,
+});
+
 // invite_revoke: an owner or admin takes back an open invite. A person invited by it who never joined is removed.
 input!(InviteRevokeInput {
     invite_id: InviteId
@@ -3222,6 +3239,8 @@ tools! {
     person_remove => PersonRemove, Admin, PersonRemoveInput, PersonRemoveOutput;
     // Human keys only: a person's own devices, or anyone's for an owner or admin (the handler checks).
     device_revoke => DeviceRevoke, Operate, DeviceRevokeInput, DeviceRevokeOutput;
+    // Human keys with a person only (the handler checks).
+    pair_code_create => PairCodeCreate, Read, PairCodeCreateInput, PairCodeCreateOutput;
     // Human keys with a person only (the handlers check).
     push_device_register => PushDeviceRegister, Operate, PushDeviceRegisterInput, PushDeviceRegisterOutput;
     push_devices_list => PushDevicesList, Read, PushDevicesListInput, PushDevicesListOutput;

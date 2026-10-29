@@ -29,6 +29,8 @@ A pairing code carries the role it was printed with: `fleetd pair` gives the dev
 person at the hub can change its settings from the app, and `fleetd pair --role read` or `--role operate` gives a
 lesser device less. The role is fixed when the code is made; the device that redeems it cannot ask for more. A key
 paired before keeps its role: if the app says it lacks `admin`, run `fleetd pair` on the hub machine and pair again.
+The desktop app's Pair a phone makes the same kind of code (one use, 15 minutes) for a phone of yours. The phone gets
+no more than the role of the device that made the code. Its QR holds only the hub's address and that code.
 
 Agents run as the same OS user as the hub, so anything that can read the hub home (its keys and its database) an
 agent can reach too. Human key files are no exception: keep yours outside the hub home and your projects, but don't

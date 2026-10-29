@@ -1,5 +1,5 @@
 // Settings in the sidebar's place: Back to where you were, a search field that narrows to an option by name, then
-// the three groups (D211). You: General, Your accounts, Hubs. Projects: the project picker and that project's pages,
+// the three groups (D211). You: General, Your accounts, Your memory, Your devices, Hubs. Projects: the project picker and that project's pages,
 // with its prompts under Prompts. Hub, for the hub's owners and admins only: People, Machines, Every project's four
 // pages (the hub-wide prompts under its Prompts), Hub accounts, and Setup while a required step is left, saying how
 // many. With several hubs the Hub group switches between the hubs this person administers.
@@ -16,6 +16,7 @@ import {
   Network,
   Server,
   SlidersHorizontal,
+  Smartphone,
   UserRound,
   Users,
   Workflow,
@@ -41,6 +42,7 @@ const YOU: ReadonlyArray<{ tab: Tab; icon: ReactNode }> = [
   { tab: "general", icon: <SlidersHorizontal /> },
   { tab: "accounts", icon: <UserRound /> },
   { tab: "your-memory", icon: <Brain /> },
+  { tab: "devices", icon: <Smartphone /> },
   { tab: "hubs", icon: <Network /> },
 ];
 

@@ -4297,6 +4297,22 @@ export type OrdersBoardOutput = {
   truncated?: boolean;
 };
 
+export type PairCodeCreateInput = {
+  hubUrl?: string;
+};
+
+export type PairCodeCreateOutput = {
+  /** `XXXX-XXXX`, single use: entered in the phone's pairing screen with `hubUrl`. */
+  code: string;
+  expiresAt: Timestamp;
+  /** Where the phone reaches the hub: never a loopback address. */
+  hubUrl: string;
+  /** `fleetd://pair?hub=<hubUrl, URL-encoded>&code=<code>`, shown as the QR. */
+  link: string;
+  next?: string;
+  truncated?: boolean;
+};
+
 export type ParkedCounts = {
   leads: number;
   tasks: number;
@@ -8016,6 +8032,7 @@ export interface ToolMap {
   navi_sites: { input: NaviSitesInput; output: NaviSitesOutput };
   order_get: { input: OrderGetInput; output: OrderGetOutput };
   orders_board: { input: OrdersBoardInput; output: OrdersBoardOutput };
+  pair_code_create: { input: PairCodeCreateInput; output: PairCodeCreateOutput };
   people_list: { input: PeopleListInput; output: PeopleListOutput };
   person_remove: { input: PersonRemoveInput; output: PersonRemoveOutput };
   person_set: { input: PersonSetInput; output: PersonSetOutput };

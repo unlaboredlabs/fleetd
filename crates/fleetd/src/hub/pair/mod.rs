@@ -5,6 +5,7 @@
 //! No auth header: the code is the credential, so failed attempts are rate limited per remote address.
 #[cfg(test)]
 mod tests;
+pub mod tools;
 
 use crate::clock::Clock;
 use crate::hub::api::{Hub, role_name};
@@ -119,15 +120,36 @@ impl PairCodes {
     /// One-time, valid for 15 minutes. `name` names the key when the device sends no name of its own; `role` is
     /// what the key gets, whatever the device asks for.
     pub fn create(&self, name: Option<&str>, role: Role) -> Result<MintedCode, StoreError> {
+        self.insert(name, role, None)
+    }
+
+    /// The same, for one more device of `person` (the app's Pair a phone): the key it mints is theirs.
+    pub fn create_for(&self, person: &PersonId, role: Role) -> Result<MintedCode, StoreError> {
+        self.insert(None, role, Some(person))
+    }
+
+    fn insert(
+        &self,
+        name: Option<&str>,
+        role: Role,
+        person: Option<&PersonId>,
+    ) -> Result<MintedCode, StoreError> {
         let now = now_ms(self.clock.as_ref());
         let expires = now + CODE_TTL_MS;
         let code = new_code();
         let canon = normalize(&code).expect("a new code normalizes");
         self.db.with(|conn| {
             conn.prepare_cached(
-                "INSERT INTO pair_codes (hash, name, expires_ms, role, created_ms) VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO pair_codes (hash, name, expires_ms, role, created_ms, person_id) VALUES (?, ?, ?, ?, ?, ?)",
             )?
-            .execute(params![hash(&canon), name, expires, role_name(role), now])?;
+            .execute(params![
+                hash(&canon),
+                name,
+                expires,
+                role_name(role),
+                now,
+                person.map(|p| p.as_str())
+            ])?;
             Ok(())
         })?;
         Ok(MintedCode {

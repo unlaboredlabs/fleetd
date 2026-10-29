@@ -542,3 +542,36 @@
   color: var(--quiet);
   font-variant-numeric: tabular-nums;
 }
+/* Your devices › Pair a phone: the QR, always dark on white so a camera reads it in either theme, and beside it the
+   address and code for typing. */
+.pairing {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-width: 720px;
+}
+.pairPhone {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-6);
+}
+.qr {
+  width: 200px;
+  height: 200px;
+  flex: none;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--hairline);
+}
+.pairFields {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+}
+.pairFields dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

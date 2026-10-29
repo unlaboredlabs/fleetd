@@ -105,6 +105,8 @@ export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unk
   // administers (the sidebar's entry).
   // Setup's People step reads it too.
   if (type === "people.changed") out.push({ tool: "people_list" }, { tool: "hub_info" }, { tool: "setup_list" });
+  // A device paired: Your devices shows it, and Pair a phone notices it.
+  if (type === "key.paired") out.push({ tool: "people_list" });
   // A session started, changed hands, ended or its recording landed: the Sessions view's list reads it again. A
   // recording, once read, never changes.
   if (type === "browser.session") out.push({ tool: "browser_sessions" });

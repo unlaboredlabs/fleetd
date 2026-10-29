@@ -132,6 +132,13 @@ export function answerHub(f: Fixture, me: JsonObject = sam, admin = true, member
     link: `fleetd://pair?hub=${encodeURIComponent(HUB)}&code=K7QM-4XWD`,
     hubUrl: HUB,
   });
+  // Pair a phone (Settings › Your devices): a 15-minute code, at the address the app reaches the hub at.
+  f.answer("pair_code_create", undefined, {
+    code: "R4TN-8HQC",
+    link: `fleetd://pair?hub=${encodeURIComponent(HUB)}&code=R4TN-8HQC`,
+    hubUrl: HUB,
+    expiresAt: new Date(Date.parse(f.now) + 15 * 60_000).toISOString(),
+  });
   f.answer("invite_revoke", undefined, {
     invite: { inviteId: "inv_aaaaaaaa", person: ref(dana), state: "revoked", createdAt: "2026-10-18T11:00:00.000Z", expiresAt: "2026-10-25T11:00:00.000Z", revokedAt: f.now },
   });

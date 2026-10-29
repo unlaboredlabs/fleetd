@@ -80,14 +80,23 @@ pages stay in the desktop app.</p>
 runners: no Expo account and no EAS.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="pair">Pair it</h2><a class="sl-anchor-link" href="#pair"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Pair it”</span></a></div>
 <ol>
-<li>On the hub, run <code dir="auto">fleetd pair</code>, or pair a phone from the desktop app. Either shows a QR code and a one-time code.</li>
-<li>In the app, tap <strong>Scan QR Code</strong> and point the camera at it: the phone pairs at once. The iPhone’s Camera app works
-too: scanning the code opens fleetd, which asks <strong>Connect to</strong> the hub first.</li>
+<li>In the desktop app, open <strong>Settings › Your devices</strong> and click <strong>Pair a phone</strong>. Or run <code dir="auto">fleetd pair</code> on the hub,
+which prints the QR code in the terminal above the code (<code dir="auto">--no-qr</code> leaves it out). Either shows a QR code, and the
+hub’s address and a one-time code under it.</li>
+<li>In the app, tap <strong>Scan QR Code</strong> and point the camera at it: the phone pairs at once, and Your devices in the
+desktop app shows it as soon as it has. The iPhone’s Camera app works too: scanning the code opens fleetd, which
+asks <strong>Connect to</strong> the hub first.</li>
 </ol>
 <p>Without a camera, tap <strong>Enter Code Manually</strong>, enter the hub’s address, such as <code dir="auto">http://devbox:4790</code>, and the code (or
-tap <strong>Paste</strong> with the code or the QR code’s link copied), and tap <strong>Connect</strong>. A code works once, for 15 minutes.</p>
+tap <strong>Paste</strong> with the code or the QR code’s link copied), and tap <strong>Connect</strong>. A code works once, for 15 minutes, and
+the QR code lasts no longer.</p>
 <p>The QR code holds a link, <code dir="auto">fleetd://pair?hub=&lt;the hub's address&gt;&amp;code=&lt;the code&gt;</code>. Opened any other way than the app’s
-own scanner (the Camera app, a page, a message), it names the hub and asks before pairing, as anyone can send one.</p>
+own scanner (the Camera app, a page, a message), it names the hub and asks before pairing, as anyone can send one.
+The address is one a phone can reach: the one the desktop app reaches the hub at, else the hub’s own tailnet or LAN
+address, never <code dir="auto">127.0.0.1</code> or <code dir="auto">localhost</code>. When the hub has only a loopback address, you get no QR code and a note
+saying so. Run <code dir="auto">fleetd init</code> again on the hub and pick its tailnet or LAN address (Settings › Hub › Setup › Where the
+hub listens says how), then pair again. A phone paired from the desktop app is yours and gets your device’s role. A
+phone paired with <code dir="auto">fleetd pair</code> gets that code’s <code dir="auto">--role</code>.</p>
 <p>The key stays in the phone’s secure storage (the Keychain on iOS, the Keystore on Android). <strong>Disconnect</strong>, in the
 app’s Settings tab, asks first,
 then signs the phone out on the hub, which revokes its key and stops its notifications, and forgets the hub. If the hub
