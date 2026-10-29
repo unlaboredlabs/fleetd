@@ -598,7 +598,9 @@ async fn host_load(home: &std::path::Path) -> String {
     )
 }
 
+/// The live view's next frame after `seq`, within `within`; else a failure that says what the Mac in `home` is busy with.
 async fn frame_after(
+    home: &std::path::Path,
     frames: &mut tokio::sync::watch::Receiver<Option<Frame>>,
     seq: u64,
     within: Duration,
@@ -611,7 +613,13 @@ async fn frame_after(
             return frame;
         }
         let left = deadline.saturating_duration_since(Instant::now());
-        assert!(!left.is_zero(), "no frame after {seq}");
+        if left.is_zero() {
+            panic!(
+                "no frame after {seq} in {} s; {}",
+                within.as_secs(),
+                host_load(home).await
+            );
+        }
         let _ = tokio::time::timeout(left, frames.changed()).await;
     }
 }
@@ -795,7 +803,7 @@ async fn settings_session(home: PathBuf, hub: Arc<TestHub>, simulators: Arc<Simu
     // A person watches and takes over: the agent's agent-device waits, the person's Home reaches the simulator.
     let mut frames = simulators.frames(&id).expect("live");
     let t = Instant::now();
-    let first = frame_after(&mut frames, 0, Duration::from_secs(15)).await;
+    let first = frame_after(&home, &mut frames, 0, Duration::from_secs(15)).await;
     eprintln!(
         "live view: first frame after {} ms, {}x{} px, {} KB",
         ms(t.elapsed()),
@@ -808,7 +816,7 @@ async fn settings_session(home: PathBuf, hub: Arc<TestHub>, simulators: Arc<Simu
     let t = Instant::now();
     let mut last = first.seq;
     while last == first.seq || t.elapsed() < Duration::from_secs(10) {
-        last = frame_after(&mut frames, last, Duration::from_secs(30))
+        last = frame_after(&home, &mut frames, last, Duration::from_secs(30))
             .await
             .seq;
     }
@@ -838,7 +846,7 @@ async fn settings_session(home: PathBuf, hub: Arc<TestHub>, simulators: Arc<Simu
     assert!(simulators.input(&id, &home_key(false)));
     let mut seen = before.seq;
     loop {
-        let frame = frame_after(&mut frames, seen, Duration::from_secs(30)).await;
+        let frame = frame_after(&home, &mut frames, seen, Duration::from_secs(30)).await;
         if frame.jpeg != before.jpeg {
             break;
         }

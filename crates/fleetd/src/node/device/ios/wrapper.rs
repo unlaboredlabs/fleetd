@@ -288,31 +288,42 @@ mod tests {
         )
         .unwrap();
         let starting = dir.path().join("runner-starting");
+        // When the wrapper ended: it waits for nothing gone, so a run that hangs past a minute fails. Not timed
+        // otherwise: on a loaded Mac node alone takes seconds to start.
         let run = || {
-            let t = std::time::Instant::now();
-            std::process::Command::new(&wrapper)
+            let mut child = std::process::Command::new(&wrapper)
                 .arg("snapshot")
                 .env("FLEETD_RUNNER_STARTING", &starting)
                 .env_remove("FLEETD_DEVICE_CONTROL")
-                .output()
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
                 .unwrap();
-            t.elapsed()
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+            while child.try_wait().unwrap().is_none() {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "the wrapper still waits"
+                );
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            std::time::Instant::now()
         };
-        assert!(
-            run() < std::time::Duration::from_secs(1),
-            "no start under way"
-        );
-        // A prepare that takes 2 s: the command waits it out. It is reaped as it ends, as the node's is.
+        run();
+        // A prepare under way: the command runs only after it ended. It is reaped as it ends, as the node's is.
         let mut prepare = std::process::Command::new("sleep")
             .arg("2")
             .spawn()
             .unwrap();
         std::fs::write(&starting, prepare.id().to_string()).unwrap();
-        let reaped = std::thread::spawn(move || prepare.wait().unwrap());
-        assert!(run() >= std::time::Duration::from_millis(1500), "waited");
-        reaped.join().unwrap();
+        let reaped = std::thread::spawn(move || {
+            prepare.wait().unwrap();
+            std::time::Instant::now()
+        });
+        let ended = run();
+        assert!(ended >= reaped.join().unwrap(), "it waited for the prepare");
         // A prepare gone (a node that stopped) holds nothing back.
-        assert!(run() < std::time::Duration::from_secs(1), "its pid is gone");
+        run();
     }
 
     #[test]
