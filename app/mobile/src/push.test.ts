@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { HubClient } from "./hub/client";
 import { fakeHub } from "./hub/fake";
 import fixture from "./push.fixture.json";
-import { GENERIC, openPayload, registerDevice, shownOf, tapRoute, type PushDeps } from "./push";
+import { androidShown, openPayload, registerDevice, shownOf, tapRoute, type PushDeps } from "./push";
 import { fromBase64, keyPairOf, seal, toBase64, type KeyPair } from "./seal";
 import { Session } from "./session";
 
@@ -18,6 +18,19 @@ const flush = async () => {
 };
 
 describe("the hub's sealed boxes", () => {
+  it("show nothing on Android unless they open with this phone's keys", () => {
+    expect(androidShown({ c: message!.ciphertext }, keys)).toMatchObject({ title: "Ada", body: "Your flight moved to 9:40." });
+    expect(androidShown({ data: { c: message!.ciphertext } }, keys)).not.toBeNull();
+    // Anyone with the token can post to the public relay: what they seal to another key, or send unsealed, shows nothing.
+    const stranger = nacl.box.keyPair();
+    expect(androidShown({ c: sealedJson({ v: 1, kind: "message", title: "Bank", body: "Call us", hub: "", at: "" }, stranger) }, keys)).toBeNull();
+    expect(androidShown({ c: toBase64(new TextEncoder().encode('{"v":1,"title":"Bank","body":"Call us"}')) }, keys)).toBeNull();
+    expect(androidShown({ c: "not base64!" }, keys)).toBeNull();
+    expect(androidShown({ title: "Bank", body: "Call us" }, keys)).toBeNull();
+    expect(androidShown({ c: message!.ciphertext }, null)).toBeNull();
+    expect(androidShown({ c: sealedJson({ v: 2, kind: "message", title: "Ada", body: "Hi", hub: "", at: "" }) }, keys)).toBeNull();
+  });
+
   it("open with the phone's secret key, whose public key is the one the hub sealed to", () => {
     expect(toBase64(keys.publicKey)).toBe(fixture.publicKey);
     expect(openPayload(message!.ciphertext, keys)).toEqual(JSON.parse(message!.plaintext));
@@ -33,16 +46,15 @@ describe("the hub's sealed boxes", () => {
     expect(openPayload("not base64!", keys)).toBeNull();
   });
 
-  it("show a newer version's as the generic text, and an unknown kind as an alert", () => {
+  it("don't open a newer version's, and show an unknown kind as an alert", () => {
     expect(openPayload(sealedJson({ v: 2, kind: "message", title: "Ada", body: "Hi", hub: "", at: "" }), keys)).toBeNull();
-    expect(shownOf(null)).toEqual(GENERIC);
     expect(openPayload(sealedJson({ v: 1, kind: "poll", title: "Ada", body: "Hi", hub: "", at: "" }), keys)?.kind).toBe("alert");
   });
 });
 
 describe("what a notification shows", () => {
   it("is one per chat, on the quiet channel inside quiet hours", () => {
-    expect(shownOf(openPayload(message!.ciphertext, keys))).toEqual({
+    expect(shownOf(openPayload(message!.ciphertext, keys)!)).toEqual({
       title: "Ada",
       body: "Your flight moved to 9:40.",
       channel: "quiet",
@@ -53,13 +65,13 @@ describe("what a notification shows", () => {
   });
 
   it("is one per request for an approval, urgent when it costs money or can't be undone", () => {
-    expect(shownOf(openPayload(approval!.ciphertext, keys))).toMatchObject({
+    expect(shownOf(openPayload(approval!.ciphertext, keys)!)).toMatchObject({
       channel: "approvals",
       urgent: true,
       id: "approval:Q7",
       route: { t: "approval", requestId: "Q7", key: "devbox/shop" },
     });
-    expect(shownOf(openPayload(sealedJson({ v: 1, kind: "order", title: "fleetd", body: "Order landed", hub: "", at: "" }), keys))).toEqual({
+    expect(shownOf(openPayload(sealedJson({ v: 1, kind: "order", title: "fleetd", body: "Order landed", hub: "", at: "" }), keys)!)).toEqual({
       title: "fleetd",
       body: "Order landed",
       channel: "other",

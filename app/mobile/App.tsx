@@ -17,7 +17,7 @@ import type { Key } from "./src/store";
 import { approvals } from "./src/lists";
 import { color } from "./src/theme";
 import { ConnectionLine, Header, TextButton } from "./src/ui";
-import { forgetPaired, forgetPush, loadPaired, pushKeys, savePaired } from "./src/vault";
+import { forgetPaired, forgetPush, loadPaired, pairWith } from "./src/vault";
 
 export default function App() {
   // Undefined while secure storage is read.
@@ -39,7 +39,7 @@ export default function App() {
             note={note}
             onPaired={(p) => {
               setNote(undefined);
-              void Promise.all([savePaired(p), forgetPush().then(pushKeys)]).then(() => setPaired(p));
+              void pairWith(p).then(() => setPaired(p));
             }}
           />
         ) : (

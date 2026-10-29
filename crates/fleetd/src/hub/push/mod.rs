@@ -2,10 +2,10 @@
 //! `push_devices`: a push token and an X25519 public key, tools.rs). [`run`] follows the event log and, for what the
 //! hub already marks as needing a person (an event with `attention`), a Navi's or a lead's final chat message, and an
 //! order that landed or stopped, seals a [`PushPayload`] to each of that person's devices and posts it to the hub's
-//! push relay (`fleetd push-relay`, crate::push_relay), with the relay's key when it takes one. The relay sees a token
-//! and ciphertext, never the content. A token the relay reports dead is dropped, unless one notification would drop
-//! more than half of a person's phones that way: a relay set up wrong makes every token look dead, so those are kept
-//! and logged. Each failure is logged once an hour at most.
+//! push relay (`fleetd push-relay`, crate::push_relay; [`DEFAULT_RELAY`] until one is set), with the relay's key when
+//! it takes one. The relay sees a token and ciphertext, never the content. A token the relay reports dead is dropped,
+//! unless one notification would drop more than half of a person's phones that way: a relay set up wrong makes every
+//! token look dead, so those are kept and logged. Each failure is logged once an hour at most.
 //!
 //! Who an event is for: a Navi's, its owner; another project's, the person who last wrote in its chat, else the hub's
 //! owner; an event about no project, the hub's owners and admins.
@@ -134,6 +134,10 @@ pub fn remove(
     Ok(device)
 }
 
+/// The relay every hub sends through until `fleetd push-relay set` says otherwise (D225): the one holding the published
+/// app's APNs and Firebase keys. It takes no key; the payload is sealed to the phone and the relay caps each device's rate.
+pub const DEFAULT_RELAY: &str = "https://push.fleetd.sh";
+
 /// The hub's push relay.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RelaySetting {
@@ -142,21 +146,55 @@ pub struct RelaySetting {
     pub key_sealed: Option<String>,
 }
 
-/// The hub's push relay; None when none is set.
-pub fn relay(c: &Connection) -> Result<Option<RelaySetting>, StoreError> {
-    Ok(
-        c.prepare_cached("SELECT url, key_sealed FROM push_relay WHERE id = 1")?
-            .query_row([], |row| {
-                Ok(RelaySetting {
-                    url: row.get(0)?,
-                    key_sealed: row.get(1)?,
-                })
+/// The hub's push relay as set; None when never set, so `default` (normally [`DEFAULT_RELAY`]) applies without a key;
+/// None too when pushes are turned off (a row with an empty URL).
+pub fn relay(c: &Connection, default: &str) -> Result<Option<RelaySetting>, StoreError> {
+    let set = c
+        .prepare_cached("SELECT url, key_sealed FROM push_relay WHERE id = 1")?
+        .query_row([], |row| {
+            Ok(RelaySetting {
+                url: row.get(0)?,
+                key_sealed: row.get(1)?,
             })
-            .optional()?
-            .filter(|r| !r.url.is_empty()),
-    )
+        })
+        .optional()?;
+    Ok(match set {
+        None => Some(RelaySetting {
+            url: default.to_owned(),
+            key_sealed: None,
+        }),
+        Some(r) if r.url.is_empty() => None,
+        Some(r) => Some(r),
+    })
 }
 
+/// Whether `url` points at the default relay's host. Whatever was set, the hub sends it no key and only over https: the
+/// public relay takes none, and a key or a push sent there in the clear would only leak.
+pub fn default_host(url: &str) -> bool {
+    let host = |u: &str| {
+        url::Url::parse(u)
+            .ok()?
+            .host_str()
+            .map(str::to_ascii_lowercase)
+    };
+    host(url).is_some() && host(url) == host(DEFAULT_RELAY)
+}
+
+/// The sealed key to send `relay`, after [`default_host`]'s rule; Err when it can't be sent at all.
+pub fn sendable(relay: &RelaySetting) -> Result<Option<&str>, String> {
+    if !default_host(&relay.url) {
+        return Ok(relay.key_sealed.as_deref());
+    }
+    if !relay.url.starts_with("https://") {
+        return Err(format!(
+            "{} is sent to over https only: set it again with `fleetd push-relay set {DEFAULT_RELAY}`",
+            relay.url
+        ));
+    }
+    Ok(None)
+}
+
+/// Sets the hub's push relay: None goes back to [`DEFAULT_RELAY`], an empty URL turns pushes off.
 pub fn set_relay(c: &Connection, relay: Option<&RelaySetting>) -> Result<(), StoreError> {
     match relay {
         Some(r) => c
@@ -458,12 +496,24 @@ pub async fn post(
 }
 
 /// The loop's memory between pages.
-#[derive(Default)]
 pub struct Follow {
     sent: HashSet<ChatMessageId>,
     order: VecDeque<ChatMessageId>,
     /// Each failure logged, and when.
     warned: HashMap<String, i64>,
+    /// Where pushes go when no relay is set: [`DEFAULT_RELAY`], a fake one in tests.
+    default_relay: String,
+}
+
+impl Default for Follow {
+    fn default() -> Self {
+        Self {
+            sent: HashSet::new(),
+            order: VecDeque::new(),
+            warned: HashMap::new(),
+            default_relay: DEFAULT_RELAY.to_owned(),
+        }
+    }
 }
 
 impl Follow {
@@ -505,10 +555,17 @@ pub async fn step(
 ) -> Result<(i64, bool, Vec<(String, Outcome)>), StoreError> {
     let page = hub.events.page(cursor, None, None)?;
     let mut outcomes = Vec::new();
-    let Some(relay) = hub.db.with(relay)? else {
+    let Some(relay) = hub.db.with(|c| relay(c, &follow.default_relay))? else {
         return Ok((page.cursor, page.more, outcomes));
     };
-    let key = match &relay.key_sealed {
+    let sealed = match sendable(&relay) {
+        Ok(sealed) => sealed,
+        Err(why) => {
+            follow.warn_once(why, now_ms(hub.clock.as_ref()));
+            return Ok((page.cursor, page.more, outcomes));
+        }
+    };
+    let key = match sealed {
         None => None,
         Some(sealed) => match open_key(hub, sealed) {
             Some(key) => Some(key),

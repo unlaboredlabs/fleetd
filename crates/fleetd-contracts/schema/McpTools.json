@@ -16529,7 +16529,7 @@
           "type": "string"
         },
         "relay": {
-          "description": "The hub has a push relay set: without one it sends nothing.",
+          "description": "The hub sends phone notifications: through its relay, push.fleetd.sh unless one is set. False when an admin\nturned them off.",
           "type": "boolean"
         },
         "truncated": {
@@ -16624,6 +16624,10 @@
     },
     "PushRelaySetOutput": {
       "properties": {
+        "default": {
+          "description": "The hub uses the default relay, https://push.fleetd.sh.",
+          "type": "boolean"
+        },
         "key": {
           "description": "The hub keeps a key for the relay.",
           "type": "boolean"
@@ -16640,7 +16644,8 @@
         }
       },
       "required": [
-        "key"
+        "key",
+        "default"
       ],
       "type": "object"
     },

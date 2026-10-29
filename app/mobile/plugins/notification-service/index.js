@@ -8,7 +8,7 @@ const path = require("node:path");
 const { withDangerousMod, withEntitlementsPlist, withXcodeProject } = require("expo/config-plugins");
 
 const TARGET = "FleetdNotifications";
-const SOURCES = ["NotificationService.swift", "Sealed.swift"];
+const SOURCES = ["NotificationService.swift", "Payload.swift", "Sealed.swift"];
 
 const keychainGroup = (appId) => `$(AppIdentifierPrefix)${appId}.push`;
 

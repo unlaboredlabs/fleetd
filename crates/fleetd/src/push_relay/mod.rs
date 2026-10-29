@@ -2,7 +2,8 @@
 //! relay forwards it to APNs (apns.rs) or FCM (fcm.rs) with the publisher's credentials, which only it holds, from
 //! files and the environment. It reads no notification: it sees a token, ciphertext and an opaque collapse key, keeps
 //! none of them and logs none of them. Limits: a body of at most [`CIPHERTEXT_MAX`], [`PER_TOKEN_PER_MIN`] pushes a
-//! minute to one token. A token APNs or FCM no longer knows is answered `dead`, and the hub drops that device; an
+//! minute to one token and [`PER_SOURCE_PER_MIN`] from one IP address (the peer's, or behind a proxy on the same machine
+//! the last X-Forwarded-For entry). A token APNs or FCM no longer knows is answered `dead`, and the hub drops that device; an
 //! answer that means the relay's own setup is wrong (another APNs environment or bundle id, another Firebase project)
 //! is `failed`, saying what to fix, so a misconfigured relay never wipes the hub's phones. With
 //! `FLEETD_PUSH_RELAY_KEY_FILE` set, it takes only requests that carry that key as a bearer token.
@@ -13,11 +14,11 @@ pub mod fcm;
 mod tests;
 
 use std::collections::HashMap;
-use std::net::SocketAddr;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use axum::extract::{DefaultBodyLimit, State};
+use axum::extract::{ConnectInfo, DefaultBodyLimit, Extension, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
@@ -32,6 +33,8 @@ pub const CIPHERTEXT_MAX: usize = 3500;
 /// The longest token: APNs's are 64 hex digits, FCM's about 160 characters.
 pub const TOKEN_MAX: usize = 4096;
 pub const PER_TOKEN_PER_MIN: u32 = 60;
+/// Pushes a minute from one IP address: a public relay takes pushes without a key, so one source can't flood it.
+pub const PER_SOURCE_PER_MIN: u32 = 600;
 /// Where `fleetd push-relay` listens without `--listen`.
 pub const DEFAULT_LISTEN: &str = "127.0.0.1:4795";
 const BODY_MAX: usize = 8 * 1024;
@@ -77,7 +80,38 @@ pub struct Relay {
     /// The key hubs send as `Authorization: Bearer`; None takes every request.
     pub key: Option<zeroize::Zeroizing<String>>,
     pub http: reqwest::Client,
-    limits: Mutex<HashMap<[u8; 32], (Instant, u32)>>,
+    tokens: Window,
+    sources: Window,
+}
+
+/// Counts per key in a one-minute window. Keys are hashes: no token or address is kept in the clear.
+struct Window {
+    per_min: u32,
+    counts: Mutex<HashMap<[u8; 32], (Instant, u32)>>,
+}
+
+impl Window {
+    fn new(per_min: u32) -> Self {
+        Self {
+            per_min,
+            counts: Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// Counts one against `what`'s minute; false when that minute is spent.
+    fn allow(&self, what: &[u8], now: Instant) -> bool {
+        let key: [u8; 32] = sha2::Sha256::digest(what).into();
+        let mut counts = self.counts.lock().unwrap();
+        if counts.len() > 10_000 {
+            counts.retain(|_, (start, _)| now.duration_since(*start) < Duration::from_secs(60));
+        }
+        let entry = counts.entry(key).or_insert((now, 0));
+        if now.duration_since(entry.0) >= Duration::from_secs(60) {
+            *entry = (now, 0);
+        }
+        entry.1 += 1;
+        entry.1 <= self.per_min
+    }
 }
 
 impl Relay {
@@ -90,8 +124,16 @@ impl Relay {
                 .timeout(UPSTREAM_TIMEOUT)
                 .build()
                 .unwrap_or_default(),
-            limits: Mutex::new(HashMap::new()),
+            tokens: Window::new(PER_TOKEN_PER_MIN),
+            sources: Window::new(PER_SOURCE_PER_MIN),
         }
+    }
+
+    /// The relay with `per_min` pushes a minute from one source, for tests.
+    #[cfg(test)]
+    pub fn with_source_limit(mut self, per_min: u32) -> Self {
+        self.sources = Window::new(per_min);
+        self
     }
 
     /// The credentials the environment names: `FLEETD_APNS_*` and `FLEETD_FCM_SERVICE_ACCOUNT`, and the key in
@@ -120,20 +162,35 @@ impl Relay {
         sha2::Sha256::digest(sent.trim().as_bytes()) == sha2::Sha256::digest(key.as_bytes())
     }
 
-    /// Counts a push to `token` against its minute; false when that minute is spent. Only a hash of the token is kept.
+    /// Counts a push to `token` against its minute; false when that minute is spent.
     fn allow(&self, token: &str, now: Instant) -> bool {
-        let key: [u8; 32] = sha2::Sha256::digest(token.as_bytes()).into();
-        let mut limits = self.limits.lock().unwrap();
-        if limits.len() > 10_000 {
-            limits.retain(|_, (start, _)| now.duration_since(*start) < Duration::from_secs(60));
-        }
-        let entry = limits.entry(key).or_insert((now, 0));
-        if now.duration_since(entry.0) >= Duration::from_secs(60) {
-            *entry = (now, 0);
-        }
-        entry.1 += 1;
-        entry.1 <= PER_TOKEN_PER_MIN
+        self.tokens.allow(token.as_bytes(), now)
     }
+
+    /// Counts a push from `source` against its minute; false when that minute is spent.
+    fn allow_source(&self, source: IpAddr, now: Instant) -> bool {
+        self.sources.allow(source.to_string().as_bytes(), now)
+    }
+}
+
+/// Where a push came from: the TCP peer, or when the peer is this machine (a reverse proxy such as Caddy in front of
+/// the relay) the last X-Forwarded-For entry, the one that proxy added. A header from anywhere else is ignored, so a
+/// client can't pick its own address. Without a peer (no connect info) every push counts as one source.
+pub fn source(peer: Option<SocketAddr>, headers: &HeaderMap) -> IpAddr {
+    let Some(peer) = peer else {
+        return IpAddr::V4(Ipv4Addr::UNSPECIFIED);
+    };
+    if !peer.ip().is_loopback() {
+        return peer.ip();
+    }
+    headers
+        .get_all("x-forwarded-for")
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .flat_map(|v| v.split(','))
+        .last()
+        .and_then(|ip| ip.trim().parse().ok())
+        .unwrap_or(peer.ip())
 }
 
 fn answer(status: StatusCode, answer: RelayAnswer) -> Response {
@@ -165,9 +222,17 @@ fn plausible(push: &RelayPush) -> bool {
 
 async fn push(
     State(relay): State<Arc<Relay>>,
+    peer: Option<Extension<ConnectInfo<SocketAddr>>>,
     headers: HeaderMap,
     body: axum::body::Bytes,
 ) -> Response {
+    let peer = peer.map(|Extension(ConnectInfo(peer))| peer);
+    if !relay.allow_source(source(peer, &headers), Instant::now()) {
+        return failed(
+            StatusCode::TOO_MANY_REQUESTS,
+            "too many pushes from this address",
+        );
+    }
     if !relay.admits(&headers) {
         return failed(
             StatusCode::UNAUTHORIZED,
@@ -248,10 +313,13 @@ pub async fn serve(listen: SocketAddr, relay: Relay) -> Result<(), String> {
         if key { "key required" } else { "no key" }
     );
     let mut stop = crate::cli::Stop::on_signals();
-    axum::serve(listener, router(Arc::new(relay)))
-        .with_graceful_shutdown(async move { stop.wait().await })
-        .await
-        .map_err(|e| e.to_string())
+    axum::serve(
+        listener,
+        router(Arc::new(relay)).into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(async move { stop.wait().await })
+    .await
+    .map_err(|e| e.to_string())
 }
 
 /// A file a credential env var names, read whole.

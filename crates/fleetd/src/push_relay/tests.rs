@@ -123,7 +123,7 @@ async fn relay_keyed(upstream: &str, key: Option<&str>) -> (String, Vec<u8>) {
     let url = format!("http://{}", listener.local_addr().unwrap());
     let mut served = Relay::new(Some(apns), Some(fcm));
     served.key = key.map(|k| zeroize::Zeroizing::new(k.to_owned()));
-    let app = router(Arc::new(served));
+    let app = router(Arc::new(served)).into_make_service_with_connect_info::<SocketAddr>();
     tokio::spawn(async move { axum::serve(listener, app).await });
     (url, public)
 }
@@ -302,6 +302,12 @@ async fn the_relay_refuses_what_is_too_big_malformed_too_frequent_or_unconfigure
     assert!(!limits.allow("aa11", t0));
     assert!(limits.allow("bb22", t0));
     assert!(limits.allow("aa11", t0 + Duration::from_secs(61)));
+    // Per source address too, whatever the tokens.
+    let ip: std::net::IpAddr = "203.0.113.7".parse().unwrap();
+    assert!((0..PER_SOURCE_PER_MIN).all(|_| limits.allow_source(ip, t0)));
+    assert!(!limits.allow_source(ip, t0));
+    assert!(limits.allow_source("203.0.113.8".parse().unwrap(), t0));
+    assert!(limits.allow_source(ip, t0 + Duration::from_secs(61)));
 
     // A platform the relay has no credentials for.
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -429,4 +435,64 @@ async fn a_relay_with_a_key_takes_only_hubs_that_send_it() {
         crate::hub::push::post(&http, &relay, None, &ios).await,
         Outcome::Failed(why) if why.starts_with("401")
     ));
+}
+
+#[test]
+fn a_push_comes_from_its_peer_or_from_what_a_proxy_on_this_machine_says() {
+    let forwarded = |v: &str| {
+        let mut h = HeaderMap::new();
+        h.insert("x-forwarded-for", v.parse().unwrap());
+        h
+    };
+    let ip = |s: &str| s.parse::<std::net::IpAddr>().unwrap();
+    let remote: SocketAddr = "198.51.100.4:5000".parse().unwrap();
+    let local: SocketAddr = "127.0.0.1:5000".parse().unwrap();
+    // A client far away can't name its own address.
+    assert_eq!(
+        source(Some(remote), &forwarded("203.0.113.7")),
+        ip("198.51.100.4")
+    );
+    // Behind Caddy on this machine: the entry Caddy added, the last one, not what the client sent before it.
+    assert_eq!(
+        source(Some(local), &forwarded("203.0.113.7")),
+        ip("203.0.113.7")
+    );
+    assert_eq!(
+        source(Some(local), &forwarded("10.0.0.1, 203.0.113.7")),
+        ip("203.0.113.7")
+    );
+    assert_eq!(
+        source(Some(local), &forwarded("not an ip")),
+        ip("127.0.0.1")
+    );
+    assert_eq!(source(Some(local), &HeaderMap::new()), ip("127.0.0.1"));
+    assert_eq!(source(None, &forwarded("203.0.113.7")), ip("0.0.0.0"));
+}
+
+#[tokio::test]
+async fn a_source_over_its_minute_is_refused_whatever_tokens_it_names() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let relay = format!("http://{}", listener.local_addr().unwrap());
+    let app = router(Arc::new(Relay::new(None, None).with_source_limit(2)))
+        .into_make_service_with_connect_info::<SocketAddr>();
+    tokio::spawn(async move { axum::serve(listener, app).await });
+    let from = |ip: &'static str, token: &'static str| {
+        let relay = relay.clone();
+        async move {
+            reqwest::Client::new()
+                .post(format!("{relay}/v1/push"))
+                .header("x-forwarded-for", ip)
+                .json(&push(PushPlatform::Ios, token))
+                .send()
+                .await
+                .unwrap()
+                .status()
+                .as_u16()
+        }
+    };
+    // No APNs credentials: a push let through answers 503.
+    assert_eq!(from("203.0.113.7", "aa11").await, 503);
+    assert_eq!(from("203.0.113.7", "bb22").await, 503);
+    assert_eq!(from("203.0.113.7", "cc33").await, 429);
+    assert_eq!(from("203.0.113.8", "cc33").await, 503);
 }

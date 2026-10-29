@@ -2349,7 +2349,8 @@ input!(PushDeviceRegisterInput {
 });
 output!(PushDeviceRegisterOutput {
     device: crate::push::PushDevice,
-    /// The hub has a push relay set: without one it sends nothing.
+    /// The hub sends phone notifications: through its relay, push.fleetd.sh unless one is set. False when an admin
+    /// turned them off.
     relay: bool,
 });
 
@@ -2368,7 +2369,8 @@ output!(PushDeviceRemoveOutput {
     device: crate::push::PushDevice,
 });
 
-// push_relay_set: where the hub sends its sealed notifications (`fleetd push-relay`); empty sends none. It replaces the
+// push_relay_set: where the hub sends its sealed notifications (`fleetd push-relay`). Never set, it sends them to
+// https://push.fleetd.sh without a key; that URL without `key` goes back to it; empty turns them off. It replaces the
 // whole setting: a URL set without `key` sends none.
 input!(PushRelaySetInput {
     url: Line<0, 2000>,
@@ -2381,6 +2383,8 @@ output!(PushRelaySetOutput {
     url: Option<String>,
     /// The hub keeps a key for the relay.
     key: bool,
+    /// The hub uses the default relay, https://push.fleetd.sh.
+    default: bool,
 });
 
 /// The release channel a hub's build follows: edge when its version contains "-edge." (or "-nightly.", edge's name

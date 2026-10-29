@@ -9,11 +9,14 @@ pub const PUSH_RELAY_USAGE: &str = "  push-relay [--listen 127.0.0.1:4795]
              credentials: FLEETD_APNS_KEY_FILE (a .p8), FLEETD_APNS_KEY_ID, FLEETD_APNS_TEAM_ID,
              FLEETD_APNS_TOPIC (the app's bundle id), FLEETD_APNS_SANDBOX=1 for development
              builds; FLEETD_FCM_SERVICE_ACCOUNT (a Firebase service account's JSON key).
-             FLEETD_PUSH_RELAY_KEY_FILE (a file holding a key): take only hubs that send it. It
-             never reads, keeps or logs a notification
+             FLEETD_PUSH_RELAY_KEY_FILE (a file holding a key): take only hubs that send it; set one
+             when the relay is reachable beyond this machine. It never reads, keeps or logs a
+             notification. Run your own only for an app you build yourself
   push-relay set <url|off> [--relay-key-file <path>] [--hub <url> --key-file <path> | --home <dir>]
-             send this hub's phone notifications through the relay at <url>, with the key in
-             --relay-key-file when the relay takes one, sealed to the hub; off sends none
+             hubs send phone notifications through https://push.fleetd.sh, the relay for the
+             published app, without a key. <url> sends them through your own relay instead, with
+             the key in --relay-key-file when it takes one, sealed to the hub;
+             https://push.fleetd.sh goes back to the default; off sends none
              (admin key on every machine)
 ";
 
@@ -101,7 +104,11 @@ async fn set(v: &args::Parsed, url: &str) -> u8 {
     }
     match hub.call("push_relay_set", input).await {
         Ok(set) => {
+            let default = set["default"].as_bool() == Some(true);
             match (set["url"].as_str(), set["key"].as_bool() == Some(true)) {
+                (Some(url), _) if default => {
+                    println!("phone notifications go through {url}, the default relay")
+                }
                 (Some(url), true) => println!("phone notifications go through {url}, with its key"),
                 (Some(url), false) => println!("phone notifications go through {url}"),
                 (None, _) => println!("phone notifications are off"),
