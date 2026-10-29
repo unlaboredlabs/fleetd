@@ -80,9 +80,13 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
     });
   }, [navigation, title, project, status]);
 
+  const list = useRef<FlatList<ThreadRow>>(null);
+  // What you send shows at once, as in Messages, wherever the thread was scrolled to (the list is upside down: 0 is
+  // the newest).
   const send = (body: string) => {
     if (body.trim() === "") return;
     session.send(chatKey, body);
+    list.current?.scrollToOffset({ offset: 0, animated: true });
   };
 
   const loading = !chat.loaded && chat.cached !== true;
@@ -90,6 +94,7 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   return (
     <KeyboardAvoidingView style={[styles.fill, { backgroundColor: t.bg }]} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <FlatList
+        ref={list}
         inverted
         data={loading && items.length === 0 ? [] : newestFirst}
         keyExtractor={(r) => r.id}

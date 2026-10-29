@@ -3,7 +3,7 @@
 // and a chevron when it opens something.
 import { Children, Fragment, isValidElement, type ReactNode } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { space, TOUCH, type, useTheme } from "../theme";
+import { shape, space, type, useTheme } from "../theme";
 import { Icon, type IconName } from "./Icon";
 
 export function ListSection({ header, footer, children }: { header?: string; footer?: string; children: ReactNode }) {
@@ -84,9 +84,9 @@ const styles = StyleSheet.create({
   section: { marginHorizontal: space.lg, marginTop: space.xl },
   header: { paddingHorizontal: space.lg, paddingBottom: 7 },
   footer: { paddingHorizontal: space.lg, paddingTop: 7 },
-  group: { borderRadius: 12, overflow: "hidden" },
+  group: { borderRadius: shape.group, borderCurve: "continuous", overflow: "hidden" },
   separator: { height: StyleSheet.hairlineWidth },
-  row: { flexDirection: "row", alignItems: "center", gap: space.md, minHeight: TOUCH, paddingHorizontal: space.lg, paddingVertical: 11 },
+  row: { flexDirection: "row", alignItems: "center", gap: space.md, minHeight: shape.row, paddingHorizontal: space.lg, paddingVertical: 11 },
   tile: { width: 29, height: 29, borderRadius: 7, alignItems: "center", justifyContent: "center" },
   title: { flexShrink: 0, maxWidth: "60%" },
   grow: { flex: 1 },

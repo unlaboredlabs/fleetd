@@ -1,7 +1,7 @@
 // iOS's buttons: filled (the one primary action), tinted (a secondary one), and plain text. Destructive turns any of
 // them red. Large is a full-width 50-point button, as at the bottom of a sheet; every size keeps a 44-point target.
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
-import { space, TOUCH, type, useTheme } from "../theme";
+import { shape, space, TOUCH, type, useTheme } from "../theme";
 import { Icon, type IconName } from "./Icon";
 
 export function Button({
@@ -36,13 +36,15 @@ export function Button({
   return (
     <Pressable
       accessibilityRole="button"
+      // The words alone: VoiceOver would read the symbol's name too.
+      accessibilityLabel={label}
       accessibilityState={{ disabled: disabled || busy, busy }}
       disabled={disabled || busy}
       onPress={onPress}
       hitSlop={size === "small" ? 5 : 0}
       style={({ pressed }) => [
         styles.base,
-        { minHeight: height, borderRadius: size === "large" ? 14 : size === "medium" ? 12 : height / 2, backgroundColor: fill },
+        { minHeight: height, borderRadius: shape.capsule || size === "small" ? height / 2 : size === "large" ? 14 : 12, backgroundColor: fill },
         kind === "plain" ? styles.plain : { paddingHorizontal: size === "small" ? 14 : space.lg },
         grow && styles.grow,
         size === "large" && styles.wide,

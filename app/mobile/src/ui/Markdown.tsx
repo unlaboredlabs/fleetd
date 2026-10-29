@@ -36,11 +36,12 @@ function BlockView({ block, ink, onAccent }: { block: Block; ink: string; onAcce
       );
     case "code":
       return (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={[styles.codeBlock, { backgroundColor: codeFill }]} contentContainerStyle={styles.codePad}>
+        // Wrapped, not scrolled sideways: in a sideways ScrollView, iOS lays the text out far taller than its lines.
+        <View style={[styles.codeBlock, { backgroundColor: codeFill }]}>
           <Text style={[styles.code, { color: ink }]} selectable>
             {block.text}
           </Text>
-        </ScrollView>
+        </View>
       );
     case "quote":
       return (
@@ -146,8 +147,7 @@ function Inlines({ nodes, ink, onAccent }: { nodes: readonly Inline[]; ink: stri
 const styles = StyleSheet.create({
   blocks: { gap: space.sm },
   code: { fontFamily: mono, fontSize: 14, lineHeight: 19 },
-  codeBlock: { borderRadius: 10 },
-  codePad: { paddingHorizontal: 10, paddingVertical: 8 },
+  codeBlock: { borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8 },
   inlineCode: { fontFamily: mono, fontSize: 15 },
   quote: { borderLeftWidth: 3, paddingLeft: 10, gap: space.xs },
   list: { gap: 2 },

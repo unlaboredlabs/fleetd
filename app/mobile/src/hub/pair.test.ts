@@ -32,8 +32,15 @@ describe("pair", () => {
   });
 
   it("passes on the hub's own words", async () => {
-    const result = await pair(answering(400, { code: "pair_code_expired", message: "That code expired.", fix: "Run fleetd pair again." }), "http://devbox:4790", "ABCD2345", "Pixel");
-    expect(result).toEqual({ ok: false, failure: { code: "pair_code_expired", message: "That code expired.", fix: "Run fleetd pair again." } });
+    const result = await pair(answering(429, { code: "pair_rate_limited", message: "Too many tries.", fix: "Wait a minute." }), "http://devbox:4790", "ABCD2345", "Pixel");
+    expect(result).toEqual({ ok: false, failure: { code: "pair_rate_limited", message: "Too many tries.", fix: "Wait a minute." } });
+  });
+
+  it("says plainly when the code expired or was used", async () => {
+    const expired = await pair(answering(401, { code: "pair_code_expired", message: "pairing code expired", fix: "Run `fleetd pair`." }), "http://devbox:4790", "ABCD2345", "Pixel");
+    expect(expired).toMatchObject({ ok: false, failure: { code: "pair_code_expired", message: "This pairing code has expired: a code works for 15 minutes." } });
+    const used = await pair(answering(401, { code: "pair_code_invalid", message: "unknown or already used pairing code" }), "http://devbox:4790", "ABCD2345", "Pixel");
+    expect(used).toMatchObject({ ok: false, failure: { code: "pair_code_invalid", message: "This pairing code was already used, or isn't one this hub made." } });
   });
 
   it("says when nothing answers", async () => {

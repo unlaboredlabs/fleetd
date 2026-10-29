@@ -35,5 +35,7 @@ export type RootParams = {
 };
 export type PairParams = {
   Welcome: undefined;
-  Pair: { code?: string } | undefined;
+  Scan: undefined;
+  /** A scanned or opened pairing link's hub and code, which `auto` pairs with at once. */
+  Pair: { hub?: string; code?: string; auto?: boolean } | undefined;
 };

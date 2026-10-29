@@ -167,9 +167,9 @@ jobs:
           app=build/Build/Products/$CONFIGURATION-iphonesimulator/fleetd.app
           appex=$app/PlugIns/FleetdNotifications.appex
           test -x "$appex/FleetdNotifications" || { echo "::error::the app has no Notification Service Extension"; exit 1; }
-          # Signed to run locally, with its entitlements: without the keychain group, secure storage fails on a simulator.
-          codesign -d --entitlements - --xml "$app" 2>/dev/null | grep -q keychain-access-groups \
-            || { echo "::error::the app is signed without its keychain group"; exit 1; }
+          # Signed to run locally, with its entitlements, which a simulator reads from the binary's __entitlements
+          # section: without the keychain group, secure storage fails there.
+          grep -aq keychain-access-groups "$app/fleetd" || { echo "::error::the app is built without its keychain group"; exit 1; }
           # Where a Debug build finds Metro (React Native's RCTBundleURLProvider reads it), sealed in by signing again.
           if [ -n "$METRO" ]; then
             printf '%s\n' "$METRO" > "$app/ip.txt"

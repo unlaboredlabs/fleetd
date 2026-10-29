@@ -11,7 +11,6 @@ import { useHub } from "../hubContext";
 import { space, useTheme } from "../theme";
 import { ListRow, ListSection } from "../ui/List";
 import { ConnectionLine } from "../ui/States";
-import { useTabBarInset } from "./layout";
 
 const statusOf = (phase: string): string =>
   phase === "live" ? "Connected" : phase === "connecting" ? "Connecting…" : phase === "retrying" ? "Reconnecting…" : phase === "refused" ? "Key refused" : "Not connected";
@@ -26,7 +25,6 @@ const updateWords = (): string => {
 export function Settings() {
   const t = useTheme();
   const { paired, state, disconnect, pairAgain } = useHub();
-  const bottom = useTabBarInset();
   const [notifications, setNotifications] = useState<string | undefined>(undefined);
   // Read again each time the tab shows: the person may have changed it in iOS Settings meanwhile.
   useFocusEffect(
@@ -39,7 +37,7 @@ export function Settings() {
   const hub = state.hub;
   const version = Constants.expoConfig?.version;
   return (
-    <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ paddingBottom: bottom + space.xxl }} scrollIndicatorInsets={{ bottom }}>
+    <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ paddingBottom: space.xxl }}>
       <ConnectionLine state={hub} onPairAgain={pairAgain} />
       <ListSection header="Hub">
         <ListRow icon="server" title="Name" value={paired.hubName} />

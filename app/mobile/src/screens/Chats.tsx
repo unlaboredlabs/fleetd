@@ -13,25 +13,28 @@ import { Avatar } from "../ui/Avatar";
 import { SkeletonRow } from "../ui/Skeleton";
 import { Badge, ConnectionLine, EmptyState } from "../ui/States";
 import { useNow } from "./time";
-import { useTabBarInset } from "./layout";
 
 const AVATAR = 52;
+
+/**
+ * The search field, under the large title as in Messages (iOS 26 would put it in a toolbar, which tabs don't show). It
+ * has to be in the screen's options from its first frame (App.tsx): one set later never shows. Chats adds its handlers.
+ */
+export const searchBar = { placeholder: "Search", placement: "stacked", hideWhenScrolling: false } as const;
 
 export function Chats({ navigation }: NativeStackScreenProps<{ Chats: undefined }, "Chats">) {
   const t = useTheme();
   const { state, session, pairAgain } = useHub();
   const root = useNavigation<NavigationProp<RootParams>>();
-  const bottom = useTabBarInset();
   const [query, setQuery] = useState("");
   const refreshing = useRefreshing(state.projects, state.hub.phase);
 
   useLayoutEffect(() => {
     navigation.setOptions({
       headerSearchBarOptions: {
-        placeholder: "Search",
+        ...searchBar,
         onChangeText: (e) => setQuery(e.nativeEvent.text),
         onCancelButtonPress: () => setQuery(""),
-        hideWhenScrolling: true,
         tintColor: t.accent,
       },
     });
@@ -67,8 +70,7 @@ export function Chats({ navigation }: NativeStackScreenProps<{ Chats: undefined 
       sections={sections}
       keyExtractor={(r) => r.key}
       contentInsetAdjustmentBehavior="automatic"
-      contentContainerStyle={{ paddingBottom: bottom, flexGrow: 1 }}
-      scrollIndicatorInsets={{ bottom }}
+      contentContainerStyle={{ flexGrow: 1 }}
       keyboardDismissMode="on-drag"
       stickySectionHeadersEnabled={false}
       refreshControl={<RefreshControl refreshing={refreshing.on} onRefresh={() => refreshing.start(() => session.refresh())} tintColor={t.secondary} />}
@@ -113,7 +115,9 @@ function ChatRow({ row, separator, onPress }: { row: Row; separator: boolean; on
   const now = useNow();
   const line = row.working ? "Working…" : (row.preview ?? row.want ?? (row.navi ? "Navi" : row.project.workspaceRoot));
   const accentLine = row.working || (row.preview === undefined && row.want !== undefined);
-  const label = [row.project.title, line, row.approvals > 0 ? `${String(row.approvals)} waiting for approval` : row.want].filter((s) => s !== undefined).join(", ");
+  // What the badge says, unless the line already does.
+  const badge = row.approvals > 0 ? `${String(row.approvals)} waiting for approval` : row.want;
+  const label = [row.project.title, line, line === row.want ? undefined : badge].filter((s) => s !== undefined).join(", ");
   return (
     <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={label}>
       {({ pressed }) => (

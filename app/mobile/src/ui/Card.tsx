@@ -2,7 +2,7 @@
 // chat's plain one, the grouped ground's.
 import type { ReactNode } from "react";
 import { StyleSheet, View, type StyleProp, type ViewStyle } from "react-native";
-import { space, useTheme } from "../theme";
+import { shape, space, useTheme } from "../theme";
 
 export function Card({ children, on = "plain", style }: { children: ReactNode; on?: "plain" | "grouped"; style?: StyleProp<ViewStyle> }) {
   const t = useTheme();
@@ -10,5 +10,5 @@ export function Card({ children, on = "plain", style }: { children: ReactNode; o
 }
 
 const styles = StyleSheet.create({
-  card: { borderRadius: 18, padding: space.lg, gap: space.md, overflow: "hidden" },
+  card: { borderRadius: shape.card, borderCurve: "continuous", padding: space.lg, gap: space.md, overflow: "hidden" },
 });

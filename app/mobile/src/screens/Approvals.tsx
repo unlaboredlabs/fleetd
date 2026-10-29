@@ -10,11 +10,9 @@ import { Card } from "../ui/Card";
 import { SkeletonBlock } from "../ui/Skeleton";
 import { ConnectionLine, EmptyState } from "../ui/States";
 import { ApprovalCard } from "./ApprovalCard";
-import { useTabBarInset } from "./layout";
 
 export function Approvals({ route }: NativeStackScreenProps<ApprovalsParams, "Approvals">) {
   const { state, session, pairAgain } = useHub();
-  const bottom = useTabBarInset();
   const focus = route.params?.focus;
   const listed = approvals(state.requests);
   const open = [...listed.filter((r) => r.requestId === focus), ...listed.filter((r) => r.requestId !== focus)];
@@ -49,8 +47,7 @@ export function Approvals({ route }: NativeStackScreenProps<ApprovalsParams, "Ap
       data={open}
       keyExtractor={(r) => r.requestId}
       contentInsetAdjustmentBehavior="automatic"
-      contentContainerStyle={[styles.cards, { paddingBottom: bottom + space.lg, flexGrow: 1 }]}
-      scrollIndicatorInsets={{ bottom }}
+      contentContainerStyle={[styles.cards, { paddingBottom: space.lg, flexGrow: 1 }]}
       ListHeaderComponent={<ConnectionLine state={state.hub} onPairAgain={pairAgain} />}
       ListEmptyComponent={empty}
       renderItem={({ item }) => {

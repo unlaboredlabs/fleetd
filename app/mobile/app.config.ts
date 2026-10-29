@@ -22,6 +22,9 @@
 // update job (build-release.yml) resolves it with the same settings, so a build gets only bundles made for it, and a
 // native change, or another URL or channel, gives builds a runtime version older bundles don't match.
 //
+// `scheme` registers fleetd:// links: a pairing QR code (`fleetd://pair?hub=…&code=…`) scanned with iOS's Camera opens
+// the app, which pairs with it.
+//
 // Notifications use the platforms' own push, APNs and FCM, through `fleetd push-relay`, never Expo's push service
 // (docs/design/push.md). The iOS Notification Service Extension that opens them comes from plugins/notification-service.
 import { relative, resolve } from "node:path";
@@ -74,7 +77,7 @@ export default ({ projectRoot }: ConfigContext): ExpoConfig => ({
     package: appId,
     ...(build === undefined ? {} : { versionCode: Number(build) }),
     adaptiveIcon: {
-      backgroundColor: "#1c1c1b",
+      backgroundColor: "#1b1c1f",
       foregroundImage: "./assets/android-icon-foreground.png",
       backgroundImage: "./assets/android-icon-background.png",
       monochromeImage: "./assets/android-icon-monochrome.png",
@@ -86,7 +89,9 @@ export default ({ projectRoot }: ConfigContext): ExpoConfig => ({
     "expo-secure-store",
     ["expo-build-properties", { android: { usesCleartextTraffic: true } }],
     // A signed build is a store's (TestFlight, the App Store), whose APNs is production; the relay picks the matching one.
-    ["expo-notifications", { mode: "production", icon: "./assets/android-icon-monochrome.png", color: "#1c1c1b", defaultChannel: "other" }],
+    ["expo-notifications", { mode: "production", icon: "./assets/android-icon-monochrome.png", color: "#1b1c1f", defaultChannel: "other" }],
+    // Scans the hub's pairing QR code (D232); no recording, so no microphone.
+    ["expo-camera", { cameraPermission: "fleetd scans the QR code your hub shows, to pair this phone with it.", microphonePermission: false, recordAudioAndroid: false }],
     "./plugins/notification-service",
     "./plugins/android-signing",
   ],
