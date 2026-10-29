@@ -32,7 +32,7 @@ The hub checks these on every fleetd call a session makes, through its MCP tools
 | Agents running at once, per project | The project's max agents, which a person sets (`cap_set`, the chat's Max agents); unset, its machine's cap within the fleet cap. A spawn over it queues and starts by itself; a review goes ahead of queued writers. The lead is not an agent and doesn't count. |
 | Agents running at once, per machine | The machine's max agents, which a person may set up to the fleet cap (`cap_set`, `fleetd machine set`, Settings › Hub › Machines). Unset: what the machine fits, one per CPU less one in eight, and 2 GB of memory each after a quarter (4 to 16 GB) is left for the system, at most 64. Either way new agents pause while memory in use runs short, and wait for 5 GB of disk each above the free-space floor. |
 | Agents running at once, fleet-wide | The machines' caps added up, unless a person set a fleet cap. |
-| Calls a task's agent may make | `report`, `ask_lead`, `brief_read`, `decisions_search`, `review_read`, `preview_suggest`, `preview_config_propose`. Every other call is refused. |
+| Calls a task's agent may make | `report`, `ask_lead`, `brief_read`, `decisions_search`, `review_read`, `preview_suggest`, `preview_config_propose`, `chat_image`. Every other call is refused. |
 | Gated commands (`gated_run`) | Classes `irreversible`, `money`, `credential`. Run only after a human approves; at most 14400 s. |
 
 These limits cover calls to fleetd, not what the agent's own shell can do. A task runs with full Bash, so `gated_run` is not the only way it could run a command. A process that leaves its session's process tree (for example with `setsid`) and scrubs its environment counts as you, with no limits: see "Known limit" on the Security page. Run agents you don't trust as a different OS user.
@@ -76,6 +76,7 @@ Every lead gets these.
 | [`review_read`](#review_read) | Read every finding of the latest reviews of your PRs, blocking and non-blocking, in full, each with path:line. | No |
 | [`preview_suggest`](#preview_suggest) | Suggest the person try a PR themselves, where a human test clearly matters (a UI change, copy in several languages, a mobile build): one line with a Try it button in the chat and the PR, once per PR, which the app also shows as something to look at until the person has seen it. | No |
 | [`preview_config_propose`](#preview_config_propose) | Propose how Try it runs this project's web app, once you know: setup commands (install), build, a start command that serves on 127.0.0.1:$PORT, the ready path and the lockfiles setup depends on. | A person approves the proposed setting in chat before it is saved. |
+| [`chat_image`](#chat_image) | Put an image you made in this project's chat: use it for screenshots of UI changes, instead of a link. | No |
 | [`preview_start`](#preview_start) | Start a preview of a PR (or an order's PRs merged together) for the person to try: only when the person asked for it in the message you are answering, never on your own (use preview_suggest for that). | No |
 | [`session_start`](#session_start) | Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end (a Navi's browser instead keeps its own profile, so the sites it signed into stay signed in). | No |
 | [`desktop`](#desktop) | Act on your Linux desktop session (session_start kind linux_desktop), with computer-use actions plus launch. | No |
@@ -876,6 +877,25 @@ Propose how Try it runs this project's web app, once you know: setup commands (i
 }
 ```
 
+### chat_image
+
+Put an image you made in this project's chat: use it for screenshots of UI changes, instead of a link. path is a png, jpeg, webp or gif file inside your working directory (relative, or absolute inside it; nothing outside it is read), at most 25 MiB. Returns its attachmentId. A lead shows it in its message with an image block ({"v":1,"kind":"image","attachmentId":"F12","caption":"…"}); a task puts the id in its result for its lead to show. Unshown, it is deleted after 24 h.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `path` | string | yes | The image file: relative to your working directory, or absolute inside it. At most 1000 characters. |
+
+**Who may call:** a lead, a task's agent, checked by the hub. **Needs a human:** no.
+
+```json
+{
+  "name": "chat_image",
+  "arguments": {
+    "path": "shots/checkout-after.png"
+  }
+}
+```
+
 ### preview_start
 
 Start a preview of a PR (or an order's PRs merged together) for the person to try: only when the person asked for it in the message you are answering, never on your own (use preview_suggest for that). It runs on a machine that can host it and opens in the app; previews_list in the app shows it.
@@ -1018,6 +1038,7 @@ Every task's agent gets these: implementers, readers, reviewers and QA.
 | [`review_read`](#review_read-task) | Read every finding of the latest reviews of your PRs, blocking and non-blocking, in full, each with path:line. | No |
 | [`preview_suggest`](#preview_suggest-task) | Suggest the person try a PR themselves, where a human test clearly matters (a UI change, copy in several languages, a mobile build): one line with a Try it button in the chat and the PR, once per PR, which the app also shows as something to look at until the person has seen it. | No |
 | [`preview_config_propose`](#preview_config_propose-task) | Propose how Try it runs this project's web app, once you know: setup commands (install), build, a start command that serves on 127.0.0.1:$PORT, the ready path and the lockfiles setup depends on. | A person approves the proposed setting in chat before it is saved. |
+| [`chat_image`](#chat_image-task) | Put an image you made in this project's chat: use it for screenshots of UI changes, instead of a link. | No |
 | [`session_start`](#session_start-task) | Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end (a Navi's browser instead keeps its own profile, so the sites it signed into stay signed in). | No |
 | [`desktop`](#desktop-task) | Act on your Linux desktop session (session_start kind linux_desktop), with computer-use actions plus launch. | No |
 | [`session_end`](#session_end-task) | Close your browser session: the browser and its profile are thrown away (a Navi's profile stays, with its sign-ins), and its recording goes to the hub. | No |
@@ -1175,6 +1196,25 @@ Propose how Try it runs this project's web app, once you know: setup commands (i
       }
     },
     "why": "The storefront is a Vite app"
+  }
+}
+```
+
+### chat_image (task)
+
+Put an image you made in this project's chat: use it for screenshots of UI changes, instead of a link. path is a png, jpeg, webp or gif file inside your working directory (relative, or absolute inside it; nothing outside it is read), at most 25 MiB. Returns its attachmentId. A lead shows it in its message with an image block ({"v":1,"kind":"image","attachmentId":"F12","caption":"…"}); a task puts the id in its result for its lead to show. Unshown, it is deleted after 24 h.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `path` | string | yes | The image file: relative to your working directory, or absolute inside it. At most 1000 characters. |
+
+**Who may call:** a lead, a task's agent, checked by the hub. **Needs a human:** no.
+
+```json
+{
+  "name": "chat_image",
+  "arguments": {
+    "path": "shots/checkout-after.png"
   }
 }
 ```

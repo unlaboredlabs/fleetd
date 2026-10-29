@@ -410,6 +410,33 @@ pub enum AttachmentMime {
     Pdf,
 }
 
+impl AttachmentMime {
+    /// An image's type by its first bytes (png, jpeg, gif, webp); None for anything else.
+    pub fn of_image(head: &[u8]) -> Option<Self> {
+        match head {
+            [0x89, b'P', b'N', b'G', b'\r', b'\n', 0x1a, b'\n', ..] => Some(Self::Png),
+            [0xff, 0xd8, 0xff, ..] => Some(Self::Jpeg),
+            [b'G', b'I', b'F', b'8', b'7' | b'9', b'a', ..] => Some(Self::Gif),
+            [
+                b'R',
+                b'I',
+                b'F',
+                b'F',
+                _,
+                _,
+                _,
+                _,
+                b'W',
+                b'E',
+                b'B',
+                b'P',
+                ..,
+            ] => Some(Self::Webp),
+            _ => None,
+        }
+    }
+}
+
 /// Something an order or note points at: a file of the project, another order, or a PR. The hub renders these into
 /// the lead's wake as a "References:" block.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

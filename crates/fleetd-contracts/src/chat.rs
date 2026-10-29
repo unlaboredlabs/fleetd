@@ -333,6 +333,26 @@ pub struct NudgeResult {
     pub next: Option<String>,
 }
 
+/// `chat_image`: a lead or task uploads an image it made (a screenshot of a UI change) for its project's chat. The
+/// caller's node reads it from the session's own working directory: a png, jpeg, webp or gif by its bytes, at most
+/// [`crate::mcp::ATTACHMENT_MAX_BYTES`]. A lead shows it with an `image` block; unshown, it goes after 24 h.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatImageCall {
+    /// The image file: relative to your working directory, or absolute inside it.
+    pub path: Line<1, 1000>,
+}
+
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatImageResult {
+    pub attachment_id: AttachmentId,
+    pub mime: AttachmentMime,
+    pub bytes: Count,
+    pub next: Option<String>,
+}
+
 /// One chat's state, for the sidebar and the status row.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]

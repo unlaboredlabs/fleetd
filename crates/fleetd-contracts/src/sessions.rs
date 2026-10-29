@@ -438,7 +438,20 @@ pub enum SessionCall {
         rel_path: NonEmpty,
         data_b64: NonEmpty,
     },
+    /// An image session `session_id` made, for its project's chat (`chat_image`): `path` is relative to the session's
+    /// own working directory, or absolute inside it, symlinks resolved. A png, jpeg, webp or gif by its bytes, at most
+    /// [`crate::mcp::ATTACHMENT_MAX_BYTES`]; the reply holds at most [`IMAGE_PIECE_BYTES`] of it from `offset`.
+    #[serde(rename_all = "camelCase")]
+    ReadImage {
+        session_id: ThreadId,
+        path: NonEmpty,
+        #[serde(default)]
+        offset: Count,
+    },
 }
+
+/// The most of an image one `read_image` reply carries, decoded: its base64 stays well inside a link frame.
+pub const IMAGE_PIECE_BYTES: usize = 8 * 1024 * 1024;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct SessionCallFrame {
@@ -762,6 +775,14 @@ pub enum SessionOutput {
     /// Answer to `skills_list`.
     Skills {
         skills: Vec<crate::skills::RepoSkill>,
+    },
+    /// Answer to `read_image`: the file's name and type, its whole size, and the piece from the asked offset.
+    #[serde(rename_all = "camelCase")]
+    Image {
+        name: String,
+        mime: crate::mcp::AttachmentMime,
+        bytes: u64,
+        data_b64: String,
     },
 }
 

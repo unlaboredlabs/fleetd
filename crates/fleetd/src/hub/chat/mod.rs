@@ -24,6 +24,7 @@ use rusqlite::{OptionalExtension, params};
 use tokio::sync::broadcast;
 
 use crate::clock::Clock;
+use crate::hub::intake::attachments;
 use crate::hub::store::{EventLog, HubDb, NewEvent, StoreError, iso_ms, now_ms};
 
 /// Event data stays under the log's 2 KB; a larger message is read with chat_history.
@@ -318,9 +319,13 @@ impl Chat {
                 skills: (!new.skills.is_empty()).then(|| List::unchecked(new.skills)),
                 preview_suggestion: new.preview_suggestion,
                 nudge: None,
-                parts: (author == ChatAuthor::Lead && !new.streaming)
-                    .then(|| parts::parts(&text))
-                    .flatten(),
+                parts: attachments::show(
+                    c,
+                    r,
+                    (author == ChatAuthor::Lead && !new.streaming)
+                        .then(|| parts::parts(&text))
+                        .flatten(),
+                )?,
                 text,
             };
             c.execute(
@@ -684,9 +689,19 @@ impl Chat {
     pub fn finish(&self, message: &mut ChatMessage, text: &str) -> Result<(), StoreError> {
         let text = text_of(text);
         let now = self.now_ts();
+        let lead_parts = match message.author {
+            ChatAuthor::Lead => self.db.with(|c| {
+                Ok(attachments::show(
+                    c,
+                    &message.project_ref,
+                    parts::parts(&text),
+                )?)
+            })?,
+            _ => None,
+        };
         let done = |m: &mut ChatMessage| {
             if m.author == ChatAuthor::Lead {
-                m.parts = parts::parts(&text);
+                m.parts = lead_parts.clone();
             }
             m.text = text.clone();
             m.state = ChatMessageState::Final;

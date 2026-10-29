@@ -7,6 +7,8 @@ use std::path::PathBuf;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
 use fleetd_contracts::auth::Role;
+use fleetd_contracts::blocks::BlockBody;
+use fleetd_contracts::chat::{CHAT_PARTS_MAX, ChatPart};
 use fleetd_contracts::ids::ProjectRef;
 use fleetd_contracts::ledger::WorkstreamId;
 use fleetd_contracts::mcp::{
@@ -14,7 +16,7 @@ use fleetd_contracts::mcp::{
     AttachmentPartInput, AttachmentPartOutput, AttachmentPutInput, AttachmentPutOutput, ErrorCode,
     UploadId,
 };
-use fleetd_contracts::prim::{Count, Text};
+use fleetd_contracts::prim::{Count, List, Text};
 use rusqlite::{OptionalExtension, params};
 use sha2::{Digest, Sha256};
 
@@ -297,6 +299,27 @@ pub async fn put(
             bytes
         }
     };
+    let name = safe_name(&input.name);
+    let (attachment_id, len, sha) =
+        store(hub, bytes, &name, input.mime, caller.key_id.as_str()).await?;
+    Ok(AttachmentPutOutput {
+        attachment_id,
+        bytes: Count::unchecked(len as i64),
+        sha256: Text::unchecked(sha),
+        next: Some("Pass attachmentId in chat_send or steer_send attachments.".into()),
+        truncated: None,
+    })
+}
+
+/// Stores a file's bytes under their sha256 and gives it a row `by` its uploader (a key, or `lead:<project>` for an
+/// agent's image), deleting the unused uploads past their 24 h on the way. Its id, size and sha256.
+pub(super) async fn store(
+    hub: &Hub,
+    bytes: Vec<u8>,
+    name: &str,
+    mime: AttachmentMime,
+    by: &str,
+) -> Result<(AttachmentId, usize, String), ToolError> {
     too_big(bytes.len())?;
     let sha = hex(&Sha256::digest(&bytes));
     let root = dir(hub);
@@ -318,7 +341,6 @@ pub async fn put(
         crate::hub::api::internal_error()
     })?;
     let now = now_ms(hub.clock.as_ref());
-    let name = safe_name(&input.name);
     let n: i64 = hub.db.with(|c| {
         // Unused uploads go here rather than on a timer: every upload checks.
         let stale: Vec<String> = {
@@ -339,17 +361,11 @@ pub async fn put(
         }
         c.execute(
             "INSERT INTO attachments (sha256, name, mime, bytes, by, created_ms) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![sha, name, mime_str(input.mime), len as i64, caller.key_id.as_str(), now],
+            params![sha, name, mime_str(mime), len as i64, by, now],
         )?;
         Ok(c.last_insert_rowid())
     })?;
-    Ok(AttachmentPutOutput {
-        attachment_id: AttachmentId::unchecked(format!("F{n}")),
-        bytes: Count::unchecked(len as i64),
-        sha256: Text::unchecked(sha),
-        next: Some("Pass attachmentId in chat_send or steer_send attachments.".into()),
-        truncated: None,
-    })
+    Ok((AttachmentId::unchecked(format!("F{n}")), len, sha))
 }
 
 /// Whether attachment `n` was placed in an order of `project`.
@@ -515,6 +531,54 @@ pub fn claim(hub: &Hub, ids: &[AttachmentId], project: &ProjectRef) -> Result<()
         })?;
     }
     Ok(())
+}
+
+/// A final lead message's parts, each `image` or `clip` block checked against project `r`: one whose attachment is
+/// the project's (a file a person gave it, or an image its lead or tasks made with `chat_image`) stays and marks the
+/// file the project's, so it is kept past the unused-upload cleanup and the app reads it; any other shows as its text.
+pub fn show(
+    c: &rusqlite::Connection,
+    r: &ProjectRef,
+    parts: Option<List<ChatPart, 1, CHAT_PARTS_MAX>>,
+) -> rusqlite::Result<Option<List<ChatPart, 1, CHAT_PARTS_MAX>>> {
+    let Some(parts) = parts else {
+        return Ok(None);
+    };
+    let key = format!("{}/{}", r.machine_id, r.project_id);
+    let lead = crate::hub::link::lead_calls::lead_by(r);
+    let mut out = Vec::new();
+    for mut part in parts {
+        if let Some(BlockBody::Image(media) | BlockBody::Clip(media)) =
+            part.block.as_ref().map(|b| &b.body)
+        {
+            let n: i64 = media.attachment_id.as_str()[1..].parse().unwrap_or(0);
+            let ours = c
+                .query_row(
+                    "SELECT 1 FROM attachments a
+                     LEFT JOIN workstreams w ON w.n = CAST(substr(a.workstream_id, 2) AS INTEGER)
+                     WHERE a.n = ?1 AND (a.project = ?2 OR (a.project IS NULL AND a.by = ?3)
+                       OR (w.machine_id = ?4 AND w.project_id = ?5))",
+                    params![n, key, lead, r.machine_id.as_str(), r.project_id.as_str()],
+                    |_| Ok(()),
+                )
+                .optional()?
+                .is_some();
+            if ours {
+                c.execute(
+                    "UPDATE attachments SET project = ?1 WHERE n = ?2 AND project IS NULL",
+                    params![key, n],
+                )?;
+            } else {
+                part.block = None;
+            }
+        }
+        out.push(part);
+    }
+    // Back to one plain bubble when no block is left of one.
+    if out.len() == 1 && out[0].block.is_none() {
+        return Ok(None);
+    }
+    Ok(List::new(out).ok())
 }
 
 /// [`deliver`] for attachments already checked (a held chat message's, sent later).
