@@ -43,6 +43,16 @@ the account, every recipient, the subject and the whole body, or the page or fil
 exact input that runs. Approve sends exactly that, once: there is no "always allow". Moving money, trading and creating
 accounts are refused even if approved. See [The approval card](/docs/integrations#card).
 
+## Hidden characters {#hidden}
+
+Some characters change how text reads without showing: control characters, line and paragraph separators,
+right-to-left overrides and other bidi controls, and zero-width characters. A command or an email holding one could
+read differently on the card from what runs or goes out. Every approval card, on the desktop and on the phone, shows
+each one as a mark such as ⟨U+202E⟩ and says **Contains hidden characters**. Each value also keeps its own direction,
+so a right-to-left word can't reorder the words around it. Accents, emoji and other scripts show as written.
+
+The marks only change how the card shows a value. Approve runs or sends the exact text.
+
 ## Enter a secret {#secrets}
 
 When a lead needs an API key or a password, it asks with `request_secret`, and the item names the machine and where
