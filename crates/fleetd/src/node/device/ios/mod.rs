@@ -23,9 +23,10 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use fleetd_contracts::browser::{
-    BrowserCallResult, BrowserControl, BrowserRecordingEntry, BrowserSessionState, SessionEnded,
-    SessionKind, SessionStarted,
+    BrowserCallResult, BrowserControl, BrowserRecordingEntry, BrowserSessionState, DeviceCall,
+    SessionEnded, SessionKind, SessionStarted,
 };
+use fleetd_contracts::machine_roles::HostKey;
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
 use fleetd_contracts::node_link::{CAP_SESSION_IOS, IosHealth, IosState};
 use fleetd_contracts::prim::{Count, Text};
@@ -37,6 +38,7 @@ use self::pool::{Golden, Pool};
 use self::session::{Opened, Session};
 use self::simctl::Simctl;
 use super::agent_device;
+use super::remote;
 use super::scrcpy::{Frame, Input};
 use super::{Starting, drives_device, new_id, refuse};
 use crate::node::browser::SecretsFor;
@@ -61,6 +63,10 @@ pub struct IosConfig {
     /// The simulator's device type by name ("iPhone 17 Pro"); absent, the newest plain iPhone of the newest iOS.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub device_type: Option<String>,
+    /// False refuses `agent-device install` and `reinstall` from agents on other machines (remote.rs): an app installed
+    /// in a simulator runs as this Mac's user. Absent: allowed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remote_install: Option<bool>,
 }
 
 impl IosConfig {
@@ -688,10 +694,58 @@ impl Simulators {
         Ok(BrowserCallResult::SessionEnd(self.close(session).await))
     }
 
+    /// An agent-device command, or a file it reads or wrote, for a screen this Mac hosts for an agent on another
+    /// machine (remote.rs): run by the node's own wrapper, on that screen's clone alone, in the screen's folder, and
+    /// logged as the agent's own command is. A person's control holds it back as the wrapper holds a local one.
+    pub async fn device(
+        self: &Arc<Self>,
+        thread: &str,
+        call: DeviceCall,
+    ) -> Result<BrowserCallResult, McpToolError> {
+        if HostKey::new(thread).is_err() {
+            return Err(refuse(
+                ErrorCode::Invalid,
+                "device steps are for an iOS screen hosted for an agent on another machine",
+                "run agent-device yourself",
+            ));
+        }
+        let session = self.live(thread).ok_or_else(|| {
+            refuse(
+                ErrorCode::NotFound,
+                "No iOS session is open.",
+                "start one with session_start kind ios",
+            )
+        })?;
+        let work = remote::Work::at(&self.home, thread);
+        let DeviceCall::Run { args } = call else {
+            session.touch();
+            return work.step(call).map(BrowserCallResult::Device);
+        };
+        work.check(&args, self.config.remote_install != Some(false))?;
+        let program = wrapper::bin_dir(&self.home).join("agent-device");
+        let path = std::env::var("PATH").ok();
+        let env = wrapper::env(&self.home, thread, path.as_deref());
+        let started = Instant::now();
+        let ran = work.run(&program, &env, &args, remote::RUN_WAIT).await;
+        session.step(
+            "agent-device",
+            json!({ "command": remote::command_line(&args) }),
+            ran.exit_code == 0,
+            Some(&ran.output()),
+            started.elapsed().as_millis() as u64,
+        );
+        if session.control() == BrowserControl::HandingBack {
+            session.set_control(BrowserControl::Agent, "agent");
+            self.report(&session, BrowserSessionState::Live);
+        }
+        Ok(BrowserCallResult::Device(ran.done()))
+    }
+
     /// Ends a session already out of the map, and starts its upload.
     async fn close(self: &Arc<Self>, session: Arc<Session>) -> SessionEnded {
         session.step("session_end", json!({}), true, None, 0);
         let files = session.close().await;
+        remote::Work::at(&self.home, &session.thread).remove();
         let ended = SessionEnded {
             session_id: session.id.clone(),
             kind: SessionKind::Ios,

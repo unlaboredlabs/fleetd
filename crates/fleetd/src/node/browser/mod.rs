@@ -630,6 +630,11 @@ impl Broker {
                 "The desktop tool drives desktop sessions, not browsers.",
                 "drive the browser with agent-browser",
             )),
+            BrowserCall::Device(_) => Err(refuse(
+                ErrorCode::NotFound,
+                "No iOS session is open.",
+                "start one with session_start kind ios",
+            )),
         }
     }
 

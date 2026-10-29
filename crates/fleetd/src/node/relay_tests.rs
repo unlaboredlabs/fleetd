@@ -327,6 +327,9 @@ async fn an_agent_on_one_node_drives_a_browser_on_another_through_the_hub() {
         mask_for: Arc::new(|_| Ok(Masker::new(&secrets()))),
         filled_elsewhere: super::session_route::FilledElsewhere::default(),
         hosted_ids: Default::default(),
+        home: devbox_home.path().to_path_buf(),
+        worktree_of: Arc::new(|_| None),
+        remotes: Default::default(),
     });
     // 1Password is devbox's alone: mac1 never gets the token, and never makes a vault.
     devbox.set_vaults(Arc::new({

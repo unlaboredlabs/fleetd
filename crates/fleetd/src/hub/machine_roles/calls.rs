@@ -31,6 +31,9 @@ pub const OPS: [&str; 2] = ["session_route", "session_step"];
 /// cancel, well inside the agent's node's wait for `session_route` (node/session_route.rs `ROUTE_WAIT`), so the hub
 /// always answers before the node gives up.
 pub const START_WAIT: Duration = Duration::from_secs(90);
+/// An agent-device command for an iOS screen elsewhere: the first in a fresh clone starts its runner there
+/// (node/device/remote.rs `RUN_WAIT`, inside this).
+pub const DEVICE_WAIT: Duration = Duration::from_secs(110);
 /// Every other call.
 pub const CALL_WAIT: Duration = Duration::from_secs(45);
 /// How long the hub gives a runner to end a start nobody will use.
@@ -125,7 +128,11 @@ pub async fn route(
             .sealed
             .filter(|s| s.runner == open.runner)
             .map(|s| s.data_b64);
-        let answer = forward(&hub, &open, call.frame, sealed, CALL_WAIT).await;
+        let wait = match call.frame.call {
+            BrowserCall::Device(_) => DEVICE_WAIT,
+            _ => CALL_WAIT,
+        };
+        let answer = forward(&hub, &open, call.frame, sealed, wait).await;
         // Ended, or no longer there to end: a runner gone offline took its session with it.
         let gone = match &answer {
             Ok(frame) => {

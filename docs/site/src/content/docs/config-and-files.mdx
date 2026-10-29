@@ -84,7 +84,7 @@ after you change it.
 | `browser` | How this machine runs [browser screens](/docs/browser-sessions#setup): `enabled`, `chrome`, `ffmpeg`, `pool`, `sandbox`, `idleMinutes`. |
 | `preview` | Previews of PRs someone asked to try: `enabled` (`false`: this machine runs none) and `slots`, the previews of one project at once, each in a worktree of its own (default 3). |
 | `device` | How this machine runs [Android screens](/docs/browser-sessions#android-setup): `enabled`, `pool`, `idleMinutes`. |
-| `ios` | How this Mac runs [iOS screens](/docs/browser-sessions#ios-setup): `enabled`, `pool`, `idleMinutes`, `deviceType`. |
+| `ios` | How this Mac runs [iOS screens](/docs/browser-sessions#ios-setup): `enabled`, `pool`, `idleMinutes`, `deviceType`, `remoteInstall`. |
 | `desktop` | How this machine runs [Linux desktop screens](/docs/browser-sessions#desktop-setup): `enabled`, `backend`, `runtime`, `image`, `xvfb`, `ffmpeg`, `pool`, `idleMinutes`. |
 
 ## The Claude login {#claude}
@@ -111,6 +111,7 @@ fleetd adds its own settings on top of yours, per session:
 | agent-browser on `PATH`, its `AGENT_BROWSER_*` variables and its skill | A lead's and a task's [browser screen](/docs/browser-sessions#use). |
 | agent-device on `PATH` (it alone: the node's SDK and adb stay inside it), its `AGENT_DEVICE_*` variables and its skill, on a machine with Android screens | A lead's and a task's [Android screen](/docs/browser-sessions#android). |
 | agent-device on `PATH` (it alone: the node's simulator set and runner stay inside it), its `AGENT_DEVICE_*` variables and its skill, on a Mac with iOS screens | A lead's and a task's [iOS screen](/docs/browser-sessions#ios). |
+| A folder first on `PATH` that holds a forwarding agent-device only while the session's iOS screen runs on another machine | A lead's and a task's [iOS screen elsewhere](/docs/browser-sessions#ios-elsewhere). |
 
 ### A dedicated claude profile {#claude-profile}
 

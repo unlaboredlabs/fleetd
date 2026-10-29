@@ -1,6 +1,7 @@
 //! The `fleetd` command line: the same subcommands, arguments, output and exit codes as older releases.
 //! Exit codes: 0 ok, 1 failed (a claim that did not pass), 2 usage, 3 refused, 4 hub or node unreachable.
 
+pub mod agent_device;
 pub mod agent_mcp;
 pub mod args;
 pub mod chat;
@@ -279,6 +280,10 @@ async fn update_command(argv: &[String]) -> u8 {
 pub fn main() -> ExitCode {
     crate::update::keep_running_binary();
     let argv: Vec<String> = std::env::args().skip(1).collect();
+    // The forwarding agent-device's (node/device/remote.rs): every argument is agent-device's, `--help` too.
+    if argv.first().map(String::as_str) == Some("agent-device") {
+        return ExitCode::from(agent_device::run(&argv[1..]));
+    }
     crate::home::init_from_argv(&argv);
     if let Some(text) = help_for(&argv) {
         print!("{text}");

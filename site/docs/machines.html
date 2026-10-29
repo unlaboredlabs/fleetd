@@ -448,6 +448,10 @@ nodes encrypt every message with a key sealed along with the secrets, so the hub
 logs none of it.</li>
 <li><strong>Its steps are recorded there.</strong> Each <code dir="auto">agent-browser</code> command that drove it goes into the hosting machine’s
 recording, with the page after it, masked on the agent’s machine first.</li>
+<li><strong>An iOS screen’s commands go sealed.</strong> The agent’s <code dir="auto">agent-device</code> commands, and the files they read and write, go
+through the hub sealed with the same key, and the Mac runs only agent-device commands that drive that screen
+(<a href="/docs/browser-sessions#ios-elsewhere">iOS screens from another machine</a>). Android screens stay on their agent’s
+machine for now.</li>
 </ul>
 <p>Only machines whose fleetd seals and opens these boxes take part. An agent on a machine with browser screens turned
 off can’t start one anywhere: it has no proxy to drive it through.</p>

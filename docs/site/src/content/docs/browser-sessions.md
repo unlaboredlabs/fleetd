@@ -245,7 +245,8 @@ Settings go under `device` in [node.json](/docs/config-and-files#node-json):
 
 ## iOS screens {#ios}
 
-On a Mac with Xcode, an agent opens an iOS screen with **`session_start`** and `kind` `ios`. It gets a fresh iOS
+On a Mac with Xcode, an agent opens an iOS screen with **`session_start`** and `kind` `ios`; an agent on any other
+machine gets one on a Mac that hosts them ([from another machine](#ios-elsewhere)). It gets a fresh iOS
 simulator and drives it with [agent-device](https://github.com/callstack/agent-device), as in an Android screen
 (`agent-device open com.apple.Preferences`, `snapshot -i`, `press @e3 --settle`). agent-device is already pointed at
 the screen's simulator by its udid. Only agent-device is told about the node's simulators: an agent's own `xcrun
@@ -266,6 +267,37 @@ storage work as for a browser screen.
   size. The action log is the same as an Android screen's, and there's no `dom` file.
 - **Live view and takeover.** `simctl` can't stream, so a person watching gets screenshots in a loop, which runs only
   while someone watches. Their taps, drags, scrolls and typing go through agent-device, one command at a time.
+
+### From an agent on another machine {#ios-elsewhere}
+
+An agent on a machine without iOS screens, such as a Linux devbox, gets one on a Mac that hosts them, placed by the
+hub as any [screen on another machine](/docs/machines#roles). It drives it the same way: while the screen is open, an
+`agent-device` first on its `PATH` sends each command through the hub to the Mac. The Mac's node runs the real
+agent-device on the screen's clone and sends back its output and exit code. The action log, the recording, takeover,
+the idle timeout and `session_end` work as on the Mac.
+
+- **Files go both ways, inside the worktree.** A file a command reads (`install build/fleetd.zip`, a `push` payload)
+  goes from the agent's worktree to the Mac first, 4 MiB at a time, up to 64 MiB per command. A folder doesn't go:
+  zip an `.app` first (`ditto -c -k --keepParent fleetd.app fleetd.zip`). A file a command writes (`screenshot
+  shots/home.png`, or `record start run.mp4` then `record stop`) comes back to that path in the worktree.
+  `screenshot` and `record start` need a file name. A path outside the worktree is refused on the agent's machine.
+- **Only commands that drive the screen run.** The Mac runs agent-device commands from a fixed list, each with its
+  own flags: `open`, `close`, `install`, `reinstall`, `uninstall`, `apps`, `appstate`, `snapshot`, `screenshot`,
+  `record`, `press`, `click`, `fill`, `type`, `scroll`, `swipe`, `longpress`, `gesture`, `wait`, `get`, `is`, `find`,
+  `back`, `home`, `app-switcher`, `alert`, `keyboard`, `settings`, `push`, `orientation`, `focus`, `action-button`,
+  `hardware-button`, `capabilities` and `help`. They run in a folder of the screen's own, which goes with it. There's
+  no shell and no `xcrun simctl`: no scripts (`batch`, `replay`, `test`), no servers or remote state (`mcp`, `daemon`,
+  `proxy`, `connect`, `plugins`), no clipboard, and no flag that picks another device, platform, session or config
+  (`--udid`, `--device`, `--platform`, `--session`, `--config`). `open` takes an app or a URL, never a file on the Mac.
+- **Sealed between the two machines.** Each command and file goes sealed with the key the agent's node sealed to the
+  Mac at the start, and numbered. The hub carries only ciphertext, and the Mac runs nothing the hub made up or sent
+  twice.
+- **An app an agent installs runs as the Mac's user.** A simulator doesn't keep an app away from the Mac the way a
+  phone does: the app can read and change what the Mac's user can, and reach the network. Installs from other
+  machines are on by default; `"remoteInstall": false` turns them off on a Mac.
+
+An Android screen the hub would place on another machine is refused for now: agent-device drives an emulator over adb
+from the emulator's own machine.
 
 ### On each Mac {#ios-setup}
 
@@ -288,6 +320,7 @@ Settings go under `ios` in [node.json](/docs/config-and-files#node-json):
 | `pool` | Clones kept booted for the next screens. Absent: 1. Each takes 1–2 GB of memory. |
 | `idleMinutes` | End a screen after this many minutes without an `agent-device` command. Absent: 30. |
 | `deviceType` | The simulator's device type by name, such as `iPhone 17 Pro`. Absent: the newest plain iPhone of the newest iOS runtime. A change takes effect when the golden is made again (delete `device/ios/golden.json`). |
+| `remoteInstall` | `false` refuses `agent-device install` and `reinstall` from agents on other machines: an app installed in a simulator runs as this Mac's user ([why](#ios-elsewhere)). Absent or `true`: allowed. |
 
 ## Linux desktop screens {#desktop}
 

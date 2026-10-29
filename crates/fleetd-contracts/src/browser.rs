@@ -371,6 +371,7 @@ pub enum BrowserCall {
     FillCredential(FillCredentialCall),
     RequestTakeover(RequestTakeoverCall),
     Desktop(DesktopCall),
+    Device(DeviceCall),
 }
 
 impl BrowserCall {
@@ -381,8 +382,74 @@ impl BrowserCall {
             Self::FillCredential(_) => "fill_credential",
             Self::RequestTakeover(_) => "request_takeover",
             Self::Desktop(_) => "desktop",
+            Self::Device(_) => "device",
         }
     }
+}
+
+/// `device`: an agent-device command for the agent's iOS screen on another machine than its own, which its node sends
+/// through the hub to the node hosting the screen (node/device/remote.rs). The agent's `agent-device` asks for a `run`
+/// with its arguments; its node sends the files the command reads first (`put`, a piece at a time), the command as
+/// the screen's node will run it, then fetches the files it wrote (`get`). Never a tool: the agent's node refuses a
+/// `put` or `get` from a process in the session. Between the two nodes each step goes `sealed`, so the hub carries
+/// ciphertext alone, and the screen's node runs nothing that doesn't open.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "step", rename_all = "snake_case")]
+pub enum DeviceCall {
+    Run {
+        args: Vec<String>,
+    },
+    #[serde(rename_all = "camelCase")]
+    Put {
+        name: String,
+        /// The file's bytes on the screen's node so far: each piece follows the last.
+        offset: u64,
+        data_b64: String,
+    },
+    Get {
+        name: String,
+        offset: u64,
+    },
+    /// Another step, sealed with the session's relay key: `count` numbers the agent's steps, each above the last.
+    #[serde(rename_all = "camelCase")]
+    Sealed {
+        count: u64,
+        data_b64: String,
+    },
+}
+
+/// A `device` step's answer.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "step", rename_all = "snake_case")]
+pub enum DeviceDone {
+    #[serde(rename_all = "camelCase")]
+    Run {
+        stdout: String,
+        stderr: String,
+        exit_code: i32,
+        /// The files the command wrote, for `get`.
+        files: Vec<DeviceFile>,
+    },
+    Put {
+        bytes: u64,
+    },
+    /// One piece; the file is gone from the screen's node once its last piece was read.
+    #[serde(rename_all = "camelCase")]
+    Get {
+        data_b64: String,
+        total: u64,
+    },
+    /// The answer to a sealed step, sealed back under its count.
+    #[serde(rename_all = "camelCase")]
+    Sealed {
+        data_b64: String,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DeviceFile {
+    pub name: String,
+    pub bytes: u64,
 }
 
 /// `session_start`: a fresh Chrome with an empty profile (or with `kind` android, a fresh Android emulator; `ios`, a
@@ -544,6 +611,7 @@ pub enum BrowserCallResult {
     FillCredential(Filled),
     RequestTakeover(TakeoverRequested),
     Desktop(DesktopDone),
+    Device(DeviceDone),
 }
 
 /// The session's browser, ready for the agent's `agent-browser`; or its emulator, ready for `agent-device`.
