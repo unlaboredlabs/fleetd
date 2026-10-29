@@ -450,6 +450,30 @@ impl Driver {
         attached["sessionId"].as_str().unwrap().to_owned()
     }
 
+    /// Waits for the first event from `seen` on that `wanted` picks, reading on while none has come yet; `seen` moves
+    /// past it, so a later wait picks only what came after.
+    pub(crate) async fn event(
+        &mut self,
+        seen: &mut usize,
+        wanted: impl Fn(&Value) -> bool,
+    ) -> Value {
+        loop {
+            while *seen < self.events.len() {
+                *seen += 1;
+                if wanted(&self.events[*seen - 1]) {
+                    return self.events[*seen - 1].clone();
+                }
+            }
+            let next = tokio::time::timeout(Duration::from_secs(20), self.ws.next())
+                .await
+                .expect("an event in 20 s");
+            let Some(Ok(Message::Text(text))) = next else {
+                panic!("the proxy closed");
+            };
+            self.events.push(serde_json::from_str(&text).unwrap());
+        }
+    }
+
     /// Waits until `expression` is true on the page. A page between documents (a submit navigating) answers with an
     /// error meanwhile, which only means not yet.
     pub(crate) async fn wait_for(&mut self, page: &str, expression: &str) {
