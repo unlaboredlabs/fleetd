@@ -34,8 +34,8 @@ jobs:
     # passes, required or not) when its paths didn't change. The app's checks and the Android build also follow the
     # desktop modules the app imports (app/mobile/src/desktop.ts); the iOS build only app/mobile itself: the same
     # JavaScript is bundled for Android, so a desktop change that breaks it fails there, and no macOS runner starts
-    # for it. A manual run builds everything. The merge train counts such a skip on a PR's head as passing once this
-    # job passed there. Both also follow site/vercel.json, whose update route the checks test.
+    # for it. A manual run builds everything. "no work for mobile (ios)" is what the merge train reads to count that
+    # skip on a PR's head as passing. Both also follow site/vercel.json, whose update route the checks test.
     name: mobile scope
     runs-on: ubuntu-latest
     timeout-minutes: 5
