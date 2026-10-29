@@ -44,7 +44,8 @@ export function Welcome({ navigation, note }: NativeStackScreenProps<PairParams,
   return (
     <View style={[styles.welcome, { paddingTop: insets.top, paddingBottom: Math.max(insets.bottom, space.lg) + space.sm }]}>
       <View style={styles.hero}>
-        <Image source={require("../../assets/icon.png")} style={styles.mark} accessibilityIgnoresInvertColors />
+        {/* A hairline edge in dark, where the mark's dark tile would melt into the ground. */}
+        <Image source={require("../../assets/icon.png")} style={[styles.mark, t.dark && { borderWidth: StyleSheet.hairlineWidth, borderColor: t.separator }]} accessibilityIgnoresInvertColors />
         <Text style={[type.largeTitle, { color: t.label }]} accessibilityRole="header">
           fleetd
         </Text>
@@ -126,6 +127,7 @@ export function Scan({ navigation }: NativeStackScreenProps<PairParams, "Scan">)
       <View style={[styles.scanBottom, { paddingBottom: Math.max(insets.bottom, space.lg) + space.sm }]}>
         <Pressable
           accessibilityRole="button"
+          accessibilityLabel="Enter Code Manually"
           onPress={() => {
             navigation.goBack();
             navigation.navigate("Pair");
@@ -278,7 +280,7 @@ const styles = StyleSheet.create({
   strong: { fontWeight: "600" },
   welcome: { flex: 1, paddingHorizontal: space.xl },
   hero: { flex: 1, alignItems: "center", justifyContent: "center", gap: space.md },
-  mark: { width: 100, height: 100, borderRadius: 23, marginBottom: space.sm },
+  mark: { width: 100, height: 100, borderRadius: 23, borderCurve: "continuous", marginBottom: space.sm },
   center: { textAlign: "center", maxWidth: 320 },
   actions: { gap: space.xs, alignItems: "stretch" },
   hint: { alignSelf: "center", marginTop: space.sm },

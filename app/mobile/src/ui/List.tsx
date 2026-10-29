@@ -2,7 +2,7 @@
 // uppercase header above and a footnote below. A row has an optional colored icon tile, a title, a value on the right
 // and a chevron when it opens something.
 import { Children, Fragment, isValidElement, type ReactNode } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { shape, space, type, useTheme } from "../theme";
 import { Icon, type IconName } from "./Icon";
 
@@ -58,6 +58,8 @@ export function ListRow({
   accessory?: ReactNode;
 }) {
   const t = useTheme();
+  // At the accessibility text sizes the value goes under the title, as iOS Settings does, rather than be cut short.
+  const stacked = useWindowDimensions().fontScale >= 1.35 && value !== undefined && detail === undefined;
   const body = (pressed: boolean) => (
     <View style={[styles.row, pressed && { backgroundColor: t.fillQuiet }]}>
       {icon === undefined ? null : (
@@ -65,7 +67,14 @@ export function ListRow({
           <Icon name={icon} size={17} color="#FFFFFF" weight="medium" />
         </View>
       )}
-      {detail === undefined ? (
+      {stacked ? (
+        <View style={styles.grow}>
+          <Text style={[type.body, { color: destructive ? t.danger : t.label }]}>{title}</Text>
+          <Text style={[type.body, { color: valueColor ?? t.secondary }]} selectable={selectable}>
+            {value}
+          </Text>
+        </View>
+      ) : detail === undefined ? (
         <Text style={[type.body, value === undefined ? styles.grow : styles.title, { color: destructive ? t.danger : t.label }]} numberOfLines={1}>
           {title}
         </Text>
@@ -77,7 +86,7 @@ export function ListRow({
           <Text style={[type.footnote, { color: t.secondary }]}>{detail}</Text>
         </View>
       )}
-      {value === undefined ? null : (
+      {value === undefined || stacked ? null : (
         <Text style={[type.body, detail === undefined ? styles.value : null, { color: valueColor ?? t.secondary }]} numberOfLines={1} selectable={selectable} ellipsizeMode="middle">
           {value}
         </Text>

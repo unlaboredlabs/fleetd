@@ -66,7 +66,8 @@ export default function App() {
   const theme = useMemo(() => navigationTheme(t), [t]);
   // A pairing link: pairs a phone that isn't, once the pairing screens are up; a paired one says how to switch hubs.
   const [link, handled] = useOpenedLink();
-  const [pairReady, setPairReady] = useState(false);
+  // Bumped each time the pairing screens come up: a link that came first goes on then.
+  const [pairShown, setPairShown] = useState(0);
   useEffect(() => {
     if (link === null || paired === undefined) return;
     const parsed = parsePairLink(link);
@@ -80,10 +81,10 @@ export default function App() {
       Alert.alert(parsed.failure.message, parsed.failure.fix?.replace(/`/gu, ""));
       return handled();
     }
-    if (!pairReady || !pairNav.isReady()) return;
+    if (!pairNav.isReady()) return;
     pairNav.navigate("Pair", { hub: parsed.hub, code: parsed.code, auto: true });
     handled();
-  }, [link, paired, pairReady, handled]);
+  }, [link, paired, pairShown, handled]);
   // Behind every screen, as during a push or a keyboard's slide: the scheme's ground, not the build's one color.
   useEffect(() => {
     void SystemUI.setBackgroundColorAsync(t.bg).catch(() => undefined);
@@ -93,13 +94,12 @@ export default function App() {
       <StatusBar style="auto" />
       <View style={[styles.fill, { backgroundColor: t.bg }]}>
         {paired === undefined ? null : paired === null ? (
-          <NavigationContainer ref={pairNav} theme={theme} onReady={() => setPairReady(true)}>
+          <NavigationContainer ref={pairNav} theme={theme} onReady={() => setPairShown((n) => n + 1)}>
             <Pairing
               note={note}
               onPaired={async (p) => {
                 await pairWith(p);
                 setNote(undefined);
-                setPairReady(false);
                 setPaired(p);
               }}
             />

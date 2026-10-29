@@ -29,9 +29,11 @@ export const chatOptions = (t: Palette): NativeStackNavigationOptions => ({
   headerBackButtonDisplayMode: "minimal",
   headerTintColor: t.accent,
   headerTitleAlign: "center",
-  // A blurred bar over the thread, which scrolls under it: the list is upside down, so iOS's own edge effect can't
-  // find it.
-  ...(Platform.OS === "ios" ? { headerTransparent: true, headerBlurEffect: "systemChromeMaterial" } : { headerStyle: { backgroundColor: t.bg } }),
+  // A blurred bar over the thread, which scrolls under it: the list is upside down, so iOS 26's own edge effects
+  // would land on the wrong ends; they're off.
+  ...(Platform.OS === "ios"
+    ? { headerTransparent: true, headerBlurEffect: "systemChromeMaterial", scrollEdgeEffects: { top: "hidden", bottom: "hidden" } }
+    : { headerStyle: { backgroundColor: t.bg } }),
 });
 
 /** Whether the keyboard is up: the composer then sits on it, not on the home indicator's inset. */
