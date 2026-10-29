@@ -1,0 +1,60 @@
+import { describe, expect, it } from "vitest";
+import { MAX_PINNED, noPrefs, parsePrefs, reducePrefs, unreadCount, type Prefs } from "./prefs";
+
+const msg = (seq: number, author: "human" | "lead" = "lead") => ({ seq, author });
+
+describe("reducePrefs", () => {
+  it("pins in the order pinned, and no more than the most", () => {
+    let p: Prefs = noPrefs;
+    for (const k of ["a", "b", "c", "d", "e", "f"]) p = reducePrefs(p, { t: "pin", key: k, on: true });
+    expect(p.pinned).toEqual(["a", "b", "c", "d", "e"].slice(0, MAX_PINNED));
+    p = reducePrefs(p, { t: "pin", key: "b", on: false });
+    expect(p.pinned).toEqual(["a", "c", "d", "e"]);
+  });
+
+  it("mutes and unmutes", () => {
+    const muted = reducePrefs(noPrefs, { t: "mute", key: "a", on: true });
+    expect(muted.muted).toEqual(["a"]);
+    expect(reducePrefs(muted, { t: "mute", key: "a", on: false }).muted).toEqual([]);
+  });
+
+  it("reads forward only, and reading clears a mark of unread", () => {
+    const marked = reducePrefs({ ...noPrefs, read: { a: 5 } }, { t: "unread", key: "a" });
+    expect(marked.unread).toEqual(["a"]);
+    const read = reducePrefs(marked, { t: "read", key: "a", seq: 3 });
+    expect(read.read.a).toBe(5);
+    expect(read.unread).toEqual([]);
+    expect(reducePrefs(read, { t: "read", key: "a", seq: 3 })).toBe(read);
+  });
+
+  it("counts chats seen for the first time as read up to what they hold, and leaves known ones", () => {
+    const p = reducePrefs({ ...noPrefs, read: { a: 2 } }, { t: "seen", lastSeqs: { a: 9, b: 4 } });
+    expect(p.read).toEqual({ a: 2, b: 4 });
+    expect(reducePrefs(p, { t: "seen", lastSeqs: { a: 9, b: 7 } })).toBe(p);
+  });
+});
+
+describe("parsePrefs", () => {
+  it("keeps what has the right shape and drops the rest", () => {
+    expect(parsePrefs({ pinned: ["a", 3], muted: "x", read: { a: 4, b: "5" }, unread: ["c"] })).toEqual({ pinned: ["a"], muted: [], read: { a: 4 }, unread: ["c"] });
+    expect(parsePrefs(null)).toEqual(noPrefs);
+  });
+});
+
+describe("unreadCount", () => {
+  const p: Prefs = { ...noPrefs, read: { a: 3 } };
+
+  it("is nothing for a chat this phone hasn't seen, or one read to its end", () => {
+    expect(unreadCount(noPrefs, "a", 9, [msg(9)])).toBe(0);
+    expect(unreadCount(p, "a", 3, [msg(3)])).toBe(0);
+  });
+
+  it("counts the other side's messages after what was read, not yours", () => {
+    expect(unreadCount(p, "a", 6, [msg(2), msg(4), msg(5, "human"), msg(6)])).toBe(1);
+    expect(unreadCount(p, "a", 6, [msg(4), msg(5), msg(6)])).toBe(3);
+  });
+
+  it("counts messages past what the phone holds", () => {
+    expect(unreadCount(p, "a", 8, [msg(4)])).toBe(5);
+  });
+});

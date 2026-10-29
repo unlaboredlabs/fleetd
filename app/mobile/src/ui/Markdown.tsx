@@ -1,23 +1,32 @@
 // A bubble's markdown (markdown.ts) as native text: code in monospace, links that open in the browser, lists with
 // hanging bullets, tables that scroll sideways. `ink` is the bubble's text color; on the accent, links are underlined
 // in it rather than drawn in the accent.
-import { Fragment, useMemo, type ReactNode } from "react";
-import { Linking, ScrollView, StyleSheet, Text, View, type TextStyle } from "react-native";
+import * as Clipboard from "expo-clipboard";
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Linking, Pressable, ScrollView, StyleSheet, Text, View, type TextStyle } from "react-native";
 import { parseMarkdown, type Block, type Inline } from "../markdown";
 import { mono, space, type, useTheme } from "../theme";
+import { haptics } from "./haptics";
+import { Icon } from "./Icon";
 
-export function Markdown({ text, ink, onAccent = false }: { text: string; ink: string; onAccent?: boolean }) {
+/**
+ * `room`: words as wide as the bubble's time, kept clear at the end of the last line (invisible), so the time sits in
+ * the corner beside the text as Telegram's does. A last block that isn't a paragraph gets a line of its own for it.
+ */
+export function Markdown({ text, ink, onAccent = false, room }: { text: string; ink: string; onAccent?: boolean; room?: string | undefined }) {
   const blocks = useMemo(() => parseMarkdown(text), [text]);
+  const lastIsText = blocks.at(-1)?.t === "p";
   return (
     <View style={styles.blocks}>
       {blocks.map((b, i) => (
-        <BlockView key={i} block={b} ink={ink} onAccent={onAccent} />
+        <BlockView key={i} block={b} ink={ink} onAccent={onAccent} room={i === blocks.length - 1 ? room : undefined} />
       ))}
+      {room !== undefined && !lastIsText ? <View style={styles.roomLine} /> : null}
     </View>
   );
 }
 
-function BlockView({ block, ink, onAccent }: { block: Block; ink: string; onAccent: boolean }) {
+function BlockView({ block, ink, onAccent, room }: { block: Block; ink: string; onAccent: boolean; room?: string | undefined }) {
   const t = useTheme();
   const codeFill = onAccent ? "rgba(255,255,255,0.18)" : t.fillQuiet;
   const base: TextStyle = { ...type.body, color: ink };
@@ -26,6 +35,11 @@ function BlockView({ block, ink, onAccent }: { block: Block; ink: string; onAcce
       return (
         <Text style={base} selectable>
           <Inlines nodes={block.inline} ink={ink} onAccent={onAccent} />
+          {room === undefined ? null : (
+            <Text style={[type.caption2, styles.room]} accessible={false}>
+              {`\u2002\u2002${room}`}
+            </Text>
+          )}
         </Text>
       );
     case "h":
@@ -35,14 +49,7 @@ function BlockView({ block, ink, onAccent }: { block: Block; ink: string; onAcce
         </Text>
       );
     case "code":
-      return (
-        // Wrapped, not scrolled sideways: in a sideways ScrollView, iOS lays the text out far taller than its lines.
-        <View style={[styles.codeBlock, { backgroundColor: codeFill }]}>
-          <Text style={[styles.code, { color: ink }]} selectable>
-            {block.text}
-          </Text>
-        </View>
-      );
+      return <CodeBlock text={block.text} lang={block.lang} ink={ink} fill={codeFill} />;
     case "quote":
       return (
         <View style={[styles.quote, { borderLeftColor: onAccent ? "rgba(255,255,255,0.5)" : t.tertiary }]}>
@@ -74,6 +81,41 @@ function BlockView({ block, ink, onAccent }: { block: Block; ink: string; onAcce
         </ScrollView>
       );
   }
+}
+
+/**
+ * Fenced code: its language and a Copy button over it, and a tap anywhere on it copies it, as Telegram's code blocks.
+ * Wrapped, not scrolled sideways: in a sideways ScrollView, iOS lays the text out far taller than its lines.
+ */
+function CodeBlock({ text, lang, ink, fill }: { text: string; lang: string | undefined; ink: string; fill: string }) {
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(false), 1600);
+    return () => clearTimeout(timer);
+  }, [copied]);
+  const copy = () => {
+    void Clipboard.setStringAsync(text);
+    haptics.success();
+    setCopied(true);
+  };
+  const label = lang === undefined || lang === "" ? "Code" : lang;
+  return (
+    <Pressable onPress={copy} accessibilityRole="button" accessibilityLabel={`${label}: ${text}`} accessibilityHint="Copies the code">
+      {({ pressed }) => (
+        <View style={[styles.codeBlock, { backgroundColor: fill }, pressed && styles.codePressed]}>
+          <View style={styles.codeHead}>
+            <Text style={[type.caption, styles.codeLang, { color: ink }]}>{label}</Text>
+            <View style={styles.copy}>
+              <Icon name={copied ? "done" : "copy"} size={12} color={ink} weight="semibold" />
+              <Text style={[type.caption, styles.codeLang, { color: ink }]}>{copied ? "Copied" : "Copy"}</Text>
+            </View>
+          </View>
+          <Text style={[styles.code, { color: ink }]}>{text}</Text>
+        </View>
+      )}
+    </Pressable>
+  );
 }
 
 /** A table's cells, column by column so each column takes its widest cell. */
@@ -147,8 +189,14 @@ function Inlines({ nodes, ink, onAccent }: { nodes: readonly Inline[]; ink: stri
 
 const styles = StyleSheet.create({
   blocks: { gap: space.sm },
+  room: { color: "transparent" },
+  roomLine: { height: 6 },
   code: { fontFamily: mono, fontSize: 14, lineHeight: 19 },
-  codeBlock: { borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8 },
+  codeBlock: { borderRadius: 12, borderCurve: "continuous", paddingHorizontal: 12, paddingTop: 8, paddingBottom: 10, gap: 6 },
+  codePressed: { opacity: 0.7 },
+  codeHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: space.sm },
+  codeLang: { fontWeight: "600", opacity: 0.6 },
+  copy: { flexDirection: "row", alignItems: "center", gap: 4 },
   inlineCode: { fontFamily: mono, fontSize: 15 },
   quote: { borderLeftWidth: 3, paddingLeft: 10, gap: space.xs },
   list: { gap: 2 },

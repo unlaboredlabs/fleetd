@@ -4,6 +4,10 @@
 // and vitest read them as they are (metro.config.js); mobile.yml runs this app's checks when they change.
 export type {
   ApprovalDecision,
+  AttachmentGetOutput,
+  AttachmentMime,
+  AttachmentRef,
+  ChatReplyTo,
   AppServerMessage,
   ChatDelta,
   ChatHistoryOutput,
@@ -30,7 +34,7 @@ export type {
   ProjectSettings,
   TodoItem,
 } from "../../desktop/src/shared/contracts";
-export { PROTOCOL_VERSION } from "../../desktop/src/shared/contracts";
+export { ATTACHMENT_MAX_BYTES, ATTACHMENT_PART_BYTES, PROTOCOL_VERSION } from "../../desktop/src/shared/contracts";
 export type { CallOutcome, HubError, HubState } from "../../desktop/src/shared/hub";
 export { hubOrigin, normalizeCode, protocolFit, type PairFailure } from "../../desktop/src/shared/pairing";
 export * from "../../desktop/src/renderer/src/data/chat";

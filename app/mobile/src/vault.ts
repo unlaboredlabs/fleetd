@@ -1,5 +1,5 @@
 // The paired hub, kept in the platform's secure storage (Keychain, Keystore): its address, its name and this phone's
-// key; and the phone's notification key. Nothing else is stored.
+// key; the phone's notification key; and which chats are muted, for the notification extension.
 import { getRandomBytes } from "expo-crypto";
 import * as SecureStore from "expo-secure-store";
 import type { Paired } from "./hub/pair";
@@ -47,6 +47,15 @@ export const pushKeys = async (): Promise<KeyPair> => {
 export const savePushDevice = (deviceId: string): Promise<void> => SecureStore.setItemAsync(DEVICE, deviceId, PUSH);
 
 export const loadPushDevice = (): Promise<string | null> => SecureStore.getItemAsync(DEVICE, PUSH);
+
+/**
+ * The chats muted on this phone (prefs.ts), where the Notification Service Extension reads them to keep their
+ * notifications quiet: account "fleetd.muted-chats" beside the notification key (service "fleetd.push:no-auth", the
+ * shared access group), a JSON array of "machineId/projectId". Written each time Mute changes.
+ */
+export const MUTED = "fleetd.muted-chats";
+
+export const saveMuted = (keys: readonly string[]): Promise<void> => SecureStore.setItemAsync(MUTED, JSON.stringify(keys), PUSH);
 
 export const forgetPush = async (): Promise<void> => {
   await SecureStore.deleteItemAsync(SECRET_KEY, PUSH);

@@ -1,7 +1,7 @@
 // One paired hub at work: the client, the state the screens read, and the calls behind them. A snapshot (on every
 // connection) reads the open requests again, reloads the open chat's latest page and sends again what the link cut
 // off; events re-read what they changed (store.ts effectsOf). Screens subscribe and dispatch nothing themselves.
-import { loadRun, mergeMessages, resetFlow, toResend, type ApprovalDecision, type ChatSend, type FlowDeps, type HubEvent, type HubState, type ToolInput, type ToolName } from "./desktop";
+import { loadRun, mergeMessages, resetFlow, toResend, type ApprovalDecision, type AttachmentGetOutput, type AttachmentRef, type ChatReplyTo, type ChatSend, type FlowDeps, type HubEvent, type HubState, type ToolInput, type ToolName } from "./desktop";
 import { HubClient, type HubFrame, type Transport, type Typed } from "./hub/client";
 import { registerDevice, signOut, type PushDeps } from "./push";
 import { initial, LATEST, reduce, refOf, effectsOf, type Action, type Key, type State } from "./store";
@@ -126,10 +126,45 @@ export class Session {
     else this.#dispatch({ t: "history_failed", key, error: r.error });
   }
 
-  /** A new message; queued under its own id while there is no link, and sent when it comes back. */
-  send(key: Key, text: string): void {
-    const row: ChatSend = { clientRequestId: this.#newId(), text, attachments: [], at: new Date(this.#now()).toISOString(), state: { t: "sending" } };
+  /**
+   * A new message, with the files already uploaded (upload.ts) and the bubble it replies to; queued under its own id
+   * while there is no link, and sent when it comes back.
+   */
+  send(key: Key, text: string, extra: { readonly attachments?: readonly AttachmentRef[]; readonly replyTo?: ChatReplyTo | undefined } = {}): void {
+    const row: ChatSend = {
+      clientRequestId: this.#newId(),
+      text,
+      attachments: extra.attachments ?? [],
+      at: new Date(this.#now()).toISOString(),
+      state: { t: "sending" },
+      ...(extra.replyTo === undefined ? {} : { replyTo: extra.replyTo }),
+    };
     void this.#send(key, row);
+  }
+
+  readonly #files = new Map<string, Promise<AttachmentGetOutput | null>>();
+
+  /** A message's file, read once (attachment_get) and kept while the app runs; null when the hub can't give it. */
+  attachment(key: Key, attachmentId: string): Promise<AttachmentGetOutput | null> {
+    const known = this.#files.get(attachmentId);
+    if (known !== undefined) return known;
+    const read = this.#client.call("attachment_get", { projectRef: refOf(key), attachmentId }, 60_000).then((r) => (r.ok ? r.output : null));
+    this.#files.set(attachmentId, read);
+    // A failed read is tried again next time.
+    void read.then((out) => {
+      if (out === null) this.#files.delete(attachmentId);
+    });
+    return read;
+  }
+
+  /** Search opened: each chat's newest page, read once per connection, for search to look through. */
+  async readCorpus(): Promise<void> {
+    for (const key of Object.keys(this.#state.projects ?? {})) {
+      if (this.#state.corpus[key] !== undefined) continue;
+      const r = await this.#client.call("chat_history", { projectRef: refOf(key), limit: CHAT_PAGE });
+      if (!r.ok) return;
+      this.#dispatch({ t: "corpus", key, messages: r.output.messages });
+    }
   }
 
   /** A failed or unanswered row, again under its own id: the hub keeps one message per id. */
@@ -147,7 +182,13 @@ export class Session {
 
   async #send(key: Key, row: ChatSend): Promise<void> {
     this.#dispatch({ t: "send", key, row });
-    const r = await this.#client.call("chat_send", { projectRef: refOf(key), text: row.text, clientRequestId: row.clientRequestId });
+    const r = await this.#client.call("chat_send", {
+      projectRef: refOf(key),
+      text: row.text,
+      clientRequestId: row.clientRequestId,
+      ...(row.attachments.length === 0 ? {} : { attachments: row.attachments.map((a) => a.attachmentId) }),
+      ...(row.replyTo === undefined ? {} : { replyTo: row.replyTo }),
+    });
     this.#dispatch(
       r.ok
         ? { t: "sent", key, clientRequestId: row.clientRequestId, result: { ok: true, message: r.output.message }, leadWaiting: r.output.leadWaiting }

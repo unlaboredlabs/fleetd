@@ -55,6 +55,8 @@ export interface State {
   readonly sends: Readonly<Record<Key, readonly ChatSend[]>>;
   /** Each chat's newest few messages, read after each snapshot and kept by events: the chats list's previews. */
   readonly latest: Readonly<Record<Key, readonly ChatMessage[]>>;
+  /** Each chat's newest page, read when search opens: what search looks through, with the chats opened. */
+  readonly corpus: Readonly<Record<Key, readonly ChatMessage[]>>;
   /** The open requests (requests_list); undefined until read on this connection. */
   readonly requests: readonly HumanRequest[] | undefined;
   /** Approvals answered from here and on their way, by requestId. */
@@ -73,6 +75,7 @@ export const initial = (hub: HubState): State => ({
   chats: {},
   sends: {},
   latest: {},
+  corpus: {},
   requests: undefined,
   answering: {},
   answerErrors: {},
@@ -84,6 +87,7 @@ export type Action =
   | { readonly t: "history"; readonly key: Key; readonly page: ChatHistoryOutput; readonly direction: "latest" | "older" }
   | { readonly t: "history_failed"; readonly key: Key; readonly error: HubError }
   | { readonly t: "latest"; readonly key: Key; readonly messages: readonly ChatMessage[] }
+  | { readonly t: "corpus"; readonly key: Key; readonly messages: readonly ChatMessage[] }
   | { readonly t: "admin"; readonly admin: boolean; readonly me?: string | undefined }
   | { readonly t: "send"; readonly key: Key; readonly row: ChatSend }
   | { readonly t: "sent"; readonly key: Key; readonly clientRequestId: string; readonly result: CallResult; readonly leadWaiting?: string | undefined }
@@ -120,6 +124,8 @@ export const reduce = (s: State, a: Action): State => {
       return withChat(s, a.key, { ...chatOf(s, a.key), error: a.error, loadingOlder: false });
     case "latest":
       return withLatest(s, a.key, a.messages);
+    case "corpus":
+      return { ...s, corpus: { ...s.corpus, [a.key]: a.messages } };
     case "admin":
       return s.admin === a.admin && s.me === a.me ? s : { ...s, admin: a.admin, me: a.me };
     case "send": {

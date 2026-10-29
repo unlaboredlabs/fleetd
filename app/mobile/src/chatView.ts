@@ -11,13 +11,14 @@ export type Bubble =
   | { readonly kind: "pr"; readonly repo: string; readonly number: number; readonly title: string | undefined }
   | { readonly kind: "checklist"; readonly title: string | undefined; readonly items: ReadonlyArray<{ readonly done: boolean; readonly text: string }> }
   | { readonly kind: "table"; readonly title: string | undefined; readonly columns: readonly string[]; readonly rows: ReadonlyArray<readonly string[]> }
-  | { readonly kind: "block"; readonly text: string };
+  | { readonly kind: "block"; readonly text: string }
+  | { readonly kind: "image"; readonly attachmentId: string; readonly name: string; readonly caption?: string | undefined }
+  | { readonly kind: "file"; readonly attachmentId: string; readonly name: string; readonly mime: string; readonly bytes: number };
 
 const BLOCK_WORDS: Readonly<Record<string, string>> = {
   chart: "A chart",
   diff: "A diff",
   agent: "An agent",
-  image: "An image",
   clip: "A clip",
 };
 
@@ -39,10 +40,50 @@ export const bubbles = (item: Pick<ChatItem, "text" | "message">): readonly Bubb
         return [{ kind: "checklist", title: block.title, items: block.items }];
       case "table":
         return [{ kind: "table", title: block.title, columns: block.columns, rows: block.rows }];
+      case "image":
+        return [{ kind: "image", attachmentId: block.attachmentId, name: block.caption ?? "Image", caption: block.caption }];
       default:
         return [{ kind: "block", text: `${BLOCK_WORDS[block.kind] ?? "Something"} the desktop app shows.` }];
     }
   });
+};
+
+/** A message's files, as bubbles of their own after its words: pictures shown, anything else as a file to open. */
+export const attachmentBubbles = (item: Pick<ChatItem, "attachments">): readonly Bubble[] =>
+  item.attachments.map((a): Bubble => (a.mime.startsWith("image/") ? { kind: "image", attachmentId: a.attachmentId, name: a.name } : { kind: "file", attachmentId: a.attachmentId, name: a.name, mime: a.mime, bytes: a.bytes }));
+
+/** A file's size as Files words it. */
+export const fileSize = (n: number): string => (n < 1024 ? `${String(n)} bytes` : n < 1_048_576 ? `${String(Math.round(n / 1024))} KB` : `${(n / 1_048_576).toFixed(1)} MB`);
+
+// Replies, as the desktop app writes them (screens/chat/bubbles.ts): the quoted bubble's first line as a markdown
+// quote, a blank line, then your words, so every client shows it; chat_send's replyTo names the bubble for the lead.
+
+const QUOTE_MAX = 90;
+
+/** A bubble's first line as plain words, for its quote: markdown marks and fences out, cut to a line. */
+export const quoteOf = (text: string): string => {
+  const line =
+    text
+      .replace(/```[\s\S]*?(```|$)/gu, " ")
+      .split("\n")
+      .map((l) =>
+        l
+          .replace(/^\s{0,3}(#{1,6}\s+|>\s?|[-*+]\s+|\d{1,2}[.)]\s+)/u, "")
+          .replace(/[*_~`]/gu, "")
+          .replace(/\[([^\]]*)\]\([^)]*\)/gu, "$1")
+          .trim(),
+      )
+      .find((l) => l !== "") ?? "";
+  return line.length > QUOTE_MAX ? `${line.slice(0, QUOTE_MAX - 1).trimEnd()}…` : line;
+};
+
+/** Your words as a reply to a bubble: its quote, a blank line, then what you wrote. */
+export const replyText = (quote: string, text: string): string => (quote === "" ? text : `> ${quote}\n\n${text}`);
+
+/** A message that replies to a bubble: the quote and the words under it; undefined for any other text. */
+export const replyOf = (text: string): { readonly quote: string; readonly body: string } | undefined => {
+  const m = /^> ([^\n]+)\n\n(?!>)([\s\S]*\S[\s\S]*)$/u.exec(text);
+  return m === null ? undefined : { quote: m[1] ?? "", body: m[2] ?? "" };
 };
 
 /** What a row of the person's own says about where it is, or undefined once the hub has it. */
@@ -64,11 +105,13 @@ export const sendNote = (item: Pick<ChatItem, "state" | "error" | "leadWaiting">
 };
 
 /** A message as the chats list's one line: its text without markdown, or what its card is. */
-export const previewOf = (item: Pick<ChatItem, "text" | "message" | "author">): string => {
+export const previewOf = (item: Pick<ChatItem, "text" | "message" | "author"> & Partial<Pick<ChatItem, "attachments">>): string => {
   const inline = item.message?.item;
   if (inline?.kind === "command_approval") return "Asks for your approval";
   if (inline?.kind === "secret_request") return "Asks for a secret";
-  const line = bubbles(item)
+  const reply = item.author === "human" ? replyOf(item.text) : undefined;
+  const shown = reply === undefined ? item : { ...item, text: reply.body };
+  const line = [...bubbles(shown), ...attachmentBubbles({ attachments: item.attachments ?? [] })]
     .map((b) => {
       switch (b.kind) {
         case "text":
@@ -82,6 +125,10 @@ export const previewOf = (item: Pick<ChatItem, "text" | "message" | "author">): 
           return b.title ?? (b.kind === "table" ? "A table" : "A checklist");
         case "block":
           return b.text;
+        case "image":
+          return b.caption ?? "Photo";
+        case "file":
+          return b.name;
       }
     })
     .filter((s) => s !== "")
@@ -96,14 +143,15 @@ export const sideOf = (item: Pick<ChatItem, "author" | "kind">): Side =>
   item.kind !== "message" ? "center" : item.author === "human" ? "me" : item.author === "system" ? "center" : "them";
 
 export type ThreadRow =
-  | { readonly t: "time"; readonly id: string; readonly at: string }
+  /** A new day starts: "Today", "Yesterday", a date. */
+  | { readonly t: "day"; readonly id: string; readonly at: string }
   | { readonly t: "item"; readonly id: string; readonly item: ChatItem; readonly side: Side; readonly first: boolean; readonly last: boolean }
-  | { readonly t: "typing"; readonly id: string };
+  | { readonly t: "typing"; readonly id: string }
+  /** Where what you haven't read starts, as Telegram's "Unread Messages" bar. */
+  | { readonly t: "unread"; readonly id: string };
 
 /** Messages this close together are one burst. */
 export const GROUP_MS = 5 * 60_000;
-/** A quiet this long gets a time line. */
-export const TIME_GAP_MS = 30 * 60_000;
 
 const msOf = (at: string): number => {
   const ms = Date.parse(at);
@@ -116,17 +164,22 @@ const voice = (item: ChatItem): string => `${item.author}:${item.author === "age
 const joins = (a: ChatItem | undefined, b: ChatItem | undefined): boolean =>
   a !== undefined && b !== undefined && sideOf(a) !== "center" && sideOf(a) === sideOf(b) && voice(a) === voice(b) && msOf(b.at) - msOf(a.at) < GROUP_MS;
 
-/** The rows to draw, oldest first. `working`: the lead is mid-turn, so a typing bubble ends the thread unless its text already streams. */
-export const threadRows = (items: readonly ChatItem[], working = false): ThreadRow[] => {
+/**
+ * The rows to draw, oldest first. `working`: the lead is mid-turn, so a typing bubble ends the thread unless its text
+ * already streams. `readSeq`: what was read when the chat opened; the unread bar goes before the first message from
+ * the other side after it. A day line goes where a new day starts, in the clock's zone, as Telegram's date chips.
+ */
+export const threadRows = (items: readonly ChatItem[], working = false, readSeq?: number, clock: Pick<Clock, "timeZone"> = {}): ThreadRow[] => {
   const rows: ThreadRow[] = [];
   let prev: ChatItem | undefined;
+  const firstUnread = readSeq === undefined ? -1 : items.findIndex((i) => i.author !== "human" && i.kind === "message" && (i.message?.seq ?? 0) > readSeq);
   for (const [i, item] of items.entries()) {
-    const at = msOf(item.at);
-    const gap = prev === undefined || at - msOf(prev.at) >= TIME_GAP_MS;
-    if (gap) rows.push({ t: "time", id: `time:${item.id}`, at: item.at });
+    if (i === firstUnread) rows.push({ t: "unread", id: "unread" });
+    const day = dayOf(msOf(item.at), clock);
+    if (prev === undefined || day !== dayOf(msOf(prev.at), clock)) rows.push({ t: "day", id: `day:${String(day)}`, at: item.at });
     const side = sideOf(item);
     const next = items[i + 1];
-    rows.push({ t: "item", id: item.id, item, side, first: !joins(prev, item), last: !joins(item, next) });
+    rows.push({ t: "item", id: item.clientRequestId ?? item.id, item, side, first: i === firstUnread || !joins(prev, item), last: i + 1 === firstUnread || !joins(item, next) });
     prev = item;
   }
   const streaming = items.at(-1)?.state === "streaming";
@@ -142,15 +195,15 @@ export interface Clock {
 
 const DAY_MS = 86_400_000;
 
-/** Days from `ms` to now, by the calendar in the clock's zone: 0 today, 1 yesterday. */
-const daysAgo = (ms: number, clock: Clock): number => {
-  const day = (t: number): number => {
-    const parts = new Intl.DateTimeFormat("en-US", { timeZone: clock.timeZone, year: "numeric", month: "numeric", day: "numeric" }).formatToParts(t);
-    const n = (type: string): number => Number(parts.find((p) => p.type === type)?.value ?? 0);
-    return Date.UTC(n("year"), n("month") - 1, n("day"));
-  };
-  return Math.round((day(clock.nowMs) - day(ms)) / DAY_MS);
+/** The calendar day `ms` falls on in the clock's zone, as the UTC midnight of that date. */
+const dayOf = (ms: number, clock: Pick<Clock, "timeZone">): number => {
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone: clock.timeZone, year: "numeric", month: "numeric", day: "numeric" }).formatToParts(ms);
+  const n = (type: string): number => Number(parts.find((p) => p.type === type)?.value ?? 0);
+  return Date.UTC(n("year"), n("month") - 1, n("day"));
 };
+
+/** Days from `ms` to now, by the calendar in the clock's zone: 0 today, 1 yesterday. */
+const daysAgo = (ms: number, clock: Clock): number => Math.round((dayOf(clock.nowMs, clock) - dayOf(ms, clock)) / DAY_MS);
 
 const fmt = (ms: number, clock: Clock, options: Intl.DateTimeFormatOptions): string =>
   new Intl.DateTimeFormat(clock.locale, { timeZone: clock.timeZone, ...options }).format(ms);
@@ -167,6 +220,22 @@ export const timeLine = (at: string, clock: Clock): string => {
   if (days < 7) return `${fmt(ms, clock, { weekday: "long" })} ${time}`;
   return `${fmt(ms, clock, { day: "numeric", month: "short", year: "numeric" })} at ${time}`;
 };
+
+/** A day line in a thread, as Telegram's: "Today", "Yesterday", "Tuesday 27 October", with the year when it isn't this one. */
+export const dayLine = (at: string, clock: Clock): string => {
+  const ms = msOf(at);
+  const days = daysAgo(ms, clock);
+  if (days <= 0) return "Today";
+  if (days === 1) return "Yesterday";
+  const thisYear = fmt(ms, clock, { year: "numeric" }) === fmt(clock.nowMs, clock, { year: "numeric" });
+  return fmt(ms, clock, { weekday: "long", day: "numeric", month: "long", ...(thisYear ? {} : { year: "numeric" }) });
+};
+
+/** A bubble's own time, small in its corner: "9:41". */
+export const bubbleTime = (at: string, clock: Clock): string => clockTime(msOf(at), clock);
+
+/** When a message was sent, in full, for its menu: "Thursday, 29 October 2026 at 9:41". */
+export const fullTime = (at: string, clock: Clock): string => `${fmt(msOf(at), clock, { weekday: "long", day: "numeric", month: "long", year: "numeric" })} at ${clockTime(msOf(at), clock)}`;
 
 /** A chats list row's time: the time today, then "Yesterday", the weekday this week, else the date. */
 export const listTime = (at: string, clock: Clock): string => {

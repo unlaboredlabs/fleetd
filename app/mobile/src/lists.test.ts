@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { HumanRequest, ProjectSummary } from "./desktop";
-import { approvals, approvalView, lists } from "./lists";
+import { approvals, approvalView, chatList, lists } from "./lists";
+import { noPrefs } from "./prefs";
 
 const AT = "2026-10-28T10:00:00Z";
 
@@ -171,5 +172,34 @@ describe("approvals", () => {
     expect(fields.find((f) => f.label === "Subject")).toEqual({ label: "Subject", value: "The `deploy` step" });
     expect(fields.some((f) => f.prose === true)).toBe(false);
     expect(approvalView(gated("r2"), "storefront").fields.filter((f) => f.prose === true).map((f) => f.label)).toEqual(["Why"]);
+  });
+});
+
+describe("chatList", () => {
+  const projects = {
+    "m1/a": project("a", "Ada", { kind: "assistant", lastActivityAt: "2026-10-28T09:00:00Z" }),
+    "m1/b": project("b", "Bea", { kind: "assistant", lastActivityAt: "2026-10-28T11:00:00Z" }),
+    "m1/shop": project("shop", "Shop", { lastActivityAt: "2026-10-28T10:00:00Z" }),
+  };
+  const chatStates = {
+    "m1/a": { projectRef: { machineId: "m1", projectId: "a" }, lastSeq: 5, leadWorking: false, needsYou: false },
+    "m1/b": { projectRef: { machineId: "m1", projectId: "b" }, lastSeq: 2, leadWorking: false, needsYou: false },
+  };
+  const s = { projects, chatStates, requests: [] };
+
+  it("puts the pinned on top in the order pinned, then whatever spoke last", () => {
+    const rows = chatList(s, { ...noPrefs, pinned: ["m1/shop", "m1/a"] });
+    expect(rows?.map((r) => r.key)).toEqual(["m1/shop", "m1/a", "m1/b"]);
+    expect(rows?.[0]?.pinned).toBe(true);
+  });
+
+  it("counts what wasn't read, says what's muted and filters", () => {
+    const prefs = { ...noPrefs, read: { "m1/a": 3, "m1/b": 2 }, muted: ["m1/a"], unread: ["m1/shop"] };
+    const rows = chatList(s, prefs);
+    const a = rows?.find((r) => r.key === "m1/a");
+    expect([a?.unread, a?.muted]).toEqual([2, true]);
+    expect(chatList(s, prefs, "unread")?.map((r) => r.key)).toEqual(["m1/shop", "m1/a"]);
+    expect(chatList(s, prefs, "navis")?.map((r) => r.key)).toEqual(["m1/b", "m1/a"]);
+    expect(chatList(s, prefs, "projects")?.map((r) => r.key)).toEqual(["m1/shop"]);
   });
 });

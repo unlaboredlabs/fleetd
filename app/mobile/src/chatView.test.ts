@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ChatItem, ChatMessage } from "./desktop";
-import { bubbles, listTime, previewOf, sendNote, threadRows, timeLine } from "./chatView";
+import { attachmentBubbles, bubbleTime, bubbles, dayLine, fileSize, fullTime, listTime, previewOf, quoteOf, replyOf, replyText, sendNote, threadRows, timeLine } from "./chatView";
 
 const message = (text: string, parts?: ChatMessage["parts"]): ChatMessage => ({
   messageId: "m1",
@@ -61,22 +61,24 @@ const item = (id: string, author: ChatItem["author"], at: string, extra: Partial
 });
 
 describe("threadRows", () => {
-  it("groups a side's burst, tails its last, and puts a time line after a quiet", () => {
+  it("groups a side's burst, tails its last, and puts a day line where a day starts", () => {
     const rows = threadRows([
       item("a", "human", "2026-10-28T10:00:00Z"),
       item("b", "human", "2026-10-28T10:01:00Z"),
       item("c", "lead", "2026-10-28T10:02:00Z"),
       item("d", "lead", "2026-10-28T10:20:00Z"),
       item("e", "lead", "2026-10-28T11:00:00Z"),
-    ]);
+      item("f", "lead", "2026-10-29T08:00:00Z"),
+    ], false, undefined, { timeZone: "UTC" });
     expect(rows.map((r) => (r.t === "item" ? `${r.id}:${r.side}:${r.first ? "F" : "-"}${r.last ? "L" : "-"}` : r.t))).toEqual([
-      "time",
+      "day",
       "a:me:F-",
       "b:me:-L",
       "c:them:FL",
       "d:them:FL",
-      "time",
       "e:them:FL",
+      "day",
+      "f:them:FL",
     ]);
   });
 
@@ -106,6 +108,15 @@ describe("times", () => {
     expect(timeLine("2026-10-12T09:12:00Z", clock)).toBe("12 Oct 2026 at 9:12");
   });
 
+  it("words a day line, a bubble's time and its full time", () => {
+    expect(dayLine("2026-10-29T09:41:00Z", clock)).toBe("Today");
+    expect(dayLine("2026-10-28T18:02:00Z", clock)).toBe("Yesterday");
+    expect(dayLine("2026-10-12T09:12:00Z", clock)).toBe("Monday 12 October");
+    expect(dayLine("2025-10-12T09:12:00Z", clock)).toBe("Sunday, 12 October 2025");
+    expect(bubbleTime("2026-10-29T09:41:00Z", clock)).toBe("9:41");
+    expect(fullTime("2026-10-29T09:41:00Z", clock)).toBe("Thursday, 29 October 2026 at 9:41");
+  });
+
   it("words a list row's time shorter", () => {
     expect(listTime("2026-10-29T09:41:00Z", clock)).toBe("9:41");
     expect(listTime("2026-10-28T09:41:00Z", clock)).toBe("Yesterday");
@@ -123,5 +134,70 @@ describe("previewOf", () => {
     expect(previewOf({ author: "lead", text: "**Done**: see `x`", message: message("**Done**: see `x`") })).toBe("Done: see x");
     expect(previewOf({ author: "human", text: "On my way", message: undefined })).toBe("You: On my way");
     expect(previewOf({ author: "lead", text: "", message: { ...message(""), item: { kind: "command_approval", requestId: "r" } as never } })).toBe("Asks for your approval");
+  });
+});
+
+describe("replies", () => {
+  it("quotes a bubble's first line as plain words, cut to a line", () => {
+    expect(quoteOf("## **Done**: see [the PR](https://x)\n\nMore")).toBe("Done: see the PR");
+    expect(quoteOf(`${"a".repeat(120)}`)).toHaveLength(90);
+    expect(quoteOf("```\ncode\n```\nAfter")).toBe("After");
+  });
+
+  it("writes a reply as the desktop app does, and reads it back", () => {
+    const text = replyText("Ship it today?", "Yes, after lunch.");
+    expect(text).toBe("> Ship it today?\n\nYes, after lunch.");
+    expect(replyOf(text)).toEqual({ quote: "Ship it today?", body: "Yes, after lunch." });
+    expect(replyOf("> just a quote")).toBeUndefined();
+    expect(replyText("", "Plain")).toBe("Plain");
+  });
+
+  it("previews a reply by its words, not its quote", () => {
+    expect(previewOf({ author: "human", text: replyText("Ship it?", "Yes"), message: undefined })).toBe("You: Yes");
+  });
+});
+
+describe("attachments", () => {
+  it("shows pictures as themselves and other files as files", () => {
+    const attachments = [
+      { attachmentId: "a", name: "shot.png", mime: "image/png" as const, bytes: 10 },
+      { attachmentId: "b", name: "notes.pdf", mime: "application/pdf" as const, bytes: 2048 },
+    ];
+    expect(attachmentBubbles({ attachments })).toEqual([
+      { kind: "image", attachmentId: "a", name: "shot.png" },
+      { kind: "file", attachmentId: "b", name: "notes.pdf", mime: "application/pdf", bytes: 2048 },
+    ]);
+    expect(previewOf({ author: "lead", text: "", message: undefined, attachments })).toBe("Photo notes.pdf");
+    expect(fileSize(2048)).toBe("2 KB");
+  });
+
+  it("draws an image block as a picture", () => {
+    const parts: ChatMessage["parts"] = [{ start: 0, end: 0, block: { v: 1, kind: "image", attachmentId: "a", caption: "The chart" } as never }];
+    expect(bubbles({ text: "", message: message("", parts) })).toEqual([{ kind: "image", attachmentId: "a", name: "The chart", caption: "The chart" }]);
+  });
+});
+
+describe("the unread bar", () => {
+  const item = (id: string, seq: number, author: ChatItem["author"]): ChatItem => ({
+    id,
+    author,
+    kind: "message",
+    text: id,
+    at: "2026-10-28T10:00:00Z",
+    attachments: [],
+    state: "sent",
+    message: { ...message(id), messageId: id, seq, author },
+  });
+
+  it("goes before the first message from the other side after what was read, and starts a burst there", () => {
+    const rows = threadRows([item("a", 1, "lead"), item("b", 2, "human"), item("c", 3, "lead"), item("d", 4, "lead")], false, 1);
+    expect(rows.map((r) => (r.t === "item" ? r.id : r.t))).toEqual(["day", "a", "b", "unread", "c", "d"]);
+    const c = rows.find((r) => r.t === "item" && r.id === "c");
+    expect(c?.t === "item" && c.first).toBe(true);
+  });
+
+  it("isn't there when everything was read, or nothing was known", () => {
+    expect(threadRows([item("a", 1, "lead")], false, 1).some((r) => r.t === "unread")).toBe(false);
+    expect(threadRows([item("a", 1, "lead")]).some((r) => r.t === "unread")).toBe(false);
   });
 });
