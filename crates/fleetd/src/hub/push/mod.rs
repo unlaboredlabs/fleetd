@@ -350,10 +350,15 @@ fn final_lead_message(hub: &Hub, event: &HubEvent, r: &ProjectRef) -> Option<Cha
 /// The longest command a notification offers Approve for: what a banner and the lock screen show whole.
 const APPROVE_MAX: usize = 200;
 
-/// Whether `text` reads on a lock screen exactly as it runs: one line of at most [`APPROVE_MAX`] characters, with
-/// nothing that hides or reorders text. That rules out control characters (`\r`, `\n`, tab, NEL), line and paragraph
-/// separators, bidi controls and marks, and zero-width characters.
+/// Whether `text` reads on a lock screen exactly as it runs: one line of at most [`APPROVE_MAX`] characters, [`plain`].
 pub fn shown_whole(text: &str) -> bool {
+    !text.trim().is_empty() && text.chars().count() <= APPROVE_MAX && plain(text)
+}
+
+/// Whether `text` holds nothing that hides or reorders text, its own or what shows next to it: no control characters
+/// (`\r`, `\n`, tab, NEL), line or paragraph separators, bidi controls and marks, or zero-width characters. Every
+/// text on a notification that offers Approve is plain: the title, the reason and the command.
+pub fn plain(text: &str) -> bool {
     let hidden = |c: char| {
         c.is_control()
             || matches!(
@@ -369,13 +374,14 @@ pub fn shown_whole(text: &str) -> bool {
                 | '\u{FE00}'..='\u{FE0F}' | '\u{E0000}'..='\u{E007F}'
             )
     };
-    !text.trim().is_empty() && text.chars().count() <= APPROVE_MAX && !text.chars().any(hidden)
+    !text.chars().any(hidden)
 }
 
 /// An approval's body and what the notification may do about it. The body is why the lead asks, then exactly what
 /// runs. Approve and Deny show only when the body is everything the card would show, whole on one line (D183/D193):
 /// a gated run's command and the directory it runs in, injecting no secret and none of money or irreversible; or a
-/// tool prompt that is a one-line Bash command, its whole input. Either must be [`shown_whole`]. Anything else is reviewed in the app: a prompt's
+/// tool prompt that is a one-line Bash command, its whole input. Either must be [`shown_whole`], and the reason before
+/// it [`plain`]. Anything else is reviewed in the app: a prompt's
 /// summary is often only part of what runs (a Write's path, a script's first line, an MCP tool's description), and an
 /// integration's send or change and a preview setting show exactly who and what on their card. A secret is entered
 /// in the app, so it gets no action.
@@ -420,7 +426,8 @@ fn approval_notice(r: &HumanRequest) -> (String, Option<PushCategory>) {
     } else {
         format!("{why}: {what}")
     };
-    let category = if answerable && exact {
+    // The reason shows just before the command: a right-to-left mark at its end would flip how the command reads.
+    let category = if answerable && exact && plain(why) {
         PushCategory::Approve
     } else {
         PushCategory::Review
@@ -520,6 +527,10 @@ pub fn notice(hub: &Hub, event: &HubEvent) -> Result<Option<Notice>, StoreError>
         .map(|p| p.title)
         .filter(|t| !t.trim().is_empty())
         .unwrap_or_else(|| "fleetd".into());
+    // The title shows above the command too.
+    if category == Some(PushCategory::Approve) && !plain(&title) {
+        category = Some(PushCategory::Review);
+    }
     let urgent = event.attention == Some(Attention::Urgent);
     let (tz, quiet) =
         crate::hub::attention::quiet_policy(|k| hub.decisions.global_value(k).ok().flatten());

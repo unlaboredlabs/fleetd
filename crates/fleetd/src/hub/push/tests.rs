@@ -1199,3 +1199,54 @@ async fn a_command_that_hides_or_reorders_text_is_reviewed_in_the_app() {
         .collect();
     assert_eq!(got, [Some(PushCategory::Review); 7]);
 }
+
+#[tokio::test]
+async fn every_text_beside_an_approvable_command_is_plain_too() {
+    let (hub, _home) = hub();
+    let owner = owner_device(&hub);
+    let (key, _) = phone(&hub, &owner, "ios", "aa11").await;
+    let (relay, url) = fake_relay().await;
+    ok(&hub, &owner, "push_relay_set", json!({ "url": url })).await;
+    // A project whose title ends in a right-to-left override, above the command.
+    let flipped: fleetd_contracts::model::ProjectSummary = serde_json::from_value(json!({
+        "machineId": "devbox", "projectId": "flip", "title": "Shop\u{202E}", "workspaceRoot": "/work/flip",
+        "threads": { "running": 0, "waiting": 0, "idle": 0, "failed": 0 }, "lastActivityAt": AT,
+    }))
+    .unwrap();
+    hub.store
+        .projects_upsert_many(&MachineId::unchecked("devbox"), &[flipped])
+        .unwrap();
+    let http = reqwest::Client::new();
+    let mut follow = Follow::default();
+    let cursor = hub.events.head();
+
+    let loud = Attention::Loud;
+    let push = || gated(&["git", "push"], "credential");
+    // The same command, plain all round, offers Approve.
+    request(&hub, "app", "approval", "Push the fix", push(), loud);
+    // The reason, just before the command, ending in a right-to-left override or mark, or holding a zero-width space.
+    for why in [
+        "Push the fix\u{202E}",
+        "Push\u{200F}",
+        "Push\u{200B} the fix",
+        "Push\u{2028}the fix",
+    ] {
+        request(&hub, "app", "approval", why, push(), loud);
+    }
+    request(&hub, "flip", "approval", "Push the fix", push(), loud);
+    // The directory it runs in, shown after it.
+    let mut cwd = push().unwrap();
+    cwd["gated"]["cwd"] = json!("/work/app/\u{2067}web");
+    request(&hub, "app", "approval", "Push the fix", Some(cwd), loud);
+    step(&hub, &http, &mut follow, cursor).await.unwrap();
+    let got: Vec<Option<PushCategory>> = relay
+        .got
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|p| opened(&key, p).category)
+        .collect();
+    assert_eq!(got[0], Some(PushCategory::Approve));
+    assert_eq!(got[1..], [Some(PushCategory::Review); 6]);
+    assert!(plain("Push the fix") && !plain("Shop\u{202E}") && !plain("a\u{FEFF}"));
+}
