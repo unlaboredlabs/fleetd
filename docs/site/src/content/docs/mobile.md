@@ -83,7 +83,7 @@ relay and push credentials: an APNs key for your bundle id on the relay, and you
 | `fleetd-ios-simulator` | The app for the iOS simulator. Unzip it and `xcrun simctl install booted fleetd.app`. |
 
 To try changes on a simulator without a build each time, run the workflow with **metro** set to a Metro server the
-simulator reaches, such as `100.64.0.5:8093`, and run `npx expo start --port 8093` in `app/mobile` there. That run
+simulator reaches, such as `100.64.0.5:8093`, and run `npm exec -- expo start --port 8093` in `app/mobile` there. That run
 builds a Debug app that loads its JavaScript from that server.
 
 The workflow runs `expo prebuild`, then gradle on an Ubuntu runner and xcodebuild on a macOS runner. On pull requests

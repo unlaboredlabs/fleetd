@@ -154,7 +154,7 @@ relay and push credentials: an APNs key for your bundle id on the relay, and you
 </tbody>
 </table>
 <p>To try changes on a simulator without a build each time, run the workflow with <strong>metro</strong> set to a Metro server the
-simulator reaches, such as <code dir="auto">100.64.0.5:8093</code>, and run <code dir="auto">npx expo start --port 8093</code> in <code dir="auto">app/mobile</code> there. That run
+simulator reaches, such as <code dir="auto">100.64.0.5:8093</code>, and run <code dir="auto">npm exec -- expo start --port 8093</code> in <code dir="auto">app/mobile</code> there. That run
 builds a Debug app that loads its JavaScript from that server.</p>
 <p>The workflow runs <code dir="auto">expo prebuild</code>, then gradle on an Ubuntu runner and xcodebuild on a macOS runner. On pull requests
 and on <code dir="auto">main</code>, the app’s checks and the Android build run when <code dir="auto">app/mobile</code>, the workflow, or a desktop module the app
