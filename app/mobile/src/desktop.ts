@@ -1,7 +1,8 @@
 // What the phone app takes from the desktop app, all in one place: the /app protocol's generated types, the pairing
 // rules, the chat reducers, what makes a project a Navi and who it belongs to, the Add project flow, a project's allowed
-// profiles and worktrees, and the Update button's run and its wording. Pure modules that import no packages, so Metro
-// and vitest read them as they are (metro.config.js); mobile.yml runs this app's checks when they change.
+// profiles and worktrees, the Update button's run and its wording, and the characters an approval card marks. Pure
+// modules that import no packages, so Metro and vitest read them as they are (metro.config.js); mobile.yml runs this
+// app's checks when they change.
 export type {
   ApprovalDecision,
   AttachmentGetOutput,
@@ -56,5 +57,6 @@ export { initialAdd, requestWhat, step as addStep, type AddMsg, type AddState, t
 export { allowedAfter, runsLine } from "../../desktop/src/renderer/screens/settings/profilesModel";
 export { unsavedWorktrees } from "../../desktop/src/renderer/screens/settings/projectModel";
 export { versionLabel, type UpdatesState } from "../../desktop/src/shared/updates";
+export { HIDDEN_WARNING, hasHidden, marked, pieces, shellWord } from "../../desktop/src/shared/hidden";
 export { updatesView, type Line, type PartLine, type UpdatesView } from "../../desktop/src/renderer/screens/updates/model";
 export { loadRun, resetFlow, retryMachine, startOver, startUpdate, useFlow, useReady, useRun, type Flow, type FlowDeps } from "../../desktop/src/renderer/screens/updates/flow";

@@ -4,12 +4,14 @@
 // re-emits its chat.message; the only state here is what the person just did, until the hub's next read of it.
 // Once answered, an item folds to one line that opens back up to the whole card.
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 import type { ChatItem, CommandApprovalItem, Machine, SecretRequestItem, ToolPreview } from "../../../shared/contracts";
+import { marked } from "../../../shared/hidden";
 import type { HubError } from "../../../shared/hub";
 import { Button, Code, cx, InlineCode, Input, Text, Truncate } from "../../ui";
 import { useData, useDataLayer, useReadOf, useToolQuery } from "../../src/data/react";
 import { configLines, configWords } from "../tryit/model";
+import { Exact, HiddenWarning, marks } from "./Exact";
 import { patchLocal, useLocal, type Failed } from "./local";
 import { prose } from "./prose";
 import { actionWarning, actionWords, answerWords, askTitle, confirmWords, foldedBody, integrationName, previewRows } from "./toolPreview";
@@ -26,6 +28,7 @@ import {
   secretTarget,
   secretTitle,
   shellLine,
+  shellWord,
   withRequest,
   type Action,
   type Outcome,
@@ -153,7 +156,7 @@ function Folded({ outcome, about, open, onToggle, focus, onFocused }: { outcome:
         {outcome.text}
       </Text>
       <Truncate size="sm" tone="quiet" expand="none" className={cx(s.foldAbout)}>
-        {about}
+        {marked(about)}
       </Truncate>
     </button>
   );
@@ -255,11 +258,14 @@ function SecretItem({ item, read }: { item: SecretRequestItem; read: number | un
         <Text size="xs" tone="quiet" strong>
           Secret
         </Text>
-        <InlineCode>{item.name}</InlineCode>
+        <InlineCode>
+          <Exact text={item.name} ltr />
+        </InlineCode>
       </div>
       <Text as="p" strong className={cx(s.title)}>
         {prose(item.text)}
       </Text>
+      <HiddenWarning fields={[item.name, target.ok ? target.where : undefined]} lines={[item.text, item.note]} />
       {item.note === undefined || item.note.trim() === "" ? null : (
         <Text as="p" size="sm" tone="quiet" className={cx(s.line)}>
           {prose(item.note)}
@@ -274,7 +280,7 @@ function SecretItem({ item, read }: { item: SecretRequestItem; read: number | un
       ) : (
         <>
           <Text as="p" size="sm" className={cx(s.line)}>
-            {`It is saved ${target.where}.`}
+            {marks(`It is saved ${target.where}.`)}
           </Text>
           <div className={s.row}>
             <Input
@@ -336,10 +342,14 @@ function PreviewDetail({ preview }: { preview: ToolPreview }) {
                   return (
                     // Exact values from the tool's input (addresses, file names): literal text, as a chat attachment's name is.
                     <span key={`${String(i)}-${v.text}`} className={s.value} data-text="code">
-                      <Text size="sm">{v.note === undefined ? `${v.text}${comma}` : v.text}</Text>
+                      <Text size="sm">
+                        <Exact text={v.text} ltr />
+                        {v.note === undefined ? comma : null}
+                      </Text>
                       {v.note === undefined ? null : (
                         <Text size="xs" tone="quiet">
-                          {`${v.note}${comma}`}
+                          <Exact text={v.note} ltr />
+                          {comma}
                         </Text>
                       )}
                     </span>
@@ -362,7 +372,9 @@ function PreviewDetail({ preview }: { preview: ToolPreview }) {
             Everything it sends
           </Text>
         </summary>
-        <Code code={preview.input} lang="json" bare />
+        <Code code={preview.input} bare>
+          {marks(preview.input, true)}
+        </Code>
       </details>
     </div>
   );
@@ -375,7 +387,7 @@ function Body({ body }: { body: string }) {
   return (
     <div className={s.body}>
       <Text as="p" size="sm" className={cx(s.line)}>
-        {all || folded === undefined ? body : folded}
+        <bdi dir="auto">{marks(all || folded === undefined ? body : folded, true)}</bdi>
       </Text>
       {folded === undefined ? null : (
         <Button size="sm" variant="ghost" className={s.showAll} onClick={() => setAll(!all)}>
@@ -481,17 +493,49 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
           : gated !== undefined
             ? prose(gated.reason)
             : preview !== undefined
-              ? askTitle(preview, asker ?? "Navi")
+              ? marks(askTitle(preview, asker ?? "Navi"))
               : permission !== undefined
-                ? `An agent wants to use ${permission.toolName}`
+                ? (
+                    <>
+                      An agent wants to use <Exact text={permission.toolName} ltr />
+                    </>
+                  )
               : "An agent needs your OK"}
       </Text>
+      <HiddenWarning
+        fields={[
+          ...(gated?.argv ?? []),
+          gated?.cwd,
+          ...(gated?.secretEnv ?? []).flatMap((e) => [e.name, e.secretKey]),
+          permission?.toolName,
+          ...(preview === undefined ? [] : [preview.title, ...previewRows(preview).flatMap((r) => r.values.flatMap((v) => [v.text, v.note]))]),
+        ]}
+        lines={[previewConfig?.why, gated?.reason, previewConfig === undefined ? undefined : configLines(previewConfig.config).join("\n"), permission?.summary, preview?.body, preview?.input]}
+      />
       <div className={s.detail}>
         {/* A proposed Try it setting: its commands as they would run, in order. */}
-        {previewConfig !== undefined ? <Code code={configLines(previewConfig.config).join("\n")} lang="sh" bare /> : null}
-        {gated !== undefined ? <Code code={shellLine(gated.argv)} lang="sh" bare /> : null}
+        {previewConfig !== undefined ? (
+          <Code code={configLines(previewConfig.config).join("\n")} bare>
+            {marks(configLines(previewConfig.config).join("\n"), true)}
+          </Code>
+        ) : null}
+        {/* Each word isolated, so a right-to-left word can't swap the order its neighbours read in. */}
+        {gated !== undefined ? (
+          <Code code={shellLine(gated.argv)} bare>
+            {gated.argv.map((a, i) => (
+              <Fragment key={i}>
+                {i === 0 ? null : " "}
+                <Exact text={shellWord(a)} ltr />
+              </Fragment>
+            ))}
+          </Code>
+        ) : null}
         {preview !== undefined ? <PreviewDetail preview={preview} /> : null}
-        {gated === undefined && previewConfig === undefined && permission !== undefined && preview === undefined ? <Code code={permission.summary} bare /> : null}
+        {gated === undefined && previewConfig === undefined && permission !== undefined && preview === undefined ? (
+          <Code code={permission.summary} bare>
+            {marks(permission.summary, true)}
+          </Code>
+        ) : null}
         {previewConfig !== undefined ? (
           <Text size="xs" tone="quiet">
             {`${configWords(previewConfig.config)} Approved, it is how this project runs Try it on ${machine}; nothing runs until someone asks.`}
@@ -502,7 +546,10 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
             {gated?.cwd === undefined ? null : (
               <>
                 {" "}
-                in <InlineCode>{gated.cwd}</InlineCode>
+                in{" "}
+                <InlineCode>
+                  <Exact text={gated.cwd} ltr />
+                </InlineCode>
               </>
             )}
             {gated === undefined ? null : ` · stops after ${String(Math.ceil(gated.timeoutSec / 60))} min`}

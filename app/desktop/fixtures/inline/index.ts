@@ -5,13 +5,16 @@
 // inline-failures fails them and the secret save, for the one-line failure with Retry; inline-reopened reopens two
 // approvals after Approve, as a hub does when the node is offline; inline-offline is that chat from the disk cache
 // with no hub. inline-integrations is a chat of a Navi's integration cards (fixtures/inline/integrations.json): an
-// email with every recipient and a file, a Notion page to trash, and a send already approved.
+// email with every recipient and a file, a Notion page to trash, and a send already approved. inline-hidden holds
+// approvals whose fields hide or reorder text (fixtures/inline/hidden.json), each character shown as its mark, and an
+// email in several languages shown as written.
 import { Fixture } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
 import type { JsonObject, JsonValue } from "../kit/json.ts";
 import { arr } from "../kit/stress.ts";
 import { heldCache } from "../offline/held.ts";
 import data from "./items.json" with { type: "json" };
+import hidden from "./hidden.json" with { type: "json" };
 import integrations from "./integrations.json" with { type: "json" };
 
 /** A real X25519 public key (the Rust seal sample's), so sealing works in a fixture run. */
@@ -171,6 +174,7 @@ export default defineGroup({
     // A Navi's integration cards in a chat of their own (fixtures/inline/integrations.json), so the chat above keeps
     // every state of the two inline items in view.
     const cards = inlineItems(base("typical"), "inline-integrations", "A chat with a Navi's integration approvals: an email to send with its recipients and file, a Notion page to trash, and an answered send.", integrations.items);
-    return [items, inlineFailures(base("typical")), inlineReopened(base("typical")), inlineOffline(items, base("hub-unreachable").state), cards];
+    const marked = inlineItems(base("typical"), "inline-hidden", "A chat with approvals whose fields hide or reorder text, each shown as its mark, and an email in several languages shown as written.", hidden.items);
+    return [items, inlineFailures(base("typical")), inlineReopened(base("typical")), inlineOffline(items, base("hub-unreachable").state), cards, marked];
   },
 });

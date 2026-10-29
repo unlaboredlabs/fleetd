@@ -1,0 +1,79 @@
+{
+  "note": "Approvals whose fields hide or reorder text, each shown as its mark under a warning: a command with a right-to-left override and Hebrew file names, an email with a zero-width space in its address, an isolate in its subject, a line separator and tag characters in its body; then an email in several languages and emoji, shown as written. devbox; no personal data.",
+  "items": [
+    {
+      "kind": "command_approval",
+      "requestId": "Q20",
+      "machineId": "devbox",
+      "state": "open",
+      "gated": {
+        "argv": [
+          "rm",
+          "-rf",
+          "build/cache",
+          "\u202e~ fr- mr\u202c",
+          "--",
+          "\u05e9\u05dc\u05d5\u05dd.txt",
+          "\u05e2\u05d5\u05dc\u05dd.txt"
+        ],
+        "cwd": "/srv/app\u2066",
+        "reason": "Clear the build cache before the release",
+        "class": "irreversible",
+        "timeoutSec": 300
+      }
+    },
+    {
+      "kind": "command_approval",
+      "requestId": "Q21",
+      "machineId": "devbox",
+      "state": "open",
+      "permission": {
+        "threadId": "t-navi",
+        "requestId": "perm-21",
+        "toolName": "mcp__google__send_message",
+        "summary": "Sends a message",
+        "preview": {
+          "integration": "google",
+          "server": "google",
+          "tool": "send_message",
+          "action": "send",
+          "title": "Send an email",
+          "account": "me@example.com",
+          "to": [
+            "Ana Ruiz <ana@exa\u200bmple.com>"
+          ],
+          "subject": "Invoice \u2067paid\u2069 for October",
+          "body": "Hi Ana,\n\nThe invoice is paid.\u2028Bank details below.\n\nNavi, for Sam\udb40\udc49\udb40\udc47\udb40\udc4e\udb40\udc4f\udb40\udc52\udb40\udc45",
+          "input": "{\n  \"account\": \"me@example.com\",\n  \"to\": \"Ana Ruiz <ana@exa\u200bmple.com>\",\n  \"subject\": \"Invoice \u2067paid\u2069 for October\",\n  \"body\": \"Hi Ana,\\n\\nThe invoice is paid.\u2028Bank details below.\\n\\nNavi, for Sam\udb40\udc49\udb40\udc47\udb40\udc4e\udb40\udc4f\udb40\udc52\udb40\udc45\"\n}"
+        }
+      }
+    },
+    {
+      "kind": "command_approval",
+      "requestId": "Q22",
+      "machineId": "devbox",
+      "state": "open",
+      "permission": {
+        "threadId": "t-navi",
+        "requestId": "perm-22",
+        "toolName": "mcp__google__send_message",
+        "summary": "Sends a message",
+        "preview": {
+          "integration": "google",
+          "server": "google",
+          "tool": "send_message",
+          "action": "send",
+          "title": "Send an email",
+          "account": "me@example.com",
+          "to": [
+            "Zo\u00eb M\u00fcller <zoe@example.com>",
+            "\u05e9\u05e8\u05d4 <sara@example.com>"
+          ],
+          "subject": "R\u00e9union mardi \u00b7 \u4f1a\u8b70 \u00b7 \u0627\u062c\u062a\u0645\u0627\u0639",
+          "body": "Bonjour Zo\u00eb, \u05e9\u05dc\u05d5\u05dd \u05e9\u05e8\u05d4,\n\nOn se voit mardi \u00e0 12:30 ? \ud83d\udc4b\ud83c\udffd \u2764\ufe0f \ud83d\udc69\u200d\ud83d\udcbb\n\u4f1a\u8b70\u306f\u660e\u65e5\u306e10\u6642\u3067\u3059\u3002\u0645\u0631\u062d\u0628\u0627 \u0628\u0627\u0644\u062c\u0645\u064a\u0639. \u0645\u06cc\u200c\u062e\u0648\u0627\u0647\u0645 \u0628\u06cc\u0627\u06cc\u0645.\n\nNavi, for Sam",
+          "input": "{\n  \"account\": \"me@example.com\",\n  \"to\": \"Zo\u00eb M\u00fcller <zoe@example.com>, \u05e9\u05e8\u05d4 <sara@example.com>\",\n  \"subject\": \"R\u00e9union mardi \u00b7 \u4f1a\u8b70 \u00b7 \u0627\u062c\u062a\u0645\u0627\u0639\",\n  \"body\": \"Bonjour Zo\u00eb, \u05e9\u05dc\u05d5\u05dd \u05e9\u05e8\u05d4,\\n\\nOn se voit mardi \u00e0 12:30 ? \ud83d\udc4b\ud83c\udffd \u2764\ufe0f \ud83d\udc69\u200d\ud83d\udcbb\\n\u4f1a\u8b70\u306f\u660e\u65e5\u306e10\u6642\u3067\u3059\u3002\u0645\u0631\u062d\u0628\u0627 \u0628\u0627\u0644\u062c\u0645\u064a\u0639. \u0645\u06cc\u200c\u062e\u0648\u0627\u0647\u0645 \u0628\u06cc\u0627\u06cc\u0645.\\n\\nNavi, for Sam\"\n}"
+        }
+      }
+    }
+  ]
+}

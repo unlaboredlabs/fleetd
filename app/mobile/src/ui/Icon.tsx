@@ -18,6 +18,7 @@ const SYMBOLS = {
   external: ["arrow.up.right", "open_in_new"],
   money: ["creditcard", "payments"],
   irreversible: ["exclamationmark.triangle", "warning"],
+  hidden: ["eye.slash", "visibility_off"],
   credential: ["key", "key"],
   error: ["exclamationmark.circle.fill", "error"],
   offline: ["wifi.slash", "cloud_off"],

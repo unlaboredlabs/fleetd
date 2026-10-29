@@ -2,7 +2,7 @@
 // project wants you as the desktop's sidebar says (screens/shell/model.ts): a secret or an approval open for it, or
 // its lead waiting for your reply. An archived Navi is in none of them. Pure, so it is unit-tested.
 import { previewOf } from "./chatView";
-import { chatItems, emptyChat, isArchived, isNavi, type HumanRequest, type ProjectSummary } from "./desktop";
+import { chatItems, emptyChat, hasHidden, isArchived, isNavi, shellWord, type HumanRequest, type ProjectSummary } from "./desktop";
 import { unreadCount, type Prefs } from "./prefs";
 import { keyOf, type Key, type State } from "./store";
 
@@ -148,18 +148,37 @@ export interface ApprovalView {
    * `more`: context shown under Details (where a command runs, its kind, the raw input behind a preview). Everything
    * that decides the answer (what runs, who it reaches, as whom, what it says) is always on the card's face, in full:
    * the card is what the person approves. `prose`: the asker's own words (why), whose `code` spans may be drawn as
-   * code; every other field shows exactly as written, backticks and all, as it would go out.
+   * code; every other field shows exactly as written, backticks and all, as it would go out. `lines`: its \n breaks
+   * the line (a body, a block of JSON); anywhere else a \n is a hidden character. `words`: a command's arguments, each
+   * quoted where it needs it, which the card isolates one by one.
    */
-  readonly fields: ReadonlyArray<{ readonly label: string; readonly value: string; readonly mono?: boolean; readonly more?: boolean; readonly prose?: boolean }>;
+  readonly fields: ReadonlyArray<ApprovalField>;
+  /** Some field holds a character that hides or reorders text (shared/hidden.ts): the card says so, and marks each. */
+  readonly hidden: boolean;
 }
+
+export interface ApprovalField {
+  readonly label: string;
+  readonly value: string;
+  readonly mono?: boolean;
+  readonly more?: boolean;
+  readonly prose?: boolean;
+  readonly lines?: boolean;
+  readonly words?: readonly string[];
+}
+
+/**
+ * What Copy gives for a field: its exact text (a command's words quoted, as the desktop copies it), never the marks
+ * and isolates the card draws it with.
+ */
+export const fieldCopy = (f: ApprovalField): string => f.value;
 
 const list = (xs: readonly string[] | undefined): string | undefined => (xs === undefined || xs.length === 0 ? undefined : xs.join(", "));
 
 export const approvalView = (r: HumanRequest, projectTitle: string | undefined): ApprovalView => {
-  const fields: Array<{ label: string; value: string; mono?: boolean; more?: boolean; prose?: boolean }> = [];
-  const add = (label: string, value: string | undefined, how: { mono?: boolean; more?: boolean; prose?: boolean } = {}) => {
-    if (value !== undefined && value !== "")
-      fields.push({ label, value, ...(how.mono === true ? { mono: true } : {}), ...(how.more === true ? { more: true } : {}), ...(how.prose === true ? { prose: true } : {}) });
+  const fields: ApprovalField[] = [];
+  const add = (label: string, value: string | undefined, how: Omit<ApprovalField, "label" | "value"> = {}) => {
+    if (value !== undefined && value !== "") fields.push({ label, value, ...how });
   };
   const who = projectTitle ?? r.projectRef.projectId;
   const preview = r.permission?.preview;
@@ -168,8 +187,9 @@ export const approvalView = (r: HumanRequest, projectTitle: string | undefined):
   if (r.gated !== undefined) {
     wants = "wants to run a command";
     risk = r.gated.class;
-    add("Why", r.gated.reason, { prose: true });
-    add("Command", r.gated.argv.join(" "), { mono: true });
+    add("Why", r.gated.reason, { prose: true, lines: true });
+    const words = r.gated.argv.map(shellWord);
+    add("Command", words.join(" "), { mono: true, words });
     add("In", r.gated.cwd, { mono: true, more: true });
     add("Kind", r.gated.class, { more: true });
     add("Secrets", list(r.gated.secretEnv?.map((e) => e.name)));
@@ -185,20 +205,21 @@ export const approvalView = (r: HumanRequest, projectTitle: string | undefined):
     add("Subject", preview.subject);
     add("On", preview.target);
     add("When", preview.when);
-    add("Body", preview.body);
+    add("Body", preview.body, { lines: true });
     add("Attachments", list(preview.attachments?.map((a) => a.name)));
-    add("Input", preview.input, { mono: true, more: true });
+    add("Input", preview.input, { mono: true, more: true, lines: true });
   } else if (r.permission !== undefined) {
     wants = r.permission.site !== undefined ? `wants to visit ${r.permission.site}` : `wants to use ${r.permission.toolName}`;
     add("What", r.permission.summary, { mono: true });
     // The summary is a first line or a path: the input is the rest of the command, or the file's content.
-    if (r.permission.input !== undefined) add("Input", JSON.stringify(r.permission.input, null, 2), { mono: true });
+    if (r.permission.input !== undefined) add("Input", JSON.stringify(r.permission.input, null, 2), { mono: true, lines: true });
   } else if (r.previewConfig !== undefined) {
     wants = "proposes how Try it runs this project";
-    add("Setting", JSON.stringify(r.previewConfig, null, 2), { mono: true });
+    add("Setting", JSON.stringify(r.previewConfig, null, 2), { mono: true, lines: true });
   } else {
     wants = "asks for approval";
   }
-  add("Asked", r.text);
-  return { title: `${who} ${wants}`, who, wants, risk, fields };
+  add("Asked", r.text, { lines: true });
+  const hidden = hasHidden(who) || hasHidden(wants) || fields.some((f) => (f.words ?? [f.value]).some((v) => hasHidden(v, f.lines === true)));
+  return { title: `${who} ${wants}`, who, wants, risk, fields, hidden };
 };
