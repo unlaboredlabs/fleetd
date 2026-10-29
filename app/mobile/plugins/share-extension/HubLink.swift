@@ -69,23 +69,29 @@ final class HubLink {
     task.cancel(with: .normalClosure, reason: nil)
   }
 
+  /// Sends a frame; one that can't go within 30 s (a hub that never accepts the connection) drops the link.
   private func send(_ frame: [String: Any]) async throws {
-    let data = try JSONSerialization.data(withJSONObject: frame)
-    try await task.send(.string(String(decoding: data, as: UTF8.self)))
+    let text = String(decoding: try JSONSerialization.data(withJSONObject: frame), as: UTF8.self)
+    try await watched(30) { try await self.task.send(.string(text)) }
   }
 
   /// The next frame, nil for one this doesn't read; a link silent for `seconds` is dropped, which throws.
   private func receive(within seconds: Double) async throws -> Frame? {
+    switch try await watched(seconds, { try await self.task.receive() }) {
+    case let .string(text): return Frame.parse(Data(text.utf8))
+    case let .data(data): return Frame.parse(data)
+    @unknown default: return nil
+    }
+  }
+
+  /// Runs a step of the link, which fails when the link is dropped after `seconds`.
+  private func watched<T>(_ seconds: Double, _ step: () async throws -> T) async throws -> T {
     let task = self.task
     let watchdog = Task {
       try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
       task.cancel(with: .goingAway, reason: nil)
     }
     defer { watchdog.cancel() }
-    switch try await task.receive() {
-    case let .string(text): return Frame.parse(Data(text.utf8))
-    case let .data(data): return Frame.parse(data)
-    @unknown default: return nil
-    }
+    return try await step()
   }
 }
