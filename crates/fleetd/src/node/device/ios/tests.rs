@@ -617,6 +617,24 @@ async fn frame_after(
     }
 }
 
+/// The session as the hub lists it, once the node's report (sent in the background) is there.
+async fn wait_listed(hub: &TestHub, id: &str) -> Value {
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        let listed = sessions(hub).await;
+        if let Some(s) = listed["sessions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["sessionId"] == id)
+        {
+            return s.clone();
+        }
+        assert!(Instant::now() < deadline, "not listed: {listed}");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+}
+
 async fn wait_recorded(hub: &TestHub, id: &str) -> Value {
     let deadline = Instant::now() + Duration::from_secs(120);
     loop {
@@ -703,8 +721,8 @@ async fn settings_session(home: PathBuf, hub: Arc<TestHub>, simulators: Arc<Simu
     let udid = result["udid"].as_str().unwrap().to_owned();
     eprintln!("the session's clone: {udid}");
     runner_up(&home, &udid).unwrap();
-    let live = sessions(&hub).await;
-    assert_eq!(live["sessions"][0]["kind"], "ios", "{live}");
+    let live = wait_listed(&hub, &id).await;
+    assert_eq!(live["kind"], "ios", "{live}");
     let refused = call(&router, json!({ "op": "session_start", "purpose": "Shop" })).await;
     assert!(
         refused["error"]["message"]
