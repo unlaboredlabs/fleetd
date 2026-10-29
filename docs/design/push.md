@@ -118,7 +118,9 @@ The hub picks each notification's `category`, inside the sealed payload, so the 
   Everything else gets **Review** (`review`), which opens the full card in the app, as D183 and D193 ask: a run that
   injects a secret, money or irreversible commands, any other tool prompt (its summary is only a part of what runs:
   a Write's path, a script's first line, an MCP tool's description), an integration's send or change, a first visit
-  to a site, a preview setting. A body cut to fit is no longer exact, so it gets Review too. A secret gets no button:
+  to a site, a preview setting. A body cut to fit is no longer exact, so it gets Review too, and so does a command
+  that could read differently on a lock screen than it runs (`shown_whole`): over 200 characters, or holding a control
+  character (`\r`, tab, escape), a line or paragraph separator, a bidi control or mark, or a zero-width character. A secret gets no button:
   it is entered in the app.
 - **Reply** (`reply`): a Navi's or a lead's message. The text goes into that chat with `chat_send`.
 

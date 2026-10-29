@@ -347,10 +347,35 @@ fn final_lead_message(hub: &Hub, event: &HubEvent, r: &ProjectRef) -> Option<Cha
         .and_then(|d| serde_json::from_str(&d).ok())
 }
 
+/// The longest command a notification offers Approve for: what a banner and the lock screen show whole.
+const APPROVE_MAX: usize = 200;
+
+/// Whether `text` reads on a lock screen exactly as it runs: one line of at most [`APPROVE_MAX`] characters, with
+/// nothing that hides or reorders text. That rules out control characters (`\r`, `\n`, tab, NEL), line and paragraph
+/// separators, bidi controls and marks, and zero-width characters.
+pub fn shown_whole(text: &str) -> bool {
+    let hidden = |c: char| {
+        c.is_control()
+            || matches!(
+                c,
+                // Line and paragraph separators.
+                '\u{2028}' | '\u{2029}'
+                // Bidi marks, embeddings, overrides and isolates.
+                | '\u{200E}' | '\u{200F}' | '\u{061C}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}'
+                // Zero-width spaces, joiners, the word joiner and invisible operators, the BOM, the Mongolian vowel
+                // separator, soft hyphen and other default-ignorable fillers.
+                | '\u{200B}'..='\u{200D}' | '\u{2060}'..='\u{2064}' | '\u{FEFF}' | '\u{180E}' | '\u{00AD}'
+                | '\u{034F}' | '\u{115F}' | '\u{1160}' | '\u{3164}' | '\u{FFA0}' | '\u{17B4}' | '\u{17B5}'
+                | '\u{FE00}'..='\u{FE0F}' | '\u{E0000}'..='\u{E007F}'
+            )
+    };
+    !text.trim().is_empty() && text.chars().count() <= APPROVE_MAX && !text.chars().any(hidden)
+}
+
 /// An approval's body and what the notification may do about it. The body is why the lead asks, then exactly what
 /// runs. Approve and Deny show only when the body is everything the card would show, whole on one line (D183/D193):
 /// a gated run's command and the directory it runs in, injecting no secret and none of money or irreversible; or a
-/// tool prompt that is a one-line Bash command, its whole input. Anything else is reviewed in the app: a prompt's
+/// tool prompt that is a one-line Bash command, its whole input. Either must be [`shown_whole`]. Anything else is reviewed in the app: a prompt's
 /// summary is often only part of what runs (a Write's path, a script's first line, an MCP tool's description), and an
 /// integration's send or change and a preview setting show exactly who and what on their card. A secret is entered
 /// in the app, so it gets no action.
@@ -364,7 +389,9 @@ fn approval_notice(r: &HumanRequest) -> (String, Option<PushCategory>) {
                 Some(cwd) => format!("{argv} (in {})", cwd.as_str()),
                 None => argv,
             };
-            let safe = !matches!(g.class, GatedClass::Money | GatedClass::Irreversible);
+            // Each word, before shown_argv quotes it: JSON escapes control characters but not bidi or zero-width ones.
+            let plain = g.argv.iter().all(|w| w.is_empty() || shown_whole(w)) && shown_whole(&what);
+            let safe = plain && !matches!(g.class, GatedClass::Money | GatedClass::Irreversible);
             let secret = g.secret_env.as_ref().is_some_and(|e| !e.0.is_empty());
             (what, safe && !secret)
         }
@@ -376,7 +403,7 @@ fn approval_notice(r: &HumanRequest) -> (String, Option<PushCategory>) {
                 .and_then(Value::as_str);
             let whole = p.tool_name.as_str() == "Bash"
                 && command == Some(p.summary.as_str())
-                && !p.summary.as_str().contains('\n');
+                && shown_whole(p.summary.as_str());
             (
                 format!("{} {}", p.tool_name, p.summary.as_str()),
                 whole && p.preview.is_none() && p.site.is_none(),

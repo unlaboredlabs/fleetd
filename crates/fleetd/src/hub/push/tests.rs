@@ -1105,3 +1105,97 @@ async fn approve_shows_only_when_the_notification_holds_all_the_card_would() {
         )
     );
 }
+
+#[test]
+fn approve_needs_text_that_reads_on_a_lock_screen_as_it_runs() {
+    assert!(shown_whole("git push origin release"));
+    assert!(shown_whole("echo 'naïve café ✓' > notes.txt"));
+    let refused = [
+        // Lines that break or return: \r, \n, NEL, line and paragraph separators.
+        ("carriage return", "ls\rrm -rf ~"),
+        ("newline", "ls\nrm -rf ~"),
+        ("next line", "ls\u{0085}rm -rf ~"),
+        ("line separator", "ls\u{2028}rm -rf ~"),
+        ("paragraph separator", "ls\u{2029}rm -rf ~"),
+        // Bidi controls that reorder what shows.
+        ("right-to-left override", "ls \u{202E}fr- mr"),
+        ("left-to-right embedding", "ls \u{202A}x"),
+        ("pop directional formatting", "ls \u{202C}x"),
+        ("right-to-left isolate", "ls \u{2067}x\u{2069}"),
+        ("first strong isolate", "ls \u{2068}x"),
+        ("left-to-right mark", "ls\u{200E} x"),
+        ("right-to-left mark", "ls\u{200F} x"),
+        ("arabic letter mark", "ls\u{061C} x"),
+        // Other control characters.
+        ("bell", "ls\u{7}"),
+        ("escape", "ls \u{1B}[2K"),
+        ("tab", "ls\tx"),
+        ("delete", "ls\u{7F}"),
+        // Zero-width characters that hide text.
+        ("zero-width space", "r\u{200B}m -rf ~"),
+        ("zero-width joiner", "r\u{200D}m"),
+        ("zero-width non-joiner", "r\u{200C}m"),
+        ("word joiner", "r\u{2060}m"),
+        ("byte order mark", "\u{FEFF}rm"),
+        ("tag characters", "ls\u{E0041}"),
+        // More than a lock screen shows whole, and nothing at all.
+        ("too long", &"x".repeat(201)),
+        ("blank", "   "),
+    ];
+    for (what, text) in refused {
+        assert!(!shown_whole(text), "{what} passed");
+    }
+    assert!(shown_whole(&"x".repeat(200)));
+}
+
+#[tokio::test]
+async fn a_command_that_hides_or_reorders_text_is_reviewed_in_the_app() {
+    let (hub, _home) = hub();
+    let owner = owner_device(&hub);
+    let (key, _) = phone(&hub, &owner, "ios", "aa11").await;
+    let (relay, url) = fake_relay().await;
+    ok(&hub, &owner, "push_relay_set", json!({ "url": url })).await;
+    let http = reqwest::Client::new();
+    let mut follow = Follow::default();
+    let cursor = hub.events.head();
+
+    let loud = Attention::Loud;
+    for command in [
+        "ls\rrm -rf ~",
+        "ls \u{202E}fr- mr",
+        "r\u{200B}m -rf ~",
+        "ls\u{2028}rm",
+    ] {
+        let asked = prompt("Bash", command, json!({ "command": command }));
+        request(&hub, "app", "approval", "Bash", asked, loud);
+    }
+    let long = "x".repeat(300);
+    let asked = prompt("Bash", &long, json!({ "command": long }));
+    request(&hub, "app", "approval", "Bash", asked, loud);
+    // A gated run's words too: its card quotes them, but JSON leaves bidi and zero-width characters as they are.
+    request(
+        &hub,
+        "app",
+        "approval",
+        "Run",
+        gated(&["ls", "\u{202E}fr-"], "credential"),
+        loud,
+    );
+    request(
+        &hub,
+        "app",
+        "approval",
+        "Run",
+        gated(&["ls", "a\u{200B}b"], "credential"),
+        loud,
+    );
+    step(&hub, &http, &mut follow, cursor).await.unwrap();
+    let got: Vec<Option<PushCategory>> = relay
+        .got
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|p| opened(&key, p).category)
+        .collect();
+    assert_eq!(got, [Some(PushCategory::Review); 7]);
+}

@@ -26,7 +26,8 @@ Press and hold a notification, or swipe it left on the lock screen and tap **Opt
 - Approve, Deny and Reply ask you to unlock the phone first: they act with the phone's own key.
 - Approve shows only when the notification holds everything the card would: the whole command and where it runs.
   Anything longer, anything that uses a secret, edits a file, spends money, can't be undone or reaches someone, opens
-  the card in the app instead.
+  the card in the app instead. So does a command with characters that could hide or reorder its text, such as
+  invisible or right-to-left marks.
 - The outcome replaces the notification, without a sound: "Approved: …", or why it wasn't, such as "Already answered
   on the desktop". A sent reply just disappears.
 - The app icon's badge counts what needs you: each open approval or secret, plus each chat waiting for your reply.
