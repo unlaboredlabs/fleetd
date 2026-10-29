@@ -1,7 +1,8 @@
 // A project's or a Navi's own screen, opened from its chat's header, as a contact's in Telegram: its avatar and name,
 // then what runs there now (agents_list), its open orders (orders_board), its checklist and its recent merges with
 // their PRs, read-only; then its name, the profiles its agents may run on and where it lives, and for a Navi Forget
-// Sign-ins. Delete last, red, asking first. What the person's role doesn't allow isn't offered (model.ts allowed).
+// Sign-ins. Delete last, red, asking first: in an action sheet, or, when uncommitted changes would be lost, in a sheet
+// that names them and wants its name typed (TypedDelete). What the person's role doesn't allow isn't offered.
 import { useFocusEffect } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useCallback, useRef, useState } from "react";
@@ -17,8 +18,9 @@ import { ListRow, ListSection } from "../../ui/List";
 import { EmptyState } from "../../ui/States";
 import { useNow } from "../time";
 import { deleteProject, forgetSignins, readForDelete, readInfo } from "./api";
-import { agentLines, allowed, checklist, deleteBlocked, deleteWords, machineName, merges, orderLines, profilesValue, subtitle, type Tone } from "./model";
+import { agentLines, allowed, checklist, deleteBlocked, deleteWords, machineName, merges, orderLines, profilesValue, subtitle, type DeleteWords, type Tone } from "./model";
 import { confirmDestructive, errorWords, Problem, useRead } from "./parts";
+import { TypedDelete } from "./TypedDelete";
 
 const toneColor = (t: Palette, tone: Tone): string => (tone === "accent" ? t.accent : tone === "warning" ? t.warning : tone === "danger" ? t.danger : t.secondary);
 
@@ -56,6 +58,7 @@ function Page({ project: p, navigation }: { project: ProjectSummary; navigation:
   );
   const [busy, setBusy] = useState<"delete" | "forget" | null>(null);
   const [forgot, setForgot] = useState(false);
+  const [typing, setTyping] = useState<DeleteWords | null>(null);
   const key = `${p.machineId}/${p.projectId}`;
   const v = info.value;
   const agents = agentLines(v?.agents ?? []);
@@ -72,17 +75,19 @@ function Page({ project: p, navigation }: { project: ProjectSummary; navigation:
     const blocked = deleteBlocked(read.value);
     if (blocked !== undefined) return Alert.alert(`Can't delete ${p.title} now`, blocked);
     const words = deleteWords(p, read.value, machine);
-    confirmDestructive({
-      ...words,
-      // Back to Chats first, then the delete: its row then goes from a list on screen, never in the same commit as
-      // these screens (the list's rows slide with a LayoutAnimation, which must not land on a screen's removal).
-      onConfirm: () => {
-        navigation.popToTop();
-        void deleteProject(session, p).then((r) => {
-          if (!r.ok) return Alert.alert(`Couldn't delete ${p.title}`, errorWords(r.error));
-          haptics.success();
-        });
-      },
+    // Uncommitted changes would be lost: their names and the project's typed, as on the desktop. Else the action sheet.
+    if (words.unsaved.length > 0) return setTyping(words);
+    confirmDestructive({ ...words, onConfirm: doDelete });
+  };
+
+  // Back to Chats first, then the delete: its row then goes from a list on screen, never in the same commit as these
+  // screens (the list's rows slide with a LayoutAnimation, which must not land on a screen's removal).
+  const doDelete = () => {
+    setTyping(null);
+    navigation.popToTop();
+    void deleteProject(session, p).then((r) => {
+      if (!r.ok) return Alert.alert(`Couldn't delete ${p.title}`, errorWords(r.error));
+      haptics.success();
     });
   };
 
@@ -185,6 +190,7 @@ function Page({ project: p, navigation }: { project: ProjectSummary; navigation:
           <ListRow title={navi ? "Delete Navi" : "Delete Project"} destructive chevron={false} {...(busy === null && live ? { onPress: () => void remove() } : {})} {...(busy === "delete" ? { accessory: spinner } : {})} />
         </ListSection>
       ) : null}
+      <TypedDelete words={typing} name={p.title} onCancel={() => setTyping(null)} onDelete={doDelete} />
     </ScrollView>
   );
 }

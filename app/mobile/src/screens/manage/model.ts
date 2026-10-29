@@ -170,12 +170,15 @@ export interface DeleteWords {
   readonly title: string;
   readonly message: string;
   readonly button: string;
+  /** Its worktrees with uncommitted changes, which the delete loses: each named, and its name typed to confirm. */
+  readonly unsaved: readonly string[];
 }
 
 /**
  * The delete's confirm, as the desktop's: a Navi or a plain folder keeps its folder; a repo's checkout, branches and
  * pull requests stay while its fleetd worktrees go (any with uncommitted changes named); the other repos a project
- * holds go from fleetd with it (#803), their checkouts staying on the machine.
+ * holds go from fleetd with it (#803), their checkouts staying on the machine. Uncommitted changes it would lose are
+ * named apart (`unsaved`), for the confirm that asks for its name.
  */
 export const deleteWords = (p: ProjectSummary, settings: ProjectSettings, machine: string): DeleteWords => {
   const navi = isNavi(p);
@@ -192,9 +195,11 @@ export const deleteWords = (p: ProjectSummary, settings: ProjectSettings, machin
         : `Its agents stop now, fleetd forgets it and its settings, and the worktrees its agents worked in are removed. Its checkout at ${path}, its branches and its pull requests stay.`,
   ];
   if (others.length > 0) lines.push(`Its other ${others.length === 1 ? "repo" : "repos"}, ${others.join(", ")}, ${others.length === 1 ? "goes" : "go"} from fleetd with it; ${others.length === 1 ? "its checkout stays" : "their checkouts stay"} on ${machine}.`);
-  if (unsaved.length > 0) lines.push(`Uncommitted changes are lost in ${unsaved.join(", ")}.`);
-  return { title: `Delete ${p.title}?`, message: lines.join("\n\n"), button: navi ? "Delete Navi" : "Delete Project" };
+  return { title: `Delete ${p.title}?`, message: lines.join("\n\n"), button: navi ? "Delete Navi" : "Delete Project", unsaved };
 };
+
+/** A delete that loses uncommitted changes is confirmed by typing its name, as on the desktop: exactly, around spaces. */
+export const deleteConfirmed = (typed: string, title: string): boolean => typed.trim() === title.trim() && title.trim() !== "";
 
 /** Why a delete can't be asked now: its machine has to list its worktrees first, so no uncommitted work goes unseen. */
 export const deleteBlocked = (settings: ProjectSettings): string | undefined =>

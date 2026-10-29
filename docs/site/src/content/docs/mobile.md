@@ -65,7 +65,8 @@ The **ⓘ** at the top of a chat opens its Navi's or project's page:
 - **Forget Sign-ins…**, for a Navi: signs it out of every site its browser kept, after a confirm.
 - **Delete Navi** or **Delete Project**: asks first and names what goes. Its agents stop and fleetd forgets it, with
   its fleetd worktrees and the checkouts of the project's other repos. Its folder, branches and pull requests stay.
-  Worktrees with uncommitted changes are named first. Delete waits until the machine can list them.
+  When worktrees hold uncommitted changes, which the delete loses, the confirm names them and you type the project's
+  name to delete, as in the desktop app. Delete waits until the machine can list them.
 
 A member does everything here on the machines they operate. A Navi is its owner's alone: only they can rename it,
 forget its sign-ins or delete it. The hub checks each change too.

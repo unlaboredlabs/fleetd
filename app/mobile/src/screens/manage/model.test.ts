@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentRow, OrderCard, PrRow, ProfilesListOutput, ProjectSettings, ProjectSummary, TodoItem } from "../../desktop";
-import { agentLines, allowed, checklist, deleteBlocked, deleteWords, merges, orderLines, profileLines, profilesValue, projectNameProblem, subtitle, suggestions } from "./model";
+import { agentLines, allowed, checklist, deleteBlocked, deleteConfirmed, deleteWords, merges, orderLines, profileLines, profilesValue, projectNameProblem, subtitle, suggestions } from "./model";
 
 const AT = "2026-10-28T10:00:00Z";
 
@@ -158,8 +158,24 @@ describe("Delete", () => {
     expect(w.message.split("\n\n")).toEqual([
       "Its agents stop now, fleetd forgets it and its settings, and the worktrees its agents worked in are removed. Its checkout at ~/src/shop, its branches and its pull requests stay.",
       "Its other repo, api, goes from fleetd with it; its checkout stays on devbox.",
-      "Uncommitted changes are lost in fleetd/T1-fix.",
     ]);
+    // Uncommitted changes go to the confirm that wants the name typed; a worktree without a branch by its path.
+    expect(w.unsaved).toEqual(["fleetd/T1-fix"]);
+    const noBranch = deleteWords(project(), settings({ worktrees: { dir: "/w", worktrees: [{ path: "/home/ada/w/c", sessionId: "s3", uncommitted: true }] } }), "devbox");
+    expect(noBranch.unsaved).toEqual(["~/w/c"]);
+  });
+
+  it("asks only the action sheet's tap when nothing uncommitted is lost", () => {
+    expect(deleteWords(project(), settings(), "devbox").unsaved).toEqual([]);
+    expect(deleteWords(navi(), settings(), "devbox").unsaved).toEqual([]);
+  });
+
+  it("enables a delete that loses uncommitted changes only once its name is typed exactly", () => {
+    expect(deleteConfirmed("", "storefront")).toBe(false);
+    expect(deleteConfirmed("store", "storefront")).toBe(false);
+    expect(deleteConfirmed("Storefront", "storefront")).toBe(false);
+    expect(deleteConfirmed("  storefront ", "storefront")).toBe(true);
+    expect(deleteConfirmed("", " ")).toBe(false);
   });
 
   it("calls a project with no repo of its own a plain folder", () => {
