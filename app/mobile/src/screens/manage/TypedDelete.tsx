@@ -50,7 +50,8 @@ export function TypedDelete({ words, name, onCancel, onDelete }: { words: Delete
               <ListRow key={w} title={w} />
             ))}
           </ListSection>
-          <ListSection header={`Type ${name} to confirm`}>
+          {/* A footnote, not a header: headers are capitals, and the name is typed as it is. */}
+          <ListSection footer={`Type “${name}” to delete it.`}>
             <FieldRow value={typed} onChangeText={setTyped} placeholder={name} autoCapitalize="none" autoFocus accessibilityLabel={`Type ${name} to confirm`} />
           </ListSection>
           <View style={styles.actions}>
