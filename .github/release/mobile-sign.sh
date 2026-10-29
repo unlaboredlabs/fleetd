@@ -22,7 +22,8 @@
 #   mobile-sign.sh android-verify <file>... prints the certificates that signed APKs and app bundles: one each
 #   mobile-sign.sh ios-enabled            prints true when the certificate, both profiles and team are set
 #   mobile-sign.sh testflight-enabled     prints true when the App Store Connect key is set
-#   mobile-sign.sh ios-keychain           a temporary keychain with the identity, and the profiles installed
+#   mobile-sign.sh ios-keychain           a temporary keychain with the identity and Apple's intermediates, and the
+#                                         profiles installed
 #   mobile-sign.sh ios-project            signs the app and extension targets manually (only them: the pods' bundles
 #                                         stay unsigned)
 #   mobile-sign.sh ios-export <archive> <out> upload|export
@@ -40,6 +41,46 @@ jks="$tmp/fleetd-mobile.jks"
 die() { echo "::error::$*"; exit 1; }
 set_all() { for v in "$@"; do [ -n "${!v:-}" ] || return 1; done; }
 profile_uuid() { security cms -D -i "${1:-$profile}" | plutil -extract UUID raw -o - -; }
+
+# Apple's WWDR intermediates, by SHA-256 of the .cer: a distribution certificate is valid only with its issuer's in
+# reach, and the runner's own keychains needn't hold it. G3 to G5 chain to Apple Root CA, G6 to Apple Root CA - G3.
+wwdr_certs="AppleWWDRCAG3 dcf21878c77f4198e4b4614f03d696d89c66c66008d4244e1b99161aac91601f
+AppleWWDRCAG4 ea4757885538dd8cb59ff4556f676087d83c85e70902c122e42c0808b5bce14c
+AppleWWDRCAG5 53fd008278e5a595fe1e908ae9c5e5675f26243264a5a6438c023e3ce2870760
+AppleWWDRCAG6 bdd4ed6e74691f0c2bfd01be0296197af1379e0418e2d300efa9c3bef642ca30"
+
+wwdr_import() {
+  while read -r name sha; do
+    cer="$tmp/$name.cer"
+    curl -fsSL --proto '=https' --retry 3 "https://www.apple.com/certificateauthority/$name.cer" -o "$cer"
+    [ "$(shasum -a 256 "$cer" | cut -d ' ' -f 1)" = "$sha" ] || die "$name.cer from apple.com isn't the pinned one"
+    security import "$cer" -k "$keychain" >/dev/null
+    rm -f "$cer"
+  done <<< "$wwdr_certs"
+}
+
+# Fails, saying which fix applies, unless the keychain holds a valid Apple Distribution identity. Prints no key material:
+# a count of private keys, the identities' names and the certificate's issuer.
+ios_identity_check() {
+  valid="$(security find-identity -v -p codesigning "$keychain")"
+  grep -q "Apple Distribution" <<< "$valid" && return 0
+  all="$(security find-identity -p codesigning "$keychain")"
+  echo "Code signing identities, valid or not:"
+  echo "$all"
+  keys="$(security dump-keychain "$keychain" | grep -c '^class: 0x00000010' || true)"
+  echo "Private keys the .p12 held: $keys"
+  if security find-certificate -c "Apple Distribution" -p "$keychain" > "$tmp/fleetd-dist.pem" 2>/dev/null; then
+    openssl x509 -in "$tmp/fleetd-dist.pem" -noout -subject -issuer -enddate
+  fi
+  rm -f "$tmp/fleetd-dist.pem"
+  if [ "$keys" = 0 ]; then
+    die "the .p12 holds no private key: export it again from Keychain Access (My Certificates, the Apple Distribution certificate with its key under it) and set IOS_CERT_P12_BASE64 again"
+  fi
+  if ! grep -q "Apple Distribution" <<< "$all"; then
+    die "the .p12's key isn't an Apple Distribution certificate's: export the Apple Distribution certificate together with its own key"
+  fi
+  die "the .p12 holds the key, but its Apple Distribution certificate isn't valid (the reason is above): its issuer isn't one of Apple's WWDR intermediates, or it's expired or revoked"
+}
 
 case "${1:-}" in
 android-enabled)
@@ -92,14 +133,14 @@ ios-keychain)
   security create-keychain -p "$pass" "$keychain"
   security set-keychain-settings -lut 3600 "$keychain"
   security unlock-keychain -p "$pass" "$keychain"
+  wwdr_import
   (umask 077 && printf '%s' "$IOS_CERT_P12_BASE64" | base64 --decode > "$p12")
   security import "$p12" -k "$keychain" -P "$IOS_CERT_PASSWORD" -f pkcs12 -T /usr/bin/codesign >/dev/null
   rm -f "$p12"
   security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$pass" "$keychain" >/dev/null
   # shellcheck disable=SC2046 # one keychain per word
   security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
-  security find-identity -v -p codesigning "$keychain" | grep -q "Apple Distribution" ||
-    die "the .p12 holds no valid Apple Distribution identity"
+  ios_identity_check
   printf '%s' "$IOS_PROFILE_BASE64" | base64 --decode > "$profile"
   printf '%s' "$IOS_EXTENSION_PROFILE_BASE64" | base64 --decode > "$extension_profile"
   for file in "$profile" "$extension_profile"; do

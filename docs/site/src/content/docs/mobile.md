@@ -105,13 +105,18 @@ and Time Sensitive Notifications capabilities, and one for its notification exte
 
 | Secret | Value |
 |---|---|
-| `IOS_CERT_P12_BASE64` | `base64 < dist.p12` of an Apple Distribution certificate with its key |
+| `IOS_CERT_P12_BASE64` | `base64 < dist.p12` of an Apple Distribution certificate with its private key |
 | `IOS_CERT_PASSWORD` | The `.p12`'s export password |
 | `IOS_PROFILE_BASE64` | `base64 < fleetd.mobileprovision` of a distribution provisioning profile for the bundle id |
 | `IOS_EXTENSION_PROFILE_BASE64` | The same, for the extension's id (`<bundle id>.notifications`) |
 | `APPLE_TEAM_ID` | Your team's 10-character id |
 | `ASC_KEY_ID`, `ASC_ISSUER_ID` | An Apple API key for TestFlight uploads (App Manager role): its id and issuer |
 | `ASC_KEY_P8_BASE64` | `base64 < AuthKey_XXXX.p8` of that key |
+
+Export the `.p12` from Keychain Access on the Mac that made the certificate's signing request: under **My
+Certificates**, the Apple Distribution certificate with its private key under it. The build adds Apple's WWDR
+intermediate certificates itself; your Mac needs them only to show the certificate as valid. A build that stops at
+**Signing keychain** says whether the `.p12` lacked its private key or the certificate wasn't valid.
 
 Set the repository variable `FLEETD_APP_ID` to your bundle id, such as `com.example.fleetd`: Apple ties a bundle id to
 one team, so you can't sign `sh.fleetd.app`. Tick **Send the iOS build to TestFlight** to upload it. Without the App
