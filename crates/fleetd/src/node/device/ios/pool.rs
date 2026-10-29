@@ -1,9 +1,8 @@
 //! The simulators sessions get. The node makes one golden simulator in its set (the newest iOS runtime, a plain
 //! iPhone), boots it once and lets it settle (a fresh simulator's first boot keeps 40-300% of a core busy for minutes),
 //! has agent-device build its XCTest runner against it, and shuts it down: `simctl clone` copies only a simulator that
-//! is shut down. Each session gets a clone of it, booted ahead of time in a warm pool with agent-device's XCTest runner
-//! already started on it, and the clone is deleted with everything done in it when the session ends; the pool clones
-//! and boots the next behind it.
+//! is shut down. Each session gets a clone of it, booted ahead of time in a warm pool, and the clone is deleted with
+//! everything done in it when the session ends; the pool clones and boots the next behind it.
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -25,12 +24,7 @@ const FIRST_BOOT: Duration = Duration::from_secs(600);
 /// agent-device's runner builds with xcodebuild: minutes on a laptop.
 const RUNNER_BUILD: Duration = Duration::from_secs(1500);
 /// How long agent-device's daemon may take to stop its runner and exit.
-pub const DAEMON_EXIT: Duration = Duration::from_secs(60);
-/// How long a clone's runner may take to start. agent-device gives a runner 45 s from its launch to listen, and a start
-/// that misses it is started again: on GitHub's 3-vCPU macOS VM a clone's runner listened after 43-50 s, so a session's
-/// first command that needed it missed, and so did the start it made again (main's run 40885901242). Started in the
-/// pool, before a session takes the clone, it is ready by then.
-pub const RUNNER_START: Duration = Duration::from_secs(180);
+const DAEMON_EXIT: Duration = Duration::from_secs(60);
 /// How long the golden may take to settle before it is shut down anyway.
 const SETTLE_MAX: Duration = Duration::from_secs(600);
 /// A simulator is settled once its processes together use less than this share of one core...
@@ -100,15 +94,14 @@ pub async fn prepare(home: &Path, device_type: Option<&str>) -> Result<Golden, S
     let runtimes = simctl.runtimes().await?;
     let (runtime, device_type) = super::simctl::pick(&runtimes, device_type)?;
     let _ = std::fs::remove_file(golden_path(home));
-    clear(home, &simctl, None).await;
+    clear(&simctl, None).await;
     let udid = simctl
         .create(GOLDEN_NAME, &device_type.identifier, &runtime.identifier)
         .await?;
     let made = async {
         simctl.boot(&udid, FIRST_BOOT).await?;
         settle(&udid).await;
-        let dir = super::ios_dir(home).join("prepare");
-        runner(&wrapper, &udid, &dir, RUNNER_BUILD, false).await?;
+        runner(home, &wrapper, &udid).await?;
         simctl.shutdown(&udid).await?;
         let xctestrun = wrapper::built_xctestrun(home)?;
         wrapper::install(home, Some(&xctestrun))?;
@@ -209,40 +202,27 @@ pub fn device_cpu(ps: &str, udid: &str) -> f64 {
         .sum()
 }
 
-/// Has agent-device, with its home and state in `dir`, start its XCTest runner on simulator `udid` (for the golden,
-/// building it first into the node's runner directory, which every session's wrapper names), then stops the daemon
-/// that did. `detach`: the daemon leaves the runner running, leased, for a session's daemon to take over (a clone's);
-/// else it stops it (the golden's, which must stay shut down).
-async fn runner(
-    wrapper: &Path,
-    udid: &str,
-    dir: &Path,
-    within: Duration,
-    detach: bool,
-) -> Result<(), String> {
+/// Has agent-device build its XCTest runner for the golden (into the node's runner directory, which every session's
+/// wrapper names) and start it once, then stops the daemon that did.
+async fn runner(home: &Path, wrapper: &Path, udid: &str) -> Result<(), String> {
+    let dir = super::ios_dir(home).join("prepare");
     let state = dir.join("state");
-    crate::node::config::mkdir_private(dir).map_err(|e| e.to_string())?;
-    let timeout_ms = within.as_millis().to_string();
+    crate::node::config::mkdir_private(&dir).map_err(|e| e.to_string())?;
+    let timeout_ms = RUNNER_BUILD.as_millis().to_string();
     let run = tokio::process::Command::new(wrapper)
         .args(["prepare", "ios-runner", "--platform", "ios", "--udid", udid])
         .args(["--timeout", &timeout_ms])
-        .env("AGENT_DEVICE_HOME", dir)
+        .env("AGENT_DEVICE_HOME", &dir)
         .env("AGENT_DEVICE_STATE_DIR", &state)
         .env("AGENT_DEVICE_NO_UPDATE_NOTIFIER", "1")
-        .env("FLEETD_IOS_RUNNER_DETACH", if detach { "1" } else { "0" })
         .env_remove("FLEETD_DEVICE_CONTROL")
         .stdin(Stdio::null())
         .kill_on_drop(true)
         .output();
-    let out = tokio::time::timeout(within + Duration::from_secs(60), run).await;
+    let out = tokio::time::timeout(RUNNER_BUILD + Duration::from_secs(60), run).await;
     stop_daemon(&state).await;
     let out = out
-        .map_err(|_| {
-            format!(
-                "agent-device's runner did not start in {} s",
-                within.as_secs()
-            )
-        })?
+        .map_err(|_| "agent-device's runner did not build in 25 minutes".to_owned())?
         .map_err(|e| format!("cannot run agent-device: {e}"))?;
     if !out.status.success() {
         let said = format!(
@@ -251,23 +231,16 @@ async fn runner(
             String::from_utf8_lossy(&out.stderr)
         );
         return Err(format!(
-            "agent-device's runner did not start: {}",
+            "agent-device's runner did not build: {}",
             said.trim().chars().take(300).collect::<String>()
         ));
     }
     Ok(())
 }
 
-/// Where the pool's agent-device starts a clone's runner. It stays while the clone does: the session's daemon takes the
-/// runner over only while the state directory of the daemon that leased it is there.
-pub fn warm_dir(home: &Path, udid: &str) -> PathBuf {
-    super::ios_dir(home).join("warm").join(udid)
-}
-
 /// Ends the agent-device daemon whose state directory is `state`, if one runs, and waits for it to exit: on its way
-/// out it stops the XCTest runner it started, or leaves it leased for the next daemon (wrapper.rs). The golden's must
-/// stop: its xcodebuild would otherwise boot the golden again once it is shut down, and `simctl clone` refuses a booted
-/// one.
+/// out it stops the XCTest runner it started (the wrapper keeps it from leaving the runner running for a next daemon),
+/// whose xcodebuild would otherwise boot the golden again once it is shut down, and `simctl clone` refuses a booted one.
 pub async fn stop_daemon(state: &Path) {
     let daemon = std::fs::read_to_string(state.join("daemon.json"))
         .ok()
@@ -292,16 +265,14 @@ pub async fn stop_daemon(state: &Path) {
     }
 }
 
-/// Deletes every simulator in the node's set but `keep`, with their runners: the clones a node that stopped left behind
-/// (each holds a booted simulator's memory), or everything before a new golden. Returns how many.
-pub async fn clear(home: &Path, simctl: &Simctl, keep: Option<&str>) -> usize {
+/// Deletes every simulator in the node's set but `keep`: the clones a node that stopped left behind (each holds a
+/// booted simulator's memory), or everything before a new golden. Returns how many.
+pub async fn clear(simctl: &Simctl, keep: Option<&str>) -> usize {
     let Ok(devices) = simctl.devices().await else {
         return 0;
     };
     let mut cleared = 0;
     for device in devices.iter().filter(|d| Some(d.udid.as_str()) != keep) {
-        wrapper::stop_runner(home, &device.udid);
-        let _ = std::fs::remove_dir_all(warm_dir(home, &device.udid));
         if device.state != "Shutdown" {
             let _ = simctl.shutdown(&device.udid).await;
         }
@@ -450,7 +421,6 @@ impl Drop for BootSlot<'_> {
 
 /// Booted clones waiting for a session: taking one costs no boot, and the pool clones and boots another behind it.
 pub struct Pool {
-    home: PathBuf,
     simctl: Simctl,
     pub golden: Golden,
     size: usize,
@@ -464,35 +434,31 @@ pub struct Pool {
     held: AtomicBool,
 }
 
-/// A clone, from the moment simctl made it: its runner stopped, shut down and deleted when dropped, so one whose boot
-/// failed, whose session_start went away mid-boot, or that waited in a drained pool goes too.
+/// A clone, from the moment simctl made it: shut down and deleted when dropped, so one whose boot failed, whose
+/// session_start went away mid-boot, or that waited in a drained pool goes too.
 pub struct Lent {
     pub udid: String,
-    home: PathBuf,
     simctl: Simctl,
 }
 
 impl Drop for Lent {
     fn drop(&mut self) {
-        discard(&self.home, &self.simctl, &self.udid);
+        discard(&self.simctl, &self.udid);
     }
 }
 
-/// Stops a clone's runner, shuts the clone down and deletes it, off the caller's thread.
-fn discard(home: &Path, simctl: &Simctl, udid: &str) {
-    let (home, simctl, udid) = (home.to_owned(), simctl.clone(), udid.to_owned());
+/// Shuts a clone down and deletes it, off the caller's thread.
+fn discard(simctl: &Simctl, udid: &str) {
+    let (simctl, udid) = (simctl.clone(), udid.to_owned());
     std::thread::spawn(move || {
-        wrapper::stop_runner(&home, &udid);
         let _ = simctl.blocking(&["shutdown", &udid]).status();
         let _ = simctl.blocking(&["delete", &udid]).status();
-        let _ = std::fs::remove_dir_all(warm_dir(&home, &udid));
     });
 }
 
 impl Pool {
-    pub fn new(home: PathBuf, simctl: Simctl, golden: Golden, size: usize) -> Arc<Self> {
+    pub fn new(simctl: Simctl, golden: Golden, size: usize) -> Arc<Self> {
         Arc::new(Self {
-            home,
             simctl,
             golden,
             size,
@@ -509,21 +475,14 @@ impl Pool {
         &self.simctl
     }
 
-    /// Clones the golden, boots the clone and starts agent-device's runner on it now. A runner that doesn't start
-    /// leaves the clone as it was: the session's agent-device starts one, as it does for a runner that died.
+    /// Clones the golden and boots the clone now.
     async fn boot(&self) -> Result<Lent, String> {
         let name = format!("fleetd-{}", super::short_id());
         let lent = Lent {
             udid: self.simctl.clone_device(&self.golden.udid, &name).await?,
-            home: self.home.clone(),
             simctl: self.simctl.clone(),
         };
         self.simctl.boot(&lent.udid, BOOT_TIMEOUT).await?;
-        let wrapper = wrapper::bin_dir(&self.home).join("agent-device");
-        let dir = warm_dir(&self.home, &lent.udid);
-        if let Err(why) = runner(&wrapper, &lent.udid, &dir, RUNNER_START, true).await {
-            tracing::warn!(udid = %lent.udid, error = %why, "iOS clone lent without its runner started");
-        }
         Ok(lent)
     }
 

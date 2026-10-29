@@ -431,7 +431,7 @@ impl Simulators {
                 let this = simulators.clone();
                 tokio::spawn(async move {
                     let simctl = Simctl::new(set_dir(&this.home));
-                    let cleared = pool::clear(&this.home, &simctl, Some(&golden.udid)).await;
+                    let cleared = pool::clear(&simctl, Some(&golden.udid)).await;
                     if cleared > 0 {
                         tracing::info!(cleared, "iOS simulators a stopped node left were deleted");
                     }
@@ -494,7 +494,6 @@ impl Simulators {
     /// Makes the pool and starts filling it.
     fn ready(&self, golden: Golden) {
         let pool = Pool::new(
-            self.home.clone(),
             Simctl::new(set_dir(&self.home)),
             golden,
             self.config.pool.unwrap_or(1),
@@ -659,6 +658,7 @@ impl Simulators {
             )
         })?;
         lock(&self.sessions).insert(thread.clone(), session.clone());
+        session.start_runner();
         session.step(
             "session_start",
             json!({
@@ -723,6 +723,18 @@ impl Simulators {
             return work.step(call).map(BrowserCallResult::Device);
         };
         work.check(&args, self.config.remote_install != Some(false))?;
+        if session.runner_starting() {
+            session.touch();
+            return Ok(BrowserCallResult::Device(
+                remote::Ran {
+                    stdout: String::new(),
+                    stderr: remote::RUNNER_STARTING.to_owned(),
+                    exit_code: 75,
+                    files: Vec::new(),
+                }
+                .done(),
+            ));
+        }
         let program = wrapper::bin_dir(&self.home).join("agent-device");
         let path = std::env::var("PATH").ok();
         let env = wrapper::env(&self.home, thread, path.as_deref());

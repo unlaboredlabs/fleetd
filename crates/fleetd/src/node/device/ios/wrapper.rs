@@ -25,67 +25,6 @@ pub fn runner_dir(home: &Path) -> PathBuf {
         .join(".tmp/fleetd-runner")
 }
 
-/// Where agent-device writes a lease for each XCTest runner it started: the runner's pid, port and token, by the
-/// simulator's udid. A daemon that stops leaves its runner running, leased ([`wrapper_script`]), and the next daemon on
-/// that simulator takes it over instead of starting one: so the pool starts a clone's runner before lending it
-/// (pool.rs), and the node stops it by its lease when the clone goes ([`stop_runner`]).
-pub fn lease_dir(home: &Path) -> PathBuf {
-    super::ios_dir(home).join("runner-leases")
-}
-
-/// A runner's lease, as agent-device wrote it.
-#[derive(Debug, PartialEq)]
-pub struct Lease {
-    pub pid: i32,
-    pub port: u16,
-}
-
-/// The lease of the runner on simulator `udid`, if agent-device wrote one.
-pub fn lease(home: &Path, udid: &str) -> Option<Lease> {
-    let text = std::fs::read_to_string(lease_path(home, udid)).ok()?;
-    let lease: serde_json::Value = serde_json::from_str(&text).ok()?;
-    (lease["deviceId"] == udid).then_some(())?;
-    Some(Lease {
-        pid: i32::try_from(lease["runnerPid"].as_i64()?).ok()?,
-        port: u16::try_from(lease["port"].as_u64()?).ok()?,
-    })
-}
-
-/// agent-device names a lease by the udid, with anything but `[A-Za-z0-9._-]` a dash.
-pub fn lease_path(home: &Path, udid: &str) -> PathBuf {
-    let name: String = udid
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-') {
-                c
-            } else {
-                '-'
-            }
-        })
-        .collect();
-    lease_dir(home).join(format!("{name}.json"))
-}
-
-/// Kills the runner leased on simulator `udid` before the simulator goes: its xcodebuild, left running, launches the
-/// runner again once the simulator shuts down, which boots it again. Only an xcodebuild started for `udid` is killed:
-/// a pid reused since is left alone.
-pub fn stop_runner(home: &Path, udid: &str) {
-    if let Some(lease) = lease(home, udid) {
-        let command = std::process::Command::new("ps")
-            .args(["-o", "command=", "-p", &lease.pid.to_string()])
-            .output()
-            .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
-            .unwrap_or_default();
-        if command.contains("xcodebuild") && command.contains(udid) {
-            let _ = nix::sys::signal::kill(
-                nix::unistd::Pid::from_raw(lease.pid),
-                nix::sys::signal::Signal::SIGKILL,
-            );
-        }
-    }
-    let _ = std::fs::remove_file(lease_path(home, udid));
-}
-
 /// Where the runner was built before it moved into the package.
 fn old_runner_dir(home: &Path) -> PathBuf {
     super::ios_dir(home).join("runner")
@@ -115,12 +54,19 @@ pub fn install(home: &Path, xctestrun: Option<&Path>) -> Result<PathBuf, String>
     Ok(wrapper)
 }
 
-/// The wrapper: refuses while the session's control file says a person has the simulator, else runs agent-device on
-/// the node's simulator set with the runner the golden built. A daemon that is stopped leaves its XCTest runner
-/// running, leased in [`lease_dir`], for the next daemon on that simulator to take over: the pool's daemon that started
-/// a clone's runner hands it to the session's (pool.rs). The golden's prepare sets `FLEETD_IOS_RUNNER_DETACH=0`, so its
-/// daemon stops the runner: the runner's xcodebuild left behind relaunches it after the simulator shuts down, which
-/// boots the simulator again, and a golden booted again can't be cloned.
+/// While a session's own agent-device starts its XCTest runner (session.rs), this file holds the pid of the `prepare`
+/// doing it, and the wrapper waits for it to end before it runs anything: a command that needs the runner meanwhile would
+/// give a start its own 45 s, and a start that takes longer was given up on, the one it made again too.
+pub fn starting_path(home: &Path, thread: &str) -> PathBuf {
+    home.join("sessions").join(thread).join("runner-starting")
+}
+
+/// The wrapper: refuses while the session's control file says a person has the simulator, waits while the session's
+/// runner starts ([`starting_path`]), else runs agent-device on
+/// the node's simulator set with the runner the golden built. A daemon that is stopped stops its XCTest runner: by
+/// default agent-device leaves it running for a next daemon to take over, and fleetd's daemons have none (each lives
+/// as long as its session, or the golden's prepare). The runner's xcodebuild left behind relaunches it after the
+/// simulator shuts down, which boots the simulator again: a golden booted again can't be cloned.
 ///
 /// Once built, the runner (`xctestrun`) is given to agent-device as an external one. A runner from its own cache whose
 /// first start misses its 45 s is taken for a bad build: agent-device deletes it and builds it again inside the
@@ -143,17 +89,18 @@ pub fn wrapper_script(entry: &Path, home: &Path, xctestrun: Option<&Path>) -> St
          # fleetd's: agent-device {VERSION}, pointed at this session's iOS simulator.\n\
          if [ -n \"$FLEETD_DEVICE_CONTROL\" ] && [ -e \"$FLEETD_DEVICE_CONTROL\" ]; then\n  \
          echo '{paused}' >&2\n  exit 75\nfi\n\
+         if [ -n \"$FLEETD_RUNNER_STARTING\" ]; then\n  \
+         while pid=$(cat \"$FLEETD_RUNNER_STARTING\" 2>/dev/null) && [ -n \"$pid\" ] && kill -0 \"$pid\" 2>/dev/null; do sleep 1; done\n\
+         fi\n\
          AGENT_DEVICE_IOS_SIMULATOR_DEVICE_SET='{set}'\n\
          AGENT_DEVICE_IOS_RUNNER_DERIVED_PATH='{runner}'\n\
-         AGENT_DEVICE_IOS_RUNNER_DETACH=\"${{FLEETD_IOS_RUNNER_DETACH:-1}}\"\n\
-         AGENT_DEVICE_IOS_RUNNER_LEASE_DIR='{leases}'\n\
+         AGENT_DEVICE_IOS_RUNNER_DETACH=0\n\
          AGENT_DEVICE_NO_UPDATE_NOTIFIER=1\n\
          export AGENT_DEVICE_IOS_SIMULATOR_DEVICE_SET AGENT_DEVICE_IOS_RUNNER_DERIVED_PATH AGENT_DEVICE_IOS_RUNNER_DETACH \
-         AGENT_DEVICE_IOS_RUNNER_LEASE_DIR AGENT_DEVICE_NO_UPDATE_NOTIFIER\n\
+         AGENT_DEVICE_NO_UPDATE_NOTIFIER\n\
          {external}\
          exec node '{entry}' \"$@\"\n",
         set = quote(&super::set_dir(home)),
-        leases = quote(&lease_dir(home)),
         entry = quote(entry),
     )
 }
@@ -200,9 +147,13 @@ pub fn write_config(home: &Path, thread: &str, udid: &str) -> std::io::Result<()
 }
 
 /// What a session's claude gets in its environment: the wrapper first on PATH (it alone), its own agent-device home
-/// and state, and the control file the wrapper checks.
+/// and state, and the control and runner-starting files the wrapper checks.
 pub fn env(home: &Path, thread: &str, path: Option<&str>) -> Vec<(String, String)> {
     let mut env = agent_device::env(home, thread, path);
+    env.push((
+        "FLEETD_RUNNER_STARTING".to_owned(),
+        starting_path(home, thread).to_string_lossy().into_owned(),
+    ));
     let android = agent_device::bin_dir(home).to_string_lossy().into_owned();
     let ios = bin_dir(home).to_string_lossy().into_owned();
     for (key, value) in &mut env {
@@ -232,7 +183,11 @@ mod tests {
             get("FLEETD_DEVICE_CONTROL"),
             Some("/n/sessions/s1/device-control")
         );
-        assert_eq!(env.len(), 4, "nothing else: {env:?}");
+        assert_eq!(
+            get("FLEETD_RUNNER_STARTING"),
+            Some("/n/sessions/s1/runner-starting")
+        );
+        assert_eq!(env.len(), 5, "nothing else: {env:?}");
         let alone = super::env(Path::new("/n"), "s1", None);
         assert_eq!(
             alone
@@ -275,7 +230,7 @@ mod tests {
             "console.log('ran', process.argv.slice(2).join(' '), \
              process.env.AGENT_DEVICE_IOS_SIMULATOR_DEVICE_SET, process.env.AGENT_DEVICE_IOS_RUNNER_DERIVED_PATH, \
              process.env.AGENT_DEVICE_IOS_RUNNER_DETACH, process.env.AGENT_DEVICE_IOS_XCTESTRUN_FILE, \
-             process.env.AGENT_DEVICE_IOS_XCTEST_DERIVED_DATA_PATH, process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR)\n",
+             process.env.AGENT_DEVICE_IOS_XCTEST_DERIVED_DATA_PATH)\n",
         )
         .unwrap();
         let wrapper = dir.path().join("agent-device");
@@ -292,18 +247,13 @@ mod tests {
         )
         .unwrap();
         let control = dir.path().join("device-control");
-        let run_detached = |detach: Option<&str>| {
-            let mut command = std::process::Command::new(&wrapper);
-            command
+        let run = || {
+            std::process::Command::new(&wrapper)
                 .args(["open", "settings"])
                 .env("FLEETD_DEVICE_CONTROL", &control)
-                .env_remove("FLEETD_IOS_RUNNER_DETACH");
-            if let Some(detach) = detach {
-                command.env("FLEETD_IOS_RUNNER_DETACH", detach);
-            }
-            command.output().unwrap()
+                .output()
+                .unwrap()
         };
-        let run = || run_detached(None);
         std::fs::write(&control, "human").unwrap();
         let paused = run();
         assert_eq!(paused.status.code(), Some(75));
@@ -319,52 +269,50 @@ mod tests {
             assert_eq!(
                 String::from_utf8_lossy(&ran.stdout).trim(),
                 "ran open settings /n/device/ios/set \
-                 /n/device/agent-device/node_modules/agent-device/.tmp/fleetd-runner 1 \
+                 /n/device/agent-device/node_modules/agent-device/.tmp/fleetd-runner 0 \
                  /n/runner's/AgentDeviceRunner_iphonesimulator27.0-arm64.xctestrun \
-                 /n/device/agent-device/node_modules/agent-device/.tmp/fleetd-runner \
-                 /n/device/ios/runner-leases"
-            );
-            // The golden's prepare: its daemon stops the runner.
-            let golden = run_detached(Some("0"));
-            assert!(
-                String::from_utf8_lossy(&golden.stdout).contains("/fleetd-runner 0 "),
-                "{golden:?}"
+                 /n/device/agent-device/node_modules/agent-device/.tmp/fleetd-runner"
             );
         }
     }
 
     #[test]
-    fn a_runner_is_found_by_its_lease_and_only_its_xcodebuild_is_killed() {
-        let home = tempfile::tempdir().unwrap();
-        let udid = "8A1B2C3D-0000-4000-8000-000000000002";
-        assert_eq!(lease(home.path(), udid), None);
-        std::fs::create_dir_all(lease_dir(home.path())).unwrap();
-        let path = lease_dir(home.path()).join(format!("{udid}.json"));
-        // A sleep stands in for a runner whose pid was reused: it isn't an xcodebuild for this simulator.
-        let mut other = std::process::Command::new("sleep")
-            .arg("30")
+    fn the_wrapper_waits_while_the_sessions_runner_starts() {
+        let dir = tempfile::tempdir().unwrap();
+        let wrapper = dir.path().join("agent-device");
+        let entry = dir.path().join("none.mjs");
+        std::fs::write(&wrapper, wrapper_script(&entry, Path::new("/n"), None)).unwrap();
+        std::fs::set_permissions(
+            &wrapper,
+            std::os::unix::fs::PermissionsExt::from_mode(0o755),
+        )
+        .unwrap();
+        let starting = dir.path().join("runner-starting");
+        let run = || {
+            let t = std::time::Instant::now();
+            std::process::Command::new(&wrapper)
+                .arg("snapshot")
+                .env("FLEETD_RUNNER_STARTING", &starting)
+                .env_remove("FLEETD_DEVICE_CONTROL")
+                .output()
+                .unwrap();
+            t.elapsed()
+        };
+        assert!(
+            run() < std::time::Duration::from_secs(1),
+            "no start under way"
+        );
+        // A prepare that takes 2 s: the command waits it out. It is reaped as it ends, as the node's is.
+        let mut prepare = std::process::Command::new("sleep")
+            .arg("2")
             .spawn()
             .unwrap();
-        let pid = other.id();
-        let written =
-            json!({ "schemaVersion": 1, "deviceId": udid, "runnerPid": pid, "port": 50123 });
-        std::fs::write(&path, written.to_string()).unwrap();
-        assert_eq!(
-            lease(home.path(), udid),
-            Some(Lease {
-                pid: pid as i32,
-                port: 50123
-            })
-        );
-        assert_eq!(lease(home.path(), "another-udid"), None);
-        stop_runner(home.path(), udid);
-        assert!(!path.exists(), "the lease goes");
-        assert!(
-            other.try_wait().unwrap().is_none(),
-            "not its runner: left alone"
-        );
-        other.kill().unwrap();
-        let _ = other.wait();
+        std::fs::write(&starting, prepare.id().to_string()).unwrap();
+        let reaped = std::thread::spawn(move || prepare.wait().unwrap());
+        assert!(run() >= std::time::Duration::from_millis(1500), "waited");
+        reaped.join().unwrap();
+        // A prepare gone (a node that stopped) holds nothing back.
+        assert!(run() < std::time::Duration::from_secs(1), "its pid is gone");
     }
 
     #[test]

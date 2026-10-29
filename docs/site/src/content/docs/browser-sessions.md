@@ -258,13 +258,12 @@ storage work as for a browser screen.
   runtime on a plain iPhone. It boots the golden once, waits for its first-boot work to settle, has agent-device build
   its XCTest runner for it, and shuts it down. Each screen gets a clone of the golden (`simctl clone`), which is
   deleted at `session_end` along with everything done in it.
-- **Starts from a warm pool.** The node keeps one clone booted for the next screen, with agent-device's XCTest
-  runner already started on it, and clones and boots another behind it, so neither `session_start` nor the agent's
-  first agent-device command waits for a boot or a runner start. The screen's agent-device takes the runner over; if
-  the runner has died, agent-device starts a new one, as it would anyway. With no clone ready, `session_start` answers
-  at once that one is starting and about how long it takes, rather than wait out the boot. When boots keep failing,
-  the pool waits before the next one: a minute, doubling up to half an hour, and back to normal after a boot that
-  works.
+- **Starts from a warm pool.** The node keeps one clone booted for the next screen and clones and boots another
+  behind it, so `session_start` doesn't wait for a boot. With no clone ready, `session_start` answers at once that
+  one is starting and about how long it takes, rather than wait out the boot. When boots keep failing, the pool waits
+  before the next one: a minute, doubling up to half an hour, and back to normal after a boot that works. The
+  screen's agent-device starts its XCTest runner as the screen starts. An agent-device command sent before the
+  runner is up waits for it, so a screen only ever has one runner.
 - **Recorded by the simulator.** The video is `simctl io recordVideo`'s H.264 MP4 (`video_mp4`), at the screen's full
   size. The action log is the same as an Android screen's, and there's no `dom` file.
 - **Live view and takeover.** `simctl` can't stream, so a person watching gets screenshots in a loop, which runs only

@@ -356,8 +356,6 @@ jobs:
             ~/.agent-device/logs/
             ${{ runner.temp }}/fleetd-test-ios/sessions/*/agent-device/
             ${{ runner.temp }}/fleetd-test-ios/device/ios/prepare/
-            ${{ runner.temp }}/fleetd-test-ios/device/ios/warm/
-            ${{ runner.temp }}/fleetd-test-ios/device/ios/runner-leases/
           if-no-files-found: ignore
           retention-days: 14
 

@@ -441,11 +441,7 @@ async fn probes_what_ios_sessions_rest_on() {
         "probe: shutdown and delete of the clone: {} ms",
         ms(t.elapsed())
     );
-    assert_eq!(
-        pool::clear(dir.path(), &simctl, None).await,
-        1,
-        "the source"
-    );
+    assert_eq!(pool::clear(&simctl, None).await, 1, "the source");
 }
 
 /// idb's MJPEG stream, where idb is installed: frames in 5 s and the first frame's wait.
@@ -516,76 +512,26 @@ async fn agent_device(router: &Router, args: &[&str]) -> (bool, String) {
     (out.status.success(), text)
 }
 
-/// The longest the pool may take to make a clone ready: clone it, boot it, start its runner and stop the daemon that
-/// did, leaving the runner to the session's.
-const WARM_MAX: Duration = Duration::from_secs(
-    pool::BOOT_TIMEOUT.as_secs() + pool::RUNNER_START.as_secs() + 60 + pool::DAEMON_EXIT.as_secs(),
-);
-
-/// The runner the pool started on a clone, and what the pool's agent-device daemon said as it stopped.
-struct PoolRunner {
-    lease: super::wrapper::Lease,
-    said: String,
+/// The XCTest runners started on simulator `udid`: each is an xcodebuild `test-without-building` naming it.
+fn runners(udid: &str) -> Vec<String> {
+    let ps = std::process::Command::new("ps")
+        .args(["-A", "-o", "pid=,command="])
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+        .unwrap_or_default();
+    ps.lines()
+        .filter(|l| {
+            l.contains("xcodebuild") && l.contains("test-without-building") && l.contains(udid)
+        })
+        .map(|l| l.trim().chars().take(200).collect())
+        .collect()
 }
 
-/// That the clone a session got from the pool has its XCTest runner up, as the pool started it: leased, its xcodebuild
-/// running and the runner listening, so the agent's first command doesn't wait for it to start.
-fn runner_up(home: &std::path::Path, udid: &str) -> Result<PoolRunner, String> {
-    let lease =
-        super::wrapper::lease(home, udid).ok_or_else(|| format!("no runner lease for {udid}"))?;
-    nix::sys::signal::kill(nix::unistd::Pid::from_raw(lease.pid), None)
-        .map_err(|e| format!("the runner's xcodebuild {} is gone: {e}", lease.pid))?;
-    let at = std::net::SocketAddr::from(([127, 0, 0, 1], lease.port));
-    std::net::TcpStream::connect_timeout(&at, Duration::from_secs(5))
-        .map_err(|e| format!("the runner doesn't listen on {at}: {e}"))?;
-    let said = runner_lines(&pool::warm_dir(home, udid).join("state"));
-    Ok(PoolRunner { lease, said })
-}
-
-/// That the session's agent-device, after a command that needs the runner, runs the one the pool started rather than a
-/// start of its own: the lease still names the pool's xcodebuild. Else what the daemons said of the runner's lease.
-fn runner_taken_over(
-    home: &std::path::Path,
-    thread: &str,
-    udid: &str,
-    pool: &PoolRunner,
-) -> Result<(), String> {
-    let now = super::wrapper::lease(home, udid);
-    if now.as_ref().map(|l| l.pid) == Some(pool.lease.pid) {
-        return Ok(());
-    }
-    Err(format!(
-        "the session's agent-device didn't take over the pool's runner {:?}; the lease is now {:?}: {}\n\
-         the pool's daemon:\n{}\nthe session's daemon:\n{}",
-        pool.lease,
-        now,
-        std::fs::read_to_string(super::wrapper::lease_path(home, udid)).unwrap_or_default(),
-        pool.said,
-        runner_lines(&crate::node::device::agent_device::session_dir(home, thread).join("state"))
-    ))
-}
-
-/// The lines of an agent-device daemon's logs under `state` that are about its runner's lease: its detach, an adoption
-/// or why not.
-fn runner_lines(state: &std::path::Path) -> String {
-    let mut lines = Vec::new();
-    let mut dirs = vec![state.to_owned()];
-    while let Some(dir) = dirs.pop() {
-        for entry in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                dirs.push(path);
-                continue;
-            }
-            let text = std::fs::read_to_string(&path).unwrap_or_default();
-            lines.extend(
-                text.lines()
-                    .filter(|l| l.contains("lease") || l.contains("detach") || l.contains("adopt"))
-                    .map(|l| l.chars().take(600).collect::<String>()),
-            );
-        }
-    }
-    lines.join("\n")
+/// That simulator `udid` has one XCTest runner, the one its session's agent-device started ahead: a command that came
+/// while it started waited for it rather than start another.
+fn one_runner(udid: &str) {
+    let found = runners(udid);
+    assert_eq!(found.len(), 1, "{udid}'s runners: {found:#?}");
 }
 
 /// Runs a session test's `body`, then ends the node's simulators even when it failed: the hosted screen's test, failing,
@@ -738,11 +684,14 @@ async fn an_agent_opens_settings_on_an_ios_session_and_its_recording_is_on_the_h
 async fn settings_session(home: PathBuf, hub: Arc<TestHub>, simulators: Arc<Simulators>) {
     let t = Instant::now();
     while simulators.warm() == 0 {
-        assert!(t.elapsed() < WARM_MAX, "the pool booted no clone");
+        assert!(
+            t.elapsed() < Duration::from_secs(300),
+            "the pool booted no clone"
+        );
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
     eprintln!(
-        "the pool's first clone, cloned, booted and its runner started: {} ms",
+        "the pool's first clone, cloned and booted: {} ms",
         ms(t.elapsed())
     );
     let router = Router {
@@ -773,7 +722,10 @@ async fn settings_session(home: PathBuf, hub: Arc<TestHub>, simulators: Arc<Simu
     assert!(start_ms < 10_000, "{start_ms} ms");
     let udid = result["udid"].as_str().unwrap().to_owned();
     eprintln!("the session's clone: {udid}");
-    let pool_runner = runner_up(&home, &udid).unwrap();
+    assert!(
+        super::wrapper::starting_path(&home, THREAD).exists(),
+        "the session's runner starts ahead"
+    );
     let live = wait_listed(&hub, &id).await;
     assert_eq!(live["kind"], "ios", "{live}");
     let refused = call(&router, json!({ "op": "session_start", "purpose": "Shop" })).await;
@@ -823,7 +775,7 @@ async fn settings_session(home: PathBuf, hub: Arc<TestHub>, simulators: Arc<Simu
         host_load(&home).await
     );
     eprintln!("agent-device press --settle: {} ms", ms(t.elapsed()));
-    runner_taken_over(&home, THREAD, &udid, &pool_runner).unwrap();
+    one_runner(&udid);
     // No session builds the runner: a slow start once had agent-device delete it and build it again in the command.
     assert_eq!(
         std::fs::metadata(&runner).and_then(|m| m.modified()).ok(),
@@ -918,11 +870,11 @@ async fn settings_session(home: PathBuf, hub: Arc<TestHub>, simulators: Arc<Simu
 
     // agent-device is done: the pool refills behind the session now. Beside the session's simulator and its recording,
     // GitHub's runner took 107 to 343 s and at times longer, so the test waits as long as the pool gives a refill (a
-    // clone, a boot, then BOOT_TIMEOUT for it to finish, and its runner's start) and only measures it: a boot that ran
-    // out of time is logged, and the pool tries again later (pool.rs's tests cover that).
+    // clone, a boot, then BOOT_TIMEOUT for it to finish) and only measures it: a boot that ran out of time is logged,
+    // and the pool tries again later (pool.rs's tests cover that).
     simulators.hold_refill(false);
     let t = Instant::now();
-    let refill = 2 * simctl::CALL + WARM_MAX;
+    let refill = 2 * simctl::CALL + pool::BOOT_TIMEOUT;
     loop {
         if simulators.warm() > 0 {
             eprintln!("the pool refilled behind it: {} ms", ms(t.elapsed()));
@@ -1035,7 +987,10 @@ async fn hosted_screen(home: PathBuf, hub: Arc<TestHub>, simulators: Arc<Simulat
     const KEY: &str = "H0123456789abcdef0123456789abcdef";
     let t = Instant::now();
     while simulators.warm() == 0 {
-        assert!(t.elapsed() < WARM_MAX, "the pool booted no clone");
+        assert!(
+            t.elapsed() < Duration::from_secs(300),
+            "the pool booted no clone"
+        );
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
     // One simulator at a time on CI's VM, as in the session above.
@@ -1054,7 +1009,24 @@ async fn hosted_screen(home: PathBuf, hub: Arc<TestHub>, simulators: Arc<Simulat
         let router = &router;
         async move { serde_json::to_value(router.handle(KEY.to_owned(), frame).await).unwrap() }
     };
-    let device = |args: &[&str]| handle(json!({ "op": "device", "step": "run", "args": args }));
+    // As the agent's `fleetd agent-device` does, a command held back while the screen's runner starts is sent again.
+    let device = |args: &[&str]| {
+        let call = json!({ "op": "device", "step": "run", "args": args });
+        let handle = &handle;
+        async move {
+            let t = Instant::now();
+            loop {
+                let ran = handle(call.clone()).await;
+                let starting = ran["result"]["exitCode"] == 75
+                    && ran["result"]["stderr"] == crate::node::device::remote::RUNNER_STARTING;
+                if !starting || t.elapsed() > super::session::RUNNER_START + Duration::from_secs(60)
+                {
+                    return ran;
+                }
+                tokio::time::sleep(Duration::from_secs(5)).await;
+            }
+        }
+    };
     let started =
         handle(json!({ "op": "session_start", "purpose": "The phone app", "kind": "ios" })).await;
     let id = started["result"]["sessionId"]
@@ -1062,7 +1034,6 @@ async fn hosted_screen(home: PathBuf, hub: Arc<TestHub>, simulators: Arc<Simulat
         .expect("started")
         .to_owned();
     let udid = started["result"]["udid"].as_str().unwrap().to_owned();
-    let pool_runner = runner_up(&home, &udid).unwrap();
 
     let t = Instant::now();
     let opened = device(&["open", "com.apple.Preferences"]).await;
@@ -1094,7 +1065,7 @@ async fn hosted_screen(home: PathBuf, hub: Arc<TestHub>, simulators: Arc<Simulat
     simulators.set_control(&id, BrowserControl::HandingBack, "human:desk");
     let after = device(&["snapshot", "-i"]).await;
     assert_eq!(after["result"]["exitCode"], 0, "{after}");
-    runner_taken_over(&home, KEY, &udid, &pool_runner).unwrap();
+    one_runner(&udid);
     assert_eq!(
         simulators.live(KEY).unwrap().control(),
         BrowserControl::Agent

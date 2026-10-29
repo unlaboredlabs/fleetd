@@ -14,7 +14,7 @@ use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, AsyncRead, BufReader};
 use tokio::sync::watch;
 
-use super::pool::{self, Lent};
+use super::pool::Lent;
 use super::screen::{Hands, Runner, Screen};
 use super::simctl::Simctl;
 use crate::node::browser::record::{self, Meta, Scrub};
@@ -30,6 +30,9 @@ const FINISH_VIDEO: Duration = Duration::from_secs(20);
 const START_VIDEO: Duration = Duration::from_secs(15);
 /// How often the recording's file is looked at, to see it has started.
 const FILE_POLL: Duration = Duration::from_millis(250);
+/// How long a session's agent-device may take to start its XCTest runner ahead of the agent's commands: on GitHub's
+/// 3-vCPU macOS VM a fresh clone's runner took 143-222 s to listen.
+pub const RUNNER_START: Duration = Duration::from_secs(300);
 
 /// Whether the recording's file, `before` and `now` (None while it isn't there), shows it recording: there, not
 /// empty, and bigger than the last look.
@@ -155,6 +158,8 @@ pub struct Session {
     control: Mutex<BrowserControl>,
     scrub: Scrub,
     last_active: Mutex<Instant>,
+    /// The session's agent-device starting its XCTest runner ([`Session::start_runner`]), until it has.
+    starting: Mutex<Option<tokio::task::AbortHandle>>,
 }
 
 pub struct Opened {
@@ -223,9 +228,85 @@ impl Session {
             control: Mutex::default(),
             scrub: Scrub::new(&opened.secrets.0),
             last_active: Mutex::new(Instant::now()),
+            starting: Mutex::new(None),
         });
         session.write_meta(None);
         Ok(session)
+    }
+
+    /// Has the session's own agent-device daemon start its XCTest runner now, in the background, with
+    /// [`RUNNER_START`] for it: `prepare ios-runner` gives a start its whole timeout, where a command that needs the
+    /// runner gives one 45 s from its launch. A clone's runner took 43-50 s to listen on GitHub's 3-vCPU macOS VM, so the
+    /// agent's first command that needed it gave up on it, and on the start it made again (main's run 40885901242). The
+    /// wrapper holds the agent's commands back meanwhile (wrapper.rs), so none starts a second runner; once it is up,
+    /// the daemon's next commands use it, and one that died is started again by agent-device as before.
+    pub fn start_runner(&self) {
+        let marker = super::wrapper::starting_path(&self.home, &self.thread);
+        let path = std::env::var("PATH").ok();
+        let mut command =
+            tokio::process::Command::new(super::wrapper::bin_dir(&self.home).join("agent-device"));
+        command
+            .args([
+                "prepare",
+                "ios-runner",
+                "--platform",
+                "ios",
+                "--udid",
+                &self.udid,
+            ])
+            .args(["--timeout", &RUNNER_START.as_millis().to_string()])
+            .envs(super::wrapper::env(
+                &self.home,
+                &self.thread,
+                path.as_deref(),
+            ))
+            .env_remove("FLEETD_DEVICE_CONTROL")
+            .env_remove("FLEETD_RUNNER_STARTING")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .kill_on_drop(true);
+        let child = match command.spawn() {
+            Ok(child) => child,
+            Err(e) => {
+                tracing::warn!(session = %self.id, error = %e, "iOS runner not started ahead");
+                return;
+            }
+        };
+        let pid = child.id().unwrap_or_default().to_string();
+        if let Err(e) = crate::node::secrets::write_atomic(&marker, pid.as_bytes()) {
+            tracing::warn!(session = %self.id, error = %e, "iOS runner start not marked");
+        }
+        let id = self.id.clone();
+        let task = tokio::spawn(async move {
+            let out = tokio::time::timeout(
+                RUNNER_START + Duration::from_secs(60),
+                child.wait_with_output(),
+            )
+            .await;
+            let _ = std::fs::remove_file(&marker);
+            match out {
+                Ok(Ok(out)) if out.status.success() => {}
+                Ok(Ok(out)) => {
+                    let said = String::from_utf8_lossy(&out.stderr)
+                        .trim()
+                        .chars()
+                        .take(300)
+                        .collect::<String>();
+                    tracing::warn!(session = %id, said, "iOS runner did not start ahead; agent-device starts it on use");
+                }
+                Ok(Err(e)) => tracing::warn!(session = %id, error = %e, "iOS runner start failed"),
+                Err(_) => tracing::warn!(session = %id, "iOS runner start ran out of time"),
+            }
+        });
+        *lock(&self.starting) = Some(task.abort_handle());
+    }
+
+    /// Whether the session's runner is still starting ([`Session::start_runner`]).
+    pub fn runner_starting(&self) -> bool {
+        lock(&self.starting)
+            .as_ref()
+            .is_some_and(|t| !t.is_finished())
     }
 
     pub fn offset_ms(&self) -> u64 {
@@ -347,10 +428,14 @@ impl Session {
         seq
     }
 
-    /// Finishes the video, stops the live view and the session's agent-device daemon, and deletes the clone with
-    /// everything done in it and its runner, which the daemon leaves leased (wrapper.rs). Returns the files there are.
+    /// Finishes the video, stops the live view and deletes the clone with everything done in it. Returns the files
+    /// there are.
     pub async fn close(&self) -> Vec<(RecordingFile, u64)> {
         self.screen.stop();
+        if let Some(starting) = lock(&self.starting).take() {
+            starting.abort();
+        }
+        let _ = std::fs::remove_file(super::wrapper::starting_path(&self.home, &self.thread));
         let recorder = lock(&self.recorder).take();
         if let Some(recorder) = recorder
             && let Err(why) = recorder.finish().await
@@ -358,9 +443,8 @@ impl Session {
             let _ = std::fs::remove_file(self.dir.join(RecordingFile::VideoMp4.file_name()));
             self.set_note(format!("no video: {why}"));
         }
-        pool::stop_daemon(&agent_device::session_dir(&self.home, &self.thread).join("state")).await;
-        agent_device::release(&self.home, &self.thread);
         lock(&self.lent).take();
+        agent_device::release(&self.home, &self.thread);
         let actions = self.dir.join(RecordingFile::Actions.file_name());
         if let Err(e) = record::scrub_file(&actions, &self.scrub) {
             tracing::warn!(session = %self.id, error = %e, "recording not scrubbed");

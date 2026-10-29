@@ -10,16 +10,30 @@ use super::agent_mcp::{env_deps, send_call, send_to_node};
 
 /// A command may send an app first and wait out a runner's start on the screen's machine.
 const WAIT: Duration = Duration::from_secs(600);
+/// How often a command is sent again while the screen's runner starts.
+const STARTING_POLL: Duration = Duration::from_secs(5);
 
 pub fn run(args: &[String]) -> u8 {
     let send = |socket: &Path, frame: &Value| send_to_node(socket, frame, WAIT);
     let deps = env_deps(&send);
     let call = json!({ "op": "device", "step": "run", "args": args });
-    let (stdout, stderr, code) = answer(send_call(call, &deps));
+    let started = std::time::Instant::now();
+    let (stdout, stderr, code) = loop {
+        let answered = answer(send_call(call.clone(), &deps));
+        if !starting(&answered) || started.elapsed() > WAIT {
+            break answered;
+        }
+        std::thread::sleep(STARTING_POLL);
+    };
     use std::io::Write;
     let _ = std::io::stdout().write_all(stdout.as_bytes());
     let _ = std::io::stderr().write_all(stderr.as_bytes());
     code
+}
+
+/// Whether the screen's node held the command back while the screen's XCTest runner starts.
+fn starting(answered: &(String, String, u8)) -> bool {
+    answered.2 == 75 && answered.1 == crate::node::device::remote::RUNNER_STARTING
 }
 
 /// What to print, and the exit code, for the node's answer.
@@ -73,6 +87,19 @@ mod tests {
             "fleetd: agent-device `batch` doesn't run here.\nfleetd: use only these commands\n"
         );
         assert_eq!(answer(Err("no node".into())).2, 1);
+    }
+
+    #[test]
+    fn a_command_waits_while_the_screens_runner_starts_but_not_for_a_person() {
+        let held = |stderr: &str| {
+            answer(Ok(json!({ "result": {
+                "op": "device", "step": "run", "stdout": "", "stderr": stderr, "exitCode": 75, "files": [],
+            }})))
+        };
+        assert!(starting(&held(
+            crate::node::device::remote::RUNNER_STARTING
+        )));
+        assert!(!starting(&held(crate::node::device::agent_device::PAUSED)));
     }
 
     #[test]
