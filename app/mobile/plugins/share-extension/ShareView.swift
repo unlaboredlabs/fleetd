@@ -5,6 +5,7 @@ import UIKit
 
 struct ShareSheet: View {
   @ObservedObject var model: ShareModel
+  @FocusState private var writing: Bool
 
   var body: some View {
     NavigationStack {
@@ -40,6 +41,7 @@ struct ShareSheet: View {
         SharedPreview(preview: model.preview)
         TextField("Add a message", text: $model.note, axis: .vertical)
           .lineLimit(1...6)
+          .focused($writing)
           .disabled(model.sending)
       } footer: {
         if let problem = model.itemProblem {
@@ -54,39 +56,15 @@ struct ShareSheet: View {
           }
         }
       } else {
-        chats
+        ChatPicker(model: model) { writing = false }
       }
     }
     .listStyle(.insetGrouped)
+    .scrollDismissesKeyboard(.immediately)
     .searchable(text: $model.query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search chats")
     .safeAreaInset(edge: .bottom) { status }
     .animation(.spring(response: 0.3, dampingFraction: 0.85), value: model.selected)
     .animation(.spring(response: 0.3, dampingFraction: 0.85), value: model.phase)
-  }
-
-  @ViewBuilder private var chats: some View {
-    if model.query.isEmpty && !model.recent.isEmpty {
-      Section("Recent") {
-        RecentRow(chats: model.recent, selected: model.selected) { model.select($0) }
-          .listRowInsets(EdgeInsets())
-      }
-    }
-    if !model.navis.isEmpty {
-      Section("Navis") {
-        ForEach(model.navis) { chat in ChatRow(chat: chat, selected: model.selected == chat) { model.select($0) } }
-      }
-    }
-    if !model.projects.isEmpty {
-      Section("Projects") {
-        ForEach(model.projects) { chat in ChatRow(chat: chat, selected: model.selected == chat) { model.select($0) } }
-      }
-    }
-    if model.navis.isEmpty && model.projects.isEmpty {
-      Section {
-        Text(model.query.isEmpty ? "\(model.hubName) has no chats yet." : "No chats match “\(model.query)”.")
-          .foregroundStyle(.secondary)
-      }
-    }
   }
 
   @ViewBuilder private var status: some View {
@@ -109,6 +87,45 @@ struct ShareSheet: View {
         }
       }
     }
+  }
+}
+
+/// The chats: the recent ones in a row, then every Navi and project, as the search finds them. Picking one ends the
+/// search and the note's typing, so Send shows.
+private struct ChatPicker: View {
+  @ObservedObject var model: ShareModel
+  let done: @MainActor () -> Void
+  @Environment(\.dismissSearch) private var dismissSearch
+
+  var body: some View {
+    if model.query.isEmpty && !model.recent.isEmpty {
+      Section("Recent") {
+        RecentRow(chats: model.recent, selected: model.selected, select: pick)
+          .listRowInsets(EdgeInsets())
+      }
+    }
+    if !model.navis.isEmpty {
+      Section("Navis") {
+        ForEach(model.navis) { chat in ChatRow(chat: chat, selected: model.selected == chat, select: pick) }
+      }
+    }
+    if !model.projects.isEmpty {
+      Section("Projects") {
+        ForEach(model.projects) { chat in ChatRow(chat: chat, selected: model.selected == chat, select: pick) }
+      }
+    }
+    if model.navis.isEmpty && model.projects.isEmpty {
+      Section {
+        Text(model.query.isEmpty ? "\(model.hubName) has no chats yet." : "No chats match “\(model.query)”.")
+          .foregroundStyle(.secondary)
+      }
+    }
+  }
+
+  private func pick(_ chat: ChatTarget) {
+    done()
+    model.select(chat)
+    if !model.query.isEmpty { dismissSearch() }
   }
 }
 
@@ -176,7 +193,7 @@ private struct SharedPreview: View {
 private struct RecentRow: View {
   let chats: [ChatTarget]
   let selected: ChatTarget?
-  let select: (ChatTarget) -> Void
+  let select: @MainActor (ChatTarget) -> Void
 
   var body: some View {
     ScrollView(.horizontal, showsIndicators: false) {
@@ -216,7 +233,7 @@ private struct RecentRow: View {
 private struct ChatRow: View {
   let chat: ChatTarget
   let selected: Bool
-  let select: (ChatTarget) -> Void
+  let select: @MainActor (ChatTarget) -> Void
 
   var body: some View {
     Button { select(chat) } label: {
