@@ -5664,6 +5664,14 @@ export type PubsubSubscription = string;
 
 export type PubsubTopic = string;
 
+export type PushBadgeInput = { [key: string]: unknown };
+
+export type PushBadgeOutput = {
+  badge: number;
+  next?: string;
+  truncated?: boolean;
+};
+
 /** A phone that gets its person's notifications. Its token and key stay on the hub. */
 export type PushDevice = {
   createdAt: Timestamp;
@@ -8063,6 +8071,7 @@ export interface ToolMap {
   project_stop: { input: ProjectStopInput; output: ProjectStopOutput };
   prompt_get: { input: PromptGetInput; output: PromptGetOutput };
   prompt_set: { input: PromptSetInput; output: PromptSetOutput };
+  push_badge: { input: PushBadgeInput; output: PushBadgeOutput };
   push_device_register: { input: PushDeviceRegisterInput; output: PushDeviceRegisterOutput };
   push_device_remove: { input: PushDeviceRemoveInput; output: PushDeviceRemoveOutput };
   push_devices_list: { input: PushDevicesListInput; output: PushDevicesListOutput };

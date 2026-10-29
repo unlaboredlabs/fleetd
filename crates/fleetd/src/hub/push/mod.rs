@@ -9,6 +9,10 @@
 //!
 //! Who an event is for: a Navi's, its owner; another project's, the person who last wrote in its chat, else the hub's
 //! owner; an event about no project, the hub's owners and admins.
+//!
+//! Each payload says what the person can do from the notification ([`PushCategory`]: approve or deny an approval
+//! whose whole command is its body, review one in the app, reply to a message) and carries their badge ([`badge`]),
+//! so the actions and the count stay sealed with the rest.
 pub mod tools;
 
 #[cfg(test)]
@@ -25,10 +29,11 @@ use fleetd_contracts::chat::{
 };
 use fleetd_contracts::events::{Attention, HubEvent, HubEventType};
 use fleetd_contracts::ids::ProjectRef;
+use fleetd_contracts::ledger::{GatedClass, HumanRequest, RequestKind, RequestState};
 use fleetd_contracts::people::PersonId;
 use fleetd_contracts::prim::Line;
 use fleetd_contracts::push::{
-    PUSH_PAYLOAD_MAX, PushDevice, PushDeviceId, PushKind, PushPayload, PushPlatform,
+    PUSH_PAYLOAD_MAX, PushCategory, PushDevice, PushDeviceId, PushKind, PushPayload, PushPlatform,
 };
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::Value;
@@ -255,11 +260,16 @@ pub fn seal(public_key: &[u8; 32], plain: &[u8]) -> String {
     B64.encode(sealed)
 }
 
-/// The payload's JSON, its body cut until it fits [`PUSH_PAYLOAD_MAX`].
+/// The payload's JSON, its body cut until it fits [`PUSH_PAYLOAD_MAX`]. An approval whose body had to be cut is no
+/// longer its whole command, so it is reviewed in the app rather than approved from the notification.
 pub fn payload_json(payload: &PushPayload) -> Vec<u8> {
     let mut payload = payload.clone();
+    let whole = payload.body.clone();
     payload.body = cut(&payload.body, BODY_MAX);
     loop {
+        if payload.category == Some(PushCategory::Approve) && payload.body != whole {
+            payload.category = Some(PushCategory::Review);
+        }
         let json = serde_json::to_vec(&payload).unwrap_or_default();
         let chars = payload.body.chars().count();
         if json.len() <= PUSH_PAYLOAD_MAX || chars == 0 {
@@ -337,6 +347,124 @@ fn final_lead_message(hub: &Hub, event: &HubEvent, r: &ProjectRef) -> Option<Cha
         .and_then(|d| serde_json::from_str(&d).ok())
 }
 
+/// The longest command a notification offers Approve for: what a banner and the lock screen show whole.
+const APPROVE_MAX: usize = 200;
+
+/// Whether `text` reads on a lock screen exactly as it runs: one line of at most [`APPROVE_MAX`] characters, [`plain`].
+pub fn shown_whole(text: &str) -> bool {
+    !text.trim().is_empty() && text.chars().count() <= APPROVE_MAX && plain(text)
+}
+
+/// Whether `text` holds nothing that hides or reorders text, its own or what shows next to it: no control characters
+/// (`\r`, `\n`, tab, NEL), line or paragraph separators, bidi controls and marks, or zero-width characters. Every
+/// text on a notification that offers Approve is plain: the title, the reason and the command.
+pub fn plain(text: &str) -> bool {
+    let hidden = |c: char| {
+        c.is_control()
+            || matches!(
+                c,
+                // Line and paragraph separators.
+                '\u{2028}' | '\u{2029}'
+                // Bidi marks, embeddings, overrides and isolates.
+                | '\u{200E}' | '\u{200F}' | '\u{061C}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}'
+                // Zero-width spaces, joiners, the word joiner and invisible operators, the BOM, the Mongolian vowel
+                // separator, soft hyphen and other default-ignorable fillers.
+                | '\u{200B}'..='\u{200D}' | '\u{2060}'..='\u{2064}' | '\u{FEFF}' | '\u{180E}' | '\u{00AD}'
+                | '\u{034F}' | '\u{115F}' | '\u{1160}' | '\u{3164}' | '\u{FFA0}' | '\u{17B4}' | '\u{17B5}'
+                | '\u{FE00}'..='\u{FE0F}' | '\u{E0000}'..='\u{E007F}'
+            )
+    };
+    !text.chars().any(hidden)
+}
+
+/// An approval's body and what the notification may do about it. The body is why the lead asks, then exactly what
+/// runs. Approve and Deny show only when the body is everything the card would show, whole on one line (D183/D193):
+/// a gated run's command and the directory it runs in, injecting no secret and none of money or irreversible; or a
+/// tool prompt that is a one-line Bash command, its whole input. Either must be [`shown_whole`], and the reason before
+/// it [`plain`]. Anything else is reviewed in the app: a prompt's
+/// summary is often only part of what runs (a Write's path, a script's first line, an MCP tool's description), and an
+/// integration's send or change and a preview setting show exactly who and what on their card. A secret is entered
+/// in the app, so it gets no action.
+fn approval_notice(r: &HumanRequest) -> (String, Option<PushCategory>) {
+    let why = r.text.as_str().trim().trim_end_matches(['.', ':']);
+    let (what, answerable) = match (&r.gated, &r.permission) {
+        (Some(g), _) => {
+            let argv =
+                crate::hub::approvals::shown_argv(&g.argv.iter().cloned().collect::<Vec<_>>());
+            let what = match &g.cwd {
+                Some(cwd) => format!("{argv} (in {})", cwd.as_str()),
+                None => argv,
+            };
+            // Each word, before shown_argv quotes it: JSON escapes control characters but not bidi or zero-width ones.
+            let plain = g.argv.iter().all(|w| w.is_empty() || shown_whole(w)) && shown_whole(&what);
+            let safe = plain && !matches!(g.class, GatedClass::Money | GatedClass::Irreversible);
+            let secret = g.secret_env.as_ref().is_some_and(|e| !e.0.is_empty());
+            (what, safe && !secret)
+        }
+        (_, Some(p)) => {
+            let command = p
+                .input
+                .as_ref()
+                .and_then(|i| i.get("command"))
+                .and_then(Value::as_str);
+            let whole = p.tool_name.as_str() == "Bash"
+                && command == Some(p.summary.as_str())
+                && shown_whole(p.summary.as_str());
+            (
+                format!("{} {}", p.tool_name, p.summary.as_str()),
+                whole && p.preview.is_none() && p.site.is_none(),
+            )
+        }
+        _ => (String::new(), false),
+    };
+    if r.kind == RequestKind::Secret {
+        return (why.to_owned(), None);
+    }
+    let exact = !what.trim().is_empty() && cut(&what, BODY_MAX) == what;
+    let body = if what.is_empty() {
+        why.to_owned()
+    } else {
+        format!("{why}: {what}")
+    };
+    // The reason shows just before the command: a right-to-left mark at its end would flip how the command reads.
+    let category = if answerable && exact && plain(why) {
+        PushCategory::Approve
+    } else {
+        PushCategory::Review
+    };
+    (body, Some(category))
+}
+
+/// The app icon's badge for `person`: each open request and each chat waiting on them with none open, of the projects
+/// whose notifications are theirs ([`recipients`]). A chat's open item already makes it wait, so it counts once.
+pub fn badge(hub: &Hub, person: &PersonId) -> Result<u32, StoreError> {
+    let open = crate::hub::approvals::store::Requests::new(hub.db.clone()).list(
+        &crate::hub::approvals::store::RequestFilter {
+            project_ref: None,
+            states: Some(vec![RequestState::Open]),
+            kind: None,
+            limit: 1000,
+        },
+    )?;
+    let mut count = 0;
+    for project in hub.store.projects_shown(None, None)? {
+        let r = ProjectRef {
+            machine_id: project.machine_id,
+            project_id: project.project_id,
+        };
+        if !hub.db.with(|c| recipients(c, Some(&r)))?.contains(person) {
+            continue;
+        }
+        let requests = open.iter().filter(|q| q.project_ref == r).count() as u32;
+        count += if requests > 0 {
+            requests
+        } else {
+            u32::from(hub.chat.state(&r, false)?.needs_you)
+        };
+    }
+    Ok(count)
+}
+
 /// The notification `event` makes, if it is one a person is pushed for.
 pub fn notice(hub: &Hub, event: &HubEvent) -> Result<Option<Notice>, StoreError> {
     let project = project_of(event);
@@ -345,6 +473,7 @@ pub fn notice(hub: &Hub, event: &HubEvent) -> Result<Option<Notice>, StoreError>
     let mut message_id = None;
     let mut request_id = None;
     let mut collapse = None;
+    let mut category = None;
     let (kind, body) = match event.r#type {
         HubEventType::ChatMessage => {
             let Some(r) = &project else { return Ok(None) };
@@ -356,6 +485,7 @@ pub fn notice(hub: &Hub, event: &HubEvent) -> Result<Option<Notice>, StoreError>
                 return Ok(None);
             }
             message_id = Some(m.message_id.clone());
+            category = Some(PushCategory::Reply);
             (PushKind::Message, m.text.as_str().to_owned())
         }
         HubEventType::WorkstreamDone => (PushKind::Order, event.summary.to_string()),
@@ -368,7 +498,19 @@ pub fn notice(hub: &Hub, event: &HubEvent) -> Result<Option<Notice>, StoreError>
             {
                 request_id = Some(ChatRequestId::unchecked(id));
                 collapse = Some(collapse_key(&format!("request/{id}")));
-                (PushKind::Approval, event.summary.to_string())
+                let body = match hub
+                    .approvals
+                    .get(id)
+                    .filter(|r| r.state == RequestState::Open)
+                {
+                    Some(r) => {
+                        let (body, c) = approval_notice(&r);
+                        category = c;
+                        body
+                    }
+                    None => event.summary.to_string(),
+                };
+                (PushKind::Approval, body)
             } else {
                 (PushKind::Alert, event.summary.to_string())
             }
@@ -385,6 +527,10 @@ pub fn notice(hub: &Hub, event: &HubEvent) -> Result<Option<Notice>, StoreError>
         .map(|p| p.title)
         .filter(|t| !t.trim().is_empty())
         .unwrap_or_else(|| "fleetd".into());
+    // The title shows above the command too.
+    if category == Some(PushCategory::Approve) && !plain(&title) {
+        category = Some(PushCategory::Review);
+    }
     let urgent = event.attention == Some(Attention::Urgent);
     let (tz, quiet) =
         crate::hub::attention::quiet_policy(|k| hub.decisions.global_value(k).ok().flatten());
@@ -404,6 +550,9 @@ pub fn notice(hub: &Hub, event: &HubEvent) -> Result<Option<Notice>, StoreError>
             request_id,
             urgent: urgent.then_some(true),
             quiet: quiet.then_some(true),
+            category,
+            // Each person's, set as it is sent.
+            badge: None,
             at: event.at.clone(),
         },
         people,
@@ -589,8 +738,14 @@ pub async fn step(
         {
             continue;
         }
-        let plain = payload_json(&notice.payload);
         for person in &notice.people {
+            // A count that can't be read leaves the badge as it was rather than holding the notification back.
+            let plain = payload_json(&PushPayload {
+                badge: badge(hub, person)
+                    .inspect_err(|e| tracing::warn!(error = %e, "push: badge not counted"))
+                    .ok(),
+                ..notice.payload.clone()
+            });
             let mut posted = Vec::new();
             for target in hub.db.with(|c| targets(c, person))? {
                 let push = RelayPush {

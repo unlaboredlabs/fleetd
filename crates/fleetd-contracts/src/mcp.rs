@@ -2405,6 +2405,11 @@ output!(PushDevicesListOutput {
     relay: bool,
 });
 
+// push_badge: the app icon's badge for the caller's person, as each notification carries it (open requests, chats
+// waiting on them); the app sets it again after the person acts.
+input!(PushBadgeInput {});
+output!(PushBadgeOutput { badge: u32 });
+
 // push_device_remove: one of the caller's person's phones stops getting notifications.
 input!(PushDeviceRemoveInput {
     device_id: crate::push::PushDeviceId
@@ -3245,6 +3250,7 @@ tools! {
     push_device_register => PushDeviceRegister, Operate, PushDeviceRegisterInput, PushDeviceRegisterOutput;
     push_devices_list => PushDevicesList, Read, PushDevicesListInput, PushDevicesListOutput;
     push_device_remove => PushDeviceRemove, Operate, PushDeviceRemoveInput, PushDeviceRemoveOutput;
+    push_badge => PushBadge, Read, PushBadgeInput, PushBadgeOutput;
     // A key with Admin on every machine (the handler checks).
     push_relay_set => PushRelaySet, Admin, PushRelaySetInput, PushRelaySetOutput;
     agents_list => AgentsList, Read, AgentsListInput, AgentsListOutput;

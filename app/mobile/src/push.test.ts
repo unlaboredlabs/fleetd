@@ -5,7 +5,22 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { HubClient } from "./hub/client";
 import { fakeHub } from "./hub/fake";
 import fixture from "./push.fixture.json";
-import { androidShown, openPayload, registerDevice, shownOf, tapRoute, type PushDeps } from "./push";
+import { READY_TIMEOUT_MS } from "./hub/client";
+import {
+  act,
+  actOf,
+  androidShown,
+  CATEGORIES,
+  categoryOf,
+  openPayload,
+  opensRoute,
+  pushedPayload,
+  registerDevice,
+  shownOf,
+  tapRoute,
+  type PushDeps,
+  type PushPayload,
+} from "./push";
 import { fromBase64, keyPairOf, seal, toBase64, type KeyPair } from "./seal";
 import { Session } from "./session";
 
@@ -61,6 +76,7 @@ describe("what a notification shows", () => {
       urgent: false,
       id: "chat:devbox/navi-ada",
       route: { t: "chat", key: "devbox/navi-ada" },
+      payload: JSON.parse(message!.plaintext),
     });
   });
 
@@ -76,6 +92,7 @@ describe("what a notification shows", () => {
       body: "Order landed",
       channel: "other",
       urgent: false,
+      payload: { v: 1, kind: "order", title: "fleetd", body: "Order landed", hub: "", at: "" },
     });
   });
 });
@@ -226,5 +243,116 @@ describe("Disconnect", () => {
     const session = new Session({ hub: "http://devbox:4790", key: "fld_abcdefxyz", transport: hub.transport, push: os.deps });
     session.start();
     expect(await session.signOut()).toMatchObject({ ok: false, error: { code: "offline" } });
+  });
+});
+
+describe("a notification's buttons", () => {
+  const DEFAULT = "expo.modules.notifications.actions.DEFAULT";
+  const base = { v: 1, title: "app", hub: "http://devbox:4790", machineId: "devbox", projectId: "app", at: "2026-10-29T08:00:00.000Z" } as const;
+  const push: PushPayload = { ...base, kind: "approval", body: "Push the fix: git push", requestId: "Q3", category: "approve", badge: 2 };
+  const deploy: PushPayload = { ...base, kind: "approval", body: "Ship it: ./deploy.sh prod", requestId: "Q4", category: "review", urgent: true };
+  const said: PushPayload = { ...base, kind: "message", title: "Ada", projectId: "navi", body: "Which flight?", category: "reply", badge: 1 };
+  const route = { t: "approval", requestId: "Q3", key: "devbox/app" } as const;
+
+  it("come from the sealed payload, and a field this app doesn't know is left out", () => {
+    const opened = openPayload(sealedJson({ ...push, colour: "red" }), keys);
+    expect(opened).toEqual(push);
+    expect(openPayload(sealedJson({ ...push, category: "bounce", badge: -1 }), keys)).not.toHaveProperty("category");
+    expect(openPayload(sealedJson({ ...push, badge: 1.5 }), keys)).not.toHaveProperty("badge");
+    expect(shownOf(push)).toMatchObject({ category: "fleetd.approve", badge: 2 });
+    expect(shownOf(said)).toMatchObject({ category: "fleetd.reply", badge: 1 });
+  });
+
+  it("are Approve and Deny, unlocked first, only where the hub marked them; money or irreversible is reviewed in the app", () => {
+    expect(categoryOf(push)).toBe("fleetd.approve");
+    expect(categoryOf(deploy)).toBe("fleetd.review");
+    // Whatever an urgent one says, it shows its full card first (D183/D193).
+    expect(categoryOf({ ...deploy, category: "approve" })).toBe("fleetd.review");
+    const { category: _, ...unmarked } = push;
+    expect(categoryOf(unmarked)).toBeUndefined();
+    expect(CATEGORIES["fleetd.approve"].every((a) => a.options.isAuthenticationRequired && !a.options.opensAppToForeground)).toBe(true);
+    expect(CATEGORIES["fleetd.review"]).toEqual([{ identifier: "review", buttonTitle: "Review", options: { opensAppToForeground: true } }]);
+    expect(CATEGORIES["fleetd.reply"][0]).toMatchObject({ identifier: "reply", textInput: { submitButtonTitle: "Send" }, options: { isAuthenticationRequired: true } });
+  });
+
+  it("open the app on a tap or Review, and act on the others", () => {
+    expect(opensRoute(DEFAULT, DEFAULT)).toBe(true);
+    expect(opensRoute("review", DEFAULT)).toBe(true);
+    expect(opensRoute("approve", DEFAULT)).toBe(false);
+    expect(actOf("approve", undefined, push)).toEqual({ t: "approve", requestId: "Q3", route });
+    expect(actOf("deny", undefined, push)).toEqual({ t: "deny", requestId: "Q3", route });
+    expect(actOf("reply", "  The 9:40 one ", said)).toEqual({ t: "reply", key: "devbox/navi", text: "The 9:40 one" });
+    expect(actOf("reply", " ", said)).toBeUndefined();
+    expect(actOf(DEFAULT, undefined, push)).toBeUndefined();
+    // iOS's payload is opened again from the APNs userInfo; Android's notification carries it.
+    expect(pushedPayload({ c: sealedJson(push) }, {}, keys)).toEqual(push);
+    expect(pushedPayload(undefined, { payload: push }, null)).toEqual(push);
+    expect(pushedPayload({ c: sealedJson(push) }, {}, null)).toBeNull();
+  });
+
+  it("approve with the phone's key, say so where the notification was and set the badge", async () => {
+    const hub = fakeHub();
+    const out = act({ t: "approve", requestId: "Q3", route }, push, { hub: "http://devbox:4790", key: "fld_phone", transport: hub.transport }, () => "c1");
+    hub.ready();
+    await flush();
+    expect(calls(hub, "approval_answer")).toMatchObject([{ input: { requestId: "Q3", decision: "approve" } }]);
+    hub.answer("approval_answer", { request: { requestId: "Q3", state: "approved" } });
+    await flush();
+    hub.answer("push_badge", { badge: 1 });
+    expect(await out).toEqual({ followUp: { title: "app", body: "Approved: Push the fix: git push", route }, badge: 1 });
+    expect(hub.link.closed).toBe(true);
+  });
+
+  it("say so when the approved command didn't run, as its machine was offline", async () => {
+    const hub = fakeHub();
+    const out = act({ t: "approve", requestId: "Q3", route }, push, { hub: "http://devbox:4790", key: "fld_phone", transport: hub.transport }, () => "c1");
+    hub.ready();
+    await flush();
+    hub.answer("approval_answer", { request: { requestId: "Q3", state: "open", evidence: "not run: devbox's node was offline when human:phone approved it" } });
+    await flush();
+    hub.answer("push_badge", { badge: 2 });
+    expect(await out).toEqual({ followUp: { title: "app", body: "Not run: devbox's node was offline when human:phone approved it", route }, badge: 2 });
+  });
+
+  it("deny, and say why when the hub refused", async () => {
+    const hub = fakeHub();
+    const out = act({ t: "deny", requestId: "Q3", route }, push, { hub: "http://devbox:4790", key: "fld_phone", transport: hub.transport }, () => "c1");
+    hub.ready();
+    await flush();
+    expect(calls(hub, "approval_answer")).toMatchObject([{ input: { requestId: "Q3", decision: "deny" } }]);
+    hub.fail("approval_answer", "conflict", "Already answered on the desktop.");
+    await flush();
+    hub.answer("push_badge", { badge: 0 });
+    expect(await out).toEqual({ followUp: { title: "app", body: "Not denied: Already answered on the desktop.", route }, badge: 0 });
+  });
+
+  it("never approve money or an irreversible command from the notification: it asks to open the app", async () => {
+    const hub = fakeHub();
+    const r = { t: "approval", requestId: "Q4", key: "devbox/app" } as const;
+    const out = await act({ t: "approve", requestId: "Q4", route: r }, { ...deploy, category: "approve" }, { hub: "http://devbox:4790", key: "fld_phone", transport: hub.transport }, () => "c1");
+    expect(hub.links).toEqual([]);
+    expect(out).toEqual({ followUp: { title: "app", body: "Open fleetd to review it on its full card: Ship it: ./deploy.sh prod", route: r } });
+  });
+
+  it("reply into the chat, and say so when it wasn't sent", async () => {
+    const hub = fakeHub();
+    const link = { hub: "http://devbox:4790", key: "fld_phone", transport: hub.transport };
+    const sent = act({ t: "reply", key: "devbox/navi", text: "The 9:40 one" }, said, link, () => "c1");
+    hub.ready();
+    await flush();
+    expect(calls(hub, "chat_send")).toMatchObject([{ input: { projectRef: { machineId: "devbox", projectId: "navi" }, text: "The 9:40 one", clientRequestId: "c1" } }]);
+    hub.answer("chat_send", { message: { messageId: "m9" } });
+    await flush();
+    hub.answer("push_badge", { badge: 0 });
+    expect(await sent).toEqual({ followUp: null, badge: 0 });
+
+    vi.useFakeTimers();
+    try {
+      const offline = act({ t: "reply", key: "devbox/navi", text: "Hi" }, said, link, () => "c2");
+      await vi.advanceTimersByTimeAsync(READY_TIMEOUT_MS);
+      expect(await offline).toEqual({ followUp: { title: "Ada", body: "Your reply wasn't sent: The hub can't be reached.", route: { t: "chat", key: "devbox/navi" } } });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

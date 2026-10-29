@@ -66,12 +66,27 @@ pub enum PushKind {
     Alert,
 }
 
-/// The plaintext a notification seals: JSON, at most [`PUSH_PAYLOAD_MAX`] bytes.
+/// What a person can do from the notification itself, as its iOS category (Android buttons). Absent: only open it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+#[schemars(extend("x-open" = true))]
+pub enum PushCategory {
+    /// Approve or Deny: an approval whose whole command or prompt is the body, and none of money, irreversible or a
+    /// send (D183/D193).
+    Approve,
+    /// Review in the app: an approval that is shown on its full card first.
+    Review,
+    /// Reply into the chat: a Navi's or a lead's message.
+    Reply,
+}
+
+/// The plaintext a notification seals: JSON, at most [`PUSH_PAYLOAD_MAX`] bytes. Fields are only ever added under
+/// `v` 1, each optional: an app ignores the ones it doesn't know.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PushPayload {
-    /// 1. A phone shows its generic text for a version it doesn't know.
+    /// 1. A phone shows its generic text for a version it doesn't know; a new field doesn't change it.
     pub v: u8,
     pub kind: PushKind,
     /// The Navi's or project's title, or "fleetd".
@@ -89,5 +104,8 @@ pub struct PushPayload {
     pub urgent: Option<bool>,
     /// Sent inside the hub's quiet hours: show it without a sound.
     pub quiet: Option<bool>,
+    pub category: Option<PushCategory>,
+    /// How many things need the person now (open requests, chats waiting on them): the app icon's badge.
+    pub badge: Option<u32>,
     pub at: Timestamp,
 }
