@@ -40,8 +40,9 @@ export default ({ projectRoot }: ConfigContext): ExpoConfig => ({
   version: "0.1.0",
   orientation: "portrait",
   icon: "./assets/icon.png",
-  userInterfaceStyle: "dark",
-  backgroundColor: "#1c1c1b",
+  // Light and dark follow the phone's setting; App.tsx sets the root view's color to match (expo-system-ui).
+  userInterfaceStyle: "automatic",
+  backgroundColor: "#000000",
   // A bundle runs only on the native build it was made for: the fingerprint changes with any native dependency.
   runtimeVersion: { policy: "fingerprint" },
   updates: updatesCert

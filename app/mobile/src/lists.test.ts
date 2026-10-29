@@ -44,6 +44,27 @@ describe("lists", () => {
     expect(out?.navis.map((r) => r.project.title)).toEqual(["Ada", "Bea"]);
     expect(out?.projects.map((r) => r.project.title)).toEqual(["storefront"]);
   });
+
+  it("gives each row its badge, its newest message and its time", () => {
+    const projects = { "m1/shop": project("shop", "storefront"), "m1/a": project("a", "Ada", { kind: "assistant" }) };
+    const chatStates = { "m1/a": { projectRef: { machineId: "m1", projectId: "a" }, lastSeq: 2, leadWorking: true, needsYou: false, lastMessageAt: "2026-10-28T12:00:00Z" } };
+    const chat = {
+      messages: [
+        { messageId: "x", projectRef: { machineId: "m1", projectId: "a" }, seq: 1, author: "lead", text: "Booked **the table**.", state: "final", createdAt: AT },
+        { messageId: "y", projectRef: { machineId: "m1", projectId: "a" }, seq: 2, author: "system", text: "Memory refreshed", state: "final", createdAt: AT },
+      ],
+      streams: {},
+      leadWaiting: {},
+      hasOlder: false,
+      loadingOlder: false,
+      held: [],
+      loaded: true,
+      missing: [],
+    };
+    const out = lists({ projects, chatStates, requests: [asked("r1"), asked("r2")], chats: { "m1/a": chat } });
+    expect(out?.needsYou.map((r) => [r.project.title, r.approvals, r.preview])).toEqual([["storefront", 2, undefined]]);
+    expect(out?.navis.map((r) => [r.preview, r.working, r.at])).toEqual([["Booked the table.", true, "2026-10-28T12:00:00Z"]]);
+  });
 });
 
 describe("approvals", () => {
@@ -56,12 +77,15 @@ describe("approvals", () => {
   it("shows a gated command in full", () => {
     expect(approvalView(gated("r1"), "storefront")).toEqual({
       title: "storefront wants to run a command",
+      who: "storefront",
+      wants: "wants to run a command",
+      risk: "irreversible",
       fields: [
         { label: "Why", value: "Ship the checkout fix" },
         { label: "Command", value: "vercel deploy --prod", mono: true },
-        { label: "In", value: "/home/devbox/shop", mono: true },
-        { label: "Kind", value: "irreversible" },
-        { label: "Asked", value: "Deploy the fix" },
+        { label: "In", value: "/home/devbox/shop", mono: true, more: true },
+        { label: "Kind", value: "irreversible", more: true },
+        { label: "Asked", value: "Deploy the fix", more: true },
       ],
     });
   });
@@ -79,6 +103,8 @@ describe("approvals", () => {
     };
     const view = approvalView(r, "Ada");
     expect(view.title).toBe("Ada wants to send an email");
+    expect(view.risk).toBeUndefined();
+    expect(view.fields.filter((f) => f.more === true).map((f) => f.label)).toEqual(["Input", "Asked"]);
     expect(view.fields.map((f) => [f.label, f.value])).toEqual([
       ["To", "a@example.com, b@example.com"],
       ["Subject", "Lease"],

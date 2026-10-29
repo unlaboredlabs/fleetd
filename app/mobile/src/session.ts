@@ -77,6 +77,12 @@ export class Session {
     if (this.#state.hub.phase !== "refused") this.#client.reconnectNow();
   }
 
+  /** Pulled to refresh: a fresh snapshot (which reads the requests and the open chat again) while live, else a dial now. */
+  refresh(): void {
+    if (this.#state.hub.phase === "live") this.#client.resync();
+    else this.wake();
+  }
+
   openChat(key: Key | null): void {
     this.#open = key;
     this.#client.chat(key === null ? null : refOf(key));

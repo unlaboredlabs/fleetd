@@ -1,59 +1,143 @@
-// One open approval with everything it would do, in full, and Approve and Deny. Used in the Approvals list and inline
-// in a chat.
-import { StyleSheet, Text, View } from "react-native";
+// One open approval as one calm card: who asks and what, the fields that decide it, the rest (every field, in full)
+// behind Details, and Approve and Deny. Money, irreversible and secret-using asks say so in a quiet line. Used in the
+// Approvals list and inline in a chat.
+import { useState } from "react";
+import { Pressable, StyleSheet, Text, View } from "react-native";
+import { listTime } from "../chatView";
 import type { HubError, HumanRequest } from "../desktop";
-import { approvalView } from "../lists";
-import { color, mono, size } from "../theme";
-import { Button } from "../ui";
+import { approvalView, type ApprovalView } from "../lists";
+import { mono, space, type, useTheme } from "../theme";
+import { Avatar } from "../ui/Avatar";
+import { Button } from "../ui/Button";
+import { Card } from "../ui/Card";
+import { haptics } from "../ui/haptics";
+import { Icon, type IconName } from "../ui/Icon";
+import { useNow } from "./time";
+
+const RISK: Record<NonNullable<ApprovalView["risk"]>, { icon: IconName; text: string }> = {
+  money: { icon: "money", text: "Spends money" },
+  irreversible: { icon: "irreversible", text: "Can't be undone" },
+  credential: { icon: "credential", text: "Uses a secret" },
+};
+
+/** The lines a long value shows before Details. */
+const CLAMP = 4;
 
 export function ApprovalCard({
   request,
   projectTitle,
+  navi,
   answering,
   error,
   onAnswer,
+  on = "plain",
 }: {
   request: HumanRequest;
   projectTitle: string | undefined;
+  navi: boolean;
   answering: boolean;
   error: HubError | undefined;
   onAnswer: (decision: "approve" | "deny") => void;
+  on?: "plain" | "grouped";
 }) {
+  const t = useTheme();
+  const now = useNow();
+  const [open, setOpen] = useState(false);
   const view = approvalView(request, projectTitle);
+  const risk = view.risk === undefined ? undefined : RISK[view.risk];
+  const shown = view.fields.filter((f) => open || f.more !== true);
+  const hidden = view.fields.length - view.fields.filter((f) => f.more !== true).length;
   return (
-    <View style={styles.card}>
-      <Text style={styles.title}>{view.title}</Text>
-      {view.fields.map((f) => (
-        <View key={f.label} style={styles.field}>
-          <Text style={styles.label}>{f.label}</Text>
-          <Text style={[styles.value, f.mono === true && styles.mono]} selectable>
-            {f.value}
-          </Text>
+    <Card on={on}>
+      <View style={styles.head} accessible accessibilityLabel={`${view.title}${risk === undefined ? "" : `. ${risk.text}`}`}>
+        <Avatar name={view.who} navi={navi} size={40} />
+        <View style={styles.who}>
+          <View style={styles.whoTop}>
+            <Text style={[type.headline, styles.grow, { color: t.label }]} numberOfLines={1}>
+              {view.who}
+            </Text>
+            <Text style={[type.footnote, { color: t.secondary }]}>{listTime(request.createdAt, now)}</Text>
+          </View>
+          <Text style={[type.subhead, { color: t.secondary }]}>{view.wants}</Text>
         </View>
-      ))}
-      {error === undefined ? null : <Text style={styles.error}>{error.message}</Text>}
-      <View style={styles.actions}>
-        <Button label="Deny" tone="danger" disabled={answering} onPress={() => onAnswer("deny")} />
-        <Button label={answering ? "Answering…" : "Approve"} tone="accent" disabled={answering} onPress={() => onAnswer("approve")} />
       </View>
-    </View>
+      {risk === undefined ? null : (
+        <View style={[styles.risk, { backgroundColor: t.warningSoft }]}>
+          <Icon name={risk.icon} size={14} color={t.warning} weight="semibold" />
+          <Text style={[type.footnote, styles.riskText, { color: t.warning }]}>{risk.text}</Text>
+        </View>
+      )}
+      {shown.length === 0 ? null : (
+        <View style={styles.fields}>
+          {shown.map((f) => (
+            <View key={f.label} style={styles.field}>
+              <Text style={[type.footnote, { color: t.secondary }]}>{f.label}</Text>
+              <Text style={[f.mono === true ? styles.mono : type.subhead, { color: t.label }]} numberOfLines={open ? undefined : CLAMP} selectable>
+                {f.value}
+              </Text>
+            </View>
+          ))}
+        </View>
+      )}
+      {hidden === 0 && !view.fields.some((f) => f.value.length > 160 || f.value.split("\n").length > CLAMP) ? null : (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ expanded: open }}
+          onPress={() => {
+            haptics.select();
+            setOpen(!open);
+          }}
+          hitSlop={10}
+          style={styles.details}
+        >
+          <Text style={[type.subhead, { color: t.accent }]}>{open ? "Less" : "Details"}</Text>
+          <Icon name="chevronDown" size={12} color={t.accent} weight="semibold" style={open ? styles.flip : undefined} />
+        </Pressable>
+      )}
+      {error === undefined ? null : (
+        <Text style={[type.footnote, { color: t.danger }]} accessibilityLiveRegion="polite">
+          {error.message}
+        </Text>
+      )}
+      <View style={styles.actions}>
+        <Button
+          label="Deny"
+          kind="tinted"
+          destructive
+          size="large"
+          grow
+          disabled={answering}
+          onPress={() => {
+            haptics.firm();
+            onAnswer("deny");
+          }}
+        />
+        <Button
+          label="Approve"
+          size="large"
+          grow
+          busy={answering}
+          onPress={() => {
+            haptics.success();
+            onAnswer("approve");
+          }}
+        />
+      </View>
+    </Card>
   );
 }
 
 const styles = StyleSheet.create({
-  card: {
-    gap: 6,
-    padding: 12,
-    borderRadius: 8,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: color.border,
-    backgroundColor: color.raised,
-  },
-  title: { color: color.text, fontSize: size.md, fontWeight: "600" },
-  field: { gap: 1 },
-  label: { color: color.faint, fontSize: size.xs },
-  value: { color: color.text, fontSize: size.sm, lineHeight: 18 },
-  mono: { fontFamily: mono, fontSize: size.xs },
-  error: { color: color.danger, fontSize: size.sm },
-  actions: { flexDirection: "row", justifyContent: "flex-end", gap: 8, marginTop: 4 },
+  head: { flexDirection: "row", alignItems: "center", gap: space.md },
+  who: { flex: 1, gap: 1 },
+  whoTop: { flexDirection: "row", alignItems: "baseline", gap: space.sm },
+  grow: { flex: 1 },
+  risk: { flexDirection: "row", alignItems: "center", alignSelf: "flex-start", gap: 5, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 8 },
+  riskText: { fontWeight: "600" },
+  fields: { gap: space.md },
+  field: { gap: 2 },
+  mono: { fontFamily: mono, fontSize: 14, lineHeight: 19 },
+  details: { flexDirection: "row", alignItems: "center", gap: 4, alignSelf: "flex-start", minHeight: 28 },
+  flip: { transform: [{ rotate: "180deg" }] },
+  actions: { flexDirection: "row", gap: space.md, marginTop: space.xs },
 });

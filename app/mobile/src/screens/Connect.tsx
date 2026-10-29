@@ -1,67 +1,147 @@
-// Pairing: the hub's address and a code from `fleetd pair` on the hub, as the desktop app's connect screen asks.
+// Pairing: a welcome with the app's mark and one way in, then the hub's address and a code from `fleetd pair` on the
+// hub, as the desktop app's connect screen asks. A code on the clipboard can be pasted straight in.
+import { useHeaderHeight } from "@react-navigation/elements";
+import type { NativeStackScreenProps } from "@react-navigation/native-stack";
+import * as Clipboard from "expo-clipboard";
 import * as Device from "expo-device";
-import { useState } from "react";
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import type { PairFailure } from "../desktop";
+import { useRef, useState, type ComponentRef } from "react";
+import { Image, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { normalizeCode, type PairFailure } from "../desktop";
+import type { PairParams } from "../hubContext";
 import { pair, type Paired } from "../hub/pair";
-import { color, mono, size } from "../theme";
-import { Button } from "../ui";
+import { mono, space, TOUCH, type, useTheme } from "../theme";
+import { Button } from "../ui/Button";
+import { haptics } from "../ui/haptics";
+import { ListSection } from "../ui/List";
 
 const deviceName = (): string => Device.deviceName ?? (Platform.OS === "ios" ? "iPhone" : "Android phone");
 
-export function Connect({ onPaired, note }: { onPaired: (paired: Paired) => void; note?: string | undefined }) {
+/** The clipboard's pairing code, if it holds one ("ABCD-2345", or the line `fleetd pair` prints it in). */
+const pastedCode = async (): Promise<string | undefined> => {
+  try {
+    const text = await Clipboard.getStringAsync();
+    const match = /\b[A-Za-z0-9]{4}-?[A-Za-z0-9]{4}\b/u.exec(text);
+    return match === null ? undefined : (normalizeCode(match[0]) ?? undefined);
+  } catch {
+    return undefined;
+  }
+};
+
+export function Welcome({ navigation, note }: NativeStackScreenProps<PairParams, "Welcome"> & { note: string | undefined }) {
+  const t = useTheme();
+  const insets = useSafeAreaInsets();
+  const [pasteNote, setPasteNote] = useState<string | undefined>(undefined);
+  return (
+    <View style={[styles.welcome, { paddingTop: insets.top, paddingBottom: Math.max(insets.bottom, space.lg) + space.sm }]}>
+      <View style={styles.hero}>
+        <Image source={require("../../assets/icon.png")} style={styles.mark} accessibilityIgnoresInvertColors />
+        <Text style={[type.largeTitle, { color: t.label }]} accessibilityRole="header">
+          fleetd
+        </Text>
+        <Text style={[type.body, styles.center, { color: t.secondary }]}>Your Navis, projects and approvals, from your own hub.</Text>
+        {note === undefined ? null : <Text style={[type.subhead, styles.center, { color: t.warning }]}>{note}</Text>}
+      </View>
+      <View style={styles.actions}>
+        <Button label="Connect to a Hub" size="large" onPress={() => navigation.navigate("Pair")} />
+        <Button
+          label="Paste a Pairing Code"
+          kind="plain"
+          icon="paste"
+          onPress={() =>
+            void pastedCode().then((code) => {
+              setPasteNote(code === undefined ? "No pairing code on the clipboard. Run fleetd pair on the hub and copy the code it prints." : undefined);
+              if (code !== undefined) navigation.navigate("Pair", { code });
+            })
+          }
+        />
+        {pasteNote === undefined ? null : <Text style={[type.footnote, styles.center, { color: t.secondary }]}>{pasteNote}</Text>}
+      </View>
+    </View>
+  );
+}
+
+export function Pair({ route, onPaired }: NativeStackScreenProps<PairParams, "Pair"> & { onPaired: (paired: Paired) => void }) {
+  const t = useTheme();
+  const insets = useSafeAreaInsets();
+  const headerHeight = useHeaderHeight();
   const [hub, setHub] = useState("");
-  const [code, setCode] = useState("");
+  const [code, setCode] = useState(route.params?.code ?? "");
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<PairFailure | null>(null);
+  const codeField = useRef<ComponentRef<typeof TextInput>>(null);
+  const ready = hub.trim() !== "" && code.trim() !== "";
 
   const submit = async () => {
+    if (!ready || busy) return;
     setBusy(true);
     setFailure(null);
     const result = await pair(fetch, hub, code, deviceName());
     setBusy(false);
-    if (result.ok) onPaired(result.paired);
-    else setFailure(result.failure);
+    if (result.ok) {
+      haptics.success();
+      onPaired(result.paired);
+    } else {
+      haptics.warning();
+      setFailure(result.failure);
+    }
   };
 
+  const field = { ...type.body, color: t.label };
   return (
-    <KeyboardAvoidingView style={styles.fill} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-      <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
-        <Text style={styles.headline}>Connect to your hub</Text>
-        <Text style={styles.prose}>
+    <KeyboardAvoidingView style={styles.fill} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={headerHeight}>
+      <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + space.xl }} keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic">
+        <Text style={[type.subhead, styles.lead, { color: t.secondary }]}>
           On the hub, run <Text style={styles.code}>fleetd pair</Text> and type the code it prints. On a tailnet, keep Tailscale on.
         </Text>
-        {note === undefined ? null : <Text style={[styles.prose, { color: color.warning }]}>{note}</Text>}
-        <Text style={styles.label}>Hub address</Text>
-        <TextInput
-          style={styles.input}
-          value={hub}
-          onChangeText={setHub}
-          placeholder="http://devbox:4790"
-          placeholderTextColor={color.faint}
-          autoCapitalize="none"
-          autoCorrect={false}
-          keyboardType="url"
-          textContentType="URL"
-        />
-        <Text style={styles.label}>Pairing code</Text>
-        <TextInput
-          style={[styles.input, styles.code]}
-          value={code}
-          onChangeText={setCode}
-          placeholder="ABCD-2345"
-          placeholderTextColor={color.faint}
-          autoCapitalize="characters"
-          autoCorrect={false}
-          onSubmitEditing={() => void submit()}
-        />
+        <ListSection header="Hub address">
+          <View style={styles.fieldRow}>
+            <TextInput
+              style={[field, styles.input]}
+              value={hub}
+              onChangeText={setHub}
+              placeholder="http://devbox:4790"
+              placeholderTextColor={t.tertiary}
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoFocus={route.params?.code !== undefined}
+              keyboardType="url"
+              textContentType="URL"
+              returnKeyType="next"
+              onSubmitEditing={() => codeField.current?.focus()}
+              accessibilityLabel="Hub address"
+              keyboardAppearance={t.dark ? "dark" : "light"}
+            />
+          </View>
+        </ListSection>
+        <ListSection header="Pairing code" footer="A code works once, for a few minutes.">
+          <View style={styles.fieldRow}>
+            <TextInput
+              ref={codeField}
+              style={[field, styles.input, styles.code]}
+              value={code}
+              onChangeText={setCode}
+              placeholder="ABCD-2345"
+              placeholderTextColor={t.tertiary}
+              autoCapitalize="characters"
+              autoCorrect={false}
+              textContentType="oneTimeCode"
+              returnKeyType="go"
+              onSubmitEditing={() => void submit()}
+              accessibilityLabel="Pairing code"
+              keyboardAppearance={t.dark ? "dark" : "light"}
+            />
+          </View>
+        </ListSection>
         {failure === null ? null : (
-          <View style={styles.failure}>
-            <Text style={styles.failureText}>{failure.message}</Text>
-            {failure.fix === undefined ? null : <Text style={styles.prose}>{failure.fix}</Text>}
+          <View style={styles.failure} accessibilityLiveRegion="polite">
+            <Text style={[type.subhead, { color: t.danger }]}>{failure.message}</Text>
+            {failure.fix === undefined ? null : <Text style={[type.footnote, { color: t.secondary }]}>{failure.fix}</Text>}
           </View>
         )}
-        <Button label={busy ? "Pairing…" : "Pair"} tone="accent" disabled={busy || hub.trim() === "" || code.trim() === ""} onPress={() => void submit()} />
+        <View style={styles.submit}>
+          <Button label="Connect" size="large" busy={busy} disabled={!ready} onPress={() => void submit()} />
+        </View>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -69,21 +149,15 @@ export function Connect({ onPaired, note }: { onPaired: (paired: Paired) => void
 
 const styles = StyleSheet.create({
   fill: { flex: 1 },
-  body: { padding: 20, gap: 8 },
-  headline: { color: color.text, fontSize: 20, fontWeight: "600", marginTop: 24, marginBottom: 4 },
-  prose: { color: color.quiet, fontSize: size.sm, lineHeight: 19 },
+  welcome: { flex: 1, paddingHorizontal: space.xl },
+  hero: { flex: 1, alignItems: "center", justifyContent: "center", gap: space.md },
+  mark: { width: 96, height: 96, borderRadius: 22, marginBottom: space.sm },
+  center: { textAlign: "center", maxWidth: 320 },
+  actions: { gap: space.sm, alignItems: "stretch" },
+  lead: { paddingHorizontal: space.xxl, paddingTop: space.sm, textAlign: "center" },
   code: { fontFamily: mono },
-  label: { color: color.quiet, fontSize: size.xs, marginTop: 12 },
-  input: {
-    color: color.text,
-    fontSize: size.md,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: color.border,
-    borderRadius: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    backgroundColor: color.raised,
-  },
-  failure: { marginVertical: 8, gap: 4 },
-  failureText: { color: color.danger, fontSize: size.sm },
+  fieldRow: { minHeight: TOUCH, justifyContent: "center", paddingHorizontal: space.lg },
+  input: { paddingVertical: 11 },
+  failure: { gap: space.xs, marginHorizontal: space.xxl, marginTop: space.md },
+  submit: { marginHorizontal: space.lg, marginTop: space.xl },
 });

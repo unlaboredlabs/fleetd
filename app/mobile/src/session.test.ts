@@ -153,6 +153,14 @@ describe("Session", () => {
     expect(session.state.answerErrors.r1).toMatchObject({ message: "Already answered on the desktop." });
   });
 
+  it("refreshes with a fresh snapshot while live", () => {
+    const { hub, session } = setup();
+    const before = hub.sentOf("snapshot").length;
+    session.refresh();
+    expect(hub.sentOf("snapshot").length).toBe(before + 1);
+    expect(hub.links.length).toBe(1);
+  });
+
   it("reads the open requests again when one changes", () => {
     const { hub } = setup();
     const reads = () => hub.sentOf("call").filter((c) => c.tool === "requests_list").length;
