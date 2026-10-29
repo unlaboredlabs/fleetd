@@ -18,14 +18,15 @@ Press and hold a notification, or swipe it left on the lock screen and tap **Opt
 
 | Notification | Buttons |
 |---|---|
-| An approval of a command or a tool prompt | **Approve**, **Deny** |
-| Money, an irreversible command, an email or anything else a Navi sends or shares | **Review**, which opens its full card in the app |
+| An approval of a command, shown whole with where it runs | **Approve**, **Deny** |
+| Money, an irreversible command, a command that uses a secret, a file edit, an email or anything else a Navi sends or shares | **Review**, which opens its full card in the app |
 | A Navi's or a lead's message | **Reply**, which sends your text into that chat |
 | A secret, an order, an alert | none: tap it to open the app |
 
 - Approve, Deny and Reply ask you to unlock the phone first: they act with the phone's own key.
-- Approve shows only when the notification holds the whole command, exactly as the card would. Anything longer, or
-  anything that spends money, can't be undone or reaches someone, opens the card in the app instead.
+- Approve shows only when the notification holds everything the card would: the whole command and where it runs.
+  Anything longer, anything that uses a secret, edits a file, spends money, can't be undone or reaches someone, opens
+  the card in the app instead.
 - The outcome replaces the notification, without a sound: "Approved: …", or why it wasn't, such as "Already answered
   on the desktop". A sent reply just disappears.
 - The app icon's badge counts what needs you: each open approval or secret, plus each chat waiting for your reply.

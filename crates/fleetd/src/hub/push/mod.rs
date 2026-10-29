@@ -348,20 +348,40 @@ fn final_lead_message(hub: &Hub, event: &HubEvent, r: &ProjectRef) -> Option<Cha
 }
 
 /// An approval's body and what the notification may do about it. The body is why the lead asks, then exactly what
-/// runs or is reached. Approve and Deny show only when that is whole on one line, and it is none of money, an
-/// irreversible command, an integration's send or change (its card shows exactly who and what, D183/D193) or a preview
-/// setting: those are reviewed in the app. A secret is entered in the app, so it gets no action.
+/// runs. Approve and Deny show only when the body is everything the card would show, whole on one line (D183/D193):
+/// a gated run's command and the directory it runs in, injecting no secret and none of money or irreversible; or a
+/// tool prompt that is a one-line Bash command, its whole input. Anything else is reviewed in the app: a prompt's
+/// summary is often only part of what runs (a Write's path, a script's first line, an MCP tool's description), and an
+/// integration's send or change and a preview setting show exactly who and what on their card. A secret is entered
+/// in the app, so it gets no action.
 fn approval_notice(r: &HumanRequest) -> (String, Option<PushCategory>) {
     let why = r.text.as_str().trim().trim_end_matches(['.', ':']);
     let (what, answerable) = match (&r.gated, &r.permission) {
-        (Some(g), _) => (
-            crate::hub::approvals::shown_argv(&g.argv.iter().cloned().collect::<Vec<_>>()),
-            !matches!(g.class, GatedClass::Money | GatedClass::Irreversible),
-        ),
-        (_, Some(p)) => (
-            format!("{} {}", p.tool_name, p.summary.as_str()),
-            p.preview.is_none(),
-        ),
+        (Some(g), _) => {
+            let argv =
+                crate::hub::approvals::shown_argv(&g.argv.iter().cloned().collect::<Vec<_>>());
+            let what = match &g.cwd {
+                Some(cwd) => format!("{argv} (in {})", cwd.as_str()),
+                None => argv,
+            };
+            let safe = !matches!(g.class, GatedClass::Money | GatedClass::Irreversible);
+            let secret = g.secret_env.as_ref().is_some_and(|e| !e.0.is_empty());
+            (what, safe && !secret)
+        }
+        (_, Some(p)) => {
+            let command = p
+                .input
+                .as_ref()
+                .and_then(|i| i.get("command"))
+                .and_then(Value::as_str);
+            let whole = p.tool_name.as_str() == "Bash"
+                && command == Some(p.summary.as_str())
+                && !p.summary.as_str().contains('\n');
+            (
+                format!("{} {}", p.tool_name, p.summary.as_str()),
+                whole && p.preview.is_none() && p.site.is_none(),
+            )
+        }
         _ => (String::new(), false),
     };
     if r.kind == RequestKind::Secret {
