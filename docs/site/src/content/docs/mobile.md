@@ -14,9 +14,11 @@ runners: no Expo account and no EAS.
 ## Pair it {#pair}
 
 1. On the hub, run `fleetd pair` and keep the code it prints.
-2. In the app, enter the hub's address, such as `http://devbox:4790`, and the code. Tap **Pair**.
+2. In the app, tap **Connect to a Hub** (or **Paste a Pairing Code**, with the code copied), enter the hub's address,
+   such as `http://devbox:4790`, and the code. Tap **Connect**.
 
-The key stays in the phone's secure storage (the Keychain on iOS, the Keystore on Android). **Disconnect** asks first,
+The key stays in the phone's secure storage (the Keychain on iOS, the Keystore on Android). **Disconnect**, in the
+app's Settings tab, asks first,
 then signs the phone out on the hub, which revokes its key and stops its notifications, and forgets the hub. If the hub
 can't be reached, you can forget it anyway and sign the phone out later under Settings › You in the desktop app.
 

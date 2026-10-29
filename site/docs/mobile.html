@@ -80,9 +80,11 @@ runners: no Expo account and no EAS.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="pair">Pair it</h2><a class="sl-anchor-link" href="#pair"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Pair it”</span></a></div>
 <ol>
 <li>On the hub, run <code dir="auto">fleetd pair</code> and keep the code it prints.</li>
-<li>In the app, enter the hub’s address, such as <code dir="auto">http://devbox:4790</code>, and the code. Tap <strong>Pair</strong>.</li>
+<li>In the app, tap <strong>Connect to a Hub</strong> (or <strong>Paste a Pairing Code</strong>, with the code copied), enter the hub’s address,
+such as <code dir="auto">http://devbox:4790</code>, and the code. Tap <strong>Connect</strong>.</li>
 </ol>
-<p>The key stays in the phone’s secure storage (the Keychain on iOS, the Keystore on Android). <strong>Disconnect</strong> asks first,
+<p>The key stays in the phone’s secure storage (the Keychain on iOS, the Keystore on Android). <strong>Disconnect</strong>, in the
+app’s Settings tab, asks first,
 then signs the phone out on the hub, which revokes its key and stops its notifications, and forgets the hub. If the hub
 can’t be reached, you can forget it anyway and sign the phone out later under Settings › You in the desktop app.</p>
 <p>Hubs on a tailnet often answer plain HTTP. The app allows that on both platforms, so turn Tailscale on in the phone
