@@ -1,8 +1,8 @@
 // One paired hub at work: the client, the state the screens read, and the calls behind them. A snapshot (on every
 // connection) reads the open requests again, reloads the open chat's latest page and sends again what the link cut
 // off; events re-read what they changed (store.ts effectsOf). Screens subscribe and dispatch nothing themselves.
-import { loadRun, mergeMessages, resetFlow, toResend, type ApprovalDecision, type ChatSend, type FlowDeps, type HubState } from "./desktop";
-import { HubClient, type HubFrame, type Transport } from "./hub/client";
+import { loadRun, mergeMessages, resetFlow, toResend, type ApprovalDecision, type ChatSend, type FlowDeps, type HubEvent, type HubState, type ToolInput, type ToolName } from "./desktop";
+import { HubClient, type HubFrame, type Transport, type Typed } from "./hub/client";
 import { registerDevice, signOut, type PushDeps } from "./push";
 import { initial, LATEST, reduce, refOf, effectsOf, type Action, type Key, type State } from "./store";
 
@@ -25,6 +25,7 @@ export class Session {
   #state: State;
   readonly #client: HubClient;
   readonly #listeners = new Set<() => void>();
+  readonly #eventListeners = new Set<(event: HubEvent) => void>();
   readonly #now: () => number;
   readonly #newId: () => string;
   /** The chat on screen, which gets streamed text and is reloaded on each connection. */
@@ -79,6 +80,17 @@ export class Session {
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
     app: { state: () => null, check: () => undefined, install: () => undefined },
   };
+
+  /** One hub call of a screen's own (a project's or Navi's, screens/manage): answered, or the hub's or the link's error. */
+  call<T extends ToolName>(tool: T, input: ToolInput<T>, timeoutMs?: number): Promise<Typed<T>> {
+    return this.#client.call(tool, input, timeoutMs);
+  }
+
+  /** Each hub event as it arrives, for a screen that follows one through (a clone's progress). */
+  onEvent(listener: (event: HubEvent) => void): () => void {
+    this.#eventListeners.add(listener);
+    return () => this.#eventListeners.delete(listener);
+  }
 
   /** Disconnect, on the hub: this phone's push registration removed and its key revoked. */
   signOut(): ReturnType<typeof signOut> {
@@ -162,11 +174,11 @@ export class Session {
     }
   }
 
-  /** Whether this phone's person is an admin, who sees Update; then, for one, the hub's update. */
+  /** Who this phone's person is, and whether an admin, who sees Update; then, for one, the hub's update. */
   async #readInfo(): Promise<void> {
     const r = await this.#client.call("hub_info", {});
     if (!r.ok) return;
-    this.#dispatch({ t: "admin", admin: r.output.admin === true });
+    this.#dispatch({ t: "admin", admin: r.output.admin === true, me: r.output.me?.personId });
     if (r.output.admin === true) void loadRun(this.updates);
   }
 
@@ -210,6 +222,7 @@ export class Session {
       }
     }
     if (frame.t === "event") {
+      for (const listener of this.#eventListeners) listener(frame.event);
       const effects = effectsOf(frame.event);
       if (effects.requests) void this.#readRequests();
       if (effects.snapshot) this.#client.resync();

@@ -6,8 +6,8 @@ description: Chat with your Navis and projects and answer approvals from your ph
 The phone app connects to your [hub](/docs/glossary#hub) as the desktop app does, with its own key. It shows your
 [Navis](/docs/navi) and projects, with what needs you on top, their chats, live as the lead writes, and the
 [approvals](/docs/approvals-and-secrets) waiting on you, each with everything it would do. Its notifications show the
-full text, end-to-end encrypted. An admin can also update fleetd from it. Settings, secrets and the hub's other admin
-pages stay in the desktop app.
+full text, end-to-end encrypted. You can make, rename and delete Navis and projects from it, and an admin can update
+fleetd. Secrets, machines, people and the hub's other admin pages stay in the desktop app.
 
 fleetd doesn't publish the app in Apple's or Google's stores yet. You build it from the repository on GitHub's
 runners: no Expo account and no EAS.
@@ -41,6 +41,35 @@ can't be reached, you can forget it anyway and sign the phone out later under Se
 Hubs on a tailnet often answer plain HTTP. The app allows that on both platforms, so turn Tailscale on in the phone
 and use the hub's tailnet name or address: `devbox`, `devbox.<tailnet>.ts.net` or its `100.x` address. A hub at any
 other address works over plain HTTP too.
+
+## Navis and projects {#manage}
+
+Tap **+** at the top of Chats for **New Navi** or **New Project**.
+
+- **New Navi**: a name (Navi when left empty) and, with more than one machine it could live on, which one. Its chat
+  opens once it's made.
+- **New Project**: a GitHub repo to clone (`owner/repo` or its URL) or the path of a folder already on a machine, an
+  optional name, and the machine. Under the field, the app lists the checkouts it found on your machines and your
+  GitHub repos, filtered as you type; one that's already a project opens its chat. A clone shows its progress, then
+  what the hub read of the repo: its default branch, CI and merge rules. When the clone's folder already holds the
+  same repo, **Add the Folder That's There** adds it as it is.
+
+The **ⓘ** at the top of a chat opens its Navi's or project's page:
+
+- **Running**: the lead and the agents working now, each with its state. Then the project's open orders, its
+  checklist and its merges of the last two weeks, each opening its pull request. Change these in the chat or the
+  desktop app.
+- **Name**: rename it. Its folder keeps its name.
+- **Agent profiles**, for a project, when the hub has more than one: the profiles its lead may run agents on. The
+  hub's default is always allowed.
+- **Forget Sign-ins…**, for a Navi: signs it out of every site its browser kept, after a confirm.
+- **Delete Navi** or **Delete Project**: asks first and names what goes. Its agents stop and fleetd forgets it, with
+  its fleetd worktrees and the checkouts of the project's other repos. Its folder, branches and pull requests stay.
+  When worktrees hold uncommitted changes, which the delete loses, the confirm names them and you type the project's
+  name to delete, as in the desktop app. Delete waits until the machine can list them.
+
+A member does everything here on the machines they operate. A Navi is its owner's alone: only they can rename it,
+forget its sign-ins or delete it. The hub checks each change too.
 
 ## Update fleetd {#update}
 

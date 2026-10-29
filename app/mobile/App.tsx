@@ -26,6 +26,7 @@ import { Approvals } from "./src/screens/Approvals";
 import { Chat, chatOptions } from "./src/screens/Chat";
 import { Chats, searchBar } from "./src/screens/Chats";
 import { Pair, Scan, Welcome } from "./src/screens/Connect";
+import { infoOptions, manageScreens, newChatOptions } from "./src/screens/manage";
 import { Settings } from "./src/screens/Settings";
 import { Session } from "./src/session";
 import { navigationTheme, useTheme, type Palette } from "./src/theme";
@@ -225,7 +226,8 @@ function Root() {
   return (
     <RootStack.Navigator screenOptions={{ headerTintColor: t.accent, contentStyle: { backgroundColor: t.bg } }}>
       <RootStack.Screen name="Home" component={Tabs} options={{ headerShown: false, title: "Chats" }} />
-      <RootStack.Screen name="Chat" component={Chat} options={chatOptions(t)} />
+      <RootStack.Screen name="Chat" component={Chat} options={({ route }) => ({ ...chatOptions(t), ...infoOptions(t, () => nav.navigate("Info", { key: route.params.key })) })} />
+      {manageScreens(RootStack, t)}
     </RootStack.Navigator>
   );
 }
@@ -240,7 +242,7 @@ function ChatsTab() {
   const t = useTheme();
   return (
     <ChatsStack.Navigator screenOptions={{ ...largeTitle(t), contentStyle: { backgroundColor: t.bg } }}>
-      <ChatsStack.Screen name="Chats" component={Chats} options={{ headerSearchBarOptions: searchBar }} />
+      <ChatsStack.Screen name="Chats" component={Chats} options={{ headerSearchBarOptions: searchBar, ...newChatOptions(t, (name) => nav.navigate(name)) }} />
     </ChatsStack.Navigator>
   );
 }

@@ -32,6 +32,14 @@ export type TabParams = {
 export type RootParams = {
   Home: NavigatorScreenParams<TabParams> | undefined;
   Chat: { key: Key };
+} & ManageParams;
+/** A project's and a Navi's own screens (screens/manage): made from the Chats list's +, opened from a chat's header. */
+export type ManageParams = {
+  NewNavi: undefined;
+  NewProject: undefined;
+  Info: { key: Key };
+  Rename: { key: Key };
+  Profiles: { key: Key };
 };
 export type PairParams = {
   Welcome: undefined;

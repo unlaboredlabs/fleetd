@@ -49,6 +49,8 @@ export interface State {
   readonly machines: readonly Machine[];
   /** Whether this phone's person is the hub's admin (hub_info), who can update it; undefined until read. */
   readonly admin: boolean | undefined;
+  /** This phone's person (hub_info's `me`), whose Navis are theirs; undefined until read, and on a hub before people. */
+  readonly me: string | undefined;
   readonly chats: Readonly<Record<Key, Chat>>;
   readonly sends: Readonly<Record<Key, readonly ChatSend[]>>;
   /** Each chat's newest few messages, read after each snapshot and kept by events: the chats list's previews. */
@@ -67,6 +69,7 @@ export const initial = (hub: HubState): State => ({
   chatStates: {},
   machines: [],
   admin: undefined,
+  me: undefined,
   chats: {},
   sends: {},
   latest: {},
@@ -81,7 +84,7 @@ export type Action =
   | { readonly t: "history"; readonly key: Key; readonly page: ChatHistoryOutput; readonly direction: "latest" | "older" }
   | { readonly t: "history_failed"; readonly key: Key; readonly error: HubError }
   | { readonly t: "latest"; readonly key: Key; readonly messages: readonly ChatMessage[] }
-  | { readonly t: "admin"; readonly admin: boolean }
+  | { readonly t: "admin"; readonly admin: boolean; readonly me?: string | undefined }
   | { readonly t: "send"; readonly key: Key; readonly row: ChatSend }
   | { readonly t: "sent"; readonly key: Key; readonly clientRequestId: string; readonly result: CallResult; readonly leadWaiting?: string | undefined }
   | { readonly t: "requests"; readonly requests: readonly HumanRequest[] }
@@ -118,7 +121,7 @@ export const reduce = (s: State, a: Action): State => {
     case "latest":
       return withLatest(s, a.key, a.messages);
     case "admin":
-      return s.admin === a.admin ? s : { ...s, admin: a.admin };
+      return s.admin === a.admin && s.me === a.me ? s : { ...s, admin: a.admin, me: a.me };
     case "send": {
       const sends = upsertSend(s.sends[a.key] ?? [], a.row);
       return { ...s, sends: { ...s.sends, [a.key]: sends } };
