@@ -512,6 +512,16 @@ async fn agent_device(router: &Router, args: &[&str]) -> (bool, String) {
     (out.status.success(), text)
 }
 
+/// Runs a session test's `body`, then ends the node's simulators even when it failed: the hosted screen's test, failing,
+/// once left its clone being deleted and its agent-device daemon running into the next test (main's run 40885901242).
+async fn ending(simulators: &Arc<Simulators>, body: impl Future<Output = ()> + Send + 'static) {
+    let ran = tokio::spawn(body).await;
+    simulators.shutdown().await;
+    if let Err(e) = ran {
+        std::panic::resume_unwind(e.into_panic());
+    }
+}
+
 /// The node's simulators and their states, for a failure's log: whether the session's clone is still there.
 async fn set_devices(home: &std::path::Path) -> String {
     match Simctl::new(super::set_dir(home)).devices().await {
@@ -628,6 +638,10 @@ async fn an_agent_opens_settings_on_an_ios_session_and_its_recording_is_on_the_h
         Arc::new(|_| Ok(Secrets::default())),
     )
     .await;
+    ending(&simulators, settings_session(home, hub, simulators.clone())).await;
+}
+
+async fn settings_session(home: PathBuf, hub: Arc<TestHub>, simulators: Arc<Simulators>) {
     let t = Instant::now();
     while simulators.warm() == 0 {
         assert!(
@@ -896,20 +910,22 @@ async fn an_agent_opens_settings_on_an_ios_session_and_its_recording_is_on_the_h
         tools.len(),
         mp4.len() / 1024
     );
-    simulators.shutdown().await;
 }
 
 /// A screen this Mac hosts for an agent on another machine (node/device/remote.rs): its agent-device commands run on
-/// its own clone, in its own folder, and log as the agent's own would; its screenshot comes back; a selector of another
+/// its own clone, in its own folder, and log as the agent's own would; its screenshots come back; a selector of another
 /// device is refused; a person's control holds the commands back until they hand it back; its end takes the folder.
+///
+/// Its commands are screenshots, which agent-device takes with simctl: the forwarding is what it tests, and the session
+/// above already starts agent-device's XCTest runner. GitHub's 3-vCPU VM can't afford a second start: here, with
+/// `open`, the runner "did not accept connection" in its 45 s while simctl's calls on the clone hung, and `open`
+/// passed agent-device's own 90 s for a request (main's run 40885901242).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_screen_hosted_for_an_agent_elsewhere_runs_its_agent_device_commands() {
-    use base64::Engine;
     if let Some(why) = no_xcode() {
         eprintln!("skipped: {why}");
         return;
     }
-    const KEY: &str = "H0123456789abcdef0123456789abcdef";
     let home = install_home();
     if pool::find(&home).is_none() {
         pool::prepare(&home, None).await.unwrap();
@@ -923,6 +939,12 @@ async fn a_screen_hosted_for_an_agent_elsewhere_runs_its_agent_device_commands()
         Arc::new(|_| Ok(Secrets::default())),
     )
     .await;
+    ending(&simulators, hosted_screen(home, hub, simulators.clone())).await;
+}
+
+async fn hosted_screen(home: PathBuf, hub: Arc<TestHub>, simulators: Arc<Simulators>) {
+    use base64::Engine;
+    const KEY: &str = "H0123456789abcdef0123456789abcdef";
     let t = Instant::now();
     while simulators.warm() == 0 {
         assert!(
@@ -956,11 +978,9 @@ async fn a_screen_hosted_for_an_agent_elsewhere_runs_its_agent_device_commands()
         .to_owned();
 
     let t = Instant::now();
-    let opened = device(&["open", "com.apple.Preferences"]).await;
-    assert_eq!(opened["result"]["exitCode"], 0, "{opened}");
-    eprintln!("a hosted screen's first command: {} ms", ms(t.elapsed()));
     let shot = device(&["screenshot", "out/1-home.png"]).await;
     assert_eq!(shot["result"]["exitCode"], 0, "{shot}");
+    eprintln!("a hosted screen's first command: {} ms", ms(t.elapsed()));
     assert_eq!(shot["result"]["files"][0]["name"], "1-home.png", "{shot}");
     let got =
         handle(json!({ "op": "device", "step": "get", "name": "1-home.png", "offset": 0 })).await;
@@ -974,7 +994,7 @@ async fn a_screen_hosted_for_an_agent_elsewhere_runs_its_agent_device_commands()
     assert_eq!(elsewhere["error"]["code"], "invalid", "{elsewhere}");
 
     simulators.set_control(&id, BrowserControl::Human, "human:desk");
-    let paused = device(&["snapshot", "-i"]).await;
+    let paused = device(&["screenshot", "out/2-paused.png"]).await;
     assert_eq!(paused["result"]["exitCode"], 75, "{paused}");
     assert!(
         paused["result"]["stderr"]
@@ -983,8 +1003,16 @@ async fn a_screen_hosted_for_an_agent_elsewhere_runs_its_agent_device_commands()
             .contains("A person has control")
     );
     simulators.set_control(&id, BrowserControl::HandingBack, "human:desk");
-    let after = device(&["snapshot", "-i"]).await;
+    let after = device(&["screenshot", "out/2-back.png"]).await;
     assert_eq!(after["result"]["exitCode"], 0, "{after}");
+    assert!(
+        after["result"]["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|f| f["name"] == "2-back.png"),
+        "{after}"
+    );
     assert_eq!(
         simulators.live(KEY).unwrap().control(),
         BrowserControl::Agent
@@ -999,5 +1027,4 @@ async fn a_screen_hosted_for_an_agent_elsewhere_runs_its_agent_device_commands()
         actions.contains("agent-device screenshot out/1-home.png"),
         "{actions}"
     );
-    simulators.shutdown().await;
 }
