@@ -229,8 +229,8 @@ jobs:
     # this one and is skipped (which passes, required or not) when its paths didn't change. HEAD^1 is the base for a
     # PR's merge commit and the previous main for a (squash-merged) push; a manual run from a branch compares with the
     # branch's merge base on main, and ios sessions on a push to main with the last push run that ran it to the end
-    # (.github/main-base.sh). No base to compare with runs them all, and so does a failure here. The merge train trusts
-    # such a skip on a PR's head only when this job passed there and said so.
+    # (.github/main-base.sh). No base to compare with runs them all, and so does a failure here. The merge train counts
+    # such a skip on a PR's head as passing once this job passed there.
     name: macos scope
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -256,8 +256,7 @@ jobs:
             base=$(git merge-base origin/main HEAD || true)
           fi
           # scope <output> <check> <paths>: <output>=true when any of the paths, or this workflow, changed. Otherwise
-          # it says "no work for <check>" in a notice: the merge train counts that check's skip on this head as
-          # passing only with it, so a run cancelled before the check started never reads as green.
+          # it says "no work for <check>" in a notice, for whoever reads the run.
           scope() {
             out=$1
             check=$2

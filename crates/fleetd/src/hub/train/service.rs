@@ -22,7 +22,7 @@ use super::github::{
 };
 use super::host::{BoxFut, TrainHost};
 use super::main_ci::{GithubSync, MainCi, ci_state};
-use super::next::{Reruns, gated_name, upstreams};
+use super::next::{Reruns, gated_name, proven_runs, upstreams};
 use super::records::{ChangeRecords, DRAFT, Db, HEAD_STATES, ListFilter, QUEUED_STATES, is_draft};
 use super::regen::Conflict;
 use super::rules::Refusal;
@@ -1264,19 +1264,14 @@ impl Train {
             };
             let fast = self.fast(repo, base).await;
             // The checks a batch skips, as `own_checks` judges them on a PR's own head: waited for by name, a skip
-            // counted only once its scope said it had no work (`proven_runs`). None of them on a batch's head, which
+            // counted only once the jobs it needs passed (`proven_runs`). None of them on a batch's head, which
             // skips them, nor while the repo's workflows were never read (`lone` holds its skips for that).
             let skips = if alone {
                 self.workflows(repo, base).await.unwrap_or_default().batch
             } else {
                 Vec::new()
             };
-            let runs = match runs {
-                Some(runs) if !skips.is_empty() => {
-                    Some(self.proven_runs(repo, sha, runs, &skips).await)
-                }
-                runs => runs,
-            };
+            let runs = runs.map(|runs| proven_runs(runs, &skips));
             let skipped_by_batch: Vec<String> = skips.into_iter().map(|b| b.name).collect();
             let judge = |runs: &[CheckRun]| {
                 let mut judged = gated(runs, fast.as_ref());

@@ -273,8 +273,8 @@ The train reads the repo's workflows on the base and finds such jobs: an `if:` w
 `!endsWith(github.head_ref, 'train/batch')`, in a workflow that runs on each push to a PR (`pull_request` with its
 default types, or with `opened` and `synchronize`). For each one:
 
-- A PR joins a batch only once that check passed on its own commit, or skipped for want of work (below). Until then it
-  stays out and says why: "its own head's `macos` still running", "… failed", or "its own head hasn't reported `macos`
+- A PR joins a batch only once that check passed or skipped on its own commit (below). Until then it stays out and
+  says why: "its own head's `macos` still running", "… failed", or "its own head hasn't reported `macos`
   yet". Nothing else would run a cancelled one again, so when that check, or a job it needs, reads cancelled, the train
   re-runs that one job once, with the jobs that need it, and says so: "its own head's `macos` was cancelled; the train
   re-ran it". It never re-runs the rest of the workflow run, so a job that failed there stays failed, and it waits
@@ -285,7 +285,7 @@ default types, or with `opened` and `synchronize`). For each one:
 - `main` still runs it after each merge, where a failure opens a fix order like any [check after the merge](#after-merge).
 
 To skip work a change doesn't touch, decide on a cheap Linux runner and skip the job by `if:` on that decision, so a
-scarce runner starts only for real work. When it skips one, the deciding job says so in a notice, `no work for <check>`:
+scarce runner starts only for real work:
 
 ```yaml
 jobs:
@@ -300,7 +300,6 @@ jobs:
       - id: scope
         run: |
           if git diff --quiet HEAD^1 HEAD -- src/macos; then
-            echo "::notice::no work for macos"
             echo macos=false >> "$GITHUB_OUTPUT"
           else
             echo macos=true >> "$GITHUB_OUTPUT"
@@ -311,10 +310,11 @@ jobs:
     runs-on: macos-latest
 ```
 
-A job that needs others also reads skipped when its run is cancelled before it starts. So on a PR's own commit, the
-train counts such a skip as passing only when every job it needs passed there and one of them gave that notice for it.
-Otherwise the check hasn't reported, and the PR stays out of batches until a new run decides it. With
-`needs.scope.outputs.macos != 'false'`, a failed scope runs the job rather than skipping it.
+On a PR's own commit, the train counts a skip as passing, as branch protection does, while a check still queued or
+running, or not reported yet, holds the PR. A job that needs others also reads skipped when its run is cancelled before
+it starts, so the train counts such a skip only once every job it needs passed there; otherwise the check hasn't
+reported, and the PR stays out of batches until a new run decides it. With `needs.scope.outputs.macos != 'false'`, a
+failed scope runs the job rather than skipping it.
 
 Don't filter the workflow by `paths:` instead: a workflow that never starts never reports, and the PR stays out of
 every batch. If the workflows can't be read, the train uses the last answer it had for the repo; with none, ready PRs
