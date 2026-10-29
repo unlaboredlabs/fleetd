@@ -1138,6 +1138,26 @@ fn approve_needs_text_that_reads_on_a_lock_screen_as_it_runs() {
         ("word joiner", "r\u{2060}m"),
         ("byte order mark", "\u{FEFF}rm"),
         ("tag characters", "ls\u{E0041}"),
+        // Other invisible format characters, each end of each range.
+        ("inhibit symmetric swapping", "\u{206A}x"),
+        ("nominal digit shapes", "1\u{206F}2"),
+        (
+            "interlinear annotation",
+            "rm \u{FFF9}-rf ~\u{FFFA}safe\u{FFFB}",
+        ),
+        ("interlinear annotation anchor", "rm \u{FFF9}x"),
+        ("interlinear annotation terminator", "rm \u{FFFB}x"),
+        ("shorthand format letter overlap", "a\u{1BCA0}b"),
+        ("shorthand format up step", "a\u{1BCA3}b"),
+        ("musical symbol begin beam", "a\u{1D173}b"),
+        ("musical symbol end phrase", "a\u{1D17A}b"),
+        // An emoji's joiner and selector, and a joiner in a Persian word, which the cards show as written.
+        ("emoji joiner", "echo \u{1F469}\u{200D}\u{1F4BB}"),
+        ("emoji selector", "echo \u{2764}\u{FE0F}"),
+        (
+            "persian non-joiner",
+            "echo \u{0645}\u{06CC}\u{200C}\u{062E}",
+        ),
         // More than a lock screen shows whole, and nothing at all.
         ("too long", &"x".repeat(201)),
         ("blank", "   "),
@@ -1146,6 +1166,18 @@ fn approve_needs_text_that_reads_on_a_lock_screen_as_it_runs() {
         assert!(!shown_whole(text), "{what} passed");
     }
     assert!(shown_whole(&"x".repeat(200)));
+    // Just outside the new ranges, visible characters that read as they run.
+    for text in [
+        "a\u{2070}b",
+        "a\u{FFF8}b",
+        "a\u{FFFC}b",
+        "a\u{1BC9F}b",
+        "a\u{1BCA4}b",
+        "a\u{1D172}b",
+        "a\u{1D17B}b",
+    ] {
+        assert!(shown_whole(text), "{text:?} refused");
+    }
 }
 
 #[tokio::test]

@@ -356,8 +356,11 @@ pub fn shown_whole(text: &str) -> bool {
 }
 
 /// Whether `text` holds nothing that hides or reorders text, its own or what shows next to it: no control characters
-/// (`\r`, `\n`, tab, NEL), line or paragraph separators, bidi controls and marks, or zero-width characters. Every
-/// text on a notification that offers Approve is plain: the title, the reason and the command.
+/// (`\r`, `\n`, tab, NEL), line or paragraph separators, bidi controls and marks, zero-width characters or other
+/// invisible format characters. Every text on a notification that offers Approve is plain: the title, the reason and
+/// the command. The class is the one the apps' cards mark (`isHidden` in app/desktop/src/shared/hidden.ts), so the
+/// hub, the notification and the cards agree; the cards alone let an emoji's joiner or selector and a ZWJ or ZWNJ
+/// inside a Persian or Hindi word show as written, which this refuses.
 pub fn plain(text: &str) -> bool {
     let hidden = |c: char| {
         c.is_control()
@@ -372,6 +375,10 @@ pub fn plain(text: &str) -> bool {
                 | '\u{200B}'..='\u{200D}' | '\u{2060}'..='\u{2064}' | '\u{FEFF}' | '\u{180E}' | '\u{00AD}'
                 | '\u{034F}' | '\u{115F}' | '\u{1160}' | '\u{3164}' | '\u{FFA0}' | '\u{17B4}' | '\u{17B5}'
                 | '\u{FE00}'..='\u{FE0F}' | '\u{E0000}'..='\u{E007F}'
+                // Other invisible format characters: the deprecated shaping and digit controls, the interlinear
+                // annotation marks (which can hide text), the shorthand format controls and musical format controls.
+                | '\u{206A}'..='\u{206F}' | '\u{FFF9}'..='\u{FFFB}' | '\u{1BCA0}'..='\u{1BCA3}'
+                | '\u{1D173}'..='\u{1D17A}'
             )
     };
     !text.chars().any(hidden)
