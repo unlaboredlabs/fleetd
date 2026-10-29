@@ -3,15 +3,17 @@
 // name; pulling down reads the hub again.
 import { useNavigation, type NavigationProp } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useState } from "react";
 import { Pressable, RefreshControl, SectionList, StyleSheet, Text, View } from "react-native";
 import { listTime } from "../chatView";
 import { useHub, type RootParams } from "../hubContext";
 import { lists, type Row } from "../lists";
 import { space, type, useTheme } from "../theme";
 import { Avatar } from "../ui/Avatar";
+import { useAnimatedRows } from "../ui/motion";
 import { SkeletonRow } from "../ui/Skeleton";
 import { Badge, ConnectionLine, EmptyState } from "../ui/States";
+import { useRefreshing } from "./refresh";
 import { useNow } from "./time";
 
 const AVATAR = 52;
@@ -46,11 +48,13 @@ export function Chats({ navigation }: NativeStackScreenProps<{ Chats: undefined 
     const q = query.trim().toLocaleLowerCase();
     const keep = (rows: readonly Row[]) => (q === "" ? rows : rows.filter((r) => r.project.title.toLocaleLowerCase().includes(q)));
     return [
-      { title: "Needs You", data: keep(shown.needsYou) },
+      { title: "Needs you", data: keep(shown.needsYou) },
       { title: "Navis", data: keep(shown.navis) },
       { title: "Projects", data: keep(shown.projects) },
     ].filter((s) => s.data.length > 0);
   }, [shown, query]);
+
+  useAnimatedRows(sections.map((x) => `${x.title}:${x.data.map((r) => r.key).join(",")}`).join(" "));
 
   const empty =
     shown === undefined ? (
@@ -77,9 +81,9 @@ export function Chats({ navigation }: NativeStackScreenProps<{ Chats: undefined 
       ListHeaderComponent={<ConnectionLine state={state.hub} onPairAgain={pairAgain} />}
       ListEmptyComponent={empty}
       renderSectionHeader={({ section }) =>
-        sections.length > 1 || section.title === "Needs You" ? (
-          <Text style={[type.footnote, styles.section, { color: t.secondary }]} accessibilityRole="header">
-            {section.title.toUpperCase()}
+        sections.length > 1 || section.title === "Needs you" ? (
+          <Text style={[type.subhead, styles.section, { color: t.secondary }]} accessibilityRole="header">
+            {section.title}
           </Text>
         ) : null
       }
@@ -88,36 +92,15 @@ export function Chats({ navigation }: NativeStackScreenProps<{ Chats: undefined 
   );
 }
 
-/** Pull to refresh's spinner: on from the pull until a new snapshot lands or the link gives up, and a second at most past that. */
-const useRefreshing = (projects: unknown, phase: string): { on: boolean; start: (go: () => void) => void } => {
-  const [since, setSince] = useState<unknown>(null);
-  const on = since !== null;
-  useEffect(() => {
-    if (!on) return;
-    if (projects !== since || phase === "refused" || phase === "retrying") {
-      setSince(null);
-      return;
-    }
-    const timer = setTimeout(() => setSince(null), 8000);
-    return () => clearTimeout(timer);
-  }, [on, since, projects, phase]);
-  return {
-    on,
-    start: (go) => {
-      setSince(projects);
-      go();
-    },
-  };
-};
-
 function ChatRow({ row, separator, onPress }: { row: Row; separator: boolean; onPress: () => void }) {
   const t = useTheme();
   const now = useNow();
-  const line = row.working ? "Working…" : (row.preview ?? row.want ?? (row.navi ? "Navi" : row.project.workspaceRoot));
+  // Blank until its newest messages are read, rather than a stand-in that flickers away.
+  const line = row.working ? "Working…" : (row.preview ?? row.want ?? (row.empty ? "No messages yet" : ""));
   const accentLine = row.working || (row.preview === undefined && row.want !== undefined);
   // What the badge says, unless the line already does.
   const badge = row.approvals > 0 ? `${String(row.approvals)} waiting for approval` : row.want;
-  const label = [row.project.title, line, line === row.want ? undefined : badge].filter((s) => s !== undefined).join(", ");
+  const label = [row.project.title, line, line === row.want ? undefined : badge].filter((s) => s !== undefined && s !== "").join(", ");
   return (
     <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={label}>
       {({ pressed }) => (
@@ -133,7 +116,7 @@ function ChatRow({ row, separator, onPress }: { row: Row; separator: boolean; on
               </Text>
             </View>
             <View style={styles.bottom}>
-              <Text style={[type.subhead, styles.preview, { color: accentLine ? t.accent : t.secondary }]} numberOfLines={1}>
+              <Text style={[type.subhead, styles.preview, { color: accentLine ? t.accent : t.secondary }]} numberOfLines={accentLine ? 1 : 2}>
                 {line}
               </Text>
               {row.approvals > 0 ? <Badge count={row.approvals} /> : row.want !== undefined ? <Badge /> : null}
@@ -148,11 +131,11 @@ function ChatRow({ row, separator, onPress }: { row: Row; separator: boolean; on
 
 const styles = StyleSheet.create({
   section: { paddingHorizontal: space.lg, paddingTop: space.lg, paddingBottom: space.xs, fontWeight: "600" },
-  row: { flexDirection: "row", alignItems: "center", gap: space.md, paddingLeft: space.lg, minHeight: 72 },
+  row: { flexDirection: "row", alignItems: "center", gap: space.md, paddingLeft: space.lg, minHeight: 76 },
   body: { flex: 1, alignSelf: "stretch", justifyContent: "center", gap: 2, paddingRight: space.lg, paddingVertical: 10 },
   top: { flexDirection: "row", alignItems: "baseline", gap: space.sm },
   title: { flex: 1 },
-  bottom: { flexDirection: "row", alignItems: "center", gap: space.sm, minHeight: 22 },
+  bottom: { flexDirection: "row", alignItems: "flex-start", gap: space.sm, minHeight: 20 },
   preview: { flex: 1 },
   separator: { position: "absolute", left: 0, right: 0, bottom: 0, height: StyleSheet.hairlineWidth },
 });

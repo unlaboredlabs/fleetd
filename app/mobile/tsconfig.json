@@ -8,7 +8,9 @@
     "noFallthroughCasesInSwitch": true,
     "verbatimModuleSyntax": true,
     "isolatedModules": true,
-    "types": ["node"]
+    "types": ["node"],
+    // The desktop modules the app imports (src/desktop.ts) find React here, as Metro and vitest do.
+    "paths": { "react": ["./node_modules/@types/react"] }
   },
   "include": ["**/*.ts", "**/*.tsx"]
 }

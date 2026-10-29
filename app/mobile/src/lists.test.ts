@@ -33,7 +33,7 @@ describe("lists", () => {
     expect(lists({ projects: undefined, chatStates: {}, requests: undefined })).toBeUndefined();
   });
 
-  it("leaves archived Navis out and sorts each group by title", () => {
+  it("leaves archived Navis out and sorts each group by title when none spoke later", () => {
     const projects = {
       "m1/b": project("b", "Bea", { kind: "assistant" }),
       "m1/a": project("a", "Ada", { kind: "assistant" }),
@@ -64,6 +64,33 @@ describe("lists", () => {
     const out = lists({ projects, chatStates, requests: [asked("r1"), asked("r2")], chats: { "m1/a": chat } });
     expect(out?.needsYou.map((r) => [r.project.title, r.approvals, r.preview])).toEqual([["storefront", 2, undefined]]);
     expect(out?.navis.map((r) => [r.preview, r.working, r.at])).toEqual([["Booked the table.", true, "2026-10-28T12:00:00Z"]]);
+  });
+});
+
+describe("lists' order and previews", () => {
+  const message = (projectId: string, seq: number, author: string, text: string) => ({
+    messageId: `${projectId}-${String(seq)}`,
+    projectRef: { machineId: "m1", projectId },
+    seq,
+    author,
+    text,
+    state: "final",
+    createdAt: AT,
+  });
+
+  it("puts who spoke last first, as Messages does", () => {
+    const projects = {
+      "m1/a": project("a", "Ada", { kind: "assistant", lastActivityAt: "2026-10-28T09:00:00Z" }),
+      "m1/b": project("b", "Bea", { kind: "assistant", lastActivityAt: "2026-10-28T08:00:00Z" }),
+    };
+    const chatStates = { "m1/b": { projectRef: { machineId: "m1", projectId: "b" }, lastSeq: 4, leadWorking: false, needsYou: false, lastMessageAt: "2026-10-28T11:00:00Z" } };
+    expect(lists({ projects, chatStates, requests: [] })?.navis.map((r) => r.project.title)).toEqual(["Bea", "Ada"]);
+  });
+
+  it("previews a chat not opened yet from its newest messages", () => {
+    const projects = { "m1/a": project("a", "Ada", { kind: "assistant" }) };
+    const latest = { "m1/a": [message("a", 7, "human", "Lunch on Tuesday?"), message("a", 8, "lead", "Booked it for **12:30**.")] };
+    expect(lists({ projects, chatStates: {}, requests: [], latest })?.navis.map((r) => r.preview)).toEqual(["Booked it for 12:30."]);
   });
 });
 

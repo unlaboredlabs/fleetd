@@ -1,8 +1,8 @@
-// The home list, as plain view data: what needs you on top, then your Navis, then the projects, each by title. A
+// The home list, as plain view data: what needs you on top, then your Navis, then the projects, each newest first. A
 // project wants you as the desktop's sidebar says (screens/shell/model.ts): a secret or an approval open for it, or
 // its lead waiting for your reply. An archived Navi is in none of them. Pure, so it is unit-tested.
 import { previewOf } from "./chatView";
-import { chatItems, isArchived, isNavi, type HumanRequest, type ProjectSummary } from "./desktop";
+import { chatItems, emptyChat, isArchived, isNavi, type HumanRequest, type ProjectSummary } from "./desktop";
 import { keyOf, type Key, type State } from "./store";
 
 export interface Row {
@@ -14,8 +14,10 @@ export interface Row {
   readonly working: boolean;
   /** The open approvals it asks: the row's badge. */
   readonly approvals: number;
-  /** Its newest message in one line, once its chat was read; else undefined. */
+  /** Its newest message in one line, from its chat once read, else from its newest messages; undefined till then. */
   readonly preview: string | undefined;
+  /** Its chat has nothing in it yet, as far as read. */
+  readonly empty: boolean;
   /** When it last spoke, or last did anything. */
   readonly at: string;
 }
@@ -39,8 +41,9 @@ const wantOf = (key: Key, needsYou: boolean, requests: readonly HumanRequest[] |
   return needsYou ? "Waiting for your reply" : undefined;
 };
 
-const previewFor = (s: Partial<Pick<State, "chats" | "sends">>, key: Key): string | undefined => {
-  const chat = s.chats?.[key];
+const previewFor = (s: Partial<Pick<State, "chats" | "sends" | "latest">>, key: Key): string | undefined => {
+  const latest = s.latest?.[key];
+  const chat = s.chats?.[key] ?? (latest === undefined ? undefined : { ...emptyChat, messages: [...latest] });
   if (chat === undefined) return undefined;
   const items = chatItems(chat, s.sends?.[key] ?? []).filter((i) => i.kind !== "event");
   for (let i = items.length - 1; i >= 0; i--) {
@@ -50,10 +53,11 @@ const previewFor = (s: Partial<Pick<State, "chats" | "sends">>, key: Key): strin
   return undefined;
 };
 
-const byTitle = (a: Row, b: Row): number => a.project.title.localeCompare(b.project.title) || a.key.localeCompare(b.key);
+/** Who spoke last first, as Messages orders chats. */
+const byRecent = (a: Row, b: Row): number => b.at.localeCompare(a.at) || a.project.title.localeCompare(b.project.title) || a.key.localeCompare(b.key);
 
 /** Undefined until the projects loaded: not "no projects". The chats read so far give the rows' previews. */
-export const lists = (s: Pick<State, "projects" | "chatStates" | "requests"> & Partial<Pick<State, "chats" | "sends">>): Lists | undefined => {
+export const lists = (s: Pick<State, "projects" | "chatStates" | "requests"> & Partial<Pick<State, "chats" | "sends" | "latest">>): Lists | undefined => {
   if (s.projects === undefined) return undefined;
   const rows = Object.entries(s.projects)
     .filter(([, p]) => !(isNavi(p) && isArchived(p)))
@@ -67,10 +71,11 @@ export const lists = (s: Pick<State, "projects" | "chatStates" | "requests"> & P
         working: chat?.leadWorking === true,
         approvals: openFor(key, s.requests, "approval"),
         preview: previewFor(s, key),
+        empty: (s.chats?.[key]?.messages.length ?? s.latest?.[key]?.length) === 0,
         at: chat?.lastMessageAt ?? project.lastActivityAt,
       };
     })
-    .sort(byTitle);
+    .sort(byRecent);
   const calm = rows.filter((r) => r.want === undefined);
   return {
     needsYou: rows.filter((r) => r.want !== undefined),

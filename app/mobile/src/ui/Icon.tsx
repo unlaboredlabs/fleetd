@@ -38,6 +38,8 @@ const SYMBOLS = {
   keyboard: ["keyboard", "keyboard"],
   close: ["xmark", "close"],
   camera: ["camera.fill", "photo_camera"],
+  status: ["antenna.radiowaves.left.and.right", "sensors"],
+  info: ["info", "info"],
 } as const satisfies Record<string, readonly [Extract<SymbolViewProps["name"], string>, AndroidSymbol]>;
 
 export type IconName = keyof typeof SYMBOLS;

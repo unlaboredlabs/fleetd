@@ -47,6 +47,9 @@ export default ({ projectRoot }: ConfigContext): ExpoConfig => ({
   // Light and dark follow the phone's setting; App.tsx sets the root view's color to match (expo-system-ui).
   userInterfaceStyle: "automatic",
   backgroundColor: "#000000",
+  // tsconfig.json's `paths` are for the typechecker alone (the desktop modules find React's types there): Metro
+  // resolves React itself (metro.config.js).
+  experiments: { tsconfigPaths: false },
   // A bundle runs only on the native build it was made for: the fingerprint changes with any native dependency.
   runtimeVersion: { policy: "fingerprint" },
   updates: updatesCert

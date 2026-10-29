@@ -1,10 +1,10 @@
 // One paired hub at work: the client, the state the screens read, and the calls behind them. A snapshot (on every
 // connection) reads the open requests again, reloads the open chat's latest page and sends again what the link cut
 // off; events re-read what they changed (store.ts effectsOf). Screens subscribe and dispatch nothing themselves.
-import { mergeMessages, toResend, type ApprovalDecision, type ChatSend, type HubState } from "./desktop";
+import { loadRun, mergeMessages, resetFlow, toResend, type ApprovalDecision, type ChatSend, type FlowDeps, type HubState } from "./desktop";
 import { HubClient, type HubFrame, type Transport } from "./hub/client";
 import { registerDevice, signOut, type PushDeps } from "./push";
-import { initial, reduce, refOf, effectsOf, type Action, type Key, type State } from "./store";
+import { initial, LATEST, reduce, refOf, effectsOf, type Action, type Key, type State } from "./store";
 
 export const CHAT_PAGE = 50;
 const OPEN_REQUESTS = { state: "open", limit: 100 } as const;
@@ -65,7 +65,20 @@ export class Session {
   stop(): void {
     this.#unsubscribeToken?.();
     this.#client.stop();
+    // The update's run is this hub's: another paired after it starts from nothing.
+    resetFlow();
   }
+
+  /**
+   * What the Update button's run (the desktop's flow.ts) does its calls with: the hub's, dialling again while it
+   * restarts. The phone has no app update in it: it updates over the air.
+   */
+  readonly updates: FlowDeps = {
+    call: (tool, input, options) => this.#client.call(tool, input, options?.timeoutMs),
+    retry: () => this.wake(),
+    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    app: { state: () => null, check: () => undefined, install: () => undefined },
+  };
 
   /** Disconnect, on the hub: this phone's push registration removed and its key revoked. */
   signOut(): ReturnType<typeof signOut> {
@@ -136,6 +149,27 @@ export class Session {
     else if (r.error.code !== "offline") this.#dispatch({ t: "history_failed", key, error: r.error });
   }
 
+  /** Each unread chat's newest messages, for the chats list, one chat at a time: what spoke last first. */
+  async #readLatest(): Promise<void> {
+    const keys = Object.entries(this.#state.projects ?? {})
+      .filter(([key]) => this.#state.chats[key] === undefined)
+      .sort(([, a], [, b]) => b.lastActivityAt.localeCompare(a.lastActivityAt))
+      .map(([key]) => key);
+    for (const key of keys) {
+      const r = await this.#client.call("chat_history", { projectRef: refOf(key), limit: LATEST });
+      if (!r.ok) return;
+      this.#dispatch({ t: "latest", key, messages: r.output.messages });
+    }
+  }
+
+  /** Whether this phone's person is an admin, who sees Update; then, for one, the hub's update. */
+  async #readInfo(): Promise<void> {
+    const r = await this.#client.call("hub_info", {});
+    if (!r.ok) return;
+    this.#dispatch({ t: "admin", admin: r.output.admin === true });
+    if (r.output.admin === true) void loadRun(this.updates);
+  }
+
   async #readRequests(): Promise<void> {
     const r = await this.#client.call("requests_list", OPEN_REQUESTS);
     if (r.ok) this.#dispatch({ t: "requests", requests: r.output.requests });
@@ -167,6 +201,9 @@ export class Session {
     if (frame.t === "state") this.#onState(frame.state);
     if (frame.t === "snapshot") {
       void this.#readRequests();
+      void this.#readLatest();
+      // An admin's: the build the hub has ready, and a run going on, followed.
+      if (this.#state.admin === true) void loadRun(this.updates);
       if (this.#open !== null) void this.#loadLatest(this.#open);
       for (const [key, rows] of Object.entries(this.#state.sends)) {
         for (const row of toResend(rows)) void this.#send(key, { ...row, state: { t: "sending" } });
@@ -186,6 +223,7 @@ export class Session {
   }
 
   #onState(state: HubState): void {
+    if (state.phase === "live") void this.#readInfo();
     if (state.phase !== "live" || this.#registered) return;
     this.#registered = true;
     void this.#register();

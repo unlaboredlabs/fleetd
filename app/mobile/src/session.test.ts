@@ -85,6 +85,35 @@ describe("Session", () => {
     expect(lists(session.state)?.needsYou.map((r) => r.want)).toEqual(["1 approval waiting", "Waiting for your reply"]);
   });
 
+  it("asks the hub whether this phone's person is an admin, and reads an admin's update", async () => {
+    const calls = (tool: string) => hub.sentOf("call").filter((c) => c.tool === tool);
+    const { hub, session } = setup();
+    expect(session.state.admin).toBeUndefined();
+    hub.answer("hub_info", { busy: [], protocol: 1, version: "0.9.0", admin: true });
+    await flush();
+    expect(session.state.admin).toBe(true);
+    expect(calls("hub_update_status")).toHaveLength(1);
+    expect(session.state.machines).toEqual([]);
+
+    const member = setup();
+    member.hub.answer("hub_info", { busy: [], protocol: 1, version: "0.9.0" });
+    await flush();
+    expect(member.session.state.admin).toBe(false);
+    expect(member.hub.sentOf("call").filter((c) => c.tool === "hub_update_status")).toEqual([]);
+  });
+
+  it("previews each chat from its newest messages, read after the snapshot and kept by events", async () => {
+    const { hub, session } = setup();
+    const reads = () => hub.sentOf("call").filter((c) => c.tool === "chat_history");
+    expect(reads().map((c) => c.input)).toEqual([{ projectRef: REF, limit: 3 }]);
+    hub.answer("chat_history", page([message(1, "Morning."), message(2, "Two **emails** need you.")]));
+    await flush();
+    expect(reads().map((c) => (c.input as { projectRef: unknown }).projectRef)).toEqual([REF, { machineId: "m1", projectId: "shop" }]);
+    expect(lists(session.state)?.navis.map((r) => r.preview)).toEqual(["Two emails need you."]);
+    hub.link.frame({ t: "event", seq: 2, type: "chat.message", at: AT, data: { projectRef: REF, messageId: "msg3", seq: 3, author: "lead", state: "final", message: message(3, "Sent both.") } });
+    expect(lists(session.state)?.navis.map((r) => r.preview)).toEqual(["Sent both."]);
+  });
+
   it("opens a chat at its latest page, streams the lead's text and takes its final message", async () => {
     const { hub, session } = setup();
     session.openChat(KEY);

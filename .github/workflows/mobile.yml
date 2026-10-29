@@ -64,7 +64,8 @@ jobs:
             echo "$out=$run" | tee -a "$GITHUB_OUTPUT"
           }
           scope app "mobile" app/mobile app/desktop/src/shared app/desktop/src/renderer/src/data/chat.ts \
-            app/desktop/src/renderer/src/data/chat-contract.ts app/desktop/src/renderer/screens/navi/model.ts site/vercel.json
+            app/desktop/src/renderer/src/data/chat-contract.ts app/desktop/src/renderer/screens/navi/model.ts \
+            app/desktop/src/renderer/screens/updates/model.ts app/desktop/src/renderer/screens/updates/flow.ts site/vercel.json
           scope ios "mobile (ios)" app/mobile
 
   mobile:

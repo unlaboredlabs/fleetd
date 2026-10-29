@@ -31,7 +31,9 @@ export function ListSection({ header, footer, children }: { header?: string; foo
 
 export function ListRow({
   title,
+  detail,
   value,
+  valueColor,
   icon,
   tint,
   onPress,
@@ -41,7 +43,10 @@ export function ListRow({
   accessory,
 }: {
   title: string;
+  /** A line under the title: why, where it failed. */
+  detail?: string | undefined;
   value?: string | undefined;
+  valueColor?: string | undefined;
   icon?: IconName;
   /** The icon tile's color; the accent when unset. */
   tint?: string | undefined;
@@ -60,11 +65,20 @@ export function ListRow({
           <Icon name={icon} size={17} color="#FFFFFF" weight="medium" />
         </View>
       )}
-      <Text style={[type.body, value === undefined ? styles.grow : styles.title, { color: destructive ? t.danger : t.label }]} numberOfLines={1}>
-        {title}
-      </Text>
+      {detail === undefined ? (
+        <Text style={[type.body, value === undefined ? styles.grow : styles.title, { color: destructive ? t.danger : t.label }]} numberOfLines={1}>
+          {title}
+        </Text>
+      ) : (
+        <View style={styles.grow}>
+          <Text style={[type.body, { color: destructive ? t.danger : t.label }]} numberOfLines={1}>
+            {title}
+          </Text>
+          <Text style={[type.footnote, { color: t.secondary }]}>{detail}</Text>
+        </View>
+      )}
       {value === undefined ? null : (
-        <Text style={[type.body, styles.value, { color: t.secondary }]} numberOfLines={1} selectable={selectable} ellipsizeMode="middle">
+        <Text style={[type.body, detail === undefined ? styles.value : null, { color: valueColor ?? t.secondary }]} numberOfLines={1} selectable={selectable} ellipsizeMode="middle">
           {value}
         </Text>
       )}

@@ -1,21 +1,27 @@
 // Approvals: every open one, oldest first (the one a tapped notification named on top), each a card to answer.
+// Pulling down reads them again.
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { FlatList, StyleSheet, View } from "react-native";
+import { FlatList, RefreshControl, StyleSheet, View } from "react-native";
 import { isNavi } from "../desktop";
 import { useHub, type ApprovalsParams } from "../hubContext";
 import { approvals } from "../lists";
 import { keyOf } from "../store";
-import { space } from "../theme";
+import { space, useTheme } from "../theme";
 import { Card } from "../ui/Card";
 import { SkeletonBlock } from "../ui/Skeleton";
 import { ConnectionLine, EmptyState } from "../ui/States";
+import { useAnimatedRows } from "../ui/motion";
 import { ApprovalCard } from "./ApprovalCard";
+import { useRefreshing } from "./refresh";
 
 export function Approvals({ route }: NativeStackScreenProps<ApprovalsParams, "Approvals">) {
+  const t = useTheme();
   const { state, session, pairAgain } = useHub();
+  const refreshing = useRefreshing(state.requests, state.hub.phase);
   const focus = route.params?.focus;
   const listed = approvals(state.requests);
   const open = [...listed.filter((r) => r.requestId === focus), ...listed.filter((r) => r.requestId !== focus)];
+  useAnimatedRows(open.map((r) => r.requestId).join(" "));
   const empty =
     state.requests === undefined && state.hub.phase === "live" ? (
       <View style={styles.cards}>
@@ -48,6 +54,7 @@ export function Approvals({ route }: NativeStackScreenProps<ApprovalsParams, "Ap
       keyExtractor={(r) => r.requestId}
       contentInsetAdjustmentBehavior="automatic"
       contentContainerStyle={[styles.cards, { paddingBottom: space.lg, flexGrow: 1 }]}
+      refreshControl={<RefreshControl refreshing={refreshing.on} onRefresh={() => refreshing.start(() => session.refresh())} tintColor={t.secondary} />}
       ListHeaderComponent={<ConnectionLine state={state.hub} onPairAgain={pairAgain} />}
       ListEmptyComponent={empty}
       renderItem={({ item }) => {

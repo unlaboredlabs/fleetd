@@ -106,6 +106,7 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
         scrollIndicatorInsets={{ top: 0, bottom: top }}
         onEndReached={() => void session.loadOlder(chatKey)}
         ListHeaderComponent={<View style={styles.bottomGap} />}
+        {...(loading ? {} : { ListEmptyComponent: <EmptyThread title={title} navi={project !== undefined && isNavi(project)} /> })}
         // The list is upside down: its footer is the top, under the translucent header.
         ListFooterComponent={
           <View style={{ paddingTop: top }}>
@@ -117,6 +118,18 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
       {chat.error === undefined ? null : <Text style={[type.footnote, styles.error, { color: t.danger }]}>{chat.error.message}</Text>}
       <Composer onSend={send} bottomInset={keyboardUp ? 0 : insets.bottom} />
     </KeyboardAvoidingView>
+  );
+}
+
+/** A chat with nothing in it yet: who it is, and that it starts here. The list turns it upright. */
+function EmptyThread({ title, navi }: { title: string; navi: boolean }) {
+  const t = useTheme();
+  return (
+    <View style={styles.emptyThread}>
+      <Avatar name={title} navi={navi} size={72} />
+      <Text style={[type.title3, { color: t.label }]}>{title}</Text>
+      <Text style={[type.subhead, styles.center, { color: t.secondary }]}>{navi ? "No messages yet. Ask it anything." : "No messages yet. Tell the lead what to work on."}</Text>
+    </View>
   );
 }
 
@@ -379,7 +392,9 @@ function TypingDots() {
 
 const styles = StyleSheet.create({
   fill: { flex: 1 },
-  list: { paddingHorizontal: space.md + 2 },
+  list: { paddingHorizontal: space.md + 2, flexGrow: 1 },
+  emptyThread: { flex: 1, alignItems: "center", justifyContent: "center", gap: space.sm, paddingHorizontal: space.xxl },
+  center: { textAlign: "center" },
   bottomGap: { height: space.sm },
   older: { paddingVertical: space.md },
   error: { paddingHorizontal: space.lg, paddingVertical: space.xs, textAlign: "center" },
