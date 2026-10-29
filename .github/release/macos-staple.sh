@@ -63,7 +63,7 @@ staple() {
   ditto -x -k "$work/$asset" "$work/app"
   local app="$work/app/fleetd.app"
   [ -d "$app" ] || die "$asset has no fleetd.app"
-  if xcrun stapler validate "$app" >/dev/null 2>&1; then
+  if "$here/macos-sign.sh" validate "$app"; then
     echo "the $TAG $asset is already stapled"
     spctl -a -vv -t exec "$app" 2>&1 || true
     return 0
@@ -107,8 +107,7 @@ for s in sorted(json.load(sys.stdin)["history"], key=lambda s: s["createdDate"],
   matched=1
   echo "stapling the ticket of submission $chosen onto $asset"
 
-  xcrun stapler staple "$app"
-  xcrun stapler validate "$app"
+  "$here/macos-sign.sh" staple "$app"
   local verdict
   verdict="$(spctl -a -vv -t exec "$app" 2>&1 || true)"
   echo "$verdict"

@@ -295,8 +295,8 @@ jobs:
           .github/release/macos-sign.sh notarize "$RUNNER_TEMP/fleetd-desktop-notarize.zip" || rc=$?
           if [ "$rc" = 3 ]; then exit 0; fi
           [ "$rc" = 0 ] || exit "$rc"
-          xcrun stapler staple dist/fleetd.app
-          xcrun stapler validate dist/fleetd.app
+          # Retries Apple's CloudKit lookup when it gets no answer; a missing or wrong ticket still fails.
+          .github/release/macos-sign.sh staple dist/fleetd.app
           echo "stapled=true" >> "$GITHUB_OUTPUT"
       - name: Gatekeeper
         if: steps.secrets.outputs.sign == 'true'
