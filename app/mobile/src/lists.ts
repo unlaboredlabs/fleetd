@@ -92,9 +92,9 @@ export interface ApprovalView {
   /** Marked on the card: it spends money, can't be undone, or uses a secret. */
   readonly risk: "money" | "irreversible" | "credential" | undefined;
   /**
-   * `more`: context shown under Details (where a command runs, its kind, a tool's raw input). Everything that decides
-   * the answer (what runs, who it reaches, as whom, what it says) is always on the card's face, in full: the card is
-   * what the person approves.
+   * `more`: context shown under Details (where a command runs, its kind, the raw input behind a preview). Everything
+   * that decides the answer (what runs, who it reaches, as whom, what it says) is always on the card's face, in full:
+   * the card is what the person approves.
    */
   readonly fields: ReadonlyArray<{ readonly label: string; readonly value: string; readonly mono?: boolean; readonly more?: boolean }>;
 }
@@ -136,7 +136,8 @@ export const approvalView = (r: HumanRequest, projectTitle: string | undefined):
   } else if (r.permission !== undefined) {
     wants = r.permission.site !== undefined ? `wants to visit ${r.permission.site}` : `wants to use ${r.permission.toolName}`;
     add("What", r.permission.summary, { mono: true });
-    if (r.permission.input !== undefined) add("Input", JSON.stringify(r.permission.input, null, 2), { mono: true, more: true });
+    // The summary is a first line or a path: the input is the rest of the command, or the file's content.
+    if (r.permission.input !== undefined) add("Input", JSON.stringify(r.permission.input, null, 2), { mono: true });
   } else if (r.previewConfig !== undefined) {
     wants = "proposes how Try it runs this project";
     add("Setting", JSON.stringify(r.previewConfig, null, 2), { mono: true });
