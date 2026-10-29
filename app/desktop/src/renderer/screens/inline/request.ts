@@ -1,6 +1,7 @@
 // What the two inline chat items say, as pure functions: where a secret lands and whether it can be sealed now, the
 // exact command an approval runs, and the one result line under it.
 import type { ChatItem, CommandApprovalItem, GatedClass, GatedRunSpec, HumanRequest, Machine, SecretRequestItem } from "../../../shared/contracts";
+import { shellWord } from "../../../shared/hidden";
 import type { HubError } from "../../../shared/hub";
 import { shortElapsed } from "../chat/format";
 import { answeredWords, previewNeedsConfirm, previewOutcome } from "./toolPreview";
@@ -76,8 +77,8 @@ export const secretTarget = (machines: Readonly<Record<string, Machine>>, item: 
 };
 
 /** argv as one line a person can read and paste, quoting only the arguments that need it. */
-export const shellLine = (argv: readonly string[]): string =>
-  argv.map((a) => (/^[\w@%+=:,./-]+$/u.test(a) ? a : `'${a.replace(/'/gu, `'\\''`)}'`)).join(" ");
+export const shellLine = (argv: readonly string[]): string => argv.map(shellWord).join(" ");
+export { shellWord };
 
 /** The secrets a command is started with, by name: the variable and the stored secret it comes from, never a value. */
 export const secretEnvLines = (gated: GatedRunSpec): string[] =>

@@ -158,3 +158,15 @@
   flex: 1 1 auto;
   min-width: 0;
 }
+/* A character that hides or reorders text, drawn as its mark (⟨U+202E⟩): machine text in the warning colour. */
+.hidden {
+  padding: 0 2px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  font-style: normal;
+  font-weight: 500;
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+  white-space: nowrap;
+}

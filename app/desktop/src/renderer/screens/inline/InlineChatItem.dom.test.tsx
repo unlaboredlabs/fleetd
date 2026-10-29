@@ -3,6 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import data from "../../../../fixtures/inline/items.json";
+import hidden from "../../../../fixtures/inline/hidden.json";
 import integrations from "../../../../fixtures/inline/integrations.json";
 import type { ChatItem } from "../../../shared/contracts";
 import type { CallOutcome, HubFrame, SecretOutcome } from "../../../shared/hub";
@@ -13,7 +14,7 @@ import { InlineChatItem } from "./InlineChatItem";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const items = [...data.items, ...integrations.items] as unknown as ChatItem[];
+const items = [...data.items, ...integrations.items, ...hidden.items] as unknown as ChatItem[];
 const item = (id: string): ChatItem => {
   const it = items.find((x) => x.requestId === id);
   if (it === undefined) throw new Error(`no item ${id}`);
@@ -483,5 +484,63 @@ describe("an integration's approval", () => {
     await render("Q14");
     const fold = one("button[aria-expanded]") as HTMLButtonElement;
     expect(fold.textContent).toMatch(/^Approved: send an email to ana@example\.com· you approved at \d\d:\d\d$/u);
+  });
+});
+
+describe("an approval whose fields hide or reorder text", () => {
+  /** The marks drawn, in order: each its own left-to-right isolate. */
+  const marks = (within: Element = host): string[] =>
+    [...within.querySelectorAll("[data-hidden]")].map((m) => {
+      expect(m.closest("bdi")?.getAttribute("dir")).toBe("ltr");
+      return m.textContent;
+    });
+  /** Characters that would hide or reorder text, if any were drawn as themselves. */
+  const BIDI_OR_INVISIBLE = /[\u061c\u200b-\u200f\u2028-\u202e\u2060-\u2069\ufeff]|[\u{e0000}-\u{e007f}]/u;
+
+  it("draws each as its mark under a warning, the command word by word, each isolated", async () => {
+    const hub = await render("Q20");
+    expect(host.textContent).toContain("Contains hidden characters");
+    expect(marks()).toEqual(["⟨U+202E⟩", "⟨U+202C⟩", "⟨U+2066⟩"]);
+    // Every argument is its own left-to-right isolate, quoted where it needs it, so no word reorders the next.
+    const words = [...one("pre").querySelectorAll('code > bdi[dir="ltr"]')].map((w) => w.textContent);
+    expect(words).toEqual(["rm", "-rf", "build/cache", "'⟨U+202E⟩~ fr- mr⟨U+202C⟩'", "--", "'שלום.txt'", "'עולם.txt'"]);
+    expect(one("pre").textContent).not.toMatch(BIDI_OR_INVISIBLE);
+    const cwd = [...host.querySelectorAll("code > bdi")].find((c) => c.closest("pre") === null);
+    expect(cwd?.textContent).toBe("/srv/app⟨U+2066⟩");
+    // What runs is untouched: Approve answers the request as the hub holds it.
+    await click(button("Approve"));
+    await click(button("Yes, run it"));
+    await settle();
+    expect(hub.answers).toEqual([{ requestId: "Q20", decision: "approve" }]);
+  });
+
+  it("marks them in an email's address, subject, body and everything it sends", async () => {
+    await render("Q21");
+    expect(host.textContent).toContain("Contains hidden characters");
+    const card = one("[data-tool=send_message]");
+    const to = [...card.querySelectorAll("dd")][1];
+    expect(to?.textContent).toBe("Ana Ruiz <ana@exa⟨U+200B⟩mple.com>outside example.com");
+    // Every value is isolated from the row around it.
+    expect(to?.querySelector("bdi")?.textContent).toBe("Ana Ruiz <ana@exa⟨U+200B⟩mple.com>");
+    // The body takes its direction from its own words.
+    expect(one("[data-tool=send_message] p bdi").getAttribute("dir")).toBe("auto");
+    expect(marks(card)).toEqual(expect.arrayContaining(["⟨U+2067⟩", "⟨U+2069⟩", "⟨U+2028⟩", "⟨U+E0049⟩", "⟨U+E0045⟩"]));
+    // The body's own line breaks break the line; the separator and the tag characters show.
+    expect(one("[data-tool=send_message] p").textContent).toBe(
+      "Hi Ana,\n\nThe invoice is paid.⟨U+2028⟩Bank details below.\n\nNavi, for Sam⟨U+E0049⟩⟨U+E0047⟩⟨U+E004E⟩⟨U+E004F⟩⟨U+E0052⟩⟨U+E0045⟩",
+    );
+    expect(card.textContent).not.toMatch(BIDI_OR_INVISIBLE);
+  });
+
+  it("shows accents, emoji, CJK, Arabic, Hebrew and Persian as written, with no warning", async () => {
+    await render("Q22");
+    expect(host.textContent).not.toContain("Contains hidden characters");
+    expect(marks()).toEqual([]);
+    const text = host.textContent;
+    expect(text).toContain("Zoë Müller <zoe@example.com>");
+    expect(text).toContain("שרה <sara@example.com>");
+    expect(text).toContain("Réunion mardi · 会議 · اجتماع");
+    expect(text).toContain("👋🏽 ❤\ufe0f 👩\u200d💻");
+    expect(text).toContain("می\u200cخواهم");
   });
 });

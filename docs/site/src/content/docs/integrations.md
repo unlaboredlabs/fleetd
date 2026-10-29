@@ -44,6 +44,9 @@ it is a summary the Navi wrote.
 | Body | The whole text that goes out or goes in, under a hairline. A long one folds, with **Show all** in place. |
 | Everything it sends | The tool's whole input as JSON, closed until you open it, so nothing is hidden behind the rows. A call too large to show whole is refused, never asked about. |
 
+A character that hides or reorders text shows as a mark such as ⟨U+200B⟩, under **Contains hidden characters**. See
+[Hidden characters](/docs/approvals-and-secrets#hidden).
+
 The buttons name the act: **Send it** and **Don't send**, **Share it**, **Delete it**, **Pay**. Either runs exactly that
 input, or tells the Navi no; <kbd>Enter</kbd> and <kbd>Esc</kbd> do the same. A delete or a spend asks once more in the
 card before it runs. Once answered, the card folds to what you decided: "Approved: send an email to ana@example.com and 2

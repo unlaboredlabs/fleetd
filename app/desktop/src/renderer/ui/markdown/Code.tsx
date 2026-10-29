@@ -50,10 +50,12 @@ export interface CodeProps {
   /** Hide the header (language, wrap and copy controls). */
   bare?: boolean;
   className?: string | undefined;
+  /** What the block shows in place of `code`'s lines, as an approval's exact command with its marks; Copy copies `code`. */
+  children?: ReactNode;
 }
 
 /** A block of machine text with syntax colours, a copy button and a wrap toggle; its right-click menu copies it too. */
-export const Code = memo(function Code({ code, lang, title, wrap: initialWrap = true, bare, className }: CodeProps) {
+export const Code = memo(function Code({ code, lang, title, wrap: initialWrap = true, bare, className, children }: CodeProps) {
   const grammar = resolveLang(lang);
   // Fences end in a newline; highlighting it would add an empty last line.
   const text = code.replace(/\n$/, "");
@@ -96,11 +98,12 @@ export const Code = memo(function Code({ code, lang, title, wrap: initialWrap = 
         )}
         <pre className={cx(s.pre, wrap ? s.wrap : s.nowrap)} data-text="code" tabIndex={wrap ? undefined : 0}>
           <code>
-            {lines.map((line, i) => (
-              <span key={i} className={s.line}>
-                {typeof line === "string" ? line : renderTokens(line)}
-              </span>
-            ))}
+            {children ??
+              lines.map((line, i) => (
+                <span key={i} className={s.line}>
+                  {typeof line === "string" ? line : renderTokens(line)}
+                </span>
+              ))}
           </code>
         </pre>
       </div>
