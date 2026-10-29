@@ -156,7 +156,7 @@ jobs:
           appex=build/Build/Products/Release-iphonesimulator/fleetd.app/PlugIns/FleetdNotifications.appex
           test -x "$appex/FleetdNotifications" || { echo "::error::the app has no Notification Service Extension"; exit 1; }
       - name: App Transport Security
-        # The built app's own Info.plist lets plain HTTP reach tailnet and local hubs, and nothing else.
+        # The built app's own Info.plist lets plain HTTP reach a hub at any address: arbitrary loads, nothing cancelling them.
         run: |
           plutil -convert json -o "$RUNNER_TEMP/Info.json" build/Build/Products/Release-iphonesimulator/fleetd.app/Info.plist
           node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/ats.ts "$RUNNER_TEMP/Info.json"
