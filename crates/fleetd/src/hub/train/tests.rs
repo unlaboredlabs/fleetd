@@ -184,8 +184,6 @@ struct FakeGh {
     required: Mutex<Option<Vec<String>>>,
     /// Workflow files (name, text) on main besides `ci`'s, where `ci` has none.
     workflow_files: Mutex<Vec<(&'static str, &'static str)>>,
-    /// The annotation messages of check runs by id; none for any other.
-    annotations: Mutex<HashMap<String, Vec<&'static str>>>,
 }
 
 fn ok(body: Value) -> GhOut {
@@ -640,16 +638,6 @@ impl FakeGh {
                 ),
                 stderr: String::new(),
             },
-            (["check-runs", id, "annotations"], "GET") => {
-                let notes = self.annotations.lock().unwrap().get(*id).cloned();
-                ok(json!(
-                    notes
-                        .unwrap_or_default()
-                        .iter()
-                        .map(|m| json!({ "message": m }))
-                        .collect::<Vec<_>>()
-                ))
-            }
             (["commits", sha, "check-runs"], _) => {
                 if let Some(look) = &*self.on_checks.lock().unwrap() {
                     look();
@@ -1455,7 +1443,6 @@ impl Kit {
             refuse_job_reruns: Mutex::default(),
             head_runs: Mutex::default(),
             workflow_files: Mutex::default(),
-            annotations: Mutex::default(),
             required: Mutex::default(),
         });
         let host = Arc::new(FakeHost {
@@ -5766,11 +5753,10 @@ async fn a_pr_left_out_of_a_batch_says_why() {
 }
 
 /// D204: CI that skips its macOS jobs on the batch PR (`!endsWith(github.head_ref, 'train/batch')`). A PR joins a batch
-/// only once its own head passed them, or skipped them for want of work: `desktop-macos` needs `macos scope`, whose run
-/// passed on that head and said "no work for desktop-macos". One still running, failed or not reported stays out and
-/// says which, and so does a skip whose scope was cancelled (the run cancelled before the check started), which the
-/// train re-runs. The batch
-/// never waits for them: they read skipped on its head, `rust (macos)` too, which main requires, and it merges on its
+/// only once its own head passed them, or skipped them: `desktop-macos` needs `macos scope`, whose run passed on that
+/// head, with or without its "no work for desktop-macos" notice (a re-run drops it). One still running, failed or not
+/// reported stays out and says which, and so does a skip whose scope was cancelled (the run cancelled before the check
+/// started), which the train re-runs. The batch never waits for them: they read skipped on its head, `rust (macos)` too, which main requires, and it merges on its
 /// first read.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_pr_joins_a_batch_only_once_its_own_head_passed_the_checks_the_batch_skips() {
@@ -5793,11 +5779,6 @@ async fn a_pr_joins_a_batch_only_once_its_own_head_passed_the_checks_the_batch_s
          needs: macos-scope\n    if: ${{ !cancelled() && !endsWith(github.head_ref, \"train/batch\") }}\n    \
          runs-on: macos-latest\n",
     ));
-    kit.gh
-        .annotations
-        .lock()
-        .unwrap()
-        .insert("40".into(), vec!["no work for desktop-macos"]);
     let own = |desktop: Option<Value>, scope: Option<Value>| {
         let mut runs = vec![
             run(1, "build", Some("success")),
@@ -5846,13 +5827,6 @@ async fn a_pr_joins_a_batch_only_once_its_own_head_passed_the_checks_the_batch_s
             Some(run(3, "desktop-macos", Some("skipped"))),
             scope(41, "cancelled"),
         ),
-        (
-            13,
-            "said",
-            "said.txt",
-            Some(run(3, "desktop-macos", Some("skipped"))),
-            scope(39, "success"),
-        ),
     ] {
         let change = kit
             .enqueue(kit.open_pr(n, branch, &[add(file, "x\n")]))
@@ -5879,13 +5853,11 @@ async fn a_pr_joins_a_batch_only_once_its_own_head_passed_the_checks_the_batch_s
         why(&prs[2]).as_deref(),
         Some("not in this batch: its own head's `desktop-macos` failed")
     );
-    // Never ran, or skipped by a scope that never said it had no work.
-    for pr in [&prs[3], &prs[6]] {
-        assert_eq!(
-            why(pr).as_deref(),
-            Some("not in this batch: its own head hasn't reported `desktop-macos` yet")
-        );
-    }
+    // Never ran.
+    assert_eq!(
+        why(&prs[3]).as_deref(),
+        Some("not in this batch: its own head hasn't reported `desktop-macos` yet")
+    );
     // Cancelled before it started: the train runs it again.
     assert_eq!(
         why(&prs[5]).as_deref(),
@@ -5895,9 +5867,8 @@ async fn a_pr_joins_a_batch_only_once_its_own_head_passed_the_checks_the_batch_s
 
 /// D204, W152: a PR the train merges alone waits for the checks a batch skips on its own head, as a PR joining a batch
 /// does. #780 merged with `ios sessions` still running on its head, and #788 with `desktop-macos` queued: alone, the
-/// train waited only for the fast set, which they aren't in. Running, queued or failed holds it; so does one its
-/// `macos scope` passed without saying "no work for" it, whether GitHub hasn't created its run yet or it read skipped.
-/// Passed, or skipped by a scope that said so, it merges.
+/// train waited only for the fast set, which they aren't in. Running, queued or failed holds it, and so does one
+/// GitHub hasn't created a run of yet. Passed, or skipped once its `macos scope` passed, it merges.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_pr_merged_alone_waits_for_its_own_heads_checks_the_batch_skips() {
     let queued = || {
@@ -5910,23 +5881,14 @@ async fn a_pr_merged_alone_waits_for_its_own_heads_checks_the_batch_skips() {
         "desktop-macos (failure)",
         "the check desktop-macos never reported",
     );
-    // Its run, the `macos scope` run (40 says "no work for desktop-macos"), and why it is held: None when it merges.
-    for (desktop, scope, held) in [
-        (Some(run(3, "desktop-macos", None)), 39, Some(running)),
-        (queued(), 39, Some(running)),
-        (
-            Some(run(3, "desktop-macos", Some("failure"))),
-            39,
-            Some(failed),
-        ),
-        (Some(run(3, "desktop-macos", Some("success"))), 39, None),
-        (Some(run(3, "desktop-macos", Some("skipped"))), 40, None),
-        (None, 39, Some(unreported)),
-        (
-            Some(run(3, "desktop-macos", Some("skipped"))),
-            39,
-            Some(unreported),
-        ),
+    // Its run, and why it is held: None when it merges.
+    for (desktop, held) in [
+        (Some(run(3, "desktop-macos", None)), Some(running)),
+        (queued(), Some(running)),
+        (Some(run(3, "desktop-macos", Some("failure"))), Some(failed)),
+        (Some(run(3, "desktop-macos", Some("success"))), None),
+        (Some(run(3, "desktop-macos", Some("skipped"))), None),
+        (None, Some(unreported)),
     ] {
         let kit = kit_on(&RepoCi {
             required: &["build"],
@@ -5939,17 +5901,12 @@ async fn a_pr_merged_alone_waits_for_its_own_heads_checks_the_batch_skips() {
              name: macos scope\n    runs-on: ubuntu-latest\n  desktop-macos:\n    needs: macos-scope\n    \
              if: ${{ !cancelled() && !endsWith(github.head_ref, 'train/batch') }}\n    runs-on: macos-latest\n",
         ));
-        kit.gh
-            .annotations
-            .lock()
-            .unwrap()
-            .insert("40".into(), vec!["no work for desktop-macos"]);
         let change = kit
             .enqueue(kit.open_pr(7, "a", &[add("a.txt", "x\n")]))
             .await;
         let mut runs = vec![
             run(1, "build", Some("success")),
-            run(scope, "macos scope", Some("success")),
+            run(39, "macos scope", Some("success")),
         ];
         runs.extend(desktop.clone());
         kit.gh
@@ -5961,14 +5918,53 @@ async fn a_pr_merged_alone_waits_for_its_own_heads_checks_the_batch_skips() {
         assert!(kit.train.step(REPO).await);
         let after = kit.get(&change.change_id);
         let Some(held) = held else {
-            assert_eq!(after.state, ChangeState::Merged, "{desktop:?} {scope}");
+            assert_eq!(after.state, ChangeState::Merged, "{desktop:?}");
             continue;
         };
-        assert!(merged_prs(&kit).is_empty(), "{desktop:?} {scope}");
-        assert_eq!(after.state, ChangeState::CiFailed, "{desktop:?} {scope}");
+        assert!(merged_prs(&kit).is_empty(), "{desktop:?}");
+        assert_eq!(after.state, ChangeState::CiFailed, "{desktop:?}");
         let why = after.last_error.unwrap_or_default();
-        assert!(why.contains(held), "{desktop:?} {scope}: {why}");
+        assert!(why.contains(held), "{desktop:?}: {why}");
     }
+}
+
+/// W183: #812 looped on CI timeouts. Its CI run was re-run, and GitHub carries a passed job into the new attempt
+/// without its annotations, so `macos scope` passed there with no notice while `desktop-macos` read skipped. The train
+/// waited for a "no work for" notice that never came, timed out ("never ran"), read the checks finished, put it back in
+/// the queue, and timed out again. A skip whose scope passed is done, as branch protection counts it: it merges on its
+/// first read.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_pr_merged_alone_merges_on_a_skip_its_scope_passed_without_a_notice() {
+    let kit = kit_on(&RepoCi {
+        required: &["build", "rust (macos)"],
+        fast: &[],
+        runs: || vec![run(1, "build", Some("success"))],
+    });
+    kit.gh.workflow_files.lock().unwrap().push((
+        "ci.yml",
+        "name: CI\non:\n  pull_request:\njobs:\n  build:\n    runs-on: ubuntu-latest\n  rust-macos:\n    \
+         name: rust (macos)\n    needs: macos-scope\n    if: ${{ !cancelled() && !endsWith(github.head_ref, 'train/batch') }}\n    \
+         runs-on: macos-latest\n  macos-scope:\n    name: macos scope\n    runs-on: ubuntu-latest\n  desktop-macos:\n    \
+         needs: macos-scope\n    if: ${{ !cancelled() && !endsWith(github.head_ref, 'train/batch') }}\n    \
+         runs-on: macos-latest\n",
+    ));
+    let change = kit
+        .enqueue(kit.open_pr(7, "a", &[add("a.txt", "x\n")]))
+        .await;
+    kit.gh.head_runs.lock().unwrap().insert(
+        kit.head_of("a"),
+        json!([
+            run(1, "build", Some("success")),
+            run(2, "rust (macos)", Some("success")),
+            run(39, "macos scope", Some("success")),
+            run(3, "desktop-macos", Some("skipped")),
+        ]),
+    );
+
+    assert!(kit.train.step(REPO).await);
+    let after = kit.get(&change.change_id);
+    assert_eq!(after.state, ChangeState::Merged, "{:?}", after.last_error);
+    assert_eq!(merged_prs(&kit).len(), 1);
 }
 
 /// D158, W152: Linux QA blocks merges. With its shards in the fast set, as fleetd's `.fleetd/train.json` lists them, a

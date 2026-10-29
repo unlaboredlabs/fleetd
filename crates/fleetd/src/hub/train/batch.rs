@@ -17,7 +17,7 @@ use super::github::{
     BATCH_MARKER, BranchMerge, CheckRun, CommitStatus, MergeOutcome, NEXT_LABEL, Pull, batch_heads,
 };
 use super::host::BoxFut;
-use super::next::{WAITING_ON, gated_name};
+use super::next::{WAITING_ON, gated_name, proven_runs};
 use super::records::DRAFT;
 use super::regen::{Conflict, REGENERATING};
 use super::service::{
@@ -543,7 +543,7 @@ impl Train {
         {
             return Some(why);
         }
-        let runs = self.proven_runs(repo, sha, runs, &workflows.batch).await;
+        let runs = proven_runs(runs, &workflows.batch);
         let batch = workflows.batch_names();
         let unrun = fast
             .as_ref()
