@@ -27,6 +27,9 @@
 //
 // Notifications use the platforms' own push, APNs and FCM, through `fleetd push-relay`, never Expo's push service
 // (docs/design/push.md). The iOS Notification Service Extension that opens them comes from plugins/notification-service.
+//
+// "fleetd" in iOS's share sheet, which sends text, links and images from other apps into a chat, is the Share
+// Extension from plugins/share-extension.
 import { relative, resolve } from "node:path";
 import type { ConfigContext, ExpoConfig } from "expo/config";
 
@@ -101,6 +104,9 @@ export default ({ projectRoot }: ConfigContext): ExpoConfig => ({
     ["expo-camera", { cameraPermission: "fleetd scans the QR code your hub shows, to pair this phone with it, and takes photos you send in a chat.", microphonePermission: false, recordAudioAndroid: false }],
     // Photos and files sent in a chat go to your hub (attachment_put). No microphone: no video with sound.
     ["expo-image-picker", { photosPermission: "fleetd sends the photos you pick to a chat on your hub.", cameraPermission: "fleetd takes photos you send in a chat.", microphonePermission: false }],
+    // The share extension before the notification one: plugins edit the Xcode project last to first, so the share
+    // extension's product joins the embedding phase the notification extension made.
+    "./plugins/share-extension",
     "./plugins/notification-service",
     "./plugins/android-signing",
   ],

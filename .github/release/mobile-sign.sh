@@ -10,6 +10,7 @@
 #   IOS_PROFILE_BASE64        base64 of an App Store provisioning profile for the app's bundle id
 #   IOS_EXTENSION_PROFILE_BASE64
 #                             base64 of one for the Notification Service Extension's: the app's plus ".notifications"
+#   IOS_SHARE_PROFILE_BASE64  base64 of one for the Share Extension's: the app's plus ".share"
 #   APPLE_TEAM_ID             the team's 10-character id
 #   ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8_BASE64
 #                             an App Store Connect API key (App Manager role): without it the signed .ipa is kept
@@ -20,11 +21,12 @@
 #                                         gradle then signs the APK and the app bundle with it, and only with it
 #                                         (plugins/android-signing.js)
 #   mobile-sign.sh android-verify <file>... prints the certificates that signed APKs and app bundles: one each
-#   mobile-sign.sh ios-enabled            prints true when the certificate, both profiles and team are set
+#   mobile-sign.sh ios-enabled            prints true when the certificate, the three profiles and team are set (else
+#                                         names the ones missing)
 #   mobile-sign.sh testflight-enabled     prints true when the App Store Connect key is set
 #   mobile-sign.sh ios-keychain           a temporary keychain with the identity and Apple's intermediates, and the
 #                                         profiles installed
-#   mobile-sign.sh ios-project            signs the app and extension targets manually (only them: the pods' bundles
+#   mobile-sign.sh ios-project            signs the app and extensions' targets manually (only them: the pods' bundles
 #                                         stay unsigned)
 #   mobile-sign.sh ios-export <archive> <out> upload|export
 #                                         an .ipa from the archive: sent to TestFlight, or written to <out>
@@ -35,6 +37,7 @@ keychain="$tmp/fleetd-mobile.keychain-db"
 p12="$tmp/fleetd-mobile.p12"
 profile="$tmp/fleetd-mobile.mobileprovision"
 extension_profile="$tmp/fleetd-mobile-extension.mobileprovision"
+share_profile="$tmp/fleetd-mobile-share.mobileprovision"
 p8="$tmp/fleetd-asc.p8"
 jks="$tmp/fleetd-mobile.jks"
 
@@ -116,10 +119,18 @@ android-verify)
   ;;
 
 ios-enabled)
-  if set_all IOS_CERT_P12_BASE64 IOS_CERT_PASSWORD IOS_PROFILE_BASE64 IOS_EXTENSION_PROFILE_BASE64 APPLE_TEAM_ID; then
+  ios_secrets="IOS_CERT_P12_BASE64 IOS_CERT_PASSWORD IOS_PROFILE_BASE64 IOS_EXTENSION_PROFILE_BASE64 IOS_SHARE_PROFILE_BASE64 APPLE_TEAM_ID"
+  # shellcheck disable=SC2086 # one name per word
+  if set_all $ios_secrets; then
     echo true
   else
-    echo "iOS signing secrets absent; no signed iOS build" >&2
+    missing="$(for v in $ios_secrets; do [ -n "${!v:-}" ] || printf '%s ' "$v"; done)"
+    # Some set and some not is a setup half done (a new extension's profile, say): say which, where it shows.
+    if [ "$(wc -w <<< "$missing")" -lt "$(wc -w <<< "$ios_secrets")" ]; then
+      echo "::warning::No signed iOS build: the secrets ${missing% } aren't set (docs: fleetd.sh/docs/mobile#ios)" >&2
+    else
+      echo "iOS signing secrets absent; no signed iOS build" >&2
+    fi
     echo false
   fi
   ;;
@@ -143,7 +154,8 @@ ios-keychain)
   ios_identity_check
   printf '%s' "$IOS_PROFILE_BASE64" | base64 --decode > "$profile"
   printf '%s' "$IOS_EXTENSION_PROFILE_BASE64" | base64 --decode > "$extension_profile"
-  for file in "$profile" "$extension_profile"; do
+  printf '%s' "$IOS_SHARE_PROFILE_BASE64" | base64 --decode > "$share_profile"
+  for file in "$profile" "$extension_profile" "$share_profile"; do
     uuid="$(profile_uuid "$file")"
     # Where Xcode 16 and later look, and where earlier ones did.
     for dir in "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles" "$HOME/Library/MobileDevice/Provisioning Profiles"; do
@@ -156,9 +168,10 @@ ios-keychain)
 ios-project)
   uuid="$(profile_uuid)"
   extension_uuid="$(profile_uuid "$extension_profile")"
-  TEAM="$APPLE_TEAM_ID" APP="$uuid" EXTENSION="$extension_uuid" ruby -rxcodeproj -e '
+  share_uuid="$(profile_uuid "$share_profile")"
+  TEAM="$APPLE_TEAM_ID" APP="$uuid" EXTENSION="$extension_uuid" SHARE="$share_uuid" ruby -rxcodeproj -e '
     project = Xcodeproj::Project.open(ARGV[0])
-    { "fleetd" => ENV["APP"], "FleetdNotifications" => ENV["EXTENSION"] }.each do |name, uuid|
+    { "fleetd" => ENV["APP"], "FleetdNotifications" => ENV["EXTENSION"], "FleetdShare" => ENV["SHARE"] }.each do |name, uuid|
       target = project.targets.find { |t| t.name == name } or abort "no #{name} target"
       target.build_configurations.each do |c|
         c.build_settings.merge!(
@@ -170,7 +183,7 @@ ios-project)
       end
     end
     project.save' "ios/fleetd.xcodeproj"
-  echo "The app target signs with profile $uuid, the extension with $extension_uuid"
+  echo "The app target signs with profile $uuid, the notification extension with $extension_uuid, the share extension with $share_uuid"
   ;;
 
 ios-export)
@@ -179,6 +192,7 @@ ios-export)
   destination="$4"
   uuid="$(profile_uuid)"
   extension_uuid="$(profile_uuid "$extension_profile")"
+  share_uuid="$(profile_uuid "$share_profile")"
   bundle="$(/usr/libexec/PlistBuddy -c 'Print :ApplicationProperties:CFBundleIdentifier' "$archive/Info.plist")"
   plist="$tmp/ExportOptions.plist"
   cat > "$plist" <<EOF
@@ -195,6 +209,7 @@ ios-export)
   <dict>
     <key>$bundle</key><string>$uuid</string>
     <key>$bundle.notifications</key><string>$extension_uuid</string>
+    <key>$bundle.share</key><string>$share_uuid</string>
   </dict>
 </dict>
 </plist>
@@ -211,7 +226,7 @@ EOF
 
 cleanup)
   security delete-keychain "$keychain" 2>/dev/null || true
-  rm -f "$p12" "$p8" "$jks" "$profile" "$extension_profile"
+  rm -f "$p12" "$p8" "$jks" "$profile" "$extension_profile" "$share_profile"
   ;;
 
 *)

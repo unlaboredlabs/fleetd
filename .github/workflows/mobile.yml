@@ -131,10 +131,10 @@ jobs:
           retention-days: 14
 
   ios:
-    # A Release build for the iOS simulator, its Notification Service Extension embedded, signed to run locally (no
-    # team: the keychain needs its entitlements even on a simulator), the JavaScript bundled in. A manual run with a
-    # Metro address builds Debug instead, which loads the JavaScript from there. First, the extension's crypto against
-    # the hub's sealed boxes. Only when app/mobile or this workflow changed (mobile scope); the merge train's batch
+    # A Release build for the iOS simulator, its Notification Service and Share extensions embedded, signed to run
+    # locally (no team: the keychain needs its entitlements even on a simulator), the JavaScript bundled in. A manual
+    # run with a Metro address builds Debug instead, which loads the JavaScript from there. First, the notification
+    # extension's crypto against the hub's sealed boxes, and the share extension's decisions. Only when app/mobile or this workflow changed (mobile scope); the merge train's batch
     # skips it, as ci.yml's macOS jobs, and each PR's own head runs it first.
     name: mobile (ios)
     needs: mobile-scope
@@ -160,6 +160,10 @@ jobs:
             plugins/notification-service/test/main.swift \
             -o "$RUNNER_TEMP/sealed-test"
           "$RUNNER_TEMP/sealed-test" src/push.fixture.json
+      - name: Share extension
+        run: |
+          swiftc -O plugins/share-extension/Shared.swift plugins/share-extension/test/main.swift -o "$RUNNER_TEMP/share-test"
+          "$RUNNER_TEMP/share-test"
       - run: npm ci --no-audit --no-fund
       # Installs the pods too.
       - run: npx expo prebuild --platform ios --clean
@@ -172,9 +176,12 @@ jobs:
           app=build/Build/Products/$CONFIGURATION-iphonesimulator/fleetd.app
           appex=$app/PlugIns/FleetdNotifications.appex
           test -x "$appex/FleetdNotifications" || { echo "::error::the app has no Notification Service Extension"; exit 1; }
+          share=$app/PlugIns/FleetdShare.appex
+          test -x "$share/FleetdShare" || { echo "::error::the app has no Share Extension"; exit 1; }
           # Signed to run locally, with its entitlements, which a simulator reads from the binary's __entitlements
-          # section: without the keychain group, secure storage fails there.
+          # section: without the keychain group, secure storage fails there, and the share extension finds no pairing.
           grep -aq keychain-access-groups "$app/fleetd" || { echo "::error::the app is built without its keychain group"; exit 1; }
+          grep -aq keychain-access-groups "$share/FleetdShare" || { echo "::error::the share extension is built without its keychain group"; exit 1; }
           # Where a Debug build finds Metro (React Native's RCTBundleURLProvider reads it), sealed in by signing again.
           if [ -n "$METRO" ]; then
             printf '%s\n' "$METRO" > "$app/ip.txt"
