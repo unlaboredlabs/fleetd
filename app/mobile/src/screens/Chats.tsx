@@ -135,7 +135,8 @@ const styles = StyleSheet.create({
   body: { flex: 1, alignSelf: "stretch", justifyContent: "center", gap: 2, paddingRight: space.lg, paddingVertical: 10 },
   top: { flexDirection: "row", alignItems: "baseline", gap: space.sm },
   title: { flex: 1 },
-  bottom: { flexDirection: "row", alignItems: "flex-start", gap: space.sm, minHeight: 20 },
+  // Two lines kept for every row, as Messages does, so rows keep one rhythm whatever their preview.
+  bottom: { flexDirection: "row", alignItems: "flex-start", gap: space.sm, minHeight: 40 },
   preview: { flex: 1 },
   separator: { position: "absolute", left: 0, right: 0, bottom: 0, height: StyleSheet.hairlineWidth },
 });

@@ -66,6 +66,8 @@ export default ({ projectRoot }: ConfigContext): ExpoConfig => ({
     : { enabled: false },
   ios: {
     bundleIdentifier: appId,
+    // iOS 18's appearances; every icon is rendered from fleetd's mark (site/icon.svg) by `npm run icons`.
+    icon: { light: "./assets/icon.png", dark: "./assets/icon-dark.png", tinted: "./assets/icon-tinted.png" },
     ...(build === undefined ? {} : { buildNumber: build }),
     supportsTablet: true,
     infoPlist: {
@@ -92,7 +94,9 @@ export default ({ projectRoot }: ConfigContext): ExpoConfig => ({
     "expo-secure-store",
     ["expo-build-properties", { android: { usesCleartextTraffic: true } }],
     // A signed build is a store's (TestFlight, the App Store), whose APNs is production; the relay picks the matching one.
-    ["expo-notifications", { mode: "production", icon: "./assets/android-icon-monochrome.png", color: "#1b1c1f", defaultChannel: "other" }],
+    ["expo-notifications", { mode: "production", icon: "./assets/notification-icon.png", color: "#6ea8fe", defaultChannel: "other" }],
+    // The mark on a plain ground, white or black as the phone is.
+    ["expo-splash-screen", { image: "./assets/splash-icon.png", imageWidth: 112, backgroundColor: "#ffffff", dark: { image: "./assets/splash-icon.png", backgroundColor: "#000000" } }],
     // Scans the hub's pairing QR code (D232); no recording, so no microphone.
     ["expo-camera", { cameraPermission: "fleetd scans the QR code your hub shows, to pair this phone with it.", microphonePermission: false, recordAudioAndroid: false }],
     "./plugins/notification-service",

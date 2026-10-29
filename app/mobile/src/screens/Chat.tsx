@@ -29,6 +29,8 @@ export const chatOptions = (t: Palette): NativeStackNavigationOptions => ({
   headerBackButtonDisplayMode: "minimal",
   headerTintColor: t.accent,
   headerTitleAlign: "center",
+  // A blurred bar over the thread, which scrolls under it: the list is upside down, so iOS's own edge effect can't
+  // find it.
   ...(Platform.OS === "ios" ? { headerTransparent: true, headerBlurEffect: "systemChromeMaterial" } : { headerStyle: { backgroundColor: t.bg } }),
 });
 
@@ -72,7 +74,9 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
 
   const title = project?.title ?? "Chat";
   const link = connectionWords(state.hub);
-  const status = link?.text ?? (working ? "Working…" : chatState?.needsYou === true ? "Waiting for you" : undefined);
+  // Always a line under the name, as Telegram's "online": the title never jumps when the lead starts or stops.
+  const quiet = project === undefined ? undefined : isNavi(project) ? "Navi" : `on ${project.machineId}`;
+  const status = link?.text ?? (working ? "Working…" : chatState?.needsYou === true ? "Waiting for you" : quiet);
   useEffect(() => {
     navigation.setOptions({
       headerTitle: () => <ChatTitle title={title} navi={project !== undefined && isNavi(project)} status={status} />,
@@ -121,7 +125,7 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   );
 }
 
-/** A chat with nothing in it yet: who it is, and that it starts here. The list turns it upright. */
+/** A chat with nothing in it yet: who it is, and that it starts here. Turned upright: the list is upside down. */
 function EmptyThread({ title, navi }: { title: string; navi: boolean }) {
   const t = useTheme();
   return (
@@ -274,7 +278,7 @@ function BubbleView({ bubble, tail, canAnswer, onAnswer }: { bubble: BubbleData;
     case "ask":
       return (
         <View style={styles.ask}>
-          <Bubble side="them" tail={tail && !canAnswer}>
+          <Bubble side="them" tail={tail}>
             <Markdown text={bubble.question} ink={t.label} />
           </Bubble>
           {canAnswer ? (
@@ -393,7 +397,7 @@ function TypingDots() {
 const styles = StyleSheet.create({
   fill: { flex: 1 },
   list: { paddingHorizontal: space.md + 2, flexGrow: 1 },
-  emptyThread: { flex: 1, alignItems: "center", justifyContent: "center", gap: space.sm, paddingHorizontal: space.xxl },
+  emptyThread: { flex: 1, alignItems: "center", justifyContent: "center", gap: space.sm, paddingHorizontal: space.xxl, transform: [{ scaleY: -1 }] },
   center: { textAlign: "center" },
   bottomGap: { height: space.sm },
   older: { paddingVertical: space.md },

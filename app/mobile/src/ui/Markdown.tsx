@@ -68,7 +68,8 @@ function BlockView({ block, ink, onAccent }: { block: Block; ink: string; onAcce
       return <View style={[styles.rule, { backgroundColor: onAccent ? "rgba(255,255,255,0.4)" : t.separator }]} />;
     case "table":
       return (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        // Not grown: a sideways ScrollView fills the height it's given, which in a bubble is far too much.
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.sideways}>
           <Grid header={block.header.map((c) => <Inlines nodes={c} ink={ink} onAccent={onAccent} />)} rows={block.rows.map((r) => r.map((c) => <Inlines nodes={c} ink={ink} onAccent={onAccent} />))} ink={ink} rule={onAccent ? "rgba(255,255,255,0.3)" : t.separator} />
         </ScrollView>
       );
@@ -153,7 +154,9 @@ const styles = StyleSheet.create({
   list: { gap: 2 },
   item: { flexDirection: "row", gap: 6 },
   marker: { minWidth: 14 },
-  itemText: { flex: 1 },
+  // Shrinks to fit, but keeps its width: the bubble sizes to its longest line, as iMessage's does.
+  itemText: { flexShrink: 1 },
+  sideways: { flexGrow: 0 },
   rule: { height: StyleSheet.hairlineWidth, marginVertical: space.xs },
   strong: { fontWeight: "600" },
   em: { fontStyle: "italic" },
