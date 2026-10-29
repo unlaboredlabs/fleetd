@@ -6,8 +6,9 @@ description: Chat with your Navis and projects and answer approvals from your ph
 The phone app connects to your [hub](/docs/glossary#hub) as the desktop app does, with its own key. It shows your
 [Navis](/docs/navi) and projects, with what needs you on top, their chats, live as the lead writes, and the
 [approvals](/docs/approvals-and-secrets) waiting on you, each with everything it would do. Its notifications show the
-full text, end-to-end encrypted. You can make, rename and delete Navis and projects from it, and an admin can update
-fleetd. Secrets, machines, people and the hub's other admin pages stay in the desktop app.
+full text, end-to-end encrypted. You can make, rename and delete Navis and projects from it, and on an iPhone
+[share](#share) text, links and images into a chat from any app. An admin can update fleetd. Secrets, machines, people
+and the hub's other admin pages stay in the desktop app.
 
 fleetd doesn't publish the app in Apple's or Google's stores yet. You build it from the repository on GitHub's
 runners: no Expo account and no EAS.
@@ -77,6 +78,25 @@ An admin sees **Update** in Settings when the hub has a newer fleetd ready, or a
 hub. It does what the desktop app's Update does: the hub updates itself, then every machine, and the app follows it
 live, machine by machine, to the outcome. A machine that failed or was put back gets **Retry**. Members don't see it,
 and the hub refuses them anyway.
+
+## Share to fleetd {#share}
+
+On an iPhone, **fleetd** is in the share sheet of Safari, Photos and any other app. It sends text, a link or up to 20
+images into a chat you pick, with a message of your own if you want one.
+
+1. Tap **Share**, then **fleetd**. The sheet shows what you're sharing, with **Add a message** under it.
+2. Pick a chat: your most recent ones are in a row on top, then every Navi and project, with **Search chats**.
+3. Tap **Send**. Images go up first, then the message with them, and the sheet closes once the hub has it.
+
+A link goes as its page title and address, after your message. Images the hub doesn't take as they are, such as HEIC
+photos, go as JPEG. Each file can be up to 25 MB, the hub's limit. Shared text longer than a message (100,000
+characters) goes as a text file. If the connection drops while sending, **Retry** sends the same message: never a second
+copy.
+
+The share sheet uses the app's own pairing. It reads the hub's address and the phone's key from the Keychain group the
+app shares with its extensions, and keeps no copy. If the phone isn't paired, or the hub refuses its key, the sheet
+says so and offers **Open fleetd**. If the hub can't be reached, it offers **Try Again** as well. Android doesn't have
+it yet.
 
 ## Notifications {#notifications}
 
@@ -160,16 +180,22 @@ gets no notifications.
 
 ### iOS and TestFlight {#ios}
 
-You need a paid Apple Developer account and two app ids: one for the bundle id you pick, with the Push Notifications
-and Time Sensitive Notifications capabilities, and one for its notification extension, the same id plus
-`.notifications`.
+You need a paid Apple Developer account and three app ids:
+
+- one for the bundle id you pick, with the Push Notifications and Time Sensitive Notifications capabilities
+- one for its notification extension, the same id plus `.notifications`
+- one for its share extension, the same id plus `.share`
+
+The extensions' app ids need no capabilities. Make an App Store distribution provisioning profile for each id, with
+your Apple Distribution certificate.
 
 | Secret | Value |
 |---|---|
 | `IOS_CERT_P12_BASE64` | `base64 < dist.p12` of an Apple Distribution certificate with its private key |
 | `IOS_CERT_PASSWORD` | The `.p12`'s export password |
 | `IOS_PROFILE_BASE64` | `base64 < fleetd.mobileprovision` of a distribution provisioning profile for the bundle id |
-| `IOS_EXTENSION_PROFILE_BASE64` | The same, for the extension's id (`<bundle id>.notifications`) |
+| `IOS_EXTENSION_PROFILE_BASE64` | The same, for the notification extension's id (`<bundle id>.notifications`) |
+| `IOS_SHARE_PROFILE_BASE64` | The same, for the share extension's id (`<bundle id>.share`) |
 | `APPLE_TEAM_ID` | Your team's 10-character id |
 | `ASC_KEY_ID`, `ASC_ISSUER_ID` | An Apple API key for TestFlight uploads (App Manager role): its id and issuer |
 | `ASC_KEY_P8_BASE64` | `base64 < AuthKey_XXXX.p8` of that key |
@@ -182,7 +208,8 @@ intermediate certificates itself; your Mac needs them only to show the certifica
 Set the repository variable `FLEETD_APP_ID` to your bundle id, such as `com.example.fleetd`: Apple ties a bundle id to
 one team, so you can't sign `sh.fleetd.app`. Tick **Send the iOS build to TestFlight** to upload it. Without the App
 Store Connect key, the signed `.ipa` is kept as the `fleetd-ios-release` artifact instead. Each run's number is the
-build number, which every upload must raise.
+build number, which every upload must raise. If only some of the iOS secrets are set, the run skips iOS and its
+**signing** job names the missing ones.
 
 ## Over-the-air updates {#updates}
 

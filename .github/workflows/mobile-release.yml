@@ -55,6 +55,7 @@ jobs:
           IOS_CERT_PASSWORD: ${{ secrets.IOS_CERT_PASSWORD }}
           IOS_PROFILE_BASE64: ${{ secrets.IOS_PROFILE_BASE64 }}
           IOS_EXTENSION_PROFILE_BASE64: ${{ secrets.IOS_EXTENSION_PROFILE_BASE64 }}
+          IOS_SHARE_PROFILE_BASE64: ${{ secrets.IOS_SHARE_PROFILE_BASE64 }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
@@ -182,6 +183,7 @@ jobs:
       IOS_CERT_PASSWORD: ${{ secrets.IOS_CERT_PASSWORD }}
       IOS_PROFILE_BASE64: ${{ secrets.IOS_PROFILE_BASE64 }}
       IOS_EXTENSION_PROFILE_BASE64: ${{ secrets.IOS_EXTENSION_PROFILE_BASE64 }}
+      IOS_SHARE_PROFILE_BASE64: ${{ secrets.IOS_SHARE_PROFILE_BASE64 }}
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
     steps:
       - uses: actions/checkout@v7
