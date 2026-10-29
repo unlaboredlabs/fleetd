@@ -120,7 +120,11 @@ The hub picks each notification's `category`, inside the sealed payload, so the 
   a Write's path, a script's first line, an MCP tool's description), an integration's send or change, a first visit
   to a site, a preview setting. A body cut to fit is no longer exact, so it gets Review too, and so does a command
   that could read differently on a lock screen than it runs (`shown_whole`): over 200 characters, or holding a control
-  character (`\r`, tab, escape), a line or paragraph separator, a bidi control or mark, or a zero-width character.
+  character (`\r`, tab, escape), a line or paragraph separator, a bidi control or mark, a zero-width character or
+  another invisible format character (interlinear annotation, deprecated format, shorthand and musical format
+  controls). The class is the one the apps' cards mark (`isHidden` in `app/desktop/src/shared/hidden.ts`), so hub,
+  notification and cards agree; only the hub also refuses an emoji's joiner or selector and a joiner inside a
+  Persian or Hindi word, which the cards show as written.
   The text shown beside it must hold none of those either (`plain`): the title, the lead's reason and the directory. A secret gets no button:
   it is entered in the app.
 - **Reply** (`reply`): a Navi's or a lead's message. The text goes into that chat with `chat_send`.
