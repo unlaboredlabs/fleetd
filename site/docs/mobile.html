@@ -198,7 +198,7 @@ and Time Sensitive Notifications capabilities, and one for its notification exte
 <tbody>
 <tr>
 <td><code dir="auto">IOS_CERT_P12_BASE64</code></td>
-<td><code dir="auto">base64 &lt; dist.p12</code> of an Apple Distribution certificate with its key</td>
+<td><code dir="auto">base64 &lt; dist.p12</code> of an Apple Distribution certificate with its private key</td>
 </tr>
 <tr>
 <td><code dir="auto">IOS_CERT_PASSWORD</code></td>
@@ -226,6 +226,10 @@ and Time Sensitive Notifications capabilities, and one for its notification exte
 </tr>
 </tbody>
 </table>
+<p>Export the <code dir="auto">.p12</code> from Keychain Access on the Mac that made the certificate’s signing request: under <strong>My
+Certificates</strong>, the Apple Distribution certificate with its private key under it. The build adds Apple’s WWDR
+intermediate certificates itself; your Mac needs them only to show the certificate as valid. A build that stops at
+<strong>Signing keychain</strong> says whether the <code dir="auto">.p12</code> lacked its private key or the certificate wasn’t valid.</p>
 <p>Set the repository variable <code dir="auto">FLEETD_APP_ID</code> to your bundle id, such as <code dir="auto">com.example.fleetd</code>: Apple ties a bundle id to
 one team, so you can’t sign <code dir="auto">sh.fleetd.app</code>. Tick <strong>Send the iOS build to TestFlight</strong> to upload it. Without the App
 Store Connect key, the signed <code dir="auto">.ipa</code> is kept as the <code dir="auto">fleetd-ios-release</code> artifact instead. Each run’s number is the
