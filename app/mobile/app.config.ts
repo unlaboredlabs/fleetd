@@ -1,7 +1,8 @@
 // The app's Expo config. Native projects are generated from it (`expo prebuild`) on each build, never kept in git.
 //
-// Hubs are often plain HTTP on a tailnet, at any address, so cleartext is allowed everywhere: ATS's arbitrary loads on
-// iOS, usesCleartextTraffic on Android. The key goes over that link as the desktop app's does.
+// Hubs are often plain HTTP on a tailnet, so cleartext is allowed: on Android everywhere (usesCleartextTraffic), on iOS
+// to tailnet and local hubs only (ATS below; scripts/ats.ts checks it). The key goes over that link as the desktop app's
+// does.
 //
 // Builds read these from the environment:
 // - FLEETD_APP_ID: the bundle id and Android package (default sh.fleetd.app). A self-built, signed app needs its own:
@@ -62,7 +63,17 @@ export default ({ projectRoot }: ConfigContext): ExpoConfig => ({
     ...(build === undefined ? {} : { buildNumber: build }),
     supportsTablet: true,
     infoPlist: {
-      NSAppTransportSecurity: { NSAllowsArbitraryLoads: true, NSAllowsLocalNetworking: true },
+      // Local networking: unqualified names (a tailnet's short MagicDNS names), .local and local addresses. Its presence
+      // makes iOS ignore NSAllowsArbitraryLoads, so tailnets get exceptions of their own: their *.ts.net names and their
+      // addresses, 100.64.0.0/10 and fd7a:115c:a1e0::/48 (iOS 17 takes addresses here; iOS 16 allows them anyway).
+      NSAppTransportSecurity: {
+        NSAllowsLocalNetworking: true,
+        NSExceptionDomains: {
+          "ts.net": { NSIncludesSubdomains: true, NSExceptionAllowsInsecureHTTPLoads: true },
+          "100.64.0.0/10": { NSExceptionAllowsInsecureHTTPLoads: true },
+          "fd7a:115c:a1e0::/48": { NSExceptionAllowsInsecureHTTPLoads: true },
+        },
+      },
       NSLocalNetworkUsageDescription: "fleetd connects to your hub on your network.",
       ITSAppUsesNonExemptEncryption: false,
     },

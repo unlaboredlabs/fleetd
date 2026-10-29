@@ -155,6 +155,11 @@ jobs:
             CODE_SIGNING_ALLOWED=NO build | tail -n 200
           appex=build/Build/Products/Release-iphonesimulator/fleetd.app/PlugIns/FleetdNotifications.appex
           test -x "$appex/FleetdNotifications" || { echo "::error::the app has no Notification Service Extension"; exit 1; }
+      - name: App Transport Security
+        # The built app's own Info.plist lets plain HTTP reach tailnet and local hubs, and nothing else.
+        run: |
+          plutil -convert json -o "$RUNNER_TEMP/Info.json" build/Build/Products/Release-iphonesimulator/fleetd.app/Info.plist
+          node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/ats.ts "$RUNNER_TEMP/Info.json"
       - name: Pack
         run: ditto -c -k --keepParent build/Build/Products/Release-iphonesimulator/fleetd.app "$RUNNER_TEMP/fleetd-ios-simulator.zip"
       - uses: actions/upload-artifact@v7
