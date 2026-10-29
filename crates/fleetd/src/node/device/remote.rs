@@ -1053,6 +1053,18 @@ impl Work {
         }
     }
 
+    /// A checked command held back unrun, with exit code 75 and `stderr`: the files sent for it go, as a run's do, so
+    /// the agent's node sends them again with the command and they never pile up past [`FILE_MAX`].
+    pub fn held_back(&self, stderr: &str) -> Ran {
+        let _ = std::fs::remove_dir_all(self.dir.join("in"));
+        Ran {
+            stdout: String::new(),
+            stderr: stderr.to_owned(),
+            exit_code: 75,
+            files: Vec::new(),
+        }
+    }
+
     /// A command's output, cut short, with this folder's own path left out: the files in it go by their names alone.
     fn text(&self, bytes: &[u8]) -> String {
         let mut text = String::from_utf8_lossy(&bytes[..bytes.len().min(OUTPUT_MAX)]).into_owned();

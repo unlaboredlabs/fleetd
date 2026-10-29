@@ -237,6 +237,23 @@ fn fake_agent_device(dir: &Path) -> PathBuf {
     program
 }
 
+#[test]
+fn a_command_held_back_drops_its_files_so_they_never_pile_up() {
+    let dir = tempfile::tempdir().unwrap();
+    let work = Work::at(dir.path(), "H0123456789abcdef0123456789abcdef");
+    let piece = B64.encode(vec![7u8; PIECE]);
+    // An install sent again every few seconds while the screen's runner starts: more than FILE_MAX in all.
+    for _ in 0..(FILE_MAX / PIECE as u64 + 2) {
+        work.put("1-app.zip", 0, &piece).unwrap();
+        let held = work.held_back(RUNNER_STARTING);
+        assert_eq!(
+            (held.exit_code, held.stderr.as_str()),
+            (75, RUNNER_STARTING)
+        );
+        assert!(!work.dir().join("in").exists(), "its files go");
+    }
+}
+
 #[tokio::test]
 async fn a_file_goes_in_and_a_file_comes_back_on_the_screens_node() {
     let dir = tempfile::tempdir().unwrap();

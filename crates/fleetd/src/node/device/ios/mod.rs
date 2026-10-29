@@ -726,13 +726,7 @@ impl Simulators {
         if session.runner_starting() {
             session.touch();
             return Ok(BrowserCallResult::Device(
-                remote::Ran {
-                    stdout: String::new(),
-                    stderr: remote::RUNNER_STARTING.to_owned(),
-                    exit_code: 75,
-                    files: Vec::new(),
-                }
-                .done(),
+                work.held_back(remote::RUNNER_STARTING).done(),
             ));
         }
         let program = wrapper::bin_dir(&self.home).join("agent-device");
