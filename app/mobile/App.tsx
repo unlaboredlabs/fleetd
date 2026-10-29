@@ -1,7 +1,7 @@
 // The app: pair with a hub once, then its chats and approvals. The paired hub lives in secure storage (vault.ts);
 // one Session talks to it while the app runs, and dials again whenever the app comes back to the front. Pairing makes
 // the phone's notification key; Disconnect signs the phone out on the hub, after a confirm, and forgets both. A pairing
-// link (`fleetd://pair?…`, from a QR code scanned with iOS's Camera) opens the app and pairs it in one step.
+// link (`fleetd://pair?…`, from a QR code scanned with iOS's Camera) opens the app and, once confirmed, pairs it.
 //
 // Navigation is iOS's own (react-native-screens): UIKit's tab bar for Chats, Approvals and Settings (a drawn one on
 // Android), each a stack with a large title that collapses on scroll, and a chat pushed over them, which a swipe from
@@ -17,7 +17,7 @@ import { ActionSheetIOS, Alert, AppState, Linking, Platform, StyleSheet, View } 
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { webSocketTransport } from "./src/hub/socket";
 import type { Paired } from "./src/hub/pair";
-import { parsePairLink } from "./src/hub/pairLink";
+import { pairLinkStep } from "./src/hub/pairLink";
 import { HubContext, useHub, type ApprovalsParams, type HubContextValue, type PairParams, type RootParams, type TabParams } from "./src/hubContext";
 import { approvals } from "./src/lists";
 import { pushDeps, useTappedRoute } from "./src/notifications";
@@ -64,26 +64,33 @@ export default function App() {
     void Promise.all([forgetPaired(), forgetPush()]).then(() => setPaired(null));
   }, []);
   const theme = useMemo(() => navigationTheme(t), [t]);
-  // A pairing link: pairs a phone that isn't, once the pairing screens are up; a paired one says how to switch hubs.
+  // A pairing link from outside the app (iOS's Camera, a page, a message): a phone that isn't paired asks first, once
+  // the pairing screens are up, as anyone can send one; a paired one says how to switch hubs.
   const [link, handled] = useOpenedLink();
   // Bumped each time the pairing screens come up: a link that came first goes on then.
   const [pairShown, setPairShown] = useState(0);
   useEffect(() => {
     if (link === null || paired === undefined) return;
-    const parsed = parsePairLink(link);
-    if (parsed === null) return handled();
-    if (paired !== null) {
-      Alert.alert(`Connected to ${paired.hubName}`, "To pair with another hub, disconnect under Settings first, then scan its code again.");
+    const step = pairLinkStep(link, "outside", paired?.hubName ?? null);
+    if (step.t === "ignore") return handled();
+    if (step.t === "paired") {
+      Alert.alert(step.title, step.message);
       return handled();
     }
-    if (!parsed.ok) {
+    if (step.t === "refuse") {
       haptics.warning();
-      Alert.alert(parsed.failure.message, parsed.failure.fix?.replace(/`/gu, ""));
+      Alert.alert(step.failure.message, step.failure.fix?.replace(/`/gu, ""));
       return handled();
     }
+    // From outside, a good link always asks first.
+    if (step.t !== "confirm") return handled();
     if (!pairNav.isReady()) return;
-    pairNav.navigate("Pair", { hub: parsed.hub, code: parsed.code, auto: true });
     handled();
+    const { hub, code } = step;
+    Alert.alert(step.title, step.message, [
+      { text: "Cancel", style: "cancel" },
+      { text: "Connect", onPress: () => pairNav.navigate("Pair", { hub, code, auto: true }) },
+    ]);
   }, [link, paired, pairShown, handled]);
   // Behind every screen, as during a push or a keyboard's slide: the scheme's ground, not the build's one color.
   useEffect(() => {

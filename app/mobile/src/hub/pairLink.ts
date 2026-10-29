@@ -35,3 +35,31 @@ export const parsePairLink = (text: string): PairLink | null => {
   if (normal === null) return bad("This pairing QR code's code isn't a pairing code.");
   return { ok: true, hub: origin.origin, code: normal };
 };
+
+/** What a pairing link does, by where it came from. */
+export type LinkStep =
+  /** Not a pairing link: nothing to do (the scanner says it isn't one). */
+  | { readonly t: "ignore" }
+  /** A broken one: why. */
+  | { readonly t: "refuse"; readonly failure: PairFailure }
+  /** This phone is paired already: how to switch hubs. */
+  | { readonly t: "paired"; readonly title: string; readonly message: string }
+  /** From outside the app (iOS's Camera, a page, a message): ask before pairing with a hub someone else may run. */
+  | { readonly t: "confirm"; readonly hub: string; readonly code: string; readonly title: string; readonly message: string }
+  /** From the app's own scanner, which the person opened to pair: pair now. */
+  | { readonly t: "pair"; readonly hub: string; readonly code: string };
+
+export const pairLinkStep = (text: string, from: "outside" | "scanner", pairedWith: string | null): LinkStep => {
+  const link = parsePairLink(text);
+  if (link === null) return { t: "ignore" };
+  if (pairedWith !== null) return { t: "paired", title: `Connected to ${pairedWith}`, message: "To pair with another hub, disconnect under Settings first, then scan its code again." };
+  if (!link.ok) return { t: "refuse", failure: link.failure };
+  if (from === "scanner") return { t: "pair", hub: link.hub, code: link.code };
+  return {
+    t: "confirm",
+    hub: link.hub,
+    code: link.code,
+    title: `Connect to ${link.hub.replace(/^https?:\/\//u, "")}?`,
+    message: `This phone pairs with the hub at ${link.hub}, which then sees it and sends it notifications. Connect only to a hub you or your team run.`,
+  };
+};

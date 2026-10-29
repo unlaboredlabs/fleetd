@@ -15,7 +15,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { normalizeCode, type PairFailure } from "../desktop";
 import type { PairParams } from "../hubContext";
 import { pair, type Paired } from "../hub/pair";
-import { parsePairLink } from "../hub/pairLink";
+import { pairLinkStep, parsePairLink } from "../hub/pairLink";
 import { mono, space, TOUCH, type, useTheme } from "../theme";
 import { Button } from "../ui/Button";
 import { haptics } from "../ui/haptics";
@@ -80,16 +80,17 @@ export function Scan({ navigation }: NativeStackScreenProps<PairParams, "Scan">)
     const now = Date.now();
     if (done.current || (seen.current?.data === data && now - seen.current.at < 2500)) return;
     seen.current = { data, at: now };
-    const link = parsePairLink(data);
-    if (link?.ok !== true) {
+    // The person opened the scanner to pair: a good code pairs at once (a link from outside asks first, App.tsx).
+    const step = pairLinkStep(data, "scanner", null);
+    if (step.t !== "pair") {
       haptics.warning();
-      setProblem(link === null ? "That isn't a fleetd pairing code." : link.failure.message);
+      setProblem(step.t === "refuse" ? step.failure.message : "That isn't a fleetd pairing code.");
       return;
     }
     done.current = true;
     haptics.success();
     navigation.goBack();
-    navigation.navigate("Pair", { hub: link.hub, code: link.code, auto: true });
+    navigation.navigate("Pair", { hub: step.hub, code: step.code, auto: true });
   };
 
   const denied = permission !== null && !permission.granted && !permission.canAskAgain;

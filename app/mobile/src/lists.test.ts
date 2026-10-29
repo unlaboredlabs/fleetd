@@ -108,7 +108,7 @@ describe("approvals", () => {
       wants: "wants to run a command",
       risk: "irreversible",
       fields: [
-        { label: "Why", value: "Ship the checkout fix" },
+        { label: "Why", value: "Ship the checkout fix", prose: true },
         { label: "Command", value: "vercel deploy --prod", mono: true },
         { label: "In", value: "/home/devbox/shop", mono: true, more: true },
         { label: "Kind", value: "irreversible", more: true },
@@ -152,5 +152,24 @@ describe("approvals", () => {
       ["Input", '{"to":["a@example.com"]}'],
       ["Asked", "Deploy the fix"],
     ]);
+  });
+
+  it("keeps what an email says exactly as it goes out, backticks too; only the asker's why draws code", () => {
+    const body = "Run `npm ci` first, then ``` the rest.";
+    const r: HumanRequest = {
+      ...asked("r1"),
+      permission: {
+        requestId: "p1",
+        threadId: "t1",
+        toolName: "mcp__gmail__send",
+        summary: "Send an email",
+        preview: { title: "Send an email", to: ["`a`@example.com"], subject: "The `deploy` step", body, input: "{}", integration: "google", server: "gmail", tool: "send", action: "send" },
+      },
+    };
+    const fields = approvalView(r, "Ada").fields;
+    expect(fields.find((f) => f.label === "Body")).toEqual({ label: "Body", value: body });
+    expect(fields.find((f) => f.label === "Subject")).toEqual({ label: "Subject", value: "The `deploy` step" });
+    expect(fields.some((f) => f.prose === true)).toBe(false);
+    expect(approvalView(gated("r2"), "storefront").fields.filter((f) => f.prose === true).map((f) => f.label)).toEqual(["Why"]);
   });
 });

@@ -71,7 +71,7 @@ export function ApprovalCard({
             <View key={f.label} style={styles.field}>
               <Text style={[type.footnote, { color: t.secondary }]}>{f.label}</Text>
               <Text style={[f.mono === true ? styles.mono : type.subhead, { color: t.label }]} selectable>
-                {f.mono === true ? f.value : <WithCode text={f.value} />}
+                {f.prose === true ? <WithCode text={f.value} /> : f.value}
               </Text>
             </View>
           ))}
@@ -125,7 +125,7 @@ export function ApprovalCard({
   );
 }
 
-/** Text with its `code` spans drawn in monospace: every word as the asker wrote it, only the backticks drawn as code. */
+/** The asker's own words (why) with their `code` spans drawn in monospace. Never for what goes out: that shows as is. */
 function WithCode({ text }: { text: string }) {
   const parts = text.split(/(`[^`\n]+`)/u);
   return (
