@@ -50,7 +50,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "project_remove",
-        "Stop the project's agent processes and forget it. Its files, branches and worktrees stay on the machine; project_add brings it back. removeWorktrees also force-removes the fleetd worktrees its agents worked in (uncommitted changes in them are lost), once its agents have stopped; its checkout and every branch stay as they are.",
+        "Stop the project's agent processes and forget it, with the checkouts of its repos that no other project holds. Its files, branches and worktrees stay on the machine; project_add brings it back. removeWorktrees also force-removes the fleetd worktrees its agents worked in (uncommitted changes in them are lost), once its agents have stopped; its checkout and every branch stay as they are.",
     ),
     (
         "project_repo_add",

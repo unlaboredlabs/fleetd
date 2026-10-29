@@ -1,6 +1,7 @@
 //! A project's repos over a real hub and a fake node (W79): a repo added by path and by clone, a project of its own
 //! attached and archived, the list, attached checkouts left out of the projects list, the project's environment, MCP
-//! servers and skills reaching every checkout, and a removal that ends only that repo's tasks.
+//! servers and skills reaching every checkout, a removal that ends only that repo's tasks, and a deleted project's
+//! repos going with it.
 use std::sync::Arc;
 
 use fleetd_contracts::auth::KeyKind;
@@ -9,6 +10,7 @@ use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef};
 use fleetd_contracts::node_link::{
     CAP_PROJECT_ENV_COPY, CAP_PROJECT_SETTINGS, CAP_REPOS, HubToNode, NodeToHub,
 };
+use fleetd_contracts::repos::RepoName;
 use fleetd_contracts::sessions::SessionCall;
 use fleetd_contracts::tasks::{Task, TaskState};
 use serde_json::{Value, json};
@@ -55,7 +57,7 @@ fn hub() -> (Arc<Hub>, tempfile::TempDir) {
 
 /// Links a node holding `app` (a plain folder at /work/app) and `shop` (a project of its own at /work/shop), with git
 /// checkouts at /work/api and /work/shop and nothing at /work/web. It answers as a node of this version would: a
-/// clone makes /work/web, a new project shows in its machine stream before the call answers. Each call goes to the
+/// clone makes /work/web, a new or removed project shows in its machine stream before the call answers. Each call goes to the
 /// test.
 async fn node(hub: &Arc<Hub>) -> mpsc::UnboundedReceiver<SessionCall> {
     let (tx, mut rx) = mpsc::unbounded_channel();
@@ -132,6 +134,16 @@ async fn node(hub: &Arc<Hub>) -> mpsc::UnboundedReceiver<SessionCall> {
                 }
                 SessionCall::ProjectEnv { .. } => {
                     json!({ "ok": { "kind": "project_env", "secrets": [] } })
+                }
+                SessionCall::ProjectRemove { project_id, .. } => {
+                    seq += 1;
+                    let event = json!({ "t": "machine_event", "seq": seq, "at": AT, "event": {
+                        "type": "project_removed", "projectId": project_id } });
+                    hub.executors.handle_frame(
+                        &devbox(),
+                        serde_json::from_value::<NodeToHub>(event).unwrap(),
+                    );
+                    json!({ "ok": { "kind": "done" } })
                 }
                 _ => json!({ "ok": { "kind": "done" } }),
             };
@@ -700,4 +712,100 @@ async fn the_projects_env_mcp_servers_and_skills_reach_every_checkout() {
         .skill_bundles(&devbox(), &ProjectId::unchecked(&checkout));
     assert_eq!(bundles.len(), 1);
     assert!(bundles[0].files[0].text.contains("the project's"));
+}
+
+/// The projects the node was asked to remove, each with `removeWorktrees`.
+fn removed(calls: &mut mpsc::UnboundedReceiver<SessionCall>) -> Vec<(String, bool)> {
+    drain(calls)
+        .into_iter()
+        .filter_map(|c| match c {
+            SessionCall::ProjectRemove {
+                project_id,
+                remove_worktrees,
+            } => Some((project_id.to_string(), remove_worktrees)),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Deleting a project with several repos removes their checkouts from the node with it, the way the project itself
+/// goes: none shows as a project of its own afterwards, the one archived when it was added included.
+#[tokio::test]
+async fn removing_a_project_removes_the_checkouts_of_its_repos() {
+    let (hub, _home) = hub();
+    let mut calls = node(&hub).await;
+    for path in ["/work/api", "/work/shop"] {
+        call(
+            &hub,
+            "project_repo_add",
+            json!({ "machineId": "devbox", "projectId": "app", "path": path }),
+        )
+        .await
+        .unwrap();
+    }
+    let api = hub
+        .repos
+        .repo_by_name(&project("app"), &RepoName::new("api").unwrap())
+        .unwrap()
+        .unwrap()
+        .checkout
+        .project_id
+        .to_string();
+    assert_eq!(names(&hub, "app").await, ["api", "shop"]);
+    assert_eq!(shown(&hub), ["app"]);
+    drain(&mut calls);
+
+    call(
+        &hub,
+        "project_remove",
+        json!({ "machineId": "devbox", "projectId": "app", "removeWorktrees": true }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(shown(&hub), Vec::<String>::new());
+    assert!(hub.store.projects_list(None, None).unwrap().is_empty());
+    assert_eq!(
+        removed(&mut calls),
+        [("app".into(), true), (api, true), ("shop".into(), true)]
+    );
+}
+
+/// A project with no repo but its own goes alone, as before; a checkout another project also holds stays with it.
+#[tokio::test]
+async fn removing_a_project_leaves_a_checkout_another_project_holds() {
+    let (hub, _home) = hub();
+    let mut calls = node(&hub).await;
+    for project_id in ["shop", "app"] {
+        call(
+            &hub,
+            "project_repo_add",
+            json!({ "machineId": "devbox", "projectId": project_id, "path": "/work/api" }),
+        )
+        .await
+        .unwrap();
+    }
+    drain(&mut calls);
+
+    call(
+        &hub,
+        "project_remove",
+        json!({ "machineId": "devbox", "projectId": "app" }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(removed(&mut calls), [("app".into(), false)]);
+    assert_eq!(shown(&hub), ["shop"]);
+    assert_eq!(names(&hub, "shop").await, ["api"]);
+
+    let (hub, _home) = self::hub();
+    let mut calls = node(&hub).await;
+    call(
+        &hub,
+        "project_remove",
+        json!({ "machineId": "devbox", "projectId": "shop" }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(removed(&mut calls), [("shop".into(), false)]);
+    assert_eq!(shown(&hub), ["app"]);
 }
