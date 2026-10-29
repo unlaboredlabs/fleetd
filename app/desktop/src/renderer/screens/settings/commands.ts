@@ -69,6 +69,14 @@ const pages: Command[] = [
     run: () => go(tabHref("your-memory")),
   },
   {
+    id: "go:settings.devices",
+    title: "Your devices",
+    detail: "The devices signed in as you, and Pair a phone",
+    group: "settings",
+    keywords: ["phone", "pair", "qr", "mobile", "devices"],
+    run: () => go(tabHref("devices")),
+  },
+  {
     id: "go:settings.hubs",
     title: "Hubs",
     detail: "The hubs this app is paired with, and their links",

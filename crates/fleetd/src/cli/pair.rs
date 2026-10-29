@@ -13,10 +13,11 @@ use crate::hub::pair::{self as hub_pair, PairCodes};
 use crate::hub::store::HubDb;
 use fleetd_contracts::auth::Role;
 
-pub const PAIR_USAGE: &str = r#"  pair [--name <device>] [--role <read|operate|admin>] [--home <dir>]
-             print a one-time code (15 min) that pairs the desktop app with this hub;
-             the app on this machine pairs by itself. The device gets --role (default admin,
-             which changes the hub's settings) on every machine
+pub const PAIR_USAGE: &str = r#"  pair [--name <device>] [--role <read|operate|admin>] [--no-qr] [--home <dir>]
+             print a one-time code (15 min) that pairs the fleetd app with this hub, and a QR
+             of its link for the phone app to scan (--no-qr leaves it out); the desktop app
+             on this machine pairs by itself. The device gets --role (default admin, which
+             changes the hub's settings) on every machine
   pair --worker <machine-id> [--home <dir>]
              print the one command that makes another machine a worker of this hub, with
              a one-time code (15 min): for a machine the hub can't reach over SSH
@@ -186,18 +187,56 @@ pub fn hub_urls(
     urls
 }
 
-fn rank_url(url: &str) -> u8 {
+/// `url`'s host, without its port or IPv6 brackets.
+fn url_host(url: &str) -> &str {
     let host = url
         .split_once("://")
         .map_or(url, |(_, rest)| rest)
-        .split('/')
+        .split(['/', '?', '#'])
         .next()
         .unwrap_or_default();
+    let host = host.rsplit_once('@').map_or(host, |(_, h)| h);
     let host = match host.rsplit_once(':') {
         Some((h, port)) if port.bytes().all(|b| b.is_ascii_digit()) => h,
         _ => host,
     };
-    let host = host.trim_matches(['[', ']']);
+    host.trim_matches(['[', ']'])
+}
+
+/// The first of `urls` a phone can reach: none on this machine's loopback (127.0.0.1, ::1, localhost) or at the
+/// every-interface 0.0.0.0, which reach nothing from another device.
+pub fn phone_url<'a>(urls: impl IntoIterator<Item = &'a str>) -> Option<&'a str> {
+    urls.into_iter().map(str::trim).find(|url| {
+        let host = url_host(url).to_ascii_lowercase();
+        !host.is_empty()
+            && match host.parse::<IpAddr>() {
+                Ok(ip) => !ip.is_loopback() && !ip.is_unspecified(),
+                Err(_) => host != "localhost" && !host.ends_with(".localhost"),
+            }
+    })
+}
+
+/// What to do when the hub has no address a phone can reach.
+pub fn loopback_only_fix() -> &'static str {
+    "Give the hub an address your phone reaches, its tailnet or LAN address: run `fleetd init` again on the hub and \
+     pick it (Settings › Hub › Setup › Where the hub listens says how), then pair the phone again."
+}
+
+/// `text` as a QR in Unicode half-blocks, two rows of modules a line, with its quiet zone. Light modules are drawn,
+/// so it reads on a dark terminal as dark-on-light.
+pub fn terminal_qr(text: &str) -> Option<String> {
+    use qrcode::render::unicode::Dense1x2;
+    let code = qrcode::QrCode::with_error_correction_level(text, qrcode::EcLevel::L).ok()?;
+    Some(
+        code.render::<Dense1x2>()
+            .dark_color(Dense1x2::Light)
+            .light_color(Dense1x2::Dark)
+            .build(),
+    )
+}
+
+fn rank_url(url: &str) -> u8 {
+    let host = url_host(url);
     match host.parse::<IpAddr>() {
         Ok(ip) => rank_ip(ip),
         Err(_) if host.ends_with(".ts.net") => 0,
@@ -263,6 +302,7 @@ pub fn pair_command(argv: &[String]) -> CliResult {
             options: &[
                 ("home", Kind::Str),
                 ("name", Kind::Str),
+                ("no-qr", Kind::Bool),
                 ("role", Kind::Str),
                 ("worker", Kind::Str),
             ],
@@ -273,8 +313,8 @@ pub fn pair_command(argv: &[String]) -> CliResult {
         Err(message) => return usage(&message),
     };
     if let Some(machine) = v.str("worker") {
-        if v.has("role") {
-            return usage("--worker joins a machine and takes no --role");
+        if v.has("role") || v.flag("no-qr") {
+            return usage("--worker joins a machine and takes no --role or --no-qr");
         }
         return match worker_command(v.str("home"), machine) {
             Ok(text) => CliResult {
@@ -295,7 +335,7 @@ pub fn pair_command(argv: &[String]) -> CliResult {
     match mint(v.str("home"), v.str("name"), role) {
         Ok(minted) => CliResult {
             code: 0,
-            stdout: describe(&minted),
+            stdout: describe(&minted, !v.flag("no-qr")),
             stderr: String::new(),
         },
         Err(message) => CliResult::err(1, format!("fleetd: {message}\n")),
@@ -374,8 +414,13 @@ pub fn join_line(hub: &str, code: &str, machine: &str, identity: Option<&str>) -
     line
 }
 
-fn describe(minted: &Minted) -> String {
-    let mut out = format!(
+/// What `fleetd pair` prints: with `qr`, the link a phone can open as a QR above the code, or why there is none.
+fn describe(minted: &Minted, qr: bool) -> String {
+    let mut out = String::new();
+    if qr {
+        out += &phone_qr(minted);
+    }
+    out += &format!(
         "Pairing code: {}  (single use, valid until {})\nGrants:       {} on every machine\nHub address:  {}\n",
         minted.code,
         minted.expires_at,
@@ -386,10 +431,26 @@ fn describe(minted: &Minted) -> String {
         out += &format!("  or:         {}\n", minted.urls[1..].join(", "));
     }
     out += &format!(
-        "Pairing link: {}\n\nThe fleetd app on this machine pairs by itself when it opens. On another device, open the\napp and enter the code and hub address above, or open the link there.\n",
+        "Pairing link: {}\n\nThe fleetd app on this machine pairs by itself when it opens. On a phone, scan the QR with the\nfleetd app. On another device, enter the code and hub address above in the app, or open the link there.\n",
         minted.deep_link
     );
     out
+}
+
+/// The QR of the pairing link for a phone, with the hub at an address a phone reaches; or, when the hub has none,
+/// why there is no QR and how to give it one.
+fn phone_qr(minted: &Minted) -> String {
+    let Some(hub) = phone_url(minted.urls.iter().map(String::as_str)) else {
+        return format!(
+            "No QR for a phone: the hub is only at {}, which a phone can't reach. {}\n\n",
+            minted.urls.join(", "),
+            loopback_only_fix()
+        );
+    };
+    match terminal_qr(&deep_link(hub, &minted.code)) {
+        Some(qr) => format!("Scan with the fleetd app on your phone:\n\n{qr}\n\n"),
+        None => String::new(),
+    }
 }
 
 #[cfg(test)]
@@ -514,6 +575,128 @@ mod tests {
         assert_eq!(
             deep_link("http://100.101.102.103:4790", "ABCD-EFGH"),
             "fleetd://pair?hub=http%3A%2F%2F100.101.102.103%3A4790&code=ABCD-EFGH"
+        );
+        // A URL's own query, fragment, path, IPv6 brackets and spaces stay inside `hub`: none leaks out as a parameter.
+        let hub = "https://devbox.tail1234.ts.net/fleet hub?x=1&code=EVIL#top";
+        let link = deep_link(hub, "ABCD-EFGH");
+        assert_eq!(
+            link,
+            "fleetd://pair?hub=https%3A%2F%2Fdevbox.tail1234.ts.net%2Ffleet+hub%3Fx%3D1%26code%3DEVIL%23top&code=ABCD-EFGH"
+        );
+        let parsed = url::Url::parse(&link).unwrap();
+        let params: Vec<(String, String)> = parsed.query_pairs().into_owned().collect();
+        assert_eq!(
+            params,
+            [
+                ("hub".into(), hub.into()),
+                ("code".into(), "ABCD-EFGH".into())
+            ]
+        );
+        assert_eq!(
+            deep_link("http://[fd7a:115c:a1e0::1]:4790", "ABCD-EFGH"),
+            "fleetd://pair?hub=http%3A%2F%2F%5Bfd7a%3A115c%3Aa1e0%3A%3A1%5D%3A4790&code=ABCD-EFGH"
+        );
+    }
+
+    #[test]
+    fn a_phone_is_never_given_a_loopback_or_every_interface_address() {
+        for url in [
+            "http://127.0.0.1:4790",
+            "http://127.1.2.3:4790",
+            "http://localhost:4790",
+            "http://LOCALHOST",
+            "http://hub.localhost:4790",
+            "http://[::1]:4790",
+            "http://0.0.0.0:4790",
+            "http://[::]:4790",
+            "",
+        ] {
+            assert_eq!(phone_url([url]), None, "{url}");
+        }
+        assert_eq!(
+            phone_url(["http://127.0.0.1:4790", "http://192.168.1.20:4790"]),
+            Some("http://192.168.1.20:4790")
+        );
+        assert_eq!(
+            phone_url([
+                "https://devbox.tail1234.ts.net",
+                "http://100.101.102.103:4790"
+            ]),
+            Some("https://devbox.tail1234.ts.net")
+        );
+        assert_eq!(
+            phone_url(["http://[fd7a:115c:a1e0::1]:4790"]),
+            Some("http://[fd7a:115c:a1e0::1]:4790")
+        );
+    }
+
+    fn minted(urls: &[&str]) -> Minted {
+        let urls: Vec<String> = urls.iter().map(|u| u.to_string()).collect();
+        Minted {
+            code: "ABCD-EFGH".into(),
+            deep_link: deep_link(&urls[0], "ABCD-EFGH"),
+            urls,
+            expires_at: "2026-10-29T10:15:00.000Z".into(),
+            role: Role::Admin,
+            app_pair_file: PathBuf::from("/h/app-pair.json"),
+        }
+    }
+
+    #[test]
+    fn fleetd_pair_prints_a_qr_of_the_phones_link_above_the_code() {
+        let out = describe(
+            &minted(&["http://127.0.0.1:4790", "http://192.168.1.20:4790"]),
+            true,
+        );
+        let (above, below) = out.split_once("Pairing code: ABCD-EFGH").unwrap();
+        assert!(
+            above.starts_with("Scan with the fleetd app on your phone:\n\n"),
+            "{out}"
+        );
+        let qr = terminal_qr(&deep_link("http://192.168.1.20:4790", "ABCD-EFGH")).unwrap();
+        assert!(above.contains(&qr), "{out}");
+        // Half-blocks, two rows of modules a line, square: as wide as it is tall in modules.
+        let lines: Vec<&str> = qr.lines().collect();
+        let width = lines[0].chars().count();
+        assert!(lines.iter().all(|l| l.chars().count() == width));
+        assert!(
+            qr.chars()
+                .all(|c| matches!(c, ' ' | '▀' | '▄' | '█' | '\n')),
+            "{qr}"
+        );
+        assert!(lines.len() * 2 >= width && lines.len() * 2 <= width + 1);
+        assert!(below.contains("Hub address:  http://127.0.0.1:4790"));
+
+        let plain = describe(
+            &minted(&["http://127.0.0.1:4790", "http://192.168.1.20:4790"]),
+            false,
+        );
+        assert!(plain.starts_with("Pairing code: ABCD-EFGH"), "{plain}");
+        assert!(!plain.contains('█'));
+    }
+
+    #[test]
+    fn fleetd_pair_on_a_loopback_only_hub_prints_no_qr_and_says_how_to_fix_it() {
+        let out = describe(&minted(&["http://127.0.0.1:4790"]), true);
+        assert!(!out.contains('█'), "{out}");
+        assert!(
+            out.starts_with(
+                "No QR for a phone: the hub is only at http://127.0.0.1:4790, which a phone can't reach. Give the hub"
+            ),
+            "{out}"
+        );
+        assert!(out.contains("Pairing code: ABCD-EFGH"));
+    }
+
+    #[test]
+    fn no_qr_is_not_for_worker() {
+        let argv = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let out = pair_command(&argv(&["--worker", "lab-b", "--no-qr"]));
+        assert_eq!(out.code, 2);
+        assert!(
+            out.stderr.contains("takes no --role or --no-qr"),
+            "{}",
+            out.stderr
         );
     }
 }

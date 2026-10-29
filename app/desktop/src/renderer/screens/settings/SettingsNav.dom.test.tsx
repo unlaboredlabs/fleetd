@@ -138,7 +138,7 @@ const screen = () => host.querySelector("[data-screen]")?.getAttribute("data-scr
 
 it("has You and Projects for a member, with the picked project's five pages, and no Hub group", async () => {
   await render("#/settings/general", false);
-  expect(rows()).toEqual(["Back", "General", "Your accounts", "Your memory", "Hubs", "docs", "Project", "Agents", "Instructions & memory", "Automations", "Prompts"]);
+  expect(rows()).toEqual(["Back", "General", "Your accounts", "Your memory", "Your devices", "Hubs", "docs", "Project", "Agents", "Instructions & memory", "Automations", "Prompts"]);
   expect(nav()?.querySelector("section[aria-label='Hub']")).toBeNull();
   expect([...(nav()?.querySelectorAll("section") ?? [])].map((x) => x.querySelector("span")?.textContent ?? "")).toEqual(expect.arrayContaining(["You", "Projects"]));
 

@@ -1,7 +1,7 @@
 // Settings (⌘, or the app menu), one window in three groups (D211). You: General (appearance, time in the app,
-// notifications, version), Your accounts (the Claude and GitHub your work runs on) and Hubs (this app's hubs and their
-// links). Projects: a project picked in the sidebar, with its Project, Agents, Instructions & memory, Automations and
-// Prompts pages. Hub, for the hub's owners and admins only (admin/HubPages.tsx): what reaches every teammate's work.
+// notifications, version), Your accounts (the Claude and GitHub your work runs on), Your memory, Your devices (and Pair
+// a phone) and Hubs (this app's hubs and their links). Projects: a project picked in the sidebar, with its Project,
+// Agents, Instructions & memory, Automations and Prompts pages. Hub, for the hub's owners and admins only (admin/HubPages.tsx): what reaches every teammate's work.
 // The route picks the page (#/settings/<tab>, #/settings/hub/<page>); see route.ts for the links into one prompt. The
 // shell shows SettingsSidebar in the sidebar's place while Settings is open.
 import { Automations } from "../automations";
@@ -9,6 +9,7 @@ import { HubPage } from "../admin/HubPages";
 import { YourGoogle } from "../google/NaviGoogle";
 import { AgentsSettings } from "./Agents";
 import { ClaudeSettings } from "./Claude";
+import { DevicesSettings } from "./Devices";
 import { General } from "./General";
 import { GithubSettings } from "./Github";
 import { HubLinksSettings, HubsSettings } from "./Hubs";
@@ -40,6 +41,8 @@ export function SettingsScreen() {
         <YourAccounts />
       ) : tab === "your-memory" ? (
         <YourMemoryPage />
+      ) : tab === "devices" ? (
+        <YourDevicesPage />
       ) : tab === "hubs" ? (
         <Hubs />
       ) : tab === "projects" ? (
@@ -78,6 +81,18 @@ function YourMemoryPage() {
       <div className={s.column}>
         <PageHead title="Your memory">How you work, as the leads remember it when you correct them or set a rule. Edit or delete anything that is wrong.</PageHead>
         <YourMemory />
+      </div>
+    </div>
+  );
+}
+
+/** The devices signed in as you, and Pair a phone. */
+function YourDevicesPage() {
+  return (
+    <div className={s.scroll} data-screen="settings.devices">
+      <div className={s.column}>
+        <PageHead title="Your devices">The apps signed in as you: this one, your phone. Pair a phone by scanning a QR with the fleetd app.</PageHead>
+        <DevicesSettings />
       </div>
     </div>
   );

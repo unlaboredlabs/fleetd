@@ -10129,6 +10129,12 @@
         "orders_board.output": {
           "$ref": "#/$defs/OrdersBoardOutput"
         },
+        "pair_code_create.input": {
+          "$ref": "#/$defs/PairCodeCreateInput"
+        },
+        "pair_code_create.output": {
+          "$ref": "#/$defs/PairCodeCreateOutput"
+        },
         "people_list.input": {
           "$ref": "#/$defs/PeopleListInput"
         },
@@ -10735,6 +10741,8 @@
         "order_get.output",
         "orders_board.input",
         "orders_board.output",
+        "pair_code_create.input",
+        "pair_code_create.output",
         "people_list.input",
         "people_list.output",
         "person_remove.input",
@@ -12813,6 +12821,49 @@
         "orders",
         "trains",
         "at"
+      ],
+      "type": "object"
+    },
+    "PairCodeCreateInput": {
+      "properties": {
+        "hubUrl": {
+          "maxLength": 2048,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "PairCodeCreateOutput": {
+      "properties": {
+        "code": {
+          "description": "`XXXX-XXXX`, single use: entered in the phone's pairing screen with `hubUrl`.",
+          "type": "string"
+        },
+        "expiresAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "hubUrl": {
+          "description": "Where the phone reaches the hub: never a loopback address.",
+          "type": "string"
+        },
+        "link": {
+          "description": "`fleetd://pair?hub=<hubUrl, URL-encoded>&code=<code>`, shown as the QR.",
+          "type": "string"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "code",
+        "link",
+        "hubUrl",
+        "expiresAt"
       ],
       "type": "object"
     },

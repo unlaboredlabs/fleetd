@@ -2290,6 +2290,18 @@ export const screens: readonly Screen[] = [
     variant: "search-none",
     open: (page) => page.getByRole("searchbox", { name: "Search settings" }).fill("zebra"),
   },
+  // Your devices: Sam's own two, then Pair a phone's QR with the address and code under it.
+  { id: "settings.devices", route: "#/settings/devices", fixtures: ["admin-owner", "admin-member", "hub-unreachable"] },
+  {
+    id: "settings.devices",
+    route: "#/settings/devices",
+    fixtures: ["admin-owner"],
+    variant: "pair-a-phone",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Pair a phone" }).click();
+      await expect(page.getByRole("img", { name: "Pairing QR code" })).toBeVisible();
+    },
+  },
   // Memory: yours (You › Your memory) with what the lead remembered, then one project's MEMORY.md and a topic.
   { id: "settings.your-memory", route: "#/settings/your-memory", fixtures: ["typical", "empty", "hub-unreachable"] },
   { id: "settings.instructions", route: "#/settings/instructions", fixtures: ["typical", "empty", "hub-unreachable"], variant: "memory" },

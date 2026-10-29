@@ -127,10 +127,10 @@ what the machine is for (admin key): agents, sessions (screens: browsers and dev
 ### fleetd pair {#pair}
 
 ```text
-fleetd pair [--name <device>] [--role <read|operate|admin>] [--home <dir>]
+fleetd pair [--name <device>] [--role <read|operate|admin>] [--no-qr] [--home <dir>]
 ```
 
-print a one-time code (15 min) that pairs the desktop app with this hub; the app on this machine pairs by itself. The device gets `--role` (default admin, which changes the hub's settings) on every machine
+print a one-time code (15 min) that pairs the fleetd app with this hub, and a QR of its link for the phone app to scan (`--no-qr` leaves it out); the desktop app on this machine pairs by itself. The device gets `--role` (default admin, which changes the hub's settings) on every machine
 
 ### fleetd pair {#pair-worker}
 

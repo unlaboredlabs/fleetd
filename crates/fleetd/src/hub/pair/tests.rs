@@ -206,3 +206,188 @@ fn a_code_minted_before_codes_carried_a_role_still_grants_operate() {
         (None, Role::Operate)
     );
 }
+
+/// A hub whose own address is `url` (its `--url`), listening on loopback, and its clock.
+fn hub_at(url: Option<&str>) -> (Arc<Hub>, Arc<ManualClock>, tempfile::TempDir) {
+    let home = tempfile::tempdir().unwrap();
+    let config = crate::hub::api::HubConfig {
+        home: home.path().to_path_buf(),
+        listen: Default::default(),
+        url: url.map(str::to_owned),
+        queue_ttl_sec: None,
+    };
+    let clock = ManualClock::at(1_792_000_000_000);
+    let hub =
+        crate::hub::serve::build_on(HubDb::open_memory().unwrap(), config, clock.clone()).unwrap();
+    (hub, clock, home)
+}
+
+async fn pair_a_phone(
+    hub: &Arc<Hub>,
+    key: &Caller,
+    app_url: &str,
+) -> Result<serde_json::Value, ToolError> {
+    match crate::hub::api::registry()
+        .call(
+            hub,
+            key,
+            "pair_code_create",
+            serde_json::json!({ "hubUrl": app_url }),
+        )
+        .await
+    {
+        Ok(out) => Ok(out),
+        Err(CallError::Tool(error)) => Err(error),
+        Err(other) => panic!("pair_code_create: {other:?}"),
+    }
+}
+
+fn trade(hub: &Hub, code: &str) -> (StatusCode, serde_json::Value) {
+    let body = serde_json::json!({ "code": code, "deviceName": "iPhone" }).to_string();
+    handle(hub, &Limiter::default(), None, None, body.as_bytes())
+}
+
+#[tokio::test]
+async fn pair_a_phone_mints_a_one_time_code_for_the_callers_own_person_at_the_apps_address() {
+    let (hub, _clock, _home) = hub_at(None);
+    let desk = pair(&hub, None);
+    let out = pair_a_phone(&hub, &desk, "http://devbox.tail1234.ts.net:4790/")
+        .await
+        .unwrap();
+    let code = out["code"].as_str().unwrap();
+    assert_eq!(out["hubUrl"], "http://devbox.tail1234.ts.net:4790");
+    assert_eq!(
+        out["link"].as_str().unwrap(),
+        format!("fleetd://pair?hub=http%3A%2F%2Fdevbox.tail1234.ts.net%3A4790&code={code}")
+    );
+    // 15 minutes, as `fleetd pair`'s: the QR lives no longer than the code.
+    assert_eq!(out["expiresAt"], iso_ms(1_792_000_000_000 + CODE_TTL_MS));
+
+    let (status, paired) = trade(&hub, code);
+    assert_eq!(status, StatusCode::OK, "{paired}");
+    let phone = hub.auth.verify(paired["key"].as_str().unwrap()).unwrap();
+    assert_eq!(phone.name, "iPhone");
+    assert_eq!(
+        phone.person.as_ref().map(|p| &p.person_id),
+        desk.person.as_ref().map(|p| &p.person_id)
+    );
+    assert_eq!(phone.grants[0].role, Role::Admin);
+    // The view notices the phone by this event.
+    let paired_events = hub
+        .events
+        .page(0, Some(&[HubEventType::KeyPaired]), None)
+        .unwrap()
+        .events;
+    assert!(
+        paired_events
+            .iter()
+            .any(|e| e.summary == "iPhone paired with the hub")
+    );
+
+    let (status, again) = trade(&hub, code);
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert_eq!(again["code"], "pair_code_invalid");
+}
+
+#[tokio::test]
+async fn pair_a_phone_on_the_hub_machine_puts_the_hubs_own_address_in_the_link_never_loopback() {
+    let (hub, _clock, _home) = hub_at(Some("http://100.101.102.103:4790"));
+    let desk = pair(&hub, None);
+    for app_url in [
+        "http://127.0.0.1:4790",
+        "http://localhost:4790",
+        "http://[::1]:4790",
+        "127.0.0.1:4790",
+    ] {
+        let out = pair_a_phone(&hub, &desk, app_url).await.unwrap();
+        assert_eq!(out["hubUrl"], "http://100.101.102.103:4790", "{app_url}");
+        assert!(
+            out["link"]
+                .as_str()
+                .unwrap()
+                .starts_with("fleetd://pair?hub=http%3A%2F%2F100.101.102.103%3A4790&code="),
+            "{out}"
+        );
+    }
+}
+
+#[test]
+fn an_app_address_saved_without_its_scheme_reaches_the_phone_as_http() {
+    let (hub, _clock, _home) = hub_at(None);
+    assert_eq!(
+        tools::phone_hub_url(&hub, Some("devbox.tail1234.ts.net:4790")).as_deref(),
+        Some("http://devbox.tail1234.ts.net:4790")
+    );
+}
+
+#[tokio::test]
+async fn a_hub_only_on_loopback_is_refused_with_how_to_give_it_an_address_and_mints_nothing() {
+    let (hub, _clock, _home) = hub_at(None);
+    let desk = pair(&hub, None);
+    let codes = |hub: &Hub| -> i64 {
+        hub.db
+            .with(|c| Ok(c.query_row("SELECT COUNT(*) FROM pair_codes", [], |r| r.get(0))?))
+            .unwrap()
+    };
+    let before = codes(&hub);
+    let refused = pair_a_phone(&hub, &desk, "http://127.0.0.1:4790")
+        .await
+        .unwrap_err();
+    assert_eq!(refused.code, fleetd_contracts::mcp::ErrorCode::Failed);
+    assert_eq!(
+        refused.message,
+        "The hub is only at http://127.0.0.1:4790, which a phone can't reach."
+    );
+    assert!(
+        refused.fix.as_deref().unwrap().contains("fleetd init"),
+        "{refused:?}"
+    );
+    assert_eq!(codes(&hub), before);
+}
+
+#[tokio::test]
+async fn a_phone_code_expires_after_15_minutes_and_gives_no_more_than_the_callers_role() {
+    let (hub, clock, _home) = hub_at(Some("http://192.168.1.20:4790"));
+    let desk = pair(&hub, Some(Role::Operate));
+    let out = pair_a_phone(&hub, &desk, "http://127.0.0.1:4790")
+        .await
+        .unwrap();
+    clock.advance(Duration::from_millis(CODE_TTL_MS as u64));
+    let (status, expired) = trade(&hub, out["code"].as_str().unwrap());
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert_eq!(expired["code"], "pair_code_expired");
+
+    let out = pair_a_phone(&hub, &desk, "http://192.168.1.20:4790")
+        .await
+        .unwrap();
+    let (status, paired) = trade(&hub, out["code"].as_str().unwrap());
+    assert_eq!(status, StatusCode::OK, "{paired}");
+    let phone = hub.auth.verify(paired["key"].as_str().unwrap()).unwrap();
+    assert_eq!(phone.grants[0].role, Role::Operate);
+}
+
+#[tokio::test]
+async fn a_key_limited_to_some_machines_cannot_pair_a_phone_that_reaches_them_all() {
+    let (hub, _clock, _home) = hub_at(Some("http://192.168.1.20:4790"));
+    let grant = Grant {
+        role: Role::Operate,
+        machines: GrantMachines::Only(vec![fleetd_contracts::ids::MachineId::unchecked("m1")]),
+    };
+    let CreatedKey { key, .. } = hub
+        .auth
+        .create_key_for("x", &[grant], KeyKind::Human, None)
+        .unwrap();
+    let limited = hub.auth.verify(&key).unwrap();
+    assert!(limited.person.is_some());
+    let codes = |hub: &Hub| -> i64 {
+        hub.db
+            .with(|c| Ok(c.query_row("SELECT COUNT(*) FROM pair_codes", [], |r| r.get(0))?))
+            .unwrap()
+    };
+    let before = codes(&hub);
+    let refused = pair_a_phone(&hub, &limited, "http://192.168.1.20:4790")
+        .await
+        .unwrap_err();
+    assert_eq!(refused.code, fleetd_contracts::mcp::ErrorCode::Forbidden);
+    assert_eq!(codes(&hub), before);
+}
