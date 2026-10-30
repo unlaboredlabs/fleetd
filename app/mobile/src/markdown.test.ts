@@ -88,6 +88,8 @@ describe("fenceView", () => {
     expect(fenceView(block, {})).toBe("code");
     expect(fenceView(block, { streaming: true })).toBe("code");
     expect(previewText('try:\n\n```fleetd-block\n{"v":1}\n```')).toBe('try: {"v":1}');
-    expect(previewText('try:\n\n```fleetd-block\n{"v":1}\n```', true)).toBe("try: Couldn't show this");
+    expect(previewText('try:\n\n```fleetd-block\n{"v":1}\n```', { blocks: true })).toBe("try: Couldn't show this");
+    // A lead's reply still streaming in: its block may still be arriving, so the preview leaves it out.
+    expect(previewText('One more:\n\n```fleetd-block\n{"v":1,"ki', { blocks: true, streaming: true })).toBe("One more:");
   });
 });

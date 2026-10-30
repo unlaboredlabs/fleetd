@@ -227,7 +227,7 @@ export const fenceView = (b: Block, { streaming = false, blocks = false }: { str
   !blocks || !isBlockFence(b) ? "code" : streaming ? "pending" : "unshown";
 
 /** A message's markdown as one line of plain text, for a preview: "**Done**: see `x`" → "Done: see x". */
-export const previewText = (source: string, blocks = false): string =>
+export const previewText = (source: string, fences: { streaming?: boolean; blocks?: boolean } = {}): string =>
   parseMarkdown(source)
     .map((b): string => {
       switch (b.t) {
@@ -235,7 +235,8 @@ export const previewText = (source: string, blocks = false): string =>
         case "h":
           return plainText(b.inline);
         case "code":
-          return blocks && isBlockFence(b) ? UNSHOWN : b.text;
+          // As the bubble draws it: a block still arriving says nothing yet.
+          return { code: b.text, unshown: UNSHOWN, pending: "" }[fenceView(b, fences)];
         case "quote":
           return b.blocks.map((q) => (q.t === "p" ? plainText(q.inline) : "")).join(" ");
         case "list":
