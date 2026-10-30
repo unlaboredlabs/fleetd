@@ -174,6 +174,7 @@ impl TaskPorts for HubTaskPorts {
                     &hub.db,
                     &request.project_ref,
                     request.order_id.as_ref(),
+                    machine_id,
                 )
             });
             let options = LaunchOptions {

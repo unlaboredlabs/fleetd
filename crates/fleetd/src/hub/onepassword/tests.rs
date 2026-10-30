@@ -2,9 +2,11 @@
 //! never kept, Test listing the vaults, Remove and a person's removal forgetting it, and a launch naming the person
 //! whose work it is when they saved one.
 use fleetd_contracts::auth::KeyKind;
-use fleetd_contracts::ids::{ProjectId, ProjectRef, Timestamp};
+use fleetd_contracts::claude_accounts::ClaudeSealedOn;
+use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef, Timestamp};
 use fleetd_contracts::node_link::CAP_ONEPASSWORD;
 use fleetd_contracts::onepassword::OnePasswordToken;
+use fleetd_contracts::secrets::SecretFingerprint;
 use fleetd_contracts::sessions::SessionCall;
 use serde_json::json;
 
@@ -108,9 +110,16 @@ async fn a_person_saves_their_token_sealed_tests_its_vaults_and_removes_it() {
     assert!(super::token(&hub.db, &bob).unwrap().is_none());
 }
 
-fn saved() -> OnePasswordToken {
+/// A token held on `machines`.
+fn saved(machines: &[&str]) -> OnePasswordToken {
     OnePasswordToken {
-        sealed_on: Vec::new(),
+        sealed_on: machines
+            .iter()
+            .map(|m| ClaudeSealedOn {
+                machine_id: MachineId::unchecked(*m),
+                fingerprint: SecretFingerprint::unchecked("0b5e55ed"),
+            })
+            .collect(),
         saved_at: Timestamp("2026-10-30T10:00:00.000Z".into()),
         last_test: None,
     }
@@ -122,7 +131,7 @@ async fn a_launch_names_the_person_whose_work_it_is_when_they_saved_a_token() {
     owner(&hub);
     let bob = member(&hub, "Bob");
     let cy = member(&hub, "Cy");
-    super::put_token(&hub.db, &cy, &saved()).unwrap();
+    super::put_token(&hub.db, &cy, &saved(&["lab"])).unwrap();
     let mut calls = node(&hub, &[CAP_ONEPASSWORD]).await;
     let ports = crate::hub::tasks::wire::HubTaskPorts::new(
         hub.executors.clone(),
@@ -164,5 +173,22 @@ async fn a_launch_names_the_person_whose_work_it_is_when_they_saved_a_token() {
         .unwrap();
     assert_eq!(super::for_lead(&hub.db, &navi), Some(cy.clone()));
     // A task in Cy's Navi is hers whoever's order it is.
-    assert_eq!(super::for_task(&hub.db, &navi, None), Some(cy));
+    assert_eq!(
+        super::for_task(&hub.db, &navi, None, &lab()),
+        Some(cy.clone())
+    );
+    // Replaced while lab was offline, her token is held only on buildbox: lab may keep the old one on disk, so no
+    // launch there names her, a task's or her Navi's lead.
+    super::put_token(&hub.db, &cy, &saved(&["buildbox"])).unwrap();
+    let cys = order(&hub, &r, Some(&cy));
+    ports
+        .launch(&lab(), request(cys.clone(), "c2"))
+        .await
+        .unwrap();
+    assert_eq!(launched(&mut calls).await.onepassword, None);
+    assert_eq!(super::for_lead(&hub.db, &navi), None);
+    assert_eq!(
+        super::for_task(&hub.db, &r, Some(&cys), &MachineId::unchecked("buildbox")),
+        Some(cy)
+    );
 }

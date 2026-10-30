@@ -79,25 +79,38 @@ fn remove_token(db: &HubDb, person: &PersonId) -> Result<(), StoreError> {
     })
 }
 
-/// `whose` work's person, when they saved a token: the launch names them, and the node gives their token.
-fn theirs(db: &HubDb, whose: Whose) -> Option<PersonId> {
-    match whose {
-        Whose::Person(person) if token(db, &person).ok().flatten().is_some() => Some(person),
-        _ => None,
-    }
+/// `whose` work's person, when their token is held on `machine`: the launch names them, and the node gives their
+/// token. A machine the hub no longer records as holding it (offline when the token was replaced or removed) may
+/// still have an old one on disk: no launch there names the person, so it is never used.
+fn theirs(db: &HubDb, whose: Whose, machine: &MachineId) -> Option<PersonId> {
+    let Whose::Person(person) = whose else {
+        return None;
+    };
+    let held = token(db, &person).ok().flatten()?;
+    held.sealed_on
+        .iter()
+        .any(|s| &s.machine_id == machine)
+        .then_some(person)
 }
 
-/// The person whose token a task of `order` in project `r` falls back on: its Navi's owner, else its order's starter.
-/// None for work nobody started, or when the hub can't tell (the task then has only its project's token).
-pub fn for_task(db: &HubDb, r: &ProjectRef, order: Option<&WorkstreamId>) -> Option<PersonId> {
+/// The person whose token a task of `order` in project `r`, launched on `machine`, falls back on: its Navi's owner,
+/// else its order's starter. None for work nobody started, on a machine that doesn't hold their token, or when the
+/// hub can't tell (the task then has only its project's token).
+pub fn for_task(
+    db: &HubDb,
+    r: &ProjectRef,
+    order: Option<&WorkstreamId>,
+    machine: &MachineId,
+) -> Option<PersonId> {
     let setup = db.claude_accounts().setup().ok()?;
-    theirs(db, whose_for_task(db, &setup, r, order).ok()?)
+    theirs(db, whose_for_task(db, &setup, r, order).ok()?, machine)
 }
 
-/// The person whose token the lead of project `r` falls back on: a Navi's owner; a project's lead has none.
+/// The person whose token the lead of project `r` falls back on: a Navi's owner, when its machine holds the token; a
+/// project's lead has none.
 pub fn for_lead(db: &HubDb, r: &ProjectRef) -> Option<PersonId> {
     let setup = db.claude_accounts().setup().ok()?;
-    theirs(db, whose_for_lead(db, &setup, r).ok()?)
+    theirs(db, whose_for_lead(db, &setup, r).ok()?, &r.machine_id)
 }
 
 /// The person behind a human key: only a person keeps a token of their own.
