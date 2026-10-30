@@ -24,8 +24,8 @@ a cut:
 | `screens` | Watch an agent's screen, and take over | a writer's live browser; then the iPhone simulator's sign-in asking for you, Take over, the code, Hand back |
 | `navi` | Navi, your own assistant | Ada, with Marta's lease renewal that waits on you; Send it, and it went |
 
-Each is `showcase-<clip>-<theme>.webm` (VP9, 2240x1440, 25 fps) with an H.264 `.mp4` twin for browsers without VP9
-(1792x1152 at level 4.2 at most, which older iPhones and iPads decode; encoded frame by frame by the app's WebCodecs,
+Each is `showcase-<clip>-<theme>.webm` (VP9, 2800x1800, 60 fps) with an H.264 `.mp4` twin for browsers without VP9
+(1792x1152 at 60 fps, level 4.2 at most, which older iPhones and iPads decode; encoded frame by frame by the app's WebCodecs,
 so nothing is dropped), its poster `showcase-<clip>-<theme>.jpg`, and a half-size `-small` twin of each for small
 screens, in `light` and `dark`. `pnpm fixtures && pnpm qa:build && pnpm site:showcase` in `app/desktop` records them in
 place (`app/desktop/qa/showcase.spec.ts`, one test per clip and theme, `-g "showcase team"` for one; it needs
@@ -33,6 +33,26 @@ Playwright's ffmpeg, `pnpm exec playwright install ffmpeg` in `app/desktop`); th
 `fixtures/showcase/media/`, drawn by `node fixtures/showcase/media.ts`. The page shows each poster first and plays its
 clip once the frame is near the screen, the half-size one on a small screen; with reduced motion it keeps the poster
 until Play. Record a clip again when what it shows changes, and keep its section's words and alt text true to it.
+
+### Cursor and camera
+
+A clip's cursor and camera come from what its scene does, not from keyframes. The scene in `showcase.spec.ts` clicks
+with `press(page, target)`, types with `ask(...)`, and can `look(page, from, until, target)` at a part of the window
+while the app moves on its own; each notes a step (when, and where on the page) in the recording's timeline.
+`app/desktop/qa/camera.ts` works out, for every frame at 60 fps, a macOS-style cursor that heads for each click along a
+gentle arc on a spring and dips as it clicks, and a camera on a critically damped spring that sets off as the cursor
+does and pushes in on the typing, on each click together with what it changed (found by comparing the frames before
+and after), and on each look, then eases back out to the whole window. Steps close together share one move in.
+`press(page, target, { zoom: false })` keeps the camera still for a step; `{ zoom: 1.3 }` sets its zoom. The window is
+recorded at 3x (4200x2700) and the clip is the window at 2x (2800x1800), so the camera's most zoom (1.5) still has a
+recorded pixel for each pixel of the clip. Each take opens and ends on the whole window, and the clip ends with the
+cursor where it starts, so cuts and the loop join up. The run logs each clip's frame pacing.
+
+### Quality
+
+The full-size clips are VP9 at CRF 22 in two passes, the `-small` ones CRF 30; the `.mp4` is H.264 at a variable rate
+of up to 12 Mbps (5 for `-small`). Only the clip near the screen loads (`preload="none"`, then an
+IntersectionObserver).
 
 The app shots in the docs (`docs/site/public/img/`) are the app's screens on E3b's fixtures, which are sanitized lab
 hub traffic (`app/desktop/fixtures`), at 1400x900@2x, without the sample-data banner. `app/desktop/qa/site.ts` lists
