@@ -144,8 +144,7 @@
 }
 
 /* The panel beside the chat (panel.tsx): as wide as you set it (--panel-size). A container only: focus rests here
-   between an item and its list, without a ring. It slides in and out by transform and opacity alone, so the chat
-   beside it never lays out mid-way; with reduced motion the durations are 0 and it just appears. */
+   between an item and its list, without a ring. The frame slides it in and out (layout.module.css). */
 .panel {
   position: relative;
   display: flex;
@@ -154,26 +153,9 @@
   min-width: 0;
   min-height: 0;
   height: 100%;
-  animation: panel-in var(--dur-base) var(--ease-out);
 }
 .panel:focus {
   outline: none;
-}
-.panel[data-state="closed"] {
-  pointer-events: none;
-  animation: panel-out var(--dur-fast) ease-in forwards;
-}
-@keyframes panel-in {
-  from {
-    opacity: 0;
-    transform: translateX(12px);
-  }
-}
-@keyframes panel-out {
-  to {
-    opacity: 0;
-    transform: translateX(12px);
-  }
 }
 .panelLoading {
   width: 100%;

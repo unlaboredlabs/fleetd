@@ -334,7 +334,7 @@ function Frame({ route, hubs, sidebar }: { route: Routed; hubs: readonly HubView
             </Boundary>
           ) : undefined
         }
-        aside={chrome && panel.present ? <PanelSlot panel={panel} /> : undefined}
+        aside={chrome && panel.shown ? <PanelSlot panel={panel} /> : undefined}
       >
         <div className={s.column}>
           {/* Fixture data must never pass for a live hub. */}

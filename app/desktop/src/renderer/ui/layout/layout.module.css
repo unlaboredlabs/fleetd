@@ -12,6 +12,8 @@
     "side main";
   height: 100%;
   min-height: 0;
+  /* A side sliding in or out passes the window's edge: no scrollbar for it. */
+  overflow: clip;
   background: var(--bg);
 }
 .noSidebar {
@@ -100,8 +102,57 @@
    over it. The page and the top row stay opaque. Static: the window server composites it, the page never repaints
    for it. Everywhere else (Linux, Reduce transparency) the sidebar is the plain --sidebar tone. */
 :root[data-vibrancy] .translucent,
-:root[data-vibrancy] .translucent > .side {
+:root[data-vibrancy] .translucent > .side:not([data-motion="out"]) {
   background: transparent;
+}
+
+/* A side coming (AppFrame's useSlide) slides in from the window's edge, already at its own width, while the main area
+   beside has laid out once for it; going, it has left the grid already, so it is drawn over the main area's edge
+   (opaque there) as it slides out. Only transform moves: nothing beside it lays out mid-way. Short, and out sooner
+   than in; with reduced motion the durations are 0 and it just comes and goes. motion.test.ts pins these. */
+.side[data-motion="in"] {
+  animation: side-in var(--dur-base) var(--ease-out);
+}
+.aside[data-motion="in"] {
+  animation: aside-in var(--dur-base) var(--ease-out);
+}
+.side[data-motion="out"],
+.aside[data-motion="out"] {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  bottom: 0;
+  grid-area: auto;
+  pointer-events: none;
+}
+.side[data-motion="out"] {
+  left: 0;
+  width: var(--sidebar-w);
+  animation: side-out var(--dur-fast) var(--ease-out) forwards;
+}
+.aside[data-motion="out"] {
+  right: 0;
+  animation: aside-out var(--dur-fast) var(--ease-out) forwards;
+}
+@keyframes side-in {
+  from {
+    transform: translateX(-100%);
+  }
+}
+@keyframes side-out {
+  to {
+    transform: translateX(-100%);
+  }
+}
+@keyframes aside-in {
+  from {
+    transform: translateX(100%);
+  }
+}
+@keyframes aside-out {
+  to {
+    transform: translateX(100%);
+  }
 }
 
 .topBar {

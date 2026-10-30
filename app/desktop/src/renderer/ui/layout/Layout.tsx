@@ -1,5 +1,16 @@
 import { ChevronRight } from "lucide-react";
-import { createContext, Fragment, useContext, useState, type ComponentProps, type ReactNode } from "react";
+import {
+  createContext,
+  Fragment,
+  useCallback,
+  useContext,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type AnimationEvent,
+  type ComponentProps,
+  type ReactNode,
+} from "react";
 import { createPortal } from "react-dom";
 import { cx } from "../lib/cx";
 import { Text } from "../text/Text";
@@ -17,6 +28,10 @@ const SetTitleSlot = createContext<(el: HTMLElement | null) => void>(() => undef
  * the right, from the very top too, as wide as its content says: its own first row sits beside the top row.
  * `corner` stays at the window's top right whether the aside shows or not (the panel's toggle, so a second click in
  * the same place undoes the first); the top row, or the aside's first row, leaves it room.
+ *
+ * The sidebar and the aside slide in from the window's edge as they come and out to it as they go (useSlide): the
+ * frame lays out once, at the toggle, and only their transform moves after it, so the chat beside never lays out
+ * again mid-way.
  */
 export function AppFrame(props: {
   topBar: ReactNode;
@@ -30,25 +45,83 @@ export function AppFrame(props: {
   className?: string;
 }) {
   const [slot, setSlot] = useState<HTMLElement | null>(null);
+  const side = useSlide(props.sidebar, props.sidebarTop);
+  const aside = useSlide(props.aside);
   return (
     <SetTitleSlot.Provider value={setSlot}>
       <TitleSlot.Provider value={slot}>
         <div className={cx(s.frame, !props.sidebar && s.noSidebar, Boolean(props.aside) && s.withAside, Boolean(props.corner) && s.withCorner, props.translucent && s.translucent, props.className)}>
-          {props.sidebar ? (
-            <div className={s.side}>
-              <div className={s.sideTop}>{props.sidebarTop}</div>
-              {props.sidebar}
+          {side.kept === null ? null : (
+            <div className={s.side} {...side.attrs}>
+              <div className={s.sideTop}>{side.kept[1]}</div>
+              {side.kept[0]}
             </div>
-          ) : null}
+          )}
           {props.topBar}
           <main className={s.main}>{props.children}</main>
-          {props.aside ? <div className={s.aside}>{props.aside}</div> : null}
+          {aside.kept === null ? null : (
+            <div className={s.aside} {...aside.attrs}>
+              {aside.kept[0]}
+            </div>
+          )}
           {/* Last: Electron takes app-region boxes in document order, so the aside's drag row would cover it. */}
           {props.corner ? <div className={s.corner}>{props.corner}</div> : null}
         </div>
       </TitleSlot.Provider>
     </SetTitleSlot.Provider>
   );
+}
+
+/** Whether the element runs a CSS animation now; without one (reduced motion, no styles) its end never comes. */
+const animates = (el: HTMLElement): boolean => {
+  const style = getComputedStyle(el);
+  const names = style.animationName.split(",").map((n) => n.trim());
+  const longest = Math.max(0, ...style.animationDuration.split(",").map((d) => (d.trim().endsWith("ms") ? parseFloat(d) : parseFloat(d) * 1000) || 0));
+  return names.some((n) => n !== "" && n !== "none") && longest > 0;
+};
+
+/**
+ * One side of the frame, by what it shows (the side itself first, then anything shown in it): `kept` is what to
+ * render, null once it has gone. Shown, it is the nodes now; hidden, the last ones shown, held inert while it slides
+ * out. The frame's grid follows the props at once, so a side going out leaves its column as it starts and is drawn
+ * over the main area's edge until it has gone. A side there at the frame's first render just shows.
+ */
+function useSlide(...nodes: ReadonlyArray<ReactNode>) {
+  const shown = Boolean(nodes[0]);
+  const [kept, setKept] = useState<ReadonlyArray<ReactNode> | null>(shown ? nodes : null);
+  const [was, setWas] = useState(shown);
+  const [motion, setMotion] = useState<"in" | "out" | null>(null);
+  if (was !== shown) {
+    setWas(shown);
+    setMotion(shown ? "in" : "out");
+  }
+  if (shown && (kept === null || nodes.some((n, i) => n !== kept[i]))) setKept(nodes);
+  const el = useRef<HTMLDivElement>(null);
+  const gone = useCallback(() => {
+    setMotion(null);
+    setKept(null);
+  }, []);
+
+  // Without an animation to wait for (reduced motion), it goes at once; a missed end, a moment after it.
+  useLayoutEffect(() => {
+    if (motion !== "out") return;
+    if (el.current === null || !animates(el.current)) {
+      gone();
+      return;
+    }
+    const late = window.setTimeout(gone, 400);
+    return () => window.clearTimeout(late);
+  }, [motion, gone]);
+
+  const onAnimationEnd = (e: AnimationEvent<HTMLDivElement>) => {
+    if (e.target !== e.currentTarget) return;
+    if (motion === "out") gone();
+    else setMotion(null);
+  };
+  return {
+    kept: shown ? nodes : motion === "out" ? kept : null,
+    attrs: { ref: el, "data-motion": motion ?? undefined, inert: motion === "out", onAnimationEnd },
+  };
 }
 
 /**
