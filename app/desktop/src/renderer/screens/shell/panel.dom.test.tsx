@@ -6,6 +6,8 @@ import type { AgentRow, Change, ChecklistGetOutput, Decision, PrGetOutput, PrRow
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { AT, event, live, snapshot } from "../../src/data/fixtures.test-util";
+import { AppFrame } from "../../ui";
+import frameStyles from "../../ui/layout/layout.module.css";
 import { TooltipProvider } from "../../ui/primitives/Tooltip";
 import { forgetViews, inSections, SECTIONS, sectionOf } from "../panel/Sections";
 import { PANEL_TABS } from "../panel/tabs";
@@ -142,12 +144,14 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+/** The panel in the frame, as the shell holds it. */
 function Harness() {
   const panel = useProjectPanel(useRoute());
   return (
     <TooltipProvider>
-      <PanelToggle panel={panel} />
-      <PanelSlot panel={panel} />
+      <AppFrame topBar={<header />} corner={<PanelToggle panel={panel} />} aside={panel.shown ? <PanelSlot panel={panel} /> : undefined} asideOpen={panel.open}>
+        <p>chat</p>
+      </AppFrame>
     </TooltipProvider>
   );
 }
@@ -240,6 +244,24 @@ it("is open on a first launch, and opens and closes with its toggle as the windo
   unmount();
   await mount();
   expect(panel()).not.toBeNull();
+});
+
+it("slides out when its toggle closes it, and goes at once when you leave the project's chat", async () => {
+  // The frame's slide, which happy-dom never runs: a side waits for its end.
+  const slide = document.createElement("style");
+  slide.textContent = `.${frameStyles.aside ?? "aside"}[data-motion] { transition-property: transform; transition-duration: 180ms; }`;
+  document.head.appendChild(slide);
+  try {
+    await mount();
+    await go("#/status");
+    expect(panel()).toBeNull();
+    await go(CHAT);
+    expect(panel()?.parentElement?.dataset["motion"]).toBeUndefined();
+    await click("Hide the panel");
+    expect(panel()?.parentElement?.dataset["motion"]).toBe("out");
+  } finally {
+    slide.remove();
+  }
 });
 
 it("opens on a PR a link names, goes back to the list, and Esc steps back out", async () => {

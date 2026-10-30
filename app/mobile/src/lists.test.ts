@@ -47,6 +47,17 @@ describe("lists", () => {
     expect(out?.projects.map((r) => r.project.title)).toEqual(["storefront"]);
   });
 
+  it("shows an archived Navi while an approval of its waits, as the badges count it", () => {
+    const projects = { "m1/a": project("a", "Ada", { kind: "assistant" }), "m1/old": project("old", "Old", { kind: "assistant", archivedAt: AT }) };
+    const waiting = { ...gated("r1"), projectRef: { machineId: "m1", projectId: "old" } };
+    const out = lists({ projects, chatStates: {}, requests: [waiting] });
+    expect(out?.needsYou.map((r) => [r.project.title, r.approvals])).toEqual([["Old", 1]]);
+    expect(chatList({ projects, chatStates: {}, requests: [waiting] }, noPrefs, "needsYou")?.map((r) => r.key)).toEqual(["m1/old"]);
+    // Answered, or only a secret: gone again.
+    expect(lists({ projects, chatStates: {}, requests: [{ ...waiting, state: "approved" }] })?.needsYou).toEqual([]);
+    expect(lists({ projects, chatStates: {}, requests: [{ ...waiting, kind: "secret" }] })?.needsYou).toEqual([]);
+  });
+
   it("gives each row its badge, its newest message and its time", () => {
     const projects = { "m1/shop": project("shop", "storefront"), "m1/a": project("a", "Ada", { kind: "assistant" }) };
     const chatStates = { "m1/a": { projectRef: { machineId: "m1", projectId: "a" }, lastSeq: 2, leadWorking: true, needsYou: false, lastMessageAt: "2026-10-28T12:00:00Z" } };
@@ -183,6 +194,23 @@ describe("chatList", () => {
     expect(chatList(s, prefs, "unread")?.map((r) => r.key)).toEqual(["m1/shop", "m1/a"]);
     expect(chatList(s, prefs, "navis")?.map((r) => r.key)).toEqual(["m1/b", "m1/a"]);
     expect(chatList(s, prefs, "projects")?.map((r) => r.key)).toEqual(["m1/shop"]);
+  });
+
+  it("floats a chat with an approval waiting above the pinned, and Needs you shows only those", () => {
+    const waiting = { ...s, requests: [gated("r1"), { ...gated("r2"), projectRef: { machineId: "m1", projectId: "a" } }, { ...gated("r3"), state: "approved" as const, projectRef: { machineId: "m1", projectId: "b" } }] };
+    const prefs = { ...noPrefs, pinned: ["m1/b"] };
+    const rows = chatList(waiting, prefs);
+    // Shop and Ada wait, whatever spoke last first; then Bea, pinned; an answered approval doesn't count.
+    expect(rows?.map((r) => [r.key, r.approvals])).toEqual([
+      ["m1/shop", 1],
+      ["m1/a", 1],
+      ["m1/b", 0],
+    ]);
+    expect(chatList(waiting, prefs, "needsYou")?.map((r) => r.key)).toEqual(["m1/shop", "m1/a"]);
+    // A secret to enter or a lead waiting for a reply isn't an approval: it stays where it was.
+    const asking = { ...s, chatStates: { ...chatStates, "m1/a": { ...chatStates["m1/a"], needsYou: true } }, requests: [{ ...asked("s1"), kind: "secret" as const }] };
+    expect(chatList(asking, prefs, "needsYou")).toEqual([]);
+    expect(chatList(asking, prefs)?.map((r) => r.key)).toEqual(["m1/b", "m1/shop", "m1/a"]);
   });
 });
 

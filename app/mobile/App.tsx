@@ -1,11 +1,12 @@
-// The app: pair with a hub once, then its chats and approvals. The paired hub lives in secure storage (vault.ts);
-// one Session talks to it while the app runs, and dials again whenever the app comes back to the front. Pairing makes
-// the phone's notification key; Disconnect signs the phone out on the hub, after a confirm, and forgets both. A pairing
-// link (`fleetd://pair?…`, from a QR code scanned with iOS's Camera) opens the app and, once confirmed, pairs it.
+// The app: pair with a hub once, then its chats, where its approvals are answered too. The paired hub lives in secure
+// storage (vault.ts); one Session talks to it while the app runs, and dials again whenever the app comes back to the
+// front. Pairing makes the phone's notification key; Disconnect signs the phone out on the hub, after a confirm, and
+// forgets both. A pairing link (`fleetd://pair?…`, from a QR code scanned with iOS's Camera) opens the app and, once
+// confirmed, pairs it.
 //
-// Navigation is iOS's own (react-native-screens): UIKit's tab bar for Chats, Approvals and Settings (a drawn one on
-// Android), each a stack with a large title that collapses on scroll, and a chat pushed over them, which a swipe from
-// the edge takes back.
+// Navigation is iOS's own (react-native-screens): UIKit's tab bar for Chats and Settings (a drawn one on Android), each
+// a stack with a large title that collapses on scroll, and a chat pushed over them, which a swipe from the edge takes
+// back. An approval has no screen of its own: its chat floats to the top of Chats, and its card in the chat answers it.
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { createNativeBottomTabNavigator } from "@react-navigation/bottom-tabs/unstable";
 import { createNavigationContainerRef, NavigationContainer } from "@react-navigation/native";
@@ -20,11 +21,10 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { webSocketTransport } from "./src/hub/socket";
 import type { Paired } from "./src/hub/pair";
 import { pairLinkStep } from "./src/hub/pairLink";
-import { HubContext, SessionContext, useHub, type ApprovalsParams, type HubContextValue, type PairParams, type RootParams, type TabParams } from "./src/hubContext";
+import { HubContext, SessionContext, useHub, type HubContextValue, type PairParams, type RootParams, type TabParams } from "./src/hubContext";
 import { approvals } from "./src/lists";
 import { pushDeps, useTappedRoute } from "./src/notifications";
-import type { Route } from "./src/push";
-import { Approvals } from "./src/screens/Approvals";
+import { chatAt, type Route } from "./src/push";
 import { Chat, chatOptions } from "./src/screens/Chat";
 import { Chats, searchBar } from "./src/screens/Chats";
 import { Pair, Scan, Welcome } from "./src/screens/Connect";
@@ -155,30 +155,34 @@ function Pairing({ note, onPaired }: { note: string | undefined; onPaired: (p: P
   );
 }
 
-/** Where a tapped notification goes: its chat, or Approvals with its request on top. */
-const go = (route: Route): void => {
-  if (route.t === "chat") nav.navigate("Chat", { key: route.key });
-  else nav.navigate("Home", { screen: "ApprovalsTab", params: { screen: "Approvals", params: route.requestId === undefined ? {} : { focus: route.requestId } } });
+let taps = 0;
+
+/** Opens where a tapped notification goes, an approval's chat at its card (push.ts chatAt): false while not known yet. */
+const go = (route: Route, requests: Parameters<typeof chatAt>[1]): boolean => {
+  const at = chatAt(route, requests);
+  if (at === undefined) return false;
+  if (at !== null) nav.navigate("Chat", at.requestId === undefined ? { key: at.key } : { key: at.key, requestId: at.requestId, tap: ++taps });
+  return true;
 };
 
 function Hub({ paired, onForget }: { paired: Paired; onForget: (why?: string) => void }) {
   const session = useMemo(() => new Session({ hub: paired.hub, key: paired.key, transport: webSocketTransport, push: pushDeps }), [paired]);
   const state = useSyncExternalStore(session.subscribe, session.getState);
-  // A tapped notification before the navigator is ready waits for it.
+  // A tapped notification before the navigator is ready, or before an approval's chat is known, waits for them.
   const pending = useRef<Route | null>(null);
+  const tryPending = useCallback(() => {
+    if (pending.current === null || !nav.isReady()) return;
+    if (go(pending.current, session.getState().requests)) pending.current = null;
+  }, [session]);
   useTappedRoute((route) => {
-    if (nav.isReady()) go(route);
-    else pending.current = route;
+    pending.current = route;
+    tryPending();
   });
   useEffect(() => {
-    const tryPending = () => {
-      if (pending.current === null || !nav.isReady()) return;
-      go(pending.current);
-      pending.current = null;
-    };
     tryPending();
     return nav.addListener("state", tryPending);
-  }, []);
+  }, [tryPending]);
+  useEffect(tryPending, [state.requests, tryPending]);
 
   useEffect(() => {
     session.start();
@@ -245,7 +249,6 @@ function Root() {
 const NativeTabBar = createNativeBottomTabNavigator<TabParams>();
 const TabBar = createBottomTabNavigator<TabParams>();
 const ChatsStack = createNativeStackNavigator<{ Chats: undefined }>();
-const ApprovalsStack = createNativeStackNavigator<ApprovalsParams>();
 const SettingsStack = createNativeStackNavigator<{ Settings: undefined }>();
 
 function ChatsTab() {
@@ -254,15 +257,6 @@ function ChatsTab() {
     <ChatsStack.Navigator screenOptions={{ ...largeTitle(t), contentStyle: { backgroundColor: t.bg } }}>
       <ChatsStack.Screen name="Chats" component={Chats} options={{ headerSearchBarOptions: searchBar, ...newChatOptions(t, (name) => nav.navigate(name)) }} />
     </ChatsStack.Navigator>
-  );
-}
-
-function ApprovalsTab() {
-  const t = useTheme();
-  return (
-    <ApprovalsStack.Navigator screenOptions={{ ...largeTitle(t), contentStyle: { backgroundColor: t.grouped } }}>
-      <ApprovalsStack.Screen name="Approvals" component={Approvals} />
-    </ApprovalsStack.Navigator>
   );
 }
 
@@ -277,15 +271,15 @@ function SettingsTab() {
 
 const TABS = [
   { name: "ChatsTab", component: ChatsTab, title: "Chats", icon: "chats", iconOn: "chatsOn" },
-  { name: "ApprovalsTab", component: ApprovalsTab, title: "Approvals", icon: "approvals", iconOn: "approvalsOn" },
   { name: "SettingsTab", component: SettingsTab, title: "Settings", icon: "settings", iconOn: "settingsOn" },
 ] as const satisfies ReadonlyArray<{ name: keyof TabParams; component: () => React.JSX.Element; title: string; icon: IconName; iconOn: IconName }>;
 
 function Tabs() {
   const t = useTheme();
   const { state } = useHub();
+  // The approvals waiting, whose chats are on top of Chats: seen from Settings too.
   const waiting = approvals(state.requests).length;
-  const badge = (name: keyof TabParams) => (name === "ApprovalsTab" && waiting > 0 ? { tabBarBadge: String(waiting) } : {});
+  const badge = (name: keyof TabParams) => (name === "ChatsTab" && waiting > 0 ? { tabBarBadge: String(waiting) } : {});
   if (Platform.OS === "ios") {
     return (
       <NativeTabBar.Navigator screenOptions={{ tabBarActiveTintColor: t.accent }}>

@@ -23,7 +23,7 @@ import { KeyboardChatScrollView, KeyboardStickyView, useReanimatedKeyboardAnimat
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { arrivalsOf, ENTER_MS, rowKeyOf, type Arrivals } from "../arrivals";
-import { attachmentBubbles, bubbleTime, bubbles, dayLine, fullTime, quoteOf, replyOf, replyText, sameRow, sendNote, threadRows, type Bubble as BubbleData, type ThreadRow } from "../chatView";
+import { attachmentBubbles, bubbleTime, bubbles, dayLine, fullTime, landingOf, quoteOf, replyOf, replyText, sameRow, sendNote, threadRows, type Bubble as BubbleData, type ThreadRow } from "../chatView";
 import { chatItems, emptyChat, isNavi, type AttachmentGetOutput, type AttachmentRef, type ChatItem } from "../desktop";
 import { useHub, useSession, type RootParams } from "../hubContext";
 import { dispatchPrefs, usePrefs } from "../prefsStore";
@@ -178,12 +178,21 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
     return true;
   };
 
-  // Opened with unread messages: land on the first of them, under its bar, rather than at the very bottom.
-  const landed = useRef(false);
+  // Opened with unread messages: land on the first of them, under its bar, rather than at the very bottom. Opened at a
+  // message (a search hit) or an approval (its notification tapped, again too, while the chat is open): land on it,
+  // lit, reading older pages first while the approval's card is further back than them.
+  const { messageId, requestId, tap } = route.params;
+  const landed = useRef<string | null>(null);
   useEffect(() => {
-    if (landed.current || !chat.loaded || newestFirst.length === 0) return;
-    landed.current = true;
-    const target = route.params.messageId;
+    const wanted = `${messageId ?? ""} ${requestId ?? ""} ${String(tap ?? 0)}`;
+    if (landed.current === wanted || !chat.loaded || newestFirst.length === 0) return;
+    const found = landingOf(items, { messageId, requestId }, { hasOlder: chat.hasOlder, failed: chat.error !== undefined });
+    if (found === "older") {
+      if (!chat.loadingOlder) void session.loadOlder(chatKey);
+      return;
+    }
+    landed.current = wanted;
+    const target = found;
     const at = target !== undefined ? newestFirst.findIndex((r) => r.t === "item" && r.item.message?.messageId === target) : newestFirst.findIndex((r) => r.t === "unread");
     // Near the bottom already: nothing to jump to.
     if (at < 6) {

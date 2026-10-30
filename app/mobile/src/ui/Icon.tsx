@@ -6,7 +6,6 @@ const SYMBOLS = {
   chats: ["bubble.left.and.bubble.right", "forum"],
   chatsOn: ["bubble.left.and.bubble.right.fill", "forum"],
   approvals: ["checkmark.shield", "verified_user"],
-  approvalsOn: ["checkmark.shield.fill", "verified_user"],
   settings: ["gearshape", "settings"],
   settingsOn: ["gearshape.fill", "settings"],
   send: ["arrow.up", "arrow_upward"],

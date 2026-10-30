@@ -1,15 +1,15 @@
 // The panel beside a project's chat, as the frame holds it. Whether it shows is the window's (sidebarState: it hides
 // itself in a narrow window, like the sidebar); what it shows is the route's when the route names a view (a PR link,
 // Status's PRs, the palette), else the tab you last had. Its width is yours (panelWidth.ts): drag its left edge, or
-// focus that edge and use the arrow keys; a double-click resets it. It slides in as it opens and out as it closes,
-// only by transform and opacity, so the chat beside it never lays out again mid-way. Its contents load with its first
-// opening, and once it has closed nothing in it reads from the hub.
+// focus that edge and use the arrow keys; a double-click resets it. The frame slides it in as its toggle opens it and
+// out as it closes it (AppFrame), only by transform, so the chat beside it never lays out again mid-way; leaving the
+// project's chat takes it away at once. Its contents load with its first opening, and once it has gone nothing in it
+// reads from the hub.
 import { PanelRight } from "lucide-react";
 import {
   lazy,
   memo,
   Suspense,
-  useCallback,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -36,12 +36,11 @@ export interface ProjectPanelState {
   /** The project on screen; the panel is only ever beside a project's chat. */
   readonly project: ProjectKey | null;
   readonly shown: boolean;
-  /** Shown, or sliding out after it closed: the frame keeps it until it is gone. */
-  readonly present: boolean;
+  /** Open by its toggle, whether or not a project's chat is on screen to show it beside: the frame slides it as this
+   * changes, and only then. */
+  readonly open: boolean;
   readonly view: PanelView;
   readonly toggle: () => void;
-  /** Its slide out ended. */
-  readonly gone: () => void;
 }
 
 export function useProjectPanel(screen: Screen): ProjectPanelState {
@@ -49,16 +48,6 @@ export function useProjectPanel(screen: Screen): ProjectPanelState {
   const project = screen.id === "project" ? screen.project : null;
   const routed = screen.id === "project" ? screen.panel : undefined;
   const shown = project !== null && !panel.hidden;
-
-  // Closing starts its slide out in the same render, so it never vanishes for a frame first. Leaving the project's
-  // chat takes it away at once.
-  const [was, setWas] = useState(shown);
-  const [closing, setClosing] = useState(false);
-  if (was !== shown) {
-    setWas(shown);
-    setClosing(!shown && project !== null);
-  }
-  const gone = useCallback(() => setClosing(false), []);
 
   // A route that names a view opens the panel on it before paint, so a link never shows it closed first.
   const routedKey = routed === undefined ? null : JSON.stringify(routed);
@@ -76,7 +65,7 @@ export function useProjectPanel(screen: Screen): ProjectPanelState {
     if (closed && screen.id === "project" && screen.panel !== undefined) navigate({ id: "project", project: screen.project, message: screen.message }, { replace: true });
   }, [shown, screen]);
 
-  return { project, shown, present: shown || (closing && project !== null), view: routed ?? listView(panel.tab), toggle: panel.toggle, gone };
+  return { project, shown, open: !panel.hidden, view: routed ?? listView(panel.tab), toggle: panel.toggle };
 }
 
 /** The top row's toggle, beside a project's chat only. */
@@ -99,20 +88,12 @@ export function PanelToggle({ panel }: { panel: ProjectPanelState }) {
   );
 }
 
-/** Whether the element runs a CSS animation now; without one (reduced motion, no styles) its end never comes. */
-const animates = (el: HTMLElement): boolean => {
-  const style = getComputedStyle(el);
-  const names = style.animationName.split(",").map((n) => n.trim());
-  const longest = Math.max(0, ...style.animationDuration.split(",").map((d) => (d.trim().endsWith("ms") ? parseFloat(d) : parseFloat(d) * 1000) || 0));
-  return names.some((n) => n !== "" && n !== "none") && longest > 0;
-};
-
 /**
  * The panel itself, while it shows. Esc inside it goes back from an agent or a PR to the list, then closes it and
  * returns focus to the toggle; menus and dialogs in it take their own Esc first.
  */
 export function PanelSlot({ panel }: { panel: ProjectPanelState }) {
-  const { project, view, shown, gone } = panel;
+  const { project, view, shown } = panel;
   const aside = useRef<HTMLElement>(null);
   const [wide, setWide] = useState(false);
   const mode: PanelMode = wide ? "wide" : "normal";
@@ -120,21 +101,9 @@ export function PanelSlot({ panel }: { panel: ProjectPanelState }) {
   const bounds = widthBounds(mode, useWindowWidth());
   const width = shownWidth(widths[mode], bounds);
 
-  // Closed: it slides out, then the frame lets it go. Without an animation to wait for, at once.
-  useLayoutEffect(() => {
-    if (shown) return;
-    const el = aside.current;
-    if (el === null || !animates(el)) {
-      gone();
-      return;
-    }
-    const late = window.setTimeout(gone, 400);
-    return () => window.clearTimeout(late);
-  }, [shown, gone]);
-
-  if (!panel.present || project === null) return null;
+  if (!shown || project === null) return null;
   const onKeyDown = (e: KeyboardEvent<HTMLElement>) => {
-    if (e.key !== "Escape" || e.defaultPrevented || !shown) return;
+    if (e.key !== "Escape" || e.defaultPrevented) return;
     if (document.querySelector('[role="dialog"], [role="menu"], [role="listbox"]') !== null) return;
     e.preventDefault();
     if (hasItem(view)) {
@@ -153,14 +122,9 @@ export function PanelSlot({ panel }: { panel: ProjectPanelState }) {
       className={s.panel}
       aria-label={PANEL_LABEL}
       tabIndex={-1}
-      data-state={shown ? "open" : "closed"}
       data-mode={mode}
-      inert={!shown}
       style={{ "--panel-size": `${String(width)}px` } as CSSProperties}
       onKeyDown={onKeyDown}
-      onAnimationEnd={(e) => {
-        if (!shown && e.target === e.currentTarget) gone();
-      }}
     >
       <ResizeHandle panel={aside} width={width} min={bounds.min} max={bounds.max} onSet={(w) => setWidth(mode, w)} />
       <Boundary key="panel" part="the panel">

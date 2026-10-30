@@ -74,6 +74,11 @@ breaks a rule changes this page in the same PR and says why.
   - A glyph morphs, cell by cell, when its state changes.
 - **Only `transform` and `opacity` change**, so nothing reflows. Closing a menu, popover or dialog is instant. A row
   leaving a list fades in place for 140 ms (`lib/leaving`), then the gap closes.
+- **The sidebar and the panel slide** from the window's edge as their toggle opens or closes them, already at their
+  own width: in over `--dur-base` (180 ms), out over `--dur-fast` (120 ms), both `--ease-out`, as a transition, so a
+  toggle mid-way turns back from where it is. The frame lays out once, at the toggle: the chat takes its new width in
+  that frame, and a side going out is drawn over its edge until it has gone (`AppFrame`). Another screen bringing or
+  taking one swaps it at once. Check a change to them with `pnpm perf:toggles`.
 - **Reduced motion:** no beat, so no loops, and entrances are a plain fade. Each state keeps a still shape of its own
   (working is a diamond on a dim field, thinking the ring's top row).
 - **Cost:** no beat while the window is hidden or with reduced motion. Check a change that adds a loop with `pnpm perf`
