@@ -5,6 +5,7 @@ use std::sync::Arc;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
 use fleetd_contracts::auth::KeyKind;
+use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef};
 use fleetd_contracts::node_link::{CAP_PROJECT_SETTINGS, HubToNode, NodeToHub};
 use fleetd_contracts::sessions::SessionCall;
@@ -12,8 +13,8 @@ use serde_json::{Value, json};
 use tokio::sync::mpsc;
 
 use crate::hub::api::{CallError, Caller, Hub, HubConfig, Listen, registry};
-use crate::hub::store::HubDb;
 use crate::hub::store::test_clock::ManualClock;
+use crate::hub::store::{HubDb, WaitInput};
 
 #[path = "order_env_tests.rs"]
 mod order_env_tests;
@@ -312,6 +313,51 @@ async fn an_old_or_offline_node_takes_no_env_and_says_why_its_worktrees_are_unkn
             .env(&project())
             .unwrap()
             .is_empty()
+    );
+}
+
+/// The apps' sidebar reads the snapshot (fleetd_status) again on project.settings. The fake node, like a real one,
+/// answers the rename before its own project event reaches the hub, if ever: the name shows in the snapshot at once.
+#[tokio::test]
+async fn a_rename_shows_at_once_in_the_apps_snapshot_and_tells_them_to_read_it() {
+    let (hub, _home) = hub();
+    let _calls = node(&hub, true).await;
+    call(
+        &hub,
+        &person(),
+        "project_settings_set",
+        json!({ "machineId": "lab", "projectId": "p1", "title": "Storefront" }),
+    )
+    .await
+    .unwrap();
+
+    let status = call(&hub, &person(), "fleetd_status", json!({}))
+        .await
+        .unwrap();
+    let titles: Vec<&str> = status["projects"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|p| p["projectId"] == "p1")
+        .map(|p| p["title"].as_str().unwrap())
+        .collect();
+    assert_eq!(titles, ["Storefront"]);
+    let page = futures_util::FutureExt::now_or_never(hub.events.wait(WaitInput {
+        cursor: Some(0),
+        types: Some(vec![HubEventType::ProjectSettings]),
+        machine_id: None,
+        timeout_sec: 0,
+    }))
+    .unwrap()
+    .unwrap();
+    let renames: Vec<_> = page
+        .events
+        .iter()
+        .map(|e| (e.project_id.as_ref().map(|p| p.as_str()), e.data.clone()))
+        .collect();
+    assert_eq!(
+        renames,
+        [(Some("p1"), Some(json!({ "title": "Storefront" })))]
     );
 }
 
