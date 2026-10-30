@@ -13,6 +13,13 @@ Quick start: https://fleetd.sh/docs/quick-start
 GitHub:      https://github.com/unlaboredlabs/fleetd
 
 
+SOFTWARE ISN'T AN ASSET. IT'S 12 EXPERIMENTS A NIGHT. KEEP ONE. DROP THE REST.
+Agents made building cheap, so stop polishing one bet for months. Ship a dozen
+experiments tonight, see what people actually use, and drop the rest without
+regret. fleetd is built for that pace: a lead plans the work, agents build it
+in parallel, and every change is reviewed before it lands.
+
+
 ASK THE LEAD; IT LANDS THE PRS
 The lead splits your request between agents, each PR gets its own reviewer,
 and the merge train lands them together.

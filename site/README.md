@@ -2,7 +2,7 @@
 
 The static site behind `curl -fsSL https://fleetd.sh | sh`. `vercel.json` serves `install.sh` at `/` to curl, Wget and
 fetch user agents and `home.html` to everyone else. `install.sh` is also at `/install.sh` for reading first. `home.html` is the landing page: a hero
-with the install line, then four short sections, each with its own clip of the app (`showcase-*`). It is dark until
+with the install line, the philosophy (three lines set big and a paragraph), then four short sections, each with its own clip of the app (`showcase-*`). It is dark until
 the reader picks Light in the header; the choice is kept under the docs' `starlight-theme` key, where anything but
 `light` (the docs' Auto included) reads as dark. `fleetd.txt` is its plain-text twin (not `index.txt`: Vercel would serve that at `/` and break the curl rewrite) for agents, and `fonts/`
 holds the self-hosted IBM Plex Sans and Lilex (both SIL OFL, licences alongside).
