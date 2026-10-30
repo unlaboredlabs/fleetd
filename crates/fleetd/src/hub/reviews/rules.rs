@@ -330,12 +330,41 @@ mod delta_tests {
             again.contains(&format!("git range-diff {old}...{new}")),
             "{again}"
         );
-        assert!(
-            again.contains(
-                "blocking only for what is wrong, unsafe or fails what it sets out to do"
-            )
-        );
+        assert!(again.contains(
+            "blocking for what is wrong, unsafe, fails what it sets out to do or is a bug a person would hit"
+        ));
         // The same head reviewed again is no delta.
         assert_eq!(review_prompt(set, &change(&new), Some(&new)), first);
+    }
+
+    /// A bug a person would hit in normal use blocks, and the reviewer runs the tests nearest the change and names
+    /// them: tonight's reviewers filed a dead tap and raw JSON in search as non-blocking, and ran no tests.
+    #[test]
+    fn a_user_visible_bug_blocks_and_the_reviewer_runs_the_nearest_tests() {
+        let text = review_prompt(PromptSet::defaults(), &change(&"a".repeat(40)), None);
+        for needle in [
+            "any bug a person would hit in normal use: a dead tap or click, raw JSON or an internal error shown, \
+             data lost or shown wrong, a crash, a flow that doesn't finish",
+            "Non-blocking is only for style, docs, naming and rare edge cases",
+            "when unsure whether people would hit it, it is blocking",
+            "Run the tests nearest the change, and name each one you ran",
+            "`cargo test -p <crate> <filter>`",
+            "a warm build in `target/`",
+            "and the tests you ran",
+        ] {
+            assert!(text.contains(needle), "{needle}\n---\n{text}");
+        }
+        assert!(!text.contains("never a long or exhaustive suite"), "{text}");
+        let brief = crate::hub::prompts::registry::get("task.brief.review")
+            .unwrap()
+            .default;
+        assert!(
+            brief.contains("Run the tests nearest the change"),
+            "{brief}"
+        );
+        assert!(
+            brief.contains("any bug a person would hit in normal use is one: a dead tap or click"),
+            "{brief}"
+        );
     }
 }

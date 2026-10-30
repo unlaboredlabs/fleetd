@@ -38,6 +38,7 @@ pub mod skills;
 pub mod store;
 pub mod update;
 pub mod util;
+pub mod warm;
 pub mod wire;
 pub mod worktree;
 pub mod worktree_setup;
