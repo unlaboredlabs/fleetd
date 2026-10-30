@@ -4,10 +4,11 @@
 // through Chromium's input pipeline: short, long, down and up in a scrolled list, from either end, after the edge's
 // autoscroll, as another desktop's move arrives, as the hub's own echo comes back early or late, and as a reply draws
 // the rows again. Each animation frame from before the press until well after the release, every row's place on screen
-// is recorded. A drop jumps when, from the press on, a row the drag never passes moves at all, or a row it passes goes
-// anywhere but one slot over to the gap's other side (the row above a row dragged down jumping up past its place); or
-// when, after the release, a row moves farther in a frame than the glide's curve would take it (a snap), or turns back
-// without the order having changed. A drag that never lifts, or lands where it started, fails.
+// is recorded. A drop jumps when, from the press on, a row the drag never reaches moves at all, or a row it reaches
+// goes anywhere but up to one slot over and back, or doesn't end where the drop puts it (the row above a row dragged
+// down jumping up past its place); or when, after the release, a row moves farther in a frame than the glide's curve
+// would take it (a snap), or turns back without the order having changed. A drag that never lifts, or lands where it
+// started, fails.
 //
 //   --theme light|dark   (default light)
 //   --strip DIR          also write each drop's frames (Chromium's screencast), named by ms from just before the press
@@ -218,6 +219,14 @@ const DROPS: ReadonlyArray<Drop> = [
   { name: "down past three, scrolled", scroll: 120, drag: async (p) => glide(p, await middle(p, await pick(p, 8)), 3 * ROW + 6, 10) },
   { name: "up past one, scrolled", scroll: 120, drag: async (p) => glide(p, await middle(p, await pick(p, 12)), -(ROW + 6), 6) },
   { name: "up past three, scrolled", scroll: 120, drag: async (p) => glide(p, await middle(p, await pick(p, 12)), -(3 * ROW + 6), 10) },
+  {
+    name: "down past three and back one, scrolled",
+    scroll: 120,
+    drag: async (p) => {
+      const end = await glide(p, await middle(p, await pick(p, 8)), 3 * ROW + 6, 10);
+      await p.mouse.move(end.x, end.y - ROW, { steps: 4 });
+    },
+  },
   { name: "down from the top", drag: async (p) => glide(p, await middle(p, await pick(p, 0)), 2 * ROW + 6, 8) },
   { name: "up from the bottom", scroll: 2000, drag: async (p) => glide(p, await middle(p, (await names(p)).at(-1) ?? ""), -(2 * ROW + 6), 8) },
   { name: "slow hub, late echo", drag: async (p) => glide(p, await middle(p, await pick(p, 4)), 2 * ROW + 4, 8), hub: { setMs: 250, getMs: 120, echoMs: 0 } },
@@ -246,10 +255,12 @@ const GLIDE_MS = 180;
 
 /**
  * Every row around the dragged one, from the press to the end, in its list (however far the sidebar scrolls). A row the
- * drag never passes (above a row dragged down, below one dragged up, beyond where it lands) stays exactly where it
- * was. A row it passes goes one way only, to the gap's other side, by at most the dragged row's height, and stays: so a
- * row passed by a row dragged down, which then sits above it, never jumps up past its place (W219). A drag that never
- * lifts, or lands where it started, has nothing to show and fails.
+ * dragged row's middle never reached (above a row dragged down, below one dragged up, beyond the farthest it went)
+ * stays exactly where it was. A row it reached slides at most one row, toward where the dragged row started: if the
+ * drop leaves it on the other side, it goes one way only and ends one row over; if the drag gave it back (it went past
+ * and came back, as after an autoscroll), it ends where it started. So a row passed by a row dragged down, which then
+ * sits above it, never jumps up past its place (W219). A drag that never lifts, or lands where it started, has nothing
+ * to show and fails.
  */
 const around = (frames: ReadonlyArray<Frame>): string[] => {
   const lifted = frames.flatMap((f) => f.rows.filter((r) => r.lifted).map((r) => r.name))[0];
@@ -261,30 +272,39 @@ const around = (frames: ReadonlyArray<Frame>): string[] => {
   const now = last.rows.findIndex((r) => r.name === lifted);
   if (was < 0 || now < 0) return [`${lifted} isn't in the list`];
   if (was === now) return [`${lifted} landed where it started`];
-  const down = now > was;
-  const size = Math.abs((first.rows[was + (down ? 1 : -1)]?.top ?? 0) - (first.rows[was]?.top ?? 0));
+  const size = Math.abs((first.rows[was + 1]?.top ?? first.rows[was - 1]?.top ?? 0) - (first.rows[was]?.top ?? 0));
+  // How far the dragged row's middle went each way, in its list, while it was lifted.
+  const middles = frames.flatMap((f) => f.rows.filter((r) => r.name === lifted && r.lifted).map((r) => r.top - f.list + size / 2));
+  const lowest = Math.max(...middles);
+  const highest = Math.min(...middles);
   const out: string[] = [];
   first.rows.forEach(({ name, top }, i) => {
     if (i === was) return;
-    const passed = i >= Math.min(was, now) && i <= Math.max(was, now);
     const at = top - first.list;
-    // Where it may be: its place, or for a row passed anywhere from there to one row toward the dragged row's start.
-    const [lo, hi] = passed ? (down ? [at - size, at] : [at, at + size]) : [at, at];
+    const below = i > was;
+    const reached = below ? lowest >= at + size / 2 - 0.5 : highest <= at + size / 2 + 0.5;
+    const passed = i >= Math.min(was, now) && i <= Math.max(was, now);
+    // Where it may be: its place, or for a row reached anywhere from there to one row toward the dragged row's start;
+    // where it must end: one row over if the drop left it on the other side, else its place.
+    const [lo, hi] = !reached ? [at, at] : below ? [at - size, at] : [at, at + size];
+    const end = passed ? (below ? at - size : at + size) : at;
+    const what = passed ? "passed" : reached ? "given back" : "never reached";
     let prev = at;
     for (const f of frames) {
       const there = f.rows.find((r) => r.name === name);
       if (there === undefined) continue;
       const y = there.top - f.list;
       const ms = Math.round(f.t - first.t);
-      const what = passed ? "passed" : "never passed";
       if (y < lo - 0.5 || y > hi + 0.5) out.push(`${name} (${what}) at ${(y - at).toFixed(1)} px from its place, ${String(ms)} ms from the press`);
-      else if (passed && (down ? y > prev + 0.5 : y < prev - 0.5)) out.push(`${name} (passed) went back ${(y - prev).toFixed(1)} px, ${String(ms)} ms from the press`);
+      else if (passed && (below ? y > prev + 0.5 : y < prev - 0.5)) out.push(`${name} (passed) went back ${(y - prev).toFixed(1)} px, ${String(ms)} ms from the press`);
       else {
         prev = y;
         continue;
       }
-      break;
+      return;
     }
+    const ended = last.rows.find((r) => r.name === name);
+    if (ended !== undefined && Math.abs(ended.top - last.list - end) > 0.5) out.push(`${name} (${what}) ended ${(ended.top - last.list - at).toFixed(1)} px from its place, not ${(end - at).toFixed(1)}`);
   });
   return out;
 };

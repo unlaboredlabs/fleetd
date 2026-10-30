@@ -279,8 +279,9 @@ describe("the rows around a row dragged in the sidebar", () => {
   /**
    * The sidebar on a, b, c, d from the data layer, `name` dragged `dy` and let go, with every commit React makes
    * looked at: where `watch` (a row the drag never passes) and `passed` (the one it does) are drawn, and whether the
-   * list took a new order while its rows were still making way for the drag (their slide then runs from a stale
-   * place: the row above jumps up, W219).
+   * list took a new order while its rows were still making way for the drag. These guard the render ordering only:
+   * here act() makes the renders one commit and nothing is painted between them, so the jump a split render painted
+   * on #868's parent (the row above jumping up, W219) doesn't show; perf:drops, in the built app, guards the frames.
    */
   const drag = async (name: string, dy: number, watch: string, passed: string) => {
     // Where each row was drawn at the last read of the layout: a transition set after it starts there.
@@ -326,7 +327,7 @@ describe("the rows around a row dragged in the sidebar", () => {
     return commits;
   };
 
-  it("never moves the row above a row dragged down, nor reorders the list while its rows still make way", async () => {
+  it("in every commit, keeps the row above a row dragged down in its place and the row passed in its slot or the gap's", async () => {
     // b down past c: a, above it, never moves; c slides up into b's place and stays there.
     const commits = await drag("b", ROW + 6, "a", "c");
     expect(commits.length).toBeGreaterThan(2);
@@ -337,7 +338,7 @@ describe("the rows around a row dragged in the sidebar", () => {
     expect(sets.map((x) => x.order)).toEqual([refs("a", "c", "b", "d")]);
   });
 
-  it("never moves the row below a row dragged up, nor reorders the list while its rows still make way", async () => {
+  it("in every commit, keeps the row below a row dragged up in its place and the row passed in its slot or the gap's", async () => {
     // c up past b: d, below it, never moves; b slides down into c's place and stays there.
     const commits = await drag("c", -(ROW + 6), "d", "b");
     expect(commits.filter((c) => c.making && c.order !== "a b c d")).toEqual([]);
