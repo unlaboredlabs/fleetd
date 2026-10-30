@@ -1,0 +1,18 @@
+# cargo-nextest runs each test in a process of its own: under one `cargo test` process, background work earlier tests
+# leave running slows every later one (the hub::train tests took 0.3 s each alone and 2.7 s in the full suite).
+# CI runs `cargo nextest run --profile ci` in `rust (linux)`; doctests run with `cargo test --doc` beside it.
+
+[profile.ci]
+# Every failure in one run, not just the first.
+fail-fast = false
+# A hung test is named after a minute and fails after five, rather than holding the job until its timeout.
+slow-timeout = { period = "60s", terminate-after = 5 }
+# The summary lists every test that failed and every test that passed only on a retry (FLAKY).
+final-status-level = "flaky"
+failure-output = "immediate-final"
+
+# The Chrome-driven browser tests (agent-browser among them) fail now and then on a busy runner: two more tries, and a
+# pass on a retry is reported as flaky, not hidden.
+[[profile.ci.overrides]]
+filter = 'package(fleetd) & test(/^node::browser::/)'
+retries = 2
