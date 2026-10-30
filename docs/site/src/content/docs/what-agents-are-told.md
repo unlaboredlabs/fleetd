@@ -16,12 +16,18 @@ lines a lead is woken with, is facts: see [Filled in by fleetd](#not-editable).
 
 ## How a session gets its instructions {#how}
 
-There is no hidden system prompt. fleetd's text reaches a model in one of two ways:
+fleetd's text reaches a model in one of three ways:
 
 | Way | Used for |
 |---|---|
-| The first message of a session | Leads (with the chat message that started the lead), tasks, reviewers. |
+| The session's system prompt | Standing rules: a lead's start prompt, voice, task profiles, your instructions and memory; a task's `## Rules` and all after them, and its share of the machine. |
+| The first message of a session | The state it starts in: a lead's digest (with the chat message that started the lead), a task's task and brief. |
 | A later message into a session | Wakes, chat messages, review findings, train news, pauses, [steers](/docs/steering). |
+
+The system prompt is added to Claude Code's own (`--append-system-prompt-file`, a private file on the machine) at
+every start of the session, resumes included. When a long session is compacted, Claude Code summarizes its messages
+but never its system prompt, so a lead keeps its exact voice and rules for the whole session. A node too old to take a system prompt, or a claude too old for
+the flag, gets it at the start of the first message instead.
 
 Your own claude setup still applies underneath. See [Config & files](/docs/config-and-files#claude).
 
@@ -163,7 +169,7 @@ fleetd instructions edit --project builder-1/app
 fleetd instructions show
 ```
 
-They are added to every lead's first message and every task brief (writers and reviewers), hub-wide first,
+They are added to every lead's and every task's system prompt (writers and reviewers), hub-wide first,
 under "Custom instructions from the human". They are not added to wakes.
 
 They are sized for about 500 characters; past that, `edit` warns. After your editor closes, `edit` prints any
@@ -180,8 +186,8 @@ an entry no longer holds, the lead removes it with `forget`, and the chat shows 
 - **Each project** (`MEMORY.md`, plus topic files for detail): only that project's sessions get it. Another project
   never sees it.
 
-A lead gets your memory and its project's `MEMORY.md` at the start of each session, after your instructions;
-writers get them in their brief. A project's lead answers everyone who shares the hub in one long session, so on a
+A lead gets your memory and its project's `MEMORY.md` in its system prompt at the start of each session, after your
+instructions; writers get them in theirs. A project's lead answers everyone who shares the hub in one long session, so on a
 hub with several people it starts with no one's memory: anyone's would stay in its context while it answers the
 others. When it remembers something in user scope, it goes to the memory of the person whose message it is
 answering, and only that person can undo it. A lead opens a topic file when it needs one. Something remembered
@@ -236,11 +242,11 @@ no longer holds stops misleading the agents:
 ## The checklist {#checklist}
 
 Each project's lead keeps a checklist with its `checklist` tool: a few plain items per piece of work you approved,
-each to do, doing or done, linked to its pull request or agent. Its first message tells it to keep the list current,
+each to do, doing or done, linked to its pull request or agent. Its start prompt tells it to keep the list current,
 moving items along in the turn their news arrives; every wake shows it how many are done and the items still open.
 You see the list in the panel's [Checklist tab](/docs/desktop-app#checklist), where you can delete items and clear
 the done ones. The lead's next wake names what you took off (`- the human took 1 item off the checklist: 3 "Dark
-mode"; leave it off unless they ask again`), its digest shows the list as it is now, and its first message tells it
+mode"; leave it off unless they ask again`), its digest shows the list as it is now, and its start prompt tells it
 never to add those back unless you ask. Writers can't change the list, and nothing is worked out from it: no
 figure, no estimate.
 

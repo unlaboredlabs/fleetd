@@ -293,6 +293,8 @@ async fn a_node_too_old_for_detached_worktrees_gets_the_old_launch() {
     use fleetd_contracts::sessions::SessionWorkspace;
     let (hub, _home) = hub();
     let mut calls = serve(&hub, Node::link(&hub).await);
+    // So old it takes no system prompt either: its brief's rules come in its first message.
+    hub.link.set_capabilities(&lab_a(), &[]);
     let pr = "https://github.com/o/r/pull/7";
     insert(
         &hub,

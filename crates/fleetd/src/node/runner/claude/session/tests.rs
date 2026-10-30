@@ -93,6 +93,7 @@ impl Fake {
             runtime_mode: RuntimeMode::FullAccess,
             allowed_tools: Vec::new(),
             allowed_only: false,
+            system_prompt: None,
             disallowed_tools: Vec::new(),
             mcp_config: None,
             strict_mcp: false,

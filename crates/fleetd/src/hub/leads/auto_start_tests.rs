@@ -159,9 +159,16 @@ impl Hub {
         (created.workstream_id, lead)
     }
 
+    /// What each launch gave its model: its system prompt, then its first message.
     pub(crate) fn launched_prompts(&self) -> Vec<String> {
         let launches = self.node.launches.lock().unwrap();
-        launches.iter().map(|l| l.prompt.to_string()).collect()
+        launches
+            .iter()
+            .map(|l| match &l.system_prompt {
+                Some(system) => format!("{system}\n\n{}", l.prompt),
+                None => l.prompt.to_string(),
+            })
+            .collect()
     }
 
     fn events_of(&self, kind: HubEventType) -> usize {
@@ -792,12 +799,11 @@ async fn a_navis_lead_starts_as_an_assistant_and_not_at_all_while_archived() {
     assert!(matches!(started, AutoStart::Started(_)));
     let launches = hub.node.launches.lock().unwrap();
     assert_eq!(launches[0].runtime_mode, RuntimeMode::ApprovalRequired);
-    assert!(
-        launches[0]
-            .prompt
-            .starts_with("You are repo-a, a personal assistant")
-    );
-    assert!(launches[0].prompt.contains("/lab/repo-a"));
+    // Its standing rules are its system prompt, which a compaction never summarizes; its first message is the state.
+    let system = launches[0].system_prompt.as_deref().unwrap();
+    assert!(system.starts_with("You are repo-a, a personal assistant"));
+    assert!(system.contains("/lab/repo-a") && system.contains("## Your voice"));
+    assert!(!launches[0].prompt.contains("## Your voice"));
     assert_eq!(*hub.node.roles.lock().unwrap(), [SessionRole::Assistant]);
 }
 
@@ -810,11 +816,11 @@ async fn a_project_of_code_keeps_its_lead_as_before() {
     ));
     let launches = hub.node.launches.lock().unwrap();
     assert_eq!(launches[0].runtime_mode, RuntimeMode::FullAccess);
-    assert!(
-        launches[0]
-            .prompt
-            .starts_with("You are the lead of project repo-a")
-    );
+    let system = launches[0].system_prompt.as_deref().unwrap();
+    assert!(system.starts_with("You are the lead of project repo-a"));
+    let voice = crate::hub::prompts::PromptSet::defaults().render("lead.voice", &[]);
+    assert!(system.contains(voice.trim_end()));
+    assert!(!launches[0].prompt.contains("## Your voice"));
     assert_eq!(*hub.node.roles.lock().unwrap(), [SessionRole::Lead]);
 }
 

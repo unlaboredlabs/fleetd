@@ -706,6 +706,7 @@ async fn start(
     let input = LaunchInput {
         project_id: r.project_id.clone(),
         prompt,
+        system_prompt: None,
         profile: hub
             .db
             .profiles()

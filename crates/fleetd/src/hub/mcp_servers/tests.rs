@@ -512,6 +512,7 @@ async fn a_launch_carries_them_and_a_send_only_a_change() {
             &crate::hub::executor::LaunchInput {
                 project_id: ProjectId::unchecked("p1"),
                 prompt: "go".into(),
+                system_prompt: None,
                 profile: fleetd_contracts::effort::ProfileName::legacy(),
                 runtime_mode: fleetd_contracts::model::RuntimeMode::FullAccess,
                 title: None,
@@ -556,6 +557,7 @@ async fn a_launch_carries_them_and_a_send_only_a_change() {
             &crate::hub::executor::LaunchInput {
                 project_id: ProjectId::unchecked("p1"),
                 prompt: "hi".into(),
+                system_prompt: None,
                 profile: fleetd_contracts::effort::ProfileName::legacy(),
                 runtime_mode: fleetd_contracts::model::RuntimeMode::FullAccess,
                 title: None,
@@ -591,6 +593,7 @@ async fn a_refresh_launch_allows_only_the_memory_tools_and_keeps_its_own_servers
             &crate::hub::executor::LaunchInput {
                 project_id: ProjectId::unchecked("p1"),
                 prompt: "tidy".into(),
+                system_prompt: None,
                 profile: fleetd_contracts::effort::ProfileName::legacy(),
                 runtime_mode: fleetd_contracts::model::RuntimeMode::FullAccess,
                 title: None,
@@ -774,6 +777,7 @@ async fn a_navis_lead_launches_with_its_integrations_reads_allowed() {
                 &crate::hub::executor::LaunchInput {
                     project_id: ProjectId::unchecked("p1"),
                     prompt: "hi".into(),
+                    system_prompt: None,
                     profile: fleetd_contracts::effort::ProfileName::legacy(),
                     runtime_mode: fleetd_contracts::model::RuntimeMode::ApprovalRequired,
                     title: None,

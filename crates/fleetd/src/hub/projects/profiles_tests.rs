@@ -134,6 +134,7 @@ async fn launch(
             &LaunchInput {
                 project_id: ProjectId::unchecked(project),
                 prompt: "go".into(),
+                system_prompt: None,
                 profile: fleetd_contracts::effort::ProfileName::unchecked(profile),
                 runtime_mode: fleetd_contracts::model::RuntimeMode::FullAccess,
                 title: None,

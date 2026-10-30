@@ -626,6 +626,11 @@ impl ClaudeRunner {
             args.push("--settings".into());
             args.push(settings.display().to_string());
         }
+        // The first message is summarized when claude compacts the session; the system prompt never is.
+        if let Some(system) = &spec.system_prompt {
+            args.push("--append-system-prompt-file".into());
+            args.push(system.display().to_string());
+        }
         args.push("--setting-sources".into());
         args.push("user,project,local".into());
         for dir in &spec.add_dirs {
@@ -815,6 +820,12 @@ pub fn session_file(config_dir: &Path, cwd: &Path, id: &str) -> Option<PathBuf> 
 /// [`session_file`] could not tell. The session service sends the run again to a resumed process.
 pub fn session_in_use(text: &str) -> bool {
     text.contains("is already in use")
+}
+
+/// claude's words (stderr, so also the failed run's message) when it doesn't know `--append-system-prompt-file`,
+/// as a claude older than the flag says it. The session service starts it again with the rules in the message.
+pub fn prompt_file_unknown(text: &str) -> bool {
+    text.contains("unknown option") && text.contains("--append-system-prompt-file")
 }
 
 #[cfg(test)]
@@ -1227,6 +1238,7 @@ mod tests {
                 r#"Bash(git commit -m "a, b")"#.into(),
             ],
             allowed_only: false,
+            system_prompt: None,
             disallowed_tools: vec!["Task".into(), "WebFetch".into()],
             mcp_config: None,
             strict_mcp: false,
@@ -1282,6 +1294,30 @@ mod tests {
             args.contains(
                 "--mcp-config /n/mcp.json --strict-mcp-config --settings /n/settings.json "
             )
+        );
+    }
+
+    #[test]
+    fn standing_rules_go_in_the_system_prompt_at_every_start() {
+        let runner = ClaudeRunner::new("claude".into());
+        for resume in [false, true] {
+            let spec = SessionSpec {
+                resume,
+                system_prompt: Some("/n/system-prompt.md".into()),
+                ..spec()
+            };
+            let args = runner.args(&spec).join(" ");
+            // A file, never the text: a compaction summarizes the conversation, never this.
+            assert!(
+                args.contains(" --append-system-prompt-file /n/system-prompt.md "),
+                "{args}"
+            );
+        }
+        assert!(
+            !runner
+                .args(&spec())
+                .iter()
+                .any(|a| a.starts_with("--append-system-prompt"))
         );
     }
 

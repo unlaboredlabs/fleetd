@@ -1411,7 +1411,7 @@ A project's policy file can add rules for its sessions: `tools.allow` and `tools
 
 | Where | What you see |
 |---|---|
-| App: open an agent in the panel's Agents tab, then **What it was told** | "What the writer was told": the exact first message, which prompt versions it used and the tools it never gets. |
-| CLI on the hub machine: `fleetd prompts show --session <machine>/<thread>` | The first message alone. |
+| App: open an agent in the panel's Agents tab, then **What it was told** | "What the writer was told": the exact system prompt and first message, which prompt versions it used and the tools it never gets. |
+| CLI on the hub machine: `fleetd prompts show --session <machine>/<thread>` | The system prompt and first message alone. |
 | MCP client: `session_prompt_get` | The same as the app. |
 | `claude mcp list` in the project's folder | Your own MCP servers, which the session loads too. |

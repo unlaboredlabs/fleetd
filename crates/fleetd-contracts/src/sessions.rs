@@ -83,6 +83,11 @@ pub struct SessionLaunch {
     pub workspace: SessionWorkspace,
     /// The first user message.
     pub prompt: NonEmpty,
+    /// The session's standing rules (a lead's role and voice, a task's rules), added to the runner's own system prompt
+    /// at every start of its process (claude's `--append-system-prompt-file`): a compaction summarizes the first
+    /// message, never these. Only nodes listing [`crate::node_link::CAP_SYSTEM_PROMPT`] get it; any other gets them at the
+    /// start of `prompt`.
+    pub system_prompt: Option<NonEmpty>,
     /// Minted by the hub (a UUID); the first run's id.
     pub run_id: NonEmpty,
     /// `--allowedTools` rules from the project's policy (`tools.allow`), in claude's own syntax: these never prompt.

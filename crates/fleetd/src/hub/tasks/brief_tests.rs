@@ -209,6 +209,13 @@ async fn a_tasks_first_prompt_carries_the_whole_brief_and_the_decisions_it_names
         !prompt.contains("never cited") && !prompt.contains("/p2-health"),
         "{prompt}"
     );
+    // Its rules are standing ones: in its system prompt, which a compaction never summarizes, and only there.
+    let system = launch.system_prompt.as_deref().unwrap();
+    assert!(
+        system.starts_with("## Rules\n") && system.contains("This is a read-only task"),
+        "{system}"
+    );
+    assert!(!prompt.contains("## Rules"), "{prompt}");
 }
 
 /// Records `task`'s verdict on `pr` at `sha`, as `report` does.
@@ -349,4 +356,32 @@ async fn an_author_reads_every_finding_of_its_prs_latest_reviews_but_no_other_pr
                 && !format!("{refused:?}").contains("p2's own")
         );
     }
+}
+
+/// The lead's text may hold a `## Rules` of its own: the brief splits at the template's, so the task and its workstream
+/// stay whole in the first message and the system prompt starts at fleetd's rules.
+#[tokio::test]
+async fn a_rules_heading_in_the_leads_text_never_cuts_the_brief_short() {
+    let (hub, _home) = hub();
+    let mut calls = serve(&hub, Node::link(&hub).await);
+    briefed(&hub);
+    let task = "Write the parser.\n\n## Rules\n- the lead's own rule\n\nThen ship it.";
+    insert(
+        &hub,
+        json!({ "taskId": "T1", "title": "parser", "state": "queued", "prompt": task }),
+    );
+    start_queued(&hub.tasks).await;
+    let launch = next_launch(&mut calls).await;
+    let prompt = launch.prompt.as_str();
+    assert!(prompt.contains(task), "{prompt}");
+    assert!(
+        prompt.contains("Goal: Every agent reads its brief itself."),
+        "{prompt}"
+    );
+    let system = launch.system_prompt.as_deref().unwrap();
+    assert!(
+        system.starts_with("## Rules\n") && !system.contains("the lead's own rule"),
+        "{system}"
+    );
+    assert!(system.contains("This is a read-only task"), "{system}");
 }

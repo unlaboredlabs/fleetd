@@ -178,6 +178,9 @@ pub const CAP_CLAUDE_MODELS: &str = "claude_models";
 /// or `medium` and an effort it knows.
 pub const CAP_PROFILE_NAMES: &str = "profile_names";
 
+/// The node passes a launch's `systemPrompt` to its runner at every start of the session (W218).
+pub const CAP_SYSTEM_PROMPT: &str = "system_prompt";
+
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]

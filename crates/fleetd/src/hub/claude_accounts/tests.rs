@@ -719,6 +719,7 @@ pub(crate) fn request(order: fleetd_contracts::ledger::WorkstreamId, id: &str) -
         project_ref: project(),
         repo_id: None,
         prompt: "go".into(),
+        system_prompt: None,
         profile: fleetd_contracts::effort::ProfileName::legacy(),
         title: "T1: go".into(),
         client_request_id: id.into(),

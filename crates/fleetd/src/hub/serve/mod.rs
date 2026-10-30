@@ -289,10 +289,8 @@ pub fn build_on_with(
     });
     executors.set_time(time.clone());
     let linked = Arc::downgrade(&link);
-    executors.set_profile_names(Arc::new(move |m| {
-        linked
-            .upgrade()
-            .is_none_or(|l| !l.node_lacks(m, fleetd_contracts::node_link::CAP_PROFILE_NAMES))
+    executors.set_node_can(Arc::new(move |m, cap| {
+        linked.upgrade().is_none_or(|l| !l.node_lacks(m, cap))
     }));
     let watchdog = crate::hub::watchdog::Watchdog::new(
         crate::hub::watchdog::stall_ms_from_env(),

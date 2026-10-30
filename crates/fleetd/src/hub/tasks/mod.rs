@@ -573,7 +573,10 @@ impl Tasks {
             .as_ref()
             .map(|b| self.d.ports.decisions_cited(r, &render::brief_text(b)))
             .unwrap_or_default();
-        let mut prompt = render_task_prompt(
+        let render::TaskPrompt {
+            system,
+            first: mut prompt,
+        } = render_task_prompt(
             &set,
             &render::PromptInput {
                 task,
@@ -598,6 +601,7 @@ impl Tasks {
             project_ref: r.clone(),
             repo_id: task.repo_id.clone(),
             prompt: prompt.clone(),
+            system_prompt: Some(system.clone()).filter(|s| !s.is_empty()),
             profile: task.profile.clone(),
             title: js_prefix(
                 &format!("{}: {}", task.task_id.as_str(), task.title.as_str()),
@@ -622,7 +626,12 @@ impl Tasks {
             r,
             &thread_id,
             &Timestamp(self.now_iso()),
-            &prompt,
+            &[system.as_str(), prompt.as_str()]
+                .iter()
+                .filter(|t| !t.is_empty())
+                .copied()
+                .collect::<Vec<_>>()
+                .join("\n\n"),
         ) {
             tracing::warn!(task = %task.task_id.as_str(), %error, "task prompts not pinned");
         }
