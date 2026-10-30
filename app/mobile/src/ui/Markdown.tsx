@@ -3,49 +3,56 @@
 // in it rather than drawn in the accent. A bubble's words aren't selectable where they stand, as in Messages: holding
 // one opens its menu, whose Select Text has them.
 import * as Clipboard from "expo-clipboard";
-import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
-import { Linking, Pressable, ScrollView, StyleSheet, Text, View, type TextStyle } from "react-native";
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Linking, PixelRatio, Pressable, ScrollView, StyleSheet, Text, View, type TextLayoutEvent, type TextStyle } from "react-native";
 import { parseMarkdown, type Block, type Inline } from "../markdown";
+import { bubble, fitWidth } from "../bubble";
 import { mono, space, type, useTheme } from "../theme";
 import { haptics } from "./haptics";
 import { Icon } from "./Icon";
 
 /**
- * `room`: words as wide as the bubble's time, kept clear at the end of the last line (invisible), so the time sits in
- * the corner beside the text as Telegram's does. A last block that isn't a paragraph gets a line of its own for it.
+ * `fit`: the words take only as wide as their longest line, as Messages' bubbles do, where a Text takes all the width it
+ * may. Paragraphs and headings measure their lines once for each text, then draw at that width; other blocks (a list,
+ * code) keep the whole width. Off while the text still streams in, so the bubble doesn't narrow and widen with each word.
  */
-export function Markdown({ text, ink, onAccent = false, room }: { text: string; ink: string; onAccent?: boolean; room?: string | undefined }) {
+export function Markdown({ text, ink, onAccent = false, fit = false }: { text: string; ink: string; onAccent?: boolean; fit?: boolean }) {
   const blocks = useMemo(() => parseMarkdown(text), [text]);
-  const lastIsText = blocks.at(-1)?.t === "p";
+  const fits = fit && blocks.every((b) => b.t === "p" || b.t === "h");
+  const lines = useRef<{ text: string; widths: number[] }>({ text: "", widths: [] });
+  const [fitted, setFitted] = useState<{ text: string; width: number } | undefined>(undefined);
+  const measure = (i: number) => (e: TextLayoutEvent) => {
+    if (fitted?.text === text) return;
+    if (lines.current.text !== text) lines.current = { text, widths: [] };
+    const widths = lines.current.widths;
+    widths[i] = Math.max(0, ...e.nativeEvent.lines.map((l) => l.width));
+    if (blocks.every((_, k) => widths[k] !== undefined)) setFitted({ text, width: fitWidth(widths, PixelRatio.get()) });
+  };
+  const width = fits && fitted?.text === text ? fitted.width : undefined;
   return (
-    <View style={styles.blocks}>
+    <View style={[styles.blocks, width !== undefined && { width }]}>
       {blocks.map((b, i) => (
-        <BlockView key={i} block={b} ink={ink} onAccent={onAccent} room={i === blocks.length - 1 ? room : undefined} />
+        <BlockView key={i} block={b} ink={ink} onAccent={onAccent} onLines={fits ? measure(i) : undefined} />
       ))}
-      {room !== undefined && !lastIsText ? <View style={styles.roomLine} /> : null}
     </View>
   );
 }
 
-function BlockView({ block, ink, onAccent, room }: { block: Block; ink: string; onAccent: boolean; room?: string | undefined }) {
+function BlockView({ block, ink, onAccent, onLines }: { block: Block; ink: string; onAccent: boolean; onLines?: ((e: TextLayoutEvent) => void) | undefined }) {
   const t = useTheme();
   const codeFill = onAccent ? "rgba(255,255,255,0.18)" : t.fillQuiet;
-  const base: TextStyle = { ...type.body, color: ink };
+  // Messages' body type (../bubble.ts). No letter spacing of our own: iOS tracks the system font itself, as Messages' does.
+  const base: TextStyle = { fontSize: bubble.fontSize, lineHeight: bubble.lineHeight, color: ink };
   switch (block.t) {
     case "p":
       return (
-        <Text style={base}>
+        <Text style={base} onTextLayout={onLines}>
           <Inlines nodes={block.inline} ink={ink} onAccent={onAccent} />
-          {room === undefined ? null : (
-            <Text style={[type.caption2, styles.room]} accessible={false}>
-              {`\u2002\u2002${room}`}
-            </Text>
-          )}
         </Text>
       );
     case "h":
       return (
-        <Text style={[base, block.level <= 2 ? type.title3 : type.headline, { color: ink }]} accessibilityRole="header">
+        <Text style={[base, block.level <= 2 ? type.title3 : type.headline, { color: ink }]} accessibilityRole="header" onTextLayout={onLines}>
           <Inlines nodes={block.inline} ink={ink} onAccent={onAccent} />
         </Text>
       );
@@ -190,8 +197,6 @@ function Inlines({ nodes, ink, onAccent }: { nodes: readonly Inline[]; ink: stri
 
 const styles = StyleSheet.create({
   blocks: { gap: space.sm },
-  room: { color: "transparent" },
-  roomLine: { height: 6 },
   code: { fontFamily: mono, fontSize: 14, lineHeight: 19 },
   codeBlock: { borderRadius: 12, borderCurve: "continuous", paddingHorizontal: 12, paddingTop: 8, paddingBottom: 10, gap: 6 },
   codePressed: { opacity: 0.7 },
