@@ -6544,6 +6544,11 @@
           "type": "string"
         },
         {
+          "const": "screen.wait",
+          "description": "A person's screen on its way (`screen_open`) moved a stage, opened, failed or was given up; `data` is\n`browser::ScreenWaitEventData`. browser_sessions reads the rest.",
+          "type": "string"
+        },
+        {
           "const": "people.changed",
           "description": "A person was invited, joined, renamed, given another role or removed, an invite was revoked, or a device signed\nout; `data` is `people::PeopleChangedData`. people_list reads the rest.",
           "type": "string"
@@ -17235,6 +17240,32 @@
       ],
       "type": "object"
     },
+    "ScreenStage": {
+      "description": "Where a person's screen is on its way (`screen_open`, [`ScreenWait`]).",
+      "oneOf": [
+        {
+          "const": "waiting",
+          "description": "In line for the machine's next free slot.",
+          "type": "string"
+        },
+        {
+          "const": "starting",
+          "description": "Its slot is taken: the hub reads the PR's build, and the screen starts on its machine.",
+          "type": "string"
+        },
+        {
+          "const": "installing",
+          "description": "The screen runs; the PR's build goes into it before it is the person's.",
+          "type": "string"
+        },
+        {
+          "const": "failed",
+          "description": "It didn't open: `error` says why.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
     "ScreenWait": {
       "description": "A person's `screen_open` waiting for a slot on a full machine: it takes the next one free there, ahead of every\nagent's start, and gives up after [`SCREEN_WAIT_MINUTES`].",
       "properties": {
@@ -17243,6 +17274,11 @@
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
+        },
+        "error": {
+          "description": "Why it failed, in a line; gone with `screen_end` and its waitId.",
+          "maxLength": 500,
+          "type": "string"
         },
         "kind": {
           "$ref": "#/$defs/SessionKind"
@@ -17259,6 +17295,15 @@
         },
         "since": {
           "$ref": "#/$defs/Timestamp"
+        },
+        "stage": {
+          "$ref": "#/$defs/ScreenStage",
+          "default": "waiting",
+          "description": "Where it is on its way: in line for a slot (the default), starting, installing a PR's build, or failed."
+        },
+        "threadId": {
+          "$ref": "#/$defs/ThreadId",
+          "description": "The screen's thread, once it starts: its session lists under it, and is the person's once this is gone."
         },
         "waitId": {
           "minLength": 1,

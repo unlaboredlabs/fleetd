@@ -4,7 +4,7 @@
 // its video. Only from a hub that says it serves sessions (`browser_sessions` in its ready frame).
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
-import type { BrowserSession as HubSession, ProjectRef } from "../../../shared/contracts";
+import type { BrowserSession as HubSession, ProjectRef, ScreenWait } from "../../../shared/contracts";
 import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import { selectLiveAgents, type LiveAgent } from "../../src/data/selectors";
 import { parseMs } from "../live/format";
@@ -318,12 +318,27 @@ export function useSessions(project: ProjectKey): readonly BrowserSession[] {
 const NO_WAITS: readonly ScreenWaiting[] = [];
 
 /** The caller's own waits for a screen of this project, oldest first. */
+const STAGES: readonly string[] = ["waiting", "starting", "installing", "failed"];
+
+/** The hub's ScreenWait as the list shows it; a stage from a newer hub reads as starting. */
+export const waitOf = (w: ScreenWait): ScreenWaiting => ({
+  id: w.waitId,
+  kind: w.kind as ScreenWaiting["kind"],
+  machineId: w.machineId,
+  since: w.since,
+  ahead: w.ahead,
+  stage: (STAGES.includes(w.stage ?? "waiting") ? (w.stage ?? "waiting") : "starting") as ScreenWaiting["stage"],
+  ...(w.pr === undefined ? {} : { pr: w.pr.number }),
+  ...(w.threadId === undefined ? {} : { threadId: w.threadId }),
+  ...(w.error === undefined ? {} : { error: w.error }),
+});
+
 export function useScreenWaits(project: ProjectKey): readonly ScreenWaiting[] {
   const on = useData((st) => st.features.includes(FEATURE));
   const projectRef: ProjectRef = { machineId: project.machineId, projectId: project.projectId };
   const waits = useToolQuery("browser_sessions", { projectRef }, { enabled: on }).data?.waits;
   return useMemo(
-    () => (waits === undefined ? NO_WAITS : waits.map((w) => ({ id: w.waitId, kind: w.kind as ScreenWaiting["kind"], machineId: w.machineId, since: w.since, ahead: w.ahead }))),
+    () => (waits === undefined ? NO_WAITS : waits.map(waitOf)),
     [waits],
   );
 }

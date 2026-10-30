@@ -570,6 +570,8 @@ struct FakeGh {
     /// What the downloaded build holds.
     build: Vec<u8>,
     calls: std::sync::Mutex<Vec<String>>,
+    /// Holds the download until notified, when set.
+    gate: std::sync::Mutex<Option<Arc<tokio::sync::Notify>>>,
 }
 
 impl GhRunner for FakeGh {
@@ -626,6 +628,12 @@ impl GhRunner for FakeGh {
                     "app-release.apk"
                 };
                 std::fs::write(std::path::Path::new(dir).join(file), &self.build).unwrap();
+                if let Some(gate) = self.gate.lock().unwrap().clone() {
+                    return Box::pin(async move {
+                        gate.notified().await;
+                        ok(json!(""))
+                    });
+                }
                 ok(json!(""))
             }
             _ => Ok(GhOut {
@@ -668,6 +676,7 @@ fn github(
         artifacts: listed,
         build: build.to_vec(),
         calls: Default::default(),
+        gate: Default::default(),
     });
     hub.builds.set_gh(gh.clone());
     gh
@@ -696,6 +705,53 @@ async fn steps(seen: &mut mpsc::UnboundedReceiver<Seen>, n: usize) -> Vec<String
     out
 }
 
+/// The caller's screens of the app project, as browser_sessions lists them.
+async fn listed(hub: &Arc<Hub>, who: &Caller) -> Value {
+    call(
+        hub,
+        who,
+        "browser_sessions",
+        json!({ "projectRef": { "machineId": "devbox", "projectId": "app" } }),
+    )
+    .await
+    .unwrap()
+}
+
+/// The listing once `until` holds of it.
+async fn listed_until(hub: &Arc<Hub>, who: &Caller, until: impl Fn(&Value) -> bool) -> Value {
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let out = listed(hub, who).await;
+            if until(&out) {
+                return out;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the screens list gets there")
+}
+
+/// The caller's live screen under `thread`, once it is theirs: in their control, its row gone.
+async fn yours(hub: &Arc<Hub>, who: &Caller, thread: &Value) -> Value {
+    let out = listed_until(hub, who, |out| {
+        out["waits"].as_array().is_none_or(|w| w.is_empty())
+            && out["sessions"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|s| &s["threadId"] == thread && s["control"] == "human")
+    })
+    .await;
+    out["sessions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| &s["threadId"] == thread)
+        .unwrap()
+        .clone()
+}
+
 #[tokio::test]
 async fn a_prs_build_goes_into_the_screen_before_the_person_has_it() {
     let (hub, _home, _clock) = setup();
@@ -719,28 +775,20 @@ async fn a_prs_build_goes_into_the_screen_before_the_person_has_it() {
         ],
         &app,
     );
+    // It answers at once, its slot taken: the rest goes on in the hub, listed under the person's waits.
     let out = call(&hub, &desk, "screen_open", with_pr("mac1", "ios"))
         .await
         .unwrap();
-    assert_eq!(out["session"]["control"], "human", "{out}");
-    assert!(
-        out["next"]
-            .as_str()
-            .unwrap()
-            .starts_with("PR #12's build is installed."),
-        "{out}"
-    );
-    let downloads: Vec<String> = gh
-        .calls
-        .lock()
-        .unwrap()
-        .iter()
-        .filter(|c| c.starts_with("run download"))
-        .cloned()
-        .collect();
-    assert!(
-        downloads[0].starts_with("run download 41 -n fleetd-ios-simulator -D "),
-        "{downloads:?}"
+    assert!(out["session"].is_null(), "{out}");
+    let opening = &out["waiting"];
+    assert_eq!(opening["stage"], "starting", "{out}");
+    assert_eq!(opening["pr"]["number"], 12);
+    let thread = opening["threadId"].clone();
+    assert!(thread.as_str().unwrap().starts_with("screen-"), "{out}");
+    assert_eq!(
+        live_on(&hub, "mac1"),
+        1,
+        "its slot is held from the answer on"
     );
     let started = next(&mut mac1).await;
     assert_eq!(started.op, "session_start");
@@ -758,13 +806,39 @@ async fn a_prs_build_goes_into_the_screen_before_the_person_has_it() {
             "run install in/pr-12.zip"
         ]
     );
+    let downloads: Vec<String> = gh
+        .calls
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|c| c.starts_with("run download"))
+        .cloned()
+        .collect();
+    assert!(
+        downloads[0].starts_with("run download 41 -n fleetd-ios-simulator -D "),
+        "{downloads:?}"
+    );
+    // Then it is the person's: live in their control under the thread named, the row gone.
+    let screen = yours(&hub, &desk, &thread).await;
+    assert_eq!(screen["kind"], "ios");
+    let moves: Vec<String> = hub
+        .db
+        .with(|c| {
+            let mut stmt = c.prepare(
+                "SELECT COALESCE(json_extract(data, '$.data.stage'), 'gone') FROM events WHERE type = 'screen.wait'
+                 ORDER BY seq",
+            )?;
+            let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+            Ok(rows.collect::<Result<_, _>>()?)
+        })
+        .unwrap();
+    assert_eq!(moves, ["installing", "gone"]);
 
     // Android: the .apk, and no runner to wait for.
     let out = call(&hub, &desk, "screen_open", with_pr("devbox", "android"))
         .await
         .unwrap();
-    assert_eq!(out["session"]["kind"], "android", "{out}");
-    assert_eq!(out["session"]["control"], "human");
+    assert_eq!(out["waiting"]["kind"], "android", "{out}");
     assert_eq!(next(&mut devbox).await.op, "session_start");
     assert_eq!(
         steps(&mut devbox, 3).await,
@@ -774,6 +848,65 @@ async fn a_prs_build_goes_into_the_screen_before_the_person_has_it() {
             "run install in/pr-12.apk"
         ]
     );
+    let screen = yours(&hub, &desk, &out["waiting"]["threadId"]).await;
+    assert_eq!(screen["kind"], "android");
+}
+
+/// The slot is taken when the open answers, not after the build downloads: an agent asking meanwhile finds the
+/// machine full, and nothing goes over its cap.
+#[tokio::test]
+async fn a_pr_opens_slot_is_held_while_its_build_downloads() {
+    let (hub, _home, _clock) = setup();
+    let _devbox = remote(&hub);
+    let mut mac1 = runner(&hub, "mac1");
+    hub.db
+        .transaction(|c| {
+            super::set_roles(
+                c,
+                &mid("mac1"),
+                &super::Roles {
+                    max_sessions: Some(1),
+                    ..Default::default()
+                },
+            )
+        })
+        .unwrap();
+    let (_, desk) = person(&hub, "Ada", "operate");
+    let gh = github(
+        &hub,
+        &[(41, "completed")],
+        &[(41, "fleetd-ios-simulator", false)],
+        b"an app",
+    );
+    let gate = Arc::new(tokio::sync::Notify::new());
+    *gh.gate.lock().unwrap() = Some(gate.clone());
+    let out = call(&hub, &desk, "screen_open", with_pr("mac1", "ios"))
+        .await
+        .unwrap();
+    let refused = route(&hub, "th-1", SessionHost::Ios, start())
+        .await
+        .unwrap_err();
+    assert!(refused.message.contains("full"), "{}", refused.message);
+    assert!(
+        mac1.try_recv().is_err(),
+        "nothing starts during the download"
+    );
+    // While it opens, its row can't be given up: its screen opens, and is ended as any.
+    let (code, _) = refusal(
+        call(
+            &hub,
+            &desk,
+            "screen_end",
+            json!({ "waitId": out["waiting"]["waitId"] }),
+        )
+        .await,
+    );
+    assert_eq!(code, ErrorCode::Invalid);
+    gate.notify_one();
+    assert_eq!(next(&mut mac1).await.op, "session_start");
+    steps(&mut mac1, 3).await;
+    yours(&hub, &desk, &out["waiting"]["threadId"]).await;
+    assert_eq!(live_on(&hub, "mac1"), 1);
 }
 
 #[tokio::test]
@@ -831,7 +964,7 @@ async fn a_pr_with_no_build_is_refused_plainly_and_starts_nothing() {
 }
 
 #[tokio::test]
-async fn a_build_that_doesnt_install_closes_its_screen() {
+async fn a_build_that_doesnt_install_closes_its_screen_and_says_why() {
     let (hub, _home, _clock) = setup();
     let mut mac1 = runner(&hub, "mac1");
     let (_, desk) = person(&hub, "Ada", "operate");
@@ -841,21 +974,35 @@ async fn a_build_that_doesnt_install_closes_its_screen() {
         &[(41, "fleetd-ios-simulator", false)],
         BROKEN,
     );
-    let (code, message) = refusal(call(&hub, &desk, "screen_open", with_pr("mac1", "ios")).await);
-    assert_eq!(code, ErrorCode::Failed);
-    assert!(
-        message.contains(
-            "PR #12's build didn't install, so the screen was closed: Error: the app is damaged"
-        ),
-        "{message}"
-    );
+    let out = call(&hub, &desk, "screen_open", with_pr("mac1", "ios"))
+        .await
+        .unwrap();
+    let id = out["waiting"]["waitId"].clone();
     assert_eq!(next(&mut mac1).await.op, "session_start");
     assert_eq!(
         steps(&mut mac1, 3).await,
         ["run", "put pr-12.zip 10", "run install in/pr-12.zip"]
     );
     assert_eq!(next(&mut mac1).await.op, "session_end");
+    let failed = listed_until(&hub, &desk, |out| out["waits"][0]["stage"] == "failed").await;
+    let error = failed["waits"][0]["error"].as_str().unwrap();
+    assert!(
+        error.contains(
+            "PR #12's build didn't install, so the screen was closed: Error: the app is damaged"
+        ),
+        "{error}"
+    );
     assert_eq!(live_on(&hub, "mac1"), 0);
+    // While it opens, its row can't be given up; once failed, screen_end clears it.
+    call(&hub, &desk, "screen_end", json!({ "waitId": id }))
+        .await
+        .unwrap();
+    assert!(
+        listed(&hub, &desk).await["waits"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[tokio::test]
@@ -904,9 +1051,14 @@ async fn a_wait_with_a_pr_gets_its_build_when_its_slot_frees() {
     .unwrap();
     assert_eq!(next(&mut mac1).await.op, "session_end");
     assert_eq!(super::screens::serve_waits(&hub).unwrap(), 1);
+    // Past its wait, its row says it is starting, and names the screen's thread.
+    let starting = listed(&hub, &bee).await;
+    assert_eq!(starting["waits"][0]["stage"], "starting", "{starting}");
+    let thread = starting["waits"][0]["threadId"].clone();
     assert_eq!(next(&mut mac1).await.op, "session_start");
     assert_eq!(
         steps(&mut mac1, 3).await,
         ["run", "put pr-12.zip 6", "run install in/pr-12.zip"]
     );
+    yours(&hub, &bee, &thread).await;
 }

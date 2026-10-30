@@ -575,3 +575,128 @@ fn one_start_at_a_time_per_agent_session() {
         "given up when dropped"
     );
 }
+
+/// A hub-placed screen's key, as the hub mints one: the thread a hosted screen runs under.
+const HOST_KEY: &str = "H0123456789abcdef0123456789abcdef";
+
+async fn call_on(router: &Router, thread: &str, call: Value) -> Value {
+    let frame: BrowserCallFrame = serde_json::from_value(json!({
+        "id": "t1", "cwd": "/", "threadId": thread, "call": call,
+    }))
+    .unwrap();
+    serde_json::to_value(router.handle(thread.to_owned(), frame).await).unwrap()
+}
+
+/// The hub's install steps (a person's PR build, hub/machine_roles/screens.rs) reach only a screen this machine hosts
+/// for the hub, and only while it runs; never an agent's own session.
+#[tokio::test]
+async fn device_steps_reach_only_a_hosted_android_screen() {
+    let home = tempfile::tempdir().unwrap();
+    let hub_home = tempfile::tempdir().unwrap();
+    let devices = Devices::start(
+        home.path(),
+        DeviceConfig::default(),
+        hub(hub_home.path()),
+        Arc::new(|_| Ok(Secrets::default())),
+    )
+    .await;
+    let put = fleetd_contracts::browser::DeviceCall::Put {
+        name: "pr-1.apk".into(),
+        offset: 0,
+        data_b64: B64.encode(b"apk"),
+    };
+    let refused = devices.device(THREAD, put.clone()).await.unwrap_err();
+    assert_eq!(refused.code, fleetd_contracts::mcp::ErrorCode::Invalid);
+    let none = devices.device(HOST_KEY, put).await.unwrap_err();
+    assert_eq!(none.code, fleetd_contracts::mcp::ErrorCode::NotFound);
+    assert!(
+        none.message.contains("No Android session"),
+        "{}",
+        none.message
+    );
+    assert!(
+        !home.path().join("sessions").join(HOST_KEY).exists(),
+        "nothing kept"
+    );
+    devices.shutdown().await;
+}
+
+/// On a real emulator: a screen hosted for the hub takes a build a piece at a time into its own folder, and
+/// `agent-device install` runs on that emulator with the node's wrapper, its words coming back and logged as a step.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_hosted_android_screen_installs_what_the_hub_sends() {
+    let Some(install) = installed() else { return };
+    let node_home = node_home(&install);
+    let hub_home = tempfile::tempdir().unwrap();
+    let hub = hub(hub_home.path());
+    let devices = Devices::start(
+        node_home.path(),
+        DeviceConfig::default(),
+        hub.clone(),
+        Arc::new(|_| Ok(Secrets::default())),
+    )
+    .await;
+    let deadline = Instant::now() + Duration::from_secs(180);
+    while devices.warm() == 0 {
+        assert!(Instant::now() < deadline, "the pool booted no emulator");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let router = Router {
+        browser: None,
+        devices: Some(devices.clone()),
+        ios: None,
+        desktops: None,
+        live: Default::default(),
+    };
+    let started = call_on(
+        &router,
+        HOST_KEY,
+        json!({ "op": "session_start", "purpose": "Android emulator opened by Ada, with PR #1", "kind": "android" }),
+    )
+    .await;
+    assert!(started["result"]["sessionId"].is_string(), "{started}");
+    // Not an app: the emulator's package manager refuses it, in its own words, after the file went in two pieces.
+    let put = |offset: u64, data: &[u8]| json!({ "op": "device", "step": "put", "name": "pr-1.apk", "offset": offset, "dataB64": B64.encode(data) });
+    let first = call_on(&router, HOST_KEY, put(0, b"not an ")).await;
+    assert_eq!(first["result"]["bytes"], 7, "{first}");
+    let second = call_on(&router, HOST_KEY, put(7, b"apk")).await;
+    assert_eq!(second["result"]["bytes"], 10, "{second}");
+    let ran = call_on(
+        &router,
+        HOST_KEY,
+        json!({ "op": "device", "step": "run", "args": ["install", "in/pr-1.apk"] }),
+    )
+    .await;
+    let done = &ran["result"];
+    assert_ne!(done["exitCode"], 0, "{ran}");
+    let words = format!(
+        "{}{}",
+        done["stdout"].as_str().unwrap(),
+        done["stderr"].as_str().unwrap()
+    );
+    assert!(words.to_lowercase().contains("install"), "{words}");
+    assert!(
+        !words.contains(node_home.path().to_str().unwrap()),
+        "the folder's path stays out: {words}"
+    );
+    // A command outside what a hosted screen runs is refused before it runs.
+    let refused = call_on(
+        &router,
+        HOST_KEY,
+        json!({ "op": "device", "step": "run", "args": ["shell", "id"] }),
+    )
+    .await;
+    assert!(refused["error"].is_object(), "{refused}");
+    let ended = call_on(&router, HOST_KEY, json!({ "op": "session_end" })).await;
+    assert!(ended["result"].is_object(), "{ended}");
+    assert!(
+        !node_home
+            .path()
+            .join("sessions")
+            .join(HOST_KEY)
+            .join("device-work")
+            .exists(),
+        "the screen's folder goes with it"
+    );
+    devices.shutdown().await;
+}

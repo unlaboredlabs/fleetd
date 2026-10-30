@@ -119,7 +119,10 @@ export interface BrowserSession {
   readonly openedBy?: string;
 }
 
-/** A person's request for a screen on a full machine, waiting for its next slot (the hub's ScreenWait). */
+/**
+ * A person's screen on its way (the hub's ScreenWait): in line for a full machine's next slot, or past it (starting, then
+ * installing a PR's build) until it is theirs, or failed with why.
+ */
 export interface ScreenWaiting {
   readonly id: string;
   readonly kind: "browser" | "android" | "ios" | "linux_desktop";
@@ -127,13 +130,31 @@ export interface ScreenWaiting {
   readonly since: string;
   /** People's waits for that machine before this one. */
   readonly ahead: number;
+  readonly stage: "waiting" | "starting" | "installing" | "failed";
+  /** The PR whose build goes in. */
+  readonly pr?: number;
+  /** The screen's thread once it starts: its session, once the screen is yours. */
+  readonly threadId?: string;
+  /** Why it failed. */
+  readonly error?: string;
 }
 
-/** A wait in words: what and where, then its place in line. */
+/** A wait in words: what and where, then how far it is (its place in line, the build going in, or why it failed). */
 export const waitLine = (w: ScreenWaiting, machine: string): { readonly title: string; readonly place: string } => {
   const what = { browser: "Browser", android: "Android emulator", ios: "iOS simulator", linux_desktop: "Linux desktop" }[w.kind];
-  const place = w.ahead === 0 ? "next in line" : `${String(w.ahead)} ${w.ahead === 1 ? "person" : "people"} ahead`;
-  return { title: `${what} on ${machine}`, place: `waiting for a free slot · ${place}` };
+  const title = `${what} on ${machine}${w.pr === undefined ? "" : ` with #${String(w.pr)}`}`;
+  switch (w.stage) {
+    case "starting":
+      return { title, place: w.pr === undefined ? "starting" : `starting · reading #${String(w.pr)}’s build` };
+    case "installing":
+      return { title, place: `installing #${String(w.pr ?? 0)}’s build` };
+    case "failed":
+      return { title, place: w.error ?? "didn’t open" };
+    default: {
+      const place = w.ahead === 0 ? "next in line" : `${String(w.ahead)} ${w.ahead === 1 ? "person" : "people"} ahead`;
+      return { title, place: `waiting for a free slot · ${place}` };
+    }
+  }
 };
 
 /** What a live screen says until its first frame comes: a browser's page, or the device it shows. */

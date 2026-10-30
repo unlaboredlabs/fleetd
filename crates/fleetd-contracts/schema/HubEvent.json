@@ -386,6 +386,11 @@
           "type": "string"
         },
         {
+          "const": "screen.wait",
+          "description": "A person's screen on its way (`screen_open`) moved a stage, opened, failed or was given up; `data` is\n`browser::ScreenWaitEventData`. browser_sessions reads the rest.",
+          "type": "string"
+        },
+        {
           "const": "people.changed",
           "description": "A person was invited, joined, renamed, given another role or removed, an invite was revoked, or a device signed\nout; `data` is `people::PeopleChangedData`. people_list reads the rest.",
           "type": "string"

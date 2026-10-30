@@ -2407,6 +2407,7 @@ export type KnownHubEventType =
   | "skills.changed"
   | "browser.session"
   | "preview.state"
+  | "screen.wait"
   | "people.changed"
   | "machine_add.step";
 /** KnownHubEventType, or a value from a newer hub. */
@@ -5942,6 +5943,11 @@ export type ScreenPr = {
   repo: GitHubRepo;
 };
 
+/** Where a person's screen is on its way (`screen_open`, [`ScreenWait`]). */
+export type KnownScreenStage = "waiting" | "starting" | "installing" | "failed";
+/** KnownScreenStage, or a value from a newer hub. */
+export type ScreenStage = KnownScreenStage | (string & {});
+
 /**
  * A person's `screen_open` waiting for a slot on a full machine: it takes the next one free there, ahead of every
  * agent's start, and gives up after [`SCREEN_WAIT_MINUTES`].
@@ -5949,12 +5955,26 @@ export type ScreenPr = {
 export type ScreenWait = {
   /** People's waits for that machine before this one. */
   ahead: number;
+  /** Why it failed, in a line; gone with `screen_end` and its waitId. */
+  error?: string;
   kind: SessionKind;
   machineId: MachineId;
   /** The PR whose build goes into the screen when it opens. */
   pr?: ScreenPr;
   projectRef: ProjectRef;
   since: Timestamp;
+  /** Where it is on its way: in line for a slot (the default), starting, installing a PR's build, or failed. */
+  stage?: ScreenStage;
+  /** The screen's thread, once it starts: its session lists under it, and is the person's once this is gone. */
+  threadId?: ThreadId;
+  waitId: string;
+};
+
+/** `screen.wait`: a person's screen on its way moved a stage, opened (it is gone) or failed. browser_sessions reads it. */
+export type ScreenWaitEventData = {
+  projectRef: ProjectRef;
+  /** Absent once it is gone: opened, or given up. */
+  stage?: ScreenStage;
   waitId: string;
 };
 
@@ -8108,6 +8128,7 @@ export interface HubEventDataMap {
   "repo.advanced": RepoAdvancedData;
   "request.opened": RequestEventData;
   "request.updated": RequestEventData;
+  "screen.wait": ScreenWaitEventData;
   "source.fresh": SourceFreshData;
   "source.stale": SourceStaleData;
   "steer.acknowledged": SteerEventData;

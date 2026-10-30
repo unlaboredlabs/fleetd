@@ -37,7 +37,7 @@ function SessionList({ project }: { project: ProjectKey }) {
         <NewScreenButton project={project} />
       </div>
       {waits.length === 0 ? null : (
-        <section className={s.waits} aria-label="Waiting for a slot">
+        <section className={s.waits} aria-label="Your screens on their way">
           {waits.map((w) => (
             <WaitRow key={w.id} wait={w} />
           ))}
@@ -72,31 +72,38 @@ function SessionList({ project }: { project: ProjectKey }) {
   );
 }
 
-/** Your wait for a slot on a full machine: what and where, your place in line, and Cancel. */
+/**
+ * Your screen on its way: what and where, then your place in line (with Cancel), the PR's build going in, or why it
+ * didn't open (with Clear).
+ */
 function WaitRow({ wait }: { wait: ScreenWaiting }) {
   const layer = useDataLayer();
   const machine = useData((d) => d.machines[wait.machineId]?.name ?? wait.machineId);
+  const failed = wait.stage === "failed";
   const cancel = async () => {
     const out = await layer.call("screen_end", { waitId: wait.id });
-    if (!out.ok) toast({ title: "Couldn’t cancel the wait", description: out.error.message, key: `wait:${wait.id}` });
+    if (!out.ok) toast({ title: failed ? "Couldn’t clear it" : "Couldn’t cancel the wait", description: out.error.message, key: `wait:${wait.id}` });
     void layer.queryClient.invalidateQueries({ queryKey: ["call", "browser_sessions"] });
   };
   const line = waitLine(wait, machine);
+  const opening = wait.stage === "starting" || wait.stage === "installing";
   return (
-    <div className={s.wait} data-wait={wait.id}>
+    <div className={s.wait} data-wait={wait.id} data-stage={wait.stage}>
       <span className={s.glyph}>
-        <StateGlyph state="queued" label="waiting for a slot" phase={2} />
+        <StateGlyph state={failed ? "failed" : opening ? "working" : "queued"} label={failed ? "didn’t open" : opening ? "opening" : "waiting for a slot"} phase={2} />
       </span>
       <span className={s.purpose}>
         <Truncate size="sm" expand="none">
           {line.title}
         </Truncate>
       </span>
-      <Button variant="quiet" size="sm" className={s.waitCancel} onClick={() => void cancel()}>
-        Cancel
-      </Button>
+      {opening ? null : (
+        <Button variant="quiet" size="sm" className={s.waitCancel} onClick={() => void cancel()}>
+          {failed ? "Clear" : "Cancel"}
+        </Button>
+      )}
       <span className={s.meta}>
-        <Text size="xs" tone="quiet">
+        <Text size="xs" tone={failed ? "danger" : "quiet"}>
           {line.place}
         </Text>
       </span>

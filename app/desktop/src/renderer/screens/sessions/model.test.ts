@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { actionLine, durationOf, glyphOf, isLive, nodeLine, nowLine, sessionGroups, siteOf, spans, stepAt, type BrowserSession, type SessionAction, type SessionState } from "./model";
+import { actionLine, durationOf, glyphOf, isLive, nodeLine, nowLine, sessionGroups, siteOf, spans, stepAt, waitLine, type BrowserSession, type SessionAction, type SessionState } from "./model";
 
 const T0 = Date.parse("2026-10-19T10:00:00.000Z");
 
@@ -114,4 +114,14 @@ describe("a step's page snapshot", () => {
     expect(nodeLine({ depth: 2, role: "textbox", name: "Email", value: "qa@acme.test" })).toEqual({ role: "textbox", name: "“Email”", value: "qa@acme.test" });
   });
 
+});
+
+describe("waitLine", () => {
+  const wait = { id: "W1", kind: "ios", machineId: "mac", since: "2026-10-19T10:00:00.000Z", ahead: 1, stage: "waiting" } as const;
+  it("says a screen's place in line, then how far it is on its way, then why it failed", () => {
+    expect(waitLine(wait, "mac")).toEqual({ title: "iOS simulator on mac", place: "waiting for a free slot · 1 person ahead" });
+    expect(waitLine({ ...wait, stage: "starting", pr: 12 }, "mac")).toEqual({ title: "iOS simulator on mac with #12", place: "starting · reading #12’s build" });
+    expect(waitLine({ ...wait, stage: "installing", pr: 12 }, "mac").place).toBe("installing #12’s build");
+    expect(waitLine({ ...wait, stage: "failed", pr: 12, error: "PR #12's build didn't install" }, "mac").place).toBe("PR #12's build didn't install");
+  });
 });

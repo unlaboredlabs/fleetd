@@ -1666,6 +1666,9 @@
         "request.updated": {
           "$ref": "#/$defs/RequestEventData"
         },
+        "screen.wait": {
+          "$ref": "#/$defs/ScreenWaitEventData"
+        },
         "source.fresh": {
           "$ref": "#/$defs/SourceFreshData"
         },
@@ -1784,6 +1787,7 @@
         "repo.advanced",
         "request.opened",
         "request.updated",
+        "screen.wait",
         "source.fresh",
         "source.stale",
         "steer.acknowledged",
@@ -2792,6 +2796,53 @@
         }
       ],
       "x-open": true
+    },
+    "ScreenStage": {
+      "description": "Where a person's screen is on its way (`screen_open`, [`ScreenWait`]).",
+      "oneOf": [
+        {
+          "const": "waiting",
+          "description": "In line for the machine's next free slot.",
+          "type": "string"
+        },
+        {
+          "const": "starting",
+          "description": "Its slot is taken: the hub reads the PR's build, and the screen starts on its machine.",
+          "type": "string"
+        },
+        {
+          "const": "installing",
+          "description": "The screen runs; the PR's build goes into it before it is the person's.",
+          "type": "string"
+        },
+        {
+          "const": "failed",
+          "description": "It didn't open: `error` says why.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
+    "ScreenWaitEventData": {
+      "description": "`screen.wait`: a person's screen on its way moved a stage, opened (it is gone) or failed. browser_sessions reads it.",
+      "properties": {
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "stage": {
+          "$ref": "#/$defs/ScreenStage",
+          "description": "Absent once it is gone: opened, or given up."
+        },
+        "waitId": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "projectRef",
+        "waitId"
+      ],
+      "type": "object"
     },
     "SecretEnvEntry": {
       "properties": {
