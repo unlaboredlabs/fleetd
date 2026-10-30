@@ -1913,6 +1913,35 @@ async fn a_reply_lands_whole_and_final_even_when_its_last_delta_never_came() {
     );
 }
 
+/// A block the person can't see as written (a table with an empty header) lands as its fence, and the lead hears
+/// which block and the rule, once, with its next wake.
+#[tokio::test]
+async fn the_lead_hears_which_block_did_not_show_and_why() {
+    let (hub, _home) = hub();
+    give_lead(&hub);
+    let r = project();
+    hub.chat
+        .read_history(&r, || async { Vec::new() })
+        .await
+        .unwrap();
+    let text = "the week:\n\n```fleetd-block\n{\"v\":1,\"kind\":\"table\",\"columns\":[\"PR\",\"\"],\"rows\":[]}\n```";
+    let mut sent = HashMap::new();
+    let parts = lead_parts(Some(("m1", "the week:")), &[("m1", text)]);
+    flow::stream_pass_with(&hub, &mut sent, |_| Some(parts.clone()));
+    let m = &hub.chat.page(&r, None, None, 10).unwrap().0[0];
+    assert_eq!(m.state, ChatMessageState::Final);
+    assert!(m.parts.as_ref().unwrap()[1].block.is_none());
+    let held = hub.leads.wakes.held(&r);
+    assert_eq!(held.len(), 1, "{held:?}");
+    assert!(
+        held[0].contains("block 1: columns[1]: expected a non-empty string"),
+        "{held:?}"
+    );
+    // Landed once: the next tick tells it nothing more.
+    flow::stream_pass_with(&hub, &mut sent, |_| Some(parts.clone()));
+    assert_eq!(hub.leads.wakes.held(&r).len(), 1);
+}
+
 /// Agents never carry the person's authority: an agent key, admin on every machine like the CLI's own, can't stop or
 /// steer.
 #[tokio::test]

@@ -579,10 +579,14 @@ span.changeUndo {
   display: inline-flex;
   min-width: 0;
 }
+/*
+ * Its size is set once it loads (imageFit); until then the same box caps it. No percentage: the stack shrinks to
+ * fit its content, and a percentage there lets a big image widen the stack and sit away from its side.
+ */
 .attachmentImage {
   display: block;
-  max-width: min(100%, 360px);
-  max-height: 240px;
+  max-width: 360px;
+  max-height: 280px;
   /* A tiny image (an icon, a 2 px crop) still reads as an image rather than a stray mark. */
   min-width: 48px;
   min-height: 48px;
@@ -593,7 +597,6 @@ span.changeUndo {
 /* An image you can open large: the image itself is the button. */
 .attachmentOpen {
   display: block;
-  max-width: 100%;
   padding: 0;
   border: 0;
   border-radius: var(--radius-sm);

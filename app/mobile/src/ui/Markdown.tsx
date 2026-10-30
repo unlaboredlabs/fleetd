@@ -5,7 +5,7 @@
 import * as Clipboard from "expo-clipboard";
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Linking, PixelRatio, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View, type TextLayoutEvent, type TextStyle } from "react-native";
-import { parseMarkdown, type Block, type Inline } from "../markdown";
+import { isBlockFence, parseMarkdown, UNSHOWN, type Block, type Inline } from "../markdown";
 import { bubble, fitWidth } from "../bubble";
 import { mono, space, type, useTheme } from "../theme";
 import { haptics } from "./haptics";
@@ -61,7 +61,14 @@ function BlockView({ block, ink, onAccent, onLines }: { block: Block; ink: strin
         </Text>
       );
     case "code":
-      return <CodeBlock text={block.text} lang={block.lang} ink={ink} fill={codeFill} />;
+      return isBlockFence(block) ? (
+        <View style={styles.unshown} accessibilityRole="text" accessibilityLabel={UNSHOWN}>
+          <Icon name="block" size={14} color={ink} />
+          <Text style={[type.footnote, { color: ink }]}>{UNSHOWN}</Text>
+        </View>
+      ) : (
+        <CodeBlock text={block.text} lang={block.lang} ink={ink} fill={codeFill} />
+      );
     case "quote":
       return (
         <View style={[styles.quote, { borderLeftColor: onAccent ? "rgba(255,255,255,0.5)" : t.tertiary }]}>
@@ -203,6 +210,7 @@ const styles = StyleSheet.create({
   blocks: { gap: space.sm },
   code: { fontFamily: mono, fontSize: 14, lineHeight: 19 },
   codeBlock: { borderRadius: 12, borderCurve: "continuous", paddingHorizontal: 12, paddingTop: 8, paddingBottom: 10, gap: 6 },
+  unshown: { flexDirection: "row", alignItems: "center", gap: 6, opacity: 0.7 },
   codePressed: { opacity: 0.7 },
   codeHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: space.sm },
   codeLang: { fontWeight: "600", opacity: 0.6 },

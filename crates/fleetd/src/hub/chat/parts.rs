@@ -4,7 +4,10 @@
 //! when it passes [`block`], and otherwise shows as the fence it is.
 use std::sync::LazyLock;
 
-use fleetd_contracts::blocks::{BLOCK_FENCE, BLOCK_JSON_MAX, ChatBlock, MESSAGE_BLOCKS_MAX};
+use fleetd_contracts::blocks::{
+    AgentBlock, AskBlock, AttachmentBlock, BLOCK_FENCE, BLOCK_JSON_MAX, ChartBlock, ChatBlock,
+    ChecklistBlock, DiffBlock, MESSAGE_BLOCKS_MAX, PrBlock, TableBlock,
+};
 use fleetd_contracts::chat::{CHAT_PARTS_MAX, ChatMessage, ChatPart};
 use fleetd_contracts::prim::{Count, List, js_len};
 use regex::Regex;
@@ -17,16 +20,65 @@ static UNSAFE: LazyLock<Regex> = LazyLock::new(|| {
 });
 
 /// One block's JSON, checked: within [`BLOCK_JSON_MAX`], the schema, and no markup or URL in its strings (a diff's
-/// hunks excepted: they are code, shown as text). None shows the fence as text.
-pub fn block(json: &str) -> Option<ChatBlock> {
+/// hunks excepted: they are code, shown as text). The block, or the rule it broke, in words for the lead; an image or
+/// clip whose caption alone is wrong shows without it, and the lead still hears why.
+pub fn block(json: &str) -> (Option<ChatBlock>, Option<String>) {
     if json.len() > BLOCK_JSON_MAX {
-        return None;
+        let why = format!(
+            "it is {} bytes of JSON, over the {BLOCK_JSON_MAX} a block holds",
+            json.len()
+        );
+        return (None, Some(why));
     }
-    let value: Value = serde_json::from_str(json).ok()?;
-    if !safe(&value) {
-        return None;
+    let mut value: Value = match serde_json::from_str(json) {
+        Ok(value) => value,
+        Err(error) => return (None, Some(format!("its JSON doesn't parse ({error})"))),
+    };
+    let why = match checked(&value) {
+        Ok(block) => return (Some(block), None),
+        Err(why) => why,
+    };
+    let media = matches!(value["kind"].as_str(), Some("image" | "clip"));
+    let captioned = media
+        && value
+            .as_object_mut()
+            .and_then(|m| m.remove("caption"))
+            .is_some();
+    (captioned.then(|| checked(&value).ok()).flatten(), Some(why))
+}
+
+fn checked(value: &Value) -> Result<ChatBlock, String> {
+    if !safe(value) {
+        return Err("a string in it holds markup, a script scheme or a URL".into());
     }
-    serde_json::from_value(value).ok()
+    serde_json::from_value(value.clone()).map_err(|e| why(value).unwrap_or(e.to_string()))
+}
+
+/// Why a block's fields don't fit its kind, naming the field: `ChatBlock` flattens its kind's fields, which loses
+/// the path, so they are read again as that kind alone.
+fn why(value: &Value) -> Option<String> {
+    fn read<T: serde::de::DeserializeOwned>(fields: &Value) -> Option<String> {
+        let e = serde_path_to_error::deserialize::<_, T>(fields).err()?;
+        Some(match e.path().to_string().as_str() {
+            "." | "" => e.into_inner().to_string(),
+            path => format!("{path}: {}", e.into_inner()),
+        })
+    }
+    let mut fields = value.clone();
+    let map = fields.as_object_mut()?;
+    map.remove("v");
+    let kind = map.remove("kind")?;
+    match kind.as_str()? {
+        "chart" => read::<ChartBlock>(&fields),
+        "table" => read::<TableBlock>(&fields),
+        "diff" => read::<DiffBlock>(&fields),
+        "pr" => read::<PrBlock>(&fields),
+        "agent" => read::<AgentBlock>(&fields),
+        "checklist" => read::<ChecklistBlock>(&fields),
+        "image" | "clip" => read::<AttachmentBlock>(&fields),
+        "ask" => read::<AskBlock>(&fields),
+        _ => None,
+    }
 }
 
 fn safe(value: &Value) -> bool {
@@ -154,24 +206,71 @@ fn bubbles(text: &str) -> Vec<Bubble> {
 
 /// The message's parts: None when it is one text bubble.
 pub fn parts(text: &str) -> Option<List<ChatPart, 1, CHAT_PARTS_MAX>> {
+    let (parts, _) = split(text);
+    if parts.len() == 1 && parts[0].block.is_none() {
+        return None;
+    }
+    List::new(parts).ok()
+}
+
+/// The blocks of the message that didn't show as written, as one line for its lead: which block (counting the
+/// message's ```fleetd-block fences from 1) and the rule it broke. None when every block showed.
+pub fn unshown(text: &str) -> Option<String> {
+    let (_, failed) = split(text);
+    if failed.is_empty() {
+        return None;
+    }
+    let all = failed
+        .iter()
+        .map(|(n, why)| format!("block {n}: {why}"))
+        .collect::<Vec<_>>()
+        .join("; ");
+    Some(format!(
+        "- your last message had {} the person couldn't see as written (a \"couldn't show this\" chip stands in): {all}; fix and send again if it matters",
+        if failed.len() == 1 {
+            "a block".to_owned()
+        } else {
+            format!("{} blocks", failed.len())
+        }
+    ))
+}
+
+// Every bubble may be a block: the bubble cap is the only one a message's blocks meet.
+const _: () = assert!(MESSAGE_BLOCKS_MAX >= CHAT_PARTS_MAX);
+
+/// The parts, and each block that failed: its number among the message's blocks, and why.
+fn split(text: &str) -> (Vec<ChatPart>, Vec<(usize, String)>) {
     let mut found = bubbles(text);
+    let is_block = |b: &Bubble| {
+        b.fence
+            .as_ref()
+            .is_some_and(|(info, _, _)| info == BLOCK_FENCE)
+    };
+    // Past the cap, the tail is the last bubble's text, its blocks shown as their fences.
+    let mut over = 0;
     if found.len() > CHAT_PARTS_MAX {
+        over = found[CHAT_PARTS_MAX - 1..]
+            .iter()
+            .filter(|b| is_block(b))
+            .count();
         let end = found[found.len() - 1].end;
         found.truncate(CHAT_PARTS_MAX);
         let last = &mut found[CHAT_PARTS_MAX - 1];
         last.end = end;
         last.fence = None;
     }
-    let mut blocks = 0;
+    let (mut blocks, mut failed) = (0, Vec::new());
     let utf16 = |byte: usize| Count::unchecked(js_len(&text[..byte]) as i64);
     let parts: Vec<ChatPart> = found
         .into_iter()
         .map(|b| {
-            let block = b
-                .fence
-                .filter(|(info, _, _)| info == BLOCK_FENCE && blocks < MESSAGE_BLOCKS_MAX)
-                .and_then(|(_, body, body_end)| block(&text[body..body_end]));
-            blocks += usize::from(block.is_some());
+            let mut block = None;
+            if let Some((_, body, body_end)) = b.fence.filter(|(info, _, _)| info == BLOCK_FENCE) {
+                blocks += 1;
+                let why;
+                (block, why) = self::block(&text[body..body_end]);
+                failed.extend(why.map(|why| (blocks, why)));
+            }
             ChatPart {
                 start: utf16(b.start),
                 end: utf16(b.end),
@@ -179,10 +278,11 @@ pub fn parts(text: &str) -> Option<List<ChatPart, 1, CHAT_PARTS_MAX>> {
             }
         })
         .collect();
-    if parts.len() == 1 && parts[0].block.is_none() {
-        return None;
-    }
-    List::new(parts).ok()
+    let past = format!(
+        "a message shows at most {CHAT_PARTS_MAX} bubbles (paragraphs, fences and blocks); send the rest in another"
+    );
+    failed.extend((blocks + 1..=blocks + over).map(|n| (n, past.clone())));
+    (parts, failed)
 }
 
 /// One bubble's text, trimmed: `part` of the message's `parts`, or the whole text for a message of one bubble.
@@ -306,6 +406,74 @@ mod tests {
         assert_eq!(fallback(&over), None);
         // Another language's fence is a text part, whatever it holds.
         assert_eq!(sliced(&format!("ok\n\n```json\n{chart}\n```"))[1].1, None);
+    }
+
+    #[test]
+    fn many_blocks_show_and_the_lead_hears_of_each_one_that_did_not() {
+        let image = |n: usize| {
+            format!(
+                "```fleetd-block\n{{\"v\":1,\"kind\":\"image\",\"attachmentId\":\"F{n}\"}}\n```"
+            )
+        };
+        // Nine images, past the old cap of 8: every one is a block, and the lead hears nothing.
+        let nine = (1..=9).map(image).collect::<Vec<_>>().join("\n\n");
+        assert!(sliced(&nine).iter().all(|(_, kind)| *kind == Some("other")));
+        assert_eq!(unshown(&nine), None);
+        // Past the bubble cap, the tail's images are the last bubble's text, and the lead hears which.
+        let many = (1..=CHAT_PARTS_MAX + 1)
+            .map(image)
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        let got = sliced(&many);
+        assert_eq!(got.len(), CHAT_PARTS_MAX);
+        assert_eq!(got[CHAT_PARTS_MAX - 1].1, None);
+        assert_eq!(
+            unshown(&many).unwrap(),
+            "- your last message had 2 blocks the person couldn't see as written (a \"couldn't show this\" chip stands in): \
+             block 24: a message shows at most 24 bubbles (paragraphs, fences and blocks); send the rest in another; \
+             block 25: a message shows at most 24 bubbles (paragraphs, fences and blocks); send the rest in another; \
+             fix and send again if it matters"
+        );
+    }
+
+    #[test]
+    fn a_table_with_an_empty_header_is_named_with_its_rule() {
+        let table = r##"{"v":1,"kind":"table","columns":["PR",""],"rows":[["#1","ok"]]}"##;
+        let text = format!("ok\n\n```fleetd-block\n{table}\n```");
+        assert_eq!(sliced(&text)[1].1, None);
+        assert_eq!(
+            unshown(&text).unwrap(),
+            "- your last message had a block the person couldn't see as written (a \"couldn't show this\" chip stands in): \
+             block 1: columns[1]: expected a non-empty string; fix and send again if it matters"
+        );
+        let ragged = r#"{"v":1,"kind":"table","columns":["a","b"],"rows":[["1"]]}"#;
+        assert_eq!(block(ragged).1.unwrap(), "each row has one cell per column");
+        assert_eq!(
+            block("{\"v\":1,").1.unwrap(),
+            "its JSON doesn't parse (EOF while parsing a value at line 1 column 7)"
+        );
+    }
+
+    #[test]
+    fn an_image_whose_caption_is_wrong_still_shows_its_image() {
+        let long = format!(
+            r#"{{"v":1,"kind":"image","attachmentId":"F3","caption":"{}"}}"#,
+            "c".repeat(201)
+        );
+        let (shown, why) = block(&long);
+        let Some(BlockBody::Image(image)) = shown.map(|b| b.body) else {
+            panic!("no image")
+        };
+        assert_eq!((image.attachment_id.as_str(), image.caption), ("F3", None));
+        assert_eq!(why.unwrap(), "caption: expected at most 200 characters");
+        let linked =
+            r#"{"v":1,"kind":"image","attachmentId":"F3","caption":"see https://x.example"}"#;
+        assert!(matches!(block(linked), (Some(_), Some(_))));
+        // Without a caption to drop, a bad image is a fence like any other block.
+        assert!(matches!(
+            block(r#"{"v":1,"kind":"image","attachmentId":""}"#),
+            (None, Some(_))
+        ));
     }
 
     #[test]

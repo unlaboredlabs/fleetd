@@ -179,3 +179,49 @@ it("closes with a click beside the image or the X, not on the image", async () =
   await settle();
   expect(viewer()).toBeNull();
 });
+
+/** An image you sent finishing its load at `width` × `height` pixels. */
+const loaded = (name: string, width: number, height: number) => {
+  const img = host.querySelector<HTMLImageElement>(`[data-mine] img[alt="${name}"]`);
+  expect(img).not.toBeNull();
+  if (img === null) return img;
+  Object.defineProperty(img, "naturalWidth", { value: width, configurable: true });
+  Object.defineProperty(img, "naturalHeight", { value: height, configurable: true });
+  act(() => {
+    img.dispatchEvent(new Event("load"));
+  });
+  return img;
+};
+
+it("sizes the images you sent in points within the box, on your side, whatever their pixels", async () => {
+  await mount(mine);
+  // In your message, after your words: the stack sits in your side's corner, as the bubble does.
+  const message = host.querySelector("[data-mine]");
+  expect(message?.lastElementChild?.querySelector('img[alt="cart.png"]')).not.toBeNull();
+  // A wide screenshot, a tall one, and a small one: each its own size, never a share of the column.
+  const wide = loaded("checkout.png", 2880, 900);
+  expect([wide?.style.width, wide?.style.height]).toEqual(["360px", "113px"]);
+  const tall = loaded("cart.png", 600, 1800);
+  expect([tall?.style.width, tall?.style.height]).toEqual(["93px", "280px"]);
+  const small = loaded("cart.png", 64, 40);
+  expect([small?.style.width, small?.style.height]).toEqual(["64px", "40px"]);
+});
+
+it("shows a lead's block that didn't fit as a small chip, never its JSON", async () => {
+  const json = '{"v":1,"kind":"table","columns":["PR",""],"rows":[]}';
+  const text = `The week:\n\n\`\`\`fleetd-block\n${json}\n\`\`\``;
+  if (lead.message === undefined) throw new Error("no message");
+  const broken: ChatItem = {
+    ...lead,
+    text,
+    message: { ...lead.message, text, parts: [{ start: 0, end: 9 }, { start: 11, end: text.length }] },
+  };
+  await mount(broken);
+  await settle();
+  expect(host.textContent).toContain("The week:");
+  expect(host.textContent).toContain("Couldn't show this");
+  expect(host.textContent).not.toContain('"kind"');
+  expect(host.querySelectorAll("[data-unshown]")).toHaveLength(1);
+  // Alone in its part, the chip has no bubble around it.
+  expect(host.querySelector('[data-part="1"]')?.className).not.toMatch(/bubble/i);
+});

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ChatBlock, ChatMessage } from "../../../shared/contracts";
 import type { ChatItem } from "../../src/data/chat";
-import { askAnswer, bubblesOf, quoted, quoteOf, replyOf, replyText, tapbackSend, type Bubble } from "./bubbles";
+import { askAnswer, bubblesOf, quoted, quoteOf, replyOf, replyText, tapbackSend, unshownOnly, type Bubble } from "./bubbles";
 
 const AT = "2026-10-19T09:00:00.000Z";
 const item = (id: string, author: ChatItem["author"], text: string, over: Partial<ChatItem> = {}): ChatItem => ({
@@ -89,4 +89,16 @@ it("an ask's answer is your first later message that is one of its buttons, in a
   expect(askAnswer(items, 0, undefined)).toBeUndefined();
   expect(askAnswer([...items, item("e", "human", "approve")], 0, undefined)).toBe("Approve");
   expect(askAnswer([item("a", "lead", ""), item("b", "human", "Deny", { state: "failed" })], 0, undefined)).toBeUndefined();
+});
+
+it("knows a bubble that is only a lead's block that didn't show, and nothing else", () => {
+  const fence = '```fleetd-block\n{"v":1,"kind":"table","columns":[""],"rows":[]}\n```';
+  expect(unshownOnly(fence)).toBe(true);
+  expect(unshownOnly(`${fence}\n`)).toBe(true);
+  // Unclosed, as the message's last bubble.
+  expect(unshownOnly('```fleetd-block\n{"v":1')).toBe(true);
+  // Words around it, two fences, or another language: a text bubble.
+  expect(unshownOnly(`see:\n${fence}`)).toBe(false);
+  expect(unshownOnly(`${fence}\n\n${fence}`)).toBe(false);
+  expect(unshownOnly('```json\n{"v":1}\n```')).toBe(false);
 });

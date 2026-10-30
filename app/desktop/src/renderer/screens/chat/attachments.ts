@@ -44,3 +44,44 @@ export const looksText = (buf: ArrayBuffer): boolean => {
     return false;
   }
 };
+
+/** The box an image sent with a message fits in, keeping its shape. */
+export const IMAGE_MAX = { width: 360, height: 280 } as const;
+
+/**
+ * How many pixels a PNG puts in a point, from its pHYs chunk: 2 for a Retina screenshot (144 dpi), 1 for anything
+ * else or a file that doesn't say. Reads only the chunks before the image data.
+ */
+export function pngDensity(dataB64: string): number {
+  let bytes: Uint8Array;
+  try {
+    bytes = Uint8Array.from(atob(dataB64.slice(0, 16_384)), (c) => c.charCodeAt(0));
+  } catch {
+    return 1;
+  }
+  const view = new DataView(bytes.buffer);
+  const word = (at: number, n = 4) => String.fromCharCode(...bytes.subarray(at, at + n));
+  if (bytes.length < 8 || word(1, 3) !== "PNG") return 1;
+  for (let at = 8; at + 8 <= bytes.length; ) {
+    const len = view.getUint32(at);
+    const type = word(at + 4);
+    if (type === "IDAT" || type === "IEND") return 1;
+    if (type === "pHYs" && at + 17 <= bytes.length) {
+      // Pixels per unit along x, then y, then the unit: 1 is the metre.
+      if (bytes[at + 16] !== 1) return 1;
+      const dpi = view.getUint32(at + 8) * 0.0254;
+      return Math.min(3, Math.max(1, Math.round(dpi / 72)));
+    }
+    at += 12 + len;
+  }
+  return 1;
+}
+
+/** An image's size in the chat: its pixels over `density` (points, as it was on its screen), shrunk to fit IMAGE_MAX. */
+export function imageFit(width: number, height: number, density = 1): { width: number; height: number } {
+  if (!(width > 0 && height > 0)) return { ...IMAGE_MAX };
+  const w = width / density;
+  const h = height / density;
+  const scale = Math.min(1, IMAGE_MAX.width / w, IMAGE_MAX.height / h);
+  return { width: Math.round(w * scale), height: Math.round(h * scale) };
+}

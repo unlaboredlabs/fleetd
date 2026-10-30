@@ -3,7 +3,7 @@
 // said in words). Messages from one side in a burst group, tight, with the tail on the last; a time line goes between
 // bursts; and the desktop's turn line shows while the lead works. Pure, so it is unit-tested.
 import type { ChatItem } from "./desktop";
-import { previewText } from "./markdown";
+import { isBlockFence, parseMarkdown, previewText, UNSHOWN } from "./markdown";
 
 export type Bubble =
   | { readonly kind: "text"; readonly text: string }
@@ -29,6 +29,9 @@ export const bubbles = (item: Pick<ChatItem, "text" | "message">): readonly Bubb
     const block = p.block;
     if (block === undefined) {
       const text = item.text.slice(p.start, p.end).trim();
+      // A block that didn't show, alone in its part: a card saying so, as for a kind the phone doesn't draw.
+      const [only, ...more] = parseMarkdown(text);
+      if (only !== undefined && more.length === 0 && isBlockFence(only)) return [{ kind: "block", text: UNSHOWN }];
       return text === "" ? [] : [{ kind: "text", text }];
     }
     switch (block.kind) {

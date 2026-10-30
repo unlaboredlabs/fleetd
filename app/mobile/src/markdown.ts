@@ -213,6 +213,12 @@ export const plainText = (inline: readonly Inline[]): string =>
   inline.map((n) => (n.t === "text" || n.t === "code" ? n.text : plainText(n.children))).join("");
 
 /** A message's markdown as one line of plain text, for a preview: "**Done**: see `x`" → "Done: see x". */
+/** The words for a lead's block that didn't show (it broke a limit, or this build can't draw it): never its JSON. */
+export const UNSHOWN = "Couldn't show this";
+
+/** A fence of a lead's block: a part with a block shows it, so one that reaches markdown didn't show. */
+export const isBlockFence = (b: Block): boolean => b.t === "code" && b.lang === "fleetd-block";
+
 export const previewText = (source: string): string =>
   parseMarkdown(source)
     .map((b): string => {
@@ -221,7 +227,7 @@ export const previewText = (source: string): string =>
         case "h":
           return plainText(b.inline);
         case "code":
-          return b.text;
+          return isBlockFence(b) ? UNSHOWN : b.text;
         case "quote":
           return b.blocks.map((q) => (q.t === "p" ? plainText(q.inline) : "")).join(" ");
         case "list":

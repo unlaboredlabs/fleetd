@@ -67,6 +67,15 @@ export function bubblesOf(item: ChatItem): readonly Bubble[] {
   return out;
 }
 
+/** A bubble that is only a lead's block that didn't show (its fence as written): its chip stands alone, unbubbled. */
+export function unshownOnly(text: string): boolean {
+  const lines = text.trim().split("\n");
+  const fences = lines.filter((l) => FENCE_LINE.test(l)).length;
+  const closed = lines.length > 1 && /^ {0,3}(`{3,}|~{3,})\s*$/.test(lines.at(-1) ?? "");
+  return /^(`{3,}|~{3,})[ \t]*fleetd-block[ \t]*$/.test(lines[0] ?? "") && (fences === 1 || (fences === 2 && closed));
+}
+const FENCE_LINE = /^ {0,3}(`{3,}|~{3,})/;
+
 /** Blocks that take the column's width rather than a bubble's. */
 export const isWide = (b: Bubble): boolean => b.kind === "block" && (b.block.kind === "chart" || b.block.kind === "table" || b.block.kind === "diff");
 
