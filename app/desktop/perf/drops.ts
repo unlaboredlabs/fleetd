@@ -1,13 +1,15 @@
 // Dropping dragged sidebar rows in the built app (`pnpm qa:build`, `pnpm fixtures`, then `pnpm perf:drops`): a long
 // sidebar (status-rows with more projects, so it scrolls), a hub that keeps the order as a real one does (it answers
 // sidebar_order_get with the last sidebar_order_set and sends sidebar.order after each), and drops made with the mouse
-// through Chromium's input pipeline: short, long, after the edge's autoscroll, as another desktop's move arrives, and
-// as the hub's own echo comes back early or late, and as a reply draws the rows again. Each animation frame from just
-// before the release until well after it, every row's place on screen is recorded. A drop jumps when, in some frame, a
-// row moves farther than the glide's curve would take it (a snap), or turns back without the order having changed.
+// through Chromium's input pipeline: short, long, down and up in a scrolled list, from either end, after the edge's
+// autoscroll, as another desktop's move arrives, as the hub's own echo comes back early or late, and as a reply draws
+// the rows again. Each animation frame from before the press until well after the release, every row's place on screen
+// is recorded. A drop jumps when a row the drag never passes (above a row dragged down, below one dragged up) moves at
+// all, from the press on; or when, after the release, a row moves farther in a frame than the glide's curve would take
+// it (a snap), or turns back without the order having changed.
 //
 //   --theme light|dark   (default light)
-//   --strip DIR          also write each drop's frames (Chromium's screencast), named by ms from the release
+//   --strip DIR          also write each drop's frames (Chromium's screencast), named by ms from just before the press
 //   --rounds N           how many times the drops are made (default 3)
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -43,10 +45,13 @@ const writeFixture = () => {
 interface Row {
   readonly name: string;
   readonly top: number;
+  readonly lifted: boolean;
 }
 interface Frame {
   readonly t: number;
   readonly rows: ReadonlyArray<Row>;
+  /** The list's own top: a row's place in it is its top less this, the same however far the sidebar scrolled. */
+  readonly list: number;
 }
 
 /** In the app's main process: the hub's sidebar_order_get / _set answered from an order it keeps. */
@@ -113,7 +118,7 @@ const names = (page: Page) =>
       .flatMap((s) => [...s.querySelectorAll<HTMLElement>("[data-reorder-row]")].map((r) => r.innerText.split("\n")[0]?.trim() ?? "")),
   );
 
-/** Starts recording every row's top each animation frame; the release's time goes in with the first pointerup. */
+/** Starts recording every row's top each animation frame, from before the press; the release's time goes in with the first pointerup. */
 const record = (page: Page) =>
   page.evaluate(() => {
     const w = window as unknown as { frames: Frame[]; up: number; stop: boolean };
@@ -123,8 +128,9 @@ const record = (page: Page) =>
     window.addEventListener("pointerup", () => (w.up = performance.now()), { capture: true, once: true });
     const tick = (t: number) => {
       const section = [...document.querySelectorAll("nav[aria-label='Sidebar'] section")].find((s) => s.textContent.startsWith("Projects"));
-      const rows = [...(section?.querySelectorAll<HTMLElement>("[data-reorder-row]") ?? [])].map((r) => ({ name: r.innerText.split("\n")[0]?.trim() ?? "", top: r.getBoundingClientRect().top }));
-      w.frames.push({ t, rows });
+      const els = [...(section?.querySelectorAll<HTMLElement>("[data-reorder-row]") ?? [])];
+      const rows = els.map((r) => ({ name: r.innerText.split("\n")[0]?.trim() ?? "", top: r.getBoundingClientRect().top, lifted: r.hasAttribute("data-lifted") }));
+      w.frames.push({ t, rows, list: els[0]?.parentElement?.getBoundingClientRect().top ?? 0 });
       if (!w.stop) requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
@@ -162,6 +168,8 @@ interface Drop {
    * sidebar's own order, or a lead's reply that draws the rows again.
    */
   readonly during?: { readonly ms: number; readonly what: "move" | "chat" };
+  /** How far the sidebar is scrolled before the press. */
+  readonly scroll?: number;
 }
 
 const ROW = 28;
@@ -203,6 +211,13 @@ const DROPS: ReadonlyArray<Drop> = [
   },
   { name: "another desktop's move before the release", drag: async (p) => glide(p, await middle(p, await pick(p, 3)), -(2 * ROW + 4), 8), during: { ms: -50, what: "move" } },
   { name: "a reply mid-glide", drag: async (p) => glide(p, await middle(p, await pick(p, 1)), 3 * ROW + 4, 8), during: { ms: 50, what: "chat" } },
+  // A real-length list scrolled part way, as a sidebar mostly is: the rows the drag never passes must not move at all.
+  { name: "down past one, scrolled", scroll: 120, drag: async (p) => glide(p, await middle(p, await pick(p, 8)), ROW + 6, 6) },
+  { name: "down past three, scrolled", scroll: 120, drag: async (p) => glide(p, await middle(p, await pick(p, 8)), 3 * ROW + 6, 10) },
+  { name: "up past one, scrolled", scroll: 120, drag: async (p) => glide(p, await middle(p, await pick(p, 12)), -(ROW + 6), 6) },
+  { name: "up past three, scrolled", scroll: 120, drag: async (p) => glide(p, await middle(p, await pick(p, 12)), -(3 * ROW + 6), 10) },
+  { name: "down from the top", drag: async (p) => glide(p, await middle(p, await pick(p, 0)), 2 * ROW + 6, 8) },
+  { name: "up from the bottom", scroll: 2000, drag: async (p) => glide(p, await middle(p, (await names(p)).at(-1) ?? ""), -(2 * ROW + 6), 8) },
   { name: "slow hub, late echo", drag: async (p) => glide(p, await middle(p, await pick(p, 4)), 2 * ROW + 4, 8), hub: { setMs: 250, getMs: 120, echoMs: 0 } },
   { name: "fast hub, instant echo", drag: async (p) => glide(p, await middle(p, await pick(p, 2)), 3 * ROW + 4, 8), hub: { setMs: 0, getMs: 0, echoMs: 0 } },
 ];
@@ -228,11 +243,39 @@ const eased = (t: number): number => {
 const GLIDE_MS = 180;
 
 /**
+ * The rows a drag never passes, from the press to the end: those above a row dragged down, below one dragged up. Each
+ * stays exactly where it was in its list the whole time: through the lift, the drag and the drop.
+ */
+const still = (frames: ReadonlyArray<Frame>): string[] => {
+  const lifted = frames.flatMap((f) => f.rows.filter((r) => r.lifted).map((r) => r.name))[0];
+  const first = frames[0];
+  const last = frames.at(-1);
+  if (lifted === undefined || first === undefined || last === undefined) return [];
+  const was = first.rows.findIndex((r) => r.name === lifted);
+  const now = last.rows.findIndex((r) => r.name === lifted);
+  if (was < 0 || now < 0 || was === now) return [];
+  const passed = new Set(first.rows.filter((_, i) => (now > was ? i >= was : i <= was)).map((r) => r.name));
+  const out: string[] = [];
+  for (const { name, top } of first.rows) {
+    if (passed.has(name)) continue;
+    const at = top - first.list;
+    for (const f of frames) {
+      const there = f.rows.find((r) => r.name === name);
+      if (there !== undefined && Math.abs(there.top - f.list - at) > 0.5) {
+        out.push(`${name}, never passed, moved ${(there.top - f.list - at).toFixed(1)} px (${String(Math.round(f.t - first.t))} ms from the press)`);
+        break;
+      }
+    }
+  }
+  return out;
+};
+
+/**
  * Every row's path from just before the release to well after it. A row may only glide: each frame it moves at most
  * as far as the glide's curve goes in that time at its start, where it is steepest (of the farthest the row goes in
  * all), and it turns back only where the order changed (the drop, or another desktop's move) a frame or two before.
  */
-const judge = (drop: string, frames: ReadonlyArray<Frame>, up: number): Verdict => {
+const judge = (drop: string, frames: ReadonlyArray<Frame>, up: number, moved: boolean): Verdict => {
   const at = frames.findIndex((f) => f.t >= up);
   const path = frames.slice(Math.max(0, at - 1));
   const jumps: string[] = [];
@@ -258,7 +301,8 @@ const judge = (drop: string, frames: ReadonlyArray<Frame>, up: number): Verdict 
       way = Math.sign(step);
     }
   }
-  return { drop, jumps, frames: path.length };
+  // Another desktop's move puts any row anywhere.
+  return { drop, jumps: [...(moved ? [] : still(frames)), ...jumps], frames: path.length };
 };
 
 const screencast = async (cdp: CDPSession, dir: string | undefined) => {
@@ -296,15 +340,15 @@ const main = async () => {
     const verdicts: Verdict[] = [];
     for (let round = 0; round < ROUNDS; round++) {
       for (const drop of DROPS) {
-        await page.evaluate(() => document.querySelector("nav[aria-label='Sidebar'] > div")?.scrollTo({ top: 0 }));
+        await page.evaluate((top) => document.querySelector("nav[aria-label='Sidebar'] > div")?.scrollTo({ top }), drop.scroll ?? 0);
         await app.evaluate((_e, h) => {
           const g = globalThis as unknown as { drops: Record<string, number> };
           Object.assign(g.drops, { getMs: 30, setMs: 40, echoMs: 20 }, h);
         }, drop.hub ?? {});
         await sleep(300);
-        await drop.drag(page);
         await record(page);
         const cast = await screencast(cdp, round === 0 ? flags.strip : undefined);
+        await drop.drag(page);
         await sleep(50);
         if (drop.during !== undefined) {
           await app.evaluate((_e, d) => {
@@ -317,7 +361,7 @@ const main = async () => {
         await sleep(AFTER_MS);
         const { frames, up } = await recorded(page);
         const shots = await cast.stop();
-        const v = judge(drop.name, frames, up);
+        const v = judge(drop.name, frames, up, drop.during?.what === "move");
         verdicts.push(v);
         console.log(`${v.jumps.length === 0 ? "smooth" : "JUMP  "}  ${drop.name} (${String(v.frames)} frames)${v.jumps.length === 0 ? "" : `\n          ${v.jumps.slice(0, 4).join("\n          ")}`}`);
         if (flags.strip !== undefined && shots.length > 0) {

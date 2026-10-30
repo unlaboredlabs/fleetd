@@ -4,7 +4,7 @@
 // go to the hub one at a time (only the newest of those made meanwhile), and a read older than the last of them,
 // such as the refetch your own earlier move's event made, never puts a row back. A row dropped in the sidebar stays
 // put through the hub's answer and its echo (W219).
-import { act } from "react";
+import { act, Profiler } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ProjectRef, ProjectSummary } from "../../../shared/contracts";
@@ -263,5 +263,86 @@ describe("a row dropped in the sidebar", () => {
     expect(titles()).toEqual(["b", "a", "c"]);
     expect(changes.takeRecords()).toEqual([]);
     changes.disconnect();
+  });
+});
+
+describe("the rows around a row dragged in the sidebar", () => {
+  const ROW = 28;
+  const layout = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect");
+  afterEach(() => layout.mockReset());
+  const rows = () => [...host.querySelectorAll<HTMLElement>("[data-reorder-row]")];
+  const nameOf = (r: HTMLElement) => r.querySelector("[class*=sidebarLabel]")?.textContent ?? "";
+  const titles = () => rows().map(nameOf);
+  const translated = (el: HTMLElement) => Number(/translateY\((-?[\d.]+)px\)/.exec(el.style.transform)?.[1] ?? 0);
+  const slot = (el: HTMLElement) => (el.parentElement === null ? 0 : [...el.parentElement.children].indexOf(el) * ROW);
+
+  /**
+   * The sidebar on a, b, c, d from the data layer, `name` dragged `dy` and let go, with every commit React makes
+   * looked at: where `watch` (a row the drag never passes) and `passed` (the one it does) are drawn, and whether the
+   * list took a new order while its rows were still making way for the drag (their slide then runs from a stale
+   * place: the row above jumps up, W219).
+   */
+  const drag = async (name: string, dy: number, watch: string, passed: string) => {
+    // Where each row was drawn at the last read of the layout: a transition set after it starts there.
+    const drawn = new Map<HTMLElement, number>();
+    layout.mockImplementation(function (this: HTMLElement) {
+      for (const r of rows()) drawn.set(r, slot(r) + translated(r));
+      return DOMRect.fromRect({ x: 0, y: slot(this) + translated(this), width: 200, height: ROW });
+    });
+    const at = (n: string) => {
+      const r = rows().find((x) => nameOf(x) === n);
+      return r === undefined ? undefined : r.style.transition.includes("transform") ? drawn.get(r) : slot(r) + translated(r);
+    };
+    const commits: { order: string; making: boolean; watch: number | undefined; passed: number | undefined }[] = [];
+    const looked = () => commits.push({ order: titles().join(" "), making: host.querySelector("[data-reorder]") !== null, watch: at(watch), passed: at(passed) });
+    act(() =>
+      root.render(
+        <UiProvider>
+          <DataProvider layer={layer}>
+            <Profiler id="sidebar" onRender={looked}>
+              <Bar />
+            </Profiler>
+          </DataProvider>
+        </UiProvider>,
+      ),
+    );
+    act(() => {
+      listener({ t: "state", state: { phase: "live", hub: "devbox:4710", protocol: 1 } });
+      listener({ t: "snapshot", snapshot: { cursor: 1, attention: [], machines: [], projects: ["a", "b", "c", "d"].map((t) => project(t)) } });
+    });
+    await settle();
+    expect(titles()).toEqual(["a", "b", "c", "d"]);
+    const y = (rows().findIndex((r) => nameOf(r) === name) + 0.5) * ROW;
+    const press = (type: string, to: number, target: EventTarget = window) =>
+      act(() => void target.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, button: 0, pointerId: 1, pointerType: "mouse", clientY: to })));
+    commits.length = 0;
+    press("pointerdown", y, rows().find((r) => nameOf(r) === name)?.querySelector("button") ?? window);
+    for (const step of [6, dy / 2, dy]) press("pointermove", y + step);
+    press("pointerup", y + dy);
+    await settle(SETTLE_MS + 20);
+    act(() => sets[0]?.land());
+    await announced();
+    await settle(SETTLE_MS + 20);
+    return commits;
+  };
+
+  it("never moves the row above a row dragged down, nor reorders the list while its rows still make way", async () => {
+    // b down past c: a, above it, never moves; c slides up into b's place and stays there.
+    const commits = await drag("b", ROW + 6, "a", "c");
+    expect(commits.length).toBeGreaterThan(2);
+    expect(commits.filter((c) => c.making && c.order !== "a b c d")).toEqual([]);
+    expect(new Set(commits.map((c) => c.watch))).toEqual(new Set([0]));
+    expect(commits.filter((c) => c.passed !== 2 * ROW && c.passed !== ROW)).toEqual([]);
+    expect(commits.at(-1)).toEqual({ order: "a c b d", making: false, watch: 0, passed: ROW });
+    expect(sets.map((x) => x.order)).toEqual([refs("a", "c", "b", "d")]);
+  });
+
+  it("never moves the row below a row dragged up, nor reorders the list while its rows still make way", async () => {
+    // c up past b: d, below it, never moves; b slides down into c's place and stays there.
+    const commits = await drag("c", -(ROW + 6), "d", "b");
+    expect(commits.filter((c) => c.making && c.order !== "a b c d")).toEqual([]);
+    expect(new Set(commits.map((c) => c.watch))).toEqual(new Set([3 * ROW]));
+    expect(commits.filter((c) => c.passed !== ROW && c.passed !== 2 * ROW)).toEqual([]);
+    expect(commits.at(-1)).toEqual({ order: "a c b d", making: false, watch: 3 * ROW, passed: 2 * ROW });
   });
 });
