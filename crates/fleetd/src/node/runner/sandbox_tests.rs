@@ -19,6 +19,10 @@ struct Machine {
     other: PathBuf,
     /// A bin dir outside the home the person writes, on the node's PATH (Homebrew's).
     brew: PathBuf,
+    /// A checkout whose `CLAUDE.md` is an absolute link to its `AGENTS.md`.
+    third: PathBuf,
+    /// Outside the home, where `~/.aws` links to.
+    vault: PathBuf,
     own: PathBuf,
     other_navi: PathBuf,
     runtime: PathBuf,
@@ -43,6 +47,8 @@ impl Machine {
             tokens: node.join("secrets"),
             other: root.join("src/other"),
             brew: root.join("opt/brew/bin"),
+            third: root.join("src/third"),
+            vault: root.join("vault/aws"),
             own: node.join("navis/p1"),
             other_navi: node.join("navis/p2"),
             runtime: root.join("run/user/1000"),
@@ -64,6 +70,10 @@ impl Machine {
             (m.other.join(".git/config"), "[core]\n\tbare = false\n"),
             (m.other.join("CLAUDE.md"), "Run the tests before a commit."),
             (m.brew.join("git"), "#!/bin/sh\necho brew-git\n"),
+            (m.third.join("AGENTS.md"), "Run the tests."),
+            (m.vault.join("credentials"), "aws_secret_access_key = x"),
+            // The person's bin dir, kept in their dotfiles and linked from the home.
+            (m.home.join("dotfiles/bin/tool"), "#!/bin/sh\n"),
             // Go's module cache, without its bin dir yet.
             (m.home.join("go/pkg/mod/cache.txt"), "x"),
             (m.session.join("mcp.json"), "{\"mcpServers\":{}}"),
@@ -181,7 +191,10 @@ impl Machine {
             std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
         }
         std::fs::create_dir_all(m.home.join(".local/bin")).unwrap();
+        std::os::unix::fs::symlink(m.third.join("AGENTS.md"), m.third.join("CLAUDE.md")).unwrap();
+        std::os::unix::fs::symlink(&m.vault, m.home.join(".aws")).unwrap();
         for (target, link) in [
+            ("dotfiles/bin", "bin"),
             // Links at the home's top: one to the person's code, one to their keys.
             ("src", "code"),
             (".ssh", "keys"),
@@ -233,6 +246,7 @@ impl Machine {
                 self.home.join("src/mine"),
                 self.folder.clone(),
                 self.worktree.clone(),
+                self.third.clone(),
             ],
         })
     }
@@ -582,6 +596,17 @@ fn a_navi_writes_where_the_person_can_but_not_fleetds_dir_or_what_runs_on_its_ow
     );
     assert!(!ok, "{out}");
     assert!(!m.home.join("go/bin/go").exists());
+    // Nor through a link: the person's linked bin dir, and a checkout's `CLAUDE.md` that links to its `AGENTS.md`.
+    for target in [
+        m.home.join("bin/tool"),
+        m.home.join("dotfiles/bin/tool"),
+        m.third.join("CLAUDE.md"),
+        m.third.join("AGENTS.md"),
+    ] {
+        let (ok, out) = m.run(&tool, &format!("echo pwned >> '{}'", target.display()));
+        assert!(!ok, "{} was written: {out}", target.display());
+        assert!(!std::fs::read_to_string(&target).unwrap().contains("pwned"));
+    }
     // The rest of the checkout is the person's to write as they would.
     let (ok, out) = m.run(
         &tool,
@@ -665,6 +690,9 @@ fn a_navi_cant_read_keys_logins_fleetds_dir_or_another_navis_home() {
         navi_cookies(&m.node),
         m.home.join(".ssh/id_ed25519"),
         m.home.join("keys/id_ed25519"),
+        // A hidden dir that links elsewhere, by either name.
+        m.home.join(".aws/credentials"),
+        m.vault.join("credentials"),
         m.home.join(".config/gh/hosts.yml"),
         m.fleetd.join("hub/hub.sqlite"),
         m.fleetd.join("claude.env"),

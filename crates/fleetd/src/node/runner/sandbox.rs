@@ -491,6 +491,13 @@ pub fn navi_fence(p: &NaviPaths) -> Fence {
         hide.push(real(Path::new(HIDDEN_X)));
         hide.extend(HIDDEN_IN_HOME_MACOS.iter().map(|h| user_home.join(h)));
     }
+    // A hidden path that is a link (`~/.ssh` into a dotfiles repo) hides what it leads to as well.
+    let targets: Vec<PathBuf> = hide
+        .iter()
+        .map(|h| real(h))
+        .filter(|r| !hide.contains(r))
+        .collect();
+    hide.extend(targets);
     hide.sort();
     hide.dedup();
 
@@ -536,10 +543,12 @@ pub fn navi_fence(p: &NaviPaths) -> Fence {
             let config = in_listed_home
                 && (name == config_name || name.starts_with(&format!("{config_name}.")));
             let set = |p: &PathBuf| *p == path;
-            if config || hide.iter().any(set) || show.iter().any(set) {
+            let link = entry.file_type().is_ok_and(|t| t.is_symlink());
+            // A shown link comes back as a link, and what it leads to read-only ([`resolve_links`]).
+            if config || hide.iter().any(set) || (!link && show.iter().any(set)) {
                 continue;
             }
-            if entry.file_type().is_ok_and(|t| t.is_symlink()) {
+            if link {
                 links.extend(std::fs::read_link(&path).map(|to| (path, to)));
             } else {
                 listed.push(path);
@@ -603,7 +612,32 @@ pub fn navi_fence(p: &NaviPaths) -> Fence {
         session: Some(p.session_id.to_owned()),
     };
     guard(&mut fence, p, &user_home, &folder);
+    resolve_links(&mut fence);
     fence
+}
+
+/// Makes each read-only path of `fence` the one it really is: a mount lands on what a link (or a linked parent) leads
+/// to, never through the link, which bubblewrap can't follow to a target outside the sandbox it is making, and a
+/// macOS rule holds the target too. One that leads into a hidden path is dropped: it stays hidden.
+fn resolve_links(fence: &mut Fence) {
+    for read_only in [false, true] {
+        let paths = if read_only { &fence.keep } else { &fence.show };
+        let resolved: Vec<PathBuf> = paths
+            .iter()
+            .filter_map(|p| {
+                let r = real(p);
+                (r == *p || fence.access(&r) != Access::Hidden).then_some(r)
+            })
+            .collect();
+        let paths = if read_only {
+            &mut fence.keep
+        } else {
+            &mut fence.show
+        };
+        *paths = resolved;
+        paths.sort();
+        paths.dedup();
+    }
 }
 
 /// What runs outside the sandbox, made read-only where the fence would let the Navi write it: the programs in the
