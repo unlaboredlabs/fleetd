@@ -7031,6 +7031,10 @@
     },
     "HubUpdateOutput": {
       "properties": {
+        "autoAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "With `settings.auto`: when the build that is ready installs by itself, an hour after the last update started at\nthe earliest. Absent when nothing is ready, or automatic updates are off."
+        },
         "leftOver": {
           "description": "True when the run isn't finished but nothing in the hub drives it any more: it won't change again, and Update\nstarts a new one. Absent otherwise.",
           "type": "boolean"
@@ -7048,8 +7052,27 @@
           "$ref": "#/$defs/UpdateRun",
           "description": "The update going now or the last one; absent when the hub never updated itself."
         },
+        "settings": {
+          "$ref": "#/$defs/UpdateSettings",
+          "description": "The hub's update settings."
+        },
         "truncated": {
           "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "HubUpdateSettingsInput": {
+      "properties": {
+        "auto": {
+          "description": "Updates install by themselves, at most once an hour: the channel's newest build an hour after the last update\nstarted, whichever builds came out in between. Off by default.",
+          "type": "boolean"
+        },
+        "drainMinutes": {
+          "description": "How long a node waits for its agents to finish their step, in minutes, 0 to 240; 0 doesn't wait.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
         }
       },
       "type": "object"
@@ -9495,6 +9518,12 @@
         "hub_update.output": {
           "$ref": "#/$defs/HubUpdateOutput"
         },
+        "hub_update_settings.input": {
+          "$ref": "#/$defs/HubUpdateSettingsInput"
+        },
+        "hub_update_settings.output": {
+          "$ref": "#/$defs/HubUpdateOutput"
+        },
         "hub_update_status.input": {
           "$ref": "#/$defs/HubUpdateStatusInput"
         },
@@ -10313,6 +10342,8 @@
         "hub_links_get.output",
         "hub_update.input",
         "hub_update.output",
+        "hub_update_settings.input",
+        "hub_update_settings.output",
         "hub_update_status.input",
         "hub_update_status.output",
         "invite_create.input",
@@ -21447,6 +21478,10 @@
     "UpdateRun": {
       "description": "One hub update, from its start to the last node's result.",
       "properties": {
+        "auto": {
+          "description": "Started by itself (automatic updates), not by a person. Absent otherwise.",
+          "type": "boolean"
+        },
         "channel": {
           "$ref": "#/$defs/HubChannel"
         },
@@ -21487,6 +21522,26 @@
         "channel",
         "startedAt",
         "parts"
+      ],
+      "type": "object"
+    },
+    "UpdateSettings": {
+      "description": "How the hub updates: `<hub home>/update/settings.json`.",
+      "properties": {
+        "auto": {
+          "description": "Updates install by themselves, at most once an hour.",
+          "type": "boolean"
+        },
+        "drainMinutes": {
+          "description": "How long a node waits for its agents to finish their step, in minutes.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "auto",
+        "drainMinutes"
       ],
       "type": "object"
     },

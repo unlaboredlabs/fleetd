@@ -8,7 +8,7 @@
 // one hub at a time, named above every page, and switches between the hubs this person administers: nothing here acts
 // on a hub the page doesn't name.
 import { useState, type ReactNode } from "react";
-import { Button, Separator, SidebarItem, Text, Truncate, cx } from "../../ui";
+import { Button, Separator, SidebarItem, Switch, Text, Truncate, cx, toast } from "../../ui";
 import type { HubView } from "../../src/data/hubs";
 import { useData, useDataLayer, useHub, useSeveralHubs } from "../../src/data/react";
 import { HUB_COLOR } from "../shell/hubColor";
@@ -27,7 +27,9 @@ import { HubSkills } from "../settings/Skills";
 import { AdminGithub } from "../github/AdminGithub";
 import { progressLine, SetupSteps, useSetupSteps } from "../setup/SetupScreen";
 import { navigate } from "../shell/navigation";
+import { setAutoUpdates, useAutoUpdates } from "../updates/flow";
 import { useUpdatesView } from "../updates/hooks";
+import { autoWords } from "../updates/model";
 import { setUpdatesOpen } from "../updates/state";
 import { HubSection } from "../updates/UpdatesSheet";
 import type { HubTab } from "../shell/routes";
@@ -157,10 +159,20 @@ function Machines() {
   );
 }
 
-/** Which fleetd the hub and each machine run, whether each is up to date, and the updates sheet, whose Update runs on the hub. */
+/** Which fleetd the hub and each machine run, whether each is up to date, the updates sheet, whose Update runs on the
+ * hub, and automatic updates (off by default). */
 function Updates() {
   const view = useUpdatesView();
-  const { hub } = useDataLayer();
+  const layer = useDataLayer();
+  const { hub } = layer;
+  const auto = useAutoUpdates();
+  const [saving, setSaving] = useState(false);
+  const turn = async (on: boolean) => {
+    setSaving(true);
+    const refused = await setAutoUpdates(layer, on);
+    setSaving(false);
+    if (refused !== null) toast({ title: "Automatic updates didn't change", description: refused, tone: "danger" });
+  };
   return (
     <PagePart title="Updates" reveal="hub.updates">
       {view.hub === null ? (
@@ -178,6 +190,15 @@ function Updates() {
               Updates the hub, then every machine, then this app.
             </Text>
           </div>
+          {auto === null ? null : (
+            <Switch
+              label="Update automatically"
+              description={autoWords(auto.settings.drainMinutes, auto.at)}
+              checked={auto.settings.auto}
+              disabled={saving}
+              onCheckedChange={(on) => void turn(on)}
+            />
+          )}
         </>
       )}
     </PagePart>

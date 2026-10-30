@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Call, UpdatePart, UpdateRun } from "../../../shared/contracts";
 import type { HubError } from "../../../shared/hub";
 import type { AppUpdate, UpdatesState } from "../../../shared/updates";
-import { BEFORE_UPDATE, currentFlow, currentReady, currentRun, loadRun, resetFlow, retryMachine, startOver, startUpdate, updateNow, type FlowDeps } from "./flow";
+import { BEFORE_UPDATE, currentAuto, currentFlow, currentReady, currentRun, loadRun, resetFlow, retryMachine, setAutoUpdates, startOver, startUpdate, updateNow, type FlowDeps } from "./flow";
 
 const NEXT = "0.0.0-edge.202610261056+1b563d7";
 
@@ -236,5 +236,19 @@ describe("the Update button's run", () => {
     await updateNow(d);
     expect(inputs).toEqual([{ now: true }]);
     expect(currentRun()?.now).toBe(true);
+  });
+
+  it("turns automatic updates on through the hub, keeps what it says, and passes on a refusal", async () => {
+    const calls: [string, unknown][] = [];
+    const call = ((tool: string, input: unknown) => {
+      calls.push([tool, input]);
+      return Promise.resolve({ ok: true as const, output: { settings: { auto: true, drainMinutes: 10 }, autoAt: "2026-10-26T11:00:00.000Z" } });
+    }) as unknown as Call;
+    expect(await setAutoUpdates({ call }, true)).toBeNull();
+    expect(calls).toEqual([["hub_update_settings", { auto: true }]]);
+    expect(currentAuto()).toEqual({ settings: { auto: true, drainMinutes: 10 }, at: "2026-10-26T11:00:00.000Z" });
+    const refused = (() => Promise.resolve({ ok: false as const, error: { code: "forbidden", message: "Needs Admin.", fix: "Ask an owner." } })) as unknown as Call;
+    expect(await setAutoUpdates({ call: refused }, false)).toBe("Needs Admin. Ask an owner.");
+    expect(currentAuto()?.settings.auto).toBe(true);
   });
 });

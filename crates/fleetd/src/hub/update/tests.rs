@@ -257,6 +257,7 @@ fn fast() -> Timing {
         prefetch_every: Duration::from_secs(600),
         drain_poll: Duration::from_millis(5),
         drain: Duration::from_secs(60),
+        auto_gap: Duration::from_secs(3600),
     }
 }
 
@@ -898,6 +899,153 @@ async fn the_deadline_comes_from_the_hubs_update_settings() {
     assert_eq!(super::Timing::default().drain, Duration::from_secs(600));
 }
 
+/// The settings `hub_update_settings` writes: a field left out stays, and the drain is capped.
+#[tokio::test]
+async fn update_settings_change_one_field_at_a_time() {
+    let home = tempfile::tempdir().unwrap();
+    let fake = Arc::new(Fake::new(home.path(), b"new"));
+    let updates = area(home.path(), &fake);
+    let off = updates.settings();
+    assert!(!off.auto, "automatic updates are off by default");
+    assert_eq!(off.drain_minutes, 1, "the timing's own minute");
+    let on = updates.set_settings(Some(true), None).unwrap();
+    assert!(on.auto);
+    let longer = updates.set_settings(None, Some(25)).unwrap();
+    assert!(longer.auto, "auto stays");
+    assert_eq!(longer.drain_minutes, 25);
+    assert_eq!(updates.drain(), Duration::from_secs(25 * 60));
+    assert_eq!(
+        updates
+            .set_settings(None, Some(10_000))
+            .unwrap()
+            .drain_minutes,
+        240
+    );
+}
+
+/// The channel now offers `version`, a build of these bytes.
+fn publish(fake: &Fake, version: &str, binary: &[u8]) {
+    let mut files = fake.feed.files.lock().unwrap();
+    files.insert(ASSET.into(), binary.to_vec());
+    files.insert(
+        "SHA256SUMS".into(),
+        format!("{}  {ASSET}\n", crate::update::sha256_hex(binary)).into_bytes(),
+    );
+    files.insert(
+        "release.json".into(),
+        format!(r#"{{"cliVersion":"{version}"}}"#).into_bytes(),
+    );
+}
+
+/// An update area whose automatic updates are on, `gap` apart, with a finished update that started `ago` before now.
+fn auto_area(home: &Path, fake: &Arc<Fake>, gap: Duration, ago: Duration) -> Arc<Updates> {
+    let started = chrono::Utc::now() - chrono::Duration::from_std(ago).unwrap();
+    let at = started.to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+    let hub = super::part(
+        UpdatePartKind::Hub,
+        None,
+        "the hub",
+        OLD,
+        UpdateState::Current,
+    );
+    let run = json!({
+        "id": "U0", "channel": "edge", "to": OLD, "startedAt": at, "finishedAt": at, "parts": [hub],
+    });
+    fs::create_dir_all(home.join("update")).unwrap();
+    fs::write(home.join("update/run.json"), run.to_string()).unwrap();
+    let updates = Updates::new(
+        home,
+        Arc::new(SystemClock),
+        Timing {
+            auto_gap: gap,
+            ..fast()
+        },
+    );
+    updates.set_ports(fake.clone());
+    updates.set_settings(Some(true), None).unwrap();
+    updates
+}
+
+/// Off by default: a build ready is only offered. On: it installs by itself, an update like the button's that says it
+/// started by itself.
+#[tokio::test]
+async fn automatic_updates_are_off_until_turned_on() {
+    let home = tempfile::tempdir().unwrap();
+    let fake = Arc::new(Fake::new(home.path(), b"new"));
+    let updates = area(home.path(), &fake);
+    assert!(updates.auto_tick().await.is_none());
+    assert_eq!(
+        updates.ready().as_deref(),
+        Some(NEW),
+        "ready, not installed"
+    );
+    assert_eq!(updates.auto_at(), None);
+    assert!(fake.plans.lock().unwrap().is_empty());
+
+    updates.set_settings(Some(true), None).unwrap();
+    let before = super::now_ms(&SystemClock);
+    assert!(
+        updates.auto_at().unwrap() >= before,
+        "due now: no update before"
+    );
+    let run = updates.auto_tick().await.expect("it starts by itself");
+    assert_eq!(run.auto, Some(true));
+    assert_eq!(run.now, None, "it waits for agents as Update does");
+    until(&updates, |r| hub_state(r) == UpdateState::Restarting).await;
+    assert_eq!(fake.plans.lock().unwrap()[0].to, NEW);
+    assert!(
+        updates.auto_tick().await.is_none(),
+        "not again while it runs"
+    );
+}
+
+/// Two builds that come out within the hour after an update install once, an hour after it, as the newer one; and a
+/// person's update counts toward the hour as an automatic one does.
+#[tokio::test]
+async fn two_builds_within_an_hour_install_once() {
+    let home = tempfile::tempdir().unwrap();
+    let fake = Arc::new(Fake::new(home.path(), b"new"));
+    let gap = Duration::from_millis(400);
+    let updates = auto_area(home.path(), &fake, gap, Duration::ZERO);
+    // The first build, minutes after a person's update.
+    assert!(updates.auto_tick().await.is_none(), "within the hour");
+    assert_eq!(updates.ready().as_deref(), Some(NEW));
+    let due = updates.auto_at().unwrap();
+    assert!(due > super::now_ms(&SystemClock), "due at the hour's end");
+    // The second build replaces it.
+    publish(&fake, NEWER, b"newer");
+    assert!(updates.auto_tick().await.is_none(), "still within the hour");
+    assert_eq!(updates.ready().as_deref(), Some(NEWER));
+    assert_eq!(updates.auto_at(), Some(due), "the same hour");
+    assert!(
+        fake.plans.lock().unwrap().is_empty(),
+        "nothing installed yet"
+    );
+
+    tokio::time::sleep(gap).await;
+    let run = updates.auto_tick().await.expect("the hour is over");
+    until(&updates, |r| hub_state(r) == UpdateState::Restarting).await;
+    assert!(updates.auto_tick().await.is_none());
+    let plans = fake.plans.lock().unwrap();
+    assert_eq!(plans.len(), 1, "one install");
+    assert_eq!(plans[0].to, NEWER, "the newest build");
+    assert_eq!(updates.status().unwrap().id, run.id);
+}
+
+/// An update that started more than an hour ago holds nothing up: a build ready installs at the next look.
+#[tokio::test]
+async fn a_build_after_a_quiet_hour_installs_at_once() {
+    let home = tempfile::tempdir().unwrap();
+    let fake = Arc::new(Fake::new(home.path(), b"new"));
+    let updates = auto_area(
+        home.path(),
+        &fake,
+        Duration::from_secs(3600),
+        Duration::from_secs(3700),
+    );
+    assert!(updates.auto_tick().await.is_some());
+}
+
 /// Update now doesn't wait for agents: not when it starts the run, and not for a run already waiting, whose nodes
 /// install at once.
 #[tokio::test]
@@ -1183,6 +1331,7 @@ fn left_run(home: &Path, to: &str, machines: &[(&str, UpdateState, Option<&str>)
         finished_at: None,
         parts: fleetd_contracts::prim::List::new(parts).unwrap(),
         now: None,
+        auto: None,
     };
     fs::create_dir_all(home.join("update")).unwrap();
     fs::write(

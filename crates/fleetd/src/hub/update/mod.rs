@@ -30,7 +30,8 @@ use std::time::Duration;
 
 use fleetd_contracts::ids::{MachineId, Timestamp};
 use fleetd_contracts::mcp::{
-    HubChannel, UpdatePart, UpdatePartKind, UpdateRun, UpdateStage, UpdateState,
+    DRAIN_MINUTES_MAX, HubChannel, UpdatePart, UpdatePartKind, UpdateRun, UpdateSettings,
+    UpdateStage, UpdateState,
 };
 use fleetd_contracts::node_link::{NodeActionResult, NodeUpdate};
 use fleetd_contracts::prim::{List, Text};
@@ -139,6 +140,8 @@ pub struct Timing {
     pub drain_poll: Duration,
     /// How long a node waits for its agents at most, unless the hub's update settings say otherwise.
     pub drain: Duration,
+    /// Automatic updates: how long after the last update started the next may start, at the earliest.
+    pub auto_gap: Duration,
 }
 
 impl Default for Timing {
@@ -153,6 +156,7 @@ impl Default for Timing {
             prefetch_every: Duration::from_secs(600),
             drain_poll: Duration::from_secs(5),
             drain: Duration::from_secs(DRAIN_MINUTES * 60),
+            auto_gap: Duration::from_secs(3600),
         }
     }
 }
@@ -177,12 +181,34 @@ pub struct Updates {
 /// How long a node waits for its agents to finish their step by default.
 pub const DRAIN_MINUTES: u64 = 10;
 
-/// `<hub home>/update/settings.json`, written by a person; every field optional.
-#[derive(Debug, Default, serde::Deserialize)]
+/// `<hub home>/update/settings.json`, written by `hub_update_settings` (or a person); every field optional.
+#[derive(Debug, Default, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Settings {
+    /// Updates install by themselves, at most once an hour ([`Updates::auto_tick`]). Off when absent.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    auto: Option<bool>,
     /// How long a node waits for its agents at most, in minutes; 0 doesn't wait.
+    #[serde(skip_serializing_if = "Option::is_none")]
     drain_minutes: Option<u64>,
+}
+
+impl Settings {
+    fn read(hub_update_dir: &Path) -> Self {
+        fs::read(hub_update_dir.join("settings.json"))
+            .ok()
+            .and_then(|b| serde_json::from_slice(&b).ok())
+            .unwrap_or_default()
+    }
+}
+
+/// How long a node waits for its agents at most by the settings in `<hub home>/update`, else `default`.
+pub fn drain_in(hub_home: &Path, default: Duration) -> Duration {
+    Settings::read(&hub_home.join("update"))
+        .drain_minutes
+        .map_or(default, |m| {
+            Duration::from_secs(m.min(u64::from(DRAIN_MINUTES_MAX)) * 60)
+        })
 }
 
 tokio::task_local! {
@@ -234,13 +260,73 @@ impl Updates {
     /// How long a node waits for its agents at most: `drainMinutes` in `<hub home>/update/settings.json`, read at
     /// each wait, else [`Timing::drain`].
     pub fn drain(&self) -> Duration {
-        let settings: Settings = fs::read(self.dir.join("settings.json"))
+        drain_in(self.dir.parent().unwrap_or(&self.dir), self.timing.drain)
+    }
+
+    /// The hub's update settings as they apply now.
+    pub fn settings(&self) -> UpdateSettings {
+        UpdateSettings {
+            auto: Settings::read(&self.dir).auto == Some(true),
+            drain_minutes: u32::try_from(self.drain().as_secs() / 60).unwrap_or(DRAIN_MINUTES_MAX),
+        }
+    }
+
+    /// Changes the settings given, keeping the rest.
+    pub fn set_settings(
+        &self,
+        auto: Option<bool>,
+        drain_minutes: Option<u32>,
+    ) -> std::io::Result<UpdateSettings> {
+        let mut settings = Settings::read(&self.dir);
+        if auto.is_some() {
+            settings.auto = auto;
+        }
+        if let Some(m) = drain_minutes {
+            settings.drain_minutes = Some(u64::from(m.min(DRAIN_MINUTES_MAX)));
+        }
+        fs::create_dir_all(&self.dir)?;
+        crate::update::replace_file(
+            &self.dir.join("settings.json"),
+            &serde_json::to_vec_pretty(&settings).unwrap_or_default(),
+        )?;
+        Ok(self.settings())
+    }
+
+    /// When the last update started, ms.
+    fn last_started(&self) -> Option<i64> {
+        let run = self.status()?;
+        chrono::DateTime::parse_from_rfc3339(run.started_at.as_str())
             .ok()
-            .and_then(|b| serde_json::from_slice(&b).ok())
-            .unwrap_or_default();
-        settings.drain_minutes.map_or(self.timing.drain, |m| {
-            Duration::from_secs(m.min(24 * 60) * 60)
-        })
+            .map(|t| t.timestamp_millis())
+    }
+
+    /// With automatic updates on and a build ready: when it installs by itself, ms (now, when the last update started
+    /// an hour ago or more). None otherwise, or while an update goes on.
+    pub fn auto_at(&self) -> Option<i64> {
+        if !self.settings().auto || self.ready().is_none() {
+            return None;
+        }
+        if self.status().is_some_and(|r| self.going(&r)) {
+            return None;
+        }
+        let now = now_ms(self.clock.as_ref());
+        Some(
+            self.last_started()
+                .map_or(now, |at| (at + ms(self.timing.auto_gap)).max(now)),
+        )
+    }
+
+    /// Automatic updates: downloads the channel's newest build ahead ([`Self::prefetch`]), and, when the settings turn
+    /// them on, starts an update to it once the last update started an hour ago or more. Builds that come out within
+    /// the hour aren't installed one by one: the one update that follows takes the newest. It waits for agents as the
+    /// Update button does. The update it started, if any.
+    pub async fn auto_tick(self: &Arc<Self>) -> Option<UpdateRun> {
+        self.prefetch().await;
+        let due = self.auto_at()?;
+        if due > now_ms(self.clock.as_ref()) {
+            return None;
+        }
+        self.begin(None, false, true).ok()
     }
 
     /// Update now was pressed for the run going on: its nodes stop waiting for their agents.
@@ -301,10 +387,12 @@ impl Updates {
         self.dir.join("fleetd.next")
     }
 
-    /// Runs [`Self::prefetch`] now and every [`Timing::prefetch_every`]. Runs until the hub stops.
+    /// Runs [`Self::auto_tick`] now and every [`Timing::prefetch_every`]. Runs until the hub stops.
     pub async fn prefetch_loop(self: Arc<Self>) {
         loop {
-            self.prefetch().await;
+            if let Some(run) = self.auto_tick().await {
+                tracing::info!("update: started {} by itself (automatic updates)", run.id);
+            }
             self.clock.sleep(self.timing.prefetch_every).await;
         }
     }
@@ -427,6 +515,16 @@ impl Updates {
         channel: Option<HubChannel>,
         now: bool,
     ) -> Result<UpdateRun, Refused> {
+        self.begin(channel, now, false)
+    }
+
+    /// [`Self::start`], or an automatic update's (`auto`).
+    fn begin(
+        self: &Arc<Self>,
+        channel: Option<HubChannel>,
+        now: bool,
+        auto: bool,
+    ) -> Result<UpdateRun, Refused> {
         let ports = self.ports().ok_or(Refused::NotWired)?;
         let mut held = self.run.lock().unwrap();
         if let Some(run) = held.as_mut().filter(|r| self.going(r)) {
@@ -491,6 +589,7 @@ impl Updates {
             finished_at: None,
             parts: List::new(parts).expect("at most UPDATE_PARTS_MAX parts"),
             now: now.then_some(true),
+            auto: auto.then_some(true),
         };
         self.save(&run);
         *held = Some(run.clone());

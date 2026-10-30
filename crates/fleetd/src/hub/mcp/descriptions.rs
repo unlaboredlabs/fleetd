@@ -25,6 +25,10 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
         "Updates fleetd to the newest build of a channel (the hub's own unless one is given): the hub first, checked against the release's SHA256SUMS, then every connected node. The hub restarts at once; each node first holds its agents' tool calls that haven't started and waits for those running to finish, at most 10 minutes (the hub's update settings), then restarts whatever runs (that carries on by itself afterwards). now: true skips the wait, also for a run going on. A new build that doesn't come up healthy is put back. Answers at once with the run; follow it with hub_update_status. startOver ends a run going on (once the hub has its result) and starts a new one. A person's key with Admin on every machine only.",
     ),
     (
+        "hub_update_settings",
+        "Changes how the hub updates; a field left out stays as it is. auto: updates install by themselves, at most once an hour (the channel's newest build an hour after the last update started, whatever came out in between), each node once its agents finish their step, as hub_update does; off by default. drainMinutes (0-240, default 10): how long a node waits for its agents. Answers as hub_update_status does, with settings and autoAt. A person's key with Admin on every machine only.",
+    ),
+    (
         "hub_update_status",
         "The hub's update going now, or the last one: the build it updates to, and each part (the hub, then each machine's node) with its state (waiting, downloading, restarting, done, current, failed, rolled_back, skipped), where it failed, and one plain sentence; leftOver when nothing in the hub drives an unfinished run any more.",
     ),

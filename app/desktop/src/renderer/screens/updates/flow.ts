@@ -7,7 +7,7 @@
 // sidebar line, the notice and the sheet show the same run; the steps take their effects as deps, so they are
 // unit-tested.
 import { useSyncExternalStore } from "react";
-import type { Call, UpdatePart, UpdateRun } from "../../../shared/contracts";
+import type { Call, HubUpdateOutput, UpdatePart, UpdateRun, UpdateSettings } from "../../../shared/contracts";
 import type { UpdatesState } from "../../../shared/updates";
 
 export type Flow =
@@ -57,14 +57,17 @@ export const BEFORE_UPDATE =
 let flow: Flow = { phase: "idle" };
 let run: UpdateRun | null = null;
 let ready: string | null = null;
+/** The hub's update settings, and when the build it has ready installs by itself (automatic updates). */
+let auto: { readonly settings: UpdateSettings; readonly at: string | null } | null = null;
 /** Bumped by each follow: an earlier one, still waiting on the hub, then stops (Start over follows the new run). */
 let following = 0;
 const listeners = new Set<() => void>();
 
-const set = (next: { flow?: Flow; run?: UpdateRun | null; ready?: string | null }) => {
+const set = (next: { flow?: Flow; run?: UpdateRun | null; ready?: string | null; auto?: typeof auto | undefined }) => {
   if (next.flow !== undefined) flow = next.flow;
   if (next.run !== undefined) run = next.run;
   if (next.ready !== undefined) ready = next.ready;
+  if (next.auto !== undefined) auto = next.auto;
   for (const listener of listeners) listener();
 };
 
@@ -77,12 +80,19 @@ export const useFlow = (): Flow => useSyncExternalStore(subscribe, () => flow);
 export const useRun = (): UpdateRun | null => useSyncExternalStore(subscribe, () => run);
 /** The channel's newest build when the hub has it downloaded and checked, ready to swap in; else null. */
 export const useReady = (): string | null => useSyncExternalStore(subscribe, () => ready);
+/** The hub's update settings and when its ready build installs by itself; null until the hub said (or an older hub). */
+export const useAutoUpdates = (): typeof auto => useSyncExternalStore(subscribe, () => auto);
 export const currentFlow = (): Flow => flow;
 export const currentReady = (): string | null => ready;
 export const currentRun = (): UpdateRun | null => run;
+export const currentAuto = (): typeof auto => auto;
 
 /** For tests: back to a window where nothing was pressed. */
-export const resetFlow = (): void => set({ flow: { phase: "idle" }, run: null, ready: null });
+export const resetFlow = (): void => set({ flow: { phase: "idle" }, run: null, ready: null, auto: null });
+
+/** The settings in an answer, kept: an older hub sends none, and they stay as they were. */
+const autoOf = (out: HubUpdateOutput): typeof auto | undefined =>
+  out.settings === undefined ? undefined : { settings: out.settings, at: out.autoAt ?? null };
 
 const going = (f: Flow): boolean => f.phase === "starting" || f.phase === "following" || f.phase === "app";
 
@@ -103,7 +113,7 @@ export const loadRun = async (deps: FlowDeps): Promise<void> => {
   if (going(flow)) return;
   const out = await deps.call("hub_update_status", {});
   if (!out.ok || going(flow)) return;
-  set({ run: out.output.run ?? null, ready: out.output.ready ?? null });
+  set({ run: out.output.run ?? null, ready: out.output.ready ?? null, auto: autoOf(out.output) });
   // Followed, never ended with this app's restart: only Update pressed in this window, or Restart to update, restarts
   // it. A run can go on for hours while a busy machine waits; this app's update then waits for a click.
   if (out.output.run !== undefined && out.output.run.finishedAt === undefined) await follow(deps, false);
@@ -132,6 +142,14 @@ export const startUpdate = async (deps: FlowDeps): Promise<void> => {
 export const updateNow = async (deps: FlowDeps): Promise<void> => {
   const out = await deps.call("hub_update", { now: true });
   if (out.ok && out.output.run !== undefined) set({ run: out.output.run });
+};
+
+/** Automatic updates on or off (Hub › Machines › Updates): the hub keeps it. The hub's words when it refused. */
+export const setAutoUpdates = async (deps: Pick<FlowDeps, "call">, on: boolean): Promise<string | null> => {
+  const out = await deps.call("hub_update_settings", { auto: on });
+  if (!out.ok) return out.error.fix === undefined ? out.error.message : `${out.error.message} ${out.error.fix}`;
+  set({ auto: autoOf(out.output) });
+  return null;
 };
 
 /** Retry: the hub updates this machine of the last run again, its fleetd then its Claude Code; the rest stays. */

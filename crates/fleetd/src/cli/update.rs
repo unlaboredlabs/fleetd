@@ -402,7 +402,11 @@ fn restart(services: &[Service], wait: bool) {
     };
     hubs.into_iter().for_each(one);
     if wait && !nodes.is_empty() {
-        wait_for_agents(Duration::from_secs(crate::hub::update::DRAIN_MINUTES * 60));
+        // The hub's own setting when the hub lives here too, as its Update button waits.
+        let default = Duration::from_secs(crate::hub::update::DRAIN_MINUTES * 60);
+        let deadline = super::hub_key::resolve_home(None)
+            .map_or(default, |home| crate::hub::update::drain_in(&home, default));
+        wait_for_agents(deadline);
     }
     nodes.into_iter().for_each(one);
     println!(

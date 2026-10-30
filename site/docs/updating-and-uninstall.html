@@ -108,7 +108,11 @@ window where you pressed <strong>Update</strong> restarts this way, and it waits
 seconds of restart fails, and the agent tries it again. Each part shows as updated as soon as its machine is back on
 the new build.</p>
 <p>The 10 minutes are <code dir="auto">drainMinutes</code> in <code dir="auto">~/.fleetd/hub/update/settings.json</code> (<code dir="auto">{"drainMinutes": 20}</code>; <code dir="auto">0</code> doesn’t wait),
-read at each update. <code dir="auto">fleetd update</code> on a machine waits the same way for its own node’s agents, 10 minutes at most;
+read at each update.</p>
+<p><strong>Update automatically</strong>, in Settings › Hub › Machines › Updates (<code dir="auto">"auto": true</code> in the same file), is off by default.
+On, the hub installs a new build by itself, at most once an hour: an hour after the last update started (yours or its
+own), it updates to the channel’s newest build, so builds that came out in between install once, as the newest. It waits
+for agents as <strong>Update</strong> does; <strong>Update now</strong> works on it too. <code dir="auto">fleetd update</code> on a machine waits the same way for its own node’s agents, 10 minutes at most;
 <code dir="auto">fleetd update --now</code> doesn’t wait.</p>
 <p>The update sheet has one overall state at the top and one line per part: the hub, each machine, Claude Code and the app.
 Each line says <strong>Waiting</strong>, <strong>Updating…</strong>, <strong>Done</strong> or <strong>Failed</strong>, with the reason in one line. Each step, with the

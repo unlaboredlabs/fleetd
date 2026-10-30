@@ -2493,9 +2493,36 @@ output!(HubUpdateOutput {
     /// True when the run isn't finished but nothing in the hub drives it any more: it won't change again, and Update
     /// starts a new one. Absent otherwise.
     left_over: Option<bool>,
+    /// The hub's update settings.
+    settings: Option<UpdateSettings>,
+    /// With `settings.auto`: when the build that is ready installs by itself, an hour after the last update started at
+    /// the earliest. Absent when nothing is ready, or automatic updates are off.
+    auto_at: Option<Timestamp>,
 });
 // hub_update_status: the update going now, or the last one.
 input!(HubUpdateStatusInput {});
+// hub_update_settings: changes the hub's update settings; a field left out stays as it is. Admin on every machine, a
+// human key only.
+input!(HubUpdateSettingsInput {
+    /// Updates install by themselves, at most once an hour: the channel's newest build an hour after the last update
+    /// started, whichever builds came out in between. Off by default.
+    auto: Option<bool>,
+    /// How long a node waits for its agents to finish their step, in minutes, 0 to 240; 0 doesn't wait.
+    drain_minutes: Option<u32>,
+});
+
+/// The longest a node may be set to wait for its agents.
+pub const DRAIN_MINUTES_MAX: u32 = 240;
+
+/// How the hub updates: `<hub home>/update/settings.json`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateSettings {
+    /// Updates install by themselves, at most once an hour.
+    pub auto: bool,
+    /// How long a node waits for its agents to finish their step, in minutes.
+    pub drain_minutes: u32,
+}
 
 /// Updates past this many parts (the hub, then a node and Claude Code per machine) are not followed part by part.
 pub const UPDATE_PARTS_MAX: usize = 401;
@@ -2516,6 +2543,8 @@ pub struct UpdateRun {
     pub parts: List<UpdatePart, 1, UPDATE_PARTS_MAX>,
     /// Update now: its nodes don't wait for their agents to finish their step. Absent otherwise.
     pub now: Option<bool>,
+    /// Started by itself (automatic updates), not by a person. Absent otherwise.
+    pub auto: Option<bool>,
 }
 
 /// The hub, or one machine's node or Claude Code, in an update.
@@ -3282,6 +3311,7 @@ tools! {
     // Human keys with Admin on every machine only (the handler checks).
     hub_update => HubUpdate, Admin, HubUpdateInput, HubUpdateOutput;
     hub_update_status => HubUpdateStatus, Read, HubUpdateStatusInput, HubUpdateOutput;
+    hub_update_settings => HubUpdateSettings, Admin, HubUpdateSettingsInput, HubUpdateOutput;
     people_list => PeopleList, Read, PeopleListInput, PeopleListOutput;
     // Owners' and admins' human keys only (the handlers check).
     invite_create => InviteCreate, Admin, InviteCreateInput, InviteCreateOutput;

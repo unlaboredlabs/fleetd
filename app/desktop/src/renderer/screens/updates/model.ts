@@ -590,8 +590,9 @@ export const updatesView = ({ app, hub, machines = [], run = null, flow = { phas
           : ofApp;
   // Never while the hub restarts: only the machines' part of a run can start over.
   const stale = flow.phase === "following" && !flow.reconnecting && (flow.leftOver === true || (flow.since !== undefined && now - flow.since >= STALE_MS));
+  // Nor while machines wait for their agents: that wait has its own deadline, and Update now beside it.
   const startOver =
-    stale && runGoing && hubUpdated(live)
+    stale && runGoing && hubUpdated(live) && drain === null
       ? {
           note:
             flow.leftOver === true
@@ -616,4 +617,14 @@ export const hubStanding = (view: Pick<UpdatesView, "hub" | "nodes" | "update" |
   // Offline, or a version it never said: nothing to claim for it.
   if (!rows.every((r) => /^(Up to date|Updated)\b/u.test(r.status))) return { tone: "quiet", text: "Not every machine has said which fleetd it runs." };
   return { tone: "quiet", text: "The hub and its machines are up to date." };
+};
+
+/** What automatic updates do, and when the build that is ready goes in. */
+export const autoWords = (drainMinutes: number, at: string | null, timeZone?: string): string => {
+  const wait = drainMinutes === 0 ? "without waiting for agents" : `once agents finish their step (${String(drainMinutes)} minutes at most)`;
+  const when =
+    at === null
+      ? ""
+      : ` The build that's ready goes in at ${clockAt(at, timeZone)}.`;
+  return `New builds install by themselves, at most once an hour, each machine ${wait}.${when}`;
 };
