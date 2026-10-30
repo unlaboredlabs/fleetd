@@ -47,14 +47,13 @@ function shoot(name, width, height, html) {
 
 // One sheet per family: every shape at 120px, in three colours.
 const FAMILY_COLOURS = {
-  A: ["sun", "fleet", "mint"],
-  B: ["graphite", "lime", "sky"],
-  C: ["ember", "lilac", "teal"],
-  D: ["plum", "sand", "rose"],
-  E: ["teal", "sun", "fleet"],
+  A: ["fleet", "sun", "mint"],
+  B: ["graphite", "lime", "rose"],
+  C: ["plum", "sky", "sand"],
+  D: ["ember", "lilac", "teal"],
 };
 for (const f of FAMILIES) {
-  const width = 80 + 90 + 8 * 140;
+  const width = 80 + 90 + f.shapes.length * 140;
   const height = 72 + 70 + 3 * 140 + 36;
   const head = f.shapes
     .map((s, i) => `<div style="width:140px"><span class="num">${f.letter}${i + 1}</span> ${s.name}<div class="name">${s.mood}</div></div>`)
@@ -82,7 +81,7 @@ for (const f of FAMILIES) {
 
 // Every colour: a handful of shapes in the whole palette.
 {
-  const picks = ["A1", "B1", "C1", "D1", "E1", "E8"];
+  const picks = ["A1", "B1", "C3", "D1"];
   const width = 80 + 60 + PALETTE.length * 104;
   const height = 72 + 120 + picks.length * 104 + 40;
   const head = PALETTE.map(
@@ -113,19 +112,19 @@ for (const f of FAMILIES) {
   );
 }
 
-// Everything at once: every being at 88px, the palette cycling, for picking by number.
+// Everything at once: every being at 100px, the palette cycling, for picking by number.
 {
-  const cols = 8;
-  const width = 80 + cols * 132;
-  const height = 72 + 20 + FAMILIES.length * 170 + 30;
+  const cols = Math.max(...FAMILIES.map((f) => f.shapes.length));
+  const width = 80 + cols * 150;
+  const height = 72 + 20 + FAMILIES.length * 184 + 30;
   const order = ["fleet", "sun", "teal", "rose", "plum", "lime", "ember", "sky", "graphite", "mint", "lilac", "sand"];
   const rows = FAMILIES.map(
     (f, r) =>
-      `<div style="display:flex;height:170px;align-items:center">` +
+      `<div style="display:flex;height:184px;align-items:center">` +
       f.shapes
         .map(
           (s, i) =>
-            `<div style="width:132px">${iconSvg(s, colour[order[(r * 3 + i) % order.length]], 88)}` +
+            `<div style="width:150px">${iconSvg(s, colour[order[(r * 3 + i) % order.length]], 100)}` +
             `<div style="margin-top:6px"><span class="num">${f.letter}${i + 1}</span> ${s.name}<div class="name">${s.mood}</div></div></div>`,
         )
         .join("") +
@@ -147,14 +146,14 @@ for (const f of FAMILIES) {
 // Real size: a chat list at 40px and a sidebar at 24px, light and dark, then every shape at 24px.
 {
   const chats = [
-    ["C3", "sun", "Scout", "Booked the venue for Thursday, the invite is out.", "9:41"],
+    ["A3", "sun", "Scout", "Booked the venue for Thursday, the invite is out.", "9:41"],
     ["B1", "graphite", "fleetd", "Merged #851: the list stays still under the menu.", "9:12"],
     ["A1", "fleet", "site", "Showcase clips render at 60 fps now.", "8:57"],
-    ["D3", "ember", "Ledger", "Your card statement is in; nothing odd this month.", "Yesterday"],
-    ["B2", "teal", "relay", "Push relay is up: apns and fcm both true.", "Yesterday"],
-    ["E1", "plum", "Atlas", "Three flights fit; the 7:10 is the cheapest.", "Tue"],
-    ["C1", "rose", "Pixel", "Here are four takes on the header art.", "Mon"],
-    ["D1", "mint", "docs", "Rebuilt site/docs after the settings page edit.", "Sun"],
+    ["C3", "ember", "Ledger", "Your card statement is in; nothing odd this month.", "Yesterday"],
+    ["D1", "teal", "relay", "Push relay is up: apns and fcm both true.", "Yesterday"],
+    ["C4", "plum", "Atlas", "Three flights fit; the 7:10 is the cheapest.", "Tue"],
+    ["D2", "rose", "Pixel", "Here are four takes on the header art.", "Mon"],
+    ["B5", "mint", "docs", "Rebuilt site/docs after the settings page edit.", "Sun"],
   ];
   const panel = (t) => {
     const list = chats
@@ -182,7 +181,7 @@ for (const f of FAMILIES) {
       `<div style="display:flex;gap:28px;margin-top:22px"><div style="width:180px;background:${t.side};border-radius:10px;padding:8px 10px">` +
       `<div style="color:${t.quiet};margin-bottom:4px">Sidebar · 24px</div>${side}</div>` +
       `<div style="flex:1"><div style="color:${t.quiet};margin-bottom:10px">All ${SHAPES.length} at 24px</div>` +
-      `<div style="display:grid;grid-template-columns:repeat(8,24px);gap:14px 15px">${all}</div></div></div></div>`
+      `<div style="display:grid;grid-template-columns:repeat(6,24px);gap:16px 26px">${all}</div></div></div></div>`
     );
   };
   const width = 80 + 2 * 560 + 32;
