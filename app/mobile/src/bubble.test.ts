@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bubble, bubbleMax, fitWidth, jumbo } from "./bubble";
+import { bubble, bubbleMax, fitWidth, jumbo, photoSize } from "./bubble";
 
 describe("bubble", () => {
   // Measured from Messages in the iOS 26 simulator (iPhone 17 Pro, 402 pt wide, 3x shots); change them only against it.
@@ -15,6 +15,7 @@ describe("bubble", () => {
       margin: 16,
       maxShare: 0.7,
       tail: { width: 16, height: 9, angle: 32, tipRadius: 1.5, inset: 5.7, drop: 4.05, notch: 11.6, notchInset: 1.1, notchDrop: 6.2 },
+      photo: { share: 0.6285, tallest: 4 / 3 },
       jumbo: { one: 72, oneLineHeight: 86, few: 48, fewLineHeight: 57, most: 3 },
     });
   });
@@ -44,6 +45,21 @@ describe("bubble", () => {
   });
 });
 
+describe("photoSize", () => {
+  // Messages' pictures on a 402 pt screen: 252.67 wide; 4:3 189.67 tall, 3:2 168.67, 3:4 337.
+  it("sizes a picture as Messages does", () => {
+    const wide = photoSize(402, 4 / 3);
+    expect(wide.width).toBeCloseTo(252.67, 1);
+    expect(wide.height).toBeCloseTo(189.5, 0);
+    expect(photoSize(402, 3 / 2).height).toBeCloseTo(168.67, 0);
+    expect(photoSize(402, 3 / 4).height).toBeCloseTo(337, 0);
+  });
+
+  it("crops a taller picture at 3:4", () => {
+    expect(photoSize(402, 9 / 16).height).toBeCloseTo(photoSize(402, 3 / 4).height, 5);
+  });
+});
+
 describe("fitWidth", () => {
   it("is the longest line, rounded up to the screen's pixel", () => {
     expect(fitWidth([120.4, 244.2, 98], 3)).toBeCloseTo(244.333, 3);
@@ -61,11 +77,16 @@ describe("jumbo", () => {
   });
 
   it("counts joined, toned and flag emoji as one each", () => {
-    expect(jumbo("👩‍👩‍👧‍👦")).toBe(1);
+    expect(jumbo("👩\u{200D}👩\u{200D}👧\u{200D}👦")).toBe(1);
     expect(jumbo("👍🏽")).toBe(1);
     expect(jumbo("🇫🇮")).toBe(1);
-    expect(jumbo("❤️")).toBe(1);
-    expect(jumbo("1️⃣")).toBe(1);
+    expect(jumbo("\u{2764}\u{FE0F}")).toBe(1);
+    expect(jumbo("1\u{FE0F}\u{20E3}")).toBe(1);
+  });
+
+  it("is 0 for symbols iOS draws as text: ©, ®, ™, ‼ and a bare heart", () => {
+    for (const text of ["\u{A9}", "\u{AE}", "\u{2122}", "\u{203C}", "\u{2764}"]) expect(jumbo(text)).toBe(0);
+    expect(jumbo("\u{2764}\u{FE0F}")).toBe(1);
   });
 
   it("is 0 for words, four or more emoji, or nothing", () => {
