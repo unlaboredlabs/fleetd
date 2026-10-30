@@ -16,7 +16,7 @@ import { chatList, type ChatRow, type Filter } from "../lists";
 import { MAX_PINNED } from "../prefs";
 import { dispatchPrefs, usePrefs } from "../prefsStore";
 import { matchesName, queryOf, searchMessages, type MessageHit } from "../search";
-import type { ChatMessage } from "../desktop";
+import { phaseOf, type ChatMessage } from "../desktop";
 import type { Key } from "../store";
 import { space, type, useTheme } from "../theme";
 import { Avatar } from "../ui/Avatar";
@@ -28,6 +28,7 @@ import type { MenuItem } from "../ui/Menu";
 import { rowIn, rowMove, rowOut, useReduceMotion } from "../ui/motion";
 import { rowFace } from "../ui/rowFace";
 import { SkeletonRow } from "../ui/Skeleton";
+import { StateGlyph } from "../ui/StateGlyph";
 import { Badge, ConnectionBanner, EmptyState } from "../ui/States";
 import { useRefreshing } from "./refresh";
 import { useNow } from "./time";
@@ -338,6 +339,11 @@ function ChatRowFace({ row, separator }: { row: ChatRow; separator: boolean }) {
           </Text>
         </View>
         <View style={styles.bottom}>
+          {row.working ? (
+            <View style={styles.glyph}>
+              <StateGlyph state="thinking" phase={phaseOf(row.key)} />
+            </View>
+          ) : null}
           <Text style={[type.subhead, styles.preview, { color: accentLine ? t.accent : t.secondary }]} numberOfLines={accentLine ? 1 : 2}>
             {mine ? <Text style={{ color: t.label }}>You: </Text> : null}
             {mine ? line.slice(5) : line}
@@ -415,6 +421,8 @@ const styles = StyleSheet.create({
   // Two lines kept for every row, as Telegram does, so rows keep one rhythm whatever their preview.
   bottom: { flexDirection: "row", alignItems: "flex-start", gap: space.sm, minHeight: 40 },
   preview: { flex: 1 },
+  /** The lead's glyph, centred on the preview's first line, as the desktop's sidebar shows a working lead. */
+  glyph: { height: 20, justifyContent: "center" },
   marks: { flexDirection: "row", alignItems: "center", gap: 4, paddingTop: 2 },
   match: { fontWeight: "600" },
   separator: { position: "absolute", left: 0, right: 0, bottom: 0, height: StyleSheet.hairlineWidth },

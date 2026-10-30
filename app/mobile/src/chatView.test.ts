@@ -91,11 +91,12 @@ describe("threadRows", () => {
     expect(rows.flatMap((r) => (r.t === "item" ? [`${r.side}:${String(r.first && r.last)}`] : []))).toEqual(["them:true", "them:true", "center:true"]);
   });
 
-  it("ends with a typing bubble while the lead works, unless its text streams", () => {
+  it("ends with the turn line while the lead works, under its reply as it streams too, as the desktop's", () => {
     const sent = [item("a", "human", "2026-10-28T10:00:00Z")];
-    expect(threadRows(sent, true).at(-1)).toEqual({ t: "typing", id: "typing" });
+    expect(threadRows(sent, true).at(-1)).toEqual({ t: "turn", id: "turn" });
     expect(threadRows(sent, false).at(-1)?.t).toBe("item");
-    expect(threadRows([...sent, item("b", "lead", "2026-10-28T10:00:01Z", { state: "streaming" })], true).at(-1)?.t).toBe("item");
+    const streaming = threadRows([...sent, item("b", "lead", "2026-10-28T10:00:01Z", { state: "streaming" })], true);
+    expect(streaming.slice(-2).map((r) => r.t)).toEqual(["item", "turn"]);
   });
 });
 
@@ -221,7 +222,8 @@ describe("sameRow", () => {
     const before = rowsOf(chat);
     const after = rowsOf(applyDelta(chat, { projectRef: ref, messageId: "m4", offset: 3, append: "king on it", seq: 4 }, Date.now()));
     expect(after.map((r) => r.id)).toEqual(before.map((r) => r.id));
-    expect(after.map((r, i) => sameRow(r, before[i] as ThreadRow))).toEqual([true, true, true, true, false]);
+    // The turn line under it, last, draws nothing again either.
+    expect(after.map((r, i) => sameRow(r, before[i] as ThreadRow))).toEqual([true, true, true, true, false, true]);
   });
 
   it("redraws the bubble above a new one in its burst, which loses its tail", () => {

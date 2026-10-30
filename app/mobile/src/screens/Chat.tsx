@@ -1,7 +1,8 @@
 // One Navi's or project's chat, as iOS 26's Messages and Telegram draw one: the thread runs under a glass title and a
 // floating glass composer, with soft edges where it meets them. Newest at the bottom, older pages as you scroll up;
 // the person's bubbles on the right and the lead's on the left, grouped by burst with time chips between; pictures
-// and files inline; the lead's text as it streams and a typing bubble while it works; blocks and approvals as cards.
+// and files inline; the lead's text as it streams and the desktop's turn line while it works; blocks and approvals as
+// cards.
 //
 // Opening it lands on the first message you haven't read, under an "Unread Messages" bar; reading to the bottom marks
 // it read. Scrolled up, a glass button takes you back down and counts what came meanwhile. Pressing and holding a
@@ -19,7 +20,7 @@ import type { NativeStackNavigationOptions, NativeStackScreenProps } from "@reac
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ActivityIndicator, FlatList, Linking, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
 import { KeyboardChatScrollView, KeyboardStickyView, useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
-import Animated, { cancelAnimation, Easing, FadeIn, FadeOut, useAnimatedStyle, useSharedValue, withRepeat, withTiming, type SharedValue } from "react-native-reanimated";
+import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { arrivalsOf, ENTER_MS, rowKeyOf, type Arrivals } from "../arrivals";
 import { attachmentBubbles, bubbleTime, bubbles, dayLine, fullTime, quoteOf, replyOf, replyText, sameRow, sendNote, threadRows, type Bubble as BubbleData, type ThreadRow } from "../chatView";
@@ -45,6 +46,7 @@ import { bubbleIn, dur, ease, useReduceMotion } from "../ui/motion";
 import { SkeletonThread } from "../ui/Skeleton";
 import { ConnectionBanner, connectionWords } from "../ui/States";
 import { ApprovalCard } from "./ApprovalCard";
+import { TurnLine } from "./TurnLine";
 import { useNow } from "./time";
 
 export const chatOptions = (t: Palette): NativeStackNavigationOptions => ({
@@ -241,9 +243,10 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
         lit={row.t === "item" && row.item.message?.messageId !== undefined && row.item.message.messageId === lit}
         enter={row.t === "item" ? entering.get(rowKeyOf(row.item)) : undefined}
         reduce={reduce}
+        still={row.t === "turn" && awayFrom !== null}
       />
     ),
-    [chatKey, title, index, lastHuman, actions, lit, entering, reduce],
+    [chatKey, title, index, lastHuman, actions, lit, entering, reduce, awayFrom],
   );
 
   const loading = !chat.loaded && chat.cached !== true;
@@ -396,13 +399,15 @@ interface RowProps {
   readonly lit: boolean;
   readonly enter: { at: number; step: number } | undefined;
   readonly reduce: boolean;
+  /** The turn line, scrolled away from: it holds still. */
+  readonly still: boolean;
 }
 
 /** Draws again only when its own row changed: the thread's rows are made anew with each streamed word. */
 const sameProps = (a: RowProps, b: RowProps): boolean =>
-  a.chatKey === b.chatKey && a.title === b.title && a.canAnswer === b.canAnswer && a.actions === b.actions && a.lit === b.lit && a.enter === b.enter && a.reduce === b.reduce && sameRow(a.row, b.row);
+  a.chatKey === b.chatKey && a.title === b.title && a.canAnswer === b.canAnswer && a.actions === b.actions && a.lit === b.lit && a.enter === b.enter && a.reduce === b.reduce && a.still === b.still && sameRow(a.row, b.row);
 
-const RowView = memo(function RowView({ row, chatKey, title, canAnswer, actions, lit, enter, reduce }: RowProps) {
+const RowView = memo(function RowView({ row, chatKey, title, canAnswer, actions, lit, enter, reduce, still }: RowProps) {
   const t = useTheme();
   const now = useNow();
   // Entering only as it mounts soon after it came: a row scrolled back to later shows still.
@@ -423,12 +428,10 @@ const RowView = memo(function RowView({ row, chatKey, title, canAnswer, actions,
       </View>
     );
   }
-  if (row.t === "typing") {
+  if (row.t === "turn") {
     return (
-      <Animated.View entering={bubbleIn(false, 0, reduce)} style={[styles.them, styles.groupGap]}>
-        <Bubble side="them" tail>
-          <TypingDots />
-        </Bubble>
+      <Animated.View entering={bubbleIn(false, 0, reduce)}>
+        <TurnLine chatKey={chatKey} still={still} />
       </Animated.View>
     );
   }
@@ -545,16 +548,13 @@ function ItemView({
 
   const parts = bubbles(item);
   const streaming = item.state === "streaming";
+  // Nothing written yet: the turn line under it says what the lead does.
+  if (parts.length === 0 && files.length === 0 && streaming) return null;
   // The time goes on the message's last bubble of words.
   const timed = parts.findLastIndex((b) => b.kind === "text");
   return (
     <View style={[styles.them, gap]}>
       {first && item.author === "agent" ? <Text style={[type.caption, styles.by, { color: t.secondary }]}>{item.message?.by ?? "Agent"}</Text> : null}
-      {parts.length === 0 && streaming ? (
-        <Bubble side="them" tail={last}>
-          <TypingDots />
-        </Bubble>
-      ) : null}
       {parts.map((b, i) => (
         <BubbleView
           key={i}
@@ -827,37 +827,6 @@ function Event({ text, icon }: { text: string; icon?: "approvals" | "lock" }) {
   );
 }
 
-/**
- * The lead writing, as the desktop draws it: three dots, one lit at a time, stepping left to right on the app's
- * 120 ms beat, two beats each, counted on the UI thread. With Reduce Motion all three stand half lit.
- */
-function TypingDots() {
-  const t = useTheme();
-  const reduce = useReduceMotion();
-  // Beats into the loop of six: dot i is lit for beats 2i and 2i + 1.
-  const beat = useSharedValue(0);
-  useEffect(() => {
-    if (reduce) return;
-    beat.value = withRepeat(withTiming(6, { duration: dur.beat * 6, easing: Easing.linear }), -1, false);
-    return () => {
-      cancelAnimation(beat);
-      beat.value = 0;
-    };
-  }, [reduce, beat]);
-  return (
-    <View style={styles.dots} accessibilityLabel="Writing">
-      {[0, 1, 2].map((i) => (
-        <Dot key={i} index={i} beat={beat} still={reduce} color={t.secondary} />
-      ))}
-    </View>
-  );
-}
-
-function Dot({ index, beat, still, color }: { index: number; beat: SharedValue<number>; still: boolean; color: string }) {
-  const lit = useAnimatedStyle(() => ({ opacity: still ? 0.6 : Math.floor(beat.value / 2) % 3 === index ? 1 : 0.3 }));
-  return <Animated.View style={[styles.dot, { backgroundColor: color }, lit]} />;
-}
-
 /** A bubble's words to select a part of, in a sheet, as Telegram's Select Text. */
 function SelectText({ text, onClose }: { text: string | null; onClose: () => void }) {
   const t = useTheme();
@@ -927,8 +896,6 @@ const styles = StyleSheet.create({
   check: { flexDirection: "row", alignItems: "center", gap: space.sm },
   event: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, marginVertical: space.sm, paddingHorizontal: space.xl },
   eventText: { textAlign: "center" },
-  dots: { flexDirection: "row", gap: 4, paddingVertical: 7, paddingHorizontal: 2 },
-  dot: { width: 8, height: 8, borderRadius: 4 },
   topFade: { position: "absolute", top: 0, left: 0, right: 0 },
   bottomFade: { position: "absolute", bottom: 0, left: 0, right: 0 },
   banner: { position: "absolute", left: 0, right: 0 },

@@ -13,6 +13,9 @@ import type { AgentRow } from "../../../shared/contracts";
 import type { HubError } from "../../../shared/hub";
 import { chatItems, type ChatItem, type ChatSend } from "./chat";
 import { projectKey, settled, type DataState, type ProjectKey } from "./store";
+import { leadLaneId } from "../../../shared/turnWords";
+
+export { leadLaneId };
 
 /** The owner of states made without one (a test's literal state). */
 const noOwner = {};
@@ -83,12 +86,6 @@ export const selectConnection = memo(
 
 // Lanes and the projects' work.
 
-/** The lane id of a project's lead, as the hub cuts it (80 UTF-16 units, whole characters). */
-export const leadLaneId = (r: { readonly machineId: string; readonly projectId: string }): string => {
-  let id = `lead:${r.machineId}/${r.projectId}`;
-  while (id.length > 80) id = Array.from(id).slice(0, -1).join("");
-  return id;
-};
 
 /**
  * A lane with its live values merged in. A finished lane keeps its own; the feed says no more about it. `endedAt`:

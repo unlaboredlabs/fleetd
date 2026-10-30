@@ -1,7 +1,7 @@
 // A chat as the phone lays it out, iMessage's way: a lead message of several parts is several bubbles, and its blocks
 // are cards (a pull request, a checklist, a table, an ask with its buttons; a chart, diff or clip is for the desktop,
 // said in words). Messages from one side in a burst group, tight, with the tail on the last; a time line goes between
-// bursts; and a typing bubble shows while the lead works. Pure, so it is unit-tested.
+// bursts; and the desktop's turn line shows while the lead works. Pure, so it is unit-tested.
 import type { ChatItem } from "./desktop";
 import { previewText } from "./markdown";
 
@@ -146,7 +146,8 @@ export type ThreadRow =
   /** A new day starts: "Today", "Yesterday", a date. */
   | { readonly t: "day"; readonly id: string; readonly at: string }
   | { readonly t: "item"; readonly id: string; readonly item: ChatItem; readonly side: Side; readonly first: boolean; readonly last: boolean }
-  | { readonly t: "typing"; readonly id: string }
+  /** The lead is mid-turn: the turn line (screens/TurnLine.tsx), what it does now. */
+  | { readonly t: "turn"; readonly id: string }
   /** Where what you haven't read starts, as Telegram's "Unread Messages" bar. */
   | { readonly t: "unread"; readonly id: string };
 
@@ -183,8 +184,8 @@ const joins = (a: ChatItem | undefined, b: ChatItem | undefined): boolean =>
   a !== undefined && b !== undefined && sideOf(a) !== "center" && sideOf(a) === sideOf(b) && voice(a) === voice(b) && msOf(b.at) - msOf(a.at) < GROUP_MS;
 
 /**
- * The rows to draw, oldest first. `working`: the lead is mid-turn, so a typing bubble ends the thread unless its text
- * already streams. `readSeq`: what was read when the chat opened; the unread bar goes before the first message from
+ * The rows to draw, oldest first. `working`: the lead is mid-turn, so the turn line ends the thread, as on the desktop,
+ * under its reply as it streams too. `readSeq`: what was read when the chat opened; the unread bar goes before the first message from
  * the other side after it. A day line goes where a new day starts, in the clock's zone, as Telegram's date chips.
  */
 export const threadRows = (items: readonly ChatItem[], working = false, readSeq?: number, clock: Pick<Clock, "timeZone"> = {}): ThreadRow[] => {
@@ -200,8 +201,7 @@ export const threadRows = (items: readonly ChatItem[], working = false, readSeq?
     rows.push({ t: "item", id: item.clientRequestId ?? item.id, item, side, first: i === firstUnread || !joins(prev, item), last: i + 1 === firstUnread || !joins(item, next) });
     prev = item;
   }
-  const streaming = items.at(-1)?.state === "streaming";
-  if (working && !streaming) rows.push({ t: "typing", id: "typing" });
+  if (working) rows.push({ t: "turn", id: "turn" });
   return rows;
 };
 
