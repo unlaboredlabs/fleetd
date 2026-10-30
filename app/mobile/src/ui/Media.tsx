@@ -7,7 +7,7 @@ import { Image, Modal, Pressable, ScrollView, Share, StyleSheet, Text, useWindow
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { fileSize } from "../chatView";
 import type { AttachmentGetOutput } from "../desktop";
-import { useHub } from "../hubContext";
+import { useSession } from "../hubContext";
 import type { Key } from "../store";
 import { space, type, useTheme } from "../theme";
 import { Glass } from "./Glass";
@@ -17,7 +17,7 @@ import { SkeletonBlock } from "./Skeleton";
 
 /** A message's file, read from the hub; undefined while it comes, null when it couldn't be. */
 export const useAttachment = (chatKey: Key, attachmentId: string): AttachmentGetOutput | null | undefined => {
-  const { session } = useHub();
+  const session = useSession();
   const [got, setGot] = useState<AttachmentGetOutput | null | undefined>(undefined);
   useEffect(() => {
     let on = true;

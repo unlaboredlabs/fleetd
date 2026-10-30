@@ -54,7 +54,10 @@ const riseIn = (by: number, duration: number, delay: number) => (_: EntryAnimati
   return { initialValues: { opacity: 0, transform: [{ translateY: by }] }, animations: { opacity: timing(1), transform: [{ translateY: timing(0) }] } };
 };
 
-/** A bubble that came in while the chat was open: `step` places into its burst; yours quicker. */
+/**
+ * A bubble that came in while the chat was open: `step` places into its burst; yours quicker. The thread is an inverted
+ * list, which flips both its scroll view and each row, so a row's rise is the screen's.
+ */
 export const bubbleIn = (mine: boolean, step: number, reduce: boolean) =>
   riseIn(reduce ? 0 : rise.enter, mine ? dur.enterMine : dur.enter, reduce ? 0 : Math.min(step, MAX_STEP) * dur.stagger);
 
