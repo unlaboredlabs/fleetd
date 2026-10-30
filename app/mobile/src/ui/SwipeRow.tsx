@@ -96,8 +96,13 @@ export function SwipeRow({
   const group = useContext(Group);
   const fallback = useSharedValue<Opened>(null);
   const open = group?.open ?? fallback;
-  /** What was open as the touch on this row came down: it decides what that touch does (swipe.ts touchDown). */
+  /** What was open as the touch on this row came down: it decides what a tap does (swipe.ts touchDown). */
   const held = useSharedValue<Opened>(null);
+  /**
+   * Whether that touch, if it swipes, only closes another row: decided as it comes down, as iOS can cancel the row's
+   * touch (its menu starting to lift the row), which lets go of `held`, before the swipe starts.
+   */
+  const closing = useSharedValue(false);
   const width = useSharedValue(0);
   const height = useSharedValue(0);
   /** +1 swiping right (leading), -1 left. */
@@ -163,12 +168,13 @@ export function SwipeRow({
       .onBegin(() => {
         const down = touchDown(open.value, id);
         held.value = down.held;
+        closing.value = swallows(down.held, id);
         open.value = down.open;
       })
       .onStart((e) => {
         const s = state.value;
         // Another row was open: this touch only closed it, as in Messages.
-        if (swallows(held.value, id)) {
+        if (closing.value) {
           state.value = { ...s, ignored: true };
           return;
         }

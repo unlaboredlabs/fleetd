@@ -146,10 +146,12 @@ describe("one row open at a time", () => {
   // tap's onPress before the row's onTouchEnd, so the tap reads it first.
   const list = (open: Opened = null) => {
     const held = new Map<string, Opened>();
-    const down = (key: string) => {
+    /** The pan's onBegin: whether a swipe from this touch would only close another row. */
+    const down = (key: string): boolean => {
       const d = touchDown(open, key);
       open = d.open;
       held.set(key, d.held);
+      return swallows(d.held, key);
     };
     const end = (key: string) => held.set(key, null);
     /** SwipeRow's tap: reads what the row held once, and only closes if something was open. */
@@ -167,12 +169,13 @@ describe("one row open at a time", () => {
         return open;
       },
       /** A finger down on a row (the pan's onBegin), then a swipe on it: whether it moved the row. */
-      swipe(key: string): boolean {
-        down(key);
-        const moved = !swallows(held.get(key) ?? null, key);
-        if (moved) open = key;
+      swipe(key: string, { cancelledFirst = false } = {}): boolean {
+        const closing = down(key);
+        // iOS can cancel the row's touch before the pan starts, as its menu begins to lift the row.
+        if (cancelledFirst) end(key);
+        if (!closing) open = key;
         end(key);
-        return moved;
+        return !closing;
       },
       /** A finger down on a row, then a tap: whether it opened the chat. */
       tap(key: string): boolean {
@@ -250,6 +253,13 @@ describe("one row open at a time", () => {
     l.close();
     expect(l.open).toBe(null);
     expect(l.tap("b")).toBe(true);
+  });
+
+  it("only closes the open row on a swipe whose touch iOS cancelled before it started", () => {
+    const l = list("a");
+    expect(l.swipe("b", { cancelledFirst: true })).toBe(false);
+    expect(l.open).toBe(null);
+    expect(l.swipe("b", { cancelledFirst: true })).toBe(true);
   });
 
   it("opens the chat on a VoiceOver tap after a swipe or a hold that only closed another row", () => {
