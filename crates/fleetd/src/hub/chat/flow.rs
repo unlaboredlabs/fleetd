@@ -20,11 +20,12 @@ use fleetd_contracts::model::ThreadStatus;
 use fleetd_contracts::prim::Count;
 use fleetd_contracts::sessions::SendMode;
 
-use super::{NewMessage, history};
+use super::{NewMessage, history, parts};
 use crate::hub::api::{Caller, Hub, ToolError, require};
 use crate::hub::intake::attachments;
 use crate::hub::leads::lead::AutoStart;
 use crate::hub::leads::records::WorkstreamFilter;
+use crate::hub::leads::wakes::{LineKind, Trigger};
 use crate::hub::prompts::PromptSet;
 use crate::hub::queue::ports::SendOpts;
 use crate::hub::store::{StoreError, WaitInput};
@@ -984,10 +985,11 @@ pub(super) async fn mirror(hub: &Hub, r: &ProjectRef, thread: &ThreadRef) {
         let source = m.source.clone().unwrap_or_default();
         match hub.chat.by_source(r, &source) {
             Ok(Some(mut existing)) => {
-                if existing.state == fleetd_contracts::chat::ChatMessageState::Streaming
-                    && let Err(error) = hub.chat.finish(&mut existing, &m.text)
-                {
-                    tracing::warn!(%error, "chat: streamed message not finished");
+                if existing.state == fleetd_contracts::chat::ChatMessageState::Streaming {
+                    match hub.chat.finish(&mut existing, &m.text) {
+                        Ok(()) => unshown(hub, r, &existing.text),
+                        Err(error) => tracing::warn!(%error, "chat: streamed message not finished"),
+                    }
                 }
             }
             Ok(None) => {
@@ -996,8 +998,12 @@ pub(super) async fn mirror(hub: &Hub, r: &ProjectRef, thread: &ThreadRef) {
                     history: old.then_some(ChatHistorySource::LeadMessage),
                     ..m
                 };
-                if let Err(error) = hub.chat.add(r, new) {
-                    tracing::warn!(%error, "chat: lead message not added");
+                match hub.chat.add(r, new) {
+                    Ok((m, true)) if !old && m.author == ChatAuthor::Lead => {
+                        unshown(hub, r, &m.text)
+                    }
+                    Ok(_) => {}
+                    Err(error) => tracing::warn!(%error, "chat: lead message not added"),
                 }
             }
             Err(error) => tracing::warn!(%error, "chat: lead message not read"),
@@ -1124,9 +1130,10 @@ fn land(hub: &Hub, r: &ProjectRef, source: &str, text: &str) -> bool {
         return true;
     }
     let result = match hub.chat.by_source(r, source) {
-        Ok(Some(mut m)) if m.state == fleetd_contracts::chat::ChatMessageState::Streaming => {
-            hub.chat.finish(&mut m, text)
-        }
+        Ok(Some(mut m)) if m.state == fleetd_contracts::chat::ChatMessageState::Streaming => hub
+            .chat
+            .finish(&mut m, text)
+            .map(|()| unshown(hub, r, &m.text)),
         Ok(Some(_)) => Ok(()),
         Ok(None) => hub
             .chat
@@ -1139,13 +1146,30 @@ fn land(hub: &Hub, r: &ProjectRef, source: &str, text: &str) -> bool {
                     ..Default::default()
                 },
             )
-            .map(|_| ()),
+            .map(|(m, created)| {
+                if created {
+                    unshown(hub, r, &m.text);
+                }
+            }),
         Err(error) => Err(error),
     };
     if let Err(error) = &result {
         tracing::warn!(%error, "chat: complete reply not landed");
     }
     result.is_ok()
+}
+
+/// A lead's reply is final: the blocks in it that didn't show, in one line with its next wake.
+fn unshown(hub: &Hub, r: &ProjectRef, text: &str) {
+    if let Some(text) = parts::unshown(text) {
+        hub.leads.wakes.trigger(
+            r,
+            Trigger::Line {
+                kind: LineKind::Quiet,
+                text,
+            },
+        );
+    }
 }
 
 /// The project whose lead runs in `thread`.

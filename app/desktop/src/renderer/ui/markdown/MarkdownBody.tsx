@@ -6,7 +6,8 @@ import remarkGfm from "remark-gfm";
 import { ContextMenu, ContextMenuCopy, ContextMenuItem } from "../primitives/ContextMenu";
 import { toast } from "../primitives/Toast";
 import { markdownBlocks } from "./blocks";
-import { Code, InlineCode } from "./Code";
+import { BLOCK_FENCE } from "../../../shared/contracts";
+import { Code, InlineCode, Unshown } from "./Code";
 import s from "./Markdown.module.css";
 
 const REMARK = [remarkGfm];
@@ -70,6 +71,7 @@ function fenceOf(children: ReactNode): { code: string; lang: string | null } | n
 const COMPONENTS: Components = {
   pre: ({ children }) => {
     const fence = fenceOf(children);
+    if (fence?.lang === BLOCK_FENCE) return <Unshown code={fence.code} />;
     return fence ? <Code code={fence.code} lang={fence.lang} /> : <pre>{children}</pre>;
   },
   code: ({ children }) => <InlineCode>{children}</InlineCode>,

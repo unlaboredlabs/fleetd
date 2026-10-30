@@ -39,6 +39,20 @@ describe("bubbles", () => {
       { kind: "block", text: "A chart the desktop app shows." },
     ]);
   });
+
+  it("shows a lead's block that didn't fit as a card saying so, never its JSON, in the bubble and the chats list", () => {
+    const fence = '```fleetd-block\n{"v":1,"kind":"table","columns":["PR",""],"rows":[]}\n```';
+    const text = `The week:\n\n${fence}`;
+    const parts: ChatMessage["parts"] = [{ start: 0, end: 9 }, { start: 11, end: text.length }];
+    expect(bubbles({ text, message: message(text, parts) })).toEqual([
+      { kind: "text", text: "The week:" },
+      { kind: "block", text: "Couldn't show this" },
+    ]);
+    expect(previewOf({ author: "lead", text, message: message(text, parts) })).toBe("The week: Couldn't show this");
+    // Past the bubble cap, blocks ride in the last bubble's text: the chats list still never shows their JSON.
+    const tail = `${fence}\n\nand more\n\n${fence}`;
+    expect(previewOf({ author: "lead", text: tail, message: message(tail, [{ start: 0, end: tail.length }]) })).toBe("Couldn't show this and more Couldn't show this");
+  });
 });
 
 describe("sendNote", () => {

@@ -212,6 +212,19 @@ export const parseInline = (source: string): Inline[] => {
 export const plainText = (inline: readonly Inline[]): string =>
   inline.map((n) => (n.t === "text" || n.t === "code" ? n.text : plainText(n.children))).join("");
 
+/** The words for a lead's block that didn't show (it broke a limit, or this build can't draw it): never its JSON. */
+export const UNSHOWN = "Couldn't show this";
+
+/** A fence of a lead's block: a part with a block shows it, so one that reaches markdown didn't show. */
+export const isBlockFence = (b: Block): boolean => b.t === "code" && b.lang === "fleetd-block";
+
+/**
+ * How a code block draws: as code; as the "couldn't show this" chip, a lead's block in a final message that didn't
+ * show; or, while the reply still streams in, as a quiet placeholder, since the block may still be arriving and the
+ * hub decides once the message is final.
+ */
+export const fenceView = (b: Block, streaming: boolean): "code" | "unshown" | "pending" => (!isBlockFence(b) ? "code" : streaming ? "pending" : "unshown");
+
 /** A message's markdown as one line of plain text, for a preview: "**Done**: see `x`" → "Done: see x". */
 export const previewText = (source: string): string =>
   parseMarkdown(source)
@@ -221,7 +234,7 @@ export const previewText = (source: string): string =>
         case "h":
           return plainText(b.inline);
         case "code":
-          return b.text;
+          return isBlockFence(b) ? UNSHOWN : b.text;
         case "quote":
           return b.blocks.map((q) => (q.t === "p" ? plainText(q.inline) : "")).join(" ");
         case "list":

@@ -26,10 +26,10 @@ import {
   useBeatRef,
 } from "../../ui";
 import { useBubbleActions } from "./actions";
-import { fmtBytes } from "./attachments";
+import { fmtBytes, imageFit, pngDensity } from "./attachments";
 import { ImageViewer, ImageViewerContext, useOpenImage } from "./ImageViewer";
 import { Block } from "./blocks/Block";
-import { bubblesOf, isWide, quoteOf, TAPBACK_WORD, TAPBACKS, tapbackSend, type Bubble, type Tapback } from "./bubbles";
+import { bubblesOf, isWide, quoteOf, TAPBACK_WORD, TAPBACKS, tapbackSend, unshownOnly, type Bubble, type Tapback } from "./bubbles";
 import { MessageReceipt, ReceiptMarkView } from "./Composer";
 import { shortClock } from "./format";
 import { authorLabel, ENTER_MS, isMineRow, type Arrival, type Row } from "./model";
@@ -64,11 +64,25 @@ function FileChip({ file }: { file: AttachmentRef }) {
 
 // An image shows itself, fetched once its row is on screen (the list only mounts visible rows), and opens large when
 // clicked. Until then, and if it can't be read, it is a file like any other.
+// It shows at its size in points (a Retina screenshot at half its pixels) within IMAGE_MAX, whatever its pixels, so it
+// sits in its side's corner like the bubble above it.
 function ImageAttachment({ project, file }: { project: ProjectRef; file: AttachmentRef }) {
   const got = useToolQuery("attachment_get", { projectRef: project, attachmentId: file.attachmentId });
   const open = useOpenImage();
+  const [size, setSize] = useState<{ width: number; height: number } | undefined>(undefined);
+  const dataB64 = got.data?.dataB64;
+  const density = useMemo(() => (dataB64 !== undefined && got.data?.mime === "image/png" ? pngDensity(dataB64) : 1), [dataB64, got.data?.mime]);
   if (got.data === undefined) return <FileChip file={file} />;
-  const img = <img className={s.attachmentImage} src={`data:${got.data.mime};base64,${got.data.dataB64}`} alt={file.name} title={file.name} />;
+  const img = (
+    <img
+      className={s.attachmentImage}
+      src={`data:${got.data.mime};base64,${got.data.dataB64}`}
+      alt={file.name}
+      title={file.name}
+      style={size}
+      onLoad={(e) => setSize(imageFit(e.currentTarget.naturalWidth, e.currentTarget.naturalHeight, density))}
+    />
+  );
   return open === undefined ? (
     img
   ) : (
@@ -179,6 +193,8 @@ function BubbleLine(props: {
   const block = bubble.kind === "block";
   const wide = isWide(bubble);
   const jumbo = !block && EMOJI_ONLY.test(bubble.text.trim());
+  // A lead's block that didn't show: its chip, without a bubble around it.
+  const bare = jumbo || (!block && unshownOnly(bubble.text));
   // A mark on the message as a whole (a nudge's Show) rings its first bubble.
   const mark = markOf(actions?.shown, item.id, bubble.key) ?? (props.opening ? markOf(actions?.shown, item.id) : undefined);
   const box = useRef<HTMLDivElement>(null);
@@ -228,8 +244,8 @@ function BubbleLine(props: {
           // Focusable from script while it is what Show went to; not a tab stop of its own.
           tabIndex={shown ? -1 : undefined}
           className={cx(
-            !block && !jumbo && s.bubble,
-            !block && !jumbo && (mine ? s.mineBubble : s.theirs),
+            !block && !bare && s.bubble,
+            !block && !bare && (mine ? s.mineBubble : s.theirs),
             first && s.first,
             last && s.last,
             wide && s.wide,

@@ -1,4 +1,4 @@
-import { Copy, Check, WrapText } from "lucide-react";
+import { Copy, Check, EyeOff, WrapText } from "lucide-react";
 import { memo, useEffect, useState, type ReactNode } from "react";
 import { copyText } from "../lib/clipboard";
 import { cx } from "../lib/cx";
@@ -117,5 +117,20 @@ export function InlineCode({ children }: { children: ReactNode }) {
     <code className={s.inline} data-text="code">
       {children}
     </code>
+  );
+}
+
+/**
+ * A lead's block that didn't show (it broke a limit, or this build can't draw it): a small chip, never its JSON. The
+ * lead hears which block and why; the right-click menu still copies what it wrote.
+ */
+export function Unshown({ code }: { code: string }) {
+  return (
+    <ContextMenu menu={() => <ContextMenuCopy text={code.replace(/\n$/, "")}>Copy block</ContextMenuCopy>}>
+      <span className={s.unshown} role="note" data-unshown="">
+        <EyeOff aria-hidden />
+        Couldn't show this
+      </span>
+    </ContextMenu>
   );
 }

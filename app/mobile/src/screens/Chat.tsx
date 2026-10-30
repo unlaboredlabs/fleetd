@@ -780,7 +780,7 @@ function BubbleView({
               <Jumbo side="them" text={bubble.text} count={jumbo(bubble.text)} />
             ) : (
               <Bubble side="them" tail={withTail && tail}>
-                <Markdown text={bubble.text} ink={t.label} fit={fit} />
+                <Markdown text={bubble.text} ink={t.label} fit={fit} streaming={!fit} />
               </Bubble>
             )
           }

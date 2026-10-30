@@ -10,8 +10,9 @@
 //!
 //! The hub checks each block when the message is final (this schema, [`BLOCK_JSON_MAX`], and no HTML, script or URL
 //! in its strings) and puts what passed on the message's part as `block`, re-serialized from this type. A block that
-//! fails, or has a kind this hub doesn't know, is a part without `block`: its text, the fence as written, is what
-//! shows. Every string here is plain text: a client never renders one as HTML or markdown.
+//! fails, or has a kind this hub doesn't know, is a part without `block`: its text is the fence as written, which a
+//! client shows as a small "couldn't show this" chip, never as its JSON, and the lead hears which block and why.
+//! Every string here is plain text: a client never renders one as HTML or markdown.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -30,8 +31,8 @@ pub const BLOCK_FENCE: &str = "fleetd-block";
 pub const BLOCK_VERSION: i64 = 1;
 /// The largest block, in bytes of its JSON as written.
 pub const BLOCK_JSON_MAX: usize = 16_000;
-/// The most blocks one message carries; past it, blocks show as their text.
-pub const MESSAGE_BLOCKS_MAX: usize = 8;
+/// The most blocks one message carries; past it, a block shows as its fence and its lead hears why.
+pub const MESSAGE_BLOCKS_MAX: usize = 24;
 
 /// One block: `v`, the block schema's version (`BLOCK_VERSION`), and its kind's fields. A kind or version a client
 /// doesn't know shows as the part's text.

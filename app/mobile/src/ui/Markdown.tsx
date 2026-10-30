@@ -5,11 +5,12 @@
 import * as Clipboard from "expo-clipboard";
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Linking, PixelRatio, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View, type TextLayoutEvent, type TextStyle } from "react-native";
-import { parseMarkdown, type Block, type Inline } from "../markdown";
+import { fenceView, parseMarkdown, UNSHOWN, type Block, type Inline } from "../markdown";
 import { bubble, fitWidth } from "../bubble";
 import { mono, space, type, useTheme } from "../theme";
 import { haptics } from "./haptics";
 import { Icon } from "./Icon";
+import { SkeletonBlock } from "./Skeleton";
 
 /**
  * `fit`: the words take only as wide as their longest line, as Messages' bubbles do, where a Text takes all the width it
@@ -17,7 +18,7 @@ import { Icon } from "./Icon";
  * blocks (a list, code) keep the whole width. Off while the text still streams in, so the bubble doesn't narrow and
  * widen with each word. Turning it on, or a new text size, lays the words out afresh at the whole width to measure them.
  */
-export function Markdown({ text, ink, onAccent = false, fit = false }: { text: string; ink: string; onAccent?: boolean; fit?: boolean }) {
+export function Markdown({ text, ink, onAccent = false, fit = false, streaming = false }: { text: string; ink: string; onAccent?: boolean; fit?: boolean; streaming?: boolean }) {
   const blocks = useMemo(() => parseMarkdown(text), [text]);
   const fits = fit && blocks.every((b) => b.t === "p" || b.t === "h");
   const { fontScale } = useWindowDimensions();
@@ -36,13 +37,13 @@ export function Markdown({ text, ink, onAccent = false, fit = false }: { text: s
     // A new key mounts the words again, so they lay out and report their lines: a change to onTextLayout alone doesn't.
     <View key={fits ? `fit:${String(fontScale)}` : "whole"} style={[styles.blocks, width !== undefined && { width }]}>
       {blocks.map((b, i) => (
-        <BlockView key={i} block={b} ink={ink} onAccent={onAccent} onLines={fits ? measure(i) : undefined} />
+        <BlockView key={i} block={b} ink={ink} onAccent={onAccent} streaming={streaming} onLines={fits ? measure(i) : undefined} />
       ))}
     </View>
   );
 }
 
-function BlockView({ block, ink, onAccent, onLines }: { block: Block; ink: string; onAccent: boolean; onLines?: ((e: TextLayoutEvent) => void) | undefined }) {
+function BlockView({ block, ink, onAccent, streaming = false, onLines }: { block: Block; ink: string; onAccent: boolean; streaming?: boolean; onLines?: ((e: TextLayoutEvent) => void) | undefined }) {
   const t = useTheme();
   const codeFill = onAccent ? "rgba(255,255,255,0.18)" : t.fillQuiet;
   // Messages' body type (../bubble.ts). No letter spacing of our own: iOS tracks the system font itself, as Messages' does.
@@ -61,7 +62,20 @@ function BlockView({ block, ink, onAccent, onLines }: { block: Block; ink: strin
         </Text>
       );
     case "code":
-      return <CodeBlock text={block.text} lang={block.lang} ink={ink} fill={codeFill} />;
+      switch (fenceView(block, streaming)) {
+        case "pending":
+          return <SkeletonBlock width={220} height={96} radius={12} />;
+        case "unshown":
+          return (
+            <View style={styles.unshown} accessibilityRole="text" accessibilityLabel={UNSHOWN}>
+              <Icon name="block" size={14} color={ink} />
+              <Text style={[type.footnote, { color: ink }]}>{UNSHOWN}</Text>
+            </View>
+          );
+        case "code":
+          return <CodeBlock text={block.text} lang={block.lang} ink={ink} fill={codeFill} />;
+      }
+      break;
     case "quote":
       return (
         <View style={[styles.quote, { borderLeftColor: onAccent ? "rgba(255,255,255,0.5)" : t.tertiary }]}>
@@ -203,6 +217,7 @@ const styles = StyleSheet.create({
   blocks: { gap: space.sm },
   code: { fontFamily: mono, fontSize: 14, lineHeight: 19 },
   codeBlock: { borderRadius: 12, borderCurve: "continuous", paddingHorizontal: 12, paddingTop: 8, paddingBottom: 10, gap: 6 },
+  unshown: { flexDirection: "row", alignItems: "center", gap: 6, opacity: 0.7 },
   codePressed: { opacity: 0.7 },
   codeHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: space.sm },
   codeLang: { fontWeight: "600", opacity: 0.6 },
