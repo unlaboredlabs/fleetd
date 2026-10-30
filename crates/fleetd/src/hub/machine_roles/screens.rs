@@ -9,18 +9,25 @@
 //! A Navi's browser runs on the Navi's own machine, on the profile it keeps (D221): the hub's own `session_host` frame
 //! names the Navi (never the seal, which anyone can make), and the runner's node opens that profile for it. Only the Navi's owner reaches it (navi/owner.rs guards every tool).
 //!
+//! With a PR, an iOS or Android screen gets the PR's CI build first (builds.rs): the hub reads it, starts the screen,
+//! sends the file to the screen's machine and runs `agent-device install` there, as an agent's node does for its screen
+//! elsewhere (node/device/remote.rs): sealed with the relay key the hub sealed into the start, so only that machine
+//! opens them. Only then is the screen the person's. A PR with no build is refused before anything starts; a build that
+//! doesn't install ends the screen.
+//!
 //! People's screens take slots as any screen does. A full machine refuses, or takes the request in line
 //! (`screen_waits`): each slot that frees there goes to the oldest person waiting, and agents' starts see the slots
 //! people wait for as taken ([`super::Runner::held`]). An agent's running screen is never ended to make room.
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
 use fleetd_contracts::auth::Role;
 use fleetd_contracts::browser::{
-    BrowserCallFrame, BrowserCallResult, BrowserControl, BrowserControlTo, BrowserSession,
-    BrowserSessionId, BrowserSessionState, SCREEN_WAIT_MINUTES, ScreenWait, SessionKind,
+    BrowserCall, BrowserCallFrame, BrowserCallResult, BrowserControl, BrowserControlTo,
+    BrowserSession, BrowserSessionId, BrowserSessionState, DeviceCall, DeviceDone,
+    SCREEN_WAIT_MINUTES, ScreenPr, ScreenWait, SessionKind,
 };
 use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef, ThreadId};
 use fleetd_contracts::machine_roles::SessionHost;
@@ -32,15 +39,21 @@ use fleetd_contracts::prim::{Count, NonEmpty};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::json;
 
-use super::calls::{CALL_WAIT, START_WAIT};
+use super::builds::{Build, Found};
+use super::calls::{CALL_WAIT, DEVICE_WAIT, START_WAIT};
 use super::{Place, Runner, end_place, insert_place, new_key, runners};
 use crate::hub::api::{Caller, Hub, Registry, ToolError, is_human, require};
 use crate::hub::store::{StoreError, iso_ms, now_ms};
+use crate::node::device::remote as device;
 
 /// A person's screen with no input from them this long ends, as an agent's does without its commands.
 pub const IDLE_MS: i64 = 30 * 60_000;
 /// How long a person's wait for a slot lasts.
 const WAIT_MS: i64 = SCREEN_WAIT_MINUTES * 60_000;
+/// How long a PR's build may take to install, a simulator's XCTest runner starting first included.
+const INSTALL_WAIT: Duration = Duration::from_secs(300);
+/// Between tries while the screen's machine holds a command back.
+const INSTALL_RETRY: Duration = Duration::from_secs(3);
 
 pub fn register(tools: &mut Registry) {
     tools.add("screen_open", screen_open);
@@ -60,15 +73,18 @@ fn kind_of(text: &str) -> SessionKind {
     serde_json::from_value(json!(text)).unwrap_or_default()
 }
 
-/// What a person's screen is called in the list, in their name.
-fn purpose(kind: SessionKind, person: &PersonRef) -> String {
+/// What a person's screen is called in the list, in their name, with the PR whose build it has.
+fn purpose(kind: SessionKind, person: &PersonRef, pr: Option<&ScreenPr>) -> String {
     let what = match kind {
         SessionKind::Browser => "Browser",
         SessionKind::Android => "Android emulator",
         SessionKind::Ios => "iOS simulator",
         SessionKind::LinuxDesktop => "Linux desktop",
     };
-    format!("{what} opened by {}", person.name)
+    match pr {
+        Some(pr) => format!("{what} opened by {}, with PR #{}", person.name, pr.number),
+        None => format!("{what} opened by {}", person.name),
+    }
 }
 
 /// The person `caller` is, as records name them. A key with no person acts as the hub's owner (navi/owner.rs), made
@@ -132,10 +148,10 @@ struct Wait {
     runner: MachineId,
     kind: SessionKind,
     since_ms: i64,
+    pr: Option<ScreenPr>,
 }
 
-const WAIT_COLUMNS: &str =
-    "wait_id, person_id, device, machine_id, project_id, runner_id, kind, since_ms";
+const WAIT_COLUMNS: &str = "wait_id, person_id, device, machine_id, project_id, runner_id, kind, since_ms, pr_repo, pr_number";
 
 fn wait_of(r: &rusqlite::Row<'_>) -> rusqlite::Result<Wait> {
     Ok(Wait {
@@ -149,6 +165,12 @@ fn wait_of(r: &rusqlite::Row<'_>) -> rusqlite::Result<Wait> {
         runner: MachineId::unchecked(r.get::<_, String>(5)?),
         kind: kind_of(&r.get::<_, String>(6)?),
         since_ms: r.get(7)?,
+        pr: match (r.get::<_, Option<String>>(8)?, r.get::<_, Option<i64>>(9)?) {
+            (Some(repo), Some(number)) => {
+                serde_json::from_value(json!({ "repo": repo, "number": number })).ok()
+            }
+            _ => None,
+        },
     })
 }
 
@@ -174,6 +196,7 @@ fn as_wait(w: &Wait, all: &[Wait]) -> ScreenWait {
         machine_id: w.runner.clone(),
         since: iso_ms(w.since_ms).into(),
         ahead: Count::unchecked(ahead as i64),
+        pr: w.pr.clone(),
     }
 }
 
@@ -266,6 +289,11 @@ async fn screen_open(
         return Err(ToolError::new(ErrorCode::Failed, why)
             .with_fix("Pick a machine that can host it: machine_roles lists what each can."));
     }
+    // A PR's build is there before anything starts or waits: a PR without one is refused now, plainly.
+    let found = match &input.pr {
+        Some(pr) => Some(find_build(&hub, &r, input.kind, pr).await?),
+        None => None,
+    };
     let person = person_of(&hub, &caller)?;
     let opener = Opener {
         person,
@@ -275,16 +303,34 @@ async fn screen_open(
     // A slot is free and nobody waits before this person: theirs now.
     let first = runner.held == 0 && runner.open() > 0;
     if first {
+        let build = match (&input.pr, &found) {
+            (Some(pr), Some(found)) => Some(fetch_build(&hub, input.kind, pr, found).await?),
+            _ => None,
+        };
         let sealed = sealed_for(&hub, &runner_id)?;
-        let start = hub
-            .db
-            .transaction(|c| prepare(c, &opener, &r, input.kind, &runner_id, sealed, navi, now))?;
-        let session = launch(&hub, start).await?;
+        let pr = input.pr.as_ref();
+        let start = hub.db.transaction(|c| {
+            prepare(
+                c,
+                &opener,
+                &r,
+                input.kind,
+                &runner_id,
+                sealed.clone(),
+                navi,
+                pr,
+                now,
+            )
+        })?;
+        let session = launch(&hub, start, build).await?;
+        let installed = match &input.pr {
+            Some(pr) => format!("PR #{}'s build is installed. ", pr.number),
+            None => String::new(),
+        };
         return Ok(ScreenOpenOutput {
-            next: Some(
-                "You have control: send browser_input. End it with screen_end when you're done."
-                    .into(),
-            ),
+            next: Some(format!(
+                "{installed}You have control: send browser_input. End it with screen_end when you're done."
+            )),
             session,
             waiting: None,
             truncated: None,
@@ -308,8 +354,9 @@ async fn screen_open(
     let id = format!("W{}", &new_key().as_str()[1..]);
     hub.db.transaction(|c| {
         c.execute(
-            "INSERT INTO screen_waits (wait_id, person_id, device, machine_id, project_id, runner_id, kind, since_ms)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            "INSERT INTO screen_waits (wait_id, person_id, device, machine_id, project_id, runner_id, kind, since_ms,
+               pr_repo, pr_number)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             params![
                 id,
                 opener.person.person_id.as_str(),
@@ -318,7 +365,9 @@ async fn screen_open(
                 r.project_id.as_str(),
                 runner_id.as_str(),
                 input.kind.as_str(),
-                now
+                now,
+                input.pr.as_ref().map(|p| p.repo.as_str()),
+                input.pr.as_ref().map(|p| p.number.get()),
             ],
         )?;
         Ok(())
@@ -421,18 +470,26 @@ struct Opener {
 /// A start the hub placed and holds a slot for, to send to its runner ([`launch`]).
 struct Start {
     place: Place,
+    kind: SessionKind,
     frame: BrowserCallFrame,
-    sealed: NonEmpty,
+    sealed: Sealed,
     /// A Navi's browser: the Navi whose kept profile it runs on, said in the hub's frame.
     navi: Option<ProjectId>,
     by: String,
 }
 
+/// A person's start as sealed to its runner, and the relay key in it, which seals the hub's install steps (a PR's build).
+#[derive(Clone)]
+struct Sealed {
+    sealed: NonEmpty,
+    relay_key: zeroize::Zeroizing<[u8; 32]>,
+}
+
 /// What the hub seals to the runner for a person's screen, as an agent's node seals its own (node/session_route.rs
 /// `Seal`): no secrets, and a relay key. A Navi's browser names its Navi in the hub's frame, never here.
-fn seal(to: &str) -> Result<NonEmpty, String> {
-    let relay_key: [u8; 32] = rand::random();
-    let plain = json!({ "secrets": [], "relayKey": B64.encode(relay_key) });
+fn seal(to: &str) -> Result<Sealed, String> {
+    let relay_key = zeroize::Zeroizing::new(rand::random::<[u8; 32]>());
+    let plain = json!({ "secrets": [], "relayKey": B64.encode(*relay_key) });
     let public: [u8; 32] = B64
         .decode(to)
         .ok()
@@ -441,12 +498,15 @@ fn seal(to: &str) -> Result<NonEmpty, String> {
     let sealed = crypto_box::PublicKey::from(public)
         .seal(&mut crypto_box::aead::OsRng, plain.to_string().as_bytes())
         .map_err(|e| e.to_string())?;
-    Ok(NonEmpty::unchecked(B64.encode(sealed)))
+    Ok(Sealed {
+        sealed: NonEmpty::unchecked(B64.encode(sealed)),
+        relay_key,
+    })
 }
 
 /// The seal for a person's screen on `runner`, to its box key. Read before any transaction: the store shares the
 /// database's connection.
-fn sealed_for(hub: &Hub, runner: &MachineId) -> Result<NonEmpty, ToolError> {
+fn sealed_for(hub: &Hub, runner: &MachineId) -> Result<Sealed, ToolError> {
     let box_key = hub
         .store
         .machine_get(runner)?
@@ -469,8 +529,9 @@ fn prepare(
     r: &ProjectRef,
     kind: SessionKind,
     runner: &MachineId,
-    sealed: NonEmpty,
+    sealed: Sealed,
     navi: bool,
+    pr: Option<&ScreenPr>,
     now: i64,
 ) -> Result<Start, StoreError> {
     let key = new_key();
@@ -490,11 +551,12 @@ fn prepare(
     )?;
     let frame = serde_json::from_value(json!({
         "id": "open", "cwd": "/",
-        "call": { "op": "session_start", "purpose": purpose(kind, &opener.person), "kind": kind },
+        "call": { "op": "session_start", "purpose": purpose(kind, &opener.person, pr), "kind": kind },
     }))
     .expect("a session_start frame");
     Ok(Start {
         place,
+        kind,
         frame,
         sealed,
         navi: (navi && kind == SessionKind::Browser).then(|| r.project_id.clone()),
@@ -502,8 +564,13 @@ fn prepare(
     })
 }
 
-/// Starts a placed screen on its runner and hands its control to the person. A start that fails frees its slot.
-async fn launch(hub: &Arc<Hub>, start: Start) -> Result<Option<BrowserSession>, ToolError> {
+/// Starts a placed screen on its runner, installs the PR's build in it when there is one, and hands its control to the
+/// person. A start that fails frees its slot; a build that doesn't install ends the screen.
+async fn launch(
+    hub: &Arc<Hub>,
+    start: Start,
+    build: Option<(ScreenPr, Build)>,
+) -> Result<Option<BrowserSession>, ToolError> {
     let place = &start.place;
     let answer = hub
         .node_commands
@@ -511,7 +578,7 @@ async fn launch(hub: &Arc<Hub>, start: Start) -> Result<Option<BrowserSession>, 
             &place.runner,
             &place.key,
             &start.frame,
-            Some(&start.sealed),
+            Some(&start.sealed.sealed),
             start.navi.as_ref(),
             START_WAIT,
         )
@@ -545,6 +612,28 @@ async fn launch(hub: &Arc<Hub>, start: Start) -> Result<Option<BrowserSession>, 
         Ok(())
     })?;
     tracing::info!(runner = %place.runner, session = %id, "a person's screen started");
+    // The build goes in while the screen is still fleetd's: a person's control holds agent-device back.
+    if let Some((pr, build)) = &build
+        && let Err(why) = install(hub, &start, build).await
+    {
+        tracing::warn!(session = %id, pr = pr.number.get(), error = %why, "a PR's build didn't install");
+        match crate::hub::browser::get(&hub.db, &id)? {
+            Some(session) => {
+                if let Err(e) = end(hub, &session).await {
+                    tracing::warn!(session = %id, error = %e.message, "a screen whose build didn't install not ended");
+                }
+            }
+            None => super::calls::cancel(hub, place).await,
+        }
+        return Err(ToolError::new(
+            ErrorCode::Failed,
+            format!(
+                "PR #{}'s build didn't install, so the screen was closed: {why}",
+                pr.number
+            ),
+        )
+        .with_fix("Try again, or open the screen without a PR."));
+    }
     // Theirs from the start: the runner reported it live before it answered, so the hub has it.
     if let Some(session) = crate::hub::browser::get(&hub.db, &id)?
         && let Err(e) = crate::hub::browser::tools::change_control(
@@ -560,6 +649,180 @@ async fn launch(hub: &Arc<Hub>, start: Start) -> Result<Option<BrowserSession>, 
         tracing::warn!(session = %id, error = %e.message, "a person's screen started without their control");
     }
     Ok(crate::hub::browser::get(&hub.db, &id)?)
+}
+
+/// Finds PR `pr`'s build for a `kind` screen of project `r`: a PR of one of the project's repos, with a CI build there.
+async fn find_build(
+    hub: &Hub,
+    r: &ProjectRef,
+    kind: SessionKind,
+    pr: &ScreenPr,
+) -> Result<Found, ToolError> {
+    if !matches!(kind, SessionKind::Ios | SessionKind::Android) {
+        return Err(ToolError::new(
+            ErrorCode::Invalid,
+            "A PR's build goes into an iOS or Android screen.",
+        )
+        .with_fix("Pick iOS or Android, or leave the PR out."));
+    }
+    let repos = project_repos(hub, r);
+    if !repos
+        .iter()
+        .any(|repo| repo.eq_ignore_ascii_case(pr.repo.as_str()))
+    {
+        return Err(ToolError::new(
+            ErrorCode::Invalid,
+            format!("{} isn't a repository of this project.", pr.repo),
+        )
+        .with_fix("Pick a PR from pr_list for this project."));
+    }
+    hub.builds
+        .find(pr.repo.as_str(), pr.number.get(), kind)
+        .await
+        .map_err(|why| {
+            ToolError::new(ErrorCode::Failed, why)
+                .with_fix("Pick another PR, or open the screen without one.")
+        })
+}
+
+/// Reads the build [`find_build`] found.
+async fn fetch_build(
+    hub: &Hub,
+    kind: SessionKind,
+    pr: &ScreenPr,
+    found: &Found,
+) -> Result<(ScreenPr, Build), ToolError> {
+    let build = hub
+        .builds
+        .fetch(pr.repo.as_str(), pr.number.get(), kind, found)
+        .await
+        .map_err(|why| {
+            ToolError::new(ErrorCode::Failed, why)
+                .with_fix("Try again, or open the screen without a PR.")
+        })?;
+    Ok((pr.clone(), build))
+}
+
+/// The GitHub repositories (`owner/name`) of project `r`: its own and attached repos, and those whose PRs it lands.
+fn project_repos(hub: &Hub, r: &ProjectRef) -> Vec<String> {
+    let mut repos: Vec<String> = hub
+        .repos
+        .repos_of(r)
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|repo| {
+            Some(
+                repo.repo_key?
+                    .as_str()
+                    .strip_prefix("github.com/")?
+                    .to_owned(),
+            )
+        })
+        .collect();
+    let changes = crate::hub::prs::project_changes(hub, r);
+    repos.extend(
+        crate::hub::prs::project_repos(hub, r, &changes)
+            .into_iter()
+            .map(|repo| repo.as_str().to_owned()),
+    );
+    repos
+}
+
+/// The hub's own sealed device steps for a person's screen: each under the relay key it sealed into the start, counted
+/// up from 1, as the agent's node counts its own (node/session_route.rs `device_step`).
+struct Steps<'a> {
+    hub: &'a Hub,
+    place: &'a Place,
+    key: &'a [u8; 32],
+    count: u64,
+}
+
+impl Steps<'_> {
+    async fn send(&mut self, call: DeviceCall, wait: Duration) -> Result<DeviceDone, String> {
+        self.count += 1;
+        let count = self.count;
+        let frame = BrowserCallFrame {
+            id: NonEmpty::unchecked(format!("install-{count}")),
+            cwd: serde_json::from_value(json!("/")).expect("a path"),
+            call: BrowserCall::Device(device::seal_call(self.key, count, &call)),
+            thread_id: None,
+        };
+        let answer = self
+            .hub
+            .node_commands
+            .host_session(&self.place.runner, &self.place.key, &frame, None, wait)
+            .await
+            .map_err(|e| e.to_string())?;
+        match (answer.result, answer.error) {
+            (Some(BrowserCallResult::Device(done)), _) => device::open_done(self.key, count, done)
+                .ok_or_else(|| "its answer didn't open with the screen's key".to_owned()),
+            (_, Some(e)) => Err(e.message),
+            _ => Err("its machine answered something else".to_owned()),
+        }
+    }
+
+    /// An agent-device command on the screen's machine: its exit code and output.
+    async fn run(&mut self, args: Vec<String>) -> Result<(i32, String), String> {
+        match self.send(DeviceCall::Run { args }, DEVICE_WAIT).await? {
+            DeviceDone::Run {
+                exit_code,
+                stdout,
+                stderr,
+                ..
+            } => Ok((exit_code, format!("{stdout}{stderr}"))),
+            _ => Err("its machine answered the command with another step's answer".to_owned()),
+        }
+    }
+}
+
+/// Sends a PR's build to the screen's machine and installs it there with `agent-device install`. A command held back
+/// (exit 75: a simulator's XCTest runner still starting) is tried again: on iOS a bare `agent-device` waits out the
+/// start first, so the build goes once.
+async fn install(hub: &Hub, start: &Start, build: &Build) -> Result<(), String> {
+    let mut steps = Steps {
+        hub,
+        place: &start.place,
+        key: &start.sealed.relay_key,
+        count: 0,
+    };
+    let until = Instant::now() + INSTALL_WAIT;
+    let held = |code: i32| code == 75 && Instant::now() < until;
+    loop {
+        if start.kind == SessionKind::Ios {
+            loop {
+                let (code, _) = steps.run(Vec::new()).await?;
+                if !held(code) {
+                    break;
+                }
+                tokio::time::sleep(INSTALL_RETRY).await;
+            }
+        }
+        let mut offset = 0u64;
+        for piece in build.bytes.chunks(device::PIECE) {
+            let put = DeviceCall::Put {
+                name: build.name.clone(),
+                offset,
+                data_b64: B64.encode(piece),
+            };
+            steps.send(put, CALL_WAIT).await?;
+            offset += piece.len() as u64;
+        }
+        let (code, out) = steps
+            .run(vec!["install".into(), format!("in/{}", build.name)])
+            .await?;
+        if code == 0 {
+            return Ok(());
+        }
+        if !held(code) {
+            let out = out.trim();
+            return Err(if out.is_empty() {
+                format!("agent-device install exited with {code}")
+            } else {
+                crate::hub::api::clip(out, 300)
+            });
+        }
+        tokio::time::sleep(INSTALL_RETRY).await;
+    }
 }
 
 /// Ends a person's live screen on its runner, and frees its slot.
@@ -675,7 +938,15 @@ pub fn serve_waits(hub: &Arc<Hub>) -> Result<usize, StoreError> {
             }
             Ok(match sealed {
                 Some(sealed) => Some(prepare(
-                    c, &opener, &w.project, w.kind, &w.runner, sealed, navi, now,
+                    c,
+                    &opener,
+                    &w.project,
+                    w.kind,
+                    &w.runner,
+                    sealed,
+                    navi,
+                    w.pr.as_ref(),
+                    now,
                 )?),
                 None => None,
             })
@@ -685,9 +956,24 @@ pub fn serve_waits(hub: &Arc<Hub>) -> Result<usize, StoreError> {
         };
         *used += 1;
         served += 1;
-        let hub = hub.clone();
+        let (hub, project, pr) = (hub.clone(), w.project.clone(), w.pr.clone());
         tokio::spawn(async move {
-            if let Err(e) = launch(&hub, start).await {
+            // The PR's build is read now, its slot held meanwhile: one that is gone since frees it.
+            let build = match &pr {
+                Some(pr) => match find_build(&hub, &project, start.kind, pr).await {
+                    Ok(found) => fetch_build(&hub, start.kind, pr, &found).await.map(Some),
+                    Err(e) => Err(e),
+                },
+                None => Ok(None),
+            };
+            let started = match build {
+                Ok(build) => launch(&hub, start, build).await.map(|_| ()),
+                Err(e) => {
+                    super::calls::cancel(&hub, &start.place).await;
+                    Err(e)
+                }
+            };
+            if let Err(e) = started {
                 tracing::warn!(error = %e.message, "a waiting person's screen didn't start");
             }
         });

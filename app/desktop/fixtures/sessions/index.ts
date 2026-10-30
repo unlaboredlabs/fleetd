@@ -2,7 +2,8 @@
 // (contracts browser.rs, app.rs): live ones (one driving, one asking you to take over, both streaming frames), and
 // ended ones recorded (with a video, without one), being saved, lost and expired. Taking over and handing back answer
 // as the hub does, the row changing hands. New screen (D239) answers too: a browser of your own opens on devbox, in your
-// control, and an iOS simulator on the Mac, whose two are in use, waits for a slot until you cancel. Its pages, frames and video: pages.ts, html.ts, script.ts and media/
+// control, and an iOS simulator on the Mac, whose two are in use, waits for a slot until you cancel; an Android screen
+// offers storefront's open PRs, whose build it would install. Its pages, frames and video: pages.ts, html.ts, script.ts and media/
 // (media.ts).
 import fs from "node:fs";
 import path from "node:path";
@@ -229,6 +230,19 @@ const preview = (base: Fixture): Fixture => {
   });
   f.drop("machine_roles");
   f.answer("machine_roles", undefined, { machines: [machine("devbox", ["browser", "android", "desktop"], 2, 8), machine("mac", ["browser", "ios"], 2, 2)] });
+  // The open PRs an Android or iOS screen can take the build of.
+  const pr = (number: number, title: string, state: string): JsonObject => ({
+    repo: "acme/storefront",
+    number,
+    url: `https://github.com/acme/storefront/pull/${String(number)}`,
+    title,
+    state,
+    review: { state: "pending", done: 0, needed: 1 },
+    author: { login: "ada" },
+    createdAt: iso(3_600_000),
+    updatedAt: iso(600_000),
+  });
+  f.answer("pr_list", { projectRef: STOREFRONT }, { at: f.now, prs: [pr(14, "Checkout keeps the cart after sign-in", "open"), pr(11, "Receipts show the shop's local time", "draft")] });
   const opened = (kind: string, machineId: string, waits: boolean) => ({ projectRef: STOREFRONT, kind, machineId, wait: waits });
   const sessionEvent = (state: string) => ({
     ms: 50,

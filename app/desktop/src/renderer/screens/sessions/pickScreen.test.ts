@@ -1,8 +1,8 @@
 // The New screen picker's model: which machines can host each kind, a Navi's browser only on its own machine, the
 // machine it starts on, and each machine's slots in words, a full one offering to wait.
 import { describe, expect, it } from "vitest";
-import type { MachineRolesEntry } from "../../../shared/contracts";
-import { canOpen, hostsFor, openWord, pickHost, slotLine } from "./pickScreen";
+import type { MachineRolesEntry, PrRow } from "../../../shared/contracts";
+import { canOpen, hostsFor, openWord, pickHost, prChoices, slotLine, takesBuild } from "./pickScreen";
 
 const machine = (machineId: string, ready: readonly string[], more: Partial<MachineRolesEntry> = {}): MachineRolesEntry => ({
   machineId,
@@ -53,5 +53,16 @@ describe("a machine's slots", () => {
     const [devbox, mac] = hostsFor(MACHINES, "browser");
     expect(openWord(devbox)).toBe("Open screen");
     expect(openWord(mac)).toBe("Wait for a slot");
+  });
+});
+
+describe("prChoices", () => {
+  const row = (number: number, state: string) => ({ repo: "acme/app", number, title: `PR ${String(number)}`, state }) as PrRow;
+  it("offers open and draft PRs, as listed, for phone screens only", () => {
+    expect(prChoices([row(3, "open"), row(2, "merged"), row(1, "draft")]).map((c) => [c.value, c.label])).toEqual([
+      ["acme/app#3", "#3 PR 3"],
+      ["acme/app#1", "#1 PR 1"],
+    ]);
+    expect(["browser", "ios", "android", "linux_desktop"].filter((k) => takesBuild(k as never))).toEqual(["ios", "android"]);
   });
 });

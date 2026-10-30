@@ -5914,6 +5914,11 @@ export type ScreenEndOutput = {
 export type ScreenOpenInput = {
   kind?: SessionKind;
   machineId: MachineId;
+  /**
+   * A PR of the project's whose CI build is installed in the screen before it is yours (iOS, Android). Refused at
+   * once when the PR's head has no such build.
+   */
+  pr?: ScreenPr;
   projectRef: ProjectRef;
   wait?: boolean;
 };
@@ -5928,6 +5933,16 @@ export type ScreenOpenOutput = {
 };
 
 /**
+ * A PR of the project's for a person's screen (`screen_open`): its CI build is installed in an iOS or Android screen
+ * before the person gets it. The build is the newest artifact of a CI run on the PR's head whose name says `ios` (a
+ * zipped simulator `.app`) or `android`/`apk` (an `.apk`).
+ */
+export type ScreenPr = {
+  number: number;
+  repo: GitHubRepo;
+};
+
+/**
  * A person's `screen_open` waiting for a slot on a full machine: it takes the next one free there, ahead of every
  * agent's start, and gives up after [`SCREEN_WAIT_MINUTES`].
  */
@@ -5936,6 +5951,8 @@ export type ScreenWait = {
   ahead: number;
   kind: SessionKind;
   machineId: MachineId;
+  /** The PR whose build goes into the screen when it opens. */
+  pr?: ScreenPr;
   projectRef: ProjectRef;
   since: Timestamp;
   waitId: string;

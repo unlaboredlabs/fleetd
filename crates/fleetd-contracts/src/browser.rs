@@ -199,6 +199,7 @@ pub struct BrowserSession {
 
 /// A person's `screen_open` waiting for a slot on a full machine: it takes the next one free there, ahead of every
 /// agent's start, and gives up after [`SCREEN_WAIT_MINUTES`].
+#[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ScreenWait {
@@ -209,6 +210,18 @@ pub struct ScreenWait {
     pub since: Timestamp,
     /// People's waits for that machine before this one.
     pub ahead: Count,
+    /// The PR whose build goes into the screen when it opens.
+    pub pr: Option<ScreenPr>,
+}
+
+/// A PR of the project's for a person's screen (`screen_open`): its CI build is installed in an iOS or Android screen
+/// before the person gets it. The build is the newest artifact of a CI run on the PR's head whose name says `ios` (a
+/// zipped simulator `.app`) or `android`/`apk` (an `.apk`).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ScreenPr {
+    pub repo: crate::train::GitHubRepo,
+    pub number: crate::prim::Positive,
 }
 
 /// How long a person's wait for a slot lasts before the hub gives it up.

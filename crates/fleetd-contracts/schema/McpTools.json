@@ -17180,6 +17180,10 @@
         "machineId": {
           "$ref": "#/$defs/MachineId"
         },
+        "pr": {
+          "$ref": "#/$defs/ScreenPr",
+          "description": "A PR of the project's whose CI build is installed in the screen before it is yours (iOS, Android). Refused at\nonce when the PR's head has no such build."
+        },
         "projectRef": {
           "$ref": "#/$defs/ProjectRef"
         },
@@ -17213,6 +17217,24 @@
       },
       "type": "object"
     },
+    "ScreenPr": {
+      "description": "A PR of the project's for a person's screen (`screen_open`): its CI build is installed in an iOS or Android screen\nbefore the person gets it. The build is the newest artifact of a CI run on the PR's head whose name says `ios` (a\nzipped simulator `.app`) or `android`/`apk` (an `.apk`).",
+      "properties": {
+        "number": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "repo": {
+          "$ref": "#/$defs/GitHubRepo"
+        }
+      },
+      "required": [
+        "repo",
+        "number"
+      ],
+      "type": "object"
+    },
     "ScreenWait": {
       "description": "A person's `screen_open` waiting for a slot on a full machine: it takes the next one free there, ahead of every\nagent's start, and gives up after [`SCREEN_WAIT_MINUTES`].",
       "properties": {
@@ -17227,6 +17249,10 @@
         },
         "machineId": {
           "$ref": "#/$defs/MachineId"
+        },
+        "pr": {
+          "$ref": "#/$defs/ScreenPr",
+          "description": "The PR whose build goes into the screen when it opens."
         },
         "projectRef": {
           "$ref": "#/$defs/ProjectRef"

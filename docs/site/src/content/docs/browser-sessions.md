@@ -64,7 +64,9 @@ You can open a screen of your own: **New screen** at the top of a project's or a
    yet can't be picked.
 2. **Pick the machine.** The list has only the machines that can host that kind (the sessions role, the kind set up,
    and a current fleetd), each with its screens in use: `1 of 2 screens in use`.
-3. **Open screen.** It opens in the panel's live view with you in control from the start, and lists under Screens as
+3. **Pick a PR build** (iOS and Android, optional): one of the project's open PRs. Its CI build is installed in the
+   screen before you get it ([below](#yours-pr)).
+4. **Open screen.** It opens in the panel's live view with you in control from the start, and lists under Screens as
    yours. **End screen** closes it. It also ends after 30 minutes without your input.
 
 Your screen is recorded and kept like an agent's, and plays back the same way once it ends. There's no agent to hand it
@@ -82,7 +84,24 @@ Screens, with your place in line and Cancel, until your screen opens there. The 
 goes to the oldest person waiting, before any agent's: an agent asking meanwhile is told the machine is full, with how
 many people wait. An agent's running screen is never ended to make room. A wait gives up after 30 minutes.
 
-MCP clients use `screen_open` and `screen_end`; `browser_sessions` lists your waits beside the screens.
+### A PR's build {#yours-pr}
+
+An iOS simulator or Android emulator can open with a PR's build installed. The hub takes the newest artifact of a CI
+run on the PR's head whose name says what it's for: `ios` for a zipped simulator `.app` (fleetd's own Mobile workflow
+uploads `fleetd-ios-simulator`), `android` or `apk` for an `.apk` (`fleetd-android-apk`). It downloads it with its
+`gh` (as the [GitHub App](/docs/github/) where it's installed), starts the screen, sends the file to the screen's
+machine sealed with that screen's key, and runs `agent-device install` there. Then the screen is yours.
+
+- A PR without a build is refused at once, in plain words: its CI still running, its build expired (GitHub keeps
+  artifacts only so long: re-run its CI), or no run that uploaded one. Nothing starts.
+- A build that doesn't install closes the screen, with agent-device's words.
+- A build can be at most 64 MiB, as an agent's install into a screen elsewhere.
+- On a Mac with `"remoteInstall": false` the install is refused, as an agent's is: a simulator app runs as the Mac's
+  user ([why](#ios-elsewhere)).
+- A wait with a PR gets its build when its slot frees.
+
+MCP clients use `screen_open` and `screen_end`; `browser_sessions` lists your waits beside the screens. `screen_open`
+takes the PR as `pr: { repo, number }`.
 
 ## Isolation {#isolation}
 
@@ -359,7 +378,7 @@ Settings go under `ios` in [node.json](/docs/config-and-files#node-json):
 | `pool` | Clones kept booted for the next screens. Absent: 1. Each takes 1–2 GB of memory. |
 | `idleMinutes` | End a screen after this many minutes without an `agent-device` command. Absent: 30. |
 | `deviceType` | The simulator's device type by name, such as `iPhone 17 Pro`. Absent: the newest plain iPhone of the newest iOS runtime. A change takes effect when the golden is made again (delete `device/ios/golden.json`). |
-| `remoteInstall` | `false` refuses `agent-device install` and `reinstall` from agents on other machines: an app installed in a simulator runs as this Mac's user ([why](#ios-elsewhere)). Absent or `true`: allowed. |
+| `remoteInstall` | `false` refuses `agent-device install` and `reinstall` from agents on other machines, and people's [PR builds](#yours-pr): an app installed in a simulator runs as this Mac's user ([why](#ios-elsewhere)). Absent or `true`: allowed. |
 
 ## Linux desktop screens {#desktop}
 

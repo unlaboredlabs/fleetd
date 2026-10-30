@@ -386,6 +386,8 @@ pub fn build_on_with(
         clock.clone(),
         leads.clone(),
     );
+    let builds =
+        crate::hub::machine_roles::builds::Builds::new(gh.clone(), config.home.join("builds"));
     let prs = crate::hub::prs::Prs::new(gh, clock.clone());
     let work = crate::hub::work::Work::new(
         db.clone(),
@@ -441,6 +443,7 @@ pub fn build_on_with(
         previews: Arc::default(),
         machine_setup: Arc::default(),
         github_app,
+        builds,
     });
     hub.updates
         .set_ports(Arc::new(crate::hub::update::ports::HubPorts(

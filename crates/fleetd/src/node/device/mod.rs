@@ -26,9 +26,10 @@ use std::time::{Duration, Instant};
 
 use fleetd_contracts::browser::{
     BrowserCall, BrowserCallFrame, BrowserCallResult, BrowserControl, BrowserRecordingEntry,
-    BrowserResultFrame, BrowserSessionId, BrowserSessionState, SessionEnded, SessionKind,
-    SessionStarted,
+    BrowserResultFrame, BrowserSessionId, BrowserSessionState, DeviceCall, SessionEnded,
+    SessionKind, SessionStarted,
 };
+use fleetd_contracts::machine_roles::HostKey;
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
 use fleetd_contracts::node_link::{AndroidHealth, AndroidState, CAP_SESSION_ANDROID};
 use fleetd_contracts::prim::{Count, Text};
@@ -494,10 +495,55 @@ impl Devices {
         Ok(BrowserCallResult::SessionEnd(self.close(session).await))
     }
 
+    /// An agent-device command, or a file it reads, for a screen this machine hosts for another (remote.rs): the hub's
+    /// install of a PR's build into a person's screen (hub/machine_roles/screens.rs). Run by the node's own wrapper on
+    /// that screen's emulator alone, in the screen's folder, and logged as an agent's command is; a person's control
+    /// holds it back as the wrapper holds a local one.
+    pub async fn device(
+        &self,
+        thread: &str,
+        call: DeviceCall,
+    ) -> Result<BrowserCallResult, McpToolError> {
+        if HostKey::new(thread).is_err() {
+            return Err(refuse(
+                ErrorCode::Invalid,
+                "device steps are for an Android screen hosted for another machine",
+                "run agent-device yourself",
+            ));
+        }
+        let session = self.live(thread).ok_or_else(|| {
+            refuse(
+                ErrorCode::NotFound,
+                "No Android session is open.",
+                "start one with session_start kind android",
+            )
+        })?;
+        let work = remote::Work::at(&self.home, thread);
+        let DeviceCall::Run { args } = call else {
+            session.touch();
+            return work.step(call).map(BrowserCallResult::Device);
+        };
+        work.check(&args, true)?;
+        let program = agent_device::bin_dir(&self.home).join("agent-device");
+        let path = std::env::var("PATH").ok();
+        let env = agent_device::env(&self.home, thread, path.as_deref());
+        let started = Instant::now();
+        let ran = work.run(&program, &env, &args, remote::RUN_WAIT).await;
+        session.step(
+            "agent-device",
+            json!({ "command": remote::command_line(&args) }),
+            ran.exit_code == 0,
+            Some(&ran.output()),
+            started.elapsed().as_millis() as u64,
+        );
+        Ok(BrowserCallResult::Device(ran.done()))
+    }
+
     /// Ends a session already out of the map, and starts its upload.
     async fn close(self: &Arc<Self>, session: Arc<Session>) -> SessionEnded {
         session.step("session_end", json!({}), true, None, 0);
         let files = session.close().await;
+        remote::Work::at(&self.home, &session.thread).remove();
         let ended = SessionEnded {
             session_id: session.id.clone(),
             kind: SessionKind::Android,
@@ -875,10 +921,10 @@ impl Router {
                     .await
             }
             BrowserCall::SessionEnd(_) => devices.session_end(&thread).await,
+            BrowserCall::Device(call) => devices.device(&thread, call.clone()).await,
             BrowserCall::FillCredential(_)
             | BrowserCall::RequestTakeover(_)
-            | BrowserCall::Desktop(_)
-            | BrowserCall::Device(_) => Err(refuse(
+            | BrowserCall::Desktop(_) => Err(refuse(
                 ErrorCode::Invalid,
                 format!(
                     "{} is not available in Android sessions yet.",

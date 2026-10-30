@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // New screen (D239): the Screens tab's button opens the picker; it lists the machines that can host the kind picked,
 // opens the screen there and goes to its live view; a full machine waits for a slot, and the wait shows in the list
-// with Cancel. The palette's "New screen…" opens the same picker.
+// with Cancel. An iOS or Android screen takes an open PR's build. The palette's "New screen…" opens the same picker.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -26,7 +26,19 @@ const machine = (machineId: string, ready: readonly string[], live = 0) => ({
   hostsOthers: true,
   hosts: ["browser", "android", "ios", "desktop"].map((host) => ({ host, ready: ready.includes(host), detail: "as tested" })),
 });
-const MACHINES = [machine("devbox", ["browser", "desktop"]), machine("mac", ["browser", "ios"], 2)];
+const MACHINES = [machine("devbox", ["browser", "desktop", "android"]), machine("mac", ["browser", "ios"], 2)];
+const pr = (number: number, title: string, state: string) => ({
+  repo: "acme/app",
+  number,
+  url: `https://github.com/acme/app/pull/${String(number)}`,
+  title,
+  state,
+  review: { state: "none", agentVerdicts: 0, blocking: 0 },
+  author: { login: "ada" },
+  createdAt: AT,
+  updatedAt: AT,
+});
+const PRS = [pr(12, "Swipe to reply", "open"), pr(9, "Old idea", "closed")];
 const OPENED = {
   sessionId: "B00000000000000000000000000000001",
   projectRef: project,
@@ -74,6 +86,7 @@ const mount = async () => {
       calls.push({ tool, input });
       if (tool === "browser_sessions") return Promise.resolve({ ok: true, output: { sessions, waits, retention: { retentionDays: 30, maxGbPerProject: 20 } } });
       if (tool === "machine_roles") return Promise.resolve({ ok: true, output: { machines: MACHINES } });
+      if (tool === "pr_list") return Promise.resolve({ ok: true, output: { prs: PRS } });
       if (tool === "screen_open") {
         const full = (input as { machineId: string }).machineId === "mac" && (input as { kind: string }).kind === "ios";
         if (full) waits = [WAIT];
@@ -156,6 +169,39 @@ it("waits for a slot on a full machine, shows the wait in the list, and cancels 
   await settle();
   expect(calls.find((c) => c.tool === "screen_end")?.input).toEqual({ waitId: "W1" });
   expect(host.textContent).not.toContain("waiting for a free slot");
+});
+
+it("installs an open PR's build into an Android screen, and offers none for a browser", async () => {
+  await mount();
+  act(() => button("New screen")?.click());
+  await settle();
+  // A browser takes no build.
+  expect(document.querySelector("[aria-label='PR build']")).toBeNull();
+  act(() => button("Android")?.click());
+  await settle();
+  const trigger = document.querySelector<HTMLElement>("[aria-label='PR build']");
+  if (trigger === null) throw new Error("no PR picker");
+  expect(trigger.textContent).toBe("None");
+  await act(async () => {
+    trigger.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerType: "mouse" }));
+    await Promise.resolve();
+  });
+  await settle();
+  // Only open PRs.
+  const options = [...document.querySelectorAll<HTMLElement>("[role='option']")];
+  expect(options.map((o) => o.textContent)).toEqual(["None", "#12 Swipe to reply"]);
+  act(() => options[1]?.click());
+  await settle();
+  expect(picker()?.textContent).toContain("Its newest CI build is installed before you get control.");
+  act(() => button("Open screen")?.click());
+  await settle();
+  expect(calls.find((c) => c.tool === "screen_open")?.input).toEqual({
+    projectRef: { machineId: project.machineId, projectId: project.projectId },
+    kind: "android",
+    machineId: "devbox",
+    wait: false,
+    pr: { repo: "acme/app", number: 12 },
+  });
 });
 
 it("offers New screen… in the palette for the project on screen", async () => {
