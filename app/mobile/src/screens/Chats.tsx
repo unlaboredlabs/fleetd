@@ -23,6 +23,7 @@ import { haptics } from "../ui/haptics";
 import { Icon } from "../ui/Icon";
 import { Menu, type MenuItem, type Rect } from "../ui/Menu";
 import { rowIn, rowMove, rowOut, useReduceMotion } from "../ui/motion";
+import { rowFace } from "../ui/rowFace";
 import { SkeletonRow } from "../ui/Skeleton";
 import { Badge, ConnectionBanner, EmptyState } from "../ui/States";
 import { useRefreshing } from "./refresh";
@@ -286,7 +287,7 @@ function SwipeRow({ row, separator, onPress, onHold }: { row: ChatRow; separator
         accessibilityLabel={rowLabel(row)}
         accessibilityActions={acts.map((a) => ({ name: a.label, label: a.label }))}
         onAccessibilityAction={(e) => acts.find((a) => a.label === e.nativeEvent.actionName)?.onPress()}
-        style={({ pressed }) => [{ backgroundColor: pressed ? t.fillQuiet : t.bg }]}
+        style={({ pressed }) => [{ backgroundColor: rowFace(t, pressed) }]}
       >
         {face}
       </Pressable>
