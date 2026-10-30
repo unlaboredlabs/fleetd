@@ -120,6 +120,10 @@ pub struct SessionLaunch {
     /// [`crate::node_link::CAP_CLAUDE_ACCOUNTS`] get it; the hub refuses the launch on any other, so an older node
     /// never runs one person's work on another's login.
     pub claude_account: Option<crate::claude_accounts::ClaudeAccount>,
+    /// The person whose 1Password token the session's `fill_credential` uses when its project and order have no
+    /// `OP_SERVICE_ACCOUNT_TOKEN` of their own (`onepassword.rs`): its order's starter, or its Navi's owner. Only
+    /// nodes listing [`crate::node_link::CAP_ONEPASSWORD`] get it.
+    pub onepassword: Option<crate::people::PersonId>,
 }
 
 /// A session's place among fleetd's agents, which decides the MCP tools it gets. The hub enforces the same split on
@@ -268,6 +272,20 @@ pub enum SessionCall {
     #[serde(rename_all = "camelCase")]
     ClaudeAccountTest {
         account: crate::claude_accounts::ClaudeAccount,
+    },
+    /// Save (`sealed`) or forget (none) a person's 1Password service account token (`onepassword.rs`). The value is
+    /// opened with the node's box key and kept only on the node, for its 1Password helper; the reply has its
+    /// fingerprint. Only nodes listing [`crate::node_link::CAP_ONEPASSWORD`] get it.
+    #[serde(rename = "onepassword_token", rename_all = "camelCase")]
+    OnePasswordToken {
+        person_id: crate::people::PersonId,
+        sealed: Option<crate::secrets::SealedSecret>,
+    },
+    /// List the vaults a person's 1Password token can read, with the 1Password SDK. Only nodes listing
+    /// [`crate::node_link::CAP_ONEPASSWORD`] get it.
+    #[serde(rename = "onepassword_test", rename_all = "camelCase")]
+    OnePasswordTest {
+        person_id: crate::people::PersonId,
     },
     /// The models the hub's API key offers, from the Models API at its endpoint. Only nodes listing
     /// [`crate::node_link::CAP_CLAUDE_MODELS`] get it.
@@ -765,6 +783,18 @@ pub enum SessionOutput {
     /// Answer to `claude_account_test`: whether the call worked, else claude's words with the secret masked.
     ClaudeAccountTested {
         ok: bool,
+        error: Option<String>,
+    },
+    /// Answer to `onepassword_token`: the fingerprint of the token it holds now, none once forgotten.
+    #[serde(rename = "onepassword_saved")]
+    OnePasswordSaved {
+        fingerprint: Option<crate::secrets::SecretFingerprint>,
+    },
+    /// Answer to `onepassword_test`: the names of the vaults the token reads, else why not, the token masked.
+    #[serde(rename = "onepassword_tested")]
+    OnePasswordTested {
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        vaults: Vec<String>,
         error: Option<String>,
     },
     /// Answer to `claude_models`: each model's id and display name, else why they weren't read, the key masked.

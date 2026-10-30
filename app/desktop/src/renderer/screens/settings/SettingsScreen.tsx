@@ -1,5 +1,5 @@
 // Settings (⌘, or the app menu), one window in three groups (D211). You: General (appearance, time in the app,
-// notifications, version), Your accounts (the Claude and GitHub your work runs on), Your memory, Your devices (and Pair
+// notifications, version), Your accounts (the Claude, GitHub and 1Password your work runs on), Your memory, Your devices (and Pair
 // a phone) and Hubs (this app's hubs and their links). Projects: a project picked in the sidebar, with its Project,
 // Agents, Instructions & memory, Automations and Prompts pages. Hub, for the hub's owners and admins only (admin/HubPages.tsx): what reaches every teammate's work.
 // The route picks the page (#/settings/<tab>, #/settings/hub/<page>); see route.ts for the links into one prompt. The
@@ -15,6 +15,7 @@ import { GithubSettings } from "./Github";
 import { HubLinksSettings, HubsSettings } from "./Hubs";
 import { Instructions } from "./Instructions";
 import { YourMemory } from "./Memory";
+import { OnePasswordSettings } from "./OnePassword";
 import { PageHead, useProjects } from "./parts";
 import { ProjectSettings } from "./Projects";
 import { Prompts } from "./Prompts";
@@ -60,7 +61,7 @@ export function SettingsScreen() {
   );
 }
 
-/** The accounts your own work runs on: your Claude account, your GitHub, and your Navi's Google. Nobody else's work uses them. */
+/** The accounts your own work runs on: your Claude account, your GitHub, your 1Password and your Navi's Google. Nobody else's work uses them. */
 function YourAccounts() {
   return (
     <div className={s.scroll} data-screen="settings.accounts">
@@ -68,6 +69,7 @@ function YourAccounts() {
         <PageHead title="Your accounts">The accounts the work you start runs on. Nobody else&apos;s work ever uses them.</PageHead>
         <ClaudeSettings />
         <GithubSettings />
+        <OnePasswordSettings />
         <YourGoogle />
       </div>
     </div>

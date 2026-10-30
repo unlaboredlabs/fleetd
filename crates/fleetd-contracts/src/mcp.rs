@@ -3000,6 +3000,40 @@ output!(ClaudeAccountTestOutput {
     test: crate::claude_accounts::ClaudeTest
 });
 
+// onepassword_get, onepassword_set, onepassword_remove, onepassword_test: a person's own 1Password service account
+// token (D235; `onepassword.rs`), which fill_credential uses in their orders and their Navi when the project or order
+// has no OP_SERVICE_ACCOUNT_TOKEN of its own. Sealed in the app to each machine's boxPubKey, as a subscription is.
+input!(OnePasswordGetInput {});
+output!(OnePasswordGetOutput {
+    /// The caller's saved token; absent until they save one.
+    token: Option<crate::onepassword::OnePasswordToken>,
+});
+input!(
+    #[serde(remote = "Self")]
+    OnePasswordSetInput {
+        /// The caller's service account token sealed to each machine agents run on.
+        sealed: List<crate::claude_accounts::ClaudeSeal, 1, 500>,
+    }
+);
+checked!(OnePasswordSetInput, |input| {
+    crate::claude_accounts::seals_distinct(&input.sealed)
+});
+output!(OnePasswordSetOutput {
+    token: crate::onepassword::OnePasswordToken,
+    /// Machines whose node doesn't hold it (offline when it was saved): save it again while they are online.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    missing_on: Vec<MachineId>,
+});
+input!(OnePasswordRemoveInput {});
+output!(OnePasswordRemoveOutput { ok: True });
+input!(OnePasswordTestInput {
+    /// Where to try it; default: the first machine online that holds it.
+    machine_id: Option<MachineId>,
+});
+output!(OnePasswordTestOutput {
+    test: crate::onepassword::OnePasswordTest
+});
+
 /// Declares the static tool table: `McpToolName` with each tool's minimum grant role and its input and output types.
 macro_rules! tools {
     ($($name:ident => $variant:ident, $scope:ident, $input:ty, $output:ty;)*) => {
@@ -3116,6 +3150,11 @@ tools! {
     claude_subscription_remove => ClaudeSubscriptionRemove, Operate, ClaudeSubscriptionRemoveInput, ClaudeSubscriptionRemoveOutput;
     claude_choice_set => ClaudeChoiceSet, Operate, ClaudeChoiceSetInput, ClaudeChoiceSetOutput;
     claude_account_test => ClaudeAccountTest, Operate, ClaudeAccountTestInput, ClaudeAccountTestOutput;
+    // Human keys only (the handlers check): a person's own 1Password token.
+    onepassword_get => OnePasswordGet, Read, OnePasswordGetInput, OnePasswordGetOutput;
+    onepassword_set => OnePasswordSet, Operate, OnePasswordSetInput, OnePasswordSetOutput;
+    onepassword_remove => OnePasswordRemove, Operate, OnePasswordRemoveInput, OnePasswordRemoveOutput;
+    onepassword_test => OnePasswordTest, Operate, OnePasswordTestInput, OnePasswordTestOutput;
     wake_set => WakeSet, Operate, WakeSetInput, WakeSetOutput;
     wake_list => WakeList, Read, WakeListInput, WakeListOutput;
     wake_cancel => WakeCancel, Operate, WakeCancelInput, WakeCancelOutput;

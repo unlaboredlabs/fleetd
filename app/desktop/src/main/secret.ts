@@ -3,7 +3,7 @@
 // only relays ciphertext and the renderer never gets the plaintext back. It is never logged.
 import { SECRET_MAX_BYTES, type EnvVarSet, type McpValueSet, type ToolInput } from "../shared/contracts";
 import type { CallOutcome, HubError, SecretOutcome } from "../shared/hub";
-import type { ClaudeAccountRequest, GoogleClientRequest, GooglePubsubRequest, HubLinkRequest, McpServerRequest, ProjectEnvRequest, SecretRequest } from "../shared/ipc";
+import type { ClaudeAccountRequest, GoogleClientRequest, GooglePubsubRequest, HubLinkRequest, McpServerRequest, OnePasswordRequest, ProjectEnvRequest, SecretRequest } from "../shared/ipc";
 
 
 const refused = (message: string, fix?: string): { ok: false; error: HubError } => ({
@@ -229,4 +229,22 @@ export const submitClaudeAccount = async (
   const sealed = await sealEach(request.boxes, value);
   if (!sealed.ok) return sealed;
   return call("claude_hub_api_set", { sealed: sealed.sealed, ...endpoint });
+};
+
+/**
+ * A person's 1Password service account token, sealed to every machine agents run on, then onepassword_set. One line
+ * starting ops_: a value pasted with its line break or quotes is trimmed, anything else refused here, before it goes
+ * anywhere. The hub's answer has where it is sealed, by fingerprint, never the value.
+ */
+export const submitOnePassword = async (
+  request: OnePasswordRequest,
+  call: (tool: "onepassword_set", input: ToolInput<"onepassword_set">) => Promise<CallOutcome>,
+): Promise<CallOutcome> => {
+  const value = request.token.trim().replace(/^["']|["']$/gu, "");
+  if (value === "" || /\s/u.test(value) || value.includes("\0") || !value.startsWith("ops_")) {
+    return refused("That isn't a service account token: one starts with ops_.", "In 1Password, copy the service account's token again and paste only the token.");
+  }
+  const sealed = await sealEach(request.boxes, value);
+  if (!sealed.ok) return sealed;
+  return call("onepassword_set", { sealed: sealed.sealed });
 };

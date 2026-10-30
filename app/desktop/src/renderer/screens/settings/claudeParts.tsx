@@ -78,13 +78,13 @@ export function TestResult({ tried, nowMs }: { tried: Tried | undefined; nowMs: 
 }
 
 /** Machines a secret isn't on: what runs there can't use it until it is saved again while they are online. */
-export function MissingOn({ sealedOn, machines }: { sealedOn: ReadonlyArray<ClaudeSealedOn>; machines: ReadonlyArray<string> }) {
+export function MissingOn({ sealedOn, machines, there = "nothing runs on it there" }: { sealedOn: ReadonlyArray<ClaudeSealedOn>; machines: ReadonlyArray<string>; there?: string }) {
   const missing = missingOn(sealedOn, machines);
   if (missing.length === 0) return null;
   return (
     <div role="status">
       <Text size="sm" tone="warning">
-        {`Not on ${missing.join(", ")}: nothing runs on it there. Save it again while ${missing.length === 1 ? "it is" : "they are"} online.`}
+        {`Not on ${missing.join(", ")}: ${there}. Save it again while ${missing.length === 1 ? "it is" : "they are"} online.`}
       </Text>
     </div>
   );

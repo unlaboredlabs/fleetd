@@ -580,6 +580,7 @@ mod tests {
             fast: false,
             helper_model: None,
             claude_account: None,
+            onepassword: None,
         };
         assert_eq!(start_mode(&local, &new, "s1"), Ok(false));
         local.started = true;

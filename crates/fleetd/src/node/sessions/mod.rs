@@ -978,6 +978,53 @@ impl SessionService {
                 .map_err(invalid)?;
                 Ok(SessionOutput::ClaudeAccountSaved { fingerprint })
             }
+            SessionCall::OnePasswordToken { person_id, sealed } => {
+                let home = self.inner.config.home.clone();
+                let fingerprint = blocking(move || {
+                    let box_key = super::identity::load_or_create_box_key(&home).ok();
+                    super::onepassword_tokens::apply(
+                        &home,
+                        &person_id,
+                        sealed.as_ref(),
+                        box_key.as_ref(),
+                    )
+                })
+                .await
+                .map_err(invalid)?;
+                Ok(SessionOutput::OnePasswordSaved { fingerprint })
+            }
+            SessionCall::OnePasswordTest { person_id } => {
+                let home = &self.inner.config.home;
+                let token = match super::onepassword_tokens::read(home, &person_id) {
+                    Ok(Some(token)) => token,
+                    Ok(None) => {
+                        return Ok(SessionOutput::OnePasswordTested {
+                            vaults: Vec::new(),
+                            error: Some(
+                                "this machine holds no 1Password token of yours: save it again while it is online"
+                                    .into(),
+                            ),
+                        });
+                    }
+                    Err(why) => {
+                        return Ok(SessionOutput::OnePasswordTested {
+                            vaults: Vec::new(),
+                            error: Some(why),
+                        });
+                    }
+                };
+                let helper = super::browser::onepassword::OnePassword::new(home, token.clone());
+                let (vaults, error) = match helper.vault_names().await {
+                    Ok(vaults) => (vaults, None),
+                    // The helper may echo what it was given: the token never leaves the machine.
+                    Err(e) => {
+                        let name = super::browser::onepassword::TOKEN_ENV.to_owned();
+                        let masker = super::mask::Masker::new(&[(name, token.to_string())]);
+                        (Vec::new(), Some(masker.text(&e.message).into_owned()))
+                    }
+                };
+                Ok(SessionOutput::OnePasswordTested { vaults, error })
+            }
             SessionCall::ClaudeModels => {
                 let (models, error) =
                     match super::claude_accounts::hub_models(&self.inner.config.home).await {
@@ -1797,6 +1844,7 @@ impl SessionService {
                 fast: launch.fast,
                 helper_model: launch.helper_model.as_ref().map(|m| m.to_string()),
                 claude_account: launch.claude_account.clone(),
+                onepassword: launch.onepassword.clone(),
             },
         };
         self.store().commit(&row, &[], false)?;

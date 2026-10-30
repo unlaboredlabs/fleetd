@@ -388,6 +388,7 @@ async fn run_link_once(
             fleetd_contracts::node_link::CAP_CLAUDE_LOGIN.to_owned(),
             fleetd_contracts::node_link::CAP_SESSION_SEAL.to_owned(),
             fleetd_contracts::node_link::CAP_CLAUDE_ACCOUNTS.to_owned(),
+            fleetd_contracts::node_link::CAP_ONEPASSWORD.to_owned(),
             fleetd_contracts::node_link::CAP_CLAUDE_MODELS.to_owned(),
             fleetd_contracts::node_link::CAP_PROFILE_NAMES.to_owned(),
             fleetd_contracts::node_link::CAP_ASSISTANT.to_owned(),

@@ -63,6 +63,8 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   { key: "claude.subscription", label: "Your Claude subscription", tab: "accounts", keywords: ["claude", "subscription", "token", "setup-token", "oauth", "connect", "test"] },
   { key: "github", label: "GitHub", tab: "accounts", keywords: ["github", "git", "pull request", "pr", "account", "sign in", "connect"] },
   { key: "github.account", label: "Your GitHub", tab: "accounts", keywords: ["github", "connect", "pr", "pull request", "sign in", "token"] },
+  { key: "onepassword", label: "1Password", tab: "accounts", keywords: ["1password", "one password", "password", "logins", "sign in", "vault", "fill", "credentials"] },
+  { key: "onepassword.token", label: "1Password service account", tab: "accounts", keywords: ["1password", "service account", "token", "ops_", "OP_SERVICE_ACCOUNT_TOKEN", "vault", "test"] },
   { key: "accounts.google", label: "Google", tab: "accounts", keywords: ["google", "gmail", "calendar", "drive", "navi", "connect"] },
   page("your-memory", ["memory", "remember", "remembered", "user.md", "preferences", "how I work", "you", "forget"]),
   page("devices", ["devices", "phone", "signed in", "keys"]),

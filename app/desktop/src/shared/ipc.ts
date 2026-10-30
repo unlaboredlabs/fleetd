@@ -255,6 +255,13 @@ export const ClaudeAccountRequest = z.discriminatedUnion("account", [
 ]);
 export type ClaudeAccountRequest = z.infer<typeof ClaudeAccountRequest>;
 
+/**
+ * A person's 1Password service account token (Settings › Your accounts › 1Password): main seals it to every machine in
+ * `boxes` and calls onepassword_set. The hub gets the boxes, never the value.
+ */
+export const OnePasswordRequest = z.strictObject({ token: z.string().min(1).max(SECRET_MAX_BYTES), boxes: Boxes });
+export type OnePasswordRequest = z.infer<typeof OnePasswordRequest>;
+
 /** An error the page caught, for the app log: what failed, the error's own text and the route. Main scrubs it. */
 export const ErrorReport = z.strictObject({
   /** The part whose card is up ("the conversation"), or "uncaught error" / "unhandled rejection". */
@@ -356,6 +363,7 @@ export const REQUESTS = {
   [IPC.githubAppCancel]: none,
   [IPC.githubConnect]: z.tuple([HubId]),
   [IPC.claudeAccountSubmit]: z.tuple([HubId, ClaudeAccountRequest]),
+  [IPC.onePasswordSubmit]: z.tuple([HubId, OnePasswordRequest]),
   [IPC.systemHostName]: none,
   [IPC.machinesJoinHere]: z.tuple([HubId, z.string().regex(/^[a-z0-9-]{1,32}$/u)]),
   [IPC.machinesJoinHereState]: z.tuple([HubId]),

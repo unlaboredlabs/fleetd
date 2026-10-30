@@ -34,6 +34,7 @@ pub mod metrics;
 pub mod model;
 pub mod navi;
 pub mod node_link;
+pub mod onepassword;
 pub mod pair;
 pub mod people;
 pub mod preview;

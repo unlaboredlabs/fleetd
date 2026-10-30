@@ -1140,7 +1140,7 @@ async fn a_dom_write_the_node_cant_place_is_refused_after_a_fill() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn without_a_token_a_fill_says_which_variable_to_ask_for() {
+async fn without_a_token_a_fill_says_where_a_person_saves_one() {
     let Some(rig) = rig().await else { return };
     let (site, _bodies, _site) = shop().await;
     let started = call(
@@ -1159,6 +1159,10 @@ async fn without_a_token_a_fill_says_which_variable_to_ask_for() {
             .as_str()
             .unwrap()
             .contains(TOKEN_ENV)
+            && refused["error"]["fix"]
+                .as_str()
+                .unwrap()
+                .contains("Settings › Your accounts › 1Password")
             && refused["error"]["fix"]
                 .as_str()
                 .unwrap()

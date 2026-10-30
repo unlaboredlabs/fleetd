@@ -80,6 +80,8 @@ const LAUNCH_TIMEOUT: Duration = Duration::from_secs(60);
 const MCP_TEST_TIMEOUT: Duration = Duration::from_secs(45);
 /// A Claude account's Test: the node gives its `claude -p` call 90 s.
 const CLAUDE_TEST_TIMEOUT: Duration = Duration::from_secs(100);
+/// A 1Password token's Test: the node may first install the SDK (up to 180 s), then gives 1Password 30 s.
+const ONEPASSWORD_TEST_TIMEOUT: Duration = Duration::from_secs(230);
 /// Forgetting a Navi's sign-ins: the node waits up to 20 s for the browser on its profile to close, then deletes it.
 const SIGNINS_TIMEOUT: Duration = Duration::from_secs(30);
 /// The node first stops the project's claude processes and waits up to 12 s for them to exit, then up to 10 s for its
@@ -187,6 +189,8 @@ pub struct LaunchOptions {
     pub mcp: Option<fleetd_contracts::mcp_servers::McpSessionConfig>,
     /// The Claude account it runs on for its whole life (`hub::claude_accounts`); none: the machine's own login.
     pub claude_account: Option<fleetd_contracts::claude_accounts::ClaudeAccount>,
+    /// The person whose 1Password token its fill_credential falls back on (`hub::onepassword`).
+    pub onepassword: Option<fleetd_contracts::people::PersonId>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1658,6 +1662,7 @@ impl Executors {
             order_id: options.order_id,
             setup: options.setup.map(Box::new),
             claude_account: options.claude_account.clone(),
+            onepassword: options.onepassword,
         };
         let mcp_launched = launch
             .mcp
@@ -2522,6 +2527,47 @@ impl Executors {
         let call = SessionCall::ClaudeAccountTest { account };
         match self.call(machine_id, op, call, CLAUDE_TEST_TIMEOUT).await? {
             SessionOutput::ClaudeAccountTested { ok, error } => Ok((ok, error)),
+            _ => Err(failed(machine_id, op, "the node sent no test result")),
+        }
+    }
+
+    /// Saves (`sealed`) or forgets (none) a person's 1Password token on the node; the fingerprint it holds afterwards.
+    /// Only to a node listing `CAP_ONEPASSWORD`.
+    pub async fn onepassword_token(
+        &self,
+        machine_id: &MachineId,
+        person_id: fleetd_contracts::people::PersonId,
+        sealed: Option<fleetd_contracts::secrets::SealedSecret>,
+    ) -> Result<Option<fleetd_contracts::secrets::SecretFingerprint>, ExecutorError> {
+        let op = NodeOperation::Project;
+        let call = SessionCall::OnePasswordToken { person_id, sealed };
+        match self.call(machine_id, op, call, READ_TIMEOUT).await? {
+            SessionOutput::OnePasswordSaved { fingerprint } => Ok(fingerprint),
+            _ => Err(failed(
+                machine_id,
+                op,
+                "the node sent no answer to onepassword_token",
+            )),
+        }
+    }
+
+    /// Has the node list the vaults a person's 1Password token reads: their names, else why not, the token masked.
+    /// Only to a node listing `CAP_ONEPASSWORD`.
+    pub async fn onepassword_test(
+        &self,
+        machine_id: &MachineId,
+        person_id: fleetd_contracts::people::PersonId,
+    ) -> Result<Result<Vec<String>, String>, ExecutorError> {
+        let op = NodeOperation::Read;
+        let call = SessionCall::OnePasswordTest { person_id };
+        match self
+            .call(machine_id, op, call, ONEPASSWORD_TEST_TIMEOUT)
+            .await?
+        {
+            SessionOutput::OnePasswordTested {
+                error: Some(error), ..
+            } => Ok(Err(error)),
+            SessionOutput::OnePasswordTested { vaults, .. } => Ok(Ok(vaults)),
             _ => Err(failed(machine_id, op, "the node sent no test result")),
         }
     }

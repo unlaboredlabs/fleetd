@@ -107,6 +107,11 @@ The hub's tools are `claude_accounts_get`, `claude_hub_api_set`, `claude_hub_api
 `claude_subscription_set`, `claude_subscription_remove`, `claude_choice_set` and `claude_account_test`. See
 [Security](/docs/security#claude) for how keys and tokens are kept.
 
+**Settings › Your accounts › 1Password** is each person's own too: a 1Password service account token that agents
+fill logins with in your orders and your Navi, unless the project has its own (see
+[Logins from 1Password](/docs/browser-sessions#1password)). Its tools are `onepassword_get`, `onepassword_set`,
+`onepassword_remove` and `onepassword_test`.
+
 ## Who did what {#attribution}
 
 | Record | Names |

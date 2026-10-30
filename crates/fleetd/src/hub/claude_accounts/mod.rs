@@ -7,7 +7,7 @@
 //! ([`Setup::runs_on`]), sends the account in the launch and records it per thread (`thread_accounts`), which the
 //! usage layer pauses by. The session keeps its account for its whole life: a lead never switches per turn.
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 pub mod tools;
 
 use std::collections::BTreeMap;

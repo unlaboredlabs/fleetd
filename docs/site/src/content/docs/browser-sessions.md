@@ -92,12 +92,20 @@ scrubbed: whatever showed on the page is in it.
 An agent signs in to a site without seeing the password. It names a 1Password secret reference, and the node types
 the value into the page itself.
 
-1. **Give the project a service account token.** In 1Password, make a service account that can read the vault with
-   the agents' logins. Set its token as `OP_SERVICE_ACCOUNT_TOKEN`, a secret [project variable](/docs/projects#env), or
-   enter it when the lead asks for it with `request_secret` (an [order's variable](/docs/approvals-and-secrets#order-variables)).
-   The node keeps it to itself: no agent, worktree setup command or MCP server gets it in its environment (the node's
-   1Password helper reads it on its standard input, not from its environment either), and it is masked like any
-   secret.
+1. **Save your service account token in Settings › Your accounts › 1Password.** In 1Password,
+   [make a service account](https://developer.1password.com/docs/service-accounts/get-started/) that can read the vault
+   with the agents' logins, then paste its token (it starts with `ops_`) and press Save and test. The app seals it on
+   your computer to every machine and never shows it again; Test lists the vaults it can read, or says what 1Password
+   said. Remove is beside it. Your token serves the work you own: the tasks of the orders you start, and your Navi's
+   lead and agents. A project's lead and work nobody started (automations, train fixes) have no owner, so only a
+   variable serves them.
+   - **A project's own token wins**, a Navi's too. One that should use another service account sets
+     `OP_SERVICE_ACCOUNT_TOKEN` as a secret [project variable](/docs/projects#env), or the lead asks for it with
+     `request_secret` (an [order's variable](/docs/approvals-and-secrets#order-variables)). Either is used instead of
+     yours, in every order of that project, whoever started it.
+   - The node keeps the token to itself: no agent, worktree setup command or MCP server gets it in its environment
+     (the node's 1Password helper reads it on its standard input, not from its environment either), and it is masked
+     like any secret.
 2. **Give each login item its website.** The node fills a field only on a page of the item's website (the same host,
    or a subdomain of it), and submits only to a form that sends there. An item with no website fills nowhere. The
    website is the one of exactly the item the reference names: by its ID, or by its title when no other item in that

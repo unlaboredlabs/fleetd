@@ -4226,6 +4226,66 @@ export type NotifyPolicy = {
   quiet: QuietWindow[];
 };
 
+export type OnePasswordGetInput = { [key: string]: unknown };
+
+export type OnePasswordGetOutput = {
+  next?: string;
+  /** The caller's saved token; absent until they save one. */
+  token?: OnePasswordToken;
+  truncated?: boolean;
+};
+
+export type OnePasswordRemoveInput = { [key: string]: unknown };
+
+export type OnePasswordRemoveOutput = {
+  next?: string;
+  ok: true;
+  truncated?: boolean;
+};
+
+export type OnePasswordSetInput = {
+  /** The caller's service account token sealed to each machine agents run on. */
+  sealed: ClaudeSeal[];
+};
+
+export type OnePasswordSetOutput = {
+  /** Machines whose node doesn't hold it (offline when it was saved): save it again while they are online. */
+  missingOn?: MachineId[];
+  next?: string;
+  token: OnePasswordToken;
+  truncated?: boolean;
+};
+
+/** The last Test of a token: the vaults it reads, listed with the 1Password SDK on one machine. */
+export type OnePasswordTest = {
+  at: Timestamp;
+  /** What went wrong, in plain words with the token masked; absent when it worked. */
+  error?: string;
+  machineId: MachineId;
+  ok: boolean;
+  /** The names of the vaults it can read. */
+  vaults?: string[];
+};
+
+export type OnePasswordTestInput = {
+  /** Where to try it; default: the first machine online that holds it. */
+  machineId?: MachineId;
+};
+
+export type OnePasswordTestOutput = {
+  next?: string;
+  test: OnePasswordTest;
+  truncated?: boolean;
+};
+
+/** A person's saved token: never the token, only where it is. */
+export type OnePasswordToken = {
+  lastTest?: OnePasswordTest;
+  savedAt: Timestamp;
+  /** Each machine whose node holds it. Work on a machine missing here has no token from the person. */
+  sealedOn: ClaudeSealedOn[];
+};
+
 /** One order (workstream) as the board shows it. */
 export type OrderCard = {
   createdAt: Timestamp;
@@ -8062,6 +8122,10 @@ export interface ToolMap {
   navi_signins_forget: { input: NaviSigninsForgetInput; output: NaviSigninsForgetOutput };
   navi_site_revoke: { input: NaviSiteRevokeInput; output: NaviSiteRevokeOutput };
   navi_sites: { input: NaviSitesInput; output: NaviSitesOutput };
+  onepassword_get: { input: OnePasswordGetInput; output: OnePasswordGetOutput };
+  onepassword_remove: { input: OnePasswordRemoveInput; output: OnePasswordRemoveOutput };
+  onepassword_set: { input: OnePasswordSetInput; output: OnePasswordSetOutput };
+  onepassword_test: { input: OnePasswordTestInput; output: OnePasswordTestOutput };
   order_get: { input: OrderGetInput; output: OrderGetOutput };
   orders_board: { input: OrdersBoardInput; output: OrdersBoardOutput };
   pair_code_create: { input: PairCodeCreateInput; output: PairCodeCreateOutput };
