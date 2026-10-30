@@ -6,10 +6,10 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ProjectSummary } from "../../../shared/contracts";
-import { createDataLayer, type HubApi } from "../../src/data/queries";
+import { createDataLayer, type DataLayer } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { UiProvider } from "../../ui";
-import { SETTLE_MS } from "../../ui/lib/reorder";
+import { DWELL_MS, SETTLE_MS } from "../../ui/lib/reorder";
 import type { SidebarProject } from "./model";
 import type { Screen } from "./routes";
 import { Sidebar } from "./Sidebar";
@@ -52,19 +52,14 @@ let host: HTMLDivElement;
 let root: Root;
 let went: Screen[];
 let calls: { tool: string; input: unknown }[];
+let layer: DataLayer;
 
+/** The sidebar with `rows`; again with other rows, the same sidebar drawing them (its state kept). */
 const mount = (rows: SidebarProject[] = ROWS) => {
-  const hub: HubApi = {
-    call: (tool, input) => (calls.push({ tool, input }), Promise.resolve({ ok: true, output: { order: [] } })),
-    subscribe: () => () => undefined,
-    resync: () => Promise.resolve(),
-    focus: () => Promise.resolve(),
-    chat: () => Promise.resolve(),
-  };
   act(() =>
     root.render(
       <UiProvider>
-        <DataProvider layer={createDataLayer(hub)}>
+        <DataProvider layer={layer}>
           <Sidebar
             projects={rows.map((p) => ({ ...p, hub: "hub" }))}
             screen={{ id: "status", at: "hub" }}
@@ -87,6 +82,13 @@ const layout = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect");
 beforeEach(() => {
   went = [];
   calls = [];
+  layer = createDataLayer({
+    call: (tool, input) => (calls.push({ tool, input }), Promise.resolve({ ok: true, output: { order: [] } })),
+    subscribe: () => () => undefined,
+    resync: () => Promise.resolve(),
+    focus: () => Promise.resolve(),
+    chat: () => Promise.resolve(),
+  });
   host = document.createElement("div");
   document.body.appendChild(host);
   root = createRoot(host);
@@ -122,7 +124,7 @@ const announced = (label: string) => section(label).querySelector("[role='status
 
 const pointer = (target: EventTarget, type: string, y: number) =>
   act(() => {
-    target.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, button: 0, pointerId: 1, clientY: y }));
+    target.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, button: 0, pointerId: 1, pointerType: "mouse", clientY: y }));
   });
 
 /** Presses `title` at its middle, moves it `dy` px in steps, and lets go. */
@@ -190,22 +192,91 @@ describe("dragging a row", () => {
   });
 });
 
+describe("a list that changes under a drag", () => {
+  // A new project, first by title among the projects.
+  const WITH_NEW = [...ROWS.slice(0, 2), row("aaa"), ...ROWS.slice(2)];
+
+  it("puts a lifted row back, and moves nothing, when another desktop's move or a new project arrives", async () => {
+    mount();
+    const docs = button("docs");
+    pointer(docs, "pointerdown", ROW + ROW / 2);
+    pointer(window, "pointermove", ROW + ROW / 2 + 10);
+    pointer(window, "pointermove", 3 * ROW);
+    expect(section("Projects").querySelector("[data-lifted]")?.textContent).toContain("docs");
+    // A project comes first: by index, "docs" would now be "api".
+    mount(WITH_NEW);
+    // It goes back to its place: the pointer no longer moves it, and letting go drops nothing.
+    pointer(window, "pointermove", 4 * ROW);
+    pointer(window, "pointerup", 4 * ROW);
+    await settle(SETTLE_MS + 20);
+    expect(section("Projects").querySelector("[data-lifted], [data-reorder]")).toBeNull();
+    expect(titles("Projects")).toEqual(["aaa", "api", "docs", "web"]);
+    expect(saved()).toEqual([]);
+  });
+
+  it("moves nothing when it changes while a dropped row settles", async () => {
+    mount();
+    pointer(button("api"), "pointerdown", ROW / 2);
+    pointer(window, "pointermove", ROW / 2 + 10);
+    pointer(window, "pointermove", 2 * ROW + 2);
+    pointer(window, "pointerup", 2 * ROW + 2);
+    mount(WITH_NEW);
+    await settle(SETTLE_MS + 20);
+    expect(titles("Projects")).toEqual(["aaa", "api", "docs", "web"]);
+    expect(saved()).toEqual([]);
+  });
+
+  it("finds a pressed row by its key at the lift, the list changed since the press", async () => {
+    mount();
+    pointer(button("web"), "pointerdown", 2 * ROW + ROW / 2);
+    // "api" goes before the lift: web is second now, not third.
+    mount(ROWS.filter((p) => p.project.title !== "api"));
+    pointer(window, "pointermove", 2 * ROW + ROW / 2 - 10);
+    expect(section("Projects").querySelector("[data-lifted]")?.textContent).toContain("web");
+    pointer(window, "pointermove", 0);
+    pointer(window, "pointerup", 0);
+    await settle(SETTLE_MS + 20);
+    expect(titles("Projects")).toEqual(["web", "docs"]);
+    expect(saved()).toEqual([["ada", "home", "web", "docs"]]);
+  });
+});
+
+describe("a section that goes mid-drag", () => {
+  it("leaves no listener on the window, and nothing settles or saves after it", async () => {
+    const removed = vi.spyOn(window, "removeEventListener");
+    mount();
+    pointer(button("api"), "pointerdown", ROW / 2);
+    pointer(window, "pointermove", ROW / 2 + 10);
+    act(() => root.render(<div />));
+    for (const type of ["pointermove", "pointerup", "pointercancel", "keydown"]) expect(removed.mock.calls.some(([t]) => t === type)).toBe(true);
+    removed.mockRestore();
+
+    // Gone mid-settle: its timer goes with it.
+    mount();
+    pointer(button("api"), "pointerdown", ROW / 2);
+    pointer(window, "pointermove", ROW / 2 + 10);
+    pointer(window, "pointermove", 2 * ROW + 2);
+    pointer(window, "pointerup", 2 * ROW + 2);
+    act(() => root.render(<div />));
+    await settle(SETTLE_MS + 20);
+    expect(saved()).toEqual([]);
+  });
+});
+
 describe("near the edge of a long sidebar", () => {
-  it("scrolls it, keeping the lifted row under the pointer, and stops when you let go", async () => {
+  /** Fourteen projects in a sidebar body that scrolls, 200 px of it on screen, scrolled to `start`; frames by hand. */
+  const longSidebar = (start = 0) => {
     const many = Array.from({ length: 14 }, (_, i) => row(`p${String(i).padStart(2, "0")}`));
     mount(many);
-    // The sidebar's body scrolls, 200 px of it on screen.
     const body = host.querySelector<HTMLElement>("nav[aria-label='Sidebar'] > div");
     if (body === null) throw new Error("no sidebar body");
     body.style.overflowY = "auto";
-    let scrollTop = 0;
+    let scrollTop = start;
     Object.defineProperty(body, "scrollTop", { get: () => scrollTop, set: (v: number) => (scrollTop = Math.max(0, Math.min(400, v))) });
     const rect = layout.getMockImplementation();
     layout.mockImplementation(function (this: HTMLElement) {
       return this === body ? DOMRect.fromRect({ x: 0, y: 0, width: 240, height: 200 }) : (rect?.call(this) ?? new DOMRect());
     });
-
-    // Animation frames step by hand.
     let queued: FrameRequestCallback[] = [];
     const raf = vi.spyOn(window, "requestAnimationFrame").mockImplementation((f) => queued.push(f));
     const caf = vi.spyOn(window, "cancelAnimationFrame").mockImplementation(() => (queued = []));
@@ -217,41 +288,86 @@ describe("near the edge of a long sidebar", () => {
           for (const f of run) f(0);
         }
       });
+    const restore = () => {
+      raf.mockRestore();
+      caf.mockRestore();
+    };
+    return { scrolled: () => scrollTop, frames, restore };
+  };
 
+  it("scrolls it, keeping the lifted row under the pointer, and stops when you let go", async () => {
+    const { scrolled, frames, restore } = longSidebar();
     // p00 (0 to 28 in its list) lifted, the pointer 12 px above the body's bottom.
     pointer(button("p00"), "pointerdown", ROW / 2);
     pointer(window, "pointermove", ROW / 2 + 10);
     pointer(window, "pointermove", 188);
     frames(3);
-    const slow = scrollTop;
+    const slow = scrolled();
     expect(slow).toBeGreaterThan(0);
     // Under the pointer: as far as the pointer went, plus what the list scrolled under it.
     const lifted = section("Projects").querySelector<HTMLElement>("[data-lifted]");
-    expect(lifted?.style.transform).toBe(`translateY(${String(188 - ROW / 2 + scrollTop)}px)`);
+    expect(lifted?.style.transform).toBe(`translateY(${String(188 - ROW / 2 + scrolled())}px)`);
 
     // Nearer the edge, faster.
     pointer(window, "pointermove", 198);
-    const before = scrollTop;
+    const before = scrolled();
     frames(3);
-    expect(scrollTop - before).toBeGreaterThan(slow);
-    expect(lifted?.style.transform).toBe(`translateY(${String(198 - ROW / 2 + scrollTop)}px)`);
+    expect(scrolled() - before).toBeGreaterThan(slow);
+    expect(lifted?.style.transform).toBe(`translateY(${String(198 - ROW / 2 + scrolled())}px)`);
 
     // Away from the edge it stops.
     pointer(window, "pointermove", 100);
-    const held = scrollTop;
+    const held = scrolled();
     frames(3);
-    expect(scrollTop).toBe(held);
+    expect(scrolled()).toBe(held);
 
     // Letting go drops the row where it is, and the list stays put.
-    const at = Math.floor((100 - ROW / 2 + scrollTop) / ROW);
+    const at = Math.floor((100 - ROW / 2 + scrolled()) / ROW);
     pointer(window, "pointerup", 100);
     frames(3);
-    expect(scrollTop).toBe(held);
-    raf.mockRestore();
-    caf.mockRestore();
+    expect(scrolled()).toBe(held);
+    restore();
     await settle(SETTLE_MS + 20);
     expect(titles("Projects").indexOf("p00")).toBe(at);
     expect(at).toBeGreaterThan(3);
+  });
+
+  it("doesn't scroll a scrolled sidebar for a row picked up near its top until the pointer heads for the edge", async () => {
+    const { scrolled, frames, restore } = longSidebar(100);
+    // p00 sits in the top edge's band; picked up there and lifted by a small move away from the edge.
+    pointer(button("p00"), "pointerdown", 20);
+    pointer(window, "pointermove", 26);
+    frames(5);
+    expect(scrolled()).toBe(100);
+    // Wandering in the band, never nearer the edge than the lift: still.
+    pointer(window, "pointermove", 30);
+    pointer(window, "pointermove", 25);
+    frames(5);
+    expect(scrolled()).toBe(100);
+    // Heading for it: up it goes.
+    pointer(window, "pointermove", 20);
+    frames(3);
+    expect(scrolled()).toBeLessThan(100);
+    pointer(window, "pointerup", 20);
+    restore();
+    await settle(SETTLE_MS + 20);
+  });
+
+  it("scrolls once the pointer rests near the edge a moment", async () => {
+    const { scrolled, frames, restore } = longSidebar(100);
+    pointer(button("p00"), "pointerdown", 20);
+    pointer(window, "pointermove", 26);
+    frames(3);
+    expect(scrolled()).toBe(100);
+    await act(() => new Promise((done) => setTimeout(done, DWELL_MS - 150)));
+    frames(3);
+    expect(scrolled()).toBe(100);
+    await act(() => new Promise((done) => setTimeout(done, 200)));
+    frames(3);
+    expect(scrolled()).toBeLessThan(100);
+    pointer(window, "pointerup", 26);
+    restore();
+    await settle(SETTLE_MS + 20);
   });
 });
 
@@ -265,7 +381,7 @@ describe("the keyboard", () => {
     key("ArrowUp");
     await settle();
     expect(titles("Projects")).toEqual(["docs", "api", "web"]);
-    expect(document.activeElement?.textContent).toContain("docs");
+    expect(document.activeElement).toBe(button("docs"));
     expect(announced("Projects")).toBe("docs moved to 1 of 3");
     expect(saved().at(-1)).toEqual(["ada", "home", "docs", "api", "web"]);
 
@@ -284,7 +400,7 @@ describe("the keyboard", () => {
     key("ArrowDown");
     await settle();
     expect(titles("Projects")).toEqual(["api", "web", "docs"]);
-    expect(document.activeElement?.textContent).toContain("docs");
+    expect(document.activeElement).toBe(button("docs"));
     expect(announced("Projects")).toBe("docs moved to 3 of 3");
   });
 });

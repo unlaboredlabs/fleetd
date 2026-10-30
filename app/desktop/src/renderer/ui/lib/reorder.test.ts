@@ -1,6 +1,6 @@
 // The reorder's arithmetic: where a lifted row drops, how far the rows it passes slide aside, and the run of its group.
 import { describe, expect, it } from "vitest";
-import { boundsOf, dropIndex, EDGE_PX, edgeSpeed, MAX_SCROLL_PX, moved, shiftOf } from "./reorder";
+import { ARM_PX, boundsOf, dropIndex, EDGE_PX, edgeSpeed, headedFor, MAX_SCROLL_PX, moved, shiftOf } from "./reorder";
 
 describe("a lifted row", () => {
   // Four 28 px rows: centres at 14, 42, 70, 98.
@@ -70,5 +70,19 @@ describe("near a scrolling list's edge", () => {
   it("keeps its bands to a third of a short list", () => {
     expect(edgeSpeed(50, 0, 90)).toBe(0);
     expect(edgeSpeed(85, 0, 90)).toBeGreaterThan(0);
+  });
+});
+
+describe("a pointer in an edge's band", () => {
+  it("arms the scroll once it heads ARM_PX for that edge from the farthest it has been since the lift", () => {
+    // Near the top (speed < 0), lifted at 26 and gone as far down as 30.
+    expect(headedFor(-5, 26, 26, 26)).toBe(false);
+    expect(headedFor(-5, 30 - ARM_PX + 1, 26, 30)).toBe(false);
+    expect(headedFor(-5, 30 - ARM_PX, 26, 30)).toBe(true);
+    // Near the bottom (speed > 0), from the highest it has been.
+    expect(headedFor(5, 180, 180, 185)).toBe(false);
+    expect(headedFor(5, 180 + ARM_PX, 180, 190)).toBe(true);
+    // Out of both bands: nothing to arm.
+    expect(headedFor(0, 0, 100, 100)).toBe(false);
   });
 });
