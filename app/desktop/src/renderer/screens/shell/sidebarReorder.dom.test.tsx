@@ -6,7 +6,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ProjectSummary } from "../../../shared/contracts";
-import { createDataLayer, type HubApi } from "../../src/data/queries";
+import { createDataLayer, type DataLayer } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { UiProvider } from "../../ui";
 import { SETTLE_MS } from "../../ui/lib/reorder";
@@ -52,19 +52,14 @@ let host: HTMLDivElement;
 let root: Root;
 let went: Screen[];
 let calls: { tool: string; input: unknown }[];
+let layer: DataLayer;
 
+/** The sidebar with `rows`; again with other rows, the same sidebar drawing them (its state kept). */
 const mount = (rows: SidebarProject[] = ROWS) => {
-  const hub: HubApi = {
-    call: (tool, input) => (calls.push({ tool, input }), Promise.resolve({ ok: true, output: { order: [] } })),
-    subscribe: () => () => undefined,
-    resync: () => Promise.resolve(),
-    focus: () => Promise.resolve(),
-    chat: () => Promise.resolve(),
-  };
   act(() =>
     root.render(
       <UiProvider>
-        <DataProvider layer={createDataLayer(hub)}>
+        <DataProvider layer={layer}>
           <Sidebar
             projects={rows.map((p) => ({ ...p, hub: "hub" }))}
             screen={{ id: "status", at: "hub" }}
@@ -87,6 +82,13 @@ const layout = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect");
 beforeEach(() => {
   went = [];
   calls = [];
+  layer = createDataLayer({
+    call: (tool, input) => (calls.push({ tool, input }), Promise.resolve({ ok: true, output: { order: [] } })),
+    subscribe: () => () => undefined,
+    resync: () => Promise.resolve(),
+    focus: () => Promise.resolve(),
+    chat: () => Promise.resolve(),
+  });
   host = document.createElement("div");
   document.body.appendChild(host);
   root = createRoot(host);
@@ -186,6 +188,77 @@ describe("dragging a row", () => {
 
     await drag("docs", ROW, { cancel: true });
     expect(titles("Projects")).toEqual(["api", "docs", "web"]);
+    expect(saved()).toEqual([]);
+  });
+});
+
+describe("a list that changes under a drag", () => {
+  // A new project, first by title among the projects.
+  const WITH_NEW = [...ROWS.slice(0, 2), row("aaa"), ...ROWS.slice(2)];
+
+  it("puts a lifted row back, and moves nothing, when another desktop's move or a new project arrives", async () => {
+    mount();
+    const docs = button("docs");
+    pointer(docs, "pointerdown", ROW + ROW / 2);
+    pointer(window, "pointermove", ROW + ROW / 2 + 10);
+    pointer(window, "pointermove", 3 * ROW);
+    expect(section("Projects").querySelector("[data-lifted]")?.textContent).toContain("docs");
+    // A project comes first: by index, "docs" would now be "api".
+    mount(WITH_NEW);
+    // It goes back to its place: the pointer no longer moves it, and letting go drops nothing.
+    pointer(window, "pointermove", 4 * ROW);
+    pointer(window, "pointerup", 4 * ROW);
+    await settle(SETTLE_MS + 20);
+    expect(section("Projects").querySelector("[data-lifted], [data-reorder]")).toBeNull();
+    expect(titles("Projects")).toEqual(["aaa", "api", "docs", "web"]);
+    expect(saved()).toEqual([]);
+  });
+
+  it("moves nothing when it changes while a dropped row settles", async () => {
+    mount();
+    pointer(button("api"), "pointerdown", ROW / 2);
+    pointer(window, "pointermove", ROW / 2 + 10);
+    pointer(window, "pointermove", 2 * ROW + 2);
+    pointer(window, "pointerup", 2 * ROW + 2);
+    mount(WITH_NEW);
+    await settle(SETTLE_MS + 20);
+    expect(titles("Projects")).toEqual(["aaa", "api", "docs", "web"]);
+    expect(saved()).toEqual([]);
+  });
+
+  it("finds a pressed row by its key at the lift, the list changed since the press", async () => {
+    mount();
+    pointer(button("web"), "pointerdown", 2 * ROW + ROW / 2);
+    // "api" goes before the lift: web is second now, not third.
+    mount(ROWS.filter((p) => p.project.title !== "api"));
+    pointer(window, "pointermove", 2 * ROW + ROW / 2 - 10);
+    expect(section("Projects").querySelector("[data-lifted]")?.textContent).toContain("web");
+    pointer(window, "pointermove", 0);
+    pointer(window, "pointerup", 0);
+    await settle(SETTLE_MS + 20);
+    expect(titles("Projects")).toEqual(["web", "docs"]);
+    expect(saved()).toEqual([["ada", "home", "web", "docs"]]);
+  });
+});
+
+describe("a section that goes mid-drag", () => {
+  it("leaves no listener on the window, and nothing settles or saves after it", async () => {
+    const removed = vi.spyOn(window, "removeEventListener");
+    mount();
+    pointer(button("api"), "pointerdown", ROW / 2);
+    pointer(window, "pointermove", ROW / 2 + 10);
+    act(() => root.render(<div />));
+    for (const type of ["pointermove", "pointerup", "pointercancel", "keydown"]) expect(removed.mock.calls.some(([t]) => t === type)).toBe(true);
+    removed.mockRestore();
+
+    // Gone mid-settle: its timer goes with it.
+    mount();
+    pointer(button("api"), "pointerdown", ROW / 2);
+    pointer(window, "pointermove", ROW / 2 + 10);
+    pointer(window, "pointermove", 2 * ROW + 2);
+    pointer(window, "pointerup", 2 * ROW + 2);
+    act(() => root.render(<div />));
+    await settle(SETTLE_MS + 20);
     expect(saved()).toEqual([]);
   });
 });
