@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { HubState, UpdateRun } from "./desktop";
 import type { Machine } from "./store";
-import { UPDATE_NOTE, updateSection, type UpdateInput } from "./updates";
+import { shortVersion, UPDATE_NOTE, updateSection, type UpdateInput } from "./updates";
 
 const NOW = Date.parse("2026-10-29T12:00:00Z");
 const HUB: HubState = { phase: "live", hub: "http://devbox:4790", protocol: 1, version: "0.9.0" };
@@ -36,7 +36,7 @@ const part = (p: "hub" | "node", name: string, state: string, extra: Partial<Upd
 
 describe("updateSection", () => {
   it("offers the hub's ready build to an admin, and to no one else", () => {
-    expect(updateSection(input({ ready: "0.9.1" }))).toEqual({ offer: { title: "fleetd 0.9.1 is ready", note: UPDATE_NOTE }, progress: null, parts: [], going: false, startOver: null });
+    expect(updateSection(input({ ready: "0.9.1" }))).toEqual({ offer: { title: "Update fleetd", detail: "0.9.1 is ready", note: UPDATE_NOTE }, progress: null, parts: [], going: false, startOver: null });
     expect(updateSection(input({ ready: "0.9.1", admin: false }))).toBeNull();
     // Not read yet: nothing, rather than a row that comes and goes.
     expect(updateSection(input({ ready: "0.9.1", admin: undefined }))).toBeNull();
@@ -44,8 +44,12 @@ describe("updateSection", () => {
   });
 
   it("offers it for a machine behind the hub, and says nothing when all are up to date", () => {
-    expect(updateSection(input({ machines: [machine("devbox"), machine("buildbox", "0.8.9")] }))?.offer).toEqual({ title: "fleetd 0.9.0 is available", note: UPDATE_NOTE });
+    expect(updateSection(input({ machines: [machine("devbox"), machine("buildbox", "0.8.9")] }))?.offer).toEqual({ title: "Update fleetd", detail: "0.9.0 is available", note: UPDATE_NOTE });
     expect(updateSection(input())).toBeNull();
+  });
+
+  it("puts an Edge build's label under the title, where it fits", () => {
+    expect(updateSection(input({ hub: { ...HUB, version: "0.0.0-edge.202610281816+e6ed04e" }, machines: [], ready: "0.0.0-edge.202610292301+c1d2e3f4" }))?.offer).toEqual({ title: "Update fleetd", detail: "Edge · Oct 29, 23:01 UTC · c1d2e3f is ready", note: UPDATE_NOTE });
   });
 
   it("follows a run: starting, the hub, then the machines one by one", () => {
@@ -79,5 +83,13 @@ describe("updateSection", () => {
 
   it("says why the hub wouldn't start it", () => {
     expect(updateSection(input({ ready: "0.9.1", flow: { phase: "refused", message: "Only an admin can update the hub." } }))?.progress).toEqual({ tone: "danger", text: "Couldn't start the update: Only an admin can update the hub." });
+  });
+});
+
+describe("shortVersion", () => {
+  it("keeps an Edge build to its day and minute, and a release as it is", () => {
+    expect(shortVersion("0.0.0-edge.202610291816+e6ed04e")).toBe("Edge · Oct 29, 18:16");
+    expect(shortVersion("0.9.1")).toBe("0.9.1");
+    expect(shortVersion("0.9.1+abc1234")).toBe("0.9.1");
   });
 });

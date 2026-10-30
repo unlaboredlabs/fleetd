@@ -1,6 +1,6 @@
 // The quiet pieces around content: an empty state, a count badge, and the banner that says the hub isn't live.
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 import type { HubState } from "../desktop";
 import { space, type, useTheme } from "../theme";
@@ -9,11 +9,16 @@ import { Glass } from "./Glass";
 import { Icon, type IconName } from "./Icon";
 import { dur, ease, useReduceMotion } from "./motion";
 
-/** Nothing here yet: a symbol in a soft disc, a title, a line on what comes, and the one thing to do. */
+/**
+ * Nothing here yet: a symbol in a soft disc, a title, a line on what comes, and the one thing to do. Only as tall as
+ * that, a little way down the screen: a list under iOS's automatic insets that stretched it to the screen's height
+ * would scroll by its bars' height past it (emptyScroll.test.ts).
+ */
 export function EmptyState({ icon, title, body, action }: { icon: IconName; title: string; body?: string; action?: { label: string; onPress: () => void } }) {
   const t = useTheme();
+  const { height } = useWindowDimensions();
   return (
-    <View style={styles.empty}>
+    <View style={[styles.empty, { paddingTop: Math.round(height * EMPTY_DROP) }]}>
       <View style={[styles.disc, { backgroundColor: t.accentSoft }]}>
         <Icon name={icon} size={34} color={t.accent} />
       </View>
@@ -23,6 +28,9 @@ export function EmptyState({ icon, title, body, action }: { icon: IconName; titl
     </View>
   );
 }
+
+/** How far down the screen an empty state starts, as a share of its height: about the middle of what the bars leave. */
+const EMPTY_DROP = 0.14;
 
 /** A count, or a dot when there is none to give; grey for a muted chat. */
 export function Badge({ count, muted = false, label, tone = "accent" }: { count?: number; muted?: boolean; label?: string; tone?: "accent" | "warning" }) {
@@ -112,7 +120,7 @@ export function ConnectionLine({ state, onPairAgain }: { state: HubState; onPair
 }
 
 const styles = StyleSheet.create({
-  empty: { flex: 1, alignItems: "center", justifyContent: "center", gap: space.sm, paddingHorizontal: space.xxl, paddingVertical: 64 },
+  empty: { alignItems: "center", gap: space.sm, paddingHorizontal: space.xxl, paddingBottom: space.xl },
   disc: { width: 76, height: 76, borderRadius: 38, alignItems: "center", justifyContent: "center", marginBottom: space.sm },
   bannerWrap: { alignItems: "center", paddingHorizontal: space.lg, paddingVertical: space.xs },
   banner: { flexDirection: "row", alignItems: "center", gap: space.sm, borderRadius: 20, borderCurve: "continuous", paddingHorizontal: space.lg, paddingVertical: 9, maxWidth: "100%" },

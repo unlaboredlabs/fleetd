@@ -24,16 +24,18 @@ export function UpdateFleetd() {
 
   const confirm = () => {
     const title = section.offer?.title ?? "Update fleetd";
+    // What it updates to, then what it does.
+    const message = section.offer?.detail === undefined ? UPDATE_NOTE : `${section.offer.detail}. ${UPDATE_NOTE}`;
     const go = () => {
       haptics.firm();
       void startUpdate(session.updates);
     };
     if (Platform.OS === "ios") {
-      ActionSheetIOS.showActionSheetWithOptions({ title, message: UPDATE_NOTE, options: ["Update", "Cancel"], cancelButtonIndex: 1 }, (i) => {
+      ActionSheetIOS.showActionSheetWithOptions({ title, message, options: ["Update", "Cancel"], cancelButtonIndex: 1 }, (i) => {
         if (i === 0) go();
       });
     } else {
-      Alert.alert(title, UPDATE_NOTE, [
+      Alert.alert(title, message, [
         { text: "Cancel", style: "cancel" },
         { text: "Update", onPress: go },
       ]);
@@ -42,7 +44,7 @@ export function UpdateFleetd() {
 
   return (
     <ListSection header="Update" {...(section.offer === null ? {} : { footer: UPDATE_NOTE })}>
-      {section.offer === null ? null : <ListRow icon="update" tint={t.accent} title={section.offer.title} onPress={confirm} />}
+      {section.offer === null ? null : <ListRow icon="update" tint={t.accent} title={section.offer.title} detail={section.offer.detail} onPress={confirm} />}
       {section.progress === null ? null : (
         <View style={styles.progress} accessibilityLiveRegion="polite">
           {section.going ? (
