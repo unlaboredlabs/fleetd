@@ -85,6 +85,8 @@ struct FakePull {
     comments: Vec<String>,
     /// What GitHub says of merging it into its base: None while it still works it out, as it does at first.
     mergeable: Option<bool>,
+    /// The repo its branch lives in, when not `repo`: a fork's.
+    head_repo: Option<String>,
 }
 
 impl FakePull {
@@ -103,6 +105,7 @@ impl FakePull {
             draft: false,
             comments: Vec::new(),
             mergeable: None,
+            head_repo: None,
         }
     }
 }
@@ -223,7 +226,7 @@ impl FakeGh {
         let labels: Vec<Value> = p.labels.iter().map(|l| json!({ "name": l })).collect();
         json!({
             "number": n, "title": p.title, "state": p.state, "merged": p.merged, "merge_commit_sha": p.merge_sha, "merged_at": p.merged_at, "body": p.body,
-            "head": { "ref": p.branch, "sha": self.head_of(&p.branch).unwrap_or_else(|| "0".repeat(40)), "repo": { "full_name": p.repo } },
+            "head": { "ref": p.branch, "sha": self.head_of(&p.branch).unwrap_or_else(|| "0".repeat(40)), "repo": { "full_name": p.head_repo.as_deref().unwrap_or(&p.repo) } },
             "base": { "ref": p.base }, "labels": labels, "draft": p.draft,
             "user": { "login": "ada-lovelace", "type": "User" }, "created_at": "2026-10-16T09:00:00Z",
             "merged_by": p.merged.then(|| json!({ "login": "ada-lovelace", "type": "User" })),
@@ -2741,8 +2744,8 @@ async fn a_merge_outside_the_train_into_a_base_the_landing_scanner_watches_wakes
 #[tokio::test(flavor = "multi_thread")]
 async fn a_pr_based_on_another_open_prs_branch_waits_for_it_then_goes_into_its_base() {
     let kit = Kit::new();
-    let parent = kit.open_pr(7, "p", &[add("p.txt", "p\n")]);
-    let child = kit.stacked_pr(8, "c", "p", &[add("c.txt", "c\n")]);
+    let parent = kit.open_pr(7, "fleetd/p", &[add("p.txt", "p\n")]);
+    let child = kit.stacked_pr(8, "fleetd/c", "fleetd/p", &[add("c.txt", "c\n")]);
     let child = kit.enqueue(child).await;
     kit.enqueue(parent.clone()).await;
     assert_eq!(
@@ -2755,16 +2758,8 @@ async fn a_pr_based_on_another_open_prs_branch_waits_for_it_then_goes_into_its_b
     }
     assert_eq!(merged_prs(&kit), [7, 8]);
     assert_eq!(kit.gh.pulls.lock().unwrap()[&8].base, "main");
-    let main = kit.head_of("main");
     for file in ["p.txt", "c.txt"] {
-        assert!(
-            git_out(
-                &kit.gh.origin,
-                &["cat-file", "-e", &format!("{main}:{file}")]
-            )
-            .is_some(),
-            "{file} on main"
-        );
+        assert!(kit.main_file(file).is_some(), "{file} on main");
     }
 }
 
@@ -2772,13 +2767,13 @@ async fn a_pr_based_on_another_open_prs_branch_waits_for_it_then_goes_into_its_b
 #[tokio::test(flavor = "multi_thread")]
 async fn a_pr_holding_another_open_prs_commits_waits_for_it() {
     let kit = Kit::new();
-    let parent = kit.open_pr(7, "p", &[add("p.txt", "p\n")]);
-    kit.commit("c", &[add("c.txt", "c\n")], Some("origin/p"));
+    let parent = kit.open_pr(7, "fleetd/p", &[add("p.txt", "p\n")]);
+    kit.commit("fleetd/c", &[add("c.txt", "c\n")], Some("origin/fleetd/p"));
     kit.gh
         .pulls
         .lock()
         .unwrap()
-        .insert(8, FakePull::open("c", "main", ""));
+        .insert(8, FakePull::open("fleetd/c", "main", ""));
     let child = kit
         .enqueue(format!("https://github.com/{REPO}/pull/8"))
         .await;
@@ -2802,6 +2797,87 @@ async fn a_pr_holding_another_open_prs_commits_waits_for_it() {
         kit.train.step(REPO).await;
     }
     assert_eq!(merged_prs(&kit), [7, 8]);
+}
+
+/// A fork's PR from its own `main` stacks nothing: its branch is not this repo's, and `main` is no writer's branch.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_forks_pr_from_its_main_holds_no_pr_into_main() {
+    let kit = Kit::new();
+    let fork = FakePull {
+        head_repo: Some("contributor/storefront".into()),
+        ..FakePull::open("main", "main", "")
+    };
+    kit.gh.pulls.lock().unwrap().insert(9, fork);
+    let change = kit
+        .enqueue(kit.open_pr(7, "fleetd/a", &[add("a.txt", "a\n")]))
+        .await;
+    assert!(kit.get(&change.change_id).after.is_empty());
+    kit.train.step(REPO).await;
+    assert_eq!(merged_prs(&kit), [7]);
+}
+
+/// A standing `develop` → `main` PR holds no PR into develop, which merges there, before and after a release of
+/// develop into main.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_standing_develop_pr_holds_no_pr_into_develop() {
+    let kit = Kit::new();
+    kit.open_pr(9, "develop", &[add("d.txt", "d\n")]);
+    let feature = kit.open_pr_on("develop", 8, "fleetd/f", &[add("f.txt", "f\n")]);
+    let change = kit.enqueue(feature).await;
+    assert!(kit.get(&change.change_id).after.is_empty());
+    kit.train.step(REPO).await;
+    assert_eq!(merged_prs(&kit), [8]);
+    assert_eq!(kit.file_on("develop", "f.txt").as_deref(), Some("f"));
+
+    // Released: a PR of develop as it is now merged into main, and develop hasn't moved since.
+    let release = FakePull {
+        state: "closed".into(),
+        merged: true,
+        merged_at: Some("2026-10-17T12:00:00Z".into()),
+        ..FakePull::open("develop", "main", "")
+    };
+    kit.gh.pulls.lock().unwrap().insert(11, release);
+    let next = kit.open_pr_on("develop", 10, "fleetd/g", &[add("g.txt", "g\n")]);
+    kit.enqueue(next).await;
+    kit.train.step(REPO).await;
+    assert_eq!(merged_prs(&kit), [8, 10]);
+    assert_eq!(kit.gh.pulls.lock().unwrap()[&10].base, "develop");
+    assert_eq!(kit.main_file("g.txt"), None);
+}
+
+/// A parent merged outside the train, never enqueued: its child, based on its branch, still goes into the parent's base
+/// and never into the landed branch.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_pr_on_the_branch_of_a_pr_merged_outside_the_train_goes_into_its_base() {
+    let clock = Arc::new(Sleeps::default());
+    let kit = Kit::on_clock(FakeCi::Actions, clock.clone());
+    let parent = kit.open_pr(7, "fleetd/p", &[add("p.txt", "p\n")]);
+    let child = kit.stacked_pr(8, "fleetd/c", "fleetd/p", &[add("c.txt", "c\n")]);
+    let child = kit.enqueue(child).await;
+    assert_eq!(
+        kit.get(&child.change_id).after,
+        [GitHubPrUrl::unchecked(parent)]
+    );
+    kit.train.step(REPO).await;
+    assert!(merged_prs(&kit).is_empty());
+
+    // Merged on GitHub by a person: its change lands on main as a squash.
+    kit.commit("main", &[add("p.txt", "p\n")], None);
+    {
+        let mut pulls = kit.gh.pulls.lock().unwrap();
+        let p = pulls.get_mut(&7).unwrap();
+        p.state = "closed".into();
+        p.merged = true;
+        p.merged_at = Some("2026-10-17T12:00:00Z".into());
+    }
+    clock.sleep(Duration::from_secs(60)).await;
+    for _ in 0..3 {
+        kit.train.step(REPO).await;
+    }
+    assert_eq!(merged_prs(&kit), [8]);
+    assert_eq!(kit.gh.pulls.lock().unwrap()[&8].base, "main");
+    assert_eq!(kit.main_file("c.txt").as_deref(), Some("c"));
+    assert_eq!(kit.file_on("fleetd/p", "c.txt"), None);
 }
 
 /// GitHub may take minutes to start a run: the train waits for the check however long it takes to appear.

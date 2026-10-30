@@ -422,9 +422,11 @@ upstream.</p>
 <p>The PRs can be in the same repo or any other. Enqueuing a PR that is already in line adds the new <code dir="auto">after</code> PRs to the
 ones it has. Once the train is merging it (rebasing, in CI or merging), that is refused: add the <code dir="auto">hold</code> label to keep it
 from landing first. The train also refuses an order that loops back, where the upstream PR already waits on this one.</p>
-<p>A PR stacked on another open PR waits for it without an <code dir="auto">after</code>: one whose base is the other PR’s branch, or whose
-commits hold the other PR’s latest commit. Once a PR based on another’s branch can go, the train first points it at
-that PR’s base, so it lands there and not in the branch that already merged.</p>
+<p>A PR stacked on an agent’s open PR waits for it without an <code dir="auto">after</code>: one whose commits hold that PR’s latest commit, as
+when it is based on that PR’s branch or built on top of it. Only a PR of the same repo from an agent’s branch (under the
+project’s branch prefix) counts, never a fork’s PR or a standing branch such as <code dir="auto">develop</code>. Once the branch a PR is based
+on has landed, however it merged, the train first points the PR at that branch’s base, so it lands there and not in
+the branch that already merged.</p>
 <p>The downstream PR is reviewed and checked as usual. Once it is ready, it stays in line, held with
 “waiting on acme/api#40” and the reason. When the upstream PR merges, the downstream PR’s train takes it on its next
 pass.</p>
