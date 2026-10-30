@@ -1,20 +1,22 @@
 // A list you reorder by dragging a row, or with ⌥↑ / ⌥↓ on a focused one (ui/DESIGN.md). A press that moves a few
 // pixels lifts the row (raised, a soft shadow, under the pointer); the rows it passes slide aside to open its gap; let
-// go, it settles into the gap and the list takes the new order. Near the top or bottom of a list that scrolls, the list
-// scrolls, faster the closer the pointer is to the edge, and the lifted row stays under the pointer; as on iOS and
-// macOS, only once the pointer heads for that edge, or rests near it a moment, so a row picked up near an edge of a
-// scrolled list doesn't set it moving. Esc puts it back.
-// So does a list that changes under it (a move from another desktop, a row added or gone): rows go by key, never by
-// an index from before. A click that didn't move is still a
-// click. Only transform changes, on the rows' wrappers, so nothing lays out mid-drag; with reduced motion the rows
-// still move with the pointer but nothing glides. Each move is announced (`status`, for a role="status" region).
+// go, the list takes the new order at once and the row glides from where it was let go into its slot (FLIP: in the
+// frame the order changes, each row is put back where it was on screen and let glide to its new place, so no frame
+// shows a row anywhere else). Any change of the order glides the same way: ⌥↑ / ⌥↓, or another desktop's move. Near the
+// top or bottom of a list that scrolls, the list scrolls, faster the closer the pointer is to the edge, and the lifted
+// row stays under the pointer; as on iOS and macOS, only once the pointer heads for that edge, or rests near it a
+// moment, so a row picked up near an edge of a scrolled list doesn't set it moving. Esc puts it back. So does a list
+// that changes under it (a move from another desktop, a row added or gone): rows go by key, never by an index from
+// before. A click that didn't move is still a click. Only transform changes, on the rows' wrappers, so nothing lays out
+// mid-drag; with reduced motion the rows still move with the pointer but nothing glides. Each move is announced
+// (`status`, for a role="status" region).
 //
 // Pure helpers first, so the arithmetic is unit-tested; the hook is the pointer and keyboard glue.
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent, type PointerEvent } from "react";
 
 /** How far a press moves before it is a drag rather than a click. */
 export const LIFT_PX = 4;
-/** The settle into the gap: --dur-base. */
+/** The glide into the new place: --dur-base. */
 export const SETTLE_MS = 180;
 /** How near the edge of a scrolling list the pointer starts it scrolling. */
 export const EDGE_PX = 48;
@@ -91,6 +93,41 @@ const clamp = (n: number, lo: number, hi: number): number => Math.min(hi, Math.m
 
 const reduced = (): boolean => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
+/** Each row's top on screen, from its list's top: transforms and glides under way included. */
+const onScreen = <K>(els: ReadonlyMap<K, HTMLElement>): ReadonlyMap<K, number> =>
+  new Map([...els].map(([key, el]) => [key, el.getBoundingClientRect().top - (el.parentElement?.getBoundingClientRect().top ?? 0)]));
+
+/**
+ * The rows put back where they were on screen (`from`, as onScreen read them before the DOM changed) and let glide to
+ * their places over `ms`, all in this frame: a row with nowhere to go, or new, just sits in its place. Returns the
+ * rows gliding.
+ */
+const glide = <K>(els: ReadonlyMap<K, HTMLElement>, from: ReadonlyMap<K, number>, ms: number): HTMLElement[] => {
+  // Their places now, with nothing moving them: a glide under way, or a drag's offset, cleared first.
+  for (const el of els.values()) {
+    el.style.transition = "none";
+    el.style.transform = "";
+  }
+  const now = onScreen(els);
+  const gliding: HTMLElement[] = [];
+  for (const [key, el] of els) {
+    const was = from.get(key);
+    const by = was === undefined ? 0 : was - (now.get(key) ?? was);
+    if (ms > 0 && Math.abs(by) >= 0.5) {
+      el.style.transform = `translateY(${String(by)}px)`;
+      gliding.push(el);
+    } else el.style.transition = "";
+  }
+  if (gliding.length === 0) return gliding;
+  // Drawn where they were, then let go: the transition runs from there.
+  void gliding[0]?.getBoundingClientRect();
+  for (const el of gliding) {
+    el.style.transition = `transform ${String(ms)}ms var(--ease-out)`;
+    el.style.transform = "";
+  }
+  return gliding;
+};
+
 export interface ReorderOptions<K extends string> {
   /** The rows, in the order they are on show. */
   readonly keys: readonly K[];
@@ -108,9 +145,9 @@ interface Press<K> {
   from: number;
   /** The list's keys at the lift: a list changed since (a move from another desktop, a row added or gone) cancels it. */
   sig: string;
-  /** Ends the press, settling a lifted row (back, with `cancel`). */
+  /** Ends the press, dropping a lifted row (back, with `cancel`). */
   finish: (cancel: boolean) => void;
-  /** Ends it at once: no settle, nothing called back (the list unmounting). */
+  /** Ends it at once: no drop, nothing called back (the list unmounting). */
   stop: () => void;
   readonly startY: number;
   readonly pointerId: number;
@@ -141,8 +178,6 @@ interface Moving<K> {
   readonly from: number;
   readonly over: number;
   readonly size: number;
-  /** Let go (or Esc): the row glides to its slot. */
-  readonly settling: boolean;
 }
 
 export interface Reorder<K extends string> {
@@ -171,7 +206,7 @@ export function useReorder<K extends string>(options: ReorderOptions<K>): Reorde
   const press = useRef<Press<K> | null>(null);
   const swallow = useRef(false);
   const refocus = useRef<K | null>(null);
-  // The settles and click guards on their way, and whether the list is still there for them.
+  // The glides' ends and click guards on their way, and whether the list is still there for them.
   const timers = useRef(new Set<number>());
   const later = (f: () => void, ms: number) => {
     const id = window.setTimeout(() => {
@@ -181,6 +216,8 @@ export function useReorder<K extends string>(options: ReorderOptions<K>): Reorde
     timers.current.add(id);
   };
   const [moving, setMoving] = useState<Moving<K> | null>(null);
+  // The row just let go, raised until it has glided into its slot.
+  const [landing, setLanding] = useState<K | null>(null);
   // The order just made, shown until `keys` (the caller's) moves on: no frame of the old order after a drop.
   // Matched on the keys' text, not the array: a parent drawing the same rows again isn't the order catching up.
   const [pending, setPending] = useState<{ readonly for: string; readonly order: readonly K[] } | null>(null);
@@ -191,10 +228,39 @@ export function useReorder<K extends string>(options: ReorderOptions<K>): Reorde
   // The rows on show, as text: what a lifted row's measures and index are of. Keys catching up to a move just made
   // leave it as it was.
   const showing = shown.join("\n");
-  // What the window's listeners and the settle's timer read, as of the last render.
+  // What the window's listeners and the glide's timer read, as of the last render.
   const latest = useRef({ ...options, shown, sig, showing });
   useLayoutEffect(() => {
     latest.current = { ...options, shown, sig, showing };
+  });
+
+  // FLIP. When the rows' places are about to change (another order, or a lifted row let go), where each row is on
+  // screen now, read before React touches the DOM; once it has, each row is put back there and glides to its new place,
+  // in the same frame. A lifted row's list waits for the drop, keeping the places it had on screen before.
+  // The read is in the render on purpose: it is the last moment the DOM still shows the old places (a class's
+  // getSnapshotBeforeUpdate), and nothing drawn depends on it.
+  const lifted = moving !== null;
+  const placed = useRef({ showing, lifted });
+  const first = useRef<ReadonlyMap<K, number> | null>(null);
+  /* eslint-disable react-hooks/refs */
+  if (first.current === null && (showing !== placed.current.showing || (placed.current.lifted && !lifted))) first.current = onScreen(els.current);
+  /* eslint-enable react-hooks/refs */
+  const glides = useRef(0);
+  useLayoutEffect(() => {
+    placed.current = { showing, lifted };
+    const from = first.current;
+    if (lifted || from === null) return;
+    first.current = null;
+    const wait = reduced() ? 0 : SETTLE_MS;
+    const gliding = glide(els.current, from, wait);
+    const n = ++glides.current;
+    const landed = () => {
+      if (glides.current !== n) return;
+      for (const el of gliding) el.style.transition = "";
+      setLanding(null);
+    };
+    if (wait === 0) landed();
+    else later(landed, wait);
   });
 
   // The list changed under a lifted row: it goes back, and nothing moves (its index would name another row now).
@@ -203,7 +269,7 @@ export function useReorder<K extends string>(options: ReorderOptions<K>): Reorde
     if (p?.lifted === true && p.sig !== showing) p.finish(true);
   }, [showing]);
 
-  // Gone mid-press or mid-settle (a hub's group collapsed or removed): no listener, timer or call back outlives it.
+  // Gone mid-press or mid-glide (a hub's group collapsed or removed): no listener, timer or call back outlives it.
   useEffect(
     () => () => {
       press.current?.stop();
@@ -235,31 +301,18 @@ export function useReorder<K extends string>(options: ReorderOptions<K>): Reorde
     now.onMove(order, key, from, to);
   };
 
-  /** Let go (or Esc, `cancel`): the lifted row glides into its gap (or back), then the list takes the order. */
-  const settle = (p: Press<K>, cancel: boolean) => {
+  /**
+   * Let go (or Esc, `cancel`): the list takes the new order now, in one render with the lift's end, and the row glides
+   * from where it was let go into its slot (or back), raised until it lands.
+   */
+  const drop = (p: Press<K>, cancel: boolean) => {
     // The click this release makes is the drop's, not the row's.
     swallow.current = true;
     later(() => (swallow.current = false), 0);
-    const el = els.current.get(p.key);
-    const to = cancel ? p.from : p.over;
-    const top = (i: number) => p.tops[i] ?? 0;
-    const bottom = (i: number) => top(i) + (p.heights[i] ?? 0);
-    const offset = to > p.from ? bottom(to) - bottom(p.from) : top(to) - top(p.from);
-    const wait = reduced() ? 0 : SETTLE_MS;
-    setMoving((m) => (m === null ? m : { ...m, over: to, settling: true }));
-    if (el !== undefined && wait > 0) {
-      el.style.transition = `transform ${String(wait)}ms var(--ease-out)`;
-      el.style.transform = `translateY(${String(offset)}px)`;
-    }
-    later(() => {
-      if (el !== undefined) {
-        el.style.transition = "";
-        el.style.transform = "";
-      }
-      setMoving(null);
-      // A list that changed while it settled: it stays where the list now has it.
-      if (latest.current.showing === p.sig) commit(p.key, to);
-    }, wait);
+    setMoving(null);
+    setLanding(p.key);
+    // A list changed under it was put back (cancel): the lift's index would name another row now.
+    if (!cancel && latest.current.showing === p.sig) commit(p.key, p.over);
   };
 
   const begin = (e: PointerEvent, key: K, at: number) => {
@@ -366,7 +419,7 @@ export function useReorder<K extends string>(options: ReorderOptions<K>): Reorde
         } catch {
           // A pointer already gone: the window's listeners still see it.
         }
-        setMoving({ key, from, over: from, size: p.heights[from] ?? 0, settling: false });
+        setMoving({ key, from, over: from, size: p.heights[from] ?? 0 });
       }
       p.low = Math.min(p.low, p.y);
       p.high = Math.max(p.high, p.y);
@@ -386,7 +439,7 @@ export function useReorder<K extends string>(options: ReorderOptions<K>): Reorde
     };
     p.finish = (cancel) => {
       p.stop();
-      if (p.lifted) settle(p, cancel);
+      if (p.lifted) drop(p, cancel);
     };
     const onUp = (ev: globalThis.PointerEvent) => {
       if (ev.pointerId === p.pointerId) p.finish(false);
@@ -407,16 +460,16 @@ export function useReorder<K extends string>(options: ReorderOptions<K>): Reorde
 
   const row = (key: K): ReturnType<Reorder<K>["row"]> => {
     const at = shown.indexOf(key);
-    const lifted = moving?.key === key;
-    const shift = moving === null || lifted ? 0 : shiftOf(at, moving.from, moving.over, moving.size);
+    const raised = moving?.key === key || landing === key;
+    const shift = moving === null || raised ? 0 : shiftOf(at, moving.from, moving.over, moving.size);
     return {
       ref: (el) => {
         if (el === null) els.current.delete(key);
         else els.current.set(key, el);
       },
       onPointerDown: (e) => {
-        // The main button, unmodified (⌃-click is the context menu on a Mac); one at a time; never mid-settle.
-        if (e.button !== 0 || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || press.current !== null || moving !== null || shown.length < 2) return;
+        // The main button, unmodified (⌃-click is the context menu on a Mac); one at a time; never while one lands.
+        if (e.button !== 0 || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || press.current !== null || moving !== null || landing !== null || shown.length < 2) return;
         begin(e, key, at);
       },
       onKeyDown: (e) => {
@@ -442,7 +495,7 @@ export function useReorder<K extends string>(options: ReorderOptions<K>): Reorde
       onDragStart: (e) => e.preventDefault(),
       style: shift === 0 ? undefined : { transform: `translateY(${String(shift)}px)` },
       "data-reorder-row": "",
-      ...(lifted ? { "data-lifted": "" as const } : {}),
+      ...(raised ? { "data-lifted": "" as const } : {}),
     };
   };
 

@@ -2,19 +2,28 @@
 // Your sidebar order through the data layer (W214): the order the hub keeps for you puts the sidebar's rows in it,
 // new ones after; a move from another desktop (sidebar.order) moves them live. Quick moves in a row each show at once,
 // go to the hub one at a time (only the newest of those made meanwhile), and a read older than the last of them,
-// such as the refetch your own earlier move's event made, never puts a row back.
+// such as the refetch your own earlier move's event made, never puts a row back. A row dropped in the sidebar stays
+// put through the hub's answer and its echo (W219).
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ProjectRef, ProjectSummary } from "../../../shared/contracts";
 import type { HubFrame } from "../../../shared/hub";
 import { createDataLayer, type DataLayer, type HubApi } from "../../src/data/queries";
-import { DataProvider } from "../../src/data/react";
+import { DataProvider, useDataLayer } from "../../src/data/react";
+import { UiProvider } from "../../ui";
+import { SETTLE_MS } from "../../ui/lib/reorder";
 import { useSidebarProjects } from "./data";
+import { Sidebar } from "./Sidebar";
 import { saveOrder } from "./yourOrder";
 
 vi.hoisted(() => {
-  (window as unknown as { fleetd: object }).fleetd = { platform: "linux", fixture: null };
+  (window as unknown as { fleetd: object }).fleetd = {
+    platform: "linux",
+    fixture: null,
+    copy: () => Promise.resolve(),
+    updates: { subscribe: () => () => undefined, state: () => new Promise(() => undefined) },
+  };
 });
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -172,5 +181,87 @@ describe("quick moves in a row", () => {
     stored = refs("b", "a", "c");
     await announced();
     expect(shown()).toEqual(["b", "a", "c"]);
+  });
+});
+
+/** The sidebar itself, its rows from the data layer as the frame gives them. */
+function Bar() {
+  const rows = useSidebarProjects(null);
+  const { hub } = useDataLayer();
+  return (
+    <Sidebar
+      projects={rows?.map((p) => ({ ...p, hub }))}
+      screen={{ id: "status", at: hub }}
+      jumpHints={false}
+      collapsed={new Set()}
+      onToggleHub={() => undefined}
+      factory={false}
+      admin={false}
+      go={() => undefined}
+    />
+  );
+}
+
+describe("a row dropped in the sidebar", () => {
+  const ROW = 28;
+  // Each row ROW px tall in its list, drawn as far off its place as its transform says.
+  const layout = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect");
+  afterEach(() => layout.mockReset());
+
+  it("stays put through the hub's answer, a read from before it and the hub's echo", async () => {
+    layout.mockImplementation(function (this: HTMLElement) {
+      const at = this.parentElement === null ? 0 : [...this.parentElement.children].indexOf(this);
+      const by = Number(/translateY\((-?[\d.]+)px\)/.exec(this.style.transform)?.[1] ?? 0);
+      return DOMRect.fromRect({ x: 0, y: at * ROW + by, width: 200, height: ROW });
+    });
+    act(() =>
+      root.render(
+        <UiProvider>
+          <DataProvider layer={layer}>
+            <Bar />
+          </DataProvider>
+        </UiProvider>,
+      ),
+    );
+    act(() => {
+      listener({ t: "state", state: { phase: "live", hub: "devbox:4710", protocol: 1 } });
+      listener({ t: "snapshot", snapshot: { cursor: 1, attention: [], machines: [], projects: [project("a"), project("b"), project("c")] } });
+    });
+    await settle();
+    const rows = () => [...host.querySelectorAll<HTMLElement>("[data-reorder-row]")];
+    const titles = () => rows().map((r) => r.querySelector("[class*=sidebarLabel]")?.textContent);
+    expect(titles()).toEqual(["a", "b", "c"]);
+
+    // a dragged past b and let go.
+    const press = (type: string, y: number, at: EventTarget = window) =>
+      act(() => void at.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, button: 0, pointerId: 1, pointerType: "mouse", clientY: y })));
+    press("pointerdown", ROW / 2, rows()[0]?.querySelector("button") ?? window);
+    press("pointermove", ROW / 2 + 10);
+    press("pointermove", ROW / 2 + ROW + 6);
+    press("pointerup", ROW / 2 + ROW + 6);
+    expect(titles()).toEqual(["b", "a", "c"]);
+    await settle(SETTLE_MS + 20);
+    expect(rows().map((r) => r.style.transform)).toEqual(["", "", ""]);
+
+    // From here nothing in the list may change: no row moved in the DOM, no row's style touched.
+    const changes = new MutationObserver(() => undefined);
+    const list = rows()[0]?.parentElement;
+    if (list === null || list === undefined) throw new Error("no list");
+    changes.observe(list, { childList: true, attributes: true, attributeFilter: ["style"], subtree: true });
+    // A read asked before the set lands answers with the order from before: never shown.
+    holdReads = true;
+    await announced();
+    act(() => sets[0]?.land());
+    await settle();
+    act(() => heldReads.splice(0).forEach((answer) => answer()));
+    await settle(SETTLE_MS + 20);
+    // The hub's echo reads it again: the same order.
+    holdReads = false;
+    await announced();
+    await settle(SETTLE_MS + 20);
+    expect(sets.map((x) => x.order)).toEqual([refs("b", "a", "c")]);
+    expect(titles()).toEqual(["b", "a", "c"]);
+    expect(changes.takeRecords()).toEqual([]);
+    changes.disconnect();
   });
 });

@@ -76,8 +76,15 @@ const mount = (rows: SidebarProject[] = ROWS) => {
   );
 };
 
-// happy-dom lays nothing out: each row is ROW px tall, stacked in its list.
+// happy-dom lays nothing out: each row is ROW px tall, stacked in its list, and drawn as far off its place as its
+// transform says.
 const layout = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect");
+const translated = (el: HTMLElement) => Number(/translateY\((-?[\d.]+)px\)/.exec(el.style.transform)?.[1] ?? 0);
+/**
+ * Where each row was drawn at the last read of the layout (as a browser recalculates styles then): a transition set
+ * after it starts there. A row's whole path in a glide is from that place to its own: no frame anywhere else.
+ */
+let drawn: Map<HTMLElement, number>;
 
 beforeEach(() => {
   went = [];
@@ -92,11 +99,15 @@ beforeEach(() => {
   host = document.createElement("div");
   document.body.appendChild(host);
   root = createRoot(host);
+  drawn = new Map();
   layout.mockImplementation(function (this: HTMLElement) {
+    for (const r of host.querySelectorAll<HTMLElement>("[data-reorder-row]")) drawn.set(r, slot(r) + translated(r));
     const at = this.parentElement === null ? 0 : [...this.parentElement.children].indexOf(this);
-    return DOMRect.fromRect({ x: 0, y: at * ROW, width: 200, height: ROW });
+    return DOMRect.fromRect({ x: 0, y: at * ROW + translated(this), width: 200, height: ROW });
   });
 });
+/** A row's own place in its list, no transform. */
+const slot = (el: HTMLElement) => (el.parentElement === null ? 0 : [...el.parentElement.children].indexOf(el) * ROW);
 afterEach(() => {
   // A press a failed test left open.
   window.dispatchEvent(new PointerEvent("pointercancel", { pointerId: 1 }));
@@ -120,6 +131,23 @@ const button = (title: string): HTMLElement => {
   return found;
 };
 const saved = () => calls.filter((c) => c.tool === "sidebar_order_set").map((c) => (c.input as { order: { projectId: string }[] }).order.map((r) => r.projectId));
+const rows = (label: string) => [...section(label).querySelectorAll<HTMLElement>("[data-reorder-row]")];
+const nameOf = (r: HTMLElement) => r.querySelector("[class*=sidebarLabel]")?.textContent ?? "";
+/** Where each row of a section is on screen now, by name. */
+const onScreen = (label: string) => new Map(rows(label).map((r) => [nameOf(r), slot(r) + translated(r)]));
+/** Each row's path from here: where its first frame draws it and where it ends, the same for a row that stays. */
+const paths = (label: string) =>
+  new Map(
+    rows(label).map((r) => {
+      const to = slot(r) + translated(r);
+      return [nameOf(r), { from: r.style.transition.includes("transform") ? drawn.get(r) : to, to }];
+    }),
+  );
+/** Every row of `label` starts where `was` had it and ends in its slot in `order`: never anywhere else. */
+const glidesFrom = (label: string, was: ReadonlyMap<string, number>, order: string[]) => {
+  expect(titles(label)).toEqual(order);
+  expect(Object.fromEntries(paths(label))).toEqual(Object.fromEntries(order.map((name, i) => [name, { from: was.get(name) ?? i * ROW, to: i * ROW }])));
+};
 const announced = (label: string) => section(label).querySelector("[role='status']")?.textContent;
 
 const pointer = (target: EventTarget, type: string, y: number) =>
@@ -192,6 +220,84 @@ describe("dragging a row", () => {
   });
 });
 
+describe("letting go", () => {
+  /** api lifted and held just past docs: api 34 px down, docs slid up into its place. */
+  const lift = () => {
+    mount();
+    pointer(button("api"), "pointerdown", ROW / 2);
+    pointer(window, "pointermove", ROW / 2 + 10);
+    pointer(window, "pointermove", ROW / 2 + ROW + 6);
+    expect(Object.fromEntries(onScreen("Projects"))).toEqual({ api: ROW + 6, docs: 0, web: 2 * ROW });
+  };
+
+  it("takes the new order in that frame, and glides each row from where it was on screen into its slot", async () => {
+    lift();
+    const was = onScreen("Projects");
+    pointer(window, "pointerup", ROW / 2 + ROW + 6);
+    // One render: the new order, each row drawn where it was, then gliding home over the settle's time.
+    glidesFrom("Projects", was, ["docs", "api", "web"]);
+    const api = rows("Projects")[1];
+    expect(api?.style.transition).toBe(`transform ${String(SETTLE_MS)}ms var(--ease-out)`);
+    expect(api?.style.transform).toBe("");
+    // Raised until it lands; the others no longer make way.
+    expect(api?.hasAttribute("data-lifted")).toBe(true);
+    expect(section("Projects").querySelector("[data-reorder]")).toBeNull();
+    expect(saved()).toEqual([["ada", "home", "docs", "api", "web"]]);
+
+    await settle(SETTLE_MS + 20);
+    expect(section("Projects").querySelector("[data-lifted]")).toBeNull();
+    expect(rows("Projects").map((r) => [r.style.transform, r.style.transition])).toEqual([
+      ["", ""],
+      ["", ""],
+      ["", ""],
+    ]);
+  });
+
+  it("glides it back on Esc, and the rows that made way with it", async () => {
+    lift();
+    const was = onScreen("Projects");
+    act(() => void window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    glidesFrom("Projects", was, ["api", "docs", "web"]);
+    await settle(SETTLE_MS + 20);
+    expect(saved()).toEqual([]);
+  });
+
+  it("with reduced motion, lands at once: nothing glides", () => {
+    const media = vi.spyOn(window, "matchMedia").mockImplementation(
+      (query) => ({ matches: query.includes("reduce"), media: query, onchange: null, addEventListener: () => undefined, removeEventListener: () => undefined, addListener: () => undefined, removeListener: () => undefined, dispatchEvent: () => false }) as MediaQueryList,
+    );
+    try {
+      lift();
+      pointer(window, "pointerup", ROW / 2 + ROW + 6);
+      expect(titles("Projects")).toEqual(["docs", "api", "web"]);
+      expect(rows("Projects").map((r) => [r.style.transform, r.style.transition])).toEqual([
+        ["", ""],
+        ["", ""],
+        ["", ""],
+      ]);
+      expect(section("Projects").querySelector("[data-lifted]")).toBeNull();
+    } finally {
+      media.mockRestore();
+    }
+  });
+
+  it("moves nothing when the same order comes back, as the hub's own echo does", async () => {
+    lift();
+    pointer(window, "pointerup", ROW / 2 + ROW + 6);
+    await settle(SETTLE_MS + 20);
+    const was = onScreen("Projects");
+    const styles = new MutationObserver(() => undefined);
+    styles.observe(section("Projects"), { attributes: true, attributeFilter: ["style"], subtree: true });
+    // The order the hub kept, as the sidebar's rows after the read: the same rows drawn again, then in that order.
+    mount();
+    mount([...ROWS.slice(0, 2), ROWS[3], ROWS[2], ROWS[4]].filter((r) => r !== undefined));
+    await settle(SETTLE_MS + 20);
+    expect(styles.takeRecords()).toEqual([]);
+    styles.disconnect();
+    glidesFrom("Projects", was, ["docs", "api", "web"]);
+  });
+});
+
 describe("a list that changes under a drag", () => {
   // A new project, first by title among the projects.
   const WITH_NEW = [...ROWS.slice(0, 2), row("aaa"), ...ROWS.slice(2)];
@@ -214,16 +320,19 @@ describe("a list that changes under a drag", () => {
     expect(saved()).toEqual([]);
   });
 
-  it("moves nothing when it changes while a dropped row settles", async () => {
+  it("glides every row on from where it is when it changes while a dropped row glides", async () => {
     mount();
     pointer(button("api"), "pointerdown", ROW / 2);
     pointer(window, "pointermove", ROW / 2 + 10);
     pointer(window, "pointermove", 2 * ROW + 2);
     pointer(window, "pointerup", 2 * ROW + 2);
+    expect(saved()).toEqual([["ada", "home", "docs", "api", "web"]]);
+    // Another desktop's order arrives mid-glide, with a new project: they turn toward their places in it.
+    const was = onScreen("Projects");
     mount(WITH_NEW);
+    glidesFrom("Projects", was, ["aaa", "api", "docs", "web"]);
     await settle(SETTLE_MS + 20);
-    expect(titles("Projects")).toEqual(["aaa", "api", "docs", "web"]);
-    expect(saved()).toEqual([]);
+    expect(section("Projects").querySelector("[data-lifted]")).toBeNull();
   });
 
   it("finds a pressed row by its key at the lift, the list changed since the press", async () => {
@@ -242,7 +351,7 @@ describe("a list that changes under a drag", () => {
 });
 
 describe("a section that goes mid-drag", () => {
-  it("leaves no listener on the window, and nothing settles or saves after it", async () => {
+  it("leaves no listener on the window, and nothing glides or saves after it", async () => {
     const removed = vi.spyOn(window, "removeEventListener");
     mount();
     pointer(button("api"), "pointerdown", ROW / 2);
@@ -251,15 +360,18 @@ describe("a section that goes mid-drag", () => {
     for (const type of ["pointermove", "pointerup", "pointercancel", "keydown"]) expect(removed.mock.calls.some(([t]) => t === type)).toBe(true);
     removed.mockRestore();
 
-    // Gone mid-settle: its timer goes with it.
+    // Gone mid-glide: the drop saved, and its timer goes with it.
+    const timers = vi.spyOn(window, "clearTimeout");
     mount();
     pointer(button("api"), "pointerdown", ROW / 2);
     pointer(window, "pointermove", ROW / 2 + 10);
     pointer(window, "pointermove", 2 * ROW + 2);
     pointer(window, "pointerup", 2 * ROW + 2);
     act(() => root.render(<div />));
+    expect(timers).toHaveBeenCalled();
+    timers.mockRestore();
     await settle(SETTLE_MS + 20);
-    expect(saved()).toEqual([]);
+    expect(saved()).toEqual([["ada", "home", "docs", "api", "web"]]);
   });
 });
 
@@ -378,9 +490,11 @@ describe("the keyboard", () => {
     act(() => docs.focus());
     const key = (k: string, alt = true) =>
       act(() => void document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: k, altKey: alt, bubbles: true, cancelable: true })));
+    const was = onScreen("Projects");
     key("ArrowUp");
+    // It glides there, as a drop does.
+    glidesFrom("Projects", was, ["docs", "api", "web"]);
     await settle();
-    expect(titles("Projects")).toEqual(["docs", "api", "web"]);
     expect(document.activeElement).toBe(button("docs"));
     expect(announced("Projects")).toBe("docs moved to 1 of 3");
     expect(saved().at(-1)).toEqual(["ada", "home", "docs", "api", "web"]);
