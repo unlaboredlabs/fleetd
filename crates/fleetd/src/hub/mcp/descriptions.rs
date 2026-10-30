@@ -205,6 +205,14 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
         "A person's own device only. List the vaults the caller's 1Password token reads, with the 1Password SDK on a machine holding it (machineId, default the first online; its first Test there installs the SDK). test.vaults, else test.error in plain words with the token masked; recorded as the token's lastTest.",
     ),
     (
+        "sidebar_order_get",
+        "The caller's own order of the projects and Navis in their sidebar, by ref; empty until they move one, and for a key with no person. A project or Navi it doesn't name goes after the ones it does.",
+    ),
+    (
+        "sidebar_order_set",
+        "A person's own device only. order: the caller's projects and Navis in their new order, replacing the one before. Their other devices follow (sidebar.order, which only they see); nobody else's sidebar changes.",
+    ),
+    (
         "claude_account_test",
         "Try an account with one tiny claude -p call on a machine holding it (machineId, default the first online): account hub_api (owners' and admins' devices) or mine (the caller's subscription). test.ok, else test.error in claude's words with the secret masked; recorded as the account's lastTest.",
     ),

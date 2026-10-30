@@ -66,6 +66,10 @@ describe("event effects", () => {
     expect(tools(e("people.changed"))).toContain("setup_list");
   });
 
+  it("your sidebar order moved on another desktop: this one reads it again, and nothing else", () => {
+    expect(effectsOf(e("sidebar.order"))).toEqual({ invalidate: [{ tool: "sidebar_order_get" }], resync: false });
+  });
+
   it("a machine or project coming or going resyncs; an unknown type does nothing", () => {
     expect(effectsOf(e("project.added")).resync).toBe(true);
     // A repo removed from a project can bring its checkout back as a project of its own.

@@ -3001,6 +3001,24 @@ output!(OnePasswordTestOutput {
     test: crate::onepassword::OnePasswordTest
 });
 
+// sidebar_order_get, sidebar_order_set: a person's own order of the projects and Navis in their sidebar (W214,
+// `hub/sidebar_order`), the same on each of their desktops; nobody else's sidebar follows it.
+/// The most projects and Navis an order names.
+pub const SIDEBAR_ORDER_MAX: usize = 2000;
+input!(SidebarOrderGetInput {});
+output!(SidebarOrderGetOutput {
+    /// The caller's projects and Navis in the order they put them, by ref; empty until they move one. A project or
+    /// Navi it doesn't name goes after the ones it does.
+    order: Vec<ProjectRef>,
+});
+input!(SidebarOrderSetInput {
+    /// The caller's projects and Navis in their new order; it replaces the one before.
+    order: UniqueList<ProjectRef, 0, SIDEBAR_ORDER_MAX>,
+});
+output!(SidebarOrderSetOutput {
+    order: Vec<ProjectRef>
+});
+
 /// Declares the static tool table: `McpToolName` with each tool's minimum grant role and its input and output types.
 macro_rules! tools {
     ($($name:ident => $variant:ident, $scope:ident, $input:ty, $output:ty;)*) => {
@@ -3115,6 +3133,9 @@ tools! {
     onepassword_set => OnePasswordSet, Operate, OnePasswordSetInput, OnePasswordSetOutput;
     onepassword_remove => OnePasswordRemove, Operate, OnePasswordRemoveInput, OnePasswordRemoveOutput;
     onepassword_test => OnePasswordTest, Operate, OnePasswordTestInput, OnePasswordTestOutput;
+    // Human keys only (the set handler checks): a person's own sidebar order.
+    sidebar_order_get => SidebarOrderGet, Read, SidebarOrderGetInput, SidebarOrderGetOutput;
+    sidebar_order_set => SidebarOrderSet, Read, SidebarOrderSetInput, SidebarOrderSetOutput;
     wake_set => WakeSet, Operate, WakeSetInput, WakeSetOutput;
     wake_list => WakeList, Read, WakeListInput, WakeListOutput;
     wake_cancel => WakeCancel, Operate, WakeCancelInput, WakeCancelOutput;

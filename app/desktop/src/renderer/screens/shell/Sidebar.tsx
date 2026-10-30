@@ -1,6 +1,8 @@
-// The sidebar: your Navis pinned on top (navi/model.ts), then the projects (each alphabetical, so none moves), each
-// opening its chat and saying why it wants you ("reply", "approve", "secret", "blocked") or how many agents work; a
-// chat with a message you haven't seen is bold. With no Navi yet, one quiet row offers to meet it (#/navi), with no
+// The sidebar: your Navis pinned on top (navi/model.ts), then the projects, each section in your own order: drag a row,
+// or move a focused one with ⌥↑ / ⌥↓, and it stays there on each of your desktops (yourOrder.ts; new ones go at the
+// end, by title, and nothing moves by itself, so a row never moves under the pointer). Each opens its chat and says
+// why it wants you ("reply", "approve", "secret", "blocked") or how many agents work; a chat with a message you haven't
+// seen is bold. With no Navi yet, one quiet row offers to meet it (#/navi), with no
 // heading. Then three rows: Status, Factory (its Agent time tab too) and Settings, which for an admin says how many
 // of the hub's required setup steps are left and opens on them (a project's agents and PRs are in the panel beside
 // its chat); then any update to make, and the hub (HubStatus), which
@@ -12,8 +14,9 @@
 // projects are a group under its name, which collapses; the footer has a row per hub. With one, there is no name and
 // no group, as before.
 import { Activity, ChevronDown, ChevronRight, Factory, Plus, Settings, Sparkle } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { display, type ShortcutId } from "../../../shared/shortcuts";
+import type { DataLayer } from "../../src/data/queries";
 import { HubScope, useDataLayer, useHub, useHubs, useToolQuery } from "../../src/data/react";
 import { archiveNavi, RenameNaviDialog, type NaviTarget } from "../navi/actions";
 import { isNavi } from "../navi/model";
@@ -32,6 +35,7 @@ import {
   Text,
   Tooltip,
   Truncate,
+  useReorder,
 } from "../../ui";
 import { ProjectAvatar } from "../projects/ProjectAvatar";
 import { RemoveProjectDialog, type RemoveTarget } from "../projects/RemoveProjectDialog";
@@ -47,6 +51,7 @@ import { useOfflineAsOf } from "./offline";
 import { sameProject, type ProjectKey, type Screen } from "./routes";
 import type { Placed } from "./Shell";
 import { shownRows } from "./sidebarState";
+import { saveOrder, withMoved } from "./yourOrder";
 import s from "./shell.module.css";
 
 const platform = window.fleetd.platform;
@@ -70,6 +75,15 @@ export interface SidebarProps {
 }
 
 const UNREAD = "New message from the lead";
+
+/** Saves `hub`'s order with `moved` (keys of one section, in their new order), from its rows among `all`. */
+const save = (layer: DataLayer | undefined, all: ReadonlyArray<Placed>, hub: string, moved: readonly string[]) => {
+  if (layer === undefined) return;
+  void saveOrder(layer, withMoved(all.filter((p) => p.hub === hub), moved).map(routeOf));
+};
+
+/** The rows of a section by key, for drawing them in the order the reorder shows. */
+const byKey = (rows: ReadonlyArray<Placed>): ReadonlyMap<string, Placed> => new Map(rows.map((p) => [p.key, p]));
 
 const noInput = {};
 
@@ -178,7 +192,7 @@ export function Sidebar({ projects, screen, jumpHints, collapsed, onToggleHub, f
       }
     >
       {projects === undefined ? null : (
-        <NaviSection navis={projects.filter((p) => isNavi(p.project))} named={several} screen={screen} jumpOf={jumpOf} go={go} />
+        <NaviSection navis={projects.filter((p) => isNavi(p.project))} all={projects} named={several} screen={screen} jumpOf={jumpOf} go={go} />
       )}
       {hubs.map((hub) => {
         // A hub whose projects haven't loaded (offline from the start, say) waits on its own; the others show theirs.
@@ -189,6 +203,7 @@ export function Sidebar({ projects, screen, jumpHints, collapsed, onToggleHub, f
           <HubScope key={hub.id} hub={hub}>
             <ProjectGroup
               rows={rows}
+              all={projects ?? []}
               named={several}
               collapsed={several && collapsed.has(hub.id)}
               onToggle={() => onToggleHub(hub.id)}
@@ -220,9 +235,27 @@ export function Sidebar({ projects, screen, jumpHints, collapsed, onToggleHub, f
  * The Navis, every hub's, pinned above the projects; with several hubs each says its hub. With none yet, one quiet row
  * to meet Navi (on the hub of the screen you're on), with no heading over it.
  */
-function NaviSection(props: { navis: ReadonlyArray<Placed>; named: boolean; screen: Routed; jumpOf: (p: Placed) => number | null; go: (screen: Screen) => void }) {
-  const { navis, named, screen, go } = props;
+function NaviSection(props: {
+  navis: ReadonlyArray<Placed>;
+  all: ReadonlyArray<Placed>;
+  named: boolean;
+  screen: Routed;
+  jumpOf: (p: Placed) => number | null;
+  go: (screen: Screen) => void;
+}) {
+  const { navis, all, named, screen, go } = props;
   const hubs = useHubs();
+  const rows = useMemo(() => byKey(navis), [navis]);
+  // With several hubs, a Navi moves among its own hub's: each hub keeps the order of its own.
+  const reorder = useReorder({
+    keys: useMemo(() => navis.map((p) => p.key), [navis]),
+    name: (key) => rows.get(key)?.project.title ?? "",
+    group: named ? (key) => rows.get(key)?.hub ?? "" : undefined,
+    onMove: (order, key) => {
+      const hub = rows.get(key)?.hub;
+      if (hub !== undefined) save(hubs.find((h) => h.id === hub)?.layer, all, hub, order);
+    },
+  });
   if (navis.length === 0) {
     return (
       <SidebarSection label="Navi">
@@ -239,20 +272,28 @@ function NaviSection(props: { navis: ReadonlyArray<Placed>; named: boolean; scre
         </Button>
       }
     >
-      {navis.map((p) => {
-        const hub = hubs.find((h) => h.id === p.hub);
-        return hub === undefined ? null : (
-          <HubScope key={p.key} hub={hub}>
-            <NaviRow
-              p={p}
-              named={named}
-              current={screen.id === "project" && screen.at === p.hub && sameProject(screen.project, p.project)}
-              jump={props.jumpOf(p)}
-              go={go}
-            />
-          </HubScope>
-        );
-      })}
+      <div {...reorder.list}>
+        {reorder.shown.map((key) => {
+          const p = rows.get(key);
+          const hub = p === undefined ? undefined : hubs.find((h) => h.id === p.hub);
+          return p === undefined || hub === undefined ? null : (
+            <div key={key} {...reorder.row(key)}>
+              <HubScope hub={hub}>
+                <NaviRow
+                  p={p}
+                  named={named}
+                  current={screen.id === "project" && screen.at === p.hub && sameProject(screen.project, p.project)}
+                  jump={props.jumpOf(p)}
+                  go={go}
+                />
+              </HubScope>
+            </div>
+          );
+        })}
+      </div>
+      <span role="status" className={s.srOnly}>
+        {reorder.status}
+      </span>
     </SidebarSection>
   );
 }
@@ -316,6 +357,8 @@ function HubFooter() {
  */
 function ProjectGroup(props: {
   rows: ReadonlyArray<Placed> | undefined;
+  /** Every hub's rows: this hub's whole order is saved from them. */
+  all: ReadonlyArray<Placed>;
   named: boolean;
   collapsed: boolean;
   onToggle: () => void;
@@ -328,6 +371,13 @@ function ProjectGroup(props: {
   const state = useHubState();
   const asOf = useOfflineAsOf();
   const [removing, setRemoving] = useState<RemoveTarget | null>(null);
+  const layer = useDataLayer();
+  const rowsByKey = useMemo(() => byKey(rows ?? []), [rows]);
+  const reorder = useReorder({
+    keys: useMemo(() => rows?.map((p) => p.key) ?? [], [rows]),
+    name: (key) => rowsByKey.get(key)?.project.title ?? "",
+    onMove: (order) => save(layer, props.all, hub.id, order),
+  });
   const at = named ? { at: hub.id } : {};
   const openRow = (p: SidebarProject) => go({ id: "project", project: routeOf(p), message: null, ...at });
   const menu = (p: SidebarProject) => () => {
@@ -383,19 +433,29 @@ function ProjectGroup(props: {
           No projects yet. Add one: a GitHub repo, or a folder on one of your machines.
         </Text>
       ) : (
-        rows.map((p) => (
-          <ContextMenu key={p.key} menu={menu(p)}>
-            <SidebarItem
-              label={p.project.title}
-              icon={<ProjectAvatar project={p.project} size={18} />}
-              current={sameProject(open, p.project)}
-              emphasis={p.unread}
-              trailing={trailing(p, props.jumpOf(p), asOf)}
-              onClick={() => openRow(p)}
-            />
-          </ContextMenu>
-        ))
+        <div {...reorder.list}>
+          {reorder.shown.map((key) => {
+            const p = rowsByKey.get(key);
+            return p === undefined ? null : (
+              <div key={key} {...reorder.row(key)}>
+                <ContextMenu menu={menu(p)}>
+                  <SidebarItem
+                    label={p.project.title}
+                    icon={<ProjectAvatar project={p.project} size={18} />}
+                    current={sameProject(open, p.project)}
+                    emphasis={p.unread}
+                    trailing={trailing(p, props.jumpOf(p), asOf)}
+                    onClick={() => openRow(p)}
+                  />
+                </ContextMenu>
+              </div>
+            );
+          })}
+        </div>
       )}
+      <span role="status" className={s.srOnly}>
+        {reorder.status}
+      </span>
       <RemoveProjectDialog project={removing} onClose={() => setRemoving(null)} />
     </SidebarSection>
   );

@@ -173,6 +173,7 @@ pub fn registry() -> Registry {
     crate::hub::mcp_servers::tools::register(&mut tools);
     crate::hub::claude_accounts::tools::register(&mut tools);
     crate::hub::onepassword::register(&mut tools);
+    crate::hub::sidebar_order::register(&mut tools);
     crate::hub::github_app::tools::register(&mut tools);
     crate::hub::hub_links::tools::register(&mut tools);
     crate::hub::train::tools::register(&mut tools);

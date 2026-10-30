@@ -107,6 +107,8 @@ export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unk
   // administers (the sidebar's entry).
   // Setup's People step reads it too.
   if (type === "people.changed") out.push({ tool: "people_list" }, { tool: "hub_info" }, { tool: "setup_list" });
+  // You moved a project or a Navi on another desktop: this sidebar follows (the hub sends it to your devices only).
+  if (type === "sidebar.order") out.push({ tool: "sidebar_order_get" });
   // A device paired: Your devices shows it, and Pair a phone notices it.
   if (type === "key.paired") out.push({ tool: "people_list" });
   // A session started, changed hands, ended or its recording landed: the Sessions view's list reads it again. A

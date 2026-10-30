@@ -24,13 +24,15 @@ async fn events_list(
 ) -> Result<EventsListOutput, ToolError> {
     let r = &input.project_ref;
     require(&caller, Role::Read, Some(&r.machine_id))?;
-    let (events, more) = hub.events.project_page(
+    let (mut events, more) = hub.events.project_page(
         r,
         input.before.map(|s| s.get()),
         input.types.as_deref(),
         input.hub_wide == Some(true),
         input.limit.get() as usize,
     )?;
+    // Another person's sidebar order is theirs alone (W214).
+    events.retain(|e| !crate::hub::sidebar_order::someone_elses(&caller, e));
     Ok(EventsListOutput {
         events: List::unchecked(events),
         more,
@@ -69,7 +71,12 @@ async fn events_wait(
         let visible: Vec<_> = page
             .events
             .into_iter()
-            .filter(|e| can_read(&caller, e) && !crate::hub::navi::owner::about(&navis, e))
+            .filter(|e| {
+                can_read(&caller, e)
+                    && !crate::hub::navi::owner::about(&navis, e)
+                    // Another person's sidebar order is theirs alone (W214).
+                    && !crate::hub::sidebar_order::someone_elses(&caller, e)
+            })
             .collect();
         if !visible.is_empty() || total == 0 || (remaining == 0 && !page.more) {
             let next = if page.more {

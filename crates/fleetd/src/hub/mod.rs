@@ -45,6 +45,7 @@ pub mod repos;
 pub mod reviews;
 pub mod serve;
 pub mod setup;
+pub mod sidebar_order;
 pub mod skills;
 pub mod slots;
 pub mod status;
