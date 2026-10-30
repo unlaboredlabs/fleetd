@@ -18,7 +18,7 @@ describe("empty screens", () => {
   const screens = sources(join(SRC, "screens")).filter((f) => readFileSync(f, "utf8").includes('contentInsetAdjustmentBehavior="automatic"'));
 
   it("finds the screens that scroll under the bars", () => {
-    expect(screens.map((f) => f.slice(SRC.length + 1)).sort()).toEqual(expect.arrayContaining(["screens/Approvals.tsx", "screens/Chats.tsx", "screens/Settings.tsx"]));
+    expect(screens.map((f) => f.slice(SRC.length + 1)).sort()).toEqual(expect.arrayContaining(["screens/Chats.tsx", "screens/Settings.tsx"]));
   });
 
   it.each(screens.map((f) => [f.slice(SRC.length + 1), f]))("%s doesn't stretch its content to the screen", (_, file) => {

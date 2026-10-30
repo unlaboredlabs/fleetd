@@ -35,16 +35,14 @@ export const useSession = (): Session => {
   return session;
 };
 
-export type ApprovalsParams = { Approvals: { focus?: string } | undefined };
 export type TabParams = {
   ChatsTab: undefined;
-  ApprovalsTab: NavigatorScreenParams<ApprovalsParams> | undefined;
   SettingsTab: undefined;
 };
 export type RootParams = {
   Home: NavigatorScreenParams<TabParams> | undefined;
-  /** `messageId`: a search hit, scrolled to and lit for a moment. */
-  Chat: { key: Key; messageId?: string };
+  /** `messageId`: a search hit; `requestId`: an approval, at its card. Either is scrolled to and lit for a moment. */
+  Chat: { key: Key; messageId?: string; requestId?: string };
 } & ManageParams;
 /** A project's and a Navi's own screens (screens/manage): made from the Chats list's +, opened from a chat's header. */
 export type ManageParams = {

@@ -2,6 +2,8 @@
 // shows for them, registering and re-registering on a new token, tap routing and signing out.
 import nacl from "tweetnacl";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { cardOf } from "./chatView";
+import type { ChatMessage, HumanRequest } from "./desktop";
 import { HubClient } from "./hub/client";
 import { fakeHub } from "./hub/fake";
 import fixture from "./push.fixture.json";
@@ -12,6 +14,7 @@ import {
   androidShown,
   CATEGORIES,
   categoryOf,
+  chatAt,
   openPayload,
   opensRoute,
   pushedPayload,
@@ -107,6 +110,27 @@ describe("tapping a notification", () => {
     const userInfo = { aps: { alert: { title: "fleetd", body: "New activity" }, "mutable-content": 1 }, c: approval!.ciphertext };
     expect(tapRoute({}, userInfo, keys)).toEqual({ t: "approval", requestId: "Q7", key: "devbox/shop" });
     expect(tapRoute({}, { data: { c: message!.ciphertext } }, keys)).toEqual({ t: "chat", key: "devbox/navi-ada" });
+  });
+
+  it("opens an approval's chat, scrolled to the card that answers it", () => {
+    const userInfo = { aps: { alert: { title: "fleetd", body: "New activity" }, "mutable-content": 1 }, c: approval!.ciphertext };
+    const route = tapRoute({}, userInfo, keys);
+    const at = route === undefined ? undefined : chatAt(route, undefined);
+    expect(at).toEqual({ key: "devbox/shop", requestId: "Q7" });
+    // The chat lands on the message whose card asks it, not on another approval's or a plain message.
+    const said = (messageId: string, item?: ChatMessage["item"]) => ({ message: { messageId, ...(item === undefined ? {} : { item }) } as ChatMessage });
+    const card = (requestId: string) => ({ kind: "command_approval", requestId, machineId: "devbox", state: "open" }) as ChatMessage["item"];
+    expect(cardOf([said("m1"), said("m2", card("Q6")), said("m3", card("Q7")), said("m4")], at!.requestId!)).toBe("m3");
+    expect(cardOf([said("m1")], "Q7")).toBeUndefined();
+    expect(chatAt({ t: "chat", key: "devbox/navi-ada" }, undefined)).toEqual({ key: "devbox/navi-ada" });
+  });
+
+  it("finds the chat of an approval that didn't say it among the open requests, once they're read", () => {
+    const open = { requestId: "Q7", kind: "approval", state: "open", projectRef: { machineId: "devbox", projectId: "shop" }, createdAt: "2026-10-28T10:00:00Z", text: "Deploy" } as HumanRequest;
+    expect(chatAt({ t: "approval", requestId: "Q7" }, undefined)).toBeUndefined();
+    expect(chatAt({ t: "approval", requestId: "Q7" }, [open])).toEqual({ key: "devbox/shop", requestId: "Q7" });
+    // Answered meanwhile: the app just opens.
+    expect(chatAt({ t: "approval", requestId: "Q7" }, [])).toBeNull();
   });
 
   it("just opens the app for one it can't read", () => {

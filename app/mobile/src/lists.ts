@@ -85,8 +85,11 @@ export const lists = (s: Pick<State, "projects" | "chatStates" | "requests"> & P
   };
 };
 
-/** The chats list's filters, as Telegram's folders: everything, what you haven't read, the Navis, the projects. */
-export type Filter = "all" | "unread" | "navis" | "projects";
+/**
+ * The chats list's filters, as Telegram's folders: everything, what you haven't read, the chats with an approval
+ * waiting for you, the Navis, the projects.
+ */
+export type Filter = "all" | "unread" | "needsYou" | "navis" | "projects";
 
 export interface ChatRow extends Row {
   readonly pinned: boolean;
@@ -99,9 +102,12 @@ export interface ChatRow extends Row {
   readonly lastSeq: number;
 }
 
+/** A chat with an approval open floats above the rest, pinned ones too: answering it is what the phone is for. */
+const waitingFirst = (a: Row, b: Row): number => Number(b.approvals > 0) - Number(a.approvals > 0);
+
 /**
- * The chats list, Telegram's way: one list, the pinned chats on top in the order pinned, then every other chat with
- * what spoke last first. Each says how many messages came since you read it, and whether it's muted (its count goes
+ * The chats list, Telegram's way: one list, the chats with an approval waiting on top, then the pinned ones in the
+ * order pinned, then every other chat with what spoke last first. Each says how many messages came since you read it, and whether it's muted (its count goes
  * grey). Archived Navis are in none of it.
  */
 export const chatList = (s: Parameters<typeof lists>[0], prefs: Prefs, filter: Filter = "all"): readonly ChatRow[] | undefined => {
@@ -119,12 +125,14 @@ export const chatList = (s: Parameters<typeof lists>[0], prefs: Prefs, filter: F
         lastSeq: s.chatStates[r.key]?.lastSeq ?? 0,
       };
     })
-    .sort((a, b) => (a.pinned && b.pinned ? prefs.pinned.indexOf(a.key) - prefs.pinned.indexOf(b.key) : a.pinned ? -1 : b.pinned ? 1 : byRecent(a, b)));
+    .sort((a, b) => waitingFirst(a, b) || (a.pinned && b.pinned ? prefs.pinned.indexOf(a.key) - prefs.pinned.indexOf(b.key) : a.pinned ? -1 : b.pinned ? 1 : byRecent(a, b)));
   switch (filter) {
     case "all":
       return rows;
     case "unread":
       return rows.filter((r) => r.unread > 0 || r.markedUnread || r.want !== undefined);
+    case "needsYou":
+      return rows.filter((r) => r.approvals > 0);
     case "navis":
       return rows.filter((r) => r.navi);
     case "projects":

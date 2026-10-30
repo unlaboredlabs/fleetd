@@ -5,7 +5,7 @@
 // (plugins/notification-service); on Android the app's background task does and posts it (notifications.ts). A
 // notification's buttons (Approve and Deny, Review, Reply) are its category, which the hub picks inside the sealed
 // payload; what each does is `act`, over a connection of its own, since the app may have been started only for it.
-import type { HubError } from "./desktop";
+import type { HubError, HumanRequest } from "./desktop";
 import { HubClient, READY_TIMEOUT_MS, type Transport } from "./hub/client";
 import { fromBase64, openSealed, toBase64, utf8, type KeyPair } from "./seal";
 import { keyOf, refOf, type Key } from "./store";
@@ -212,6 +212,24 @@ export const routeOf = (p: PushPayload): Route | undefined => {
   const key = p.machineId !== undefined && p.projectId !== undefined ? keyOf({ machineId: p.machineId, projectId: p.projectId }) : undefined;
   if (p.kind === "approval" && p.requestId !== undefined) return key === undefined ? { t: "approval", requestId: p.requestId } : { t: "approval", requestId: p.requestId, key };
   return key === undefined ? undefined : { t: "chat", key };
+};
+
+/** Where a route opens: a chat, an approval's at its card. */
+export interface ChatAt {
+  readonly key: Key;
+  readonly requestId?: string;
+}
+
+/**
+ * The chat a tapped notification opens: its own, or the approval's, scrolled to the card that answers it. An approval
+ * that didn't say its chat is found among the open requests: undefined until they are read, null once they are and it
+ * isn't there (answered meanwhile), when the app just opens.
+ */
+export const chatAt = (route: Route, requests: readonly HumanRequest[] | undefined): ChatAt | null | undefined => {
+  if (route.t === "chat") return { key: route.key };
+  const key = route.key ?? requests?.find((r) => r.requestId === route.requestId)?.projectRef;
+  if (key === undefined) return requests === undefined ? undefined : null;
+  return { key: typeof key === "string" ? key : keyOf(key), requestId: route.requestId };
 };
 
 /** The notification Android posts for a payload (iOS's extension does the same in Swift). */

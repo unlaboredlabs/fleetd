@@ -1,6 +1,7 @@
-// Chats, as Telegram and Messages list them: one list, your pinned chats on top, then whatever spoke last, each a
-// full-bleed row with its avatar, its newest message and when, and a count of what you haven't read (grey when
-// muted). Filters above it narrow it to the unread, the Navis or the projects. Swipe a row right to mark it read or
+// Chats, as Telegram and Messages list them: one list, the chats with an approval waiting for you on top with its
+// count, then your pinned chats, then whatever spoke last, each a full-bleed row with its avatar, its newest message
+// and when, and a count of what you haven't read (grey when muted). Filters above it narrow it to the unread, the chats
+// that need you, the Navis or the projects. Swipe a row right to mark it read or
 // unread or to pin it, left to mute it; hold it for the same in iOS's own menu (ui/HoldMenu.tsx). Pin, mute and read
 // live on this phone (prefs.ts). Search finds chats by name and messages by their words (search.ts). Pulling down reads
 // the hub again.
@@ -44,6 +45,7 @@ export const searchBar = { placeholder: "Search", placement: "stacked", hideWhen
 const FILTERS: ReadonlyArray<{ readonly id: Filter; readonly label: string }> = [
   { id: "all", label: "All" },
   { id: "unread", label: "Unread" },
+  { id: "needsYou", label: "Needs you" },
   { id: "navis", label: "Navis" },
   { id: "projects", label: "Projects" },
 ];
@@ -106,7 +108,7 @@ export function Chats({ navigation }: NativeStackScreenProps<{ Chats: undefined 
   const arrived = useArrived(lines.map((l) => l.key));
 
   const open = (key: Key, messageId?: string) => root.navigate("Chat", messageId === undefined ? { key } : { key, messageId });
-  const unreadCount = all?.filter((r) => (r.unread > 0 && !r.muted) || r.markedUnread).length ?? 0;
+  const counts = { unread: all?.filter((r) => (r.unread > 0 && !r.muted) || r.markedUnread).length ?? 0, needsYou: all?.filter((r) => r.approvals > 0).length ?? 0 };
 
   const empty =
     shown === undefined ? (
@@ -119,6 +121,8 @@ export function Chats({ navigation }: NativeStackScreenProps<{ Chats: undefined 
       <EmptyState icon="search" title="No Results" body={`Nothing in your chats says “${query}”.`} />
     ) : filter === "unread" ? (
       <EmptyState icon="doneAll" title="All Caught Up" body="Nothing you haven't read." />
+    ) : filter === "needsYou" ? (
+      <EmptyState icon="doneAll" title="All Caught Up" body="When a Navi or a lead asks before it acts, its chat shows up here." />
     ) : (
       <EmptyState icon="bubble" title="No Chats Yet" body="Make a Navi or add a project in the desktop app, and its chat shows up here." />
     );
@@ -145,7 +149,7 @@ export function Chats({ navigation }: NativeStackScreenProps<{ Chats: undefined 
         ListHeaderComponent={
           <View>
             <ConnectionBanner state={state.hub} onPairAgain={pairAgain} />
-            {query === "" && all !== undefined && all.length > 0 ? <Filters value={filter} onChange={setFilter} unread={unreadCount} /> : null}
+            {query === "" && all !== undefined && all.length > 0 ? <Filters value={filter} onChange={setFilter} counts={counts} /> : null}
           </View>
         }
         ListEmptyComponent={empty}
@@ -173,21 +177,24 @@ export function Chats({ navigation }: NativeStackScreenProps<{ Chats: undefined 
 
 /**
  * The list's filters, as Telegram's folder tabs on iOS 26: a Liquid Glass capsule each, as the tab bar's, the chosen
- * one tinted with the accent rather than filled. Without glass, quiet fills and the accent.
+ * one tinted with the accent rather than filled. Without glass, quiet fills and the accent. Unread counts its chats in
+ * the accent, Needs you its approvals' chats in the rows' approval orange.
  */
-function Filters({ value, onChange, unread }: { value: Filter; onChange: (f: Filter) => void; unread: number }) {
+function Filters({ value, onChange, counts }: { value: Filter; onChange: (f: Filter) => void; counts: { readonly unread: number; readonly needsYou: number } }) {
   const t = useTheme();
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters} accessibilityRole="tablist">
       <GlassGroup style={styles.filterGroup} spacing={4}>
         {FILTERS.map((f) => {
           const on = f.id === value;
+          const count = f.id === "unread" || f.id === "needsYou" ? counts[f.id] : 0;
+          const tone = f.id === "needsYou" ? t.warning : t.accentFill;
           const face = (
             <>
               <Text style={[type.subhead, styles.filterText, { color: on ? t.onAccent : t.label }]}>{f.label}</Text>
-              {f.id === "unread" && unread > 0 ? (
-                <View style={[styles.filterCount, { backgroundColor: on ? t.onAccent : t.accentFill }]}>
-                  <Text style={[type.caption2, styles.filterCountText, { color: on ? t.accentFill : t.onAccent }]}>{unread}</Text>
+              {count > 0 ? (
+                <View style={[styles.filterCount, { backgroundColor: on ? t.onAccent : tone }]}>
+                  <Text style={[type.caption2, styles.filterCountText, { color: on ? t.accentFill : t.onAccent }]}>{count}</Text>
                 </View>
               ) : null}
             </>
@@ -197,7 +204,7 @@ function Filters({ value, onChange, unread }: { value: Filter; onChange: (f: Fil
               key={f.id}
               accessibilityRole="tab"
               accessibilityState={{ selected: on }}
-              accessibilityLabel={f.id === "unread" && unread > 0 ? `${f.label}, ${String(unread)}` : f.label}
+              accessibilityLabel={count > 0 ? `${f.label}, ${String(count)}` : f.label}
               onPress={() => {
                 if (on) return;
                 haptics.select();

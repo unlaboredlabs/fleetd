@@ -137,6 +137,10 @@ export const previewOf = (item: Pick<ChatItem, "text" | "message" | "author"> & 
 };
 
 /** Which side a row sits on: the person's on the right, the lead's and agents' on the left, the rest centred. */
+/** The message whose card answers an approval: where a tapped approval opens its chat. Undefined: not in what's read. */
+export const cardOf = (items: readonly Pick<ChatItem, "message">[], requestId: string): string | undefined =>
+  items.find((i) => i.message?.item?.kind === "command_approval" && i.message.item.requestId === requestId)?.message?.messageId;
+
 export type Side = "me" | "them" | "center";
 
 export const sideOf = (item: Pick<ChatItem, "author" | "kind">): Side =>

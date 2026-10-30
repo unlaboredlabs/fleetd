@@ -1,12 +1,11 @@
-// A calm card: rounded, no border, a step off its ground. On a grouped ground (Approvals) it is a row's color; on a
-// chat's plain one, the grouped ground's.
+// A calm card: rounded, no border, a step off a chat's plain ground in the grouped ground's color.
 import type { ReactNode } from "react";
 import { StyleSheet, View, type StyleProp, type ViewStyle } from "react-native";
 import { shape, space, useTheme } from "../theme";
 
-export function Card({ children, on = "plain", style }: { children: ReactNode; on?: "plain" | "grouped"; style?: StyleProp<ViewStyle> }) {
+export function Card({ children, style }: { children: ReactNode; style?: StyleProp<ViewStyle> }) {
   const t = useTheme();
-  return <View style={[styles.card, { backgroundColor: on === "grouped" ? t.cell : t.surface }, style]}>{children}</View>;
+  return <View style={[styles.card, { backgroundColor: t.surface }, style]}>{children}</View>;
 }
 
 const styles = StyleSheet.create({

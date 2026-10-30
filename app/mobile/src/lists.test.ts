@@ -184,6 +184,23 @@ describe("chatList", () => {
     expect(chatList(s, prefs, "navis")?.map((r) => r.key)).toEqual(["m1/b", "m1/a"]);
     expect(chatList(s, prefs, "projects")?.map((r) => r.key)).toEqual(["m1/shop"]);
   });
+
+  it("floats a chat with an approval waiting above the pinned, and Needs you shows only those", () => {
+    const waiting = { ...s, requests: [gated("r1"), { ...gated("r2"), projectRef: { machineId: "m1", projectId: "a" } }, { ...gated("r3"), state: "approved" as const, projectRef: { machineId: "m1", projectId: "b" } }] };
+    const prefs = { ...noPrefs, pinned: ["m1/b"] };
+    const rows = chatList(waiting, prefs);
+    // Shop and Ada wait, whatever spoke last first; then Bea, pinned; an answered approval doesn't count.
+    expect(rows?.map((r) => [r.key, r.approvals])).toEqual([
+      ["m1/shop", 1],
+      ["m1/a", 1],
+      ["m1/b", 0],
+    ]);
+    expect(chatList(waiting, prefs, "needsYou")?.map((r) => r.key)).toEqual(["m1/shop", "m1/a"]);
+    // A secret to enter or a lead waiting for a reply isn't an approval: it stays where it was.
+    const asking = { ...s, chatStates: { ...chatStates, "m1/a": { ...chatStates["m1/a"], needsYou: true } }, requests: [{ ...asked("s1"), kind: "secret" as const }] };
+    expect(chatList(asking, prefs, "needsYou")).toEqual([]);
+    expect(chatList(asking, prefs)?.map((r) => r.key)).toEqual(["m1/b", "m1/shop", "m1/a"]);
+  });
 });
 
 describe("an approval whose fields hide or reorder text", () => {
