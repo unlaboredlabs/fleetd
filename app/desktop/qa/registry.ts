@@ -87,6 +87,8 @@ export const fixtures = [
   "lead-worked",
   // The night's memory refresh line: its summary, opened to its changes (fixtures/lead).
   "lead-memory",
+  // The nightly cleanup's line for the worktrees it kept: its summary, opened to each (fixtures/lead).
+  "lead-worktrees",
   // Group fixtures (fixtures/<group>/index.ts), named <group>-<what>.
   "projects-cloning",
   "projects-dropped",
@@ -518,6 +520,19 @@ export const screens: readonly Screen[] = [
       const changes = page.getByRole("list", { name: "Memory changes" });
       await changes.getByRole("button", { name: /^PR screenshots live/u }).click();
       await expect(changes.getByText(/^Was: /u)).toBeVisible();
+    },
+  },
+  // The nightly cleanup's kept worktrees: one summary line, and opened, each with what is unsaved and its path.
+  { id: "chat", route: CHAT, fixtures: ["lead-worktrees"], variant: "worktrees-kept" },
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["lead-worktrees"],
+    variant: "worktrees-kept-open",
+    open: async (page) => {
+      await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
+      await page.getByRole("button", { name: "Cleanup kept 6 worktrees with unsaved work" }).click();
+      await expect(page.getByRole("list", { name: "Worktrees kept" }).getByRole("listitem")).toHaveCount(6);
     },
   },
   // The line above the box says what the lead waits on, and Show brings the open approval into view.

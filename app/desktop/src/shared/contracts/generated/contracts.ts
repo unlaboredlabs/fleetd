@@ -1098,6 +1098,11 @@ export type ChatMessage = {
   text: string;
   /** Set when the text was last appended to, or an item's state changed. */
   updatedAt?: Timestamp;
+  /**
+   * A system line "Cleanup kept 6 worktrees with unsaved work": the worktrees one nightly cleanup kept for work only
+   * they hold.
+   */
+  worktreesKept?: WorktreesKept;
 };
 
 /**
@@ -2959,6 +2964,17 @@ export type IssuedLink = {
   /** The projects it reaches; absent: every project its person reaches. */
   projects?: ProjectRef[];
   revokedAt?: Timestamp;
+};
+
+export type KeptWorktree = {
+  /** The machine it is on. */
+  machineId: MachineId;
+  /** Where it is on that machine. */
+  path: string;
+  /** Its task's title. */
+  title: string;
+  /** What only it holds: "uncommitted changes", "2 unpushed commits". */
+  unsaved: string;
 };
 
 export type KeyAction = "down" | "up";
@@ -7932,6 +7948,14 @@ export type WorktreeSetup = {
   runAnyway?: boolean;
   /** Each command's time limit, in seconds. */
   timeoutSec?: number;
+};
+
+/**
+ * The worktrees one nightly cleanup kept in a project because they hold work that exists nowhere else, as one line
+ * that opens to each: what frees it is pushing or deleting that work.
+ */
+export type WorktreesKept = {
+  items: KeptWorktree[];
 };
 
 /** Every tool the app can `call`: its input and its output. */

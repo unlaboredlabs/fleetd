@@ -550,6 +550,10 @@
         "updatedAt": {
           "$ref": "#/$defs/Timestamp",
           "description": "Set when the text was last appended to, or an item's state changed."
+        },
+        "worktreesKept": {
+          "$ref": "#/$defs/WorktreesKept",
+          "description": "A system line \"Cleanup kept 6 worktrees with unsaved work\": the worktrees one nightly cleanup kept for work only\nthey hold."
         }
       },
       "required": [
@@ -938,6 +942,42 @@
           "type": "string"
         }
       ]
+    },
+    "KeptWorktree": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId",
+          "description": "The machine it is on."
+        },
+        "path": {
+          "description": "Where it is on that machine.",
+          "maxLength": 4096,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "title": {
+          "description": "Its task's title.",
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "unsaved": {
+          "description": "What only it holds: \"uncommitted changes\", \"2 unpushed commits\".",
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "title",
+        "unsaved",
+        "machineId",
+        "path"
+      ],
+      "type": "object"
     },
     "MachineId": {
       "description": "Machine slug, [a-z0-9-]{1,32}",
@@ -1668,6 +1708,23 @@
     "WorkstreamId": {
       "pattern": "^W[1-9][0-9]*$",
       "type": "string"
+    },
+    "WorktreesKept": {
+      "description": "The worktrees one nightly cleanup kept in a project because they hold work that exists nowhere else, as one line\nthat opens to each: what frees it is pushing or deleting that work.",
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/KeptWorktree"
+          },
+          "maxItems": 200,
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "type": "object"
     }
   },
   "$ref": "#/$defs/ChatMessage",

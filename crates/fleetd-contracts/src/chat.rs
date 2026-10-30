@@ -262,6 +262,9 @@ pub struct ChatMessage {
     /// A system line "Memory refreshed: +a ~b −c": what the nightly memory refresh changed, each change undone on its
     /// own or all together with `memory_undo`.
     pub memory_refreshed: Option<crate::memory::MemoryRefreshed>,
+    /// A system line "Cleanup kept 6 worktrees with unsaved work": the worktrees one nightly cleanup kept for work only
+    /// they hold.
+    pub worktrees_kept: Option<WorktreesKept>,
     /// A human message: the skills it named with `$name`, which the lead's copy lists.
     pub skills: Option<List<crate::skills::SkillName, 1, 8, true>>,
     /// An agent's suggestion to try a PR (preview_suggest), posted once per PR with `text` in its words: the app
@@ -269,6 +272,30 @@ pub struct ChatMessage {
     pub preview_suggestion: Option<crate::preview::PreviewSuggestion>,
     /// The lead flagged it for the person's look (`nudge`), or it is an agent's Try it suggestion.
     pub nudge: Option<ChatNudge>,
+}
+
+/// The most worktrees one "Cleanup kept" line lists; a night that keeps more posts another line.
+pub const WORKTREES_KEPT_MAX: usize = 200;
+
+/// The worktrees one nightly cleanup kept in a project because they hold work that exists nowhere else, as one line
+/// that opens to each: what frees it is pushing or deleting that work.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct WorktreesKept {
+    pub items: List<KeptWorktree, 1, WORKTREES_KEPT_MAX>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct KeptWorktree {
+    /// Its task's title.
+    pub title: crate::tasks::TaskTitle,
+    /// What only it holds: "uncommitted changes", "2 unpushed commits".
+    pub unsaved: Line<1, 120>,
+    /// The machine it is on.
+    pub machine_id: MachineId,
+    /// Where it is on that machine.
+    pub path: Line<1, 4096>,
 }
 
 /// The most nudges a project keeps open of each kind, the lead's and agents' Try it suggestions: a newer one past it

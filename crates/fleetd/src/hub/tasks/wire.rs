@@ -489,6 +489,19 @@ impl TaskPorts for HubTaskPorts {
         }
     }
 
+    fn tell_kept(&self, project_ref: &ProjectRef, kept: fleetd_contracts::chat::WorktreesKept) {
+        let Some(hub) = self.hub() else { return };
+        let new = crate::hub::chat::NewMessage {
+            author: Some(fleetd_contracts::chat::ChatAuthor::System),
+            text: super::worktrees::kept_summary(kept.items.len()),
+            worktrees_kept: Some(kept),
+            ..Default::default()
+        };
+        if let Err(error) = hub.chat.add(project_ref, new) {
+            tracing::warn!(%error, "the worktrees kept were not posted");
+        }
+    }
+
     fn global_decision(&self, key: &str) -> Option<String> {
         self.hub()?.decisions.global_value(key).ok().flatten()
     }

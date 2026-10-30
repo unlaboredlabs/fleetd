@@ -17,6 +17,7 @@ import { useBubbleActions } from "./actions";
 import { useLooked } from "./looked";
 import { markOf, useShown } from "./shown";
 import { RefreshedChanges, RememberedUndo } from "./Remembered";
+import { KeptWorktrees } from "./KeptWorktrees";
 import { ChatSuggestion } from "../tryit/Suggestion";
 import { useNow, useOnScreen } from "../live";
 import type { ChatItem as InlineItem } from "../../../shared/contracts";
@@ -237,6 +238,14 @@ const RowView = memo(function RowView(props: {
         return (
           <div className={s.quietRow} data-entry="event">
             <RefreshedChanges project={project} message={r.item.message} refreshed={r.item.message.memoryRefreshed} at={shortClock(r.item.at)} />
+          </div>
+        );
+      }
+      // The night's cleanup: how many worktrees it kept for unsaved work, opening to each with its path.
+      if (r.item.message?.worktreesKept !== undefined) {
+        return (
+          <div className={s.quietRow} data-entry="event">
+            <KeptWorktrees message={r.item.message} kept={r.item.message.worktreesKept} at={shortClock(r.item.at)} />
           </div>
         );
       }
