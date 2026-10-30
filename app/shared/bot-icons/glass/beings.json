@@ -1,0 +1,21 @@
+{
+  "about": "The Rounds in glass. Coordinates are the icon's 100×100 box (y down). body: the shared silhouette as cubic Béziers. Face parts: eye [x, y, w, h, tilt°], lid [x1, x2, y, depth, thick] (a crescent bowing down for a doze, up for a smile), lidded [x, y, w, h, x1, y1, x2, y2] (an eye shut flat above the line), oval [x, y, rx, ry].",
+  "body": [
+    [50, 25],
+    [[67.4, 25], [79, 37], [79, 55]],
+    [[79, 71.8], [70.3, 79], [50, 79]],
+    [[29.7, 79], [21, 71.8], [21, 55]],
+    [[21, 37], [32.6, 25], [50, 25]]
+  ],
+  "beings": [
+    { "id": "mo", "name": "Mo", "mood": "calm", "face": [["eye", 40, 50, 4.8, 6.3, -6], ["eye", 60, 50, 4.8, 6.3, 6]] },
+    { "id": "wee", "name": "Wee", "mood": "shy", "face": [["eye", 45, 59, 3.8, 4.9, -4], ["eye", 55, 59, 3.8, 4.9, 4]] },
+    { "id": "peep", "name": "Peep", "mood": "curious", "face": [["eye", 56, 45, 4.9, 6.5, 4], ["eye", 69.5, 45.5, 4.3, 5.7, 8]] },
+    { "id": "nap", "name": "Nap", "mood": "sleepy", "face": [["lid", 32, 46, 50, 7, 5.4], ["lid", 54, 68, 50, 7, 5.4]] },
+    { "id": "cy", "name": "Cy", "mood": "focused", "face": [["eye", 53, 46, 7.4, 9.2, 4]] },
+    { "id": "wink", "name": "Wink", "mood": "cheeky", "face": [["eye", 40, 50, 4.8, 6.3, -6], ["lid", 53, 68, 55, -10, 5.4]] },
+    { "id": "joy", "name": "Joy", "mood": "delighted", "face": [["lid", 31, 46, 56, -11, 5.4], ["lid", 54, 69, 56, -11, 5.4]] },
+    { "id": "huh", "name": "Huh", "mood": "skeptical", "face": [["eye", 40, 50, 4.8, 6.3, -6], ["lidded", 60, 51, 5.2, 6.3, 52, 48.5, 68, 50.5]] },
+    { "id": "wow", "name": "Wow", "mood": "amazed", "face": [["eye", 38, 47, 5.6, 6.5, -4], ["eye", 62, 47, 5.6, 6.5, 4], ["oval", 50, 64, 3.2, 4]] }
+  ]
+}

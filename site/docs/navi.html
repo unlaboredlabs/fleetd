@@ -304,9 +304,11 @@ another project’s or another person’s Navi’s. The tools are <code dir="aut
 <p>Navis are MCP tools on the hub: <code dir="auto">navi_create {name, machineId?}</code>, <code dir="auto">navi_list {archived?, machineId?}</code>,
 <code dir="auto">navi_rename {machineId, projectId, name}</code>, <code dir="auto">navi_archive {machineId, projectId, archived?}</code>,
 <code dir="auto">navi_sites {machineId, projectId}</code> and <code dir="auto">navi_site_revoke {machineId, projectId, site}</code>. A Navi’s or project’s
-picture is <code dir="auto">project_avatar_set {machineId, projectId, attachmentId?, crop?}</code> (an image from <code dir="auto">attachment_put</code> and the
-square to keep; no <code dir="auto">attachmentId</code> removes it) and <code dir="auto">project_avatar_get {machineId, projectId}</code>; a summary’s <code dir="auto">avatar</code>
-names the one it has. Each returns the
+icon is <code dir="auto">project_icon_set {machineId, projectId, icon: {face, color}}</code>, a built-in face and color that replaces
+any picture; a summary’s <code dir="auto">icon</code> says which it wears (one made from its id until someone picks). Its picture is
+<code dir="auto">project_avatar_set {machineId, projectId, attachmentId?, crop?}</code> (an image from <code dir="auto">attachment_put</code> and the square to
+keep; no <code dir="auto">attachmentId</code> removes it) and <code dir="auto">project_avatar_get {machineId, projectId}</code>; a summary’s <code dir="auto">avatar</code> names the
+one it has. Each returns the
 Navi as a project summary with <code dir="auto">kind: "assistant"</code>, <code dir="auto">createdBy</code> (the id and name of the key that made it) and, once
 archived, <code dir="auto">archivedAt</code>. Every other project has no <code dir="auto">kind</code>. Talk to a Navi with <code dir="auto">chat_send</code>, as to any project.
 <code dir="auto">navi_asks {navi}</code> lists what a Navi asked other projects for, with the orders opened for each, on a hub whose ready

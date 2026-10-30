@@ -1,6 +1,6 @@
 // Making and managing projects and Navis from the phone: their screens in the root stack (New Navi and New Project as
-// sheets; a project's or Navi's screen, Rename and Agent Profiles pushed over its chat, in a stack of their own, and
-// Move and Scale for its picture over everything), and the two ways in: the Chats list's + menu and a chat's bar. App.tsx
+// sheets; a project's or Navi's screen, Rename and Agent Profiles pushed over its chat, in a stack of their own, its
+// icon as a sheet, and Move and Scale for its picture over everything), and the two ways in: the Chats list's + menu and a chat's bar. App.tsx
 // adds these to its navigators.
 import { useNavigation } from "@react-navigation/native";
 import { createNativeStackNavigator, type NativeStackNavigationOptions } from "@react-navigation/native-stack";
@@ -8,6 +8,7 @@ import { Alert, Platform, Pressable } from "react-native";
 import type { ChatInfoParams, RootParams } from "../../hubContext";
 import { useTheme, type Palette } from "../../theme";
 import { haptics } from "../../ui/haptics";
+import { IconPicker } from "./IconPicker";
 import { Info } from "./Info";
 import { NewNavi } from "./NewNavi";
 import { NewProject } from "./NewProject";
@@ -44,6 +45,7 @@ export const manageScreens = (Stack: RootStack, t: Palette) => (
     <Stack.Screen name="NewNavi" component={NewNavi} options={sheet(t, "New Navi")} />
     <Stack.Screen name="NewProject" component={NewProject} options={sheet(t, "New Project")} />
     <Stack.Screen name="ChatInfo" component={ChatInfo} options={{ headerShown: false }} />
+    <Stack.Screen name="Icon" component={IconPicker} options={sheet(t, "Icon")} />
     <Stack.Screen name="Photo" component={Photo} options={{ presentation: "fullScreenModal", animation: "fade", headerShown: false, gestureEnabled: false, contentStyle: { backgroundColor: "#000000" } }} />
   </Stack.Group>
 );

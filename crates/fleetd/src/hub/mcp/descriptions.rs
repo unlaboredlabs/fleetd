@@ -101,6 +101,10 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
         "A project's or Navi's picture, base64 JPEG, with its id: the one its summary names in avatar. NotFound when it has none (its letters show).",
     ),
     (
+        "project_icon_set",
+        "Give a project or Navi the built-in icon its chat shows: icon is a face (a glass being: mo, wee, peep, nap, cy, wink, joy, huh, wow) and the color of its round field. It takes the place of its picture, if it had one. One never picked is derived from its id; every summary's icon says which it wears. Every open app sees it at once (project.settings). Anyone who may change the project's settings; a Navi's, its owner.",
+    ),
+    (
         "project_settings_get",
         "One project's settings: its title and checkout, keepWorktrees, memoryRefresh, its environment variables (a plain one's value, a secret's fingerprint only), its setup commands, its merge train's checks (train), and from its node, while online, where its worktrees live, the branch new ones start from and the worktrees there now, each marked when it has uncommitted changes.",
     ),

@@ -451,6 +451,7 @@ fn full_hub(home: &std::path::Path) -> (Arc<crate::hub::api::Hub>, ProjectRef) {
                 owner: None,
                 archived_at: None,
                 avatar: None,
+                icon: None,
             }],
         )
         .unwrap();
