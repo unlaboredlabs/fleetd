@@ -43,7 +43,8 @@ pub struct Fence {
     /// Read but never written inside a written path. One without an extension that isn't there is made, empty, as a
     /// dir ([`Fence::prepare`]), so it is never made by the session instead.
     pub keep: Vec<PathBuf>,
-    /// The listed home's own entries, read and written as they are, and never made (Linux).
+    /// Bound back as they are, read and written, and never made (Linux): the listed home's own entries, and the
+    /// folders on the way to a read-only path ([`hold_folders`]).
     pub listed: Vec<PathBuf>,
     /// `(link, target)`: a symlink in the listed home, made again as it is, so it leads where it always did and a
     /// hidden target stays hidden (Linux).
@@ -617,7 +618,43 @@ pub fn navi_fence(p: &NaviPaths) -> Fence {
     fence.keep.extend(links);
     fence.keep.sort();
     fence.keep.dedup();
+    if cfg!(target_os = "linux") {
+        hold_folders(&mut fence);
+    }
     fence
+}
+
+/// Makes each folder on the way to a read-only path, in a folder the Navi writes, a mount point: bound onto itself,
+/// written as before. A mount point can't be renamed, though a folder above one can, so otherwise the Navi could move
+/// `~/dotfiles/pkg` aside and leave its own `pkg/.local/bin` (or its own checkout, or `/opt/brew`) in its place. Linux
+/// only.
+fn hold_folders(fence: &mut Fence) {
+    let writable = |d: &Path| nix::unistd::access(d, nix::unistd::AccessFlags::W_OK).is_ok();
+    let ops = fence.ops();
+    let mut seen = std::collections::HashSet::new();
+    let mut held = Vec::new();
+    for path in fence.show.iter().chain(&fence.keep) {
+        for folder in path.ancestors().skip(1) {
+            let Some(parent) = folder.parent() else {
+                break;
+            };
+            if !seen.insert(folder) {
+                break;
+            }
+            let mounted = ops.iter().any(|(at, _)| *at == folder);
+            if !mounted
+                && access_in(&ops, folder) == Access::Write
+                && access_in(&ops, parent) == Access::Write
+                && writable(parent)
+            {
+                held.push(folder.to_owned());
+            }
+        }
+    }
+    drop(ops);
+    fence.listed.extend(held);
+    fence.listed.sort();
+    fence.listed.dedup();
 }
 
 /// Keeps where they are the links on the way to a read-only path, from a folder the Navi writes: once removed, its own
@@ -874,18 +911,23 @@ impl Fence {
     /// What the session may do with `path`, once resolved, as its sandbox has it: what the deepest of the fence's
     /// paths that holds it says, the last of those at one depth; written where none does, as the person may.
     pub fn access(&self, path: &Path) -> Access {
-        let mut access = Access::Write;
-        for (at, op) in self.ops() {
-            if path.starts_with(at) {
-                access = match op {
-                    Op::Hide => Access::Hidden,
-                    Op::Show => Access::Read,
-                    Op::Write | Op::Private(_) | Op::Link(_) => Access::Write,
-                };
-            }
-        }
-        access
+        access_in(&self.ops(), path)
     }
+}
+
+/// [`Fence::access`] with the fence's [`Fence::ops`] made once.
+fn access_in(ops: &[(&Path, Op<'_>)], path: &Path) -> Access {
+    let mut access = Access::Write;
+    for (at, op) in ops {
+        if path.starts_with(at) {
+            access = match op {
+                Op::Hide => Access::Hidden,
+                Op::Show => Access::Read,
+                Op::Write | Op::Private(_) | Op::Link(_) => Access::Write,
+            };
+        }
+    }
+    access
 }
 
 /// What the sandbox does at a path.

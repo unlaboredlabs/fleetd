@@ -238,6 +238,9 @@ nothing can be mounted on a link, the folder holding a linked bin dir of your ho
 is listed like the home: the link comes back as a link and the folder’s other entries as they are, but nothing new
 is made at its top. A Navi installs into its own home, so that costs it nothing. A checkout isn’t listed (it can
 still clone into <code dir="auto">~/src</code>); the node checks it instead, below.</li>
+<li>On Linux, each folder on the way to a read-only path that the Navi could rename (<code dir="auto">~/dotfiles/pkg</code> above
+<code dir="auto">~/dotfiles/pkg/.local/bin</code>, a checkout, <code dir="auto">/opt/brew</code> above <code dir="auto">/opt/brew/bin</code>) is bound onto itself: written as
+before, but it can’t be moved aside for another.</li>
 <li><code dir="auto">~/.claude</code> (but its own session’s files: its conversation in <code dir="auto">~/.claude/projects/&lt;its folder&gt;</code>,
 <code dir="auto">~/.claude/session-env/&lt;session&gt;</code>, <code dir="auto">~/.claude/file-history/&lt;session&gt;</code>, and the login file
 <code dir="auto">~/.claude/.credentials.json</code>, where Claude Code saves a refreshed token), so it can’t add hooks or MCP servers for
@@ -268,8 +271,8 @@ and <code dir="auto">~/snap</code> (each snap’s own data, logins included).</l
 <li>The docker socket (<code dir="auto">/run/docker.sock</code>, <code dir="auto">/var/run/docker.sock</code>).</li>
 </ul>
 <p>Everything else reads as it does for you: your code, your notes, other projects’ checkouts.</p>
-<p><strong>A replaced checkout stops work.</strong> A Navi could still move a whole checkout aside and leave a folder of its own in its
-place, or swap a linked <code dir="auto">CLAUDE.md</code> for its own file on Linux. So the node records each project’s checkout the first
+<p><strong>A replaced checkout stops work.</strong> A Navi could still swap a linked <code dir="auto">CLAUDE.md</code> for its own file on Linux, or on
+macOS move a whole checkout aside and leave a folder of its own in its place. So the node records each project’s checkout the first
 time a lead or agent runs there: its folder, its <code dir="auto">.git</code> (and what a worktree’s <code dir="auto">.git</code> file says), and each link among <code dir="auto">.claude</code>, <code dir="auto">.fleetd</code>, <code dir="auto">.mcp.json</code>,
 <code dir="auto">CLAUDE.md</code> and <code dir="auto">CLAUDE.local.md</code> (in <code dir="auto">checkouts.json</code> in the node’s home, which no Navi sees). Before it starts a
 lead or agent there again, it checks them. When one is another, nothing starts, and the chat says the folder was
@@ -341,10 +344,10 @@ Navis can’t run there (with how to install bubblewrap).</li>
 sockets stay reachable, including an X server that accepts local connections without a cookie
 (<code dir="auto">xhost +si:localuser</code>, the GNOME default). fleetd’s own screens don’t listen there. Its folder, its session’s
 MCP config (with its own servers’ tokens) and Claude Code’s login are readable to it, since Claude Code needs them.
-It can still write code you or an agent run later on purpose: a script, a test or a build file in a checkout. It
-can rename the folder above a <code dir="auto">PATH</code> directory you can write outside your home (<code dir="auto">/opt/brew</code> for <code dir="auto">/opt/brew/bin</code>)
-and put its own in its place, so a program you later run there could be its own: keep such directories in a folder
-you don’t write as you, or out of your <code dir="auto">PATH</code>. A
+It can still write code you or an agent run later on purpose: a script, a test or a build file in a checkout. On
+macOS it can rename a folder above a read-only path (<code dir="auto">/opt/brew</code> for <code dir="auto">/opt/brew/bin</code>, a dotfiles folder holding
+your linked bin dir) and put its own in its place, so a program you later run there could be its own; a replaced
+checkout is caught (above), a replaced program folder isn’t. A
 path hidden here but reachable through another mount of the same disk (a bind mount you made) is reachable there
 too.</li>
 </ul>

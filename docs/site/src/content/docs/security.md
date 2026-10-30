@@ -142,6 +142,9 @@ so a Navi that is talked into something can't plant code there that reads your k
   is listed like the home: the link comes back as a link and the folder's other entries as they are, but nothing new
   is made at its top. A Navi installs into its own home, so that costs it nothing. A checkout isn't listed (it can
   still clone into `~/src`); the node checks it instead, below.
+- On Linux, each folder on the way to a read-only path that the Navi could rename (`~/dotfiles/pkg` above
+  `~/dotfiles/pkg/.local/bin`, a checkout, `/opt/brew` above `/opt/brew/bin`) is bound onto itself: written as
+  before, but it can't be moved aside for another.
 - `~/.claude` (but its own session's files: its conversation in `~/.claude/projects/<its folder>`,
   `~/.claude/session-env/<session>`, `~/.claude/file-history/<session>`, and the login file
   `~/.claude/.credentials.json`, where Claude Code saves a refreshed token), so it can't add hooks or MCP servers for
@@ -174,8 +177,8 @@ in for a path, the real file and its copies are hidden.
 
 Everything else reads as it does for you: your code, your notes, other projects' checkouts.
 
-**A replaced checkout stops work.** A Navi could still move a whole checkout aside and leave a folder of its own in its
-place, or swap a linked `CLAUDE.md` for its own file on Linux. So the node records each project's checkout the first
+**A replaced checkout stops work.** A Navi could still swap a linked `CLAUDE.md` for its own file on Linux, or on
+macOS move a whole checkout aside and leave a folder of its own in its place. So the node records each project's checkout the first
 time a lead or agent runs there: its folder, its `.git` (and what a worktree's `.git` file says), and each link among `.claude`, `.fleetd`, `.mcp.json`,
 `CLAUDE.md` and `CLAUDE.local.md` (in `checkouts.json` in the node's home, which no Navi sees). Before it starts a
 lead or agent there again, it checks them. When one is another, nothing starts, and the chat says the folder was
@@ -213,10 +216,10 @@ Nothing comes back after the node or the machine restarts, and there is no root,
   sockets stay reachable, including an X server that accepts local connections without a cookie
   (`xhost +si:localuser`, the GNOME default). fleetd's own screens don't listen there. Its folder, its session's
   MCP config (with its own servers' tokens) and Claude Code's login are readable to it, since Claude Code needs them.
-  It can still write code you or an agent run later on purpose: a script, a test or a build file in a checkout. It
-  can rename the folder above a `PATH` directory you can write outside your home (`/opt/brew` for `/opt/brew/bin`)
-  and put its own in its place, so a program you later run there could be its own: keep such directories in a folder
-  you don't write as you, or out of your `PATH`. A
+  It can still write code you or an agent run later on purpose: a script, a test or a build file in a checkout. On
+  macOS it can rename a folder above a read-only path (`/opt/brew` for `/opt/brew/bin`, a dotfiles folder holding
+  your linked bin dir) and put its own in its place, so a program you later run there could be its own; a replaced
+  checkout is caught (above), a replaced program folder isn't. A
   path hidden here but reachable through another mount of the same disk (a bind mount you made) is reachable there
   too.
 

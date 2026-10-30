@@ -678,9 +678,11 @@ fn a_navi_cant_swap_a_linked_bin_dir_for_its_own() {
         return;
     };
     let m = Machine::new();
-    // The person keeps `~/.local/bin` in their dotfiles, linked from where installers look.
+    // The person keeps `~/.local/bin` in their dotfiles, linked from where installers look (GNU stow's layout).
     let bin = m.home.join(".local/bin");
-    let kept = m.home.join("dotfiles/local-bin");
+    let pkg = m.home.join("dotfiles/pkg");
+    let kept = pkg.join(".local/bin");
+    std::fs::create_dir_all(kept.parent().unwrap()).unwrap();
     std::fs::rename(&bin, &kept).unwrap();
     std::os::unix::fs::symlink(&kept, &bin).unwrap();
     let fence = m.fence();
@@ -722,6 +724,32 @@ fn a_navi_cant_swap_a_linked_bin_dir_for_its_own() {
         ),
     );
     assert!(ok, "{out}");
+    // On Linux no folder above it moves aside for another either, nor the one above a PATH dir outside the home;
+    // what is inside them is written as before.
+    if cfg!(target_os = "linux") {
+        for (folder, inside) in [
+            (&pkg, kept.clone()),
+            (&m.brew.parent().unwrap().to_owned(), m.brew.clone()),
+        ] {
+            let (ok, out) = m.run(
+                &tool,
+                &format!(
+                    "mv '{0}' '{0}.old' && mkdir -p '{1}' && echo pwned > '{1}/git'",
+                    folder.display(),
+                    inside.display()
+                ),
+            );
+            assert!(!ok, "{} moved: {out}", folder.display());
+            let git = std::fs::read_to_string(inside.join("git")).unwrap_or_default();
+            assert!(!git.contains("pwned"), "{out}");
+            assert!(!folder.with_extension("old").exists(), "{out}");
+        }
+        let (ok, out) = m.run(
+            &tool,
+            &format!("echo x > '{}'", pkg.join("README").display()),
+        );
+        assert!(ok, "{out}");
+    }
 }
 
 #[test]
@@ -773,6 +801,8 @@ fn a_checkout_a_navi_swapped_is_refused_before_an_agent_runs_there() {
             m.other.display()
         ),
     );
+    // On Linux the checkout is a mount point, which can't be moved; on macOS it can, and the node refuses it.
+    assert!(!(ok && cfg!(target_os = "linux")), "{out}");
     if ok {
         let refused = crate::node::checkouts::check(node.path(), &m.other).unwrap_err();
         assert!(
