@@ -32,6 +32,7 @@
     "perf:record": "node fixtures/build.ts && node perf/record-smoke.ts",
     "perf:busy": "node fixtures/build.ts && node perf/busy.ts",
     "perf:toggles": "node fixtures/build.ts && node perf/toggles.ts",
+    "perf:drops": "node fixtures/build.ts && node perf/drops.ts",
     "debug-guard-check": "node scripts/debug-guard-check.ts",
     "build:test": "MAIN_VITE_FLEETD_TEST_BUILD=1 electron-vite build"
   },

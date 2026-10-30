@@ -225,8 +225,13 @@ ol {
 }
 
 /* A list you reorder (ui/lib/reorder): the lifted row rides the pointer, raised a step with a small soft shadow, never
-   scaled; the rows it passes glide aside over --dur-base to open its gap. With reduced motion the duration is 0, so
-   they step aside at once. */
+   scaled; the rows it passes glide aside over --dur-base to open its gap. Landed, its shadow fades. With reduced
+   motion the durations are 0, so they step aside at once. */
+[data-reorder-row] {
+  transition:
+    box-shadow var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out);
+}
 [data-reorder] [data-reorder-row]:not([data-lifted]) {
   transition: transform var(--dur-base) var(--ease-out);
 }
