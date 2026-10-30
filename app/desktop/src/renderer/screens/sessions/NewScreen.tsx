@@ -13,7 +13,7 @@ import { isNavi } from "../navi/model";
 import { projectKey } from "../../src/data/store";
 import { currentRoute, navigate } from "../shell/navigation";
 import { panelRoute, type ProjectKey } from "../shell/routes";
-import { canOpen, hostsFor, KINDS, openWord, pickHost, slotLine, type ScreenKind } from "./newScreen";
+import { canOpen, hostsFor, KINDS, openWord, pickHost, slotLine, type ScreenKind } from "./pickScreen";
 import s from "./sessions.module.css";
 
 /** The hub feature that says it opens people's screens. */

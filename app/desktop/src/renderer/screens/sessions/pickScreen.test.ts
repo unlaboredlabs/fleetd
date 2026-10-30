@@ -2,7 +2,7 @@
 // machine it starts on, and each machine's slots in words, a full one offering to wait.
 import { describe, expect, it } from "vitest";
 import type { MachineRolesEntry } from "../../../shared/contracts";
-import { canOpen, hostsFor, openWord, pickHost, slotLine } from "./newScreen";
+import { canOpen, hostsFor, openWord, pickHost, slotLine } from "./pickScreen";
 
 const machine = (machineId: string, ready: readonly string[], more: Partial<MachineRolesEntry> = {}): MachineRolesEntry => ({
   machineId,
