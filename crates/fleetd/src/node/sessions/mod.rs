@@ -2508,6 +2508,15 @@ impl SessionService {
             || PathBuf::from(agent_exe(std::env::current_exe(), std::process::id())),
             Path::to_path_buf,
         );
+        let projects = self
+            .inner
+            .store
+            .projects()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|p| PathBuf::from(p.workspace_root))
+            .filter(|r| r.is_absolute())
+            .collect();
         let runtime_dir = std::env::var_os("XDG_RUNTIME_DIR")
             .map(PathBuf::from)
             .unwrap_or_else(|| format!("/run/user/{}", nix::unistd::getuid()).into());
@@ -2535,6 +2544,7 @@ impl SessionService {
             socket: &super::lead::lead_socket_path(home),
             runtime_dir: Some(&runtime_dir),
             own: &sandbox::navi_dir(home, row.summary.project_id.as_str()),
+            projects,
             claude_bin: &super::claude_binary(),
             path: env
                 .iter()

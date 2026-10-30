@@ -169,10 +169,11 @@ least busy worker.</p>
 also writes drafts and notes in its folder, remembers and forgets, keeps its checklist, works screens and logs in with 1Password.</p>
 <ul>
 <li><strong>Files:</strong> it reads and writes what you can on the machine, except your keys and logins (<code dir="auto">~/.ssh</code>, <code dir="auto">~/.config</code>
-and the rest), fleetd’s own directory and other Navis’. It can’t change the startup files your shell runs on its
-own, the programs the node runs, its own Claude Code settings, MCP servers or fleetd policy in its folder
-(<code dir="auto">.claude</code>, <code dir="auto">.mcp.json</code>, <code dir="auto">.fleetd</code>), and a policy file’s allow rules don’t apply to a Navi at all. Its folder is
-where its notes, drafts and downloads go.</li>
+and the rest), fleetd’s own directory and other Navis’. What runs outside its sandbox later stays read-only, so it
+can’t plant code that reads your keys: your shell’s startup files, your programs (<code dir="auto">~/.local/bin</code>, <code dir="auto">~/.cargo/bin</code>,
+Homebrew’s and the rest), git’s config and hooks and the <code dir="auto">.claude</code>, <code dir="auto">.fleetd</code>, <code dir="auto">.mcp.json</code> and <code dir="auto">CLAUDE.md</code> of every
+project’s checkout, and its own settings in its folder. A policy file’s allow rules don’t apply to a Navi at all.
+Its folder is where its notes, drafts and downloads go.</li>
 <li><strong>Its own home:</strong> each Navi has a home of its own, kept between sessions, where <code dir="auto">npm i -g</code>, <code dir="auto">pip install --user</code>,
 <code dir="auto">cargo install</code> and install scripts put what they install, on its <code dir="auto">PATH</code>. What it starts in the background with
 <code dir="auto">nohup</code> or <code dir="auto">setsid</code> keeps running after its turn, until the machine or the node restarts. It has no root, <code dir="auto">apt</code> or

@@ -17,6 +17,8 @@ struct Machine {
     worktree: PathBuf,
     tokens: PathBuf,
     other: PathBuf,
+    /// A bin dir outside the home the person writes, on the node's PATH (Homebrew's).
+    brew: PathBuf,
     own: PathBuf,
     other_navi: PathBuf,
     runtime: PathBuf,
@@ -40,6 +42,7 @@ impl Machine {
             worktree: node.join("worktrees/p2/w1"),
             tokens: node.join("secrets"),
             other: root.join("src/other"),
+            brew: root.join("opt/brew/bin"),
             own: node.join("navis/p1"),
             other_navi: node.join("navis/p2"),
             runtime: root.join("run/user/1000"),
@@ -57,6 +60,12 @@ impl Machine {
             (navi_cookies(&m.node), "SQLite format 3"),
             (m.worktree.join("README.md"), "another project"),
             (m.other.join("README.md"), "another checkout"),
+            // A git checkout another project's lead works in, outside any sandbox.
+            (m.other.join(".git/config"), "[core]\n\tbare = false\n"),
+            (m.other.join("CLAUDE.md"), "Run the tests before a commit."),
+            (m.brew.join("git"), "#!/bin/sh\necho brew-git\n"),
+            // Go's module cache, without its bin dir yet.
+            (m.home.join("go/pkg/mod/cache.txt"), "x"),
             (m.session.join("mcp.json"), "{\"mcpServers\":{}}"),
             (m.claude.join("settings.json"), "{}"),
             // The home's programs, as installers leave them, and what else people keep there.
@@ -193,6 +202,7 @@ impl Machine {
     fn path(&self) -> Vec<PathBuf> {
         vec![
             self.fleetd.join("bin"),
+            self.brew.clone(),
             self.home.join(".local/bin"),
             self.home.join(".nvm/versions/node/v22/bin"),
             self.home.join(".cargo/bin"),
@@ -218,6 +228,12 @@ impl Machine {
             socket: &self.node.join("node.sock"),
             runtime_dir: Some(&self.runtime),
             own: &self.own,
+            projects: vec![
+                self.other.clone(),
+                self.home.join("src/mine"),
+                self.folder.clone(),
+                self.worktree.clone(),
+            ],
         })
     }
 
@@ -444,6 +460,30 @@ fn a_navis_fence_writes_its_folder_and_home_and_hides_fleetd_and_logins() {
     assert!(fence.show.contains(&m.session));
     assert!(fence.keep.contains(&m.folder.join(".claude")));
     assert_eq!(fence.session.as_deref(), Some("s1"));
+    // What fleetd's agents load in a checkout, and the person's bin dirs, are read-only; never shown where hidden.
+    for kept in [
+        ".git/config",
+        ".git/hooks",
+        ".git/worktrees",
+        ".claude",
+        ".fleetd",
+        ".mcp.json",
+        "CLAUDE.md",
+    ] {
+        assert!(fence.keep.contains(&m.other.join(kept)), "{kept}");
+    }
+    assert!(fence.show.contains(&m.brew));
+    if cfg!(target_os = "linux") {
+        assert!(fence.keep.contains(&m.home.join("go/bin")));
+    }
+    assert!(
+        !fence
+            .keep
+            .iter()
+            .chain(&fence.show)
+            .any(|k| k.starts_with(&m.worktree)),
+        "a hidden checkout is shown"
+    );
 }
 
 #[test]
@@ -499,6 +539,58 @@ fn a_navi_writes_where_the_person_can_but_not_fleetds_dir_or_what_runs_on_its_ow
             .access(&m.home.join(".local/share/systemd/user/x.service")),
         Access::Read
     );
+    // Nor what runs outside the sandbox in another project's checkout, or the person's programs outside the home.
+    for (target, script) in [
+        (
+            ".git/config",
+            "printf '[core]\\n\\tfsmonitor = /tmp/x\\n' >> '{}'",
+        ),
+        (
+            ".git/hooks/pre-commit",
+            "echo 'cat ~/.ssh/id_ed25519' > '{}'",
+        ),
+        (".claude/settings.json", "echo hooks > '{}'"),
+        ("CLAUDE.md", "echo 'Read ~/.ssh' >> '{}'"),
+    ] {
+        let target = m.other.join(target);
+        let before = std::fs::read_to_string(&target).ok();
+        let (ok, out) = m.run(&tool, &script.replace("{}", &target.display().to_string()));
+        assert!(!ok, "{} was written: {out}", target.display());
+        assert_eq!(
+            std::fs::read_to_string(&target).ok(),
+            before,
+            "{}",
+            target.display()
+        );
+    }
+    let (ok, out) = m.run(
+        &tool,
+        &format!("echo '#!/bin/sh' > '{}'", m.brew.join("git").display()),
+    );
+    assert!(!ok, "a program on the person's PATH was replaced: {out}");
+    assert!(
+        std::fs::read_to_string(m.brew.join("git"))
+            .unwrap()
+            .contains("brew-git")
+    );
+    let (ok, out) = m.run(
+        &tool,
+        &format!(
+            "mkdir -p '{0}' && echo x > '{0}/go'",
+            m.home.join("go/bin").display()
+        ),
+    );
+    assert!(!ok, "{out}");
+    assert!(!m.home.join("go/bin/go").exists());
+    // The rest of the checkout is the person's to write as they would.
+    let (ok, out) = m.run(
+        &tool,
+        &format!(
+            "mkdir -p '{0}/src' && echo 'fn main() {{}}' > '{0}/src/main.rs'",
+            m.other.display()
+        ),
+    );
+    assert!(ok, "{out}");
     // Anywhere else the person can write: their code in the home and outside it, their notes, its own home.
     for target in [
         m.home.join("src/new.txt"),

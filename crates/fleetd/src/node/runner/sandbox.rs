@@ -3,7 +3,8 @@
 //! hidden: the logins and keys people keep in their home ([`HIDDEN_IN_HOME`]), fleetd's own dir apart from the Navi's
 //! folder and its own home, claude's record of every other session, and the sockets that would run a command outside
 //! (the user's D-Bus and systemd in the runtime dir, docker's, the X server's). Startup files the person's shell runs
-//! on its own ([`RUN_ON_THEIR_OWN`]) and the programs on the node's PATH stay read-only. The per-tool checks
+//! on its own ([`RUN_ON_THEIR_OWN`]), the person's programs, and what fleetd's own agents load in each project's
+//! checkout (git's config and hooks, Claude Code's settings) stay read-only: they run outside the sandbox ([`guard`]). The per-tool checks
 //! (`claude::role_answer`, the hub's site gate) stay as a second layer. Network stays as it is: the site gate decides.
 //!
 //! Each Navi has a home of its own under the node's home ([`navi_dir`]), its commands' HOME ([`navi_env`]), where
@@ -178,7 +179,39 @@ const RUN_ON_THEIR_OWN: &[&str] = &[
     ".xprofile",
     ".xsessionrc",
     ".xinitrc",
+    // Ubuntu's `.bashrc` sources it.
+    ".bash_aliases",
+    // cargo's own settings, which can name a program every build runs (`build.rustc-wrapper`).
+    ".cargo/config.toml",
+    ".cargo/config",
 ];
+
+/// In each project's checkout on the machine, where fleetd's own agents run outside any sandbox: what they load as
+/// their settings, MCP servers, policy and instructions. Read-only to a Navi, which writes the rest of a checkout. A dir
+/// that isn't there is made empty first ([`Fence::prepare`]); a file that isn't there can still be made, and a new
+/// `.mcp.json` runs nothing until settings the Navi can't write approve it.
+const PROJECT_KEPT: &[&str] = &[
+    ".claude",
+    ".fleetd",
+    ".mcp.json",
+    "CLAUDE.md",
+    "CLAUDE.local.md",
+];
+
+/// In a checkout's git dir, and its common dir: what makes git run a program (`core.fsmonitor`, `core.hooksPath`, an
+/// alias, a hook) for every worktree of it. `hooks` and `worktrees` are made empty first when they aren't there.
+const GIT_KEPT: &[&str] = &["config", "config.worktree", "hooks", "worktrees"];
+
+/// Outside the home, where people keep programs they run without a sandbox (Homebrew's): read-only to a Navi where the
+/// person can write them, as is every such dir on the node's PATH.
+const SYSTEM_BINS: &[&str] = &[
+    "/home/linuxbrew/.linuxbrew/bin",
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
+];
+
+/// In the person's home, beside [`HOME_BINS`]: more dirs installers put programs in.
+const MORE_HOME_BINS: &[&str] = &[".npm-global/bin", ".volta/bin", ".pyenv/shims"];
 
 /// In the user's home: dirs whose units and services the user's systemd and D-Bus start outside the sandbox, read-only
 /// to a Navi. They sit inside `~/.local`, which it writes, so one that isn't there is made, empty, before it starts
@@ -311,6 +344,8 @@ pub struct NaviPaths<'a> {
     pub runtime_dir: Option<&'a Path>,
     /// The Navi's own dir ([`navi_dir`]): its home and its `/tmp`.
     pub own: &'a Path,
+    /// Every project's root on this node: checkouts where fleetd's agents run outside any sandbox.
+    pub projects: Vec<PathBuf>,
     /// The `claude` binary the node runs.
     pub claude_bin: &'a Path,
     /// The session's PATH: its programs in the home are read again (Linux).
@@ -555,7 +590,7 @@ pub fn navi_fence(p: &NaviPaths) -> Fence {
     }
     // A hidden path stays hidden: one shown as well isn't shown.
     show.retain(|s| !hide.contains(s));
-    Fence {
+    let mut fence = Fence {
         write,
         hide,
         show,
@@ -566,7 +601,91 @@ pub fn navi_fence(p: &NaviPaths) -> Fence {
         links,
         tmp: cfg!(target_os = "linux").then(|| own.join(TMP_DIR)),
         session: Some(p.session_id.to_owned()),
+    };
+    guard(&mut fence, p, &user_home, &folder);
+    fence
+}
+
+/// What runs outside the sandbox, made read-only where the fence would let the Navi write it: the programs in the
+/// person's bin dirs ([`HOME_BINS`], [`MORE_HOME_BINS`], [`SYSTEM_BINS`], the node's PATH), and in each project's
+/// checkout what fleetd's agents load there ([`PROJECT_KEPT`], [`GIT_KEPT`]). Nothing hidden is shown through it.
+fn guard(fence: &mut Fence, p: &NaviPaths, user_home: &Path, folder: &Path) {
+    let writable = |d: &Path| nix::unistd::access(d, nix::unistd::AccessFlags::W_OK).is_ok();
+    let open = |f: &Fence, d: &Path| f.access(d) == Access::Write;
+    // Bin dirs: read-only where they are. On Linux one that isn't there is made empty first where the Navi could make
+    // it (its parent is written, and isn't the listed home's read-only top); on macOS a rule holds a path that isn't
+    // there too.
+    let bins: Vec<PathBuf> = HOME_BINS
+        .iter()
+        .chain(MORE_HOME_BINS)
+        .map(|b| user_home.join(b))
+        .chain(SYSTEM_BINS.iter().map(|b| real(Path::new(b))))
+        .chain(
+            p.path
+                .iter()
+                .map(|d| real(d))
+                .filter(|d| !d.starts_with(user_home)),
+        )
+        .collect();
+    for bin in bins {
+        if !open(fence, &bin) {
+            continue;
+        }
+        if bin.is_dir() {
+            if writable(&bin) {
+                fence.show.push(bin);
+            }
+        } else if cfg!(target_os = "macos") {
+            fence.show.push(bin);
+        } else if let Some(parent) = bin.parent()
+            && parent != user_home
+            && parent.is_dir()
+            && writable(parent)
+        {
+            fence.keep.push(bin);
+        }
     }
+    // Checkouts: only those the person writes, so what is made first can be.
+    for root in p.projects.iter().map(|r| real(r)) {
+        if root == folder || !root.is_dir() || !writable(&root) || !open(fence, &root) {
+            continue;
+        }
+        let mut kept: Vec<PathBuf> = PROJECT_KEPT.iter().map(|k| root.join(k)).collect();
+        for git in git_dirs(&root) {
+            if git.join("config").is_file() && writable(&git) {
+                kept.extend(GIT_KEPT.iter().map(|k| git.join(k)));
+            }
+        }
+        kept.retain(|k| open(fence, k));
+        fence.keep.extend(kept);
+    }
+    fence.show.sort();
+    fence.show.dedup();
+    fence.keep.sort();
+    fence.keep.dedup();
+}
+
+/// A checkout's git dirs: `.git` itself, or the one a `.git` file names (a worktree's, a submodule's), with the common
+/// dir it shares hooks and config with.
+fn git_dirs(root: &Path) -> Vec<PathBuf> {
+    let dot = root.join(".git");
+    let dir = if dot.is_dir() {
+        dot
+    } else {
+        match std::fs::read_to_string(&dot).ok().and_then(|t| {
+            t.trim()
+                .strip_prefix("gitdir:")
+                .map(|g| root.join(g.trim()))
+        }) {
+            Some(dir) => dir,
+            None => return Vec::new(),
+        }
+    };
+    let mut dirs = vec![real(&dir)];
+    if let Ok(common) = std::fs::read_to_string(dir.join("commondir")) {
+        dirs.push(real(&dir.join(common.trim())));
+    }
+    dirs
 }
 
 impl Fence {

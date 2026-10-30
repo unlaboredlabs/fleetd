@@ -110,17 +110,31 @@ and `PIP_BREAK_SYSTEM_PACKAGES=1`, so `npm i -g`, `pip install --user`, `cargo i
 `curl … | sh` installers put what they install there. `RUSTUP_HOME` points at your `~/.rustup` when you have one, so
 your toolchains still run. Claude Code itself keeps your `HOME`, where its login is. No Navi sees another's home.
 
-**Writes**, on both: anywhere you can write on the machine, except:
+**Writes**, on both: anywhere you can write on the machine, except what runs outside its sandbox later: your shells,
+your systemd, and fleetd's own agents, which run unsandboxed in your checkouts and hold tokens. Those stay read-only,
+so a Navi that is talked into something can't plant code there that reads your keys:
 
 - What it can't read (below).
 - Startup files that run on their own, read-only: `~/.profile`, `~/.bashrc`, `~/.bash_profile`, `~/.bash_login`,
   `~/.bash_logout`, `~/.zshenv`, `~/.zprofile`, `~/.zshrc`, `~/.zlogin`, `~/.zlogout`, `~/.pam_environment`,
-  `~/.xprofile`, `~/.xsessionrc` and `~/.xinitrc`, and the user's systemd units and D-Bus services
+  `~/.xprofile`, `~/.xsessionrc`, `~/.xinitrc`, `~/.bash_aliases`, cargo's `~/.cargo/config.toml` (it can name a
+  program every build runs), and the user's systemd units and D-Bus services
   (`~/.local/share/systemd`, `~/.local/share/dbus-1/services`; each is made, empty, if it isn't there). A line it
   added there would run outside its sandbox.
-- The programs the node runs, read-only: Claude Code's install, every directory on the session's `PATH` that is in
-  your home (a `…/bin` as its whole install, so `~/.nvm/versions/node/v22` for node and npm, and `~/.cargo` for
-  `~/.cargo/bin`), and the install a program there links to elsewhere in the home.
+- Your programs: Claude Code's install, every directory on the node's `PATH` that is in your home (a `…/bin` as its
+  whole install, so `~/.nvm/versions/node/v22` for node and npm, and `~/.cargo` for `~/.cargo/bin`) and the install
+  a program there links to elsewhere in the home; every directory on the node's `PATH` outside the home that you can
+  write; Homebrew's (`/home/linuxbrew/.linuxbrew/bin`, `/opt/homebrew/bin`) and `/usr/local/bin` when you can write
+  them; and your `~/bin`, `~/.local/bin`, `~/.cargo/bin`, `~/go/bin`, `~/.bun/bin`, `~/.deno/bin`,
+  `~/.npm-global/bin`, `~/.volta/bin` and `~/.pyenv/shims`, where your shells look. On Linux one of those that isn't
+  there but could be made is made, empty, first. The Navi's own home's bin dirs stay its own, first on its `PATH`.
+- In each project's checkout on the machine (every project the node knows): git's `config`, `config.worktree`,
+  `hooks` and `worktrees` in its git dir (and the common dir a worktree's `.git` points at), so no `core.fsmonitor`,
+  `core.hooksPath`, alias or hook runs in your git or an agent's; and `.claude`, `.fleetd`, `.mcp.json`, `CLAUDE.md`
+  and `CLAUDE.local.md`, which fleetd's agents load as their settings, policy and instructions. `.claude`, `.fleetd`,
+  `hooks` and `worktrees` are made, empty, if they aren't there. A new `.mcp.json` or `CLAUDE.md` can still be made;
+  a new `.mcp.json`'s servers don't run until settings it can't write approve them. The rest of a checkout is yours
+  to have it write: its code, a commit.
 - `~/.claude` (but its own session's files: its conversation in `~/.claude/projects/<its folder>`,
   `~/.claude/session-env/<session>`, `~/.claude/file-history/<session>`, and the login file
   `~/.claude/.credentials.json`, where Claude Code saves a refreshed token), so it can't add hooks or MCP servers for
@@ -184,9 +198,9 @@ Nothing comes back after the node or the machine restarts, and there is no root,
   sockets stay reachable, including an X server that accepts local connections without a cookie
   (`xhost +si:localuser`, the GNOME default). fleetd's own screens don't listen there. Its folder, its session's
   MCP config (with its own servers' tokens) and Claude Code's login are readable to it, since Claude Code needs them.
-  It can write what you run later yourself: a script in your code, a program in a `PATH` directory the node doesn't
-  use. A path hidden here but reachable through another mount of the same disk (a bind mount you made) is reachable
-  there too.
+  It can still write code you or an agent run later on purpose: a script, a test or a build file in a checkout. A
+  path hidden here but reachable through another mount of the same disk (a bind mount you made) is reachable there
+  too.
 
 ## Hub links {#hub-links}
 

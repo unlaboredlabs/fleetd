@@ -79,10 +79,11 @@ A Navi searches the web freely, and reads what its [integrations](/docs/integrat
 also writes drafts and notes in its folder, remembers and forgets, keeps its checklist, works screens and logs in with 1Password.
 
 - **Files:** it reads and writes what you can on the machine, except your keys and logins (`~/.ssh`, `~/.config`
-  and the rest), fleetd's own directory and other Navis'. It can't change the startup files your shell runs on its
-  own, the programs the node runs, its own Claude Code settings, MCP servers or fleetd policy in its folder
-  (`.claude`, `.mcp.json`, `.fleetd`), and a policy file's allow rules don't apply to a Navi at all. Its folder is
-  where its notes, drafts and downloads go.
+  and the rest), fleetd's own directory and other Navis'. What runs outside its sandbox later stays read-only, so it
+  can't plant code that reads your keys: your shell's startup files, your programs (`~/.local/bin`, `~/.cargo/bin`,
+  Homebrew's and the rest), git's config and hooks and the `.claude`, `.fleetd`, `.mcp.json` and `CLAUDE.md` of every
+  project's checkout, and its own settings in its folder. A policy file's allow rules don't apply to a Navi at all.
+  Its folder is where its notes, drafts and downloads go.
 - **Its own home:** each Navi has a home of its own, kept between sessions, where `npm i -g`, `pip install --user`,
   `cargo install` and install scripts put what they install, on its `PATH`. What it starts in the background with
   `nohup` or `setsid` keeps running after its turn, until the machine or the node restarts. It has no root, `apt` or
