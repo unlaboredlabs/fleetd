@@ -219,14 +219,15 @@ export const UNSHOWN = "Couldn't show this";
 export const isBlockFence = (b: Block): boolean => b.t === "code" && b.lang === "fleetd-block";
 
 /**
- * How a code block draws: as code; as the "couldn't show this" chip, a lead's block in a final message that didn't
- * show; or, while the reply still streams in, as a quiet placeholder, since the block may still be arriving and the
- * hub decides once the message is final.
+ * How a code block draws: as code; in a lead's or agent's words (`blocks`), a fleetd-block fence as the "couldn't
+ * show this" chip once the message is final, or as a quiet placeholder while the reply still streams in, since the
+ * block may still be arriving and the hub decides once the message is final. A person's fence is code they wrote.
  */
-export const fenceView = (b: Block, streaming: boolean): "code" | "unshown" | "pending" => (!isBlockFence(b) ? "code" : streaming ? "pending" : "unshown");
+export const fenceView = (b: Block, { streaming = false, blocks = false }: { streaming?: boolean; blocks?: boolean }): "code" | "unshown" | "pending" =>
+  !blocks || !isBlockFence(b) ? "code" : streaming ? "pending" : "unshown";
 
 /** A message's markdown as one line of plain text, for a preview: "**Done**: see `x`" → "Done: see x". */
-export const previewText = (source: string): string =>
+export const previewText = (source: string, blocks = false): string =>
   parseMarkdown(source)
     .map((b): string => {
       switch (b.t) {
@@ -234,7 +235,7 @@ export const previewText = (source: string): string =>
         case "h":
           return plainText(b.inline);
         case "code":
-          return isBlockFence(b) ? UNSHOWN : b.text;
+          return blocks && isBlockFence(b) ? UNSHOWN : b.text;
         case "quote":
           return b.blocks.map((q) => (q.t === "p" ? plainText(q.inline) : "")).join(" ");
         case "list":

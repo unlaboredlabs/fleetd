@@ -52,6 +52,8 @@ describe("bubbles", () => {
     // Past the bubble cap, blocks ride in the last bubble's text: the chats list still never shows their JSON.
     const tail = `${fence}\n\nand more\n\n${fence}`;
     expect(previewOf({ author: "lead", text: tail, message: message(tail, [{ start: 0, end: tail.length }]) })).toBe("Couldn't show this and more Couldn't show this");
+    // A person's own fence is what they wrote: the chats list shows it as text.
+    expect(previewOf({ author: "human", text: fence })).toBe('You: {"v":1,"kind":"table","columns":["PR",""],"rows":[]}');
   });
 });
 

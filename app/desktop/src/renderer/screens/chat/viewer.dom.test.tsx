@@ -235,3 +235,10 @@ it("never shows the chip while a lead's reply streams in: its block may still be
   expect(host.querySelector("[data-unshown]")).toBeNull();
   expect(host.textContent).not.toContain('"kind"');
 });
+
+it("shows a fleetd-block fence in your own message as the code you wrote, never the chip", async () => {
+  const text = 'try this:\n\n```fleetd-block\n{"v":1,"kind":"ask","question":"Ship?"}\n```';
+  await mount({ ...mine, text, attachments: [] });
+  expect(host.querySelector("[data-unshown]")).toBeNull();
+  expect(host.textContent).toContain('"kind":"ask"');
+});

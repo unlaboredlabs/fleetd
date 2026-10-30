@@ -76,9 +76,18 @@ describe("fenceView", () => {
     const [code] = parseMarkdown('```json\n{"a":1}\n```');
     if (block === undefined || code === undefined) throw new Error("no blocks");
     // Still arriving: never "Couldn't show this", which the hub decides once the message is final.
-    expect(fenceView(block, true)).toBe("pending");
-    expect(fenceView(block, false)).toBe("unshown");
-    expect(fenceView(code, true)).toBe("code");
-    expect(fenceView(code, false)).toBe("code");
+    expect(fenceView(block, { blocks: true, streaming: true })).toBe("pending");
+    expect(fenceView(block, { blocks: true })).toBe("unshown");
+    expect(fenceView(code, { blocks: true, streaming: true })).toBe("code");
+    expect(fenceView(code, { blocks: true })).toBe("code");
+  });
+
+  it("leaves a fleetd-block fence in a person's words as the code they wrote", () => {
+    const [block] = parseMarkdown('```fleetd-block\n{"v":1,"kind":"ask","question":"Ship?"}\n```');
+    if (block === undefined) throw new Error("no block");
+    expect(fenceView(block, {})).toBe("code");
+    expect(fenceView(block, { streaming: true })).toBe("code");
+    expect(previewText('try:\n\n```fleetd-block\n{"v":1}\n```')).toBe('try: {"v":1}');
+    expect(previewText('try:\n\n```fleetd-block\n{"v":1}\n```', true)).toBe("try: Couldn't show this");
   });
 });

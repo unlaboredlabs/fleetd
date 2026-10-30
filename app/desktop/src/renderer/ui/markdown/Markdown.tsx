@@ -13,13 +13,18 @@ export interface MarkdownProps {
   rawToggle?: boolean;
   /** Start in raw view. */
   initialRaw?: boolean;
+  /**
+   * A lead's or agent's words: a fleetd-block fence that reaches markdown is a block that didn't show, drawn as a
+   * small chip. Anywhere else (a person's message, a PR) it is code like any other.
+   */
+  blocks?: boolean;
 }
 
 /**
  * Rendered markdown (GFM: tables, task lists, strikethrough, autolinks). Raw HTML is dropped, never rendered.
  * Memoized on its props, so a message parses once and re-renders of the list around it cost nothing.
  */
-export const Markdown = memo(function Markdown({ source, className, rawToggle, initialRaw = false }: MarkdownProps) {
+export const Markdown = memo(function Markdown({ source, className, rawToggle, initialRaw = false, blocks = false }: MarkdownProps) {
   const [raw, setRaw] = useState(initialRaw);
   const body =
     raw && rawToggle ? (
@@ -30,7 +35,7 @@ export const Markdown = memo(function Markdown({ source, className, rawToggle, i
       <div className={cx(s.root, !rawToggle && className)} data-text="wrap">
         {/* aria-busy until the parser has loaded, which the QA gate waits out. */}
         <Suspense fallback={<div aria-busy="true" />}>
-          <MarkdownBody source={source} />
+          <MarkdownBody source={source} blocks={blocks} />
         </Suspense>
       </div>
     );

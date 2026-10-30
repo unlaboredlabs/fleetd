@@ -118,7 +118,7 @@ export const previewOf = (item: Pick<ChatItem, "text" | "message" | "author"> & 
     .map((b) => {
       switch (b.kind) {
         case "text":
-          return previewText(b.text);
+          return previewText(b.text, item.author !== "human");
         case "ask":
           return b.question;
         case "pr":

@@ -68,12 +68,17 @@ function fenceOf(children: ReactNode): { code: string; lang: string | null } | n
   return { code, lang };
 }
 
-const COMPONENTS: Components = {
-  pre: ({ children }) => {
+/** A fenced block as code; with `blocks` (a lead's or agent's words), a fleetd-block fence that didn't show as a chip. */
+const pre =
+  (blocks: boolean) =>
+  ({ children }: { children?: ReactNode }) => {
     const fence = fenceOf(children);
-    if (fence?.lang === BLOCK_FENCE) return <Unshown code={fence.code} />;
+    if (blocks && fence?.lang === BLOCK_FENCE) return <Unshown code={fence.code} />;
     return fence ? <Code code={fence.code} lang={fence.lang} /> : <pre>{children}</pre>;
-  },
+  };
+
+const COMPONENTS: Components = {
+  pre: pre(false),
   code: ({ children }) => <InlineCode>{children}</InlineCode>,
   // An app route stays in the app.
   a: ({ href, children }) => (href?.startsWith("#/") ? <AppLink href={href}>{children}</AppLink> : <ExternalLink href={href}>{children}</ExternalLink>),
@@ -86,17 +91,19 @@ const COMPONENTS: Components = {
   ),
 };
 
-const Block = memo(function Block({ source }: { source: string }) {
+const WITH_BLOCKS: Components = { ...COMPONENTS, pre: pre(true) };
+
+const Block = memo(function Block({ source, blocks }: { source: string; blocks: boolean }) {
   return (
-    <ReactMarkdown remarkPlugins={REMARK} components={COMPONENTS} skipHtml>
+    <ReactMarkdown remarkPlugins={REMARK} components={blocks ? WITH_BLOCKS : COMPONENTS} skipHtml>
       {source}
     </ReactMarkdown>
   );
 });
 
 /** Block by block: a reply streaming in re-parses only its last block, the one still growing. */
-export default function MarkdownBody({ source }: { source: string }) {
-  const blocks = useMemo(() => markdownBlocks(source), [source]);
+export default function MarkdownBody({ source, blocks = false }: { source: string; blocks?: boolean }) {
+  const parts = useMemo(() => markdownBlocks(source), [source]);
   // By position: a streaming message only grows at its end, so every block before the last keeps its key and text.
-  return blocks.map((b, i) => <Block key={i} source={b} />);
+  return parts.map((b, i) => <Block key={i} source={b} blocks={blocks} />);
 }
