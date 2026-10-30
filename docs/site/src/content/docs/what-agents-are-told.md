@@ -24,9 +24,9 @@ fleetd's text reaches a model in one of three ways:
 | The first message of a session | The state it starts in: a lead's digest (with the chat message that started the lead), a task's task and brief. |
 | A later message into a session | Wakes, chat messages, review findings, train news, pauses, [steers](/docs/steering). |
 
-The system prompt is added to Claude Code's own (`--append-system-prompt`) at every start of the session, resumes
-included. When a long session is compacted, Claude Code summarizes its messages but never its system prompt, so a lead
-keeps its exact voice and rules for the whole session. A node too old to take a system prompt gets it at the start of
+The system prompt is added to Claude Code's own (`--append-system-prompt-file`, a private file on the machine) at
+every start of the session, resumes included. When a long session is compacted, Claude Code summarizes its messages
+but never its system prompt, so a lead keeps its exact voice and rules for the whole session. A node too old to take a system prompt gets it at the start of
 the first message instead.
 
 Your own claude setup still applies underneath. See [Config & files](/docs/config-and-files#claude).

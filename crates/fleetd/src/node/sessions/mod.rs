@@ -2383,6 +2383,15 @@ impl SessionService {
                 .to_string_lossy()
                 .into_owned(),
         ));
+        // Its standing rules, written at each start: the file is the session's, kept private as its MCP config is.
+        let system_prompt = match &row.local.system_prompt {
+            Some(text) => {
+                let file = dir.join("system-prompt.md");
+                super::secrets::write_atomic(&file, text.as_bytes())?;
+                Some(file)
+            }
+            None => None,
+        };
         let settings = dir.join("settings.json");
         let helper_model = row
             .local
@@ -2512,7 +2521,7 @@ impl SessionService {
                 .chain(claude::role_allowed(row.local.role))
                 .collect(),
             allowed_only: row.local.allowed_only,
-            system_prompt: row.local.system_prompt.clone(),
+            system_prompt,
             disallowed_tools: ALWAYS_DISALLOWED
                 .iter()
                 .map(|t| (*t).to_owned())

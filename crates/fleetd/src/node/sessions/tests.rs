@@ -690,10 +690,49 @@ async fn a_leads_voice_survives_a_compaction_and_a_resume_verbatim() {
     let args = crate::node::runner::claude::ClaudeRunner::new("claude".into()).args(spec);
     let at = args
         .iter()
-        .position(|a| a == "--append-system-prompt")
+        .position(|a| a == "--append-system-prompt-file")
         .unwrap();
-    assert_eq!(args[at + 1], start.system);
-    assert!(args[at + 1].contains(voice));
+    let file = std::fs::read_to_string(&args[at + 1]).unwrap();
+    assert_eq!(file, start.system);
+    assert!(file.contains(voice));
+}
+
+/// Memory can make a system prompt larger than one argument may be (128 KiB on Linux): it goes in a private file, and
+/// claude's argv stays small and holds none of it.
+#[tokio::test]
+async fn a_system_prompt_past_an_arguments_limit_goes_whole_in_a_private_file() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let mut hub = hub(
+        dir.path(),
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::fixture("init-partial-two-turns"),
+    )
+    .await;
+    hub.project(dir.path()).await;
+    let memory = format!("## Memory\n{}", "- é remember this line\n".repeat(8_000));
+    assert!(memory.len() > 128 * 1024);
+    let SessionCall::Launch(lead) = launch("s1", RuntimeMode::FullAccess, SessionWorkspace::Root)
+    else {
+        unreachable!()
+    };
+    hub.ok(SessionCall::Launch(SessionLaunch {
+        role: fleetd_contracts::sessions::SessionRole::Lead,
+        system_prompt: Some(NonEmpty::unchecked(memory.as_str())),
+        ..lead
+    }))
+    .await;
+    hub.settled("r1").await;
+    let spec = &hub.runner.spawned()[0];
+    let args = crate::node::runner::claude::ClaudeRunner::new("claude".into()).args(spec);
+    assert!(
+        args.iter()
+            .all(|a| a.len() < 4096 && !a.contains("remember this"))
+    );
+    let file = spec.system_prompt.as_ref().unwrap();
+    assert_eq!(std::fs::read_to_string(file).unwrap(), memory);
+    let mode = std::fs::metadata(file).unwrap().permissions().mode();
+    assert_eq!(mode & 0o077, 0, "{mode:o}");
 }
 
 #[tokio::test(start_paused = true)]
@@ -1284,7 +1323,7 @@ async fn a_removed_worktree_comes_back_at_the_same_path_when_the_session_resumes
     assert_eq!(var(&spec, "MAKEFLAGS"), Some(format!("-j{jobs}")));
     assert_eq!(var(&spec, "GOFLAGS"), Some(format!("-p={jobs}")));
     // The note is a standing rule: in the system prompt, which a compaction never summarizes, not the brief.
-    let system = spec.system_prompt.as_deref().unwrap_or_default();
+    let system = std::fs::read_to_string(spec.system_prompt.as_ref().unwrap()).unwrap();
     assert!(
         system.contains(&format!("- Builds get {jobs} parallel jobs per agent")),
         "{system}"

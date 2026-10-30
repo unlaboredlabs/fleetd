@@ -100,9 +100,9 @@ lines a lead is woken with, is facts: see <a href="#not-editable">Filled in by f
 </tr>
 </tbody>
 </table>
-<p>The system prompt is added to Claude Code’s own (<code dir="auto">--append-system-prompt</code>) at every start of the session, resumes
-included. When a long session is compacted, Claude Code summarizes its messages but never its system prompt, so a lead
-keeps its exact voice and rules for the whole session. A node too old to take a system prompt gets it at the start of
+<p>The system prompt is added to Claude Code’s own (<code dir="auto">--append-system-prompt-file</code>, a private file on the machine) at
+every start of the session, resumes included. When a long session is compacted, Claude Code summarizes its messages
+but never its system prompt, so a lead keeps its exact voice and rules for the whole session. A node too old to take a system prompt gets it at the start of
 the first message instead.</p>
 <p>Your own claude setup still applies underneath. See <a href="/docs/config-and-files#claude">Config &amp; files</a>.</p>
 <p>Agents act through fleetd’s MCP tools. The list, generated from the code, is in
