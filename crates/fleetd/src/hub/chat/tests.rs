@@ -1934,7 +1934,7 @@ async fn the_lead_hears_which_block_did_not_show_and_why() {
     let held = hub.leads.wakes.held(&r);
     assert_eq!(held.len(), 1, "{held:?}");
     assert!(
-        held[0].contains("block 1: columns[1]: expected a non-empty string"),
+        held[0].contains("block 1 didn't show: columns[1]: expected a non-empty string"),
         "{held:?}"
     );
     // Landed once: the next tick tells it nothing more.

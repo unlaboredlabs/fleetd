@@ -1,7 +1,8 @@
 //! A final lead message's bubbles. The lead separates bubbles with a blank line, as it separates paragraphs, so a
 //! reply reads the same in a client that shows `text` whole. A code fence is a bubble of its own and never split; a
 //! list or table stays one bubble across the blank lines of a loose list. A ```fleetd-block fence becomes a block
-//! when it passes [`block`], and otherwise shows as the fence it is.
+//! when it passes [`block`], and otherwise shows as the fence it is; a ```json or untagged fence becomes one only when
+//! its whole body is a block that passes every check. The lead hears of either case with its next wake ([`unshown`]).
 use std::sync::LazyLock;
 
 use fleetd_contracts::blocks::{
@@ -45,6 +46,15 @@ pub fn block(json: &str) -> (Option<ChatBlock>, Option<String>) {
             .and_then(|m| m.remove("caption"))
             .is_some();
     (captioned.then(|| checked(&value).ok()).flatten(), Some(why))
+}
+
+/// A ```json or untagged fence whose whole body is one block that passes every check: a lead that forgot the
+/// fleetd-block tag. Anything else in such a fence (a real JSON snippet) stays code.
+fn promoted(json: &str) -> Option<ChatBlock> {
+    if json.len() > BLOCK_JSON_MAX || !json.trim_start().starts_with('{') {
+        return None;
+    }
+    checked(&serde_json::from_str(json).ok()?).ok()
 }
 
 fn checked(value: &Value) -> Result<ChatBlock, String> {
@@ -213,33 +223,49 @@ pub fn parts(text: &str) -> Option<List<ChatPart, 1, CHAT_PARTS_MAX>> {
     List::new(parts).ok()
 }
 
-/// The blocks of the message that didn't show as written, as one line for its lead: which block (counting the
-/// message's ```fleetd-block fences from 1) and the rule it broke. None when every block showed.
+/// What the lead should hear of its message's blocks, as one line: each block (counting the message's blocks from 1)
+/// that didn't show and the rule it broke, showed without its caption, or showed from a fence not tagged
+/// fleetd-block. None when every block showed as written.
 pub fn unshown(text: &str) -> Option<String> {
-    let (_, failed) = split(text);
-    if failed.is_empty() {
+    let (_, notes) = split(text);
+    if notes.is_empty() {
         return None;
     }
-    let all = failed
+    let all = notes
         .iter()
-        .map(|(n, why)| format!("block {n}: {why}"))
+        .map(|n| match n {
+            Note::Failed(n, why) => format!("block {n} didn't show: {why}"),
+            Note::Captionless(n, why) => format!("block {n} showed without its caption: {why}"),
+            Note::Promoted(n, fence) => format!(
+                "block {n} showed, but I rendered your {fence} fence as a block; tag it fleetd-block"
+            ),
+        })
         .collect::<Vec<_>>()
         .join("; ");
+    let failed = notes.iter().any(|n| matches!(n, Note::Failed(..)));
     Some(format!(
-        "- your last message had {} the person couldn't see as written (a \"couldn't show this\" chip stands in): {all}; fix and send again if it matters",
-        if failed.len() == 1 {
-            "a block".to_owned()
+        "- in your last message, {all}{}",
+        if failed {
+            "; the person sees a \"couldn't show this\" chip for each block that didn't show: fix and send again if it matters"
         } else {
-            format!("{} blocks", failed.len())
+            ""
         }
     ))
+}
+
+/// One of a message's blocks the lead should hear of, by its number among the message's blocks.
+enum Note {
+    Failed(usize, String),
+    Captionless(usize, String),
+    /// A block from a ```json or untagged fence, as the fence opened.
+    Promoted(usize, &'static str),
 }
 
 // Every bubble may be a block: the bubble cap is the only one a message's blocks meet.
 const _: () = assert!(MESSAGE_BLOCKS_MAX >= CHAT_PARTS_MAX);
 
-/// The parts, and each block that failed: its number among the message's blocks, and why.
-fn split(text: &str) -> (Vec<ChatPart>, Vec<(usize, String)>) {
+/// The parts, and what the lead should hear of their blocks.
+fn split(text: &str) -> (Vec<ChatPart>, Vec<Note>) {
     let mut found = bubbles(text);
     let is_block = |b: &Bubble| {
         b.fence
@@ -265,11 +291,31 @@ fn split(text: &str) -> (Vec<ChatPart>, Vec<(usize, String)>) {
         .into_iter()
         .map(|b| {
             let mut block = None;
-            if let Some((_, body, body_end)) = b.fence.filter(|(info, _, _)| info == BLOCK_FENCE) {
-                blocks += 1;
-                let why;
-                (block, why) = self::block(&text[body..body_end]);
-                failed.extend(why.map(|why| (blocks, why)));
+            match b.fence {
+                Some((info, body, body_end)) if info == BLOCK_FENCE => {
+                    blocks += 1;
+                    let why;
+                    (block, why) = self::block(&text[body..body_end]);
+                    failed.extend(why.map(|why| match block {
+                        Some(_) => Note::Captionless(blocks, why),
+                        None => Note::Failed(blocks, why),
+                    }));
+                }
+                Some((info, body, body_end))
+                    if info.is_empty() || info.eq_ignore_ascii_case("json") =>
+                {
+                    block = promoted(&text[body..body_end]);
+                    if block.is_some() {
+                        blocks += 1;
+                        let fence = if info.is_empty() {
+                            "untagged ```"
+                        } else {
+                            "```json"
+                        };
+                        failed.push(Note::Promoted(blocks, fence));
+                    }
+                }
+                _ => {}
             }
             ChatPart {
                 start: utf16(b.start),
@@ -281,7 +327,7 @@ fn split(text: &str) -> (Vec<ChatPart>, Vec<(usize, String)>) {
     let past = format!(
         "a message shows at most {CHAT_PARTS_MAX} bubbles (paragraphs, fences and blocks); send the rest in another"
     );
-    failed.extend((blocks + 1..=blocks + over).map(|n| (n, past.clone())));
+    failed.extend((blocks + 1..=blocks + over).map(|n| Note::Failed(n, past.clone())));
     (parts, failed)
 }
 
@@ -405,7 +451,7 @@ mod tests {
         );
         assert_eq!(fallback(&over), None);
         // Another language's fence is a text part, whatever it holds.
-        assert_eq!(sliced(&format!("ok\n\n```json\n{chart}\n```"))[1].1, None);
+        assert_eq!(sliced(&format!("ok\n\n```ts\n{chart}\n```"))[1].1, None);
     }
 
     #[test]
@@ -429,10 +475,10 @@ mod tests {
         assert_eq!(got[CHAT_PARTS_MAX - 1].1, None);
         assert_eq!(
             unshown(&many).unwrap(),
-            "- your last message had 2 blocks the person couldn't see as written (a \"couldn't show this\" chip stands in): \
-             block 24: a message shows at most 24 bubbles (paragraphs, fences and blocks); send the rest in another; \
-             block 25: a message shows at most 24 bubbles (paragraphs, fences and blocks); send the rest in another; \
-             fix and send again if it matters"
+            "- in your last message, \
+             block 24 didn't show: a message shows at most 24 bubbles (paragraphs, fences and blocks); send the rest in another; \
+             block 25 didn't show: a message shows at most 24 bubbles (paragraphs, fences and blocks); send the rest in another\
+             ; the person sees a \"couldn't show this\" chip for each block that didn't show: fix and send again if it matters"
         );
     }
 
@@ -443,8 +489,8 @@ mod tests {
         assert_eq!(sliced(&text)[1].1, None);
         assert_eq!(
             unshown(&text).unwrap(),
-            "- your last message had a block the person couldn't see as written (a \"couldn't show this\" chip stands in): \
-             block 1: columns[1]: expected a non-empty string; fix and send again if it matters"
+            "- in your last message, block 1 didn't show: columns[1]: expected a non-empty string\
+             ; the person sees a \"couldn't show this\" chip for each block that didn't show: fix and send again if it matters"
         );
         let ragged = r#"{"v":1,"kind":"table","columns":["a","b"],"rows":[["1"]]}"#;
         assert_eq!(block(ragged).1.unwrap(), "each row has one cell per column");
@@ -474,6 +520,31 @@ mod tests {
             block(r#"{"v":1,"kind":"image","attachmentId":""}"#),
             (None, Some(_))
         ));
+    }
+
+    #[test]
+    fn a_block_in_a_json_or_untagged_fence_shows_and_a_json_snippet_stays_code() {
+        let image = r#"{"v":1,"kind":"image","attachmentId":"F7","caption":"Checkout, dark"}"#;
+        let text = format!("here:\n\n```json\n{image}\n```\n\nand\n\n```\n{image}\n```");
+        let got = sliced(&text);
+        assert_eq!((got[1].1, got[3].1), (Some("other"), Some("other")));
+        assert_eq!(
+            unshown(&text).unwrap(),
+            "- in your last message, \
+             block 1 showed, but I rendered your ```json fence as a block; tag it fleetd-block; \
+             block 2 showed, but I rendered your untagged ``` fence as a block; tag it fleetd-block"
+        );
+        // Real JSON, a block that breaks a rule, or another language: code, and nothing to tell.
+        for snippet in [
+            "```json\n{\"name\":\"fleetd\",\"version\":\"1.2.0\"}\n```",
+            "```json\n{\"v\":1,\"kind\":\"table\",\"columns\":[\"\"],\"rows\":[]}\n```",
+            "```json\n[{\"v\":1,\"kind\":\"image\",\"attachmentId\":\"F7\"}]\n```",
+            &format!("```ts\n{image}\n```"),
+        ] {
+            let text = format!("ok\n\n{snippet}");
+            assert_eq!(sliced(&text)[1].1, None, "{snippet}");
+            assert_eq!(unshown(&text), None, "{snippet}");
+        }
     }
 
     #[test]
