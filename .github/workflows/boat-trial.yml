@@ -1,0 +1,308 @@
+name: boat trial
+
+# Temporary (W217): ci.yml's Linux jobs and Desktop QA's Linux shards on boat.dev runners, steps copied as they are and
+# only runs-on changed, to time them beside GitHub's run of the same commit. Never merged.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
+
+jobs:
+  rust-crates:
+    name: boat / rust-crates
+    # The root Cargo workspace's tests. Lint (fmt, clippy) and the docs and lab checks on the built binary are jobs of
+    # their own, beside this one: one job ran all four one after the other.
+    runs-on: boat
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # Also checks that the generated contracts (schema/*.json and the app's TypeScript) are current
+      # (schema::generated_contracts_are_current) and replays the recorded claude fixtures (node::runner).
+      - run: cargo test --locked --workspace
+
+  rust-lint:
+    name: boat / rust-lint
+    runs-on: boat
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Hub migrations only add new files, after the base's
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch --quiet --depth=1 origin "$GITHUB_BASE_REF"
+          node .github/migrations-check.mjs FETCH_HEAD
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: cargo fmt --all --check
+      - run: cargo clippy --locked --workspace --all-targets -- -D warnings
+
+  rust-docs:
+    name: boat / rust-docs
+    # The docs' generated pages, `fleetd help` for the site job, and the lab scenarios, all on one debug build.
+    runs-on: boat
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: cargo build --locked -p fleetd -p docsgen
+      - name: The docs' generated pages are up to date
+        # The CLI reference, the Agent tools page and the prompt table in docs/site/src/content/docs come from the
+        # code. This fails while they differ from a fresh render. Fix: cargo run -q -p docsgen, then rebuild and commit
+        # (site/README.md).
+        run: cargo run --locked -q -p docsgen -- --check
+      # For the site job.
+      - run: target/debug/fleetd help > "$RUNNER_TEMP/fleetd-help.txt"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: fleetd-help
+          path: ${{ runner.temp }}/fleetd-help.txt
+          retention-days: 1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: tests/lab/package-lock.json
+      - run: npm ci --prefix tests/lab --no-audit --no-fund
+      - name: Lab scenarios on a project that isn't fleetd
+        # W9's tests/lab/factory, on the debug binary built above: a hub and a node on a generated Python repo with a
+        # local ssh-style origin, and an offline stand-in for claude. No network, GitHub or claude login.
+        run: npm run factory --prefix tests/lab
+        env:
+          FLEETD_BIN: ${{ github.workspace }}/target/debug/fleetd
+          FLEETD_FACTORY_DIR: ${{ runner.temp }}/factory
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: lab-factory-logs
+          path: ${{ runner.temp }}/factory/*/logs/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  rust:
+    # What rust-crates can't check on its own: that libsodium (in Node, as the desktop app seals) opens what the node's
+    # Rust seals and the other way round. rust-macos runs the same on macOS. `rust (linux)` and `rust (macos)` are
+    # required checks.
+    name: boat / rust (linux)
+    runs-on: boat
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: tests/lab/package-lock.json
+      - run: npm ci --prefix tests/lab --no-audit --no-fund
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Sealed boxes against libsodium
+        run: cargo test --locked -p fleetd --lib node::identity
+        env:
+          FLEETD_REQUIRE_NODE_SEAL: "1"
+      - name: agent-browser's own scripts run in a session that filled a login
+        # The pinned agent-browser (agent_browser.rs's VERSION), on the runner's Chrome: every script its commands
+        # send is one of the pinned shapes (agent_browser_shapes.json) and a sealed session runs it, and its commands
+        # work after a fill. FLEETD_REQUIRE_AGENT_BROWSER makes these tests fail, not skip, without it or a Chrome.
+        run: |
+          version="$(sed -n 's/^pub const VERSION: &str = "\(.*\)";$/\1/p' crates/fleetd/src/node/browser/agent_browser.rs)"
+          npm install --ignore-scripts --no-audit --no-fund --prefix "$RUNNER_TEMP/agent-browser" "agent-browser@$version"
+          # The package carries each platform's binary itself; its install script only links one, so skipping it
+          # leaves them all in bin/. Fail here, plainly, if this one isn't there or doesn't run.
+          bin="$RUNNER_TEMP/agent-browser/node_modules/agent-browser/bin/agent-browser-linux-x64"
+          test -f "$bin" || { ls -l "$(dirname "$bin")"; echo "no $bin in agent-browser@$version" >&2; exit 1; }
+          chmod +x "$bin"
+          "$bin" --version | grep -F "$version"
+          FLEETD_TEST_AGENT_BROWSER="$bin" cargo test --locked -p fleetd --lib agent_browser
+        env:
+          FLEETD_REQUIRE_AGENT_BROWSER: "1"
+      - name: A Navi's sandbox holds (bubblewrap)
+        # node/runner/sandbox: a Navi can't write outside its folder or read the token store, and works as usual
+        # inside it. rust-crates runs the same tests without bubblewrap, where they skip and say why;
+        # FLEETD_REQUIRE_SANDBOX makes them fail here instead. Ubuntu's AppArmor blocks the user namespaces bwrap needs
+        # unless a profile allows them; the runner turns the restriction off.
+        run: |
+          sudo apt-get install -y --no-install-recommends bubblewrap
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          bwrap --ro-bind / / --unshare-all true
+          cargo test --locked -p fleetd --lib node::runner::sandbox
+        env:
+          FLEETD_REQUIRE_SANDBOX: "1"
+
+  desktop:
+    name: boat / desktop
+    # app/desktop, the Electron app (its own pnpm workspace): typecheck, lint, unit tests and a build. Runs when
+    # app/desktop or this workflow changed; otherwise it reports success at once, so it can be a required check.
+    # desktop-packaged runs the packed app and its budgets beside it.
+    runs-on: boat
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: app/desktop
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # A manual run from a branch compares with its merge base on main, so it needs the history.
+          fetch-depth: ${{ github.event_name == 'workflow_dispatch' && '0' || '2' }}
+      - name: Scope
+        id: scope
+        working-directory: .
+        run: |
+          run=true
+          base=$(git rev-parse -q --verify HEAD^1 || true)
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$GITHUB_REF" != refs/heads/main ]; then
+            base=$(git merge-base origin/main HEAD || true)
+          fi
+          if [ -n "$base" ] && git diff --quiet "$base" HEAD -- app/desktop .github/workflows/ci.yml; then
+            run=false
+            echo "app/desktop didn't change."
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+      - if: steps.scope.outputs.run == 'true'
+        uses: pnpm/action-setup@v6
+        with:
+          package_json_file: app/desktop/package.json
+      - if: steps.scope.outputs.run == 'true'
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: app/desktop/pnpm-lock.yaml
+      - if: steps.scope.outputs.run == 'true'
+        name: No paths that differ only in case
+        # macOS checkouts are case-insensitive: Composer.tsx beside composer.ts breaks the Mac build and the
+        # "./composer" import alike, so the extension is ignored too.
+        run: |
+          clashes=$(git ls-files | sed -E 's/\.[^./]+$//' | awk '{ l = tolower($0) } (l in seen) && seen[l] != $0 { print seen[l] " / " $0; next } { seen[l] = $0 }')
+          if [ -n "$clashes" ]; then echo "Paths that differ only in case (rename one):"; echo "$clashes"; exit 1; fi
+      - if: steps.scope.outputs.run == 'true'
+        run: pnpm install --frozen-lockfile
+      - if: steps.scope.outputs.run == 'true'
+        run: pnpm typecheck
+      - if: steps.scope.outputs.run == 'true'
+        run: pnpm lint
+      - if: steps.scope.outputs.run == 'true'
+        run: pnpm test
+      - if: steps.scope.outputs.run == 'true'
+        run: pnpm build
+      - name: A release build refuses debugging switches
+        # Builds both variants, lays each out as a packaged app and launches it: with a DevTools switch the release
+        # build must exit before anything listens; the test build must still listen. The fuse-only cases (--inspect)
+        # run against the real package in build-release.yml.
+        if: steps.scope.outputs.run == 'true'
+        run: pnpm debug-guard-check
+
+  qa:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, scale: 1, shard: 1, of: 4 }
+          - { os: ubuntu-latest, scale: 1, shard: 2, of: 4 }
+          - { os: ubuntu-latest, scale: 1, shard: 3, of: 4 }
+          - { os: ubuntu-latest, scale: 1, shard: 4, of: 4 }
+    name: boat / qa (${{ matrix.os }}, ${{ matrix.shard }}/${{ matrix.of }})
+    runs-on: boat
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+    defaults:
+      run:
+        working-directory: app/desktop
+    env:
+      QA_SCALE: ${{ matrix.scale }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+      - name: Scope
+        # Runs when app/desktop or this workflow changed, and always on a manual or nightly run; otherwise reports
+        # success at once, so it can be required. A push to main compares with the last push run that wasn't cancelled,
+        # and runs in full when it finds none.
+        id: scope
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          run=true
+          base=HEAD^1
+          if [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_REF" = refs/heads/main ]; then
+            last=$(.github/main-base.sh desktop-qa.yml "qa (")
+            if [ -n "$last" ] && git fetch -q --depth=1 origin "$last"; then base=$last; else base=; fi
+            echo "Comparing with ${base:-nothing: no earlier finished run found, so it runs in full}."
+          fi
+          if [ "${{ github.event_name }}" != workflow_dispatch ] && [ "${{ github.event_name }}" != schedule ] \
+            && [ -n "$base" ] && git rev-parse -q --verify "$base" >/dev/null \
+            && git diff --quiet "$base" HEAD -- app/desktop .github/workflows/desktop-qa.yml; then
+            run=false
+            echo "app/desktop didn't change."
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+      - if: steps.scope.outputs.run == 'true'
+        uses: pnpm/action-setup@v6
+        with:
+          package_json_file: app/desktop/package.json
+      - if: steps.scope.outputs.run == 'true'
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: app/desktop/pnpm-lock.yaml
+      - if: steps.scope.outputs.run == 'true'
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cache/electron
+            ~/Library/Caches/electron
+          key: electron-${{ runner.os }}-${{ hashFiles('app/desktop/pnpm-lock.yaml') }}
+      - if: steps.scope.outputs.run == 'true'
+        run: pnpm install --frozen-lockfile
+      - if: steps.scope.outputs.run == 'true'
+        # Electron fetches its binary on first launch; fetch it here so the first test isn't timed on a download.
+        run: pnpm exec install-electron
+      - if: steps.scope.outputs.run == 'true'
+        # Build output of app/desktop/fixtures, validated against the contracts' JSON Schemas.
+        run: pnpm fixtures
+      - if: steps.scope.outputs.run == 'true'
+        # The app with the QA error probe bundled, which release builds leave out.
+        run: pnpm qa:build
+      - if: steps.scope.outputs.run == 'true' && matrix.shard == 1
+        name: Self-test of the DOM checks
+        run: pnpm qa:selftest
+      - if: steps.scope.outputs.run == 'true'
+        name: Screens
+        run: pnpm qa --shard=${{ matrix.shard }}/${{ matrix.of }}
+      - if: always() && steps.scope.outputs.run == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-qa-${{ runner.os }}-${{ matrix.shard }}
+          path: |
+            app/desktop/qa-results/
+            app/desktop/test-results/
+          if-no-files-found: ignore
+          retention-days: 14

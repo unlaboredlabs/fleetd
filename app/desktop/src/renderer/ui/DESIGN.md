@@ -90,3 +90,4 @@ breaks a rule changes this page in the same PR and says why.
 - **Cost:** no beat while the window is hidden or with reduced motion. Check a change that adds a loop with `pnpm perf`
   and `pnpm perf:busy` (20 agents at work), against main.
 - **Never:** gradient blobs, rainbow or soft shimmer, confetti, sparkles, bouncing or overshooting easings.
+
