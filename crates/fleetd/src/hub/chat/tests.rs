@@ -462,7 +462,7 @@ async fn the_message_that_starts_the_lead_goes_in_with_its_start() {
         .unwrap()
         .iter()
         .filter_map(|c| match c {
-            SessionCall::Launch(l) => Some(Ok(l.prompt.to_string())),
+            SessionCall::Launch(l) => Some(Ok(l.clone())),
             SessionCall::Send { text, .. } => Some(Err(text.to_string())),
             _ => None,
         })
@@ -471,10 +471,16 @@ async fn the_message_that_starts_the_lead_goes_in_with_its_start() {
         (launches.len(), sends.len()) == (1, 0),
         "{launches:?} {sends:?}"
     );
-    let first = launches[0].as_ref().unwrap();
+    let launch = launches[0].as_ref().unwrap();
+    // The lead's start prompt is its system prompt; the message ends its first message, after the state.
+    let system = launch.system_prompt.as_deref().unwrap();
     assert!(
-        first.starts_with("You are the lead of project app")
-            && first.ends_with("The human writes in your chat:\n\nadd dark mode"),
+        system.starts_with("You are the lead of project app"),
+        "{system}"
+    );
+    let first = launch.prompt.as_str();
+    assert!(
+        first.ends_with("The human writes in your chat:\n\nadd dark mode"),
         "{first}"
     );
 }
