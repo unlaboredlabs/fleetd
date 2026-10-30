@@ -1,7 +1,7 @@
-//! The claude versions this fleetd was tested with. `TESTED` is the version the fixtures were recorded from,
-//! `SUPPORTED` the range it was tested across. fleetd never refuses a claude for its version: the probe's
+//! The claude versions this fleetd was tested with. `TESTED` is the version machines are brought to and fixes name,
+//! `SUPPORTED` the range it was tested across. Each recorded fixture names the claude it came from. fleetd never refuses a claude for its version: the probe's
 //! `initialize` and real runs decide. Outside the range the doctor and setup warn and name the fix.
-pub const TESTED: &str = "2.1.302";
+pub const TESTED: &str = "2.1.314";
 /// Claude Code's own installer, user-space; fleetd never installs claude itself.
 pub const INSTALL: &str = "curl -fsSL https://claude.ai/install.sh | bash";
 pub const SUPPORTED: &str = ">=2.1.300, <2.2.0";
@@ -22,7 +22,7 @@ pub enum VersionVerdict {
     Unreadable,
 }
 
-/// `version` as `claude --version` prints it ("2.1.302 (Claude Code)").
+/// `version` as `claude --version` prints it ("2.1.314 (Claude Code)").
 pub fn check(version: &str) -> VersionVerdict {
     match parse(version) {
         None => VersionVerdict::Unreadable,

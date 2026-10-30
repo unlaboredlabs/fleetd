@@ -135,7 +135,7 @@ impl Node {
 }
 
 fn runner_event(login: &str, problem: Option<&str>) -> Value {
-    let mut v = json!({ "type": "runner_info", "runner": "claude", "version": "2.1.302",
+    let mut v = json!({ "type": "runner_info", "runner": "claude", "version": "2.1.314",
         "supported": ">=2.1.300, <2.2.0", "versionOk": true, "login": login, "loginKind": "subscription",
         "conformanceOk": true });
     if let Some(p) = problem {

@@ -1583,7 +1583,7 @@ mod tests {
             let fix = entry.check.fix.unwrap();
             (fix.label, fix.command)
         };
-        let ok = Some("2.1.302 (Claude Code)");
+        let ok = Some("2.1.314 (Claude Code)");
         assert_eq!(
             fix(Some(runner(ok, LoginStatus::LoggedOut, None))),
             (
@@ -1620,7 +1620,7 @@ mod tests {
         assert_eq!(command, None);
         assert_eq!(
             label,
-            "On mac: claude install 2.1.302, then claude auth login"
+            "On mac: claude install 2.1.314, then claude auth login"
         );
         // No runner report: the node's own fix, never a restart for a login problem.
         assert_eq!(fix(None).1.as_deref(), Some("claude auth login"));
@@ -1857,7 +1857,7 @@ mod tests {
     fn the_doctor_checks_claude_doesnt_update_itself() {
         let info = |self_update| RunnerInfo {
             runner: fleetd_contracts::sessions::RunnerKind::Claude,
-            version: Some("2.1.302 (Claude Code)".into()),
+            version: Some("2.1.314 (Claude Code)".into()),
             supported: ">=2.1.300, <2.2.0".into(),
             version_ok: true,
             login: LoginStatus::LoggedIn,
@@ -1943,7 +1943,7 @@ mod tests {
         };
         assert_eq!(
             statuses(&info(
-                Some("2.1.302 (Claude Code)"),
+                Some("2.1.314 (Claude Code)"),
                 LoginStatus::LoggedIn,
                 Some(true)
             )),
@@ -1961,7 +1961,7 @@ mod tests {
         assert_eq!(bad[0].check.status, Warn);
         assert_eq!(
             bad[0].check.fix.as_ref().and_then(|f| f.command.as_deref()),
-            Some("claude install 2.1.302")
+            Some("claude install 2.1.314")
         );
         // Older than tested: a warning with the update, never a refusal on the version alone.
         let older = runner_checks(
@@ -1989,7 +1989,7 @@ mod tests {
                 proxy_source: Some("~/.claude/settings.json".into()),
                 config_dir: Some("/Users/ada/.claude".into()),
                 ..info(
-                    Some("2.1.302 (Claude Code)"),
+                    Some("2.1.314 (Claude Code)"),
                     LoginStatus::LoggedOut,
                     Some(true),
                 )
@@ -2010,7 +2010,7 @@ mod tests {
                 proxy_source: Some("~/.claude/settings.json".into()),
                 config_dir: Some("/Users/ada/.claude".into()),
                 ..info(
-                    Some("2.1.302 (Claude Code)"),
+                    Some("2.1.314 (Claude Code)"),
                     LoginStatus::LoggedIn,
                     Some(true),
                 )
@@ -2018,7 +2018,7 @@ mod tests {
         );
         assert_eq!(
             ok[1].check.message,
-            "mac: claude 2.1.302, logged in (Max), via proxy http://127.0.0.1:8317 from ~/.claude/settings.json."
+            "mac: claude 2.1.314, logged in (Max), via proxy http://127.0.0.1:8317 from ~/.claude/settings.json."
         );
         assert_eq!(bad[2].check.status, Fail);
         let newer = runner_checks(

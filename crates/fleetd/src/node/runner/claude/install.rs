@@ -60,7 +60,7 @@ pub enum Installed {
     Left(String),
 }
 
-/// The leading version number of `claude --version` output ("2.1.302 (Claude Code)" is "2.1.302").
+/// The leading version number of `claude --version` output ("2.1.314 (Claude Code)" is "2.1.314").
 pub fn number(output: &str) -> &str {
     output.split_whitespace().next().unwrap_or("")
 }
@@ -326,20 +326,20 @@ mod tests {
 
     #[tokio::test]
     async fn brings_claude_to_the_tested_version() {
-        let claude = fake("2.1.310", InstalledBy::Native, Ok(Some("2.1.302")));
+        let claude = fake("2.1.310", InstalledBy::Native, Ok(Some("2.1.314")));
         assert_eq!(
-            bring_to(&claude, "2.1.302").await,
+            bring_to(&claude, "2.1.314").await,
             Ok(Installed::Done {
                 from: "2.1.310".into(),
-                to: "2.1.302".into()
+                to: "2.1.314".into()
             })
         );
-        assert_eq!(*claude.installs.lock().unwrap(), ["2.1.302"]);
+        assert_eq!(*claude.installs.lock().unwrap(), ["2.1.314"]);
 
-        let current = fake("2.1.302", InstalledBy::Native, Err("never asked"));
+        let current = fake("2.1.314", InstalledBy::Native, Err("never asked"));
         assert_eq!(
-            bring_to(&current, "2.1.302").await,
-            Ok(Installed::Current("2.1.302".into()))
+            bring_to(&current, "2.1.314").await,
+            Ok(Installed::Current("2.1.314".into()))
         );
         assert!(current.installs.lock().unwrap().is_empty());
     }
@@ -350,18 +350,18 @@ mod tests {
         let claude = fake(
             "2.1.310",
             InstalledBy::Native,
-            Err("Could not download 2.1.302: 404"),
+            Err("Could not download 2.1.314: 404"),
         );
-        let failed = bring_to(&claude, "2.1.302").await.unwrap_err();
+        let failed = bring_to(&claude, "2.1.314").await.unwrap_err();
         assert_eq!(failed.stage, UpdateStage::Install);
         assert_eq!(
             failed.message,
-            "`claude install 2.1.302` failed (Could not download 2.1.302: 404), so 2.1.310 stays"
+            "`claude install 2.1.314` failed (Could not download 2.1.314: 404), so 2.1.310 stays"
         );
 
         // It said it worked, but the launcher still starts the old one.
         let stuck = fake("2.1.310", InstalledBy::Native, Ok(None));
-        let failed = bring_to(&stuck, "2.1.302").await.unwrap_err();
+        let failed = bring_to(&stuck, "2.1.314").await.unwrap_err();
         assert!(
             failed
                 .message
@@ -376,7 +376,7 @@ mod tests {
     async fn claude_installed_another_way_or_not_at_all_is_left_with_the_command() {
         let left = |by| async move {
             let claude = fake("2.1.310", by, Err("never asked"));
-            let Ok(Installed::Left(said)) = bring_to(&claude, "2.1.302").await else {
+            let Ok(Installed::Left(said)) = bring_to(&claude, "2.1.314").await else {
                 panic!("not left alone");
             };
             assert!(claude.installs.lock().unwrap().is_empty());
@@ -390,7 +390,7 @@ mod tests {
         assert!(
             left(InstalledBy::Npm)
                 .await
-                .contains("`npm install -g @anthropic-ai/claude-code@2.1.302`")
+                .contains("`npm install -g @anthropic-ai/claude-code@2.1.314`")
         );
         assert!(left(InstalledBy::Package).await.contains("package manager"));
 
@@ -399,10 +399,10 @@ mod tests {
             ..fake("2.1.310", InstalledBy::Native, Err("never asked"))
         };
         assert_eq!(
-            bring_to(&missing, "2.1.302").await,
+            bring_to(&missing, "2.1.314").await,
             Ok(Installed::Left(
-                "Claude Code is not installed here: install 2.1.302 with \
-                 `curl -fsSL https://claude.ai/install.sh | bash -s 2.1.302`"
+                "Claude Code is not installed here: install 2.1.314 with \
+                 `curl -fsSL https://claude.ai/install.sh | bash -s 2.1.314`"
                     .into()
             ))
         );
@@ -412,7 +412,7 @@ mod tests {
     fn who_installed_claude_is_read_from_where_its_launcher_points() {
         let by = |p: &str| installed_by(Path::new(p));
         assert_eq!(
-            by("/home/u/.local/share/claude/versions/2.1.302"),
+            by("/home/u/.local/share/claude/versions/2.1.314"),
             InstalledBy::Native
         );
         assert_eq!(
@@ -436,10 +436,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let versions = dir.path().join(".local/share/claude/versions");
         std::fs::create_dir_all(&versions).unwrap();
-        std::fs::write(versions.join("2.1.302"), b"").unwrap();
+        std::fs::write(versions.join("2.1.314"), b"").unwrap();
         let bin = dir.path().join(".local/bin");
         std::fs::create_dir_all(&bin).unwrap();
-        std::os::unix::fs::symlink(versions.join("2.1.302"), bin.join("claude")).unwrap();
+        std::os::unix::fs::symlink(versions.join("2.1.314"), bin.join("claude")).unwrap();
         assert_eq!(
             installed_by(&std::fs::canonicalize(bin.join("claude")).unwrap()),
             InstalledBy::Native

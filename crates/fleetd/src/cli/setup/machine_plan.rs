@@ -842,7 +842,7 @@ mod tests {
         );
         // Outside the tested range: set up anyway, with a note that says so and how to change it.
         for (version, fix) in [
-            ("2.2.1", "claude install 2.1.302"),
+            ("2.2.1", "claude install 2.1.314"),
             ("2.1.296", "claude update"),
         ] {
             let untested = Facts {
@@ -891,7 +891,7 @@ mod tests {
     #[test]
     fn reads_the_probe() {
         let out = "home /home/ada\nconfig /home/ada/.config\nuser ada\nuid 1001\nos Darwin\narch arm64\n\
-                   path /usr/bin:/bin\nclaude /home/ada/.local/bin/claude\nclaude_version 2.1.302 (Claude Code)\n\
+                   path /usr/bin:/bin\nclaude /home/ada/.local/bin/claude\nclaude_version 2.1.314 (Claude Code)\n\
                    linger unknown\nfile /home/ada/.fleetd/node/node.json eyJlbnJvbGxlZCI6dHJ1ZX0=\n\
                    file /home/ada/empty \nsize /home/ada/.fleetd/claude.env 0\n\
                    digest /home/ada/.fleetd/bin/fleetd abc123\n";
@@ -902,7 +902,7 @@ mod tests {
         );
         assert_eq!(
             facts.claude_version.as_deref(),
-            Some("2.1.302 (Claude Code)")
+            Some("2.1.314 (Claude Code)")
         );
         assert_eq!(
             facts.file("/home/ada/.fleetd/node/node.json"),

@@ -36,7 +36,7 @@ const check = (name: string, status: DoctorCheck["status"], message: string, fix
 /** laptop just joined: claude installed but logged out, its identity set, a project fetched, Android not ready. */
 const LOGGED_OUT: DoctorCheck[] = [
   check("online", "ok", "laptop is online."),
-  check("claude_version", "ok", "laptop runs claude 2.1.302, the version fleetd was tested with."),
+  check("claude_version", "ok", "laptop runs claude 2.1.314, the version fleetd was tested with."),
   check("claude_login", "fail", "laptop: claude is not logged in, so its sessions can't start.", { kind: "manual", label: "Log claude in on laptop", command: "claude auth login" }),
   check("commit_identity", "ok", "laptop commits as 1+ada-lovelace@users.noreply.github.com."),
   check("git_fetch", "ok", "At each project's last start on laptop: storefront fetched its remote."),

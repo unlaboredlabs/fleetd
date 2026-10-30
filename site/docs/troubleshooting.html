@@ -202,7 +202,7 @@ address stops answering, check where it points with <code dir="auto">tailscale s
 </thead>
 <tbody>
 <tr>
-<td>“claude 2.1.302, not logged in, so its sessions can’t start” <code dir="auto">[claude_login]</code></td>
+<td>“claude 2.1.314, not logged in, so its sessions can’t start” <code dir="auto">[claude_login]</code></td>
 <td><code dir="auto">claude</code> on that machine is logged out, or its login expired.</td>
 <td><code dir="auto">claude auth login</code> on that machine, or log in through your proxy.</td>
 </tr>
@@ -224,17 +224,17 @@ address stops answering, check where it points with <code dir="auto">tailscale s
 <tr>
 <td>“claude 2.2.0 is newer than fleetd is tested with” <code dir="auto">[claude_version]</code> !</td>
 <td>A <code dir="auto">claude</code> past fleetd’s tested range. Sessions run.</td>
-<td>If they misbehave, <code dir="auto">claude install 2.1.302</code></td>
+<td>If they misbehave, <code dir="auto">claude install 2.1.314</code></td>
 </tr>
 <tr>
 <td>“<code dir="auto">claude --version</code> printed …, which fleetd can’t read” <code dir="auto">[claude_version]</code></td>
 <td>A broken install.</td>
-<td><code dir="auto">curl -fsSL https://claude.ai/install.sh | bash -s 2.1.302</code></td>
+<td><code dir="auto">curl -fsSL https://claude.ai/install.sh | bash -s 2.1.314</code></td>
 </tr>
 <tr>
 <td>“did not answer fleetd’s protocol probe as expected” <code dir="auto">[runner_conformance]</code></td>
 <td>This <code dir="auto">claude</code> speaks a different protocol.</td>
-<td><code dir="auto">claude install 2.1.302</code></td>
+<td><code dir="auto">claude install 2.1.314</code></td>
 </tr>
 <tr>
 <td>“<code dir="auto">claude --version</code> and the running claude disagree” <code dir="auto">[runner_conformance]</code></td>
@@ -249,7 +249,7 @@ address stops answering, check where it points with <code dir="auto">tailscale s
 <tr>
 <td>An agent’s activity says “claude offered its own agent tools (…)”</td>
 <td>A newer <code dir="auto">claude</code> has an agent tool fleetd’s deny list didn’t name. fleetd stopped that session, and the next start denies the tool.</td>
-<td>Nothing. If it happens again, <code dir="auto">claude install 2.1.302</code>.</td>
+<td>Nothing. If it happens again, <code dir="auto">claude install 2.1.314</code>.</td>
 </tr>
 </tbody>
 </table>

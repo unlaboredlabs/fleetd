@@ -155,7 +155,7 @@
       },
       {
        "id": "hub/claude_version",
-       "message": "claude 2.1.302 (Claude Code) is supported.",
+       "message": "claude 2.1.314 (Claude Code) is supported.",
        "scope": "hub",
        "status": "ok"
       },

@@ -235,7 +235,7 @@ const runRow = (p: UpdatePart, to: string, reconnecting: boolean): Omit<PartRow,
   }
 };
 
-/** A machine's Claude Code in the run, in one line: "Claude Code 2.1.310 → 2.1.302: installing…". */
+/** A machine's Claude Code in the run, in one line: "Claude Code 2.1.310 → 2.1.314: installing…". */
 const claudeRow = (p: UpdatePart): Omit<PartRow, "key" | "name" | "raw"> => {
   const to = p.to ?? "the tested version";
   const label = p.from === "" || p.from === to ? `Claude Code ${to}` : `Claude Code ${p.from} → ${to}`;
