@@ -145,12 +145,21 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   const [image, setImage] = useState<AttachmentGetOutput | null>(null);
   const [lit, setLit] = useState<string | null>(null);
 
+  // The keyboard covers the home indicator's inset, which the composer keeps clear when it's down: up, the composer
+  // sits a step above it, and the thread's newest end is that much less than the keyboard above where it was.
+  const lift = Math.max(insets.bottom - space.sm, 0);
+  const keyboard = useReanimatedKeyboardAnimation();
+  // The list is upside down, its newest end at 0, or under the keyboard's padding (before 0) while it's up.
+  const newestEnd = () => -Math.max(0, -keyboard.height.value - lift);
+  const toNewest = () => list.current?.scrollToOffset({ offset: newestEnd(), animated: !reduce });
+
   // Scrolled away from the newest: the seq it was at, so the button down counts what came since.
   const [awayFrom, setAwayFrom] = useState<number | null>(null);
   const newestSeq = items.reduce((n, i) => Math.max(n, i.message?.seq ?? 0), 0);
   const cameSince = awayFrom === null ? 0 : items.filter((i) => i.author !== "human" && i.kind === "message" && (i.message?.seq ?? 0) > awayFrom).length;
   const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const y = e.nativeEvent.contentOffset.y;
+    // How far from the newest end, wherever the keyboard puts it.
+    const y = e.nativeEvent.contentOffset.y - newestEnd();
     if (y > AWAY && awayFrom === null) setAwayFrom(newestSeq);
     else if (y < AWAY / 3 && awayFrom !== null) setAwayFrom(null);
   };
@@ -191,12 +200,6 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
     return () => clearTimeout(timer);
   }, [lit]);
 
-  // The keyboard covers the home indicator's inset, which the composer keeps clear when it's down: up, the composer
-  // sits a step above it, and the thread's newest end is that much less than the keyboard above where it was.
-  const lift = Math.max(insets.bottom - space.sm, 0);
-  const keyboard = useReanimatedKeyboardAnimation();
-  // The list is upside down, its newest end at 0, or under the keyboard's padding (before 0) while it's up.
-  const toNewest = () => list.current?.scrollToOffset({ offset: -Math.max(0, -keyboard.height.value - lift), animated: !reduce });
 
   // What you send shows at once, as in Messages, wherever the thread was scrolled to.
   const send = (body: string, files: readonly AttachmentRef[] = []) => {
