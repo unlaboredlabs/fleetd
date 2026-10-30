@@ -258,7 +258,7 @@ export function SwipeRow({
   const close = () => {
     open.value = null;
   };
-  const forget = () => {
+  const letGo = () => {
     held.value = null;
   };
   const tap = (run: () => void) => () => {
@@ -287,8 +287,8 @@ export function SwipeRow({
         // Every touch on the row lets go of what it held as it ends: a swipe, a hold for the menu, a tap. A later
         // VoiceOver activation, which comes without a pan, mustn't find it and only close. React hands a touch's end
         // to the tap's onPress before onTouchEnd, so the tap has read it by now.
-        onTouchEnd={forget}
-        onTouchCancel={forget}
+        onTouchEnd={letGo}
+        onTouchCancel={letGo}
         onLayout={(e) => {
           width.value = e.nativeEvent.layout.width;
           height.value = e.nativeEvent.layout.height;
