@@ -141,36 +141,62 @@ describe("the circles", () => {
 });
 
 describe("one row open at a time", () => {
-  // The list's open row, as SwipeRow and Chats drive it: each step is what the gesture, a tap or the list calls.
+  // The list's open row, as SwipeRow and Chats drive it: each step is what the gesture, a tap or the list calls. Each row
+  // keeps what was open as a touch on it came down (`held`) until that touch ends, lifted or cancelled; React runs a
+  // tap's onPress before the row's onTouchEnd, so the tap reads it first.
   const list = (open: Opened = null) => {
-    let held: Opened = null;
+    const held = new Map<string, Opened>();
+    const down = (key: string) => {
+      const d = touchDown(open, key);
+      open = d.open;
+      held.set(key, d.held);
+    };
+    const end = (key: string) => held.set(key, null);
+    /** SwipeRow's tap: reads what the row held once, and only closes if something was open. */
+    const press = (key: string): boolean => {
+      const was = held.get(key) ?? null;
+      held.set(key, null);
+      if (tapCloses(was)) {
+        open = null;
+        return false;
+      }
+      return true;
+    };
     return {
       get open() {
         return open;
       },
       /** A finger down on a row (the pan's onBegin), then a swipe on it: whether it moved the row. */
       swipe(key: string): boolean {
-        ({ open, held } = touchDown(open, key));
-        if (swallows(held, key)) return false;
-        open = key;
-        return true;
+        down(key);
+        const moved = !swallows(held.get(key) ?? null, key);
+        if (moved) open = key;
+        end(key);
+        return moved;
       },
       /** A finger down on a row, then a tap: whether it opened the chat. */
       tap(key: string): boolean {
-        ({ open, held } = touchDown(open, key));
-        if (tapCloses(held)) {
-          open = null;
-          return false;
-        }
-        return true;
+        down(key);
+        const opened = press(key);
+        end(key);
+        return opened;
       },
-      /** A finger down on a row that becomes a long press: iOS's menu lifts it. */
+      /** VoiceOver's double-tap on a row, which can come without a touch the pan sees. */
+      voiceOver(key: string): boolean {
+        return press(key);
+      },
+      /** A finger down on a row that becomes a long press: iOS's menu lifts it and cancels the touch. */
       hold(key: string) {
-        ({ open } = touchDown(open, key));
+        down(key);
+        end(key);
       },
-      /** A touch on the list away from its rows: empty space, the filters. */
-      touchList() {
+      /** A touch away from the rows: the list's space, its filters, the navigation bar's title, + or search field. */
+      touchAway() {
         if (touchCloses(open, false)) open = null;
+      },
+      /** A filter picked with VoiceOver, or the list left for another tab or a chat: Swipes.close. */
+      close() {
+        open = null;
       },
       /** A row goes back closed, or leaves the list. */
       closed(key: string) {
@@ -210,12 +236,34 @@ describe("one row open at a time", () => {
     expect(l.open).toBe(null);
   });
 
-  it("closes the open row on a touch away from the rows: empty space, the filters, the search field", () => {
+  it("closes the open row on a touch away from the rows: empty space, the filters, the navigation bar", () => {
     const l = list("a");
-    l.touchList();
+    l.touchAway();
     expect(l.open).toBe(null);
     expect(touchCloses("a", true)).toBe(false);
     expect(touchCloses(null, false)).toBe(false);
+  });
+
+  it("closes the open row when a filter is picked without a touch, or the list is left", () => {
+    const l = list();
+    l.swipe("a");
+    l.close();
+    expect(l.open).toBe(null);
+    expect(l.tap("b")).toBe(true);
+  });
+
+  it("opens the chat on a VoiceOver tap after a swipe or a hold that only closed another row", () => {
+    const swiped = list("a");
+    expect(swiped.swipe("b")).toBe(false);
+    expect(swiped.voiceOver("b")).toBe(true);
+    const held = list("a");
+    held.hold("b");
+    expect(held.voiceOver("b")).toBe(true);
+    // The row's own swipe, closed again, leaves nothing behind either.
+    const own = list("a");
+    expect(own.swipe("a")).toBe(true);
+    own.closed("a");
+    expect(own.voiceOver("a")).toBe(true);
   });
 
   it("doesn't spend the next tap when the open row leaves the list", () => {
