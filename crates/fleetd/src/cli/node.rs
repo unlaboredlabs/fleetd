@@ -48,7 +48,7 @@ pub async fn node_command(argv: &[String]) -> u8 {
         rest,
         &Spec {
             options: OPTIONS,
-            positionals: false,
+            positionals: command == Some("trust"),
         },
     ) {
         Ok(v) => v,
@@ -99,6 +99,27 @@ pub async fn node_command(argv: &[String]) -> u8 {
                 .await
                 .map_err(|error| error.to_string()),
         ),
+        Some("trust") => {
+            let [dir] = v.positionals.as_slice() else {
+                return usage("node trust takes the checkout's folder");
+            };
+            let home = home.unwrap_or_else(crate::node::config::default_node_home);
+            let dir = std::path::absolute(dir).unwrap_or_else(|_| PathBuf::from(dir));
+            match crate::node::checkouts::trust(&home, &dir) {
+                Ok(true) => {
+                    println!("{} is trusted as it is now: send again.", dir.display());
+                    0
+                }
+                Ok(false) => {
+                    println!(
+                        "fleetd has nothing recorded for {}: nothing to trust.",
+                        dir.display()
+                    );
+                    0
+                }
+                Err(e) => exit(Err(format!("{} was not trusted: {e}", dir.display()))),
+            }
+        }
         Some(other) => usage(&format!("unknown node command '{other}'")),
         None => usage("missing node command"),
     }

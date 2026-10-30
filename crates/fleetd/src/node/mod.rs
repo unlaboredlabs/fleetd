@@ -4,6 +4,7 @@
 //! SIGINT or SIGTERM (`Ok`) or a failure the node cannot retry past (`Err`, exit 1 with `fleetd: <message>`).
 pub mod actions;
 pub mod browser;
+pub mod checkouts;
 pub mod claude_accounts;
 pub mod claude_login;
 pub mod cmd;
@@ -58,6 +59,8 @@ pub const NODE_USAGE: &str = "  node join --hub <url> (--token <token> | --token
              dedicated one
   node run [--home <dir>]
              keep the link up for a machine that has joined
+  node trust <dir> [--home <dir>]
+             start work again in a project's checkout fleetd refused as replaced, once you checked it
 ";
 
 /// `fleetd node join`, after the CLI has parsed its flags (and read `--token-file`, see [`read_token_file`]).

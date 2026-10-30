@@ -190,7 +190,7 @@ const RUN_ON_THEIR_OWN: &[&str] = &[
 /// their settings, MCP servers, policy and instructions. Read-only to a Navi, which writes the rest of a checkout. A dir
 /// that isn't there is made empty first ([`Fence::prepare`]); a file that isn't there can still be made, and a new
 /// `.mcp.json` runs nothing until settings the Navi can't write approve it.
-const PROJECT_KEPT: &[&str] = &[
+pub const PROJECT_KEPT: &[&str] = &[
     ".claude",
     ".fleetd",
     ".mcp.json",
@@ -612,8 +612,77 @@ pub fn navi_fence(p: &NaviPaths) -> Fence {
         session: Some(p.session_id.to_owned()),
     };
     guard(&mut fence, p, &user_home, &folder);
+    let links = pin_links(&mut fence, &user_home);
     resolve_links(&mut fence);
+    fence.keep.extend(links);
+    fence.keep.sort();
+    fence.keep.dedup();
     fence
+}
+
+/// Keeps where they are the links on the way to a read-only path, from a folder the Navi writes: once removed, its own
+/// file or dir could stand in their place (a `~/.local/bin` linked into a dotfiles repo, a checkout's `CLAUDE.md`).
+/// On macOS the link itself isn't written: returned, to keep once the rest is resolved. On Linux, where no mount lands on a link, the person's home bin dir
+/// ([`HOME_BINS`], [`MORE_HOME_BINS`]) has its parent listed as the home is: the link comes back as a link in a
+/// read-only tmpfs, and the parent's other entries as they are, though nothing new is made at its top. That costs the
+/// Navi nothing: it installs into its own home. A checkout isn't listed (`git clone` into `~/src` still works); the node
+/// checks its links before an agent runs there instead (`node::checkouts`).
+fn pin_links(fence: &mut Fence, user_home: &Path) -> Vec<PathBuf> {
+    let writable = |d: &Path| nix::unistd::access(d, nix::unistd::AccessFlags::W_OK).is_ok();
+    // `(link, folder)` for each link on the way to `path` in a folder the person and the Navi write.
+    let swappable = |fence: &Fence, path: &Path| {
+        let mut found = Vec::new();
+        let mut at = PathBuf::new();
+        for part in path.components() {
+            let next = at.join(part);
+            if !next.is_symlink() {
+                at = next;
+                continue;
+            }
+            if writable(&at) && fence.access(&at) == Access::Write {
+                found.push((next.clone(), at.clone()));
+            }
+            at = real(&next);
+        }
+        found
+    };
+    if cfg!(target_os = "macos") {
+        return fence
+            .show
+            .iter()
+            .chain(&fence.keep)
+            .flat_map(|p| swappable(fence, p))
+            .map(|(link, _)| link)
+            .collect();
+    }
+    let folders: Vec<PathBuf> = HOME_BINS
+        .iter()
+        .chain(MORE_HOME_BINS)
+        .flat_map(|b| swappable(fence, &user_home.join(b)))
+        .map(|(_, folder)| folder)
+        .collect();
+    for folder in folders {
+        if fence.hide.contains(&folder) {
+            continue;
+        }
+        fence.listed.retain(|l| *l != folder);
+        let entries = std::fs::read_dir(&folder).into_iter().flatten().flatten();
+        for entry in entries {
+            let path = entry.path();
+            if entry.file_type().is_ok_and(|t| t.is_symlink()) {
+                fence
+                    .links
+                    .extend(std::fs::read_link(&path).map(|to| (path, to)));
+            } else if ![&fence.hide, &fence.show, &fence.keep]
+                .iter()
+                .any(|set| set.contains(&path))
+            {
+                fence.listed.push(path);
+            }
+        }
+        fence.hide.push(folder);
+    }
+    Vec::new()
 }
 
 /// Makes each read-only path of `fence` the one it really is: a mount lands on what a link (or a linked parent) leads

@@ -135,6 +135,12 @@ so a Navi that is talked into something can't plant code there that reads your k
   `hooks` and `worktrees` are made, empty, if they aren't there. A new `.mcp.json` or `CLAUDE.md` can still be made;
   a new `.mcp.json`'s servers don't run until settings it can't write approve them. The rest of a checkout is yours
   to have it write: its code, a commit.
+- A read-only path that is a link (`CLAUDE.md` linked to `AGENTS.md`, `~/.local/bin` linked into your dotfiles) is
+  read-only where it leads, and the link itself stays. On macOS the link can't be removed or replaced. On Linux, where
+  nothing can be mounted on a link, the folder holding a linked bin dir of your home (`~/.local` for `~/.local/bin`)
+  is listed like the home: the link comes back as a link and the folder's other entries as they are, but nothing new
+  is made at its top. A Navi installs into its own home, so that costs it nothing. A checkout isn't listed (it can
+  still clone into `~/src`); the node checks it instead, below.
 - `~/.claude` (but its own session's files: its conversation in `~/.claude/projects/<its folder>`,
   `~/.claude/session-env/<session>`, `~/.claude/file-history/<session>`, and the login file
   `~/.claude/.credentials.json`, where Claude Code saves a refreshed token), so it can't add hooks or MCP servers for
@@ -167,6 +173,14 @@ in for a path, the real file and its copies are hidden.
 
 Everything else reads as it does for you: your code, your notes, other projects' checkouts.
 
+**A replaced checkout stops work.** A Navi could still move a whole checkout aside and leave a folder of its own in its
+place, or swap a linked `CLAUDE.md` for its own file on Linux. So the node records each project's checkout the first
+time a lead or agent runs there: its folder, its `.git`, and each link among `.claude`, `.fleetd`, `.mcp.json`,
+`CLAUDE.md` and `CLAUDE.local.md` (in `checkouts.json` in the node's home, which no Navi sees). Before it starts a
+lead or agent there again, it checks them. When one is another, nothing starts, and the chat says the folder was
+replaced. Check it, then run `fleetd node trust <folder>` on that machine and send again. Re-cloning a project in
+the same place stops it the same way.
+
 **On Linux the home is listed.** A Navi's `~` is read-only, with each entry it had when the session started bound
 back, but the hidden ones. A link there stays a link, so one into a hidden path leads nowhere. Nothing new appears at
 the top of your home while it runs, such as another session's temporary copy of `~/.claude.json`, and it can't make a
@@ -198,7 +212,10 @@ Nothing comes back after the node or the machine restarts, and there is no root,
   sockets stay reachable, including an X server that accepts local connections without a cookie
   (`xhost +si:localuser`, the GNOME default). fleetd's own screens don't listen there. Its folder, its session's
   MCP config (with its own servers' tokens) and Claude Code's login are readable to it, since Claude Code needs them.
-  It can still write code you or an agent run later on purpose: a script, a test or a build file in a checkout. A
+  It can still write code you or an agent run later on purpose: a script, a test or a build file in a checkout. It
+  can rename the folder above a `PATH` directory you can write outside your home (`/opt/brew` for `/opt/brew/bin`)
+  and put its own in its place, so a program you later run there could be its own: keep such directories in a folder
+  you don't write as you, or out of your `PATH`. A
   path hidden here but reachable through another mount of the same disk (a bind mount you made) is reachable there
   too.
 
