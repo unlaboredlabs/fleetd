@@ -628,7 +628,7 @@ fn integration(key: Value) -> Value {
         "roles": { "lead": true, "writers": false, "reviewers": false },
         "transport": { "type": "http", "url": "https://mcp.example.com/mcp" },
         "headers": [key],
-        "integration": { "kind": "custom" } })
+        "integration": {} })
 }
 
 /// Marks p1 a Navi, as creating one from the app does.
@@ -690,7 +690,7 @@ async fn an_integration_connects_with_its_key_sealed_and_revoking_forgets_the_ke
     )
     .await
     .unwrap();
-    assert_eq!(saved["server"]["integration"], json!({ "kind": "custom" }));
+    assert_eq!(saved["server"]["integration"], json!({}));
     assert!(matches!(
         calls.recv().await.unwrap(),
         SessionCall::McpSecrets { ref set, .. } if set.len() == 1
@@ -706,7 +706,7 @@ async fn an_integration_connects_with_its_key_sealed_and_revoking_forgets_the_ke
     .await
     .unwrap();
     let server = &got["project"][0];
-    assert_eq!(server["integration"]["kind"], "custom");
+    assert_eq!(server["integration"], json!({}));
     assert_eq!(server["headers"][0]["sealedOn"][0]["machineId"], "lab");
     assert!(server["headers"][0].get("value").is_none());
     for text in [got.to_string(), saved.to_string(), every_row(&hub)] {
@@ -758,15 +758,12 @@ async fn a_navis_lead_launches_with_its_integrations_reads_allowed() {
     let (hub, _home) = hub();
     let mut calls = node(&hub).await;
     let plain = json!({ "kind": "plain", "name": "Authorization", "value": "public" });
-    // A server marked Google that isn't fleetd's own is a custom server: what reads is what the person marked as
-    // reading.
-    let mut google = integration(plain);
-    google["name"] = "google".into();
-    google["integration"] = json!({ "kind": "google", "readTools": ["search_threads"] });
+    // What reads is what the person marked as reading; an older app's kind is no matter.
+    let mut docs = integration(plain);
+    docs["name"] = "docs".into();
+    docs["integration"] = json!({ "kind": "custom", "readTools": ["search_pages"] });
     make_navi(&hub);
-    call(&hub, &person(), "mcp_server_set", google)
-        .await
-        .unwrap();
+    call(&hub, &person(), "mcp_server_set", docs).await.unwrap();
     for (n, role) in [
         (1, fleetd_contracts::sessions::SessionRole::Assistant),
         (2, fleetd_contracts::sessions::SessionRole::Lead),
@@ -794,7 +791,7 @@ async fn a_navis_lead_launches_with_its_integrations_reads_allowed() {
         let reads = launch
             .allowed_tools
             .iter()
-            .any(|t| t == "mcp__google__search_threads");
+            .any(|t| t == "mcp__docs__search_pages");
         assert_eq!(reads, n == 1, "{role:?}: {:?}", launch.allowed_tools);
         assert!(
             !launch
@@ -803,4 +800,46 @@ async fn a_navis_lead_launches_with_its_integrations_reads_allowed() {
                 .any(|t| t.contains("send_message"))
         );
     }
+}
+
+/// A server of an older hub's built-in integration, dropped by the upgrade: once its node is online, the node is told
+/// to forget its token, and is asked no more.
+#[tokio::test]
+async fn the_secrets_of_a_server_the_upgrade_dropped_are_forgotten_once_its_node_is_online() {
+    let (hub, _home) = hub();
+    hub.db
+        .with(|c| {
+            c.execute_batch(
+                "INSERT INTO mcp_secret_forgets (machine_id, project_id, name) VALUES ('lab', 'p1', 'docs');
+                 INSERT INTO mcp_secret_forgets (machine_id, project_id, name) VALUES ('away', 'p2', 'docs');",
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    let mut calls = node(&hub).await;
+    super::tools::forget_queued(&hub).await;
+    let SessionCall::McpSecrets {
+        scope,
+        server,
+        set,
+        keep,
+    } = calls.recv().await.unwrap()
+    else {
+        panic!("not mcp_secrets")
+    };
+    assert_eq!(
+        (serde_json::to_value(&scope).unwrap(), server.as_str()),
+        (json!({ "kind": "project", "projectId": "p1" }), "docs")
+    );
+    assert!(set.is_empty() && keep.is_empty());
+    // The machine still offline keeps its place in the queue.
+    let left: Vec<String> = hub
+        .db
+        .mcp_servers()
+        .forgets()
+        .unwrap()
+        .into_iter()
+        .map(|(m, _, _)| m.to_string())
+        .collect();
+    assert_eq!(left, ["away"]);
 }

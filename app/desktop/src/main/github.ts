@@ -10,7 +10,7 @@ import type { AddressInfo } from "node:net";
 import type { GithubAppManifestOutput, ToolInput } from "../shared/contracts";
 import type { CallOutcome, HubError } from "../shared/hub";
 import type { GithubAppRequest } from "../shared/ipc";
-import { landing } from "./google";
+import { landing } from "./loopback";
 
 /** How long GitHub's form may take: reading it, renaming the App, signing in. */
 export const WAIT_MS = 15 * 60_000;

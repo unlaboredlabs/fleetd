@@ -11,7 +11,7 @@ use serde_json::{Map, Value, json};
 
 use super::{guides, read};
 use crate::hub::doctor::checks::{
-    self, ClaudeSetupView, CmdOutcome, DoctorCheck, DoctorStatus, GoogleFacts, Probe, SetupFacts,
+    self, ClaudeSetupView, CmdOutcome, DoctorCheck, DoctorStatus, Probe, SetupFacts,
 };
 
 /// The fixtures' hub (app/desktop/fixtures/kit HUB): a tailnet name would fail their leak check.
@@ -69,7 +69,6 @@ struct Point {
     key: bool,
     logins: bool,
     github: bool,
-    google: bool,
 }
 
 /// The checks at `p`, on a hub with no project yet (the fixtures' empty hub).
@@ -108,12 +107,6 @@ fn doctor_at(p: &Point) -> Vec<DoctorCheck> {
     ];
     out.extend(claude(p.key));
     let facts = SetupFacts {
-        google: p.google.then(|| GoogleFacts {
-            client_id: "1234567890-abc.apps.googleusercontent.com".into(),
-            sealed_on: vec!["devbox".into()],
-            online: vec!["devbox".into()],
-            pubsub: true,
-        }),
         github_app: p.github.then(|| {
             serde_json::from_value(json!({
                 "appId": 1048576, "slug": "fleetd-on-devbox", "name": "fleetd on devbox", "clientId": "Iv23liQ4fXk8w2ZsT0aB",
@@ -180,16 +173,11 @@ fn fixtures() -> Value {
         key: false,
         logins: false,
         github: false,
-        google: false,
     };
     let key = Point { key: true, ..fresh };
     let github = Point {
         github: true,
         ..key
-    };
-    let google = Point {
-        google: true,
-        ..github
     };
     let logins = Point {
         logins: true,
@@ -202,8 +190,7 @@ fn fixtures() -> Value {
         "setup-fresh": scenario(&fresh, &fresh, &[]),
         "setup-claude-logins": scenario(&logins, &logins, &[]),
         "setup-github": scenario(&key, &github, &[]),
-        "setup-google": scenario(&github, &google, &[]),
-        "setup-done": scenario(&github, &github, &[SetupStepId::Google, SetupStepId::Notion]),
+        "setup-done": scenario(&github, &github, &[SetupStepId::People]),
       },
     })
 }

@@ -22,7 +22,7 @@ a cut:
 | `lead` | Ask the lead; it lands the PRs | you ask storefront's lead, it splits the request between three writers and #231 opens; then the merge line as four PRs merge as one batch |
 | `team` | Your team in one chat | checkout's chat: Bob's earlier request, Sam's ask, Alice's beside it under her name, and the lead answering both |
 | `screens` | Watch an agent's screen, and take over | a writer's live browser; then the iPhone simulator's sign-in asking for you, Take over, the code, Hand back |
-| `navi` | Navi, your own assistant | Ada, woken by Marta's mail, with a reply that waits on you; Send it, and it went |
+| `navi` | Navi, your own assistant | Ada, with Marta's lease renewal that waits on you; Send it, and it went |
 
 Each is `showcase-<clip>-<theme>.webm` (VP9, 2240x1440, 25 fps) with an H.264 `.mp4` twin for browsers without VP9
 (1792x1152 at level 4.2 at most, which older iPhones and iPads decode; encoded frame by frame by the app's WebCodecs,

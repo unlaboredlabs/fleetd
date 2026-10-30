@@ -26,8 +26,7 @@ On an owner's or admin's app: **Settings › Hub accounts › GitHub**.
 GitHub sends you back to the fleetd app, and the hub fetches the App's private key and secrets from GitHub directly.
 The hub seals them to its own key, in the hub's home. No person ever sees them, and no fleetd call returns them.
 
-It works on any hub, plain HTTP included. The app catches GitHub's answer on this computer (`127.0.0.1`), as it does
-for [Google](/docs/google/).
+It works on any hub, plain HTTP included. The app catches GitHub's answer on this computer (`127.0.0.1`).
 
 From a terminal on the hub machine, with no desktop app:
 

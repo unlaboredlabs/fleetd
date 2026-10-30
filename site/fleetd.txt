@@ -36,8 +36,8 @@ showcase-screens-dark.jpg. More: https://fleetd.sh/docs/browser-sessions
 
 
 NAVI, YOUR OWN ASSISTANT
-A Navi has its own name and chat, and new mail wakes it. It drafts the reply,
-and nothing goes out until you approve it.
+A Navi has its own name and chat, and does what you ask. Nothing goes out
+until you approve it.
 Clip: showcase-navi-dark.webm, showcase-navi-light.webm. Still:
 showcase-navi-dark.jpg. More: https://fleetd.sh/docs/navi
 

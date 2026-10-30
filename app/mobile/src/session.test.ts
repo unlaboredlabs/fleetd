@@ -50,9 +50,9 @@ const approval = (requestId: string): HumanRequest => ({
   permission: {
     requestId,
     threadId: "t1",
-    toolName: "mcp__gmail__send",
-    summary: "Send an email",
-    preview: { title: "Send an email", to: ["landlord@example.com"], subject: "Lease", body: "Signed copy attached.", input: "{}", integration: "google", server: "gmail", tool: "send", action: "send" },
+    toolName: "mcp__lettings__send_lease",
+    summary: "Send the signed lease",
+    preview: { title: "Use send_lease on lettings", input: '{"to":"landlord@example.com"}', server: "lettings", tool: "send_lease", action: "send" },
   },
 });
 

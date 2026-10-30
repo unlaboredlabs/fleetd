@@ -11,7 +11,7 @@ vi.hoisted(() => {
 describe("Settings' search for a member", () => {
   it("offers no Hub page or option", () => {
     expect(optionsFor(false).some((o) => isHubTab(o.tab))).toBe(false);
-    for (const q of ["whole fleet", "fleet cap", "machine roles", "memory caps", "people", "invite", "github app", "google client", "setup"]) {
+    for (const q of ["whole fleet", "fleet cap", "machine roles", "memory caps", "people", "invite", "github app", "setup"]) {
       expect(searchSettings(q, optionsFor(false)).filter((o) => isHubTab(o.tab)), q).toEqual([]);
     }
   });

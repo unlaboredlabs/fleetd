@@ -9,7 +9,7 @@ import { lacksTool } from "../../src/data/errors";
 import { CallError } from "../../src/data/queries";
 import { useDataLayer, useToolQuery } from "../../src/data/react";
 import { Button, Text } from "../../ui";
-import { dayWords } from "../google/model";
+import { dayWords } from "../github/words";
 import { ConfirmRemove, Problem } from "./claudeParts";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import { PagePart, Setting } from "./parts";

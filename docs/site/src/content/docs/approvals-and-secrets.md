@@ -36,11 +36,10 @@ command as a [gated command](/docs/glossary#gated-command).
 If the machine was offline when you approved, the item opens again and says why. Click "Approve again" once it is
 back. If an answer doesn't go through, the item says why in one line; click Retry.
 
-## Approve a Navi's email, event or page {#integrations}
+## Approve a Navi's integration call {#integrations}
 
-A Navi asks before any write, send, delete or share through its [integrations](/docs/integrations). Its card shows
-the account, every recipient, the subject and the whole body, or the page or file and the change, all read from the
-exact input that runs. Approve sends exactly that, once: there is no "always allow". Moving money, trading and creating
+A Navi asks before any call through its [integrations](/docs/integrations) that you didn't mark as a read. Its card
+shows the tool and its whole input, exactly as it runs. Approve sends exactly that, once: there is no "always allow". Moving money, trading and creating
 accounts are refused even if approved. See [The approval card](/docs/integrations#card).
 
 ## Hidden characters {#hidden}
@@ -112,8 +111,8 @@ take only a human key. `requests_list` lists every secret and approval request w
 ## Approve a Navi's tool call {#tool-approvals}
 
 A [Navi](/docs/navi)'s lead runs with claude's permission prompts on: any tool off its short allow-list (a command, an
-email send, another MCP server's write, its first visit to a site) asks first. fleetd shows the ask in the Navi's chat as an approval with
-the tool and its input, such as an email's recipients and full text. Approve runs the tool with exactly that input;
+MCP server's write, its first visit to a site) asks first. fleetd shows the ask in the Navi's chat as an approval with
+the tool and its input. Approve runs the tool with exactly that input;
 Deny tells the Navi you said no, with your reason if you type one. There is no "always allow". If the Navi's run
 ends before you answer, the approval closes by itself.
 

@@ -4,8 +4,8 @@
 // gets a real box key so the secret field can seal. inline-items answers Approve and Deny as a hub does;
 // inline-failures fails them and the secret save, for the one-line failure with Retry; inline-reopened reopens two
 // approvals after Approve, as a hub does when the node is offline; inline-offline is that chat from the disk cache
-// with no hub. inline-integrations is a chat of a Navi's integration cards (fixtures/inline/integrations.json): an
-// email with every recipient and a file, a Notion page to trash, and a send already approved. inline-hidden holds
+// with no hub. inline-integrations is a chat of a Navi's integration cards (fixtures/inline/integrations.json): a
+// message to send, a page to delete, and a send already approved. inline-hidden holds
 // approvals whose fields hide or reorder text (fixtures/inline/hidden.json), each character shown as its mark, and an
 // email in several languages shown as written.
 import { Fixture } from "../kit/fixture.ts";
@@ -173,7 +173,7 @@ export default defineGroup({
     const items = inlineItems(base("typical"));
     // A Navi's integration cards in a chat of their own (fixtures/inline/integrations.json), so the chat above keeps
     // every state of the two inline items in view.
-    const cards = inlineItems(base("typical"), "inline-integrations", "A chat with a Navi's integration approvals: an email to send with its recipients and file, a Notion page to trash, and an answered send.", integrations.items);
+    const cards = inlineItems(base("typical"), "inline-integrations", "A chat with a Navi's integration approvals: a message to send, a page to delete, and an answered send.", integrations.items);
     const marked = inlineItems(base("typical"), "inline-hidden", "A chat with approvals whose fields hide or reorder text, each shown as its mark, and an email in several languages shown as written.", hidden.items);
     return [items, inlineFailures(base("typical")), inlineReopened(base("typical")), inlineOffline(items, base("hub-unreachable").state), cards, marked];
   },

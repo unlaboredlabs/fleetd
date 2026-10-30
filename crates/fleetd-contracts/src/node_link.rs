@@ -91,17 +91,6 @@ pub const CAP_PROJECT_ENV_COPY: &str = "project_env_copy";
 /// The node takes `mcp_secrets` and `mcp_test`, and a launch's and a send's MCP servers.
 pub const CAP_MCP_SERVERS: &str = "mcp_servers";
 
-/// `google` (a Navi's own Google connection: the admin's OAuth client, an account's tokens) and the native
-/// `google-mcp` server in a Navi lead's MCP config.
-pub const CAP_GOOGLE: &str = "google";
-
-/// New mail for a Navi: `google`'s `pubsub_set`, `mail_pull`, `mail_watch` and `mail_check` (W97).
-pub const CAP_GOOGLE_MAIL: &str = "google_mail";
-
-/// `google`'s `mail_files` (the files a Navi's email attaches, read in its folder for the approval card), and the
-/// native server's `--folder`.
-pub const CAP_GOOGLE_FILES: &str = "google_files";
-
 /// `skills_list` (a project's repo skills, for Settings → Skills). Hub-kept skills ride on `launch`, which an older
 /// node ignores.
 pub const CAP_SKILLS: &str = "skills";

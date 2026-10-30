@@ -82,7 +82,6 @@ export default defineConfig({
             "what-agents-are-told",
             "mcp-servers",
             "integrations",
-            "google",
             "skills",
             "browser-sessions",
             "mcp-clients",

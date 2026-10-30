@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // Settings' Hub group (D211): People, Machines, Every project (Profiles, Tools & skills, Instructions & memory,
-// Prompts), Hub accounts, and Setup while required steps are left; machine roles and caps on Machines; Claude, GitHub
-// and Google on Hub accounts with the way back into the guided setup; and the hub-wide instructions, memory caps, MCP
+// Prompts), Hub accounts, and Setup while required steps are left; machine roles and caps on Machines; Claude and
+// GitHub on Hub accounts with the way back into the guided setup; and the hub-wide instructions, memory caps, MCP
 // servers, skills and prompts on Every project's pages, its prompts nested under its Prompts in the sidebar and saved
 // hub-wide. A project's pages keep its own: its Prompts never offer a hub-wide save, and its Instructions are a
 // project's.
@@ -172,7 +172,7 @@ it("nests Every project's pages, Setup last saying how many required steps are l
   expect(nav()?.querySelector("[role='group'][aria-label='Prompts']")).not.toBeNull();
 });
 
-it("puts machine roles and caps on Machines, and the hub's Claude, GitHub and Google on Hub accounts", async () => {
+it("puts machine roles and caps on Machines, and the hub's Claude and GitHub on Hub accounts", async () => {
   window.location.hash = "#/settings/hub/machines";
   await render(admin);
   expect(host.querySelector("[data-screen='settings.hub.machines']")).not.toBeNull();
@@ -181,7 +181,7 @@ it("puts machine roles and caps on Machines, and the hub's Claude, GitHub and Go
 
   await click(button("Hub accounts", nav() ?? document));
   expect(host.querySelector("[data-screen='settings.hub.accounts']")).not.toBeNull();
-  expect(parts()).toEqual(["admin.claude", "admin.github", "admin.google"]);
+  expect(parts()).toEqual(["admin.claude", "admin.github"]);
   await click(button("Run guided setup again"));
   expect(window.location.hash).toBe("#/settings/hub/setup");
 });

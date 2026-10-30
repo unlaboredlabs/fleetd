@@ -11,7 +11,7 @@ use fleetd_contracts::prim::Count;
 use fleetd_contracts::setup::{HubSetupStep, SetupNeed, SetupStepId};
 
 use crate::hub::api::{Caller, Hub, Registry, ToolError, allows_everywhere, error};
-use crate::hub::doctor::checks::{self, DoctorCheck};
+use crate::hub::doctor::checks::DoctorCheck;
 use crate::hub::store::now_ms;
 
 pub fn register(tools: &mut Registry) {
@@ -114,25 +114,7 @@ async fn setup_test(
         SetupStepId::Machines | SetupStepId::Claude => hub.doctor.list(true).await,
         _ => hub.doctor.rerun_hub().await,
     };
-    let mut checks = with_fresh(&hub, results.checks).await;
-    if input.step == SetupStepId::Google && hub.db.google().client()?.is_some() {
-        let tested = match crate::hub::google::tools::test_machine(&hub, None) {
-            Err(e) => checks::google_tested(None, Some(&e.message)),
-            Ok(m) => match crate::hub::google::tools::test_client(&hub, &m).await {
-                Ok(c) => {
-                    checks::google_tested(Some(m.as_str()), c.problem.as_deref().filter(|_| !c.ok))
-                }
-                Err(e) => checks::google_tested(Some(m.as_str()), Some(&e.message)),
-            },
-        };
-        // Google's answer and what the hub keeps both count: a client Google takes still wants a look on a machine
-        // that lacks its secret.
-        match checks.iter().position(|c| c.id == "hub/google") {
-            Some(i) if super::rank(checks[i].status) >= super::rank(tested.check.status) => {}
-            Some(i) => checks[i] = tested.check,
-            None => checks.push(tested.check),
-        }
-    }
+    let checks = with_fresh(&hub, results.checks).await;
     Ok(SetupTestOutput {
         step: one(read(&hub, &checks)?, input.step),
         next: None,

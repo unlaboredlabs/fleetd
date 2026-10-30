@@ -1,18 +1,11 @@
-//! A Navi's integrations: Google (Gmail, Calendar and Drive through fleetd's own server, hub/google), Notion and any
-//! other MCP server, each one of the project's MCP servers marked with what it is (`McpServer.integration`). Notion and
-//! custom servers connect and revoke with `mcp_server_set` and `mcp_server_remove`, Google with `google_connect` and
-//! `google_disconnect`: the key or token is sealed on Navi's machine and the hub keeps none of it.
+//! A Navi's integrations: its project's MCP servers, connected and revoked with `mcp_server_set` and
+//! `mcp_server_remove`: a key or token is sealed on Navi's machine and the hub keeps none of it.
 //!
 //! The gate is here, outside the model: [`policy::verdict`] answers each of a session's permission prompts for an MCP
-//! tool from a per-tool table. A read runs unasked; a write, send, delete, share or spend asks the person every time
-//! with a [`ToolPreview`](fleetd_contracts::integrations::ToolPreview) of exactly who it reaches and what it says; moving
-//! money, trading, creating accounts, and sending what looks like a credential are refused even if approved.
-//! [`policy::launch_rules`] lists the read tools for a session's `--allowedTools`, so claude doesn't ask for them.
-//!
-//! Each integration's table is one small module: [`google`] for fleetd's own Google server, [`notion`] for the official
-//! Notion server.
-pub mod google;
-pub mod notion;
+//! tool. A tool the person marked as reading runs unasked; anything else asks the person every time with a
+//! [`ToolPreview`](fleetd_contracts::integrations::ToolPreview) of its whole input; moving money, trading, creating
+//! accounts, and sending what looks like a credential are refused even if approved. [`policy::launch_rules`] lists the
+//! read tools for a session's `--allowedTools`, so claude doesn't ask for them.
 pub mod policy;
 
 use fleetd_contracts::ids::ProjectRef;
@@ -36,19 +29,6 @@ pub fn is_navi(db: &HubDb, r: &ProjectRef) -> Result<bool, StoreError> {
         .flatten())
     })?;
     Ok(kind.as_deref() == Some(ASSISTANT))
-}
-
-/// How many Navis have Notion connected: setup's Notion step is done once anyone has.
-pub fn notion_navis(db: &HubDb) -> Result<usize, StoreError> {
-    db.with(|c| {
-        let n: i64 = c.query_row(
-            "SELECT COUNT(DISTINCT machine_id || '/' || project_id) FROM mcp_servers
-             WHERE json_extract(data, '$.integration.kind') = 'notion'",
-            [],
-            |row| row.get(0),
-        )?;
-        Ok(n as usize)
-    })
 }
 
 #[cfg(test)]

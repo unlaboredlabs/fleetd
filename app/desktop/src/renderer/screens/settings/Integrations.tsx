@@ -1,17 +1,15 @@
-// A Navi's Integrations (its Projects page, only for a project of kind assistant): Notion through its official server
-// with the person's own integration token, and any other MCP server. Each is one of the Navi's MCP servers:
-// connecting seals the token or key in main to Navi's machine and saves it (mcp_server_set), then tests it at once
+// A Navi's Integrations (its Projects page, only for a project of kind assistant): the MCP servers the person connects
+// to it. Connecting seals the key in main to Navi's machine and saves it (mcp_server_set), then tests it at once
 // (mcp_server_test), which lists each tool by the hub's policy: read freely, ask each time, never. Disconnect is
-// mcp_server_remove, which also erases the key on the machine. Its Google is fleetd's own, in You › Your accounts
-// (google/NaviGoogle.tsx).
+// mcp_server_remove, which also erases the key on the machine.
 import { useState, type ReactNode } from "react";
-import { Button, Checkbox, Dialog, Field, InlineCode, Input, Radio, RadioGroup, Text, Textarea, Truncate } from "../../ui";
-import type { IntegrationKind, McpServer, McpTestResult } from "../../../shared/contracts";
+import { Button, Checkbox, Dialog, Field, Input, Radio, RadioGroup, Text, Textarea, Truncate } from "../../ui";
+import type { McpServer, McpTestResult } from "../../../shared/contracts";
 import type { McpServerRequest } from "../../../shared/ipc";
 import { CallError } from "../../src/data/queries";
 import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
-import { byPolicy, connectionsOf, customRequest, DOCS, emptyNote, notionRequest, policyLine, suggestedReads, testProblem } from "./integrationsModel";
+import { byPolicy, connectionsOf, customRequest, DOCS, emptyNote, policyLine, suggestedReads, testProblem } from "./integrationsModel";
 import { emptyDraft, nameProblem, type Draft } from "./mcpModel";
 import { Setting } from "./parts";
 import s from "./settings.module.css";
@@ -46,7 +44,7 @@ function useConnect() {
   };
 }
 
-type Dialogs = { kind: "notion" } | { kind: "custom" } | { kind: "disconnect"; server: McpServer };
+type Dialogs = { kind: "custom" } | { kind: "disconnect"; server: McpServer };
 
 export function IntegrationsSection({ projectRef }: { projectRef: Ref }) {
   const live = useLive();
@@ -74,28 +72,15 @@ export function IntegrationsSection({ projectRef }: { projectRef: Ref }) {
   return (
     <Setting reveal="projects.integrations" label="Integrations" help={help}>
       <div role="list" aria-label="Integrations" className={s.integrations}>
-        <Row
-          kind="notion"
-          title="Notion"
-          what="The pages you share with your own Notion integration."
-          server={c.notion}
-          machine={machine.name}
-          tested={c.notion === undefined ? undefined : tests[c.notion.name]}
-          onTested={tested}
-          onConnect={() => setDialog({ kind: "notion" })}
-          onDisconnect={(server) => setDialog({ kind: "disconnect", server })}
-        />
-        {c.custom.map((server) => (
+        {c.map((server) => (
           <Row
             key={server.name}
-            kind="custom"
             title={server.name}
             what={server.transport.type === "stdio" ? [server.transport.command, ...(server.transport.args ?? [])].join(" ") : server.transport.url}
             server={server}
             machine={machine.name}
             tested={tests[server.name]}
             onTested={tested}
-            onConnect={() => undefined}
             onDisconnect={(s2) => setDialog({ kind: "disconnect", server: s2 })}
           />
         ))}
@@ -106,7 +91,6 @@ export function IntegrationsSection({ projectRef }: { projectRef: Ref }) {
           How integrations work
         </Button>
       </div>
-      {dialog?.kind === "notion" ? <ConnectNotion projectRef={projectRef} onClose={() => setDialog(null)} onDone={done("notion")} /> : null}
       {dialog?.kind === "custom" ? (
         <ConnectCustom projectRef={projectRef} taken={(read.data.project ?? []).map((x) => x.name)} onClose={() => setDialog(null)} onDone={(name, t) => done(name)(t)} />
       ) : null}
@@ -116,14 +100,12 @@ export function IntegrationsSection({ projectRef }: { projectRef: Ref }) {
 }
 
 function Row(props: {
-  kind: IntegrationKind;
   title: string;
   what: string;
-  server: McpServer | undefined;
+  server: McpServer;
   machine: string;
   tested: Tested | undefined;
   onTested: (name: string, t: Tested) => void;
-  onConnect: () => void;
   onDisconnect: (server: McpServer) => void;
 }) {
   const hubCall = useHubCall();
@@ -142,9 +124,9 @@ function Row(props: {
       },
     );
   };
-  const sealed = server === undefined ? false : [...(server.env ?? []), ...(server.headers ?? [])].some((v) => v.kind === "secret" && (v.sealedOn ?? []).length > 0);
+  const sealed = [...(server.env ?? []), ...(server.headers ?? [])].some((v) => v.kind === "secret" && (v.sealedOn ?? []).length > 0);
   return (
-    <div role="listitem" aria-label={props.title} className={s.integration} data-connected={server === undefined ? undefined : ""}>
+    <div role="listitem" aria-label={props.title} className={s.integration} data-connected="">
       <div className={s.integrationHead}>
         <div className={s.stack}>
           <Text strong size="sm">
@@ -155,49 +137,41 @@ function Row(props: {
           </Truncate>
         </div>
         <div className={s.inline}>
-          {server === undefined ? (
-            <Button size="sm" onClick={props.onConnect}>
-              Connect
-            </Button>
-          ) : (
-            <>
-              <Text size="xs" tone="quiet">
-                {server.enabled ? "Connected" : "Off"}
-              </Text>
-              <Button size="sm" variant="ghost" disabled={testing} onClick={() => test(server)}>
-                {testing ? "Testing…" : "Test connection"}
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => props.onDisconnect(server)}>
-                Disconnect
-              </Button>
-            </>
-          )}
+          <Text size="xs" tone="quiet">
+            {server.enabled ? "Connected" : "Off"}
+          </Text>
+          <Button size="sm" variant="ghost" disabled={testing} onClick={() => test(server)}>
+            {testing ? "Testing…" : "Test connection"}
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => props.onDisconnect(server)}>
+            Disconnect
+          </Button>
         </div>
       </div>
-      {server !== undefined && sealed ? (
+      {sealed ? (
         <Text size="xs" tone="quiet">
-          {props.kind === "notion" ? "Integration secret" : "Key"} sealed on {props.machine}. Navi never sees it.
+          Key sealed on {props.machine}. Navi never sees it.
         </Text>
       ) : null}
-      {props.tested === undefined ? null : <Found kind={props.kind} tested={props.tested} machine={props.machine} />}
+      {props.tested === undefined ? null : <Found tested={props.tested} machine={props.machine} />}
     </div>
   );
 }
 
-/** What a test found: the tools by policy, or the failure in the integration's words. */
-function Found(props: { kind: IntegrationKind; tested: Tested; machine: string }) {
+/** What a test found: the tools by policy, or the failure. */
+function Found(props: { tested: Tested; machine: string }) {
   const { tested } = props;
   if ("error" in tested || tested.result.error !== undefined) {
     const error = "error" in tested ? tested.error : (tested.result.error ?? "");
     return (
       <div role="alert">
         <Text size="sm" tone="danger">
-          {testProblem(props.kind, error, props.machine)}
+          {testProblem(error, props.machine)}
         </Text>
       </div>
     );
   }
-  const empty = emptyNote(props.kind, tested.result);
+  const empty = emptyNote(tested.result);
   if (empty !== null) {
     return (
       <div role="status">
@@ -231,19 +205,6 @@ function Found(props: { kind: IntegrationKind; tested: Tested; machine: string }
   );
 }
 
-/** Numbered steps, each a line or two, with the values to paste in code. */
-function Steps({ children }: { children: ReactNode }) {
-  return <ol className={s.steps}>{children}</ol>;
-}
-
-function Step({ children }: { children: ReactNode }) {
-  return (
-    <li>
-      <Text size="sm">{children}</Text>
-    </li>
-  );
-}
-
 function ConnectFooter(props: { busy: boolean; ok: boolean; label: string; onClose: () => void; onConnect: () => void }) {
   return (
     <>
@@ -265,62 +226,7 @@ function SealedNote({ machine, what }: { machine: string; what: string }) {
   );
 }
 
-function ConnectNotion(props: { projectRef: Ref; onClose: () => void; onDone: (t: Tested) => void }) {
-  const machine = useMachine(props.projectRef);
-  const connect = useConnect();
-  const [token, setToken] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
-  const built = notionRequest(token, { kind: "project", ...props.projectRef }, machine.boxes);
-  const go = () => {
-    if (!built.ok) return;
-    setBusy(true);
-    setProblem(null);
-    void connect(built.request).then((out) => {
-      setBusy(false);
-      if (out.ok) props.onDone(out.tested);
-      else setProblem(out.problem);
-    });
-  };
-  return (
-    <Dialog
-      open
-      wide
-      onOpenChange={(o) => !o && !busy && props.onClose()}
-      title="Connect Notion"
-      description="Navi uses Notion's official MCP server with an integration you make in your own workspace. It sees only the pages you share with that integration."
-      footer={<ConnectFooter busy={busy} ok={built.ok} label="Connect and test" onClose={props.onClose} onConnect={go} />}
-    >
-      <div className={s.stack}>
-        <Steps>
-          <Step>
-            In Notion, open <InlineCode>notion.so/profile/integrations</InlineCode> and make a new integration: Internal, in the workspace Navi should use. Name it Navi.
-          </Step>
-          <Step>Under Capabilities, keep Read content, Update content and Insert content. Add the comment ones if Navi should comment.</Step>
-          <Step>Copy its Internal Integration Secret (it starts with ntn_) and paste it below.</Step>
-          <Step>Share pages with it: on each page Navi may use, open the ••• menu, then Connections, and add Navi. Pages under it come along.</Step>
-        </Steps>
-        <div className={s.inline}>
-          <Button size="sm" variant="ghost" onClick={() => open(`${DOCS}#notion`)}>
-            Step by step in the docs
-          </Button>
-        </div>
-        <Field label="Integration secret" description={`Notion's server runs on ${machine.name} with npx, which comes with Node.js.`}>
-          <Input mono aria-label="Integration secret" className={s.secretValue} data-secret="" value={token} disabled={busy} autoComplete="off" spellCheck={false} placeholder="ntn_…" onChange={(e) => setToken(e.target.value)} />
-        </Field>
-        <SealedNote machine={machine.name} what="secret" />
-        {!built.ok && token.trim() !== "" ? (
-          <Text size="sm" tone="quiet">
-            {built.problem}
-          </Text>
-        ) : null}
-        <Problem text={problem} />
-      </div>
-    </Dialog>
-  );
-}
-
-/** Any other MCP server: its details, then, once tested, which of its tools only read and may run unasked. */
+/** An MCP server: its details, then, once tested, which of its tools only read and may run unasked. */
 function ConnectCustom(props: { projectRef: Ref; taken: ReadonlyArray<string>; onClose: () => void; onDone: (name: string, t: Tested) => void }) {
   const machine = useMachine(props.projectRef);
   const connect = useConnect();
@@ -437,7 +343,7 @@ function ConnectCustom(props: { projectRef: Ref; taken: ReadonlyArray<string>; o
         </div>
       ) : (
         <div className={s.stack}>
-          <Found kind="custom" tested={tested} machine={machine.name} />
+          <Found tested={tested} machine={machine.name} />
           {tools.map((t) => (
             <Checkbox
               key={t.name}
@@ -465,12 +371,8 @@ function Disconnect(props: { server: McpServer; machine: string; onClose: () => 
   const refetch = useRefetch();
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
-  const kind = props.server.integration?.kind ?? "custom";
-  const name = kind === "notion" ? "Notion" : props.server.name;
-  const source =
-    kind === "notion"
-        ? "To cut it off at the source too, delete the integration in Notion (notion.so/profile/integrations)."
-        : "To cut it off at the source too, revoke the key where you made it.";
+  const name = props.server.name;
+  const source = "To cut it off at the source too, revoke the key where you made it.";
   const go = () => {
     setBusy(true);
     setProblem(null);

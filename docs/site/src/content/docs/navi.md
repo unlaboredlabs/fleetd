@@ -14,10 +14,9 @@ every project has, unchanged: [chat](/docs/chat), memory and its nightly refresh
 
 ## Yours alone {#yours}
 
-Each Navi belongs to the person who made it. Only you see your Navis, in the sidebar, on the Navi page, under
-**Your accounts › Google** and **Hubs › Hub links**. Only you use them: their chat and approvals, Google, Notion and
-other tools, hub links, allowed sites, sign-ins, settings, archive and delete. The hub refuses everyone else, admins included. An
-admin can only delete the Navi of someone removed from the hub. On a hub from before people, Navis made earlier
+Each Navi belongs to the person who made it. Only you see your Navis, in the sidebar, on the Navi page and under
+**Hubs › Hub links**. Only you use them: their chat and approvals, integrations and other tools, hub links, allowed
+sites, sign-ins, settings, archive and delete. The hub refuses everyone else, admins included. An admin can only delete the Navi of someone removed from the hub. On a hub from before people, Navis made earlier
 belong to the person whose device made them, else the hub's owner.
 
 ## In the app
@@ -76,9 +75,8 @@ least busy worker.
 
 ## What it does on its own, and what it asks first
 
-A Navi searches the web freely, and reads your connected mail, calendar and files and the factory's status. It also
-writes drafts and notes in its folder, saves [Gmail drafts](/docs/google#tools) that only you send, remembers and
-forgets, keeps its checklist, works screens and logs in with 1Password.
+A Navi searches the web freely, and reads what its [integrations](/docs/integrations) hold and the factory's status. It
+also writes drafts and notes in its folder, remembers and forgets, keeps its checklist, works screens and logs in with 1Password.
 
 - **Files:** it reads and writes only inside its own folder. A read or an edit anywhere else is refused, whoever
   approves it, so your keys, its MCP servers' tokens and other projects stay out of its reach. It can't change its own

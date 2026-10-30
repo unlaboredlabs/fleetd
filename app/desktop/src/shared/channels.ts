@@ -72,17 +72,6 @@ export const IPC = {
   mcpServerSubmit: "mcp:server-submit",
   /** invoke(HubLinkRequest) → CallOutcome. Main seals a pasted link key to the hub's own key, then calls hub_link_add. */
   hubLinkSubmit: "hub-link:submit",
-  /** invoke(GoogleClientRequest) → CallOutcome. Main seals the client secret to each machine's key, then calls google_client_set. */
-  googleClientSubmit: "google:client-submit",
-  /** invoke(GooglePubsubRequest) → CallOutcome. Main seals the service account key to the reading machine's key, then calls google_pubsub_set. */
-  googlePubsubSubmit: "google:pubsub-submit",
-  /**
-   * invoke(GoogleConnectRequest) → CallOutcome. Main opens Google's consent page, catches the code on a loopback port
-   * and calls google_connect; `cancelled` when the person stops waiting.
-   */
-  googleConnect: "google:connect",
-  /** invoke() → void. Stops waiting for Google's answer to the connect under way, if any. */
-  googleCancel: "google:cancel",
   /**
    * invoke(GithubAppRequest) → CallOutcome. Main posts the hub's App manifest to GitHub from a loopback page, catches
    * GitHub's code there and calls github_app_create; `cancelled` when the admin stops waiting.

@@ -132,48 +132,28 @@ describe("approvals", () => {
     ]);
   });
 
-  it("shows who an email reaches and what it says", () => {
+  it("shows what an MCP tool would do, and everything it sends", () => {
     const r: HumanRequest = {
       ...asked("r1"),
       permission: {
         requestId: "p1",
         threadId: "t1",
-        toolName: "mcp__gmail__send",
-        summary: "Send an email",
-        preview: { title: "Send an email", account: "sam@example.com", to: ["a@example.com", "b@example.com"], subject: "Lease", body: "Signed.", input: '{"to":["a@example.com"]}', integration: "google", server: "gmail", tool: "send", action: "send" },
+        toolName: "mcp__crm__send_message",
+        summary: "Send a message",
+        preview: { title: "Use send_message on crm", input: '{"to":["a@example.com"]}', server: "crm", tool: "send_message", action: "send" },
       },
     };
     const view = approvalView(r, "Ada");
-    expect(view.title).toBe("Ada wants to send an email");
+    expect(view.title).toBe("Ada wants to use send_message on crm");
     expect(view.risk).toBeUndefined();
     expect(view.fields.filter((f) => f.more === true).map((f) => f.label)).toEqual(["Input"]);
     expect(view.fields.map((f) => [f.label, f.value])).toEqual([
-      ["As", "sam@example.com"],
-      ["To", "a@example.com, b@example.com"],
-      ["Subject", "Lease"],
-      ["Body", "Signed."],
       ["Input", '{"to":["a@example.com"]}'],
       ["Asked", "Deploy the fix"],
     ]);
-  });
-
-  it("keeps what an email says exactly as it goes out, backticks too; only the asker's why draws code", () => {
-    const body = "Run `npm ci` first, then ``` the rest.";
-    const r: HumanRequest = {
-      ...asked("r1"),
-      permission: {
-        requestId: "p1",
-        threadId: "t1",
-        toolName: "mcp__gmail__send",
-        summary: "Send an email",
-        preview: { title: "Send an email", to: ["`a`@example.com"], subject: "The `deploy` step", body, input: "{}", integration: "google", server: "gmail", tool: "send", action: "send" },
-      },
-    };
-    const fields = approvalView(r, "Ada").fields;
-    expect(fields.find((f) => f.label === "Body")).toEqual({ label: "Body", value: body, lines: true });
-    expect(fields.find((f) => f.label === "Subject")).toEqual({ label: "Subject", value: "The `deploy` step" });
-    expect(fields.some((f) => f.prose === true)).toBe(false);
-    expect(approvalView(gated("r2"), "storefront").fields.filter((f) => f.prose === true).map((f) => f.label)).toEqual(["Why"]);
+    const preview = { title: "Use delete_contact on crm", input: "{}", server: "crm", tool: "delete_contact", action: "delete" as const };
+    const deletes: HumanRequest = { ...r, permission: { requestId: "p2", threadId: "t1", toolName: "mcp__crm__delete_contact", summary: "", preview } };
+    expect(approvalView(deletes, "Ada").risk).toBe("irreversible");
   });
 });
 
@@ -220,26 +200,23 @@ describe("an approval whose fields hide or reorder text", () => {
     expect(r.gated?.argv[2]).toBe("\u202E~ fr- mr\u202C");
   });
 
-  it("finds one in any field of an email: an address, the subject, the body, everything it sends", () => {
+  it("finds one in everything a tool sends", () => {
     const send = (preview: Partial<ToolPreview>): HumanRequest => ({
       ...asked("r1"),
       text: "Send it",
       permission: {
         requestId: "p1",
         threadId: "t1",
-        toolName: "mcp__gmail__send",
-        summary: "Send an email",
-        preview: { title: "Send an email", to: ["a@example.com"], subject: "Lease", body: "Signed.\n\nSam", input: "{}", integration: "google", server: "gmail", tool: "send", action: "send", ...preview },
+        toolName: "mcp__crm__send_message",
+        summary: "Send a message",
+        preview: { title: "Use send_message on crm", input: '{\n  "to": "a@example.com"\n}', server: "crm", tool: "send_message", action: "send", ...preview },
       },
     });
     expect(approvalView(send({}), "Ada").hidden).toBe(false);
-    expect(approvalView(send({ to: ["a@exa\u200Bmple.com"] }), "Ada").hidden).toBe(true);
-    expect(approvalView(send({ subject: "Invoice \u2067paid\u2069" }), "Ada").hidden).toBe(true);
-    expect(approvalView(send({ body: "Paid.\u2028Bank details" }), "Ada").hidden).toBe(true);
-    expect(approvalView(send({ body: "Sam\u{E0049}\u{E0047}" }), "Ada").hidden).toBe(true);
+    expect(approvalView(send({ input: '{"to":"a@exa\u200Bmple.com"}' }), "Ada").hidden).toBe(true);
     expect(approvalView(send({ input: '{"to":"a@example.com\u202E"}' }), "Ada").hidden).toBe(true);
-    // A subject's \n is hidden; a body's breaks its line.
-    expect(approvalView(send({ subject: "Lease\nBcc: x@example.com" }), "Ada").hidden).toBe(true);
+    expect(approvalView(send({ input: '{"body":"Paid.\u2028Bank details"}' }), "Ada").hidden).toBe(true);
+    expect(approvalView(send({ input: '{"body":"Sam\u{E0049}\u{E0047}"}' }), "Ada").hidden).toBe(true);
   });
 
   it("copies each field's exact text, never the marks and isolates it is drawn with", () => {
@@ -250,13 +227,13 @@ describe("an approval whose fields hide or reorder text", () => {
       permission: {
         requestId: "p1",
         threadId: "t1",
-        toolName: "mcp__gmail__send",
-        summary: "Send an email",
-        preview: { title: "Send an email", to: ["a@exa\u200Bmple.com"], subject: "Invoice \u2067paid\u2069", body, input: '{"to":"a@example.com\u202E"}', integration: "google", server: "gmail", tool: "send", action: "send" },
+        toolName: "mcp__crm__send_message",
+        summary: "Send a message",
+        preview: { title: "Use send_message on crm", input: `{"to":"a@exa\u200Bmple.com\u202E","body":${JSON.stringify(body)}}`, server: "crm", tool: "send_message", action: "send" },
       },
     };
     const fields = approvalView(r, "Ada").fields;
-    const raw: Record<string, string> = { To: "a@exa\u200Bmple.com", Subject: "Invoice \u2067paid\u2069", Body: body, Input: '{"to":"a@example.com\u202E"}', Asked: "Send it \u202Enow" };
+    const raw: Record<string, string> = { Input: `{"to":"a@exa\u200Bmple.com\u202E","body":${JSON.stringify(body)}}`, Asked: "Send it \u202Enow" };
     for (const f of fields) {
       expect(fieldCopy(f), f.label).toBe(raw[f.label] ?? f.value);
       // What the card draws differs: it holds the marks and isolates the copy leaves out.
@@ -276,17 +253,13 @@ describe("an approval whose fields hide or reorder text", () => {
       permission: {
         requestId: "p1",
         threadId: "t1",
-        toolName: "mcp__gmail__send",
-        summary: "Send an email",
+        toolName: "mcp__crm__send_message",
+        summary: "Send a message",
         preview: {
-          title: "Send an email",
-          to: ["Zoë Müller <zoe@example.com>", "שרה <sara@example.com>"],
-          subject: "Réunion · 会議 · اجتماع",
-          body: "On se voit mardi ? ❤\uFE0F 👩\u200D💻\nمی\u200Cخواهم بیایم.",
-          input: "{}",
-          integration: "google",
-          server: "gmail",
-          tool: "send",
+          title: "Use send_message on crm",
+          input: "{\n  \"to\": \"Zoë Müller <zoe@example.com>, שרה <sara@example.com>\",\n  \"subject\": \"Réunion · 会議 · اجتماع\",\n  \"body\": \"On se voit mardi ? ❤\uFE0F 👩\u200D💻 می\u200Cخواهم بیایم.\"\n}",
+          server: "crm",
+          tool: "send_message",
           action: "send",
         },
       },

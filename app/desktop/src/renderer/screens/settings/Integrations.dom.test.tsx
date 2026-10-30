@@ -17,17 +17,17 @@ vi.hoisted(() => {
 
 const AT = "2026-10-27T10:00:00.000Z";
 const BOX = "Az+6kf/abi0V7SO+sn4h++sIgyPoNDAneLBDFaJf3TA=";
-const NOTION_KEY = "ntn_never_in_a_hub_call_0123";
+const CRM_KEY = "Bearer crm_never_in_a_hub_call_0123";
 const ref = { machineId: "devbox", projectId: "navi" };
 
-const notion: McpServer = {
+const crm: McpServer = {
   scope: { kind: "project", ...ref },
-  name: "notion",
+  name: "crm",
   enabled: true,
   roles: { lead: true, writers: false, reviewers: false },
-  transport: { type: "stdio", command: "npx", args: ["-y", "@notionhq/notion-mcp-server"] },
-  env: [{ name: "NOTION_TOKEN", kind: "secret", sealedOn: [{ machineId: "devbox", fingerprint: "5ec2e7a1" }] }],
-  integration: { kind: "notion" },
+  transport: { type: "http", url: "https://mcp.crm.example/mcp" },
+  headers: [{ name: "Authorization", kind: "secret", sealedOn: [{ machineId: "devbox", fingerprint: "5ec2e7a1" }] }],
+  integration: {},
   updatedAt: AT,
 };
 
@@ -58,11 +58,11 @@ beforeEach(() => {
   tested = {
     machineId: "devbox",
     result: {
-      server: "Notion API 2.0.0",
+      server: "CRM 2.0.0",
       tools: [
-        { name: "API-post-search", policy: "read" },
-        { name: "API-retrieve-a-page", policy: "read" },
-        { name: "API-patch-page", policy: "ask" },
+        { name: "list_contacts", policy: "read" },
+        { name: "get_contact", policy: "read" },
+        { name: "update_contact", policy: "ask" },
       ],
     },
   };
@@ -72,7 +72,7 @@ beforeEach(() => {
     secret: {
       mcpServer: (_hub: string, request: McpServerRequest): Promise<CallOutcome> => {
         saved.push(request);
-        project = [request.name === "notion" ? notion : { ...notion, name: request.name, integration: { kind: request.integration?.kind ?? "custom" } }];
+        project = [{ ...crm, name: request.name, integration: request.integration?.readTools === undefined ? {} : { readTools: request.integration.readTools } }];
         return Promise.resolve({ ok: true, output: { server: project[0] } });
       },
     },
@@ -158,41 +158,26 @@ const row = (name: string) => {
 const hubCalls = () => JSON.stringify(calls);
 
 describe("a Navi's integrations", () => {
-  it("lists Notion to connect and a custom server to add", async () => {
+  it("offers to add an MCP server", async () => {
     await render();
-    expect(row("Notion").textContent).toContain("The pages you share with your own Notion integration.");
+    expect(document.querySelectorAll('[role="listitem"]')).toHaveLength(0);
     expect(document.body.textContent).toContain("Add an MCP server");
     expect(document.body.textContent).toContain("Moving money, trading and creating accounts are never allowed.");
     expect(document.body.textContent).not.toMatch(/xaq/iu);
   });
 
-  it("shows a connected Notion: its secret sealed on Navi's machine, and a test by policy", async () => {
-    project = [notion];
+  it("shows a connected server: its key sealed on Navi's machine, and a test by policy", async () => {
+    project = [crm];
     await render();
-    await click(button("Test connection", row("Notion")));
-    const text = row("Notion").textContent;
+    await click(button("Test connection", row("crm")));
+    const text = row("crm").textContent;
     expect(text).toContain("Connected");
-    expect(text).toContain("Integration secret sealed on devbox. Navi never sees it.");
-    expect(text).toContain("Works on devbox (Notion API 2.0.0): 2 tools read freely · 1 asks you each time.");
-    expect(text).toContain("API-post-search, API-retrieve-a-page");
+    expect(text).toContain("Key sealed on devbox. Navi never sees it.");
+    expect(text).toContain("Works on devbox (CRM 2.0.0): 2 tools read freely · 1 asks you each time.");
+    expect(text).toContain("list_contacts, get_contact");
     tested = { machineId: "devbox", result: { error: "HTTP 401 Unauthorized" } };
-    await click(button("Test connection", row("Notion")));
-    expect(row("Notion").querySelector('[role="alert"]')?.textContent).toContain("Notion refused the token.");
-  });
-
-  it("connects Notion with its own token as a sealed NOTION_TOKEN for its official server", async () => {
-    await render();
-    await click(button("Connect", row("Notion")));
-    expect(dialog().textContent).toContain("notion.so/profile/integrations");
-    expect(dialog().textContent).toContain("Connections, and add Navi");
-    await type(field("Integration secret"), NOTION_KEY);
-    await click(button("Connect and test", dialog()));
-    const request = saved[0];
-    expect(request?.integration).toEqual({ kind: "notion" });
-    expect(request?.transport).toEqual({ type: "stdio", command: "npx", args: ["-y", "@notionhq/notion-mcp-server"] });
-    expect(request?.env).toEqual([{ kind: "secret", name: "NOTION_TOKEN", value: NOTION_KEY }]);
-    expect(hubCalls()).not.toContain(NOTION_KEY);
-    expect(document.body.textContent).not.toContain(NOTION_KEY);
+    await click(button("Test connection", row("crm")));
+    expect(row("crm").querySelector('[role="alert"]')?.textContent).toContain("Failed on devbox: HTTP 401 Unauthorized");
   });
 
   it("adds a custom server, then saves the tools the person ticks as only reading", async () => {
@@ -210,27 +195,30 @@ describe("a Navi's integrations", () => {
     await click(button("Add an MCP server"));
     await type(field("Name"), "linear");
     await type(field("URL"), "https://mcp.linear.app/mcp");
+    await type(field("Key"), CRM_KEY);
     await click(button("Connect and test", dialog()));
-    expect(saved[0]?.integration).toEqual({ kind: "custom" });
-    expect(saved[0]?.headers).toEqual([]);
+    expect(saved[0]?.integration).toEqual({});
+    expect(saved[0]?.headers).toEqual([{ kind: "secret", name: "Authorization", value: CRM_KEY }]);
+    expect(hubCalls()).not.toContain(CRM_KEY);
     // The server's own read-only hint is ticked; a blocked tool can't be.
     const box = (name: string) => [...dialog().querySelectorAll<HTMLElement>('[role="checkbox"]')].find((c) => c.closest("label")?.textContent.includes(name) ?? c.parentElement?.textContent.includes(name));
     expect(box("list_issues")?.getAttribute("aria-checked")).toBe("true");
     expect(box("transfer_funds")?.getAttribute("aria-checked")).toBe("false");
     expect(dialog().textContent).toContain("Blocked: fleetd never runs this one.");
     await click(button("Save", dialog()));
-    expect(saved[1]?.integration).toEqual({ kind: "custom", readTools: ["list_issues"] });
+    expect(saved[1]?.integration).toEqual({ readTools: ["list_issues"] });
+    expect(document.body.textContent).not.toContain(CRM_KEY);
   });
 
   it("disconnects: the server goes, and the key is erased from Navi's machine", async () => {
-    project = [notion];
+    project = [crm];
     await render();
-    await click(button("Disconnect", row("Notion")));
+    await click(button("Disconnect", row("crm")));
     expect(dialog().textContent).toContain("the key is erased from devbox");
-    expect(dialog().textContent).toContain("delete the integration in Notion");
+    expect(dialog().textContent).toContain("revoke the key where you made it");
     await click(button("Disconnect", dialog()));
-    expect(calls.find((c) => c.tool === "mcp_server_remove")?.input).toEqual({ scope: notion.scope, name: "notion" });
+    expect(calls.find((c) => c.tool === "mcp_server_remove")?.input).toEqual({ scope: crm.scope, name: "crm" });
     await settle();
-    expect(button("Connect", row("Notion"))).toBeDefined();
+    expect(document.querySelector('[role="listitem"][aria-label="crm"]')).toBeNull();
   });
 });

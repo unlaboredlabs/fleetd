@@ -2256,173 +2256,6 @@ export type GithubLoopback = string;
 
 export type GithubManifestCode = string;
 
-/** One Navi's Google account. */
-export type GoogleAccount = {
-  connectedAt: Timestamp;
-  /** The account's address, as Gmail names it. */
-  email: string;
-  /**
-   * Google stopped taking the connection (revoked, or a testing app's 7 days ran out): why, as the Navi's node last
-   * saw it. The app offers Reconnect.
-   */
-  lapsed?: string;
-  /** When new mail wakes the Navi. */
-  mail?: MailWake;
-  projectRef: ProjectRef;
-  /** What the person granted: Google lets them untick some. */
-  scopes: string[];
-};
-
-/** The hub's admin's OAuth client, as the hub keeps it: no secret. */
-export type GoogleClient = {
-  clientId: GoogleClientId;
-  /**
-   * New mail in real time: Gmail tells this topic, and one machine reads its subscription. None: the hub checks
-   * each Navi's mail about every minute instead.
-   */
-  pubsub?: GooglePubsub;
-  /** Each machine whose node holds its secret, with that node's fingerprint of it. */
-  sealedOn?: McpSealedOn[];
-  updatedAt: Timestamp;
-};
-
-/**
- * Test: whether Google takes the client's id and secret, asked with a code that can't work. Google answers
- * `invalid_grant` for a client it knows and `invalid_client` for one it doesn't.
- */
-export type GoogleClientCheck = {
-  ok: boolean;
-  /** What's wrong, in a line a person can act on. */
-  problem?: string;
-};
-
-export type GoogleClientId = string;
-
-export type GoogleClientSetInput = {
-  clientId: GoogleClientId;
-  /** The client secret sealed to each machine that runs a Navi. */
-  sealed: McpSeal[];
-};
-
-export type GoogleClientSetOutput = {
-  client: GoogleClient;
-  /** Machines that were offline: their Navis can't connect until the client is saved again while they are online. */
-  missingOn?: MachineId[];
-  next?: string;
-  truncated?: boolean;
-};
-
-export type GoogleClientTestInput = {
-  /** Where to test; default: the first machine online that holds the client. */
-  machineId?: MachineId;
-};
-
-export type GoogleClientTestOutput = {
-  check: GoogleClientCheck;
-  machineId: MachineId;
-  next?: string;
-  truncated?: boolean;
-};
-
-export type GoogleCode = string;
-
-export type GoogleConnectInput = {
-  /** From Google's redirect. */
-  code: GoogleCode;
-  /** The PKCE verifier whose challenge the consent page was opened with. */
-  codeVerifier: PkceVerifier;
-  /** The Navi. */
-  project: ProjectRef;
-  /** The loopback address the code was sent to. */
-  redirectUri: LoopbackUri;
-};
-
-export type GoogleConnectOutput = {
-  account: GoogleAccount;
-  next?: string;
-  truncated?: boolean;
-};
-
-export type GoogleDisconnectInput = {
-  project: ProjectRef;
-};
-
-export type GoogleDisconnectOutput = {
-  next?: string;
-  /** Whether Google confirmed the revoke; the tokens are gone from the machine either way. */
-  revoked: boolean;
-  truncated?: boolean;
-};
-
-export type GoogleGetInput = {
-  /** Also this Navi's account. */
-  project?: ProjectRef;
-};
-
-export type GoogleGetOutput = {
-  /** The asked Navi's account, when it has one. */
-  account?: GoogleAccount;
-  /** The admin's OAuth client; none until one is saved. */
-  client?: GoogleClient;
-  /** How the hub hears of new mail now: push through Pub/Sub, or polling. */
-  mailMode: MailMode;
-  /** Why it polls although Pub/Sub is set up: what the last read of the subscription said. */
-  mailProblem?: string;
-  next?: string;
-  /** Where the consent page sends the person back: a loopback address, any port. */
-  redirect: string;
-  /** What connecting asks Google for. */
-  scopes: string[];
-  truncated?: boolean;
-};
-
-export type GoogleMailSetInput = {
-  /** The Navi. */
-  project: ProjectRef;
-  /** With rule query: Gmail search. */
-  query?: string;
-  rule: MailWakeRule;
-};
-
-export type GoogleMailSetOutput = {
-  account: GoogleAccount;
-  next?: string;
-  truncated?: boolean;
-};
-
-/** Gmail's push notifications through the admin's Pub/Sub, as the hub keeps them: no key. */
-export type GooglePubsub = {
-  /** That node's fingerprint of the key. */
-  fingerprint: SecretFingerprint;
-  /** The machine whose node holds the service account key and reads the subscription. */
-  machineId: MachineId;
-  subscription: PubsubSubscription;
-  topic: PubsubTopic;
-};
-
-/**
- * Gmail's push through the admin's Pub/Sub: the topic Gmail tells, the subscription one machine reads, and the
- * service account key it reads with, sealed to that machine.
- */
-export type GooglePubsubSet = {
-  machineId: MachineId;
-  /** The service account's JSON key, sealed with crypto_box_seal to that machine's boxPubKey. */
-  sealed: SealedSecret;
-  subscription: PubsubSubscription;
-  topic: PubsubTopic;
-};
-
-export type GooglePubsubSetInput = {
-  /** None: turn real-time mail off; the hub checks each Navi's mail about every minute. */
-  pubsub?: GooglePubsubSet;
-};
-
-export type GooglePubsubSetOutput = {
-  client: GoogleClient;
-  next?: string;
-  truncated?: boolean;
-};
-
 export type Grant = {
   machines: GrantMachines;
   role: Role;
@@ -2717,7 +2550,7 @@ export type HubSetupStep = {
   need: SetupNeed;
   parts: SetupPart[];
   /**
-   * Where in the app the fields are saved, a Hub page of the app's Settings ("google"), where the terminal can't seal
+   * Where in the app the fields are saved, a Hub page of the app's Settings ("github"), where the terminal can't seal
    * them.
    */
   place?: string;
@@ -2879,9 +2712,6 @@ export type IntakeRef = {
   kind: "pr";
   url: GitHubPrUrl;
 };
-
-/** What a configured MCP server is to the hub's tool policy. */
-export type IntegrationKind = "google" | "notion" | "custom";
 
 /** A single-use pairing code bound to a person, valid for 7 days. The code itself is shown once, at creation. */
 export type Invite = {
@@ -3410,35 +3240,19 @@ export type MachineSleptData = {
 
 export type MachineStatus = "online" | "offline" | "degraded";
 
-/** How the hub hears of new mail now. */
-export type MailMode = "push" | "polling";
-
-/** A Navi's mail wake, as the person set it. */
-export type MailWake = {
-  /** With `rule: query`: Gmail search, e.g. `from:boss@example.com OR is:important`. */
-  query?: string;
-  rule: MailWakeRule;
-  /** When Gmail's watch of the inbox ends, in ms since the epoch; renewed a day before. */
-  watchExpiresMs?: number;
-};
-
-/** When a Navi's new mail wakes it. */
-export type MailWakeRule = "off" | "all" | "query";
-
 /** How sure the matcher is that new work repeats a piece in flight. */
 export type MatchStrength = "weak" | "strong" | "exact";
 
 export type McpArg = string;
 
 /**
- * The integration a server is, on its row (`McpServer.integration`). A server without one is a custom one with no
- * tool marked as reading.
+ * What the person marked a server's tools as, on its row (`McpServer.integration`). A server without one has no tool
+ * marked as reading.
  */
 export type McpIntegration = {
-  kind: IntegrationKind;
   /**
-   * A custom server's tools that only read, as the person marked them when connecting it. Ignored for Notion and
-   * fleetd's own Google server, whose tools the hub's table knows. A tool the policy blocks stays blocked even when listed here.
+   * The server's tools that only read, as the person marked them when connecting it. A tool the policy blocks stays
+   * blocked even when listed here.
    */
   readTools?: McpToolName[];
 };
@@ -3482,10 +3296,7 @@ export type McpServer = {
   env?: McpValue[];
   /** An HTTP or SSE server's headers. */
   headers?: McpValue[];
-  /**
-   * What it is to a Navi (Google, Notion or custom), for the hub's tool policy; none for a server added before
-   * integrations, which counts as custom.
-   */
+  /** The tools the person marked as only reading, for the hub's tool policy; none marks none. */
   integration?: McpIntegration;
   name: McpServerName;
   roles: McpRoles;
@@ -3513,7 +3324,7 @@ export type McpServerSetInput = {
   env?: McpValueSet[];
   /** An HTTP or SSE server's headers, the whole list. */
   headers?: McpValueSet[];
-  /** What it is to a Navi: Google, Notion or custom, for the hub's tool policy. */
+  /** The tools the person marked as only reading, for the hub's tool policy. */
   integration?: McpIntegration;
   name: McpServerName;
   roles: McpRoles;
@@ -4790,18 +4601,6 @@ export type PreviewAsker = {
   words: string;
 };
 
-/** A file an asking tool attaches, as its input names it. */
-export type PreviewAttachment = {
-  /** Its size, when its bytes are in the input or the Navi's node read the file. */
-  bytes?: number;
-  /** Where it comes from, when not from the input: "from Drive", "from message 18c2". */
-  from?: string;
-  /** Its type, as the email names it: "application/pdf". */
-  mime?: string;
-  /** The name the recipient sees: "tenant-form.pdf", or what the file is when the tool names it by id. */
-  name: string;
-};
-
 /**
  * A project's preview setting (Settings › Projects › Try it, or `project_settings_set {preview}`). Nothing runs
  * because of it: it says how to run a preview someone asks for.
@@ -5736,10 +5535,6 @@ export type PromptWarning = {
 
 export type PromptWarningCode = "placeholder_missing" | "placeholder_unknown" | "safety_rule_missing" | "too_long";
 
-export type PubsubSubscription = string;
-
-export type PubsubTopic = string;
-
 export type PushBadgeInput = { [key: string]: unknown };
 
 export type PushBadgeOutput = {
@@ -6187,7 +5982,7 @@ export type SetupField = {
 };
 
 /** Where a step sits in the list. */
-export type KnownSetupGroup = "accounts" | "people" | "integrations" | "hub";
+export type KnownSetupGroup = "accounts" | "people" | "hub";
 /** KnownSetupGroup, or a value from a newer hub. */
 export type SetupGroup = KnownSetupGroup | (string & {});
 
@@ -6260,7 +6055,7 @@ export type SetupStep = {
 };
 
 /** The steps, in the order they are listed. */
-export type KnownSetupStepId = "address" | "machines" | "claude" | "github" | "people" | "google" | "notion";
+export type KnownSetupStepId = "address" | "machines" | "claude" | "github" | "people";
 /** KnownSetupStepId, or a value from a newer hub. */
 export type SetupStepId = KnownSetupStepId | (string & {});
 
@@ -7341,39 +7136,18 @@ export type ToolPermission = {
 export type ToolPolicy = "read" | "ask" | "blocked";
 
 /**
- * What an approval card shows for an asking tool: who it reaches and what it says, or what it changes. Every field is
- * read from the exact input the tool runs with once approved; nothing is a summary the agent wrote.
+ * What an approval card shows for an asking tool: what it does and everything it gets. The input is the exact one
+ * the tool runs with once approved; nothing is a summary the agent wrote.
  */
 export type ToolPreview = {
-  /** The account it acts as, when the tool names one (the connected Google account's address). */
-  account?: string;
   action: ToolAction;
-  /** Every file it attaches. */
-  attachments?: PreviewAttachment[];
-  /**
-   * Who it reaches when the tool decides that itself, such as a reply to a message's sender: said in words, since
-   * the card can't list them.
-   */
-  audience?: string;
-  bcc?: string[];
-  /** The text that goes out or goes in: the email's body, the event's notes, the page's new content. */
-  body?: string;
-  cc?: string[];
-  /** Everything the tool gets, as JSON, so nothing is hidden behind the fields above. */
+  /** Everything the tool gets, as JSON. */
   input: string;
-  integration: IntegrationKind;
   /** The configured server's name, as claude prefixes its tools (`mcp__<server>__<tool>`). */
   server: McpServerName;
-  subject?: string;
-  /** What it acts on: a message, an event, a page or a file, by name or id. */
-  target?: string;
-  /** What it does, as a verb phrase the app puts after "<the Navi> wants to": "Send an email", "Reply to an email". */
+  /** What it does, as a verb phrase the app puts after "<the Navi> wants to": "Use create_page on docs". */
   title: string;
-  /** Every recipient, as the tool gets them. */
-  to?: string[];
   tool: McpToolName;
-  /** When, for an event: "2026-11-03 10:00 → 11:00". */
-  when?: string;
 };
 
 /**
@@ -8073,13 +7847,6 @@ export interface ToolMap {
   github_app_test: { input: GithubAppTestInput; output: GithubAppTestOutput };
   github_connect: { input: GithubConnectInput; output: GithubConnectOutput };
   github_disconnect: { input: GithubDisconnectInput; output: GithubDisconnectOutput };
-  google_client_set: { input: GoogleClientSetInput; output: GoogleClientSetOutput };
-  google_client_test: { input: GoogleClientTestInput; output: GoogleClientTestOutput };
-  google_connect: { input: GoogleConnectInput; output: GoogleConnectOutput };
-  google_disconnect: { input: GoogleDisconnectInput; output: GoogleDisconnectOutput };
-  google_get: { input: GoogleGetInput; output: GoogleGetOutput };
-  google_mail_set: { input: GoogleMailSetInput; output: GoogleMailSetOutput };
-  google_pubsub_set: { input: GooglePubsubSetInput; output: GooglePubsubSetOutput };
   hub_info: { input: HubInfoInput; output: HubInfoOutput };
   hub_link_add: { input: HubLinkAddInput; output: HubLinkAddOutput };
   hub_link_mint: { input: HubLinkMintInput; output: HubLinkMintOutput };

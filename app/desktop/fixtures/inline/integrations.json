@@ -1,5 +1,5 @@
 {
-  "note": "A Navi's integration approvals (hub/integrations): an email to send with every recipient, a Bcc, an outside address and two files from its folder; a Notion page to trash; and an email already approved, folded. devbox; no personal data.",
+  "note": "A Navi's integration approvals (hub/integrations): a message to send through a custom MCP server, with its whole input; a page to delete; and a send already approved, folded. devbox; no personal data.",
   "items": [
     {
       "kind": "command_approval",
@@ -9,40 +9,14 @@
       "permission": {
         "threadId": "t-navi",
         "requestId": "perm-3",
-        "toolName": "mcp__google__send_message",
+        "toolName": "mcp__crm__send_message",
         "summary": "Sends a message",
         "preview": {
-          "integration": "google",
-          "server": "google",
+          "server": "crm",
           "tool": "send_message",
           "action": "send",
-          "title": "Send an email",
-          "account": "me@example.com",
-          "to": [
-            "Ana Ruiz <ana@example.com>",
-            "bo@example.com.au"
-          ],
-          "cc": [
-            "cy@example.com"
-          ],
-          "subject": "Lunch on Tuesday",
-          "body": "Hi Ana,\n\nTuesday at 12:30 at the usual place? I'll book a table.\n\nNavi, for Sam",
-          "input": "{\n  \"account\": \"me@example.com\",\n  \"to\": \"Ana Ruiz <ana@example.com>, bo@example.com.au\",\n  \"cc\": [\n    \"cy@example.com\"\n  ],\n  \"bcc\": [\n    \"sam@example.com\"\n  ],\n  \"subject\": \"Lunch on Tuesday\",\n  \"body\": \"Hi Ana,\\n\\nTuesday at 12:30 at the usual place? I'll book a table.\\n\\nNavi, for Sam\",\n  \"attachments\": [\n    {\n      \"path\": \"menu.pdf\",\n      \"sha256\": \"9f2c00000000000000000000000000000000000000000000000000000000a1b2\"\n    },\n    {\n      \"path\": \"maps/table.png\",\n      \"sha256\": \"5e7d00000000000000000000000000000000000000000000000000000000c3d4\"\n    }\n  ]\n}",
-          "bcc": [
-            "sam@example.com"
-          ],
-          "attachments": [
-            {
-              "name": "menu.pdf",
-              "bytes": 184200,
-              "mime": "application/pdf"
-            },
-            {
-              "name": "table.png",
-              "bytes": 42800,
-              "mime": "image/png"
-            }
-          ]
+          "title": "Use send_message on crm",
+          "input": "{\n  \"account\": \"me@example.com\",\n  \"to\": \"Ana Ruiz <ana@example.com>, bo@example.com.au\",\n  \"cc\": [\n    \"cy@example.com\"\n  ],\n  \"bcc\": [\n    \"sam@example.com\"\n  ],\n  \"subject\": \"Lunch on Tuesday\",\n  \"body\": \"Hi Ana,\\n\\nTuesday at 12:30 at the usual place? I'll book a table.\\n\\nNavi, for Sam\",\n  \"attachments\": [\n    {\n      \"path\": \"menu.pdf\",\n      \"sha256\": \"9f2c00000000000000000000000000000000000000000000000000000000a1b2\"\n    },\n    {\n      \"path\": \"maps/table.png\",\n      \"sha256\": \"5e7d00000000000000000000000000000000000000000000000000000000c3d4\"\n    }\n  ]\n}"
         }
       }
     },
@@ -54,15 +28,13 @@
       "permission": {
         "threadId": "t-navi",
         "requestId": "perm-4",
-        "toolName": "mcp__notion__API-patch-page",
+        "toolName": "mcp__docs__delete_page",
         "summary": "Updates a page",
         "preview": {
-          "integration": "notion",
-          "server": "notion",
-          "tool": "API-patch-page",
+          "server": "docs",
+          "tool": "delete_page",
           "action": "delete",
-          "title": "Move a Notion page to the trash",
-          "target": "Trip planning (2f1c…)",
+          "title": "Use delete_page on docs",
           "input": "{\n  \"page_id\": \"2f1c\",\n  \"archived\": true\n}"
         }
       }
@@ -77,20 +49,13 @@
       "permission": {
         "threadId": "t-navi",
         "requestId": "perm-5",
-        "toolName": "mcp__google__send_message",
+        "toolName": "mcp__crm__send_message",
         "summary": "Sends a message",
         "preview": {
-          "integration": "google",
-          "server": "google",
+          "server": "crm",
           "tool": "send_message",
           "action": "send",
-          "title": "Send an email",
-          "account": "me@example.com",
-          "to": [
-            "ana@example.com"
-          ],
-          "subject": "Re: Lunch on Tuesday",
-          "body": "12:30 it is.",
+          "title": "Use send_message on crm",
           "input": "{\n  \"account\": \"me@example.com\",\n  \"to\": \"ana@example.com\",\n  \"subject\": \"Re: Lunch on Tuesday\",\n  \"body\": \"12:30 it is.\"\n}"
         }
       }

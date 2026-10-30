@@ -160,7 +160,7 @@ export function registerSettingsCommands(layer: DataLayer): () => void {
     hubPage("go:hub.tools", "Tools & skills", "Every project: global MCP servers and hub-wide skills", "hub.tools", ["mcp", "skills", "global", "every project"]),
     hubPage("go:hub.instructions", "Instructions for every project", "Every project: instructions and memory caps", "hub.instructions", ["instructions", "memory caps", "global"]),
     hubPage("go:hub.prompts", "Hub-wide prompts", "Every project: the texts fleetd sends every project's agents", "hub.prompts", ["prompts", "templates", "global"]),
-    hubPage("go:hub.accounts", "Hub accounts", "The hub's Claude API key, GitHub App and Google client", "hub.accounts", ["claude", "api key", "github app", "google", "connections"]),
+    hubPage("go:hub.accounts", "Hub accounts", "The hub's Claude API key and GitHub App", "hub.accounts", ["claude", "api key", "github app", "connections"]),
   ]);
   const offSource = registerSource({
     id: "prompts",

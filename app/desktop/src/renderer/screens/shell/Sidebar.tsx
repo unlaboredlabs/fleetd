@@ -269,7 +269,7 @@ function NaviRow({ p, named, current, jump, go }: { p: Placed; named: boolean; c
     <>
       <ContextMenuItem onSelect={open}>Open</ContextMenuItem>
       <ContextMenuItem onSelect={() => setRenaming({ machineId, projectId, title })}>Rename…</ContextMenuItem>
-      {/* Its connections (Google, Notion, MCP servers) are in its settings. */}
+      {/* Its connections (MCP servers) are in its settings. */}
       <ContextMenuItem onSelect={() => go({ id: "settings", tab: "projects", for: `${machineId}/${projectId}`, ...at })}>Open settings</ContextMenuItem>
       <ContextMenuCopy text={workspaceRoot}>Copy folder path</ContextMenuCopy>
       <ContextMenuSeparator />

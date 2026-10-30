@@ -2,9 +2,9 @@
 // shown to nobody else; the hub refuses anyone else's change too. People (roles, Invite someone and the invites open,
 // and every hub link); Machines (Add machine, the machines with Repair and Remove, each one's page with its checklist,
 // their roles, their caps, and Updates: each one's fleetd with Update…); Every project, laid out as a project's own pages are: Profiles, Tools & skills,
-// Instructions & memory and Prompts, each reaching every project on the hub; Hub accounts (the hub's Claude API key,
-// its GitHub App, github/AdminGithub.tsx, and its Google client for Navis, google/AdminGoogle.tsx); and Setup, the hub's
-// guided steps (setup/SetupScreen.tsx), listed only while a required one is left. With several hubs the group manages
+// Instructions & memory and Prompts, each reaching every project on the hub; Hub accounts (the hub's Claude API key
+// and its GitHub App, github/AdminGithub.tsx); and Setup, the hub's guided steps (setup/SetupScreen.tsx), listed only
+// while a required one is left. With several hubs the group manages
 // one hub at a time, named above every page, and switches between the hubs this person administers: nothing here acts
 // on a hub the page doesn't name.
 import { useState, type ReactNode } from "react";
@@ -25,7 +25,6 @@ import { Prompts } from "../settings/Prompts";
 import type { SettingsRoute } from "../settings/route";
 import { HubSkills } from "../settings/Skills";
 import { AdminGithub } from "../github/AdminGithub";
-import { AdminGoogle } from "../google/AdminGoogle";
 import { progressLine, SetupSteps, useSetupSteps } from "../setup/SetupScreen";
 import { navigate } from "../shell/navigation";
 import { useUpdatesView } from "../updates/hooks";
@@ -240,7 +239,7 @@ function InstructionsAndMemory() {
 }
 
 /**
- * What the hub itself connects to: its Claude API key, its GitHub App and its Google client, each set up once; and the
+ * What the hub itself connects to: its Claude API key and its GitHub App, each set up once; and the
  * way back into the guided setup, which walks the same steps.
  */
 function HubAccounts({ me }: { me: Person | undefined }) {
@@ -260,7 +259,6 @@ function HubAccounts({ me }: { me: Person | undefined }) {
         </PageHead>
         <ClaudeAdmin me={me} />
         <AdminGithub />
-        <AdminGoogle />
       </div>
     </div>
   );

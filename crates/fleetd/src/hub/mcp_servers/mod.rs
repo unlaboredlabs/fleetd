@@ -13,7 +13,7 @@ pub mod tools;
 
 use std::collections::BTreeMap;
 
-use fleetd_contracts::ids::{MachineId, ProjectRef, Timestamp};
+use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef, Timestamp};
 use fleetd_contracts::mcp_servers::{
     McpScope, McpSecretScope, McpServer, McpServerName, McpSessionConfig, McpSessionServer,
     McpSessionValue, McpValue,
@@ -131,6 +131,60 @@ impl McpServerStore<'_> {
         })
     }
 
+    /// The secrets a node is yet to forget for a server the hub no longer has (an older hub's built-in integrations,
+    /// dropped by a migration): machine, where the node keeps them, server.
+    pub fn forgets(&self) -> Result<Vec<(MachineId, McpSecretScope, McpServerName)>, StoreError> {
+        self.db.with(|c| {
+            let mut stmt =
+                c.prepare_cached("SELECT machine_id, project_id, name FROM mcp_secret_forgets")?;
+            let rows = stmt
+                .query_map([], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                    ))
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            Ok(rows
+                .into_iter()
+                .filter_map(|(m, p, name)| {
+                    let scope = match p.as_str() {
+                        "" => McpSecretScope::Global,
+                        _ => McpSecretScope::Project {
+                            project_id: ProjectId::new(p).ok()?,
+                        },
+                    };
+                    Some((
+                        MachineId::new(m).ok()?,
+                        scope,
+                        McpServerName::new(name).ok()?,
+                    ))
+                })
+                .collect())
+        })
+    }
+
+    /// The node forgot them.
+    pub fn forgot(
+        &self,
+        machine_id: &MachineId,
+        scope: &McpSecretScope,
+        name: &McpServerName,
+    ) -> Result<(), StoreError> {
+        let project_id = match scope {
+            McpSecretScope::Global => "",
+            McpSecretScope::Project { project_id } => project_id.as_str(),
+        };
+        self.db.with(|c| {
+            c.execute(
+                "DELETE FROM mcp_secret_forgets WHERE machine_id = ? AND project_id = ? AND name = ?",
+                params![machine_id.as_str(), project_id, name.as_str()],
+            )?;
+            Ok(())
+        })
+    }
+
     pub fn remove(&self, scope: &McpScope, name: &McpServerName) -> Result<bool, StoreError> {
         let (m, p) = scope_key(scope);
         self.db.with(|c| {
@@ -185,11 +239,6 @@ impl McpServerStore<'_> {
                 project_id: project.project_id.clone(),
             })?;
             by_name.extend(servers.into_iter().map(|s| (s.name.to_string(), s)));
-        }
-        // A Navi with a Google account gets fleetd's own server, over one of the same name.
-        if let Some(account) = self.db.google().account(r)? {
-            let google = crate::hub::google::server(&account);
-            by_name.insert(google.name.to_string(), google);
         }
         Ok(by_name.into_values().collect())
     }

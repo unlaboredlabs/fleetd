@@ -7,7 +7,7 @@
 //   the train merges four PRs as one batch.
 // - team: checkout's chat, which the team shares: Sam asks, Alice adds hers, the lead answers the two of them.
 // - screens: an agent's live browser; cut to the iPhone's sign-in asking for you, Take over, the code, Hand back.
-// - navi: Ada, a Navi, woken by mail with a reply that waits on you; Send it, and it went.
+// - navi: Ada, a Navi, with a lease renewal that waits on you; Send it, and it went.
 //
 // Each clip is one run of the app at a person's pace, from which it keeps its takes, a few seconds each, cut together
 // tight; what QA does between them (taking the phone over for the lead's clip, opening the phone for the screens') is
@@ -344,7 +344,7 @@ const clips = (frames: ReadonlyArray<{ at: number }>): Record<"lead" | "team" | 
       poster: takeOver + DIGIT_MS.first + CODE.length * DIGIT_MS.every + 200,
     };
   },
-  // From storefront to Ada: Marta's mail woke it, and its reply with both files waits on you. Send it, and it went.
+  // From storefront to Ada: its lease renewal for Marta waits on you. Send it, and it went.
   navi: async (page, start) => {
     await sleepUntil(start + 700);
     await press(page, item(page, /^Ada\b/u));

@@ -9,7 +9,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { AddressInfo } from "node:net";
 import type { GithubAppGetOutput, ToolInput } from "../shared/contracts";
 import type { CallOutcome, HubError } from "../shared/hub";
-import { landing, pkce } from "./google";
+import { landing, pkce } from "./loopback";
 
 /** How long the browser has to come back: signing in to GitHub and reading its page. */
 export const WAIT_MS = 10 * 60_000;

@@ -17,7 +17,7 @@ use serde_json::{Value, json};
 use super::*;
 use crate::hub::push::Outcome;
 
-const RSA_KEY: &str = include_str!("../node/google/testdata/service-account-test-key.pem");
+const RSA_KEY: &str = include_str!("testdata/service-account-test-key.pem");
 
 /// What the fake upstream got: (path, headers, body).
 type Seen = Arc<Mutex<Vec<(String, HeaderMap, String)>>>;

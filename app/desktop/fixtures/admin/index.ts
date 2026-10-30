@@ -5,8 +5,7 @@
 // for leads, with no subscription of his own.
 import { defineGroup } from "../kit/group.ts";
 import { Fixture, HUB } from "../kit/fixture.ts";
-import { isObject, type JsonObject } from "../kit/json.ts";
-import { arr } from "../kit/stress.ts";
+import type { JsonObject } from "../kit/json.ts";
 import { profilesList } from "../settings/profiles.ts";
 
 const AT = "2026-10-12T09:00:00.000Z";
@@ -212,43 +211,6 @@ export function answerHub(f: Fixture, me: JsonObject = sam, admin = true, member
 }
 
 /**
- * Hub accounts › Google (google/AdminGoogle.tsx): no client yet; one saved on devbox only, buildbox missing; one
- * Google refuses; and real-time mail by push, or polling with why.
- */
-function google(from: Fixture, name: string, note: string, client: "none" | "set" | "refused" | "push" | "polling"): Fixture {
-  const f = hub(from, name, note, sam, true);
-  const box = "Az+6kf/abi0V7SO+sn4h++sIgyPoNDAneLBDFaJf3TA=";
-  if (f.snapshot !== undefined) f.snapshot["machines"] = arr(f.snapshot["machines"]).map((m) => (isObject(m) ? { ...m, boxPubKey: box } : m));
-  const saved = { clientId: "418559210337-q8fj2v0c6m1k3s5t7u9w.apps.googleusercontent.com", sealedOn: [{ machineId: "devbox", fingerprint: "9c41e0b2" }], updatedAt: "2026-10-17T09:00:00.000Z" };
-  const scopes = [
-    "openid",
-    "email",
-    "https://www.googleapis.com/auth/gmail.readonly",
-    "https://www.googleapis.com/auth/gmail.compose",
-    "https://www.googleapis.com/auth/calendar.events",
-    "https://www.googleapis.com/auth/drive",
-  ];
-  const pubsub = { topic: "projects/fleetd-devbox/topics/fleetd-gmail", subscription: "projects/fleetd-devbox/subscriptions/fleetd-gmail-hub", machineId: "devbox", fingerprint: "71d03a5e" };
-  const realtime = client === "push" || client === "polling";
-  f.answer("google_get", undefined, {
-    ...(client === "none" ? {} : { client: { ...saved, ...(realtime ? { pubsub } : {}) } }),
-    scopes,
-    redirect: "http://127.0.0.1",
-    mailMode: client === "push" ? "push" : "polling",
-    ...(client === "polling" ? { mailProblem: "devbox is offline, and it holds the key" } : {}),
-  });
-  f.answer("google_pubsub_set", undefined, { client: saved, next: "The hub checks the mail of each Navi whose mail wakes it about every minute." });
-  f.answer(
-    "google_client_test",
-    undefined,
-    client === "refused"
-      ? { machineId: "devbox", check: { ok: false, problem: "Google doesn't know this client: check the Client ID and secret, or make a new Desktop app client." } }
-      : { machineId: "devbox", check: { ok: true } },
-  );
-  return f;
-}
-
-/**
  * Hub accounts › GitHub (github/AdminGithub.tsx): no App yet, with the button that creates one; one created but not
  * installed; one installed on acme's chosen repositories and all of Sam's, tested; and one whose key GitHub refused.
  * The App is acme's, so its pages are under acme's settings.
@@ -354,11 +316,6 @@ export default defineGroup({
     hub(base("chat-empty"), "admin-owner", "Sam owns the hub: Alice is an admin, Bob a member, and Dana's invite waits", sam, true),
     hub(base("chat-empty"), "admin-admin", "The same hub as Alice, an admin: Sam the owner is out of her reach", alice, true),
     // Bob's device holds admin on every machine, as every paired device did before people: his role alone hides it.
-    google(base("chat-empty"), "admin-google-none", "Hub accounts › Google on a hub with no OAuth client yet: the steps and the form", "none"),
-    google(base("chat-empty"), "admin-google-set", "Hub accounts › Google with the client saved on devbox, not on buildbox; Test finds it", "set"),
-    google(base("chat-empty"), "admin-google-push", "Hub accounts › Google with real-time mail read on devbox, by push", "push"),
-    google(base("chat-empty"), "admin-google-polling", "Hub accounts › Google with real-time mail set up, polling because devbox is offline", "polling"),
-    google(base("chat-empty"), "admin-google-refused", "Hub accounts › Google with a client Google doesn't know: Test says so", "refused"),
     github(base("chat-empty"), "admin-github-none", "Hub accounts › GitHub on a hub with no App yet: Create GitHub App", "none"),
     github(base("chat-empty"), "admin-github-created", "Hub accounts › GitHub with the App created and not installed yet", "created"),
     github(base("chat-empty"), "admin-github-installed", "Hub accounts › GitHub with the App installed on acme and Sam's account, tested", "installed"),

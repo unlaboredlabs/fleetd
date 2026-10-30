@@ -125,34 +125,6 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
         "Test connection: the node starts the server (stdio, in the project's checkout with its variables, or the home directory for a global one) or connects to it (http, sse) with its secrets resolved there, initializes it and lists its tools within 30 s. result has the server's name and tools, or error: what went wrong, a command's stderr tail with its secrets masked. A global server is tested on machineId, by default the first machine online.",
     ),
     (
-        "google_get",
-        "A Navi's own Google connection: the hub's OAuth client (clientId and the machines holding its secret, sealedOn; never the secret), with project that Navi's account (its address, the scopes granted, and lapsed: why Google stopped taking it, as its node says now), the scopes connecting asks for, and the redirect: a loopback address on any port, which a Desktop app client takes unregistered. mailMode says how the hub hears of new mail now: push (Gmail through the admin's Pub/Sub, within seconds) or polling (each Navi's inbox about every minute); mailProblem, why it polls although Pub/Sub is set up.",
-    ),
-    (
-        "google_client_set",
-        "Human keys only, operate on every machine. Save the hub's Google OAuth client, of the Desktop app type: clientId, and sealed, its secret sealed on the client with crypto_box_seal to each machine's boxPubKey that runs Navis. Each node keeps it in its home and answers with the fingerprint; the hub never keeps the secret. missingOn names machines that were offline.",
-    ),
-    (
-        "google_client_test",
-        "Ask Google whether it takes the client: the node holding it (machineId, by default the first online) trades a code that can't work, and Google's answer says whether it knows the client and its secret. check.ok, or check.problem in a line a person can act on.",
-    ),
-    (
-        "google_connect",
-        "Human keys only, operate on the Navi's machine. Connect a Google account to a Navi: the app opened Google's consent page with PKCE and caught the code on a loopback address; code, codeVerifier and that redirectUri go to the Navi's node, which trades them for tokens with the client's secret and keeps them in its home, outside the Navi's folder. Only a Navi takes one. The Navi's lead gets the google server's tools from its next start; reads and drafts run at once, a send, reply, invitation, upload or share asks the person.",
-    ),
-    (
-        "google_disconnect",
-        "Human keys only, operate on the Navi's machine. Disconnect a Navi's Google account: its node revokes the grant at Google and deletes its tokens; revoked says whether Google confirmed. Refused while the machine is offline, since the tokens are there.",
-    ),
-    (
-        "google_pubsub_set",
-        "Human keys only, operate on every machine. Set up new mail in real time: pubsub.topic (projects/<project>/topics/<topic>) that Gmail publishes to (gmail-api-push@system.gserviceaccount.com needs Pub/Sub Publisher on it), pubsub.subscription (a pull subscription of it), pubsub.machineId (the one machine that reads it) and pubsub.sealed (the service account's JSON key, with Pub/Sub Subscriber on the subscription, sealed with crypto_box_seal to that machine's boxPubKey). That node checks the key and keeps it in its home; the hub keeps its fingerprint. No pubsub: turn it off, and the machine forgets the key; the hub checks each Navi's mail about every minute.",
-    ),
-    (
-        "google_mail_set",
-        "Human keys only, operate on the Navi's machine. Set when new mail wakes a Navi: rule off (it reads mail only when asked), all (each new inbox message) or query (only new mail matching query, in Gmail's search syntax). The wake names each message's sender, subject, start and thread, marked as the mailbox's untrusted words.",
-    ),
-    (
         "claude_accounts_get",
         "Which Claude account each person's work runs on (teams step 8). hubApi: the hub's API configuration (endpoint, the machines holding the key with each node's fingerprint, the last Test), never the key. settings.membersUseHubApi: members may run on it (on by default; owners and admins always may). leadsRunOn: what projects' leads and work nobody started (automations, train fixes) run on: the hub's API, else the hub owner's subscription, else each machine's own login (machine_login) when nothing is set up. me: the caller's own choice, subscription (machines and fingerprints, never the token) and runsOn, what the orders they start and their Navi run on, or refused with the fix. people: everyone's, for an owner's or admin's device.",
     ),
@@ -346,11 +318,11 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "setup_list",
-        "Admin on every machine. The hub admin's setup, the steps fleetd init and the app's Settings › Hub › Setup show: where the hub listens, machines, Claude (required), GitHub (before the first PR), people, Google and Notion (optional). Each step has its why, numbered parts with the values to paste computed for this hub and the provider's pages, the fields for what comes back and where they are saved (place), and its status read from the doctor's checks (ways: one way done is enough): done, todo, look (set up but failing; said and fix say why) or skipped. failing: with look, its check fails rather than warns. requiredLeft: required steps not set up, or failing; agents can't run until none is left.",
+        "Admin on every machine. The hub admin's setup, the steps fleetd init and the app's Settings › Hub › Setup show: where the hub listens, machines, Claude (required), GitHub (before the first PR) and people (optional). Each step has its why, numbered parts with the values to paste computed for this hub and the provider's pages, the fields for what comes back and where they are saved (place), and its status read from the doctor's checks (ways: one way done is enough): done, todo, look (set up but failing; said and fix say why) or skipped. failing: with look, its check fails rather than warns. requiredLeft: required steps not set up, or failing; agents can't run until none is left.",
     ),
     (
         "setup_test",
-        "Admin on every machine. Run one step's checks now and return the step: the hub's checks, every machine's for machines and claude, and for google, Google asked whether it takes the hub's client.",
+        "Admin on every machine. Run one step's checks now and return the step: the hub's checks, and every machine's for machines and claude.",
     ),
     (
         "setup_skip",

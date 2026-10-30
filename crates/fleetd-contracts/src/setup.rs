@@ -21,19 +21,15 @@ pub enum SetupStepId {
     Claude,
     Github,
     People,
-    Google,
-    Notion,
 }
 
 impl SetupStepId {
-    pub const ALL: [SetupStepId; 7] = [
+    pub const ALL: [SetupStepId; 5] = [
         Self::Address,
         Self::Machines,
         Self::Claude,
         Self::Github,
         Self::People,
-        Self::Google,
-        Self::Notion,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -43,8 +39,6 @@ impl SetupStepId {
             Self::Claude => "claude",
             Self::Github => "github",
             Self::People => "people",
-            Self::Google => "google",
-            Self::Notion => "notion",
         }
     }
 
@@ -62,7 +56,6 @@ pub enum SetupGroup {
     Hub,
     Accounts,
     People,
-    Integrations,
 }
 
 /// When a step must be done. Nothing blocks using fleetd before then.
@@ -181,7 +174,7 @@ pub struct HubSetupStep {
     pub fields: Vec<SetupField>,
     /// What happens after the fields are saved.
     pub fields_note: Option<String>,
-    /// Where in the app the fields are saved, a Hub page of the app's Settings ("google"), where the terminal can't seal
+    /// Where in the app the fields are saved, a Hub page of the app's Settings ("github"), where the terminal can't seal
     /// them.
     pub place: Option<String>,
     /// What Test does, in a few words.
@@ -221,9 +214,11 @@ mod tests {
         assert!(matches_check("*/online", "lab-a/online"));
         assert!(!matches_check("*/online", "hub/online"));
         assert!(!matches_check("*/online", "devbox/onlines"));
-        assert!(matches_check("hub/google", "hub/google"));
-        assert!(!matches_check("hub/google", "devbox/google"));
+        assert!(matches_check("hub/people", "hub/people"));
+        assert!(!matches_check("hub/people", "devbox/people"));
         assert_eq!(SetupStepId::parse("github"), Some(SetupStepId::Github));
         assert_eq!(SetupStepId::parse("nope"), None);
+        // A step an older hub had reads as none.
+        assert_eq!(SetupStepId::parse("google"), None);
     }
 }

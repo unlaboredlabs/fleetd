@@ -10,7 +10,6 @@ pub mod cmd;
 pub mod config;
 pub mod desktop;
 pub mod device;
-pub mod google;
 pub mod hosts;
 pub mod identity;
 pub mod landed;
@@ -172,6 +171,16 @@ pub async fn run(args: RunArgs) -> Result<(), NodeError> {
     }
 }
 
+/// What an older build kept for a Navi's Google connection, in `<node home>/google`: the OAuth client's secret, each
+/// Navi's tokens, the Pub/Sub key and how far each inbox was read. fleetd has no Google connection now, so it goes.
+fn forget_google(home: &Path) {
+    match std::fs::remove_dir_all(home.join("google")) {
+        Ok(()) => tracing::info!("removed the Google tokens an older fleetd kept"),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => tracing::warn!("the Google tokens an older fleetd kept were not removed: {e}"),
+    }
+}
+
 /// Resolves on SIGINT or SIGTERM.
 async fn shutdown_signal() {
     use tokio::signal::unix::{SignalKind, signal};
@@ -207,6 +216,7 @@ async fn run_node(
     tracing::info!(machine_id = %config.machine_id, hub = %config.hub, "fleetd node starting");
     let store = store::NodeStore::open(&home.join("sessions.sqlite"))
         .map_err(|e| NodeError::Setup(format!("cannot open the session store in {shown}: {e}")))?;
+    forget_google(home);
     // Before any session starts: their fleetd tools run this binary, wherever an update moves the installed one.
     let pin_home = home.to_owned();
     let _ = tokio::task::spawn_blocking(move || self_exe::pin(&pin_home)).await;
@@ -446,4 +456,26 @@ pub(crate) fn claude_binary() -> PathBuf {
             PathBuf::from("claude")
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn a_node_forgets_the_google_tokens_an_older_build_kept() {
+        let home = tempfile::tempdir().unwrap();
+        let google = home.path().join("google");
+        std::fs::create_dir_all(google.join("accounts")).unwrap();
+        std::fs::write(google.join("client.json"), r#"{"clientSecret":"x"}"#).unwrap();
+        std::fs::write(
+            google.join("accounts/p1.json"),
+            r#"{"refreshToken":"1//x"}"#,
+        )
+        .unwrap();
+        std::fs::write(home.path().join("node.json"), "{}").unwrap();
+        super::forget_google(home.path());
+        assert!(!google.exists());
+        assert!(home.path().join("node.json").exists());
+        // Nothing to forget is no error.
+        super::forget_google(home.path());
+    }
 }

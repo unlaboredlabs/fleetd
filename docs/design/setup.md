@@ -1,11 +1,11 @@
 # One setup for the hub admin
 
-Status: approved (D197), being built (§7). Revised for D189 (Google, native), D190 (one GitHub App per hub), D195
-(Gmail in real time) and the answers to its open questions (§6). The prototype of the app's screens is `#/setup` in
+Status: approved (D197), being built (§7). Revised for D190 (one GitHub App per hub), D236 (no built-in
+integrations) and the answers to its open questions (§6). The prototype of the app's screens is `#/setup` in
 `app/desktop/src/renderer/screens/setup`, against `fixtures/setup`.
 
-A new hub needs a lot of configuring: where it listens, its machines, Claude, a GitHub App, and optionally people,
-Google, Notion and 1Password. Today these live in five places with five vocabularies. This design makes each
+A new hub needs a lot of configuring: where it listens, its machines, Claude, a GitHub App, and optionally people
+and 1Password. Today these live in five places with five vocabularies. This design makes each
 one a **step**: a check with a status, why it matters, the exact values to paste, a link to the provider's page,
 fields for what comes back, and a Test button. `fleetd init`, the app's first run and the admin's Settings › Hub ›
 Setup all render the same steps. Only three are required. The rest wait until something needs them.
@@ -22,8 +22,8 @@ Setup all render the same steps. Only three are required. The rest wait until so
 | Machines › Setup checks (`screens/projects/SetupChecks.tsx`) | The doctor's results | Each fix is a command to copy; Re-run, no Test, no fields |
 | Settings › MCP servers, a project's secrets, the docs | Integrations, 1Password (`OP_SERVICE_ACCOUNT_TOKEN` as a project secret) | Spread over install, quick-start, machines, mcp-servers and browser-sessions pages |
 
-Nothing covers a Claude API key or endpoint, a GitHub App, a Google client, or inviting people: these are new
-(D186, D187, D189, D190, teams step 1).
+Nothing covers a Claude API key or endpoint, a GitHub App, or inviting people: these are new (D186, D187, D190,
+teams step 1).
 
 ### A first run, as a new admin sees it
 
@@ -80,8 +80,6 @@ In order. **Need** says when it must be done; nothing blocks using fleetd before
 | Claude | Required | A hub API key and an optional endpoint, **or** nothing: then the hub owner connects their own subscription. Either way, each person later picks their own subscription or the hub's configuration in their own settings, and a switch here turns the hub's option off for members (D200) | Key name `fleetd on devbox`; for a subscription, the command `claude setup-token` | Claude Console › API keys | API key (sealed), endpoint; or the subscription's long-lived token (sealed) | One tiny `claude -p` call made with the key (and endpoint) or the token, on a machine holding it (`claude_account_test`; fleetd never calls the API itself). Done by either way: the key, or the owner's subscription (§3.1) | Built (teams step 8): `claude_hub_api_set`, `claude_subscription_set`, `claude_account_test`; the app's Settings › Claude and Settings › Hub accounts › Claude; the `hub/claude_key` and `hub/claude_owner` checks |
 | GitHub App | Before the first PR | Nothing to paste: confirm the App GitHub shows, pick the repositories to install it on, connect your own account | The manifest: name, homepage, callback `<hub>/oauth/github/callback`, repository permissions, webhook | "Create on my account" or "in an organization", then GitHub's install page | none: GitHub hands the App's keys to the hub | Mint an installation token and list the repositories it reaches; the admin's own sign-in proves the callback | D190; today `gh auth` on the hub (`hub/gh_auth`) |
 | Invite people | Optional | A name, admin or not | The invite link | none | Name | The link opens | teams step 1, in flight |
-| Google | Optional | A Cloud project, the three APIs, the sign-in screen published In production, a Desktop app OAuth client; optionally Gmail in real time (a Pub/Sub topic, a pull subscription, and a service account to read it) | Project and app name, the Gmail, Calendar and Drive scopes; on an HTTPS hub, also a web redirect `<hub>/oauth/google/callback` | Cloud Console: new project, enable APIs, Auth Platform › Branding, › Clients | Client ID, client secret (sealed to the hub); optionally the Gmail subscription and the reader's JSON key (sealed to one machine) | Exchange a dummy code: `invalid_grant` means Google knows the client; with a key, pull once from the subscription; then each person connects from their Navi | D189; Navi integrations, in flight (#635) |
-| Notion | Optional | An internal integration | Integration name | Notion › Integrations | Secret (sealed) | `mcp_server_test` (search) | Navi integrations, in flight |
 | 1Password | Optional | A service account for one vault | Account name | 1Password › Service accounts | Token (sealed) | List the vaults it reads | per person (Settings › Your accounts › 1Password); a project's `OP_SERVICE_ACCOUNT_TOKEN` overrides it |
 
 Custom MCP servers stay in Settings › Hub › Every project › Tools & skills (global ones) and each project's settings. They aren't hub setup, and each one is different.
@@ -165,7 +163,6 @@ All admin-only (admin on every machine today; the hub admin role after teams ste
     "Connect your Claude to start this order" (D200).
   - If the hub has no GitHub App, a non-admin sees "Ask an admin to set up GitHub for this hub". The admin gets one
     attention item that opens Settings › Hub › Setup › GitHub App.
-  - The same for Google: a person's Navi offers "Connect Google" only once the hub has a client.
 - **Optional:** shown once on the welcome and listed in Settings › Hub › Setup. Never a badge.
 - **Skip** is offered on every step that isn't required. A skipped step reads "Later" and keeps its place in the list.
 
@@ -175,22 +172,19 @@ Secret fields use the existing sealed flow (`app/desktop/src/main/secret.ts`): t
 `crypto_box_seal` on the admin's device, the hub relays ciphertext and keeps a fingerprint, and the screen says
 "Sealed on this device; the hub keeps only its fingerprint". Each field names its **sink**:
 
-- **Machines** (the Claude API key, people's Claude subscription tokens, the Notion and 1Password tokens) are sealed
+- **Machines** (the Claude API key, people's Claude subscription tokens, the 1Password token) are sealed
   to every machine's box key, like a global MCP server's secret today (`McpValueSet::Secret`), and to the hub's own
   key.
   - **A machine added later** gets them when an admin approves it once: "Give buildbox the hub's saved secrets
-    (Claude key, Notion, 1Password)?" Then the hub opens its copies and re-seals them to the new machine's key.
+    (Claude key, 1Password)?" Then the hub opens its copies and re-seals them to the new machine's key.
   - Nothing is copied to a machine without that approval. Until then, the step reads "sealed on 2 of 3 machines".
-- **One machine** is for a credential exactly one machine uses. The Gmail reader's JSON key is sealed to the machine
-  that reads the subscription (by default the hub's own, devbox), and to no other.
 - **Hub** is new. It holds what the hub process uses itself:
   - the GitHub App's private key, client secret and webhook secret, which GitHub sends straight to the hub when the
     App is created (the manifest conversion), so no person ever sees them;
-  - the Google client secret;
-  - each person's GitHub and Google tokens, which the hub refreshes.
+  - each person's GitHub token, which the hub refreshes.
 
-  The hub gets a box key of its own in its home. The admin's app seals the Google client secret (and each machine
-  secret's hub copy) to it, and the hub opens these in its own process only.
+  The hub gets a box key of its own in its home. The admin's app seals each machine secret's hub copy to it, and the
+  hub opens these in its own process only.
 
 In the terminal, `fleetd init` reads a secret with hidden input and seals it the same way before it leaves the CLI.
 
@@ -200,9 +194,8 @@ Values come from the hub's URL as devices reach it (`--url`, else the listen add
 first time: `http://devbox.your-tailnet.ts.net:4790/oauth/github/callback`. Names default to `fleetd on <host>`, so an
 admin with several hubs can tell their apps apart at each provider.
 
-A plain-HTTP tailnet hub is enough for every step. HTTPS (Tailscale Serve) is optional and adds two things:
-- GitHub's webhooks, in the App's manifest;
-- a web redirect for Google, besides the Desktop app client.
+A plain-HTTP tailnet hub is enough for every step. HTTPS (Tailscale Serve) is optional and adds GitHub's webhooks, in
+the App's manifest.
 
 ### 3.6 The GitHub App (D190)
 
@@ -210,7 +203,7 @@ One GitHub App per hub. It does the hub's own work, and it signs each person in.
 no `gh auth` on the hub.
 
 1. **Create** (built, T1076). "Create GitHub App", on the admin's account or an organization, makes the app (or
-   `fleetd github-app create` on the hub machine) listen on a loopback port, as Google's desktop sign-in does, so it
+   `fleetd github-app create` on the hub machine) listen on a loopback port, as a desktop sign-in does, so it
    works on every hub, plain HTTP included. Its page there posts GitHub's app manifest (`github_app_manifest`) to
    `github.com/settings/apps/new` (or `/organizations/<org>/settings/apps/new`) with a one-time `state`. The manifest
    fills in:
@@ -245,69 +238,6 @@ over HTTPS, and the manifest leaves them off unless the hub's address is HTTPS.
 **Test** mints an installation token, lists the repositories it reaches (`GET /installation/repositories`), and,
 once people sign in, checks the admin's own token (`GET /user`). The status line says: "The App "fleetd on devbox" is installed on acme with
 12 repositories, its token works, and you're connected as dev."
-
-### 3.7 Google (D189)
-
-Native: the hub talks to Google itself, and xaq isn't involved. The admin brings a Google OAuth client once. Each
-person then connects their own Google account from their Navi.
-
-- **The admin's parts:**
-  1. A Cloud project.
-  2. Gmail, Calendar and Drive turned on (one `flows/enableapi` link for all three).
-  3. The sign-in screen (Google Auth Platform › Branding), with its audience and these scopes:
-     - `gmail.modify`: read, label and draft; a send still asks the person first;
-     - `calendar.events`;
-     - `drive.readonly`;
-     - plus `openid` and `email`, to name the account.
-
-     The audience is Internal if everyone is in one Google Workspace (no warning, no review). Otherwise it is
-     External, and the step tells the admin to press **Publish app**, so the status is **In production**. People
-     then see Google's "unverified app" warning once and click past it. In Testing, their sign-ins would lapse after
-     7 days.
-  4. A **Desktop app** client, the default. It needs no redirect URI: the fleetd app catches Google's answer on its
-     own computer (`http://127.0.0.1:<port>`), so a plain-HTTP tailnet hub works. On an HTTPS hub, a Web
-     application client with `<hub>/oauth/google/callback` also works from a browser. The client ID and secret are
-     pasted into the step, and the secret is sealed to the hub.
-
-  5. **Gmail in real time** (optional, D195). Without it, Navis poll Gmail about every minute. With it, Gmail
-     publishes a notice to a Pub/Sub topic on each new message, and one machine **pulls** from a subscription and
-     passes the notices to the hub, so no public address is needed. It takes two optional parts, each with deep
-     links.
-
-     *Gmail in real time:*
-     - turn on Pub/Sub (`flows/enableapi?apiid=pubsub.googleapis.com`);
-     - create topic `fleetd-gmail`, without a default subscription;
-     - on the topic, grant `gmail-api-push@system.gserviceaccount.com` the **Pub/Sub Publisher** role
-       (`roles/pubsub.publisher`), the account Gmail publishes as;
-     - create subscription `fleetd-gmail-hub` on that topic, delivery type **Pull**.
-
-     *A key to read it* (the credential T805 settled):
-     - create service account `fleetd-gmail-reader`, with no project roles;
-     - on subscription `fleetd-gmail-hub`, grant `fleetd-gmail-reader@fleetd-devbox.iam.gserviceaccount.com` the
-       **Pub/Sub Subscriber** role (`roles/pubsub.subscriber`), and nothing else;
-     - create a JSON key for it (Keys › Add key › JSON), paste it, and delete the downloaded file.
-
-     The machine signs in as that account with the `https://www.googleapis.com/auth/pubsub` scope. Both parts are
-     also one copyable Cloud Shell block, in project `fleetd-devbox`: the services, topic, publisher, subscription,
-     account, subscriber binding and key commands, ending in `cat … && rm …`. That prints the key once, to paste.
-
-     The client, the subscription (`projects/fleetd-devbox/subscriptions/fleetd-gmail-hub`) and the JSON key are
-     saved on Settings › Hub accounts › Google (#746, #749), which the step links to (`place: google`); the step itself has no
-     fields of its own to save. The key is sealed there to the one machine that reads (§3.4), and the page shows only
-     its machine and fingerprint, never the key.
-- **Test** exchanges a dummy code at Google's token endpoint. `invalid_grant` means Google knows the client and its
-  secret; `invalid_client` means it doesn't. With a key saved, the reading machine also pulls from the subscription
-  once as the service account: an empty answer is fine, and a refused one names the missing Subscriber role or a
-  wrong subscription name.
-- **Each person** connects from their Navi:
-  - The app opens Google's sign-in and catches the loopback redirect. The hub exchanges the code (`access_type=offline`)
-    and keeps that person's refresh token in the hub sink.
-  - When a token lapses or is revoked at Google, the Navi offers a one-click **Reconnect**.
-  - With real time on, the hub asks Gmail to watch that person's inbox (`users.watch` against the topic). It renews
-    the watch before Gmail's 7-day expiry, and reads what changed (`users.history.list`) on each notice. A missed
-    or lapsed watch falls back to polling, so mail is never lost.
-  - Navi's Google tools use only the token of the person whose Navi it is.
-  - Disconnecting, or the person being removed, revokes the token.
 
 ## 4. Three renderings of the same steps
 
@@ -378,22 +308,6 @@ copy buttons, live checks after the paste, "progress is saved".
   - Each person's choice and whether their subscription is connected, for "Connect your Claude" before a first order
     (D200).
   - The agent profiles' model settings (#626) stay in Settings › Agents, not setup.
-- **Google (D189) and the Navi integrations (T745, #635)**
-  - The Desktop app client with the loopback redirect the app catches (T805); `/oauth/google/callback` only on HTTPS
-    hubs; the scopes as one constant.
-  - Reconnect in the Navi when a token lapses.
-  - Gmail in real time (D195):
-    - one machine pulling from the saved subscription as the service account in the sealed JSON key (scope
-      `https://www.googleapis.com/auth/pubsub`), and passing the notices to the hub;
-    - a one-machine sink for that key, chosen in the step (the hub's machine by default);
-    - each person's `users.watch`, renewed before its 7-day expiry;
-    - polling every minute when the step's real-time part isn't set up;
-    - the `hub/google` check pulling once.
-  - A `hub/google` check (the dummy code exchange), and each person's connection state for their Navi.
-  - The client secret and people's refresh tokens in the hub sink.
-  - Navi's Google tools on the hub's own Google client, replacing the xaq adapter (`google.rs`).
-  - Notion: a `hub/notion` check from `mcp_server_test`; the fields as `McpValueSet` names; for BYO OAuth, a callback
-    at `/oauth/notion/callback`.
 - **1Password (exists, per project)**
   - A fleet-wide token as well as the project one.
   - A `hub/onepassword` check where the node lists the vault's item titles with the token.
@@ -406,28 +320,16 @@ copy buttons, live checks after the paste, "progress is saved".
 None are open. Each answer below is already in the sections above.
 
 1. **GitHub** is one GitHub App per hub, created through the manifest flow (D190).
-2. **Google** is native, with the admin's own client (D189):
-   - a Desktop app client with a loopback redirect by default, so no HTTPS is needed;
-   - published In production, so sign-ins don't lapse after 7 days; people click past Google's unverified-app
-     warning once;
-   - a one-click Reconnect when a token lapses anyway.
-3. **A machine added later** gets the saved secrets once an admin approves it. The hub re-seals them to the machine's
+2. **A machine added later** gets the saved secrets once an admin approves it. The hub re-seals them to the machine's
    key; nothing is copied silently.
-4. **GitHub webhooks** are off by default, and the hub polls, as the train does. They are on only for hubs whose address
+3. **GitHub webhooks** are off by default, and the hub polls, as the train does. They are on only for hubs whose address
    is HTTPS.
-5. **Gmail in real time** is optional in the Google step (D195), and it takes two parts:
-   - a Pub/Sub topic, with the Publisher role for Gmail's push account, and a pull subscription;
-   - a service account with only the Subscriber role on that subscription. Its JSON key is sealed to the one machine
-     that reads it (T805).
-
-   Without it, Navis poll Gmail about every minute.
 
 ## 7. Build order, after approval
 
 1. Built: `hub/setup` (the steps, `setup_list`, `setup_test`, `setup_skip`, skips) on today's checks, with
    `fleetd doctor` printing steps first. New hub checks read from the hub's own state, there only once their step is
-   set up: `hub/people` (someone invited has paired a device), `hub/google` (the client saved, and on which machines)
-   and `hub/notion` (a Navi has it).
+   set up: `hub/people` (someone invited has paired a device).
 2. Built: `fleetd init` lists the hub's steps after its bootstrap and offers the ones left; `--step <id>` opens one
    (its guide, Test, Later, and for People an invite).
 3. Built: the app's first run (an admin's empty home is the welcome while a required step is left), the step screen
@@ -436,7 +338,7 @@ None are open. Each answer below is already in the sections above.
    required steps left. The app's fixtures are the hub's own answers, written from the catalog
    (`hub/setup/fixtures.rs` → `app/desktop/fixtures/setup/steps.json`), so the app keeps no second catalog. Setup
    reads `setup_list` again when a setup view opens, when the doctor's checks change (`doctor.changed`) or people do,
-   and after a save on a step's place (Claude, Google, a Navi's integrations), so a result saved elsewhere, or with
+   and after a save on a step's place (Claude, GitHub, People), so a result saved elsewhere, or with
    `fleetd init`, shows at once. Today the GitHub step is "Log gh in on the hub", with no `place`: there is nothing
    to save in the app. When the GitHub App replaces it, its parts, check and `place` come from the hub, and the app
    needs only to learn the new place's page.
@@ -447,7 +349,7 @@ What the build does differently from the sections above, for now:
 - **Result fields live on the place's page, not in the step.** A step has no fields of its own (`fields` stays empty,
   and there is no `setup_save`): it names the page that saves its result (`place`), and its last part, "Save it in
   fleetd", opens it. The Claude key and endpoint are on Settings › Hub accounts › Claude, a subscription token on Settings ›
-  Claude, Google's client and the Pub/Sub key on Settings › Hub accounts › Google, invites on Settings › Hub › People. Each
+  Claude, invites on Settings › Hub › People. Each
   of those pages seals its secrets on the device as before. The terminal never takes a secret: the CLI's key isn't a
   person's, and the sealed paths are the app's.
 - **GitHub** is `gh auth login` on the hub (`hub/gh_auth`) until the GitHub App (D190) is built; its manifest flow,
@@ -458,7 +360,5 @@ What the build does differently from the sections above, for now:
 - **Claude** reads `hub/claude_key` and `hub/claude_owner` (#756) as its first two ways, then every machine's own
   login. Its parts send the key to Settings › Hub accounts › Claude and the owner's subscription token to Settings › Claude,
   where the app seals them.
-- **Notion** is each person's own integration on their Navi (#643), so the hub has nothing to save: the step says
-  how, and is done once any Navi has it.
 - **1Password** stays a project secret for now, and isn't a step.
 - No `setup.changed` event yet: a screen re-reads `setup_list` after its own calls and on `doctor.changed`.

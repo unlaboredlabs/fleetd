@@ -39,9 +39,6 @@ struct Fake {
     /// who allowed it.
     navi: Mutex<bool>,
     sites: Mutex<Vec<(String, String)>>,
-    /// What the Navi's node answers for an email's files, and each list of paths it was asked to read.
-    mail_files: Mutex<Result<Vec<fleetd_contracts::google::MailFile>, String>>,
-    files_asked: Mutex<Vec<Vec<String>>>,
 }
 
 impl Default for Fake {
@@ -70,8 +67,6 @@ impl Default for Fake {
             servers: Mutex::default(),
             navi: Mutex::new(true),
             sites: Mutex::default(),
-            mail_files: Mutex::new(Ok(Vec::new())),
-            files_asked: Mutex::default(),
         }
     }
 }
@@ -182,15 +177,6 @@ impl ApprovalHub for Fake {
             })
         });
         Box::pin(async move { known })
-    }
-    fn mail_files(
-        &self,
-        _: &ProjectRef,
-        paths: Vec<String>,
-    ) -> BoxFut<'_, Result<Vec<fleetd_contracts::google::MailFile>, String>> {
-        let files = self.mail_files.lock().unwrap().clone();
-        self.files_asked.lock().unwrap().push(paths);
-        Box::pin(async move { files })
     }
     fn navi_site_allow(&self, _: &ProjectRef, site: &str, by: &str) -> BoxFut<'_, ()> {
         self.sites.lock().unwrap().push((site.into(), by.into()));
@@ -921,26 +907,14 @@ fn requests(fake: &Fake) -> Vec<HumanRequest> {
         .unwrap()
 }
 
-/// A Navi's email send: what the approval shows is what runs once approved.
+/// A Navi's message through its CRM: what the approval shows is what runs once approved.
 fn send_input() -> Value {
     json!({ "to": ["ana@example.com"], "subject": "Saturday", "body": "Could we book a cleaning?" })
 }
 
-/// A Navi with Google connected, as the integrations policy reads it: the hub's own `fleetd google-mcp`.
-fn google() -> fleetd_contracts::mcp_servers::McpServer {
-    let mut s: fleetd_contracts::mcp_servers::McpServer = serde_json::from_value(json!({
-        "scope": { "kind": "project", "machineId": "lab-a", "projectId": "p1" },
-        "name": "google", "enabled": true,
-        "roles": { "lead": true, "writers": false, "reviewers": false },
-        "transport": { "type": "stdio", "command": "fleetd", "args": ["google-mcp"] },
-        "updatedAt": "2026-10-27T00:00:00Z"
-    }))
-    .unwrap();
-    s.integration = Some(fleetd_contracts::integrations::McpIntegration {
-        kind: fleetd_contracts::integrations::IntegrationKind::Google,
-        read_tools: fleetd_contracts::prim::List::new(vec![]).unwrap(),
-    });
-    s
+/// A Navi's custom MCP server, `crm`, with the tools the person marked as reads.
+fn crm() -> fleetd_contracts::mcp_servers::McpServer {
+    integration("crm", &["list_contacts"])
 }
 
 fn pending_with(request_id: &str, tool: &str, input: Option<Value>) -> PendingPermission {
@@ -954,9 +928,9 @@ fn pending_with(request_id: &str, tool: &str, input: Option<Value>) -> PendingPe
 #[tokio::test]
 async fn a_prompt_becomes_one_approval_and_approve_runs_the_tool_with_exactly_the_input_shown() {
     let fake = Arc::new(Fake::default());
-    *fake.servers.lock().unwrap() = vec![google()];
+    *fake.servers.lock().unwrap() = vec![crm()];
     let a = approvals(&fake);
-    let tool = "mcp__google__send_message";
+    let tool = "mcp__crm__send_message";
     *fake.pending.lock().unwrap() = Some(
         serde_json::from_value(json!({
             "requestId": "q1", "toolName": tool, "summary": "send to ana@example.com", "input": send_input(),
@@ -977,7 +951,7 @@ async fn a_prompt_becomes_one_approval_and_approve_runs_the_tool_with_exactly_th
         (
             RequestKind::Approval,
             RequestState::Open,
-            "mcp__google__send_message: send to ana@example.com"
+            "mcp__crm__send_message: send to ana@example.com"
         )
     );
     let permission = serde_json::to_value(&r.permission).unwrap();
@@ -990,15 +964,23 @@ async fn a_prompt_becomes_one_approval_and_approve_runs_the_tool_with_exactly_th
         ),
         (&json!("t1"), &json!("q1"), &json!(tool), &send_input())
     );
-    // The integration's card: every recipient, the subject and the body.
-    assert_eq!(permission["preview"]["to"], json!(["ana@example.com"]));
-    assert_eq!(permission["preview"]["subject"], "Saturday");
-    assert_eq!(permission["preview"]["body"], "Could we book a cleaning?");
+    // The card: the tool, and the whole input it runs with.
+    assert_eq!(permission["preview"]["server"], "crm");
+    assert_eq!(permission["preview"]["action"], "send");
+    assert!(
+        permission["preview"]["input"]
+            .as_str()
+            .unwrap()
+            .contains("Could we book a cleaning?")
+    );
     // The chat shows it like a gated command, with the tool, its input and the card.
     let item = serde_json::to_value(chat_item(r)).unwrap();
     assert_eq!(item["kind"], "command_approval");
     assert_eq!(item["permission"]["input"], send_input());
-    assert_eq!(item["permission"]["preview"]["title"], "Send an email");
+    assert_eq!(
+        item["permission"]["preview"]["title"],
+        "Use send_message on crm"
+    );
     assert!(
         fake.answers.lock().unwrap().is_empty(),
         "nothing is answered for the person"
@@ -1081,21 +1063,21 @@ async fn a_prompt_that_goes_away_closes_its_request() {
 async fn an_integrations_read_runs_unasked_and_a_blocked_or_unshowable_call_is_refused_with_nothing_filed()
  {
     let fake = Arc::new(Fake::default());
-    *fake.servers.lock().unwrap() = vec![google()];
+    *fake.servers.lock().unwrap() = vec![crm()];
     let a = approvals(&fake);
     for (id, tool, input) in [
         (
             "q1",
-            "mcp__google__search_threads",
+            "mcp__crm__list_contacts",
             Some(json!({ "query": "dentist" })),
         ),
         (
             "q2",
-            "mcp__google__send_money",
+            "mcp__crm__send_money",
             Some(json!({ "to": "bo@example.com", "amount": 50 })),
         ),
         // The node sent no input: the card could not show what approving it sends.
-        ("q3", "mcp__google__send_message", None),
+        ("q3", "mcp__crm__send_message", None),
     ] {
         *fake.pending.lock().unwrap() = Some(pending_with(id, tool, input));
         a.on_thread_event(&event("thread.waiting", Some(prompt(id, tool, "a call"))))
@@ -1258,7 +1240,7 @@ async fn a_browser_open_is_a_visit_and_any_other_sessions_prompt_is_left_alone()
 #[tokio::test]
 async fn an_unsandboxed_command_a_new_site_and_a_send_ask() {
     let fake = Arc::new(Fake::default());
-    *fake.servers.lock().unwrap() = vec![google()];
+    *fake.servers.lock().unwrap() = vec![crm()];
     let a = approvals(&fake);
     bash(&a, &fake, "q5", "rm -rf ~").await;
     let filed = requests(&fake);
@@ -1277,16 +1259,16 @@ async fn an_unsandboxed_command_a_new_site_and_a_send_ask() {
         })
         .unwrap();
     assert_eq!(visit.site.as_deref(), Some("new.example"));
-    // A send still asks, with its recipients and its text.
+    // A send still asks, with its whole input.
     prompted(
         &a,
         &fake,
         (
             event(
                 "thread.waiting",
-                Some(prompt("q7", "mcp__google__send_message", "send")),
+                Some(prompt("q7", "mcp__crm__send_message", "send")),
             ),
-            pending_with("q7", "mcp__google__send_message", Some(send_input())),
+            pending_with("q7", "mcp__crm__send_message", Some(send_input())),
         ),
     )
     .await;
@@ -1301,8 +1283,12 @@ async fn an_unsandboxed_command_a_new_site_and_a_send_ask() {
         })
         .unwrap();
     let preview = serde_json::to_value(&send.preview).unwrap();
-    assert_eq!(preview["to"], json!(["ana@example.com"]));
-    assert_eq!(preview["body"], "Could we book a cleaning?");
+    assert!(
+        preview["input"]
+            .as_str()
+            .unwrap()
+            .contains("ana@example.com")
+    );
     assert!(fake.answers.lock().unwrap().is_empty());
 }
 
@@ -1328,52 +1314,50 @@ async fn a_prompt_whose_input_cant_be_shown_is_refused() {
     );
 }
 
-/// A Navi's server of `kind`, named `name`, with the tools the person marked as reads.
-fn integration(name: &str, kind: &str, reads: &[&str]) -> fleetd_contracts::mcp_servers::McpServer {
+/// A Navi's custom server named `name`, with the tools the person marked as reads.
+fn integration(name: &str, reads: &[&str]) -> fleetd_contracts::mcp_servers::McpServer {
     serde_json::from_value(json!({
         "scope": { "kind": "project", "machineId": "lab-a", "projectId": "p1" },
         "name": name, "enabled": true,
         "roles": { "lead": true, "writers": false, "reviewers": false },
         "transport": { "type": "http", "url": "https://mcp.example.com/mcp" },
-        "integration": { "kind": kind, "readTools": reads },
+        "integration": { "readTools": reads },
         "updatedAt": "2026-10-27T00:00:00Z"
     }))
     .unwrap()
 }
 
 #[tokio::test]
-async fn through_the_relay_notion_and_custom_servers_get_their_policy_and_mail_with_inline_files_is_refused()
- {
-    use base64::Engine;
+async fn through_the_relay_a_custom_server_gets_its_policy() {
     let fake = Arc::new(Fake::default());
     *fake.servers.lock().unwrap() = vec![
-        google(),
-        integration("notion", "notion", &[]),
-        integration("crm", "custom", &["list_contacts"]),
+        crm(),
+        // As an older hub kept it: the kind it was marked with is no matter.
+        serde_json::from_value(json!({
+            "scope": { "kind": "project", "machineId": "lab-a", "projectId": "p1" },
+            "name": "docs", "enabled": true,
+            "roles": { "lead": true, "writers": false, "reviewers": false },
+            "transport": { "type": "http", "url": "https://docs.example.com/mcp" },
+            "integration": { "kind": "custom", "readTools": ["search_pages"] },
+            "updatedAt": "2026-10-27T00:00:00Z"
+        }))
+        .unwrap(),
     ];
     let a = approvals(&fake);
-    let b64 = |bytes: &[u8]| base64::engine::general_purpose::STANDARD.encode(bytes);
-    let photo = b64(&[0u8, 1, 2, 3, 255, 254, 7, 8].repeat(500));
-    let mail = |content: &str, name: &str| {
-        json!({ "to": ["ana@example.com"], "bcc": ["sam@example.com"], "subject": "Lease", "body": "Attached.",
-            "attachments": [{ "content_base64": content, "filename": name }] })
-    };
-    let notes = b64(b"tenant notes\ntoken = ghp_abcdefghijklmnopqrstuvwxyz0123\n");
     for (id, tool, input) in [
-        // A custom server's tool the person marked as a read: unasked.
+        // A tool the person marked as a read: unasked.
         ("q1", "mcp__crm__list_contacts", json!({})),
         // Its money tool: blocked, whatever was marked.
         ("q2", "mcp__crm__transfer_funds", json!({ "amount": 50 })),
-        // A Notion page to the trash: asks as a delete.
+        // A delete: asks as a delete.
+        ("q3", "mcp__crm__delete_contact", json!({ "id": "c9" })),
+        // A key in what it would send: refused as a key.
         (
-            "q3",
-            "mcp__notion__API-patch-page",
-            json!({ "page_id": "p9", "archived": true }),
+            "q4",
+            "mcp__crm__send_message",
+            json!({ "to": ["ana@example.com"], "body": "token = ghp_abcdefghijklmnopqrstuvwxyz0123" }),
         ),
-        // Mail with files in its input, whatever they hold: refused before any card, as a Navi attaches only files in
-        // its folder; a key is refused as a key.
-        ("q4", "mcp__google__send_message", mail(&notes, "notes.txt")),
-        ("q5", "mcp__google__send_message", mail(&photo, "photo.jpg")),
+        ("q5", "mcp__docs__search_pages", json!({ "query": "lease" })),
     ] {
         *fake.pending.lock().unwrap() = Some(pending_with(id, tool, Some(input)));
         a.on_thread_event(&event("thread.waiting", Some(prompt(id, tool, "a call"))))
@@ -1385,19 +1369,18 @@ async fn through_the_relay_notion_and_custom_servers_get_their_policy_and_mail_w
         .map(|(_, _, id, d)| (id.as_str(), d))
         .collect();
     assert_eq!(decided.len(), 4, "{decided:?}");
-    assert_eq!(
-        decided[0],
-        (
-            "q1",
+    for id in ["q1", "q5"] {
+        assert_eq!(
+            decided.iter().find(|(i, _)| *i == id).unwrap().1,
             &PermissionDecision::Allow {
                 updated_input: None
-            }
-        )
-    );
+            },
+            "{id}"
+        );
+    }
     for (id, why) in [
         ("q2", "moves money"),
         ("q4", "looks like a password, key or token"),
-        ("q5", "paths to files in your folder"),
     ] {
         let (_, PermissionDecision::Deny { message }) =
             decided.iter().find(|(i, _)| *i == id).unwrap()
@@ -1407,82 +1390,12 @@ async fn through_the_relay_notion_and_custom_servers_get_their_policy_and_mail_w
         assert!(message.as_str().contains(why), "{id}: {}", message.as_str());
     }
 
-    // One card waits for the person: the Notion delete.
+    // One card waits for the person: the delete.
     let open = requests(&fake);
     assert_eq!(open.len(), 1);
     let card =
         |r: &HumanRequest| serde_json::to_value(&r.permission.as_ref().unwrap().preview).unwrap();
     assert_eq!(open[0].permission.as_ref().unwrap().request_id, "q3");
     assert_eq!(card(&open[0])["action"], "delete");
-    assert_eq!(card(&open[0])["title"], "Move a Notion page to the trash");
-}
-
-/// A send's files are read on the Navi's machine before its card, which lists each; approving runs the input that pins
-/// their hashes, and a file the node refuses is denied with its words, no card.
-#[tokio::test]
-async fn an_email_s_files_are_on_its_card_and_approving_pins_them() {
-    use fleetd_contracts::google::MailFile;
-    let fake = Arc::new(Fake::default());
-    *fake.servers.lock().unwrap() = vec![google()];
-    *fake.mail_files.lock().unwrap() = Ok(vec![MailFile {
-        path: "lease.pdf".into(),
-        name: "lease.pdf".into(),
-        bytes: 120_000,
-        mime: "application/pdf".into(),
-        sha256: "ab".repeat(32),
-        credential: false,
-    }]);
-    let a = approvals(&fake);
-    let input = json!({ "to": ["ana@example.com"], "subject": "Lease", "body": "Attached.",
-        "attachments": ["lease.pdf"] });
-    let tool = "mcp__google__send_message";
-    *fake.pending.lock().unwrap() = Some(pending_with("q1", tool, Some(input.clone())));
-    a.on_thread_event(&event("thread.waiting", Some(prompt("q1", tool, "a call"))))
-        .await;
-    assert_eq!(
-        *fake.files_asked.lock().unwrap(),
-        [vec!["lease.pdf".to_owned()]]
-    );
-    let open = requests(&fake);
-    assert_eq!(open.len(), 1);
-    let permission = open[0].permission.as_ref().unwrap();
-    let card = serde_json::to_value(&permission.preview).unwrap();
-    assert_eq!(
-        card["attachments"],
-        json!([{ "name": "lease.pdf", "bytes": 120_000, "mime": "application/pdf" }])
-    );
-    let pinned = json!([{ "path": "lease.pdf", "sha256": "ab".repeat(32) }]);
-    assert_eq!(permission.input.as_ref().unwrap()["attachments"], pinned);
-
-    a.answer(&person(), &open[0].request_id, true, None)
-        .await
-        .unwrap();
-    let answers = fake.answers.lock().unwrap().clone();
-    let PermissionDecision::Allow {
-        updated_input: Some(ran),
-    } = &answers[0].3
-    else {
-        panic!("{answers:?}")
-    };
-    assert_eq!(ran["attachments"], pinned);
-    assert_eq!(ran["body"], "Attached.");
-
-    // The node's refusal reaches the Navi as it is, and no card is filed.
-    *fake.mail_files.lock().unwrap() =
-        Err("Blocked by fleetd, nothing was sent: ../lease.pdf is outside your folder".into());
-    let outside =
-        json!({ "to": ["ana@example.com"], "body": "x", "attachments": ["../lease.pdf"] });
-    *fake.pending.lock().unwrap() = Some(pending_with("q2", tool, Some(outside)));
-    a.on_thread_event(&event("thread.waiting", Some(prompt("q2", tool, "a call"))))
-        .await;
-    assert_eq!(requests(&fake).len(), 1);
-    let answers = fake.answers.lock().unwrap().clone();
-    let PermissionDecision::Deny { message } = &answers[1].3 else {
-        panic!("{answers:?}")
-    };
-    assert!(
-        message.as_str().contains("outside your folder"),
-        "{}",
-        message.as_str()
-    );
+    assert_eq!(card(&open[0])["title"], "Use delete_contact on crm");
 }

@@ -3,7 +3,7 @@
 // only relays ciphertext and the renderer never gets the plaintext back. It is never logged.
 import { SECRET_MAX_BYTES, type EnvVarSet, type McpValueSet, type ToolInput } from "../shared/contracts";
 import type { CallOutcome, HubError, SecretOutcome } from "../shared/hub";
-import type { ClaudeAccountRequest, GoogleClientRequest, GooglePubsubRequest, HubLinkRequest, McpServerRequest, OnePasswordRequest, ProjectEnvRequest, SecretRequest } from "../shared/ipc";
+import type { ClaudeAccountRequest, HubLinkRequest, McpServerRequest, OnePasswordRequest, ProjectEnvRequest, SecretRequest } from "../shared/ipc";
 
 
 const refused = (message: string, fix?: string): { ok: false; error: HubError } => ({
@@ -133,51 +133,8 @@ export const submitMcpServer = async (
     headers: headers.set,
     ...(request.integration === undefined
       ? {}
-      : { integration: { kind: request.integration.kind, ...(request.integration.readTools === undefined ? {} : { readTools: request.integration.readTools }) } }),
+      : { integration: request.integration.readTools === undefined ? {} : { readTools: request.integration.readTools } }),
   });
-};
-
-/**
- * The hub's Google OAuth client: its secret sealed to every machine in `boxes`, then google_client_set. The hub keeps
- * the id and each node's fingerprint of the secret; nothing returns the secret.
- */
-export const submitGoogleClient = async (
-  request: GoogleClientRequest,
-  call: (tool: "google_client_set", input: ToolInput<"google_client_set">) => Promise<CallOutcome>,
-): Promise<CallOutcome> => {
-  const secret = request.secret.trim();
-  if (/\s/u.test(secret)) return refused("The client secret has a space or a line break in it.", "Copy it again from the client's page in Google Cloud Console.");
-  const sealed: Array<{ machineId: string; sealed: string }> = [];
-  for (const box of request.boxes) {
-    const one = await seal(box.boxPubKey, secret);
-    if (!one.ok) return { ok: false, error: { ...one.error, message: `For ${box.machineId}: ${one.error.message}` } };
-    sealed.push({ machineId: box.machineId, sealed: one.sealed });
-  }
-  return call("google_client_set", { clientId: request.clientId, sealed });
-};
-
-/**
- * Real-time mail's service account key: checked to be one, sealed to the machine that reads the subscription, then
- * google_pubsub_set. Nothing returns the key; the hub keeps that machine's fingerprint of it.
- */
-export const submitGooglePubsub = async (
-  request: GooglePubsubRequest,
-  call: (tool: "google_pubsub_set", input: ToolInput<"google_pubsub_set">) => Promise<CallOutcome>,
-): Promise<CallOutcome> => {
-  const fix = "Paste the whole JSON file from the service account's Keys › Add key › Create new key › JSON.";
-  let key: unknown;
-  try {
-    key = JSON.parse(request.key);
-  } catch {
-    return refused("That isn't a JSON key.", fix);
-  }
-  const k = typeof key === "object" && key !== null ? (key as Record<string, unknown>) : {};
-  if (k["type"] !== "service_account" || typeof k["private_key"] !== "string" || typeof k["client_email"] !== "string") {
-    return refused("That isn't a service account's JSON key.", fix);
-  }
-  const sealed = await seal(request.boxPubKey, request.key.trim());
-  if (!sealed.ok) return { ok: false, error: { ...sealed.error, message: `For ${request.machineId}: ${sealed.error.message}` } };
-  return call("google_pubsub_set", { pubsub: { topic: request.topic, subscription: request.subscription, machineId: request.machineId, sealed: sealed.sealed } });
 };
 
 /** One value sealed to each machine in `boxes`, as the Claude account tools take it. */

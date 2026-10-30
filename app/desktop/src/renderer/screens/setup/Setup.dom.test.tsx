@@ -121,7 +121,7 @@ describe("setup", () => {
   it("opens the first step not done, with the hub's guide, and Test runs that step's checks on the hub", async () => {
     await render(<SetupScreen view={null} />);
     expect(document.querySelector("[data-screen='setup']")).not.toBeNull();
-    expect(document.body.textContent).toContain("3 of 7 done.");
+    expect(document.body.textContent).toContain("3 of 5 done.");
     // Claude is done with the hub's key; GitHub is next, to do before the first PR (no project yet), not failing.
     expect(rail("claude")).toContain("Done");
     expect(rail("github")).toContain("Before the first PR");
@@ -152,15 +152,15 @@ describe("setup", () => {
   });
 
   it("puts an optional step off for later on the hub, and back", async () => {
-    await render(<SetupScreen view="google" />);
+    await render(<SetupScreen view="github" />);
     await click(button("Skip for now"));
-    expect(calls.find((c) => c.tool === "setup_skip")?.input).toEqual({ step: "google", skipped: true });
-    expect(rail("google")).toContain("Later");
-    // Skip went on to the next step; the screen here stays on Google, now later.
-    expect(window.location.hash).toBe("#/setup/notion");
+    expect(calls.find((c) => c.tool === "setup_skip")?.input).toEqual({ step: "github", skipped: true });
+    expect(rail("github")).toContain("Later");
+    // Skip went on to the next step; the screen here stays on GitHub, now later.
+    expect(window.location.hash).toBe("#/setup/people");
     await click(button("Back on the list"));
-    expect(calls.filter((c) => c.tool === "setup_skip").at(-1)?.input).toEqual({ step: "google", skipped: false });
-    expect(rail("google")).toContain("Optional");
+    expect(calls.filter((c) => c.tool === "setup_skip").at(-1)?.input).toEqual({ step: "github", skipped: false });
+    expect(rail("github")).toContain("Before the first PR");
     // A required step can't wait.
     await render(<SetupScreen view="machines" />);
     expect([...document.querySelectorAll("button")].some((b) => b.textContent.trim() === "Skip for now")).toBe(false);

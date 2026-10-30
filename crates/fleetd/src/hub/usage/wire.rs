@@ -286,30 +286,8 @@ impl DoctorFleet for OpsPorts {
     fn setup_facts(&self) -> crate::hub::doctor::checks::SetupFacts {
         let hub = self.hub();
         let people = crate::hub::people::People::new(hub.db.clone(), hub.clock.clone());
-        let online: Vec<String> = hub
-            .store
-            .machines_list()
-            .unwrap_or_default()
-            .iter()
-            .filter(|m| hub.executors.is_connected(&m.machine_id))
-            .map(|m| m.machine_id.to_string())
-            .collect();
-        let google = hub.db.google().client().ok().flatten().map(|c| {
-            crate::hub::doctor::checks::GoogleFacts {
-                client_id: c.client_id.to_string(),
-                sealed_on: c
-                    .sealed_on
-                    .iter()
-                    .map(|s| s.machine_id.to_string())
-                    .collect(),
-                online,
-                pubsub: c.pubsub.is_some(),
-            }
-        });
         crate::hub::doctor::checks::SetupFacts {
             joined: people.joined().unwrap_or_default(),
-            google,
-            notion: crate::hub::integrations::notion_navis(&hub.db).unwrap_or(0),
             github_app: hub.github_app.get().ok().flatten(),
         }
     }

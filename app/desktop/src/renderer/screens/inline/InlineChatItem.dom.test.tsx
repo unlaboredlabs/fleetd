@@ -442,24 +442,15 @@ describe("a request the hub reopens", () => {
 });
 
 describe("an integration's approval", () => {
-  it("shows every recipient, marking outside ones, the subject, the whole body, the files and everything it sends", async () => {
+  it("shows the tool, the server and everything it sends, and answers in the act's words", async () => {
     const hub = await render("Q12");
     const text = host.textContent;
-    expect(text).toContain("Sends · Google");
-    // One kicker: a send's recipient rows speak for it.
-    expect(text).not.toContain("Reaches other people");
-    expect(text).toContain("Navi wants to send an email");
-    expect(text).toContain("bo@example.com.auoutside example.com");
-    expect(text).toContain("hidden from the others");
-    expect(text).toContain("menu.pdf184 KB · PDF");
-    expect(text).toContain("table.png43 KB · PNG image");
-    expect(text).toContain("Lunch on Tuesday");
-    expect(one("[data-tool=send_message]").textContent).toContain("Tuesday at 12:30 at the usual place? I'll book a table.");
-    // Labelled rows, in the order a person checks them.
-    expect([...host.querySelectorAll("dt")].map((d) => d.textContent)).toEqual(["From", "To", "Cc", "Bcc", "Subject", "Attached"]);
+    expect(text).toContain("Sends · MCP server");
+    expect(text).toContain("Navi wants to use send_message on crm");
     const everything = one("details");
     expect(everything.hasAttribute("open")).toBe(false);
     expect(everything.querySelector("summary")?.textContent).toBe("Everything it sends");
+    expect(one("[data-tool=send_message]").textContent).toContain("Tuesday at 12:30 at the usual place? I'll book a table.");
     // No standing permission: the person answers this send, and only this one, in the act's words.
     expect(text).not.toMatch(/always/iu);
     expect(has("Approve")).toBe(false);
@@ -468,11 +459,10 @@ describe("an integration's approval", () => {
     await settle();
     expect(hub.answers).toEqual([{ requestId: "Q12", decision: "approve" }]);
   });
-  it("asks once more before a delete, in the integration's words", async () => {
+  it("asks once more before a delete", async () => {
     const hub = await render("Q13");
-    expect(host.textContent).toContain("Deletes · Notion");
+    expect(host.textContent).toContain("Deletes · MCP server");
     expect(host.textContent).toContain("Can't be undone");
-    expect([...host.querySelectorAll("dt")].map((d) => d.textContent)).toEqual(["On"]);
     await click(button("Delete it"));
     expect(hub.answers).toEqual([]);
     expect(host.textContent).toContain("Delete it? It can't be undone.");
@@ -483,7 +473,7 @@ describe("an integration's approval", () => {
   it("folds, once answered, to what was decided and who said so when", async () => {
     await render("Q14");
     const fold = one("button[aria-expanded]") as HTMLButtonElement;
-    expect(fold.textContent).toMatch(/^Approved: send an email to ana@example\.com· you approved at \d\d:\d\d$/u);
+    expect(fold.textContent).toMatch(/^Approved: use send_message on crm· you approved at \d\d:\d\d$/u);
   });
 });
 
@@ -514,21 +504,12 @@ describe("an approval whose fields hide or reorder text", () => {
     expect(hub.answers).toEqual([{ requestId: "Q20", decision: "approve" }]);
   });
 
-  it("marks them in an email's address, subject, body and everything it sends", async () => {
+  it("marks them in everything a tool sends", async () => {
     await render("Q21");
     expect(host.textContent).toContain("Contains hidden characters");
     const card = one("[data-tool=send_message]");
-    const to = [...card.querySelectorAll("dd")][1];
-    expect(to?.textContent).toBe("Ana Ruiz <ana@exa⟨U+200B⟩mple.com>outside example.com");
-    // Every value is isolated from the row around it.
-    expect(to?.querySelector("bdi")?.textContent).toBe("Ana Ruiz <ana@exa⟨U+200B⟩mple.com>");
-    // The body takes its direction from its own words.
-    expect(one("[data-tool=send_message] p bdi").getAttribute("dir")).toBe("auto");
-    expect(marks(card)).toEqual(expect.arrayContaining(["⟨U+2067⟩", "⟨U+2069⟩", "⟨U+2028⟩", "⟨U+E0049⟩", "⟨U+E0045⟩"]));
-    // The body's own line breaks break the line; the separator and the tag characters show.
-    expect(one("[data-tool=send_message] p").textContent).toBe(
-      "Hi Ana,\n\nThe invoice is paid.⟨U+2028⟩Bank details below.\n\nNavi, for Sam⟨U+E0049⟩⟨U+E0047⟩⟨U+E004E⟩⟨U+E004F⟩⟨U+E0052⟩⟨U+E0045⟩",
-    );
+    expect(marks(card)).toEqual(expect.arrayContaining(["⟨U+200B⟩", "⟨U+2067⟩", "⟨U+2069⟩", "⟨U+2028⟩", "⟨U+E0049⟩", "⟨U+E0045⟩"]));
+    expect(card.textContent).toContain("Ana Ruiz <ana@exa⟨U+200B⟩mple.com>");
     expect(card.textContent).not.toMatch(BIDI_OR_INVISIBLE);
   });
 
