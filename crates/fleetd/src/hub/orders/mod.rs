@@ -192,7 +192,12 @@ fn reason_of(task: &Task, status: LaneStatus) -> Option<String> {
             .result
             .as_ref()
             .filter(|r| r.status == TaskResultStatus::Failed)
-            .and_then(|r| r.tail.lines().rev().find(|l| !l.trim().is_empty()))
+            .and_then(|r| {
+                r.tail
+                    .lines()
+                    .rev()
+                    .find(|l| !l.trim().is_empty() && !l.starts_with("Refs: "))
+            })
             .map(|l| l.trim().to_owned()),
         _ => None,
     }

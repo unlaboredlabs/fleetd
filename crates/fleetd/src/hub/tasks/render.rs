@@ -107,6 +107,74 @@ pub fn tail_of(text: &str, max: usize) -> String {
     }
 }
 
+const REFS: &str = "Refs: ";
+
+/// A finished task's result as stored: whole when it fits in `max`, else its head and its tail around a "…" line, then
+/// a last line "Refs: …" lifting every PR URL, attachment id (F12) and commit SHA of the whole text, so no cut loses
+/// them.
+pub fn result_text(text: &str, max: usize) -> String {
+    let t = text.trim();
+    if js_len(t) <= max {
+        return t.to_owned();
+    }
+    let refs = refs_of(t);
+    // A text cut once already (the executor's copy of a long message) ends in its own Refs line: the new one
+    // replaces it, and holds all of its refs.
+    let t = t
+        .rsplit_once(&format!("\n\n{REFS}"))
+        .filter(|(_, last)| !last.contains('\n'))
+        .map_or(t, |(body, _)| body.trim_end());
+    let line = if refs.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "\n\n{}",
+            one_line(&format!("{REFS}{}", refs.join(" ")), max / 2)
+        )
+    };
+    let room = max - js_len(&line) - js_len("\n…\n");
+    let head = js_prefix(t, room / 2).trim_end();
+    let tail = js_suffix(t, room - js_len(head)).trim_start();
+    format!("{head}\n…\n{tail}{line}")
+}
+
+/// A token of letters, digits, `_` and `-`: an attachment id or a commit SHA is one whole, a UUID's part is not.
+static TOKEN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[0-9A-Za-z_-]+").unwrap());
+
+fn is_attachment_id(token: &str) -> bool {
+    token.strip_prefix('F').is_some_and(|n| {
+        !n.is_empty() && !n.starts_with('0') && n.bytes().all(|b| b.is_ascii_digit())
+    })
+}
+
+/// 7 to 40 lowercase hex digits with a letter and a digit, so neither a number nor a hex-looking word.
+fn is_sha(token: &str) -> bool {
+    (7..=40).contains(&token.len())
+        && token
+            .bytes()
+            .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+        && token.bytes().any(|b| b.is_ascii_digit())
+        && token.bytes().any(|b| b.is_ascii_alphabetic())
+}
+
+/// What a result names that a cut must never lose, each once: its PR URLs, then its attachment ids, then its commit
+/// SHAs, in the order they appear.
+pub fn refs_of(text: &str) -> Vec<String> {
+    let tokens: Vec<&str> = TOKEN.find_iter(text).map(|m| m.as_str()).collect();
+    let ids = tokens.iter().filter(|t| is_attachment_id(t));
+    let shas = tokens.iter().filter(|t| is_sha(t));
+    let mut refs: Vec<String> = Vec::new();
+    for r in pr_urls([text])
+        .into_iter()
+        .chain(ids.chain(shas).map(|t| (*t).to_owned()))
+    {
+        if !refs.contains(&r) {
+            refs.push(r);
+        }
+    }
+    refs
+}
+
 static PR_URL: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
         r#"https?://[^\s"'<>()]+?/(?:pull|pulls|pull-requests|pullrequest|merge_requests)/[0-9]+"#,
@@ -517,7 +585,23 @@ pub fn task_digest_lines(
             .filter(|_| since.is_none())
             .map_or_else(String::new, |r| {
                 let tail = r.tail.as_str();
-                one_line(tail.strip_prefix('…').unwrap_or(tail), 160)
+                let tail = tail.strip_prefix('…').unwrap_or(tail);
+                let body = tail
+                    .rsplit_once(&format!("\n\n{REFS}"))
+                    .map_or(tail, |(body, _)| body);
+                let shown = one_line(body, 160);
+                // The line is cut, its refs never: those it or the PR beside the title already show are left out.
+                let seen = refs_of(&shown);
+                let refs: Vec<String> = refs_of(tail)
+                    .into_iter()
+                    .filter(|p| !seen.contains(p))
+                    .filter(|p| r.pr_url.as_ref().is_none_or(|pr| pr.as_str() != p))
+                    .collect();
+                if refs.is_empty() {
+                    shown
+                } else {
+                    format!("{shown} {REFS}{}", refs.join(" "))
+                }
             });
         let arrow = if first.is_empty() {
             String::new()
@@ -572,6 +656,78 @@ mod tests {
         assert!(lines(None)[0].ends_with("→ Fixed it."), "{:?}", lines(None));
         let wake = lines(Some("2026-10-25T09:30:00.000Z"));
         assert!(wake[0].ends_with(": B"), "{wake:?}");
+    }
+
+    /// A long result keeps its head and its tail, and a last Refs line holds every PR URL, attachment id and commit
+    /// SHA, even those from the middle that was cut.
+    #[test]
+    fn a_long_result_keeps_its_head_tail_and_refs() {
+        let middle = "Took screenshots F12 and F13, pushed 3f9c2ab1, then CI went red; ".repeat(60);
+        let text = format!(
+            "Done: the sidebar glides. PR https://github.com/o/r/pull/868.\n{middle}\nLeft: nothing. See F14."
+        );
+        let kept = result_text(&text, TAIL_MAX);
+        assert!(js_len(&kept) <= TAIL_MAX, "{}", js_len(&kept));
+        assert!(kept.starts_with("Done: the sidebar glides."), "{kept}");
+        assert!(kept.contains("\n…\n"), "{kept}");
+        let (body, refs) = kept.rsplit_once("\n\n").unwrap();
+        assert!(body.ends_with("Left: nothing. See F14."), "{body}");
+        assert_eq!(
+            refs,
+            "Refs: https://github.com/o/r/pull/868 F12 F13 F14 3f9c2ab1"
+        );
+        // Cut again, it keeps one Refs line, with every ref.
+        let again = result_text(&format!("More at the start: F9.\n{kept}"), 1000);
+        assert_eq!(again.matches("Refs: ").count(), 1, "{again}");
+        assert!(
+            again.ends_with("\n\nRefs: https://github.com/o/r/pull/868 F9 F12 F13 F14 3f9c2ab1"),
+            "{again}"
+        );
+        // A short one stays as it was, with no Refs line.
+        assert_eq!(
+            result_text("  Fixed it in F2.  ", TAIL_MAX),
+            "Fixed it in F2."
+        );
+    }
+
+    /// Ids are whole tokens: a UUID's part, a plain number, a hex-looking word and F0 are none.
+    #[test]
+    fn refs_are_whole_ids_each_once() {
+        assert_eq!(
+            refs_of(
+                "F3 then F3, commit abc1234 and abc1234def; project 0a00fc86-8668-4fe9, run 12345678, \
+                 deadbeef, F0, FOO1, https://github.com/o/r/pull/7 and https://github.com/o/r/pull/7"
+            ),
+            [
+                "https://github.com/o/r/pull/7",
+                "F3",
+                "abc1234",
+                "abc1234def"
+            ]
+        );
+    }
+
+    /// The digest's line for an ended task is cut, but names every ref its text holds beyond the cut and the PR.
+    #[test]
+    fn a_first_messages_ended_line_keeps_the_refs_its_cut_lost() {
+        let tail = result_text(
+            &format!(
+                "{} Shots F21 and F22, head 9e8d7c6b.",
+                "Long story. ".repeat(300)
+            ),
+            TAIL_MAX,
+        );
+        let task: Task = serde_json::from_value(serde_json::json!({
+            "taskId": "T5", "projectRef": { "machineId": "lab-a", "projectId": "p1" }, "workstreamId": "W1",
+            "title": "B", "kind": "write", "prompt": "do it", "state": "done", "attempt": 1,
+            "createdAt": "2026-10-25T09:00:00.000Z", "endedAt": "2026-10-25T10:00:00.000Z",
+            "result": { "status": "done", "tail": tail, "prUrl": "https://github.com/o/r/pull/9",
+                        "at": "2026-10-25T10:00:00.000Z" },
+        }))
+        .unwrap();
+        let line = &task_digest_lines(std::slice::from_ref(&task), None, "", &|_| None)[0];
+        assert!(line.contains("[https://github.com/o/r/pull/9]"), "{line}");
+        assert!(line.ends_with("… Refs: F21 F22 9e8d7c6b"), "{line}");
     }
 
     #[test]

@@ -1270,7 +1270,7 @@ impl Tasks {
         .join("\n\n");
         let result = TaskResult {
             status,
-            tail: Text::unchecked(tail_of(&tail, render::TAIL_MAX)),
+            tail: Text::unchecked(render::result_text(&tail, render::TAIL_MAX)),
             branch: branch.clone().map(NonEmpty::unchecked),
             pr_url,
             end_cause,
