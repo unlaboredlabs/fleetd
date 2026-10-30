@@ -13,12 +13,17 @@ use rusqlite::params;
 use super::ports::TaskError;
 use super::{TaskCaller, Tasks, holds_pr, lead_error, store_error};
 use crate::hub::api::Hub;
-use crate::hub::store::now_ms;
+use crate::hub::store::{now_ms, parse_ms};
 use crate::hub::work::BoxFut;
 
 pub const POLL_EVERY: Duration = Duration::from_secs(60);
 /// A wait still open this long ends, telling its task so.
 pub const GIVE_UP_MS: i64 = 6 * 3600 * 1000;
+/// GitHub reads that fail in a row before the wait ends, telling its task why.
+pub const READ_TRIES: i64 = 3;
+/// A PR head counts as finished only once its last check completed this long ago: a workflow another one starts, or
+/// a label's, registers its jobs a little after the first ones end.
+pub const SETTLE_MS: i64 = 2 * 60_000;
 const PER_TASK: i64 = 10;
 /// Failing jobs named in the line; the rest are counted.
 const NAMED: usize = 10;
@@ -77,6 +82,37 @@ pub enum Read {
     },
     /// Nothing more will happen: why, in a few words ("was merged", "GitHub has no such run").
     Over(String),
+}
+
+/// One check run on a PR's head, as [`head_read`] needs it.
+pub struct Check {
+    pub name: String,
+    pub status: String,
+    pub conclusion: Option<String>,
+    pub completed_ms: Option<i64>,
+}
+
+/// A PR head's state from its workflow runs' statuses and its check runs (the latest of each): running while any run
+/// or check is, while it has none yet, and for [`SETTLE_MS`] after its last check completed.
+pub fn head_read(sha: &str, runs: &[String], checks: &[Check], now: i64) -> Read {
+    let last = checks.iter().filter_map(|c| c.completed_ms).max();
+    if checks.is_empty()
+        || runs.iter().any(|r| r != "completed")
+        || checks.iter().any(|c| c.status != "completed")
+        || last.is_none_or(|at| now - at < SETTLE_MS)
+    {
+        return Read::Running;
+    }
+    Read::Finished {
+        conclusion: None,
+        label: sha.chars().take(7).collect(),
+        failing: checks
+            .iter()
+            .filter(|c| !passed(c.conclusion.as_deref()))
+            .map(|c| c.name.clone())
+            .collect(),
+        total: checks.len(),
+    }
 }
 
 /// GitHub's reads; the hub's goes through the train's `gh` client, tests fake it.
@@ -211,15 +247,16 @@ impl Tasks {
         })
     }
 
-    /// Every open wait: task, URL, when asked.
-    fn ci_waits(&self) -> Vec<(TaskId, String, i64)> {
+    /// Every open wait: task, URL, when asked, GitHub reads failed in a row.
+    fn ci_waits(&self) -> Vec<(TaskId, String, i64, i64)> {
         self.db(|c| {
-            c.prepare("SELECT task_id, url, created_ms FROM ci_waits ORDER BY created_ms")?
+            c.prepare("SELECT task_id, url, created_ms, errors FROM ci_waits ORDER BY created_ms")?
                 .query_map([], |r| {
                     Ok((
                         TaskId::unchecked(r.get::<_, String>(0)?),
                         r.get::<_, String>(1)?,
                         r.get::<_, i64>(2)?,
+                        r.get::<_, i64>(3)?,
                     ))
                 })?
                 .collect()
@@ -241,14 +278,25 @@ impl Tasks {
         }
     }
 
-    /// One pass: each finished wait wakes its task and goes; a wait of a cancelled or deleted task goes silently.
-    /// Returns how many tasks were woken.
+    fn ci_wait_errors(&self, task_id: &TaskId, url: &str, errors: i64) {
+        if let Err(error) = self.db(|c| {
+            c.execute(
+                "UPDATE ci_waits SET errors = ? WHERE task_id = ? AND url = ?",
+                params![errors, task_id.as_str(), url],
+            )
+        }) {
+            tracing::warn!(%error, task = %task_id, "ci wait: errors not counted");
+        }
+    }
+
+    /// One pass: each finished wait wakes its task and goes. A wait of a failed, cancelled or deleted task goes
+    /// silently: a wake never restarts one. Returns how many tasks were woken.
     pub async fn poll_ci_waits(self: &Arc<Self>, reads: &dyn CiReads) -> usize {
         let now = now_ms(self.d.clock.as_ref());
         let mut woken = 0;
-        for (task_id, url, created) in self.ci_waits() {
+        for (task_id, url, created, errors) in self.ci_waits() {
             let task = match self.get(&task_id) {
-                Ok(Some(t)) if t.state != TaskState::Cancelled => t,
+                Ok(Some(t)) if !matches!(t.state, TaskState::Cancelled | TaskState::Failed) => t,
                 Ok(_) => {
                     self.ci_wait_done(&task_id, &url);
                     continue;
@@ -263,11 +311,21 @@ impl Tasks {
                 continue;
             };
             let line = match reads.read(&target).await {
-                Ok(read) => summary(&target, &read),
-                Err(error) => {
+                Ok(read) => {
+                    if errors > 0 {
+                        self.ci_wait_errors(&task_id, &url, 0);
+                    }
+                    summary(&target, &read)
+                }
+                Err(error) if errors + 1 < READ_TRIES => {
                     tracing::warn!(%error, %url, "ci wait: GitHub not read");
+                    self.ci_wait_errors(&task_id, &url, errors + 1);
                     None
                 }
+                Err(error) => Some(format!(
+                    "CI you waited on (wait_ci) could not be read: GitHub failed {READ_TRIES} times in a row for \
+                     {url} ({error}). Look at it with `gh`, or call wait_ci again."
+                )),
             };
             let given_up = now.saturating_sub(created) >= GIVE_UP_MS;
             let Some(line) = line.or_else(|| {
@@ -361,24 +419,38 @@ impl CiReads for HubReads {
                     if pull.state != "open" {
                         return Ok(Read::Over("was closed".into()));
                     }
-                    let checks = gh
-                        .check_runs(repo, &pull.head.sha)
+                    let sha = &pull.head.sha;
+                    let runs = gh
+                        .get(&format!(
+                            "repos/{repo}/actions/runs?head_sha={sha}&per_page=100"
+                        ))
                         .await
-                        .map_err(|e| e.message)?;
-                    // None yet is a head GitHub hasn't started on.
-                    if checks.is_empty() || checks.iter().any(|c| c.status != "completed") {
-                        return Ok(Read::Running);
-                    }
-                    Ok(Read::Finished {
-                        conclusion: None,
-                        label: pull.head.sha.chars().take(7).collect(),
-                        failing: checks
-                            .iter()
-                            .filter(|c| !passed(c.conclusion.as_deref()))
-                            .map(|c| c.name.clone())
-                            .collect(),
-                        total: checks.len(),
-                    })
+                        .map_err(|e| e.message)?
+                        .map_err(|(status, message)| format!("{status}: {message}"))?;
+                    let runs: Vec<String> = runs["workflow_runs"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|r| r["status"].as_str().map(str::to_owned))
+                        .collect();
+                    let checks: Vec<Check> = gh
+                        .check_runs(repo, sha)
+                        .await
+                        .map_err(|e| e.message)?
+                        .into_iter()
+                        .map(|c| Check {
+                            completed_ms: c.completed_at.as_deref().and_then(parse_ms),
+                            name: c.name,
+                            status: c.status,
+                            conclusion: c.conclusion,
+                        })
+                        .collect();
+                    Ok(head_read(
+                        sha,
+                        &runs,
+                        &checks,
+                        now_ms(self.0.clock.as_ref()),
+                    ))
                 }
             }
         })
