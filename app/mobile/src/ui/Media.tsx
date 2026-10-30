@@ -44,7 +44,8 @@ export const shareFile = async (a: AttachmentGetOutput): Promise<void> => {
 
 /**
  * A picture in the thread, sized as Messages sizes one (../bubble.ts): its own shape, a soft block while it loads. The
- * last of a burst has the tail, cut from the picture: it's drawn TAIL_REACH taller, its box keeps the rest of it.
+ * last of a burst has the tail, cut from the picture. Every picture is drawn TAIL_REACH taller than its box, tail or
+ * not, so it keeps its scale when it lifts into the menu without one.
  */
 export function ImageBubble({
   chatKey,
@@ -86,7 +87,7 @@ export function ImageBubble({
       onPress={() => onOpen(got)}
     >
       {({ pressed }) => {
-        const picture = <Image source={{ uri: uriOf(got) }} style={{ width, height: tail ? height + TAIL_REACH : height }} resizeMode="cover" />;
+        const picture = <Image source={{ uri: uriOf(got) }} style={{ width, height: height + TAIL_REACH }} resizeMode="cover" />;
         return (
           <View style={pressed && styles.pressed}>
             <View style={[styles.image, { width, height, backgroundColor: t.fillQuiet }]}>{picture}</View>

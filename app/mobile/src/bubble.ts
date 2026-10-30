@@ -27,9 +27,10 @@ export const bubble = {
   tail: { width: 16, height: 9, angle: 32, tipRadius: 1.5, inset: 5.7, drop: 4.05, notch: 11.6, notchInset: 1.1, notchDrop: 6.2 },
   /**
    * A picture: as wide as this share of the screen whatever its shape (252.67 pt on a 402 pt screen, landscape or
-   * portrait), as tall as its shape makes it, up to `tallest` times its width (a 3:4 portrait, the tallest measured).
+   * portrait), as tall as its shape makes it, up to `tallest` times its width (a 3:4 portrait, the tallest measured),
+   * and at least `lowest` tall, so a panorama doesn't become a sliver (cropped at its sides).
    */
-  photo: { share: 0.6285, tallest: 4 / 3 },
+  photo: { share: 0.6285, tallest: 4 / 3, lowest: 110 },
   /** Emoji alone, without a bubble: one is drawn at `one`, two or three at `few`, each with its line's height. */
   jumbo: { one: 72, oneLineHeight: 86, few: 48, fewLineHeight: 57, most: 3 },
 } as const;
@@ -47,7 +48,8 @@ export const bubbleMax = (width: number): number => Math.round(width * bubble.ma
 /** A picture's size on a screen `screen` points wide, from its width over its height. */
 export const photoSize = (screen: number, aspect: number): { width: number; height: number } => {
   const width = Math.round(screen * bubble.photo.share * 3) / 3;
-  return { width, height: Math.round(Math.min(width / aspect, width * bubble.photo.tallest) * 3) / 3 };
+  const height = Math.min(Math.max(width / aspect, bubble.photo.lowest), width * bubble.photo.tallest);
+  return { width, height: Math.round(height * 3) / 3 };
 };
 
 // One emoji as Messages draws it big: a flag (first, as each of its letters is a pictograph too), a keycap, or a

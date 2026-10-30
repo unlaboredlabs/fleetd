@@ -1,38 +1,44 @@
 // Messages' times: drag the thread left and each message's time comes in at its right, your bubbles sliding over to
 // make room while the other side's keep their place; let go and it all goes back. The drag runs on the UI thread. It
 // starts only leftward and away from the screen's left edge, so iOS's swipe back from that edge stays iOS's, and a
-// mostly vertical drag stays the thread's scroll.
+// mostly vertical drag stays the thread's scroll. The time column is as wide as the times at the person's text size.
 import { createContext, useContext, useMemo, type ReactNode } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, { useAnimatedStyle, useSharedValue, withTiming, type SharedValue } from "react-native-reanimated";
-import { REVEAL, revealOf } from "../reveal";
+import { revealOf, revealWidth, TIME_SCALE } from "../reveal";
 import { type, useTheme } from "../theme";
 import { quick } from "./motion";
 
 /** The screen's left edge, kept for iOS's swipe back. */
 const EDGE = 24;
 
-const Shown = createContext<{ shown: SharedValue<number>; margin: number } | null>(null);
+const Shown = createContext<{ shown: SharedValue<number>; margin: number; width: number } | null>(null);
 
 /** The thread's area, its rows `margin` in from the screen's sides: a leftward drag anywhere but the left edge shows the times. */
 export function RevealArea({ margin, children }: { margin: number; children: ReactNode }) {
   const shown = useSharedValue(0);
+  // Where the drag was when it took hold, 10 pt in: the thread moves from there.
+  const from = useSharedValue(0);
+  const width = revealWidth(useWindowDimensions().fontScale);
   const pan = useMemo(
     () =>
       Gesture.Pan()
         .activeOffsetX(-10)
         .failOffsetY([-10, 10])
         .hitSlop({ left: -EDGE })
+        .onStart((e) => {
+          from.value = e.translationX;
+        })
         .onUpdate((e) => {
-          shown.value = revealOf(e.translationX);
+          shown.value = revealOf(e.translationX, from.value, width);
         })
         .onFinalize(() => {
           shown.value = withTiming(0, quick);
         }),
-    [shown],
+    [shown, from, width],
   );
-  const area = useMemo(() => ({ shown, margin }), [shown, margin]);
+  const area = useMemo(() => ({ shown, margin, width }), [shown, margin, width]);
   return (
     <Shown.Provider value={area}>
       <GestureDetector gesture={pan}>
@@ -51,8 +57,8 @@ export function Revealed({ mine, time, children }: { mine: boolean; time: string
   return (
     <View>
       <Animated.View style={mine ? slide : undefined}>{children}</Animated.View>
-      <Animated.View style={[styles.time, { marginLeft: area?.margin ?? 0 }, slide]} pointerEvents="none" accessible={false} importantForAccessibility="no-hide-descendants">
-        <Text style={[type.caption, styles.timeText, { color: t.secondary }]} maxFontSizeMultiplier={1.2} numberOfLines={1}>
+      <Animated.View style={[styles.time, { marginLeft: area?.margin ?? 0, width: area?.width ?? 0 }, slide]} pointerEvents="none" accessible={false} importantForAccessibility="no-hide-descendants">
+        <Text style={[type.caption, styles.timeText, { color: t.secondary }]} maxFontSizeMultiplier={TIME_SCALE} numberOfLines={1}>
           {time}
         </Text>
       </Animated.View>
@@ -63,6 +69,6 @@ export function Revealed({ mine, time, children }: { mine: boolean; time: string
 const styles = StyleSheet.create({
   fill: { flex: 1 },
   // Past the row's right end and the thread's margin: off the screen until the thread slides.
-  time: { position: "absolute", top: 0, bottom: 0, left: "100%", width: REVEAL, justifyContent: "center" },
+  time: { position: "absolute", top: 0, bottom: 0, left: "100%", justifyContent: "center" },
   timeText: { fontVariant: ["tabular-nums"], paddingLeft: 6 },
 });

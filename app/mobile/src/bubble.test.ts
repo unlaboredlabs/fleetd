@@ -15,7 +15,7 @@ describe("bubble", () => {
       margin: 16,
       maxShare: 0.7,
       tail: { width: 16, height: 9, angle: 32, tipRadius: 1.5, inset: 5.7, drop: 4.05, notch: 11.6, notchInset: 1.1, notchDrop: 6.2 },
-      photo: { share: 0.6285, tallest: 4 / 3 },
+      photo: { share: 0.6285, tallest: 4 / 3, lowest: 110 },
       jumbo: { one: 72, oneLineHeight: 86, few: 48, fewLineHeight: 57, most: 3 },
     });
   });
@@ -46,13 +46,20 @@ describe("bubble", () => {
 });
 
 describe("photoSize", () => {
-  // Messages' pictures on a 402 pt screen: 252.67 wide; 4:3 189.67 tall, 3:2 168.67, 3:4 337.
+  // Messages' pictures on a 402 pt screen, measured: 252.67 wide; 4:3 189.67 tall, 3:2 168.67, 3:4 337. Ours land on
+  // the same third of a point but 3:2's, a third under.
   it("sizes a picture as Messages does", () => {
     const wide = photoSize(402, 4 / 3);
-    expect(wide.width).toBeCloseTo(252.67, 1);
-    expect(wide.height).toBeCloseTo(189.5, 0);
-    expect(photoSize(402, 3 / 2).height).toBeCloseTo(168.67, 0);
-    expect(photoSize(402, 3 / 4).height).toBeCloseTo(337, 0);
+    expect(wide.width).toBeCloseTo(252.67, 2);
+    expect(wide.height).toBeCloseTo(189.67, 2);
+    expect(photoSize(402, 3 / 2).height).toBeCloseTo(168.33, 2);
+    expect(photoSize(402, 3 / 4).height).toBeCloseTo(337, 2);
+  });
+
+  it("keeps a panorama at least 110 tall", () => {
+    expect(photoSize(402, 4).height).toBe(110);
+    expect(photoSize(402, 100).height).toBe(110);
+    expect(photoSize(402, 2).height).toBeCloseTo(126.33, 2);
   });
 
   it("crops a taller picture at 3:4", () => {
