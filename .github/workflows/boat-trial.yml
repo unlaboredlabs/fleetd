@@ -32,9 +32,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           # Trial only: boat saves its own cache on this branch, keyed apart from GitHub's (its toolchains and home
-          # already differ), so a rerun restores it.
+          # already differ), so a rerun restores it; also when a job fails, as two do on boat.
           key: boat
           save-if: true
+          cache-on-failure: true
       # Also checks that the generated contracts (schema/*.json and the app's TypeScript) are current
       # (schema::generated_contracts_are_current) and replays the recorded claude fixtures (node::runner).
       - run: cargo test --locked --workspace
@@ -56,9 +57,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           # Trial only: boat saves its own cache on this branch, keyed apart from GitHub's (its toolchains and home
-          # already differ), so a rerun restores it.
+          # already differ), so a rerun restores it; also when a job fails, as two do on boat.
           key: boat
           save-if: true
+          cache-on-failure: true
       - run: cargo fmt --all --check
       - run: cargo clippy --locked --workspace --all-targets -- -D warnings
 
@@ -73,9 +75,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           # Trial only: boat saves its own cache on this branch, keyed apart from GitHub's (its toolchains and home
-          # already differ), so a rerun restores it.
+          # already differ), so a rerun restores it; also when a job fails, as two do on boat.
           key: boat
           save-if: true
+          cache-on-failure: true
       - run: cargo build --locked -p fleetd -p docsgen
       - name: The docs' generated pages are up to date
         # The CLI reference, the Agent tools page and the prompt table in docs/site/src/content/docs come from the
@@ -129,9 +132,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           # Trial only: boat saves its own cache on this branch, keyed apart from GitHub's (its toolchains and home
-          # already differ), so a rerun restores it.
+          # already differ), so a rerun restores it; also when a job fails, as two do on boat.
           key: boat
           save-if: true
+          cache-on-failure: true
       - name: Sealed boxes against libsodium
         run: cargo test --locked -p fleetd --lib node::identity
         env:
