@@ -1688,6 +1688,34 @@ export const screens: readonly Screen[] = [
       await expect(page.getByText("Its newest CI build is installed before you get control.")).toBeVisible();
     },
   },
+  // ...opened: it goes on in the hub, and the picker follows it (here, the build going in) until the screen is yours.
+  {
+    id: "sessions",
+    route: `${CHAT}/sessions`,
+    fixtures: ["sessions-preview"],
+    variant: "new-screen-pr-opening",
+    open: async (page) => {
+      await page.getByRole("button", { name: "New screen", exact: true }).click();
+      await page.getByRole("radio", { name: /^Android/u }).click();
+      await page.getByRole("combobox", { name: "PR build" }).click();
+      await page.getByRole("option", { name: "#14 Checkout keeps the cart after sign-in" }).click();
+      await page.getByRole("button", { name: "Open screen" }).click();
+      await expect(page.getByText("Installing #14’s build on devbox…")).toBeVisible();
+    },
+  },
+  // A browser with a PR is its Try it preview: no machine to pick.
+  {
+    id: "sessions",
+    route: `${CHAT}/sessions`,
+    fixtures: ["sessions-preview"],
+    variant: "new-screen-pr-web",
+    open: async (page) => {
+      await page.getByRole("button", { name: "New screen", exact: true }).click();
+      await page.getByRole("combobox", { name: "PR preview" }).click();
+      await page.getByRole("option", { name: "#14 Checkout keeps the cart after sign-in" }).click();
+      await expect(page.getByRole("button", { name: "Open preview" })).toBeVisible();
+    },
+  },
   // ...and a browser of your own on devbox: its live view, yours from the start, with End screen and no Hand back.
   {
     id: "sessions",

@@ -211,11 +211,24 @@ const preview = (base: Fixture): Fixture => {
   const ended: JsonObject = { ...mine, state: "uploading", endedAt: iso(0) };
   const wait: JsonObject = { waitId: "W5e2c4a6f8d0b1a3c5e7f9d1b3a5c7e9f", projectRef: STOREFRONT, kind: "ios", machineId: "mac", since: iso(0), ahead: 0 };
   rows.unshift(mine, ended);
-  f.answer("browser_sessions", { projectRef: STOREFRONT }, { sessions: rows, waits: [wait], retention: { retentionDays: 30, maxGbPerProject: 20 } });
+  // An Android emulator on devbox with #14's build, past its wait: its build going in.
+  const installing: JsonObject = {
+    waitId: "W7a9c1e3f5b7d9f1a3c5e7b9d1f3a5c7e",
+    projectRef: STOREFRONT,
+    kind: "android",
+    machineId: "devbox",
+    since: iso(0),
+    ahead: 0,
+    stage: "installing",
+    threadId: "screen-7a9c1e3f5b7d9f1a3c5e7b9d1f3a5c7e",
+    pr: { repo: "acme/storefront", number: 14 },
+  };
+  f.answer("browser_sessions", { projectRef: STOREFRONT }, { sessions: rows, waits: [wait, installing], retention: { retentionDays: 30, maxGbPerProject: 20 } });
   const where = (r: JsonObject) => ({ tool: "browser_sessions", field: "sessions", where: { sessionId: asText(r["sessionId"]), control: asText(r["control"]) } });
   const mineAs = (state: string) => ({ tool: "browser_sessions", field: "sessions", where: { sessionId: SESSION.mine, state } });
   const waiting = { tool: "browser_sessions", field: "waits", where: { waitId: asText(wait["waitId"]) } };
-  f.hidden.push(where(yours(checkout)), where(yours(payouts)), where(handing(payouts)), mineAs("live"), mineAs("uploading"), waiting);
+  const building = { tool: "browser_sessions", field: "waits", where: { waitId: asText(installing["waitId"]) } };
+  f.hidden.push(building, where(yours(checkout)), where(yours(payouts)), where(handing(payouts)), mineAs("live"), mineAs("uploading"), waiting);
   const check = (host: string, ready: boolean) => ({ host, ready, detail: ready ? "ready" : "not set up here" });
   const machine = (machineId: string, ready: readonly string[], live: number, max: number): JsonObject => ({
     machineId,
@@ -255,6 +268,9 @@ const preview = (base: Fixture): Fixture => {
     frames: [sessionEvent("live"), { ms: 400, kind: "browser_frame", payload: frame(SESSION.mine, 1, "home", "https://staging.shop.example.com/", "human") }],
   });
   f.answer("screen_open", opened("ios", "mac", true), { waiting: wait });
+  const withPr = { ...opened("android", "devbox", false), pr: { repo: "acme/storefront", number: 14 } };
+  f.answer("screen_open", withPr, { waiting: installing });
+  f.then("screen_open", withPr, { show: [building], frames: [] });
   f.then("screen_open", opened("ios", "mac", true), { show: [waiting], frames: [sessionEvent("live")] });
   f.answer("screen_end", { waitId: asText(wait["waitId"]) }, {});
   f.then("screen_end", { waitId: asText(wait["waitId"]) }, { hide: [waiting], frames: [sessionEvent("live")] });

@@ -1,13 +1,15 @@
 // @vitest-environment happy-dom
 // New screen (D239): the Screens tab's button opens the picker; it lists the machines that can host the kind picked,
 // opens the screen there and goes to its live view; a full machine waits for a slot, and the wait shows in the list
-// with Cancel. An iOS or Android screen takes an open PR's build. The palette's "New screen…" opens the same picker.
+// with Cancel. An iOS or Android screen takes an open PR's build: the picker follows it in the hub until the screen is
+// yours, or says why it failed; a browser with a PR opens its Try it preview. The palette's "New screen…" opens the same
+// picker.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
-import { AT, live, project, snapshot } from "../../src/data/fixtures.test-util";
+import { AT, event, live, project, snapshot } from "../../src/data/fixtures.test-util";
 import { TooltipProvider } from "../../ui/primitives/Tooltip";
 import { SessionsPane } from "./SessionsPane";
 import { NewScreenHost } from "./NewScreen";
@@ -52,6 +54,9 @@ const OPENED = {
   openedBy: { personId: "p_adaadaad", name: "Ada" },
 };
 const WAIT = { waitId: "W1", projectRef: project, kind: "ios", machineId: "mac", since: AT, ahead: 0 };
+// An Android screen with #12's build, past its wait from the answer on.
+const OPENING = { ...WAIT, waitId: "W2", kind: "android", machineId: "devbox", stage: "starting", threadId: "screen-2", pr: { repo: "acme/app", number: 12 } };
+const MINE = { ...OPENED, sessionId: "B00000000000000000000000000000002", threadId: "screen-2", kind: "android" };
 
 let host: HTMLDivElement;
 let root: Root | undefined;
@@ -61,6 +66,8 @@ let calls: { tool: string; input: unknown; timeoutMs?: number | undefined }[] = 
 let refuse: string | undefined;
 let waits: unknown[] = [];
 let sessions: unknown[] = [];
+/** pr_list fails this many more times. */
+let prsFail = 0;
 
 beforeEach(() => {
   vi.stubGlobal("fleetd", { platform: "darwin", fixture: null, hub: { watch: () => Promise.resolve(), input: () => Promise.resolve() } });
@@ -68,6 +75,7 @@ beforeEach(() => {
   document.body.appendChild(host);
   calls = [];
   refuse = undefined;
+  prsFail = 0;
   waits = [];
   sessions = [];
   window.location.hash = "";
@@ -83,6 +91,11 @@ afterEach(() => {
 const settle = async () => {
   for (let i = 0; i < 8; i++) await act(() => new Promise((done) => setTimeout(done, 0)));
 };
+/** An event's reads, which the data layer batches every 100 ms. */
+const eventSettle = async () => {
+  await act(() => new Promise((done) => setTimeout(done, 150)));
+  await settle();
+};
 
 const mount = async () => {
   const hub: HubApi = {
@@ -91,7 +104,18 @@ const mount = async () => {
       if (tool === "screen_open" && refuse !== undefined) return Promise.reject(new Error(refuse));
       if (tool === "browser_sessions") return Promise.resolve({ ok: true, output: { sessions, waits, retention: { retentionDays: 30, maxGbPerProject: 20 } } });
       if (tool === "machine_roles") return Promise.resolve({ ok: true, output: { machines: MACHINES } });
-      if (tool === "pr_list") return Promise.resolve({ ok: true, output: { prs: PRS } });
+      if (tool === "pr_list") {
+        if (prsFail > 0) {
+          prsFail -= 1;
+          return Promise.resolve({ ok: false, error: { code: "failed", message: "GitHub can’t be reached" } });
+        }
+        return Promise.resolve({ ok: true, output: { prs: PRS } });
+      }
+      if (tool === "preview_start") return Promise.resolve({ ok: true, output: { preview: {} } });
+      if (tool === "screen_open" && (input as { pr?: unknown }).pr !== undefined) {
+        waits = [OPENING];
+        return Promise.resolve({ ok: true, output: { waiting: OPENING } });
+      }
       if (tool === "screen_open") {
         const full = (input as { machineId: string }).machineId === "mac" && (input as { kind: string }).kind === "ios";
         if (full) waits = [WAIT];
@@ -176,31 +200,35 @@ it("waits for a slot on a full machine, shows the wait in the list, and cancels 
   expect(host.textContent).not.toContain("waiting for a free slot");
 });
 
-it("installs an open PR's build into an Android screen, and offers none for a browser", async () => {
-  await mount();
-  act(() => button("New screen")?.click());
-  await settle();
-  // A browser takes no build.
-  expect(document.querySelector("[aria-label='PR build']")).toBeNull();
-  act(() => button("Android")?.click());
-  await settle();
-  const trigger = document.querySelector<HTMLElement>("[aria-label='PR build']");
+/** Picks `label` in the picker's PR select. */
+const pickPr = async (label: string) => {
+  const trigger = document.querySelector<HTMLElement>("[aria-label^='PR ']");
   if (trigger === null) throw new Error("no PR picker");
-  expect(trigger.textContent).toBe("None");
   await act(async () => {
     trigger.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerType: "mouse" }));
     await Promise.resolve();
   });
   await settle();
-  // Only open PRs.
   const options = [...document.querySelectorAll<HTMLElement>("[role='option']")];
-  expect(options.map((o) => o.textContent)).toEqual(["None", "#12 Swipe to reply"]);
-  act(() => options[1]?.click());
+  act(() => options.find((o) => o.textContent === label)?.click());
   await settle();
+  return options.map((o) => o.textContent);
+};
+
+it("installs an open PR's build into an Android screen, following it until the screen is yours", async () => {
+  await mount();
+  act(() => button("New screen")?.click());
+  await settle();
+  act(() => button("Android")?.click());
+  await settle();
+  expect(document.querySelector("[aria-label='PR build']")?.textContent).toBe("None");
+  // Only open PRs.
+  expect(await pickPr("#12 Swipe to reply")).toEqual(["None", "#12 Swipe to reply"]);
   expect(picker()?.textContent).toContain("Its newest CI build is installed before you get control.");
   act(() => button("Open screen")?.click());
   await settle();
-  expect(calls.find((c) => c.tool === "screen_open")?.input).toEqual({
+  const opened = calls.find((c) => c.tool === "screen_open");
+  expect(opened?.input).toEqual({
     projectRef: { machineId: project.machineId, projectId: project.projectId },
     kind: "android",
     machineId: "devbox",
@@ -208,8 +236,76 @@ it("installs an open PR's build into an Android screen, and offers none for a br
     pr: { repo: "acme/app", number: 12 },
   });
   // The app's calls wait at most 5 minutes (shared/ipc.ts CallRequest): longer is refused before the hub.
-  const timeout = calls.find((c) => c.tool === "screen_open")?.timeoutMs ?? 0;
-  expect(CallRequest.safeParse({ tool: "screen_open", input: {}, timeoutMs: timeout }).success).toBe(true);
+  expect(CallRequest.safeParse({ tool: "screen_open", input: {}, timeoutMs: opened?.timeoutMs }).success).toBe(true);
+  // It answered at once; the picker follows it as the hub moves it on.
+  expect(picker()?.textContent).toContain("Reading #12’s build and starting the screen on devbox…");
+  waits = [{ ...OPENING, stage: "installing" }];
+  act(() => send(event(2, "screen.wait", { projectRef: project, waitId: "W2", stage: "installing" })));
+  await eventSettle();
+  expect(picker()?.textContent).toContain("Installing #12’s build on devbox…");
+  expect(host.textContent).toContain("installing #12’s build");
+  // Yours: the picker goes, and the panel shows its live view.
+  waits = [];
+  sessions = [MINE];
+  act(() => send(event(3, "screen.wait", { projectRef: project, waitId: "W2" })));
+  await eventSettle();
+  expect(picker()).toBeNull();
+  expect(window.location.hash).toContain(MINE.sessionId);
+});
+
+it("says why a PR's build didn't open, and clears it when closed", async () => {
+  await mount();
+  act(() => button("New screen")?.click());
+  await settle();
+  act(() => button("Android")?.click());
+  await settle();
+  await pickPr("#12 Swipe to reply");
+  act(() => button("Open screen")?.click());
+  await settle();
+  waits = [{ ...OPENING, stage: "failed", error: "PR #12's build didn't install, so the screen was closed: Failure [INSTALL_FAILED_INVALID_APK]" }];
+  act(() => send(event(2, "screen.wait", { projectRef: project, waitId: "W2", stage: "failed" })));
+  await eventSettle();
+  expect(picker()?.textContent).toContain("It didn’t open.");
+  expect(picker()?.textContent).toContain("INSTALL_FAILED_INVALID_APK");
+  act(() => button("Close")?.click());
+  await settle();
+  expect(picker()).toBeNull();
+  expect(calls.filter((c) => c.tool === "screen_end").map((c) => c.input)).toEqual([{ waitId: "W2" }]);
+});
+
+it("opens a browser with a PR as its Try it preview, with no machine to pick", async () => {
+  await mount();
+  act(() => button("New screen")?.click());
+  await settle();
+  expect(document.querySelector("[aria-label='PR preview']")?.textContent).toBe("None");
+  await pickPr("#12 Swipe to reply");
+  expect(document.querySelector("[aria-labelledby='screen-host']")).toBeNull();
+  expect(picker()?.textContent).toContain("Opens #12’s Try it preview");
+  act(() => button("Open preview")?.click());
+  await settle();
+  expect(calls.find((c) => c.tool === "preview_start")?.input).toEqual({
+    projectRef: { machineId: project.machineId, projectId: project.projectId },
+    of: { kind: "pr", repo: "acme/app", number: 12 },
+    target: "web",
+  });
+  expect(calls.some((c) => c.tool === "screen_open")).toBe(false);
+  expect(picker()).toBeNull();
+  expect(window.location.hash).toContain("prs");
+});
+
+it("says plainly when the project's PRs can't be read, and reads them again on Retry", async () => {
+  prsFail = 10;
+  await mount();
+  act(() => button("New screen")?.click());
+  await settle();
+  act(() => button("iOS")?.click());
+  await settle();
+  await vi.waitFor(() => expect(picker()?.textContent).toContain("The project’s PRs couldn’t be read"), { timeout: 10_000 });
+  prsFail = 0;
+  act(() => button("Retry")?.click());
+  await settle();
+  expect(picker()?.textContent).not.toContain("couldn’t be read");
+  expect(picker()?.textContent).toContain("Optional: an open PR whose CI build to install.");
 });
 
 it("says so when the call fails before the hub, and can be tried again", async () => {

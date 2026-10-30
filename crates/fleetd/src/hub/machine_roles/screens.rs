@@ -15,6 +15,11 @@
 //! opens them. Only then is the screen the person's. A PR with no build is refused before anything starts; a build that
 //! doesn't install ends the screen.
 //!
+//! An open with a PR answers at once, its slot taken: a simulator's start and an install can take longer than a call
+//! may wait. It goes on in the hub as a row of `screen_waits` past its wait (`stage` starting, then installing), which
+//! browser_sessions lists with the screen's thread until the screen is the person's, or with why it failed. Each move is
+//! a `screen.wait` event. A served wait goes the same way.
+//!
 //! People's screens take slots as any screen does. A full machine refuses, or takes the request in line
 //! (`screen_waits`): each slot that frees there goes to the oldest person waiting, and agents' starts see the slots
 //! people wait for as taken ([`super::Runner::held`]). An agent's running screen is never ended to make room.
@@ -27,15 +32,16 @@ use fleetd_contracts::auth::Role;
 use fleetd_contracts::browser::{
     BrowserCall, BrowserCallFrame, BrowserCallResult, BrowserControl, BrowserControlTo,
     BrowserSession, BrowserSessionId, BrowserSessionState, DeviceCall, DeviceDone,
-    SCREEN_WAIT_MINUTES, ScreenPr, ScreenWait, SessionKind,
+    SCREEN_WAIT_MINUTES, ScreenPr, ScreenStage, ScreenWait, ScreenWaitEventData, SessionKind,
 };
+use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef, ThreadId};
 use fleetd_contracts::machine_roles::SessionHost;
 use fleetd_contracts::mcp::{
     ErrorCode, ScreenEndInput, ScreenEndOutput, ScreenOpenInput, ScreenOpenOutput,
 };
 use fleetd_contracts::people::{PersonId, PersonRef};
-use fleetd_contracts::prim::{Count, NonEmpty};
+use fleetd_contracts::prim::{Count, NonEmpty, Text};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::json;
 
@@ -43,16 +49,15 @@ use super::builds::{Build, Found};
 use super::calls::{CALL_WAIT, DEVICE_WAIT, START_WAIT};
 use super::{Place, Runner, end_place, insert_place, new_key, runners};
 use crate::hub::api::{Caller, Hub, Registry, ToolError, is_human, require};
-use crate::hub::store::{StoreError, iso_ms, now_ms};
+use crate::hub::store::{NewEvent, StoreError, iso_ms, now_ms};
 use crate::node::device::remote as device;
 
 /// A person's screen with no input from them this long ends, as an agent's does without its commands.
 pub const IDLE_MS: i64 = 30 * 60_000;
 /// How long a person's wait for a slot lasts.
 const WAIT_MS: i64 = SCREEN_WAIT_MINUTES * 60_000;
-/// How long a simulator's XCTest runner may take to start before a PR's build installs. With the start (`START_WAIT`)
-/// and the download (`gh`'s 30 s) it stays inside the 5 minutes the desktop app waits for `screen_open`.
-const INSTALL_WAIT: Duration = Duration::from_secs(150);
+/// How long a PR's build may take to install, a simulator's XCTest runner starting first included.
+const INSTALL_WAIT: Duration = Duration::from_secs(300);
 /// Between tries while the screen's machine holds a command back.
 const INSTALL_RETRY: Duration = Duration::from_secs(3);
 
@@ -131,10 +136,10 @@ pub fn opener(
     })
 }
 
-/// People waiting for a slot on `runner` now.
+/// People waiting for a slot on `runner` now: in line, not on their way (their slot is a place already).
 pub fn held_on(c: &Connection, runner: &MachineId, now: i64) -> Result<i64, StoreError> {
     Ok(c.query_row(
-        "SELECT COUNT(*) FROM screen_waits WHERE runner_id = ?1 AND since_ms > ?2",
+        "SELECT COUNT(*) FROM screen_waits WHERE runner_id = ?1 AND since_ms > ?2 AND stage = 'waiting'",
         params![runner.as_str(), now - WAIT_MS],
         |r| r.get(0),
     )?)
@@ -150,9 +155,13 @@ struct Wait {
     kind: SessionKind,
     since_ms: i64,
     pr: Option<ScreenPr>,
+    stage: ScreenStage,
+    thread: Option<String>,
+    error: Option<String>,
 }
 
-const WAIT_COLUMNS: &str = "wait_id, person_id, device, machine_id, project_id, runner_id, kind, since_ms, pr_repo, pr_number";
+const WAIT_COLUMNS: &str = "wait_id, person_id, device, machine_id, project_id, runner_id, kind, since_ms, pr_repo, \
+                            pr_number, stage, thread_id, error";
 
 fn wait_of(r: &rusqlite::Row<'_>) -> rusqlite::Result<Wait> {
     Ok(Wait {
@@ -172,6 +181,9 @@ fn wait_of(r: &rusqlite::Row<'_>) -> rusqlite::Result<Wait> {
             }
             _ => None,
         },
+        stage: serde_json::from_value(json!(r.get::<_, String>(10)?)).unwrap_or_default(),
+        thread: r.get(11)?,
+        error: r.get(12)?,
     })
 }
 
@@ -188,7 +200,7 @@ fn as_wait(w: &Wait, all: &[Wait]) -> ScreenWait {
     let ahead = all
         .iter()
         .take_while(|o| o.id != w.id)
-        .filter(|o| o.runner == w.runner)
+        .filter(|o| o.runner == w.runner && o.stage == ScreenStage::Waiting)
         .count();
     ScreenWait {
         wait_id: NonEmpty::unchecked(&w.id),
@@ -198,6 +210,68 @@ fn as_wait(w: &Wait, all: &[Wait]) -> ScreenWait {
         since: iso_ms(w.since_ms).into(),
         ahead: Count::unchecked(ahead as i64),
         pr: w.pr.clone(),
+        stage: w.stage,
+        thread_id: w.thread.as_deref().map(ThreadId::unchecked),
+        error: w
+            .error
+            .as_deref()
+            .map(|e| Text::unchecked(crate::hub::api::clip(e, 500))),
+    }
+}
+
+/// `screen.wait` for wait `id` of project `r`, now at `stage` (None: gone).
+fn announce(hub: &Hub, r: &ProjectRef, id: &str, stage: Option<ScreenStage>) {
+    let data = ScreenWaitEventData {
+        project_ref: r.clone(),
+        wait_id: NonEmpty::unchecked(id),
+        stage,
+    };
+    let appended = serde_json::to_value(data)
+        .map_err(StoreError::from)
+        .and_then(|data| {
+            hub.events.append(NewEvent {
+                at: iso_ms(now_ms(hub.clock.as_ref())).into(),
+                r#type: HubEventType::ScreenWait,
+                machine_id: Some(r.machine_id.clone()),
+                project_id: Some(r.project_id.clone()),
+                thread_id: None,
+                summary: format!(
+                    "a person's screen: {}",
+                    stage.map_or("gone", ScreenStage::as_str)
+                ),
+                data: Some(data),
+                attention: None,
+            })
+        });
+    if let Err(e) = appended {
+        tracing::warn!(error = %e, "screen.wait not announced");
+    }
+}
+
+/// Moves wait `id` to `stage`, with why when it failed.
+fn set_stage(hub: &Hub, r: &ProjectRef, id: &str, stage: ScreenStage, error: Option<&str>) {
+    let set = hub.db.transaction(|c| {
+        Ok(c.execute(
+            "UPDATE screen_waits SET stage = ?2, error = ?3 WHERE wait_id = ?1",
+            params![id, stage.as_str(), error],
+        )?)
+    });
+    match set {
+        Ok(0) => {}
+        Ok(_) => announce(hub, r, id, Some(stage)),
+        Err(e) => tracing::warn!(error = %e, "a person's screen's stage not kept"),
+    }
+}
+
+/// Wait `id` is over: its screen is the person's.
+fn done(hub: &Hub, r: &ProjectRef, id: &str) {
+    let gone = hub
+        .db
+        .transaction(|c| Ok(c.execute("DELETE FROM screen_waits WHERE wait_id = ?1", [id])?));
+    match gone {
+        Ok(0) => {}
+        Ok(_) => announce(hub, r, id, None),
+        Err(e) => tracing::warn!(error = %e, "a person's opened screen's wait not dropped"),
     }
 }
 
@@ -301,41 +375,72 @@ async fn screen_open(
         device: caller.name.clone(),
     };
     let now = now_ms(hub.clock.as_ref());
-    // A slot is free and nobody waits before this person: theirs now.
-    let first = runner.held == 0 && runner.open() > 0;
-    if first {
-        let build = match (&input.pr, &found) {
-            (Some(pr), Some(found)) => Some(fetch_build(&hub, input.kind, pr, found).await?),
-            _ => None,
-        };
-        let sealed = sealed_for(&hub, &runner_id)?;
-        let pr = input.pr.as_ref();
-        let start = hub.db.transaction(|c| {
-            prepare(
-                c,
-                &opener,
-                &r,
-                input.kind,
-                &runner_id,
-                sealed.clone(),
-                navi,
-                pr,
-                now,
-            )
-        })?;
-        let session = launch(&hub, start, build).await?;
-        let installed = match &input.pr {
-            Some(pr) => format!("PR #{}'s build is installed. ", pr.number),
-            None => String::new(),
-        };
-        return Ok(ScreenOpenOutput {
-            next: Some(format!(
-                "{installed}You have control: send browser_input. End it with screen_end when you're done."
-            )),
-            session,
-            waiting: None,
-            truncated: None,
-        });
+    // A slot is free and nobody waits before this person: theirs now. Counted again as the place is kept, so a start
+    // that took it meanwhile leaves this person the wait.
+    let sealed = if runner.held == 0 && runner.open() > 0 {
+        Some(sealed_for(&hub, &runner_id)?)
+    } else {
+        None
+    };
+    let pr = input.pr.as_ref();
+    let taken = match sealed {
+        None => None,
+        Some(sealed) => hub.db.transaction(|c| {
+            if held_on(c, &runner_id, now)? > 0 || super::live_on(c, &runner_id, now)? >= runner.max
+            {
+                return Ok(None);
+            }
+            let start = prepare(
+                c, &opener, &r, input.kind, &runner_id, sealed, navi, pr, now,
+            )?;
+            // With a PR it opens in the hub's own time, its row saying how far it is.
+            let wait = match pr {
+                Some(_) => Some(insert_wait(
+                    c,
+                    &opener,
+                    &r,
+                    input.kind,
+                    &runner_id,
+                    pr,
+                    ScreenStage::Starting,
+                    Some(start.place.origin_thread.as_str()),
+                    now,
+                )?),
+                None => None,
+            };
+            Ok(Some((start, wait)))
+        })?,
+    };
+    match taken {
+        Some((start, None)) => {
+            let session = launch(&hub, start, None, None).await?;
+            return Ok(ScreenOpenOutput {
+                next: Some(
+                    "You have control: send browser_input. End it with screen_end when you're done."
+                        .into(),
+                ),
+                session,
+                waiting: None,
+                truncated: None,
+            });
+        }
+        Some((start, Some(id))) => {
+            let all = hub.db.with(|c| waits_on(c, now))?;
+            let waiting = all.iter().find(|w| w.id == id).map(|w| as_wait(w, &all));
+            tokio::spawn(opening(hub.clone(), id, start, input.pr.clone(), found));
+            return Ok(ScreenOpenOutput {
+                session: None,
+                waiting,
+                next: Some(
+                    "Its slot is yours. The hub reads the PR's build, starts the screen and installs it, then hands it \
+                     to you: screen.wait events follow each step, and browser_sessions lists it under waits (its \
+                     threadId names its session) until it is yours, or says why it failed."
+                        .into(),
+                ),
+                truncated: None,
+            });
+        }
+        None => {}
     }
     let full = format!(
         "{} is full: {} of {} screens{}.",
@@ -352,26 +457,18 @@ async fn screen_open(
             "Call screen_open again with wait true to take its next free slot (ahead of agents), or pick another machine.",
         ));
     }
-    let id = format!("W{}", &new_key().as_str()[1..]);
-    hub.db.transaction(|c| {
-        c.execute(
-            "INSERT INTO screen_waits (wait_id, person_id, device, machine_id, project_id, runner_id, kind, since_ms,
-               pr_repo, pr_number)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-            params![
-                id,
-                opener.person.person_id.as_str(),
-                opener.device,
-                r.machine_id.as_str(),
-                r.project_id.as_str(),
-                runner_id.as_str(),
-                input.kind.as_str(),
-                now,
-                input.pr.as_ref().map(|p| p.repo.as_str()),
-                input.pr.as_ref().map(|p| p.number.get()),
-            ],
-        )?;
-        Ok(())
+    let id = hub.db.transaction(|c| {
+        insert_wait(
+            c,
+            &opener,
+            &r,
+            input.kind,
+            &runner_id,
+            pr,
+            ScreenStage::Waiting,
+            None,
+            now,
+        )
     })?;
     let all = hub.db.with(|c| waits_on(c, now))?;
     let waiting = all.iter().find(|w| w.id == id).map(|w| as_wait(w, &all));
@@ -383,6 +480,42 @@ async fn screen_open(
         )),
         truncated: None,
     })
+}
+
+/// Keeps a person's screen on its way: in line (`waiting`), or past it (`starting`, on `thread`). Returns its id.
+#[allow(clippy::too_many_arguments)]
+fn insert_wait(
+    c: &Connection,
+    opener: &Opener,
+    r: &ProjectRef,
+    kind: SessionKind,
+    runner: &MachineId,
+    pr: Option<&ScreenPr>,
+    stage: ScreenStage,
+    thread: Option<&str>,
+    now: i64,
+) -> Result<String, StoreError> {
+    let id = format!("W{}", &new_key().as_str()[1..]);
+    c.execute(
+        "INSERT INTO screen_waits (wait_id, person_id, device, machine_id, project_id, runner_id, kind, since_ms,
+           pr_repo, pr_number, stage, thread_id)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+        params![
+            id,
+            opener.person.person_id.as_str(),
+            opener.device,
+            r.machine_id.as_str(),
+            r.project_id.as_str(),
+            runner.as_str(),
+            kind.as_str(),
+            now,
+            pr.map(|p| p.repo.as_str()),
+            pr.map(|p| p.number.get()),
+            stage.as_str(),
+            thread,
+        ],
+    )?;
+    Ok(id)
 }
 
 async fn screen_end(
@@ -399,21 +532,39 @@ async fn screen_end(
     }
     let me = person_of(&hub, &caller)?;
     if let Some(wait) = &input.wait_id {
-        let gone = hub.db.transaction(|c| {
-            Ok(c.execute(
-                "DELETE FROM screen_waits WHERE wait_id = ?1 AND person_id = ?2",
-                params![wait.as_str(), me.person_id.as_str()],
-            )?)
-        })?;
-        if gone == 0 {
+        let now = now_ms(hub.clock.as_ref());
+        let found = hub
+            .db
+            .with(|c| waits_on(c, now))?
+            .into_iter()
+            .find(|w| w.id == wait.as_str() && w.person == me.person_id.as_str());
+        let Some(found) = found else {
             return Err(ToolError::new(
                 ErrorCode::NotFound,
                 format!("You have no wait {wait}: its screen may have opened already."),
             ));
+        };
+        // One on its way has its screen starting already: it opens, and screen_end ends it then.
+        if matches!(found.stage, ScreenStage::Starting | ScreenStage::Installing) {
+            return Err(ToolError::new(
+                ErrorCode::Invalid,
+                format!("Your screen {wait} is opening on {} now.", found.runner),
+            )
+            .with_fix("End it with screen_end and its sessionId once it opens."));
         }
+        hub.db.transaction(|c| {
+            c.execute("DELETE FROM screen_waits WHERE wait_id = ?1", [&found.id])?;
+            Ok(())
+        })?;
+        announce(&hub, &found.project, &found.id, None);
+        let said = if found.stage == ScreenStage::Failed {
+            "It is cleared."
+        } else {
+            "Your wait is given up."
+        };
         return Ok(ScreenEndOutput {
             session: None,
-            next: Some("Your wait is given up.".into()),
+            next: Some(said.into()),
             truncated: None,
         });
     }
@@ -571,6 +722,7 @@ async fn launch(
     hub: &Arc<Hub>,
     start: Start,
     build: Option<(ScreenPr, Build)>,
+    wait: Option<&str>,
 ) -> Result<Option<BrowserSession>, ToolError> {
     let place = &start.place;
     let answer = hub
@@ -614,6 +766,9 @@ async fn launch(
     })?;
     tracing::info!(runner = %place.runner, session = %id, "a person's screen started");
     // The build goes in while the screen is still fleetd's: a person's control holds agent-device back.
+    if let (Some(_), Some(wait)) = (&build, wait) {
+        set_stage(hub, &place.origin, wait, ScreenStage::Installing, None);
+    }
     if let Some((pr, build)) = &build
         && let Err(why) = install(hub, &start, build).await
     {
@@ -895,7 +1050,12 @@ pub fn serve_waits(hub: &Arc<Hub>) -> Result<usize, StoreError> {
         )?;
         Ok(())
     })?;
-    let waits = hub.db.with(|c| waits_on(c, now))?;
+    let waits: Vec<Wait> = hub
+        .db
+        .with(|c| waits_on(c, now))?
+        .into_iter()
+        .filter(|w| w.stage == ScreenStage::Waiting)
+        .collect();
     if waits.is_empty() {
         return Ok(0);
     }
@@ -927,59 +1087,102 @@ pub fn serve_waits(hub: &Arc<Hub>) -> Result<usize, StoreError> {
         };
         let navi = is_navi(hub, &w.project)?;
         let sealed = match sealed_for(hub, &w.runner) {
-            Ok(sealed) => Some(sealed),
+            Ok(sealed) => sealed,
             Err(e) => {
-                tracing::warn!(error = %e.message, "a waiting person's screen can't be sealed; given up");
-                None
+                set_stage(
+                    hub,
+                    &w.project,
+                    &w.id,
+                    ScreenStage::Failed,
+                    Some(&e.message),
+                );
+                continue;
             }
         };
+        // Taken only while it still waits (not given up meanwhile): its slot is a place from here.
         let start = hub.db.transaction(|c| {
-            if c.execute("DELETE FROM screen_waits WHERE wait_id = ?1", [&w.id])? == 0 {
+            let waiting: Option<i64> = c
+                .query_row(
+                    "SELECT 1 FROM screen_waits WHERE wait_id = ?1 AND stage = 'waiting'",
+                    [&w.id],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            if waiting.is_none() {
                 return Ok(None);
             }
-            Ok(match sealed {
-                Some(sealed) => Some(prepare(
-                    c,
-                    &opener,
-                    &w.project,
-                    w.kind,
-                    &w.runner,
-                    sealed,
-                    navi,
-                    w.pr.as_ref(),
-                    now,
-                )?),
-                None => None,
-            })
+            let start = prepare(
+                c,
+                &opener,
+                &w.project,
+                w.kind,
+                &w.runner,
+                sealed,
+                navi,
+                w.pr.as_ref(),
+                now,
+            )?;
+            c.execute(
+                "UPDATE screen_waits SET stage = 'starting', thread_id = ?2 WHERE wait_id = ?1",
+                params![w.id, start.place.origin_thread.as_str()],
+            )?;
+            Ok(Some(start))
         })?;
         let Some(start) = start else {
             continue;
         };
+        announce(hub, &w.project, &w.id, Some(ScreenStage::Starting));
         *used += 1;
         served += 1;
-        let (hub, project, pr) = (hub.clone(), w.project.clone(), w.pr.clone());
-        tokio::spawn(async move {
-            // The PR's build is read now, its slot held meanwhile: one that is gone since frees it.
-            let build = match &pr {
-                Some(pr) => match find_build(&hub, &project, start.kind, pr).await {
-                    Ok(found) => fetch_build(&hub, start.kind, pr, &found).await.map(Some),
-                    Err(e) => Err(e),
-                },
-                None => Ok(None),
-            };
-            let started = match build {
-                Ok(build) => launch(&hub, start, build).await.map(|_| ()),
-                Err(e) => {
-                    super::calls::cancel(&hub, &start.place).await;
-                    Err(e)
-                }
-            };
-            if let Err(e) = started {
-                tracing::warn!(error = %e.message, "a waiting person's screen didn't start");
-            }
-        });
+        tokio::spawn(opening(
+            hub.clone(),
+            w.id.clone(),
+            start,
+            w.pr.clone(),
+            None,
+        ));
     }
     Ok(served)
+}
+
+/// A person's screen past its wait, in the hub's own time: the PR's build read (its slot held meanwhile), the screen
+/// started, the build installed, and the screen handed to them. Its row goes once it is theirs, or says why it failed.
+async fn opening(
+    hub: Arc<Hub>,
+    wait: String,
+    start: Start,
+    pr: Option<ScreenPr>,
+    found: Option<Found>,
+) {
+    let project = start.place.origin.clone();
+    let kind = start.kind;
+    let build = match &pr {
+        None => Ok(None),
+        Some(pr) => {
+            let found = match found {
+                Some(found) => Ok(found),
+                None => find_build(&hub, &project, kind, pr).await,
+            };
+            match found {
+                Ok(found) => fetch_build(&hub, kind, pr, &found).await.map(Some),
+                Err(e) => Err(e),
+            }
+        }
+    };
+    let opened = match build {
+        Ok(build) => launch(&hub, start, build, Some(&wait)).await.map(|_| ()),
+        Err(e) => {
+            super::calls::cancel(&hub, &start.place).await;
+            Err(e)
+        }
+    };
+    match opened {
+        Ok(()) => done(&hub, &project, &wait),
+        Err(e) => {
+            tracing::warn!(error = %e.message, "a person's screen didn't open");
+            set_stage(&hub, &project, &wait, ScreenStage::Failed, Some(&e.message));
+        }
+    }
 }
 
 /// People's live screens with no input from them for [`IDLE_MS`] (or since they started, or since the hub did).

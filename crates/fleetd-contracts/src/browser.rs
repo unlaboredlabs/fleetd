@@ -212,6 +212,51 @@ pub struct ScreenWait {
     pub ahead: Count,
     /// The PR whose build goes into the screen when it opens.
     pub pr: Option<ScreenPr>,
+    /// Where it is on its way: in line for a slot (the default), starting, installing a PR's build, or failed.
+    #[serde(default)]
+    pub stage: ScreenStage,
+    /// The screen's thread, once it starts: its session lists under it, and is the person's once this is gone.
+    pub thread_id: Option<ThreadId>,
+    /// Why it failed, in a line; gone with `screen_end` and its waitId.
+    pub error: Option<Text<0, 500>>,
+}
+
+/// Where a person's screen is on its way (`screen_open`, [`ScreenWait`]).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(extend("x-open" = true))]
+pub enum ScreenStage {
+    /// In line for the machine's next free slot.
+    #[default]
+    Waiting,
+    /// Its slot is taken: the hub reads the PR's build, and the screen starts on its machine.
+    Starting,
+    /// The screen runs; the PR's build goes into it before it is the person's.
+    Installing,
+    /// It didn't open: `error` says why.
+    Failed,
+}
+
+impl ScreenStage {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Waiting => "waiting",
+            Self::Starting => "starting",
+            Self::Installing => "installing",
+            Self::Failed => "failed",
+        }
+    }
+}
+
+/// `screen.wait`: a person's screen on its way moved a stage, opened (it is gone) or failed. browser_sessions reads it.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ScreenWaitEventData {
+    pub project_ref: ProjectRef,
+    pub wait_id: NonEmpty,
+    /// Absent once it is gone: opened, or given up.
+    pub stage: Option<ScreenStage>,
 }
 
 /// A PR of the project's for a person's screen (`screen_open`): its CI build is installed in an iOS or Android screen

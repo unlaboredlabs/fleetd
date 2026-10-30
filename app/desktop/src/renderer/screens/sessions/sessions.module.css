@@ -769,3 +769,9 @@ section + section .group {
   flex-direction: column;
   gap: var(--space-2);
 }
+.prError {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
