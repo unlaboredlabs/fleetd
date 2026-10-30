@@ -27,6 +27,9 @@ type Id = (u64, u64);
 struct Identity {
     root: Id,
     git: Option<Id>,
+    /// What a `.git` file says (a linked worktree's `gitdir: …`): rewritten in place, it keeps its identity.
+    #[serde(default)]
+    git_file: Option<String>,
     /// Each of [`PROJECT_KEPT`] that is a link, by name: the link's own identity, not what it leads to.
     #[serde(default)]
     links: BTreeMap<String, Id>,
@@ -53,6 +56,9 @@ fn identity(root: &Path) -> Option<Identity> {
         git: std::fs::symlink_metadata(root.join(".git"))
             .ok()
             .map(|m| id(&m)),
+        git_file: std::fs::symlink_metadata(root.join(".git"))
+            .is_ok_and(|m| m.is_file())
+            .then(|| std::fs::read_to_string(root.join(".git")).unwrap_or_default()),
         links,
     })
 }
@@ -82,7 +88,7 @@ pub fn check(node_home: &Path, root: &Path) -> Result<(), Refusal> {
     let replaced = match all.get(&key) {
         None => None,
         Some(was) if was.root != now.root => Some("the folder itself".to_owned()),
-        Some(was) if was.git != now.git => Some(".git".to_owned()),
+        Some(was) if was.git != now.git || was.git_file != now.git_file => Some(".git".to_owned()),
         Some(was) => was
             .links
             .iter()
@@ -192,6 +198,19 @@ mod tests {
         check(&home, &root).unwrap();
         std::fs::rename(root.join(".git"), root.join("git.old")).unwrap();
         std::fs::create_dir(root.join(".git")).unwrap();
+        let refused = check(&home, &root).unwrap_err();
+        assert!(refused.message.contains(".git"), "{}", refused.message);
+    }
+
+    #[test]
+    fn a_worktrees_git_file_rewritten_in_place_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let (home, root) = (dir.path().join("node"), dir.path().join("wt"));
+        std::fs::create_dir_all(&home).unwrap();
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join(".git"), "gitdir: /src/proj/.git/worktrees/wt\n").unwrap();
+        check(&home, &root).unwrap();
+        std::fs::write(root.join(".git"), "gitdir: /tmp/evil\n").unwrap();
         let refused = check(&home, &root).unwrap_err();
         assert!(refused.message.contains(".git"), "{}", refused.message);
     }

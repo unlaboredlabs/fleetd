@@ -730,6 +730,16 @@ fn a_checkout_a_navi_swapped_is_refused_before_an_agent_runs_there() {
         return;
     };
     let m = Machine::new();
+    // The third checkout a linked worktree of the other's repo: its `.git` a file naming the git dir.
+    let dot_git = m.third.join(".git");
+    let gitdir = format!("gitdir: {}\n", m.other.join(".git").display());
+    std::fs::write(&dot_git, &gitdir).unwrap();
+    let (ok, out) = m.run(
+        &tool,
+        &format!("echo 'gitdir: /tmp/evil' > '{}'", dot_git.display()),
+    );
+    assert!(!ok, "a worktree's .git was rewritten: {out}");
+    assert_eq!(std::fs::read_to_string(&dot_git).unwrap(), gitdir);
     let node = tempfile::tempdir().unwrap();
     for root in [&m.third, &m.other] {
         crate::node::checkouts::check(node.path(), root).unwrap();

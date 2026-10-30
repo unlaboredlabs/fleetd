@@ -754,6 +754,11 @@ fn guard(fence: &mut Fence, p: &NaviPaths, user_home: &Path, folder: &Path) {
             continue;
         }
         let mut kept: Vec<PathBuf> = PROJECT_KEPT.iter().map(|k| root.join(k)).collect();
+        // A worktree's or submodule's `.git` file, which names the git dir whose config and hooks run.
+        let dot_git = root.join(".git");
+        if std::fs::symlink_metadata(&dot_git).is_ok_and(|m| m.is_file()) {
+            kept.push(dot_git);
+        }
         for git in git_dirs(&root) {
             if git.join("config").is_file() && writable(&git) {
                 kept.extend(GIT_KEPT.iter().map(|k| git.join(k)));

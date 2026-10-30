@@ -129,7 +129,8 @@ so a Navi that is talked into something can't plant code there that reads your k
   `~/.npm-global/bin`, `~/.volta/bin` and `~/.pyenv/shims`, where your shells look. On Linux one of those that isn't
   there but could be made is made, empty, first. The Navi's own home's bin dirs stay its own, first on its `PATH`.
 - In each project's checkout on the machine (every project the node knows): git's `config`, `config.worktree`,
-  `hooks` and `worktrees` in its git dir (and the common dir a worktree's `.git` points at), so no `core.fsmonitor`,
+  `hooks` and `worktrees` in its git dir (and the common dir a worktree's `.git` points at), a worktree's `.git`
+  file itself, so no `core.fsmonitor`,
   `core.hooksPath`, alias or hook runs in your git or an agent's; and `.claude`, `.fleetd`, `.mcp.json`, `CLAUDE.md`
   and `CLAUDE.local.md`, which fleetd's agents load as their settings, policy and instructions. `.claude`, `.fleetd`,
   `hooks` and `worktrees` are made, empty, if they aren't there. A new `.mcp.json` or `CLAUDE.md` can still be made;
@@ -175,7 +176,7 @@ Everything else reads as it does for you: your code, your notes, other projects'
 
 **A replaced checkout stops work.** A Navi could still move a whole checkout aside and leave a folder of its own in its
 place, or swap a linked `CLAUDE.md` for its own file on Linux. So the node records each project's checkout the first
-time a lead or agent runs there: its folder, its `.git`, and each link among `.claude`, `.fleetd`, `.mcp.json`,
+time a lead or agent runs there: its folder, its `.git` (and what a worktree's `.git` file says), and each link among `.claude`, `.fleetd`, `.mcp.json`,
 `CLAUDE.md` and `CLAUDE.local.md` (in `checkouts.json` in the node's home, which no Navi sees). Before it starts a
 lead or agent there again, it checks them. When one is another, nothing starts, and the chat says the folder was
 replaced. Check it, then run `fleetd node trust <folder>` on that machine and send again. Re-cloning a project in
