@@ -208,7 +208,7 @@ another, up to an hour), stops the rest.
   them: they hear what failed. Without setup commands, each app the PR touches gets its lockfile's install
   (`pnpm install --frozen-lockfile --prefer-offline`, `npm ci`, with the shared package cache). A finished
   reviewer's cargo `target/` goes to the next reviewer of the same checkout, so only what changed rebuilds; the machine
-  keeps the newest three.
+  keeps the newest two (`warmBuilds` in node.json) and drops any older than a week.
 - Setup runs only in agents' worktrees, never in the project's checkout, and only on machines whose fleetd is new
   enough; the page says when it isn't.
 

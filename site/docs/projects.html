@@ -328,7 +328,7 @@ agent’s next start. Stopping or interrupting the agent during setup ends it th
 them: they hear what failed. Without setup commands, each app the PR touches gets its lockfile’s install
 (<code dir="auto">pnpm install --frozen-lockfile --prefer-offline</code>, <code dir="auto">npm ci</code>, with the shared package cache). A finished
 reviewer’s cargo <code dir="auto">target/</code> goes to the next reviewer of the same checkout, so only what changed rebuilds; the machine
-keeps the newest three.</li>
+keeps the newest two (<code dir="auto">warmBuilds</code> in node.json) and drops any older than a week.</li>
 <li>Setup runs only in agents’ worktrees, never in the project’s checkout, and only on machines whose fleetd is new
 enough; the page says when it isn’t.</li>
 </ul>

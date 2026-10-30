@@ -138,6 +138,7 @@ pub async fn join(args: JoinArgs) -> Result<(), NodeError> {
         min_free_gb: None,
         mem_per_agent_gb: None,
         disk_per_agent_gb: None,
+        warm_builds: None,
         enrolled: false,
         browser: None,
         preview: None,

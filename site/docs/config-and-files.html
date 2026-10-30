@@ -155,6 +155,10 @@ after you change it.</p>
 <td>GB of disk to allow per new agent’s worktree when the hub works out how many more fit above <code dir="auto">minFreeGb</code>. Absent or <code dir="auto">0</code>: 5 GB, about a Rust worktree with a build cache; a JS project needs 1 to 2. Read with every heartbeat.</td>
 </tr>
 <tr>
+<td><code dir="auto">warmBuilds</code></td>
+<td>Warm cargo builds each checkout keeps for its next readers and reviewers: a finished reviewer’s <code dir="auto">target/</code> goes to the next one. Absent: 2; <code dir="auto">0</code> keeps none. Each is a whole target, often many GB; the node prunes them to this many once a day and drops any older than a week.</td>
+</tr>
+<tr>
 <td><code dir="auto">browser</code></td>
 <td>How this machine runs <a href="/docs/browser-sessions#setup">browser screens</a>: <code dir="auto">enabled</code>, <code dir="auto">chrome</code>, <code dir="auto">ffmpeg</code>, <code dir="auto">pool</code>, <code dir="auto">sandbox</code>, <code dir="auto">idleMinutes</code>.</td>
 </tr>
