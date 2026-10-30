@@ -5,6 +5,7 @@ import { File, Paths } from "expo-file-system";
 import { useEffect, useState } from "react";
 import { Image, Modal, Pressable, ScrollView, Share, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { bubble } from "../bubble";
 import { fileSize } from "../chatView";
 import type { AttachmentGetOutput } from "../desktop";
 import { useSession } from "../hubContext";
@@ -43,7 +44,7 @@ export const shareFile = async (a: AttachmentGetOutput): Promise<void> => {
 const MAX_W = 240;
 
 /** A picture in the thread: its own shape, at most 240 pt wide, a soft block while it loads. */
-export function ImageBubble({ chatKey, attachmentId, name, onOpen, time }: { chatKey: Key; attachmentId: string; name: string; onOpen: (a: AttachmentGetOutput) => void; time?: string | undefined }) {
+export function ImageBubble({ chatKey, attachmentId, name, onOpen }: { chatKey: Key; attachmentId: string; name: string; onOpen: (a: AttachmentGetOutput) => void }) {
   const t = useTheme();
   const got = useAttachment(chatKey, attachmentId);
   const [aspect, setAspect] = useState<number | undefined>(undefined);
@@ -58,7 +59,7 @@ export function ImageBubble({ chatKey, attachmentId, name, onOpen, time }: { cha
         <Text style={[type.footnote, { color: t.secondary }]}>{name} couldn't be read</Text>
       </View>
     );
-  if (got === undefined || aspect === undefined) return <SkeletonBlock width={MAX_W} height={MAX_W * 0.75} radius={18} />;
+  if (got === undefined || aspect === undefined) return <SkeletonBlock width={MAX_W} height={MAX_W * 0.75} radius={bubble.radius} />;
   const width = aspect >= 1 ? MAX_W : Math.max(160, MAX_W * aspect * 1.2);
   const height = Math.min(320, Math.max(110, width / aspect));
   return (
@@ -69,23 +70,14 @@ export function ImageBubble({ chatKey, attachmentId, name, onOpen, time }: { cha
       onPress={() => onOpen(got)}
     >
       {({ pressed }) => (
-        <View>
-          <Image source={{ uri: uriOf(got) }} style={[styles.image, { width, height, backgroundColor: t.fillQuiet }, pressed && styles.pressed]} resizeMode="cover" />
-          {time === undefined ? null : (
-            <View style={styles.imageTime}>
-              <Text style={[type.caption2, styles.imageTimeText]} maxFontSizeMultiplier={1.4}>
-                {time}
-              </Text>
-            </View>
-          )}
-        </View>
+        <Image source={{ uri: uriOf(got) }} style={[styles.image, { width, height, backgroundColor: t.fillQuiet }, pressed && styles.pressed]} resizeMode="cover" />
       )}
     </Pressable>
   );
 }
 
 /** Any other file: its kind, name and size; tapping shares it (Save to Files, Quick Look in another app). */
-export function FileBubble({ chatKey, attachmentId, name, mime, bytes, mine, time }: { chatKey: Key; attachmentId: string; name: string; mime: string; bytes: number; mine: boolean; time?: string | undefined }) {
+export function FileBubble({ chatKey, attachmentId, name, mime, bytes, mine }: { chatKey: Key; attachmentId: string; name: string; mime: string; bytes: number; mine: boolean }) {
   const t = useTheme();
   const got = useAttachment(chatKey, attachmentId);
   const ink = mine ? t.onAccent : t.label;
@@ -109,7 +101,7 @@ export function FileBubble({ chatKey, attachmentId, name, mime, bytes, mine, tim
         <Text style={[type.subhead, styles.strong, { color: ink }]} numberOfLines={1}>
           {name}
         </Text>
-        <Text style={[type.caption, { color: ink, opacity: 0.7 }]}>{[got === null ? "Couldn't be read" : fileSize(bytes), time].filter((s) => s !== undefined).join(" · ")}</Text>
+        <Text style={[type.caption, { color: ink, opacity: 0.7 }]}>{got === null ? "Couldn't be read" : fileSize(bytes)}</Text>
       </View>
     </Pressable>
   );
@@ -167,12 +159,10 @@ export function ImageViewer({ image, onClose }: { image: AttachmentGetOutput | n
 }
 
 const styles = StyleSheet.create({
-  image: { borderRadius: 18, borderCurve: "continuous" },
+  image: { borderRadius: bubble.radius, borderCurve: "continuous" },
   pressed: { opacity: 0.8 },
-  imageTime: { position: "absolute", right: 8, bottom: 8, borderRadius: 9, paddingHorizontal: 6, paddingVertical: 2, backgroundColor: "rgba(0,0,0,0.45)" },
-  imageTimeText: { color: "#FFFFFF", fontVariant: ["tabular-nums"] },
   missing: { flexDirection: "row", alignItems: "center", gap: space.sm, borderRadius: 18, paddingHorizontal: space.md, paddingVertical: space.md },
-  file: { flexDirection: "row", alignItems: "center", gap: space.md, borderRadius: 18, borderCurve: "continuous", paddingVertical: 10, paddingLeft: 10, paddingRight: space.lg, maxWidth: 280 },
+  file: { flexDirection: "row", alignItems: "center", gap: space.md, borderRadius: bubble.radius, borderCurve: "continuous", paddingVertical: 10, paddingLeft: 10, paddingRight: space.lg, maxWidth: 280 },
   fileIcon: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
   fileText: { flexShrink: 1, gap: 1 },
   strong: { fontWeight: "600" },
