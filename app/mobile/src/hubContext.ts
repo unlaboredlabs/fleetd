@@ -1,4 +1,4 @@
-// What every screen of a paired hub reads: its session, the state it shows, the pairing, and the two ways out.
+// What every screen of a paired hub reads: its session, the state it shows, the pairing, and the way out.
 import type { NavigatorScreenParams } from "@react-navigation/native";
 import { createContext, useContext } from "react";
 import type { Paired } from "./hub/pair";
@@ -11,8 +11,6 @@ export interface HubContextValue {
   readonly paired: Paired;
   /** Asks first, then signs this phone out on the hub and forgets it. */
   readonly disconnect: () => void;
-  /** The key was refused: forget the hub, to pair again. */
-  readonly pairAgain: () => void;
 }
 
 export const HubContext = createContext<HubContextValue | null>(null);

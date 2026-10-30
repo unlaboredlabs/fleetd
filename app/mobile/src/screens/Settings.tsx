@@ -13,7 +13,6 @@ import { pushDeps } from "../notifications";
 import { shape, space, type, useTheme } from "../theme";
 import { haptics } from "../ui/haptics";
 import { ListRow, ListSection } from "../ui/List";
-import { ConnectionBanner } from "../ui/States";
 import { shortVersion } from "../updates";
 import { UpdateFleetd } from "./UpdateFleetd";
 
@@ -29,7 +28,7 @@ const updateWords = (): string => {
 
 export function Settings() {
   const t = useTheme();
-  const { paired, state, disconnect, pairAgain } = useHub();
+  const { paired, state, disconnect } = useHub();
   const [notifications, setNotifications] = useState<string | undefined>(undefined);
   // Read again each time the tab shows: the person may have changed it in iOS Settings meanwhile.
   const read = useCallback(() => {
@@ -52,7 +51,6 @@ export function Settings() {
   const [wholeVersion, setWholeVersion] = useState(false);
   return (
     <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ paddingBottom: space.xxl }}>
-      <ConnectionBanner state={hub} onPairAgain={pairAgain} />
       <View style={[styles.head, { backgroundColor: t.cell }]} accessible accessibilityRole="header" accessibilityLabel={`${paired.hubName}, ${statusOf(hub.phase)}`}>
         {/* A hairline edge in dark, where the mark's dark tile would melt into the card. */}
         <Image source={require("../../assets/icon.png")} style={[styles.mark, t.dark && { borderWidth: StyleSheet.hairlineWidth, borderColor: t.separator }]} accessibilityIgnoresInvertColors />

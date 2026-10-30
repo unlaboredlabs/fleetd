@@ -1,4 +1,4 @@
-// Chrome that floats over content (the composer, the scroll-to-bottom button, menus, banners): iOS 26's Liquid
+// Chrome that floats over content (the composer, the scroll-to-bottom button, menus): iOS 26's Liquid
 // Glass, a material blur on older iOS, and a translucent fill on Android. With Reduce Transparency iOS draws the glass
 // frosted by itself.
 import { BlurView } from "expo-blur";
