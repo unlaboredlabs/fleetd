@@ -175,6 +175,7 @@ export function runChecks(opts: CheckOptions): Finding[] {
   // line's). Descenders ("g", "y") hang in the bottom fifth of that box, where a fixed trim can't see them cut.
   interface Glyphs {
     baseline: number;
+    box: number;
     above: number;
     below: number;
   }
@@ -189,15 +190,21 @@ export function runChecks(opts: CheckOptions): Finding[] {
       const s = style(el);
       pen.font = `${s.fontStyle} ${s.fontWeight} ${s.fontSize} ${s.fontFamily}`;
       const m = pen.measureText(s.textTransform === "uppercase" ? node.data.toUpperCase() : node.data);
-      result = { baseline: m.fontBoundingBoxAscent, above: m.actualBoundingBoxAscent, below: m.actualBoundingBoxDescent };
+      result = {
+        baseline: m.fontBoundingBoxAscent,
+        box: m.fontBoundingBoxAscent + m.fontBoundingBoxDescent,
+        above: m.actualBoundingBoxAscent,
+        below: m.actualBoundingBoxDescent,
+      };
     }
     glyphMemo.set(node, result);
     return result;
   };
-  // The ink of one run: its glyphs' measured reach where the font can be measured, else the trimmed rect.
+  // The ink of one run: its glyphs' measured reach, where the canvas measured the same font box the run was laid out
+  // in (not a fallback face, nor a platform font whose metrics the two read differently); else the trimmed rect.
   const inkOfRun = (node: Text, el: Element, rect: Rect): Rect => {
     const g = glyphsOf(node, el);
-    if (!g) return inkOf(rect);
+    if (!g || Math.abs(g.box - (rect.bottom - rect.top)) > 1) return inkOf(rect);
     const baseline = rect.top + g.baseline;
     return { left: rect.left, right: rect.right, top: baseline - g.above, bottom: baseline + g.below };
   };
@@ -275,12 +282,16 @@ export function runChecks(opts: CheckOptions): Finding[] {
   // 1. Overflow: a text run outside the box that holds it. A box that scrolls, ellipsizes (sideways) or clamps
   // (downwards) contains the run on that axis, and from there on its own box stands for the run: it must itself fit
   // every ancestor, or the ellipsis never shows and an outer pane cuts the line. Each run is reported once, on the
-  // nearest box it escapes. Line boxes are taller than the ink, so the vertical test uses the glyphs' measured ink
-  // (`inkOfRun`): a tight line-height never counts, but a box that cuts off a descender does.
+  // nearest box it escapes. Line boxes are taller than the ink, so the vertical test uses the trimmed run (`inkOf`): a
+  // tight line-height never counts. A box that clips is held to the glyphs' measured ink as well (`inkOfRun`), since
+  // what it cuts is the ink: a descender cut off is reported. Glyphs a little past a box that doesn't clip are drawn
+  // whole, and the overlap check sees them if they run into something.
   const reportedOverflow = new Set<Element>();
   for (const run of allRuns) {
-    const ink = inkOfRun(run.node, run.el, run.rect);
-    const extent = { left: run.rect.left, right: run.rect.right, top: ink.top, bottom: ink.bottom };
+    const trimmed = inkOf(run.rect);
+    const measured = inkOfRun(run.node, run.el, run.rect);
+    const extent = { left: run.rect.left, right: run.rect.right, top: trimmed.top, bottom: trimmed.bottom };
+    const ink = { top: Math.min(trimmed.top, measured.top), bottom: Math.max(trimmed.bottom, measured.bottom) };
     for (let e: Element | null = run.el; e && e !== document.documentElement; e = e.parentElement) {
       const s = style(e);
       if (s.display === "inline" || s.display === "contents") continue;
@@ -295,7 +306,8 @@ export function runChecks(opts: CheckOptions): Finding[] {
       const containsX = scrolls(s.overflowX) || ellipsizes(s);
       const containsY = scrolls(s.overflowY) || (s.getPropertyValue("-webkit-line-clamp") !== "none" && clips(s.overflowY));
       const outX = extent.left < box.left - SLOP || extent.right > box.right + SLOP;
-      const outY = extent.top < box.top - SLOP || extent.bottom > box.bottom + SLOP;
+      const reach = clips(s.overflowY) ? ink : extent;
+      const outY = reach.top < box.top - SLOP || reach.bottom > box.bottom + SLOP;
       const problem =
         outX && !containsX
           ? clips(s.overflowX)
@@ -320,7 +332,10 @@ export function runChecks(opts: CheckOptions): Finding[] {
         break;
       }
       if (containsX) Object.assign(extent, { left: box.left, right: box.right });
-      if (containsY) Object.assign(extent, { top: box.top, bottom: box.bottom });
+      if (containsY) {
+        Object.assign(extent, { top: box.top, bottom: box.bottom });
+        Object.assign(ink, { top: box.top, bottom: box.bottom });
+      }
       // A positioned box sits where it is put, past its ancestors' edges on purpose (popovers, badges).
       if (s.position === "absolute" || s.position === "fixed") break;
     }

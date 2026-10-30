@@ -7,6 +7,7 @@ const pages = {
     <p class="case w200">A long paragraph that wraps over several lines because body text always wraps instead of being cut off at the edge of its box.</p>
     <p class="case w200 ellipsis" title="Add a public frozen PNG snapshot under an unguessable link">Add a public frozen PNG snapshot under an unguessable link</p>
     <p class="case w200 ellipsis tight">A tight line, typography and its descenders</p>
+    <p class="case snug">Why you are woken, glyphs a little taller than their line</p>
     <p class="case w200 clamp">Two lines at most, then an ellipsis: this description goes on well past two lines so that the clamp is what shows the end of it.</p>
     <pre class="case" data-text="code">## Do not re-ask
 - share.public_link = eac3e0fe-ec61-4954-4f78-67240a80c42b @ 3e760f96</pre>

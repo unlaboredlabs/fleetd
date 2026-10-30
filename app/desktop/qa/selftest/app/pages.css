@@ -8,6 +8,7 @@ html, body { margin: 0; height: 100%; font: 14px/20px sans-serif; color: #1c2024
 .ellipsis { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .short { height: 20px; }
 .tight { line-height: 16px; }
+.snug { font-size: 21px; line-height: 16px; }
 /* A button laid out as a column with padding top and bottom: its label shrinks under its line, cutting the "g" off. */
 .chip { display: flex; flex-direction: column; box-sizing: border-box; width: max-content; height: 24px; padding: 4px 0; border: 1px solid #ccc; }
 .chip-label { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
