@@ -21,7 +21,9 @@ use crate::ledger::{
 };
 use crate::live::{AgentLane, OrderCard, TrainLive};
 use crate::memory::{MemoryCaps, MemoryFile, MemoryScope, MemoryText, MemoryTopic};
-use crate::model::{ActionItem, Machine, ProjectOutcome, ProjectSummary, ThreadSummary};
+use crate::model::{
+    ActionItem, Machine, ProjectIcon, ProjectOutcome, ProjectSummary, ThreadSummary,
+};
 use crate::people::{
     DEVICES_MAX, HubRole, Invite, InviteId, PEOPLE_MAX, Person, PersonId, PersonName,
 };
@@ -1233,6 +1235,17 @@ output!(ProjectAvatarGetOutput {
     mime: AttachmentMime,
     /// Standard base64.
     data_b64: String,
+});
+
+// project_icon_set: the built-in icon a project's or Navi's chat shows (a summary's `icon`). Picking one takes the
+// place of its picture, if it had one.
+input!(ProjectIconSetInput {
+    machine_id: MachineId,
+    project_id: ProjectId,
+    icon: ProjectIcon,
+});
+output!(ProjectIconSetOutput {
+    project: ProjectSummary
 });
 
 /// A site a Navi fetches and opens without asking: a person approved its first visit.
@@ -3096,6 +3109,7 @@ tools! {
     navi_archive => NaviArchive, Operate, NaviArchiveInput, NaviArchiveOutput;
     project_avatar_set => ProjectAvatarSet, Operate, ProjectAvatarSetInput, ProjectAvatarSetOutput;
     project_avatar_get => ProjectAvatarGet, Read, ProjectAvatarGetInput, ProjectAvatarGetOutput;
+    project_icon_set => ProjectIconSet, Operate, ProjectIconSetInput, ProjectIconSetOutput;
     navi_sites => NaviSites, Read, NaviSitesInput, NaviSitesOutput;
     navi_site_revoke => NaviSiteRevoke, Operate, NaviSiteRevokeInput, NaviSiteRevokeOutput;
     navi_signins_forget => NaviSigninsForget, Operate, NaviSigninsForgetInput, NaviSigninsForgetOutput;

@@ -89,6 +89,10 @@ fn tool_calls(navi: &Value) -> Vec<(&'static str, Value)> {
         ("navi_signins_forget", r.clone()),
         ("project_avatar_set", r.clone()),
         ("project_avatar_get", r.clone()),
+        (
+            "project_icon_set",
+            flat(json!({ "icon": { "face": "wink", "color": "sun" } })),
+        ),
         ("navi_asks", json!({ "navi": r })),
         ("mcp_servers_get", json!({ "project": r })),
         ("hub_links_get", json!({ "navi": r })),

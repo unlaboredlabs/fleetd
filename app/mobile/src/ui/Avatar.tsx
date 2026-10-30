@@ -1,13 +1,16 @@
 // A chat's avatar, a circle as iOS draws a contact's: its picture once a person gave it one (project_avatar_set), else
+// its built-in icon (a glass being on a field of a color: the hub's pick or one it derived), else, from an older hub,
 // its initials on a color picked from its name. A Navi's letters sit on a soft top-to-bottom gradient of its color, as
 // Telegram draws a person's; a project's on a soft wash of it. A picture is read from the hub once (Session.picture)
 // and kept in the cache folder by its id, so it shows at once on the next launch; one not seen before fades in over
-// the letters.
+// the icon.
 import { File, Paths } from "expo-file-system";
 import { LinearGradient } from "expo-linear-gradient";
 import { useContext, useEffect, useRef, useState } from "react";
 import { Animated, Image, StyleSheet, Text, View } from "react-native";
 import { initials, tintIndex } from "../avatar";
+import { ICON_FILES } from "../botIconFiles";
+import type { ProjectIcon } from "../desktop";
 import { SessionContext } from "../hubContext";
 import { useTheme } from "../theme";
 
@@ -29,7 +32,15 @@ export interface Pictured {
   readonly machineId: string;
   readonly projectId: string;
   readonly avatar?: string | undefined;
+  readonly icon?: ProjectIcon | undefined;
 }
+
+/** The image of `icon` for a circle `size` points across (Metro picks the screen's scale); undefined for one this build doesn't have. */
+export const iconSource = (icon: ProjectIcon | undefined, size: number): number | undefined => {
+  if (icon === undefined) return undefined;
+  const files = ICON_FILES[`${icon.face}-${icon.color}`];
+  return files === undefined ? undefined : size <= 32 ? files[0] : files[1];
+};
 
 const fileOf = (avatar: string): File => new File(Paths.cache, `avatar-${avatar}.jpg`);
 
@@ -83,12 +94,22 @@ export const usePicture = (of: Pictured | undefined): { uri: string | undefined;
   return { uri: read !== undefined && read.avatar === avatar ? read.uri : undefined, fresh: true };
 };
 
-export function Avatar({ name, navi, size = 52, picture }: { name: string; navi: boolean; size?: number; picture?: Pictured | undefined }) {
+export function Avatar({ name, navi, size = 52, picture, icon }: { name: string; navi: boolean; size?: number; picture?: Pictured | undefined; icon?: ProjectIcon | undefined }) {
   const t = useTheme();
   const tint = t.tints[tintIndex(name, t.tints.length)] ?? t.accent;
   const text = initials(name);
   const shown = usePicture(picture);
   const box = { width: size, height: size, borderRadius: size / 2 };
+  // `icon` over the summary's: the picker's choice before it is sent.
+  const glass = iconSource(icon ?? picture?.icon, size);
+  if (glass !== undefined) {
+    return (
+      <View accessible={false} style={[styles.base, box]}>
+        <Image source={glass} style={{ width: size, height: size }} fadeDuration={0} />
+        {shown.uri === undefined || icon !== undefined ? null : <Picture key={shown.uri} uri={shown.uri} fade={shown.fresh} />}
+      </View>
+    );
+  }
   return (
     <View accessible={false} style={[styles.base, box, { backgroundColor: navi ? tint : withAlpha(tint, t.dark ? 0.28 : 0.16) }]}>
       {navi ? <LinearGradient colors={[lighter(tint, 0.32), tint]} style={StyleSheet.absoluteFill} /> : null}

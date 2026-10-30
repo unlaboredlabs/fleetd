@@ -81,7 +81,7 @@ export function ProjectSettings({ route }: { route: SettingsRoute }) {
   return (
     <div className={s.scroll} data-screen="settings.projects">
       <div className={s.column}>
-        <PageHead title="Project">Its picture, name, repos, worktrees, its agents&apos; environment and setup, and its merge train.</PageHead>
+        <PageHead title="Project">Its icon, name, repos, worktrees, its agents&apos; environment and setup, and its merge train.</PageHead>
         {ref === undefined ? <NoProject /> : null}
         {read.isLoadingError ? (
           <div className={s.inline}>

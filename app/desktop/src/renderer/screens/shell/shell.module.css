@@ -230,6 +230,11 @@
 }
 
 /* With several hubs, a Navi's hub beside it: quiet, before its mark. */
+/* A row's icon (Sidebar.tsx SIDEBAR_AVATAR): a pixel into its padding above and below, so the row keeps its height. */
+.avatar {
+  margin-block: -1px;
+}
+
 .naviHub {
   color: var(--faint);
   font-size: var(--text-xs);

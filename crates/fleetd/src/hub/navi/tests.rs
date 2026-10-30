@@ -349,6 +349,7 @@ async fn a_plain_folder_with_no_git_is_added_as_a_project_with_no_repo() {
         owner: None,
         archived_at: None,
         avatar: None,
+        icon: None,
     };
     hub.store
         .projects_upsert_many(&devbox(), &[summary])

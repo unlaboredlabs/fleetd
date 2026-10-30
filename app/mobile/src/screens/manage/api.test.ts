@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { addStep, initialAdd, type AddMsg, type AddState, type HubEvent, type ProfilesListOutput } from "../../desktop";
 import { fakeHub } from "../../hub/fake";
 import { Session } from "../../session";
-import { addCall, createNavi, deleteProject, discover, FORGET_MS, forgetSignins, naviHomes, readForDelete, readInfo, REMOVE_MS, removePicture, rename, setPicture, setProfile } from "./api";
+import { addCall, createNavi, deleteProject, discover, FORGET_MS, forgetSignins, naviHomes, readForDelete, readInfo, REMOVE_MS, removePicture, rename, setIcon, setPicture, setProfile } from "./api";
 
 const AT = "2026-10-28T10:00:00Z";
 const NOW = Date.parse(AT);
@@ -262,5 +262,19 @@ describe("Its picture", () => {
     expect(calls("project_avatar_set").at(-1)?.input).toEqual(REF);
     hub.answer("project_avatar_set", { project: SHOP });
     await expect(removed).resolves.toEqual({ ok: true, value: SHOP });
+  });
+
+  it("sends a face and color picked, and says why the hub wouldn't take it", async () => {
+    const { hub, session, calls } = setup();
+    const icon = { face: "wink", color: "sun" } as const;
+    const set = setIcon(session, NAVI, icon);
+    expect(calls("project_icon_set").at(-1)?.input).toEqual({ machineId: NAVI.machineId, projectId: NAVI.projectId, icon });
+    const shown = { ...NAVI, icon };
+    hub.answer("project_icon_set", { project: shown });
+    await expect(set).resolves.toEqual({ ok: true, value: shown });
+
+    const refused = setIcon(session, SHOP, icon);
+    hub.fail("project_icon_set", "forbidden", "Only its owner can change it.");
+    await expect(refused).resolves.toMatchObject({ ok: false, error: { message: "Only its owner can change it." } });
   });
 });

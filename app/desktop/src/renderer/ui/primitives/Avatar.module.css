@@ -27,6 +27,11 @@
   color: #ffffff;
   background: linear-gradient(color-mix(in srgb, var(--tint), #ffffff 32%), var(--tint));
 }
+/* A built-in icon is its own round field, drawn to the circle's edge. */
+.iconOnly,
+.navi.iconOnly {
+  background: none;
+}
 .picture {
   position: absolute;
   inset: 0;
