@@ -15,7 +15,7 @@ use super::contract::*;
 use super::github::{BATCH_MARKER, GhOut, GhRunner, NEXT_LABEL, TRAIN_CONTEXT, batch_heads};
 use super::host::*;
 use super::records::{Db, ListFilter};
-use super::service::{ReviewGate, Train, TrainOptions, Verdict};
+use super::service::{ReviewGate, Train, TrainOptions, Verdict, short};
 use crate::clock::{Clock, SystemClock};
 
 const REPO: &str = "acme/storefront";
@@ -196,6 +196,9 @@ struct FakeGh {
     required: Mutex<Option<Vec<String>>>,
     /// Workflow files (name, text) on main besides `ci`'s, where `ci` has none.
     workflow_files: Mutex<Vec<(&'static str, &'static str)>>,
+    /// The finished runs a schedule started on main, newest first, and the jobs of each by run id.
+    scheduled: Mutex<Vec<Value>>,
+    run_jobs: Mutex<HashMap<u64, Value>>,
 }
 
 fn ok(body: Value) -> GhOut {
@@ -555,6 +558,20 @@ impl FakeGh {
                         .collect(),
                 ))
             }
+            (["actions", "runs"], "GET") if query.contains("event=schedule") => {
+                ok(json!({ "workflow_runs": *self.scheduled.lock().unwrap() }))
+            }
+            (["actions", "runs", id, "jobs"], "GET") => {
+                match self
+                    .run_jobs
+                    .lock()
+                    .unwrap()
+                    .get(&id.parse::<u64>().unwrap_or(0))
+                {
+                    Some(jobs) => ok(json!({ "jobs": jobs })),
+                    None => http_error(404, "Not Found"),
+                }
+            }
             // A branch in the range may hold slashes.
             (["compare", range @ ..], "GET") if !args.iter().any(|a| a.contains("github.diff")) => {
                 let range = range.join("/");
@@ -564,7 +581,13 @@ impl FakeGh {
                     &self.origin,
                     &["rev-list", "--reverse", &format!("{base}..{head}")],
                 );
-                let commits: Vec<Value> = commits.lines().map(|c| json!({ "sha": c })).collect();
+                let commits: Vec<Value> = commits
+                    .lines()
+                    .map(|c| {
+                        let message = git(&self.origin, &["log", "-1", "--format=%B", c]);
+                        json!({ "sha": c, "commit": { "message": message } })
+                    })
+                    .collect();
                 let total = commits.len() + usize::from(*self.partial_ranges.lock().unwrap());
                 ok(
                     json!({ "merge_base_commit": { "sha": base }, "total_commits": total, "commits": commits }),
@@ -1495,6 +1518,8 @@ impl Kit {
             head_runs: Mutex::default(),
             workflow_files: Mutex::default(),
             required: Mutex::default(),
+            scheduled: Mutex::default(),
+            run_jobs: Mutex::default(),
         });
         let host = Arc::new(FakeHost {
             tasks: Mutex::default(),
@@ -6594,6 +6619,113 @@ async fn a_check_the_batch_skips_that_fails_on_main_opens_a_fix_order() {
         "{}",
         orders[0].1
     );
+}
+
+/// A workflow a schedule starts on main (fleetd's nightly Mac checks) runs nothing a PR runs, long after the merge:
+/// its newest run failing opens one fix order naming its failed jobs, the run and the commits since its last green
+/// scheduled run. The same failure read again, after a restart, opens nothing more; another job failing the next night
+/// while that order is open is that order's. A newer green run of a workflow, or a cancelled one, opens nothing.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_failed_scheduled_run_on_main_opens_one_fix_order_with_the_commits_since_its_last_green_run()
+ {
+    let kit = kit_on(&REPOS[0]);
+    let green_at = kit.head_of("main");
+    let a = kit
+        .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
+        .await;
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(state_of(&kit, &a), ChangeState::Merged);
+    let red_at = kit.head_of("main");
+    let at = crate::hub::store::iso_ms(kit.train.now_ms());
+    let workflow_run = |id: u64, workflow: u64, sha: &str, conclusion: &str| {
+        json!({ "id": id, "workflow_id": workflow, "name": if workflow == 1 { "Mac" } else { "Staple" },
+            "path": ".github/workflows/mac.yml", "head_sha": sha, "conclusion": conclusion,
+            "html_url": format!("https://github.com/{REPO}/actions/runs/{id}"), "updated_at": at })
+    };
+    let job = |name: &str, conclusion: &str| json!({ "name": name, "conclusion": conclusion });
+    *kit.gh.scheduled.lock().unwrap() = vec![
+        workflow_run(30, 2, &red_at, "cancelled"),
+        workflow_run(20, 1, &red_at, "failure"),
+        workflow_run(12, 2, &green_at, "failure"),
+        workflow_run(10, 1, &green_at, "success"),
+    ];
+    kit.gh.run_jobs.lock().unwrap().insert(
+        20,
+        json!([
+            job("rust (macos)", "failure"),
+            job("ios sessions", "success"),
+            job("qa / qa (macos-latest, 1/3)", "timed_out")
+        ]),
+    );
+    // A pass reads scheduled runs every 10 minutes at most: the merge's pass just did, so a new train reads them.
+    let train = kit.restarted();
+    train.step(REPO).await;
+    let orders = kit.host.orders.lock().unwrap().clone();
+    assert_eq!(orders.len(), 1, "{orders:?}");
+    let text = &orders[0].1;
+    assert!(
+        text.starts_with(&format!(
+            "Fix the scheduled run of `Mac` on main: it failed at {} in `rust (macos)`, `qa / qa (macos-latest, \
+             1/3)`. Its run: https://github.com/{REPO}/actions/runs/20 ",
+            short(&red_at)
+        )),
+        "{text}"
+    );
+    let title = git(&kit.gh.origin, &["log", "-1", "--format=%s", &red_at]);
+    assert!(
+        text.contains(&format!(
+            "since its last green scheduled run, at {}:\n- {} {}\n",
+            short(&green_at),
+            short(&red_at),
+            title.trim()
+        )),
+        "{text}"
+    );
+    let order = train.records.fix_order(REPO, "rust (macos)").unwrap().1;
+    assert_eq!(
+        train
+            .records
+            .fix_order(REPO, "qa / qa (macos-latest, 1/3)")
+            .map(|f| f.1),
+        Some(order.clone())
+    );
+
+    // The same failure, read by a hub that restarted.
+    let train = kit.restarted();
+    train.step(REPO).await;
+    assert_eq!(kit.host.orders.lock().unwrap().len(), 1);
+
+    // The next night another job fails too, while the order is open.
+    kit.gh
+        .scheduled
+        .lock()
+        .unwrap()
+        .insert(0, workflow_run(40, 1, &red_at, "failure"));
+    kit.gh.run_jobs.lock().unwrap().insert(
+        40,
+        json!([
+            job("rust (macos)", "failure"),
+            job("ios sessions", "failure")
+        ]),
+    );
+    let train = kit.restarted();
+    train.step(REPO).await;
+    assert_eq!(kit.host.orders.lock().unwrap().len(), 1);
+    assert_eq!(
+        train.records.fix_order(REPO, "ios sessions").map(|f| f.1),
+        Some(order)
+    );
+
+    // Green again: nothing to fix.
+    kit.gh
+        .scheduled
+        .lock()
+        .unwrap()
+        .insert(0, workflow_run(50, 1, &red_at, "success"));
+    kit.gh.run_jobs.lock().unwrap().clear();
+    let train = kit.restarted();
+    train.step(REPO).await;
+    assert_eq!(kit.host.orders.lock().unwrap().len(), 1);
 }
 
 impl Kit {

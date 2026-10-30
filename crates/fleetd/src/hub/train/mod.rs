@@ -15,6 +15,7 @@ pub mod records;
 pub mod regen;
 pub mod repo_checks;
 pub mod rules;
+pub mod scheduled;
 pub mod service;
 pub mod tools;
 pub mod watch;
