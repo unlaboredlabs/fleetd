@@ -56,48 +56,25 @@ fn values_are_computed_for_this_hub_and_work_on_plain_http() {
         machines.value,
         format!("fleetd init --join {HUB} --code <code>")
     );
-    // Google: a Desktop app client with the loopback redirect, so a plain-HTTP tailnet hub needs nothing registered.
-    let google = steps.iter().find(|s| s.id == SetupStepId::Google).unwrap();
-    let values: Vec<_> = google.parts.iter().flat_map(|p| &p.values).collect();
-    let find = |label: &str| {
-        values
+    // The Claude key is named for this hub, and a hub reached by address names itself "hub".
+    let key_name = |steps: &[fleetd_contracts::setup::HubSetupStep]| {
+        steps[2]
+            .parts
             .iter()
-            .find(|v| v.label == label)
-            .map(|v| v.value.as_str())
+            .flat_map(|p| &p.values)
+            .find(|v| v.label == "Key name")
+            .map(|v| v.value.clone())
     };
-    assert_eq!(find("Project name"), Some("fleetd-devbox"));
-    assert_eq!(find("App name"), Some("fleetd on devbox"));
-    assert_eq!(find("Redirect URI"), Some("http://127.0.0.1"));
-    assert_eq!(find("Subscription ID"), Some("fleetd-gmail-hub"));
+    assert_eq!(key_name(&steps).as_deref(), Some("fleetd on devbox"));
     assert_eq!(
-        find("Subscriber on the subscription"),
-        Some("fleetd-gmail-reader@fleetd-devbox.iam.gserviceaccount.com")
+        key_name(&guides("http://100.64.0.7:4790")).as_deref(),
+        Some("fleetd on hub")
     );
-    assert_eq!(google.place.as_deref(), Some("google"));
-    // Its secrets are saved where the app seals them, never typed into the step.
+    // Secrets are saved where the app seals them, never typed into a step.
     assert!(
         steps
             .iter()
             .all(|s| s.fields.iter().all(|f| f.secret != Some(true)))
-    );
-    // The Cloud project id keeps to Google's rules, whatever the host is called.
-    assert_eq!(super::cloud_project("DevBox"), "fleetd-devbox");
-    assert_eq!(
-        super::cloud_project("my_very-long-machine-name-here"),
-        "fleetd-my-very-long-machine-na"
-    );
-    assert_eq!(
-        super::cloud_project("box-name-that-ends-on-dash-here-x"),
-        "fleetd-box-name-that-ends-on-d"
-    );
-    assert_eq!(
-        super::cloud_project("a-b-c-d-e-f-g-h-i-j-k-l-m-"),
-        "fleetd-a-b-c-d-e-f-g-h-i-j-k-l"
-    );
-    // A hub reached by address names itself "hub".
-    assert_eq!(
-        guides("http://100.64.0.7:4790")[5].parts[0].values[0].value,
-        "fleetd-hub"
     );
 }
 
@@ -106,15 +83,13 @@ fn a_step_is_todo_until_a_check_says_otherwise_and_skipping_is_only_kept_for_tod
     use SetupStatus::*;
     use SetupStepId::*;
     assert_eq!(
-        status_of(&[], &[Google]),
+        status_of(&[], &[People]),
         [
             (Address, Todo),
             (Machines, Todo),
             (Claude, Todo),
             (Github, Todo),
-            (People, Todo),
-            (Google, Skipped),
-            (Notion, Todo),
+            (People, Skipped),
         ]
     );
     let checks = [
@@ -124,24 +99,18 @@ fn a_step_is_todo_until_a_check_says_otherwise_and_skipping_is_only_kept_for_tod
         check("lab/online", DoctorStatus::Fail, "lab is offline."),
         check(
             "hub/gh_auth",
-            DoctorStatus::Ok,
-            "gh is logged in on the hub as dev.",
-        ),
-        check(
-            "hub/google",
             DoctorStatus::Warn,
-            "Google client … but lab lacks its secret.",
+            "gh's token on the hub expires tomorrow.",
         ),
     ];
-    let steps = read(guides(HUB), &checks, &[Google].into_iter().collect());
+    let steps = read(guides(HUB), &checks, &[Github].into_iter().collect());
     let get = |id| steps.iter().find(|s| s.id == id).unwrap();
     assert_eq!(get(Address).status, Done);
     // The worst of a way's checks decides: one machine offline wants a look, and says which.
     assert_eq!(get(Machines).status, Look);
     assert_eq!(get(Machines).said.as_deref(), Some("lab is offline."));
-    assert_eq!(get(Github).status, Done);
     // Set up but failing is never hidden as "later".
-    assert_eq!(get(Google).status, Look);
+    assert_eq!(get(Github).status, Look);
 }
 
 #[test]
@@ -269,14 +238,25 @@ async fn the_tools_are_an_admins_and_keep_only_what_was_put_off() {
     );
     assert!(why.contains("admin role"), "{why}");
 
+    // A step an older hub had, put off there, is no error: it is no step now.
+    hub.db
+        .with(|c| {
+            c.execute(
+                "INSERT INTO setup_skips (step, at_ms) VALUES ('google', 1)",
+                [],
+            )?;
+            Ok(())
+        })
+        .unwrap();
     let list = call(&hub, &admin, "setup_list", json!({})).await.unwrap();
     let steps = list["steps"].as_array().unwrap();
-    assert_eq!(steps.len(), 7);
+    assert_eq!(steps.len(), 5);
+    assert!(steps.iter().all(|s| s["status"] != "skipped"), "{list}");
     assert_eq!(steps[0]["parts"][0]["values"][0]["value"], HUB);
     // No machines yet, so machines and Claude are left at least.
     assert!(list["requiredLeft"].as_i64().unwrap() >= 2, "{list}");
-    assert_eq!(steps[5]["id"], "google");
-    assert_eq!(steps[5]["status"], "todo");
+    assert_eq!(steps[4]["id"], "people");
+    assert_eq!(steps[4]["status"], "todo");
 
     let why = format!(
         "{:?}",
@@ -295,18 +275,18 @@ async fn the_tools_are_an_admins_and_keep_only_what_was_put_off() {
         &hub,
         &admin,
         "setup_skip",
-        json!({ "step": "google", "skipped": true }),
+        json!({ "step": "people", "skipped": true }),
     )
     .await
     .unwrap();
     assert_eq!(skipped["step"]["status"], "skipped");
     let list = call(&hub, &admin, "setup_list", json!({})).await.unwrap();
-    assert_eq!(list["steps"][5]["status"], "skipped");
+    assert_eq!(list["steps"][4]["status"], "skipped");
     let back = call(
         &hub,
         &admin,
         "setup_skip",
-        json!({ "step": "google", "skipped": false }),
+        json!({ "step": "people", "skipped": false }),
     )
     .await
     .unwrap();

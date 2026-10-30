@@ -176,12 +176,12 @@ it("keeps the picked project across a project's pages, and an older link on the 
   expect(window.location.hash).toBe("#/settings/projects?for=devbox/storefront");
 });
 
-it("puts your Claude, GitHub, 1Password and Navi's Google on Your accounts, and the paired hubs and hub links on Hubs, from old Connections links too", async () => {
+it("puts your Claude, GitHub and 1Password on Your accounts, and the paired hubs and hub links on Hubs, from old Connections links too", async () => {
   const parts = () => [...host.querySelectorAll<HTMLElement>("[data-part]")].map((p) => p.dataset["part"]);
   for (const hash of ["#/settings/claude", "#/settings/connections", "#/settings/accounts"]) {
     await render(hash, false);
     expect(screen(), hash).toBe("settings.accounts");
-    expect(parts()).toEqual(["claude", "github", "onepassword", "accounts.google"]);
+    expect(parts()).toEqual(["claude", "github", "onepassword"]);
     act(() => root.unmount());
     root = createRoot(host);
   }

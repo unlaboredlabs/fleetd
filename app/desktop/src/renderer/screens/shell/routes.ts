@@ -146,7 +146,6 @@ const ADMIN_MOVED: Readonly<Record<string, HubTab>> = {
   connections: "hub.accounts",
   claude: "hub.accounts",
   github: "hub.accounts",
-  google: "hub.accounts",
   hub: "hub.tools",
   skills: "hub.tools",
   setup: "hub.setup",

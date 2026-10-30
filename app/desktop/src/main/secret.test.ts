@@ -4,7 +4,7 @@ import rust from "./secret.rust-seal.json";
 import { SECRET_MAX_BYTES } from "../shared/contracts";
 import { IPC } from "../shared/channels";
 import { parseRequest } from "../shared/ipc";
-import { seal, submitClaudeAccount, submitGoogleClient, submitGooglePubsub, submitHubLink, submitMcpServer, submitOnePassword, submitProjectEnv, submitSecret } from "./secret";
+import { seal, submitClaudeAccount, submitHubLink, submitMcpServer, submitOnePassword, submitProjectEnv, submitSecret } from "./secret";
 
 const bytes = (b64: string) => new Uint8Array(Buffer.from(b64, "base64"));
 
@@ -162,21 +162,21 @@ describe("sealing a secret ask's value", () => {
     };
     const request = {
       scope: { kind: "project" as const, machineId: "devbox", projectId: "navi" },
-      name: "notion",
+      name: "crm",
       enabled: true,
       roles: { lead: true, writers: false, reviewers: false },
-      transport: { type: "stdio" as const, command: "npx", args: ["-y", "@notionhq/notion-mcp-server"] },
-      env: [{ kind: "secret" as const, name: "NOTION_TOKEN", value: "ntn_hunter2hunter2" }],
+      transport: { type: "stdio" as const, command: "npx", args: ["-y", "crm-mcp"] },
+      env: [{ kind: "secret" as const, name: "CRM_TOKEN", value: "crm_hunter2hunter2" }],
       headers: [],
       boxes: [{ machineId: "devbox", boxPubKey: rust.publicKey }],
-      integration: { kind: "notion" as const },
+      integration: { readTools: ["list_contacts"] },
     };
     expect(parseRequest(IPC.mcpServerSubmit, ["hub", request]).ok).toBe(true);
-    expect(parseRequest(IPC.mcpServerSubmit, ["hub", { ...request, integration: { kind: "gmail" } }]).ok).toBe(false);
+    expect(parseRequest(IPC.mcpServerSubmit, ["hub", { ...request, integration: { kind: "custom" } }]).ok).toBe(false);
     expect((await submitMcpServer(request, call)).ok).toBe(true);
     const input = sent[1] as { integration?: unknown };
-    expect(input.integration).toEqual({ kind: "notion" });
-    expect(JSON.stringify(sent)).not.toContain("ntn_hunter2hunter2");
+    expect(input.integration).toEqual({ readTools: ["list_contacts"] });
+    expect(JSON.stringify(sent)).not.toContain("crm_hunter2hunter2");
   });
 });
 
@@ -204,74 +204,6 @@ describe("a pasted hub link key", () => {
     const wrong = await submitHubLink({ ...request, key: "fld_not_a_link_key" }, call);
     expect(wrong.ok).toBe(false);
     if (!wrong.ok) expect(wrong.error.fix).toContain("flk_");
-    expect(sent).toEqual([]);
-  });
-
-  it("seals the hub's Google client secret to every machine, and sends the hub only the id and the boxes", async () => {
-    await sodium.ready;
-    const [pk, sk] = [bytes(rust.publicKey), bytes(rust.secretKey)];
-    const sent: Array<{ tool: string; input: unknown }> = [];
-    const call = (tool: string, input: unknown) => {
-      sent.push({ tool, input });
-      return Promise.resolve({ ok: true as const, output: {} });
-    };
-    const secret = "GOCSPX-never_in_a_hub_call_0123";
-    const clientId = "418559210337-q8fj2v0c.apps.googleusercontent.com";
-    const boxes = [
-      { machineId: "devbox", boxPubKey: rust.publicKey },
-      { machineId: "buildbox", boxPubKey: rust.publicKey },
-    ];
-    const request = { clientId, secret, boxes };
-    expect(parseRequest(IPC.googleClientSubmit, ["hub", request]).ok).toBe(true);
-    expect(parseRequest(IPC.googleClientSubmit, ["hub", { ...request, clientId: "not-a-client" }]).ok).toBe(false);
-    expect(parseRequest(IPC.googleClientSubmit, ["hub", { ...request, boxes: [] }]).ok).toBe(false);
-    expect((await submitGoogleClient(request, call)).ok).toBe(true);
-    const [only] = sent;
-    expect(only?.tool).toBe("google_client_set");
-    expect(JSON.stringify(only?.input)).not.toContain(secret);
-    const input = only?.input as { clientId: string; sealed: Array<{ machineId: string; sealed: string }> };
-    expect(input.clientId).toBe(clientId);
-    expect(input.sealed.map((x) => x.machineId)).toEqual(["devbox", "buildbox"]);
-    for (const x of input.sealed) expect(sodium.to_string(sodium.crypto_box_seal_open(bytes(x.sealed), pk, sk))).toBe(secret);
-
-    sent.length = 0;
-    const spaced = await submitGoogleClient({ ...request, secret: "GOCSPX-a b" }, call);
-    expect(spaced.ok).toBe(false);
-    if (!spaced.ok) expect(spaced.error.fix).toBeTruthy();
-    expect(sent).toEqual([]);
-  });
-
-  it("checks real-time mail's key is a service account's, seals it to the reading machine, and never sends it plain", async () => {
-    await sodium.ready;
-    const [pk, sk] = [bytes(rust.publicKey), bytes(rust.secretKey)];
-    const sent: Array<{ tool: string; input: unknown }> = [];
-    const call = (tool: string, input: unknown) => {
-      sent.push({ tool, input });
-      return Promise.resolve({ ok: true as const, output: {} });
-    };
-    const key = JSON.stringify({ type: "service_account", private_key: "-----BEGIN PRIVATE KEY-----never_in_a_hub_call", client_email: "fleetd-gmail-reader@fleetd-devbox.iam.gserviceaccount.com" });
-    const request = {
-      topic: "projects/fleetd-devbox/topics/fleetd-gmail",
-      subscription: "projects/fleetd-devbox/subscriptions/fleetd-gmail-hub",
-      machineId: "devbox",
-      boxPubKey: rust.publicKey,
-      key,
-    };
-    expect(parseRequest(IPC.googlePubsubSubmit, ["hub", request]).ok).toBe(true);
-    expect(parseRequest(IPC.googlePubsubSubmit, ["hub", { ...request, topic: "fleetd-gmail" }]).ok).toBe(false);
-    expect((await submitGooglePubsub(request, call)).ok).toBe(true);
-    expect(sent[0]?.tool).toBe("google_pubsub_set");
-    expect(JSON.stringify(sent[0]?.input)).not.toContain("never_in_a_hub_call");
-    const input = sent[0]?.input as { pubsub: { topic: string; subscription: string; machineId: string; sealed: string } };
-    expect(input.pubsub).toMatchObject({ topic: request.topic, subscription: request.subscription, machineId: "devbox" });
-    expect(sodium.to_string(sodium.crypto_box_seal_open(bytes(input.pubsub.sealed), pk, sk))).toBe(key);
-
-    sent.length = 0;
-    for (const wrong of ["not json", JSON.stringify({ type: "authorized_user", client_id: "x" })]) {
-      const out = await submitGooglePubsub({ ...request, key: wrong }, call);
-      expect(out.ok).toBe(false);
-      if (!out.ok) expect(out.error.fix).toContain("JSON");
-    }
     expect(sent).toEqual([]);
   });
 });

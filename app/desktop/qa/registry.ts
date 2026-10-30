@@ -97,7 +97,6 @@ export const fixtures = [
   "setup-fresh",
   "setup-claude-logins",
   "setup-github",
-  "setup-google",
   "setup-done",
   // F10: the connect screen's states (fixtures/onboarding).
   "onboarding-first-run",
@@ -253,20 +252,6 @@ export const fixtures = [
   // Hub links (fixtures/navi): Ada's Linked hubs and Sam's links to this hub; and neither yet.
   "navi-links",
   "navi-links-none",
-  // Ada's Google on You › Your accounts (fixtures/navi), a state each; Hub accounts › Google (fixtures/admin).
-  "navi-google-none",
-  "navi-google-setup",
-  "navi-google-ready",
-  "navi-google-connected",
-  "navi-google-lapsed",
-  "navi-google-not-held",
-  "navi-google-mail-query",
-  "navi-google-mail-off",
-  "admin-google-none",
-  "admin-google-set",
-  "admin-google-refused",
-  "admin-google-push",
-  "admin-google-polling",
   // fleetd.sh's showcase: one request played from send to merge, recorded by showcase.spec.ts (fixtures/showcase).
   "showcase-order",
 ] as const;
@@ -364,9 +349,6 @@ const whileLoading = (go: (page: Page) => Promise<void>, shown: (page: Page) => 
 
 /** An entry's name in test titles, shot files and the contact sheet. */
 export const label = (s: Pick<Screen, "id" | "variant">) => (s.variant === undefined ? s.id : `${s.id}~${s.variant}`);
-
-// Ada's Google row on You › Your accounts, where navi-google-* and navi-two's Home get one list each.
-const adaGoogle = (page: Page) => page.getByRole("list", { name: "Ada's Google" }).getByRole("listitem", { name: "Google" });
 
 export const screens: readonly Screen[] = [
   // F2 (A4): the live strip docked to the top of the project's composer. live-0 draws no strip.
@@ -1093,8 +1075,8 @@ export const screens: readonly Screen[] = [
   // A5 (F5): the two inline items, every state: the masked secret field, the exact command with Approve / Deny, open
   // again after the node was offline; answered ones folded to one line (saved, not needed, ran, ran with an error,
   // not run, denied, running).
-  // ...and a Navi's integration cards: recipients, an outside address, a file, a Notion delete, an answered send; and
-  // approvals whose hidden characters show as marks.
+  // ...and a Navi's integration cards: a send, a delete, an answered send; and approvals whose hidden characters show
+  // as marks.
   { id: "chat", route: CHAT, fixtures: ["inline-items", "inline-integrations", "inline-hidden"], variant: "inline" },
   // The same chat offline from the disk cache: an open item says it can't be answered now, and a secret never claims
   // the hub doesn't know its machine.
@@ -1504,11 +1486,10 @@ export const screens: readonly Screen[] = [
   // A hub on another protocol, either way round.
   { id: "onboarding.mismatch", route: "#/onboarding", fixtures: ["onboarding-app-too-old", "onboarding-hub-too-old"] },
   // W100: the hub admin's setup (a design prototype, docs/design/setup.md): the welcome, a step open beside the list
-  // (Claude to do, the GitHub App, the Google client), and the end.
+  // (Claude to do, the GitHub App), and the end.
   { id: "setup.welcome", route: "#/setup/welcome", fixtures: ["setup-fresh"] },
   { id: "setup", route: "#/setup/claude", fixtures: ["setup-fresh", "setup-claude-logins", "setup-github"], variant: "claude" },
   { id: "setup", route: "#/setup/github", fixtures: ["setup-github"], variant: "github" },
-  { id: "setup", route: "#/setup/google", fixtures: ["setup-google"], variant: "google" },
   { id: "setup.done", route: "#/setup/done", fixtures: ["setup-done"] },
   // F8: Add project (the pick list, its empty and loading states, gh and machine problems) and Machines.
   { id: "projects.add", route: "#/projects/add", fixtures: ["typical", "empty", "long-text", "node-too-old", "hub-unreachable"] },
@@ -1951,7 +1932,7 @@ export const screens: readonly Screen[] = [
   { id: "settings.agents", route: "#/settings/agents", fixtures: ["settings-agents", "long-text", "empty", "hub-unreachable"] },
   // Settings' Hub group (D211): People as the owner (every row changeable but their own) and as an admin (the owner
   // out of reach), with Invite someone, Dana's invite waiting and a new one just made with its link; Hub accounts (the
-  // hub's Claude key, GitHub App and Google client); Every project's Tools & skills and Instructions & memory
+  // hub's Claude key and GitHub App); Every project's Tools & skills and Instructions & memory
   // (its prompts under its Prompts in the sidebar); Setup; and a member who follows a link.
   { id: "settings.hub.people", route: "#/settings/hub/people", fixtures: ["admin-owner", "admin-admin", "admin-old-hub"] },
   // Claude (teams step 8): the hub's key sealed and tested, the members switch, what leads run on with the owner's
@@ -2106,28 +2087,6 @@ export const screens: readonly Screen[] = [
       await page.getByText(/^Installed pr-review, pinned/u).waitFor();
     },
   },
-  { id: "settings.hub.accounts", route: "#/settings/hub/accounts", fixtures: ["admin-google-none", "admin-google-set", "admin-google-refused", "admin-google-push", "admin-google-polling"], variant: "google" },
-  {
-    id: "settings.hub.accounts",
-    route: "#/settings/hub/accounts",
-    fixtures: ["admin-google-set", "admin-google-push"],
-    variant: "real-time-mail",
-    open: async (page) => {
-      const region = page.getByRole("region", { name: "Real-time mail" });
-      await region.getByText(/^(Set up|Change) real-time mail$/u).click();
-      await region.getByRole("button", { name: "Save", exact: true }).scrollIntoViewIfNeeded();
-    },
-  },
-  {
-    id: "settings.hub.accounts",
-    route: "#/settings/hub/accounts",
-    fixtures: ["admin-google-set", "admin-google-refused"],
-    variant: "tested",
-    open: async (page) => {
-      await page.getByRole("region", { name: "OAuth client" }).getByRole("button", { name: "Test", exact: true }).click();
-      await page.getByText(/Tested on devbox\./u).waitFor();
-    },
-  },
   // Hub › Setup reads the hub's steps (setup_list): a fresh hub with required steps left, and one done.
   { id: "settings.hub.setup", route: "#/settings/hub/setup", fixtures: ["setup-fresh", "setup-done"] },
   { id: "settings.hub.denied", route: "#/settings/hub/people", fixtures: ["admin-member"] },
@@ -2237,41 +2196,6 @@ export const screens: readonly Screen[] = [
       await region.getByRole("button", { name: "Link a hub" }).click();
       await region.getByRole("form", { name: "Link a hub" }).scrollIntoViewIfNeeded();
     },
-  },
-  // A Navi's Google on You › Your accounts (google/NaviGoogle.tsx): no client (a member, an admin), ready, connected, lapsed
-  // and the Navi's machine not holding the client; then the connect dialog with its help open, and Disconnect's.
-  {
-    id: "settings.accounts",
-    route: "#/settings/accounts",
-    fixtures: [
-      "navi-google-none",
-      "navi-google-setup",
-      "navi-google-ready",
-      "navi-google-connected",
-      "navi-google-lapsed",
-      "navi-google-not-held",
-      "navi-google-mail-query",
-      "navi-google-mail-off",
-    ],
-    variant: "google",
-    open: (page) => adaGoogle(page).scrollIntoViewIfNeeded(),
-  },
-  {
-    id: "settings.accounts",
-    route: "#/settings/accounts",
-    fixtures: ["navi-google-ready"],
-    variant: "google-connect",
-    open: async (page) => {
-      await adaGoogle(page).getByRole("button", { name: "Connect", exact: true }).click();
-      await page.getByRole("dialog").getByText("Seeing a warning or an error on Google’s page?").click();
-    },
-  },
-  {
-    id: "settings.accounts",
-    route: "#/settings/accounts",
-    fixtures: ["navi-google-connected"],
-    variant: "google-disconnect",
-    open: (page) => adaGoogle(page).getByRole("button", { name: "Disconnect", exact: true }).click(),
   },
   {
     id: "settings.hubs",

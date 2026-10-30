@@ -11,8 +11,7 @@ import type { PairingService } from "./pairing/service";
 import type { PresenceSetting } from "./presence";
 import { cancelGithubApp, createGithubApp } from "./github";
 import { cancelGithubConnect, connectGithub } from "./githubConnect";
-import { cancelGoogle, connectGoogle } from "./google";
-import { submitClaudeAccount, submitGoogleClient, submitGooglePubsub, submitHubLink, submitMcpServer, submitOnePassword, submitProjectEnv, submitSecret } from "./secret";
+import { submitClaudeAccount, submitHubLink, submitMcpServer, submitOnePassword, submitProjectEnv, submitSecret } from "./secret";
 import { applyMenuState } from "./menuState";
 import type { Notifier } from "./notify";
 import type { Opener } from "./opener";
@@ -74,16 +73,6 @@ export const registerIpc = (
   handle(IPC.projectEnvSubmit, (_event, id, request) => submitProjectEnv(request, call(id)));
   handle(IPC.mcpServerSubmit, (_event, id, request) => submitMcpServer(request, call(id)));
   handle(IPC.hubLinkSubmit, (_event, id, request) => submitHubLink(request, call(id)));
-  handle(IPC.googleClientSubmit, (_event, id, request) => submitGoogleClient(request, call(id)));
-  handle(IPC.googlePubsubSubmit, (_event, id, request) => submitGooglePubsub(request, call(id)));
-  handle(IPC.googleConnect, (_event, id, request) =>
-    connectGoogle(request, call(id), async (url) => {
-      const checked = externalUrl(url);
-      if (!checked.ok) throw new Error(checked.message);
-      await shell.openExternal(checked.url);
-    }),
-  );
-  handle(IPC.googleCancel, () => cancelGoogle());
   handle(IPC.githubAppCreate, (_event, id, request) =>
     createGithubApp(request, call(id), async (url) => {
       const checked = externalUrl(url);

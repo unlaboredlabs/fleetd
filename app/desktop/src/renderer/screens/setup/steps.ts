@@ -10,7 +10,7 @@ export type SetupStep = HubSetupStep;
 export const needWords = (need: SetupNeed): string =>
   need.kind === "required" ? "Required" : need.kind === "before" ? `Before ${need.what}` : "Optional";
 
-const GROUP_WORDS: Readonly<Record<string, string>> = { hub: "This hub", accounts: "Accounts", people: "People", integrations: "Integrations" };
+const GROUP_WORDS: Readonly<Record<string, string>> = { hub: "This hub", accounts: "Accounts", people: "People" };
 
 export const groupWords = (group: SetupGroup): string => GROUP_WORDS[group] ?? group;
 
@@ -34,7 +34,6 @@ export interface Place {
 const ADMIN: Readonly<Record<string, Place>> = {
   machines: { label: "Open Hub › Machines", screen: { id: "settings", tab: "hub.machines" } },
   invites: { label: "Open Hub › People", screen: { id: "settings", tab: "hub.people" } },
-  google: { label: "Open Hub accounts", screen: { id: "settings", tab: "hub.accounts" }, reveal: "admin.google" },
   claude: { label: "Open Hub accounts", screen: { id: "settings", tab: "hub.accounts" }, reveal: "admin.claude" },
   github: { label: "Open Hub accounts", screen: { id: "settings", tab: "hub.accounts" }, reveal: "admin.github" },
 };

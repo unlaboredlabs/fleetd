@@ -234,11 +234,6 @@ pub enum SessionCall {
         project_id: Option<ProjectId>,
         server: crate::mcp_servers::McpSessionServer,
     },
-    /// A Navi's Google connection (`crate::google`): the admin's client, and an account's tokens, kept on the node.
-    /// Only nodes listing [`crate::node_link::CAP_GOOGLE`] get it.
-    Google {
-        call: crate::google::GoogleCall,
-    },
     /// Forget a Navi's sign-ins: end its browser session, if one is open, and delete the browser profile it keeps
     /// between sessions (D221). Nothing to delete is no error. Only nodes listing
     /// [`crate::node_link::CAP_NAVI_SIGNINS`] get it.
@@ -772,10 +767,6 @@ pub enum SessionOutput {
     },
     /// Answer to `mcp_test`.
     McpTested(crate::mcp_servers::McpTestResult),
-    /// Answer to `google`.
-    Google {
-        answer: crate::google::GoogleAnswer,
-    },
     /// Answer to `claude_account_secret`: the fingerprint of the secret it holds now, none once forgotten.
     ClaudeAccountSaved {
         fingerprint: Option<crate::secrets::SecretFingerprint>,

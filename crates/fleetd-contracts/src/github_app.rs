@@ -61,6 +61,20 @@ brand!(
 );
 
 brand!(
+    /// A PKCE code verifier (RFC 7636): 43 to 128 unreserved characters.
+    PkceVerifier,
+    name = "PkceVerifier",
+    pattern = r"^[A-Za-z0-9._~-]{43,128}$"
+);
+
+brand!(
+    /// The loopback address the app serves the manifest page on: `http://127.0.0.1:<port>` and a path.
+    LoopbackUri,
+    name = "LoopbackUri",
+    pattern = r"^http://127\.0\.0\.1:[1-9][0-9]{0,4}(/[A-Za-z0-9/._-]*)?$"
+);
+
+brand!(
     /// The loopback address the app caught GitHub's sign-in on: `http://127.0.0.1:<port>/github/callback`.
     GithubLoopback,
     name = "GithubLoopback",

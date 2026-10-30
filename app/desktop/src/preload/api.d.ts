@@ -3,7 +3,7 @@ import type { MenuCommand } from "../shared/menu";
 import type { BrowserInput } from "../shared/contracts";
 import type { CallOutcome, ConnectOutcome, DropInfo, HubFrame, OpenOutcome, SecretOutcome } from "../shared/hub";
 import type { HubColor, HubEntry, HubId, PairTarget } from "../shared/hubs";
-import type { ChatScope, ClaudeAccountRequest, ErrorReport, GoogleClientRequest, GithubAppRequest, GoogleConnectRequest, GooglePubsubRequest, HubLinkRequest, McpServerRequest, OnePasswordRequest, OrderFocus, ProjectEnvRequest, SecretRequest, SessionWindowRequest } from "../shared/ipc";
+import type { ChatScope, ClaudeAccountRequest, ErrorReport, GithubAppRequest, HubLinkRequest, McpServerRequest, OnePasswordRequest, OrderFocus, ProjectEnvRequest, SecretRequest, SessionWindowRequest } from "../shared/ipc";
 import type { JoinHere, ThisComputer } from "../shared/joinHere";
 import type { KeyStore, PairOutcome, PairRequest, PairStart, Probe, SetupOutcome } from "../shared/pairing";
 import type { UpdatesState } from "../shared/updates";
@@ -38,16 +38,6 @@ export interface FleetdApi {
      */
     hubLink(hub: HubId, request: HubLinkRequest): Promise<CallOutcome>;
     /**
-     * The hub's Google OAuth client: main seals the secret to every machine in `boxes` and calls google_client_set. The
-     * output has the client by its id and the machines holding it, never the secret.
-     */
-    googleClient(hub: HubId, request: GoogleClientRequest): Promise<CallOutcome>;
-    /**
-     * Real-time mail: main checks the service account key, seals it to `boxPubKey` and calls google_pubsub_set. The
-     * output has the client with its Pub/Sub by fingerprint, never the key.
-     */
-    googlePubsub(hub: HubId, request: GooglePubsubRequest): Promise<CallOutcome>;
-    /**
      * A Claude account's key or token: main seals it to every machine in `boxes` and calls claude_hub_api_set or
      * claude_subscription_set. The output has where it is sealed, by fingerprint only; nothing returns the value.
      */
@@ -57,15 +47,6 @@ export interface FleetdApi {
      * onepassword_set. The output has where it is sealed, by fingerprint only; nothing returns the value.
      */
     onePassword(hub: HubId, request: OnePasswordRequest): Promise<CallOutcome>;
-  };
-  readonly google: {
-    /**
-     * Connects a Navi to the person's Google account: main opens Google's consent page in the browser, catches the
-     * answer on 127.0.0.1 and calls google_connect, answering as it does. Error code `cancelled` after `cancel()`.
-     */
-    connect(hub: HubId, request: GoogleConnectRequest): Promise<CallOutcome>;
-    /** Stops waiting for Google's answer. */
-    cancel(): Promise<void>;
   };
   readonly github: {
     /**

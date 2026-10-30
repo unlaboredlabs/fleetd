@@ -12,7 +12,6 @@ mod tests;
 use std::collections::BTreeSet;
 
 use fleetd_contracts::doctor::DoctorFix;
-use fleetd_contracts::google::{GOOGLE_REDIRECT, GOOGLE_SCOPES};
 use fleetd_contracts::setup::{
     HubSetupStep, SetupGroup, SetupLink, SetupNeed, SetupPart, SetupStatus, SetupStepId,
     SetupValue, SetupWay, matches_check,
@@ -21,13 +20,6 @@ use rusqlite::params;
 
 use crate::hub::doctor::checks::{DoctorCheck, DoctorStatus};
 use crate::hub::store::{HubDb, StoreError};
-
-/// Gmail in real time (D195): Gmail publishes to this topic as its push account, and one machine reads the
-/// subscription as this service account.
-const GMAIL_TOPIC: &str = "fleetd-gmail";
-const GMAIL_SUBSCRIPTION: &str = "fleetd-gmail-hub";
-const GMAIL_PUSH: &str = "gmail-api-push@system.gserviceaccount.com";
-const GMAIL_READER: &str = "fleetd-gmail-reader";
 
 fn link(label: &str, url: impl Into<String>) -> SetupLink {
     SetupLink {
@@ -106,259 +98,6 @@ fn host_of(hub: &str) -> String {
     host.split('.').next().unwrap_or("hub").to_owned()
 }
 
-/// The Cloud project id the guide proposes, `fleetd-<host>`, within Google's rules: up to 30 lowercase letters,
-/// digits and dashes, starting with a letter and not ending with a dash.
-fn cloud_project(host: &str) -> String {
-    let id: String = format!("fleetd-{host}")
-        .to_ascii_lowercase()
-        .chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
-        .take(30)
-        .collect();
-    id.trim_end_matches('-').to_owned()
-}
-
-/// Each scope in words where it is pasted, and what it is for (the app's google/model.ts).
-fn scope_words(scope: &str) -> (&str, &str) {
-    match scope {
-        "openid" => ("Account", "Which account is connected."),
-        "email" => ("Address", "Which account is connected."),
-        "https://www.googleapis.com/auth/gmail.readonly" => {
-            ("Read mail", "Searching and reading mail.")
-        }
-        "https://www.googleapis.com/auth/gmail.compose" => (
-            "Draft and send",
-            "Drafts, sends and replies. It can't delete mail or change labels.",
-        ),
-        "https://www.googleapis.com/auth/calendar.events" => {
-            ("Calendar", "Reading, making and changing events.")
-        }
-        "https://www.googleapis.com/auth/drive" => {
-            ("Drive", "Searching, reading, uploading and sharing files.")
-        }
-        other => (
-            other.trim_start_matches("https://www.googleapis.com/auth/"),
-            "",
-        ),
-    }
-}
-
-/// The Google step's parts for this hub: the Cloud project, the APIs, the sign-in screen with the scopes the hub asks
-/// for, a Desktop app client with the loopback redirect (so a plain-HTTP tailnet hub works), and Gmail in real time.
-fn google_parts(host: &str) -> Vec<SetupPart> {
-    let name = format!("fleetd on {host}");
-    let project = cloud_project(host);
-    let reader = format!("{GMAIL_READER}@{project}.iam.gserviceaccount.com");
-    let shell = [
-        format!("gcloud config set project {project}"),
-        format!("SA={reader}"),
-        [
-            "gcloud services enable pubsub.googleapis.com".to_owned(),
-            format!("gcloud pubsub topics create {GMAIL_TOPIC}"),
-            format!(
-                "gcloud pubsub topics add-iam-policy-binding {GMAIL_TOPIC} --member=serviceAccount:{GMAIL_PUSH} --role=roles/pubsub.publisher"
-            ),
-            format!("gcloud pubsub subscriptions create {GMAIL_SUBSCRIPTION} --topic={GMAIL_TOPIC}"),
-            format!("gcloud iam service-accounts create {GMAIL_READER}"),
-            "sleep 30".to_owned(),
-            format!(
-                "gcloud pubsub subscriptions add-iam-policy-binding {GMAIL_SUBSCRIPTION} --member=serviceAccount:$SA --role=roles/pubsub.subscriber"
-            ),
-            "gcloud iam service-accounts keys create key.json --iam-account=$SA".to_owned(),
-            "cat key.json && rm key.json".to_owned(),
-        ]
-        .join(" &&\n"),
-    ]
-    .join("\n");
-    vec![
-        part(
-            "Create a Google Cloud project",
-            None,
-            vec![link(
-                "New project",
-                "https://console.cloud.google.com/projectcreate",
-            )],
-            vec![noted(
-                "Project name",
-                &project,
-                format!(
-                    "Keep the project ID the same as the name. IDs are global across Google Cloud: if {project} is \
-                     taken, take the ID Google offers and use it wherever {project} appears below."
-                ),
-            )],
-        ),
-        part(
-            "Turn on Gmail, Calendar and Drive",
-            None,
-            vec![link(
-                "Enable the three APIs",
-                "https://console.cloud.google.com/flows/enableapi?apiid=gmail.googleapis.com,calendar-json.googleapis.com,drive.googleapis.com",
-            )],
-            vec![],
-        ),
-        part(
-            "Set up the sign-in screen",
-            None,
-            vec![
-                link("Branding", "https://console.cloud.google.com/auth/branding"),
-                link("Audience", "https://console.cloud.google.com/auth/audience"),
-            ],
-            vec![
-                value("App name", &name),
-                plain(
-                    "Audience",
-                    "Internal if everyone is in your Google Workspace; otherwise External.",
-                ),
-                plain(
-                    "Publishing status",
-                    "External: press Publish app, so it is In production. In Testing, Google ends each connection after 7 days.",
-                ),
-            ],
-        ),
-        part(
-            "Add the scopes",
-            Some(
-                "Gmail and Drive are restricted scopes: until Google verifies the app, people see a warning when they \
-                 connect and press Advanced, then Go to the app. An unverified app takes up to 100 people.",
-            ),
-            vec![link(
-                "Data access",
-                "https://console.cloud.google.com/auth/scopes",
-            )],
-            GOOGLE_SCOPES
-                .iter()
-                .map(|s| {
-                    let (label, why) = scope_words(s);
-                    SetupValue {
-                        note: (!why.is_empty()).then(|| why.to_owned()),
-                        ..value(label, *s)
-                    }
-                })
-                .collect(),
-        ),
-        part(
-            "Create the OAuth client",
-            None,
-            vec![link(
-                "Create client",
-                "https://console.cloud.google.com/auth/clients/create",
-            )],
-            vec![
-                plain("Application type", "Desktop app"),
-                value("Name", &name),
-                noted(
-                    "Redirect URI",
-                    GOOGLE_REDIRECT,
-                    "Nothing to register: a Desktop app client takes it on any port. When someone connects, the fleetd \
-                     app listens on a free port on their own computer, and Google sends them back there.",
-                ),
-            ],
-        ),
-        SetupPart {
-            optional: Some(true),
-            ..part(
-                "Gmail in real time",
-                Some(
-                    "New mail reaches Navi in seconds. Gmail publishes to a Pub/Sub topic and fleetd pulls from it, so \
-                     no public address is needed. Without it, Navi checks Gmail about every minute.",
-                ),
-                vec![
-                    link(
-                        "Enable Pub/Sub",
-                        "https://console.cloud.google.com/flows/enableapi?apiid=pubsub.googleapis.com",
-                    ),
-                    link(
-                        "Create the topic",
-                        "https://console.cloud.google.com/cloudpubsub/topic/create",
-                    ),
-                    link(
-                        "Create the subscription",
-                        "https://console.cloud.google.com/cloudpubsub/subscription/create",
-                    ),
-                ],
-                vec![
-                    noted(
-                        "Topic ID",
-                        GMAIL_TOPIC,
-                        format!(
-                            "Untick \"Add a default subscription\". Its full name is \
-                             projects/{project}/topics/{GMAIL_TOPIC}."
-                        ),
-                    ),
-                    noted(
-                        "Publisher on the topic",
-                        GMAIL_PUSH,
-                        "Topic › Permissions › Add principal, role Pub/Sub Publisher. Gmail publishes as this account.",
-                    ),
-                    noted(
-                        "Subscription ID",
-                        GMAIL_SUBSCRIPTION,
-                        format!(
-                            "Topic {GMAIL_TOPIC}, delivery type Pull. Its full name is \
-                             projects/{project}/subscriptions/{GMAIL_SUBSCRIPTION}."
-                        ),
-                    ),
-                ],
-            )
-        },
-        SetupPart {
-            optional: Some(true),
-            ..part(
-                "A key to read it",
-                Some(
-                    "A service account that may only read the subscription. Its key goes to one machine, which pulls \
-                     new-mail notices and passes them to the hub.",
-                ),
-                vec![
-                    link(
-                        "Create the service account",
-                        "https://console.cloud.google.com/iam-admin/serviceaccounts/create",
-                    ),
-                    link(
-                        "Subscriptions",
-                        "https://console.cloud.google.com/cloudpubsub/subscription/list",
-                    ),
-                    link(
-                        "Service accounts",
-                        "https://console.cloud.google.com/iam-admin/serviceaccounts",
-                    ),
-                ],
-                vec![
-                    noted(
-                        "Service account ID",
-                        GMAIL_READER,
-                        "No project roles: skip the optional steps and press Done.",
-                    ),
-                    noted(
-                        "Subscriber on the subscription",
-                        &reader,
-                        "Subscriptions › the subscription above › Permissions › Add principal, role Pub/Sub Subscriber.",
-                    ),
-                    plain(
-                        "Key",
-                        "Service accounts › the account above › Keys › Add key › Create new key › JSON. Paste the \
-                         downloaded file on Settings › Hub accounts › Google, then delete it.",
-                    ),
-                    SetupValue {
-                        command: Some(true),
-                        ..noted(
-                            "Or in Cloud Shell",
-                            shell,
-                            format!(
-                                "Both parts in one go, in project {project}: it prints the key once, to paste. A new \
-                                 account can take a minute to show up; if the Subscriber grant says it doesn't exist, \
-                                 run the last three lines again. If your organization refuses the key \
-                                 (iam.disableServiceAccountKeyCreation), an organization admin lifts that policy for \
-                                 this project; or leave real-time mail off, and Navi checks mail about every minute."
-                            ),
-                        )
-                    },
-                ],
-            )
-        },
-    ]
-}
-
 /// Every step in order, its values computed for `hub` (the URL devices reach it at), status still to read.
 pub fn guides(hub: &str) -> Vec<HubSetupStep> {
     let base = hub.trim_end_matches('/');
@@ -389,7 +128,10 @@ pub fn guides(hub: &str) -> Vec<HubSetupStep> {
                 Some(
                     "Your tailnet keeps it private, and plain HTTP is fine there. HTTPS (Tailscale Serve) is optional.",
                 ),
-                vec![link("Tailscale admin", "https://login.tailscale.com/admin/machines")],
+                vec![link(
+                    "Tailscale admin",
+                    "https://login.tailscale.com/admin/machines",
+                )],
                 vec![noted(
                     "Hub address",
                     base,
@@ -415,7 +157,11 @@ pub fn guides(hub: &str) -> Vec<HubSetupStep> {
                 ),
                 vec![],
                 vec![
-                    command("On the hub, for a code", "fleetd pair --worker <name>", None),
+                    command(
+                        "On the hub, for a code",
+                        "fleetd pair --worker <name>",
+                        None,
+                    ),
                     command(
                         "On the machine",
                         format!("fleetd init --join {base} --code <code>"),
@@ -462,7 +208,11 @@ pub fn guides(hub: &str) -> Vec<HubSetupStep> {
                          token in Settings › Your accounts › Claude; the app seals it on your device.",
                     ),
                     vec![],
-                    vec![command("On any computer with claude", "claude setup-token", None)],
+                    vec![command(
+                        "On any computer with claude",
+                        "claude setup-token",
+                        None,
+                    )],
                 ),
                 part(
                     "Or log Claude in on each machine",
@@ -511,7 +261,9 @@ pub fn guides(hub: &str) -> Vec<HubSetupStep> {
                 ),
             ],
             place: Some("github".into()),
-            test: Some("Mint a token for each installation, or ask gh who it is logged in as".into()),
+            test: Some(
+                "Mint a token for each installation, or ask gh who it is logged in as".into(),
+            ),
             ways: vec![
                 way(Some("the hub's GitHub App"), &["hub/github_app"]),
                 way(Some("gh on the hub"), &["hub/gh_auth"]),
@@ -529,7 +281,9 @@ pub fn guides(hub: &str) -> Vec<HubSetupStep> {
         HubSetupStep {
             parts: vec![part(
                 "Invite someone",
-                Some("The invite is a link and a code, for one person, good for 7 days. Send it to them yourself."),
+                Some(
+                    "The invite is a link and a code, for one person, good for 7 days. Send it to them yourself.",
+                ),
                 vec![],
                 vec![command(
                     "On the hub",
@@ -544,47 +298,6 @@ pub fn guides(hub: &str) -> Vec<HubSetupStep> {
                 SetupGroup::People,
                 "Invite people",
                 "Each person gets their own sign-in, chats and Navi; you choose who is an admin.",
-                SetupNeed::Optional,
-            )
-        },
-        HubSetupStep {
-            parts: google_parts(&host),
-            fields_note: Some(
-                "Save the client ID and secret, and the Gmail subscription and key if you set them up, on \
-                 Settings › Hub accounts › Google: the app seals the secrets on your device. Then each person connects their \
-                 own Google account from their Navi; if a sign-in lapses, Navi offers Reconnect."
-                    .into(),
-            ),
-            place: Some("google".into()),
-            test: Some("Ask Google whether it knows this client".into()),
-            ways: vec![way(None, &["hub/google"])],
-            ..step(
-                SetupStepId::Google,
-                SetupGroup::Integrations,
-                "Google",
-                "Each person's Navi reads and drafts their mail, calendar and Drive, through a Google client you own.",
-                SetupNeed::Optional,
-            )
-        },
-        HubSetupStep {
-            parts: vec![part(
-                "Each person makes their own integration",
-                Some(
-                    "Nothing to set up for the hub: each person connects Notion on their Navi's Integrations, with an \
-                     internal integration of their own, and shares with it only the pages Navi may use.",
-                ),
-                vec![link("Notion › Integrations", "https://www.notion.so/profile/integrations")],
-                vec![
-                    value("Integration name", &name),
-                    plain("Type", "Internal, in the workspace Navi should use."),
-                ],
-            )],
-            ways: vec![way(None, &["hub/notion"])],
-            ..step(
-                SetupStepId::Notion,
-                SetupGroup::Integrations,
-                "Notion",
-                "Navis read and write the Notion pages each person shares with them.",
                 SetupNeed::Optional,
             )
         },

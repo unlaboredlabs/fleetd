@@ -6,7 +6,6 @@
 // shell shows SettingsSidebar in the sidebar's place while Settings is open.
 import { Automations } from "../automations";
 import { HubPage } from "../admin/HubPages";
-import { YourGoogle } from "../google/NaviGoogle";
 import { AgentsSettings } from "./Agents";
 import { ClaudeSettings } from "./Claude";
 import { DevicesSettings } from "./Devices";
@@ -61,7 +60,7 @@ export function SettingsScreen() {
   );
 }
 
-/** The accounts your own work runs on: your Claude account, your GitHub, your 1Password and your Navi's Google. Nobody else's work uses them. */
+/** The accounts your own work runs on: your Claude account, your GitHub and your 1Password. Nobody else's work uses them. */
 function YourAccounts() {
   return (
     <div className={s.scroll} data-screen="settings.accounts">
@@ -70,7 +69,6 @@ function YourAccounts() {
         <ClaudeSettings />
         <GithubSettings />
         <OnePasswordSettings />
-        <YourGoogle />
       </div>
     </div>
   );

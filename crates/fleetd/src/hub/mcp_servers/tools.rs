@@ -405,6 +405,46 @@ async fn remove(
     })
 }
 
+/// Has each online node forget the secrets queued for it ([`super::McpServerStore::forgets`]); one offline, or too
+/// old, is asked again on the next round.
+pub async fn forget_queued(hub: &Hub) {
+    let store = hub.db.mcp_servers();
+    let queued = match store.forgets() {
+        Ok(queued) => queued,
+        Err(e) => {
+            tracing::warn!("MCP secrets to forget not read: {e}");
+            return;
+        }
+    };
+    for (m, scope, name) in queued {
+        if node_ready(hub, &m).is_err() {
+            continue;
+        }
+        let forgot = hub
+            .executors
+            .mcp_secrets(&m, scope.clone(), name.clone(), Vec::new(), Vec::new())
+            .await;
+        match forgot {
+            Ok(_) => {
+                if let Err(e) = store.forgot(&m, &scope, &name) {
+                    tracing::warn!(machine_id = %m, server = %name, "MCP secrets forgotten, not noted: {e}");
+                }
+            }
+            Err(e) => {
+                tracing::warn!(machine_id = %m, server = %name, "MCP secrets not forgotten: {e}")
+            }
+        }
+    }
+}
+
+/// [`forget_queued`] each minute, until the hub stops.
+pub async fn run_forget(hub: Arc<Hub>) {
+    loop {
+        forget_queued(&hub).await;
+        hub.clock.sleep(std::time::Duration::from_secs(60)).await;
+    }
+}
+
 async fn settings_set(
     hub: Arc<Hub>,
     caller: Caller,

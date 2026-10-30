@@ -226,25 +226,12 @@ pub fn repo_ci(without_ci: &[String]) -> Entry {
 pub struct SetupFacts {
     /// Who joined after the hub's first person, by name.
     pub joined: Vec<String>,
-    /// The Google client's id, the machines holding its secret, the machines that should (the online ones), and
-    /// whether new mail comes through Pub/Sub. None: no client saved.
-    pub google: Option<GoogleFacts>,
-    /// Navis with Notion connected.
-    pub notion: usize,
     /// The hub's own GitHub App (D190), as the hub keeps it: where it is installed and its last Test.
     pub github_app: Option<fleetd_contracts::github_app::GithubApp>,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct GoogleFacts {
-    pub client_id: String,
-    pub sealed_on: Vec<String>,
-    pub online: Vec<String>,
-    pub pubsub: bool,
-}
-
-/// The setup checks the hub reads from its own state: someone else joined, Google's client is saved, a Navi has
-/// Notion. A step not set up has no check.
+/// The setup checks the hub reads from its own state: someone else joined, the GitHub App. A step not set up has no
+/// check.
 pub fn setup_checks(facts: &SetupFacts) -> Vec<Entry> {
     let mut out = Vec::new();
     let joined = match facts.joined.as_slice() {
@@ -256,74 +243,8 @@ pub fn setup_checks(facts: &SetupFacts) -> Vec<Entry> {
     if let Some(joined) = joined {
         out.push(hub_entry("people", Pass, &joined, None));
     }
-    if let Some(g) = &facts.google {
-        let missing: Vec<&str> = g
-            .online
-            .iter()
-            .filter(|m| !g.sealed_on.contains(m))
-            .map(String::as_str)
-            .collect();
-        let mail = if g.pubsub {
-            "new mail arrives in real time through Pub/Sub"
-        } else {
-            "Navis check mail about every minute"
-        };
-        out.push(if g.sealed_on.is_empty() {
-            hub_entry(
-                "google",
-                Warn,
-                &format!(
-                    "Google client {} is saved, but no machine holds its secret.",
-                    g.client_id
-                ),
-                Some(manual(
-                    "Save the client secret again on Settings › Hub accounts › Google",
-                    None,
-                )),
-            )
-        } else if !missing.is_empty() {
-            hub_entry(
-                "google",
-                Warn,
-                &format!(
-                    "Google client {} is saved, but {} {} its secret; their Navis can't connect Google.",
-                    g.client_id,
-                    missing.join(", "),
-                    if missing.len() == 1 { "lacks" } else { "lack" }
-                ),
-                Some(manual(
-                    "Save the client secret again on Settings › Hub accounts › Google, with those machines online",
-                    None,
-                )),
-            )
-        } else {
-            hub_entry(
-                "google",
-                Pass,
-                &format!(
-                    "Google client {} is saved on {}; {mail}.",
-                    g.client_id,
-                    g.sealed_on.join(", ")
-                ),
-                None,
-            )
-        });
-    }
     if let Some(app) = &facts.github_app {
         out.push(github_app(app));
-    }
-    if facts.notion > 0 {
-        let navis = if facts.notion == 1 {
-            "1 Navi".to_owned()
-        } else {
-            format!("{} Navis", facts.notion)
-        };
-        out.push(hub_entry(
-            "notion",
-            Pass,
-            &format!("Notion is connected on {navis}."),
-            None,
-        ));
     }
     out
 }
@@ -367,29 +288,6 @@ pub fn github_app(app: &fleetd_contracts::github_app::GithubApp) -> Entry {
                 None,
             )
         }
-    }
-}
-
-/// Setup's Test of the Google step: what Google said of the client, asked from `machine_id`; `problem` is why it
-/// refused, or why it couldn't be asked.
-pub fn google_tested(machine_id: Option<&str>, problem: Option<&str>) -> Entry {
-    let on = machine_id.map_or(String::new(), |m| format!(" Tested on {m}."));
-    match problem {
-        None => hub_entry(
-            "google",
-            Pass,
-            &format!("Google knows this client and its secret.{on}"),
-            None,
-        ),
-        Some(p) => hub_entry(
-            "google",
-            Fail,
-            &format!("{}{on}", p.trim_end()),
-            Some(manual(
-                "Check the client ID and secret on Settings › Hub accounts › Google, then test again",
-                None,
-            )),
-        ),
     }
 }
 
@@ -1599,16 +1497,8 @@ mod tests {
     #[test]
     fn setup_checks_are_there_only_once_their_step_is_set_up() {
         assert!(setup_checks(&SetupFacts::default()).is_empty());
-        let google = |sealed_on: &[&str]| GoogleFacts {
-            client_id: "123-abc.apps.googleusercontent.com".into(),
-            sealed_on: sealed_on.iter().map(|m| (*m).to_owned()).collect(),
-            online: vec!["devbox".into(), "lab".into()],
-            pubsub: false,
-        };
         let facts = SetupFacts {
             joined: vec!["Alice".into(), "Bo".into(), "Cy".into()],
-            google: Some(google(&["devbox", "lab"])),
-            notion: 1,
             github_app: None,
         };
         let got: Vec<_> = setup_checks(&facts)
@@ -1617,29 +1507,11 @@ mod tests {
             .collect();
         assert_eq!(
             got,
-            [
-                ("hub/people".into(), Pass, "Alice and 2 others have joined.".into()),
-                (
-                    "hub/google".into(),
-                    Pass,
-                    "Google client 123-abc.apps.googleusercontent.com is saved on devbox, lab; Navis check mail \
-                     about every minute."
-                        .into()
-                ),
-                ("hub/notion".into(), Pass, "Notion is connected on 1 Navi.".into()),
-            ]
-        );
-        // A machine online without the secret: its Navis can't connect.
-        let partly = SetupFacts {
-            google: Some(google(&["devbox"])),
-            ..SetupFacts::default()
-        };
-        let check = &setup_checks(&partly)[0].check;
-        assert_eq!(check.status, Warn);
-        assert!(
-            check.message.contains("but lab lacks its secret"),
-            "{}",
-            check.message
+            [(
+                "hub/people".into(),
+                Pass,
+                "Alice and 2 others have joined.".into()
+            )]
         );
     }
 

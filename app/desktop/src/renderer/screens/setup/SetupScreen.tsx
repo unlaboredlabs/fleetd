@@ -2,8 +2,8 @@
 // walks. #/setup is the first run: the welcome, the steps with one open beside them, and the end. Settings › Hub ›
 // Setup shows the same steps (SetupSteps) on its page. Each step's status is the hub's, read from its checks; Test runs
 // that step's checks now (setup_test), Skip for now keeps it for later (setup_skip), and a step's result is saved
-// where it lives already (Settings › Hub accounts › Google, › Claude, …), which its place opens. Only owners and admins see any
-// of it.
+// where it lives already (Settings › Hub accounts › Claude, › GitHub, …), which its place opens. Only owners and admins
+// see any of it.
 
 import { Check } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -341,7 +341,7 @@ export function Welcome({ steps }: { steps: ReadonlyArray<SetupStep> }) {
             Start setup
           </Button>
           <Text size="sm" tone="quiet">
-            A few minutes for what is required. Google takes longest, and can wait.
+            A few minutes for what is required.
           </Text>
         </div>
       </div>

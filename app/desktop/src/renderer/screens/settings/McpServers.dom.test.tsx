@@ -232,7 +232,7 @@ describe("Settings → MCP servers", () => {
 
 describe("a Navi's MCP section", () => {
   it("leaves its integrations to the Integrations section, and keeps their names taken", async () => {
-    project = [{ ...github, scope: { kind: "project", machineId: "devbox", projectId: "p1" }, name: "google", integration: { kind: "google" } }];
+    project = [{ ...github, scope: { kind: "project", machineId: "devbox", projectId: "p1" }, name: "crm", integration: {} }];
     await render(<McpSection projectRef={{ machineId: "devbox", projectId: "p1" }} />);
     const own = document.querySelector('[role="list"][aria-label="MCP servers"]');
     expect(own).toBeNull();
@@ -240,7 +240,7 @@ describe("a Navi's MCP section", () => {
     await click(button("Add server"));
     const name = dialog().querySelector<HTMLInputElement>('input[placeholder="github"]');
     if (name === null) throw new Error("no name field");
-    await type(name, "google");
-    expect(dialog().textContent).toContain("google is already there");
+    await type(name, "crm");
+    expect(dialog().textContent).toContain("crm is already there");
   });
 });

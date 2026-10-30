@@ -125,7 +125,7 @@ const render = async (accounts: ClaudeAccountsGetOutput, info: Partial<HubInfoOu
                   : tool === "claude_settings_set"
                     ? { settings: { membersUseHubApi: false } }
                     : undefined;
-      // Connections' other parts (GitHub, Google) find a hub without them.
+      // Connections' other parts (GitHub) find a hub without them.
       return Promise.resolve(output === undefined ? { ok: false, error: { code: "not_found", message: `${tool} isn't faked` } } : { ok: true, output });
     },
     subscribe: (l) => ((listener = l), () => undefined),

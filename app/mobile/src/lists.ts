@@ -194,19 +194,9 @@ export const approvalView = (r: HumanRequest, projectTitle: string | undefined):
     add("Kind", r.gated.class, { more: true });
     add("Secrets", list(r.gated.secretEnv?.map((e) => e.name)));
   } else if (preview !== undefined) {
-    // The hub words it to follow "<the Navi> wants to": "Send an email".
+    // The hub words it to follow "<the Navi> wants to": "Use create_page on docs".
     wants = `wants to ${preview.title.charAt(0).toLowerCase()}${preview.title.slice(1)}`;
     risk = preview.action === "spend" ? "money" : preview.action === "delete" ? "irreversible" : undefined;
-    add("As", preview.account);
-    add("To", list(preview.to));
-    add("Cc", list(preview.cc));
-    add("Bcc", list(preview.bcc));
-    add("Reaches", preview.audience);
-    add("Subject", preview.subject);
-    add("On", preview.target);
-    add("When", preview.when);
-    add("Body", preview.body, { lines: true });
-    add("Attachments", list(preview.attachments?.map((a) => a.name)));
     add("Input", preview.input, { mono: true, more: true, lines: true });
   } else if (r.permission !== undefined) {
     wants = r.permission.site !== undefined ? `wants to visit ${r.permission.site}` : `wants to use ${r.permission.toolName}`;

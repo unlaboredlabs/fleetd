@@ -1,4 +1,4 @@
-// A setup step's guide, shared by #/setup and Settings › Hub accounts (Google): numbered parts, each with the provider's
+// A setup step's guide, shown by #/setup: numbered parts, each with the provider's
 // pages to open and the values to paste there, each value with a Copy button.
 import { Copy, ExternalLink } from "lucide-react";
 import type { ReactNode } from "react";

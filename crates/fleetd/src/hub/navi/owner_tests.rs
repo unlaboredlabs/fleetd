@@ -88,8 +88,6 @@ fn tool_calls(navi: &Value) -> Vec<(&'static str, Value)> {
         ("navi_site_revoke", flat(json!({ "site": "example.com" }))),
         ("navi_signins_forget", r.clone()),
         ("navi_asks", json!({ "navi": r })),
-        ("google_get", json!({ "project": r })),
-        ("google_disconnect", json!({ "project": r })),
         ("mcp_servers_get", json!({ "project": r })),
         ("hub_links_get", json!({ "navi": r })),
         ("events_list", json!({ "projectRef": r })),

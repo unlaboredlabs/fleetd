@@ -173,7 +173,6 @@ pub fn registry() -> Registry {
     crate::hub::onepassword::register(&mut tools);
     crate::hub::github_app::tools::register(&mut tools);
     crate::hub::hub_links::tools::register(&mut tools);
-    crate::hub::google::tools::register(&mut tools);
     crate::hub::train::tools::register(&mut tools);
     crate::hub::tasks::tools::register(&mut tools);
     crate::hub::steer::tools::register(&mut tools);

@@ -45,7 +45,7 @@ export function NaviScreen() {
                 Your own assistant, on your machines. Tell it what you need in a chat, as you would a person.
               </Text>
               <ul className={s.does}>
-                <Text as="li">Reads your mail, keeps your calendar and finds things in your Drive and Notion.</Text>
+                <Text as="li">Researches, keeps your to-dos and notes, and works with the tools you connect.</Text>
                 <Text as="li">Uses a browser for you, and remembers what matters from one day to the next.</Text>
                 <Text as="li">Asks your projects’ leads for work, and tells you when it lands.</Text>
               </ul>

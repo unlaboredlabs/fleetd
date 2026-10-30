@@ -282,7 +282,7 @@ the 186 call sites is the largest single piece of work (§8, step 3).
   - `project_message` writes into another project as an agent, labelled "Navi (Alice)", which is input and never
     an approval (`chat.rs:55-57`). It is allowed only in projects where Alice is a member.
   - A Navi never answers an approval, a secret or a takeover anywhere.
-- Its secrets (a 1Password service account, Gmail tokens) are sealed to its machine and belong to that project
+- Its secrets (a 1Password service account, its MCP servers' keys) are sealed to its machine and belong to that project
   only, as the Navi plan already says (§3.7).
 
 ### 5.2 Memory

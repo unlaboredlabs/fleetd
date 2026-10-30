@@ -4,7 +4,7 @@
 // re-emits its chat.message; the only state here is what the person just did, until the hub's next read of it.
 // Once answered, an item folds to one line that opens back up to the whole card.
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 import type { ChatItem, CommandApprovalItem, Machine, SecretRequestItem, ToolPreview } from "../../../shared/contracts";
 import { marked } from "../../../shared/hidden";
 import type { HubError } from "../../../shared/hub";
@@ -14,7 +14,7 @@ import { configLines, configWords } from "../tryit/model";
 import { Exact, HiddenWarning, marks } from "./Exact";
 import { patchLocal, useLocal, type Failed } from "./local";
 import { prose } from "./prose";
-import { actionWarning, actionWords, answerWords, askTitle, confirmWords, foldedBody, integrationName, previewRows } from "./toolPreview";
+import { actionWarning, actionWords, answerWords, confirmWords } from "./toolPreview";
 import {
   approvalOffline,
   approvalOutcome,
@@ -318,54 +318,10 @@ function SecretItem({ item, read }: { item: SecretRequestItem; read: number | un
 const fromControl = (e: KeyboardEvent<HTMLElement>): boolean =>
   e.target !== e.currentTarget && (e.target as HTMLElement).closest("button, input, textarea, select, a, [role=button]") !== null;
 
-/**
- * An integration's ask, exactly as it would run: who it acts as and reaches, its subject, the whole body under a
- * hairline, and everything the tool gets behind one disclosure, so nothing is hidden behind the fields.
- */
+/** An integration's ask, exactly as it would run: everything the tool gets, behind one disclosure. */
 function PreviewDetail({ preview }: { preview: ToolPreview }) {
-  const rows = previewRows(preview);
   return (
     <div className={s.preview} data-tool={preview.tool}>
-      {rows.length === 0 ? null : (
-        <dl className={s.fields}>
-          {rows.map((row) => (
-            <div key={row.label} className={s.fieldRow}>
-              <dt>
-                <Text size="xs" tone="quiet">
-                  {row.label}
-                </Text>
-              </dt>
-              <dd>
-                {row.values.map((v, i) => {
-                  // The comma closes the value, after its note when it has one.
-                  const comma = i < row.values.length - 1 ? "," : "";
-                  return (
-                    // Exact values from the tool's input (addresses, file names): literal text, as a chat attachment's name is.
-                    <span key={`${String(i)}-${v.text}`} className={s.value} data-text="code">
-                      <Text size="sm">
-                        <Exact text={v.text} ltr />
-                        {v.note === undefined ? comma : null}
-                      </Text>
-                      {v.note === undefined ? null : (
-                        <Text size="xs" tone="quiet">
-                          <Exact text={v.note} ltr />
-                          {comma}
-                        </Text>
-                      )}
-                    </span>
-                  );
-                })}
-                {row.note === undefined ? null : (
-                  <Text size="xs" tone="quiet">
-                    {row.note}
-                  </Text>
-                )}
-              </dd>
-            </div>
-          ))}
-        </dl>
-      )}
-      {preview.body === undefined || preview.body === "" ? null : <Body body={preview.body} />}
       <details className={s.everything}>
         <summary>
           <Text size="xs" tone="quiet">
@@ -376,24 +332,6 @@ function PreviewDetail({ preview }: { preview: ToolPreview }) {
           {marks(preview.input, true)}
         </Code>
       </details>
-    </div>
-  );
-}
-
-/** The body, whole, or folded with Show all in place when it is long. */
-function Body({ body }: { body: string }) {
-  const [all, setAll] = useState(false);
-  const folded = foldedBody(body);
-  return (
-    <div className={s.body}>
-      <Text as="p" size="sm" className={cx(s.line)}>
-        <bdi dir="auto">{marks(all || folded === undefined ? body : folded, true)}</bdi>
-      </Text>
-      {folded === undefined ? null : (
-        <Button size="sm" variant="ghost" className={s.showAll} onClick={() => setAll(!all)}>
-          {all ? "Show less" : "Show all"}
-        </Button>
-      )}
     </div>
   );
 }
@@ -471,7 +409,7 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
           {previewConfig !== undefined
             ? "Try it setting"
             : preview !== undefined
-              ? `${actionWords(preview.action)} · ${integrationName(preview.integration)}`
+              ? `${actionWords(preview.action)} · MCP server`
               : gated === undefined
                 ? "Permission"
                 : "Command"}
@@ -493,7 +431,18 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
           : gated !== undefined
             ? prose(gated.reason)
             : preview !== undefined
-              ? marks(askTitle(preview, asker ?? "Navi"))
+              ? (
+                  <>
+                    {marks(`${asker ?? "Navi"} wants to use `)}
+                    <InlineCode>
+                      <Exact text={preview.tool} ltr />
+                    </InlineCode>
+                    {" on "}
+                    <InlineCode>
+                      <Exact text={preview.server} ltr />
+                    </InlineCode>
+                  </>
+                )
               : permission !== undefined
                 ? (
                     <>
@@ -508,9 +457,9 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
           gated?.cwd,
           ...(gated?.secretEnv ?? []).flatMap((e) => [e.name, e.secretKey]),
           permission?.toolName,
-          ...(preview === undefined ? [] : [preview.title, ...previewRows(preview).flatMap((r) => r.values.flatMap((v) => [v.text, v.note]))]),
+          preview?.title,
         ]}
-        lines={[previewConfig?.why, gated?.reason, previewConfig === undefined ? undefined : configLines(previewConfig.config).join("\n"), permission?.summary, preview?.body, preview?.input]}
+        lines={[previewConfig?.why, gated?.reason, previewConfig === undefined ? undefined : configLines(previewConfig.config).join("\n"), permission?.summary, preview?.input]}
       />
       <div className={s.detail}>
         {/* A proposed Try it setting: its commands as they would run, in order. */}

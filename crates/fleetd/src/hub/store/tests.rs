@@ -1175,3 +1175,81 @@ fn a_fresh_hub_has_high_and_medium() {
         ]
     );
 }
+
+/// A hub from before Google and Notion went (D236): the Google client, accounts and mail state go, and so do Navis'
+/// Notion servers, each node that held a Notion token queued to forget it; a custom server stays as it was.
+#[test]
+fn google_and_notion_go_on_an_older_hub_and_their_secrets_are_queued_to_forget() {
+    use super::migrations::MIGRATIONS;
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    // Found by content, not as the last migration, so later migrations don't break this test.
+    let gone = MIGRATIONS
+        .iter()
+        .position(|m| m.contains("DROP TABLE google_client"))
+        .expect("the no-Google-or-Notion migration");
+    for m in &MIGRATIONS[..gone] {
+        conn.execute_batch(m).unwrap();
+    }
+    let sealed = |m: &str| format!(r#"{{"machineId":"{m}","fingerprint":"5ec2e7a1"}}"#);
+    let server = |name: &str, kind: &str, holders: &[&str]| {
+        let sealed_on: Vec<String> = holders.iter().map(|m| sealed(m)).collect();
+        format!(
+            r#"{{"scope":{{"kind":"project","machineId":"devbox","projectId":"navi"}},"name":"{name}","enabled":true,
+            "roles":{{"lead":true,"writers":false,"reviewers":false}},
+            "transport":{{"type":"stdio","command":"npx","args":["-y","server"]}},
+            "env":[{{"name":"TOKEN","kind":"secret","sealedOn":[{}]}}],
+            "integration":{{"kind":"{kind}"}},"updatedAt":"2026-10-27T00:00:00Z"}}"#,
+            sealed_on.join(",")
+        )
+    };
+    conn.execute(
+        "INSERT INTO mcp_servers (machine_id, project_id, name, data) VALUES
+           ('devbox', 'navi', 'notion', ?1), ('devbox', 'navi', 'crm', ?2), ('lab', 'navi2', 'notes', ?3)",
+        rusqlite::params![
+            server("notion", "notion", &["devbox"]),
+            server("crm", "custom", &["devbox"]),
+            server("notes", "notion", &["lab", "devbox"]),
+        ],
+    )
+    .unwrap();
+    conn.execute_batch(
+        r#"INSERT INTO google_client (id, data) VALUES (1, '{"clientId":"1-a.apps.googleusercontent.com"}');
+        INSERT INTO google_accounts (machine_id, project_id, data) VALUES ('devbox', 'navi', '{"email":"ana@example.com"}');
+        INSERT INTO google_mail_state (id, pulled_ms) VALUES (1, 5);"#,
+    )
+    .unwrap();
+    conn.execute_batch(MIGRATIONS[gone]).unwrap();
+    for m in &MIGRATIONS[gone + 1..] {
+        conn.execute_batch(m).unwrap();
+    }
+
+    let count = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap() };
+    assert_eq!(
+        count("SELECT count(*) FROM sqlite_master WHERE name LIKE 'google%'"),
+        0
+    );
+    let names: Vec<String> = conn
+        .prepare("SELECT name FROM mcp_servers")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(names, ["crm"]);
+    let queued: Vec<(String, String, String)> = conn
+        .prepare("SELECT machine_id, project_id, name FROM mcp_secret_forgets ORDER BY 1, 2")
+        .unwrap()
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    let row = |m: &str, p: &str, n: &str| (m.to_owned(), p.to_owned(), n.to_owned());
+    assert_eq!(
+        queued,
+        [
+            row("devbox", "navi", "notion"),
+            row("devbox", "navi2", "notes"),
+            row("lab", "navi2", "notes"),
+        ]
+    );
+}

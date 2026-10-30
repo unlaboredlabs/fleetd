@@ -6,7 +6,6 @@ pub mod agent_mcp;
 pub mod args;
 pub mod chat;
 pub mod github_app;
-pub mod google_mcp;
 pub mod hub_key;
 pub mod mcp_client;
 pub mod metrics;
@@ -296,9 +295,6 @@ pub fn main() -> ExitCode {
     }
     if argv.first().map(String::as_str) == Some("agent-mcp") {
         return ExitCode::from(agent_mcp::run(&argv[1..]));
-    }
-    if argv.first().map(String::as_str) == Some(fleetd_contracts::google::GOOGLE_MCP_ARG) {
-        return ExitCode::from(google_mcp::run(&argv[1..]));
     }
     // The watcher an update starts from the previous binary (crate::update::finish); not for people, so not in help.
     if argv.first().map(String::as_str) == Some("update-finish")

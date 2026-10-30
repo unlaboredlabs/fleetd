@@ -175,7 +175,6 @@ fn place_words(place: &str) -> String {
                 .to_owned();
         }
         "github" => "Hub accounts › GitHub",
-        "google" => "Hub accounts › Google",
         "invites" | "people" => "Hub › People",
         "machines" => "Hub › Machines",
         other => other,
@@ -252,7 +251,7 @@ mod tests {
         read(
             guides(HUB),
             checks,
-            &[SetupStepId::Notion].into_iter().collect(),
+            &[SetupStepId::People].into_iter().collect(),
         )
     }
 
@@ -293,17 +292,7 @@ mod tests {
                 ),
                 (
                     State::Skipped,
-                    "optional · fleetd init --step people".into(),
-                    None
-                ),
-                (
-                    State::Skipped,
-                    "optional · fleetd init --step google".into(),
-                    None
-                ),
-                (
-                    State::Skipped,
-                    "later · fleetd init --step notion".into(),
+                    "later · fleetd init --step people".into(),
                     None
                 ),
             ]
@@ -370,31 +359,29 @@ mod tests {
     }
 
     #[test]
-    fn a_guide_puts_each_value_on_its_own_line_and_says_where_secrets_go() {
-        let google = steps(&[])
+    fn a_guide_puts_each_value_on_its_own_line_and_says_where_in_the_app() {
+        let github = steps(&[])
             .into_iter()
-            .find(|s| s.id == SetupStepId::Google)
+            .find(|s| s.id == SetupStepId::Github)
             .unwrap();
-        let text = guide(&google);
-        assert!(text.starts_with("Each person's Navi reads"), "{text}");
+        let text = guide(&github);
+        assert!(text.starts_with("The hub opens PRs"), "{text}");
         assert!(
-            text.contains("\n1. Create a Google Cloud project\n"),
+            text.contains("\n1. Create the hub's GitHub App\n"),
             "{text}"
         );
         assert!(
-            text.contains("   Project name:\n     fleetd-devbox\n"),
+            text.contains("   Or on the hub, from a terminal:\n     fleetd github-app create\n"),
             "{text}"
         );
         assert!(
-            text.contains("\n6. Gmail in real time (optional)\n"),
+            text.contains("In the app: Settings › Hub accounts › GitHub."),
             "{text}"
         );
         assert!(
-            text.contains("on Settings › Hub accounts › Google"),
-            "{text}"
-        );
-        assert!(
-            text.ends_with("Test: Ask Google whether it knows this client."),
+            text.ends_with(
+                "Test: Mint a token for each installation, or ask gh who it is logged in as."
+            ),
             "{text}"
         );
         let people = steps(&[])

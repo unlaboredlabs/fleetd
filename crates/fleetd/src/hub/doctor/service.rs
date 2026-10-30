@@ -92,7 +92,7 @@ pub trait DoctorFleet: Send + Sync {
     fn claude_setup(&self) -> BoxFut<'_, Option<checks::ClaudeSetupView>> {
         Box::pin(async { None })
     }
-    /// What the hub keeps of its optional setup: people, the Google client, Navis with Notion.
+    /// What the hub keeps of its optional setup: people, the GitHub App.
     fn setup_facts(&self) -> checks::SetupFacts {
         checks::SetupFacts::default()
     }
@@ -247,7 +247,7 @@ impl Doctor {
         out
     }
 
-    /// The setup checks read from the hub's own state, as it is now (people, Google, Notion, Claude's accounts): cheap,
+    /// The setup checks read from the hub's own state, as it is now (people, the GitHub App, Claude's accounts): cheap,
     /// so setup reads them fresh rather than from the last run.
     pub async fn setup_checks(&self) -> Vec<DoctorCheck> {
         let mut out = checks::setup_checks(&self.deps.fleet.setup_facts());

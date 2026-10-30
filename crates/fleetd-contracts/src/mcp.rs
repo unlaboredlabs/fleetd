@@ -1383,7 +1383,7 @@ input!(
         /// An HTTP or SSE server's headers, the whole list.
         #[serde(default)]
         headers: List<crate::mcp_servers::McpValueSet, 0, 50>,
-        /// What it is to a Navi: Google, Notion or custom, for the hub's tool policy.
+        /// The tools the person marked as only reading, for the hub's tool policy.
         integration: Option<crate::integrations::McpIntegration>,
     }
 );
@@ -1459,111 +1459,6 @@ input!(McpServerTestInput {
 output!(McpServerTestOutput {
     machine_id: MachineId,
     result: crate::mcp_servers::McpTestResult,
-});
-
-// google_get, google_client_set, google_client_test, google_connect, google_disconnect: a Navi's own Google
-// connection (crate::google).
-input!(GoogleGetInput {
-    /// Also this Navi's account.
-    project: Option<ProjectRef>,
-});
-output!(GoogleGetOutput {
-    /// The admin's OAuth client; none until one is saved.
-    client: Option<crate::google::GoogleClient>,
-    /// The asked Navi's account, when it has one.
-    account: Option<crate::google::GoogleAccount>,
-    /// What connecting asks Google for.
-    scopes: Vec<String>,
-    /// Where the consent page sends the person back: a loopback address, any port.
-    redirect: String,
-    /// How the hub hears of new mail now: push through Pub/Sub, or polling.
-    mail_mode: crate::google::MailMode,
-    /// Why it polls although Pub/Sub is set up: what the last read of the subscription said.
-    mail_problem: Option<String>,
-});
-input!(
-    #[serde(remote = "Self")]
-    GoogleClientSetInput {
-        client_id: crate::google::GoogleClientId,
-        /// The client secret sealed to each machine that runs a Navi.
-        sealed: Vec<crate::mcp_servers::McpSeal>,
-    }
-);
-checked!(GoogleClientSetInput, |input| {
-    if input.sealed.is_empty() {
-        return Err("the client secret is sealed to no machine".into());
-    }
-    let mut machines = std::collections::BTreeSet::new();
-    if !input
-        .sealed
-        .iter()
-        .all(|s| machines.insert(s.machine_id.as_str()))
-    {
-        return Err("the client secret is sealed to a machine twice".into());
-    }
-    Ok(())
-});
-output!(GoogleClientSetOutput {
-    client: crate::google::GoogleClient,
-    /// Machines that were offline: their Navis can't connect until the client is saved again while they are online.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    missing_on: Vec<MachineId>,
-});
-input!(GoogleClientTestInput {
-    /// Where to test; default: the first machine online that holds the client.
-    machine_id: Option<MachineId>,
-});
-output!(GoogleClientTestOutput {
-    machine_id: MachineId,
-    check: crate::google::GoogleClientCheck,
-});
-input!(GoogleConnectInput {
-    /// The Navi.
-    project: ProjectRef,
-    /// From Google's redirect.
-    code: crate::google::GoogleCode,
-    /// The PKCE verifier whose challenge the consent page was opened with.
-    code_verifier: crate::google::PkceVerifier,
-    /// The loopback address the code was sent to.
-    redirect_uri: crate::google::LoopbackUri,
-});
-output!(GoogleConnectOutput {
-    account: crate::google::GoogleAccount,
-});
-input!(GooglePubsubSetInput {
-    /// None: turn real-time mail off; the hub checks each Navi's mail about every minute.
-    pubsub: Option<GooglePubsubSet>,
-});
-/// Gmail's push through the admin's Pub/Sub: the topic Gmail tells, the subscription one machine reads, and the
-/// service account key it reads with, sealed to that machine.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct GooglePubsubSet {
-    pub topic: crate::google::PubsubTopic,
-    pub subscription: crate::google::PubsubSubscription,
-    pub machine_id: MachineId,
-    /// The service account's JSON key, sealed with crypto_box_seal to that machine's boxPubKey.
-    pub sealed: crate::secrets::SealedSecret,
-}
-output!(GooglePubsubSetOutput {
-    client: crate::google::GoogleClient,
-});
-input!(GoogleMailSetInput {
-    /// The Navi.
-    project: ProjectRef,
-    rule: crate::google::MailWakeRule,
-    /// With rule query: Gmail search.
-    query: Option<crate::prim::Line<1, 500>>,
-});
-output!(GoogleMailSetOutput {
-    account: crate::google::GoogleAccount,
-});
-input!(GoogleDisconnectInput {
-    project: ProjectRef
-});
-output!(GoogleDisconnectOutput {
-    /// Whether Google confirmed the revoke; the tokens are gone from the machine either way.
-    revoked: bool,
 });
 
 // prompt_get, prompt_set, session_prompt_get: every prompt fleetd sends a model.
@@ -2877,7 +2772,7 @@ input!(GithubAppManifestInput {
     /// What the admin's GitHub shows it as: `fleetd on <host>`. GitHub may ask for another when it is taken.
     name: crate::github_app::GithubAppName,
     /// Where GitHub sends the admin back with the code: the loopback page that posted the manifest.
-    redirect: crate::google::LoopbackUri,
+    redirect: crate::github_app::LoopbackUri,
     /// Make it in this organization; absent: in the admin's own account.
     organization: Option<crate::github_app::GithubLogin>,
 });
@@ -2902,7 +2797,7 @@ input!(GithubConnectInput {
     /// From GitHub's redirect.
     code: crate::github_app::GithubCode,
     /// The PKCE verifier whose challenge the sign-in was opened with.
-    code_verifier: crate::google::PkceVerifier,
+    code_verifier: crate::github_app::PkceVerifier,
     /// The loopback address the code was sent to.
     redirect_uri: crate::github_app::GithubLoopback,
 });
@@ -3122,15 +3017,6 @@ tools! {
     mcp_server_remove => McpServerRemove, Operate, McpServerRemoveInput, McpServerRemoveOutput;
     mcp_settings_set => McpSettingsSet, Operate, McpSettingsSetInput, McpSettingsSetOutput;
     mcp_server_test => McpServerTest, Operate, McpServerTestInput, McpServerTestOutput;
-    google_get => GoogleGet, Read, GoogleGetInput, GoogleGetOutput;
-    // Human keys only (the handlers check): the client with operate on every machine, as a global MCP server; an
-    // account with operate on its Navi's machine.
-    google_client_set => GoogleClientSet, Operate, GoogleClientSetInput, GoogleClientSetOutput;
-    google_client_test => GoogleClientTest, Operate, GoogleClientTestInput, GoogleClientTestOutput;
-    google_connect => GoogleConnect, Operate, GoogleConnectInput, GoogleConnectOutput;
-    google_disconnect => GoogleDisconnect, Operate, GoogleDisconnectInput, GoogleDisconnectOutput;
-    google_pubsub_set => GooglePubsubSet, Operate, GooglePubsubSetInput, GooglePubsubSetOutput;
-    google_mail_set => GoogleMailSet, Operate, GoogleMailSetInput, GoogleMailSetOutput;
     github_app_get => GithubAppGet, Read, GithubAppGetInput, GithubAppGetOutput;
     // Owners' and admins' human keys only (the handlers check): the hub's own GitHub App.
     github_app_manifest => GithubAppManifest, Admin, GithubAppManifestInput, GithubAppManifestOutput;

@@ -173,8 +173,7 @@ pub struct McpServer {
     /// An HTTP or SSE server's headers.
     #[serde(default)]
     pub headers: Vec<McpValue>,
-    /// What it is to a Navi (Google, Notion or custom), for the hub's tool policy; none for a server added before
-    /// integrations, which counts as custom.
+    /// The tools the person marked as only reading, for the hub's tool policy; none marks none.
     pub integration: Option<crate::integrations::McpIntegration>,
     pub updated_at: Timestamp,
 }

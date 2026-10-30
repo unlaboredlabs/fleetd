@@ -306,7 +306,7 @@ fn fleetd_server(role: SessionRole, sock: &Path, session_id: &str) -> Option<ser
     }))
 }
 
-/// This binary as a session's claude starts it for fleetd's own servers (`agent-mcp`, `google-mcp`).
+/// This binary as a session's claude starts it for fleetd's own server (`agent-mcp`).
 pub fn self_command() -> String {
     match super::self_exe::pinned() {
         Some(pinned) => pinned.to_string_lossy().into_owned(),
@@ -1082,29 +1082,6 @@ impl SessionService {
                     },
                 };
                 Ok(SessionOutput::McpTested(result))
-            }
-            SessionCall::Google { call } => {
-                let folder = match &call {
-                    fleetd_contracts::google::GoogleCall::Connect { project_id, .. }
-                    | fleetd_contracts::google::GoogleCall::Status { project_id }
-                    | fleetd_contracts::google::GoogleCall::Disconnect { project_id, .. }
-                    | fleetd_contracts::google::GoogleCall::MailFiles { project_id, .. } => {
-                        Some(self.project_root(project_id)?)
-                    }
-                    _ => None,
-                };
-                let home = self.inner.config.home.clone();
-                let box_key = super::identity::load_or_create_box_key(&home).ok();
-                let answer = super::google::answer(
-                    &home,
-                    &super::google::Endpoints::default(),
-                    call,
-                    box_key.as_ref(),
-                    folder,
-                )
-                .await
-                .map_err(invalid)?;
-                Ok(SessionOutput::Google { answer })
             }
             SessionCall::Launch(launch) => self.launch(launch).await,
             SessionCall::Send {
@@ -2322,7 +2299,6 @@ impl SessionService {
         let kept = super::mcp_servers::kept(&dir);
         let session_mcp = super::mcp_servers::session_config(
             &config.home,
-            Some(Path::new(&row.local.workspace_root)),
             kept.as_ref(),
             fleetd_server(row.local.role, &sock, id),
             id,
@@ -3714,7 +3690,6 @@ impl SessionService {
         blocking(move || {
             super::project_env::forget(&home, &id);
             super::mcp_servers::forget(&home, &id);
-            super::google::forget(&home, &id);
         })
         .await;
         self.st().machine(frame);

@@ -69,7 +69,7 @@ make this machine a worker of that hub, without SSH from the hub: the command `f
 ### fleetd init {#init-step}
 
 ```text
-fleetd init --step <address|machines|claude|github|people|google|notion> [--home <dir>]
+fleetd init --step <address|machines|claude|github|people> [--home <dir>]
 ```
 
 open one of the hub's setup steps: why, the values to paste and the pages to open, then Test it, or put it off for later. The app's Settings › Hub › Setup has the same steps

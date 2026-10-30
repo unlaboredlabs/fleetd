@@ -8,7 +8,7 @@ person's answers (§6) and the core as built (§7). This records intent when wri
 - Navi **sends email itself after the person approves it in the app**, with no "always allow" at first.
 - **No chat-app bridges in v1** (Telegram, Slack, iMessage): a mobile app comes later.
 - **Unlimited Navis per person**, each a named assistant, as Grok bots and OpenAI dots are. Not one per person.
-- **v1 includes Google (Gmail, Calendar, Drive), Notion and custom MCP integrations.**
+- **v1 includes custom MCP integrations** and no built-in ones (D236).
 
 ## The recommendation in brief
 
@@ -32,7 +32,7 @@ session ran with full access. W97 brought it back; see §7.)
 
 | | What it is (Oct 2026) | Take | Leave |
 |---|---|---|---|
-| **Grok Bot** (xAI/SpaceXAI, beta Aug 2026) | Named bots that act as "teammates" on one cloud Linux VM per user. A **Primary Bot** takes everyday requests and routes them to specialist bots. Routines run on a schedule or a trigger (Slack message, Git event). "Teach a task" records you doing something and turns it into a skill. Plugins for Gmail, Calendar, Notion, Linear and Stripe come first; the browser is the fallback. Approval is needed for send, publish, purchase, delete, permission or prod changes and legal terms, with allow once / deny / always allow, and require-approval rules beat always-allow. Secrets go in masked fields. Mobile apps can watch the computer and take it over. | The **primary-bot-routes-to-owners** model, which is Navi routing to project leads. The **approval list**, with require-approval rules beating always-allow. **Connectors before the browser.** Take over from the phone. | All bots share one VM, cookies and credentials, so "separate bots are not separate security zones". fleetd's fresh session per screen is better. |
+| **Grok Bot** (xAI/SpaceXAI, beta Aug 2026) | Named bots that act as "teammates" on one cloud Linux VM per user. A **Primary Bot** takes everyday requests and routes them to specialist bots. Routines run on a schedule or a trigger (Slack message, Git event). "Teach a task" records you doing something and turns it into a skill. Plugins for mail, calendars, notes, Linear and Stripe come first; the browser is the fallback. Approval is needed for send, publish, purchase, delete, permission or prod changes and legal terms, with allow once / deny / always allow, and require-approval rules beat always-allow. Secrets go in masked fields. Mobile apps can watch the computer and take it over. | The **primary-bot-routes-to-owners** model, which is Navi routing to project leads. The **approval list**, with require-approval rules beating always-allow. **Connectors before the browser.** Take over from the phone. | All bots share one VM, cookies and credentials, so "separate bots are not separate security zones". fleetd's fresh session per screen is better. |
 | **OpenAI dots** (Sep 2026, ChatGPT Pro) | Built out of their coding agent (Codex), repackaged as "an entity and a single conversation". It works in the background and messages you first: a morning review of email, calendar and tasks, meeting briefs, and "proactive research" from what it knows of you. It uses every app connected to ChatGPT. It won't pay or share personal information without asking, but may book a meeting on its own. Early reviews say it asks too often and is sometimes late with alerts. | **A coding factory turned assistant** is exactly fleetd's path. Take **one conversation that feels like one entity**, the **morning review**, and **low-risk actions on its own, money and personal information always asked**. | Coarse permissions (no read-only drive access). Proactive research that builds a profile of your contacts. |
 | **Claude Duet** (Anthropic, Oct 21 2026; iOS, Android, claude.ai) | Proactive, and messages you first. One main thread plus **topic channels** that share one memory. A **Tasks tab** with statuses: Duet can say a task looks done, but only you close it. Morning brief, follow-ups on stalled threads, calendar conflict catches. It scans accounts every few hours, not continuously, because scans cost usage. It asks before sending, paying, signing or deleting, and each approval shows destination, content and every recipient. A check outside the agent confirms each action matches your request. Some actions always need approval, and moving money or trading is blocked even if you approve. Passwords never reach the model, and an outgoing classifier blocks credentials and IDs. It has its own cloud computer, but you **can't watch or take over** its browser. The reviewer's complaint: "it can see the Claude sessions on his computers but can't direct them." | **Approval cards that show every recipient and the exact content.** **A gate outside the model.** A **blocked-even-if-approved** list. **Scan every few hours, not continuously.** **Only the person closes a to-do**, which fleetd's checklist already does. Channels later. | Its biggest gap, directing coding sessions, is fleetd's core. That is the reason to build Navi. |
 | **Hermes Agent** (Nous Research, open source, Feb 2026) | A self-hosted personal agent: "one agent, one memory, every surface". **MEMORY.md + USER.md**, bounded and curated, which the agent manages itself. Full-text search over past chats. Skills it writes and improves from experience. Cron jobs. A single **gateway** process for Telegram, Discord, Slack, WhatsApp, Signal, SMS, email, Teams, Matrix and iMessage (through BlueBubbles). Start on the CLI, get notified on Telegram, carry on in Discord. | **Its memory design is the same as fleetd's** (`user.md` + `MEMORY.md` with caps), which confirms the foundation. Take the **gateway**: one process, many chat apps, the same agent and memory behind it. Take **skills learned from use**, since fleetd already has `skill_install`. | Unattended self-editing of skills, unless a person reviews them. |
@@ -130,8 +130,7 @@ Paths are under `crates/fleetd/src/` unless shown otherwise.
 
 ### MCP servers and skills: reusable as is
 - Per-project or global MCP servers. A secret in a server's env or headers is sealed in the app to each machine; the
-  hub keeps fingerprints only (`hub/mcp_servers/mod.rs:1-7`). **Gmail, Google Calendar, Slack and Notion arrive here**
-  as off-the-shelf MCP servers, with no new integration code.
+  hub keeps fingerprints only (`hub/mcp_servers/mod.rs:1-7`).
 - Skills per project or global (`hub/skills/mod.rs:1-6`), and a lead can `skill_install`.
 
 ### Projects as workspaces with zero or more repos: partly built
@@ -166,7 +165,7 @@ Paths are under `crates/fleetd/src/` unless shown otherwise.
 | Automations (cron, webhook, Run now) | Automation runs that are chat turns rather than orders (**s**) |
 | Browser, Android, iOS and desktop screens, recordings, takeover, 1Password | Factory bridge: `project_message`, `factory_status`, and a wake when the order Navi opened changes (**m**) |
 | `request_secret`, `gated_run`, permission prompts relayed as approvals, quiet hours | A blocked-even-if-approved list, and approval cards that show recipients (**s**) |
-| MCP servers with sealed secrets (the route to Gmail and Calendar), skills | Telegram gateway on the node (**m**), and later Slack or iMessage |
+| MCP servers with sealed secrets, skills | Telegram gateway on the node (**m**), and later Slack or iMessage |
 | Checklist as the person's to-do list | A persistent logged-in browser profile per site (**m**) |
 
 ---
@@ -224,8 +223,8 @@ Paths are under `crates/fleetd/src/` unless shown otherwise.
 ### 3.5 Its tools
 - **Screens:** browser, Android, iOS and Linux desktop sessions with recordings, takeover and 1Password fills, all as
   they are. The browser is the **fallback**; connectors come first, as Grok Bot does it.
-- **Integrations (v1, W97):** Google (Gmail, Calendar, Drive), Notion and any custom **MCP server**, added to a Navi
-  in Administration › Hub settings. Their OAuth tokens are sealed to the machine. Read tools run unasked; write and send
+- **Integrations (v1, W97):** any **MCP server** the person connects to a Navi in its settings. Their keys are sealed to
+  the machine. Read tools run unasked; write and send
   tools ask, the approval showing recipients and content (a separate writer's part).
 - **Web:** WebSearch and WebFetch, allowed in the assistant role.
 - **Files:** Navi's project directory on its machine is its filing cabinet: notes, drafts, downloads, exports. Files
@@ -303,9 +302,7 @@ Already there for this version, unchanged: memory and the nightly refresh (#621 
 approvals, the checklist, automations, and notifications with quiet hours.
 
 **Later steps**
-5. **Email and calendar:** documented MCP servers for Gmail and Google Calendar (and Microsoft 365), approval cards
-   that show recipients and content for send tools, the blocked-even-if-approved list, and email and calendar in the
-   morning brief. **m**
+5. ~~**Email and calendar.**~~ Dropped (D236): fleetd has no built-in integrations.
 6. **Telegram gateway** on the node: allow-listed user, chat both ways, urgent notices, "open the app" for approvals.
    **m**
 7. ~~**Persistent browser profiles** per site for Navi, so it stays logged in, kept on its node and scrubbed in
@@ -341,7 +338,7 @@ names several AI assistants. Shipmate is a large cruise app. Mate is a translato
 2. **Which chat app comes first for the phone?** *Answered: none in v1.* A mobile app comes later.
 3. **One Navi per person now, or a shared company Navi?** *Answered: unlimited Navis*, each a named assistant, like
    Grok bots or OpenAI dots. Each records who created it, for per-person Navis on a shared hub later.
-4. **Integrations in v1:** *Answered: Google (Gmail, Calendar, Drive), Notion and custom MCP servers.*
+4. **Integrations in v1:** *Answered: custom MCP servers only (D236).*
 
 ---
 
@@ -393,14 +390,14 @@ bridge (`hub/navi/bridge`) and the integrations (`hub/integrations`) are separat
 - The hub refuses everyone else, admins included, in one place: `navi::owner::guard`, which the registry runs before
   every tool's handler. It refuses a call whose input names another person's Navi anywhere: a `machineId` with a
   `projectId`, or with a `threadId` (the thread's project), or a `requestId` (the project that asked). That covers
-  `navi_*`, chat, approvals and secrets, integrations (Google, Notion, custom MCP servers), hub links, allowed sites,
+  `navi_*`, chat, approvals and secrets, integrations (its MCP servers), hub links, allowed sites,
   settings, events and `project_remove`. The one exception: an admin's `project_remove` of a Navi whose owner was
   removed from the hub.
 - Lists leave other people's Navis out (`owner::others`): `navi_list`, `fleetd_status` (projects, attention, chats),
   `project_get`'s list, `events_wait`, `requests_list`, the status rows and the agents view, and the app's chat and
   live streams. The factory bridge doesn't see or reach another person's Navi either, nor does a hub link.
 - A Navi with no owner (a hub without people) is anyone's, as before people.
-- The app also keeps a Navi with another `owner` out of the Navi page, Your accounts › Google and Hubs › Hub links
+- The app also keeps a Navi with another `owner` out of the Navi page and Hubs › Hub links
   (`isYours` in `screens/navi/model.ts`).
 
 ### The assistant role
@@ -617,48 +614,40 @@ refused, and a task never makes them (`hub/tasks/policy.rs`). The chat read is a
 project's or another person's is out of reach, and a message id from any other chat is refused as unknown. No index,
 embeddings or service: a person's chat stays small enough for a scan.
 
-## 9. Integrations and approvals (W97)
+## 9. Integrations and approvals (W97, D236)
 
-A Navi reaches outside services through MCP servers marked with what they are (`McpServer.integration`: `google`,
-`notion` or `custom`). The code is `crates/fleetd/src/hub/integrations/`; the contracts are
+A Navi reaches outside services through the MCP servers the person connects to it, each marked as an integration
+(`McpServer.integration`, with the tools the person marked as only reading in `read_tools`). fleetd has no built-in
+integrations (D236). The code is `crates/fleetd/src/hub/integrations/`; the contracts are
 `crates/fleetd-contracts/src/integrations.rs`.
 
 **Connecting.** From the Navi's settings (Integrations), never a coding project's: `mcp_server_set` refuses an
-`integration` on a project whose kind isn't `assistant`, since a coding lead runs with full access. Notion is its
-official server (`npx -y @notionhq/notion-mcp-server`) with the person's internal integration secret as `NOTION_TOKEN`;
-a custom server is any URL or command, with the tools the person marked as only reading in `read_tools`. A key or token
-is sealed in the app to the Navi's machine; the hub keeps its fingerprint only, and Disconnect (`mcp_server_remove`)
-makes the node forget it. Google (Gmail, Calendar, Drive) is fleetd's own: the hub serves it as a server named `google`
-of kind `google`, and `hub/integrations/google.rs` holds its tool names and the input fields its cards read.
+`integration` on a project whose kind isn't `assistant`, since a coding lead runs with full access. A server is any URL
+or command. A key is sealed in the app to the Navi's machine; the hub keeps its fingerprint only, and Disconnect
+(`mcp_server_remove`) makes the node forget it.
 
 **The gate, outside the model.** `policy::verdict(tool, input, servers)` answers each permission prompt for an MCP tool
-of the Navi's lead: Allow for a read; Ask with a `ToolPreview` for a write, send, delete, share or spend; Block for what
-is refused even if approved. `policy::launch_rules` puts the read tools in `--allowedTools` and the blocked ones in
-`--disallowedTools`. The relay (Navi core) calls both. The order of rules:
+of the Navi's lead: Allow for a read; Ask with a `ToolPreview` for anything else; Block for what is refused even if
+approved. `policy::launch_rules` puts the read tools in `--allowedTools` and the blocked ones in `--disallowedTools`.
+The relay (Navi core) calls both. The order of rules:
 
 1. The blocked list, by the words of any tool's name on any server: moving money (transfer, payout, withdraw, wire,
    money, funds, sending a transaction), trading (trade, sell, swap, stock, crypto; buying or placing shares, orders,
    positions) and creating accounts (sign up, create or open an account).
-2. The integration's table: `google.rs`, `notion.rs` (`API-*` reads by verb, `API-patch-page` with `archived` is a
-   delete), or a custom server's `read_tools`.
+2. The server's `read_tools`.
 3. Anything else asks, with its action guessed from its name.
 
-An ask is also blocked when its input looks like a credential (`hub/redact`): in its text, and inside an attached file
-whose bytes read as text (valid UTF-8, almost no control characters). A value that decodes as base64 is a file, and its
-base64 is never searched as it is, since random letters spell key shapes by chance; a binary file is shown by name and
-size and the person decides (D193). A value under 256 characters is too short to be a real file, and its own text is
-searched too, so a key can't go out as a tiny file. An ask is also blocked when its whole input, a file's bytes said by their size,
-doesn't fit the card (100,000 characters). Nothing is ever "always allowed".
+An ask is also blocked when its input looks like a credential (`hub/redact`), in the whole of it or in any string in
+it, and when its whole input doesn't fit the card (100,000 characters). Nothing is ever "always allowed".
 
-**The card.** `ToolPreview` carries the account, every To/Cc/Bcc, an audience line when the tool picks recipients
-itself, the subject or title, the time, the attachments (name, size, type, source), the target and the whole body, all
-read from the input the tool runs with, plus that input as JSON. A Gmail send's or reply's files are paths in the Navi's
-folder: the policy answers `Verdict::Files`, the relay has the Navi's node read them (`GoogleCall::MailFiles`, inside
-the folder only, at most 20 files and 25 MB), lists each on the card, refuses a text file holding a credential, and
-rewrites the approved input to pin each file's SHA-256, which `google-mcp` checks before it sends. The app names the Navi ("Ada wants to send an email"), marks
-an address outside the account's domain and Bcc, puts its one warning word only on a share, delete or spend, names the
-act on its buttons (Send it / Don't send), and once answered folds to what was decided ("Approved: send an email to …"),
-never "Sent": the hub knows the answer, not the tool's result.
+**The card.** `ToolPreview` carries the server, the tool, the action and the whole input the tool runs with, as JSON.
+The app names the Navi ("Ada wants to use create_page on docs"), puts its one warning word only on a share, delete or
+spend, names the act on its buttons (Send it / Don't send), and once answered folds to what was decided ("Approved:
+a change"), never "Sent": the hub knows the answer, not the tool's result.
+
+**Upgrading.** A hub from before D236 drops the stored connections, OAuth client and mail state of its former built-in
+integrations in a migration; each node that held one of their tokens is queued to forget it once online
+(`mcp_secret_forgets`, `mcp_servers::tools::run_forget`), and a node deletes the OAuth tokens it kept at start.
 
 ---
 

@@ -236,49 +236,6 @@ impl ApprovalHub for OpsPorts {
         })
     }
 
-    fn mail_files(
-        &self,
-        project: &ports::ProjectRef,
-        paths: Vec<String>,
-    ) -> BoxFut<'_, Result<Vec<fleetd_contracts::google::MailFile>, String>> {
-        use fleetd_contracts::google::{GoogleAnswer, GoogleCall};
-        let r: Option<fleetd_contracts::ids::ProjectRef> = convert(project);
-        Box::pin(async move {
-            let r = r.ok_or("Blocked by fleetd: the hub has no record of this Navi.")?;
-            let hub = self.hub();
-            let m = &r.machine_id;
-            if !hub.executors.is_connected(m) {
-                return Err(format!(
-                    "Blocked by fleetd: {m} is offline, so the files this email attaches can't be read for the \
-                     person's approval. Try again once it is online."
-                ));
-            }
-            if !hub
-                .link
-                .node_can(m, fleetd_contracts::node_link::CAP_GOOGLE_FILES)
-            {
-                return Err(format!(
-                    "Blocked by fleetd: {m}'s node is too old to attach files to email. Tell the person: they \
-                     update fleetd on {m}."
-                ));
-            }
-            let call = GoogleCall::MailFiles {
-                project_id: r.project_id.clone(),
-                paths,
-            };
-            match hub.executors.google(m, call).await {
-                Ok(GoogleAnswer::MailFiles { files }) => Ok(files),
-                Ok(_) => Err(format!(
-                    "Blocked by fleetd: {m}'s node gave an answer that doesn't fit the call."
-                )),
-                Err(ExecutorError::NodeRequestFailed { message, .. }) => {
-                    Err(format!("Blocked by fleetd, nothing was sent: {message}"))
-                }
-                Err(e) => Err(format!("Blocked by fleetd, nothing was sent: {e}")),
-            }
-        })
-    }
-
     fn navi_site_allow(&self, project: &ports::ProjectRef, site: &str, by: &str) -> BoxFut<'_, ()> {
         let r: Option<fleetd_contracts::ids::ProjectRef> = convert(project);
         let (site, by) = (site.to_owned(), by.to_owned());

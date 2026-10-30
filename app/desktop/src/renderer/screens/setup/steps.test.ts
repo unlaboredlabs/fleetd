@@ -18,7 +18,7 @@ describe("setup steps", () => {
     expect(isRequiredLeft(step("machines", { status: "done" }))).toBe(false);
     // Optional and "before" steps never hold agents back.
     expect(isRequiredLeft(step("github", { status: "look", failing: true }))).toBe(false);
-    expect(requiredLeft([step("address", { status: "done" }), step("machines"), step("claude"), step("google")])).toBe(2);
+    expect(requiredLeft([step("address", { status: "done" }), step("machines"), step("claude"), step("people")])).toBe(2);
     // The fixtures agree with the hub's count.
     for (const [name, scenario] of Object.entries(fixtures.scenarios)) {
       const steps = Object.entries(scenario.list).map(([id, read]) => step(id, read as Partial<SetupStep>));
@@ -29,13 +29,13 @@ describe("setup steps", () => {
   it("says each need and status in words", () => {
     expect(needWords(step("address").need)).toBe("Required");
     expect(needWords(step("github").need)).toBe("Before the first PR");
-    expect(needWords(step("google").need)).toBe("Optional");
+    expect(needWords(step("people").need)).toBe("Optional");
     expect([statusWords("done"), statusWords("look"), statusWords("skipped"), statusWords("todo")]).toEqual(["Done", "Needs a look", "Later", undefined]);
   });
 
   it("opens where each step's result is saved: a Hub page, and for Claude and GitHub your own accounts too", () => {
-    // Claude, GitHub and Google share Hub accounts, each landing on its own part of it.
-    expect(placesOf(step("google"))).toEqual([{ label: "Open Hub accounts", screen: { id: "settings", tab: "hub.accounts" }, reveal: "admin.google" }]);
+    // Claude and GitHub share Hub accounts, each landing on its own part of it.
+    expect(placesOf(step("people"))).toEqual([{ label: "Open Hub › People", screen: { id: "settings", tab: "hub.people" } }]);
     expect(placesOf(step("claude")).map((p) => p.label)).toEqual(["Open Hub accounts", "Open Your accounts"]);
     expect(placesOf(step("claude"))[1]).toEqual({ label: "Open Your accounts", screen: { id: "settings", tab: "accounts" }, reveal: "claude" });
     expect(placesOf(step("claude"))[0]?.reveal).toBe("admin.claude");

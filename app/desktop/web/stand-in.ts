@@ -77,14 +77,8 @@ const fleetdApi = (file: File): FleetdApi => {
       projectEnv: () => Promise.resolve({ ok: false, error: notHere }),
       mcpServer: () => Promise.resolve({ ok: false, error: notHere }),
       hubLink: () => Promise.resolve({ ok: false, error: notHere }),
-      googleClient: () => Promise.resolve({ ok: false, error: notHere }),
-      googlePubsub: () => Promise.resolve({ ok: false, error: notHere }),
       claudeAccount: () => Promise.resolve({ ok: false, error: notHere }),
       onePassword: () => Promise.resolve({ ok: false, error: notHere }),
-    },
-    google: {
-      connect: () => Promise.resolve({ ok: false, error: notHere }),
-      cancel: done,
     },
     github: {
       createApp: () => Promise.resolve({ ok: false, error: notHere }),

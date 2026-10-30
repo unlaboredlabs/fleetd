@@ -1,7 +1,6 @@
 // Settings › Projects › Project (#/settings/projects?for=<machine>/<project>, the project picked in the sidebar): its
 // name, its repos with their default setup (RepoSetting.tsx, SetupSetting.tsx), its worktrees, its agents' environment
-// variables, a Navi's integrations (Notion and other servers; its Google is in You › Your accounts, its linked hubs in
-// You › Hubs) and its browser's sign-ins (NaviSignins.tsx), the merge train's checks (TrainSetting.tsx), and deleting
+// variables, a Navi's integrations (its MCP servers; its linked hubs are in You › Hubs) and its browser's sign-ins (NaviSignins.tsx), the merge train's checks (TrainSetting.tsx), and deleting
 // it. Its memory refresh is on its Instructions & memory. Reads project_settings_get; writes project_settings_set,
 // project_env_set (through main, which seals each secret to the project machine's key) and project_remove. A secret's
 // value is write-only: typed here once, sealed in main, and only its fingerprint ever comes back.

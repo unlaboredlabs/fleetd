@@ -13,7 +13,7 @@ export const isNavi = (p: Pick<ProjectSummary, "kind">): boolean => p.kind === "
  */
 export const isYours = (p: Pick<ProjectSummary, "owner">, me: string | undefined): boolean => p.owner === undefined || p.owner === me;
 
-/** Your Navis still in use, as Settings lists them: your Google and the hubs each reaches. */
+/** Your Navis still in use, as Settings lists them: the hubs each reaches. */
 export const yourNavis = (projects: ReadonlyArray<ProjectSummary>, me: string | undefined): ProjectSummary[] =>
   projects.filter((p) => isNavi(p) && !isArchived(p) && isYours(p, me));
 

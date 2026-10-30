@@ -32,8 +32,7 @@ const NOTES: Readonly<Record<string, string>> = {
   "setup-fresh": "A hub fleetd init just made on devbox: the hub and devbox up, Claude and GitHub to do (devbox's claude logged out), the rest optional.",
   "setup-claude-logins": "Claude done the plain way: no hub key, devbox's own claude logged in.",
   "setup-github": "Claude done with the hub's API key; GitHub is next, and its Test finds gh logged in on the hub.",
-  "setup-google": "Everything required and GitHub done; Google is next, and its Test finds the client and real-time mail.",
-  "setup-done": "Everything required and GitHub done; Google and Notion put off for later, people optional.",
+  "setup-done": "Everything required and GitHub done; people put off for later.",
 };
 
 export default defineGroup({

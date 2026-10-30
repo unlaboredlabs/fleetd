@@ -6,8 +6,8 @@ description: Give agents more tools, globally or per project, from a command on 
 You can give fleetd's agents more tools through MCP servers: a GitHub or database server, your docs search, an internal
 API. Configure them in the desktop app, for every project or for one, and pick which agents get each.
 
-A Navi's Notion, and servers whose tools should ask before they write, are connected under
-its [Integrations](/docs/integrations) instead.
+A Navi's servers, whose tools ask before they write, are connected under its [Integrations](/docs/integrations)
+instead.
 
 ## Add a server {#add}
 
@@ -27,9 +27,6 @@ is off: that's how to turn a global server off for one project.
 
 A command server starts in the agent's working directory with the agent's environment, the
 [project's variables](/docs/projects#env) included, plus its own environment.
-
-A Navi with a Google account connected also gets fleetd's own `google` server, for its lead only: see
-[Google for Navi](/docs/google). It replaces a server of the same name in that Navi.
 
 ## When a change takes effect {#takes-effect}
 

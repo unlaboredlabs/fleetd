@@ -13,11 +13,10 @@ export const LEAKS: ReadonlyArray<readonly [string, RegExp]> = [
   ["a Slack token", /\bxox[abpr]-[A-Za-z0-9-]{10,}/u],
   ["a JWT", /\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/u],
   ["a fleetd key", /\bfld_(?!redacted)[a-z2-7]{20,}/u],
-  // git@github.com:owner/repo is a remote, not someone's address; nor is a Google service account (Gmail's push account,
-  // the reader setup names), which fleetd computes from the project.
+  // git@github.com:owner/repo is a remote, not someone's address.
   [
     "an email address",
-    /(?<![A-Za-z0-9._%+-])(?!git@github\.com\b)[A-Za-z0-9._%+-]+@(?!example\.com\b)(?![A-Za-z0-9.-]*\.gserviceaccount\.com\b)[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[a-z]{2,}\b/u,
+    /(?<![A-Za-z0-9._%+-])(?!git@github\.com\b)[A-Za-z0-9._%+-]+@(?!example\.com\b)[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[a-z]{2,}\b/u,
   ],
   ["a tailnet IPv4 address", /\b100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d{1,3}\.\d{1,3}\b/u],
   ["a tailnet IPv6 address", /\bfd7a:115c:a1e0:/iu],

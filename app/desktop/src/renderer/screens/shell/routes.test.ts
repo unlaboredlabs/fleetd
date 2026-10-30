@@ -85,7 +85,6 @@ describe("routes", () => {
       ["connections", "hub.accounts"],
       ["claude", "hub.accounts"],
       ["github", "hub.accounts"],
-      ["google", "hub.accounts"],
       ["hub", "hub.tools"],
       ["skills", "hub.tools"],
       ["setup", "hub.setup"],

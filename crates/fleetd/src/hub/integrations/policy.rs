@@ -1,11 +1,9 @@
 //! The per-tool policy the hub enforces on a session's MCP tools. Every tool resolves to a [`Rule`]: first the blocked
-//! list, by the words of the tool's name, for every server; then the integration's own table ([`super::google`] for
-//! the hub's own native server only, [`super::notion`], or a custom server's tools the person marked as reading); anything else asks, with an action
-//! guessed from its name. An asking tool whose input looks like it holds a credential is blocked too.
-use fleetd_contracts::google::MailFile;
+//! list, by the words of the tool's name, for every server; then the server's tools the person marked as reading;
+//! anything else asks, with an action guessed from its name. An asking tool whose input looks like it holds a
+//! credential is blocked too.
 use fleetd_contracts::integrations::{
-    IntegrationKind, McpToolName, PREVIEW_INPUT_MAX, PreviewAttachment, ToolAction, ToolPolicy,
-    ToolPreview,
+    McpToolName, PREVIEW_INPUT_MAX, ToolAction, ToolPolicy, ToolPreview,
 };
 use fleetd_contracts::mcp_servers::{FLEETD_SERVER, McpServer, McpServerName};
 use fleetd_contracts::prim::{Line, Text, js_len};
@@ -74,140 +72,8 @@ pub enum Verdict {
     Allow,
     /// Ask the person, showing this; once approved, answer Allow with the exact input it was read from.
     Ask(Box<ToolPreview>),
-    /// Have the Navi's node read the files at `paths` in its folder, which a Gmail send or reply attaches; then ask
-    /// with [`with_mail_files`]'s card, or refuse with why the node couldn't.
-    Files {
-        preview: Box<ToolPreview>,
-        paths: Vec<String>,
-    },
     /// Answer Deny with this, and ask no one.
     Block(&'static str),
-}
-
-/// The fields an integration reads from a tool's input for its card; [`preview`] bounds them.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct Draft {
-    pub title: Option<String>,
-    pub account: Option<String>,
-    pub to: Vec<String>,
-    pub cc: Vec<String>,
-    pub bcc: Vec<String>,
-    pub audience: Option<String>,
-    pub subject: Option<String>,
-    pub body: Option<String>,
-    pub target: Option<String>,
-    pub when: Option<String>,
-    pub attachments: Vec<Attachment>,
-}
-
-/// A file a tool attaches: its name, its size when its bytes are in the input, where it comes from otherwise.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct Attachment {
-    pub name: String,
-    pub bytes: Option<u64>,
-    pub from: Option<String>,
-}
-
-/// `text` without the line breaks and spaces a wrapped base64 holds.
-fn compact(text: &str) -> String {
-    text.chars().filter(|c| !c.is_ascii_whitespace()).collect()
-}
-
-/// A file's bytes: `text` decoded as base64 in any of its four spellings (standard or url-safe, padded or not), wrapped
-/// in lines or not. A value that decodes is a file, whatever its length.
-pub(super) fn file_bytes(text: &str) -> Option<Vec<u8>> {
-    use base64::Engine;
-    use base64::engine::general_purpose::{STANDARD, STANDARD_NO_PAD, URL_SAFE, URL_SAFE_NO_PAD};
-    let text = compact(text);
-    if text.is_empty() {
-        return None;
-    }
-    [STANDARD, STANDARD_NO_PAD, URL_SAFE, URL_SAFE_NO_PAD]
-        .iter()
-        .find_map(|e| e.decode(&text).ok())
-}
-
-/// The size an attachment's `content_base64` gives, the same on its card's row and in its JSON: the decoded bytes when
-/// it decodes, its own length otherwise.
-pub fn attachment_size(text: &str) -> u64 {
-    file_bytes(text).map_or(text.len(), |b| b.len()) as u64
-}
-
-/// Below this many characters an attachment's value is too short to be a real file: its text is also searched for a
-/// key's shape as it is, so a key can't go out as a tiny binary file.
-const SHORT_VALUE: usize = 256;
-
-/// Whether a file's bytes read as text: valid UTF-8 with almost no control characters. Only such a file is searched for
-/// a key; a binary one is shown by its name and size, and the person's approval decides.
-fn is_text(bytes: &[u8]) -> bool {
-    let Ok(text) = std::str::from_utf8(bytes) else {
-        return false;
-    };
-    let control = text
-        .chars()
-        .filter(|c| c.is_control() && !matches!(c, '\n' | '\r' | '\t'))
-        .count();
-    control * 100 <= text.chars().count()
-}
-
-/// `input` with the `content_base64` of each file a Google tool attaches (an `attachments` item with a `filename`) replaced by
-/// what `swap` returns for it; nothing else is changed, on any server.
-fn with_files(
-    kind: IntegrationKind,
-    input: &Value,
-    mut swap: impl FnMut(&str) -> Option<Value>,
-) -> Value {
-    let mut out = input.clone();
-    if kind != IntegrationKind::Google {
-        return out;
-    }
-    let Some(items) = out.get_mut("attachments").and_then(Value::as_array_mut) else {
-        return out;
-    };
-    for item in items.iter_mut().filter_map(Value::as_object_mut) {
-        let swapped = match item.get("content_base64") {
-            Some(Value::String(b)) if item.contains_key("filename") => swap(b),
-            _ => None,
-        };
-        if let Some(v) = swapped {
-            item.insert("content_base64".into(), v);
-        }
-    }
-    out
-}
-
-/// `input` as the card shows it: the bytes of each file a Google tool attaches said by their size, which no one reads.
-pub fn shown_input(kind: IntegrationKind, input: &Value) -> Value {
-    with_files(kind, input, |b| {
-        let bytes = file_bytes(b)?;
-        Some(Value::String(format!("[the file's {} bytes]", bytes.len())))
-    })
-}
-
-/// Whether a call would send or store what looks like a credential: in its text, and inside the files a Google tool
-/// attaches that read as text. A real file's base64 is never searched as it is: its random letters spell key shapes by
-/// chance, and refusing real mail for that would be worse than the key it might hide. A value under [`SHORT_VALUE`]
-/// characters is searched as it is too, and a value that doesn't decode isn't a file, and is searched as text.
-pub(super) fn sends_credential(kind: IntegrationKind, input: &Value) -> bool {
-    let mut files: Vec<Vec<u8>> = Vec::new();
-    let mut short_key = false;
-    let text = with_files(kind, input, |b| {
-        let bytes = file_bytes(b)?;
-        short_key |= compact(b).len() < SHORT_VALUE && crate::hub::redact::redact(b) != b;
-        files.push(bytes);
-        Some(Value::String("[file]".into()))
-    });
-    short_key || holds_credential(&text) || files.iter().any(|f| file_holds_credential(f))
-}
-
-/// Whether a file reads as text holding what looks like a credential. A binary one never does: its name and size are
-/// on the card, and the person's approval decides.
-pub fn file_holds_credential(bytes: &[u8]) -> bool {
-    if !is_text(bytes) {
-        return false;
-    }
-    let t = String::from_utf8_lossy(bytes);
-    crate::hub::redact::redact(&t) != t
 }
 
 /// A tool name's words, lower case: `create_account`, `createAccount` and `API-create-account` are all
@@ -320,39 +186,27 @@ pub fn guess(tool: &str) -> ToolAction {
     }
 }
 
-/// A server's integration as the policy reads it: Google's table only for the hub's own native server
-/// ([`crate::hub::google::is_native`]); any other server marked Google is a custom one, every write asking with its
-/// whole input.
-fn kind_of(server: Option<&McpServer>) -> (IntegrationKind, &[McpToolName]) {
-    match server.and_then(|s| Some((s, s.integration.as_ref()?))) {
-        Some((s, i)) if i.kind == IntegrationKind::Google && !crate::hub::google::is_native(s) => {
-            (IntegrationKind::Custom, i.read_tools.as_slice())
-        }
-        Some((_, i)) => (i.kind, i.read_tools.as_slice()),
-        None => (IntegrationKind::Custom, &[]),
-    }
+/// The tools a server's person marked as reading.
+fn reads_of(server: Option<&McpServer>) -> &[McpToolName] {
+    server
+        .and_then(|s| s.integration.as_ref())
+        .map_or(&[], |i| i.read_tools.as_slice())
 }
 
-/// The rule for one call: blocked by name, then the integration's table, then an ask.
-pub fn rule(kind: IntegrationKind, read_tools: &[McpToolName], tool: &str, input: &Value) -> Rule {
+/// The rule for one call: blocked by name, then the tools marked as reading, then an ask.
+pub fn rule(read_tools: &[McpToolName], tool: &str) -> Rule {
     if let Some(n) = never(tool) {
         return Rule::Blocked(n);
     }
-    let known = match kind {
-        IntegrationKind::Google => super::google::rule(tool, input),
-        IntegrationKind::Notion => super::notion::rule(tool, input),
-        IntegrationKind::Custom => read_tools
-            .iter()
-            .any(|t| t.as_str() == tool)
-            .then_some(Rule::Read),
-    };
-    known.unwrap_or_else(|| Rule::Ask(guess(tool)))
+    if read_tools.iter().any(|t| t.as_str() == tool) {
+        return Rule::Read;
+    }
+    Rule::Ask(guess(tool))
 }
 
 /// A tool's policy by its name alone, as the connect screen lists it.
 pub fn tool_policy(server: &McpServer, tool: &str) -> ToolPolicy {
-    let (kind, reads) = kind_of(Some(server));
-    rule(kind, reads, tool, &Value::Null).into()
+    rule(reads_of(Some(server)), tool).into()
 }
 
 /// `mcp__<server>__<tool>` split at a configured server's name, or at the first `__` after the prefix.
@@ -377,32 +231,21 @@ pub fn verdict(tool_name: &str, input: &Value, servers: &[McpServer]) -> Option<
         return None;
     }
     let server = servers.iter().find(|s| s.name.as_str() == server_name);
-    let (kind, reads) = kind_of(server);
-    Some(match rule(kind, reads, tool, input) {
+    Some(match rule(reads_of(server), tool) {
         Rule::Read => Verdict::Allow,
         Rule::Blocked(n) => Verdict::Block(n.why()),
         Rule::Ask(action) => {
-            if sends_credential(kind, input) {
+            if holds_credential(input) {
                 return Some(Verdict::Block(Never::Credential.why()));
             }
-            let shown = shown_input(kind, input);
-            if js_len(&serde_json::to_string_pretty(&shown).unwrap_or_default()) > PREVIEW_INPUT_MAX
+            if js_len(&serde_json::to_string_pretty(input).unwrap_or_default()) > PREVIEW_INPUT_MAX
             {
                 return Some(Verdict::Block(TOO_LARGE));
             }
-            let files = match kind {
-                IntegrationKind::Google => super::google::mail_paths(tool, input),
-                _ => None,
-            };
-            match (preview(kind, server_name, tool, action, input), files) {
-                (_, Some(Err(why))) => Verdict::Block(why),
-                (Some(p), Some(Ok(paths))) => Verdict::Files {
-                    preview: Box::new(p),
-                    paths,
-                },
-                (Some(p), None) => Verdict::Ask(Box::new(p)),
+            match preview(server_name, tool, action, input) {
+                Some(p) => Verdict::Ask(Box::new(p)),
                 // A name the contracts can't carry is no tool fleetd shows a person: refused rather than asked blind.
-                (None, _) => Verdict::Block(
+                None => Verdict::Block(
                     "Blocked by fleetd: this tool's name can't be shown on an approval card.",
                 ),
             }
@@ -411,7 +254,7 @@ pub fn verdict(tool_name: &str, input: &Value, servers: &[McpServer]) -> Option<
 }
 
 /// Whether any part of `input` looks like a credential: the whole of it, and each string in it on its own, so one
-/// inside a JSON-encoded string (which Notion's server takes at times) is read unescaped.
+/// inside a JSON-encoded string is read unescaped.
 fn holds_credential(input: &Value) -> bool {
     let shows = |text: &str| crate::hub::redact::redact(text) != text;
     fn strings<'a>(v: &'a Value, out: &mut Vec<&'a str>) {
@@ -439,13 +282,7 @@ pub struct LaunchRules {
 pub fn launch_rules(servers: &[McpServer]) -> LaunchRules {
     let mut out = LaunchRules::default();
     for s in servers.iter().filter(|s| s.enabled && s.roles.lead) {
-        let (kind, reads) = kind_of(Some(s));
-        let names: Vec<&str> = match kind {
-            IntegrationKind::Google => super::google::READS.to_vec(),
-            IntegrationKind::Notion => super::notion::READS.to_vec(),
-            IntegrationKind::Custom => reads.iter().map(|t| t.as_str()).collect(),
-        };
-        for tool in names {
+        for tool in reads_of(Some(s)).iter().map(|t| t.as_str()) {
             let rule = format!("mcp__{}__{tool}", s.name);
             if never(tool).is_some() {
                 out.disallowed.push(rule);
@@ -480,134 +317,14 @@ fn line<const MAX: usize>(text: &str) -> Option<Line<1, MAX>> {
     Line::new(clip_utf16(&flat, MAX).0).ok()
 }
 
-fn lines<const MAX: usize>(list: &[String]) -> Vec<Line<1, MAX>> {
-    list.iter().filter_map(|a| line(a)).collect()
-}
-
-/// The card for an asking call, every field read from `input`.
-pub fn preview(
-    kind: IntegrationKind,
-    server: &str,
-    tool: &str,
-    action: ToolAction,
-    input: &Value,
-) -> Option<ToolPreview> {
-    let d = match kind {
-        IntegrationKind::Google => super::google::draft(tool, input),
-        IntegrationKind::Notion => super::notion::draft(tool, input),
-        IntegrationKind::Custom => Draft::default(),
-    };
-    let title = d
-        .title
-        .clone()
-        .unwrap_or_else(|| format!("Use {tool} on {server}"));
-    let pretty = serde_json::to_string_pretty(&shown_input(kind, input)).unwrap_or_default();
+/// The card for an asking call: its title, and the whole input it runs with.
+pub fn preview(server: &str, tool: &str, action: ToolAction, input: &Value) -> Option<ToolPreview> {
     Some(ToolPreview {
-        integration: kind,
         server: McpServerName::new(server).ok()?,
         tool: McpToolName::new(tool).ok()?,
         action,
-        title: line(&title)?,
-        account: d.account.as_deref().and_then(line),
-        to: lines(&d.to),
-        cc: lines(&d.cc),
-        bcc: lines(&d.bcc),
-        audience: d.audience.as_deref().and_then(line),
-        subject: d
-            .subject
-            .as_deref()
-            .map(|s| Text::unchecked(clip_utf16(s, 1000).0)),
-        // Whole, as the input is.
-        body: d.body.and_then(|b| Text::new(b).ok()),
-        attachments: d
-            .attachments
-            .iter()
-            .filter_map(|a| {
-                Some(PreviewAttachment {
-                    name: line(&a.name)?,
-                    bytes: a.bytes,
-                    mime: None,
-                    from: a.from.as_deref().and_then(line),
-                })
-            })
-            .collect(),
-        target: d
-            .target
-            .as_deref()
-            .map(|t| Text::unchecked(clip_utf16(t, 2000).0)),
-        when: d.when.as_deref().and_then(line),
+        title: line(&format!("Use {tool} on {server}"))?,
         // Whole: `verdict` refuses an input past the bound before it asks.
-        input: Text::new(pretty).ok()?,
+        input: Text::new(serde_json::to_string_pretty(input).unwrap_or_default()).ok()?,
     })
-}
-
-/// A Gmail send's or reply's card once the Navi's node read the files it attaches (`GoogleCall::MailFiles`): each
-/// listed by name, size and type, and the input it runs with pinning each file's SHA-256 (`{ "path", "sha256" }`), so
-/// the tool sends exactly the bytes the person approved, or nothing. `Err`: why it is refused instead.
-pub fn with_mail_files(
-    mut preview: ToolPreview,
-    input: &Value,
-    paths: &[String],
-    files: &[MailFile],
-) -> Result<(ToolPreview, Value), &'static str> {
-    let read: Vec<&str> = files.iter().map(|f| f.path.as_str()).collect();
-    if read != paths.iter().map(String::as_str).collect::<Vec<_>>() {
-        return Err(
-            "Blocked by fleetd: the Navi's machine didn't read the files this email attaches.",
-        );
-    }
-    if files.iter().any(|f| f.credential) {
-        return Err(Never::Credential.why());
-    }
-    preview.attachments = files
-        .iter()
-        .map(|f| {
-            Some(PreviewAttachment {
-                name: line(&f.name)?,
-                bytes: Some(f.bytes),
-                mime: line(&f.mime),
-                from: None,
-            })
-        })
-        .collect::<Option<_>>()
-        .ok_or("Blocked by fleetd: a file's name can't be shown on an approval card.")?;
-    let mut input = input.clone();
-    input["attachments"] = files
-        .iter()
-        .map(|f| serde_json::json!({ "path": f.path, "sha256": f.sha256 }))
-        .collect();
-    let pretty = serde_json::to_string_pretty(&input).unwrap_or_default();
-    if js_len(&pretty) > PREVIEW_INPUT_MAX {
-        return Err(TOO_LARGE);
-    }
-    preview.input = Text::new(pretty).map_err(|_| TOO_LARGE)?;
-    Ok((preview, input))
-}
-
-/// Addresses as a tool takes them: an array, or one comma-separated string.
-pub fn addresses(v: &Value) -> Vec<String> {
-    match v {
-        Value::String(s) => s
-            .split(',')
-            .map(str::trim)
-            .filter(|a| !a.is_empty())
-            .map(str::to_owned)
-            .collect(),
-        Value::Array(items) => items
-            .iter()
-            .flat_map(|i| match i {
-                Value::Object(o) => o.get("email").map(addresses).unwrap_or_default(),
-                other => addresses(other),
-            })
-            .collect(),
-        _ => Vec::new(),
-    }
-}
-
-/// The first of `keys` that `input` has as a non-empty string.
-pub fn text_of(input: &Value, keys: &[&str]) -> Option<String> {
-    keys.iter()
-        .find_map(|k| input.get(*k).and_then(Value::as_str))
-        .filter(|s| !s.trim().is_empty())
-        .map(str::to_owned)
 }

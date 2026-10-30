@@ -1816,26 +1816,6 @@
       ],
       "type": "object"
     },
-    "IntegrationKind": {
-      "description": "What a configured MCP server is to the hub's tool policy.",
-      "oneOf": [
-        {
-          "const": "google",
-          "description": "Gmail, Google Calendar and Google Drive through fleetd's own `google` server, with the person's own account\n(`crate::google`).",
-          "type": "string"
-        },
-        {
-          "const": "notion",
-          "description": "Notion's official MCP server (`@notionhq/notion-mcp-server`) with the person's internal integration token.",
-          "type": "string"
-        },
-        {
-          "const": "custom",
-          "description": "Any other server, by URL or command: every tool asks unless the person marked it as one that only reads.",
-          "type": "string"
-        }
-      ]
-    },
     "InviteId": {
       "pattern": "^inv_[a-z2-7]{8}$",
       "type": "string"
@@ -2160,42 +2140,6 @@
       "required": [
         "repo",
         "number"
-      ],
-      "type": "object"
-    },
-    "PreviewAttachment": {
-      "description": "A file an asking tool attaches, as its input names it.",
-      "properties": {
-        "bytes": {
-          "description": "Its size, when its bytes are in the input or the Navi's node read the file.",
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "from": {
-          "description": "Where it comes from, when not from the input: \"from Drive\", \"from message 18c2\".",
-          "maxLength": 200,
-          "minLength": 1,
-          "pattern": "^[^\\r\\n]*$",
-          "type": "string"
-        },
-        "mime": {
-          "description": "Its type, as the email names it: \"application/pdf\".",
-          "maxLength": 200,
-          "minLength": 1,
-          "pattern": "^[^\\r\\n]*$",
-          "type": "string"
-        },
-        "name": {
-          "description": "The name the recipient sees: \"tenant-form.pdf\", or what the file is when the tool names it by id.",
-          "maxLength": 300,
-          "minLength": 1,
-          "pattern": "^[^\\r\\n]*$",
-          "type": "string"
-        }
-      },
-      "required": [
-        "name"
       ],
       "type": "object"
     },
@@ -3284,7 +3228,7 @@
         },
         {
           "const": "delete",
-          "description": "Removes something: mail to the trash, an event, a page, a file.",
+          "description": "Removes something: a message, an event, a page, a file.",
           "type": "string"
         },
         {
@@ -3339,106 +3283,32 @@
       "type": "object"
     },
     "ToolPreview": {
-      "description": "What an approval card shows for an asking tool: who it reaches and what it says, or what it changes. Every field is\nread from the exact input the tool runs with once approved; nothing is a summary the agent wrote.",
+      "description": "What an approval card shows for an asking tool: what it does and everything it gets. The input is the exact one\nthe tool runs with once approved; nothing is a summary the agent wrote.",
       "properties": {
-        "account": {
-          "description": "The account it acts as, when the tool names one (the connected Google account's address).",
-          "maxLength": 320,
-          "minLength": 1,
-          "pattern": "^[^\\r\\n]*$",
-          "type": "string"
-        },
         "action": {
           "$ref": "#/$defs/ToolAction"
         },
-        "attachments": {
-          "description": "Every file it attaches.",
-          "items": {
-            "$ref": "#/$defs/PreviewAttachment"
-          },
-          "type": "array"
-        },
-        "audience": {
-          "description": "Who it reaches when the tool decides that itself, such as a reply to a message's sender: said in words, since\nthe card can't list them.",
-          "maxLength": 300,
-          "minLength": 1,
-          "pattern": "^[^\\r\\n]*$",
-          "type": "string"
-        },
-        "bcc": {
-          "items": {
-            "maxLength": 320,
-            "minLength": 1,
-            "pattern": "^[^\\r\\n]*$",
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "body": {
-          "description": "The text that goes out or goes in: the email's body, the event's notes, the page's new content.",
-          "maxLength": 100000,
-          "type": "string"
-        },
-        "cc": {
-          "items": {
-            "maxLength": 320,
-            "minLength": 1,
-            "pattern": "^[^\\r\\n]*$",
-            "type": "string"
-          },
-          "type": "array"
-        },
         "input": {
-          "description": "Everything the tool gets, as JSON, so nothing is hidden behind the fields above.",
+          "description": "Everything the tool gets, as JSON.",
           "maxLength": 100000,
           "type": "string"
-        },
-        "integration": {
-          "$ref": "#/$defs/IntegrationKind"
         },
         "server": {
           "$ref": "#/$defs/McpServerName",
           "description": "The configured server's name, as claude prefixes its tools (`mcp__<server>__<tool>`)."
         },
-        "subject": {
-          "maxLength": 1000,
-          "type": "string"
-        },
-        "target": {
-          "description": "What it acts on: a message, an event, a page or a file, by name or id.",
-          "maxLength": 2000,
-          "type": "string"
-        },
         "title": {
-          "description": "What it does, as a verb phrase the app puts after \"<the Navi> wants to\": \"Send an email\", \"Reply to an email\".",
+          "description": "What it does, as a verb phrase the app puts after \"<the Navi> wants to\": \"Use create_page on docs\".",
           "maxLength": 200,
           "minLength": 1,
           "pattern": "^[^\\r\\n]*$",
           "type": "string"
-        },
-        "to": {
-          "description": "Every recipient, as the tool gets them.",
-          "items": {
-            "maxLength": 320,
-            "minLength": 1,
-            "pattern": "^[^\\r\\n]*$",
-            "type": "string"
-          },
-          "type": "array"
         },
         "tool": {
           "$ref": "#/$defs/McpToolName"
-        },
-        "when": {
-          "description": "When, for an event: \"2026-11-03 10:00 → 11:00\".",
-          "maxLength": 200,
-          "minLength": 1,
-          "pattern": "^[^\\r\\n]*$",
-          "type": "string"
         }
       },
       "required": [
-        "integration",
         "server",
         "tool",
         "action",
