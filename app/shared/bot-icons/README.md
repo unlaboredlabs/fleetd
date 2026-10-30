@@ -5,3 +5,6 @@ field. `shapes.mjs` holds the beings, `palette.mjs` the colours; `svg/` has each
 
 `node app/shared/bot-icons/render.mjs` rewrites `svg/` and renders the gallery's contact sheets into `out/` (ignored)
 with headless Chrome.
+
+`rounds.mjs` holds the polished Rounds (a shared hand-tuned body, crafted eyes, three finishes);
+`node app/shared/bot-icons/render-rounds.mjs` renders their sheets into `out/`.
