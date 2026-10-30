@@ -223,11 +223,11 @@ export const isBlockFence = (b: Block): boolean => b.t === "code" && b.lang === 
  * show this" chip once the message is final, or as a quiet placeholder while the reply still streams in, since the
  * block may still be arriving and the hub decides once the message is final. A person's fence is code they wrote.
  */
-export const fenceView = (b: Block, { streaming = false, blocks = false }: { streaming?: boolean; blocks?: boolean }): "code" | "unshown" | "pending" =>
+export const fenceView = (b: Block, { streaming = false, blocks }: { streaming?: boolean; blocks: boolean }): "code" | "unshown" | "pending" =>
   !blocks || !isBlockFence(b) ? "code" : streaming ? "pending" : "unshown";
 
 /** A message's markdown as one line of plain text, for a preview: "**Done**: see `x`" → "Done: see x". */
-export const previewText = (source: string, fences: { streaming?: boolean; blocks?: boolean } = {}): string =>
+export const previewText = (source: string, fences: { streaming?: boolean; blocks: boolean }): string =>
   parseMarkdown(source)
     .map((b): string => {
       switch (b.t) {

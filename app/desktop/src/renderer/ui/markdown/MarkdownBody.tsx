@@ -68,7 +68,7 @@ function fenceOf(children: ReactNode): { code: string; lang: string | null } | n
   return { code, lang };
 }
 
-/** A fenced block as code; with `blocks` (a lead's or agent's words), a fleetd-block fence that didn't show as a chip. */
+/** A fenced block as code; with `blocks` (unless a person wrote the words), a fleetd-block fence as its chip. */
 const pre =
   (blocks: boolean) =>
   ({ children }: { children?: ReactNode }) => {
@@ -102,7 +102,7 @@ const Block = memo(function Block({ source, blocks }: { source: string; blocks: 
 });
 
 /** Block by block: a reply streaming in re-parses only its last block, the one still growing. */
-export default function MarkdownBody({ source, blocks = false }: { source: string; blocks?: boolean }) {
+export default function MarkdownBody({ source, blocks = true }: { source: string; blocks?: boolean }) {
   const parts = useMemo(() => markdownBlocks(source), [source]);
   // By position: a streaming message only grows at its end, so every block before the last keeps its key and text.
   return parts.map((b, i) => <Block key={i} source={b} blocks={blocks} />);

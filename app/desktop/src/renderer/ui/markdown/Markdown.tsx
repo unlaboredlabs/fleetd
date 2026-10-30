@@ -14,8 +14,8 @@ export interface MarkdownProps {
   /** Start in raw view. */
   initialRaw?: boolean;
   /**
-   * A lead's or agent's words: a fleetd-block fence that reaches markdown is a block that didn't show, drawn as a
-   * small chip. Anywhere else (a person's message, a PR) it is code like any other.
+   * On (the default): a fleetd-block fence that reaches markdown is a lead's block that didn't show, drawn as a
+   * small chip, never its JSON. Off for words a person wrote, where it is code like any other.
    */
   blocks?: boolean;
 }
@@ -24,7 +24,7 @@ export interface MarkdownProps {
  * Rendered markdown (GFM: tables, task lists, strikethrough, autolinks). Raw HTML is dropped, never rendered.
  * Memoized on its props, so a message parses once and re-renders of the list around it cost nothing.
  */
-export const Markdown = memo(function Markdown({ source, className, rawToggle, initialRaw = false, blocks = false }: MarkdownProps) {
+export const Markdown = memo(function Markdown({ source, className, rawToggle, initialRaw = false, blocks = true }: MarkdownProps) {
   const [raw, setRaw] = useState(initialRaw);
   const body =
     raw && rawToggle ? (

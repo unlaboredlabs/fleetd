@@ -14,10 +14,10 @@ const source = (text: string, machineId: string | undefined, projectId: string |
 };
 
 /**
- * A message in markdown, with its machine tokens set as code; parsed once per text. `blocks`: a lead's or agent's,
- * whose fleetd-block fences that reach here didn't show (a chip); a person's show as code.
+ * A message in markdown, with its machine tokens set as code; parsed once per text. `blocks` (on unless a person wrote
+ * it): its fleetd-block fences that reach here didn't show, so they are chips; a person's show as code.
  */
-export function Message({ text, project, blocks = false }: { text: string; project?: ProjectKey | undefined; blocks?: boolean }) {
+export function Message({ text, project, blocks = true }: { text: string; project?: ProjectKey | undefined; blocks?: boolean }) {
   const { machineId, projectId } = project ?? {};
   const md = useMemo(() => source(text, machineId, projectId), [text, machineId, projectId]);
   return <Markdown source={md} blocks={blocks} />;

@@ -585,7 +585,7 @@ function ItemView({
                   ) : (
                     <Bubble side="me" tail={tail && last && files.length === 0}>
                       {replied === undefined ? null : <Quote who={quotedWho} quote={replied.quote} onAccent onPress={quotedId === undefined ? undefined : () => actions.jumpTo(quotedId)} />}
-                      <Markdown text={words} ink={t.onAccent} onAccent fit />
+                      <Markdown text={words} ink={t.onAccent} onAccent fit holdsBlocks={false} />
                     </Bubble>
                   )
                 }
@@ -780,7 +780,7 @@ function BubbleView({
               <Jumbo side="them" text={bubble.text} count={jumbo(bubble.text)} />
             ) : (
               <Bubble side="them" tail={withTail && tail}>
-                <Markdown text={bubble.text} ink={t.label} fit={fit} streaming={!fit} holdsBlocks />
+                <Markdown text={bubble.text} ink={t.label} fit={fit} streaming={!fit} />
               </Bubble>
             )
           }
