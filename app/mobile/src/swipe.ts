@@ -172,22 +172,42 @@ export const POP = spring(0.5, 0.7);
 export const FADE = spring(0.25, 1);
 
 /**
- * Only one row is open at a time. `open` is the row that is, or the last a swipe took hold of: a swipe on another row,
- * or the list starting to scroll (null), closes it, and a tap while one is open only closes it.
+ * Only one row is open at a time. `open` is the row that is, or the last a swipe took hold of. A touch anywhere closes
+ * it: on another row (a swipe or a long press there only closes it), on the list's other parts, or the list starting to
+ * scroll; and a tap that closes it does nothing else. A row that leaves the list while open (a search typed, a hub
+ * update) frees the list as it goes, so the next tap isn't spent closing nothing.
  */
 export type Opened = string | null;
 
-/** A row went back closed: nothing is open, unless another took hold since. */
+/**
+ * A finger came down on row `key`: what's open now, and what was open as it came down (`held`), which decides what
+ * this touch does: another row open closes at once, and the touch only closed it.
+ */
+export const touchDown = (open: Opened, key: string): { open: Opened; held: Opened } => {
+  "worklet";
+  return { open: open !== null && open !== key ? null : open, held: open };
+};
+
+/** Whether a swipe that started with `held` open only closed it, rather than moving row `key`. */
+export const swallows = (held: Opened, key: string): boolean => {
+  "worklet";
+  return held !== null && held !== key;
+};
+
+/** A tap on a row that came down with `held` open: it only closes it; with nothing open, it opens the chat. */
+export const tapCloses = (held: Opened): boolean => held !== null;
+
+/** A touch on the list away from its rows (empty space, the search field): closes what's open. */
+export const touchCloses = (open: Opened, onRow: boolean): boolean => open !== null && !onRow;
+
+/** Row `key` went back closed, or left the list: nothing is open, unless another row took hold since. */
 export const closed = (open: Opened, key: string): Opened => {
   "worklet";
   return open === key ? null : open;
 };
 
-/** Whether a row shown open should close now that `open` is the open one. */
+/** Whether row `key`, shown open, should close now that `open` is the open one. */
 export const shouldClose = (open: Opened, key: string): boolean => {
   "worklet";
   return open !== key;
 };
-
-/** A tap on a row: with one open, it only closes it (and nothing opens); otherwise it opens the chat. */
-export const tapCloses = (open: Opened): boolean => open !== null;

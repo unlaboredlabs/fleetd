@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { armedDistance, BODY, circles, closed, commitDistance, drag, grab, handedVelocity, openDistance, release, resisted, shouldClose, tapCloses } from "./swipe";
+import { armedDistance, BODY, circles, closed, commitDistance, drag, grab, handedVelocity, openDistance, release, resisted, shouldClose, swallows, tapCloses, touchCloses, touchDown, type Opened } from "./swipe";
 
 // An iPhone 17 Pro's width, the simulator's Messages was measured on.
 const W = 402;
@@ -141,19 +141,97 @@ describe("the circles", () => {
 });
 
 describe("one row open at a time", () => {
-  it("closes the open row when a swipe takes hold of another, or the list scrolls", () => {
-    expect(shouldClose("b", "a")).toBe(true);
-    expect(shouldClose(null, "a")).toBe(true);
-    expect(shouldClose("a", "a")).toBe(false);
+  // The list's open row, as SwipeRow and Chats drive it: each step is what the gesture, a tap or the list calls.
+  const list = (open: Opened = null) => {
+    let held: Opened = null;
+    return {
+      get open() {
+        return open;
+      },
+      /** A finger down on a row (the pan's onBegin), then a swipe on it: whether it moved the row. */
+      swipe(key: string): boolean {
+        ({ open, held } = touchDown(open, key));
+        if (swallows(held, key)) return false;
+        open = key;
+        return true;
+      },
+      /** A finger down on a row, then a tap: whether it opened the chat. */
+      tap(key: string): boolean {
+        ({ open, held } = touchDown(open, key));
+        if (tapCloses(held)) {
+          open = null;
+          return false;
+        }
+        return true;
+      },
+      /** A finger down on a row that becomes a long press: iOS's menu lifts it. */
+      hold(key: string) {
+        ({ open } = touchDown(open, key));
+      },
+      /** A touch on the list away from its rows: empty space, the filters. */
+      touchList() {
+        if (touchCloses(open, false)) open = null;
+      },
+      /** A row goes back closed, or leaves the list. */
+      closed(key: string) {
+        open = closed(open, key);
+      },
+    };
+  };
+
+  it("closes the open row when a swipe begins on another, and that swipe only closes it", () => {
+    const l = list();
+    expect(l.swipe("a")).toBe(true);
+    expect(l.swipe("b")).toBe(false);
+    expect(l.open).toBe(null);
+    expect(l.swipe("b")).toBe(true);
+    expect(l.open).toBe("b");
+  });
+
+  it("lets the open row be swiped again", () => {
+    const l = list("a");
+    expect(l.swipe("a")).toBe(true);
+    expect(l.open).toBe("a");
+  });
+
+  it("makes a tap on any row only close the open one, and the next tap opens a chat", () => {
+    const l = list("a");
+    expect(l.tap("b")).toBe(false);
+    expect(l.open).toBe(null);
+    expect(l.tap("b")).toBe(true);
+    const own = list("a");
+    expect(own.tap("a")).toBe(false);
+    expect(own.open).toBe(null);
+  });
+
+  it("closes the open row when another is held for its menu", () => {
+    const l = list("a");
+    l.hold("b");
+    expect(l.open).toBe(null);
+  });
+
+  it("closes the open row on a touch away from the rows: empty space, the filters, the search field", () => {
+    const l = list("a");
+    l.touchList();
+    expect(l.open).toBe(null);
+    expect(touchCloses("a", true)).toBe(false);
+    expect(touchCloses(null, false)).toBe(false);
+  });
+
+  it("doesn't spend the next tap when the open row leaves the list", () => {
+    const l = list("a");
+    // A search is typed and row a goes: it frees the list as it unmounts.
+    l.closed("a");
+    expect(l.tap("b")).toBe(true);
   });
 
   it("leaves another row open when one that had closed reports it", () => {
-    expect(closed("a", "a")).toBe(null);
     expect(closed("b", "a")).toBe("b");
   });
 
-  it("makes a tap only close the open row, rather than open a chat", () => {
-    expect(tapCloses("a")).toBe(true);
-    expect(tapCloses(null)).toBe(false);
+  it("closes a row shown open once another is the open one, or none is", () => {
+    expect(shouldClose("b", "a")).toBe(true);
+    expect(shouldClose(null, "a")).toBe(true);
+    expect(shouldClose("a", "a")).toBe(false);
   });
 });

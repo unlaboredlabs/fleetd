@@ -83,11 +83,14 @@ export function Chats({ navigation }: NativeStackScreenProps<{ Chats: undefined 
         ...searchBar,
         onChangeText: (e) => setTyped(e.nativeEvent.text),
         onCancelButtonPress: () => setTyped(""),
-        onFocus: () => void session.readCorpus(),
+        onFocus: () => {
+          swiped.close();
+          void session.readCorpus();
+        },
         tintColor: t.accent,
       },
     });
-  }, [navigation, t.accent, session]);
+  }, [navigation, t.accent, session, swiped]);
 
   // Chats seen for the first time count as read up to what they hold: a new phone doesn't open on a wall of counts.
   const lastSeqs = useMemo(() => Object.fromEntries(Object.entries(state.chatStates).map(([k, c]) => [k, c.lastSeq])), [state.chatStates]);
@@ -130,16 +133,16 @@ export function Chats({ navigation }: NativeStackScreenProps<{ Chats: undefined 
     );
 
   return (
-    <SwipeGroup open={swiped}>
+    <SwipeGroup swipes={swiped}>
       <Animated.FlatList
         data={lines}
         keyExtractor={(l) => l.key}
         contentInsetAdjustmentBehavior="automatic"
         keyboardDismissMode="on-drag"
         keyboardShouldPersistTaps="handled"
-        onScrollBeginDrag={() => {
-          swiped.value = null;
-        }}
+        onScrollBeginDrag={swiped.close}
+        // A touch on the list away from its rows (empty space, the filters) closes the open row; rows see to their own.
+        onTouchStart={swiped.touched}
         {...(reduce ? {} : { itemLayoutAnimation: rowMove })}
         refreshControl={
           <RefreshControl
@@ -155,10 +158,7 @@ export function Chats({ navigation }: NativeStackScreenProps<{ Chats: undefined 
           query === "" && all !== undefined && all.length > 0 ? (
             <Filters
               value={filter}
-              onChange={(f) => {
-                swiped.value = null;
-                setFilter(f);
-              }}
+              onChange={setFilter}
               counts={counts}
             />
           ) : undefined

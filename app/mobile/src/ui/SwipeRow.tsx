@@ -3,14 +3,15 @@
 // halfway (or flick) and it stays open: a circle's tap runs it. Past the commit point the first circle stretches into a
 // capsule across the gap, the row jumps ahead with a tick, and letting go there runs it and the row springs back.
 // Everything moves on the UI thread with Reanimated's springs, which jump straight to their end under Reduce Motion.
-// One row is open at a time (SwipeGroup): a swipe on another row or the list scrolling closes it, and a tap while one is
-// open only closes it. VoiceOver has the same actions on the row itself (ui/HoldMenu.tsx), and the circles' labels.
-import { createContext, useContext, useMemo, useRef, useState, type ReactNode } from "react";
+// One row is open at a time (SwipeGroup, swipe.ts): a touch anywhere closes it (another row, the list's space, the
+// search field, the list scrolling), and a touch that closes it does nothing else. VoiceOver has the same actions on
+// the row itself (ui/HoldMenu.tsx), and the circles' labels.
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, { interpolateColor, ReduceMotion, useAnimatedReaction, useAnimatedStyle, useDerivedValue, useSharedValue, withSpring, type SharedValue } from "react-native-reanimated";
 import { scheduleOnRN } from "react-native-worklets";
-import { BODY, BUTTON, CARD_RADIUS, circles, closed, drag, FADE, grab, handedVelocity, openDistance, POP, release, shouldClose, SLOP, SURFACE, tapCloses, type Drag, type Opened } from "../swipe";
+import { BODY, BUTTON, CARD_RADIUS, circles, closed, drag, FADE, grab, handedVelocity, openDistance, POP, release, shouldClose, SLOP, SURFACE, swallows, tapCloses, touchCloses, touchDown, type Drag, type Opened } from "../swipe";
 import { useTheme } from "../theme";
 import { haptics } from "./haptics";
 import { Icon, type IconName } from "./Icon";
@@ -22,14 +23,40 @@ export interface SwipeAction {
   readonly onPress: () => void;
 }
 
-/** The list's open row, shared by its rows: one open at a time. */
-const Group = createContext<SharedValue<Opened> | null>(null);
+/** A list whose rows swipe: its open row, one at a time (swipe.ts). */
+export interface Swipes {
+  readonly open: SharedValue<Opened>;
+  /** Whether the touch going down now came down on a row, which closes what's open itself. */
+  readonly onRow: { current: boolean };
+  /** Close the open row: the list starts to scroll, a filter is picked, the search field is focused. */
+  readonly close: () => void;
+  /** The list's own onTouchStart: a touch away from its rows (empty space, its header) closes the open row. */
+  readonly touched: () => void;
+}
 
-/** A list whose rows swipe. Close its open row as it starts to scroll: `open.value = null`. */
-export const useSwipeGroup = (): SharedValue<Opened> => useSharedValue<Opened>(null);
+const Group = createContext<Swipes | null>(null);
 
-export function SwipeGroup({ open, children }: { open: SharedValue<Opened>; children: ReactNode }) {
-  return <Group.Provider value={open}>{children}</Group.Provider>;
+export const useSwipeGroup = (): Swipes => {
+  const open = useSharedValue<Opened>(null);
+  const onRow = useRef(false);
+  return useMemo(
+    () => ({
+      open,
+      onRow,
+      close: () => {
+        open.value = null;
+      },
+      touched: () => {
+        if (touchCloses(open.value, onRow.current)) open.value = null;
+        onRow.current = false;
+      },
+    }),
+    [open],
+  );
+};
+
+export function SwipeGroup({ swipes, children }: { swipes: Swipes; children: ReactNode }) {
+  return <Group.Provider value={swipes}>{children}</Group.Provider>;
 }
 
 const reduce = { reduceMotion: ReduceMotion.System } as const;
@@ -61,7 +88,9 @@ export function SwipeRow({
   const t = useTheme();
   const group = useContext(Group);
   const fallback = useSharedValue<Opened>(null);
-  const open = group ?? fallback;
+  const open = group?.open ?? fallback;
+  /** What was open as the touch on this row came down: it decides what that touch does (swipe.ts touchDown). */
+  const held = useSharedValue<Opened>(null);
   const width = useSharedValue(0);
   const height = useSharedValue(0);
   /** +1 swiping right (leading), -1 left. */
@@ -123,11 +152,16 @@ export function SwipeRow({
     return Gesture.Pan()
       .activeOffsetX([-SLOP, SLOP])
       .failOffsetY([-SLOP, SLOP])
+      // A finger down on this row closes another open one at once, before it's a swipe, a tap or a hold.
+      .onBegin(() => {
+        const down = touchDown(open.value, id);
+        held.value = down.held;
+        open.value = down.open;
+      })
       .onStart((e) => {
         const s = state.value;
-        // Another row is open: this touch only closes it, as in Messages.
-        if (open.value !== null && open.value !== id) {
-          open.value = null;
+        // Another row was open: this touch only closed it, as in Messages.
+        if (swallows(held.value, id)) {
           state.value = { ...s, ignored: true };
           return;
         }
@@ -200,11 +234,22 @@ export function SwipeRow({
     },
   );
 
+  // A row that leaves the list while open (a search typed, a hub update) frees it as it goes.
+  useEffect(
+    () => () => {
+      open.value = closed(open.value, id);
+    },
+    [open, id],
+  );
+
   const close = () => {
     open.value = null;
   };
   const tap = (run: () => void) => () => {
-    if (tapCloses(open.value)) close();
+    // Read once: VoiceOver's activations come without a touch, so a stale one mustn't swallow them.
+    const was = held.value;
+    held.value = null;
+    if (tapCloses(was)) close();
     else run();
   };
 
@@ -220,6 +265,9 @@ export function SwipeRow({
     <GestureDetector gesture={pan}>
       <View
         collapsable={false}
+        onTouchStart={() => {
+          if (group !== null) group.onRow.current = true;
+        }}
         onLayout={(e) => {
           width.value = e.nativeEvent.layout.width;
           height.value = e.nativeEvent.layout.height;
@@ -239,6 +287,7 @@ export function SwipeRow({
             scale={(circlesOf[i] ?? circlesOf[0])[0]}
             opacity={(circlesOf[i] ?? circlesOf[0])[1]}
             onPress={() => {
+              held.value = null;
               close();
               a.onPress();
             }}
