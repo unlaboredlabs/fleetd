@@ -11,7 +11,8 @@
 //! The hub checks each block when the message is final (this schema, [`BLOCK_JSON_MAX`], and no HTML, script or URL
 //! in its strings) and puts what passed on the message's part as `block`, re-serialized from this type. A block that
 //! fails, or has a kind this hub doesn't know, is a part without `block`: its text is the fence as written, which a
-//! client shows as a small "couldn't show this" chip, never as its JSON, and the lead hears which block and why. Every string here is plain text: a client never renders one as HTML or markdown.
+//! client shows as a small "couldn't show this" chip, never as its JSON, and the lead hears which block and why.
+//! Every string here is plain text: a client never renders one as HTML or markdown.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};

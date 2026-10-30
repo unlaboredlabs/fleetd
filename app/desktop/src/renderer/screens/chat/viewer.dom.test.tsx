@@ -225,3 +225,13 @@ it("shows a lead's block that didn't fit as a small chip, never its JSON", async
   // Alone in its part, the chip has no bubble around it.
   expect(host.querySelector('[data-part="1"]')?.className).not.toMatch(/bubble/i);
 });
+
+it("never shows the chip while a lead's reply streams in: its block may still be arriving", async () => {
+  const text = 'The week:\n\n```fleetd-block\n{"v":1,"kind":"table","colu';
+  if (lead.message === undefined) throw new Error("no message");
+  const { parts: _, ...message } = lead.message;
+  const streaming: ChatItem = { ...lead, text, state: "streaming", message: { ...message, text, state: "streaming" } };
+  await mount(streaming);
+  expect(host.querySelector("[data-unshown]")).toBeNull();
+  expect(host.textContent).not.toContain('"kind"');
+});

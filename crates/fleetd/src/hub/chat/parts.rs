@@ -1,8 +1,9 @@
 //! A final lead message's bubbles. The lead separates bubbles with a blank line, as it separates paragraphs, so a
 //! reply reads the same in a client that shows `text` whole. A code fence is a bubble of its own and never split; a
 //! list or table stays one bubble across the blank lines of a loose list. A ```fleetd-block fence becomes a block
-//! when it passes [`block`], and otherwise shows as the fence it is; a ```json or untagged fence becomes one only when
-//! its whole body is a block that passes every check. The lead hears of either case with its next wake ([`unshown`]).
+//! when it passes [`block`], and otherwise shows as the fence it is; a ```json or untagged fence becomes one only
+//! when its whole body is a block that passes every check. The lead hears of either case with its next wake
+//! ([`unshown`]).
 use std::sync::LazyLock;
 
 use fleetd_contracts::blocks::{
@@ -21,8 +22,8 @@ static UNSAFE: LazyLock<Regex> = LazyLock::new(|| {
 });
 
 /// One block's JSON, checked: within [`BLOCK_JSON_MAX`], the schema, and no markup or URL in its strings (a diff's
-/// hunks excepted: they are code, shown as text). The block, or the rule it broke, in words for the lead; an image or
-/// clip whose caption alone is wrong shows without it, and the lead still hears why.
+/// hunks excepted: they are code, shown as text). The block, or the rule it broke, in words for the lead; an image
+/// or clip whose caption alone is wrong shows without it, and the lead still hears why.
 pub fn block(json: &str) -> (Option<ChatBlock>, Option<String>) {
     if json.len() > BLOCK_JSON_MAX {
         let why = format!(
@@ -223,7 +224,7 @@ pub fn parts(text: &str) -> Option<List<ChatPart, 1, CHAT_PARTS_MAX>> {
     List::new(parts).ok()
 }
 
-/// What the lead should hear of its message's blocks, as one line: each block (counting the message's blocks from 1)
+/// What the lead should hear of its message's blocks, as one line: each block, numbered from 1 in the message,
 /// that didn't show and the rule it broke, showed without its caption, or showed from a fence not tagged
 /// fleetd-block. None when every block showed as written.
 pub fn unshown(text: &str) -> Option<String> {

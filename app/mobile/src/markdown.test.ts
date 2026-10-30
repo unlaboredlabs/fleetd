@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseInline, parseMarkdown, previewText } from "./markdown";
+import { fenceView, parseInline, parseMarkdown, previewText } from "./markdown";
 
 describe("parseInline", () => {
   it("reads code, strong, emphasis and strikes", () => {
@@ -67,5 +67,18 @@ describe("parseMarkdown", () => {
 describe("previewText", () => {
   it("is one line of plain text", () => {
     expect(previewText("**Done**: see `x`\n\n- a\n- b")).toBe("Done: see x a, b");
+  });
+});
+
+describe("fenceView", () => {
+  it("is a quiet placeholder while a reply streams in, and the chip only once it's final", () => {
+    const [block] = parseMarkdown('```fleetd-block\n{"v":1,"kind":"ima');
+    const [code] = parseMarkdown('```json\n{"a":1}\n```');
+    if (block === undefined || code === undefined) throw new Error("no blocks");
+    // Still arriving: never "Couldn't show this", which the hub decides once the message is final.
+    expect(fenceView(block, true)).toBe("pending");
+    expect(fenceView(block, false)).toBe("unshown");
+    expect(fenceView(code, true)).toBe("code");
+    expect(fenceView(code, false)).toBe("code");
   });
 });
