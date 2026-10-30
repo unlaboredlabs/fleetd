@@ -127,6 +127,14 @@ const render = async (avatar: string | undefined, icon: { face: string; color: s
   });
   await settle();
   await settle();
+  // A later snapshot, as another device's change brings.
+  return async (frame: HubFrame) => {
+    await act(async () => {
+      listener(frame);
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    await settle();
+  };
 };
 
 const section = () => {
@@ -237,6 +245,17 @@ describe("Settings → Projects → Icon", () => {
     });
     expect(previewFile()).toBe("wink-fleet-96.webp");
     expect(sent()).toEqual([]);
+  });
+
+  it("lets a later change from another device show after a quick run that ends where it began", async () => {
+    const push = await render(undefined);
+    await click(radio("Face", "Joy"));
+    await click(radio("Face", "Wink"));
+    await wait(SEND_AFTER_MS + 50);
+    expect(sent()).toEqual([{ machineId: "devbox", projectId: "p1", icon: { face: "wink", color: "fleet" } }]);
+    await push(snapshot(undefined, { face: "mo", color: "mint" }));
+    expect(previewFile()).toBe("mo-mint-96.webp");
+    expect(radio("Face", "Mo").getAttribute("aria-checked")).toBe("true");
   });
 
   it("picks a face over a picture, which takes its place", async () => {

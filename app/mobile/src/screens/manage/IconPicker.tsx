@@ -1,7 +1,8 @@
 // A project's or Navi's icon, from its screen (Info): a sheet with the icon large at the top, the built-in faces in a
 // grid in the color picked, the colors under them, and Choose Photo / Take Photo (then Move and Scale) / Remove Photo,
 // as the desktop's Settings › Projects › Icon. A face or color shows at once in the large icon; Done sends it
-// (project_icon_set, which takes the place of a picture), Cancel leaves the icon as it was.
+// (project_icon_set, which takes the place of a picture), Cancel leaves the icon as it was. The last choice wins: a
+// photo chosen after a face (iconPick.ts) shows, and Done keeps it.
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useEffect, useState } from "react";
 import { Alert, Image, Pressable, ScrollView, StyleSheet, View } from "react-native";
@@ -13,6 +14,7 @@ import { haptics } from "../../ui/haptics";
 import { ListRow, ListSection } from "../../ui/List";
 import { EmptyState } from "../../ui/States";
 import { removePicture, setIcon } from "./api";
+import { pickOver, standing, type Pick } from "./iconPick";
 import { errorWords, sheetOptions } from "./parts";
 import { fromCamera, fromLibrary } from "./pick";
 
@@ -25,9 +27,10 @@ export function IconPicker({ navigation, route }: NativeStackScreenProps<RootPar
   const { state, session } = useHub();
   const key = route.params.key;
   const p = state.projects?.[key];
-  // A face or color tapped and not yet sent: the large icon shows it over the picture.
-  const [picked, setPicked] = useState<ProjectIcon | null>(null);
+  // A face or color tapped and not yet sent: the large icon shows it over the picture, until a newer photo.
+  const [pick, setPick] = useState<Pick | null>(null);
   const [busy, setBusy] = useState(false);
+  const picked = standing(pick, p?.avatar);
   const current = picked ?? p?.icon;
   const hasPicture = p?.avatar !== undefined && picked === null;
 
@@ -50,11 +53,14 @@ export function IconPicker({ navigation, route }: NativeStackScreenProps<RootPar
   }
   const choose = (next: ProjectIcon) => {
     haptics.select();
-    setPicked(next);
+    setPick(pickOver(next, p.avatar));
   };
+  // A photo chosen is the newer choice: the pick goes, even before the photo's summary arrives.
   const photo = (from: () => Promise<Awaited<ReturnType<typeof fromLibrary>>>) => () =>
     void from().then((got) => {
-      if (got !== null) navigation.navigate("Photo", { key, ...got });
+      if (got === null) return;
+      setPick(null);
+      navigation.navigate("Photo", { key, ...got });
     });
   const remove = () => {
     setBusy(true);
