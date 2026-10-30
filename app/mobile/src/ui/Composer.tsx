@@ -219,7 +219,7 @@ export function Composer({
                   importantForAccessibility={ready ? "yes" : "no-hide-descendants"}
                   onPress={send}
                   hitSlop={8}
-                  style={({ pressed }) => [styles.send, { backgroundColor: t.accent }, pressed && styles.pressed]}
+                  style={({ pressed }) => [styles.send, { backgroundColor: t.accentFill }, pressed && styles.pressed]}
                 >
                   <Icon name="send" size={16} color="#FFFFFF" weight="bold" />
                 </Pressable>
@@ -270,7 +270,7 @@ function Thumb({ file, onRemove }: { file: Attaching; onRemove: () => void }) {
       )}
       {busy ? (
         <View style={[styles.progressTrack, { backgroundColor: "rgba(0,0,0,0.25)" }]}>
-          <View style={[styles.progress, { width: `${String(Math.max(6, Math.round(file.progress * 100)))}%`, backgroundColor: t.accent }]} />
+          <View style={[styles.progress, { width: `${String(Math.max(6, Math.round(file.progress * 100)))}%`, backgroundColor: t.accentFill }]} />
         </View>
       ) : null}
       {file.error === undefined ? null : (

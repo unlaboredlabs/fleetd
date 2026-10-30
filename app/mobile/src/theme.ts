@@ -1,6 +1,7 @@
 // The app's look, as iOS draws it: Apple's system colors for light and dark (the scheme follows the phone's), its type
-// scale for the system font (SF on iOS), and one accent, system blue. Text scales with Dynamic Type, as React Native's
-// Text does by default.
+// scale for the system font (SF on iOS), and one accent, the desktop app's calmer blue rather than system blue (its
+// --accent and --accent-fill in app/desktop/src/renderer/ui/tokens.css). Text scales with Dynamic Type, as React
+// Native's Text does by default.
 import { DarkTheme, DefaultTheme, type Theme as NavigationTheme } from "@react-navigation/native";
 import { Platform, useColorScheme, type TextStyle } from "react-native";
 
@@ -19,7 +20,11 @@ export interface Palette {
   /** systemFill and tertiarySystemFill: a search field, a skeleton, a quiet button. */
   readonly fill: string;
   readonly fillQuiet: string;
+  /** The accent as text and icons: links, unread, the header's buttons. */
   readonly accent: string;
+  /** The accent as a fill under onAccent: a sent bubble, the selected chip, a filled button, a badge. Dark mode's
+   * accent is too light for white on it, so this is a deeper blue there; light mode's is the accent itself. */
+  readonly accentFill: string;
   /** The accent at a tenth: an ask's options, a selected row. */
   readonly accentSoft: string;
   readonly onAccent: string;
@@ -53,8 +58,9 @@ const light: Palette = {
   separator: "rgba(60,60,67,0.29)",
   fill: "rgba(120,120,128,0.2)",
   fillQuiet: "rgba(118,118,128,0.12)",
-  accent: "#007AFF",
-  accentSoft: "rgba(0,122,255,0.1)",
+  accent: "#2360C4",
+  accentFill: "#2360C4",
+  accentSoft: "rgba(35,96,196,0.1)",
   onAccent: "#FFFFFF",
   bubble: "#E9E9EB",
   surface: "#F2F2F7",
@@ -80,8 +86,9 @@ const dark: Palette = {
   separator: "rgba(84,84,88,0.6)",
   fill: "rgba(120,120,128,0.36)",
   fillQuiet: "rgba(118,118,128,0.24)",
-  accent: "#0A84FF",
-  accentSoft: "rgba(10,132,255,0.18)",
+  accent: "#79ABF5",
+  accentFill: "#2E69CC",
+  accentSoft: "rgba(121,171,245,0.18)",
   onAccent: "#FFFFFF",
   bubble: "#262628",
   surface: "#1C1C1E",

@@ -35,7 +35,7 @@ const EMPTY_DROP = 0.14;
 /** A count, or a dot when there is none to give; grey for a muted chat. */
 export function Badge({ count, muted = false, label, tone = "accent" }: { count?: number; muted?: boolean; label?: string; tone?: "accent" | "warning" }) {
   const t = useTheme();
-  const fill = muted ? t.muted : tone === "warning" ? t.warning : t.accent;
+  const fill = muted ? t.muted : tone === "warning" ? t.warning : t.accentFill;
   if (count === undefined) return <View style={[styles.dot, { backgroundColor: fill }]} accessibilityLabel={label ?? "Needs you"} />;
   return (
     <View style={[styles.badge, { backgroundColor: fill }]} accessibilityLabel={label ?? `${String(count)} waiting`}>

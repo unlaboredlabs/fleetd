@@ -308,7 +308,7 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
                 </Pressable>
               </Glass>
               {cameSince > 0 ? (
-                <View style={[styles.downCount, { backgroundColor: t.accent }]}>
+                <View style={[styles.downCount, { backgroundColor: t.accentFill }]}>
                   <Text style={[type.caption, styles.downCountText]} maxFontSizeMultiplier={1.3}>
                     {cameSince > 99 ? "99+" : String(cameSince)}
                   </Text>

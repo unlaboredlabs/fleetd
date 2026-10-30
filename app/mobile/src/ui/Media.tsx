@@ -100,9 +100,9 @@ export function FileBubble({ chatKey, attachmentId, name, mime, bytes, mine, tim
         haptics.tap();
         void shareFile(got).catch(() => undefined);
       }}
-      style={({ pressed }) => [styles.file, { backgroundColor: mine ? t.accent : t.bubble }, pressed && styles.pressed]}
+      style={({ pressed }) => [styles.file, { backgroundColor: mine ? t.accentFill : t.bubble }, pressed && styles.pressed]}
     >
-      <View style={[styles.fileIcon, { backgroundColor: mine ? "rgba(255,255,255,0.22)" : t.accent }]}>
+      <View style={[styles.fileIcon, { backgroundColor: mine ? "rgba(255,255,255,0.22)" : t.accentFill }]}>
         <Icon name={mime === "application/pdf" ? "pdf" : "file"} size={18} color="#FFFFFF" />
       </View>
       <View style={styles.fileText}>

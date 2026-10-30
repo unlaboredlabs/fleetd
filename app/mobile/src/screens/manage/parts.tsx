@@ -99,7 +99,7 @@ export const sheetOptions = (t: Palette, onCancel: (() => void) | undefined, don
       unstable_headerRightItems: () =>
         done === undefined
           ? []
-          : [{ type: "button", label: done.label, icon: { type: "sfSymbol", name: "checkmark" }, variant: "prominent", tintColor: t.accent, disabled: !done.enabled || done.busy, onPress: afterTap(done.onPress) }],
+          : [{ type: "button", label: done.label, icon: { type: "sfSymbol", name: "checkmark" }, variant: "prominent", tintColor: t.accentFill, disabled: !done.enabled || done.busy, onPress: afterTap(done.onPress) }],
     };
   }
   return {

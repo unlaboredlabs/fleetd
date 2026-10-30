@@ -100,7 +100,7 @@ export function NewProject({ navigation }: Props) {
         <Text style={[type.subhead, styles.text, { color: t.secondary }]}>{job.detail}</Text>
         {job.fraction === undefined ? null : (
           <View style={[styles.track, { backgroundColor: t.fill }]}>
-            <View style={[styles.bar, { backgroundColor: t.accent, width: `${String(Math.round(job.fraction * 100))}%` }]} />
+            <View style={[styles.bar, { backgroundColor: t.accentFill, width: `${String(Math.round(job.fraction * 100))}%` }]} />
           </View>
         )}
         <Text style={[type.footnote, styles.text, { color: t.tertiary }]}>{`On ${names(job.machineId)}. It carries on if you close this, and shows in Chats once added.`}</Text>
