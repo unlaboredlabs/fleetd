@@ -18,11 +18,13 @@
 use std::sync::Arc;
 
 use fleetd_contracts::auth::Role;
+use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef, Timestamp};
 use fleetd_contracts::mcp::{
     ErrorCode, ProjectEnvSetInput, ProjectEnvSetOutput, ProjectSettings, ProjectSettingsGetInput,
     ProjectSettingsGetOutput, ProjectSettingsSetInput, ProjectSettingsSetOutput,
 };
+use fleetd_contracts::model::ProjectSummary;
 use fleetd_contracts::node_link::CAP_PROJECT_SETTINGS;
 use fleetd_contracts::preview::PreviewConfig;
 use fleetd_contracts::prim::Count;
@@ -41,7 +43,7 @@ use crate::hub::api::{
     Caller, Hub, Registry, ToolError, is_human, offline, require, unknown_machine, unknown_project,
 };
 use crate::hub::executor::tools::from_executor;
-use crate::hub::store::{HubDb, StoreError};
+use crate::hub::store::{HubDb, NewEvent, StoreError};
 
 pub fn register(tools: &mut Registry) {
     tools.add("project_settings_get", get);
@@ -555,7 +557,9 @@ async fn set(
     };
     let repo = repo_named(&hub, &r, input.repo.as_ref())?;
     let repo_id = repo.as_ref().map(|repo| &repo.repo_id);
-    // The name lives on the node, which renames it in place: the machine stream then brings it back to every cache.
+    // The name lives on the node, which renames it in place. The hub's cache takes it at once, as a Navi's rename does,
+    // and project.settings tells every open app to read its projects again: the node's own event changes the cache
+    // later but tells no app.
     if let Some(title) = &input.title
         && title.as_str() != project.title
     {
@@ -566,6 +570,23 @@ async fn set(
             .project_upsert(m, &r.project_id, title.as_str(), &project.workspace_root)
             .await
             .map_err(from_executor)?;
+        hub.store.projects_upsert_many(
+            m,
+            &[ProjectSummary {
+                title: title.to_string(),
+                ..project.clone()
+            }],
+        )?;
+        hub.events.append(NewEvent {
+            at: crate::hub::checks::now_ts(hub.clock.as_ref()),
+            r#type: HubEventType::ProjectSettings,
+            machine_id: Some(m.clone()),
+            project_id: Some(r.project_id.clone()),
+            thread_id: None,
+            summary: format!("{} renamed {title}", project.title),
+            data: Some(serde_json::json!({ "title": title })),
+            attention: None,
+        })?;
     }
     if let Some(keep) = input.keep_worktrees {
         hub.db.project_settings().set_keep_worktrees(&r, keep)?;
@@ -586,11 +607,7 @@ async fn set(
             .project_settings()
             .set_preview_in(&r, repo_id, preview)?;
     }
-    let mut settings = settings_of(&hub, &r, repo.as_ref()).await?;
-    if let Some(title) = input.title {
-        // Until the node's project event lands in the cache.
-        settings.title = title.to_string();
-    }
+    let settings = settings_of(&hub, &r, repo.as_ref()).await?;
     let next = if input.memory_refresh.is_some()
         && input.preview.is_none()
         && input.train.is_none()

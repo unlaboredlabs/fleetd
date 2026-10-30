@@ -190,6 +190,15 @@ describe("Session", () => {
     expect(hub.links.length).toBe(1);
   });
 
+  it("shows a project's new name once the hub says it was renamed, without a restart", () => {
+    const { hub, session } = setup();
+    const before = hub.sentOf("snapshot").length;
+    hub.link.frame({ t: "event", seq: 2, type: "project.settings", at: AT, machineId: "m1", projectId: "shop", data: { title: "Shop" } });
+    expect(hub.sentOf("snapshot").length).toBe(before + 1);
+    hub.link.frame({ ...snapshot, cursor: 2, projects: [project("navi", "Ada", "assistant"), project("shop", "Shop")] });
+    expect(lists(session.state)?.projects.map((r) => r.project.title)).toEqual(["Shop"]);
+  });
+
   it("reads the open requests again when one changes", () => {
     const { hub } = setup();
     const reads = () => hub.sentOf("call").filter((c) => c.tool === "requests_list").length;
