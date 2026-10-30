@@ -50,8 +50,9 @@ use crate::node::device::remote as device;
 pub const IDLE_MS: i64 = 30 * 60_000;
 /// How long a person's wait for a slot lasts.
 const WAIT_MS: i64 = SCREEN_WAIT_MINUTES * 60_000;
-/// How long a PR's build may take to install, a simulator's XCTest runner starting first included.
-const INSTALL_WAIT: Duration = Duration::from_secs(300);
+/// How long a simulator's XCTest runner may take to start before a PR's build installs. With the start (`START_WAIT`)
+/// and the download (`gh`'s 30 s) it stays inside the 5 minutes the desktop app waits for `screen_open`.
+const INSTALL_WAIT: Duration = Duration::from_secs(150);
 /// Between tries while the screen's machine holds a command back.
 const INSTALL_RETRY: Duration = Duration::from_secs(3);
 

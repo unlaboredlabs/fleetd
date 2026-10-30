@@ -20,6 +20,9 @@ import s from "./sessions.module.css";
 /** The hub feature that says it opens people's screens. */
 export const NEW_SCREEN = "screen_open";
 
+/** How long an open with a PR's build waits for the hub: the most the app's calls may (shared/ipc.ts). */
+export const SCREEN_PR_WAIT_MS = 300_000;
+
 const ICON: Readonly<Record<ScreenKind, ReactNode>> = {
   browser: <Globe aria-hidden />,
   ios: <Smartphone aria-hidden />,
@@ -112,12 +115,15 @@ export function NewScreenDialog({ project, onClose }: { project: ProjectKey; onC
     if (busy || host === undefined) return;
     setBusy(true);
     setError(null);
-    // A PR's build downloads and installs first: a simulator's runner can take minutes to start before it does.
-    const out = await layer.call(
-      "screen_open",
-      { projectRef, kind, machineId: host.machineId, wait: host.full, ...(pr === undefined ? {} : { pr: { repo: pr.repo, number: pr.number } }) },
-      { timeoutMs: pr === undefined ? 120_000 : 480_000 },
-    );
+    // A PR's build downloads and installs first: a simulator's runner can take minutes to start before it does. The
+    // app's calls wait at most 5 minutes, which the hub's install fits in.
+    const out = await layer
+      .call(
+        "screen_open",
+        { projectRef, kind, machineId: host.machineId, wait: host.full, ...(pr === undefined ? {} : { pr: { repo: pr.repo, number: pr.number } }) },
+        { timeoutMs: pr === undefined ? 120_000 : SCREEN_PR_WAIT_MS },
+      )
+      .catch((e: unknown) => ({ ok: false as const, error: { message: e instanceof Error ? e.message : String(e), fix: undefined } }));
     setBusy(false);
     if (!out.ok) {
       setError({ message: out.error.message, fix: out.error.fix });

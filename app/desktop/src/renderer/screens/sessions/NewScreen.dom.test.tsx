@@ -12,6 +12,7 @@ import { TooltipProvider } from "../../ui/primitives/Tooltip";
 import { SessionsPane } from "./SessionsPane";
 import { NewScreenHost } from "./NewScreen";
 import { commandFor } from "../palette/registry";
+import { CallRequest } from "../../../shared/ipc";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -55,7 +56,9 @@ const WAIT = { waitId: "W1", projectRef: project, kind: "ios", machineId: "mac",
 let host: HTMLDivElement;
 let root: Root | undefined;
 let send: Parameters<HubApi["subscribe"]>[0] = () => undefined;
-let calls: { tool: string; input: unknown }[] = [];
+let calls: { tool: string; input: unknown; timeoutMs?: number | undefined }[] = [];
+/** screen_open with a PR fails the way the app's IPC does, before the hub. */
+let refuse: string | undefined;
 let waits: unknown[] = [];
 let sessions: unknown[] = [];
 
@@ -64,6 +67,7 @@ beforeEach(() => {
   host = document.createElement("div");
   document.body.appendChild(host);
   calls = [];
+  refuse = undefined;
   waits = [];
   sessions = [];
   window.location.hash = "";
@@ -82,8 +86,9 @@ const settle = async () => {
 
 const mount = async () => {
   const hub: HubApi = {
-    call: (tool, input) => {
-      calls.push({ tool, input });
+    call: (tool, input, options) => {
+      calls.push({ tool, input, timeoutMs: options?.timeoutMs });
+      if (tool === "screen_open" && refuse !== undefined) return Promise.reject(new Error(refuse));
       if (tool === "browser_sessions") return Promise.resolve({ ok: true, output: { sessions, waits, retention: { retentionDays: 30, maxGbPerProject: 20 } } });
       if (tool === "machine_roles") return Promise.resolve({ ok: true, output: { machines: MACHINES } });
       if (tool === "pr_list") return Promise.resolve({ ok: true, output: { prs: PRS } });
@@ -202,6 +207,22 @@ it("installs an open PR's build into an Android screen, and offers none for a br
     wait: false,
     pr: { repo: "acme/app", number: 12 },
   });
+  // The app's calls wait at most 5 minutes (shared/ipc.ts CallRequest): longer is refused before the hub.
+  const timeout = calls.find((c) => c.tool === "screen_open")?.timeoutMs ?? 0;
+  expect(CallRequest.safeParse({ tool: "screen_open", input: {}, timeoutMs: timeout }).success).toBe(true);
+});
+
+it("says so when the call fails before the hub, and can be tried again", async () => {
+  await mount();
+  refuse = "call: invalid request.";
+  act(() => button("New screen")?.click());
+  await settle();
+  act(() => button("Android")?.click());
+  await settle();
+  act(() => button("Open screen")?.click());
+  await settle();
+  expect(picker()?.textContent).toContain("call: invalid request.");
+  expect(button("Open screen")?.disabled).toBe(false);
 });
 
 it("offers New screen… in the palette for the project on screen", async () => {
