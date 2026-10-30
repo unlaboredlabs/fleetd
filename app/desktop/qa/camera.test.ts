@@ -63,6 +63,26 @@ describe("direct", () => {
     expect(Math.max(...zooms.slice(1).map((z, i) => Math.abs(z - (zooms[i] ?? z))))).toBeLessThan(0.02);
   });
 
+  it("opens a take after a cut with the cursor where the clicks between the takes left it, at rest", () => {
+    // Two takes; the second's click happens in the gap, off screen.
+    const takes = [
+      [1000, 3000],
+      [5000, 7000],
+    ] as const;
+    const gap: Step[] = [{ kind: "click", at: 1500, until: 1500, box: box(1100, 60) }, { kind: "click", at: 4700, until: 4700, box: box(200, 700) }];
+    const times = takes.flatMap(([from, to]) => Array.from({ length: Math.round(((to - from) * 60) / 1000) + 1 }, (_, i) => from + (i * 1000) / 60));
+    const frames = direct(gap, takes, o, times);
+    const opens = frames[times.indexOf(takes[1][0])]?.pointer;
+    expect(opens?.x).toBeCloseTo(240, 0);
+    expect(opens?.y).toBeCloseTo(714, 0);
+    // Within each take, never a jump.
+    for (const [from, to] of takes) {
+      const span = frames.filter((_, i) => (times[i] ?? 0) >= from && (times[i] ?? 0) <= to);
+      const most = Math.max(...span.slice(1).map((d, i) => Math.hypot(d.pointer.x - (span[i]?.pointer.x ?? 0), d.pointer.y - (span[i]?.pointer.y ?? 0))));
+      expect(most).toBeLessThan(60);
+    }
+  });
+
   it("keeps a step's camera where it is with zoom: false", () => {
     const still = direct([{ ...(steps[1] as Step), zoom: false }], [take], o, ticks);
     expect(still.every((d) => d.shot.zoom === 1)).toBe(true);

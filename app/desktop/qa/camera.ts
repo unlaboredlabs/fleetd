@@ -209,6 +209,23 @@ export function direct(steps: readonly Step[], takes: ReadonlyArray<readonly [nu
   const dip = new Spring(1, DIP.omega, DIP.zeta);
   let now = first;
   let take = -1;
+  // Up to `t` in 4 ms slices, each with its targets then; the camera only within a take.
+  const run = (t: number, plan?: ReadonlyArray<{ at: number; shot: Shot }>) => {
+    while (now < t) {
+      const ms = Math.min(4, t - now);
+      now += ms;
+      if (plan !== undefined) {
+        const shot = plan.findLast((p) => p.at <= now)?.shot ?? whole;
+        camX.step(shot.x, ms);
+        camY.step(shot.y, ms);
+        camZ.step(Math.log(shot.zoom), ms);
+      }
+      const p = target(now);
+      curX.step(p.x, ms);
+      curY.step(p.y, ms);
+      dip.step(presses.some((c) => now >= c && now < c + DIP.ms) ? DIP.depth : 1, ms);
+    }
+  };
   const out: Direction[] = [];
   for (const time of times) {
     const t = Math.max(time, first);
@@ -217,26 +234,15 @@ export function direct(steps: readonly Step[], takes: ReadonlyArray<readonly [nu
     const plan = plans[n];
     if (plan === undefined) throw new Error("no takes");
     if (n !== take) {
-      // A cut: the camera opens on the whole window; the cursor goes on from where it was.
+      // A cut: the cursor goes through what happened between the takes off screen, so the next opens with it where
+      // those clicks left it, at rest; the camera opens on the whole window.
       take = n;
+      run(plan.take[0]);
       camX.reset(whole.x);
       camY.reset(whole.y);
       camZ.reset(0);
-      now = Math.max(now, plan.take[0]);
     }
-    // In 4 ms slices, each with its targets then.
-    while (now < t) {
-      const ms = Math.min(4, t - now);
-      now += ms;
-      const shot = plan.plan.findLast((p) => p.at <= now)?.shot ?? whole;
-      camX.step(shot.x, ms);
-      camY.step(shot.y, ms);
-      camZ.step(Math.log(shot.zoom), ms);
-      const p = target(now);
-      curX.step(p.x, ms);
-      curY.step(p.y, ms);
-      dip.step(presses.some((c) => now >= c && now < c + DIP.ms) ? DIP.depth : 1, ms);
-    }
+    run(t, plan.plan);
     const zoom = clamp(Math.exp(camZ.x), 1, o.cap);
     out.push({ shot: inside({ x: camX.x, y: camY.x }, zoom, o.view), pointer: { x: curX.x, y: curY.x, scale: dip.x } });
   }
