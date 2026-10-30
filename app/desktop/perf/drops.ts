@@ -4,13 +4,15 @@
 // through Chromium's input pipeline: short, long, down and up in a scrolled list, from either end, after the edge's
 // autoscroll, as another desktop's move arrives, as the hub's own echo comes back early or late, and as a reply draws
 // the rows again. Each animation frame from before the press until well after the release, every row's place on screen
-// is recorded. A drop jumps when a row the drag never passes (above a row dragged down, below one dragged up) moves at
-// all, from the press on; or when, after the release, a row moves farther in a frame than the glide's curve would take
-// it (a snap), or turns back without the order having changed.
+// is recorded. A drop jumps when, from the press on, a row the drag never passes moves at all, or a row it passes goes
+// anywhere but one slot over to the gap's other side (the row above a row dragged down jumping up past its place); or
+// when, after the release, a row moves farther in a frame than the glide's curve would take it (a snap), or turns back
+// without the order having changed. A drag that never lifts, or lands where it started, fails.
 //
 //   --theme light|dark   (default light)
 //   --strip DIR          also write each drop's frames (Chromium's screencast), named by ms from just before the press
 //   --rounds N           how many times the drops are made (default 3)
+//   --only TEXT          only the drops whose name has TEXT
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
@@ -18,7 +20,7 @@ import type { CDPSession, Page } from "@playwright/test";
 import { fixturesDir, launch } from "../qa/harness.ts";
 import type { FixtureName } from "../qa/registry.ts";
 
-const { values: flags } = parseArgs({ options: { theme: { type: "string" }, strip: { type: "string" }, rounds: { type: "string" } } });
+const { values: flags } = parseArgs({ options: { theme: { type: "string" }, strip: { type: "string" }, rounds: { type: "string" }, only: { type: "string" } } });
 const theme: "light" | "dark" = flags.theme === "dark" ? "dark" : "light";
 const ROUNDS = Number(flags.rounds ?? "3");
 /** How long after the release the frames are kept: the settle (180 ms) and well past it. */
@@ -191,7 +193,7 @@ const DROPS: ReadonlyArray<Drop> = [
   { name: "long down", drag: async (p) => glide(p, await middle(p, await pick(p, 1)), 6 * ROW + 4, 20) },
   { name: "long up", drag: async (p) => glide(p, await middle(p, await pick(p, 9)), -(6 * ROW + 4), 20) },
   { name: "quick flick", drag: async (p) => glide(p, await middle(p, await pick(p, 3)), 3 * ROW, 2) },
-  { name: "half a row", drag: async (p) => glide(p, await middle(p, await pick(p, 5)), ROW / 2 + 2, 4) },
+  { name: "just past one", drag: async (p) => glide(p, await middle(p, await pick(p, 5)), ROW + 2, 4) },
   {
     name: "after autoscroll",
     drag: async (p) => {
@@ -243,30 +245,47 @@ const eased = (t: number): number => {
 const GLIDE_MS = 180;
 
 /**
- * The rows a drag never passes, from the press to the end: those above a row dragged down, below one dragged up. Each
- * stays exactly where it was in its list the whole time: through the lift, the drag and the drop.
+ * Every row around the dragged one, from the press to the end, in its list (however far the sidebar scrolls). A row the
+ * drag never passes (above a row dragged down, below one dragged up, beyond where it lands) stays exactly where it
+ * was. A row it passes goes one way only, to the gap's other side, by at most the dragged row's height, and stays: so a
+ * row passed by a row dragged down, which then sits above it, never jumps up past its place (W219). A drag that never
+ * lifts, or lands where it started, has nothing to show and fails.
  */
-const still = (frames: ReadonlyArray<Frame>): string[] => {
+const around = (frames: ReadonlyArray<Frame>): string[] => {
   const lifted = frames.flatMap((f) => f.rows.filter((r) => r.lifted).map((r) => r.name))[0];
   const first = frames[0];
   const last = frames.at(-1);
-  if (lifted === undefined || first === undefined || last === undefined) return [];
+  if (first === undefined || last === undefined) return ["no frames"];
+  if (lifted === undefined) return ["no row lifted"];
   const was = first.rows.findIndex((r) => r.name === lifted);
   const now = last.rows.findIndex((r) => r.name === lifted);
-  if (was < 0 || now < 0 || was === now) return [];
-  const passed = new Set(first.rows.filter((_, i) => (now > was ? i >= was : i <= was)).map((r) => r.name));
+  if (was < 0 || now < 0) return [`${lifted} isn't in the list`];
+  if (was === now) return [`${lifted} landed where it started`];
+  const down = now > was;
+  const size = Math.abs((first.rows[was + (down ? 1 : -1)]?.top ?? 0) - (first.rows[was]?.top ?? 0));
   const out: string[] = [];
-  for (const { name, top } of first.rows) {
-    if (passed.has(name)) continue;
+  first.rows.forEach(({ name, top }, i) => {
+    if (i === was) return;
+    const passed = i >= Math.min(was, now) && i <= Math.max(was, now);
     const at = top - first.list;
+    // Where it may be: its place, or for a row passed anywhere from there to one row toward the dragged row's start.
+    const [lo, hi] = passed ? (down ? [at - size, at] : [at, at + size]) : [at, at];
+    let prev = at;
     for (const f of frames) {
       const there = f.rows.find((r) => r.name === name);
-      if (there !== undefined && Math.abs(there.top - f.list - at) > 0.5) {
-        out.push(`${name}, never passed, moved ${(there.top - f.list - at).toFixed(1)} px (${String(Math.round(f.t - first.t))} ms from the press)`);
-        break;
+      if (there === undefined) continue;
+      const y = there.top - f.list;
+      const ms = Math.round(f.t - first.t);
+      const what = passed ? "passed" : "never passed";
+      if (y < lo - 0.5 || y > hi + 0.5) out.push(`${name} (${what}) at ${(y - at).toFixed(1)} px from its place, ${String(ms)} ms from the press`);
+      else if (passed && (down ? y > prev + 0.5 : y < prev - 0.5)) out.push(`${name} (passed) went back ${(y - prev).toFixed(1)} px, ${String(ms)} ms from the press`);
+      else {
+        prev = y;
+        continue;
       }
+      break;
     }
-  }
+  });
   return out;
 };
 
@@ -302,7 +321,7 @@ const judge = (drop: string, frames: ReadonlyArray<Frame>, up: number, moved: bo
     }
   }
   // Another desktop's move puts any row anywhere.
-  return { drop, jumps: [...(moved ? [] : still(frames)), ...jumps], frames: path.length };
+  return { drop, jumps: [...(moved ? [] : around(frames)), ...jumps], frames: path.length };
 };
 
 const screencast = async (cdp: CDPSession, dir: string | undefined) => {
@@ -339,7 +358,7 @@ const main = async () => {
     const cdp = await page.context().newCDPSession(page);
     const verdicts: Verdict[] = [];
     for (let round = 0; round < ROUNDS; round++) {
-      for (const drop of DROPS) {
+      for (const drop of DROPS.filter((d) => flags.only === undefined || d.name.includes(flags.only))) {
         await page.evaluate((top) => document.querySelector("nav[aria-label='Sidebar'] > div")?.scrollTo({ top }), drop.scroll ?? 0);
         await app.evaluate((_e, h) => {
           const g = globalThis as unknown as { drops: Record<string, number> };
@@ -367,7 +386,7 @@ const main = async () => {
         if (flags.strip !== undefined && shots.length > 0) {
           const dir = path.join(flags.strip, theme, drop.name.replaceAll(" ", "-"));
           mkdirSync(dir, { recursive: true });
-          // The screencast's clock and the page's differ: frames are named from the first one after the release.
+          // The screencast's clock and the page's differ: frames are named from the first one, just before the press.
           const t0 = shots[0]?.ts ?? 0;
           for (const s of shots) writeFileSync(path.join(dir, `${String(Math.round(s.ts - t0)).padStart(4, "0")}.png`), Buffer.from(s.data, "base64"));
           writeFileSync(path.join(dir, "frames.json"), JSON.stringify({ up, frames }));
