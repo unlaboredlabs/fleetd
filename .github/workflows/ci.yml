@@ -19,10 +19,10 @@ concurrency:
 permissions:
   contents: read
 
-# Line tables only, not full debug info: backtraces keep their file and line, and the build, its link and the cache
-# each job restores are smaller.
+# No debug info: the build, its link and the cache each job restores are smaller and quicker. Backtraces still name
+# each function, without its file and line.
 env:
-  CARGO_PROFILE_DEV_DEBUG: line-tables-only
+  CARGO_PROFILE_DEV_DEBUG: "0"
 
 # Everything runs on GitHub-hosted runners, which are free for public repos. Rust caches are saved from main only:
 # the repo's 10 GB cache quota holds one copy per job, and pull requests restore main's.
@@ -34,21 +34,6 @@ env:
 # required `rust (macos)` does too. Main runs them after each merge.
 
 jobs:
-  rust-crates:
-    # The root Cargo workspace's tests. Lint (fmt, clippy) and the docs and lab checks on the built binary are jobs of
-    # their own, beside this one: one job ran all four one after the other.
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-      # Also checks that the generated contracts (schema/*.json and the app's TypeScript) are current
-      # (schema::generated_contracts_are_current) and replays the recorded claude fixtures (node::runner).
-      - run: cargo test --locked --workspace
-
   rust-lint:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -173,9 +158,21 @@ jobs:
       - run: node .github/docs-links.mjs --external
 
   rust:
-    # What rust-crates can't check on its own: that libsodium (in Node, as the desktop app seals) opens what the node's
-    # Rust seals and the other way round. rust-macos runs the same on macOS. `rust (linux)` and `rust (macos)` are
-    # required checks.
+    # The root Cargo workspace's tests, under cargo-nextest (a process per test; .config/nextest.toml retries the
+    # Chrome-driven browser tests and reports those as flaky), and its doctests. Lint (fmt, clippy) and the docs and lab
+    # checks on the built binary are jobs of their own, beside this one. `rust (linux)` and `rust (macos)` are required
+    # checks, so the workspace tests gate merges.
+    #
+    # The tests also check that the generated contracts (schema/*.json and the app's TypeScript) are current
+    # (schema::generated_contracts_are_current) and replay the recorded claude fixtures (node::runner). Here, what
+    # they'd skip elsewhere must run: the FLEETD_REQUIRE_* variables make these fail instead of skip without their tool.
+    # - libsodium (in Node, as the desktop app seals) opens what the node's Rust seals and the other way round
+    #   (node::identity; rust-macos runs the same on macOS).
+    # - The pinned agent-browser (agent_browser.rs's VERSION), on the runner's Chrome: every script its commands send is
+    #   one of the pinned shapes (agent_browser_shapes.json) and a sealed session runs it, and its commands work after
+    #   a fill.
+    # - A Navi's sandbox holds under bubblewrap (node::runner::sandbox): a Navi can't write outside its folder or read
+    #   the token store, and works as usual inside it.
     name: rust (linux)
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -187,18 +184,7 @@ jobs:
           cache: npm
           cache-dependency-path: tests/lab/package-lock.json
       - run: npm ci --prefix tests/lab --no-audit --no-fund
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-      - name: Sealed boxes against libsodium
-        run: cargo test --locked -p fleetd --lib node::identity
-        env:
-          FLEETD_REQUIRE_NODE_SEAL: "1"
-      - name: agent-browser's own scripts run in a session that filled a login
-        # The pinned agent-browser (agent_browser.rs's VERSION), on the runner's Chrome: every script its commands
-        # send is one of the pinned shapes (agent_browser_shapes.json) and a sealed session runs it, and its commands
-        # work after a fill. FLEETD_REQUIRE_AGENT_BROWSER makes these tests fail, not skip, without it or a Chrome.
+      - name: agent-browser, as pinned
         run: |
           version="$(sed -n 's/^pub const VERSION: &str = "\(.*\)";$/\1/p' crates/fleetd/src/node/browser/agent_browser.rs)"
           npm install --ignore-scripts --no-audit --no-fund --prefix "$RUNNER_TEMP/agent-browser" "agent-browser@$version"
@@ -208,21 +194,30 @@ jobs:
           test -f "$bin" || { ls -l "$(dirname "$bin")"; echo "no $bin in agent-browser@$version" >&2; exit 1; }
           chmod +x "$bin"
           "$bin" --version | grep -F "$version"
-          FLEETD_TEST_AGENT_BROWSER="$bin" cargo test --locked -p fleetd --lib agent_browser
-        env:
-          FLEETD_REQUIRE_AGENT_BROWSER: "1"
-      - name: A Navi's sandbox holds (bubblewrap)
-        # node/runner/sandbox: a Navi can't write outside its folder or read the token store, and works as usual
-        # inside it. rust-crates runs the same tests without bubblewrap, where they skip and say why;
-        # FLEETD_REQUIRE_SANDBOX makes them fail here instead. Ubuntu's AppArmor blocks the user namespaces bwrap needs
-        # unless a profile allows them; the runner turns the restriction off.
+          echo "FLEETD_TEST_AGENT_BROWSER=$bin" >> "$GITHUB_ENV"
+      - name: bubblewrap
+        # Ubuntu's AppArmor blocks the user namespaces bwrap needs unless a profile allows them; the runner turns the
+        # restriction off.
         run: |
           sudo apt-get install -y --no-install-recommends bubblewrap
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           bwrap --ro-bind / / --unshare-all true
-          cargo test --locked -p fleetd --lib node::runner::sandbox
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Workspace tests
+        run: cargo nextest run --locked --workspace --profile ci
         env:
+          FLEETD_REQUIRE_NODE_SEAL: "1"
+          FLEETD_REQUIRE_AGENT_BROWSER: "1"
           FLEETD_REQUIRE_SANDBOX: "1"
+      # nextest doesn't run doctests.
+      - name: Doctests
+        run: cargo test --locked --workspace --doc
 
   macos-scope:
     # Which macOS jobs have work, decided on Linux so a macOS runner starts only for real work: each macOS job needs
