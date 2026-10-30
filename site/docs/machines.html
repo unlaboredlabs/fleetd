@@ -431,7 +431,9 @@ the number you set, 1 to 64.</p>
 <p>When an agent starts a screen, the hub places it: on the agent’s own machine when it hosts screens, can run that kind
 and has a free screen slot; else on the online machine that can with the most free slots. When none can, the agent is
 told why in one line: none can host that kind, the ones that can are offline, or every one is full. The default cap is
-never lower than the machine’s agent slots and leads together, one screen each, as before screen caps.</p>
+never lower than the machine’s agent slots and leads together, one screen each, as before screen caps. A screen a
+person <a href="/docs/browser-sessions#yours">opens themselves</a> takes a slot too, on the machine they pick, and a person
+waiting for a full machine’s next slot gets it before any agent does.</p>
 <p>A screen on another machine works as one on the agent’s own:</p>
 <ul>
 <li><strong>Its secrets go sealed.</strong> Before it starts, the agent’s node seals the screen’s secrets (its project’s, its

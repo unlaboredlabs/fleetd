@@ -9,7 +9,7 @@ import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import { selectLiveAgents, type LiveAgent } from "../../src/data/selectors";
 import { parseMs } from "../live/format";
 import type { ProjectKey } from "../shell/routes";
-import type { BrowserSession, SessionAction, SessionState } from "./model";
+import type { BrowserSession, ScreenWaiting, SessionAction, SessionState } from "./model";
 
 /** The hub feature that says it serves sessions (panel/tabs.ts gates the view on it too). */
 export const FEATURE = "browser_sessions";
@@ -71,8 +71,13 @@ export const fromHub = (row: HubSession, agent: SessionAgent): BrowserSession =>
     ...(files.length > 0 && start !== undefined && end !== undefined ? { recording: { durationMs: Math.max(0, end - start), files } } : {}),
     ...(row.credentialsFilled === undefined || row.credentialsFilled === 0 ? {} : { credentialsFilled: row.credentialsFilled }),
     ...(row.note === undefined ? {} : { note: row.note }),
+    ...(row.openedBy === undefined ? {} : { openedBy: row.openedBy.name }),
   };
 };
+
+/** Who a session is for in the views: the person who opened it themselves, else its agent. */
+export const ownerOf = (agents: readonly LiveAgent[] | undefined, row: HubSession): SessionAgent =>
+  row.openedBy === undefined ? agentOf(agents, row) : { laneId: "", title: row.openedBy.name };
 
 /** One line of actions.jsonl (contracts BrowserAction), as far as the views read it. */
 export interface HubAction {
@@ -307,7 +312,20 @@ export function useSessions(project: ProjectKey): readonly BrowserSession[] {
   // Read here too, so a session names its agent where nothing else reads the agents (a session's own window).
   useToolQuery("agents_list", ALL, { enabled: on });
   const agents = useData(selectLiveAgents);
-  return useMemo(() => rows.map((row) => fromHub(row, agentOf(agents, row))), [rows, agents]);
+  return useMemo(() => rows.map((row) => fromHub(row, ownerOf(agents, row))), [rows, agents]);
+}
+
+const NO_WAITS: readonly ScreenWaiting[] = [];
+
+/** The caller's own waits for a screen of this project, oldest first. */
+export function useScreenWaits(project: ProjectKey): readonly ScreenWaiting[] {
+  const on = useData((st) => st.features.includes(FEATURE));
+  const projectRef: ProjectRef = { machineId: project.machineId, projectId: project.projectId };
+  const waits = useToolQuery("browser_sessions", { projectRef }, { enabled: on }).data?.waits;
+  return useMemo(
+    () => (waits === undefined ? NO_WAITS : waits.map((w) => ({ id: w.waitId, kind: w.kind as ScreenWaiting["kind"], machineId: w.machineId, since: w.since, ahead: w.ahead }))),
+    [waits],
+  );
 }
 
 /** A recorded session's files, read once (a recording never changes): its steps with their pages, and its video. */

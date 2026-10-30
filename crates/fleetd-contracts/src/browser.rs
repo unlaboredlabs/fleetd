@@ -192,7 +192,27 @@ pub struct BrowserSession {
     pub credentials_filled: Count,
     /// Why a session is lost, or what its recording lacks ("no video: this machine has no ffmpeg").
     pub note: Option<Text<0, 500>>,
+    /// The person who opened it themselves (`screen_open`): a person's screen, theirs to drive from its start. Absent
+    /// for an agent's.
+    pub opened_by: Option<crate::people::PersonRef>,
 }
+
+/// A person's `screen_open` waiting for a slot on a full machine: it takes the next one free there, ahead of every
+/// agent's start, and gives up after [`SCREEN_WAIT_MINUTES`].
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ScreenWait {
+    pub wait_id: NonEmpty,
+    pub project_ref: ProjectRef,
+    pub kind: SessionKind,
+    pub machine_id: crate::ids::MachineId,
+    pub since: Timestamp,
+    /// People's waits for that machine before this one.
+    pub ahead: Count,
+}
+
+/// How long a person's wait for a slot lasts before the hub gives it up.
+pub const SCREEN_WAIT_MINUTES: i64 = 30;
 
 /// One line of `actions.jsonl`: a tool call of the agent's that drove the browser (an `agent-browser` command, a
 /// session tool), or a person's step (`takeover`, `handback`; their input is not logged key by key).

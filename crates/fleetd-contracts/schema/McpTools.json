@@ -1817,6 +1817,10 @@
           "maxLength": 500,
           "type": "string"
         },
+        "openedBy": {
+          "$ref": "#/$defs/PersonRef",
+          "description": "The person who opened it themselves (`screen_open`): a person's screen, theirs to drive from its start. Absent\nfor an agent's."
+        },
         "projectRef": {
           "$ref": "#/$defs/ProjectRef"
         },
@@ -1915,6 +1919,15 @@
         },
         "truncated": {
           "type": "boolean"
+        },
+        "waits": {
+          "default": [],
+          "description": "The caller's own waits for a slot to open a screen in this project (`screen_open` wait), oldest first.",
+          "items": {
+            "$ref": "#/$defs/ScreenWait"
+          },
+          "maxItems": 100,
+          "type": "array"
         }
       },
       "required": [
@@ -9913,6 +9926,18 @@
         "requests_list.output": {
           "$ref": "#/$defs/RequestsListOutput"
         },
+        "screen_end.input": {
+          "$ref": "#/$defs/ScreenEndInput"
+        },
+        "screen_end.output": {
+          "$ref": "#/$defs/ScreenEndOutput"
+        },
+        "screen_open.input": {
+          "$ref": "#/$defs/ScreenOpenInput"
+        },
+        "screen_open.output": {
+          "$ref": "#/$defs/ScreenOpenOutput"
+        },
         "secret_submit.input": {
           "$ref": "#/$defs/SecretSubmitInput"
         },
@@ -10381,6 +10406,10 @@
         "push_relay_set.output",
         "requests_list.input",
         "requests_list.output",
+        "screen_end.input",
+        "screen_end.output",
+        "screen_open.input",
+        "screen_open.output",
         "secret_submit.input",
         "secret_submit.output",
         "session_prompt_get.input",
@@ -17115,6 +17144,110 @@
         }
       ],
       "x-open": true
+    },
+    "ScreenEndInput": {
+      "properties": {
+        "sessionId": {
+          "$ref": "#/$defs/BrowserSessionId"
+        },
+        "waitId": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "ScreenEndOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "session": {
+          "$ref": "#/$defs/BrowserSession"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "ScreenOpenInput": {
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/SessionKind",
+          "default": "browser"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "wait": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "projectRef",
+        "machineId"
+      ],
+      "type": "object"
+    },
+    "ScreenOpenOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "session": {
+          "$ref": "#/$defs/BrowserSession",
+          "description": "The screen, live with the caller in control. Absent while it waits."
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "waiting": {
+          "$ref": "#/$defs/ScreenWait",
+          "description": "Its place in line for the machine's next free slot."
+        }
+      },
+      "type": "object"
+    },
+    "ScreenWait": {
+      "description": "A person's `screen_open` waiting for a slot on a full machine: it takes the next one free there, ahead of every\nagent's start, and gives up after [`SCREEN_WAIT_MINUTES`].",
+      "properties": {
+        "ahead": {
+          "description": "People's waits for that machine before this one.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "kind": {
+          "$ref": "#/$defs/SessionKind"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "since": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "waitId": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "waitId",
+        "projectRef",
+        "kind",
+        "machineId",
+        "since",
+        "ahead"
+      ],
+      "type": "object"
     },
     "SealedSecret": {
       "type": "string"

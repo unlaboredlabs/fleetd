@@ -1,11 +1,12 @@
 // One screen (a browser session, or a device's), in the panel's wide width. While it runs: the page as the agent sees
 // it, the full width, what the agent is doing now, and Take over. Taken over, the page is yours: the frame's bar turns
 // to say so, your clicks and keys go to the page, and Hand back gives it to the agent, which looks at the page again
-// and goes on; meanwhile it waits, and its line says so. An agent that asks you to take over says why above the page.
+// and goes on; meanwhile it waits, and its line says so. A screen a person opened themselves (New screen) is theirs from
+// its start, with no agent: End screen closes it, and its recording goes to the hub as any screen's. An agent that asks you to take over says why above the page.
 // Once it has ended: its replay, the recording the full width; Steps opens its steps beside it, each step a jump to its
 // moment and a way into the page's snapshot at that step. A login filled from 1Password is a step in words; its value
 // is never on the hub to show, nor in a snapshot.
-import { AppWindow, ChevronLeft, CornerUpLeft, Hand, KeyRound, ListOrdered, ListTree, Pause, Play } from "lucide-react";
+import { AppWindow, ChevronLeft, CornerUpLeft, Hand, KeyRound, ListOrdered, ListTree, Pause, Play, Square } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 import { Button, EmptyState, StateGlyph, Text, Tooltip, Truncate, cx, toast } from "../../ui";
 import { useDataLayer } from "../../src/data/react";
@@ -85,7 +86,7 @@ function Head({ session: x, windowed }: { session: BrowserSession; windowed: boo
         <Text size="xs" tone={STATE_TONE[x.state]} strong={x.state === "asking" || x.state === "yours"}>
           {STATE_WORD[x.state]}
         </Text>
-        {windowed ? (
+        {windowed || x.openedBy !== undefined ? (
           <span className={s.agentLink}>{who}</span>
         ) : (
           <a className={s.agentLink} href={agent} title="Open its agent">
@@ -141,6 +142,15 @@ function Live({ session: x, windowed }: { session: BrowserSession; windowed: boo
       if (!ok) toast({ title: to === "human" ? "Couldn’t take over" : "Couldn’t hand back", description: "The hub didn’t take it. Try again.", key: `control:${x.id}` });
     });
   };
+  const own = x.openedBy !== undefined;
+  const [ending, setEnding] = useState(false);
+  const end = () => {
+    setEnding(true);
+    void layer.call("screen_end", { sessionId: x.id }).then((out) => {
+      setEnding(false);
+      if (!out.ok) toast({ title: "Couldn’t end the screen", description: out.error.message, key: `end:${x.id}` });
+    });
+  };
   useCommands(
     [
       {
@@ -148,11 +158,19 @@ function Live({ session: x, windowed }: { session: BrowserSession; windowed: boo
         title: "Hand back the page",
         detail: "Give the page you took over back to its agent",
         group: "actions",
-        enabled: () => takes,
+        enabled: () => takes && !own,
         run: () => control("agent"),
       },
+      {
+        id: "session.end",
+        title: "End this screen",
+        detail: "Close the screen you opened; its recording goes to the hub",
+        group: "actions",
+        enabled: () => own,
+        run: end,
+      },
     ],
-    [x.id, takes],
+    [x.id, takes, own],
   );
   const popOut = () => {
     if (!yours) control("human");
@@ -196,7 +214,7 @@ function Live({ session: x, windowed }: { session: BrowserSession; windowed: boo
         <div className={s.control}>
           <span className={s.nowLine}>
             <Text size="xs" tone="faint">
-              {yours ? "The agent" : "Now"}
+              {own ? "You" : yours ? "The agent" : "Now"}
             </Text>
             <span className={s.nowWords}>
               <Text size="xs" tone={x.state === "asking" ? "warning" : yours ? "quiet" : "default"}>
@@ -208,6 +226,17 @@ function Live({ session: x, windowed }: { session: BrowserSession; windowed: boo
             <Button variant="secondary" size="sm" icon={<AppWindow aria-hidden />} onClick={() => showWindow(x.projectRef, x.id, layer.hub)}>
               Show its window
             </Button>
+          ) : own ? (
+            <span className={s.controls}>
+              {yours ? null : (
+                <Button variant="secondary" size="sm" icon={<Hand aria-hidden />} disabled={asking !== null} onClick={() => control("human")}>
+                  Take control
+                </Button>
+              )}
+              <Button variant="secondary" size="sm" icon={<Square aria-hidden />} disabled={ending} onClick={end}>
+                {ending ? "Ending…" : "End screen"}
+              </Button>
+            </span>
           ) : yours ? (
             <Button
               variant="primary"

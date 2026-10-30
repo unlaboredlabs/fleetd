@@ -17,19 +17,19 @@ use crate::hub::link::lead_calls::CallerAgent;
 use crate::hub::store::HubDb;
 use crate::hub::store::test_clock::ManualClock;
 
-const AT: &str = "2026-10-26T10:00:00.000Z";
-const NOW_MS: u64 = 1_792_000_000_000;
+pub(super) const AT: &str = "2026-10-26T10:00:00.000Z";
+pub(super) const NOW_MS: u64 = 1_792_000_000_000;
 const SESSION: &str = "B0123456789abcdef0123456789abcdef";
 /// Each machine's box key, as its hello gave it.
 const BOX_KEY: &str = "Az+6kf/abi0V7SO+sn4h++sIgyPoNDAneLBDFaJf3TA=";
 /// What the agent's node sealed to the runner: the hub relays it as it is.
 const SEALED: &str = "c2VhbGVkIGZvciBtYWMx";
 
-fn mid(m: &str) -> MachineId {
+pub(super) fn mid(m: &str) -> MachineId {
     MachineId::unchecked(m)
 }
 
-fn app() -> ProjectRef {
+pub(super) fn app() -> ProjectRef {
     ProjectRef {
         machine_id: mid("devbox"),
         project_id: ProjectId::unchecked("app"),
@@ -39,6 +39,13 @@ fn app() -> ProjectRef {
 /// A hub with devbox (Linux: Chrome and docker) and mac1 (macOS: Chrome and iOS simulators) online, both on a node
 /// that hosts others' sessions, and project app on devbox.
 fn hub() -> (Arc<Hub>, tempfile::TempDir) {
+    hub_at(ManualClock::at(NOW_MS))
+}
+
+/// [`hub`] on `clock`.
+pub(super) fn hub_at(
+    clock: Arc<crate::hub::store::test_clock::ManualClock>,
+) -> (Arc<Hub>, tempfile::TempDir) {
     let home = tempfile::tempdir().unwrap();
     let config = HubConfig {
         home: home.path().to_path_buf(),
@@ -46,12 +53,7 @@ fn hub() -> (Arc<Hub>, tempfile::TempDir) {
         url: None,
         queue_ttl_sec: None,
     };
-    let hub = crate::hub::serve::build_on(
-        HubDb::open_memory().unwrap(),
-        config,
-        ManualClock::at(NOW_MS),
-    )
-    .unwrap();
+    let hub = crate::hub::serve::build_on(HubDb::open_memory().unwrap(), config, clock).unwrap();
     for m in ["devbox", "mac1"] {
         let machine = serde_json::from_value(json!({
             "machineId": m, "name": m, "tags": [], "status": "online", "lastSeenAt": AT, "nodeVersion": "0.1.0",
@@ -82,7 +84,7 @@ fn hub() -> (Arc<Hub>, tempfile::TempDir) {
 }
 
 /// The machine's heartbeat, 32 CPUs and 64 GB, able to host `ready` and nothing else.
-fn report_hosts(hub: &Hub, m: &str, ready: &[SessionHost]) {
+pub(super) fn report_hosts(hub: &Hub, m: &str, ready: &[SessionHost]) {
     let mut load = crate::hub::link::guard::tests::load(500, 1.0);
     load.mem_total_bytes = Some(fleetd_contracts::prim::Count::unchecked(64 << 30));
     load.hosts = Some(List::unchecked(
@@ -98,7 +100,7 @@ fn report_hosts(hub: &Hub, m: &str, ready: &[SessionHost]) {
     hub.link.observe_load(&mid(m), Some(load), AT);
 }
 
-fn admin() -> Caller {
+pub(super) fn admin() -> Caller {
     serde_json::from_value(json!({
         "keyId": "k1", "name": "desk", "prefix": "fld_abcdef", "createdAt": AT,
         "grants": [{ "role": "admin", "machines": "*" }],
@@ -112,7 +114,7 @@ async fn tool(hub: &Arc<Hub>, name: &str, input: Value) -> Result<Value, CallErr
         .await
 }
 
-fn task_caller() -> LeadCaller {
+pub(super) fn task_caller() -> LeadCaller {
     LeadCaller {
         project_ref: app(),
         by: crate::hub::link::lead_calls::lead_by(&app()),
@@ -121,7 +123,7 @@ fn task_caller() -> LeadCaller {
 }
 
 /// Task T7's node hands the hub one of its agent's session calls, for session `thread`.
-async fn route(
+pub(super) async fn route(
     hub: &Hub,
     thread: &str,
     host: SessionHost,
@@ -131,7 +133,8 @@ async fn route(
     match &first.seal_to {
         // As the agent's node does: seal to the runner the hub named, and start again.
         Some(key) => {
-            assert_eq!(key.as_str(), BOX_KEY);
+            let runner = hub.store.machine_get(&first.runner).unwrap().unwrap();
+            assert_eq!(Some(key), runner.box_pub_key.as_ref());
             assert!(first.answer.is_none(), "nothing starts before the seal");
             let sealed = json!({ "runner": first.runner, "dataB64": SEALED });
             route_once(hub, thread, host, call, Some(sealed)).await
@@ -140,7 +143,7 @@ async fn route(
     }
 }
 
-async fn route_once(
+pub(super) async fn route_once(
     hub: &Hub,
     thread: &str,
     host: SessionHost,
@@ -162,7 +165,7 @@ async fn route_once(
     }
 }
 
-fn start() -> Value {
+pub(super) fn start() -> Value {
     json!({ "op": "session_start", "purpose": "Check the signup form" })
 }
 
@@ -178,7 +181,7 @@ async fn live_on_devbox(hub: &Hub, thread: &str, id: &str) {
 }
 
 /// Placing sessions on other machines turned on, and devbox's node linked to hear of them.
-fn remote(hub: &Arc<Hub>) -> crate::hub::link::commands::AttachedLink {
+pub(super) fn remote(hub: &Arc<Hub>) -> crate::hub::link::commands::AttachedLink {
     hub.db.transaction(|c| super::set_remote(c, true)).unwrap();
     let (tx, rx) = mpsc::unbounded_channel::<HubToNode>();
     std::mem::forget(rx);
@@ -376,7 +379,7 @@ async fn an_agents_device_steps_reach_its_own_screen_and_no_one_elses() {
 }
 
 /// The next frame a node's link gets from the hub.
-async fn heard(link: &mut mpsc::UnboundedReceiver<HubToNode>) -> HubToNode {
+pub(super) async fn heard(link: &mut mpsc::UnboundedReceiver<HubToNode>) -> HubToNode {
     tokio::time::timeout(std::time::Duration::from_secs(5), link.recv())
         .await
         .expect("the node hears of it")
@@ -690,6 +693,7 @@ fn runner(m: &str, sessions: bool, ready: bool, live: i64, max: i64) -> Runner {
         others_note: None,
         live,
         max,
+        held: 0,
     }
 }
 
@@ -730,6 +734,29 @@ fn placement_prefers_the_agents_machine_then_the_most_free_slots() {
         place(&mid("devbox"), SessionHost::Browser, &[silent], true).unwrap(),
         mid("devbox")
     );
+    // A slot a person waits for isn't an agent's: a machine whose free slots people wait for is full to agents.
+    let held = Runner {
+        held: 2,
+        ..runner("lab-b", true, true, 2, 4)
+    };
+    let refused = place(
+        &mid("devbox"),
+        SessionHost::Browser,
+        &[full_own_again(), held],
+        true,
+    )
+    .unwrap_err();
+    assert!(
+        refused
+            .message
+            .contains("lab-b 2 of 4, 2 people waiting for a slot"),
+        "{}",
+        refused.message
+    );
+}
+
+fn full_own_again() -> Runner {
+    runner("devbox", true, true, 2, 2)
 }
 
 #[tokio::test]

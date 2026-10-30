@@ -115,7 +115,26 @@ export interface BrowserSession {
   readonly credentialsFilled?: number;
   /** Why it was lost, or what its recording lacks. */
   readonly note?: string;
+  /** The person who opened it themselves (New screen): theirs to drive, with no agent to hand it back to. */
+  readonly openedBy?: string;
 }
+
+/** A person's request for a screen on a full machine, waiting for its next slot (the hub's ScreenWait). */
+export interface ScreenWaiting {
+  readonly id: string;
+  readonly kind: "browser" | "android" | "ios" | "linux_desktop";
+  readonly machineId: string;
+  readonly since: string;
+  /** People's waits for that machine before this one. */
+  readonly ahead: number;
+}
+
+/** A wait in words: what and where, then its place in line. */
+export const waitLine = (w: ScreenWaiting, machine: string): { readonly title: string; readonly place: string } => {
+  const what = { browser: "Browser", android: "Android emulator", ios: "iOS simulator", linux_desktop: "Linux desktop" }[w.kind];
+  const place = w.ahead === 0 ? "next in line" : `${String(w.ahead)} ${w.ahead === 1 ? "person" : "people"} ahead`;
+  return { title: `${what} on ${machine}`, place: `waiting for a free slot · ${place}` };
+};
 
 /** What a live screen says until its first frame comes: a browser's page, or the device it shows. */
 export const waitingFor = (s: Pick<BrowserSession, "kind">): string => {
@@ -310,11 +329,11 @@ export const nowLine = (s: BrowserSession): string => {
     case "starting":
       return "Opening a fresh browser";
     case "running":
-      return s.now ?? "Working in the page";
+      return s.openedBy === undefined ? (s.now ?? "Working in the page") : "Take control to drive it";
     case "asking":
       return "Waiting for you to take over";
     case "yours":
-      return "Waits, and sees the page as you leave it";
+      return s.openedBy === undefined ? "Waits, and sees the page as you leave it" : "Drive it: your clicks and keys go to the screen";
     case "handingBack":
       return "Looking at the page as you left it";
     case "saving":

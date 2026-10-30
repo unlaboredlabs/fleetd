@@ -7,9 +7,10 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
 use fleetd_contracts::auth::Role;
 use fleetd_contracts::browser::{
-    BrowserControl, BrowserControlFrame, BrowserControlTo, BrowserSessionState,
+    BrowserControl, BrowserControlFrame, BrowserControlTo, BrowserSession, BrowserSessionState,
     RECORDING_PART_BYTES,
 };
+use fleetd_contracts::ids::MachineId;
 use fleetd_contracts::mcp::{
     BrowserControlInput, BrowserControlOutput, BrowserRecordingGetInput, BrowserRecordingGetOutput,
     BrowserRetentionSetInput, BrowserRetentionSetOutput, BrowserSessionsInput,
@@ -68,6 +69,13 @@ async fn browser_control(
             format!("Screen {id} is {}, not live.", session.state.as_str()),
         ));
     }
+    if session.opened_by.is_some() && input.control == BrowserControlTo::Agent {
+        return Err(ToolError::new(
+            ErrorCode::Invalid,
+            format!("Screen {id} is a person's own: it has no agent to hand it to."),
+        )
+        .with_fix("End it with screen_end when you're done."));
+    }
     let next = match (input.control, session.control) {
         (BrowserControlTo::Human, _) => BrowserControl::Human,
         (BrowserControlTo::Agent, BrowserControl::Human) => BrowserControl::HandingBack,
@@ -75,52 +83,15 @@ async fn browser_control(
     };
     if next != session.control {
         let machine = super::live::runs_on(&hub, &session)?;
-        if !hub.link.node_can(&machine, CAP_BROWSER) {
-            return Err(ToolError::new(
-                ErrorCode::MachineOffline,
-                format!("{machine}'s node isn't connected, or is too old for takeover."),
-            )
-            .with_fix("Try again once the machine is online on the current fleetd."));
-        }
-        let frame = HubToNode::BrowserControl(BrowserControlFrame {
-            session_id: id.clone(),
-            control: input.control,
-            by: Text::unchecked(person(&caller)),
-        });
-        // The node says who drives once it acted; the session changes only then.
-        let mut reports = hub.link.browser_live.await_control(id);
-        // Every exit from here drops `reports`, which leaves no wait behind (live.rs).
-        if !hub.link.send_to(&machine, frame) {
-            return Err(ToolError::new(
-                ErrorCode::MachineOffline,
-                format!("{machine}'s node isn't connected."),
-            ));
-        }
-        let confirmed = tokio::time::timeout(CONTROL_WAIT, async {
-            while let Some(control) = reports.recv().await {
-                let done = match next {
-                    BrowserControl::Human => control == BrowserControl::Human,
-                    // The agent may have taken it back already.
-                    _ => control != BrowserControl::Human,
-                };
-                if done {
-                    return true;
-                }
-            }
-            false
-        })
-        .await;
-        drop(reports);
-        if confirmed != Ok(true) {
-            return Err(ToolError::new(
-                ErrorCode::Failed,
-                format!(
-                    "{machine}'s node didn't confirm the change: screen {id} may have just ended there. \
-                     Nothing changed."
-                ),
-            )
-            .with_fix("Read the screen again with browser_sessions, and try again if it is still live."));
-        }
+        change_control(
+            &hub,
+            &session,
+            &machine,
+            input.control,
+            next,
+            person(&caller),
+        )
+        .await?;
         session = get(&hub.db, id)?.ok_or_else(not_found)?;
     }
     Ok(BrowserControlOutput {
@@ -134,6 +105,65 @@ async fn browser_control(
         }),
         truncated: None,
     })
+}
+
+/// Sends a change of who drives `session` to `machine`, the one it runs on, and waits for its node to report it done:
+/// `next`, the control it becomes. Nothing changes on the hub until the node reports.
+pub async fn change_control(
+    hub: &Hub,
+    session: &BrowserSession,
+    machine: &MachineId,
+    control: BrowserControlTo,
+    next: BrowserControl,
+    by: String,
+) -> Result<(), ToolError> {
+    let id = &session.session_id;
+    if !hub.link.node_can(machine, CAP_BROWSER) {
+        return Err(ToolError::new(
+            ErrorCode::MachineOffline,
+            format!("{machine}'s node isn't connected, or is too old for takeover."),
+        )
+        .with_fix("Try again once the machine is online on the current fleetd."));
+    }
+    let frame = HubToNode::BrowserControl(BrowserControlFrame {
+        session_id: id.clone(),
+        control,
+        by: Text::unchecked(by),
+    });
+    // The node says who drives once it acted; the session changes only then.
+    let mut reports = hub.link.browser_live.await_control(id);
+    // Every exit from here drops `reports`, which leaves no wait behind (live.rs).
+    if !hub.link.send_to(machine, frame) {
+        return Err(ToolError::new(
+            ErrorCode::MachineOffline,
+            format!("{machine}'s node isn't connected."),
+        ));
+    }
+    let confirmed = tokio::time::timeout(CONTROL_WAIT, async {
+        while let Some(control) = reports.recv().await {
+            let done = match next {
+                BrowserControl::Human => control == BrowserControl::Human,
+                // The agent may have taken it back already.
+                _ => control != BrowserControl::Human,
+            };
+            if done {
+                return true;
+            }
+        }
+        false
+    })
+    .await;
+    drop(reports);
+    if confirmed != Ok(true) {
+        return Err(ToolError::new(
+            ErrorCode::Failed,
+            format!(
+                "{machine}'s node didn't confirm the change: screen {id} may have just ended there. Nothing changed."
+            ),
+        )
+        .with_fix("Read the screen again with browser_sessions, and try again if it is still live."));
+    }
+    Ok(())
 }
 
 async fn browser_sessions(
@@ -153,11 +183,14 @@ async fn browser_sessions(
             .collect(),
         None => list(&hub.db, &r, input.limit.get() as usize)?,
     };
-    let next = sessions
-        .is_empty()
-        .then(|| "No screens yet: an agent opens one with session_start.".to_owned());
+    let next = sessions.is_empty().then(|| {
+        "No screens yet: an agent opens one with session_start, a person with screen_open."
+            .to_owned()
+    });
+    let waits = crate::hub::machine_roles::screens::waits_of(&hub, &caller, &r)?;
     Ok(BrowserSessionsOutput {
         sessions: List::unchecked(sessions),
+        waits: List::unchecked(waits),
         retention: hub.db.with(retention_on)?,
         next,
         truncated: None,

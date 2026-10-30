@@ -772,6 +772,11 @@ export type BrowserSession = {
   kind?: SessionKind;
   /** Why a session is lost, or what its recording lacks ("no video: this machine has no ffmpeg"). */
   note?: string;
+  /**
+   * The person who opened it themselves (`screen_open`): a person's screen, theirs to drive from its start. Absent
+   * for an agent's.
+   */
+  openedBy?: PersonRef;
   projectRef: ProjectRef;
   purpose: string;
   sessionId: BrowserSessionId;
@@ -818,6 +823,8 @@ export type BrowserSessionsOutput = {
   retention: BrowserRetention;
   sessions: BrowserSession[];
   truncated?: boolean;
+  /** The caller's own waits for a slot to open a screen in this project (`screen_open` wait), oldest first. */
+  waits?: ScreenWait[];
 };
 
 export type CapSetInput = {
@@ -5893,6 +5900,47 @@ export type KnownSandboxStatus = "ready" | "gap" | "missing";
 /** KnownSandboxStatus, or a value from a newer hub. */
 export type SandboxStatus = KnownSandboxStatus | (string & {});
 
+export type ScreenEndInput = {
+  sessionId?: BrowserSessionId;
+  waitId?: string;
+};
+
+export type ScreenEndOutput = {
+  next?: string;
+  session?: BrowserSession;
+  truncated?: boolean;
+};
+
+export type ScreenOpenInput = {
+  kind?: SessionKind;
+  machineId: MachineId;
+  projectRef: ProjectRef;
+  wait?: boolean;
+};
+
+export type ScreenOpenOutput = {
+  next?: string;
+  /** The screen, live with the caller in control. Absent while it waits. */
+  session?: BrowserSession;
+  truncated?: boolean;
+  /** Its place in line for the machine's next free slot. */
+  waiting?: ScreenWait;
+};
+
+/**
+ * A person's `screen_open` waiting for a slot on a full machine: it takes the next one free there, ahead of every
+ * agent's start, and gives up after [`SCREEN_WAIT_MINUTES`].
+ */
+export type ScreenWait = {
+  /** People's waits for that machine before this one. */
+  ahead: number;
+  kind: SessionKind;
+  machineId: MachineId;
+  projectRef: ProjectRef;
+  since: Timestamp;
+  waitId: string;
+};
+
 export type SealedSecret = string;
 
 export type SecretEnvEntry = {
@@ -7977,6 +8025,8 @@ export interface ToolMap {
   push_devices_list: { input: PushDevicesListInput; output: PushDevicesListOutput };
   push_relay_set: { input: PushRelaySetInput; output: PushRelaySetOutput };
   requests_list: { input: RequestsListInput; output: RequestsListOutput };
+  screen_end: { input: ScreenEndInput; output: ScreenEndOutput };
+  screen_open: { input: ScreenOpenInput; output: ScreenOpenOutput };
   secret_submit: { input: SecretSubmitInput; output: SecretSubmitOutput };
   session_prompt_get: { input: SessionPromptGetInput; output: SessionPromptGetOutput };
   setup_list: { input: SetupListInput; output: SetupListOutput };

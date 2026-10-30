@@ -1,7 +1,8 @@
 // The Sessions fixture (W46): many-agents' storefront with browser sessions, as a hub serving them sends them
 // (contracts browser.rs, app.rs): live ones (one driving, one asking you to take over, both streaming frames), and
 // ended ones recorded (with a video, without one), being saved, lost and expired. Taking over and handing back answer
-// as the hub does, the row changing hands. Its pages, frames and video: pages.ts, html.ts, script.ts and media/
+// as the hub does, the row changing hands. New screen (D239) answers too: a browser of your own opens on devbox, in your
+// control, and an iOS simulator on the Mac, whose two are in use, waits for a slot until you cancel. Its pages, frames and video: pages.ts, html.ts, script.ts and media/
 // (media.ts).
 import fs from "node:fs";
 import path from "node:path";
@@ -84,7 +85,7 @@ const preview = (base: Fixture): Fixture => {
   const iso = (agoMs: number) => new Date(Date.parse(f.now) - agoMs).toISOString();
   // The hub says it serves browser sessions: the Agents section shows them (no other fixture's hub says so).
   if (f.state.phase !== "live") throw new Error("many-agents' hub isn't live");
-  f.state = { ...f.state, features: ["presence", "browser_sessions"] };
+  f.state = { ...f.state, features: ["presence", "browser_sessions", "screen_open"] };
   for (const tool of ["orders_board", "order_get"]) f.update(tool, (out) => patchLane(out, "T4", { status: "waiting", statusReason: ASKS }));
   // Its own work: the browser tools it called, the login filled from 1Password by reference, and why it asked.
   const thread = findLane(f.output("orders_board", {}) ?? f.answers("orders_board")[0]?.output ?? null, "T4")?.["threadRef"];
@@ -185,18 +186,7 @@ const preview = (base: Fixture): Fixture => {
     }),
     row(SESSION.expired, "T8", "Check the pricing page on staging after the copy change", 33 * 86_400_000, { state: "expired", endedAt: iso(33 * 86_400_000 - 95_000) }),
   ];
-  f.answer("browser_sessions", { projectRef: STOREFRONT }, { sessions: rows, retention: { retentionDays: 30, maxGbPerProject: 20 } });
-  const where = (r: JsonObject) => ({ tool: "browser_sessions", field: "sessions", where: { sessionId: asText(r["sessionId"]), control: asText(r["control"]) } });
-  f.hidden.push(where(yours(checkout)), where(yours(payouts)), where(handing(payouts)));
-
-  // Their recordings.
-  answerFile(f, SESSION.share, "actions", share.actions);
-  answerFile(f, SESSION.share, "dom", share.dom);
-  answerFile(f, SESSION.share, "video", video);
-  answerFile(f, SESSION.pricing, "actions", pricing.actions);
-  answerFile(f, SESSION.pricing, "dom", pricing.dom);
-
-  // The live ones' pages: checkout's agent goes on, a page every 2.2 s; payouts waits on its code.
+  // A live page's frame, as the node streams it.
   const frame = (sessionId: string, seq: number, image: string, url: string, control: string): JsonObject => ({
     sessionId,
     seq,
@@ -206,6 +196,65 @@ const preview = (base: Fixture): Fixture => {
     url,
     control,
   });
+  // New screen: your own browser, once you open it; and your wait for the Mac.
+  const mine: JsonObject = {
+    sessionId: SESSION.mine,
+    projectRef: STOREFRONT,
+    threadId: "screen-5e2c4a6f8d0b1a3c5e7f9d1b3a5c7e9f",
+    purpose: "Browser opened by Ada",
+    state: "live",
+    control: "human",
+    startedAt: iso(0),
+    openedBy: { personId: "p_adaadaad", name: "Ada" },
+  };
+  const ended: JsonObject = { ...mine, state: "uploading", endedAt: iso(0) };
+  const wait: JsonObject = { waitId: "W5e2c4a6f8d0b1a3c5e7f9d1b3a5c7e9f", projectRef: STOREFRONT, kind: "ios", machineId: "mac", since: iso(0), ahead: 0 };
+  rows.unshift(mine, ended);
+  f.answer("browser_sessions", { projectRef: STOREFRONT }, { sessions: rows, waits: [wait], retention: { retentionDays: 30, maxGbPerProject: 20 } });
+  const where = (r: JsonObject) => ({ tool: "browser_sessions", field: "sessions", where: { sessionId: asText(r["sessionId"]), control: asText(r["control"]) } });
+  const mineAs = (state: string) => ({ tool: "browser_sessions", field: "sessions", where: { sessionId: SESSION.mine, state } });
+  const waiting = { tool: "browser_sessions", field: "waits", where: { waitId: asText(wait["waitId"]) } };
+  f.hidden.push(where(yours(checkout)), where(yours(payouts)), where(handing(payouts)), mineAs("live"), mineAs("uploading"), waiting);
+  const check = (host: string, ready: boolean) => ({ host, ready, detail: ready ? "ready" : "not set up here" });
+  const machine = (machineId: string, ready: readonly string[], live: number, max: number): JsonObject => ({
+    machineId,
+    name: machineId,
+    online: true,
+    roles: ["agents", "sessions"],
+    maxSessions: max,
+    maxSessionsWhy: "set",
+    sessionsLive: live,
+    hostsOthers: true,
+    hosts: ["browser", "android", "ios", "desktop"].map((h) => check(h, ready.includes(h))),
+  });
+  f.drop("machine_roles");
+  f.answer("machine_roles", undefined, { machines: [machine("devbox", ["browser", "android", "desktop"], 2, 8), machine("mac", ["browser", "ios"], 2, 2)] });
+  const opened = (kind: string, machineId: string, waits: boolean) => ({ projectRef: STOREFRONT, kind, machineId, wait: waits });
+  const sessionEvent = (state: string) => ({
+    ms: 50,
+    kind: "event" as const,
+    payload: { seq: 0, at: iso(0), type: "browser.session", summary: `screen ${state}`, ...STOREFRONT, data: { projectRef: STOREFRONT, sessionId: SESSION.mine, state, control: "human" } },
+  });
+  f.answer("screen_open", opened("browser", "devbox", false), { session: mine });
+  f.then("screen_open", opened("browser", "devbox", false), {
+    show: [mineAs("live")],
+    frames: [sessionEvent("live"), { ms: 400, kind: "browser_frame", payload: frame(SESSION.mine, 1, "home", "https://staging.shop.example.com/", "human") }],
+  });
+  f.answer("screen_open", opened("ios", "mac", true), { waiting: wait });
+  f.then("screen_open", opened("ios", "mac", true), { show: [waiting], frames: [sessionEvent("live")] });
+  f.answer("screen_end", { waitId: asText(wait["waitId"]) }, {});
+  f.then("screen_end", { waitId: asText(wait["waitId"]) }, { hide: [waiting], frames: [sessionEvent("live")] });
+  f.answer("screen_end", { sessionId: SESSION.mine }, { session: ended });
+  f.then("screen_end", { sessionId: SESSION.mine }, { hide: [mineAs("live")], show: [mineAs("uploading")], frames: [sessionEvent("uploading")] });
+
+  // Their recordings.
+  answerFile(f, SESSION.share, "actions", share.actions);
+  answerFile(f, SESSION.share, "dom", share.dom);
+  answerFile(f, SESSION.share, "video", video);
+  answerFile(f, SESSION.pricing, "actions", pricing.actions);
+  answerFile(f, SESSION.pricing, "dom", pricing.dom);
+
+  // The live ones' pages: checkout's agent goes on, a page every 2.2 s; payouts waits on its code.
   const SHOP = "https://staging.shop.example.com";
   const urls: Readonly<Record<string, string>> = { home: `${SHOP}/`, signIn: `${SHOP}/account/sign-in`, signInFilled: `${SHOP}/account/sign-in`, product: `${SHOP}/products/linen-shirt`, productAdded: `${SHOP}/products/linen-shirt` };
   CHECKOUT_FRAMES.forEach((image, i) => f.later(i * 2_200, "browser_frame", frame(SESSION.checkout, i + 1, image, urls[image] ?? `${SHOP}/checkout`, "agent")));
