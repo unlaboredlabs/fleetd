@@ -25,17 +25,27 @@ import bpy
 HERE = Path(__file__).resolve().parent
 SPEC = json.loads((HERE / "beings.json").read_text())
 UNIT = 0.02  # one unit of the 100×100 box, in scene units: the disc's radius is 1
+SCALE = 1.2  # the being drawn this much larger than in the box: about 70% of the disc across
 
 # The slab: edges rounded with this radius, a flat top this far above the middle plane.
-EDGE = 0.17
+EDGE = 0.2
 FLAT = 0.05
-LIFT = 0.035  # the gap between the disc and the slab's underside
+LIFT = 0.02
+DOME = 0.035  # how much the top swells toward the middle: thicker there, a lens  # the gap between the disc and the slab's underside
 BOWL = 0.05  # how deep an eye is cut into the slab's top
 INK_GAP = 0.005  # the ink lies this far under a cut's surface
 
 
+def dome(x, y):
+    """How far the top has swelled at a scene point: most in the body's middle, nothing at its edge."""
+    cx, cy = to_scene(50, 53)
+    d = ((x - cx) / (29 * UNIT * SCALE)) ** 2 + ((y - cy) / (27 * UNIT * SCALE)) ** 2
+    return DOME * max(0.0, 1 - d) ** 1.5
+
+
 def to_scene(x, y):
-    return ((x - 50) * UNIT, (50 - y) * UNIT)
+    """A point of the box in the scene, scaled about the body's middle and set a touch low, so it sits."""
+    return ((x - 50) * UNIT * SCALE, (52 - y) * UNIT * SCALE - 0.02)
 
 
 def cubic(p0, p1, p2, p3, n):
@@ -154,10 +164,20 @@ def tones(field_hex):
     field = hex_rgb(field_hex)
     _, l, s = colorsys.rgb_to_hls(*field)
     mid = hls(field, l=min(l, 0.47), ds=0.08 if s > 0.15 else 0)
+    h = colorsys.rgb_to_hls(*mid)[0]
+    turn = lambda c, dh: colorsys.hls_to_rgb((colorsys.rgb_to_hls(*c)[0] + dh) % 1, *colorsys.rgb_to_hls(*c)[1:])
     return {
         "light": linear(hls(mid, dl=0.1)),
         "deep": linear(hls(mid, dl=-0.08, ds=0.05)),
+        # The blobs in the disc: a lighter neighbour hue at the upper left, a deeper one at the lower right and a
+        # pale third at the upper right, for the glass to bend.
+        "blobs": [
+            linear(hls(turn(mid, 0.03), dl=0.12)),
+            linear(hls(turn(mid, -0.025), dl=-0.08, ds=0.05)),
+            linear(hls(turn(mid, 0.06), dl=0.1, ds=-0.05)),
+        ],
         "glass": linear(hls(field, l=0.95, s=min(s + 0.1, 0.8))),
+        "edge": linear(hls(field, l=0.74, s=min(s + 0.25, 1.0))),
         "ink": linear(hls(field, l=0.07, s=min(s + 0.2, 0.9))),
     }
 
@@ -190,22 +210,35 @@ def disc_material():
     ramp = t.nodes.new("ShaderNodeValToRGB")
     ramp.name = "tone"
     t.links.new(ramp_in.outputs["Result"], ramp.inputs["Fac"])
-    # A soft glow toward the upper left and a fine grain: something smooth but alive for the glass to bend.
-    glow_at = node(t, "ShaderNodeVectorMath")
-    glow_at.operation = "DISTANCE"
-    glow_at.inputs[1].default_value = (-0.45, 0.55, 0)
-    t.links.new(coord.outputs["Object"], glow_at.inputs[0])
-    glow_fall = node(t, "ShaderNodeMapRange", **{"From Min": 0.0, "From Max": 1.1, "To Min": 0.22, "To Max": 0.0})
-    t.links.new(glow_at.outputs["Value"], glow_fall.inputs["Value"])
-    silk = node(t, "ShaderNodeMix")
+    # A soft mesh of colour: three blobs over the gradient, and faint rings of light about the middle, so the glass
+    # has something to magnify and warp.
+    under = ramp
+    for i, (at, reach, weight) in enumerate((((-0.6, 0.65, 0), 1.0, 0.75), ((0.7, -0.6, 0), 1.0, 0.7), ((0.65, 0.55, 0), 0.7, 0.5))):
+        far = node(t, "ShaderNodeVectorMath")
+        far.operation = "DISTANCE"
+        far.inputs[1].default_value = at
+        t.links.new(coord.outputs["Object"], far.inputs[0])
+        near = node(t, "ShaderNodeMapRange", **{"From Min": 0.0, "From Max": reach, "To Min": weight, "To Max": 0.0})
+        near.interpolation_type = "SMOOTHSTEP"
+        t.links.new(far.outputs["Value"], near.inputs["Value"])
+        blob = node(t, "ShaderNodeMix")
+        blob.data_type = "RGBA"
+        blob.name = f"blob{i}"
+        t.links.new(near.outputs["Result"], blob.inputs["Factor"])
+        t.links.new(under.outputs[2 if under is not ramp else "Color"], blob.inputs[6])
+        under = blob
+    rings = node(t, "ShaderNodeTexWave", Scale=1.7, Distortion=0.0)
+    rings.wave_type = "RINGS"
+    rings.rings_direction = "SPHERICAL"
+    t.links.new(coord.outputs["Object"], rings.inputs["Vector"])
+    silk = node(t, "ShaderNodeMix", Factor=0.035)
     silk.data_type = "RGBA"
-    silk.blend_type = "SCREEN"
-    silk.inputs[7].default_value = (1, 1, 1, 1)
-    t.links.new(glow_fall.outputs["Result"], silk.inputs["Factor"])
-    t.links.new(ramp.outputs["Color"], silk.inputs[6])
+    silk.blend_type = "SOFT_LIGHT"
+    t.links.new(under.outputs[2], silk.inputs[6])
+    t.links.new(rings.outputs["Color"], silk.inputs[7])
     clouds = node(t, "ShaderNodeTexNoise", Scale=2.2, Detail=3.0, Roughness=0.5)
     t.links.new(coord.outputs["Object"], clouds.inputs["Vector"])
-    cloud = node(t, "ShaderNodeMix", Factor=0.06)
+    cloud = node(t, "ShaderNodeMix", Factor=0.04)
     cloud.data_type = "RGBA"
     cloud.blend_type = "OVERLAY"
     t.links.new(silk.outputs[2], cloud.inputs[6])
@@ -232,8 +265,17 @@ def glass_material():
     out = t.nodes.new("ShaderNodeOutputMaterial")
     tint = t.nodes.new("ShaderNodeRGB")
     tint.name = "tint"
+    # Thin at the edge, thick in the middle: the edge takes a clearer, more saturated tint.
+    edge = t.nodes.new("ShaderNodeRGB")
+    edge.name = "edge"
+    thin = node(t, "ShaderNodeLayerWeight", Blend=0.25)
+    tinted = node(t, "ShaderNodeMix")
+    tinted.data_type = "RGBA"
+    t.links.new(thin.outputs["Facing"], tinted.inputs["Factor"])
+    t.links.new(tint.outputs[0], tinted.inputs[6])
+    t.links.new(edge.outputs[0], tinted.inputs[7])
     split = t.nodes.new("ShaderNodeSeparateColor")
-    t.links.new(tint.outputs[0], split.inputs[0])
+    t.links.new(tinted.outputs[2], split.inputs[0])
     total = None
     for channel, ior in enumerate((1.46, 1.5, 1.54)):
         colour = t.nodes.new("ShaderNodeCombineColor")
@@ -269,7 +311,7 @@ def glass_material():
     t.links.new(frosted.outputs[0], milky.inputs[1])
     t.links.new(milk.outputs[0], milky.inputs[2])
     total = milky
-    coat = node(t, "ShaderNodeBsdfGlossy", Roughness=0.012)
+    coat = node(t, "ShaderNodeBsdfGlossy", Roughness=0.05)
     fresnel = node(t, "ShaderNodeFresnel", IOR=1.5)
     layer = t.nodes.new("ShaderNodeMixShader")
     t.links.new(fresnel.outputs[0], layer.inputs[0])
@@ -298,7 +340,7 @@ def glass_material():
     gather.data_type = "RGBA"
     gather.blend_type = "MULTIPLY"
     gather.inputs[7].default_value = (1.4, 1.4, 1.4, 1)
-    t.links.new(tint.outputs[0], gather.inputs[6])
+    t.links.new(tinted.outputs[2], gather.inputs[6])
     t.links.new(gather.outputs[2], clear.inputs["Color"])
     through = t.nodes.new("ShaderNodeMixShader")
     t.links.new(gate.outputs[0], through.inputs[0])
@@ -312,10 +354,10 @@ def ink_material():
     mat = bpy.data.materials.new("ink")
     mat.use_nodes = True
     p = mat.node_tree.nodes["Principled BSDF"]
-    p.inputs["Roughness"].default_value = 0.25
-    p.inputs["Specular IOR Level"].default_value = 0.15
-    p.inputs["Coat Weight"].default_value = 0.6
-    p.inputs["Coat Roughness"].default_value = 0.015
+    p.inputs["Roughness"].default_value = 0.1
+    p.inputs["Specular IOR Level"].default_value = 0.3
+    p.inputs["Coat Weight"].default_value = 0.7
+    p.inputs["Coat Roughness"].default_value = 0.03
     return mat
 
 
@@ -337,7 +379,7 @@ def area(name, location, size, energy, target=(0, 0, 0), shape="RECTANGLE", size
 def rim_ring():
     """A ring of light around the icon at about the slab's height: the rounded edge reflects it as one thin line
     that follows the curve, brightest at the upper left, fainter at the lower right, seen only in reflections."""
-    bpy.ops.mesh.primitive_torus_add(major_radius=4.0, minor_radius=0.24, major_segments=192, minor_segments=12, location=(0, 0, 0.9))
+    bpy.ops.mesh.primitive_torus_add(major_radius=4.0, minor_radius=0.9, major_segments=192, minor_segments=12, location=(0, 0, 0.9))
     ring = bpy.context.active_object
     ring.name = "rim"
     for flag in ("visible_camera", "visible_diffuse", "visible_transmission", "visible_volume_scatter", "visible_shadow"):
@@ -365,7 +407,7 @@ def rim_ring():
     for at in (0.3, 0.62):
         ramp.color_ramp.elements.new(at).color = (0.004, 0.004, 0.004, 1)
     t.links.new(curve.outputs["Result"], ramp.inputs["Fac"])
-    glow = node(t, "ShaderNodeEmission", Strength=36.0)
+    glow = node(t, "ShaderNodeEmission", Strength=16.0)
     t.links.new(ramp.outputs["Color"], glow.inputs["Color"])
     t.links.new(glow.outputs[0], out.inputs["Surface"])
     ring.data.materials.append(mat)
@@ -431,6 +473,16 @@ def build():
     key.visible_glossy = False
     key.visible_transmission = False
     rim_ring()
+    # A small bright light that only the ink sees: a wet glint in each eye.
+    inks = bpy.data.collections.new("inks")
+    glint = bpy.data.lights.new("glint", "POINT")
+    glint.shadow_soft_size = 0.12
+    glint.energy = 900
+    glint_obj = bpy.data.objects.new("glint", glint)
+    glint_obj.location = (-2.0, 3.0, 5.5)
+    glint_obj.visible_diffuse = False
+    scene.collection.objects.link(glint_obj)
+    glint_obj.light_linking.receiver_collection = inks
     disc = bpy.data.meshes.new("disc")
     bpy.ops.mesh.primitive_cylinder_add(vertices=256, radius=1.0, depth=0.02, location=(0, 0, -0.01))
     disc_obj = bpy.context.active_object
@@ -440,6 +492,17 @@ def build():
     glass = glass_material()
     z = LIFT + EDGE + FLAT
     body = solid(slab("body", inset(body_outline(), EDGE), FLAT, EDGE, z, glass, resolution=12))
+    # Even quads all over (a curve's cap is one big face), so the top can swell and be cut cleanly.
+    even = body.modifiers.new("even", "REMESH")
+    even.mode = "VOXEL"
+    even.voxel_size = 0.006
+    bpy.context.view_layer.objects.active = body
+    bpy.ops.object.modifier_apply(modifier="even")
+    for poly in body.data.polygons:
+        poly.use_smooth = True
+    for v in body.data.vertices:
+        if v.co.z > 0:
+            v.co.z += dome(v.co.x, v.co.y) * min(v.co.z / (FLAT + EDGE), 1) ** 0.5
     body.hide_render = True
     return {"disc": disc_obj, "blank": body, "glass": glass, "ink": ink_material(), "top": z + FLAT + EDGE}
 
@@ -466,7 +529,12 @@ def set_colour(parts, field_hex):
     ramp = parts["disc"].data.materials[0].node_tree.nodes["tone"].color_ramp
     ramp.elements[0].color = rgba(t["deep"])
     ramp.elements[1].color = rgba(t["light"])
-    parts["glass"].node_tree.nodes["tint"].outputs[0].default_value = rgba(t["glass"])
+    nodes = parts["glass"].node_tree.nodes
+    nodes["tint"].outputs[0].default_value = rgba(t["glass"])
+    nodes["edge"].outputs[0].default_value = rgba(t["edge"])
+    disc_nodes = parts["disc"].data.materials[0].node_tree.nodes
+    for i, c in enumerate(t["blobs"]):
+        disc_nodes[f"blob{i}"].inputs[7].default_value = rgba(c)
     parts["ink"].node_tree.nodes["Principled BSDF"].inputs["Base Color"].default_value = rgba(t["ink"])
 
 
@@ -476,7 +544,7 @@ def bowl(name, x, y, w, h, tilt, z, depth, keep_below=None):
     mesh = bpy.data.meshes.new(name)
     bm = bmesh.new()
     bmesh.ops.create_uvsphere(bm, u_segments=64, v_segments=32, radius=1.0)
-    bmesh.ops.scale(bm, vec=(w * UNIT, h * UNIT, depth), verts=bm.verts)
+    bmesh.ops.scale(bm, vec=(w * UNIT * SCALE, h * UNIT * SCALE, depth), verts=bm.verts)
     bmesh.ops.rotate(bm, verts=bm.verts, cent=(0, 0, 0), matrix=__import__("mathutils").Matrix.Rotation(math.radians(-tilt), 3, "Z"))
     cx, cy = to_scene(x, y)
     bmesh.ops.translate(bm, vec=(cx, cy, z), verts=bm.verts)
@@ -505,7 +573,7 @@ def groove(name, x1, x2, y, depth, thick, z, scale):
     path = quad((x1, y), (m, mid), (x2, y), 40) + [(x2, y)]
     curve = bpy.data.curves.new(name, "CURVE")
     curve.dimensions = "3D"
-    curve.bevel_depth = thick / 2 * UNIT * scale
+    curve.bevel_depth = thick / 2 * UNIT * SCALE * scale
     curve.bevel_resolution = 6
     curve.use_fill_caps = True
     spline = curve.splines.new("POLY")
@@ -535,13 +603,16 @@ def set_face(parts, being):
             x, y, w, h = v[:4]
             tilt = v[4] if kind == "eye" else 0
             line = v[4:8] if kind == "lidded" else None
-            cut = bowl(f"cut{i}", x, y, w, h, tilt, top, BOWL, line)
-            ink = bowl(f"face{i}", x, y, w * 0.97, h * 0.97, tilt, top - INK_GAP, BOWL, line)
+            at = top + dome(*to_scene(x, y))
+            cut = bowl(f"cut{i}", x, y, w, h, tilt, at, BOWL, line)
+            ink = bowl(f"face{i}", x, y, w * 0.97, h * 0.97, tilt, at - INK_GAP, BOWL, line)
         else:
             x1, x2, y, depth, thick = v
-            cut = groove(f"cut{i}", x1, x2, y, depth, thick, top, 1.0)
-            ink = groove(f"face{i}", x1, x2, y, depth, thick, top - INK_GAP, 0.92)
+            at = top + dome(*to_scene((x1 + x2) / 2, y))
+            cut = groove(f"cut{i}", x1, x2, y, depth, thick, at, 1.0)
+            ink = groove(f"face{i}", x1, x2, y, depth, thick, at - INK_GAP, 0.92)
         ink.data.materials.append(parts["ink"])
+        bpy.data.collections["inks"].objects.link(ink)
         cut.hide_render = True
         cutters.objects.link(cut)
         bpy.context.scene.collection.objects.unlink(cut)
@@ -557,6 +628,13 @@ def set_face(parts, being):
     for poly in body.data.polygons:
         poly.use_smooth = True
     body.data.set_sharp_from_angle(angle=math.radians(40))
+    # Each cut's lip is rounded off a little, so it catches the light as a soft sheen, not a drawn line.
+    lip = body.modifiers.new("lip", "BEVEL")
+    lip.limit_method = "ANGLE"
+    lip.angle_limit = math.radians(35)
+    lip.width = 0.007
+    lip.segments = 4
+    lip.harden_normals = False
     for ink in [o for o in bpy.data.objects if o.name.startswith("face")]:
         for poly in ink.data.polygons:
             poly.use_smooth = True

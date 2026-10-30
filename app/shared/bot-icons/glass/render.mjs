@@ -26,12 +26,12 @@ const SAME = ["A7", ["plum", "rose", "sky", "graphite"]];
 const file = (set, id, c) => join(out, set, `${c}-${id}.png`);
 const jobs = [
   ...SHOWN.flatMap((c) => beings.map((b) => ({ being: b.id, c, size: 240, samples: 64, out: file("grid", b.id, c) }))),
-  ...HERO.map(([id, c]) => ({ being: id, c, size: 480, samples: 128, out: file("hero", id, c) })),
-  ...SAME[1].map((c) => ({ being: SAME[0], c, size: 400, samples: 96, out: file("same", SAME[0], c) })),
+  ...HERO.map(([id, c]) => ({ being: id, c, size: 480, samples: 80, out: file("hero", id, c) })),
+  ...SAME[1].map((c) => ({ being: SAME[0], c, size: 400, samples: 64, out: file("same", SAME[0], c) })),
 ];
 
 // Rough seconds per render on two threads, to keep each Blender run short.
-const cost = (j) => (j.size / 240) ** 2 * (j.samples / 64) * 7;
+const cost = (j) => 20 + (j.size / 240) ** 2 * (j.samples / 64) * 20;
 const todo = jobs.filter((j) => !existsSync(j.out));
 let batch = [];
 let spent = 0;
@@ -44,7 +44,7 @@ if (batch.length) {
   for (const j of batch) mkdirSync(dirname(j.out), { recursive: true });
   const list = join(out, "jobs.json");
   writeFileSync(list, JSON.stringify({ jobs: batch }));
-  execFileSync(blender, ["-b", "--factory-startup", "--python", join(here, "scene.py"), "--", list], { stdio: "ignore", timeout: 230_000 });
+  execFileSync(blender, ["-b", "--factory-startup", "-t", "2", "--python", join(here, "scene.py"), "--", list], { stdio: "ignore", timeout: 230_000 });
   const left = jobs.filter((j) => !existsSync(j.out)).length;
   console.log(`rendered ${batch.length}, ${left} left`);
   if (left) process.exit(0);
