@@ -822,6 +822,12 @@ pub fn session_in_use(text: &str) -> bool {
     text.contains("is already in use")
 }
 
+/// claude's words (stderr, so also the failed run's message) when it doesn't know `--append-system-prompt-file`,
+/// as a claude older than the flag says it. The session service starts it again with the rules in the message.
+pub fn prompt_file_unknown(text: &str) -> bool {
+    text.contains("unknown option") && text.contains("--append-system-prompt-file")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

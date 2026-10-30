@@ -26,8 +26,8 @@ fleetd's text reaches a model in one of three ways:
 
 The system prompt is added to Claude Code's own (`--append-system-prompt-file`, a private file on the machine) at
 every start of the session, resumes included. When a long session is compacted, Claude Code summarizes its messages
-but never its system prompt, so a lead keeps its exact voice and rules for the whole session. A node too old to take a system prompt gets it at the start of
-the first message instead.
+but never its system prompt, so a lead keeps its exact voice and rules for the whole session. A node too old to take a system prompt, or a claude too old for
+the flag, gets it at the start of the first message instead.
 
 Your own claude setup still applies underneath. See [Config & files](/docs/config-and-files#claude).
 

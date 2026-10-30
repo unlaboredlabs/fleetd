@@ -291,7 +291,8 @@ pub fn render_task_prompt(set: &PromptSet, input: &PromptInput<'_>) -> TaskPromp
         TaskKind::Review => "task.brief.review",
     };
     let brief = set.render(id, vars);
-    let (first, rules) = match brief.find(RULES) {
+    // The template's own heading is the last: the lead's text and the workstream come before it, and may hold one too.
+    let (first, rules) = match brief.rfind(RULES) {
         Some(at) => (brief[..at].trim_end(), &brief[at + 1..]),
         None => (brief.trim_end(), ""),
     };

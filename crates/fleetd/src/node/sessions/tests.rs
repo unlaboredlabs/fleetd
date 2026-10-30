@@ -625,10 +625,11 @@ async fn a_restarted_node_closes_what_was_running_and_the_next_send_resumes() {
     assert_eq!(spec.cwd, dir.path());
 }
 
-/// A lead's voice is in its system prompt, which claude never compacts: after a compaction and a restart of its node,
-/// the claude that resumes it gets lead.voice verbatim again, and its first message never had it.
+/// A lead's and a Navi's voice is in their system prompt, which claude never compacts: after a compaction and a
+/// restart of their node, the claude that resumes each gets lead.voice verbatim again, and no first message had it.
 #[tokio::test]
 async fn a_leads_voice_survives_a_compaction_and_a_resume_verbatim() {
+    use fleetd_contracts::sessions::SessionRole;
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("sessions.sqlite");
     let set = crate::hub::prompts::PromptSet::defaults();
@@ -638,7 +639,19 @@ async fn a_leads_voice_survives_a_compaction_and_a_resume_verbatim() {
     };
     let voice = set.render("lead.voice", &[]);
     let voice = voice.trim_end();
-    for navi in [None, Some("/home/me/navi")] {
+    let sessions = [
+        ("s1", SessionRole::Lead, None),
+        ("s2", SessionRole::Assistant, Some("/home/me/navi")),
+    ];
+    let mut before = hub(
+        dir.path(),
+        NodeStore::open(&db).unwrap(),
+        FakeRunner::fixture("compact-manual"),
+    )
+    .await;
+    before.project(dir.path()).await;
+    let mut systems = Vec::new();
+    for (id, role, navi) in sessions {
         let start = crate::hub::leads::prompt::render_lead_start(
             set,
             &r,
@@ -650,31 +663,26 @@ async fn a_leads_voice_survives_a_compaction_and_a_resume_verbatim() {
             navi,
         );
         assert!(start.system.contains(voice), "{}", start.system);
-        assert!(!start.first.contains("## Your voice"), "{}", start.first);
+        let SessionCall::Launch(lead) = launch(id, RuntimeMode::FullAccess, SessionWorkspace::Root)
+        else {
+            unreachable!()
+        };
+        let run = format!("{id}-r1");
+        before
+            .ok(SessionCall::Launch(SessionLaunch {
+                role,
+                prompt: NonEmpty::unchecked(start.first.as_str()),
+                system_prompt: Some(NonEmpty::unchecked(start.system.as_str())),
+                run_id: NonEmpty::unchecked(run.as_str()),
+                ..lead
+            }))
+            .await;
+        before.settled(&run).await;
+        systems.push(start.system);
     }
-    let start =
-        crate::hub::leads::prompt::render_lead_start(set, &r, "app", &[], "DIGEST", "", "", None);
-    let SessionCall::Launch(lead) = launch("s1", RuntimeMode::FullAccess, SessionWorkspace::Root)
-    else {
-        unreachable!()
-    };
-    let lead = SessionLaunch {
-        role: fleetd_contracts::sessions::SessionRole::Lead,
-        prompt: NonEmpty::unchecked(start.first.as_str()),
-        system_prompt: Some(NonEmpty::unchecked(start.system.as_str())),
-        ..lead
-    };
-    let mut before = hub(
-        dir.path(),
-        NodeStore::open(&db).unwrap(),
-        FakeRunner::fixture("compact-manual"),
-    )
-    .await;
-    before.project(dir.path()).await;
-    before.ok(SessionCall::Launch(lead)).await;
-    before.settled("r1").await;
-    let first = &sends(&before.runner)[0].1;
-    assert!(!first.contains(voice), "{first}");
+    for (_, first) in sends(&before.runner) {
+        assert!(!first.contains(voice), "{first}");
+    }
     drop(before);
 
     let mut after = hub(
@@ -683,18 +691,58 @@ async fn a_leads_voice_survives_a_compaction_and_a_resume_verbatim() {
         FakeRunner::fixture("init-partial-two-turns"),
     )
     .await;
-    after.ok(send("s1", "r2")).await;
-    after.settled("r2").await;
-    let spec = &after.runner.spawned()[0];
-    assert!(spec.resume);
-    let args = crate::node::runner::claude::ClaudeRunner::new("claude".into()).args(spec);
-    let at = args
-        .iter()
-        .position(|a| a == "--append-system-prompt-file")
-        .unwrap();
-    let file = std::fs::read_to_string(&args[at + 1]).unwrap();
-    assert_eq!(file, start.system);
-    assert!(file.contains(voice));
+    for ((id, ..), system) in sessions.iter().zip(&systems) {
+        let run = format!("{id}-r2");
+        after.ok(send(id, &run)).await;
+        after.settled(&run).await;
+        let spec = after
+            .runner
+            .spawned()
+            .into_iter()
+            .find(|s| s.session_id == *id)
+            .unwrap();
+        assert!(spec.resume);
+        let args = crate::node::runner::claude::ClaudeRunner::new("claude".into()).args(&spec);
+        let at = args
+            .iter()
+            .position(|a| a == "--append-system-prompt-file")
+            .unwrap();
+        let file = std::fs::read_to_string(&args[at + 1]).unwrap();
+        assert_eq!(&file, system);
+        assert!(file.contains(voice));
+    }
+}
+
+/// A claude older than `--append-system-prompt-file` refuses the start: the node starts it again without the flag,
+/// the rules at the head of the message.
+#[tokio::test]
+async fn a_claude_without_the_prompt_file_flag_gets_the_rules_in_the_message() {
+    let dir = tempfile::tempdir().unwrap();
+    let runner = FakeRunner::fixture("init-partial-two-turns");
+    *runner.refuse_next.lock().unwrap() =
+        Some("error: unknown option '--append-system-prompt-file'".into());
+    let mut hub = hub(dir.path(), NodeStore::open_memory(10_000).unwrap(), runner).await;
+    hub.project(dir.path()).await;
+    let SessionCall::Launch(lead) = launch("s1", RuntimeMode::FullAccess, SessionWorkspace::Root)
+    else {
+        unreachable!()
+    };
+    hub.ok(SessionCall::Launch(SessionLaunch {
+        role: fleetd_contracts::sessions::SessionRole::Lead,
+        system_prompt: Some(NonEmpty::unchecked("## Your voice\nShort.")),
+        ..lead
+    }))
+    .await;
+    let done = hub.settled("r1").await;
+    assert_eq!(done.latest_run.unwrap().status, RunStatus::Completed);
+    let spawned = hub.runner.spawned();
+    assert_eq!(spawned.len(), 2);
+    assert!(spawned[0].system_prompt.is_some());
+    assert!(spawned[1].system_prompt.is_none());
+    let prompt = "Reply with the word OK and nothing else.";
+    let sends = sends(&hub.runner);
+    assert_eq!(sends[1].1, format!("## Your voice\nShort.\n\n{prompt}"));
+    assert_eq!(hub.service.store().runs("s1").unwrap().len(), 1);
 }
 
 /// Memory can make a system prompt larger than one argument may be (128 KiB on Linux): it goes in a private file, and

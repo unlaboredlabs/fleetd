@@ -522,6 +522,9 @@ struct State {
     spawned: HashSet<String>,
     /// claude's own agent tools a session's init still offered: every later session denies them too.
     agent_tools: Vec<String>,
+    /// This node's claude refused `--append-system-prompt-file`: until the node restarts, every start passes a
+    /// session's standing rules at the head of the message it starts with instead.
+    no_prompt_file: bool,
     /// Runs the node is retrying: when the retry was scheduled (ms), its attempt and delay.
     node_retry: HashMap<String, (u64, u32, u64)>,
     /// Tagged sends (steers) by steer id, until their receipt is final.
@@ -2071,7 +2074,8 @@ impl SessionService {
             _ => false,
         };
         let (commands, note) = self.ensure_live(id, opening).await?;
-        // The agent hears that its worktree was rebuilt before anything else, so it checks what is left.
+        // The agent hears that its worktree was rebuilt before anything else, so it checks what is left; and a claude
+        // without the system prompt file, its rules.
         let command = match (command, note) {
             (SessionCommand::Send { run_id, text, mode }, Some(note)) => SessionCommand::Send {
                 run_id,
@@ -2140,12 +2144,25 @@ impl SessionService {
         // it with its brief and a handoff. Only its first message itself may start over.
         let must_resume = resume && !opening && row.local.role == SessionRole::Worker;
         self.checkout_unchanged(row.local.role, &row.local.workspace_root)?;
-        let (spec, secrets, order_digest) = self.spec(&row, resume, must_resume).map_err(|e| {
-            error(
-                SessionErrorCode::Internal,
-                format!("cannot prepare the session's files: {e}"),
-            )
-        })?;
+        let (mut spec, secrets, order_digest) =
+            self.spec(&row, resume, must_resume).map_err(|e| {
+                error(
+                    SessionErrorCode::Internal,
+                    format!("cannot prepare the session's files: {e}"),
+                )
+            })?;
+        // A claude without `--append-system-prompt-file` gets the rules with the message this start sends, as before
+        // the flag: a compaction can summarize them then, but the session runs.
+        let note = match row.local.system_prompt.as_deref() {
+            Some(rules) if self.st().no_prompt_file => {
+                spec.system_prompt = None;
+                Some(match note {
+                    Some(note) => format!("{}\n\n{note}", rules.trim_end()),
+                    None => rules.trim_end().to_owned(),
+                })
+            }
+            _ => note,
+        };
         let secrets = Arc::new(secrets);
         self.inner.runner.fence(&spec).await.map_err(runner_error)?;
         let fence = spec.sandbox.clone();
@@ -3185,6 +3202,13 @@ impl SessionService {
                 && self.resend_refused(id, run_id)
             {
                 return;
+            }
+            // A claude older than the flag: the start goes again, the rules in the message (`ensure_live`).
+            if unread && claude::prompt_file_unknown(failure.message.as_str()) {
+                self.st().no_prompt_file = true;
+                if self.resend_refused(id, run_id) {
+                    return;
+                }
             }
             if self.fall_back(id, run_id, failure, unread) {
                 return;
