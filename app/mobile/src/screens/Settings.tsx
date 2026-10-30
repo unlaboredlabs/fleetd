@@ -1,21 +1,20 @@
-// Settings, as iOS's own and Telegram's: the hub this phone is paired with at the top (its mark, name and how the link
-// is), then its address and status, for an admin its update, its notifications, this phone and its app, and
-// Disconnect, which asks first.
+// Settings, as iOS's own and Telegram's: the hub this phone is paired with at the top, on a card as iOS's Apple Account
+// (fleetd's mark, its name and how the link is), then its address and version, for an admin its update, its
+// notifications, this phone and its app, and Disconnect, which asks first.
 import { useFocusEffect } from "@react-navigation/native";
 import Constants from "expo-constants";
 import * as Device from "expo-device";
 import * as Notifications from "expo-notifications";
 import * as Updates from "expo-updates";
-import { LinearGradient } from "expo-linear-gradient";
 import { useCallback, useState } from "react";
-import { Linking, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Image, Linking, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useHub } from "../hubContext";
 import { pushDeps } from "../notifications";
-import { space, type, useTheme } from "../theme";
-import { lighter } from "../ui/Avatar";
-import { Icon } from "../ui/Icon";
+import { shape, space, type, useTheme } from "../theme";
+import { haptics } from "../ui/haptics";
 import { ListRow, ListSection } from "../ui/List";
 import { ConnectionBanner } from "../ui/States";
+import { shortVersion } from "../updates";
 import { UpdateFleetd } from "./UpdateFleetd";
 
 const statusOf = (phase: string): string =>
@@ -49,24 +48,41 @@ export function Settings() {
   };
   const hub = state.hub;
   const version = Constants.expoConfig?.version;
+  // A tap shows the hub's whole version, as iOS's About shows its build.
+  const [wholeVersion, setWholeVersion] = useState(false);
   return (
     <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ paddingBottom: space.xxl }}>
       <ConnectionBanner state={hub} onPairAgain={pairAgain} />
-      <View style={styles.head} accessible accessibilityRole="header" accessibilityLabel={`${paired.hubName}, ${statusOf(hub.phase)}`}>
-        <View style={styles.mark}>
-          <LinearGradient colors={[lighter(t.accent, 0.35), t.accent]} style={StyleSheet.absoluteFill} />
-          <Icon name="server" size={38} color="#FFFFFF" />
-        </View>
-        <Text style={[type.title2, { color: t.label }]} numberOfLines={1}>
-          {paired.hubName}
-        </Text>
-        <View style={styles.state}>
-          <View style={[styles.dot, { backgroundColor: hub.phase === "live" ? t.success : t.warning }]} />
-          <Text style={[type.subhead, { color: t.secondary }]}>{hub.phase === "live" && hub.version !== undefined ? `${statusOf(hub.phase)} · fleetd ${hub.version}` : statusOf(hub.phase)}</Text>
+      <View style={[styles.head, { backgroundColor: t.cell }]} accessible accessibilityRole="header" accessibilityLabel={`${paired.hubName}, ${statusOf(hub.phase)}`}>
+        {/* A hairline edge in dark, where the mark's dark tile would melt into the card. */}
+        <Image source={require("../../assets/icon.png")} style={[styles.mark, t.dark && { borderWidth: StyleSheet.hairlineWidth, borderColor: t.separator }]} accessibilityIgnoresInvertColors />
+        <View style={styles.headText}>
+          <Text style={[type.title3, { color: t.label }]} numberOfLines={1}>
+            {paired.hubName}
+          </Text>
+          <View style={styles.state}>
+            <View style={[styles.dot, { backgroundColor: hub.phase === "live" ? t.success : t.warning }]} />
+            <Text style={[type.subhead, styles.stateText, { color: t.secondary }]} numberOfLines={1}>
+              {statusOf(hub.phase)}
+            </Text>
+          </View>
         </View>
       </View>
       <ListSection header="Hub">
         <ListRow icon="link" tint={t.tints[5]} title="Address" value={paired.hub} selectable />
+        {hub.phase === "live" && hub.version !== undefined ? (
+          <ListRow
+            icon="server"
+            tint={t.tints[6]}
+            title="Version"
+            {...(wholeVersion ? { detail: hub.version } : { value: shortVersion(hub.version) })}
+            onPress={() => {
+              haptics.select();
+              setWholeVersion((w) => !w);
+            }}
+            chevron={false}
+          />
+        ) : null}
       </ListSection>
       <UpdateFleetd />
       <ListSection header="Notifications" footer="The hub seals each notification to this phone's own key, so only this phone can read it.">
@@ -85,8 +101,10 @@ export function Settings() {
 }
 
 const styles = StyleSheet.create({
-  head: { alignItems: "center", gap: space.xs, paddingTop: space.sm, paddingBottom: space.sm },
-  mark: { width: 88, height: 88, borderRadius: 44, overflow: "hidden", alignItems: "center", justifyContent: "center", marginBottom: space.sm },
+  head: { flexDirection: "row", alignItems: "center", gap: space.md, marginHorizontal: space.lg, marginTop: space.sm, padding: space.md, borderRadius: shape.group, borderCurve: "continuous" },
+  mark: { width: 60, height: 60, borderRadius: 14, borderCurve: "continuous" },
+  headText: { flex: 1, gap: 2 },
   state: { flexDirection: "row", alignItems: "center", gap: 6 },
+  stateText: { flexShrink: 1 },
   dot: { width: 8, height: 8, borderRadius: 4 },
 });

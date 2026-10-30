@@ -19,6 +19,7 @@ import type { ChatMessage } from "../desktop";
 import type { Key } from "../store";
 import { space, type, useTheme } from "../theme";
 import { Avatar } from "../ui/Avatar";
+import { Glass, GlassGroup, liquidGlass } from "../ui/Glass";
 import { haptics } from "../ui/haptics";
 import { Icon } from "../ui/Icon";
 import { Menu, type MenuItem, type Rect } from "../ui/Menu";
@@ -126,7 +127,6 @@ export function Chats({ navigation }: NativeStackScreenProps<{ Chats: undefined 
         data={lines}
         keyExtractor={(l) => l.key}
         contentInsetAdjustmentBehavior="automatic"
-        contentContainerStyle={styles.grow}
         keyboardDismissMode="on-drag"
         keyboardShouldPersistTaps="handled"
         {...(reduce ? {} : { itemLayoutAnimation: rowMove })}
@@ -170,35 +170,50 @@ export function Chats({ navigation }: NativeStackScreenProps<{ Chats: undefined 
   );
 }
 
-/** The list's filters, as Telegram's folder tabs: one capsule each, the chosen one filled. */
+/**
+ * The list's filters, as Telegram's folder tabs on iOS 26: a Liquid Glass capsule each, as the tab bar's, the chosen
+ * one tinted with the accent rather than filled. Without glass, quiet fills and the accent.
+ */
 function Filters({ value, onChange, unread }: { value: Filter; onChange: (f: Filter) => void; unread: number }) {
   const t = useTheme();
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters} accessibilityRole="tablist">
-      {FILTERS.map((f) => {
-        const on = f.id === value;
-        return (
-          <Pressable
-            key={f.id}
-            accessibilityRole="tab"
-            accessibilityState={{ selected: on }}
-            accessibilityLabel={f.id === "unread" && unread > 0 ? `${f.label}, ${String(unread)}` : f.label}
-            onPress={() => {
-              if (on) return;
-              haptics.select();
-              onChange(f.id);
-            }}
-            style={[styles.filter, { backgroundColor: on ? t.label : t.fillQuiet }]}
-          >
-            <Text style={[type.subhead, styles.filterText, { color: on ? t.bg : t.label }]}>{f.label}</Text>
-            {f.id === "unread" && unread > 0 ? (
-              <View style={[styles.filterCount, { backgroundColor: on ? t.bg : t.accent }]}>
-                <Text style={[type.caption2, styles.filterCountText, { color: on ? t.label : t.onAccent }]}>{unread}</Text>
-              </View>
-            ) : null}
-          </Pressable>
-        );
-      })}
+      <GlassGroup style={styles.filterGroup} spacing={4}>
+        {FILTERS.map((f) => {
+          const on = f.id === value;
+          const face = (
+            <>
+              <Text style={[type.subhead, styles.filterText, { color: on ? t.onAccent : t.label }]}>{f.label}</Text>
+              {f.id === "unread" && unread > 0 ? (
+                <View style={[styles.filterCount, { backgroundColor: on ? t.onAccent : t.accent }]}>
+                  <Text style={[type.caption2, styles.filterCountText, { color: on ? t.accent : t.onAccent }]}>{unread}</Text>
+                </View>
+              ) : null}
+            </>
+          );
+          return (
+            <Pressable
+              key={f.id}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: on }}
+              accessibilityLabel={f.id === "unread" && unread > 0 ? `${f.label}, ${String(unread)}` : f.label}
+              onPress={() => {
+                if (on) return;
+                haptics.select();
+                onChange(f.id);
+              }}
+            >
+              {liquidGlass ? (
+                <Glass interactive style={styles.filter} {...(on ? { tint: t.accent } : {})}>
+                  {face}
+                </Glass>
+              ) : (
+                <View style={[styles.filter, { backgroundColor: on ? t.accent : t.fillQuiet }]}>{face}</View>
+              )}
+            </Pressable>
+          );
+        })}
+      </GlassGroup>
     </ScrollView>
   );
 }
@@ -388,10 +403,10 @@ function HitRow({ hit, title, navi, separator, onPress }: { hit: MessageHit; tit
 const ACTION_W = 78;
 
 const styles = StyleSheet.create({
-  grow: { flexGrow: 1 },
   section: { paddingHorizontal: space.lg, paddingTop: space.lg, paddingBottom: space.xs, fontWeight: "600" },
-  filters: { gap: space.sm, paddingHorizontal: space.lg, paddingTop: space.xs, paddingBottom: space.sm },
-  filter: { flexDirection: "row", alignItems: "center", gap: 6, borderRadius: 17, paddingHorizontal: 14, minHeight: 34 },
+  filters: { paddingHorizontal: space.lg, paddingTop: space.xs, paddingBottom: space.md },
+  filterGroup: { flexDirection: "row", gap: space.sm },
+  filter: { flexDirection: "row", alignItems: "center", gap: 6, borderRadius: 18, borderCurve: "continuous", paddingHorizontal: 16, minHeight: 36 },
   filterText: { fontWeight: "600" },
   filterCount: { minWidth: 18, height: 18, borderRadius: 9, paddingHorizontal: 5, alignItems: "center", justifyContent: "center" },
   filterCountText: { fontWeight: "700" },

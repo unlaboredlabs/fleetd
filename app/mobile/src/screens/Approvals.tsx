@@ -67,7 +67,7 @@ export function Approvals({ route }: NativeStackScreenProps<ApprovalsParams, "Ap
       {...(reduce ? {} : { itemLayoutAnimation: rowMove })}
       keyExtractor={(r) => r.requestId}
       contentInsetAdjustmentBehavior="automatic"
-      contentContainerStyle={[styles.cards, { paddingBottom: space.lg, flexGrow: 1 }]}
+      contentContainerStyle={[styles.cards, { paddingBottom: space.lg }]}
       refreshControl={
         <RefreshControl
           refreshing={refreshing.on}
