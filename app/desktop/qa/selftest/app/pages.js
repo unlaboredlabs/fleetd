@@ -6,6 +6,7 @@ const pages = {
   "#/good": `<div class="page" data-screen="good">
     <p class="case w200">A long paragraph that wraps over several lines because body text always wraps instead of being cut off at the edge of its box.</p>
     <p class="case w200 ellipsis" title="Add a public frozen PNG snapshot under an unguessable link">Add a public frozen PNG snapshot under an unguessable link</p>
+    <p class="case w200 ellipsis tight">A tight line, typography and its descenders</p>
     <p class="case w200 clamp">Two lines at most, then an ellipsis: this description goes on well past two lines so that the clamp is what shows the end of it.</p>
     <pre class="case" data-text="code">## Do not re-ask
 - share.public_link = eac3e0fe-ec61-4954-4f78-67240a80c42b @ 3e760f96</pre>
@@ -46,6 +47,7 @@ const pages = {
     <div class="case w200 nowrap clip" data-testid="exp-overflow-clip">A long single line clipped at the edge with no ellipsis at all</div>
     <div class="case w200 nowrap" data-testid="exp-overflow-spill">A long single line that spills out of its box to the right</div>
     <div class="case w200 short clip" data-testid="exp-overflow-bottom">A paragraph that wraps onto three lines inside a box only one line tall, so the rest is cut</div>
+    <div class="case chip" data-testid="exp-overflow-descender"><span class="chip-label">devbox · suggested</span></div>
     <div class="case">
       <div data-testid="exp-overlap-rows-a">First row of a list with a fixed height</div>
       <div class="pull-up" data-testid="exp-overlap-rows-b">Second row drawn over the first</div>

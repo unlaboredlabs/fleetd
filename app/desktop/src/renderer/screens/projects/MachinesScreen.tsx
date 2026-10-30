@@ -114,7 +114,7 @@ function MachineRow(props: {
   const runs = [glance.running, props.projects.length > 0 ? count(props.projects.length, "project", "projects") : "no projects"].filter(Boolean).join(" · ");
   const detailId = `machine-${m.machineId}`;
   return (
-    <section className={s.machine} aria-label={m.name} data-open={open || undefined}>
+    <section className={s.machineRow} aria-label={m.name} data-open={open || undefined}>
       {/* The chevron is the control; a click anywhere else on the line opens it too. */}
       <div className={s.machineHead} onClick={props.onToggle}>
         <button
@@ -159,7 +159,7 @@ function MachineRow(props: {
       ) : null}
       {open ? (
         <div className={s.detail} id={detailId}>
-          <span className={s.facts}>
+          <span className={s.machineFacts}>
             {glance.facts.map((p) => (
               <Text key={p.text} size="xs" tone="quiet" tabular>
                 {p.text}
