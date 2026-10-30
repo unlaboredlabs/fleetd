@@ -162,9 +162,9 @@ jobs:
       - if: steps.scope.outputs.run == 'true'
         # Electron fetches its binary on first launch; fetch it here so the first test isn't timed on a download.
         run: pnpm exec install-electron
-      # The fixtures and the QA build are cached under a hash of what each reads, so a shard whose inputs a run has
-      # built before (main's, or this PR's last) skips that minute. The fixtures read only part of the app, which
-      # scripts/fixtures-key.ts follows; the build reads all of src/ but its tests.
+      # The fixtures are cached under a hash of every file their build reads (scripts/fixtures-key.ts follows the part
+      # of the app they import), so a shard whose fixtures a run has built before (main's, or this PR's last) skips
+      # that minute. The QA build takes seconds and isn't cached.
       - if: steps.scope.outputs.run == 'true'
         id: fixtures-key
         run: echo "key=$(node scripts/fixtures-key.ts)" >> "$GITHUB_OUTPUT"
@@ -178,15 +178,6 @@ jobs:
         # Build output of app/desktop/fixtures, validated against the contracts' JSON Schemas.
         run: pnpm fixtures
       - if: steps.scope.outputs.run == 'true'
-        id: qa-build
-        uses: actions/cache@v5
-        with:
-          path: app/desktop/out
-          key: >-
-            qa-build-${{ runner.os }}-${{ hashFiles('app/desktop/src/**', '!app/desktop/src/**/*.test.ts',
-            '!app/desktop/src/**/*.test.tsx', 'app/desktop/electron.vite.config.ts', 'app/desktop/package.json',
-            'app/desktop/pnpm-lock.yaml', 'app/desktop/tsconfig*.json') }}
-      - if: steps.scope.outputs.run == 'true' && steps.qa-build.outputs.cache-hit != 'true'
         # The app with the QA error probe bundled, which release builds leave out.
         run: pnpm qa:build
       - if: steps.scope.outputs.run == 'true' && matrix.shard == 1
