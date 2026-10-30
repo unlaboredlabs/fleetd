@@ -241,6 +241,8 @@ pub trait TaskPorts: Send + Sync {
     }
     /// Chat.system_line: a line for the person in the project's chat. Plain ports drop it.
     fn tell_person(&self, _project_ref: &ProjectRef, _text: &str) {}
+    /// Chat.add: one line for the person listing the worktrees a nightly cleanup kept. Plain ports drop it.
+    fn tell_kept(&self, _project_ref: &ProjectRef, _kept: fleetd_contracts::chat::WorktreesKept) {}
     /// Decisions.global_value: the active global decision on `key`. Plain ports know none.
     fn global_decision(&self, _key: &str) -> Option<String> {
         None

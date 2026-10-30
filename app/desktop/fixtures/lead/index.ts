@@ -3,7 +3,8 @@
 // hub's events since the lead started working). lead-planning is the usual case; lead-long has a long file name and
 // many events, to wrap; lead-counting has worked over an hour with nothing more known. lead-worked: the turn is over,
 // and the line under the reply says how long it took. lead-memory: the night's memory refresh line, after the lead's
-// reply, with the changes it made to MEMORY.md and a topic file.
+// reply, with the changes it made to MEMORY.md and a topic file. lead-worktrees: the night's cleanup line for the
+// worktrees it kept, before the memory refresh's.
 import { Fixture } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
 import { at } from "../kit/ids.ts";
@@ -148,6 +149,50 @@ function memoryRefreshed(f: Fixture): Fixture {
   return f;
 }
 
+/** Six worktrees the nightly cleanup kept, under their project's folder of worktrees on devbox. */
+const WORKTREES_KEPT: JsonObject = {
+  items: [
+    ["Browser sessions: 1Password logins agents can't read back", "uncommitted changes", "0e85c21b-2f52-4f85-43ac-d684d63072fd"],
+    ["Agents can read their brief and the decisions", "1 unpushed commit", "1bf7fe11-81ed-4969-f43c-c35fa354b9f2"],
+    ["Authors can read their PR's review findings", "2 unpushed commits", "1444af18-99a9-4cb7-c656-e1e382fc7d66"],
+    ["Try it: tailnet port proxy with per-device check", "1 unpushed commit", "4e6cadda-3201-453a-6711-d57f0f0eee82"],
+    ["Fix: worker join one-liner prompts again", "1 unpushed commit", "39237c80-2ac3-4401-eef2-61588a348b43"],
+    ["Try it: the hub starts, tracks and ends previews", "9 unpushed commits", "e2d0818a-d1ff-4d9c-e20b-1df7e2fbbb46"],
+  ].map(([title, unsaved, task]: string[]) => ({
+    title: title ?? "",
+    unsaved: unsaved ?? "",
+    machineId: STOREFRONT.machineId,
+    path: `/home/dev/.fleetd/node/worktrees/${STOREFRONT.projectId}/${task}`,
+  })),
+};
+
+/** The night's cleanup in storefront's chat: one line for the six worktrees it kept, then the memory refresh's. */
+function worktreesKept(f: Fixture): Fixture {
+  const t = (s: number) => at(f.now, -s * 1000);
+  const msg = (seq: number, author: "human" | "lead" | "system", text: string, s: number, extra: JsonObject = {}): JsonObject => ({
+    messageId: `m${seq}`,
+    projectRef: STOREFRONT,
+    seq,
+    author,
+    text,
+    attachments: [],
+    createdAt: t(s),
+    state: "final",
+    ...(author === "human" ? { by: "laptop", clientRequestId: `seed-${seq}`, delivery: "turn" } : {}),
+    ...extra,
+  });
+  const messages = [
+    msg(1, "human", "Ship the receipts PR once its review is clean.", 9 * 3600),
+    msg(2, "lead", "Receipts merged. Nothing else is open on checkout.", 8 * 3600),
+    msg(3, "system", "Cleanup kept 6 worktrees with unsaved work", 3660, { worktreesKept: WORKTREES_KEPT }),
+    msg(4, "system", "Memory refreshed: +3 ~1 −2", 3600, { memoryRefreshed: MEMORY_REFRESHED }),
+  ];
+  const state = setChatState(f, STOREFRONT, { needsYou: false, leadWorking: false, lastSeq: 4, lastMessageAt: t(3600) });
+  for (const { input } of f.answers("chat_history")) if (obj(input?.["projectRef"])["projectId"] === STOREFRONT.projectId) f.drop("chat_history", input);
+  f.answer("chat_history", { projectRef: STOREFRONT }, { messages, moreBefore: false, moreAfter: false, state });
+  return f;
+}
+
 export default defineGroup({
   fixtures: (base) => [
     leadAtWork(
@@ -174,5 +219,6 @@ export default defineGroup({
       { orders: 1, agents: 3, startS: 460, replyS: 250, endS: 240 },
     ),
     memoryRefreshed(Fixture.from(base("typical"), "lead-memory", "storefront's chat with the night's memory refresh line: 3 added, 1 updated, 2 removed.")),
+    worktreesKept(Fixture.from(base("typical"), "lead-worktrees", "storefront's chat with the night's cleanup line: 6 worktrees kept for unsaved work.")),
   ],
 });

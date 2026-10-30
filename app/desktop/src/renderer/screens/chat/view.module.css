@@ -399,6 +399,30 @@ span.changeUndo {
 .changeUndone .changeText {
   color: var(--quiet);
 }
+/* The worktrees the nightly cleanup kept, opened under its line: each its task and what only it holds, then its path
+   to copy. */
+.keptList {
+  gap: var(--space-2);
+}
+.kept {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--space-2);
+  align-items: baseline;
+}
+.keptTitle {
+  grid-column: 1 / -1;
+  color: var(--text);
+}
+.keptDetail {
+  color: var(--quiet);
+}
+.keptPath {
+  font-family: var(--font-mono);
+  color: var(--quiet);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
 .day {
   display: flex;
   align-items: center;

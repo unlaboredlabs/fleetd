@@ -3,17 +3,20 @@
 //! Around 04:00 in `policy.tz` (else the hub's zone), and once soon after the hub starts, the sweep has the node remove
 //! the worktree of every task that ended over `policy.worktree_days` (3) days ago, through its safe removal. One
 //! holding work that exists only there (uncommitted changes, unpushed commits) is kept and the person is told once in
-//! the project's chat; one the node couldn't remove (offline, a git error) is tried again the next night, up to
-//! [`MAX_TRIES`] times, then given up on with one line to the person. A session its node doesn't know counts as removed,
-//! as does a removal done at the task's end or merge. A project that keeps its finished worktrees (`keep_worktrees`)
-//! is left alone. Each sweep also cancels tasks still queued under an order that has closed: they would never start.
+//! the project's chat, in one line a sweep listing all it kept there; one the node couldn't remove (offline, a git
+//! error) is tried again the next night, up to [`MAX_TRIES`] times, then given up on with one line to the person. A
+//! session its node doesn't know counts as removed, as does a removal done at the task's end or merge. A project that
+//! keeps its finished worktrees (`keep_worktrees`) is left alone. Each sweep also cancels tasks still queued under an
+//! order that has closed: they would never start.
 use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::{TimeZone, Timelike};
 use chrono_tz::Tz;
-use fleetd_contracts::ids::ProjectRef;
+use fleetd_contracts::chat::{KeptWorktree, WORKTREES_KEPT_MAX, WorktreesKept};
+use fleetd_contracts::ids::{MachineId, ProjectRef};
 use fleetd_contracts::ledger::WorkstreamState;
+use fleetd_contracts::prim::{Line, List};
 use fleetd_contracts::tasks::Task;
 
 use super::ports::PortError;
@@ -63,6 +66,7 @@ impl Tasks {
             }
         };
         let mut given_up: Vec<(ProjectRef, Vec<String>)> = Vec::new();
+        let mut kept: Vec<(ProjectRef, Vec<KeptWorktree>)> = Vec::new();
         for (task, flagged) in ended {
             let Some(thread) = &task.thread_ref else {
                 continue;
@@ -85,8 +89,11 @@ impl Tasks {
                 Err(PortError::Failed(message)) if holds_work(&message) => {
                     swept.kept += 1;
                     if !flagged {
-                        let text = kept_line(&task, &message);
-                        self.d.ports.tell_person(&task.project_ref, &text);
+                        let worktree = kept_worktree(&task, &thread.machine_id, &message);
+                        match kept.iter_mut().find(|(r, _)| *r == task.project_ref) {
+                            Some((_, items)) => items.push(worktree),
+                            None => kept.push((task.project_ref.clone(), vec![worktree])),
+                        }
                     }
                     "flagged"
                 }
@@ -120,6 +127,12 @@ impl Tasks {
             };
             if let Err(error) = self.db(|c| TaskRecords::set_worktree(c, &task.task_id, seen)) {
                 tracing::warn!(task_id = id, %error, "worktree sweep: outcome not recorded");
+            }
+        }
+        for (r, items) in kept {
+            for chunk in items.chunks(WORKTREES_KEPT_MAX) {
+                let items = List::unchecked(chunk.to_vec());
+                self.d.ports.tell_kept(&r, WorktreesKept { items });
             }
         }
         for (r, ids) in given_up {
@@ -177,23 +190,36 @@ fn holds_work(message: &str) -> bool {
     message.contains(KEPT) && (message.contains(UNCOMMITTED) || message.contains(UNPUSHED))
 }
 
-/// The person's line for a worktree kept for its work: which agent's, where, why, and what frees it.
-fn kept_line(task: &Task, message: &str) -> String {
+/// A worktree kept for its work, as the person's line lists it: whose, what only it holds, and where.
+fn kept_worktree(task: &Task, machine: &MachineId, message: &str) -> KeptWorktree {
     // `... kept <path>: <why>`
     let kept = message.rsplit_once(KEPT).map_or("", |(_, kept)| kept);
-    let (path, why) = kept.split_once(": ").unwrap_or((kept, "it holds work"));
-    let why = if why.starts_with("it ") {
-        why.to_owned()
-    } else {
-        format!("it has {why}")
-    };
-    format!(
-        "Kept the worktree of \"{}\" ({}) on {}: {why}, which exist nowhere else. It is at {path}. Push or delete \
-         that work and the nightly cleanup removes the worktree.",
-        task.title.as_str(),
-        task.task_id.as_str(),
-        task.project_ref.machine_id.as_str(),
-    )
+    let (path, why) = kept.split_once(": ").unwrap_or((kept, "work"));
+    KeptWorktree {
+        title: task.title.clone(),
+        unsaved: Line::unchecked(unsaved(why)),
+        machine_id: machine.clone(),
+        path: Line::unchecked(path),
+    }
+}
+
+/// "uncommitted changes" or "2 unpushed commits", from the node's `<why>`.
+fn unsaved(why: &str) -> String {
+    let commits = why
+        .strip_suffix(UNPUSHED)
+        .and_then(|n| n.trim_end().strip_suffix("commit(s)"))
+        .and_then(|n| n.trim().parse::<u64>().ok());
+    match commits {
+        Some(1) => "1 unpushed commit".to_owned(),
+        Some(n) => format!("{n} unpushed commits"),
+        None => why.strip_prefix("it has ").unwrap_or(why).to_owned(),
+    }
+}
+
+/// The text of a line listing `n` kept worktrees: "Cleanup kept 6 worktrees with unsaved work".
+pub fn kept_summary(n: usize) -> String {
+    let worktrees = if n == 1 { "worktree" } else { "worktrees" };
+    format!("Cleanup kept {n} {worktrees} with unsaved work")
 }
 
 /// The next `HOUR`:00 in `tz` after `now_ms`. A day whose `HOUR`:00 doesn't exist (a clock change) is skipped.

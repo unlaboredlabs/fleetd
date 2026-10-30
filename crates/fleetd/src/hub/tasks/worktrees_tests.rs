@@ -1,7 +1,8 @@
 //! Cleanup over a real hub with a fake node: the nightly sweep removes the worktrees of tasks that ended over 3 days
-//! ago, keeps one holding work only there and tells the person once, tries a failed removal again and gives up after a
-//! week, and skips one already removed at its task's end; closing an order stops its leftover agents but not the
-//! train's reviewers, and the sweep cancels tasks left queued under orders closed before that.
+//! ago, keeps one holding work only there and tells the person once (one line a night for all it kept), tries a
+//! failed removal again and gives up after a week, and skips one already removed at its task's end; closing an order
+//! stops its leftover agents but not the train's reviewers, and the sweep cancels tasks left queued under orders
+//! closed before that.
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -194,13 +195,18 @@ async fn the_sweep_removes_old_safe_worktrees_keeps_and_flags_work_once_and_retr
         ["t1", "t2", "t3", "t5"],
         "T4 is too recent"
     );
-    let lines = system_lines(&hub);
-    assert_eq!(lines.len(), 1, "{lines:?}");
-    assert!(
-        lines[0].contains("\"slice 2\" (T2) on lab-a: it has uncommitted changes")
-            && lines[0].contains("/w/p1/t2"),
-        "{}",
-        lines[0]
+    assert_eq!(
+        system_lines(&hub),
+        ["Cleanup kept 1 worktree with unsaved work"]
+    );
+    assert_eq!(
+        kept_lines(&hub),
+        [vec![(
+            "slice 2".to_owned(),
+            "uncommitted changes".to_owned(),
+            "lab-a".to_owned(),
+            "/w/p1/t2".to_owned()
+        )]]
     );
 
     // The next night: T3's removal is tried again and goes through; T2 is still kept, and not flagged again.
@@ -217,6 +223,81 @@ async fn the_sweep_removes_old_safe_worktrees_keeps_and_flags_work_once_and_retr
     let third = hub.tasks.sweep_worktrees().await;
     assert_eq!((third.removed, third.kept, third.failed), (1, 0, 0));
     assert_eq!(drain(&mut removals), ["t2"]);
+}
+
+/// The worktrees each system line lists as kept: title, what is unsaved, machine and path.
+fn kept_lines(hub: &Hub) -> Vec<Vec<(String, String, String, String)>> {
+    let (messages, _, _) = hub.chat.page(&project(), None, None, 100).unwrap();
+    messages
+        .into_iter()
+        .filter_map(|m| m.worktrees_kept)
+        .map(|kept| {
+            kept.items
+                .iter()
+                .map(|w| {
+                    (
+                        w.title.to_string(),
+                        w.unsaved.to_string(),
+                        w.machine_id.to_string(),
+                        w.path.to_string(),
+                    )
+                })
+                .collect()
+        })
+        .collect()
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_night_that_keeps_several_worktrees_lists_them_in_one_line() {
+    let (hub, _home) = hub_on(ManualClock::at(NOW as u64));
+    let node = Node::link(&hub).await;
+    let _removals = serve(
+        &hub,
+        node,
+        HashMap::from([
+            (
+                "t1",
+                vec![refused(
+                    "git",
+                    "the node on devbox refused or failed the stop request: kept /w/p1/t1: 1 commit(s) not pushed",
+                )],
+            ),
+            (
+                "t2",
+                vec![refused("git", "kept /w/p1/t2: it has uncommitted changes")],
+            ),
+            (
+                "t3",
+                vec![refused("git", "kept /w/p1/t3: 9 commit(s) not pushed")],
+            ),
+        ]),
+    );
+    for n in 1..=4 {
+        ended(&hub, n, 4);
+    }
+
+    assert_eq!(hub.tasks.sweep_worktrees().await.kept, 3);
+    assert_eq!(
+        system_lines(&hub),
+        ["Cleanup kept 3 worktrees with unsaved work"],
+        "one line for the night, without task ids"
+    );
+    let unsaved: Vec<Vec<String>> = kept_lines(&hub)
+        .into_iter()
+        .map(|line| {
+            line.into_iter()
+                .map(|(title, unsaved, _, path)| format!("{title}: {unsaved} at {path}"))
+                .collect()
+        })
+        .collect();
+    assert_eq!(
+        unsaved,
+        [[
+            "slice 1: 1 unpushed commit at /w/p1/t1",
+            "slice 2: uncommitted changes at /w/p1/t2",
+            "slice 3: 9 unpushed commits at /w/p1/t3",
+        ]]
+    );
 }
 
 #[tokio::test(flavor = "current_thread")]
