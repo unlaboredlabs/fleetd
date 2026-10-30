@@ -87,6 +87,8 @@ export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unk
   const projectScoped = startsWithAny(type, ["workstream.", "lead.", "thread."]) || type === "project.settings";
   if (projectScoped && event.machineId !== undefined && event.projectId !== undefined) {
     out.push({ tool: "project_get", where: { machineId: event.machineId, projectId: event.projectId } });
+    // Its picture, read again only when it has one (project_avatar_set).
+    if (type === "project.settings") out.push({ tool: "project_avatar_get", where: { machineId: event.machineId, projectId: event.projectId } });
   }
   if (type === "prompt.changed" || type === "prompt.default_changed") {
     out.push({ tool: "prompt_get" }, { tool: "session_prompt_get" });

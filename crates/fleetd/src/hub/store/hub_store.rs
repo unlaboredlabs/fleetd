@@ -62,6 +62,7 @@ fn with_repos(
     };
     project.repos = crate::hub::repos::store::of(conn, &r)?;
     let navi = crate::hub::navi::store::of(conn, &r)?;
+    project.avatar = crate::hub::projects::avatar::of(conn, &r)?;
     project.kind = navi.as_ref().map(|_| ProjectKind::Assistant);
     (project.created_by, project.archived_at, project.owner) = navi
         .map_or((None, None, None), |n| {
@@ -170,6 +171,7 @@ impl HubStore {
                     created_by: None,
                     archived_at: None,
                     owner: None,
+                    avatar: None,
                     ..project.clone()
                 };
                 stmt.execute(params![
@@ -263,6 +265,7 @@ impl HubStore {
                 "memory_refresh_lines",
                 "assistants",
                 "navi_sites",
+                "project_avatars",
             ] {
                 conn.prepare_cached(&format!(
                     "DELETE FROM {table} WHERE machine_id = ? AND project_id = ?"

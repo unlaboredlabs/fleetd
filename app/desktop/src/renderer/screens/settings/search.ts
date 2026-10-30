@@ -75,6 +75,7 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   { key: "hubs.hub-links", label: "Hub links", tab: "hubs", keywords: ["hub link", "link key", "navi", "other hub", "revoke"] },
   { key: "hubs.linked", label: "Linked hubs", tab: "hubs", keywords: ["hub link", "link key", "navi", "other hub", "reach"] },
   page("projects", ["project settings", "repo", "repository"]),
+  { key: "projects.picture", label: "Project picture", tab: "projects", keywords: ["avatar", "photo", "image", "icon"] },
   { key: "projects.name", label: "Project name", tab: "projects", keywords: ["rename", "title"] },
   { key: "projects.repos", label: "Repos", tab: "projects", keywords: ["repo", "repository", "remote", "base branch", "checkout", "preview", "folder"] },
   { key: "projects.worktrees", label: "Worktrees", tab: "projects", keywords: ["worktree", "cleanup", "keep", "base branch", "branch", "disk"] },

@@ -501,6 +501,53 @@ pub fn check(hub: &Hub, caller: &Caller, ids: &[AttachmentId]) -> Result<(), Too
     Ok(())
 }
 
+/// An upload of the caller's, its bytes and type, for a tool that keeps its own copy of the file (a project's picture),
+/// then forgets the upload: once nothing placed it, its row goes, and its file with the last row naming it.
+pub async fn take(
+    hub: &Hub,
+    caller: &Caller,
+    id: &AttachmentId,
+) -> Result<(Vec<u8>, String), ToolError> {
+    check(hub, caller, std::slice::from_ref(id))?;
+    let Some(r) = row(hub, id)? else {
+        return Err(ToolError::new(
+            ErrorCode::NotFound,
+            format!("No attachment {id}."),
+        ));
+    };
+    let path = dir(hub).join(&r.sha256);
+    let bytes = tokio::task::spawn_blocking(move || std::fs::read(path))
+        .await
+        .map_err(|_| crate::hub::api::internal_error())?
+        .map_err(|_| {
+            ToolError::new(
+                ErrorCode::NotFound,
+                format!("Attachment {id}'s file is gone."),
+            )
+            .with_fix("Upload it again with attachment_put.")
+        })?;
+    let n: i64 = id.as_str()[1..].parse().unwrap_or(0);
+    hub.db.with(|c| {
+        let gone = c.execute(
+            "DELETE FROM attachments WHERE n = ?1 AND workstream_id IS NULL AND project IS NULL",
+            [n],
+        )?;
+        let used = c
+            .query_row(
+                "SELECT 1 FROM attachments WHERE sha256 = ?1 LIMIT 1",
+                [&r.sha256],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some();
+        if gone > 0 && !used {
+            let _ = std::fs::remove_file(dir(hub).join(&r.sha256));
+        }
+        Ok(())
+    })?;
+    Ok((bytes, r.mime))
+}
+
 /// Writes the attachments into the project under `.fleetd/attachments/<folder>/` (the order's id, or `chat`), marks
 /// them as the project's, and returns the lines for the lead, one per
 /// file. A file the machine could not take says so in its line instead of failing the order.

@@ -73,6 +73,8 @@ tempfile = "3"
 # connection, and encodes the frames as JPEG
 x11rb = { version = "=0.14.0", default-features = false, features = ["xtest", "damage"] }
 jpeg-encoder = "=0.7.1"
+# project avatars: a person's picture is decoded, cropped and resized on the hub, and kept re-encoded without its metadata
+image = { version = "=0.25.10", default-features = false, features = ["jpeg", "png", "webp"] }
 
 # node power: macOS sleep assertions through IOKit, loaded at run time (the darwin build links no framework)
 [target.'cfg(target_os = "macos")'.dependencies]

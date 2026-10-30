@@ -384,6 +384,10 @@
           "$ref": "#/$defs/Timestamp",
           "description": "A Navi's: when it was archived. An archived Navi keeps its chat, memory and folder, and its lead doesn't\nstart until it is brought back (`navi_archive` with `archived: false`)."
         },
+        "avatar": {
+          "description": "Its picture's id, from the hub, once a person gave it one (`project_avatar_set`): it changes with each new\npicture, whose bytes come from `project_avatar_get`. Absent: its letters show.",
+          "type": "string"
+        },
         "createdBy": {
           "$ref": "#/$defs/ProjectCreator",
           "description": "A Navi's: the key that created it, from the hub. Absent for other projects, and for a Navi made before it was\nrecorded."

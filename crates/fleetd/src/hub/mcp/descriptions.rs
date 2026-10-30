@@ -93,6 +93,14 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
         "Archive a Navi: its lead stops and doesn't start again, and navi_list leaves it out; its chat, memory and folder stay. archived: false brings it back.",
     ),
     (
+        "project_avatar_set",
+        "Give a project or Navi the picture its chat shows in place of its letters: attachmentId is the picture as picked (png, jpeg or webp, from attachment_put), crop the square to keep in its pixels as it shows (absent: the largest one in its middle). The hub keeps only that square, at most 512 px a side, re-encoded as JPEG without the original's metadata (EXIF, location), and forgets the upload. No attachmentId removes the picture. Every open app sees it at once (project.settings). Anyone who may change the project's settings; a Navi's, its owner.",
+    ),
+    (
+        "project_avatar_get",
+        "A project's or Navi's picture, base64 JPEG, with its id: the one its summary names in avatar. NotFound when it has none (its letters show).",
+    ),
+    (
         "project_settings_get",
         "One project's settings: its title and checkout, keepWorktrees, memoryRefresh, its environment variables (a plain one's value, a secret's fingerprint only), its setup commands, its merge train's checks (train), and from its node, while online, where its worktrees live, the branch new ones start from and the worktrees there now, each marked when it has uncommitted changes.",
     ),

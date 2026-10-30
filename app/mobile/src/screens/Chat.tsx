@@ -30,7 +30,7 @@ import { dispatchPrefs, usePrefs } from "../prefsStore";
 import type { Key } from "../store";
 import { space, type, useTheme, type Palette } from "../theme";
 import { upload } from "../upload";
-import { Avatar } from "../ui/Avatar";
+import { Avatar, type Pictured } from "../ui/Avatar";
 import { Bubble } from "../ui/Bubble";
 import { Button } from "../ui/Button";
 import { Card } from "../ui/Card";
@@ -135,10 +135,11 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   const status = link?.busy === true ? "Connecting…" : link !== undefined ? "Offline" : working ? "Working…" : chatState?.needsYou === true ? "Waiting for you" : quiet;
   useEffect(() => {
     navigation.setOptions({
-      headerTitle: () => <ChatTitle title={title} navi={navi} status={status} busy={working && link === undefined} />,
+      headerTitle: () => <ChatTitle picture={project} title={title} navi={navi} status={status} busy={working && link === undefined} />,
       title,
     });
-  }, [navigation, title, navi, status, working, link]);
+    // A picture set or removed (here or on another device) draws the header again: its id is all that changes.
+  }, [navigation, title, navi, status, working, link, project?.avatar]);
 
   const list = useRef<FlatList<ThreadRow>>(null);
   const [composerHeight, setComposerHeight] = useState(60);
@@ -283,7 +284,7 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
           }}
           onEndReached={() => void session.loadOlder(chatKey)}
           ListHeaderComponent={<View style={{ height: composerHeight + space.xs }} />}
-          {...(loading ? {} : { ListEmptyComponent: <EmptyThread title={title} navi={navi} onPick={(s) => send(s)} /> })}
+          {...(loading ? {} : { ListEmptyComponent: <EmptyThread picture={project} title={title} navi={navi} onPick={(s) => send(s)} /> })}
           // The list is upside down: its footer is the top, under the clear header.
           ListFooterComponent={
             <View style={{ paddingTop: top + space.sm }}>
@@ -350,12 +351,12 @@ const withOpacity = (hex: string, alpha: number): string => {
 };
 
 /** A chat with nothing in it yet: who it is, and a few things to say to start. Turned upright: the list is upside down. */
-function EmptyThread({ title, navi, onPick }: { title: string; navi: boolean; onPick: (text: string) => void }) {
+function EmptyThread({ picture, title, navi, onPick }: { picture: Pictured | undefined; title: string; navi: boolean; onPick: (text: string) => void }) {
   const t = useTheme();
   const starters = navi ? ["What's on my calendar today?", "Summarize my unread email", "Remind me what I asked you last"] : ["What are you working on?", "Show me the open pull requests", "What failed in CI?"];
   return (
     <View style={styles.emptyThread}>
-      <Avatar name={title} navi={navi} size={88} />
+      <Avatar name={title} navi={navi} size={88} picture={picture} />
       <Text style={[type.title2, { color: t.label }]}>{title}</Text>
       <Text style={[type.subhead, styles.center, { color: t.secondary }]}>{navi ? "Your Navi. Ask it anything, or start with one of these." : "Tell the lead what to work on, or start with one of these."}</Text>
       <View style={styles.starters}>
@@ -378,12 +379,12 @@ function EmptyThread({ title, navi, onPick }: { title: string; navi: boolean; on
 }
 
 /** The chat's name and how it is, in a glass capsule over the thread, as iOS 26's Telegram. */
-function ChatTitle({ title, navi, status, busy }: { title: string; navi: boolean; status: string | undefined; busy: boolean }) {
+function ChatTitle({ picture, title, navi, status, busy }: { picture: Pictured | undefined; title: string; navi: boolean; status: string | undefined; busy: boolean }) {
   const t = useTheme();
   return (
     <Glass style={styles.titleGlass}>
       <View style={styles.title} accessible accessibilityRole="header" accessibilityLabel={status === undefined ? title : `${title}, ${status}`}>
-        <Avatar name={title} navi={navi} size={30} />
+        <Avatar name={title} navi={navi} size={30} picture={picture} />
         <View style={styles.titleText}>
           <Text style={[type.headline, { color: t.label }]} numberOfLines={1} maxFontSizeMultiplier={1.3}>
             {title}
@@ -468,6 +469,7 @@ function InlineApproval({ chatKey, requestId, state: asked }: { chatKey: Key; re
         request={open}
         projectTitle={project?.title}
         navi={project !== undefined && isNavi(project)}
+        picture={project}
         answering={state.answering[open.requestId] === true}
         error={state.answerErrors[open.requestId]}
         onAnswer={(d) => void session.answer(open.requestId, d)}

@@ -1,5 +1,6 @@
 // Making and managing projects and Navis from the phone: their screens in the root stack (New Navi and New Project as
-// sheets; a project's or Navi's screen, Rename and Agent Profiles pushed over its chat), and the two ways in: the
+// sheets; a project's or Navi's screen, Rename and Agent Profiles pushed over its chat, and Move and Scale for its
+// picture over everything), and the two ways in: the
 // Chats list's + menu and the info button in a chat's header. App.tsx adds these to its navigators.
 import type { createNativeStackNavigator, NativeStackNavigationOptions } from "@react-navigation/native-stack";
 import { Alert, Platform, Pressable } from "react-native";
@@ -9,6 +10,7 @@ import { haptics } from "../../ui/haptics";
 import { Info } from "./Info";
 import { NewNavi } from "./NewNavi";
 import { NewProject } from "./NewProject";
+import { Photo } from "./Photo";
 import { Profiles } from "./Profiles";
 import { Rename } from "./Rename";
 import { Symbol } from "./parts";
@@ -43,6 +45,7 @@ export const manageScreens = (Stack: RootStack, t: Palette) => (
     <Stack.Screen name="Info" component={Info} options={pushed(t, "Info")} />
     <Stack.Screen name="Rename" component={Rename} options={pushed(t, "Name")} />
     <Stack.Screen name="Profiles" component={Profiles} options={pushed(t, "Agent Profiles")} />
+    <Stack.Screen name="Photo" component={Photo} options={{ presentation: "fullScreenModal", animation: "fade", headerShown: false, gestureEnabled: false, contentStyle: { backgroundColor: "#000000" } }} />
   </Stack.Group>
 );
 

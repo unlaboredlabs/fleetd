@@ -1,7 +1,7 @@
 // One paired hub at work: the client, the state the screens read, and the calls behind them. A snapshot (on every
 // connection) reads the open requests again, reloads the open chat's latest page and sends again what the link cut
 // off; events re-read what they changed (store.ts effectsOf). Screens subscribe and dispatch nothing themselves.
-import { loadRun, mergeMessages, resetFlow, toResend, type ApprovalDecision, type AttachmentGetOutput, type AttachmentRef, type ChatReplyTo, type ChatSend, type FlowDeps, type HubEvent, type HubState, type ToolInput, type ToolName } from "./desktop";
+import { loadRun, mergeMessages, resetFlow, toResend, type ApprovalDecision, type AttachmentGetOutput, type AttachmentRef, type ChatReplyTo, type ChatSend, type FlowDeps, type HubEvent, type HubState, type ProjectRef, type ToolInput, type ToolName } from "./desktop";
 import { HubClient, type HubFrame, type Transport, type Typed } from "./hub/client";
 import { registerDevice, signOut, type PushDeps } from "./push";
 import { initial, LATEST, reduce, refOf, effectsOf, type Action, type Key, type State } from "./store";
@@ -153,6 +153,23 @@ export class Session {
     // A failed read is tried again next time.
     void read.then((out) => {
       if (out === null) this.#files.delete(attachmentId);
+    });
+    return read;
+  }
+
+  readonly #pictures = new Map<string, Promise<string | null>>();
+
+  /**
+   * A project's or Navi's picture by its id (its summary's `avatar`), base64 JPEG, read once (project_avatar_get) and
+   * kept while the app runs; null when the hub can't give it.
+   */
+  picture(ref: ProjectRef, avatar: string): Promise<string | null> {
+    const known = this.#pictures.get(avatar);
+    if (known !== undefined) return known;
+    const read = this.#client.call("project_avatar_get", { machineId: ref.machineId, projectId: ref.projectId }).then((r) => (r.ok && r.output.avatar === avatar ? r.output.dataB64 : null));
+    this.#pictures.set(avatar, read);
+    void read.then((out) => {
+      if (out === null) this.#pictures.delete(avatar);
     });
     return read;
   }

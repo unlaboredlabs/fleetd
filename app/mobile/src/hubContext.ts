@@ -54,6 +54,8 @@ export type ManageParams = {
   Info: { key: Key };
   Rename: { key: Key };
   Profiles: { key: Key };
+  /** A photo as picked, moved and scaled in a circle to become the chat's picture. */
+  Photo: { key: Key; uri: string; width: number; height: number; mime: "image/jpeg" | "image/png" | "image/webp" };
 };
 export type PairParams = {
   Welcome: undefined;

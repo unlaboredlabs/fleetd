@@ -1,10 +1,11 @@
 // The hub calls behind a project's and a Navi's screens, each as the desktop makes it: New Navi (machine_roles,
 // navi_create), New Project (project_discover, then the desktop's add flow over project_add), its screen's reads
 // (agents_list, orders_board, checklist_get, pr_list, profiles_list), Rename (navi_rename, or project_settings_set's
-// title), Agent Profiles (project_set), Forget Sign-ins (navi_signins_forget) and Delete (project_settings_get for its
-// worktrees, then project_remove with them).
-import { allowedAfter, discovery, isNavi, type AddCall, type AgentRow, type Discovery, type HubError, type MachineRolesEntry, type OrderCard, type PrRow, type ProfilesListOutput, type ProjectRef, type ProjectSettings, type ProjectSummary, type TodoItem } from "../../desktop";
+// title), its picture (attachment_put, then project_avatar_set), Agent Profiles (project_set), Forget Sign-ins
+// (navi_signins_forget) and Delete (project_settings_get for its worktrees, then project_remove with them).
+import { allowedAfter, discovery, isNavi, type AddCall, type AttachmentMime, type AvatarCrop, type AgentRow, type Discovery, type HubError, type MachineRolesEntry, type OrderCard, type PrRow, type ProfilesListOutput, type ProjectRef, type ProjectSettings, type ProjectSummary, type TodoItem } from "../../desktop";
 import type { Session } from "../../session";
+import { upload, UPLOAD_TIMEOUT_MS } from "../../upload";
 import { MERGES_DAYS } from "./model";
 
 export type Hub = Pick<Session, "call">;
@@ -48,6 +49,20 @@ export const createNavi = async (hub: Hub, name: string, machineId: string | und
 export const rename = async (hub: Hub, p: ProjectSummary, name: string): Promise<Result<null>> => {
   const r = isNavi(p) ? await hub.call("navi_rename", { ...ref(p), name }) : await hub.call("project_settings_set", { ...ref(p), title: name });
   return r.ok ? { ok: true, value: null } : r;
+};
+
+/** A picture as it was picked and the square of it to keep: sent to the hub, which keeps that square alone. */
+export const setPicture = async (hub: Hub, p: ProjectRef, bytes: Uint8Array, mime: AttachmentMime, crop: AvatarCrop): Promise<Result<ProjectSummary>> => {
+  const sent = await upload((tool, input, ms) => hub.call(tool, input, ms), bytes, mime === "image/png" ? "picture.png" : "picture.jpg", mime);
+  if (!sent.ok) return { ok: false, error: { code: "failed", message: sent.message } };
+  const r = await hub.call("project_avatar_set", { ...ref(p), attachmentId: sent.ref.attachmentId, crop }, UPLOAD_TIMEOUT_MS);
+  return r.ok ? { ok: true, value: r.output.project } : r;
+};
+
+/** Its picture taken away: its letters show again. */
+export const removePicture = async (hub: Hub, p: ProjectRef): Promise<Result<ProjectSummary>> => {
+  const r = await hub.call("project_avatar_set", ref(p));
+  return r.ok ? { ok: true, value: r.output.project } : r;
 };
 
 export interface Info {

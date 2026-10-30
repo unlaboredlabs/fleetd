@@ -1,0 +1,96 @@
+/* A chat's avatar: a circle, its picture or its letters (Avatar.tsx). Its tints are iOS's own colors in the phone's
+   order (app/mobile/src/theme.ts `tints`), picked by name: a Navi's letters are white on a soft gradient of its tint, a
+   project's are its tint on a wash of it. */
+.avatar {
+  --wash: 16%;
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  overflow: hidden;
+  color: var(--tint);
+  background: color-mix(in srgb, var(--tint) var(--wash), transparent);
+  font-weight: var(--weight-strong);
+  line-height: 1;
+  letter-spacing: 0.01em;
+  user-select: none;
+}
+:global([data-theme="dark"]) .avatar {
+  --wash: 28%;
+}
+.avatar::before {
+  content: attr(data-letters);
+}
+.navi {
+  color: #ffffff;
+  background: linear-gradient(color-mix(in srgb, var(--tint), #ffffff 32%), var(--tint));
+}
+.picture {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.avatar[data-tint="0"] {
+  --tint: #007aff;
+}
+.avatar[data-tint="1"] {
+  --tint: #34c759;
+}
+.avatar[data-tint="2"] {
+  --tint: #ff9500;
+}
+.avatar[data-tint="3"] {
+  --tint: #af52de;
+}
+.avatar[data-tint="4"] {
+  --tint: #ff2d55;
+}
+.avatar[data-tint="5"] {
+  --tint: #30b0c7;
+}
+.avatar[data-tint="6"] {
+  --tint: #5856d6;
+}
+.avatar[data-tint="7"] {
+  --tint: #a2845e;
+}
+.avatar[data-tint="8"] {
+  --tint: #00c7be;
+}
+.avatar[data-tint="9"] {
+  --tint: #ff3b30;
+}
+:global([data-theme="dark"]) .avatar[data-tint="0"] {
+  --tint: #0a84ff;
+}
+:global([data-theme="dark"]) .avatar[data-tint="1"] {
+  --tint: #30d158;
+}
+:global([data-theme="dark"]) .avatar[data-tint="2"] {
+  --tint: #ff9f0a;
+}
+:global([data-theme="dark"]) .avatar[data-tint="3"] {
+  --tint: #bf5af2;
+}
+:global([data-theme="dark"]) .avatar[data-tint="4"] {
+  --tint: #ff375f;
+}
+:global([data-theme="dark"]) .avatar[data-tint="5"] {
+  --tint: #40c8e0;
+}
+:global([data-theme="dark"]) .avatar[data-tint="6"] {
+  --tint: #5e5ce6;
+}
+:global([data-theme="dark"]) .avatar[data-tint="7"] {
+  --tint: #ac8e68;
+}
+:global([data-theme="dark"]) .avatar[data-tint="8"] {
+  --tint: #66d4cf;
+}
+:global([data-theme="dark"]) .avatar[data-tint="9"] {
+  --tint: #ff453a;
+}

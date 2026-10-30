@@ -1,6 +1,9 @@
 //! Adding a project, the one path MCP, the app and the CLI share: discover repos, inspect one, add a path (a git
 //! checkout or a plain folder) or clone a GitHub repository with progress events, and remove. The node does the filesystem and git work on its machine;
 //! gh runs on the hub machine, and `gh repo list` falls back to the target worker when the hub has no gh login.
+pub mod avatar;
+#[cfg(test)]
+mod avatar_tests;
 #[cfg(test)]
 mod create_tests;
 pub mod inspect;

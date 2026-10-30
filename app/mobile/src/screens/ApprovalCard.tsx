@@ -11,7 +11,7 @@ import { HIDDEN_WARNING, marked, type HubError, type HumanRequest } from "../des
 import { exactRuns, FSI, markRuns, PDI, type Run } from "../exact";
 import { approvalView, fieldCopy, type ApprovalField, type ApprovalView } from "../lists";
 import { mono, space, type, useTheme } from "../theme";
-import { Avatar } from "../ui/Avatar";
+import { Avatar, type Pictured } from "../ui/Avatar";
 import { Button } from "../ui/Button";
 import { Card } from "../ui/Card";
 import { haptics } from "../ui/haptics";
@@ -28,6 +28,7 @@ export function ApprovalCard({
   request,
   projectTitle,
   navi,
+  picture,
   answering,
   error,
   onAnswer,
@@ -35,6 +36,7 @@ export function ApprovalCard({
   request: HumanRequest;
   projectTitle: string | undefined;
   navi: boolean;
+  picture?: Pictured | undefined;
   answering: boolean;
   error: HubError | undefined;
   onAnswer: (decision: "approve" | "deny") => void;
@@ -49,7 +51,7 @@ export function ApprovalCard({
   return (
     <Card>
       <View style={styles.head} accessible accessibilityLabel={`${marked(view.title)}${risk === undefined ? "" : `. ${risk.text}`}`}>
-        <Avatar name={view.who} navi={navi} size={40} />
+        <Avatar name={view.who} navi={navi} size={40} picture={picture} />
         <View style={styles.who}>
           <View style={styles.whoTop}>
             <Text style={[type.headline, styles.grow, { color: t.label }]} numberOfLines={1}>

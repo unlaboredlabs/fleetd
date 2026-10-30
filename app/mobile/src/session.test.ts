@@ -210,3 +210,23 @@ describe("Session", () => {
     expect(session.state.chats[KEY]?.messages.map((m) => m.text)).toEqual(["Hi", "A long one"]);
   });
 });
+
+describe("A chat's picture", () => {
+  it("is read once per picture while the app runs, and again after a failed read", async () => {
+    const { hub, session } = setup();
+    const reads = () => hub.sentOf("call").filter((c) => c.tool === "project_avatar_get");
+    const first = session.picture(REF, "a1b2c3d4e5f60718");
+    const again = session.picture(REF, "a1b2c3d4e5f60718");
+    expect(reads().map((c) => c.input)).toEqual([REF]);
+    hub.answer("project_avatar_get", { avatar: "a1b2c3d4e5f60718", mime: "image/jpeg", dataB64: "/9j/AA==" });
+    await expect(first).resolves.toBe("/9j/AA==");
+    await expect(again).resolves.toBe("/9j/AA==");
+
+    // A newer picture than the one asked for answers nothing; it is read again under its own id.
+    const stale = session.picture(REF, "0000000000000000");
+    hub.answer("project_avatar_get", { avatar: "a1b2c3d4e5f60718", mime: "image/jpeg", dataB64: "/9j/AA==" });
+    await expect(stale).resolves.toBeNull();
+    void session.picture(REF, "0000000000000000");
+    expect(reads()).toHaveLength(3);
+  });
+});

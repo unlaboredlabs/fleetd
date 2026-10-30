@@ -58,6 +58,10 @@ Tap **+** at the top of Chats for **New Navi** or **New Project**.
 
 The **ⓘ** at the top of a chat opens its Navi's or project's page:
 
+- **Its picture**: tap the avatar, or **Add Photo** / **Edit** under it, for **Choose Photo**, **Take Photo** and,
+  once it has one, **Remove Photo**. A photo opens in **Move and Scale**: pinch to zoom, drag to move, then **Choose**.
+  The chat shows it in place of its letters on every phone and desktop. The hub keeps only the circle's square, at
+  most 512 px, without the photo's location or other metadata.
 - **Running**: the lead and the agents working now, each with its state. Then the project's open orders, its
   checklist and its merges of the last two weeks, each opening its pull request. Change these in the chat or the
   desktop app.

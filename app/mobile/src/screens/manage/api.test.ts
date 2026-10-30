@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { addStep, initialAdd, type AddMsg, type AddState, type HubEvent, type ProfilesListOutput } from "../../desktop";
 import { fakeHub } from "../../hub/fake";
 import { Session } from "../../session";
-import { addCall, createNavi, deleteProject, discover, FORGET_MS, forgetSignins, naviHomes, readForDelete, readInfo, REMOVE_MS, rename, setProfile } from "./api";
+import { addCall, createNavi, deleteProject, discover, FORGET_MS, forgetSignins, naviHomes, readForDelete, readInfo, REMOVE_MS, removePicture, rename, setPicture, setProfile } from "./api";
 
 const AT = "2026-10-28T10:00:00Z";
 const NOW = Date.parse(AT);
@@ -234,5 +234,33 @@ describe("Session", () => {
     await flush();
     expect(session.state.me).toBe("p_ada");
     expect(session.state.admin).toBe(false);
+  });
+});
+
+describe("Its picture", () => {
+  it("sends the photo as picked, then names the square to keep", async () => {
+    const { hub, session, calls } = setup();
+    const crop = { x: 500, y: 0, size: 3000 };
+    const set = setPicture(session, SHOP, new Uint8Array([0xff, 0xd8, 0xff]), "image/jpeg", crop);
+    expect(calls("attachment_put").at(-1)?.input).toEqual({ name: "picture.jpg", mime: "image/jpeg", dataB64: "/9j/" });
+    hub.answer("attachment_put", { attachmentId: "F7", bytes: 3, sha256: "x".repeat(64) });
+    await flush();
+    expect(calls("project_avatar_set").at(-1)?.input).toEqual({ ...REF, attachmentId: "F7", crop });
+    const shown = { ...SHOP, avatar: "a1b2c3d4e5f60718" };
+    hub.answer("project_avatar_set", { project: shown });
+    await expect(set).resolves.toEqual({ ok: true, value: shown });
+  });
+
+  it("says why the hub wouldn't take it, and removes it with no attachment", async () => {
+    const { hub, session, calls } = setup();
+    const set = setPicture(session, NAVI, new Uint8Array([1]), "image/png", { x: 0, y: 0, size: 1 });
+    hub.fail("attachment_put", "invalid", "The file is too big.");
+    await expect(set).resolves.toMatchObject({ ok: false, error: { message: "The file is too big." } });
+    expect(calls("project_avatar_set")).toEqual([]);
+
+    const removed = removePicture(session, SHOP);
+    expect(calls("project_avatar_set").at(-1)?.input).toEqual(REF);
+    hub.answer("project_avatar_set", { project: SHOP });
+    await expect(removed).resolves.toEqual({ ok: true, value: SHOP });
   });
 });

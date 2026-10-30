@@ -27,6 +27,7 @@ import type { ProjectRef } from "./slots";
 import { useAsOfWords } from "../shell/offline";
 import { navigate } from "../shell/navigation";
 import { isNavi } from "../navi/model";
+import { ProjectAvatar } from "../projects/ProjectAvatar";
 import { useHubRole } from "../admin/role";
 import s from "./view.module.css";
 
@@ -114,10 +115,8 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
   const openAt = rows === undefined ? undefined : target !== undefined ? rowIndexOf(rows, target) : newAt === -1 ? undefined : newAt;
   const empty = view !== undefined && view.items.length === 0 && !view.hasOlder;
   const title = data.title ?? "";
-  const navi = useData((d) => {
-    const p = d.projects[key];
-    return p !== undefined && isNavi(p);
-  });
+  const summary = useData((d) => d.projects[key]);
+  const navi = summary !== undefined && isNavi(summary);
   const who = navi && title !== "" ? title : undefined;
   const [replyTo, setReplyTo] = useState<ReplyTarget>();
   const onSent = useCallback(() => {
@@ -216,6 +215,7 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
     >
       <FrameTitle
         title={title || undefined}
+        lead={summary === undefined || data.missing ? undefined : <ProjectAvatar project={summary} size={22} />}
         detail={
           data.missing ? undefined : (
             <AttentionLine
