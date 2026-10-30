@@ -121,6 +121,7 @@ pub(crate) fn hub(runner_usable: bool) -> Hub {
                 created_by: None,
                 owner: None,
                 archived_at: None,
+                avatar: None,
             }],
         )
         .unwrap();

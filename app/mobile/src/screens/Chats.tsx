@@ -20,7 +20,7 @@ import { matchesName, queryOf, searchMessages, type MessageHit } from "../search
 import { phaseOf, type ChatMessage } from "../desktop";
 import type { Key } from "../store";
 import { space, type, useTheme } from "../theme";
-import { Avatar } from "../ui/Avatar";
+import { Avatar, type Pictured } from "../ui/Avatar";
 import { Glass, GlassGroup, liquidGlass } from "../ui/Glass";
 import { haptics } from "../ui/haptics";
 import { Icon } from "../ui/Icon";
@@ -163,7 +163,7 @@ export function Chats({ navigation }: NativeStackScreenProps<{ Chats: undefined 
                   {line.title}
                 </Text>
               ) : line.t === "hit" ? (
-                <HitRow hit={line.hit} title={state.projects?.[line.hit.key]?.title ?? ""} navi={all?.find((r) => r.key === line.hit.key)?.navi ?? false} separator={separator} onPress={() => open(line.hit.key, line.hit.messageId)} />
+                <HitRow hit={line.hit} picture={state.projects?.[line.hit.key]} title={state.projects?.[line.hit.key]?.title ?? ""} navi={all?.find((r) => r.key === line.hit.key)?.navi ?? false} separator={separator} onPress={() => open(line.hit.key, line.hit.messageId)} />
               ) : (
                 <SwipeRow row={line.row} separator={separator} onPress={() => open(line.row.key)} />
               )}
@@ -332,7 +332,7 @@ function ChatRowFace({ row, separator }: { row: ChatRow; separator: boolean }) {
   const mine = !accentLine && line.startsWith("You: ");
   return (
     <View style={styles.row}>
-      <Avatar name={row.project.title} navi={row.navi} size={AVATAR} />
+      <Avatar name={row.project.title} navi={row.navi} size={AVATAR} picture={row.project} />
       <View style={styles.body}>
         <View style={styles.top}>
           <View style={styles.name}>
@@ -375,7 +375,7 @@ function ChatRowFace({ row, separator }: { row: ChatRow; separator: boolean }) {
 }
 
 /** A message that says what was searched for: its chat, when, and its words with the match in bold. */
-function HitRow({ hit, title, navi, separator, onPress }: { hit: MessageHit; title: string; navi: boolean; separator: boolean; onPress: () => void }) {
+function HitRow({ hit, picture, title, navi, separator, onPress }: { hit: MessageHit; picture: Pictured | undefined; title: string; navi: boolean; separator: boolean; onPress: () => void }) {
   const t = useTheme();
   const now = useNow();
   const [from, to] = hit.match;
@@ -384,7 +384,7 @@ function HitRow({ hit, title, navi, separator, onPress }: { hit: MessageHit; tit
     <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={`${title}, ${who}${hit.snippet}`}>
       {({ pressed }) => (
         <View style={[styles.row, styles.hitRow, pressed && { backgroundColor: t.fillQuiet }]}>
-          <Avatar name={title} navi={navi} size={44} />
+          <Avatar name={title} navi={navi} size={44} picture={picture} />
           <View style={[styles.body, styles.hitBody]}>
             <View style={styles.top}>
               <Text style={[type.headline, styles.nameText, { color: t.label }]} numberOfLines={1}>

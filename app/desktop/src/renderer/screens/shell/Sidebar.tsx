@@ -33,6 +33,7 @@ import {
   Tooltip,
   Truncate,
 } from "../../ui";
+import { ProjectAvatar } from "../projects/ProjectAvatar";
 import { RemoveProjectDialog, type RemoveTarget } from "../projects/RemoveProjectDialog";
 import { UpdatesLine } from "../updates";
 import { HubStatus } from "./HubStatus";
@@ -281,6 +282,7 @@ function NaviRow({ p, named, current, jump, go }: { p: Placed; named: boolean; c
       <ContextMenu menu={menu}>
         <SidebarItem
           label={p.project.title}
+          icon={<ProjectAvatar project={p.project} size={18} />}
           current={current}
           emphasis={p.unread}
           trailing={
@@ -385,6 +387,7 @@ function ProjectGroup(props: {
           <ContextMenu key={p.key} menu={menu(p)}>
             <SidebarItem
               label={p.project.title}
+              icon={<ProjectAvatar project={p.project} size={18} />}
               current={sameProject(open, p.project)}
               emphasis={p.unread}
               trailing={trailing(p, props.jumpOf(p), asOf)}

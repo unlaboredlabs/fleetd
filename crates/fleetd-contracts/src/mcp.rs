@@ -1196,6 +1196,45 @@ output!(NaviArchiveOutput {
     navi: ProjectSummary
 });
 
+// project_avatar_set, project_avatar_get: the picture a project's or Navi's chat shows in place of its letters. The
+// hub keeps its own copy: the crop, at most 512 px square, re-encoded as JPEG without the original's metadata (EXIF,
+// location). A project's summary names it by `avatar`, which changes with each new picture.
+/// The largest picture the hub keeps, in pixels per side.
+pub const AVATAR_PX: u32 = 512;
+
+/// The square of a picture to keep, in its pixels as it shows (EXIF orientation applied): its top-left corner and side.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AvatarCrop {
+    pub x: Count,
+    pub y: Count,
+    pub size: Positive,
+}
+
+input!(ProjectAvatarSetInput {
+    machine_id: MachineId,
+    project_id: ProjectId,
+    /// The picture, uploaded with attachment_put (png, jpeg or webp). Absent removes the picture: the letters again.
+    attachment_id: Option<AttachmentId>,
+    /// The square of it to keep; absent: the largest square in its middle. Clamped to the picture.
+    crop: Option<AvatarCrop>,
+});
+output!(ProjectAvatarSetOutput {
+    project: ProjectSummary
+});
+input!(ProjectAvatarGetInput {
+    machine_id: MachineId,
+    project_id: ProjectId,
+});
+output!(ProjectAvatarGetOutput {
+    /// The picture's id, as the project's summary names it in `avatar`.
+    avatar: Line<1, 64>,
+    /// Always image/jpeg.
+    mime: AttachmentMime,
+    /// Standard base64.
+    data_b64: String,
+});
+
 /// A site a Navi fetches and opens without asking: a person approved its first visit.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -3004,6 +3043,8 @@ tools! {
     navi_list => NaviList, Read, NaviListInput, NaviListOutput;
     navi_rename => NaviRename, Operate, NaviRenameInput, NaviRenameOutput;
     navi_archive => NaviArchive, Operate, NaviArchiveInput, NaviArchiveOutput;
+    project_avatar_set => ProjectAvatarSet, Operate, ProjectAvatarSetInput, ProjectAvatarSetOutput;
+    project_avatar_get => ProjectAvatarGet, Read, ProjectAvatarGetInput, ProjectAvatarGetOutput;
     navi_sites => NaviSites, Read, NaviSitesInput, NaviSitesOutput;
     navi_site_revoke => NaviSiteRevoke, Operate, NaviSiteRevokeInput, NaviSiteRevokeOutput;
     navi_signins_forget => NaviSigninsForget, Operate, NaviSigninsForgetInput, NaviSigninsForgetOutput;

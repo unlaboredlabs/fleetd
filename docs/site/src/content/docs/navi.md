@@ -214,7 +214,10 @@ another project's or another person's Navi's. The tools are `chat_search` and `c
 
 Navis are MCP tools on the hub: `navi_create {name, machineId?}`, `navi_list {archived?, machineId?}`,
 `navi_rename {machineId, projectId, name}`, `navi_archive {machineId, projectId, archived?}`,
-`navi_sites {machineId, projectId}` and `navi_site_revoke {machineId, projectId, site}`. Each returns the
+`navi_sites {machineId, projectId}` and `navi_site_revoke {machineId, projectId, site}`. A Navi's or project's
+picture is `project_avatar_set {machineId, projectId, attachmentId?, crop?}` (an image from `attachment_put` and the
+square to keep; no `attachmentId` removes it) and `project_avatar_get {machineId, projectId}`; a summary's `avatar`
+names the one it has. Each returns the
 Navi as a project summary with `kind: "assistant"`, `createdBy` (the id and name of the key that made it) and, once
 archived, `archivedAt`. Every other project has no `kind`. Talk to a Navi with `chat_send`, as to any project.
 `navi_asks {navi}` lists what a Navi asked other projects for, with the orders opened for each, on a hub whose ready

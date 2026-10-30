@@ -5,6 +5,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ProjectSummary } from "../../../shared/contracts";
+import type { HubFrame } from "../../../shared/hub";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { UiProvider } from "../../ui";
@@ -170,5 +171,56 @@ describe("with two Navis", () => {
     mount([ADA, STOREFRONT]);
     rightClick(button("storefront"));
     expect(items()).toEqual(["Open", "Open settings", "Copy path", "Remove project…"]);
+  });
+});
+
+describe("each row's avatar", () => {
+  it("is a circle of its letters, its picture once it has one, read once for that row alone", async () => {
+    const pictured = row("Home", { kind: "assistant", avatar: "a1b2c3d4e5f60718" });
+    let listener: (frame: HubFrame) => void = () => undefined;
+    const hub: HubApi = {
+      call: (tool, input) => {
+        calls.push({ tool, input });
+        const output = tool === "project_avatar_get" ? { avatar: "a1b2c3d4e5f60718", mime: "image/jpeg", dataB64: "/9j/AA==" } : {};
+        return Promise.resolve({ ok: true, output });
+      },
+      subscribe: (l) => ((listener = l), () => undefined),
+      resync: () => Promise.resolve(),
+      focus: () => Promise.resolve(),
+      chat: () => Promise.resolve(),
+    };
+    act(() =>
+      root.render(
+        <UiProvider>
+          <DataProvider layer={createDataLayer(hub)}>
+            <Sidebar
+              projects={[ADA, pictured, STOREFRONT].map((p) => ({ ...p, hub: "hub" }))}
+              screen={{ id: "status", at: "hub" }}
+              jumpHints={false}
+              collapsed={new Set()}
+              onToggleHub={() => undefined}
+              factory={false}
+              admin={false}
+              go={(s) => went.push(s)}
+            />
+          </DataProvider>
+        </UiProvider>,
+      ),
+    );
+    act(() => {
+      listener({ t: "state", state: { phase: "live", hub: "devbox:4710", protocol: 1 } });
+      listener({ t: "snapshot", snapshot: { cursor: 1, attention: [], machines: [], projects: [ADA.project, pictured.project, STOREFRONT.project] } });
+    });
+    await settle();
+    const avatars = [...host.querySelectorAll<HTMLElement>("[data-avatar]")];
+    expect(avatars.map((a) => [a.dataset.avatar, a.dataset.letters])).toEqual([
+      ["letters", "A"],
+      ["picture", "H"],
+      ["letters", "S"],
+    ]);
+    // The letters are the avatar's CSS: the row's text is its name.
+    expect(button("Ada").textContent).toBe("Ada");
+    expect(avatars[1]?.querySelector("img")?.getAttribute("src")).toBe("data:image/jpeg;base64,/9j/AA==");
+    expect(calls.filter((c) => c.tool === "project_avatar_get").map((c) => c.input)).toEqual([{ machineId: "devbox", projectId: "home" }]);
   });
 });

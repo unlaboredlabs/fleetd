@@ -1445,6 +1445,32 @@
       ],
       "type": "object"
     },
+    "AvatarCrop": {
+      "description": "The square of a picture to keep, in its pixels as it shows (EXIF orientation applied): its top-left corner and side.",
+      "properties": {
+        "size": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "x": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "y": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "size"
+      ],
+      "type": "object"
+    },
     "BaseError": {
       "properties": {
         "kind": {
@@ -6246,7 +6272,7 @@
         },
         {
           "const": "project.settings",
-          "description": "A project's settings changed (`project_set`): `data.profiles`, the profiles it allows; or a repo was removed from it\n(`project_repo_remove`): `data.repoRemoved`, its name.",
+          "description": "A project's settings changed (`project_set`): `data.profiles`, the profiles it allows; or a repo was removed from it\n(`project_repo_remove`): `data.repoRemoved`, its name; or its picture (`project_avatar_set`): `data.avatar`, the\nnew one's id, null once removed.",
           "type": "string"
         },
         {
@@ -9755,6 +9781,18 @@
         "project_add.output": {
           "$ref": "#/$defs/ProjectAddOutput"
         },
+        "project_avatar_get.input": {
+          "$ref": "#/$defs/ProjectAvatarGetInput"
+        },
+        "project_avatar_get.output": {
+          "$ref": "#/$defs/ProjectAvatarGetOutput"
+        },
+        "project_avatar_set.input": {
+          "$ref": "#/$defs/ProjectAvatarSetInput"
+        },
+        "project_avatar_set.output": {
+          "$ref": "#/$defs/ProjectAvatarSetOutput"
+        },
         "project_discover.input": {
           "$ref": "#/$defs/ProjectDiscoverInput"
         },
@@ -10299,6 +10337,10 @@
         "profiles_list.output",
         "project_add.input",
         "project_add.output",
+        "project_avatar_get.input",
+        "project_avatar_get.output",
+        "project_avatar_set.input",
+        "project_avatar_set.output",
         "project_discover.input",
         "project_discover.output",
         "project_env_set.input",
@@ -14606,6 +14648,92 @@
       ],
       "type": "object"
     },
+    "ProjectAvatarGetInput": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        }
+      },
+      "required": [
+        "machineId",
+        "projectId"
+      ],
+      "type": "object"
+    },
+    "ProjectAvatarGetOutput": {
+      "properties": {
+        "avatar": {
+          "description": "The picture's id, as the project's summary names it in `avatar`.",
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "dataB64": {
+          "description": "Standard base64.",
+          "type": "string"
+        },
+        "mime": {
+          "$ref": "#/$defs/AttachmentMime",
+          "description": "Always image/jpeg."
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "avatar",
+        "mime",
+        "dataB64"
+      ],
+      "type": "object"
+    },
+    "ProjectAvatarSetInput": {
+      "properties": {
+        "attachmentId": {
+          "$ref": "#/$defs/AttachmentId",
+          "description": "The picture, uploaded with attachment_put (png, jpeg or webp). Absent removes the picture: the letters again."
+        },
+        "crop": {
+          "$ref": "#/$defs/AvatarCrop",
+          "description": "The square of it to keep; absent: the largest square in its middle. Clamped to the picture."
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        }
+      },
+      "required": [
+        "machineId",
+        "projectId"
+      ],
+      "type": "object"
+    },
+    "ProjectAvatarSetOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "project": {
+          "$ref": "#/$defs/ProjectSummary"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "project"
+      ],
+      "type": "object"
+    },
     "ProjectChatState": {
       "description": "One chat's state, for the sidebar and the status row.",
       "properties": {
@@ -15696,6 +15824,10 @@
         "archivedAt": {
           "$ref": "#/$defs/Timestamp",
           "description": "A Navi's: when it was archived. An archived Navi keeps its chat, memory and folder, and its lead doesn't\nstart until it is brought back (`navi_archive` with `archived: false`)."
+        },
+        "avatar": {
+          "description": "Its picture's id, from the hub, once a person gave it one (`project_avatar_set`): it changes with each new\npicture, whose bytes come from `project_avatar_get`. Absent: its letters show.",
+          "type": "string"
         },
         "createdBy": {
           "$ref": "#/$defs/ProjectCreator",

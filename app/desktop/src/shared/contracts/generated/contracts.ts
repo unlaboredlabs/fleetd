@@ -611,6 +611,13 @@ export type AutomationUpdateOutput = {
   webhookUrl?: string;
 };
 
+/** The square of a picture to keep, in its pixels as it shows (EXIF orientation applied): its top-left corner and side. */
+export type AvatarCrop = {
+  size: number;
+  x: number;
+  y: number;
+};
+
 export type BaseError = {
   kind: BaseErrorKind;
   /** git's first line, e.g. "fatal: Authentication failed for 'https://github.com/a/b.git/'"; "offline". */
@@ -4926,6 +4933,37 @@ export type ProjectAddedData = {
   title: string;
 };
 
+export type ProjectAvatarGetInput = {
+  machineId: MachineId;
+  projectId: ProjectId;
+};
+
+export type ProjectAvatarGetOutput = {
+  /** The picture's id, as the project's summary names it in `avatar`. */
+  avatar: string;
+  /** Standard base64. */
+  dataB64: string;
+  /** Always image/jpeg. */
+  mime: AttachmentMime;
+  next?: string;
+  truncated?: boolean;
+};
+
+export type ProjectAvatarSetInput = {
+  /** The picture, uploaded with attachment_put (png, jpeg or webp). Absent removes the picture: the letters again. */
+  attachmentId?: AttachmentId;
+  /** The square of it to keep; absent: the largest square in its middle. Clamped to the picture. */
+  crop?: AvatarCrop;
+  machineId: MachineId;
+  projectId: ProjectId;
+};
+
+export type ProjectAvatarSetOutput = {
+  next?: string;
+  project: ProjectSummary;
+  truncated?: boolean;
+};
+
 /** One chat's state, for the sidebar and the status row. */
 export type ProjectChatState = {
   lastMessageAt?: Timestamp;
@@ -5354,6 +5392,11 @@ export type ProjectSummary = {
    * start until it is brought back (`navi_archive` with `archived: false`).
    */
   archivedAt?: Timestamp;
+  /**
+   * Its picture's id, from the hub, once a person gave it one (`project_avatar_set`): it changes with each new
+   * picture, whose bytes come from `project_avatar_get`. Absent: its letters show.
+   */
+  avatar?: string;
   /**
    * A Navi's: the key that created it, from the hub. Absent for other projects, and for a Navi made before it was
    * recorded.
@@ -7912,6 +7955,8 @@ export interface ToolMap {
   profile_update: { input: ProfileUpdateInput; output: ProfileUpdateOutput };
   profiles_list: { input: ProfilesListInput; output: ProfilesListOutput };
   project_add: { input: ProjectAddInput; output: ProjectAddOutput };
+  project_avatar_get: { input: ProjectAvatarGetInput; output: ProjectAvatarGetOutput };
+  project_avatar_set: { input: ProjectAvatarSetInput; output: ProjectAvatarSetOutput };
   project_discover: { input: ProjectDiscoverInput; output: ProjectDiscoverOutput };
   project_env_set: { input: ProjectEnvSetInput; output: ProjectEnvSetOutput };
   project_files: { input: ProjectFilesInput; output: ProjectFilesOutput };

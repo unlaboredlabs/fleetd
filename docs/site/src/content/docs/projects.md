@@ -113,6 +113,7 @@ Open a project's settings in the desktop app: Settings → Projects, then pick t
 
 | Setting | Does |
 |---|---|
+| Picture | The circle its chat shows in the sidebar, the chat and on the phone, in place of its letters. Click it or **Choose…** to pick a png, jpeg or webp, or drop one on it; **Move and scale** lets you drag and zoom it before **Save**. The hub keeps only the circle's square, at most 512 px, without the file's metadata. **Remove** brings the letters back. |
 | Name | How fleetd shows the project. Its folder keeps its own name. |
 | Repos | The git repos the project holds, each with its remote, base branch and checkout (machine and path), and the setup and preview it runs with: its own, or the default. A plain folder holds none. **Add repo** and **Remove…**: see [Repos](#repos). Under them, **Default setup**: what runs in each new worktree of a repo without setup of its own. See [Setup commands](#setup). |
 | Keep finished worktrees | Off (the default): a reader's worktree goes when its task finishes, and a writer's once its pull request merges; any left behind go in the [nightly cleanup](#cleanup). On: they stay on the machine. |

@@ -8,6 +8,7 @@ export type {
   AttachmentGetOutput,
   AttachmentMime,
   AttachmentRef,
+  AvatarCrop,
   ChatReplyTo,
   AppServerMessage,
   ChatDelta,
@@ -40,6 +41,8 @@ export type {
 export { ATTACHMENT_MAX_BYTES, ATTACHMENT_PART_BYTES, PROTOCOL_VERSION } from "../../desktop/src/shared/contracts";
 export type { CallOutcome, HubError, HubState } from "../../desktop/src/shared/hub";
 export { hubOrigin, normalizeCode, protocolFit, type PairFailure } from "../../desktop/src/shared/pairing";
+export { initials, tintIndex } from "../../desktop/src/shared/avatar";
+export { baseScale, clampPan, clampZoom, cropOf, MAX_ZOOM, zoomAbout } from "../../desktop/src/shared/crop";
 export * from "../../desktop/src/renderer/src/data/chat";
 export { canHost, firstHome, isArchived, isNavi, isYours, NAME_MAX, nameProblem, naviHomes } from "../../desktop/src/renderer/screens/navi/model";
 export { addSource, baseName, otherHost, tilde } from "../../desktop/src/renderer/screens/projects/source";

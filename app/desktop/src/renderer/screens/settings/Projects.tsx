@@ -1,6 +1,7 @@
 // Settings › Projects › Project (#/settings/projects?for=<machine>/<project>, the project picked in the sidebar): its
-// name, its repos with their default setup (RepoSetting.tsx, SetupSetting.tsx), its worktrees, its agents' environment
-// variables, a Navi's integrations (its MCP servers; its linked hubs are in You › Hubs) and its browser's sign-ins (NaviSignins.tsx), the merge train's checks (TrainSetting.tsx), and deleting
+// picture (Picture.tsx), its name, its repos with their default setup (RepoSetting.tsx, SetupSetting.tsx), its
+// worktrees, its agents' environment variables, a Navi's integrations (its MCP servers; its linked hubs are in You ›
+// Hubs) and its browser's sign-ins (NaviSignins.tsx), the merge train's checks (TrainSetting.tsx), and deleting
 // it. Its memory refresh is on its Instructions & memory. Reads project_settings_get; writes project_settings_set,
 // project_env_set (through main, which seals each secret to the project machine's key) and project_remove. A secret's
 // value is write-only: typed here once, sealed in main, and only its fingerprint ever comes back.
@@ -19,6 +20,7 @@ import { IntegrationsSection } from "./Integrations";
 import { isNavi } from "./integrationsModel";
 import { SigninsSetting } from "./NaviSignins";
 import { NoProject, PageHead, Setting } from "./parts";
+import { PictureSetting } from "./Picture";
 import {
   countAfter,
   ENV_MAX,
@@ -79,7 +81,7 @@ export function ProjectSettings({ route }: { route: SettingsRoute }) {
   return (
     <div className={s.scroll} data-screen="settings.projects">
       <div className={s.column}>
-        <PageHead title="Project">Its name, repos, worktrees, its agents&apos; environment and setup, and its merge train.</PageHead>
+        <PageHead title="Project">Its picture, name, repos, worktrees, its agents&apos; environment and setup, and its merge train.</PageHead>
         {ref === undefined ? <NoProject /> : null}
         {read.isLoadingError ? (
           <div className={s.inline}>
@@ -129,6 +131,8 @@ function ProjectPage({ settings, refresh, onDeleted }: { settings: Settings; ref
   };
   return (
     <>
+      <PictureSetting project={summary ?? { ...ref, title: settings.title }} />
+      <Separator />
       <NameSetting settings={settings} />
       <Separator />
       <RepoSetting settings={settings} />

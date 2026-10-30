@@ -257,8 +257,8 @@ private struct ChatRow: View {
   }
 }
 
-/// A chat's initials on its color, as in the app (src/ui/Avatar.tsx): a Navi's a filled circle, a project's a soft
-/// rounded square.
+/// A chat's initials on its color, in a circle as in the app (src/ui/Avatar.tsx): a Navi's filled, a project's a soft
+/// wash of it.
 struct AvatarView: View {
   let name: String
   let navi: Bool
@@ -271,12 +271,11 @@ struct AvatarView: View {
   var body: some View {
     let tint = Self.tints[Avatar.tint(name, count: Self.tints.count)]
     let initials = Avatar.initials(name)
-    let shape = RoundedRectangle(cornerRadius: navi ? size / 2 : size * 0.28, style: .continuous)
     Text(initials)
       .font(.system(size: size * (initials.count > 1 ? 0.36 : 0.42), weight: .semibold))
       .foregroundStyle(navi ? Color.white : tint)
       .frame(width: size, height: size)
-      .background(navi ? tint : tint.opacity(scheme == .dark ? 0.28 : 0.16), in: shape)
+      .background(navi ? tint : tint.opacity(scheme == .dark ? 0.28 : 0.16), in: Circle())
       .accessibilityHidden(true)
   }
 }

@@ -70,6 +70,11 @@ describe("event effects", () => {
     expect(effectsOf(e("project.added")).resync).toBe(true);
     // A repo removed from a project can bring its checkout back as a project of its own.
     expect(effectsOf(e("project.settings")).resync).toBe(true);
+    // A new picture (project_avatar_set): the summary's id comes with the resync, its bytes with a read of its own.
+    expect(effectsOf(e("project.settings", { avatar: "a1b2c3d4e5f60718" }, { machineId: "devbox", projectId: "app" })).invalidate).toContainEqual({
+      tool: "project_avatar_get",
+      where: { machineId: "devbox", projectId: "app" },
+    });
     // Add project's list marks the repos that are projects, so it is read again too.
     expect(tools(e("project.removed"))).toContain("project_discover");
     // A known machine's status is patched in place; only one the snapshot lacks resyncs.

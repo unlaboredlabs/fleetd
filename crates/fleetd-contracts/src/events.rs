@@ -54,7 +54,8 @@ pub enum HubEventType {
     #[serde(rename = "project.fetch_failed")]
     ProjectFetchFailed,
     /// A project's settings changed (`project_set`): `data.profiles`, the profiles it allows; or a repo was removed from it
-    /// (`project_repo_remove`): `data.repoRemoved`, its name.
+    /// (`project_repo_remove`): `data.repoRemoved`, its name; or its picture (`project_avatar_set`): `data.avatar`, the
+    /// new one's id, null once removed.
     #[serde(rename = "project.settings")]
     ProjectSettings,
     #[serde(rename = "thread.started")]

@@ -1,0 +1,76 @@
+/* Settings › Projects › Picture (Picture.tsx): the avatar to click or drop on, and Move and Scale. */
+.target {
+  position: relative;
+  display: inline-flex;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+}
+.target:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.target[data-dragging] {
+  outline: 2px dashed var(--accent);
+  outline-offset: 3px;
+}
+.hover {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #00000059;
+  color: #ffffff;
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+}
+.hover > svg {
+  width: 20px;
+  height: 20px;
+}
+.target:hover:not(:disabled) .hover,
+.target:focus-visible .hover,
+.target[data-dragging] .hover {
+  opacity: 1;
+}
+.crop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4);
+}
+.stage {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  background: #000000;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.stage:active {
+  cursor: grabbing;
+}
+.image {
+  position: absolute;
+  max-width: none;
+  pointer-events: none;
+}
+/* The circle kept; around it, the rest dimmed. */
+.circle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 0 999px #0000009e;
+  pointer-events: none;
+}
+.slider {
+  width: 240px;
+  accent-color: var(--accent);
+}

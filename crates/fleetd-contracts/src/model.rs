@@ -133,6 +133,10 @@ pub struct ProjectSummary {
     /// start until it is brought back (`navi_archive` with `archived: false`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub archived_at: Option<Timestamp>,
+    /// Its picture's id, from the hub, once a person gave it one (`project_avatar_set`): it changes with each new
+    /// picture, whose bytes come from `project_avatar_get`. Absent: its letters show.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub avatar: Option<String>,
 }
 
 /// What a project is. Absent on a project: one of code, a lead with its repos and folders.
