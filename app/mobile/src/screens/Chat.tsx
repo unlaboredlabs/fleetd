@@ -5,20 +5,26 @@
 //
 // Opening it lands on the first message you haven't read, under an "Unread Messages" bar; reading to the bottom marks
 // it read. Scrolled up, a glass button takes you back down and counts what came meanwhile. Pressing and holding a
-// bubble lifts it with a menu: Reply (quoted above your words), Copy, and Select Text. Bubbles that arrive while you
-// look rise in with the desktop's motion (ui/motion.ts). Messages written offline wait and go when the hub is back.
+// bubble lifts it with iOS's own menu (ui/HoldMenu.tsx): Reply (quoted above your words), Copy, and Select Text.
+// Bubbles that arrive while you look rise in with the desktop's motion (ui/motion.ts). Messages written offline wait
+// and go when the hub is back.
+//
+// Smooth while a reply streams: each row draws again only when its own message changed (chatView.ts sameRow), so a
+// streamed word redraws one bubble; the keyboard, the composer on it and the thread above it move together on the UI
+// thread (react-native-keyboard-controller), following a finger that drags the keyboard down.
 import * as Clipboard from "expo-clipboard";
 import { LinearGradient } from "expo-linear-gradient";
 import { useHeaderHeight } from "@react-navigation/elements";
 import type { NativeStackNavigationOptions, NativeStackScreenProps } from "@react-navigation/native-stack";
-import { useEffect, useMemo, useRef, useState, type ComponentRef, type ReactNode } from "react";
-import { ActivityIndicator, FlatList, Keyboard, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
-import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { ActivityIndicator, FlatList, Linking, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
+import { KeyboardChatScrollView, KeyboardStickyView, useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
+import Animated, { cancelAnimation, Easing, FadeIn, FadeOut, useAnimatedStyle, useSharedValue, withRepeat, withTiming, type SharedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { arrivalsOf, ENTER_MS, rowKeyOf, type Arrivals } from "../arrivals";
-import { attachmentBubbles, bubbleTime, bubbles, dayLine, fullTime, quoteOf, replyOf, replyText, sendNote, threadRows, type Bubble as BubbleData, type ThreadRow } from "../chatView";
+import { attachmentBubbles, bubbleTime, bubbles, dayLine, fullTime, quoteOf, replyOf, replyText, sameRow, sendNote, threadRows, type Bubble as BubbleData, type ThreadRow } from "../chatView";
 import { chatItems, emptyChat, isNavi, type AttachmentGetOutput, type AttachmentRef, type ChatItem } from "../desktop";
-import { useHub, type RootParams } from "../hubContext";
+import { useHub, useSession, type RootParams } from "../hubContext";
 import { dispatchPrefs, usePrefs } from "../prefsStore";
 import type { Key } from "../store";
 import { space, type, useTheme, type Palette } from "../theme";
@@ -31,9 +37,10 @@ import { Composer, type Reply } from "../ui/Composer";
 import { Glass } from "../ui/Glass";
 import { haptics } from "../ui/haptics";
 import { Icon } from "../ui/Icon";
+import { HoldMenu } from "../ui/HoldMenu";
 import { Grid, Markdown } from "../ui/Markdown";
 import { FileBubble, ImageBubble, ImageViewer, shareFile } from "../ui/Media";
-import { Menu, type MenuItem, type Rect } from "../ui/Menu";
+import type { MenuItem } from "../ui/Menu";
 import { bubbleIn, dur, ease, useReduceMotion } from "../ui/motion";
 import { SkeletonThread } from "../ui/Skeleton";
 import { ConnectionBanner, connectionWords } from "../ui/States";
@@ -49,39 +56,21 @@ export const chatOptions = (t: Palette): NativeStackNavigationOptions => ({
   ...(Platform.OS === "ios" ? { headerTransparent: true, headerShadowVisible: false, scrollEdgeEffects: { top: "hidden", bottom: "hidden" } } : { headerStyle: { backgroundColor: t.bg } }),
 });
 
-/** Whether the keyboard is up: the composer then sits on it, not on the home indicator's inset. */
-const useKeyboardUp = (): boolean => {
-  const [up, setUp] = useState(false);
-  useEffect(() => {
-    const show = Keyboard.addListener(Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow", () => setUp(true));
-    const hide = Keyboard.addListener(Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide", () => setUp(false));
-    return () => {
-      show.remove();
-      hide.remove();
-    };
-  }, []);
-  return up;
-};
-
 /** Scrolled up further than this from the newest, the button down shows. */
 const AWAY = 280;
 
-/** A bubble held: where it is, it drawn again, and what the menu can do with it. */
-interface Held {
-  readonly at: Rect;
-  readonly node: ReactNode;
-  readonly mine: boolean;
-  readonly items: readonly MenuItem[];
-  readonly when: string;
-}
-
-/** What a chat's thread does that its rows need: the menu, replies, the image viewer, jumping to a message. */
+/**
+ * What a chat's thread does that its rows need: replies, the image viewer, jumping to a message, who wrote one. The
+ * same object for as long as the chat is open, so rows that didn't change don't draw again.
+ */
 interface ThreadActions {
-  readonly hold: (held: Held) => void;
   readonly reply: (target: { readonly id: string; readonly part: number; readonly who: string; readonly quote: string }) => void;
   readonly selectText: (text: string) => void;
   readonly openImage: (image: AttachmentGetOutput) => void;
   readonly jumpTo: (messageId: string) => void;
+  /** Whose the message is, as a reply's quote names them: "You", or the chat's lead. */
+  readonly whoWrote: (messageId: string) => string;
+  readonly answer: (text: string) => void;
 }
 
 export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "Chat">) {
@@ -92,7 +81,6 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   const chatKey = route.params.key;
   const insets = useSafeAreaInsets();
   const headerHeight = useHeaderHeight();
-  const keyboardUp = useKeyboardUp();
   const project = state.projects?.[chatKey];
   const chatState = state.chatStates[chatKey];
   const chat = state.chats[chatKey] ?? emptyChat;
@@ -153,7 +141,6 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   const list = useRef<FlatList<ThreadRow>>(null);
   const [composerHeight, setComposerHeight] = useState(60);
   const [reply, setReply] = useState<(Reply & { id: string; part: number }) | undefined>(undefined);
-  const [held, setHeld] = useState<Held | null>(null);
   const [selecting, setSelecting] = useState<string | null>(null);
   const [image, setImage] = useState<AttachmentGetOutput | null>(null);
   const [lit, setLit] = useState<string | null>(null);
@@ -204,39 +191,67 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
     return () => clearTimeout(timer);
   }, [lit]);
 
-  // What you send shows at once, as in Messages, wherever the thread was scrolled to (the list is upside down: 0 is
-  // the newest).
+  // The keyboard covers the home indicator's inset, which the composer keeps clear when it's down: up, the composer
+  // sits a step above it, and the thread's newest end is that much less than the keyboard above where it was.
+  const lift = Math.max(insets.bottom - space.sm, 0);
+  const keyboard = useReanimatedKeyboardAnimation();
+  // The list is upside down, its newest end at 0, or under the keyboard's padding (before 0) while it's up.
+  const toNewest = () => list.current?.scrollToOffset({ offset: -Math.max(0, -keyboard.height.value - lift), animated: !reduce });
+
+  // What you send shows at once, as in Messages, wherever the thread was scrolled to.
   const send = (body: string, files: readonly AttachmentRef[] = []) => {
     if (body.trim() === "" && files.length === 0) return;
     const text = reply === undefined ? body : replyText(reply.quote, body);
     session.send(chatKey, text, { attachments: files, replyTo: reply === undefined ? undefined : { messageId: reply.id, part: reply.part } });
     setReply(undefined);
     setAwayFrom(null);
-    list.current?.scrollToOffset({ offset: 0, animated: !reduce });
+    toNewest();
   };
 
-  const actions: ThreadActions = {
-    hold: setHeld,
-    reply: (r) => {
-      haptics.tap();
-      setReply({ id: r.id, part: r.part, who: r.who, quote: r.quote });
-    },
-    selectText: setSelecting,
-    openImage: setImage,
-    jumpTo: (messageId) => {
-      if (scrollToRow((r) => r.t === "item" && r.item.message?.messageId === messageId, 0.5)) setLit(messageId);
-    },
-  };
+  // What the actions read, as of the last draw.
+  const now = useRef({ items, title, send, scrollToRow });
+  now.current = { items, title, send, scrollToRow };
+  const actions = useMemo(
+    (): ThreadActions => ({
+      reply: (r) => {
+        haptics.tap();
+        setReply({ id: r.id, part: r.part, who: r.who, quote: r.quote });
+      },
+      selectText: setSelecting,
+      openImage: setImage,
+      jumpTo: (messageId) => {
+        if (now.current.scrollToRow((r) => r.t === "item" && r.item.message?.messageId === messageId, 0.5)) setLit(messageId);
+      },
+      whoWrote: (messageId) => (now.current.items.find((i) => i.id === messageId)?.author === "human" ? "You" : now.current.title),
+      answer: (text) => now.current.send(text),
+    }),
+    [],
+  );
+  const renderRow = useCallback(
+    ({ item: row }: { item: ThreadRow }) => (
+      <RowView
+        row={row}
+        chatKey={chatKey}
+        title={title}
+        canAnswer={row.t === "item" && (index.get(row.item.id) ?? -1) > lastHuman}
+        actions={actions}
+        lit={row.t === "item" && row.item.message?.messageId !== undefined && row.item.message.messageId === lit}
+        enter={row.t === "item" ? entering.get(rowKeyOf(row.item)) : undefined}
+        reduce={reduce}
+      />
+    ),
+    [chatKey, title, index, lastHuman, actions, lit, entering, reduce],
+  );
 
   const loading = !chat.loaded && chat.cached !== true;
   const top = Platform.OS === "ios" ? headerHeight : 0;
-  const bottomInset = keyboardUp ? 0 : insets.bottom;
   return (
-    <KeyboardAvoidingView style={[styles.fill, { backgroundColor: t.thread }]} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+    <View style={[styles.fill, { backgroundColor: t.thread }]}>
       <View style={styles.fill}>
         <FlatList
           ref={list}
           inverted
+          renderScrollComponent={(props) => <KeyboardChatScrollView {...props} inverted offset={lift} />}
           data={loading && items.length === 0 ? [] : newestFirst}
           keyExtractor={(r) => r.id}
           contentContainerStyle={styles.list}
@@ -260,74 +275,57 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
               {loading && items.length === 0 ? <SkeletonThread /> : chat.loadingOlder ? <ActivityIndicator style={styles.older} color={t.secondary} /> : null}
             </View>
           }
-          renderItem={({ item: row }) => (
-            <RowView
-              row={row}
-              chatKey={chatKey}
-              title={title}
-              items={items}
-              canAnswer={row.t === "item" && (index.get(row.item.id) ?? -1) > lastHuman}
-              onAnswer={(s) => send(s)}
-              actions={actions}
-              lit={row.t === "item" && row.item.message?.messageId !== undefined && row.item.message.messageId === lit}
-              enter={row.t === "item" ? entering.get(rowKeyOf(row.item)) : undefined}
-              reduce={reduce}
-            />
-          )}
+          renderItem={renderRow}
         />
-        {Platform.OS === "ios" ? (
-          <>
-            <LinearGradient pointerEvents="none" colors={[t.thread, withOpacity(t.thread, 0.85), withOpacity(t.thread, 0)]} locations={[0, 0.55, 1]} style={[styles.topFade, { height: top + space.lg }]} />
-            <LinearGradient pointerEvents="none" colors={[withOpacity(t.thread, 0), withOpacity(t.thread, 0.9)]} style={[styles.bottomFade, { height: composerHeight + space.lg }]} />
-          </>
-        ) : null}
+        {Platform.OS === "ios" ? <LinearGradient pointerEvents="none" colors={[t.thread, withOpacity(t.thread, 0.85), withOpacity(t.thread, 0)]} locations={[0, 0.55, 1]} style={[styles.topFade, { height: top + space.lg }]} /> : null}
         <View pointerEvents="box-none" style={[styles.banner, { top: top + space.xs }]}>
           <ConnectionBanner state={state.hub} onPairAgain={pairAgain} />
         </View>
-        {chat.error === undefined ? null : <Text style={[type.footnote, styles.error, { color: t.danger, bottom: composerHeight + space.xs }]}>{chat.error.message}</Text>}
-        {awayFrom === null ? null : (
-          <Animated.View
-            entering={FadeIn.duration(reduce ? 0 : dur.quick).easing(ease.snap)}
-            exiting={FadeOut.duration(reduce ? 0 : dur.quick).easing(ease.snap)}
-            style={[styles.down, { bottom: composerHeight + space.md }]}
-          >
-            <Glass interactive style={styles.downButton}>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={cameSince > 0 ? `Scroll to the newest, ${String(cameSince)} new` : "Scroll to the newest"}
-                style={styles.downHit}
-                onPress={() => {
-                  haptics.tap();
-                  list.current?.scrollToOffset({ offset: 0, animated: !reduce });
-                }}
-              >
-                <Icon name="down" size={18} color={t.label} weight="semibold" />
-              </Pressable>
-            </Glass>
-            {cameSince > 0 ? (
-              <View style={[styles.downCount, { backgroundColor: t.accent }]}>
-                <Text style={[type.caption, styles.downCountText]} maxFontSizeMultiplier={1.3}>
-                  {cameSince > 99 ? "99+" : String(cameSince)}
-                </Text>
-              </View>
-            ) : null}
-          </Animated.View>
-        )}
-        <View style={styles.composer} pointerEvents="box-none">
+        {/* The composer and what sits on it ride on the keyboard. */}
+        <KeyboardStickyView offset={{ closed: 0, opened: lift }} style={styles.dock} pointerEvents="box-none">
+          {Platform.OS === "ios" ? <LinearGradient pointerEvents="none" colors={[withOpacity(t.thread, 0), withOpacity(t.thread, 0.9)]} style={[styles.bottomFade, { height: composerHeight + space.lg }]} /> : null}
+          {chat.error === undefined ? null : <Text style={[type.footnote, styles.error, { color: t.danger, bottom: composerHeight + space.xs }]}>{chat.error.message}</Text>}
+          {awayFrom === null ? null : (
+            <Animated.View
+              entering={FadeIn.duration(reduce ? 0 : dur.quick).easing(ease.snap)}
+              exiting={FadeOut.duration(reduce ? 0 : dur.quick).easing(ease.snap)}
+              style={[styles.down, { bottom: composerHeight + space.md }]}
+            >
+              <Glass interactive style={styles.downButton}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={cameSince > 0 ? `Scroll to the newest, ${String(cameSince)} new` : "Scroll to the newest"}
+                  style={styles.downHit}
+                  onPress={() => {
+                    haptics.tap();
+                    toNewest();
+                  }}
+                >
+                  <Icon name="down" size={18} color={t.label} weight="semibold" />
+                </Pressable>
+              </Glass>
+              {cameSince > 0 ? (
+                <View style={[styles.downCount, { backgroundColor: t.accent }]}>
+                  <Text style={[type.caption, styles.downCountText]} maxFontSizeMultiplier={1.3}>
+                    {cameSince > 99 ? "99+" : String(cameSince)}
+                  </Text>
+                </View>
+              ) : null}
+            </Animated.View>
+          )}
           <Composer
             onSend={send}
             upload={(bytes, name, mime, progress) => upload((tool, input, timeoutMs) => session.call(tool, input, timeoutMs), bytes, name, mime, progress)}
-            bottomInset={bottomInset}
+            bottomInset={insets.bottom}
             reply={reply}
             onCancelReply={() => setReply(undefined)}
             onHeight={setComposerHeight}
           />
-        </View>
+        </KeyboardStickyView>
       </View>
-      <Menu at={held?.at ?? null} preview={held?.node} items={held?.items ?? []} title={held?.when} align={held?.mine === true ? "right" : "left"} onClose={() => setHeld(null)} />
       <SelectText text={selecting} onClose={() => setSelecting(null)} />
       <ImageViewer image={image} onClose={() => setImage(null)} />
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
@@ -386,29 +384,22 @@ function ChatTitle({ title, navi, status, busy }: { title: string; navi: boolean
   );
 }
 
-function RowView({
-  row,
-  chatKey,
-  title,
-  items,
-  canAnswer,
-  onAnswer,
-  actions,
-  lit,
-  enter,
-  reduce,
-}: {
-  row: ThreadRow;
-  chatKey: Key;
-  title: string;
-  items: readonly ChatItem[];
-  canAnswer: boolean;
-  onAnswer: (text: string) => void;
-  actions: ThreadActions;
-  lit: boolean;
-  enter: { at: number; step: number } | undefined;
-  reduce: boolean;
-}) {
+interface RowProps {
+  readonly row: ThreadRow;
+  readonly chatKey: Key;
+  readonly title: string;
+  readonly canAnswer: boolean;
+  readonly actions: ThreadActions;
+  readonly lit: boolean;
+  readonly enter: { at: number; step: number } | undefined;
+  readonly reduce: boolean;
+}
+
+/** Draws again only when its own row changed: the thread's rows are made anew with each streamed word. */
+const sameProps = (a: RowProps, b: RowProps): boolean =>
+  a.chatKey === b.chatKey && a.title === b.title && a.canAnswer === b.canAnswer && a.actions === b.actions && a.lit === b.lit && a.enter === b.enter && a.reduce === b.reduce && sameRow(a.row, b.row);
+
+const RowView = memo(function RowView({ row, chatKey, title, canAnswer, actions, lit, enter, reduce }: RowProps) {
   const t = useTheme();
   const now = useNow();
   // Entering only as it mounts soon after it came: a row scrolled back to later shows still.
@@ -438,7 +429,7 @@ function RowView({
       </Animated.View>
     );
   }
-  const body = <ItemView item={row.item} side={row.side} first={row.first} last={row.last} chatKey={chatKey} title={title} items={items} canAnswer={canAnswer} onAnswer={onAnswer} actions={actions} />;
+  const body = <ItemView item={row.item} side={row.side} first={row.first} last={row.last} chatKey={chatKey} title={title} canAnswer={canAnswer} actions={actions} />;
   return (
     <Animated.View
       {...(motion === undefined ? {} : { entering: bubbleIn(row.side === "me", motion.step, reduce) })}
@@ -447,15 +438,28 @@ function RowView({
       {body}
     </Animated.View>
   );
-}
+}, sameProps);
 
-/** Long-pressing `view` lifts it: measures where it is, then opens the menu with it drawn again. */
-const useHold = (actions: ThreadActions) => {
-  const ref = useRef<ComponentRef<typeof View>>(null);
-  const hold = (node: ReactNode, mine: boolean, items: readonly MenuItem[], when: string) =>
-    ref.current?.measureInWindow((x: number, y: number, width: number, height: number) => actions.hold({ at: { x, y, width, height }, node, mine, items, when }));
-  return { ref, hold };
-};
+/** An approval asked in the chat: its card while it's open, then a line saying how it went. */
+function InlineApproval({ chatKey, requestId, state: asked }: { chatKey: Key; requestId: string; state: string }) {
+  // The hub's state, which a row reads only here: the rest of the thread doesn't draw again with it.
+  const { state, session } = useHub();
+  const open = state.requests?.find((r) => r.requestId === requestId);
+  if (open === undefined) return <Event text={`Approval ${asked === "open" ? "waiting" : asked}`} icon="approvals" />;
+  const project = state.projects?.[chatKey];
+  return (
+    <View style={[styles.card, styles.groupGap]}>
+      <ApprovalCard
+        request={open}
+        projectTitle={project?.title}
+        navi={project !== undefined && isNavi(project)}
+        answering={state.answering[open.requestId] === true}
+        error={state.answerErrors[open.requestId]}
+        onAnswer={(d) => void session.answer(open.requestId, d)}
+      />
+    </View>
+  );
+}
 
 function ItemView({
   item,
@@ -464,9 +468,7 @@ function ItemView({
   last,
   chatKey,
   title,
-  items,
   canAnswer,
-  onAnswer,
   actions,
 }: {
   item: ChatItem;
@@ -475,37 +477,17 @@ function ItemView({
   last: boolean;
   chatKey: Key;
   title: string;
-  items: readonly ChatItem[];
   canAnswer: boolean;
-  onAnswer: (text: string) => void;
   actions: ThreadActions;
 }) {
   const t = useTheme();
   const now = useNow();
-  const { state, session } = useHub();
+  const session = useSession();
   const gap = first ? styles.groupGap : styles.tightGap;
   const time = bubbleTime(item.at, now);
   const when = fullTime(item.at, now);
   const inline = item.message?.item;
-  if (inline?.kind === "command_approval") {
-    const open = state.requests?.find((r) => r.requestId === inline.requestId);
-    if (open !== undefined) {
-      const project = state.projects?.[chatKey];
-      return (
-        <View style={[styles.card, styles.groupGap]}>
-          <ApprovalCard
-            request={open}
-            projectTitle={project?.title}
-            navi={project !== undefined && isNavi(project)}
-            answering={state.answering[open.requestId] === true}
-            error={state.answerErrors[open.requestId]}
-            onAnswer={(d) => void session.answer(open.requestId, d)}
-          />
-        </View>
-      );
-    }
-    return <Event text={`Approval ${inline.state === "open" ? "waiting" : inline.state}`} icon="approvals" />;
-  }
+  if (inline?.kind === "command_approval") return <InlineApproval chatKey={chatKey} requestId={inline.requestId} state={inline.state} />;
   if (inline?.kind === "secret_request") return <Event text="Asks for a secret: enter it in the desktop app." icon="lock" />;
   if (side === "center") return <Event text={item.text} />;
 
@@ -519,7 +501,7 @@ function ItemView({
     const replied = replyOf(item.text);
     const words = replied?.body ?? item.text;
     const quotedId = item.message?.replyTo?.messageId;
-    const quotedWho = quotedId === undefined ? title : items.find((i) => i.id === quotedId)?.author === "human" ? "You" : title;
+    const quotedWho = quotedId === undefined ? title : actions.whoWrote(quotedId);
     return (
       <View style={[styles.me, gap]}>
         {words.trim() === "" ? null : (
@@ -576,7 +558,6 @@ function ItemView({
           bubble={b}
           tail={last && files.length === 0 && i === parts.length - 1}
           canAnswer={canAnswer}
-          onAnswer={onAnswer}
           chatKey={chatKey}
           actions={actions}
           target={messageId === undefined || streaming ? undefined : { id: messageId, part: i, who }}
@@ -630,7 +611,6 @@ function HeldBubble({
   actions: ThreadActions;
   onPress?: (() => void) | undefined;
 }) {
-  const { ref, hold } = useHold(actions);
   const menu: MenuItem[] = [
     ...(target === undefined ? [] : [{ label: "Reply", icon: "reply" as const, onPress: () => actions.reply({ ...target, quote: quoteOf(text) }) }]),
     {
@@ -644,21 +624,23 @@ function HeldBubble({
     { label: "Select Text", icon: "select", presents: true, onPress: () => actions.selectText(text) },
   ];
   return (
-    <Pressable
-      ref={ref}
-      collapsable={false}
+    <HoldMenu
+      items={menu}
+      title={when}
+      radius={BUBBLE_RADIUS}
+      align={mine ? "right" : "left"}
+      preview={bubble(false)}
       onPress={onPress}
-      onLongPress={() => hold(bubble(false), mine, menu, when)}
-      delayLongPress={300}
       accessibilityRole={onPress === undefined ? undefined : "button"}
       accessibilityHint={onPress === undefined ? undefined : "Sends it again"}
-      accessibilityActions={menu.map((m) => ({ name: m.label, label: m.label }))}
-      onAccessibilityAction={(e) => menu.find((m) => m.label === e.nativeEvent.actionName)?.onPress()}
     >
       {bubble(true)}
-    </Pressable>
+    </HoldMenu>
   );
 }
+
+/** A bubble's corners (ui/Bubble.tsx), and a picture's or a file's (ui/Media.tsx): the shape it lifts in. */
+const BUBBLE_RADIUS = 18;
 
 /** A picture or a file in the thread, with its time; held, it lifts with Reply and Share. */
 function MediaView({
@@ -678,8 +660,7 @@ function MediaView({
   when: string;
   target?: { id: string; part: number; who: string } | undefined;
 }) {
-  const { session } = useHub();
-  const { ref, hold } = useHold(actions);
+  const session = useSession();
   if (bubble.kind !== "image" && bubble.kind !== "file") return null;
   const menu: MenuItem[] = [
     ...(target === undefined ? [] : [{ label: "Reply", icon: "reply" as const, onPress: () => actions.reply({ ...target, quote: bubble.kind === "image" ? `Photo: ${bubble.name}` : bubble.name }) }]),
@@ -700,11 +681,9 @@ function MediaView({
       <FileBubble chatKey={chatKey} attachmentId={bubble.attachmentId} name={bubble.name} mime={bubble.mime} bytes={bubble.bytes} mine={mine} time={time} />
     );
   return (
-    <View ref={ref} collapsable={false}>
-      <Pressable onLongPress={() => hold(view(true), mine, menu, when)} delayLongPress={300} accessibilityActions={menu.map((m) => ({ name: m.label, label: m.label }))} onAccessibilityAction={(e) => menu.find((m) => m.label === e.nativeEvent.actionName)?.onPress()}>
-        {view(false)}
-      </Pressable>
-    </View>
+    <HoldMenu items={menu} title={when} radius={BUBBLE_RADIUS} align={mine ? "right" : "left"} preview={view(true)}>
+      {view(false)}
+    </HoldMenu>
   );
 }
 
@@ -712,7 +691,6 @@ function BubbleView({
   bubble,
   tail,
   canAnswer,
-  onAnswer,
   chatKey,
   actions,
   target,
@@ -722,7 +700,6 @@ function BubbleView({
   bubble: BubbleData;
   tail: boolean;
   canAnswer: boolean;
-  onAnswer: (text: string) => void;
   chatKey: Key;
   actions: ThreadActions;
   target: { id: string; part: number; who: string } | undefined;
@@ -765,7 +742,7 @@ function BubbleView({
                   size="small"
                   onPress={() => {
                     haptics.tap();
-                    onAnswer(o);
+                    actions.answer(o);
                   }}
                 />
               ))}
@@ -849,24 +826,33 @@ function Event({ text, icon }: { text: string; icon?: "approvals" | "lock" }) {
 
 /**
  * The lead writing, as the desktop draws it: three dots, one lit at a time, stepping left to right on the app's
- * 120 ms beat, two beats each. With Reduce Motion all three stand half lit.
+ * 120 ms beat, two beats each, counted on the UI thread. With Reduce Motion all three stand half lit.
  */
 function TypingDots() {
   const t = useTheme();
   const reduce = useReduceMotion();
-  const [step, setStep] = useState(0);
+  // Beats into the loop of six: dot i is lit for beats 2i and 2i + 1.
+  const beat = useSharedValue(0);
   useEffect(() => {
     if (reduce) return;
-    const timer = setInterval(() => setStep((s) => (s + 1) % 6), dur.beat);
-    return () => clearInterval(timer);
-  }, [reduce]);
+    beat.value = withRepeat(withTiming(6, { duration: dur.beat * 6, easing: Easing.linear }), -1, false);
+    return () => {
+      cancelAnimation(beat);
+      beat.value = 0;
+    };
+  }, [reduce, beat]);
   return (
     <View style={styles.dots} accessibilityLabel="Writing">
       {[0, 1, 2].map((i) => (
-        <View key={i} style={[styles.dot, { backgroundColor: t.secondary, opacity: reduce ? 0.6 : Math.floor(step / 2) === i ? 1 : 0.3 }]} />
+        <Dot key={i} index={i} beat={beat} still={reduce} color={t.secondary} />
       ))}
     </View>
   );
+}
+
+function Dot({ index, beat, still, color }: { index: number; beat: SharedValue<number>; still: boolean; color: string }) {
+  const lit = useAnimatedStyle(() => ({ opacity: still ? 0.6 : Math.floor(beat.value / 2) % 3 === index ? 1 : 0.3 }));
+  return <Animated.View style={[styles.dot, { backgroundColor: color }, lit]} />;
 }
 
 /** A bubble's words to select a part of, in a sheet, as Telegram's Select Text. */
@@ -943,7 +929,7 @@ const styles = StyleSheet.create({
   topFade: { position: "absolute", top: 0, left: 0, right: 0 },
   bottomFade: { position: "absolute", bottom: 0, left: 0, right: 0 },
   banner: { position: "absolute", left: 0, right: 0 },
-  composer: { position: "absolute", left: 0, right: 0, bottom: 0 },
+  dock: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, justifyContent: "flex-end" },
   down: { position: "absolute", right: space.md },
   downButton: { width: 44, height: 44, borderRadius: 22 },
   downHit: { flex: 1, alignItems: "center", justifyContent: "center" },

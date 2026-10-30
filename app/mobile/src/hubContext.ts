@@ -23,6 +23,18 @@ export const useHub = (): HubContextValue => {
   return hub;
 };
 
+/**
+ * The session alone, which never changes while paired: for a view that only calls the hub (a picture loading), so it
+ * doesn't draw again with every change to the state (a streamed word).
+ */
+export const SessionContext = createContext<Session | null>(null);
+
+export const useSession = (): Session => {
+  const session = useContext(SessionContext);
+  if (session === null) throw new Error("useSession outside a paired hub");
+  return session;
+};
+
 export type ApprovalsParams = { Approvals: { focus?: string } | undefined };
 export type TabParams = {
   ChatsTab: undefined;

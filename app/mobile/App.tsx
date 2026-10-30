@@ -15,11 +15,12 @@ import * as SystemUI from "expo-system-ui";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { ActionSheetIOS, Alert, AppState, Linking, Platform, StyleSheet, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { webSocketTransport } from "./src/hub/socket";
 import type { Paired } from "./src/hub/pair";
 import { pairLinkStep } from "./src/hub/pairLink";
-import { HubContext, useHub, type ApprovalsParams, type HubContextValue, type PairParams, type RootParams, type TabParams } from "./src/hubContext";
+import { HubContext, SessionContext, useHub, type ApprovalsParams, type HubContextValue, type PairParams, type RootParams, type TabParams } from "./src/hubContext";
 import { approvals } from "./src/lists";
 import { pushDeps, useTappedRoute } from "./src/notifications";
 import type { Route } from "./src/push";
@@ -100,6 +101,7 @@ export default function App() {
   }, [t.bg]);
   return (
     <GestureHandlerRootView style={styles.fill}>
+    <KeyboardProvider>
     <SafeAreaProvider>
       <StatusBar style="auto" />
       <View style={[styles.fill, { backgroundColor: t.bg }]}>
@@ -121,6 +123,7 @@ export default function App() {
         )}
       </View>
     </SafeAreaProvider>
+    </KeyboardProvider>
     </GestureHandlerRootView>
   );
 }
@@ -216,9 +219,11 @@ function Hub({ paired, onForget }: { paired: Paired; onForget: (why?: string) =>
   }, [session, state, paired, onForget]);
 
   return (
-    <HubContext.Provider value={value}>
-      <Root />
-    </HubContext.Provider>
+    <SessionContext.Provider value={session}>
+      <HubContext.Provider value={value}>
+        <Root />
+      </HubContext.Provider>
+    </SessionContext.Provider>
   );
 }
 
@@ -227,7 +232,9 @@ const RootStack = createNativeStackNavigator<RootParams>();
 function Root() {
   const t = useTheme();
   return (
-    <RootStack.Navigator screenOptions={{ headerTintColor: t.accent, contentStyle: { backgroundColor: t.bg } }}>
+    // A screen under another (the chats list under a chat) doesn't draw again while it's covered: a streamed reply
+    // changes the state with every word.
+    <RootStack.Navigator screenOptions={{ headerTintColor: t.accent, contentStyle: { backgroundColor: t.bg }, freezeOnBlur: true }}>
       <RootStack.Screen name="Home" component={Tabs} options={{ headerShown: false, title: "Chats" }} />
       <RootStack.Screen name="Chat" component={Chat} options={({ route }) => ({ ...chatOptions(t), ...infoOptions(t, () => nav.navigate("Info", { key: route.params.key })) })} />
       {manageScreens(RootStack, t)}

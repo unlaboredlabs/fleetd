@@ -1,11 +1,12 @@
 // Chats, as Telegram and Messages list them: one list, your pinned chats on top, then whatever spoke last, each a
 // full-bleed row with its avatar, its newest message and when, and a count of what you haven't read (grey when
 // muted). Filters above it narrow it to the unread, the Navis or the projects. Swipe a row right to mark it read or
-// unread or to pin it, left to mute it; hold it for the same as a menu. Pin, mute and read live on this phone
-// (prefs.ts). Search finds chats by name and messages by their words (search.ts). Pulling down reads the hub again.
+// unread or to pin it, left to mute it; hold it for the same in iOS's own menu (ui/HoldMenu.tsx). Pin, mute and read
+// live on this phone (prefs.ts). Search finds chats by name and messages by their words (search.ts). Pulling down reads
+// the hub again.
 import { useNavigation, type NavigationProp } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { useLayoutEffect, useMemo, useRef, useState, type ComponentRef, type ReactNode } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import ReanimatedSwipeable, { type SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 import Animated from "react-native-reanimated";
@@ -22,7 +23,8 @@ import { Avatar } from "../ui/Avatar";
 import { Glass, GlassGroup, liquidGlass } from "../ui/Glass";
 import { haptics } from "../ui/haptics";
 import { Icon } from "../ui/Icon";
-import { Menu, type MenuItem, type Rect } from "../ui/Menu";
+import { HoldMenu } from "../ui/HoldMenu";
+import type { MenuItem } from "../ui/Menu";
 import { rowIn, rowMove, rowOut, useReduceMotion } from "../ui/motion";
 import { rowFace } from "../ui/rowFace";
 import { SkeletonRow } from "../ui/Skeleton";
@@ -102,7 +104,6 @@ export function Chats({ navigation }: NativeStackScreenProps<{ Chats: undefined 
   }, [shown, all, query, state.corpus, state.latest, state.chats, state.projects]);
   const arrived = useArrived(lines.map((l) => l.key));
 
-  const [held, setHeld] = useState<{ at: Rect; node: ReactNode; items: readonly MenuItem[] } | null>(null);
   const open = (key: Key, messageId?: string) => root.navigate("Chat", messageId === undefined ? { key } : { key, messageId });
   const unreadCount = all?.filter((r) => (r.unread > 0 && !r.muted) || r.markedUnread).length ?? 0;
 
@@ -159,13 +160,12 @@ export function Chats({ navigation }: NativeStackScreenProps<{ Chats: undefined 
               ) : line.t === "hit" ? (
                 <HitRow hit={line.hit} title={state.projects?.[line.hit.key]?.title ?? ""} navi={all?.find((r) => r.key === line.hit.key)?.navi ?? false} separator={separator} onPress={() => open(line.hit.key, line.hit.messageId)} />
               ) : (
-                <SwipeRow row={line.row} separator={separator} onPress={() => open(line.row.key)} onHold={setHeld} />
+                <SwipeRow row={line.row} separator={separator} onPress={() => open(line.row.key)} />
               )}
             </Animated.View>
           );
         }}
       />
-      <Menu at={held?.at ?? null} preview={held?.node} items={held?.items ?? []} onClose={() => setHeld(null)} />
     </>
   );
 }
@@ -242,9 +242,8 @@ const rowActions = (row: ChatRow, pinsFull: boolean): ReadonlyArray<MenuItem & {
 };
 
 /** A chat row that swipes: right for read and pin, left for mute, each a full-height button as Telegram's. */
-function SwipeRow({ row, separator, onPress, onHold }: { row: ChatRow; separator: boolean; onPress: () => void; onHold: (h: { at: Rect; node: ReactNode; items: readonly MenuItem[] }) => void }) {
+function SwipeRow({ row, separator, onPress }: { row: ChatRow; separator: boolean; onPress: () => void }) {
   const t = useTheme();
-  const ref = useRef<ComponentRef<typeof View>>(null);
   const swipe = useRef<SwipeableMethods>(null);
   const acts = rowActions(row, usePrefs().pinned.length >= MAX_PINNED);
   const [read, pin, mute] = acts as [(typeof acts)[number], (typeof acts)[number], (typeof acts)[number]];
@@ -267,7 +266,6 @@ function SwipeRow({ row, separator, onPress, onHold }: { row: ChatRow; separator
       </Text>
     </Pressable>
   );
-  // In a view of its own, so holding it can measure where it is.
   const face = <ChatRowFace row={row} separator={separator} />;
   return (
     <ReanimatedSwipeable
@@ -290,22 +288,17 @@ function SwipeRow({ row, separator, onPress, onHold }: { row: ChatRow; separator
         </View>
       )}
     >
-      <Pressable
-        ref={ref}
-        collapsable={false}
+      <HoldMenu
+        items={acts}
+        radius={ROW_RADIUS}
+        color={t.bg}
         onPress={onPress}
-        onLongPress={() =>
-          ref.current?.measureInWindow((x: number, y: number, width: number, height: number) => onHold({ at: { x, y, width, height }, node: <View style={{ backgroundColor: t.bg }}>{face}</View>, items: acts }))
-        }
-        delayLongPress={350}
         accessibilityRole="button"
         accessibilityLabel={rowLabel(row)}
-        accessibilityActions={acts.map((a) => ({ name: a.label, label: a.label }))}
-        onAccessibilityAction={(e) => acts.find((a) => a.label === e.nativeEvent.actionName)?.onPress()}
         style={({ pressed }) => [{ backgroundColor: rowFace(t, pressed) }]}
       >
         {face}
-      </Pressable>
+      </HoldMenu>
     </ReanimatedSwipeable>
   );
 }
@@ -401,6 +394,8 @@ function HitRow({ hit, title, navi, separator, onPress }: { hit: MessageHit; tit
 }
 
 const ACTION_W = 78;
+/** A held row lifts as a card with these corners, as a chat in Messages. */
+const ROW_RADIUS = 16;
 
 const styles = StyleSheet.create({
   section: { paddingHorizontal: space.lg, paddingTop: space.lg, paddingBottom: space.xs, fontWeight: "600" },

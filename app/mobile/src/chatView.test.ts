@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { ChatItem, ChatMessage } from "./desktop";
-import { attachmentBubbles, bubbleTime, bubbles, dayLine, fileSize, fullTime, listTime, previewOf, quoteOf, replyOf, replyText, sendNote, threadRows, timeLine } from "./chatView";
+import { applyDelta, applyHistory, chatItems, emptyChat, type Chat, type ChatItem, type ChatMessage } from "./desktop";
+import { attachmentBubbles, bubbleTime, bubbles, dayLine, fileSize, fullTime, listTime, previewOf, quoteOf, replyOf, replyText, sameRow, sendNote, threadRows, timeLine, type ThreadRow } from "./chatView";
 
 const message = (text: string, parts?: ChatMessage["parts"]): ChatMessage => ({
   messageId: "m1",
@@ -199,5 +199,37 @@ describe("the unread bar", () => {
   it("isn't there when everything was read, or nothing was known", () => {
     expect(threadRows([item("a", 1, "lead")], false, 1).some((r) => r.t === "unread")).toBe(false);
     expect(threadRows([item("a", 1, "lead")]).some((r) => r.t === "unread")).toBe(false);
+  });
+});
+
+describe("sameRow", () => {
+  const ref = { machineId: "m", projectId: "p" };
+  const msg = (seq: number, author: string, text: string, state = "final"): ChatMessage => ({
+    messageId: `m${String(seq)}`,
+    projectRef: ref,
+    seq,
+    author,
+    text,
+    state,
+    createdAt: `2026-10-28T10:0${String(seq)}:00Z`,
+  });
+  const page = (messages: ChatMessage[]) => ({ messages, moreAfter: false, moreBefore: false, state: { projectRef: ref, lastSeq: messages.length, leadWorking: true, needsYou: false } });
+  const rowsOf = (chat: Chat) => threadRows(chatItems(chat, []), true);
+
+  it("redraws only the streaming bubble when a word comes", () => {
+    const chat = applyHistory(emptyChat, page([msg(1, "human", "Hi"), msg(2, "lead", "Hello."), msg(3, "human", "Status?"), msg(4, "lead", "Wor", "streaming")]), "latest");
+    const before = rowsOf(chat);
+    const after = rowsOf(applyDelta(chat, { projectRef: ref, messageId: "m4", offset: 3, append: "king on it", seq: 4 }, Date.now()));
+    expect(after.map((r) => r.id)).toEqual(before.map((r) => r.id));
+    expect(after.map((r, i) => sameRow(r, before[i] as ThreadRow))).toEqual([true, true, true, true, false]);
+  });
+
+  it("redraws the bubble above a new one in its burst, which loses its tail", () => {
+    const chat = applyHistory(emptyChat, page([msg(1, "lead", "One.")]), "latest");
+    const next = applyHistory(chat, page([msg(1, "lead", "One."), msg(2, "lead", "Two.")]), "latest");
+    const [day, one] = rowsOf(chat);
+    const [day2, one2] = rowsOf(next);
+    expect(sameRow(day as ThreadRow, day2 as ThreadRow)).toBe(true);
+    expect(sameRow(one as ThreadRow, one2 as ThreadRow)).toBe(false);
   });
 });

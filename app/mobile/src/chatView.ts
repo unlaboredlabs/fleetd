@@ -150,6 +150,24 @@ export type ThreadRow =
   /** Where what you haven't read starts, as Telegram's "Unread Messages" bar. */
   | { readonly t: "unread"; readonly id: string };
 
+/**
+ * Whether two rows draw the same: the thread makes its rows anew with each change (a streamed word), and a row that is
+ * the same draws nothing again. A row's message is made anew too, from the same hub message and fields.
+ */
+export const sameRow = (a: ThreadRow, b: ThreadRow): boolean => {
+  if (a === b) return true;
+  if (a.t !== b.t || a.id !== b.id) return false;
+  if (a.t === "item" && b.t === "item") return a.side === b.side && a.first === b.first && a.last === b.last && sameItem(a.item, b.item);
+  if (a.t === "day" && b.t === "day") return a.at === b.at;
+  return true;
+};
+
+const sameItem = (a: ChatItem, b: ChatItem): boolean => {
+  if (a === b) return true;
+  const keys = Object.keys(a) as Array<keyof ChatItem>;
+  return keys.length === Object.keys(b).length && keys.every((k) => a[k] === b[k]);
+};
+
 /** Messages this close together are one burst. */
 export const GROUP_MS = 5 * 60_000;
 
@@ -195,9 +213,24 @@ export interface Clock {
 
 const DAY_MS = 86_400_000;
 
+/**
+ * Formatters, made once each: making one is slow on the phone, and a thread asks for two per message each time it
+ * draws, which a streamed reply does with every word.
+ */
+const formatters = new Map<string, Intl.DateTimeFormat>();
+const formatter = (locale: string | undefined, options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat => {
+  const key = `${locale ?? ""}|${JSON.stringify(options)}`;
+  let made = formatters.get(key);
+  if (made === undefined) {
+    made = new Intl.DateTimeFormat(locale, options);
+    formatters.set(key, made);
+  }
+  return made;
+};
+
 /** The calendar day `ms` falls on in the clock's zone, as the UTC midnight of that date. */
 const dayOf = (ms: number, clock: Pick<Clock, "timeZone">): number => {
-  const parts = new Intl.DateTimeFormat("en-US", { timeZone: clock.timeZone, year: "numeric", month: "numeric", day: "numeric" }).formatToParts(ms);
+  const parts = formatter("en-US", { timeZone: clock.timeZone, year: "numeric", month: "numeric", day: "numeric" }).formatToParts(ms);
   const n = (type: string): number => Number(parts.find((p) => p.type === type)?.value ?? 0);
   return Date.UTC(n("year"), n("month") - 1, n("day"));
 };
@@ -205,8 +238,7 @@ const dayOf = (ms: number, clock: Pick<Clock, "timeZone">): number => {
 /** Days from `ms` to now, by the calendar in the clock's zone: 0 today, 1 yesterday. */
 const daysAgo = (ms: number, clock: Clock): number => Math.round((dayOf(clock.nowMs, clock) - dayOf(ms, clock)) / DAY_MS);
 
-const fmt = (ms: number, clock: Clock, options: Intl.DateTimeFormatOptions): string =>
-  new Intl.DateTimeFormat(clock.locale, { timeZone: clock.timeZone, ...options }).format(ms);
+const fmt = (ms: number, clock: Clock, options: Intl.DateTimeFormatOptions): string => formatter(clock.locale, { timeZone: clock.timeZone, ...options }).format(ms);
 
 const clockTime = (ms: number, clock: Clock): string => fmt(ms, clock, { hour: "numeric", minute: "2-digit" });
 

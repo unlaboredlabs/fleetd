@@ -54,9 +54,12 @@ const riseIn = (by: number, duration: number, delay: number) => (_: EntryAnimati
   return { initialValues: { opacity: 0, transform: [{ translateY: by }] }, animations: { opacity: timing(1), transform: [{ translateY: timing(0) }] } };
 };
 
-/** A bubble that came in while the chat was open: `step` places into its burst; yours quicker. */
+/**
+ * A bubble that came in while the chat was open: `step` places into its burst; yours quicker. The thread is a list
+ * drawn upside down (newest at its start), so its rise is down in the row's own terms.
+ */
 export const bubbleIn = (mine: boolean, step: number, reduce: boolean) =>
-  riseIn(reduce ? 0 : rise.enter, mine ? dur.enterMine : dur.enter, reduce ? 0 : Math.min(step, MAX_STEP) * dur.stagger);
+  riseIn(reduce ? 0 : -rise.enter, mine ? dur.enterMine : dur.enter, reduce ? 0 : Math.min(step, MAX_STEP) * dur.stagger);
 
 /** A list row that turned up while the list was on screen. */
 export const rowIn = (reduce: boolean) => riseIn(reduce ? 0 : rise.row, dur.rowIn, 0);

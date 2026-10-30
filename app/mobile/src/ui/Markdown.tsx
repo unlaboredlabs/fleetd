@@ -1,6 +1,7 @@
 // A bubble's markdown (markdown.ts) as native text: code in monospace, links that open in the browser, lists with
 // hanging bullets, tables that scroll sideways. `ink` is the bubble's text color; on the accent, links are underlined
-// in it rather than drawn in the accent.
+// in it rather than drawn in the accent. A bubble's words aren't selectable where they stand, as in Messages: holding
+// one opens its menu, whose Select Text has them.
 import * as Clipboard from "expo-clipboard";
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Linking, Pressable, ScrollView, StyleSheet, Text, View, type TextStyle } from "react-native";
@@ -33,7 +34,7 @@ function BlockView({ block, ink, onAccent, room }: { block: Block; ink: string; 
   switch (block.t) {
     case "p":
       return (
-        <Text style={base} selectable>
+        <Text style={base}>
           <Inlines nodes={block.inline} ink={ink} onAccent={onAccent} />
           {room === undefined ? null : (
             <Text style={[type.caption2, styles.room]} accessible={false}>
@@ -44,7 +45,7 @@ function BlockView({ block, ink, onAccent, room }: { block: Block; ink: string; 
       );
     case "h":
       return (
-        <Text style={[base, block.level <= 2 ? type.title3 : type.headline, { color: ink }]} accessibilityRole="header" selectable>
+        <Text style={[base, block.level <= 2 ? type.title3 : type.headline, { color: ink }]} accessibilityRole="header">
           <Inlines nodes={block.inline} ink={ink} onAccent={onAccent} />
         </Text>
       );
@@ -64,7 +65,7 @@ function BlockView({ block, ink, onAccent, room }: { block: Block; ink: string; 
           {block.items.map((item, i) => (
             <View key={i} style={styles.item}>
               <Text style={[base, styles.marker]}>{block.ordered ? `${String(block.start + i)}.` : "•"}</Text>
-              <Text style={[base, styles.itemText]} selectable>
+              <Text style={[base, styles.itemText]}>
                 <Inlines nodes={item} ink={ink} onAccent={onAccent} />
               </Text>
             </View>
