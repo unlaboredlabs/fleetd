@@ -642,3 +642,35 @@ async fn a_starting_hub_revokes_the_owner_key_and_deletes_its_file() {
     assert!(!file.exists());
     assert!(hub.auth.verify(&owner.key).is_err());
 }
+
+/// A hub frees its parts once its last handle goes: a cycle among them (a hook one part holds that holds another part
+/// back) keeps every test's database, files and runtime handles open until the test process ends.
+#[tokio::test]
+async fn a_dropped_hub_frees_its_parts() {
+    let home = tempfile::tempdir().unwrap();
+    let config = HubConfig {
+        home: home.path().to_path_buf(),
+        listen: Listen::default(),
+        url: None,
+        queue_ttl_sec: None,
+    };
+    let db = HubDb::open(home.path()).unwrap();
+    let parts = Arc::downgrade(&db);
+    let hub = build_on(db, config, Arc::new(SystemClock)).unwrap();
+    let (executors, leads, tasks) = (
+        Arc::downgrade(&hub.executors),
+        Arc::downgrade(&hub.leads),
+        Arc::downgrade(&hub.tasks),
+    );
+    drop(hub);
+    assert_eq!(
+        (
+            parts.strong_count(),
+            executors.strong_count(),
+            leads.strong_count(),
+            tasks.strong_count()
+        ),
+        (0, 0, 0, 0),
+        "the database, executors, leads and tasks outlive the hub"
+    );
+}
