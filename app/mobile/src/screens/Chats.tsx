@@ -247,7 +247,7 @@ function SwipeRow({ row, separator, onPress }: { row: ChatRow; separator: boolea
   const swipe = useRef<SwipeableMethods>(null);
   const acts = rowActions(row, usePrefs().pinned.length >= MAX_PINNED);
   const [read, pin, mute] = acts as [(typeof acts)[number], (typeof acts)[number], (typeof acts)[number]];
-  const tone = { accent: t.accent, success: t.success, warning: t.warning } as const;
+  const tone = { accent: t.accentFill, success: t.success, warning: t.warning } as const;
   const button = (a: (typeof acts)[number]) => (
     <Pressable
       key={a.label}
