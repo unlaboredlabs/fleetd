@@ -26,6 +26,7 @@ import { arrivalsOf, ENTER_MS, rowKeyOf, type Arrivals } from "../arrivals";
 import { attachmentBubbles, bubbleTime, bubbles, dayLine, fullTime, landingOf, quoteOf, replyOf, replyText, sameRow, sendNote, threadRows, type Bubble as BubbleData, type ThreadRow } from "../chatView";
 import { chatItems, emptyChat, isNavi, type AttachmentGetOutput, type AttachmentRef, type ChatItem } from "../desktop";
 import { useHub, useSession, type RootParams } from "../hubContext";
+import { linkStatus } from "../link";
 import { dispatchPrefs, usePrefs } from "../prefsStore";
 import type { Key } from "../store";
 import { space, type, useTheme, type Palette } from "../theme";
@@ -44,7 +45,6 @@ import { FileBubble, ImageBubble, ImageViewer, shareFile } from "../ui/Media";
 import type { MenuItem } from "../ui/Menu";
 import { bubbleIn, dur, ease, useReduceMotion } from "../ui/motion";
 import { SkeletonThread } from "../ui/Skeleton";
-import { ConnectionBanner, connectionWords } from "../ui/States";
 import { ApprovalCard } from "./ApprovalCard";
 import { TurnLine } from "./TurnLine";
 import { useNow } from "./time";
@@ -78,7 +78,7 @@ interface ThreadActions {
 export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "Chat">) {
   const t = useTheme();
   const reduce = useReduceMotion();
-  const { state, session, pairAgain } = useHub();
+  const { state, session } = useHub();
   const prefs = usePrefs();
   const chatKey = route.params.key;
   const insets = useSafeAreaInsets();
@@ -129,7 +129,7 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
     return () => clearTimeout(timer);
   }, [gone, navigation]);
 
-  const link = connectionWords(state.hub);
+  const link = linkStatus(state.hub);
   // Always a line under the name, as Telegram's "online": the title never jumps when the lead starts or stops.
   const quiet = project === undefined ? undefined : navi ? "Navi" : `on ${project.machineId}`;
   const status = link?.busy === true ? "Connecting…" : link !== undefined ? "Offline" : working ? "Working…" : chatState?.needsYou === true ? "Waiting for you" : quiet;
@@ -293,9 +293,6 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
           renderItem={renderRow}
         />
         {Platform.OS === "ios" ? <LinearGradient pointerEvents="none" colors={[t.thread, withOpacity(t.thread, 0.85), withOpacity(t.thread, 0)]} locations={[0, 0.55, 1]} style={[styles.topFade, { height: top + space.lg }]} /> : null}
-        <View pointerEvents="box-none" style={[styles.banner, { top: top + space.xs }]}>
-          <ConnectionBanner state={state.hub} onPairAgain={pairAgain} />
-        </View>
         {/* The composer and what sits on it ride on the keyboard. */}
         <KeyboardStickyView offset={{ closed: 0, opened: lift }} style={styles.dock} pointerEvents="box-none">
           {Platform.OS === "ios" ? <LinearGradient pointerEvents="none" colors={[withOpacity(t.thread, 0), withOpacity(t.thread, 0.9)]} style={[styles.bottomFade, { height: composerHeight + space.lg }]} /> : null}
@@ -907,7 +904,6 @@ const styles = StyleSheet.create({
   eventText: { textAlign: "center" },
   topFade: { position: "absolute", top: 0, left: 0, right: 0 },
   bottomFade: { position: "absolute", bottom: 0, left: 0, right: 0 },
-  banner: { position: "absolute", left: 0, right: 0 },
   dock: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, justifyContent: "flex-end" },
   down: { position: "absolute", right: space.md },
   downButton: { width: 44, height: 44, borderRadius: 22 },

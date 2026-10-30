@@ -219,8 +219,19 @@ function Hub({ paired, onForget }: { paired: Paired; onForget: (why?: string) =>
         ]);
       }
     };
-    return { session, state, paired, disconnect, pairAgain: () => onForget("This phone's key was refused: pair it again.") };
+    return { session, state, paired, disconnect };
   }, [session, state, paired, onForget]);
+
+  // A refused key is the one link state that asks something of the person: iOS's own alert, over whatever shows.
+  const refused = state.hub.phase === "refused" ? state.hub.message : undefined;
+  useEffect(() => {
+    if (refused === undefined) return;
+    haptics.warning();
+    Alert.alert("Pair This Phone Again", refused, [
+      { text: "Not Now", style: "cancel" },
+      { text: "Pair Again", onPress: () => onForget("This phone's key was refused: pair it again.") },
+    ]);
+  }, [refused, onForget]);
 
   return (
     <SessionContext.Provider value={session}>

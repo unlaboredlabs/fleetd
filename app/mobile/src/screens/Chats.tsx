@@ -30,7 +30,8 @@ import { rowIn, rowMove, rowOut, useReduceMotion } from "../ui/motion";
 import { rowFace } from "../ui/rowFace";
 import { SkeletonRow } from "../ui/Skeleton";
 import { StateGlyph } from "../ui/StateGlyph";
-import { Badge, ConnectionBanner, EmptyState } from "../ui/States";
+import { Badge, EmptyState } from "../ui/States";
+import { useLinkHeader } from "./linkHeader";
 import { useRefreshing } from "./refresh";
 import { useNow } from "./time";
 
@@ -67,13 +68,14 @@ const useArrived = (keys: readonly string[]): ReadonlySet<string> => {
 export function Chats({ navigation }: NativeStackScreenProps<{ Chats: undefined }, "Chats">) {
   const t = useTheme();
   const reduce = useReduceMotion();
-  const { state, session, pairAgain } = useHub();
+  const { state, session } = useHub();
   const prefs = usePrefs();
   const root = useNavigation<NavigationProp<RootParams>>();
   const [typed, setTyped] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const refreshing = useRefreshing(state.projects, state.hub.phase);
   const query = queryOf(typed);
+  useLinkHeader(navigation, "Chats");
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -146,12 +148,7 @@ export function Chats({ navigation }: NativeStackScreenProps<{ Chats: undefined 
             tintColor={t.secondary}
           />
         }
-        ListHeaderComponent={
-          <View>
-            <ConnectionBanner state={state.hub} onPairAgain={pairAgain} />
-            {query === "" && all !== undefined && all.length > 0 ? <Filters value={filter} onChange={setFilter} counts={counts} /> : null}
-          </View>
-        }
+        ListHeaderComponent={query === "" && all !== undefined && all.length > 0 ? <Filters value={filter} onChange={setFilter} counts={counts} /> : undefined}
         ListEmptyComponent={empty}
         renderItem={({ item: line, index }) => {
           const next = lines[index + 1];
