@@ -3,8 +3,9 @@
 // new recording gets new names, so the immutable cache never serves a stale clip.
 //
 //   node site/media.mjs upload     CI on main (.github/workflows/site-media.yml): puts each file the bucket doesn't hold
-//                                  yet, with a year's immutable Cache-Control, then calls the SITE_DEPLOY_HOOK so the
-//                                  page switches to them. Skips, and passes, while the R2 secrets aren't set.
+//                                  yet, with a year's immutable Cache-Control, then, while production's page still
+//                                  serves any of them from Vercel, calls the SITE_DEPLOY_HOOK so it switches. Skips,
+//                                  and passes, while the R2 secrets aren't set.
 //   node media.mjs build           the Vercel build (vercel.json, from site/): points home.html at each file BASE already
 //                                  serves; the rest stay on the repo's own files. So the page never names an object the
 //                                  upload hasn't finished. Never fails the build.
@@ -110,9 +111,11 @@ async function upload() {
     console.log(`uploaded ${name} as ${BASE}/${key}`);
   }
   console.log(`media: ${fresh.length} uploaded, ${all.length - fresh.length} already in ${BUCKET}`);
-  if (fresh.length === 0) return;
-  // The deploy that came with this push may have run before the upload finished, and kept these on Vercel.
-  if (process.env.SITE_DEPLOY_HOOK) {
+  // The deploy that came with this push may have run before the upload finished, and kept these on Vercel; so may an
+  // earlier run's, when the hook wasn't set then.
+  if (await live(all.map(({ key }) => `${BASE}/${key}`))) {
+    console.log("media: production already serves all of them from R2");
+  } else if (process.env.SITE_DEPLOY_HOOK) {
     const res = await fetch(process.env.SITE_DEPLOY_HOOK, { method: "POST" });
     if (!res.ok) throw new Error(`the deploy hook answered ${res.status}`);
     console.log("media: asked Vercel for a fresh deploy of main");
@@ -130,14 +133,20 @@ async function build() {
 async function unchanged() {
   if (process.env.VERCEL_ENV !== "production") return 0;
   const urls = await served();
-  if (urls.size === 0) return 0;
-  try {
-    const res = await fetch(`https://${process.env.VERCEL_PROJECT_PRODUCTION_URL || "fleetd.sh"}/home`, { signal: AbortSignal.timeout(10_000) });
-    const live = await res.text();
-    if (res.ok && [...urls.values()].every((url) => live.includes(url))) return 0;
-  } catch {}
+  if (urls.size === 0 || (await live([...urls.values()]))) return 0;
   console.log(`media: production still serves some of ${BASE}'s media from Vercel`);
   return 1;
+}
+
+/** Whether production's landing page names each of `urls`; false when it can't be read. */
+async function live(urls) {
+  try {
+    const res = await fetch(`https://${process.env.VERCEL_PROJECT_PRODUCTION_URL || "fleetd.sh"}/home`, { signal: AbortSignal.timeout(10_000) });
+    const page = await res.text();
+    return res.ok && urls.every((url) => page.includes(url));
+  } catch {
+    return false;
+  }
 }
 
 function check() {
