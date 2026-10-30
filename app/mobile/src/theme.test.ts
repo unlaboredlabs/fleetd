@@ -8,6 +8,7 @@ vi.mock("@react-navigation/native", () => ({ DarkTheme: { colors: {} }, DefaultT
 const { useTheme } = await import("./theme");
 
 const tokens = readFileSync(new URL("../../desktop/src/renderer/ui/tokens.css", import.meta.url), "utf8");
+const shareView = readFileSync(new URL("../plugins/share-extension/ShareView.swift", import.meta.url), "utf8");
 
 /** A desktop token's value in one theme's block of tokens.css. */
 const desktop = (theme: "light" | "dark", name: string): string => {
@@ -50,4 +51,15 @@ describe("the accent", () => {
       expect(contrast(t.onAccent, t.accentFill)).toBeGreaterThanOrEqual(4.5);
     });
   }
+
+  it("is the share extension's too", () => {
+    const swift = (name: string): string[] =>
+      /static let (\w+) = Color\(UIColor \{ \$0\.userInterfaceStyle == \.dark \? UIColor\(hex: 0x(\w{6})\) : UIColor\(hex: 0x(\w{6})\) \}\)/
+        .exec(shareView.split("\n").find((l) => l.includes(`static let ${name} =`)) ?? "")
+        ?.slice(2)
+        .map((h) => `#${h}`) ?? [];
+    expect(swift("accent")).toEqual([desktop("dark", "accent"), desktop("light", "accent")]);
+    expect(swift("accentFill")).toEqual([desktop("dark", "accent-fill"), desktop("light", "accent-fill")]);
+    expect(shareView).not.toContain("Color.accentColor");
+  });
 });
