@@ -183,10 +183,12 @@ preview loads; the Vercel build (`media.mjs build`) rewrites its poster paths, a
 with the R2 URL of each file that `BASE` already answers for, and leaves the rest on Vercel.
 
 On a push to main that changes them, the Site media workflow (`.github/workflows/site-media.yml`, `media.mjs upload`)
-puts each file the bucket doesn't hold yet, over R2's S3 API with the runner's `aws`, then calls the deploy hook
-(`SITE_DEPLOY_HOOK`). Vercel's own deploy of that push may run before the upload ends: it keeps the new files on Vercel,
-and the hook's deploy switches them. So the page never names an object that isn't there. The workflow skips, and
-passes, until the repository has:
+puts each file the bucket doesn't hold yet, over R2's S3 API with the runner's `aws`, then, while fleetd.sh/home still
+serves any of them from Vercel, calls the deploy hook (`SITE_DEPLOY_HOOK`, Vercel project settings above). Vercel's own
+deploy of that push usually runs before the upload ends: it keeps the new files on Vercel, and the hook's deploy
+switches them. So the page never names an object that isn't there. Without the hook, they switch with the next
+production deploy, which the Ignored Build Step lets through for it. The workflow skips, and passes, until the
+repository has:
 
 | name | kind | value |
 |---|---|---|
@@ -196,7 +198,7 @@ passes, until the repository has:
 
 The bucket needs `media.unlabored.net` as its custom domain (R2 › the bucket › Settings › Custom Domains). The page
 loads the media without `crossorigin`, so the bucket needs no CORS rule. Run the workflow by hand (Actions › Site media
-› Run workflow) after setting them, or after emptying the bucket. `.github/site-check.mjs` (CI's `site` job) runs `node
+› Run workflow) after setting them or the hook, or after emptying the bucket. `.github/site-check.mjs` (CI's `site` job) runs `node
 site/media.mjs check`: it fails when the page names a media file that isn't in `site/`, so it wouldn't be uploaded, or
 one a build would leave on Vercel. To check the live page:
 
