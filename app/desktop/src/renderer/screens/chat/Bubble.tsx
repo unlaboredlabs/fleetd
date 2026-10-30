@@ -27,6 +27,7 @@ import {
 } from "../../ui";
 import { useBubbleActions } from "./actions";
 import { fmtBytes } from "./attachments";
+import { ImageViewer, ImageViewerContext, useOpenImage } from "./ImageViewer";
 import { Block } from "./blocks/Block";
 import { bubblesOf, isWide, quoteOf, TAPBACK_WORD, TAPBACKS, tapbackSend, type Bubble, type Tapback } from "./bubbles";
 import { MessageReceipt, ReceiptMarkView } from "./Composer";
@@ -34,6 +35,7 @@ import { shortClock } from "./format";
 import { authorLabel, ENTER_MS, isMineRow, type Arrival, type Row } from "./model";
 import { plainText } from "./plain";
 import { useLooked } from "./looked";
+import { shotsOf } from "./shots";
 import { markOf, useShown } from "./shown";
 import type { ProjectRef } from "./slots";
 import { bubbleKey, toggleTapback, useTapbacks } from "./tapbacks";
@@ -60,12 +62,20 @@ function FileChip({ file }: { file: AttachmentRef }) {
   );
 }
 
-// An image shows itself, fetched once its row is on screen (the list only mounts visible rows). Until then, and
-// if it can't be read, it is a file like any other.
+// An image shows itself, fetched once its row is on screen (the list only mounts visible rows), and opens large when
+// clicked. Until then, and if it can't be read, it is a file like any other.
 function ImageAttachment({ project, file }: { project: ProjectRef; file: AttachmentRef }) {
   const got = useToolQuery("attachment_get", { projectRef: project, attachmentId: file.attachmentId });
+  const open = useOpenImage();
   if (got.data === undefined) return <FileChip file={file} />;
-  return <img className={s.attachmentImage} src={`data:${got.data.mime};base64,${got.data.dataB64}`} alt={file.name} title={file.name} />;
+  const img = <img className={s.attachmentImage} src={`data:${got.data.mime};base64,${got.data.dataB64}`} alt={file.name} title={file.name} />;
+  return open === undefined ? (
+    img
+  ) : (
+    <button type="button" className={s.attachmentOpen} onClick={() => open(file.attachmentId)} aria-label={`Open ${file.name}`}>
+      {img}
+    </button>
+  );
 }
 
 function Attachment({ project, file }: { project: ProjectRef; file: AttachmentRef }) {
@@ -281,57 +291,62 @@ export function MessageView({ row: r, mineLatest, enter }: { row: Extract<Row, {
   const tail = useEnter(enter, bubbles.length);
   const box = useRef<HTMLDivElement>(null);
   useLooked(box, i.id);
+  const shots = useMemo(() => shotsOf(i, bubbles), [i, bubbles]);
+  const [viewing, setViewing] = useState<string | undefined>(undefined);
   return (
-    <div
-      ref={box}
-      className={cx(s.message, r.run && s.messageHead, (r.history || i.author === "agent") && s.quietMessage, mine && s.mine)}
-      data-entry="message"
-      data-author={i.author}
-      data-mine={mine ? "" : undefined}
-    >
-      {r.head && !mine && i.author !== "lead" ? (
-        <div className={s.head} data-head>
-          <Text size="xs" tone="quiet">
-            {r.by ?? authorLabel(i)}
-          </Text>
-        </div>
-      ) : null}
-      {r.reply !== undefined ? (
-        <button type="button" className={cx(s.quote, quote.className)} style={quote.style} disabled={target === undefined} onClick={() => target !== undefined && actions?.show(target)} aria-label={`Replying to: ${r.reply.quote}`}>
-          <Truncate size="xs" tone="quiet" expand="none">
-            {r.reply.quote}
-          </Truncate>
-        </button>
-      ) : null}
-      {typing ? (
-        <TypingLine enter={enter} />
-      ) : (
-        bubbles.map((b, n) => (
-          <BubbleLine
-            key={b.key}
-            item={i}
-            bubble={b}
-            first={r.run && n === 0}
-            last={r.end && n === bubbles.length - 1 && !files}
-            lead={lead}
-            answer={r.answered?.[b.key]}
-            tapback={lead ? marks[bubbleKey(i.id, b.key)] : undefined}
-            enter={enter}
-            step={n}
-            opening={n === 0}
-            mine={mine}
-            receipt={mine && n === bubbles.length - 1 ? mineLatest : undefined}
-          />
-        ))
-      )}
-      {files && actions !== undefined ? (
-        <div className={cx(s.attachments, tail.className)} style={tail.style}>
-          {i.attachments.map((a) => (
-            <Attachment key={a.attachmentId} project={actions.project} file={a} />
-          ))}
-        </div>
-      ) : null}
-      {mine && actions !== undefined ? <MessageReceipt project={actions.project} item={i} latest={mineLatest} /> : null}
-    </div>
+    <ImageViewerContext.Provider value={shots.length > 0 ? setViewing : undefined}>
+      <div
+        ref={box}
+        className={cx(s.message, r.run && s.messageHead, (r.history || i.author === "agent") && s.quietMessage, mine && s.mine)}
+        data-entry="message"
+        data-author={i.author}
+        data-mine={mine ? "" : undefined}
+      >
+        {r.head && !mine && i.author !== "lead" ? (
+          <div className={s.head} data-head>
+            <Text size="xs" tone="quiet">
+              {r.by ?? authorLabel(i)}
+            </Text>
+          </div>
+        ) : null}
+        {r.reply !== undefined ? (
+          <button type="button" className={cx(s.quote, quote.className)} style={quote.style} disabled={target === undefined} onClick={() => target !== undefined && actions?.show(target)} aria-label={`Replying to: ${r.reply.quote}`}>
+            <Truncate size="xs" tone="quiet" expand="none">
+              {r.reply.quote}
+            </Truncate>
+          </button>
+        ) : null}
+        {typing ? (
+          <TypingLine enter={enter} />
+        ) : (
+          bubbles.map((b, n) => (
+            <BubbleLine
+              key={b.key}
+              item={i}
+              bubble={b}
+              first={r.run && n === 0}
+              last={r.end && n === bubbles.length - 1 && !files}
+              lead={lead}
+              answer={r.answered?.[b.key]}
+              tapback={lead ? marks[bubbleKey(i.id, b.key)] : undefined}
+              enter={enter}
+              step={n}
+              opening={n === 0}
+              mine={mine}
+              receipt={mine && n === bubbles.length - 1 ? mineLatest : undefined}
+            />
+          ))
+        )}
+        {files && actions !== undefined ? (
+          <div className={cx(s.attachments, tail.className)} style={tail.style}>
+            {i.attachments.map((a) => (
+              <Attachment key={a.attachmentId} project={actions.project} file={a} />
+            ))}
+          </div>
+        ) : null}
+        {mine && actions !== undefined ? <MessageReceipt project={actions.project} item={i} latest={mineLatest} /> : null}
+        {viewing !== undefined && actions !== undefined ? <ImageViewer project={actions.project} shots={shots} at={viewing} onAt={setViewing} /> : null}
+      </div>
+    </ImageViewerContext.Provider>
   );
 }

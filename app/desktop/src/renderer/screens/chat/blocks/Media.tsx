@@ -1,9 +1,11 @@
-// Checklists, and an image or clip already on the hub (attachment_get, read once the bubble is on screen).
+// Checklists, and an image or clip already on the hub (attachment_get, read once the bubble is on screen). In the chat
+// an image opens large in the viewer when clicked; a clip plays where it is.
 import { Check, Circle } from "lucide-react";
 import type { AttachmentBlock, ChecklistBlock } from "../../../../shared/contracts";
 import { useToolQuery } from "../../../src/data/react";
 import { cx, Text } from "../../../ui";
 import { useBubbleActions } from "../actions";
+import { useOpenImage } from "../ImageViewer";
 import b from "./blocks.module.css";
 
 export function Checklist({ list }: { list: ChecklistBlock }) {
@@ -32,9 +34,11 @@ export function Checklist({ list }: { list: ChecklistBlock }) {
 
 export function Media({ media, clip }: { media: AttachmentBlock; clip: boolean }) {
   const project = useBubbleActions()?.project;
+  const open = useOpenImage();
   const got = useToolQuery("attachment_get", { projectRef: project ?? { machineId: "", projectId: "" }, attachmentId: media.attachmentId }, { enabled: project !== undefined });
   const data = got.data;
   const src = data === undefined ? undefined : `data:${data.mime};base64,${data.dataB64}`;
+  const alt = media.caption ?? data?.name ?? "";
   return (
     <figure className={b.media} data-block={clip ? "clip" : "image"}>
       {src === undefined ? (
@@ -45,8 +49,12 @@ export function Media({ media, clip }: { media: AttachmentBlock; clip: boolean }
         </div>
       ) : clip && data?.mime.startsWith("video/") === true ? (
         <video className={b.mediaItem} src={src} controls preload="metadata" />
+      ) : clip || open === undefined ? (
+        <img className={b.mediaItem} src={src} alt={alt} />
       ) : (
-        <img className={b.mediaItem} src={src} alt={media.caption ?? data?.name ?? ""} />
+        <button type="button" className={b.mediaOpen} onClick={() => open(media.attachmentId)} aria-label={alt === "" ? "Open image" : `Open ${alt}`}>
+          <img className={b.mediaItem} src={src} alt={alt} />
+        </button>
       )}
       {media.caption !== undefined ? (
         <figcaption>
