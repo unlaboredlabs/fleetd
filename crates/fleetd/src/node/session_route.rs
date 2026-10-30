@@ -193,10 +193,6 @@ fn seal_to(to: &[u8; 32], plain: &[u8]) -> Option<String> {
 struct Seal {
     secrets: Vec<(String, String)>,
     relay_key: String,
-    /// A person's browser screen for a Navi of this machine's (the hub seals that one itself, D239): it runs on the
-    /// profile the Navi keeps, inside its folder's fence, as the Navi's own browser does. Never from an agent's node.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    navi: Option<String>,
 }
 
 /// A value the agent's node read from its 1Password for a `fill_credential` of a session hosted elsewhere, sealed to
@@ -242,7 +238,6 @@ async fn seal_for(
             .cloned()
             .collect(),
         relay_key: B64.encode(relay_key),
-        navi: None,
     };
     let plain = zeroize::Zeroizing::new(serde_json::to_vec(&seal).map_err(|e| e.to_string())?);
     let public: [u8; 32] = B64
@@ -1182,13 +1177,15 @@ pub async fn host(
                         ),
                     });
                 };
-                if let Some(navi) = &seal.navi {
+                // Only the hub's own word opens a Navi's profile (a person's screen_open, D239): never anything sealed,
+                // which any node can make for any runner.
+                if let Some(navi) = host.navi.as_ref().map(|n| n.to_string()) {
                     let browser = matches!(
                         &host.frame.call,
                         BrowserCall::SessionStart(start)
                             if start.kind.is_none_or(|k| k == SessionKind::Browser)
                     );
-                    let folder = navi_folder(navi);
+                    let folder = navi_folder(&navi);
                     let (Some(broker), Some(folder), true) = (&broker, folder, browser) else {
                         return Some(SessionHostResult {
                             id: host.id,
@@ -1198,7 +1195,7 @@ pub async fn host(
                             ),
                         });
                     };
-                    SessionHooks::navi(broker.as_ref(), &key, navi, &folder);
+                    SessionHooks::navi(broker.as_ref(), &key, &navi, &folder);
                 }
                 hosted.lock().insert(
                     key.clone(),

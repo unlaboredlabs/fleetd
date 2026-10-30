@@ -246,6 +246,10 @@ pub struct SessionHostFrame {
     /// With `session_start` or `fill_credential`: the agent's node's sealed box for this runner
     /// ([`SealedForRunner::data_b64`]).
     pub sealed: Option<NonEmpty>,
+    /// With `session_start` of a person's own browser screen (`screen_open`) for a Navi of the runner's: the Navi,
+    /// whose kept profile it runs on. Set by the hub alone, never from what an agent's node sent; a runner opens a
+    /// Navi's profile for nothing else.
+    pub navi: Option<crate::ids::ProjectId>,
 }
 
 /// Hub -> the runner's node: a step of the agent's for the recording of the session it hosts under `hostKey`.

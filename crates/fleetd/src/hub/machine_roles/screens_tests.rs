@@ -17,7 +17,7 @@ use fleetd_contracts::people::{HubRole, PersonId, PersonName};
 use serde_json::{Value, json};
 use tokio::sync::mpsc;
 
-use super::tests::{AT, NOW_MS, hub_at, mid, remote, report_hosts, route, start};
+use super::tests::{AT, NOW_MS, hub_at, mid, remote, report_hosts, route, route_once, start};
 use crate::hub::api::{CallError, Caller, Hub, registry};
 use crate::hub::people::People;
 use crate::hub::store::test_clock::ManualClock;
@@ -28,6 +28,8 @@ struct Seen {
     op: String,
     key: String,
     seal: Option<Value>,
+    /// The Navi the hub's own frame named: the only word a runner takes to open a Navi's profile.
+    navi: Option<String>,
 }
 
 /// Gives `m` a box key the test holds, and links a fake node for it: it opens what the hub seals to it, starts each
@@ -102,7 +104,8 @@ fn runner(hub: &Arc<Hub>, m: &str) -> mpsc::UnboundedReceiver<Seen> {
                     }))
                     .unwrap();
                     hub.node_commands.resolve(&m, reply);
-                    let _ = seen_tx.send(Seen { op: op.to_owned(), key, seal });
+                    let navi = host.navi.as_ref().map(|n| n.to_string());
+                    let _ = seen_tx.send(Seen { op: op.to_owned(), key, seal, navi });
                 }
                 Some(frame) = link.recv() => {
                     if let HubToNode::BrowserControl(c) = frame
@@ -189,7 +192,7 @@ async fn a_person_opens_a_screen_on_the_machine_they_pick_and_drives_it_from_the
     let seal = started.seal.unwrap();
     assert_eq!(seal["secrets"], json!([]));
     assert!(seal["relayKey"].is_string());
-    assert!(seal.get("navi").is_none());
+    assert!(started.navi.is_none());
     // It takes one of mac1's slots, as any screen does, and lists with the caller's project.
     assert_eq!(live_on(&hub, "mac1"), 1);
     let listed = call(
@@ -294,12 +297,52 @@ async fn a_navis_browser_opened_by_its_owner_runs_on_its_kept_profile_on_its_mac
         .unwrap();
     assert_eq!(out["session"]["control"], "human", "{out}");
     let started = next(&mut devbox).await;
-    assert_eq!(started.seal.unwrap()["navi"], "ada-navi");
+    // The hub's own frame names the Navi; its seal doesn't, which any node could make.
+    assert_eq!(started.navi.as_deref(), Some("ada-navi"));
+    assert!(started.seal.unwrap().get("navi").is_none());
     // A project's browser gets no Navi's profile.
     call(&hub, &desk, "screen_open", open("devbox", "browser"))
         .await
         .unwrap();
-    assert!(next(&mut devbox).await.seal.unwrap().get("navi").is_none());
+    assert!(next(&mut devbox).await.navi.is_none());
+}
+
+/// An agent's node seals what it likes to the runner the hub names: a seal that names a Navi reaches the runner as it
+/// was, and the hub's frame names no Navi, so the runner opens no Navi's profile for an agent.
+#[tokio::test]
+async fn an_agents_start_never_names_a_navi_whatever_its_node_sealed() {
+    let (hub, _home, _clock) = setup();
+    let _devbox = remote(&hub);
+    let mut mac1 = runner(&hub, "mac1");
+    let (ada, _) = person(&hub, "Ada", "operate");
+    navi(&hub, "ada-navi", &ada);
+    let first = route_once(&hub, "th-1", SessionHost::Ios, start(), None)
+        .await
+        .unwrap();
+    let to = first.seal_to.expect("sealed to mac1 first");
+    let public: [u8; 32] = B64.decode(to.as_str()).unwrap().try_into().unwrap();
+    let forged = json!({ "secrets": [], "relayKey": B64.encode([1u8; 32]), "navi": "ada-navi" });
+    let sealed = crypto_box::PublicKey::from(public)
+        .seal(&mut crypto_box::aead::OsRng, forged.to_string().as_bytes())
+        .unwrap();
+    let routed = route_once(
+        &hub,
+        "th-1",
+        SessionHost::Ios,
+        start(),
+        Some(json!({ "runner": "mac1", "dataB64": B64.encode(sealed) })),
+    )
+    .await
+    .unwrap();
+    assert_eq!(routed.runner, mid("mac1"));
+    let seen = next(&mut mac1).await;
+    assert_eq!(seen.op, "session_start");
+    assert_eq!(
+        seen.seal.unwrap()["navi"],
+        "ada-navi",
+        "the seal went as it was"
+    );
+    assert!(seen.navi.is_none(), "the hub's frame names no Navi");
 }
 
 #[tokio::test]

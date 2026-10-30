@@ -6,8 +6,8 @@
 //! control to the person as soon as it is live. It is recorded as any screen is, and ends with `screen_end`, or after
 //! [`IDLE_MS`] without the person's input.
 //!
-//! A Navi's browser runs on the Navi's own machine, on the profile it keeps (D221): the seal names the Navi, and the
-//! runner's node opens that profile for it. Only the Navi's owner reaches it (navi/owner.rs guards every tool).
+//! A Navi's browser runs on the Navi's own machine, on the profile it keeps (D221): the hub's own `session_host` frame
+//! names the Navi (never the seal, which anyone can make), and the runner's node opens that profile for it. Only the Navi's owner reaches it (navi/owner.rs guards every tool).
 //!
 //! People's screens take slots as any screen does. A full machine refuses, or takes the request in line
 //! (`screen_waits`): each slot that frees there goes to the oldest person waiting, and agents' starts see the slots
@@ -275,10 +275,10 @@ async fn screen_open(
     // A slot is free and nobody waits before this person: theirs now.
     let first = runner.held == 0 && runner.open() > 0;
     if first {
-        let sealed = sealed_for(&hub, &r, input.kind, &runner_id, navi)?;
+        let sealed = sealed_for(&hub, &runner_id)?;
         let start = hub
             .db
-            .transaction(|c| prepare(c, &opener, &r, input.kind, &runner_id, sealed, now))?;
+            .transaction(|c| prepare(c, &opener, &r, input.kind, &runner_id, sealed, navi, now))?;
         let session = launch(&hub, start).await?;
         return Ok(ScreenOpenOutput {
             next: Some(
@@ -423,17 +423,16 @@ struct Start {
     place: Place,
     frame: BrowserCallFrame,
     sealed: NonEmpty,
+    /// A Navi's browser: the Navi whose kept profile it runs on, said in the hub's frame.
+    navi: Option<ProjectId>,
     by: String,
 }
 
 /// What the hub seals to the runner for a person's screen, as an agent's node seals its own (node/session_route.rs
-/// `Seal`): no secrets, a relay key, and for a Navi's browser the Navi whose kept profile it runs on.
-fn seal(to: &str, navi: Option<&str>) -> Result<NonEmpty, String> {
+/// `Seal`): no secrets, and a relay key. A Navi's browser names its Navi in the hub's frame, never here.
+fn seal(to: &str) -> Result<NonEmpty, String> {
     let relay_key: [u8; 32] = rand::random();
-    let mut plain = json!({ "secrets": [], "relayKey": B64.encode(relay_key) });
-    if let Some(navi) = navi {
-        plain["navi"] = json!(navi);
-    }
+    let plain = json!({ "secrets": [], "relayKey": B64.encode(relay_key) });
     let public: [u8; 32] = B64
         .decode(to)
         .ok()
@@ -445,23 +444,16 @@ fn seal(to: &str, navi: Option<&str>) -> Result<NonEmpty, String> {
     Ok(NonEmpty::unchecked(B64.encode(sealed)))
 }
 
-/// The seal for a person's screen of `kind` in `r` on `runner`, to its box key. Read before any transaction: the store
-/// shares the database's connection.
-fn sealed_for(
-    hub: &Hub,
-    r: &ProjectRef,
-    kind: SessionKind,
-    runner: &MachineId,
-    navi: bool,
-) -> Result<NonEmpty, ToolError> {
+/// The seal for a person's screen on `runner`, to its box key. Read before any transaction: the store shares the
+/// database's connection.
+fn sealed_for(hub: &Hub, runner: &MachineId) -> Result<NonEmpty, ToolError> {
     let box_key = hub
         .store
         .machine_get(runner)?
         .and_then(|m| m.box_pub_key)
         .map(|k| k.to_string())
         .unwrap_or_default();
-    let navi = (navi && kind == SessionKind::Browser).then_some(r.project_id.as_str());
-    seal(&box_key, navi).map_err(|e| {
+    seal(&box_key).map_err(|e| {
         ToolError::new(
             ErrorCode::Failed,
             format!("{runner} has no key to seal a screen to: {e}."),
@@ -470,6 +462,7 @@ fn sealed_for(
 }
 
 /// Places a person's screen on `runner` and holds its slot: from here it counts there, as a start does.
+#[allow(clippy::too_many_arguments)]
 fn prepare(
     c: &Connection,
     opener: &Opener,
@@ -477,6 +470,7 @@ fn prepare(
     kind: SessionKind,
     runner: &MachineId,
     sealed: NonEmpty,
+    navi: bool,
     now: i64,
 ) -> Result<Start, StoreError> {
     let key = new_key();
@@ -503,6 +497,7 @@ fn prepare(
         place,
         frame,
         sealed,
+        navi: (navi && kind == SessionKind::Browser).then(|| r.project_id.clone()),
         by: format!("human:{}", opener.device),
     })
 }
@@ -512,11 +507,12 @@ async fn launch(hub: &Arc<Hub>, start: Start) -> Result<Option<BrowserSession>, 
     let place = &start.place;
     let answer = hub
         .node_commands
-        .host_session(
+        .host_navi_session(
             &place.runner,
             &place.key,
             &start.frame,
             Some(&start.sealed),
+            start.navi.as_ref(),
             START_WAIT,
         )
         .await;
@@ -666,7 +662,7 @@ pub fn serve_waits(hub: &Arc<Hub>) -> Result<usize, StoreError> {
             device: w.device.clone(),
         };
         let navi = is_navi(hub, &w.project)?;
-        let sealed = match sealed_for(hub, &w.project, w.kind, &w.runner, navi) {
+        let sealed = match sealed_for(hub, &w.runner) {
             Ok(sealed) => Some(sealed),
             Err(e) => {
                 tracing::warn!(error = %e.message, "a waiting person's screen can't be sealed; given up");
@@ -679,7 +675,7 @@ pub fn serve_waits(hub: &Arc<Hub>) -> Result<usize, StoreError> {
             }
             Ok(match sealed {
                 Some(sealed) => Some(prepare(
-                    c, &opener, &w.project, w.kind, &w.runner, sealed, now,
+                    c, &opener, &w.project, w.kind, &w.runner, sealed, navi, now,
                 )?),
                 None => None,
             })

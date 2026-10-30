@@ -143,7 +143,7 @@ pub(super) async fn route(
     }
 }
 
-async fn route_once(
+pub(super) async fn route_once(
     hub: &Hub,
     thread: &str,
     host: SessionHost,
