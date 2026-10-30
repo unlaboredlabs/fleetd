@@ -25,6 +25,11 @@ export const bubble = {
    * the side and `notchDrop` below, cuts the pinch between the corner and the tail.
    */
   tail: { width: 16, height: 9, angle: 32, tipRadius: 1.5, inset: 5.7, drop: 4.05, notch: 11.6, notchInset: 1.1, notchDrop: 6.2 },
+  /**
+   * A picture: as wide as this share of the screen whatever its shape (252.67 pt on a 402 pt screen, landscape or
+   * portrait), as tall as its shape makes it, up to `tallest` times its width (a 3:4 portrait, the tallest measured).
+   */
+  photo: { share: 0.6285, tallest: 4 / 3 },
   /** Emoji alone, without a bubble: one is drawn at `one`, two or three at `few`, each with its line's height. */
   jumbo: { one: 72, oneLineHeight: 86, few: 48, fewLineHeight: 57, most: 3 },
 } as const;
@@ -39,8 +44,16 @@ export const fitWidth = (lines: readonly number[], scale: number): number => Mat
 /** The widest a bubble draws on a screen `width` points wide. */
 export const bubbleMax = (width: number): number => Math.round(width * bubble.maxShare);
 
-// One emoji as a person sees it: a pictograph with its variation, skin tone and joined ones; a flag; a keycap.
-const emoji = /(?:\p{Extended_Pictographic}(?:️|\p{Emoji_Modifier})?(?:‍\p{Extended_Pictographic}(?:️|\p{Emoji_Modifier})?)*|\p{Regional_Indicator}{2}|[0-9#*]️?⃣)/gu;
+/** A picture's size on a screen `screen` points wide, from its width over its height. */
+export const photoSize = (screen: number, aspect: number): { width: number; height: number } => {
+  const width = Math.round(screen * bubble.photo.share * 3) / 3;
+  return { width, height: Math.round(Math.min(width / aspect, width * bubble.photo.tallest) * 3) / 3 };
+};
+
+// One emoji as Messages draws it big: a flag (first, as each of its letters is a pictograph too), a keycap, or a
+// pictograph shown as emoji, by default or asked for with VS16 (not ©, ™ or a bare ❤, which iOS draws as text), with
+// its skin tone, its joined ones and a subdivision flag's tags.
+const emoji = /(?:\p{Regional_Indicator}{2}|(?:\p{Emoji_Presentation}|\p{Extended_Pictographic}\u{FE0F})\p{Emoji_Modifier}?(?:\u{200D}(?:\p{Emoji_Presentation}|\p{Extended_Pictographic}\u{FE0F}?)\p{Emoji_Modifier}?)*(?:[\u{E0020}-\u{E007E}]+\u{E007F})?|[0-9#*]\u{FE0F}?\u{20E3})/gu;
 
 /** How many emoji `text` is, when it's emoji alone (spaces aside) and few enough to draw big; otherwise 0. */
 export const jumbo = (text: string): number => {

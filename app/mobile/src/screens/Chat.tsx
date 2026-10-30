@@ -595,7 +595,7 @@ function ItemView({
           </View>
         )}
         {files.map((b, i) => (
-          <MediaView key={i} bubble={b} chatKey={chatKey} mine actions={actions} when={when} target={messageId === undefined ? undefined : { id: messageId, part: 0, who }} />
+          <MediaView key={i} bubble={b} chatKey={chatKey} mine actions={actions} when={when} target={messageId === undefined ? undefined : { id: messageId, part: 0, who }} tail={last && i === files.length - 1} />
         ))}
         {note === undefined ? null : <Text style={[type.caption, styles.note, { color: retry ? t.danger : t.secondary }]}>{note}</Text>}
       </View>
@@ -623,7 +623,7 @@ function ItemView({
         />
       ))}
       {files.map((b, i) => (
-        <MediaView key={`f${String(i)}`} bubble={b} chatKey={chatKey} mine={false} actions={actions} when={when} target={messageId === undefined ? undefined : { id: messageId, part: 0, who }} />
+        <MediaView key={`f${String(i)}`} bubble={b} chatKey={chatKey} mine={false} actions={actions} when={when} target={messageId === undefined ? undefined : { id: messageId, part: 0, who }} tail={last && i === files.length - 1} />
       ))}
     </View>
   );
@@ -707,6 +707,7 @@ function MediaView({
   actions,
   when,
   target,
+  tail,
 }: {
   bubble: BubbleData;
   chatKey: Key;
@@ -714,6 +715,8 @@ function MediaView({
   actions: ThreadActions;
   when: string;
   target?: { id: string; part: number; who: string } | undefined;
+  /** The burst's last: it has the tail (not lifted in the menu, as a bubble's). */
+  tail: boolean;
 }) {
   const session = useSession();
   if (bubble.kind !== "image" && bubble.kind !== "file") return null;
@@ -731,9 +734,9 @@ function MediaView({
   ];
   const view = (held: boolean) =>
     bubble.kind === "image" ? (
-      <ImageBubble chatKey={chatKey} attachmentId={bubble.attachmentId} name={bubble.name} onOpen={held ? () => undefined : actions.openImage} />
+      <ImageBubble chatKey={chatKey} attachmentId={bubble.attachmentId} name={bubble.name} onOpen={held ? () => undefined : actions.openImage} side={mine ? "me" : "them"} tail={tail && !held} />
     ) : (
-      <FileBubble chatKey={chatKey} attachmentId={bubble.attachmentId} name={bubble.name} mime={bubble.mime} bytes={bubble.bytes} mine={mine} />
+      <FileBubble chatKey={chatKey} attachmentId={bubble.attachmentId} name={bubble.name} mime={bubble.mime} bytes={bubble.bytes} mine={mine} tail={tail && !held} />
     );
   return (
     <HoldMenu items={menu} title={when} radius={BUBBLE_RADIUS} align={mine ? "right" : "left"} preview={view(true)}>
@@ -785,7 +788,7 @@ function BubbleView({
       );
     case "image":
     case "file":
-      return <MediaView bubble={bubble} chatKey={chatKey} mine={false} actions={actions} when={when} target={target} />;
+      return <MediaView bubble={bubble} chatKey={chatKey} mine={false} actions={actions} when={when} target={target} tail={tail} />;
     case "ask":
       return (
         <View style={styles.ask}>
@@ -937,7 +940,8 @@ const styles = StyleSheet.create({
   pending: { opacity: 0.7 },
   note: { marginTop: 3, marginRight: 4, textAlign: "right" },
   them: { alignItems: "flex-start", paddingRight: 56, gap: metrics.gap },
-  by: { marginLeft: space.md, marginBottom: 1 },
+  // In line with the words in the bubble under it.
+  by: { marginLeft: metrics.padX, marginBottom: 1 },
   quote: { flexDirection: "row", gap: space.sm, borderRadius: 8, paddingVertical: 4, paddingRight: space.sm, marginBottom: 6, marginTop: 2, overflow: "hidden" },
   quoteRule: { width: 3 },
   quoteText: { flexShrink: 1 },

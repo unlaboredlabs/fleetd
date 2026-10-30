@@ -5,7 +5,7 @@ import { File, Paths } from "expo-file-system";
 import { useEffect, useState } from "react";
 import { Image, Modal, Pressable, ScrollView, Share, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { bubble } from "../bubble";
+import { bubble, bubbleMax, photoSize } from "../bubble";
 import { fileSize } from "../chatView";
 import type { AttachmentGetOutput } from "../desktop";
 import { useSession } from "../hubContext";
@@ -13,6 +13,7 @@ import type { Key } from "../store";
 import { space, type, useTheme } from "../theme";
 import { Glass } from "./Glass";
 import { haptics } from "./haptics";
+import { Tail, TAIL_REACH } from "./Bubble";
 import { Icon } from "./Icon";
 import { SkeletonBlock } from "./Skeleton";
 
@@ -41,11 +42,27 @@ export const shareFile = async (a: AttachmentGetOutput): Promise<void> => {
   await Share.share({ url: file.uri });
 };
 
-const MAX_W = 240;
-
-/** A picture in the thread: its own shape, at most 240 pt wide, a soft block while it loads. */
-export function ImageBubble({ chatKey, attachmentId, name, onOpen }: { chatKey: Key; attachmentId: string; name: string; onOpen: (a: AttachmentGetOutput) => void }) {
+/**
+ * A picture in the thread, sized as Messages sizes one (../bubble.ts): its own shape, a soft block while it loads. The
+ * last of a burst has the tail, cut from the picture: it's drawn TAIL_REACH taller, its box keeps the rest of it.
+ */
+export function ImageBubble({
+  chatKey,
+  attachmentId,
+  name,
+  onOpen,
+  side,
+  tail = false,
+}: {
+  chatKey: Key;
+  attachmentId: string;
+  name: string;
+  onOpen: (a: AttachmentGetOutput) => void;
+  side: "me" | "them";
+  tail?: boolean;
+}) {
   const t = useTheme();
+  const screen = useWindowDimensions();
   const got = useAttachment(chatKey, attachmentId);
   const [aspect, setAspect] = useState<number | undefined>(undefined);
   useEffect(() => {
@@ -59,9 +76,8 @@ export function ImageBubble({ chatKey, attachmentId, name, onOpen }: { chatKey: 
         <Text style={[type.footnote, { color: t.secondary }]}>{name} couldn't be read</Text>
       </View>
     );
-  if (got === undefined || aspect === undefined) return <SkeletonBlock width={MAX_W} height={MAX_W * 0.75} radius={bubble.radius} />;
-  const width = aspect >= 1 ? MAX_W : Math.max(160, MAX_W * aspect * 1.2);
-  const height = Math.min(320, Math.max(110, width / aspect));
+  const { width, height } = photoSize(screen.width, aspect ?? 4 / 3);
+  if (got === undefined || aspect === undefined) return <SkeletonBlock width={width} height={height} radius={bubble.radius} />;
   return (
     <Pressable
       accessibilityRole="imagebutton"
@@ -69,18 +85,26 @@ export function ImageBubble({ chatKey, attachmentId, name, onOpen }: { chatKey: 
       accessibilityHint="Opens it full screen"
       onPress={() => onOpen(got)}
     >
-      {({ pressed }) => (
-        <Image source={{ uri: uriOf(got) }} style={[styles.image, { width, height, backgroundColor: t.fillQuiet }, pressed && styles.pressed]} resizeMode="cover" />
-      )}
+      {({ pressed }) => {
+        const picture = <Image source={{ uri: uriOf(got) }} style={{ width, height: tail ? height + TAIL_REACH : height }} resizeMode="cover" />;
+        return (
+          <View style={pressed && styles.pressed}>
+            <View style={[styles.image, { width, height, backgroundColor: t.fillQuiet }]}>{picture}</View>
+            {tail ? <Tail side={side} picture={{ node: picture, size: { width, height } }} /> : null}
+          </View>
+        );
+      }}
     </Pressable>
   );
 }
 
 /** Any other file: its kind, name and size; tapping shares it (Save to Files, Quick Look in another app). */
-export function FileBubble({ chatKey, attachmentId, name, mime, bytes, mine }: { chatKey: Key; attachmentId: string; name: string; mime: string; bytes: number; mine: boolean }) {
+export function FileBubble({ chatKey, attachmentId, name, mime, bytes, mine, tail = false }: { chatKey: Key; attachmentId: string; name: string; mime: string; bytes: number; mine: boolean; tail?: boolean }) {
   const t = useTheme();
   const got = useAttachment(chatKey, attachmentId);
+  const screen = useWindowDimensions();
   const ink = mine ? t.onAccent : t.label;
+  const fill = mine ? t.accentFill : t.bubble;
   return (
     <Pressable
       accessibilityRole="button"
@@ -92,8 +116,9 @@ export function FileBubble({ chatKey, attachmentId, name, mime, bytes, mine }: {
         haptics.tap();
         void shareFile(got).catch(() => undefined);
       }}
-      style={({ pressed }) => [styles.file, { backgroundColor: mine ? t.accentFill : t.bubble }, pressed && styles.pressed]}
+      style={({ pressed }) => [styles.file, { backgroundColor: fill, maxWidth: bubbleMax(screen.width) }, pressed && styles.pressed]}
     >
+      {tail ? <Tail side={mine ? "me" : "them"} fill={fill} /> : null}
       <View style={[styles.fileIcon, { backgroundColor: mine ? "rgba(255,255,255,0.22)" : t.accentFill }]}>
         <Icon name={mime === "application/pdf" ? "pdf" : "file"} size={18} color="#FFFFFF" />
       </View>
@@ -159,10 +184,11 @@ export function ImageViewer({ image, onClose }: { image: AttachmentGetOutput | n
 }
 
 const styles = StyleSheet.create({
-  image: { borderRadius: bubble.radius, borderCurve: "continuous" },
+  image: { borderRadius: bubble.radius, borderCurve: "continuous", overflow: "hidden" },
   pressed: { opacity: 0.8 },
-  missing: { flexDirection: "row", alignItems: "center", gap: space.sm, borderRadius: 18, paddingHorizontal: space.md, paddingVertical: space.md },
-  file: { flexDirection: "row", alignItems: "center", gap: space.md, borderRadius: bubble.radius, borderCurve: "continuous", paddingVertical: 10, paddingLeft: 10, paddingRight: space.lg, maxWidth: 280 },
+  // A bubble's corners, side padding and widest (FileBubble); a file's icon sits 10 in.
+  missing: { flexDirection: "row", alignItems: "center", gap: space.sm, borderRadius: bubble.radius, borderCurve: "continuous", paddingHorizontal: bubble.padX, paddingVertical: bubble.padY },
+  file: { flexDirection: "row", alignItems: "center", gap: space.md, borderRadius: bubble.radius, borderCurve: "continuous", paddingVertical: 10, paddingLeft: 10, paddingRight: bubble.padX },
   fileIcon: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
   fileText: { flexShrink: 1, gap: 1 },
   strong: { fontWeight: "600" },
