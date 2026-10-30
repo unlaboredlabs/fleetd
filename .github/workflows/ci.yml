@@ -305,11 +305,21 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      # As build-release.yml's cli job: zig is the C toolchain for SQLite's and ring's build scripts.
-      - uses: mlugg/setup-zig@v2
+      # zig is the C toolchain for SQLite's and ring's build scripts, the version build-release.yml's cli job uses. It
+      # comes from the cache, keyed by version; on a miss, from ziglang.org itself, checked against its published
+      # sha256, rather than setup-zig's community mirrors on every run of a check that gates merges.
+      - id: zig
+        uses: actions/cache@v5
         with:
-          version: 0.17.0
-          use-cache: false
+          path: ~/zig
+          key: zig-0.17.0-x86_64-linux
+      - if: steps.zig.outputs.cache-hit != 'true'
+        run: |
+          curl -sSfL --retry 3 -o "$RUNNER_TEMP/zig.tar.xz" https://ziglang.org/download/0.17.0/zig-x86_64-linux-0.17.0.tar.xz
+          echo "1cbe9df9f27e6b78d14ccbca43b6703a404ef79ef1c463de901d7f088d4e2026  $RUNNER_TEMP/zig.tar.xz" | sha256sum -c -
+          mkdir -p ~/zig
+          tar -xJf "$RUNNER_TEMP/zig.tar.xz" -C ~/zig --strip-components=1
+      - run: echo "$HOME/zig" >> "$GITHUB_PATH"
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-zigbuild@0.23.4
