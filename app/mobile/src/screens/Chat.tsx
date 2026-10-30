@@ -15,7 +15,6 @@
 // thread (react-native-keyboard-controller), following a finger that drags the keyboard down.
 import * as Clipboard from "expo-clipboard";
 import { LinearGradient } from "expo-linear-gradient";
-import { useHeaderHeight } from "@react-navigation/elements";
 import type { NativeStackNavigationOptions, NativeStackScreenProps } from "@react-navigation/native-stack";
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ActivityIndicator, FlatList, Linking, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
@@ -46,17 +45,22 @@ import type { MenuItem } from "../ui/Menu";
 import { bubbleIn, dur, ease, useReduceMotion } from "../ui/motion";
 import { SkeletonThread } from "../ui/Skeleton";
 import { ApprovalCard } from "./ApprovalCard";
+import { Symbol } from "./manage/parts";
 import { TurnLine } from "./TurnLine";
 import { useNow } from "./time";
 
-export const chatOptions = (t: Palette): NativeStackNavigationOptions => ({
-  headerBackButtonDisplayMode: "minimal",
-  headerTintColor: t.label,
-  headerTitleAlign: "center",
-  // The thread runs under a clear bar, its glass title and back button floating over it, and fades out under them
-  // (Chat draws the fade). The list is upside down, so iOS 26's own edge effects would land on the wrong ends: off.
-  ...(Platform.OS === "ios" ? { headerTransparent: true, headerShadowVisible: false, scrollEdgeEffects: { top: "hidden", bottom: "hidden" } } : { headerStyle: { backgroundColor: t.bg } }),
-});
+/**
+ * On iOS the chat draws its own bar (ChatBar), its glass back button, title and Info floating over the thread, which
+ * fades out under them. The stack's bar stays hidden, as it is over the chats list: a bar the stack shows over a chat
+ * and hides again on the way back didn't leave with the chat but stood over the list sliding in, then slid off late
+ * (UIKit, iOS 26). Drawn in the screen, it goes with the chat, by the back button or a swipe from the edge.
+ */
+export const chatOptions = (t: Palette): NativeStackNavigationOptions =>
+  Platform.OS === "ios" ? { headerShown: false } : { headerBackButtonDisplayMode: "minimal", headerTintColor: t.label, headerTitleAlign: "center", headerStyle: { backgroundColor: t.bg } };
+
+/** The bar's height under the status bar, and its glass buttons', as iOS 26's own. */
+const BAR = 54;
+const BAR_BUTTON = 52;
 
 /** Scrolled up further than this from the newest, the button down shows. */
 const AWAY = 280;
@@ -82,7 +86,8 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   const prefs = usePrefs();
   const chatKey = route.params.key;
   const insets = useSafeAreaInsets();
-  const headerHeight = useHeaderHeight();
+  // Where the thread starts under the bar (iOS draws it over the thread; Android's stack draws it above).
+  const top = Platform.OS === "ios" ? insets.top + BAR : 0;
   const project = state.projects?.[chatKey];
   const chatState = state.chatStates[chatKey];
   const chat = state.chats[chatKey] ?? emptyChat;
@@ -133,13 +138,16 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   // Always a line under the name, as Telegram's "online": the title never jumps when the lead starts or stops.
   const quiet = project === undefined ? undefined : navi ? "Navi" : `on ${project.machineId}`;
   const status = link?.busy === true ? "Connecting…" : link !== undefined ? "Offline" : working ? "Working…" : chatState?.needsYou === true ? "Waiting for you" : quiet;
+  const openInfo = useCallback(() => navigation.navigate("ChatInfo", { screen: "Info", params: { key: chatKey } }), [navigation, chatKey]);
+  // Android's stack draws the bar.
   useEffect(() => {
+    if (Platform.OS === "ios") return;
     navigation.setOptions({
-      headerTitle: () => <ChatTitle picture={project} title={title} navi={navi} status={status} busy={working && link === undefined} />,
+      headerTitle: () => <ChatTitle picture={project} title={title} navi={navi} status={status} busy={working && link === undefined} onPress={openInfo} />,
       title,
     });
     // A picture set or removed (here or on another device) draws the header again: its id is all that changes.
-  }, [navigation, title, navi, status, working, link, project?.avatar]);
+  }, [navigation, title, navi, status, working, link, project?.avatar, openInfo]);
 
   const list = useRef<FlatList<ThreadRow>>(null);
   const [composerHeight, setComposerHeight] = useState(60);
@@ -175,7 +183,7 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   const scrollToRow = (find: (r: ThreadRow) => boolean, viewPosition: number) => {
     const at = newestFirst.findIndex(find);
     if (at < 0) return false;
-    list.current?.scrollToIndex({ index: at, animated: !reduce, viewPosition, viewOffset: viewPosition > 0.5 ? headerHeight : composerHeight });
+    list.current?.scrollToIndex({ index: at, animated: !reduce, viewPosition, viewOffset: viewPosition > 0.5 ? top : composerHeight });
     return true;
   };
 
@@ -260,7 +268,6 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   );
 
   const loading = !chat.loaded && chat.cached !== true;
-  const top = Platform.OS === "ios" ? headerHeight : 0;
   return (
     <View style={[styles.fill, { backgroundColor: t.thread }]}>
       <View style={styles.fill}>
@@ -294,6 +301,11 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
           renderItem={renderRow}
         />
         {Platform.OS === "ios" ? <LinearGradient pointerEvents="none" colors={[t.thread, withOpacity(t.thread, 0.85), withOpacity(t.thread, 0)]} locations={[0, 0.55, 1]} style={[styles.topFade, { height: top + space.lg }]} /> : null}
+        {Platform.OS === "ios" ? (
+          <ChatBar top={insets.top} onBack={() => navigation.goBack()} onInfo={openInfo}>
+            <ChatTitle picture={project} title={title} navi={navi} status={status} busy={working && link === undefined} onPress={openInfo} />
+          </ChatBar>
+        ) : null}
         {/* The composer and what sits on it ride on the keyboard. */}
         <KeyboardStickyView offset={{ closed: 0, opened: lift }} style={styles.dock} pointerEvents="box-none">
           {Platform.OS === "ios" ? <LinearGradient pointerEvents="none" colors={[withOpacity(t.thread, 0), withOpacity(t.thread, 0.9)]} style={[styles.bottomFade, { height: composerHeight + space.lg }]} /> : null}
@@ -375,25 +387,46 @@ function EmptyThread({ picture, title, navi, onPick }: { picture: Pictured | und
   );
 }
 
-/** The chat's name and how it is, in a glass capsule over the thread, as iOS 26's Telegram. */
-function ChatTitle({ picture, title, navi, status, busy }: { picture: Pictured | undefined; title: string; navi: boolean; status: string | undefined; busy: boolean }) {
+/** iOS's bar over the thread (chatOptions): glass back and Info buttons either side of the title, as the stack's own. */
+function ChatBar({ top, onBack, onInfo, children }: { top: number; onBack: () => void; onInfo: () => void; children: ReactNode }) {
+  const t = useTheme();
+  const button = (label: string, symbol: "chevron.left" | "info.circle", onPress: () => void) => (
+    <Glass interactive style={styles.barButton}>
+      <Pressable accessibilityRole="button" accessibilityLabel={label} style={styles.barHit} onPress={onPress}>
+        <Symbol ios={symbol} android={symbol === "info.circle" ? "info" : "arrow_back"} size={symbol === "info.circle" ? 26 : 24} color={t.label} />
+      </Pressable>
+    </Glass>
+  );
+  return (
+    <View style={[styles.bar, { top }]} pointerEvents="box-none">
+      {button("Back", "chevron.left", onBack)}
+      {children}
+      {button("Info", "info.circle", onInfo)}
+    </View>
+  );
+}
+
+/** The chat's name and how it is, in a glass capsule over the thread, as iOS 26's Telegram. Tapped, its Info, as Messages'. */
+function ChatTitle({ picture, title, navi, status, busy, onPress }: { picture: Pictured | undefined; title: string; navi: boolean; status: string | undefined; busy: boolean; onPress: () => void }) {
   const t = useTheme();
   return (
-    <Glass style={styles.titleGlass}>
-      <View style={styles.title} accessible accessibilityRole="header" accessibilityLabel={status === undefined ? title : `${title}, ${status}`}>
-        <Avatar name={title} navi={navi} size={30} picture={picture} />
-        <View style={styles.titleText}>
-          <Text style={[type.headline, { color: t.label }]} numberOfLines={1} maxFontSizeMultiplier={1.3}>
-            {title}
-          </Text>
-          {status === undefined ? null : (
-            <Text style={[type.caption2, { color: busy ? t.accent : t.secondary }]} numberOfLines={1} maxFontSizeMultiplier={1.3}>
-              {status}
+    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={status === undefined ? title : `${title}, ${status}`} accessibilityHint="Shows the chat's info" style={({ pressed }) => pressed && styles.pressed}>
+      <Glass style={styles.titleGlass}>
+        <View style={styles.title}>
+          <Avatar name={title} navi={navi} size={30} picture={picture} />
+          <View style={styles.titleText}>
+            <Text style={[type.headline, { color: t.label }]} numberOfLines={1} maxFontSizeMultiplier={1.3}>
+              {title}
             </Text>
-          )}
+            {status === undefined ? null : (
+              <Text style={[type.caption2, { color: busy ? t.accent : t.secondary }]} numberOfLines={1} maxFontSizeMultiplier={1.3}>
+                {status}
+              </Text>
+            )}
+          </View>
         </View>
-      </View>
-    </Glass>
+      </Glass>
+    </Pressable>
   );
 }
 
@@ -869,6 +902,9 @@ const styles = StyleSheet.create({
   starter: { borderRadius: 18, borderCurve: "continuous", paddingHorizontal: space.lg, paddingVertical: 12 },
   older: { paddingVertical: space.md },
   error: { position: "absolute", left: 0, right: 0, paddingHorizontal: space.lg, paddingVertical: space.xs, textAlign: "center" },
+  bar: { position: "absolute", left: 12, right: 12, height: BAR_BUTTON, flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 22 - BAR_BUTTON / 2 },
+  barButton: { width: BAR_BUTTON, height: BAR_BUTTON, borderRadius: BAR_BUTTON / 2 },
+  barHit: { flex: 1, alignItems: "center", justifyContent: "center" },
   titleGlass: { borderRadius: 22, borderCurve: "continuous" },
   title: { flexDirection: "row", alignItems: "center", gap: space.sm, maxWidth: 240, paddingLeft: 6, paddingRight: space.lg, paddingVertical: 5 },
   titleText: { flexShrink: 1 },

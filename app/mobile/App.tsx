@@ -251,7 +251,7 @@ function Root() {
     // changes the state with every word.
     <RootStack.Navigator screenOptions={{ headerTintColor: t.accent, contentStyle: { backgroundColor: t.bg }, freezeOnBlur: true }}>
       <RootStack.Screen name="Home" component={Tabs} options={{ headerShown: false, title: "Chats" }} />
-      <RootStack.Screen name="Chat" component={Chat} options={({ route }) => ({ ...chatOptions(t), ...infoOptions(t, () => nav.navigate("Info", { key: route.params.key })) })} />
+      <RootStack.Screen name="Chat" component={Chat} options={({ route }) => ({ ...chatOptions(t), ...infoOptions(t, () => nav.navigate("ChatInfo", { screen: "Info", params: { key: route.params.key } })) })} />
       {manageScreens(RootStack, t)}
     </RootStack.Navigator>
   );

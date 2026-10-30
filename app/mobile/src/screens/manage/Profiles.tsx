@@ -1,10 +1,9 @@
 // Agent Profiles, pushed from a project's screen, as the desktop's project Agents page: the hub's task profiles, each
 // checked when its lead may run agents on it (project_set). The default is always allowed; running tasks keep theirs.
-import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useState } from "react";
 import { RefreshControl, ScrollView } from "react-native";
 import { runsLine, type HubError } from "../../desktop";
-import { useHub, type RootParams } from "../../hubContext";
+import { useHub, type ChatInfoProps } from "../../hubContext";
 import { refOf } from "../../store";
 import { space, useTheme } from "../../theme";
 import { haptics } from "../../ui/haptics";
@@ -13,7 +12,7 @@ import { setProfile } from "./api";
 import { profileLines } from "./model";
 import { CheckRow, errorWords, Problem, useRead } from "./parts";
 
-export function Profiles({ route }: NativeStackScreenProps<RootParams, "Profiles">) {
+export function Profiles({ route }: ChatInfoProps<"Profiles">) {
   const t = useTheme();
   const { session } = useHub();
   const ref = refOf(route.params.key);

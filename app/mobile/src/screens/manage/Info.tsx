@@ -4,13 +4,12 @@
 // their PRs, read-only; then its name, the profiles its agents may run on and where it lives, and for a Navi Forget
 // Sign-ins. Delete last, red, asking first: in an action sheet, or, when uncommitted changes would be lost, in a sheet
 // that names them and wants its name typed (TypedDelete). What the person's role doesn't allow isn't offered.
-import { useFocusEffect } from "@react-navigation/native";
-import type { NativeStackScreenProps } from "@react-navigation/native-stack";
+import { StackActions, useFocusEffect } from "@react-navigation/native";
 import { useCallback, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Linking, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { listTime } from "../../chatView";
 import { isNavi, tilde, type ProjectSummary, type TodoItem } from "../../desktop";
-import { useHub, type RootParams } from "../../hubContext";
+import { useHub, type ChatInfoProps } from "../../hubContext";
 import { space, type, useTheme, type Palette } from "../../theme";
 import { Avatar } from "../../ui/Avatar";
 import { haptics } from "../../ui/haptics";
@@ -26,7 +25,7 @@ import { TypedDelete } from "./TypedDelete";
 
 const toneColor = (t: Palette, tone: Tone): string => (tone === "accent" ? t.accent : tone === "warning" ? t.warning : tone === "danger" ? t.danger : t.secondary);
 
-export function Info({ navigation, route }: NativeStackScreenProps<RootParams, "Info">) {
+export function Info({ navigation, route }: ChatInfoProps<"Info">) {
   const t = useTheme();
   const { state } = useHub();
   const key = route.params.key;
@@ -41,7 +40,7 @@ export function Info({ navigation, route }: NativeStackScreenProps<RootParams, "
   return <Page project={project} navigation={navigation} />;
 }
 
-function Page({ project: p, navigation }: { project: ProjectSummary; navigation: NativeStackScreenProps<RootParams, "Info">["navigation"] }) {
+function Page({ project: p, navigation }: { project: ProjectSummary; navigation: ChatInfoProps<"Info">["navigation"] }) {
   const t = useTheme();
   const now = useNow();
   const { state, session } = useHub();
@@ -86,7 +85,7 @@ function Page({ project: p, navigation }: { project: ProjectSummary; navigation:
   // screens (the list's rows slide with a LayoutAnimation, which must not land on a screen's removal).
   const doDelete = () => {
     setTyping(null);
-    navigation.popToTop();
+    navigation.getParent()?.dispatch(StackActions.popToTop());
     void deleteProject(session, p).then((r) => {
       if (!r.ok) return Alert.alert(`Couldn't delete ${p.title}`, errorWords(r.error));
       haptics.success();
