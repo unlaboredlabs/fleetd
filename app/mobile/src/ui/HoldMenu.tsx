@@ -71,7 +71,7 @@ export function HoldMenu({
     </Pressable>
   );
   if (NativeMenu !== null) {
-    const menu = (
+    return (
       <NativeMenu
         actions={items.map((m) => ({ id: m.label, title: m.label, systemImage: sfSymbol(m.icon), destructive: m.destructive === true }))}
         menuTitle={title}
@@ -82,8 +82,6 @@ export function HoldMenu({
         {face}
       </NativeMenu>
     );
-    // iOS hides the view while it's lifted: its ground stays, so what lies under it (a row's swipe actions) doesn't show.
-    return color === undefined ? menu : <View style={{ backgroundColor: color }}>{menu}</View>;
   }
   return (
     <>

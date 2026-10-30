@@ -50,6 +50,12 @@ const SYMBOLS = {
   unmute: ["bell", "notifications"],
   read: ["checkmark.message", "mark_chat_read"],
   unread: ["message.badge", "mark_chat_unread"],
+  // Filled, white on a swiped row's circles, as Messages draws them.
+  readFill: ["checkmark.message.fill", "mark_chat_read"],
+  unreadFill: ["message.badge.filled.fill", "mark_chat_unread"],
+  unpinFill: ["pin.slash.fill", "keep_off"],
+  muteFill: ["bell.slash.fill", "notifications_off"],
+  unmuteFill: ["bell.fill", "notifications"],
   plus: ["plus", "add"],
   photos: ["photo.on.rectangle", "photo_library"],
   takePhoto: ["camera", "photo_camera"],
