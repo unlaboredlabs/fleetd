@@ -8,3 +8,7 @@ with headless Chrome.
 
 `rounds.mjs` holds the polished Rounds (a shared hand-tuned body, crafted eyes, three finishes);
 `node app/shared/bot-icons/render-rounds.mjs` renders their sheets into `out/`.
+
+`glass/` renders the Rounds as real glass with Blender Cycles: `beings.json` holds the body and faces, `scene.py`
+the scene, and `BLENDER=/path/to/blender node app/shared/bot-icons/glass/render.mjs` renders (rerun until it says
+the sheets are done) and lays the sheets out in `out/glass/`.

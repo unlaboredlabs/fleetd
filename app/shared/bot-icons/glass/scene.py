@@ -156,7 +156,7 @@ def tones(field_hex):
     mid = hls(field, l=min(l, 0.47), ds=0.08 if s > 0.15 else 0)
     return {
         "light": linear(hls(mid, dl=0.1)),
-        "deep": linear(hls(mid, dl=-0.13)),
+        "deep": linear(hls(mid, dl=-0.08, ds=0.05)),
         "glass": linear(hls(field, l=0.95, s=min(s + 0.1, 0.8))),
         "ink": linear(hls(field, l=0.07, s=min(s + 0.2, 0.9))),
     }
@@ -212,7 +212,7 @@ def disc_material():
     t.links.new(clouds.outputs["Color"], cloud.inputs[7])
     # Part glow, part lit, so the colour holds and the shadow and the light through the glass still land on it.
     diffuse = node(t, "ShaderNodeBsdfDiffuse")
-    glow = node(t, "ShaderNodeEmission", Strength=0.12)
+    glow = node(t, "ShaderNodeEmission", Strength=0.4)
     t.links.new(cloud.outputs[2], diffuse.inputs["Color"])
     t.links.new(cloud.outputs[2], glow.inputs["Color"])
     add = t.nodes.new("ShaderNodeAddShader")
@@ -253,7 +253,7 @@ def glass_material():
     # stays crisp and bends the colour behind it.
     face_on = node(t, "ShaderNodeLayerWeight", Blend=0.3)
     through_frost = node(t, "ShaderNodeMapRange", **{"From Min": 0.0, "From Max": 0.8, "To Min": 0.16, "To Max": 0.0})
-    back_frost = node(t, "ShaderNodeMapRange", **{"From Min": 0.0, "From Max": 0.8, "To Min": 0.2, "To Max": 0.0})
+    back_frost = node(t, "ShaderNodeMapRange", **{"From Min": 0.0, "From Max": 0.8, "To Min": 0.26, "To Max": 0.0})
     t.links.new(face_on.outputs["Facing"], through_frost.inputs["Value"])
     t.links.new(face_on.outputs["Facing"], back_frost.inputs["Value"])
     frost = t.nodes.new("ShaderNodeBsdfTranslucent")
@@ -427,7 +427,7 @@ def build():
 
     # The key: soft, from above in front and a little left; it lights the disc and casts the contact shadow, but
     # never shows in the glass, so the glass's only highlights are the rim.
-    key = area("key", (-1.5, 3.6, 3.6), 3.0, 170)
+    key = area("key", (-1.5, 3.6, 3.6), 3.0, 120)
     key.visible_glossy = False
     key.visible_transmission = False
     rim_ring()
