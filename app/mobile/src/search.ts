@@ -28,10 +28,13 @@ export const queryOf = (typed: string): string => typed.trim().replace(/\s+/gu, 
 
 export const matchesName = (name: string, query: string): boolean => query !== "" && fold(name).includes(fold(query));
 
-/** A message's words around `query`, or undefined when it doesn't say it. */
-export const snippetOf = (text: string, query: string): { snippet: string; match: readonly [number, number] } | undefined => {
+/**
+ * A message's words around `query`, or undefined when it doesn't say it. `blocks`: a lead's or agent's words, whose
+ * fleetd-block fences never show as their JSON; a person's are the code they wrote.
+ */
+export const snippetOf = (text: string, query: string, blocks: boolean): { snippet: string; match: readonly [number, number] } | undefined => {
   if (query === "") return undefined;
-  const plain = previewText(text);
+  const plain = previewText(text, { blocks });
   const at = fold(plain).indexOf(fold(query));
   if (at < 0) return undefined;
   const cut = at > LEAD ? plain.lastIndexOf(" ", at - LEAD) + 1 || at - LEAD : 0;
@@ -50,7 +53,7 @@ export const searchMessages = (sources: Readonly<Record<Key, readonly ChatMessag
     for (const m of messages) {
       if (seen.has(m.messageId) || m.state === "streaming") continue;
       seen.add(m.messageId);
-      const found = snippetOf(m.text, query);
+      const found = snippetOf(m.text, query, m.author !== "human");
       if (found !== undefined) hits.push({ key, messageId: m.messageId, seq: m.seq, at: m.createdAt, author: m.author, ...found });
     }
   }

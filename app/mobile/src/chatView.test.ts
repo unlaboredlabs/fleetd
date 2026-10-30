@@ -52,6 +52,11 @@ describe("bubbles", () => {
     // Past the bubble cap, blocks ride in the last bubble's text: the chats list still never shows their JSON.
     const tail = `${fence}\n\nand more\n\n${fence}`;
     expect(previewOf({ author: "lead", text: tail, message: message(tail, [{ start: 0, end: tail.length }]) })).toBe("Couldn't show this and more Couldn't show this");
+    // Still streaming in: the chats list leaves the block out until the message is final.
+    const streaming = { ...message("One more:\n\n```fleetd-block\n{\"v\":1,\"ki"), state: "streaming" as const };
+    expect(previewOf({ author: "lead", text: streaming.text, message: streaming })).toBe("One more:");
+    // A person's own fence is what they wrote: the chats list shows it as text.
+    expect(previewOf({ author: "human", text: fence })).toBe('You: {"v":1,"kind":"table","columns":["PR",""],"rows":[]}');
   });
 });
 

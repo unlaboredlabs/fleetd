@@ -194,7 +194,9 @@ function BubbleLine(props: {
   const wide = isWide(bubble);
   const jumbo = !block && EMOJI_ONLY.test(bubble.text.trim());
   // A lead's block that didn't show: its chip, without a bubble around it.
-  const bare = jumbo || (!block && unshownOnly(bubble.text));
+  // Only a lead's or agent's words hold blocks; a person's fleetd-block fence is code they wrote.
+  const blocks = item.author !== "human";
+  const bare = jumbo || (blocks && !block && unshownOnly(bubble.text));
   // A mark on the message as a whole (a nudge's Show) rings its first bubble.
   const mark = markOf(actions?.shown, item.id, bubble.key) ?? (props.opening ? markOf(actions?.shown, item.id) : undefined);
   const box = useRef<HTMLDivElement>(null);
@@ -256,7 +258,7 @@ function BubbleLine(props: {
           data-bubble={block ? bubble.block.kind : "text"}
           data-part={bubble.key}
         >
-          {block ? <Block block={bubble.block} answer={props.answer} /> : jumbo ? bubble.text.trim() : <Message text={bubble.text} project={actions?.project} />}
+          {block ? <Block block={bubble.block} answer={props.answer} /> : jumbo ? bubble.text.trim() : <Message text={bubble.text} project={actions?.project} blocks={blocks} />}
           {props.tapback !== undefined ? (
             <span className={s.tapbacks} role="img" aria-label={`You reacted: ${TAPBACK_WORD[props.tapback]}`}>
               {props.tapback}
