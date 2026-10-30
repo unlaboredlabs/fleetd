@@ -1,10 +1,9 @@
 fleetd
 https://fleetd.sh
 
-A software factory on your own machines.
+Software factories, reinvented as fast as the models improve.
 
-You ask a project's lead. Agents build it on your machines, a reviewer checks
-every change, and a merge train lands it.
+You set the direction. Agents build, review and ship it while you sleep.
 
   curl -fsSL https://fleetd.sh | sh
 
