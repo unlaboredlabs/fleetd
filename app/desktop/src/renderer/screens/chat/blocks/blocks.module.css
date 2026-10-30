@@ -222,6 +222,16 @@
   border-radius: 14px;
   object-fit: contain;
 }
+/* An image you can open large: the image itself is the button. */
+.mediaOpen {
+  display: block;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 14px;
+  background: none;
+  cursor: zoom-in;
+}
 .mediaWait {
   display: grid;
   place-items: center;

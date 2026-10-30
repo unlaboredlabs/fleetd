@@ -566,6 +566,16 @@ span.changeUndo {
   border-radius: var(--radius-sm);
   object-fit: contain;
 }
+/* An image you can open large: the image itself is the button. */
+.attachmentOpen {
+  display: block;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  cursor: zoom-in;
+}
 .attachmentIcon {
   flex: none;
   width: 14px;
