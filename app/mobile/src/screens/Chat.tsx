@@ -22,7 +22,7 @@ import { KeyboardChatScrollView, KeyboardStickyView, useReanimatedKeyboardAnimat
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { arrivalsOf, ENTER_MS, rowKeyOf, type Arrivals } from "../arrivals";
-import { attachmentBubbles, bubbleTime, bubbles, dayLine, fullTime, landingOf, quoteOf, replyOf, replyText, sameRow, sendNote, threadRows, type Bubble as BubbleData, type ThreadRow } from "../chatView";
+import { attachmentBubbles, bubbles, dayLine, fullTime, landingOf, quoteOf, replyOf, replyText, sameRow, sendNote, threadRows, type Bubble as BubbleData, type ThreadRow } from "../chatView";
 import { chatItems, emptyChat, isNavi, type AttachmentGetOutput, type AttachmentRef, type ChatItem } from "../desktop";
 import { useHub, useSession, type RootParams } from "../hubContext";
 import { linkStatus } from "../link";
@@ -31,7 +31,8 @@ import type { Key } from "../store";
 import { space, type, useTheme, type Palette } from "../theme";
 import { upload } from "../upload";
 import { Avatar, type Pictured } from "../ui/Avatar";
-import { Bubble } from "../ui/Bubble";
+import { bubble as metrics, jumbo } from "../bubble";
+import { Bubble, Jumbo } from "../ui/Bubble";
 import { Button } from "../ui/Button";
 import { Card } from "../ui/Card";
 import { Composer, type Reply } from "../ui/Composer";
@@ -531,7 +532,6 @@ function ItemView({
   const now = useNow();
   const session = useSession();
   const gap = first ? styles.groupGap : styles.tightGap;
-  const time = bubbleTime(item.at, now);
   const when = fullTime(item.at, now);
   const inline = item.message?.item;
   if (inline?.kind === "command_approval") return <InlineApproval chatKey={chatKey} requestId={inline.requestId} state={inline.state} />;
@@ -568,19 +568,23 @@ function ItemView({
                       }
                     : undefined
                 }
-                bubble={(tail) => (
-                  <Bubble side="me" tail={tail && last && files.length === 0} time={time}>
-                    {replied === undefined ? null : <Quote who={quotedWho} quote={replied.quote} onAccent onPress={quotedId === undefined ? undefined : () => actions.jumpTo(quotedId)} />}
-                    <Markdown text={words} ink={t.onAccent} onAccent room={time} />
-                  </Bubble>
-                )}
+                bubble={(tail) =>
+                  replied === undefined && jumbo(words) > 0 ? (
+                    <Jumbo side="me" text={words} count={jumbo(words)} />
+                  ) : (
+                    <Bubble side="me" tail={tail && last && files.length === 0}>
+                      {replied === undefined ? null : <Quote who={quotedWho} quote={replied.quote} onAccent onPress={quotedId === undefined ? undefined : () => actions.jumpTo(quotedId)} />}
+                      <Markdown text={words} ink={t.onAccent} onAccent fit />
+                    </Bubble>
+                  )
+                }
               />
             </View>
             {retry ? <Icon name="error" size={22} color={t.danger} /> : null}
           </View>
         )}
         {files.map((b, i) => (
-          <MediaView key={i} bubble={b} chatKey={chatKey} mine actions={actions} time={time} when={when} target={messageId === undefined ? undefined : { id: messageId, part: 0, who }} />
+          <MediaView key={i} bubble={b} chatKey={chatKey} mine actions={actions} when={when} target={messageId === undefined ? undefined : { id: messageId, part: 0, who }} />
         ))}
         {note === undefined ? null : <Text style={[type.caption, styles.note, { color: retry ? t.danger : t.secondary }]}>{note}</Text>}
       </View>
@@ -591,8 +595,6 @@ function ItemView({
   const streaming = item.state === "streaming";
   // Nothing written yet: the turn line under it says what the lead does.
   if (parts.length === 0 && files.length === 0 && streaming) return null;
-  // The time goes on the message's last bubble of words.
-  const timed = parts.findLastIndex((b) => b.kind === "text");
   return (
     <View style={[styles.them, gap]}>
       {first && item.author === "agent" ? <Text style={[type.caption, styles.by, { color: t.secondary }]}>{item.message?.by ?? "Agent"}</Text> : null}
@@ -605,12 +607,12 @@ function ItemView({
           chatKey={chatKey}
           actions={actions}
           target={messageId === undefined || streaming ? undefined : { id: messageId, part: i, who }}
-          time={i === timed && files.length === 0 && !streaming ? time : undefined}
+          fit={!streaming}
           when={when}
         />
       ))}
       {files.map((b, i) => (
-        <MediaView key={`f${String(i)}`} bubble={b} chatKey={chatKey} mine={false} actions={actions} time={time} when={when} target={messageId === undefined ? undefined : { id: messageId, part: 0, who }} />
+        <MediaView key={`f${String(i)}`} bubble={b} chatKey={chatKey} mine={false} actions={actions} when={when} target={messageId === undefined ? undefined : { id: messageId, part: 0, who }} />
       ))}
     </View>
   );
@@ -684,15 +686,14 @@ function HeldBubble({
 }
 
 /** A bubble's corners (ui/Bubble.tsx), and a picture's or a file's (ui/Media.tsx): the shape it lifts in. */
-const BUBBLE_RADIUS = 18;
+const BUBBLE_RADIUS = metrics.radius;
 
-/** A picture or a file in the thread, with its time; held, it lifts with Reply and Share. */
+/** A picture or a file in the thread; held, it lifts with Reply and Share. */
 function MediaView({
   bubble,
   chatKey,
   mine,
   actions,
-  time,
   when,
   target,
 }: {
@@ -700,7 +701,6 @@ function MediaView({
   chatKey: Key;
   mine: boolean;
   actions: ThreadActions;
-  time?: string | undefined;
   when: string;
   target?: { id: string; part: number; who: string } | undefined;
 }) {
@@ -720,9 +720,9 @@ function MediaView({
   ];
   const view = (held: boolean) =>
     bubble.kind === "image" ? (
-      <ImageBubble chatKey={chatKey} attachmentId={bubble.attachmentId} name={bubble.name} time={time} onOpen={held ? () => undefined : actions.openImage} />
+      <ImageBubble chatKey={chatKey} attachmentId={bubble.attachmentId} name={bubble.name} onOpen={held ? () => undefined : actions.openImage} />
     ) : (
-      <FileBubble chatKey={chatKey} attachmentId={bubble.attachmentId} name={bubble.name} mime={bubble.mime} bytes={bubble.bytes} mine={mine} time={time} />
+      <FileBubble chatKey={chatKey} attachmentId={bubble.attachmentId} name={bubble.name} mime={bubble.mime} bytes={bubble.bytes} mine={mine} />
     );
   return (
     <HoldMenu items={menu} title={when} radius={BUBBLE_RADIUS} align={mine ? "right" : "left"} preview={view(true)}>
@@ -738,8 +738,8 @@ function BubbleView({
   chatKey,
   actions,
   target,
-  time,
   when,
+  fit,
 }: {
   bubble: BubbleData;
   tail: boolean;
@@ -747,8 +747,9 @@ function BubbleView({
   chatKey: Key;
   actions: ThreadActions;
   target: { id: string; part: number; who: string } | undefined;
-  time: string | undefined;
   when: string;
+  /** The words take only their longest line's width: not while they still stream in. */
+  fit: boolean;
 }) {
   const t = useTheme();
   switch (bubble.kind) {
@@ -760,21 +761,25 @@ function BubbleView({
           when={when}
           text={bubble.text}
           target={target}
-          bubble={(withTail) => (
-            <Bubble side="them" tail={withTail && tail} time={time}>
-              <Markdown text={bubble.text} ink={t.label} room={time} />
-            </Bubble>
-          )}
+          bubble={(withTail) =>
+            jumbo(bubble.text) > 0 ? (
+              <Jumbo side="them" text={bubble.text} count={jumbo(bubble.text)} />
+            ) : (
+              <Bubble side="them" tail={withTail && tail}>
+                <Markdown text={bubble.text} ink={t.label} fit={fit} />
+              </Bubble>
+            )
+          }
         />
       );
     case "image":
     case "file":
-      return <MediaView bubble={bubble} chatKey={chatKey} mine={false} actions={actions} time={time} when={when} target={target} />;
+      return <MediaView bubble={bubble} chatKey={chatKey} mine={false} actions={actions} when={when} target={target} />;
     case "ask":
       return (
         <View style={styles.ask}>
           <Bubble side="them" tail={tail}>
-            <Markdown text={bubble.question} ink={t.label} />
+            <Markdown text={bubble.question} ink={t.label} fit />
           </Bubble>
           {canAnswer ? (
             <View style={styles.options}>
@@ -895,7 +900,7 @@ function SelectText({ text, onClose }: { text: string | null; onClose: () => voi
 
 const styles = StyleSheet.create({
   fill: { flex: 1 },
-  list: { paddingHorizontal: space.md, flexGrow: 1 },
+  list: { paddingHorizontal: metrics.margin, flexGrow: 1 },
   emptyThread: { flex: 1, alignItems: "center", justifyContent: "center", gap: space.sm, paddingHorizontal: space.xl, transform: [{ scaleY: -1 }] },
   center: { textAlign: "center" },
   starters: { alignSelf: "stretch", gap: space.sm, marginTop: space.lg },
@@ -912,15 +917,15 @@ const styles = StyleSheet.create({
   timeChip: { borderRadius: 12, paddingHorizontal: 10, paddingVertical: 3 },
   unreadBar: { alignItems: "center", paddingVertical: 5, marginTop: space.md, marginHorizontal: -space.md },
   strong: { fontWeight: "600" },
-  groupGap: { marginTop: 10 },
-  tightGap: { marginTop: 2 },
+  groupGap: { marginTop: metrics.burstGap },
+  tightGap: { marginTop: metrics.gap },
   litRow: { borderRadius: 20 },
-  me: { alignItems: "flex-end", paddingLeft: 56, gap: 2 },
+  me: { alignItems: "flex-end", paddingLeft: 56, gap: metrics.gap },
   mineRow: { flexDirection: "row", alignItems: "center", gap: space.sm, maxWidth: "100%" },
   mineBubble: { flexShrink: 1 },
   pending: { opacity: 0.7 },
   note: { marginTop: 3, marginRight: 4, textAlign: "right" },
-  them: { alignItems: "flex-start", paddingRight: 56, gap: 2 },
+  them: { alignItems: "flex-start", paddingRight: 56, gap: metrics.gap },
   by: { marginLeft: space.md, marginBottom: 1 },
   quote: { flexDirection: "row", gap: space.sm, borderRadius: 8, paddingVertical: 4, paddingRight: space.sm, marginBottom: 6, marginTop: 2, overflow: "hidden" },
   quoteRule: { width: 3 },
