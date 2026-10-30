@@ -372,6 +372,8 @@ async fn person_remove(
         .ok_or_else(|| unknown_person(id))?;
     // Their Claude subscription goes with them: nobody's work runs on it again.
     crate::hub::claude_accounts::tools::forget_person(&hub, &person.person_id).await;
+    // And their 1Password token.
+    crate::hub::onepassword::forget_person(&hub, &person.person_id).await;
     // So does their GitHub connection: revoked at GitHub, and gone from their orders' agents.
     crate::hub::github_app::sessions::forget_person(&hub, &person.person_id).await;
     announce(

@@ -20,6 +20,7 @@ pub mod load;
 pub mod mask;
 pub mod mcp_probe;
 pub mod mcp_servers;
+pub mod onepassword_tokens;
 pub mod order_env;
 pub mod power;
 pub mod preview;

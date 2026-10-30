@@ -99,6 +99,7 @@ fn launch(id: &str, mode: RuntimeMode, workspace: SessionWorkspace) -> SessionCa
         order_id: None,
         setup: None,
         claude_account: None,
+        onepassword: None,
     })
 }
 

@@ -4,8 +4,8 @@
 //!   refuses it.
 //! - [`outgoing`]: the proxy passes each message for the driver through it.
 //!
-//! A fill reads the reference with the session's vault (onepassword.rs: the project's `OP_SERVICE_ACCOUNT_TOKEN`, a
-//! cache per session, backoff on rate limits), checks that the page and the field's form are on the item's own
+//! A fill reads the reference with the session's vault (onepassword.rs: the project's `OP_SERVICE_ACCOUNT_TOKEN`, else
+//! its person's, a cache per session, backoff on rate limits), checks that the page and the field's form are on the item's own
 //! website, seals the session (its scrubber learns the value, agent-browser's policy file denies its reads, and the
 //! proxy runs only agent-browser's own script shapes and refuses the rest, [`sealed_refusal`] and shapes.rs), then
 //! types the value over the node's own connection and submits, in one step ([`fill`]). The value never passes the
@@ -123,11 +123,10 @@ impl Broker {
         .ok_or_else(|| {
             refuse(
                 ErrorCode::Failed,
-                format!("This project has no 1Password service account token ({TOKEN_ENV})."),
-                &format!(
-                    "ask your lead for {TOKEN_ENV}: a 1Password service account token that can read the item's \
-                     vault, which a person enters with request_secret as a project or order variable"
-                ),
+                format!("There is no 1Password service account token for this work ({TOKEN_ENV})."),
+                "ask your lead: the person whose order this is saves a service account token that can read the \
+                 item's vault in the app's Settings › Your accounts › 1Password, or a person enters one with \
+                 request_secret as a project or order variable",
             )
         })?;
         let vault = Arc::new(SessionVault {

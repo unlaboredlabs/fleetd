@@ -28,7 +28,7 @@ use crate::hub::tasks::ports::{LaunchRequest, PortError, TaskPorts};
 const AT: &str = "2026-10-27T10:00:00.000Z";
 const TOKEN: &str = "sk-ant-oat01-never-on-the-hub";
 
-fn lab() -> MachineId {
+pub(crate) fn lab() -> MachineId {
     MachineId::unchecked("lab")
 }
 
@@ -278,7 +278,7 @@ fn a_launch_refuses_an_account_on_a_node_too_old_to_run_one() {
 
 // Over a real hub.
 
-fn machine(hub: &Hub, id: &str) {
+pub(crate) fn machine(hub: &Hub, id: &str) {
     let machine = serde_json::from_value(json!({
         "machineId": id, "name": id, "tags": [], "status": "online", "lastSeenAt": AT, "nodeVersion": "0.1.0",
     }))
@@ -286,7 +286,7 @@ fn machine(hub: &Hub, id: &str) {
     hub.store.machine_upsert(&machine, None).unwrap();
 }
 
-fn hub() -> (Arc<Hub>, tempfile::TempDir) {
+pub(crate) fn hub() -> (Arc<Hub>, tempfile::TempDir) {
     let home = tempfile::tempdir().unwrap();
     let config = HubConfig {
         home: home.path().to_path_buf(),
@@ -304,12 +304,12 @@ fn hub() -> (Arc<Hub>, tempfile::TempDir) {
     (hub, home)
 }
 
-fn people(hub: &Hub) -> People {
+pub(crate) fn people(hub: &Hub) -> People {
     People::new(hub.db.clone(), hub.clock.clone())
 }
 
 /// A device of `person`, an admin's on every machine when they administer, else operate.
-fn device(hub: &Hub, person: &PersonId, role: &str) -> Caller {
+pub(crate) fn device(hub: &Hub, person: &PersonId, role: &str) -> Caller {
     let grants: Vec<Grant> =
         serde_json::from_value(json!([{ "role": role, "machines": "*" }])).unwrap();
     hub.auth
@@ -318,18 +318,18 @@ fn device(hub: &Hub, person: &PersonId, role: &str) -> Caller {
         .info
 }
 
-fn member(hub: &Hub, name: &str) -> PersonId {
+pub(crate) fn member(hub: &Hub, name: &str) -> PersonId {
     people(hub)
         .create(&PersonName::unchecked(name), HubRole::Member)
         .unwrap()
         .person_id
 }
 
-fn owner(hub: &Hub) -> PersonId {
+pub(crate) fn owner(hub: &Hub) -> PersonId {
     people(hub).ensure_owner().unwrap().person_id
 }
 
-fn order(
+pub(crate) fn order(
     hub: &Hub,
     r: &ProjectRef,
     by: Option<&PersonId>,
@@ -356,14 +356,14 @@ fn order(
     w.workstream_id
 }
 
-fn project() -> ProjectRef {
+pub(crate) fn project() -> ProjectRef {
     ProjectRef {
         machine_id: lab(),
         project_id: ProjectId::unchecked("p1"),
     }
 }
 
-async fn call(
+pub(crate) async fn call(
     hub: &Arc<Hub>,
     caller: &Caller,
     tool: &str,
@@ -373,7 +373,7 @@ async fn call(
 }
 
 /// Every text value of every row of every table.
-fn every_row(hub: &Hub) -> String {
+pub(crate) fn every_row(hub: &Hub) -> String {
     hub.db
         .with(|c| {
             let tables: Vec<String> = c
@@ -399,7 +399,7 @@ fn every_row(hub: &Hub) -> String {
         .unwrap()
 }
 
-fn sealed(value: &str) -> String {
+pub(crate) fn sealed(value: &str) -> String {
     use base64::Engine;
     let secret = crypto_box::SecretKey::generate(&mut crypto_box::aead::OsRng);
     let boxed = secret
@@ -409,9 +409,9 @@ fn sealed(value: &str) -> String {
     base64::engine::general_purpose::STANDARD.encode(boxed)
 }
 
-/// Links a node holding project p1 that answers account calls as a node would (a test fails with the token
-/// masked), handing each call to the test.
-async fn node(hub: &Arc<Hub>, caps: &[&str]) -> mpsc::UnboundedReceiver<SessionCall> {
+/// Links a node holding project p1 that answers account and 1Password calls as a node would (a Claude test fails
+/// with the token masked; a 1Password test lists two vaults), handing each call to the test.
+pub(crate) async fn node(hub: &Arc<Hub>, caps: &[&str]) -> mpsc::UnboundedReceiver<SessionCall> {
     let (tx, mut rx) = mpsc::unbounded_channel();
     hub.executors
         .attach(
@@ -455,6 +455,17 @@ async fn node(hub: &Arc<Hub>, caps: &[&str]) -> mpsc::UnboundedReceiver<SessionC
                     json!({ "ok": { "kind": "claude_account_saved" } })
                 }
                 SessionCall::ReadFile { .. } => json!({ "ok": { "kind": "file" } }),
+                SessionCall::OnePasswordToken {
+                    sealed: Some(_), ..
+                } => {
+                    json!({ "ok": { "kind": "onepassword_saved", "fingerprint": "0b5e55ed" } })
+                }
+                SessionCall::OnePasswordToken { sealed: None, .. } => {
+                    json!({ "ok": { "kind": "onepassword_saved" } })
+                }
+                SessionCall::OnePasswordTest { .. } => {
+                    json!({ "ok": { "kind": "onepassword_tested", "vaults": ["Agents", "Shared"] } })
+                }
                 SessionCall::ClaudeAccountTest { .. } => {
                     json!({ "ok": { "kind": "claude_account_tested",
                     "ok": false, "error": "Invalid API key: ***CLAUDE_CODE_OAUTH_TOKEN***" } })
@@ -702,7 +713,7 @@ async fn a_person_connects_their_own_subscription_tests_it_and_it_goes_with_them
     );
 }
 
-fn request(order: fleetd_contracts::ledger::WorkstreamId, id: &str) -> LaunchRequest {
+pub(crate) fn request(order: fleetd_contracts::ledger::WorkstreamId, id: &str) -> LaunchRequest {
     LaunchRequest {
         project_id: ProjectId::unchecked("p1"),
         project_ref: project(),
@@ -717,7 +728,7 @@ fn request(order: fleetd_contracts::ledger::WorkstreamId, id: &str) -> LaunchReq
     }
 }
 
-async fn launched(
+pub(crate) async fn launched(
     calls: &mut mpsc::UnboundedReceiver<SessionCall>,
 ) -> fleetd_contracts::sessions::SessionLaunch {
     loop {

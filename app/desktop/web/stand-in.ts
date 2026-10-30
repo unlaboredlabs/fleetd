@@ -80,6 +80,7 @@ const fleetdApi = (file: File): FleetdApi => {
       googleClient: () => Promise.resolve({ ok: false, error: notHere }),
       googlePubsub: () => Promise.resolve({ ok: false, error: notHere }),
       claudeAccount: () => Promise.resolve({ ok: false, error: notHere }),
+      onePassword: () => Promise.resolve({ ok: false, error: notHere }),
     },
     google: {
       connect: () => Promise.resolve({ ok: false, error: notHere }),

@@ -70,6 +70,7 @@ const api: FleetdApi = {
     googleClient: (hub, request) => ipcRenderer.invoke(IPC.googleClientSubmit, hub, request) as Promise<CallOutcome>,
     googlePubsub: (hub, request) => ipcRenderer.invoke(IPC.googlePubsubSubmit, hub, request) as Promise<CallOutcome>,
     claudeAccount: (hub, request) => ipcRenderer.invoke(IPC.claudeAccountSubmit, hub, request) as Promise<CallOutcome>,
+    onePassword: (hub, request) => ipcRenderer.invoke(IPC.onePasswordSubmit, hub, request) as Promise<CallOutcome>,
   },
   google: {
     connect: (hub, request) => ipcRenderer.invoke(IPC.googleConnect, hub, request) as Promise<CallOutcome>,

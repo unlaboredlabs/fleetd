@@ -84,6 +84,7 @@ impl LeadPorts for HubPorts {
         };
         let account =
             crate::hub::claude_accounts::for_lead(self.executors.hub_db(), &self.link, &project);
+        let onepassword = crate::hub::onepassword::for_lead(self.executors.hub_db(), &project);
         Box::pin(async move {
             if too_old {
                 return Err(LeadError::new(
@@ -105,6 +106,7 @@ impl LeadPorts for HubPorts {
                         role,
                         mcp_role: Some(fleetd_contracts::mcp_servers::McpAgentRole::Lead),
                         claude_account,
+                        onepassword,
                         ..Default::default()
                     },
                 )

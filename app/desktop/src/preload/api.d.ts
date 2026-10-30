@@ -3,7 +3,7 @@ import type { MenuCommand } from "../shared/menu";
 import type { BrowserInput } from "../shared/contracts";
 import type { CallOutcome, ConnectOutcome, DropInfo, HubFrame, OpenOutcome, SecretOutcome } from "../shared/hub";
 import type { HubColor, HubEntry, HubId, PairTarget } from "../shared/hubs";
-import type { ChatScope, ClaudeAccountRequest, ErrorReport, GoogleClientRequest, GithubAppRequest, GoogleConnectRequest, GooglePubsubRequest, HubLinkRequest, McpServerRequest, OrderFocus, ProjectEnvRequest, SecretRequest, SessionWindowRequest } from "../shared/ipc";
+import type { ChatScope, ClaudeAccountRequest, ErrorReport, GoogleClientRequest, GithubAppRequest, GoogleConnectRequest, GooglePubsubRequest, HubLinkRequest, McpServerRequest, OnePasswordRequest, OrderFocus, ProjectEnvRequest, SecretRequest, SessionWindowRequest } from "../shared/ipc";
 import type { JoinHere, ThisComputer } from "../shared/joinHere";
 import type { KeyStore, PairOutcome, PairRequest, PairStart, Probe, SetupOutcome } from "../shared/pairing";
 import type { UpdatesState } from "../shared/updates";
@@ -52,6 +52,11 @@ export interface FleetdApi {
      * claude_subscription_set. The output has where it is sealed, by fingerprint only; nothing returns the value.
      */
     claudeAccount(hub: HubId, request: ClaudeAccountRequest): Promise<CallOutcome>;
+    /**
+     * The person's 1Password service account token: main seals it to every machine in `boxes` and calls
+     * onepassword_set. The output has where it is sealed, by fingerprint only; nothing returns the value.
+     */
+    onePassword(hub: HubId, request: OnePasswordRequest): Promise<CallOutcome>;
   };
   readonly google: {
     /**

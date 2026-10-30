@@ -167,6 +167,16 @@ impl TaskPorts for HubTaskPorts {
                     "github: no token for the order's agents: {e}"
                 );
             }
+            // Its order's starter's (or its Navi's owner's) 1Password token, for fill_credential when the project and
+            // order have none of their own.
+            let onepassword = self.hub().and_then(|hub| {
+                crate::hub::onepassword::for_task(
+                    &hub.db,
+                    &request.project_ref,
+                    request.order_id.as_ref(),
+                    machine_id,
+                )
+            });
             let options = LaunchOptions {
                 workspace,
                 role: fleetd_contracts::sessions::SessionRole::Worker,
@@ -174,6 +184,7 @@ impl TaskPorts for HubTaskPorts {
                 order_id: request.order_id,
                 setup,
                 claude_account,
+                onepassword,
                 ..Default::default()
             };
             self.executors

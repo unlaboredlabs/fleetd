@@ -48,6 +48,14 @@ impl SessionService {
         let home = &self.inner.config.home;
         let mut secrets = super::super::project_env::secrets(home, row.summary.project_id.as_str());
         secrets.extend(self.order_vars(row).0);
+        secrets.extend(
+            super::super::onepassword_tokens::fallback(
+                home,
+                row.local.onepassword.as_ref(),
+                &secrets,
+            )
+            .unwrap_or_default(),
+        );
         secrets.extend(super::super::mcp_servers::secrets(
             home,
             &home.join("sessions").join(row.summary.session_id.as_str()),
@@ -65,8 +73,8 @@ impl SessionService {
         Ok(Masker::new(&self.call_secrets(id)?.0))
     }
 
-    /// The secrets of a session's calls: its project's and order's variables and its MCP servers', those its claude
-    /// started with too.
+    /// The secrets of a session's calls: its project's and order's variables (else its person's 1Password token in
+    /// their place) and its MCP servers', those its claude started with too.
     pub fn call_secrets(&self, id: &str) -> Result<Secrets, String> {
         let spawned = self.st().live.get(id).map(|l| l.spawned.clone());
         let row = match self.store().session(id) {
@@ -82,6 +90,13 @@ impl SessionService {
                 home, project, order,
             )?);
         }
+        // Its person's 1Password token, unless the project or order has its own: fill_credential reads it from here.
+        let token = super::super::onepassword_tokens::fallback(
+            home,
+            row.local.onepassword.as_ref(),
+            &secrets,
+        )?;
+        secrets.extend(token);
         // An MCP server whose secrets the node can't resolve is left out of the session, so it never had them.
         secrets.extend(super::super::mcp_servers::secrets(
             home,
@@ -119,9 +134,16 @@ impl SessionService {
             .map(|(n, _)| n)
             .collect();
         let (mut order, _) = self.order_vars(row);
-        // The 1Password token is the node's, never in an agent's environment (spawn leaves it out).
+        // The 1Password token is the node's, never in an agent's environment (spawn leaves it out): the project's or
+        // order's own, else the person's whose work it is.
         let token = TOKEN_ENV;
-        let has_token = vars.iter().chain(&order).any(|(n, _)| n == token);
+        let has_token = vars.iter().chain(&order).any(|(n, _)| n == token)
+            || row.local.onepassword.as_ref().is_some_and(|person| {
+                matches!(
+                    super::super::onepassword_tokens::read(home, person),
+                    Ok(Some(_))
+                )
+            });
         vars.retain(|(n, _)| n != token);
         order.retain(|(n, _)| n != token);
         let shown = |(name, value): &(String, String)| {

@@ -4,7 +4,7 @@ import rust from "./secret.rust-seal.json";
 import { SECRET_MAX_BYTES } from "../shared/contracts";
 import { IPC } from "../shared/channels";
 import { parseRequest } from "../shared/ipc";
-import { seal, submitClaudeAccount, submitGoogleClient, submitGooglePubsub, submitHubLink, submitMcpServer, submitProjectEnv, submitSecret } from "./secret";
+import { seal, submitClaudeAccount, submitGoogleClient, submitGooglePubsub, submitHubLink, submitMcpServer, submitOnePassword, submitProjectEnv, submitSecret } from "./secret";
 
 const bytes = (b64: string) => new Uint8Array(Buffer.from(b64, "base64"));
 
@@ -329,5 +329,40 @@ describe("a Claude account's key or token", () => {
     expect(JSON.stringify(set.sent)).not.toContain(KEY);
     const keep = await run({ account: "hub_api", endpoint: "https://gateway.devbox.example/v2", boxes });
     expect(keep.sent).toEqual([{ tool: "claude_hub_api_set", input: { sealed: [], endpoint: "https://gateway.devbox.example/v2" } }]);
+  });
+});
+
+describe("a person's 1Password token", () => {
+  it("seals it to every machine for onepassword_set, trimmed, and refuses anything but one ops_ line before sending", async () => {
+    await sodium.ready;
+    const [pk, sk] = [bytes(rust.publicKey), bytes(rust.secretKey)];
+    const TOKEN = "ops_devbox-service-account_CCCC";
+    const boxes = [
+      { machineId: "devbox", boxPubKey: rust.publicKey },
+      { machineId: "buildbox", boxPubKey: rust.publicKey },
+    ];
+    const sent: Array<{ tool: string; input: unknown }> = [];
+    const call = (tool: "onepassword_set", input: unknown) => {
+      sent.push({ tool, input });
+      return Promise.resolve({ ok: true as const, output: { token: {} } });
+    };
+    const parsed = parseRequest(IPC.onePasswordSubmit, ["hub", { token: ` "${TOKEN}"\n`, boxes }]);
+    if (!parsed.ok) throw new Error(`refused at the IPC boundary: ${parsed.reason}`);
+    expect((await submitOnePassword(parsed.args[1], call)).ok).toBe(true);
+    expect(sent.map((c) => c.tool)).toEqual(["onepassword_set"]);
+    expect(JSON.stringify(sent[0]?.input)).not.toContain(TOKEN);
+    const input = sent[0]?.input as { sealed: Array<{ machineId: string; sealed: string }> };
+    expect(input.sealed.map((b) => b.machineId)).toEqual(["devbox", "buildbox"]);
+    for (const box of input.sealed) expect(sodium.to_string(sodium.crypto_box_seal_open(bytes(box.sealed), pk, sk))).toBe(TOKEN);
+
+    sent.length = 0;
+    for (const wrong of ["hunter2", "ops_one two", "eyJhbGciOi"]) {
+      const out = await submitOnePassword({ token: wrong, boxes }, call);
+      expect(out.ok).toBe(false);
+      if (!out.ok) expect(out.error.message).toContain("ops_");
+    }
+    const none = await submitOnePassword({ token: TOKEN, boxes: [] }, call);
+    expect(none.ok).toBe(false);
+    expect(sent).toEqual([]);
   });
 });

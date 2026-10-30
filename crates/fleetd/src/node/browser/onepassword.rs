@@ -1,8 +1,9 @@
 //! Logins from 1Password, filled without the agent seeing them (`fill_credential`). The node resolves an `op://`
 //! reference with the 1Password SDK (`@1password/sdk`, pinned, run under Node.js by a small helper the node writes)
-//! and a service account token: the project's secret variable `OP_SERVICE_ACCOUNT_TOKEN`, which a person enters
-//! through `request_secret` and the node keeps out of every agent's environment. Each session keeps what it resolved
-//! (not one-time codes, which change every 30 s) and backs off when 1Password rate-limits the token.
+//! and a service account token: the project's or order's secret variable `OP_SERVICE_ACCOUNT_TOKEN`, else the token
+//! the person whose work it is saved in Settings › Your accounts (onepassword_tokens.rs). The node keeps it out of
+//! every agent's environment. Each session keeps what it resolved (not one-time codes, which change every 30 s) and
+//! backs off when 1Password rate-limits the token. The same helper lists a token's vaults for its Test.
 use std::collections::HashMap;
 use std::future::Future;
 use std::path::{Path, PathBuf};
@@ -150,8 +151,8 @@ pub fn origin_allowed(page: &str, urls: &[String]) -> bool {
     })
 }
 
-/// The helper the node runs under Node.js: the token as its first line in, then one JSON line in per reference, one
-/// out, over a client made once.
+/// The helper the node runs under Node.js: the token as its first line in, then one JSON line in per reference (or
+/// `{"vaults":true}` for the names of the vaults the token reads), one out, over a client made once.
 pub const HELPER: &str = r#"// fleetd's 1Password helper: resolves op:// references with the SDK and a service account token. The token is the
 // first line on stdin, not in the environment, where the user's other processes could read it.
 import { createClient, RateLimitExceededError } from "@1password/sdk";
@@ -196,10 +197,15 @@ for await (const line of createInterface({ input: process.stdin })) {
   let answer;
   try {
     client ??= await createClient({ auth: token, integrationName: "fleetd", integrationVersion: "1" });
-    const { ref } = JSON.parse(line);
-    const urls = await websites(ref);
-    // An item without a website fills nowhere, so its value isn't read.
-    answer = urls.length ? { value: await client.secrets.resolve(ref), urls } : { urls };
+    const { ref, vaults: list } = JSON.parse(line);
+    if (list) {
+      vaults ??= await client.vaults.list();
+      answer = { vaults: vaults.map((v) => v.title) };
+    } else {
+      const urls = await websites(ref);
+      // An item without a website fills nowhere, so its value isn't read.
+      answer = urls.length ? { value: await client.secrets.resolve(ref), urls } : { urls };
+    }
   } catch (e) {
     const message = String(e?.message ?? e).slice(0, 300);
     const rateLimited = e instanceof RateLimitExceededError || /rate.?limit|too many requests|429/i.test(message);
@@ -333,7 +339,8 @@ impl OnePassword {
         })
     }
 
-    async fn ask(&self, reference: &str) -> Result<Credential, CredError> {
+    /// One line to the helper and its answer, parsed; its error as a [`CredError`].
+    async fn exchange(&self, request: Value) -> Result<Value, CredError> {
         let fail = |message: &str| CredError {
             message: message.to_owned(),
             rate_limited: false,
@@ -343,7 +350,7 @@ impl OnePassword {
             *process = Some(self.start().await?);
         }
         let helper = process.as_mut().expect("started");
-        let line = format!("{}\n", json!({ "ref": reference }));
+        let line = format!("{request}\n");
         if helper.stdin.write_all(line.as_bytes()).await.is_err() {
             *process = None;
             return Err(fail("the 1Password helper stopped"));
@@ -356,7 +363,7 @@ impl OnePassword {
             return Err(fail("1Password did not answer in 30 s"));
         };
         let answer = Zeroizing::new(answer);
-        let mut parsed: Value = serde_json::from_str(&answer)
+        let parsed: Value = serde_json::from_str(&answer)
             .map_err(|_| fail("the 1Password helper said nothing readable"))?;
         if let Some(error) = parsed["error"].as_str() {
             return Err(CredError {
@@ -364,6 +371,26 @@ impl OnePassword {
                 rate_limited: parsed["rateLimited"] == true,
             });
         }
+        Ok(parsed)
+    }
+
+    /// The names of the vaults the token reads: a token's Test.
+    pub async fn vault_names(&self) -> Result<Vec<String>, CredError> {
+        let parsed = self.exchange(json!({ "vaults": true })).await?;
+        Ok(parsed["vaults"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|v| v.as_str().map(str::to_owned))
+            .collect())
+    }
+
+    async fn ask(&self, reference: &str) -> Result<Credential, CredError> {
+        let fail = |message: &str| CredError {
+            message: message.to_owned(),
+            rate_limited: false,
+        };
+        let mut parsed = self.exchange(json!({ "ref": reference })).await?;
         let urls: Vec<String> = parsed["urls"]
             .as_array()
             .into_iter()
@@ -398,9 +425,71 @@ pub fn vault_for(home: &Path) -> VaultFor {
     })
 }
 
+/// The service account token the fake SDK takes.
+#[cfg(test)]
+pub const FAKE_TOKEN: &str = "ops_devbox-fake-service-account";
+
+/// A fake `@1password/sdk` at the pinned version in `home`'s install, so the node runs its real helper against it
+/// with no npm and no 1Password: it takes [`FAKE_TOKEN`] only, refuses any other in an error that echoes it, reads
+/// vaults Agents and Shared, and in Agents an item Shop on https://shop.devbox.test. None without Node.js.
+#[cfg(test)]
+pub fn fake_sdk(home: &Path) -> Option<()> {
+    std::process::Command::new("node")
+        .arg("--version")
+        .output()
+        .ok()
+        .filter(|o| o.status.success())?;
+    let sdk = install_dir(home).join("node_modules/@1password/sdk");
+    std::fs::create_dir_all(&sdk).unwrap();
+    std::fs::write(
+        sdk.join("package.json"),
+        json!({ "name": "@1password/sdk", "version": SDK_VERSION, "type": "module", "main": "index.js" })
+            .to_string(),
+    )
+    .unwrap();
+    let index = r#"export class RateLimitExceededError extends Error {}
+export async function createClient({ auth }) {
+  if (auth !== "{token}") throw new Error(`invalid service account token ${auth}`);
+  if (process.env.OP_SERVICE_ACCOUNT_TOKEN !== undefined) throw new Error("the token is in the environment");
+  return {
+    vaults: { list: async () => [{ id: "v1", title: "Agents" }, { id: "v2", title: "Shared" }] },
+    items: {
+      list: async (vault) =>
+        vault === "v1" ? [{ id: "i1", title: "Shop", websites: [{ url: "https://shop.devbox.test/login" }] }] : [],
+    },
+    secrets: { resolve: async (ref) => `pw-${ref.split("/").at(-1)}` },
+  };
+}
+"#;
+    std::fs::write(sdk.join("index.js"), index.replace("{token}", FAKE_TOKEN)).unwrap();
+    Some(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn the_helper_takes_its_token_on_stdin_lists_its_vaults_and_resolves() {
+        let home = tempfile::tempdir().unwrap();
+        if fake_sdk(home.path()).is_none() {
+            eprintln!("no Node.js here: the helper isn't tried");
+            return;
+        }
+        let helper = OnePassword::new(home.path(), Zeroizing::new(FAKE_TOKEN.into()));
+        assert_eq!(helper.vault_names().await.unwrap(), ["Agents", "Shared"]);
+        let shop = helper.ask("op://Agents/Shop/password").await.unwrap();
+        assert_eq!(shop.value.as_str(), "pw-password");
+        assert_eq!(shop.urls, ["https://shop.devbox.test/login"]);
+        let refused = OnePassword::new(home.path(), Zeroizing::new("ops_wrong".into()))
+            .vault_names()
+            .await
+            .unwrap_err();
+        assert_eq!(
+            refused.message,
+            "1Password: invalid service account token ops_wrong"
+        );
+    }
 
     #[test]
     fn a_page_is_on_the_items_site_by_its_host_or_a_subdomain() {

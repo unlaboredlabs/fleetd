@@ -123,6 +123,10 @@ function hub(from: Fixture, name: string, note: string, me: JsonObject, admin: b
 export function answerHub(f: Fixture, me: JsonObject = sam, admin = true, membersUseHubApi = true): Fixture {
   f.answer("hub_info", undefined, hubInfo(me, admin));
   f.answer("claude_accounts_get", undefined, claudeAccounts(me, admin, membersUseHubApi));
+  // Sam saved a 1Password service account that reads two vaults; anyone else has none yet.
+  const vaults = { at: "2026-10-19T09:20:00.000Z", machineId: "devbox", ok: true, vaults: ["Agents", "Shared logins"] };
+  f.answer("onepassword_get", undefined, me === sam ? { token: { sealedOn: [{ machineId: "buildbox", fingerprint: "0b5e55ed" }, { machineId: "devbox", fingerprint: "0b5e55ed" }], savedAt: "2026-10-19T09:20:00.000Z", lastTest: vaults } } : {});
+  f.answer("onepassword_test", undefined, { test: { ...vaults, at: f.now } });
   f.answer("usage_status", undefined, usageStatus);
   f.answer("people_list", undefined, people(me));
   const eve = person("p_eeeeeeee", "Eve Park", "member", f.now);

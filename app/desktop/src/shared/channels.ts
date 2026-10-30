@@ -97,6 +97,8 @@ export const IPC = {
   githubConnect: "github:connect",
   /** invoke(ClaudeAccountRequest) → CallOutcome. Main seals a Claude key or token to each machine's key, then calls claude_hub_api_set or claude_subscription_set. */
   claudeAccountSubmit: "claude-account:submit",
+  /** invoke(OnePasswordRequest) → CallOutcome. Main seals a person's 1Password service account token to each machine's key, then calls onepassword_set. */
+  onePasswordSubmit: "onepassword:submit",
   /** invoke(url) → OpenOutcome. Opens an http(s) link in the user's browser; refuses other schemes. */
   openExternal: "app:openExternal",
   /** main → renderer: (HubId, HubFrame) */

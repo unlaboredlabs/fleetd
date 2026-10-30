@@ -178,6 +178,10 @@ pub const CAP_SESSION_SEAL: &str = "session_seal";
 /// `claudeAccount` on them (teams step 8).
 pub const CAP_CLAUDE_ACCOUNTS: &str = "claude_accounts";
 
+/// The node keeps people's 1Password tokens (`onepassword_token`, `onepassword_test`) and gives a launch's
+/// `onepassword` person's token to its fill_credential when its project and order have none.
+pub const CAP_ONEPASSWORD: &str = "onepassword";
+
 /// `claude_models`: the node lists the models the hub's API key offers, for the profiles' model picker.
 pub const CAP_CLAUDE_MODELS: &str = "claude_models";
 

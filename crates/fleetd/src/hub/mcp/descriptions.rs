@@ -209,6 +209,22 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
         "A person's own device only. choice: subscription (their own, always) or hub_api (the hub's API configuration, if they may use it); absent: their subscription once connected, else the hub's API. Agents started from then on run this way; a running one keeps its account.",
     ),
     (
+        "onepassword_get",
+        "A person's own device only. The caller's 1Password service account token as the hub keeps it: the machines holding it (by fingerprint, never the token) and its last Test; absent until they save one.",
+    ),
+    (
+        "onepassword_set",
+        "A person's own device only. Save the caller's 1Password service account token: sealed, the token sealed on the client with crypto_box_seal to each machine's boxPubKey. The hub relays each box to its node and keeps the fingerprint, never the token; no agent, setup command or MCP server gets it. fill_credential in the orders the caller starts and in their Navi uses it when the project or order has no OP_SERVICE_ACCOUNT_TOKEN of its own, which wins. Replaces a token saved before; missingOn names machines that don't hold it.",
+    ),
+    (
+        "onepassword_remove",
+        "A person's own device only. Remove the caller's 1Password token; each online node holding it forgets it.",
+    ),
+    (
+        "onepassword_test",
+        "A person's own device only. List the vaults the caller's 1Password token reads, with the 1Password SDK on a machine holding it (machineId, default the first online; its first Test there installs the SDK). test.vaults, else test.error in plain words with the token masked; recorded as the token's lastTest.",
+    ),
+    (
         "claude_account_test",
         "Try an account with one tiny claude -p call on a machine holding it (machineId, default the first online): account hub_api (owners' and admins' devices) or mine (the caller's subscription). test.ok, else test.error in claude's words with the secret masked; recorded as the account's lastTest.",
     ),

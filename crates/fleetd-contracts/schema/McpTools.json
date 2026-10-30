@@ -10157,6 +10157,30 @@
         "navi_sites.output": {
           "$ref": "#/$defs/NaviSitesOutput"
         },
+        "onepassword_get.input": {
+          "$ref": "#/$defs/OnePasswordGetInput"
+        },
+        "onepassword_get.output": {
+          "$ref": "#/$defs/OnePasswordGetOutput"
+        },
+        "onepassword_remove.input": {
+          "$ref": "#/$defs/OnePasswordRemoveInput"
+        },
+        "onepassword_remove.output": {
+          "$ref": "#/$defs/OnePasswordRemoveOutput"
+        },
+        "onepassword_set.input": {
+          "$ref": "#/$defs/OnePasswordSetInput"
+        },
+        "onepassword_set.output": {
+          "$ref": "#/$defs/OnePasswordSetOutput"
+        },
+        "onepassword_test.input": {
+          "$ref": "#/$defs/OnePasswordTestInput"
+        },
+        "onepassword_test.output": {
+          "$ref": "#/$defs/OnePasswordTestOutput"
+        },
         "order_get.input": {
           "$ref": "#/$defs/OrderGetInput"
         },
@@ -10783,6 +10807,14 @@
         "navi_site_revoke.output",
         "navi_sites.input",
         "navi_sites.output",
+        "onepassword_get.input",
+        "onepassword_get.output",
+        "onepassword_remove.input",
+        "onepassword_remove.output",
+        "onepassword_set.input",
+        "onepassword_set.output",
+        "onepassword_test.input",
+        "onepassword_test.output",
         "order_get.input",
         "order_get.output",
         "orders_board.input",
@@ -12564,6 +12596,168 @@
       "required": [
         "coalesceSec",
         "quiet"
+      ],
+      "type": "object"
+    },
+    "OnePasswordGetInput": {
+      "type": "object"
+    },
+    "OnePasswordGetOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "token": {
+          "$ref": "#/$defs/OnePasswordToken",
+          "description": "The caller's saved token; absent until they save one."
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "OnePasswordRemoveInput": {
+      "type": "object"
+    },
+    "OnePasswordRemoveOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "ok": {
+          "enum": [
+            true
+          ],
+          "type": "boolean"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "type": "object"
+    },
+    "OnePasswordSetInput": {
+      "properties": {
+        "sealed": {
+          "description": "The caller's service account token sealed to each machine agents run on.",
+          "items": {
+            "$ref": "#/$defs/ClaudeSeal"
+          },
+          "maxItems": 500,
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "sealed"
+      ],
+      "type": "object"
+    },
+    "OnePasswordSetOutput": {
+      "properties": {
+        "missingOn": {
+          "description": "Machines whose node doesn't hold it (offline when it was saved): save it again while they are online.",
+          "items": {
+            "$ref": "#/$defs/MachineId"
+          },
+          "type": "array"
+        },
+        "next": {
+          "type": "string"
+        },
+        "token": {
+          "$ref": "#/$defs/OnePasswordToken"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "token"
+      ],
+      "type": "object"
+    },
+    "OnePasswordTest": {
+      "description": "The last Test of a token: the vaults it reads, listed with the 1Password SDK on one machine.",
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "error": {
+          "description": "What went wrong, in plain words with the token masked; absent when it worked.",
+          "type": "string"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "vaults": {
+          "description": "The names of the vaults it can read.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "at",
+        "machineId",
+        "ok"
+      ],
+      "type": "object"
+    },
+    "OnePasswordTestInput": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId",
+          "description": "Where to try it; default: the first machine online that holds it."
+        }
+      },
+      "type": "object"
+    },
+    "OnePasswordTestOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "test": {
+          "$ref": "#/$defs/OnePasswordTest"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "test"
+      ],
+      "type": "object"
+    },
+    "OnePasswordToken": {
+      "description": "A person's saved token: never the token, only where it is.",
+      "properties": {
+        "lastTest": {
+          "$ref": "#/$defs/OnePasswordTest"
+        },
+        "savedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "sealedOn": {
+          "description": "Each machine whose node holds it. Work on a machine missing here has no token from the person.",
+          "items": {
+            "$ref": "#/$defs/ClaudeSealedOn"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "sealedOn",
+        "savedAt"
       ],
       "type": "object"
     },

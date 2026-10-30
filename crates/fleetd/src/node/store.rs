@@ -111,6 +111,10 @@ pub struct SessionLocal {
     /// login.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub claude_account: Option<fleetd_contracts::claude_accounts::ClaudeAccount>,
+    /// The person whose 1Password token its fill_credential uses when its project and order have none
+    /// (onepassword_tokens.rs).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub onepassword: Option<fleetd_contracts::people::PersonId>,
 }
 
 #[derive(Clone, Debug, PartialEq)]

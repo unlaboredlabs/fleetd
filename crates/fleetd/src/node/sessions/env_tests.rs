@@ -301,6 +301,126 @@ async fn the_1password_token_stays_with_the_node_and_out_of_every_agents_environ
     );
 }
 
+/// A person's 1Password token (Settings › Your accounts), saved on the node sealed: a session launched with them as
+/// its person has it for fill_credential as `OP_SERVICE_ACCOUNT_TOKEN`, masked and never in its environment; Test lists
+/// its vaults through the node's helper (a fake SDK here); and a project's own token wins over it.
+#[tokio::test]
+async fn a_persons_1password_token_serves_their_sessions_unless_the_project_has_its_own() {
+    use crate::node::browser::onepassword::{FAKE_TOKEN, TOKEN_ENV, fake_sdk};
+    use fleetd_contracts::people::PersonId;
+    use fleetd_contracts::project_settings::{EnvVarName, EnvVarSet};
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("node");
+    let mut node = hub(
+        dir.path(),
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::fixture("init-partial-two-turns"),
+    )
+    .await;
+    node.project(dir.path()).await;
+    let cy = PersonId::unchecked("p_cccccccc");
+    let saved = node
+        .ok(SessionCall::OnePasswordToken {
+            person_id: cy.clone(),
+            sealed: Some(crate::node::project_env::seal(&home, FAKE_TOKEN)),
+        })
+        .await;
+    assert_eq!(
+        saved,
+        SessionOutput::OnePasswordSaved {
+            fingerprint: Some(fleetd_contracts::secrets::SecretFingerprint::unchecked(
+                crate::node::secrets::fingerprint_of(FAKE_TOKEN.as_bytes())
+            )),
+        }
+    );
+    let mut call = in_order("a", "W1", SessionWorkspace::Root);
+    if let SessionCall::Launch(l) = &mut call {
+        l.onepassword = Some(cy.clone());
+    }
+    node.ok(call).await;
+    node.settled("a-r1").await;
+    let spawned = node.runner.spawned();
+    assert!(spawned[0].env.iter().all(|(_, v)| !v.contains(FAKE_TOKEN)));
+    fn tokens(service: &SessionService, id: &str) -> Vec<String> {
+        let held = service.call_secrets(id).unwrap();
+        held.0
+            .iter()
+            .filter(|(n, _)| n == crate::node::browser::onepassword::TOKEN_ENV)
+            .map(|(_, v)| v.clone())
+            .collect()
+    }
+    assert_eq!(
+        tokens(&node.service, "a"),
+        [FAKE_TOKEN],
+        "fill_credential reads Cy's token"
+    );
+    let brief = node
+        .service
+        .store()
+        .message("a", "a-r1")
+        .unwrap()
+        .unwrap()
+        .text;
+    assert!(
+        brief.contains("`OP_SERVICE_ACCOUNT_TOKEN` is set, for this machine's node only"),
+        "{brief}"
+    );
+    assert_eq!(
+        node.service.call_masker("a").unwrap().text(FAKE_TOKEN),
+        "***OP_SERVICE_ACCOUNT_TOKEN***"
+    );
+    // Test: the node's helper lists the vaults it reads.
+    if fake_sdk(&home).is_some() {
+        let tested = node
+            .ok(SessionCall::OnePasswordTest {
+                person_id: cy.clone(),
+            })
+            .await;
+        assert_eq!(
+            tested,
+            SessionOutput::OnePasswordTested {
+                vaults: vec!["Agents".into(), "Shared".into()],
+                error: None,
+            }
+        );
+    }
+    // A session without a person has no token.
+    node.ok(in_order("b", "W2", SessionWorkspace::Root)).await;
+    node.settled("b-r1").await;
+    assert!(tokens(&node.service, "b").is_empty());
+    // The project's own OP_SERVICE_ACCOUNT_TOKEN wins over Cy's.
+    node.ok(SessionCall::ProjectEnv {
+        project_id: ProjectId::unchecked("p1"),
+        set: vec![EnvVarSet::Secret {
+            name: EnvVarName::new(TOKEN_ENV).unwrap(),
+            sealed: crate::node::project_env::seal(&home, "ops_devbox-projects-own"),
+        }],
+        remove: vec![],
+    })
+    .await;
+    assert_eq!(tokens(&node.service, "a"), ["ops_devbox-projects-own"]);
+    // Forgotten (Remove), it no longer serves anyone.
+    node.ok(SessionCall::ProjectEnv {
+        project_id: ProjectId::unchecked("p1"),
+        set: vec![],
+        remove: vec![EnvVarName::new(TOKEN_ENV).unwrap()],
+    })
+    .await;
+    node.ok(SessionCall::OnePasswordToken {
+        person_id: cy.clone(),
+        sealed: None,
+    })
+    .await;
+    assert!(tokens(&node.service, "a").is_empty());
+    let tested = node
+        .ok(SessionCall::OnePasswordTest { person_id: cy })
+        .await;
+    assert!(
+        matches!(tested, SessionOutput::OnePasswordTested { error: Some(ref e), .. } if e.contains("holds no 1Password token")),
+        "{tested:?}"
+    );
+}
+
 /// A project secret pasted into an `ask_lead` (or any fleetd call of a session) goes out over the link masked: the
 /// hub gets, and so stores and shows, `***NAME***`. A call whose masked form no longer fits is refused, never sent.
 #[tokio::test]

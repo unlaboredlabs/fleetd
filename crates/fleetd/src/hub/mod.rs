@@ -30,6 +30,7 @@ pub mod mcp_servers;
 pub mod memory;
 pub mod metrics;
 pub mod navi;
+pub mod onepassword;
 pub mod orders;
 pub mod pair;
 pub mod people;
