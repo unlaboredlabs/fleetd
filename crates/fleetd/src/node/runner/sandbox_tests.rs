@@ -3,7 +3,8 @@ use std::path::{Path, PathBuf};
 use super::*;
 
 /// A machine in a temp dir: a user's home with their logins and claude's config, fleetd's dir with the node's home,
-/// a Navi's folder, another project's worktree and the token store, and another project's checkout.
+/// a Navi's folder and own dir, another Navi's, another project's worktree and the token store, another project's
+/// checkout, and the user's runtime dir with their D-Bus and systemd sockets.
 struct Machine {
     _dir: tempfile::TempDir,
     home: PathBuf,
@@ -16,6 +17,9 @@ struct Machine {
     worktree: PathBuf,
     tokens: PathBuf,
     other: PathBuf,
+    own: PathBuf,
+    other_navi: PathBuf,
+    runtime: PathBuf,
 }
 
 impl Machine {
@@ -36,6 +40,9 @@ impl Machine {
             worktree: node.join("worktrees/p2/w1"),
             tokens: node.join("secrets"),
             other: root.join("src/other"),
+            own: node.join("navis/p1"),
+            other_navi: node.join("navis/p2"),
+            runtime: root.join("run/user/1000"),
             _dir: dir,
             home,
             fleetd,
@@ -144,6 +151,13 @@ impl Machine {
             (m.node.join("bin/fleetd-agent-1"), "#!/bin/sh\n"),
             (m.node.join("node.sock"), ""),
             (m.folder.join("notes.md"), "hello"),
+            // Where the user's D-Bus and systemd listen (a socket's path here would be too long to bind).
+            (m.runtime.join("bus"), ""),
+            (m.runtime.join("systemd/private"), ""),
+            (
+                m.other_navi.join("home/.local/bin/secret-tool"),
+                "another Navi's",
+            ),
         ];
         for (path, text) in files {
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -159,6 +173,9 @@ impl Machine {
         }
         std::fs::create_dir_all(m.home.join(".local/bin")).unwrap();
         for (target, link) in [
+            // Links at the home's top: one to the person's code, one to their keys.
+            ("src", "code"),
+            (".ssh", "keys"),
             (".local/share/claude/versions/2.1.302", ".local/bin/claude"),
             (
                 ".local/share/uv/python/cpython-3.12/bin/python3.12",
@@ -199,35 +216,39 @@ impl Machine {
             path: self.path(),
             exe: &self.node.join("bin/fleetd-agent-1"),
             socket: &self.node.join("node.sock"),
-            runtime_dir: None,
-            other_roots: vec![
-                self.other.clone(),
-                self.home.clone(),
-                self.home.join("src/mine"),
-            ],
+            runtime_dir: Some(&self.runtime),
+            own: &self.own,
         })
     }
 
     /// `script` in `sh`, inside the Navi's sandbox, with `tool` as the sandbox: whether it succeeded, and its output.
     fn run(&self, tool: &Path, script: &str) -> (bool, String) {
-        let (program, args) = wrap_with(
+        self.run_in(tool, &self.fence(), script)
+    }
+
+    /// [`Machine::run`] in `fence`, made earlier.
+    fn run_in(&self, tool: &Path, fence: &Fence, script: &str) -> (bool, String) {
+        let sandboxed = wrap_with(
             Some(tool.to_owned()),
-            &self.fence(),
+            fence,
             &self.folder,
             Path::new("/bin/sh"),
             vec!["-c".into(), script.into()],
         )
         .unwrap();
-        let mut command = std::process::Command::new(program);
-        with_scope(&mut command);
-        let out = command
-            .args(args)
+        let out = sandboxed
+            .command()
             .current_dir(&self.folder)
             .env_clear()
             .env("PATH", "/usr/bin:/bin")
             .env("HOME", &self.home)
             .envs(crate::node::sessions::share::scratch_env(&self.scratch))
             .env("DISPLAY", ":0")
+            .env("XDG_RUNTIME_DIR", &self.runtime)
+            .env(
+                "DBUS_SESSION_BUS_ADDRESS",
+                format!("unix:path={}", self.runtime.join("bus").display()),
+            )
             .output()
             .unwrap();
         let text = format!(
@@ -266,10 +287,15 @@ fn sandbox_or_skip() -> Option<PathBuf> {
 }
 
 #[test]
-fn a_navis_fence_writes_its_folder_and_hides_fleetd_logins_and_other_projects() {
+fn a_navis_fence_writes_its_folder_and_home_and_hides_fleetd_and_logins() {
     let m = Machine::new();
     let fence = m.fence();
-    for written in [&m.folder, &m.scratch, &m.session.join("agent-device")] {
+    for written in [
+        &m.folder,
+        &m.scratch,
+        &m.session.join("agent-device"),
+        &m.own.join("home"),
+    ] {
         assert!(fence.write.contains(written), "{}", written.display());
     }
     // Its conversation, and its own session's state in claude's config dir; nothing else there.
@@ -302,19 +328,65 @@ fn a_navis_fence_writes_its_folder_and_hides_fleetd_logins_and_other_projects() 
         m.session.join("claude/shell-snapshots"),
         m.claude.join("shell-snapshots")
     )));
-    assert!(fence.hide.contains(&m.other));
+    // The user's sockets that would run a command outside.
+    assert!(fence.hide.contains(&m.runtime));
+    // Another project's checkout is the person's, as written as the rest of the machine.
+    assert!(!fence.hide.iter().any(|h| m.other.starts_with(h)));
+    assert_eq!(fence.access(&m.other.join("README.md")), Access::Write);
+    // The node's home hides every other Navi's home with it.
+    assert_eq!(
+        fence.access(&m.other_navi.join("home/.local/bin/secret-tool")),
+        Access::Hidden
+    );
+    assert_eq!(fence.access(&m.own.join("home/.local/bin")), Access::Write);
+    // The programs the node runs, and what runs on its own, are read-only.
+    for back in [
+        m.home.join(".local/bin"),
+        m.home.join(".local/share/claude/versions"),
+        m.home.join(".nvm/versions/node/v22"),
+        m.home.join(".gitconfig"),
+        m.home.join(".bashrc"),
+        m.home.join(".profile"),
+    ] {
+        assert!(fence.show.contains(&back), "{}", back.display());
+        assert_eq!(
+            fence.access(&back.join("x")),
+            Access::Read,
+            "{}",
+            back.display()
+        );
+    }
     if cfg!(target_os = "linux") {
-        // The home is an allow-list: hidden whole, and only what a Navi runs and works in comes back.
+        // The home is listed: hidden whole, and each of its entries comes back but the hidden ones.
         assert!(fence.hide.contains(&m.home));
-        for back in [
-            m.home.join(".local/bin"),
-            m.home.join(".local/share/claude/versions"),
-            m.home.join(".nvm/versions/node/v22"),
-            m.home.join(".gitconfig"),
-        ] {
-            assert!(fence.show.contains(&back), "{}", back.display());
+        assert_eq!(fence.tmp, Some(m.own.join("tmp")));
+        for entry in ["notes", "src", ".local", ".nvm"] {
+            assert!(fence.listed.contains(&m.home.join(entry)), "{entry}");
         }
-        assert!(!fence.show.contains(&m.home.join(".local")));
+        for out in [
+            ".ssh",
+            ".config",
+            ".fleetd",
+            ".bashrc",
+            ".claude",
+            ".claude.json",
+        ] {
+            assert!(!fence.listed.contains(&m.home.join(out)), "{out}");
+        }
+        assert!(
+            !fence
+                .listed
+                .iter()
+                .any(|l| l.to_string_lossy().contains(".claude.json")),
+            "{:?}",
+            fence.listed
+        );
+        // A link comes back as a link, wherever it leads.
+        assert!(
+            fence
+                .links
+                .contains(&(m.home.join("keys"), m.home.join(".ssh")))
+        );
         assert!(
             fence
                 .private
@@ -333,18 +405,14 @@ fn a_navis_fence_writes_its_folder_and_hides_fleetd_logins_and_other_projects() 
             "{:?}",
             fence.show
         );
-        // A linked tool's install comes back; a link into another project or into fleetd's dir brings back nothing.
-        assert!(
-            fence
-                .show
-                .contains(&m.home.join(".local/share/uv/python/cpython-3.12"))
-        );
-        assert!(
-            !fence
-                .show
-                .iter()
-                .any(|s| s.starts_with(m.home.join("src/mine")))
-        );
+        // A linked tool's install comes back read-only, the code it lives in too; a link into fleetd's dir brings
+        // back nothing.
+        for install in [
+            m.home.join(".local/share/uv/python/cpython-3.12"),
+            m.home.join("src/mine"),
+        ] {
+            assert!(fence.show.contains(&install), "{}", install.display());
+        }
         // git's own settings, never its credential store.
         assert!(fence.show.contains(&m.home.join(".config/git/config")));
         assert!(!fence.show.contains(&m.home.join(".config/git")));
@@ -358,37 +426,81 @@ fn a_navis_fence_writes_its_folder_and_hides_fleetd_logins_and_other_projects() 
         ] {
             assert!(fence.hide.contains(hidden), "{}", hidden.display());
         }
-        // A project whose root holds the whole home isn't hidden: the Navi's folder and its tools are in it.
         assert!(!fence.hide.contains(&m.home));
+    }
+    for hidden in [
+        m.home.join(".ssh/id_ed25519"),
+        m.home.join(".config/gh/hosts.yml"),
+        m.fleetd.join("hub/hub.sqlite"),
+        m.tokens.join("google.json"),
+    ] {
+        assert_eq!(
+            fence.access(&hidden),
+            Access::Hidden,
+            "{}",
+            hidden.display()
+        );
     }
     assert!(fence.show.contains(&m.session));
     assert!(fence.keep.contains(&m.folder.join(".claude")));
+    assert_eq!(fence.session.as_deref(), Some("s1"));
 }
 
 #[test]
-fn a_navi_cant_write_outside_its_folder() {
+fn a_navi_writes_where_the_person_can_but_not_fleetds_dir_or_what_runs_on_its_own() {
     let Some(tool) = sandbox_or_skip() else {
         return;
     };
     let m = Machine::new();
-    for target in [
+    let mut refused = vec![
         m.fleetd.join("escape"),
         m.node.join("node.json"),
         m.worktree.join("README.md"),
         m.worktree.join("escape"),
-        m.other.join("README.md"),
-        m.home.join("escape"),
+        m.other_navi.join("home/escape"),
         m.home.join(".bashrc"),
+        m.home.join(".profile"),
+        m.home.join(".ssh/authorized_keys"),
+        m.home.join(".local/bin/claude"),
         m.claude.join("settings.json"),
         m.session.join("settings.json"),
         m.folder.join(".claude/settings.json"),
-    ] {
+    ];
+    // On Linux nothing new is made at the home's top, where a startup file of another shell could go.
+    if cfg!(target_os = "linux") {
+        refused.push(m.home.join("escape"));
+    }
+    for target in refused {
         let before = std::fs::read_to_string(&target).ok();
         let (ok, out) = m.run(&tool, &format!("echo pwned > '{}'", target.display()));
         assert!(!ok, "{} was written: {out}", target.display());
         assert_eq!(
             std::fs::read_to_string(&target).ok(),
             before,
+            "{}",
+            target.display()
+        );
+    }
+    // Anywhere else the person can write: their code in the home and outside it, their notes, its own home.
+    for target in [
+        m.home.join("src/new.txt"),
+        m.home.join("notes/todo.md"),
+        m.home.join("code/through-a-link.txt"),
+        m.other.join("README.md"),
+        m.own.join("home/.local/bin/tool"),
+    ] {
+        let (ok, out) = m.run(
+            &tool,
+            &format!(
+                "mkdir -p '{0}' && echo written > '{1}'",
+                target.parent().unwrap().display(),
+                target.display()
+            ),
+        );
+        assert!(ok, "{}: {out}", target.display());
+        assert_eq!(
+            std::fs::read_to_string(&target).unwrap(),
+            "written\n",
             "{}",
             target.display()
         );
@@ -433,7 +545,7 @@ fn navi_cookies(node: &Path) -> PathBuf {
 }
 
 #[test]
-fn a_navi_cant_read_the_token_store_logins_or_other_projects() {
+fn a_navi_cant_read_keys_logins_fleetds_dir_or_another_navis_home() {
     let Some(tool) = sandbox_or_skip() else {
         return;
     };
@@ -442,10 +554,12 @@ fn a_navi_cant_read_the_token_store_logins_or_other_projects() {
         m.tokens.join("google.json"),
         navi_cookies(&m.node),
         m.home.join(".ssh/id_ed25519"),
+        m.home.join("keys/id_ed25519"),
         m.home.join(".config/gh/hosts.yml"),
         m.fleetd.join("hub/hub.sqlite"),
+        m.fleetd.join("claude.env"),
         m.worktree.join("README.md"),
-        m.other.join("README.md"),
+        m.other_navi.join("home/.local/bin/secret-tool"),
         // claude's record of every other session: conversations, prompts, file backups, environments.
         m.claude.join("projects/-src-other/t1.jsonl"),
         m.claude.join("history.jsonl"),
@@ -455,6 +569,7 @@ fn a_navi_cant_read_the_token_store_logins_or_other_projects() {
         m.home.join(".npmrc"),
         m.home.join(".pgpass"),
         m.home.join(".config/git/credentials"),
+        m.home.join(".cargo/credentials.toml"),
         m.claude.join("ide/1234.lock"),
         // A backup of claude's config, with the MCP servers its copy leaves out.
         m.home.join(".claude.json.backup.1792349295"),
@@ -462,12 +577,14 @@ fn a_navi_cant_read_the_token_store_logins_or_other_projects() {
         let (ok, out) = m.run(&tool, &format!("cat '{}'", secret.display()));
         assert!(!ok, "{} was read: {out}", secret.display());
     }
-    if cfg!(target_os = "linux") {
-        let (ok, out) = m.run(
-            &tool,
-            "test -z \"$DISPLAY\" && test -z \"$(ls -A /tmp/.X11-unix 2>/dev/null)\"",
-        );
-        assert!(ok, "the X server is in reach: {out}");
+    // The person's own files read as they are.
+    for read in [
+        m.home.join("notes/diary.md"),
+        m.home.join(".bashrc"),
+        m.other.join("README.md"),
+    ] {
+        let (ok, out) = m.run(&tool, &format!("cat '{}'", read.display()));
+        assert!(ok, "{}: {out}", read.display());
     }
     let (_, out) = m.run(
         &tool,
@@ -475,10 +592,28 @@ fn a_navi_cant_read_the_token_store_logins_or_other_projects() {
     );
     // By name: an error's path holds the random temp dir's, which can spell "p2" (.tmpp2E3RV).
     assert!(!out.lines().any(|l| l.trim() == "p2"), "{out}");
-    // No other process is in reach, so neither is a way back to the real disk through one (/proc/<pid>/root).
     if cfg!(target_os = "linux") {
+        let (ok, out) = m.run(
+            &tool,
+            "test -z \"$DISPLAY\" && test -z \"$(ls -A /tmp/.X11-unix 2>/dev/null)\"",
+        );
+        assert!(ok, "the X server is in reach: {out}");
+        // Neither the user's D-Bus nor their systemd, which would run a command outside: no socket, no address.
+        let (ok, out) = m.run(
+            &tool,
+            &format!(
+                "test -z \"$DBUS_SESSION_BUS_ADDRESS$XDG_RUNTIME_DIR\" && ! test -e '{}' && ! test -e '{}'",
+                m.runtime.join("bus").display(),
+                m.runtime.join("systemd/private").display()
+            ),
+        );
+        assert!(ok, "D-Bus or systemd is in reach: {out}");
+        // No process outside its box is in reach, so neither is a way back to the real disk through one
+        // (/proc/<pid>/root).
         let (ok, out) = m.run(&tool, &format!("ls /proc/{}/root/", std::process::id()));
         assert!(!ok, "{out}");
+        let (ok, out) = m.run(&tool, "ls /proc/1/root/home");
+        assert!(!ok, "the box's init leads to the disk: {out}");
     }
 }
 
@@ -543,7 +678,14 @@ fn a_navi_works_in_its_folder_as_usual() {
             .contains("rotated")
     );
     if cfg!(target_os = "linux") {
-        assert!(!Path::new(&tmp).exists(), "/tmp was its own");
+        // Its /tmp is the Navi's own, on disk.
+        assert!(!Path::new(&tmp).exists(), "/tmp was the machine's");
+        assert!(
+            m.own
+                .join("tmp")
+                .join(Path::new(&tmp).file_name().unwrap())
+                .is_file()
+        );
         // A shell snapshot it writes is its own, never one another session sources.
         assert!(
             m.session
@@ -577,18 +719,6 @@ fn a_navis_claude_makes_its_temp_dir_in_its_scratch_dir() {
             .is_file(),
         "{out}"
     );
-    // The machine's /tmp stays shut: on macOS no write reaches it, and on Linux the session's /tmp is its own.
-    let tmp = format!("/private/tmp/fleetd-sandbox-claude-{}", std::process::id());
-    let tmp = if cfg!(target_os = "macos") {
-        tmp
-    } else {
-        tmp.replace("/private", "")
-    };
-    let (ok, out) = m.run(&tool, &format!("mkdir {tmp}"));
-    if cfg!(target_os = "macos") {
-        assert!(!ok && out.contains("not permitted"), "{out}");
-    }
-    assert!(!Path::new(&tmp).exists(), "{out}");
 }
 
 #[test]
@@ -665,7 +795,7 @@ fn a_blocked_user_namespace_points_at_apparmor() {
 }
 
 #[test]
-fn macoss_profile_writes_only_the_fence_and_reads_no_hidden_path() {
+fn macoss_profile_writes_all_but_the_hidden_and_read_only_paths_and_reads_no_hidden_one() {
     let fence = Fence {
         write: vec![
             "/Users/ada/.fleetd/node/navi/ada".into(),
@@ -679,40 +809,50 @@ fn macoss_profile_writes_only_the_fence_and_reads_no_hidden_path() {
         show: vec![
             "/Users/ada/.fleetd/node/sessions/s1".into(),
             "/Users/ada/.claude".into(),
+            "/Users/ada/.zshrc".into(),
         ],
         keep: vec!["/Users/ada/.fleetd/node/navi/ada/.claude".into()],
-        private: vec![],
-        config_copy: None,
+        ..Fence::default()
     };
     let profile = seatbelt(&fence);
-    let line = |start: &str| {
+    assert!(
+        profile.starts_with("(version 1)\n(allow default)\n"),
+        "{profile}"
+    );
+    assert!(!profile.contains("(deny file-write*)\n"), "{profile}");
+    let line = |rule: &str, what: &str, path: &str| {
+        let line = format!("({rule} {what} (subpath \"{path}\"))");
         profile
             .lines()
-            .position(|l| l.starts_with(start))
-            .unwrap_or_else(|| panic!("{start}: {profile}"))
+            .position(|l| l == line)
+            .unwrap_or_else(|| panic!("{line}: {profile}"))
     };
+    let read = "file-read-data file-read-xattr";
+    let write = "file-write*";
+    // Each path's rules after those of the paths around it: the folder is read and written inside the hidden fleetd
+    // dir, its kept paths aren't written inside it, and claude's other sessions aren't inside its shown config dir.
+    let fleetd = "/Users/ada/.fleetd";
+    let folder = "/Users/ada/.fleetd/node/navi/ada";
+    assert!(line("deny", write, fleetd) < line("allow", write, folder));
+    assert!(line("deny", read, fleetd) < line("allow", read, folder));
+    assert!(line("allow", write, folder) < line("deny", write, &format!("{folder}/.claude")));
     assert!(
-        line("(deny file-write*)")
-            < line("(allow file-write* (subpath \"/Users/ada/.fleetd/node/navi/ada\")")
+        line("allow", read, "/Users/ada/.claude")
+            < line("deny", read, "/Users/ada/.claude/projects")
     );
     assert!(
-        line("(allow file-write*")
-            < line("(deny file-write* (subpath \"/Users/ada/.fleetd/node/navi/ada/.claude\")")
+        line("deny", write, "/Users/ada/.claude")
+            < line("allow", write, "/Users/ada/.claude/projects/-navi-ada")
     );
-    // Each read rule after those of the paths around it: the folder is read inside the hidden fleetd dir, and claude's
-    // other sessions aren't inside its shown config dir.
-    let read = |rule: &str, path: &str| {
-        line(&format!(
-            "({rule} file-read-data file-read-xattr (subpath \"{path}\"))"
-        ))
-    };
-    assert!(read("deny", "/Users/ada/.fleetd") < read("allow", "/Users/ada/.fleetd/node/navi/ada"));
-    assert!(read("allow", "/Users/ada/.claude") < read("deny", "/Users/ada/.claude/projects"));
     assert!(
-        read("deny", "/Users/ada/.claude/projects")
-            < read("allow", "/Users/ada/.claude/projects/-navi-ada")
+        line("deny", read, "/Users/ada/.claude/projects")
+            < line("allow", read, "/Users/ada/.claude/projects/-navi-ada")
     );
-    read("deny", "/Users/ada/.ssh");
+    line("deny", read, "/Users/ada/.ssh");
+    line("deny", write, "/Users/ada/.ssh");
+    // What runs on its own reads, but takes no write.
+    line("allow", read, "/Users/ada/.zshrc");
+    line("deny", write, "/Users/ada/.zshrc");
     assert_eq!(quoted(Path::new("/a \"b\"\\c")), "\"/a \\\"b\\\"\\\\c\"");
 }
 
@@ -828,7 +968,7 @@ fn a_copy_of_claudes_config_gone_before_the_start_fails_nothing() {
     // On Linux the home's tmpfs hides it without naming it.
     assert!(fence.hide.contains(&gone) || cfg!(target_os = "linux"));
     std::fs::remove_file(&gone).unwrap();
-    let (program, args) = wrap_with(
+    let sandboxed = wrap_with(
         Some(tool),
         &fence,
         &m.folder,
@@ -836,9 +976,7 @@ fn a_copy_of_claudes_config_gone_before_the_start_fails_nothing() {
         vec!["-c".into(), "true".into()],
     )
     .expect("a vanished copy is skipped, not mounted over");
-    let mut command = std::process::Command::new(program);
-    with_scope(&mut command);
-    assert!(command.args(args).env_clear().status().unwrap().success());
+    assert!(sandboxed.command().env_clear().status().unwrap().success());
     // The backups stay hidden.
     let backup = m.home.join(".claude.json.backup.1792349295");
     assert!(fence.hide.contains(&backup) || fence.hide.contains(&m.home));
@@ -846,7 +984,7 @@ fn a_copy_of_claudes_config_gone_before_the_start_fails_nothing() {
 
 #[cfg(target_os = "linux")]
 #[test]
-fn a_navis_home_holds_only_what_it_runs_and_works_in() {
+fn a_navi_sees_the_persons_home_as_it_is_but_what_stays_hidden() {
     let Some(tool) = sandbox_or_skip() else {
         return;
     };
@@ -869,6 +1007,7 @@ fn a_navis_home_holds_only_what_it_runs_and_works_in() {
          cat ~/.local/share/uv/python/cpython-3.12/lib/python3.12/os.py
          test -d ~/.rustup/toolchains/stable
          test -f ~/.fleetd/bin/fleetd
+         cat ~/notes/diary.md
          mkdir -p ~/.cache/claude && echo log > ~/.cache/claude/log"
     );
     let (ok, out) = m.run(&tool, &script);
@@ -880,6 +1019,7 @@ fn a_navis_home_holds_only_what_it_runs_and_works_in() {
         "Ada",
         "false",
         "# stdlib",
+        "private",
     ] {
         assert!(out.contains(ran), "{ran}: {out}");
     }
@@ -890,14 +1030,17 @@ fn a_navis_home_holds_only_what_it_runs_and_works_in() {
     // Its cache is its own.
     assert!(m.session.join("home-cache/claude/log").is_file());
     assert!(!m.home.join(".cache/claude/log").exists());
-    // Nothing else of the home is there: not its notes, its shell's startup files, another session's temporary copy
-    // of claude's config, or anything made after the fence was.
+    // The person's files are there, but not their keys, another session's temporary copy of claude's config, or
+    // anything made after the fence was. (`.config` and `.fleetd` are there only as the way to what comes back in
+    // them.)
+    let fence = m.fence();
     std::fs::write(m.home.join("made-later.txt"), "x").unwrap();
-    let listed = m.run(&tool, "ls -A ~").1;
+    let listed = m.run_in(&tool, &fence, "ls -A ~").1;
     let names: Vec<&str> = listed.lines().collect();
+    for present in ["notes", "src", ".bashrc", ".local", "code", "keys"] {
+        assert!(names.contains(&present), "{present}: {listed}");
+    }
     for absent in [
-        "notes",
-        ".bashrc",
         ".claude.json.tmp.77.1792349295",
         ".claude.json.backup.1792349295",
         ".ssh",
@@ -906,8 +1049,6 @@ fn a_navis_home_holds_only_what_it_runs_and_works_in() {
         assert!(!names.contains(&absent), "{absent}: {listed}");
     }
     for unreadable in [
-        m.home.join(".bashrc"),
-        m.home.join("notes/diary.md"),
         m.home.join(".cargo/credentials.toml"),
         m.home.join("made-later.txt"),
         // fleetd's dir, whatever of it is on the PATH.
@@ -916,13 +1057,100 @@ fn a_navis_home_holds_only_what_it_runs_and_works_in() {
         m.home.join(".local/bin/sneaky"),
         // git's credential store, beside the settings that come back.
         m.home.join(".config/git/credentials"),
-        // Another project, through the tool linked from it.
-        m.home.join("src/mine/README.md"),
-        m.home.join(".local/bin/tool"),
     ] {
-        let (ok, out) = m.run(&tool, &format!("cat '{}'", unreadable.display()));
+        let (ok, out) = m.run_in(&tool, &fence, &format!("cat '{}'", unreadable.display()));
         assert!(!ok, "{} was read: {out}", unreadable.display());
     }
-    let (ok, _) = m.run(&tool, "echo x > ~/new-file");
-    assert!(!ok, "the home took a write");
+}
+
+/// `script` as claude runs a Navi's command in a turn of session `session`: its command environment
+/// ([`navi_env`]) sourced first, as `CLAUDE_ENV_FILE` has it.
+#[cfg(target_os = "linux")]
+fn turn(m: &Machine, tool: &Path, session: &str, script: &str) -> (bool, String) {
+    let env = m.session.join(format!("{session}-env.sh"));
+    std::fs::write(&env, navi_env(&m.own, &m.home)).unwrap();
+    m.run(tool, &format!(". '{}'\n{script}", env.display()))
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn a_navi_installs_a_program_in_its_home_and_it_runs_on_after_the_turn() {
+    let Some(tool) = sandbox_or_skip() else {
+        return;
+    };
+    let m = Machine::new();
+    // A release tarball, as a download leaves it: one program that keeps a heartbeat.
+    let release = m.folder.join("release");
+    std::fs::create_dir_all(&release).unwrap();
+    std::fs::write(
+        release.join("beat"),
+        "#!/bin/sh\necho $$ > /tmp/beat.pid\nn=0\nwhile :; do n=$((n+1)); echo $n > /tmp/beat.count; sleep 0.1; done\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(
+        release.join("beat"),
+        std::os::unix::fs::PermissionsExt::from_mode(0o755),
+    )
+    .unwrap();
+    let (ok, out) = turn(
+        &m,
+        &tool,
+        "s1",
+        "set -e
+         cd \"$TMPDIR\" && tar -czf beat.tar.gz -C \"$OLDPWD/release\" beat
+         mkdir -p ~/.local/bin && tar -xzf beat.tar.gz -C ~/.local/bin
+         command -v beat
+         nohup beat > /tmp/beat.log 2>&1 &
+         sleep 0.5
+         cat /tmp/beat.pid",
+    );
+    assert!(ok, "{out}");
+    let installed = m.own.join("home/.local/bin/beat");
+    assert!(out.contains(&installed.display().to_string()), "{out}");
+    assert!(installed.is_file());
+    // The turn is over: its sandbox exited. The next turn, another session, finds the program running, and hears it.
+    let (ok, out) = turn(
+        &m,
+        &tool,
+        "s2",
+        "set -e
+         pid=$(cat /tmp/beat.pid)
+         kill -0 \"$pid\"
+         a=$(cat /tmp/beat.count); sleep 0.5; b=$(cat /tmp/beat.count)
+         test \"$b\" -gt \"$a\" && echo beating
+         command -v beat
+         ps -e -o pid=,comm= | wc -l",
+    );
+    assert!(ok, "{out}");
+    assert!(out.contains("beating"), "{out}");
+    // Its mark names its session, never the spawn's: the end of a session leaves it be, and the node still tells it
+    // from the person's own shell.
+    let program = installed.display().to_string();
+    let running = super::super::process::table()
+        .into_iter()
+        .filter(|p| {
+            std::fs::read(format!("/proc/{}/cmdline", p.pid))
+                .is_ok_and(|c| String::from_utf8_lossy(&c).contains(&program))
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(running.len(), 1, "{running:?}");
+    let environ = std::fs::read(format!("/proc/{}/environ", running[0].pid)).unwrap();
+    assert!(
+        String::from_utf8_lossy(&environ).contains("FLEETD_RUNNER_SESSION=s1.navi\0"),
+        "{}",
+        String::from_utf8_lossy(&environ)
+    );
+    // Only the box's processes are in sight: its init, its `cat`, the program, and this turn's.
+    let seen: usize = out.lines().last().unwrap().trim().parse().unwrap();
+    assert!(seen < 10, "{out}");
+    // The box ends with its Navi, and what ran in it.
+    forget_navi(&m.own);
+    assert!(!m.own.exists());
+    let (ok, out) = turn(
+        &m,
+        &tool,
+        "s3",
+        "test ! -e /tmp/beat.pid && ! command -v beat",
+    );
+    assert!(ok, "a new box starts empty: {out}");
 }

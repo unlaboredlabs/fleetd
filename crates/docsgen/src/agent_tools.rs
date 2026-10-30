@@ -878,8 +878,9 @@ fn builtins(root: &Path) -> Result<String, String> {
     md.push_str(
         "\n**A Navi's lead** keeps `Edit`, `Write`, `WebFetch` and `WebSearch`, and runs in `manual` permission mode: \
          any tool not below asks first. Its file tools and fetches always ask, in its settings' `permissions.ask`, \
-         whatever your own settings allow. The node answers a file tool: allowed inside the Navi's own folder, \
-         refused outside it (and for its `.claude`, `.mcp.json` and `.fleetd`), whoever approves it. A policy file's \
+         whatever your own settings allow. The node answers a file tool as the Navi's sandbox has it: allowed but \
+         where the sandbox hides or keeps read-only (and for its `.claude`, `.mcp.json` and `.fleetd`), refused there \
+         whoever approves it ([Navi sandbox](/docs/security#navi-sandbox), D234). A policy file's \
          allow rules don't apply to it. The node also answers a shell command: it runs, held by the OS sandbox \
          (decision `navi.shell-unasked`, D208), unless it opens a site in the browser. A fetch or `agent-browser \
          open` goes through without asking to a site the person allowed at its first visit or linked in their own \

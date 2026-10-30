@@ -498,6 +498,8 @@ struct Live {
     order_digest: Option<String>,
     /// The secrets the process was started with, for masking what it reports and the fleetd calls it makes.
     spawned: Arc<super::mask::Secrets>,
+    /// A Navi's sandbox, which its file tools' prompts are answered by too.
+    fence: Option<sandbox::Fence>,
 }
 
 #[derive(Default)]
@@ -2114,6 +2116,7 @@ impl SessionService {
         })?;
         let secrets = Arc::new(secrets);
         self.inner.runner.fence(&spec).await.map_err(runner_error)?;
+        let fence = spec.sandbox.clone();
         let handle = self.inner.runner.spawn(spec).map_err(runner_error)?;
         row.local.started = true;
         row.local.pid = Some(handle.pid);
@@ -2141,6 +2144,7 @@ impl SessionService {
                     slept: None,
                     order_digest,
                     spawned: secrets.clone(),
+                    fence,
                 },
             );
             generation
@@ -2377,9 +2381,16 @@ impl SessionService {
         // Its order's variables as they are at each Bash command, not only as its claude started: a GitHub token the
         // hub renews mid-turn reaches the agent's next command. The file names the order's script, no value.
         env.retain(|(k, _)| k != ORDER_ENV_FILE_ENV);
-        if let Some(sourced) = row.local.order_id.as_deref().and_then(|order| {
+        let mut sourced = row.local.order_id.as_deref().and_then(|order| {
             super::order_env::env_file(&config.home, row.summary.project_id.as_str(), order)
-        }) {
+        });
+        // A Navi's commands run in its own home, with what it installed there on the PATH (D234).
+        if row.local.role == SessionRole::Assistant {
+            let own = sandbox::navi_dir(&config.home, row.summary.project_id.as_str());
+            let navi = sandbox::navi_env(&own, &super::util::home_dir());
+            sourced = Some(navi + sourced.as_deref().unwrap_or_default());
+        }
+        if let Some(sourced) = sourced {
             let at = dir.join("order-env.sh");
             std::fs::write(&at, sourced)?;
             env.push((
@@ -2497,16 +2508,6 @@ impl SessionService {
             || PathBuf::from(agent_exe(std::env::current_exe(), std::process::id())),
             Path::to_path_buf,
         );
-        let other_roots = self
-            .inner
-            .store
-            .projects()
-            .unwrap_or_default()
-            .into_iter()
-            .filter(|p| p.project_id != row.summary.project_id)
-            .map(|p| PathBuf::from(p.workspace_root))
-            .filter(|r| r.is_absolute())
-            .collect();
         let runtime_dir = std::env::var_os("XDG_RUNTIME_DIR")
             .map(PathBuf::from)
             .unwrap_or_else(|| format!("/run/user/{}", nix::unistd::getuid()).into());
@@ -2533,7 +2534,7 @@ impl SessionService {
             exe: &exe,
             socket: &super::lead::lead_socket_path(home),
             runtime_dir: Some(&runtime_dir),
-            other_roots,
+            own: &sandbox::navi_dir(home, row.summary.project_id.as_str()),
             claude_bin: &super::claude_binary(),
             path: env
                 .iter()
@@ -3015,11 +3016,14 @@ impl SessionService {
         run_id: &Option<String>,
     ) {
         let scratch = share::scratch_dir(&self.inner.config.home, id);
+        let fence = self.st().live.get(id).and_then(|l| l.fence.clone());
+        let fence =
+            |cwd: &Path| fence.unwrap_or_else(|| sandbox::Fence::folder_only(cwd, &scratch));
         let decision = self.update(id, |c| {
             let decision = state::node_answer(
                 c.row.local.role,
                 &c.row.local.cwd,
-                &scratch,
+                &fence(&c.row.local.cwd),
                 c.row.summary.runtime_mode,
                 c.row.local.allowed_only,
                 &tool_name,
@@ -3690,6 +3694,7 @@ impl SessionService {
         blocking(move || {
             super::project_env::forget(&home, &id);
             super::mcp_servers::forget(&home, &id);
+            sandbox::forget_navi(&sandbox::navi_dir(&home, &id));
         })
         .await;
         self.st().machine(frame);

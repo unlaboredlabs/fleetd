@@ -5,8 +5,9 @@
 //! runs in the assistant role (`SessionRole::Assistant`), which asks a person before a send, a write through an
 //! integration, or a first visit to a site they didn't give it.
 //!
-//! Its lead reads and writes only inside its folder (the node refuses the rest, and the OS sandbox holds its commands to
-//! it), runs commands unasked (D208), and fetches or opens a site unasked only once the person allowed that site at its
+//! Its lead reads and writes what the person can on its machine, but their keys and logins and fleetd's own files, from
+//! a home of its own where its background processes outlive the turn (D234; the node's OS sandbox holds every tool and
+//! command to it, `node/runner/sandbox.rs`), runs commands unasked (D208), and fetches or opens a site unasked only once the person allowed that site at its
 //! first visit or linked it in their own message (`sites`).
 //!
 //! Each Navi has an owner (D215, `owner`): only they see it and use it, and the hub refuses anyone else.

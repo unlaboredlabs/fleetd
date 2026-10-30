@@ -4006,6 +4006,20 @@ async fn a_navi_gets_its_folder_under_the_node_home_and_its_lead_the_assistant_r
             .iter()
             .any(|(k, _)| crate::node::runner::sandbox::NO_ENV.contains(&k.as_str()))
     );
+    // Its commands run in its own home, which it writes, with what it installs there on their PATH (D234).
+    let home = real(&node.join("navis/p1/home"));
+    assert!(fence.write.contains(&home));
+    let sourced = spec
+        .env
+        .iter()
+        .find(|(k, _)| k == crate::node::runner::claude::ORDER_ENV_FILE_ENV)
+        .map(|(_, v)| std::fs::read_to_string(v).unwrap())
+        .expect("its commands' environment");
+    assert!(
+        sourced.contains(&format!("export HOME='{}'\n", home.display())),
+        "{sourced}"
+    );
+    assert!(sourced.contains("$HOME/.local/bin:"), "{sourced}");
 }
 
 /// The browser's hooks, keeping only which agent sessions are a Navi's.

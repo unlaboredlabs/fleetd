@@ -78,17 +78,19 @@ least busy worker.
 A Navi searches the web freely, and reads what its [integrations](/docs/integrations) hold and the factory's status. It
 also writes drafts and notes in its folder, remembers and forgets, keeps its checklist, works screens and logs in with 1Password.
 
-- **Files:** it reads and writes only inside its own folder. A read or an edit anywhere else is refused, whoever
-  approves it, so your keys, its MCP servers' tokens and other projects stay out of its reach. It can't change its own
-  Claude Code settings, MCP servers or fleetd policy in its folder either (`.claude`, `.mcp.json`, `.fleetd`), and a
-  policy file's allow rules don't apply to a Navi at all.
-- **Sandbox:** on top of those checks, a Navi's Claude Code and every command, MCP server and tool it starts run in
-  an OS sandbox ([Security](/docs/security#navi-sandbox)). Whatever a command tries, it writes only inside its folder
-  and its own scratch and `/tmp`, and can't read fleetd's directory, `~/.config`, `~/.ssh`, other projects or the
-  integrations' tokens.
+- **Files:** it reads and writes what you can on the machine, except your keys and logins (`~/.ssh`, `~/.config`
+  and the rest), fleetd's own directory and other Navis'. It can't change the startup files your shell runs on its
+  own, the programs the node runs, its own Claude Code settings, MCP servers or fleetd policy in its folder
+  (`.claude`, `.mcp.json`, `.fleetd`), and a policy file's allow rules don't apply to a Navi at all. Its folder is
+  where its notes, drafts and downloads go.
+- **Its own home:** each Navi has a home of its own, kept between sessions, where `npm i -g`, `pip install --user`,
+  `cargo install` and install scripts put what they install, on its `PATH`. What it starts in the background with
+  `nohup` or `setsid` keeps running after its turn, until the machine or the node restarts. It has no root, `apt` or
+  systemd services.
+- **Sandbox:** a Navi's Claude Code and every command, MCP server and tool it starts run in an OS sandbox that holds
+  those lines whatever a command tries ([Security](/docs/security#navi-sandbox)).
 - **Commands:** its shell commands run without asking (decision `navi.shell-unasked`, D208). The sandbox is the
-  guard: a command can't write outside its folder. The one exception is a browser command that opens a site, which
-  goes through the site rule below.
+  guard. The one exception is a browser command that opens a site, which goes through the site rule below.
 - **Sites:** a link you write in your own chat message is allowed as you send it, so the Navi fetches or opens it
   without asking. A link it finds itself, or reads in an email or on a page, isn't. The first time it fetches a page or
   opens a site in its browser, you're asked in its chat, with the site named. Approve once and it fetches and opens
