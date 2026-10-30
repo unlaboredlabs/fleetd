@@ -88,15 +88,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+        # Only this repo's own push runs on main, newest first: a fork's PR from a branch named main runs as a
+        # pull_request, so its artifact never stands in for main's.
         run: |
-          run=$(gh api "repos/$GH_REPO/actions/artifacts?name=fleetd-help&per_page=50" \
-            -q '[.artifacts[] | select(.expired | not) | select(.workflow_run.head_branch == "main")][0].workflow_run.id // empty' || true)
-          if [ -n "$run" ] && gh run download "$run" -n fleetd-help -D "$RUNNER_TEMP"; then
-            echo "From main's run $run."
-            echo "from=main" >> "$GITHUB_OUTPUT"
-          else
-            echo "::notice::main has no fleetd help kept; building it"
-          fi
+          runs=$(gh run list --workflow ci.yml --branch main --event push --limit 10 --json databaseId -q '.[].databaseId' || true)
+          for run in $runs; do
+            if gh run download "$run" -n fleetd-help -D "$RUNNER_TEMP" 2>/dev/null; then
+              echo "From main's run $run."
+              echo "from=main" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          done
+          echo "::notice::main has no fleetd help kept; building it"
       - uses: dtolnay/rust-toolchain@stable
         if: steps.help.outputs.from != 'main'
       - uses: Swatinem/rust-cache@v2
