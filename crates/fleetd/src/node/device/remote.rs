@@ -1005,7 +1005,7 @@ impl Work {
         }
         let mut command = tokio::process::Command::new(program);
         command
-            .args(args)
+            .args(self.paths(args))
             .current_dir(&self.dir)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -1051,6 +1051,22 @@ impl Work {
             exit_code,
             files: self.written(),
         }
+    }
+
+    /// A checked command with its files (`in/…`, `out/…`) as full paths in this folder: agent-device's daemon reads
+    /// `install`'s app from its own working directory, not the command's, and the session's daemon starts at
+    /// session_start in the node's ([`super::ios::session::Session::start_runner`]), so `in/…` was looked for there.
+    fn paths(&self, args: &[String]) -> Vec<String> {
+        let Ok(parsed) = parse(args) else {
+            return args.to_vec();
+        };
+        args.iter()
+            .zip(&parsed.roles)
+            .map(|(arg, role)| match role {
+                Role::Plain => arg.clone(),
+                _ => self.dir.join(arg).to_string_lossy().into_owned(),
+            })
+            .collect()
     }
 
     /// A checked command held back unrun, with exit code 75 and `stderr`: the files sent for it go, as a run's do, so
