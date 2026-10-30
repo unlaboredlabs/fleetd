@@ -1,7 +1,9 @@
 // A list you reorder by dragging a row, or with ⌥↑ / ⌥↓ on a focused one (ui/DESIGN.md). A press that moves a few
 // pixels lifts the row (raised, a soft shadow, under the pointer); the rows it passes slide aside to open its gap; let
 // go, it settles into the gap and the list takes the new order. Near the top or bottom of a list that scrolls, the list
-// scrolls, faster the closer the pointer is to the edge, and the lifted row stays under the pointer. Esc puts it back.
+// scrolls, faster the closer the pointer is to the edge, and the lifted row stays under the pointer; as on iOS and
+// macOS, only once the pointer heads for that edge, or rests near it a moment, so a row picked up near an edge of a
+// scrolled list doesn't set it moving. Esc puts it back.
 // So does a list that changes under it (a move from another desktop, a row added or gone): rows go by key, never by
 // an index from before. A click that didn't move is still a
 // click. Only transform changes, on the rows' wrappers, so nothing lays out mid-drag; with reduced motion the rows
@@ -18,6 +20,17 @@ export const SETTLE_MS = 180;
 export const EDGE_PX = 48;
 /** The fastest it scrolls, at the edge or past it: px a frame. */
 export const MAX_SCROLL_PX = 14;
+/** How far the pointer heads for an edge, since the lift, before the list scrolls that way. */
+export const ARM_PX = 6;
+/** Or how long it rests near an edge. */
+export const DWELL_MS = 500;
+
+/**
+ * Whether a pointer at `y`, in an edge's band (`speed` from edgeSpeed: negative near the top), has headed for that edge:
+ * ARM_PX nearer it than the farthest from it the pointer has been since the lift (`low` to `high`).
+ */
+export const headedFor = (speed: number, y: number, low: number, high: number): boolean =>
+  speed < 0 ? y <= high - ARM_PX : speed > 0 ? y >= low + ARM_PX : false;
 
 /**
  * How far a list from `top` to `bottom` scrolls this frame with the pointer at `y`: none outside the edges' bands, then
@@ -114,6 +127,13 @@ interface Press<K> {
   scroll0: number;
   /** The autoscroll's next frame; 0 while it isn't scrolling. */
   frame: number;
+  /** The pointer has headed for an edge, or rested near one: the list may scroll. */
+  armed: boolean;
+  /** The highest and lowest the pointer has been since the lift. */
+  low: number;
+  high: number;
+  /** The rest near an edge being timed; 0 when none. */
+  dwell: number;
 }
 
 interface Moving<K> {
@@ -262,6 +282,10 @@ export function useReorder<K extends string>(options: ReorderOptions<K>): Reorde
       scroller: null,
       scroll0: 0,
       frame: 0,
+      armed: false,
+      low: e.clientY,
+      high: e.clientY,
+      dwell: 0,
     };
     /** The lifted row under the pointer, the list scrolled or not, and the gap where it would drop. */
     const place = () => {
@@ -280,14 +304,33 @@ export function useReorder<K extends string>(options: ReorderOptions<K>): Reorde
         setMoving((m) => (m === null ? m : { ...m, over }));
       }
     };
-    /** A frame of the autoscroll: on while the pointer is near an edge and the list can still go that way. */
+    const restless = () => {
+      if (p.dwell !== 0) window.clearTimeout(p.dwell);
+      p.dwell = 0;
+    };
+    /**
+     * A frame of the autoscroll: on while the pointer is near an edge and the list can still go that way, once armed.
+     * Not yet armed, a pointer near an edge arms it by heading for it, or by resting there DWELL_MS.
+     */
     const tick = () => {
       p.frame = 0;
       const scroller = p.scroller;
       if (!p.lifted || scroller === null) return;
       const box = scroller.getBoundingClientRect();
       const speed = edgeSpeed(p.y, box.top, box.bottom);
-      if (speed === 0) return;
+      if (speed === 0) return restless();
+      if (!p.armed && headedFor(speed, p.y, p.low, p.high)) p.armed = true;
+      if (!p.armed) {
+        if (p.dwell === 0) {
+          p.dwell = window.setTimeout(() => {
+            p.dwell = 0;
+            p.armed = true;
+            if (p.frame === 0) tick();
+          }, DWELL_MS);
+        }
+        return;
+      }
+      restless();
       const before = scroller.scrollTop;
       scroller.scrollTop = before + speed;
       if (scroller.scrollTop === before) return;
@@ -315,6 +358,8 @@ export function useReorder<K extends string>(options: ReorderOptions<K>): Reorde
         p.scroller = scrollerOf(el);
         p.scroll0 = p.scroller?.scrollTop ?? 0;
         p.scroller?.addEventListener("scroll", place);
+        p.low = p.y;
+        p.high = p.y;
         p.lifted = true;
         try {
           el.setPointerCapture(p.pointerId);
@@ -323,6 +368,8 @@ export function useReorder<K extends string>(options: ReorderOptions<K>): Reorde
         }
         setMoving({ key, from, over: from, size: p.heights[from] ?? 0, settling: false });
       }
+      p.low = Math.min(p.low, p.y);
+      p.high = Math.max(p.high, p.y);
       place();
       if (p.frame === 0) tick();
     };
@@ -334,6 +381,7 @@ export function useReorder<K extends string>(options: ReorderOptions<K>): Reorde
       p.scroller?.removeEventListener("scroll", place);
       if (p.frame !== 0) window.cancelAnimationFrame(p.frame);
       p.frame = 0;
+      restless();
       if (press.current === p) press.current = null;
     };
     p.finish = (cancel) => {

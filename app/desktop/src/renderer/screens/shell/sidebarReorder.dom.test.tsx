@@ -9,7 +9,7 @@ import type { ProjectSummary } from "../../../shared/contracts";
 import { createDataLayer, type DataLayer } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { UiProvider } from "../../ui";
-import { SETTLE_MS } from "../../ui/lib/reorder";
+import { DWELL_MS, SETTLE_MS } from "../../ui/lib/reorder";
 import type { SidebarProject } from "./model";
 import type { Screen } from "./routes";
 import { Sidebar } from "./Sidebar";
@@ -124,7 +124,7 @@ const announced = (label: string) => section(label).querySelector("[role='status
 
 const pointer = (target: EventTarget, type: string, y: number) =>
   act(() => {
-    target.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, button: 0, pointerId: 1, clientY: y }));
+    target.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, button: 0, pointerId: 1, pointerType: "mouse", clientY: y }));
   });
 
 /** Presses `title` at its middle, moves it `dy` px in steps, and lets go. */
@@ -264,21 +264,19 @@ describe("a section that goes mid-drag", () => {
 });
 
 describe("near the edge of a long sidebar", () => {
-  it("scrolls it, keeping the lifted row under the pointer, and stops when you let go", async () => {
+  /** Fourteen projects in a sidebar body that scrolls, 200 px of it on screen, scrolled to `start`; frames by hand. */
+  const longSidebar = (start = 0) => {
     const many = Array.from({ length: 14 }, (_, i) => row(`p${String(i).padStart(2, "0")}`));
     mount(many);
-    // The sidebar's body scrolls, 200 px of it on screen.
     const body = host.querySelector<HTMLElement>("nav[aria-label='Sidebar'] > div");
     if (body === null) throw new Error("no sidebar body");
     body.style.overflowY = "auto";
-    let scrollTop = 0;
+    let scrollTop = start;
     Object.defineProperty(body, "scrollTop", { get: () => scrollTop, set: (v: number) => (scrollTop = Math.max(0, Math.min(400, v))) });
     const rect = layout.getMockImplementation();
     layout.mockImplementation(function (this: HTMLElement) {
       return this === body ? DOMRect.fromRect({ x: 0, y: 0, width: 240, height: 200 }) : (rect?.call(this) ?? new DOMRect());
     });
-
-    // Animation frames step by hand.
     let queued: FrameRequestCallback[] = [];
     const raf = vi.spyOn(window, "requestAnimationFrame").mockImplementation((f) => queued.push(f));
     const caf = vi.spyOn(window, "cancelAnimationFrame").mockImplementation(() => (queued = []));
@@ -290,41 +288,86 @@ describe("near the edge of a long sidebar", () => {
           for (const f of run) f(0);
         }
       });
+    const restore = () => {
+      raf.mockRestore();
+      caf.mockRestore();
+    };
+    return { scrolled: () => scrollTop, frames, restore };
+  };
 
+  it("scrolls it, keeping the lifted row under the pointer, and stops when you let go", async () => {
+    const { scrolled, frames, restore } = longSidebar();
     // p00 (0 to 28 in its list) lifted, the pointer 12 px above the body's bottom.
     pointer(button("p00"), "pointerdown", ROW / 2);
     pointer(window, "pointermove", ROW / 2 + 10);
     pointer(window, "pointermove", 188);
     frames(3);
-    const slow = scrollTop;
+    const slow = scrolled();
     expect(slow).toBeGreaterThan(0);
     // Under the pointer: as far as the pointer went, plus what the list scrolled under it.
     const lifted = section("Projects").querySelector<HTMLElement>("[data-lifted]");
-    expect(lifted?.style.transform).toBe(`translateY(${String(188 - ROW / 2 + scrollTop)}px)`);
+    expect(lifted?.style.transform).toBe(`translateY(${String(188 - ROW / 2 + scrolled())}px)`);
 
     // Nearer the edge, faster.
     pointer(window, "pointermove", 198);
-    const before = scrollTop;
+    const before = scrolled();
     frames(3);
-    expect(scrollTop - before).toBeGreaterThan(slow);
-    expect(lifted?.style.transform).toBe(`translateY(${String(198 - ROW / 2 + scrollTop)}px)`);
+    expect(scrolled() - before).toBeGreaterThan(slow);
+    expect(lifted?.style.transform).toBe(`translateY(${String(198 - ROW / 2 + scrolled())}px)`);
 
     // Away from the edge it stops.
     pointer(window, "pointermove", 100);
-    const held = scrollTop;
+    const held = scrolled();
     frames(3);
-    expect(scrollTop).toBe(held);
+    expect(scrolled()).toBe(held);
 
     // Letting go drops the row where it is, and the list stays put.
-    const at = Math.floor((100 - ROW / 2 + scrollTop) / ROW);
+    const at = Math.floor((100 - ROW / 2 + scrolled()) / ROW);
     pointer(window, "pointerup", 100);
     frames(3);
-    expect(scrollTop).toBe(held);
-    raf.mockRestore();
-    caf.mockRestore();
+    expect(scrolled()).toBe(held);
+    restore();
     await settle(SETTLE_MS + 20);
     expect(titles("Projects").indexOf("p00")).toBe(at);
     expect(at).toBeGreaterThan(3);
+  });
+
+  it("doesn't scroll a scrolled sidebar for a row picked up near its top until the pointer heads for the edge", async () => {
+    const { scrolled, frames, restore } = longSidebar(100);
+    // p00 sits in the top edge's band; picked up there and lifted by a small move away from the edge.
+    pointer(button("p00"), "pointerdown", 20);
+    pointer(window, "pointermove", 26);
+    frames(5);
+    expect(scrolled()).toBe(100);
+    // Wandering in the band, never nearer the edge than the lift: still.
+    pointer(window, "pointermove", 30);
+    pointer(window, "pointermove", 25);
+    frames(5);
+    expect(scrolled()).toBe(100);
+    // Heading for it: up it goes.
+    pointer(window, "pointermove", 20);
+    frames(3);
+    expect(scrolled()).toBeLessThan(100);
+    pointer(window, "pointerup", 20);
+    restore();
+    await settle(SETTLE_MS + 20);
+  });
+
+  it("scrolls once the pointer rests near the edge a moment", async () => {
+    const { scrolled, frames, restore } = longSidebar(100);
+    pointer(button("p00"), "pointerdown", 20);
+    pointer(window, "pointermove", 26);
+    frames(3);
+    expect(scrolled()).toBe(100);
+    await act(() => new Promise((done) => setTimeout(done, DWELL_MS - 150)));
+    frames(3);
+    expect(scrolled()).toBe(100);
+    await act(() => new Promise((done) => setTimeout(done, 200)));
+    frames(3);
+    expect(scrolled()).toBeLessThan(100);
+    pointer(window, "pointerup", 26);
+    restore();
+    await settle(SETTLE_MS + 20);
   });
 });
 
@@ -338,7 +381,7 @@ describe("the keyboard", () => {
     key("ArrowUp");
     await settle();
     expect(titles("Projects")).toEqual(["docs", "api", "web"]);
-    expect(document.activeElement?.textContent).toContain("docs");
+    expect(document.activeElement).toBe(button("docs"));
     expect(announced("Projects")).toBe("docs moved to 1 of 3");
     expect(saved().at(-1)).toEqual(["ada", "home", "docs", "api", "web"]);
 
@@ -357,7 +400,7 @@ describe("the keyboard", () => {
     key("ArrowDown");
     await settle();
     expect(titles("Projects")).toEqual(["api", "web", "docs"]);
-    expect(document.activeElement?.textContent).toContain("docs");
+    expect(document.activeElement).toBe(button("docs"));
     expect(announced("Projects")).toBe("docs moved to 3 of 3");
   });
 });

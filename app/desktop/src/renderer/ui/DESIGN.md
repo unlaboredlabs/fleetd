@@ -82,9 +82,9 @@ breaks a rule changes this page in the same PR and says why.
 - **A row you drag** (`lib/reorder`) lifts after 4 px: raised a step with a small soft shadow, never scaled, it rides
   the pointer. The rows it passes slide aside over `--dur-base` to open its gap; let go, it settles into the gap over
   the same, `--ease-out`, then the list takes the order. Near a scrolling list's top or bottom (48 px) the list
-  scrolls, easing in (squared) to 14 px a frame at the edge, and the lifted row stays under the pointer. Esc settles
-  it back. ⌥↑ / ⌥↓ move a focused row at once. With reduced motion nothing glides: the rows step aside and the drop
-  lands at once.
+  scrolls, easing in (squared) to 14 px a frame at the edge, and the lifted row stays under the pointer. As on iOS
+  and macOS it waits for the pointer to head 6 px for that edge, or rest near it 500 ms. Esc settles it back. ⌥↑ / ⌥↓
+  move a focused row at once. With reduced motion nothing glides: the rows step aside and the drop lands at once.
 - **Reduced motion:** no beat, so no loops, and entrances are a plain fade. Each state keeps a still shape of its own
   (working is a diamond on a dim field, thinking the ring's top row).
 - **Cost:** no beat while the window is hidden or with reduced motion. Check a change that adds a loop with `pnpm perf`
