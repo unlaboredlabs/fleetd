@@ -7,12 +7,14 @@
 //!
 //! Merge order across PRs (`after`): a Change whose `after` PRs haven't all merged waits in line, held "waiting on" the
 //! first of them, in this repo or another. When one fails CI or review, or leaves the train unmerged, the Change stays
-//! held and the lead is told once. Once they have all merged it goes, kicked by their merge.
+//! held and the lead is told once. Once they have all merged it goes, kicked by their merge. A PR stacked on another
+//! open PR, based on its branch or holding its head among its commits, gets that PR in its `after` by itself (`stack`);
+//! one based on its branch goes into that PR's base once it merged (`restack`).
 use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 
 use super::contract::{Change, ChangeId, ChangeState, GitHubPrUrl, parse_pr_url};
-use super::github::{CheckRun, NEXT_LABEL};
+use super::github::{CheckRun, GhError, NEXT_LABEL, Pull};
 use super::records::{HEAD_STATES, QUEUED_STATES};
 use super::service::{Train, lock, timed_out};
 use crate::hub::leads::events::Event;
@@ -137,6 +139,13 @@ pub(super) struct Rerun {
     /// GitHub's refusals since that re-run, and when the train may ask again.
     refused: u32,
     at: i64,
+}
+
+/// Whether the train re-ran `run`, the newest run of its check, as the run it saw: GitHub shows no newer run of it yet.
+pub(super) fn reran(reruns: &Reruns, run: &CheckRun) -> bool {
+    run.workflow_run()
+        .and_then(|w| reruns.get(&(w, run.name.clone())))
+        .is_some_and(|r| r.times > 0 && r.seen == run.id)
 }
 
 /// What `rerun_jobs` came to, over every job it was given.
@@ -881,6 +890,84 @@ impl Train {
             .render();
             self.wake_lead(&change.project_ref, line).await;
         }
+    }
+
+    /// The Change with the open PRs its PR `pull` is stacked on in its `after`: the one whose branch is its base, and
+    /// each whose head is among its commits. It then waits for them by itself, as for `change_enqueue`'s `after`. The
+    /// train's own batch PRs never count, nor a PR that already waits on this one (`loops_back`).
+    pub(super) async fn stack(&self, change: &Change, pull: &Pull) -> Result<Change, GhError> {
+        let repo = change.repo.as_str();
+        let head = pull.head.sha.to_lowercase();
+        let scratch = self.scratch_prefix(repo).await;
+        let open = self.github.open_pulls(repo).await?;
+        let mut commits: Option<Vec<String>> = None;
+        let mut under = Vec::new();
+        for other in &open {
+            let other_head = other.head.sha.to_lowercase();
+            if other.number == change.pr_number.get()
+                || other_head == head
+                || scratch
+                    .as_deref()
+                    .is_some_and(|p| other.head.ref_.starts_with(p))
+            {
+                continue;
+            }
+            let stacked = other.head.ref_ == pull.base.ref_ || {
+                if commits.is_none() {
+                    // GitHub lists at most 250 commits: past that only the base can tell.
+                    let range = self.github.range(repo, &pull.base.ref_, &head).await?;
+                    commits = Some(range.map(|(_, c)| c).unwrap_or_default());
+                }
+                commits.as_ref().is_some_and(|c| c.contains(&other_head))
+            };
+            let url =
+                GitHubPrUrl::unchecked(format!("https://github.com/{repo}/pull/{}", other.number));
+            if stacked
+                && !change.after.contains(&url)
+                && self
+                    .loops_back(change.pr_url.as_str(), std::slice::from_ref(&url))
+                    .is_none()
+            {
+                tracing::info!(change_id = %change.change_id, upstream = %url, "train: stacked on another open PR");
+                under.push(url);
+            }
+        }
+        Ok(self.add_after(change.clone(), &under))
+    }
+
+    /// A Change whose PR is based on the branch of a PR in its `after` that merged: its PR is pointed at that PR's base,
+    /// so it merges there, not into a branch that already landed. Whether it was pointed; the next pass takes it.
+    pub(super) async fn restack(&self, change: &Change, pull: &Pull) -> Result<bool, GhError> {
+        for url in &change.after {
+            let Some(p) = parse_pr_url(url.as_str()) else {
+                continue;
+            };
+            let Some(upstream) = self.records.latest_for(&p.repo.to_lowercase(), p.pr_number)
+            else {
+                continue;
+            };
+            if upstream.state != ChangeState::Merged
+                || upstream.repo != change.repo
+                || upstream.branch.as_str() != pull.base.ref_
+            {
+                continue;
+            }
+            let repo = change.repo.as_str();
+            let base = self.github.pull(repo, p.pr_number).await?.base.ref_;
+            self.github
+                .edit_pull(repo, change.pr_number.get(), &[("base", &base)])
+                .await?;
+            tracing::info!(change_id = %change.change_id, base, "train: stacked PR pointed at its merged upstream's base");
+            self.update(&change.change_id, Some(&[ChangeState::Ready]), |mut c| {
+                c.last_error = Some(super::service::error_text(&format!(
+                    "{} merged, so it now goes into {base}",
+                    upstream.pr_url
+                )));
+                c
+            });
+            return Ok(true);
+        }
+        Ok(false)
     }
 
     /// The PRs it waits on, now also `after`'s.

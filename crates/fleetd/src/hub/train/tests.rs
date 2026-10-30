@@ -185,6 +185,8 @@ struct FakeGh {
     reruns: Arc<Mutex<Vec<u64>>>,
     /// GitHub refuses every re-run of one job.
     refuse_job_reruns: Mutex<bool>,
+    /// Each Actions job's log, by job id.
+    job_logs: Mutex<HashMap<u64, String>>,
     /// The `check_runs` of one head, before `runs` and `ci`.
     head_runs: Mutex<HashMap<String, Value>>,
     /// The checks main requires through a ruleset, when set: in place of what `ci` requires.
@@ -228,6 +230,32 @@ impl FakeGh {
             "mergeable": p.mergeable,
             "mergeable_state": match p.mergeable { Some(true) => "clean", Some(false) => "dirty", None => "unknown" },
         })
+    }
+
+    /// Scripted `runs` with each failed job the train re-ran failing again, in a newer run, unless the script already
+    /// shows a newer run of its check.
+    fn failing_again(&self, runs: Value) -> Value {
+        let Value::Array(mut runs) = runs else {
+            return runs;
+        };
+        let reruns = self.reruns.lock().unwrap().clone();
+        let again: Vec<Value> = runs
+            .iter()
+            .filter(|r| r["conclusion"] == "failure")
+            .filter(|r| r["id"].as_u64().is_some_and(|id| reruns.contains(&id)))
+            .filter(|r| {
+                !runs
+                    .iter()
+                    .any(|o| o["name"] == r["name"] && o["id"].as_u64() > r["id"].as_u64())
+            })
+            .map(|r| {
+                let mut again = r.clone();
+                again["id"] = json!(r["id"].as_u64().unwrap() + 1000);
+                again
+            })
+            .collect();
+        runs.extend(again);
+        Value::Array(runs)
     }
 
     fn red(&self, sha: &str) -> bool {
@@ -524,7 +552,9 @@ impl FakeGh {
                         .collect(),
                 ))
             }
-            (["compare", range], "GET") if !args.iter().any(|a| a.contains("github.diff")) => {
+            // A branch in the range may hold slashes.
+            (["compare", range @ ..], "GET") if !args.iter().any(|a| a.contains("github.diff")) => {
+                let range = range.join("/");
                 let (from, head) = range.split_once("...").unwrap_or_default();
                 let base = git(&self.origin, &["merge-base", from, head]);
                 let commits = git(
@@ -651,10 +681,10 @@ impl FakeGh {
                 }
                 self.moves_during_ci(sha);
                 if let Some(runs) = self.head_runs.lock().unwrap().get(*sha) {
-                    return ok(json!({ "check_runs": runs }));
+                    return ok(json!({ "check_runs": self.failing_again(runs.clone()) }));
                 }
                 if let Some(runs) = &*self.runs.lock().unwrap() {
-                    return ok(json!({ "check_runs": runs() }));
+                    return ok(json!({ "check_runs": self.failing_again(runs()) }));
                 }
                 match self.ci {
                     FakeCi::Macos { .. } => return ok(self.macos_runs(sha)),
@@ -809,6 +839,16 @@ impl FakeGh {
                         })
                         .collect(),
                 ))
+            }
+            (["actions", "jobs", job, "logs"], "GET") => {
+                match self.job_logs.lock().unwrap().get(&job.parse().unwrap()) {
+                    Some(log) => GhOut {
+                        exit_code: 0,
+                        stdout: log.clone(),
+                        stderr: String::new(),
+                    },
+                    None => http_error(404, "Not Found"),
+                }
             }
             (["actions", "jobs", job, "rerun"], "POST") => {
                 self.reruns.lock().unwrap().push(job.parse().unwrap());
@@ -1448,6 +1488,7 @@ impl Kit {
             runs: Mutex::default(),
             reruns: Arc::default(),
             refuse_job_reruns: Mutex::default(),
+            job_logs: Mutex::default(),
             head_runs: Mutex::default(),
             workflow_files: Mutex::default(),
             required: Mutex::default(),
@@ -2695,32 +2736,72 @@ async fn a_merge_outside_the_train_into_a_base_the_landing_scanner_watches_wakes
     );
 }
 
-/// The train merges a PR into its own base, so a PR based on another open PR's branch would land in that PR: it is
-/// refused with how to go on once its parent merges.
+/// A PR based on another open PR's branch waits for that PR by itself, with no `after` from the lead; once that PR
+/// merged, the train points it at that PR's base, so it lands on main and not in the landed branch.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_pr_based_on_another_open_prs_branch_is_refused() {
+async fn a_pr_based_on_another_open_prs_branch_waits_for_it_then_goes_into_its_base() {
     let kit = Kit::new();
     let parent = kit.open_pr(7, "p", &[add("p.txt", "p\n")]);
-    kit.enqueue(parent).await;
     let child = kit.stacked_pr(8, "c", "p", &[add("c.txt", "c\n")]);
-    let refused = kit
-        .train
-        .enqueue(&project(), enqueue_call(child))
-        .await
-        .unwrap_err();
-    assert!(
-        refused.message.contains("based on #7's branch"),
-        "{}",
-        refused.message
+    let child = kit.enqueue(child).await;
+    kit.enqueue(parent.clone()).await;
+    assert_eq!(
+        kit.get(&child.change_id).after,
+        [GitHubPrUrl::unchecked(parent)]
     );
+
+    for _ in 0..4 {
+        kit.train.step(REPO).await;
+    }
+    assert_eq!(merged_prs(&kit), [7, 8]);
+    assert_eq!(kit.gh.pulls.lock().unwrap()[&8].base, "main");
+    let main = kit.head_of("main");
+    for file in ["p.txt", "c.txt"] {
+        assert!(
+            git_out(
+                &kit.gh.origin,
+                &["cat-file", "-e", &format!("{main}:{file}")]
+            )
+            .is_some(),
+            "{file} on main"
+        );
+    }
+}
+
+/// A PR into main whose commits hold another open PR's head is stacked on it too: it waits for that PR to merge first.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_pr_holding_another_open_prs_commits_waits_for_it() {
+    let kit = Kit::new();
+    let parent = kit.open_pr(7, "p", &[add("p.txt", "p\n")]);
+    kit.commit("c", &[add("c.txt", "c\n")], Some("origin/p"));
+    kit.gh
+        .pulls
+        .lock()
+        .unwrap()
+        .insert(8, FakePull::open("c", "main", ""));
+    let child = kit
+        .enqueue(format!("https://github.com/{REPO}/pull/8"))
+        .await;
+    assert_eq!(
+        kit.get(&child.change_id).after,
+        [GitHubPrUrl::unchecked(parent.clone())]
+    );
+    kit.train.step(REPO).await;
+    let held = kit.get(&child.change_id);
     assert!(
-        refused
-            .fix
+        held.last_error
             .as_deref()
-            .is_some_and(|f| f.contains("gh pr edit 8 --base")),
+            .is_some_and(|e| e.starts_with(super::next::WAITING_ON)),
         "{:?}",
-        refused.fix
+        held.last_error
     );
+    assert!(merged_prs(&kit).is_empty());
+
+    kit.enqueue(parent).await;
+    for _ in 0..3 {
+        kit.train.step(REPO).await;
+    }
+    assert_eq!(merged_prs(&kit), [7, 8]);
 }
 
 /// GitHub may take minutes to start a run: the train waits for the check however long it takes to appear.
@@ -3571,6 +3652,88 @@ async fn a_required_check_cancelled_in_the_prs_own_run_is_re_run_before_the_merg
     );
 }
 
+/// #861: a check that fails on a PR's own head is re-run once, alone. When the re-run passes, the PR merges with no
+/// push, and its author and the lead hear in one line that it was flaky, with the test the log names.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_failed_job_passing_on_its_re_run_merges_and_is_called_flaky() {
+    let clock = Arc::new(Sleeps::default());
+    let kit = Kit::on_clock(FakeCi::Required, clock);
+    kit.gh.job_logs.lock().unwrap().insert(
+        10,
+        "2026-10-30T21:00:00.0000000Z test hub::lab::serves_the_page ... FAILED\n".into(),
+    );
+    let reruns = kit.gh.reruns.clone();
+    answer_checks(&kit, move || {
+        let mut runs = vec![job(10, 1, "build", "failure")];
+        if !reruns.lock().unwrap().is_empty() {
+            runs.push(job(11, 1, "build", "success"));
+        }
+        runs
+    });
+    let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")]);
+    let (_, change_id) = kit.author_task(Some(&pr)).await;
+
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(kit.get(&change_id).state, ChangeState::Merged);
+    assert_eq!(*kit.gh.reruns.lock().unwrap(), [10], "the failed job, once");
+    let sends = kit.host.sends.lock().unwrap().clone();
+    let flaky: Vec<&(String, String)> = sends.iter().filter(|(_, m)| m.contains("flaky")).collect();
+    assert_eq!(flaky.len(), 1, "{sends:?}");
+    assert_eq!(flaky[0].0, "T1");
+    assert!(
+        flaky[0]
+            .1
+            .contains("build (test hub::lab::serves_the_page) failed, then passed"),
+        "{}",
+        flaky[0].1
+    );
+    let wakes = kit.host.wakes.lock().unwrap().clone();
+    assert_eq!(
+        wakes.iter().filter(|w| w.contains("flaky CI on")).count(),
+        1,
+        "{wakes:?}"
+    );
+}
+
+/// A failed job that fails again on its one re-run is red: the PR goes back to its author as before, and no third run
+/// is asked for.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_failed_job_failing_again_on_its_re_run_goes_back_to_its_author() {
+    let clock = Arc::new(Sleeps::default());
+    let kit = Kit::on_clock(FakeCi::Required, clock);
+    let reruns = kit.gh.reruns.clone();
+    answer_checks(&kit, move || {
+        let mut runs = vec![job(10, 1, "build", "failure")];
+        if !reruns.lock().unwrap().is_empty() {
+            runs.push(job(11, 1, "build", "failure"));
+        }
+        runs
+    });
+    let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")]);
+    let (_, change_id) = kit.author_task(Some(&pr)).await;
+
+    assert!(kit.train.step(REPO).await);
+    let failed = kit.get(&change_id);
+    assert_eq!(failed.state, ChangeState::CiFailed);
+    assert!(
+        failed
+            .last_error
+            .as_deref()
+            .unwrap()
+            .starts_with("CI failed on "),
+        "{:?}",
+        failed.last_error
+    );
+    assert_eq!(*kit.gh.reruns.lock().unwrap(), [10]);
+    assert!(kit.gh.merges.lock().unwrap().is_empty());
+    let sends = kit.host.sends.lock().unwrap().clone();
+    assert!(!sends.iter().any(|(_, m)| m.contains("flaky")), "{sends:?}");
+    assert!(
+        sends.last().unwrap().1.contains("build (failure)"),
+        "{sends:?}"
+    );
+}
+
 /// A required check that reads cancelled however often it is re-run is no failure, but the train never asks GitHub to
 /// merge: it waits until CI times out, which the lead hears of, not the author (D191).
 #[tokio::test(flavor = "multi_thread")]
@@ -3611,6 +3774,77 @@ async fn the_train_never_merges_while_a_required_check_reads_cancelled() {
             .any(|l| l.starts_with("merge"))
     );
     assert_eq!(*kit.gh.reruns.lock().unwrap(), [10, 11]);
+}
+
+/// #860: its author pushed a fix to a parked PR while the train waited 25 min on another PR's CI, and the train only
+/// read the push once that CI ended. Now the PRs waiting in line are read during the wait: the parked PR takes its new
+/// head and goes back in line before the other PR merges.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_push_to_a_parked_pr_is_taken_while_another_prs_ci_runs() {
+    let clock = Arc::new(Sleeps::default());
+    let kit = Kit::on_clock(FakeCi::Workflow { green_from: 40 }, clock);
+    let parked = kit
+        .enqueue(kit.open_pr(8, "b", &[add("b.txt", "b\n")]))
+        .await;
+    kit.gh.head_runs.lock().unwrap().insert(
+        kit.head_of("b"),
+        json!([check("ci", "completed", Some("failure"), None)]),
+    );
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(state_of(&kit, &parked), ChangeState::CiFailed);
+
+    let other = kit
+        .enqueue(kit.open_pr(7, "a", &[add("a.txt", "a\n")]))
+        .await;
+    let gh = Arc::downgrade(&kit.gh);
+    let pushed = Mutex::new(false);
+    *kit.gh.on_checks.lock().unwrap() = Some(Box::new(move || {
+        let Some(gh) = gh.upgrade() else { return };
+        if !std::mem::replace(&mut *pushed.lock().unwrap(), true) {
+            gh.push_empty("b");
+        }
+    }));
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(merged_prs(&kit), [7]);
+    assert_eq!(state_of(&kit, &other), ChangeState::Merged);
+    let moved = kit.get(&parked.change_id);
+    assert_eq!(moved.head_sha.as_str(), kit.head_of("b"));
+    assert_eq!(moved.state, ChangeState::Ready, "{:?}", moved.last_error);
+}
+
+/// A push to the PR in CI that doesn't cancel its run: the train stops waiting on the old head, which could never
+/// merge, and takes the new one, with no re-enqueue.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_push_to_the_pr_in_ci_ends_the_wait_on_its_old_head() {
+    let clock = Arc::new(Sleeps::default());
+    let kit = Kit::on_clock(FakeCi::Workflow { green_from: 40 }, clock);
+    let change = kit
+        .enqueue(kit.open_pr(7, "e", &[add("e.txt", "e\n")]))
+        .await;
+    let gh = Arc::downgrade(&kit.gh);
+    let pushed = Mutex::new(false);
+    *kit.gh.on_checks.lock().unwrap() = Some(Box::new(move || {
+        let Some(gh) = gh.upgrade() else { return };
+        // Once the train waits on CI for the head it took.
+        if *gh.polls.lock().unwrap() >= 5 && !std::mem::replace(&mut *pushed.lock().unwrap(), true)
+        {
+            gh.push_empty("e");
+        }
+    }));
+
+    kit.train.step(REPO).await;
+    let back = kit.get(&change.change_id);
+    assert_eq!(
+        (back.state, back.last_error.as_deref()),
+        (ChangeState::Ready, Some(super::service::CI_SUPERSEDED))
+    );
+    assert!(merged_prs(&kit).is_empty());
+    for _ in 0..3 {
+        kit.train.step(REPO).await;
+    }
+    let merged = kit.get(&change.change_id);
+    assert_eq!(merged.state, ChangeState::Merged);
+    assert_eq!(kit.gh.merges.lock().unwrap()[0].1, kit.head_of("e"));
 }
 
 /// The author pushes while the train rebases their PR, which cancels CI on the train's head: the PR is never

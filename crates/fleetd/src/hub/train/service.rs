@@ -23,7 +23,7 @@ use super::github::{
 use super::host::{BoxFut, TrainHost};
 use super::main_ci::{GithubSync, MainCi, ci_state};
 use super::next::{Reruns, gated_name, proven_runs, upstreams};
-use super::records::{ChangeRecords, DRAFT, Db, HEAD_STATES, ListFilter, QUEUED_STATES, is_draft};
+use super::records::{ChangeRecords, DRAFT, Db, HEAD_STATES, ListFilter, is_draft};
 use super::regen::Conflict;
 use super::rules::Refusal;
 use crate::clock::Clock;
@@ -158,9 +158,9 @@ pub const NEVER_RAN_WAIT: Duration = Duration::from_secs(5 * 60);
 pub(super) const CI_TIMED_OUT: &str = "CI timed out";
 /// What becomes of a Change whose CI timed out; it needs nothing from its author.
 pub(super) const CI_WATCHED: &str = "the train keeps watching its checks: once they finish green it goes back in the queue, with no push needed";
-/// Why a Change whose CI was cancelled by a push to its PR is back in line: the train takes the new head next.
+/// Why a Change whose PR was pushed to during its CI is back in line: the train takes the new head next.
 pub(super) const CI_SUPERSEDED: &str =
-    "a push to the PR cancelled its CI; the train takes the new head";
+    "a push to the PR replaced the head its CI ran on; the train takes the new head";
 /// Why a timed-out Change whose checks read cancelled, however often re-run, goes back to its author.
 pub(super) const CI_CANCELLED: &str =
     "its CI timed out, then was cancelled, and re-running it didn't finish it";
@@ -903,9 +903,11 @@ impl Train {
     }
 
     /// Reads the PR branch's head and patch id. A new Change goes to the gate. A parked one (needs_rebase, ci_failed)
-    /// whose patch is unchanged keeps its reviews and goes back on the queue; a new patch is reviewed again.
+    /// whose patch is unchanged keeps its reviews and goes back on the queue; a new patch is reviewed again. A PR stacked
+    /// on another open PR waits for it (`stack`).
     async fn admit(&self, change: &Change, pull: &Pull) -> Result<(), GhError> {
         let (head_sha, patch_id) = self.seen(change, pull).await?;
+        let change = &self.stack(change, pull).await?;
         let same_patch = change.patch_id.as_ref() == Some(&patch_id);
         if same_patch && change.state != ChangeState::Queued {
             let moved = self.update(&change.change_id, Some(&[change.state]), |mut c| {
@@ -1174,7 +1176,8 @@ impl Train {
     /// (`Gate::Unknown`), any skip holds for `LABEL_HOLD_MS` only. While some checks have been queued for
     /// `RUNNER_WAIT_MS`, `noted` (the Changes in this CI run) say they wait for runners. Never green while a check
     /// `base` requires reads cancelled in some workflow run (`cancelled_required`): the train re-runs those jobs alone
-    /// and waits again, and a job still cancelled after `CANCELLED_RERUNS` re-runs is red.
+    /// and waits again, and a job still cancelled after `CANCELLED_RERUNS` re-runs is red. On a PR's own head a job that
+    /// failed is re-run once too (`flaky`), and red only when it fails again.
     pub(super) async fn wait_ci(
         &self,
         change: &Change,
@@ -1239,6 +1242,9 @@ impl Train {
         let mut last: Vec<CheckRun> = Vec::new();
         let mut queued_since: Option<i64> = None;
         let mut reruns: Reruns = HashMap::new();
+        // The jobs re-run for failing on the PR's own head, and the checks that were (`rerun_failed`).
+        let mut failed_reruns: Reruns = HashMap::new();
+        let mut flaky: Vec<super::flaky::Flaky> = Vec::new();
         // The newest cancelled check the PR's head was read for (`superseded`).
         let mut cancel_read = 0.0;
         let (mut tried_label, mut told) = (start, false);
@@ -1246,6 +1252,8 @@ impl Train {
         let mut finished_without: Option<i64> = None;
         // A PR's own head, not a batch's: it merges alone, so the checks a batch skips are decided here (D204).
         let alone = change.head_sha.as_str() == sha;
+        // When the PRs waiting in line were last read for pushes (`refresh`).
+        let mut refreshed = start;
         loop {
             let mut all = Vec::new();
             // The checks of the fast set that have neither a run nor a status on `sha` while every other is green, and
@@ -1318,6 +1326,20 @@ impl Train {
                     }
                     if let Some(true) = self.rerun_cancelled(repo, &red, &all, &mut reruns).await {
                         start = self.now_ms();
+                    }
+                }
+                // A failure on the PR's own head gets one re-run of its job before it counts: a flake passes then.
+                Checks::Red(red)
+                    if alone
+                        && let Some(now) = self
+                            .rerun_failed(repo, &red, &all, &mut failed_reruns, &mut flaky)
+                            .await =>
+                {
+                    if now {
+                        // The re-run's time is its own, and it has had none yet.
+                        start = self.now_ms();
+                        self.clock.sleep(self.busy_wait(start, CI_FIRST_WAIT)).await;
+                        continue;
                     }
                 }
                 Checks::Red(red) => {
@@ -1393,6 +1415,7 @@ impl Train {
                             let cancelled = cancelled_required(&all, required.as_deref());
                             if cancelled.is_empty() {
                                 self.check_spans(change, sha, &runs);
+                                self.flaky_note(change, sha, &flaky).await;
                                 return Some(CiOutcome::Green);
                             }
                             if self
@@ -1447,6 +1470,15 @@ impl Train {
                     stall => stall,
                 };
                 return Some(CiOutcome::Timeout(stall));
+            }
+            // A push while the train waits on CI: the PRs waiting in line take their new heads now, not once this CI ends
+            // (#860 waited 25 min behind #861's), and a push to this PR ends the wait on its old head.
+            if now - refreshed >= self.options.poll_interval.as_millis() as i64 {
+                refreshed = now;
+                if alone && self.head_moved(change, repo, sha).await {
+                    return Some(CiOutcome::Moved);
+                }
+                self.refresh(repo).await;
             }
             // A pass waiting on CI is the train running: keep its source live and main CI read.
             self.options.fresh.touch(&fresh::train(repo), self.now_ms());
@@ -1511,6 +1543,11 @@ impl Train {
             return false;
         }
         *read = newest;
+        self.head_moved(change, repo, sha).await
+    }
+
+    /// Whether the Change's PR has a head other than `sha` now: its author pushed. False when it can't be read.
+    async fn head_moved(&self, change: &Change, repo: &str, sha: &str) -> bool {
         match self.github.pull(repo, change.pr_number.get()).await {
             Ok(pull) => pull.head.sha.to_lowercase() != sha,
             Err(e) => {
@@ -1813,6 +1850,7 @@ impl Train {
     /// The head of a ready Change moved: the same patch stays ready, a new one goes back to review.
     pub(super) async fn ready_moved(&self, change: &Change, pull: &Pull) -> Result<(), GhError> {
         let (head_sha, patch_id) = self.seen(change, pull).await?;
+        let change = &self.stack(change, pull).await?;
         if change.patch_id.as_ref() == Some(&patch_id) {
             self.update(&change.change_id, Some(&[ChangeState::Ready]), |mut c| {
                 c.head_sha = head_sha;
@@ -3107,31 +3145,7 @@ impl Train {
             );
             return Err(self.refuse(project_ref, &pr_url, refusal, Some(row)).await);
         }
-        // The train merges each PR into its own base, so one based on another open PR's branch would land in that PR.
-        let open = [
-            QUEUED_STATES,
-            HEAD_STATES,
-            &[ChangeState::NeedsRebase, ChangeState::CiFailed],
-        ]
-        .concat();
-        if let Some(parent) = self
-            .records
-            .in_train(&repo, &open)
-            .into_iter()
-            .find(|c| c.branch.as_str() == pull.base.ref_)
-        {
-            let refusal = Refusal::new(
-                format!(
-                    "It is based on #{}'s branch, not on a branch the train merges into.",
-                    parent.pr_number
-                ),
-                format!(
-                    "once #{} merges, point it at that PR's base (`gh pr edit {pr_number} --base <base>`) and enqueue it again",
-                    parent.pr_number
-                ),
-            );
-            return Err(self.refuse(project_ref, &pr_url, refusal, Some(row)).await);
-        }
+        // One based on another open PR's branch waits for that PR, then goes into its base (`stack`, `restack`).
         self.records.ensure_train(&repo, project_ref, self.now_ms());
         self.train_project(&repo, project_ref);
         let at = self.now_iso();
