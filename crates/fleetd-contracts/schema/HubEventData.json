@@ -1669,6 +1669,9 @@
         "screen.wait": {
           "$ref": "#/$defs/ScreenWaitEventData"
         },
+        "sidebar.order": {
+          "$ref": "#/$defs/SidebarOrderData"
+        },
         "source.fresh": {
           "$ref": "#/$defs/SourceFreshData"
         },
@@ -1788,6 +1791,7 @@
         "request.opened",
         "request.updated",
         "screen.wait",
+        "sidebar.order",
         "source.fresh",
         "source.stale",
         "steer.acknowledged",
@@ -2939,6 +2943,18 @@
     },
     "SetupInput": {
       "type": "string"
+    },
+    "SidebarOrderData": {
+      "description": "`sidebar.order`: whose sidebar order changed.",
+      "properties": {
+        "personId": {
+          "$ref": "#/$defs/PersonId"
+        }
+      },
+      "required": [
+        "personId"
+      ],
+      "type": "object"
     },
     "SkillName": {
       "description": "Lowercase letters, digits and single hyphens, at most 64 characters",

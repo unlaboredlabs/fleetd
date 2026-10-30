@@ -272,6 +272,10 @@ pub enum HubEventType {
     /// out; `data` is `people::PeopleChangedData`. people_list reads the rest.
     #[serde(rename = "people.changed")]
     PeopleChanged,
+    /// A person moved a project or a Navi in their sidebar; `data` is `people::SidebarOrderData`. Only that person's
+    /// own devices see it; sidebar_order_get reads the order.
+    #[serde(rename = "sidebar.order")]
+    SidebarOrder,
     /// A machine_add started, moved a step or ended; `data` is `machine_setup::MachineAddStepData`.
     /// machine_add_status reads the rest.
     #[serde(rename = "machine_add.step")]
@@ -364,6 +368,7 @@ impl HubEventType {
             Self::PreviewState => "preview.state",
             Self::ScreenWait => "screen.wait",
             Self::PeopleChanged => "people.changed",
+            Self::SidebarOrder => "sidebar.order",
             Self::MachineAddStep => "machine_add.step",
         }
     }

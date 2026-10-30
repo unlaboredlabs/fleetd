@@ -396,6 +396,11 @@
           "type": "string"
         },
         {
+          "const": "sidebar.order",
+          "description": "A person moved a project or a Navi in their sidebar; `data` is `people::SidebarOrderData`. Only that person's\nown devices see it; sidebar_order_get reads the order.",
+          "type": "string"
+        },
+        {
           "const": "machine_add.step",
           "description": "A machine_add started, moved a step or ended; `data` is `machine_setup::MachineAddStepData`.\nmachine_add_status reads the rest.",
           "type": "string"

@@ -2409,6 +2409,7 @@ export type KnownHubEventType =
   | "preview.state"
   | "screen.wait"
   | "people.changed"
+  | "sidebar.order"
   | "machine_add.step";
 /** KnownHubEventType, or a value from a newer hub. */
 export type HubEventType = KnownHubEventType | (string & {});
@@ -6224,6 +6225,34 @@ export type SetupWay = {
   label?: string;
 };
 
+/** `sidebar.order`: whose sidebar order changed. */
+export type SidebarOrderData = {
+  personId: PersonId;
+};
+
+export type SidebarOrderGetInput = { [key: string]: unknown };
+
+export type SidebarOrderGetOutput = {
+  next?: string;
+  /**
+   * The caller's projects and Navis in the order they put them, by ref; empty until they move one. A project or
+   * Navi it doesn't name goes after the ones it does.
+   */
+  order: ProjectRef[];
+  truncated?: boolean;
+};
+
+export type SidebarOrderSetInput = {
+  /** The caller's projects and Navis in their new order; it replaces the one before. */
+  order: ProjectRef[];
+};
+
+export type SidebarOrderSetOutput = {
+  next?: string;
+  order: ProjectRef[];
+  truncated?: boolean;
+};
+
 export type SkillDeleteInput = {
   name: SkillName;
   /** Required with scope project. */
@@ -8069,6 +8098,8 @@ export interface ToolMap {
   setup_list: { input: SetupListInput; output: SetupListOutput };
   setup_skip: { input: SetupSkipInput; output: SetupSkipOutput };
   setup_test: { input: SetupTestInput; output: SetupTestOutput };
+  sidebar_order_get: { input: SidebarOrderGetInput; output: SidebarOrderGetOutput };
+  sidebar_order_set: { input: SidebarOrderSetInput; output: SidebarOrderSetOutput };
   skill_delete: { input: SkillDeleteInput; output: SkillDeleteOutput };
   skill_get: { input: SkillGetInput; output: SkillGetOutput };
   skill_install: { input: SkillInstallInput; output: SkillInstallOutput };
@@ -8129,6 +8160,7 @@ export interface HubEventDataMap {
   "request.opened": RequestEventData;
   "request.updated": RequestEventData;
   "screen.wait": ScreenWaitEventData;
+  "sidebar.order": SidebarOrderData;
   "source.fresh": SourceFreshData;
   "source.stale": SourceStaleData;
   "steer.acknowledged": SteerEventData;

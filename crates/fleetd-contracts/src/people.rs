@@ -141,6 +141,13 @@ pub struct PeopleChangedData {
     pub key_id: Option<String>,
 }
 
+/// `sidebar.order`: whose sidebar order changed.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SidebarOrderData {
+    pub person_id: PersonId,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

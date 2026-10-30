@@ -6554,6 +6554,11 @@
           "type": "string"
         },
         {
+          "const": "sidebar.order",
+          "description": "A person moved a project or a Navi in their sidebar; `data` is `people::SidebarOrderData`. Only that person's\nown devices see it; sidebar_order_get reads the order.",
+          "type": "string"
+        },
+        {
           "const": "machine_add.step",
           "description": "A machine_add started, moved a step or ended; `data` is `machine_setup::MachineAddStepData`.\nmachine_add_status reads the rest.",
           "type": "string"
@@ -9973,6 +9978,18 @@
         "setup_test.output": {
           "$ref": "#/$defs/SetupTestOutput"
         },
+        "sidebar_order_get.input": {
+          "$ref": "#/$defs/SidebarOrderGetInput"
+        },
+        "sidebar_order_get.output": {
+          "$ref": "#/$defs/SidebarOrderGetOutput"
+        },
+        "sidebar_order_set.input": {
+          "$ref": "#/$defs/SidebarOrderSetInput"
+        },
+        "sidebar_order_set.output": {
+          "$ref": "#/$defs/SidebarOrderSetOutput"
+        },
         "skill_delete.input": {
           "$ref": "#/$defs/SkillDeleteInput"
         },
@@ -10425,6 +10442,10 @@
         "setup_skip.output",
         "setup_test.input",
         "setup_test.output",
+        "sidebar_order_get.input",
+        "sidebar_order_get.output",
+        "sidebar_order_set.input",
+        "sidebar_order_set.output",
         "skill_delete.input",
         "skill_delete.output",
         "skill_get.input",
@@ -17989,6 +18010,67 @@
       },
       "required": [
         "checks"
+      ],
+      "type": "object"
+    },
+    "SidebarOrderGetInput": {
+      "type": "object"
+    },
+    "SidebarOrderGetOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "order": {
+          "description": "The caller's projects and Navis in the order they put them, by ref; empty until they move one. A project or\nNavi it doesn't name goes after the ones it does.",
+          "items": {
+            "$ref": "#/$defs/ProjectRef"
+          },
+          "type": "array"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "order"
+      ],
+      "type": "object"
+    },
+    "SidebarOrderSetInput": {
+      "properties": {
+        "order": {
+          "description": "The caller's projects and Navis in their new order; it replaces the one before.",
+          "items": {
+            "$ref": "#/$defs/ProjectRef"
+          },
+          "maxItems": 2000,
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "order"
+      ],
+      "type": "object"
+    },
+    "SidebarOrderSetOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "order": {
+          "items": {
+            "$ref": "#/$defs/ProjectRef"
+          },
+          "type": "array"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "order"
       ],
       "type": "object"
     },
