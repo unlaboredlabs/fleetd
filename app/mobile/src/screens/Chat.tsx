@@ -138,7 +138,8 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
       headerTitle: () => <ChatTitle picture={project} title={title} navi={navi} status={status} busy={working && link === undefined} />,
       title,
     });
-  }, [navigation, title, navi, status, working, link]);
+    // A picture set or removed (here or on another device) draws the header again: its id is all that changes.
+  }, [navigation, title, navi, status, working, link, project?.avatar]);
 
   const list = useRef<FlatList<ThreadRow>>(null);
   const [composerHeight, setComposerHeight] = useState(60);
