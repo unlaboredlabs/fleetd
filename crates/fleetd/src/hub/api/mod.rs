@@ -153,6 +153,8 @@ pub struct Hub {
     pub machine_setup: Arc<crate::hub::machine_setup::MachineSetup>,
     /// The hub's own GitHub App and its tokens (hub/github_app).
     pub github_app: Arc<crate::hub::github_app::GithubApps>,
+    /// PRs' CI builds for people's screens (machine_roles/builds.rs).
+    pub builds: Arc<crate::hub::machine_roles::builds::Builds>,
 }
 
 /// Every MCP tool the hub serves, from every area that registers. The one place that lists them.

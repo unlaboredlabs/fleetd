@@ -1,8 +1,9 @@
 // What the New screen picker shows, as plain view data (D239): the four kinds of screen a person can open, the machines
 // that can host each (from machine_roles: the sessions role, the kind ready there, and a node that hosts screens the hub
 // places), and each machine's slots in words, full ones offering to wait. A Navi's browser runs only on the Navi's own
-// machine, where it keeps its sign-ins. Pure, so it is unit-tested.
-import type { MachineRolesEntry } from "../../../shared/contracts";
+// machine, where it keeps its sign-ins. An iOS or Android screen can take an open PR's CI build, installed before the
+// person gets it. Pure, so it is unit-tested.
+import type { MachineRolesEntry, PrRow } from "../../../shared/contracts";
 
 export type ScreenKind = "browser" | "ios" | "android" | "linux_desktop";
 
@@ -57,3 +58,24 @@ export const slotLine = (h: HostChoice): string => {
 
 /** What the picker's button says for the machine picked. */
 export const openWord = (h: HostChoice | undefined): string => (h?.full === true ? "Wait for a slot" : "Open screen");
+
+/** Whether a PR's build can go into a screen of `kind`: an iOS simulator's or an Android emulator's. */
+export const takesBuild = (kind: ScreenKind): boolean => kind === "ios" || kind === "android";
+
+/** A PR the picker offers, its build to install. */
+export interface PrChoice {
+  /** `owner/name#number`: the picker's value for it. */
+  readonly value: string;
+  readonly label: string;
+  readonly repo: string;
+  readonly number: number;
+}
+
+/** The PR picked when none is. */
+export const NO_PR = "none";
+
+/** The project's open PRs, as pr_list lists them (open first, most recently updated first). */
+export const prChoices = (rows: readonly PrRow[]): PrChoice[] =>
+  rows
+    .filter((r) => r.state === "open" || r.state === "draft")
+    .map((r) => ({ value: `${r.repo}#${String(r.number)}`, label: `#${String(r.number)} ${r.title}`, repo: r.repo, number: r.number }));

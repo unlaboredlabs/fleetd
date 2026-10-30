@@ -11,6 +11,7 @@
 //!
 //! Session slots are separate from agent slots: a machine's live sessions are its own agents' (`browser_sessions`)
 //! and those it hosts for others, and each machine's cap is a person's setting or what it fits ([`auto_sessions`]).
+pub mod builds;
 pub mod calls;
 pub mod relay;
 pub mod screens;

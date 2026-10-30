@@ -498,7 +498,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "screen_open",
-        "Open a screen of your own for a project or Navi: kind browser (default), android, ios or linux_desktop, on machineId, a machine that can host that kind (machine_roles lists them). It opens with you in control, records as an agent's screen does, and ends with screen_end or after 30 minutes without your input. A Navi's browser runs on its own machine, on the profile it keeps, so sites you sign in to stay signed in for it; only its owner opens one. A full machine refuses; with wait true the request takes its next free slot, ahead of agents' starts, for up to 30 minutes. A person's device with operate on the project's machine only.",
+        "Open a screen of your own for a project or Navi: kind browser (default), android, ios or linux_desktop, on machineId, a machine that can host that kind (machine_roles lists them). It opens with you in control, records as an agent's screen does, and ends with screen_end or after 30 minutes without your input. A Navi's browser runs on its own machine, on the profile it keeps, so sites you sign in to stay signed in for it; only its owner opens one. pr (repo and number, a PR of the project's) installs that PR's CI build in an ios or android screen before it is yours: the newest artifact of a CI run on its head named for ios (a zipped simulator .app) or android/apk (an .apk); a PR without one is refused at once. A full machine refuses; with wait true the request takes its next free slot, ahead of agents' starts, for up to 30 minutes. A person's device with operate on the project's machine only.",
     ),
     (
         "screen_end",

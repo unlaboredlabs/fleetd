@@ -1,11 +1,12 @@
 // New screen (D239): a person opens a browser, an iOS simulator, an Android emulator or a Linux desktop of their own,
 // for a project or a Navi. A short picker: the kind, as four tiles, then the machine that can host it, each with its
-// slots in words; a full one offers to wait for its next slot, which goes to people before agents. It opens in the
+// slots in words; a full one offers to wait for its next slot, which goes to people before agents. An iOS or Android
+// screen can take an open PR's CI build, installed before the person gets it. It opens in the
 // panel's live view with the person in control; a wait shows in the Screens list until its screen opens. Opened from
 // the top of the Screens tab and from the palette's "New screen…", for the project on screen.
 import { AppWindow, Globe, Monitor, Smartphone, TabletSmartphone } from "lucide-react";
 import { useState, useSyncExternalStore, type ReactNode } from "react";
-import { Button, Dialog, Radio, RadioGroup, Text, cx } from "../../ui";
+import { Button, Dialog, Radio, RadioGroup, Select, Text, cx } from "../../ui";
 import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import { useCommands } from "../palette";
 import { HubText } from "../projects/HubText";
@@ -13,11 +14,14 @@ import { isNavi } from "../navi/model";
 import { projectKey } from "../../src/data/store";
 import { currentRoute, navigate } from "../shell/navigation";
 import { panelRoute, type ProjectKey } from "../shell/routes";
-import { canOpen, hostsFor, KINDS, openWord, pickHost, slotLine, type ScreenKind } from "./pickScreen";
+import { canOpen, hostsFor, KINDS, NO_PR, openWord, pickHost, prChoices, slotLine, takesBuild, type ScreenKind } from "./pickScreen";
 import s from "./sessions.module.css";
 
 /** The hub feature that says it opens people's screens. */
 export const NEW_SCREEN = "screen_open";
+
+/** How long an open with a PR's build waits for the hub: the most the app's calls may (shared/ipc.ts). */
+export const SCREEN_PR_WAIT_MS = 300_000;
 
 const ICON: Readonly<Record<ScreenKind, ReactNode>> = {
   browser: <Globe aria-hidden />,
@@ -100,16 +104,26 @@ export function NewScreenDialog({ project, onClose }: { project: ProjectKey; onC
   const [error, setError] = useState<{ message: string; fix?: string | undefined } | null>(null);
   const hosts = hostsFor(machines, kind, naviHome);
   const host = pickHost(hosts, picked);
+  const projectRef = { machineId: project.machineId, projectId: project.projectId };
+  const phone = takesBuild(kind);
+  const prs = useToolQuery("pr_list", { projectRef }, { enabled: phone });
+  const choices = prChoices(prs.data?.prs ?? []);
+  const [prPicked, setPr] = useState(NO_PR);
+  const pr = phone ? choices.find((c) => c.value === prPicked) : undefined;
 
   const open = async () => {
     if (busy || host === undefined) return;
     setBusy(true);
     setError(null);
-    const out = await layer.call(
-      "screen_open",
-      { projectRef: { machineId: project.machineId, projectId: project.projectId }, kind, machineId: host.machineId, wait: host.full },
-      { timeoutMs: 120_000 },
-    );
+    // A PR's build downloads and installs first: a simulator's runner can take minutes to start before it does. The
+    // app's calls wait at most 5 minutes, which the hub's install fits in.
+    const out = await layer
+      .call(
+        "screen_open",
+        { projectRef, kind, machineId: host.machineId, wait: host.full, ...(pr === undefined ? {} : { pr: { repo: pr.repo, number: pr.number } }) },
+        { timeoutMs: pr === undefined ? 120_000 : SCREEN_PR_WAIT_MS },
+      )
+      .catch((e: unknown) => ({ ok: false as const, error: { message: e instanceof Error ? e.message : String(e), fix: undefined } }));
     setBusy(false);
     if (!out.ok) {
       setError({ message: out.error.message, fix: out.error.fix });
@@ -140,7 +154,7 @@ export function NewScreenDialog({ project, onClose }: { project: ProjectKey; onC
             Cancel
           </Button>
           <Button variant="primary" disabled={busy || host === undefined || !host.online} onClick={() => void open()}>
-            {busy ? "Opening…" : openWord(host)}
+            {busy ? (pr === undefined || host?.full === true ? "Opening…" : `Installing #${String(pr.number)}…`) : openWord(host)}
           </Button>
         </>
       }
@@ -204,6 +218,32 @@ export function NewScreenDialog({ project, onClose }: { project: ProjectKey; onC
             </RadioGroup>
           )}
         </div>
+        {phone ? (
+          <div className={s.hosts}>
+            <Text id="screen-pr" size="xs" tone="quiet">
+              PR build
+            </Text>
+            <Select
+              aria-label="PR build"
+              value={pr?.value ?? NO_PR}
+              onValueChange={(v) => {
+                setPr(v);
+                setError(null);
+              }}
+              disabled={busy || prs.data === undefined}
+              options={[{ value: NO_PR, label: "None" }, ...choices.map((c) => ({ value: c.value, label: c.label }))]}
+            />
+            <Text size="xs" tone="quiet">
+              {prs.data === undefined
+                ? "Reading the project’s PRs…"
+                : pr !== undefined
+                  ? `Its newest CI build is installed before you get control.`
+                  : choices.length === 0
+                    ? "The project has no open PRs."
+                    : "Optional: an open PR whose CI build to install."}
+            </Text>
+          </div>
+        ) : null}
         {error === null ? null : (
           <div role="alert">
             <Text size="sm" tone="danger">
