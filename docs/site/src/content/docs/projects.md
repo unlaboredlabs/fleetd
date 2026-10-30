@@ -204,6 +204,11 @@ another, up to an hour), stops the rest.
 - A worktree that is gone when its agent goes on (removed, or deleted) comes back and is set up again first. Setup
   counts as done only once it has run to its end: if the machine's fleetd stops in the middle, it runs again at the
   agent's next start. Stopping or interrupting the agent during setup ends it there, and the agent doesn't start.
+- Readers and reviewers start ready to test. Their setup runs at most 5 minutes a command, and a failure never stops
+  them: they hear what failed. Without setup commands, each app the PR touches gets its lockfile's install
+  (`pnpm install --frozen-lockfile --prefer-offline`, `npm ci`, with the shared package cache). A finished
+  reviewer's cargo `target/` goes to the next reviewer of the same checkout, so only what changed rebuilds; the machine
+  keeps the newest three.
 - Setup runs only in agents' worktrees, never in the project's checkout, and only on machines whose fleetd is new
   enough; the page says when it isn't.
 
