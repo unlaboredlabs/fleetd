@@ -28,6 +28,14 @@ struct Machine {
     runtime: PathBuf,
 }
 
+/// A Navi's box runs until its Navi goes or the node exits: without this, each test's would run, a thread and a
+/// bubblewrap, until the test process ends.
+impl Drop for Machine {
+    fn drop(&mut self) {
+        forget_navi(&self.own);
+    }
+}
+
 impl Machine {
     fn new() -> Self {
         // Beside the test binary, not under /tmp: the sandbox gives its session a /tmp of its own, which would hide

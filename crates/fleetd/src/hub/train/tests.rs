@@ -32,8 +32,15 @@ const GIT_ENV: [(&str, &str); 8] = [
     ("GIT_COMMITTER_EMAIL", "author@example.invalid"),
 ];
 
+/// `name` as a full path. A bare name with PATH set in the child's env makes std fork the whole test process rather
+/// than posix_spawn it, and a fork costs more the more memory the process holds.
+fn program(name: &str) -> PathBuf {
+    crate::node::desktop::display::on_path(name).unwrap_or_else(|| name.into())
+}
+
 fn git_out(cwd: &Path, args: &[&str]) -> Option<String> {
-    let out = Command::new("git")
+    static GIT: std::sync::LazyLock<PathBuf> = std::sync::LazyLock::new(|| program("git"));
+    let out = Command::new(&*GIT)
         .args(args)
         .current_dir(cwd)
         .env_clear()
@@ -1253,7 +1260,7 @@ impl TrainHost for FakeHost {
                 .lock()
                 .unwrap()
                 .push(format!("{} {}", argv[0], argv[1]));
-            let child = tokio::process::Command::new(&argv[0])
+            let child = tokio::process::Command::new(program(&argv[0]))
                 .args(&argv[1..])
                 .current_dir(&dir)
                 .env_clear()

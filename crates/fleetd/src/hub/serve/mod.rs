@@ -338,7 +338,7 @@ pub fn build_on_with(
         crate::hub::tasks::wire::HubTaskPorts::new(executors.clone(), node_commands.clone());
     let task_ports: Arc<dyn crate::hub::tasks::ports::TaskPorts> = hub_task_ports.clone();
     let source = crate::hub::policy::NodePolicySource {
-        executors: executors.clone(),
+        executors: Arc::downgrade(&executors),
     };
     let policies = crate::hub::policy::Policies::new(Arc::new(source), clock.clone());
     executors.set_tool_policy(policies.clone());
