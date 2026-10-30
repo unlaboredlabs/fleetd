@@ -1666,12 +1666,15 @@ mod tests {
         std::fs::create_dir_all(worktree.join("build")).unwrap();
         let app = vec![b'z'; remote_device::PIECE + 5];
         std::fs::write(worktree.join("build/app.zip"), &app).unwrap();
+        // As agent-device does, it reads the app in its daemon's working directory, not the command's: the session's
+        // daemon starts at session_start, in the node's.
         let program = dir.path().join("agent-device");
         std::fs::write(
             &program,
             "#!/bin/sh\n\
              case \"$1\" in\n\
-             install) echo \"Installed $2: $(wc -c < \"$2\" | tr -d ' ') bytes\";;\n\
+             install) cd \"${0%/*}\"; [ -f \"$2\" ] || { echo \"App binary not found: $PWD/$2\" >&2; exit 1; }\n\
+             echo \"Installed $2: $(wc -c < \"$2\" | tr -d ' ') bytes\";;\n\
              screenshot) printf PNG > \"$2\"; echo \"Saved $2\";;\n\
              *) echo \"ran $*\";;\n\
              esac\n",
