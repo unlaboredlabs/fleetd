@@ -4,8 +4,8 @@
 // capsule across the gap, the row jumps ahead with a tick, and letting go there runs it and the row springs back.
 // Everything moves on the UI thread with Reanimated's springs, which jump straight to their end under Reduce Motion.
 // One row is open at a time (SwipeGroup, swipe.ts): a touch anywhere closes it (another row, the list's space, the
-// search field, the list scrolling), and a touch that closes it does nothing else. VoiceOver has the same actions on
-// the row itself (ui/HoldMenu.tsx), and the circles' labels.
+// navigation bar, the list scrolling), and so do a filter picked and leaving the list; a touch that closes it does
+// nothing else. VoiceOver has the same actions on the row itself (ui/HoldMenu.tsx), and the circles' labels.
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
@@ -30,7 +30,7 @@ export interface Swipes {
   readonly onRow: { current: boolean };
   /** Close the open row: the list starts to scroll, a filter is picked, the search field is focused. */
   readonly close: () => void;
-  /** The list's own onTouchStart: a touch away from its rows (empty space, its header) closes the open row. */
+  /** onTouchStart around the list and its navigation bar: a touch away from its rows closes the open row. */
   readonly touched: () => void;
 }
 
@@ -53,6 +53,13 @@ export const useSwipeGroup = (): Swipes => {
     }),
     [open],
   );
+};
+
+/** The group the list's screen sits in (SwipeGroup). */
+export const useSwipes = (): Swipes => {
+  const group = useContext(Group);
+  if (group === null) throw new Error("useSwipes outside a SwipeGroup");
+  return group;
 };
 
 export function SwipeGroup({ swipes, children }: { swipes: Swipes; children: ReactNode }) {
@@ -89,8 +96,13 @@ export function SwipeRow({
   const group = useContext(Group);
   const fallback = useSharedValue<Opened>(null);
   const open = group?.open ?? fallback;
-  /** What was open as the touch on this row came down: it decides what that touch does (swipe.ts touchDown). */
+  /** What was open as the touch on this row came down: it decides what a tap does (swipe.ts touchDown). */
   const held = useSharedValue<Opened>(null);
+  /**
+   * Whether that touch, if it swipes, only closes another row: decided as it comes down, as iOS can cancel the row's
+   * touch (its menu starting to lift the row), which lets go of `held`, before the swipe starts.
+   */
+  const closing = useSharedValue(false);
   const width = useSharedValue(0);
   const height = useSharedValue(0);
   /** +1 swiping right (leading), -1 left. */
@@ -156,12 +168,13 @@ export function SwipeRow({
       .onBegin(() => {
         const down = touchDown(open.value, id);
         held.value = down.held;
+        closing.value = swallows(down.held, id);
         open.value = down.open;
       })
       .onStart((e) => {
         const s = state.value;
         // Another row was open: this touch only closed it, as in Messages.
-        if (swallows(held.value, id)) {
+        if (closing.value) {
           state.value = { ...s, ignored: true };
           return;
         }
@@ -245,6 +258,9 @@ export function SwipeRow({
   const close = () => {
     open.value = null;
   };
+  const letGo = () => {
+    held.value = null;
+  };
   const tap = (run: () => void) => () => {
     // Read once: VoiceOver's activations come without a touch, so a stale one mustn't swallow them.
     const was = held.value;
@@ -268,6 +284,11 @@ export function SwipeRow({
         onTouchStart={() => {
           if (group !== null) group.onRow.current = true;
         }}
+        // Every touch on the row lets go of what it held as it ends: a swipe, a hold for the menu, a tap. A later
+        // VoiceOver activation, which comes without a pan, mustn't find it and only close. React hands a touch's end
+        // to the tap's onPress before onTouchEnd, so the tap has read it by now.
+        onTouchEnd={letGo}
+        onTouchCancel={letGo}
         onLayout={(e) => {
           width.value = e.nativeEvent.layout.width;
           height.value = e.nativeEvent.layout.height;

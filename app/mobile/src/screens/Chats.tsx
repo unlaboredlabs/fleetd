@@ -7,7 +7,7 @@
 // the hub again.
 import { useNavigation, type NavigationProp } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import Animated, { useAnimatedStyle, type SharedValue } from "react-native-reanimated";
 import { listTime } from "../chatView";
@@ -29,7 +29,7 @@ import { rowIn, rowMove, rowOut, useReduceMotion } from "../ui/motion";
 import { SkeletonRow } from "../ui/Skeleton";
 import { StateGlyph } from "../ui/StateGlyph";
 import { Badge, EmptyState } from "../ui/States";
-import { SwipeGroup, SwipeRow, useSwipeGroup, type SwipeAction } from "../ui/SwipeRow";
+import { SwipeRow, useSwipes, type SwipeAction } from "../ui/SwipeRow";
 import { useLinkHeader } from "./linkHeader";
 import { useRefreshing } from "./refresh";
 import { useNow } from "./time";
@@ -74,8 +74,11 @@ export function Chats({ navigation }: NativeStackScreenProps<{ Chats: undefined 
   const [filter, setFilter] = useState<Filter>("all");
   const refreshing = useRefreshing(state.projects, state.hub.phase);
   const query = queryOf(typed);
-  const swiped = useSwipeGroup();
+  // The tab holds the open row (App.tsx ChatsTab), so a touch on the navigation bar closes it too. Leaving the list
+  // (another tab, a chat opened from a notification) closes it as well.
+  const swiped = useSwipes();
   useLinkHeader(navigation, "Chats");
+  useEffect(() => navigation.addListener("blur", swiped.close), [navigation, swiped]);
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -133,56 +136,56 @@ export function Chats({ navigation }: NativeStackScreenProps<{ Chats: undefined 
     );
 
   return (
-    <SwipeGroup swipes={swiped}>
-      <Animated.FlatList
-        data={lines}
-        keyExtractor={(l) => l.key}
-        contentInsetAdjustmentBehavior="automatic"
-        keyboardDismissMode="on-drag"
-        keyboardShouldPersistTaps="handled"
-        onScrollBeginDrag={swiped.close}
-        // A touch on the list away from its rows (empty space, the filters) closes the open row; rows see to their own.
-        onTouchStart={swiped.touched}
-        {...(reduce ? {} : { itemLayoutAnimation: rowMove })}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing.on}
-            onRefresh={() => {
-              haptics.tap();
-              refreshing.start(() => session.refresh());
+    <Animated.FlatList
+      data={lines}
+      keyExtractor={(l) => l.key}
+      contentInsetAdjustmentBehavior="automatic"
+      keyboardDismissMode="on-drag"
+      keyboardShouldPersistTaps="handled"
+      onScrollBeginDrag={swiped.close}
+      {...(reduce ? {} : { itemLayoutAnimation: rowMove })}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing.on}
+          onRefresh={() => {
+            haptics.tap();
+            refreshing.start(() => session.refresh());
+          }}
+          tintColor={t.secondary}
+        />
+      }
+      ListHeaderComponent={
+        query === "" && all !== undefined && all.length > 0 ? (
+          <Filters
+            value={filter}
+            onChange={(f) => {
+              // VoiceOver picks a filter without a touch on the list.
+              swiped.close();
+              setFilter(f);
             }}
-            tintColor={t.secondary}
+            counts={counts}
           />
-        }
-        ListHeaderComponent={
-          query === "" && all !== undefined && all.length > 0 ? (
-            <Filters
-              value={filter}
-              onChange={setFilter}
-              counts={counts}
-            />
-          ) : undefined
-        }
-        ListEmptyComponent={empty}
-        renderItem={({ item: line, index }) => {
-          const next = lines[index + 1];
-          const separator = next !== undefined && next.t !== "head";
-          return (
-            <Animated.View {...(arrived.has(line.key) ? { entering: rowIn(reduce) } : {})} exiting={rowOut}>
-              {line.t === "head" ? (
-                <Text style={[type.subhead, styles.section, { color: t.secondary }]} accessibilityRole="header">
-                  {line.title}
-                </Text>
-              ) : line.t === "hit" ? (
-                <HitRow hit={line.hit} picture={state.projects?.[line.hit.key]} title={state.projects?.[line.hit.key]?.title ?? ""} navi={all?.find((r) => r.key === line.hit.key)?.navi ?? false} separator={separator} onPress={() => open(line.hit.key, line.hit.messageId)} />
-              ) : (
-                <SwipingChat row={line.row} separator={separator} onPress={() => open(line.row.key)} />
-              )}
-            </Animated.View>
-          );
-        }}
-      />
-    </SwipeGroup>
+        ) : undefined
+      }
+      ListEmptyComponent={empty}
+      renderItem={({ item: line, index }) => {
+        const next = lines[index + 1];
+        const separator = next !== undefined && next.t !== "head";
+        return (
+          <Animated.View {...(arrived.has(line.key) ? { entering: rowIn(reduce) } : {})} exiting={rowOut}>
+            {line.t === "head" ? (
+              <Text style={[type.subhead, styles.section, { color: t.secondary }]} accessibilityRole="header">
+                {line.title}
+              </Text>
+            ) : line.t === "hit" ? (
+              <HitRow hit={line.hit} picture={state.projects?.[line.hit.key]} title={state.projects?.[line.hit.key]?.title ?? ""} navi={all?.find((r) => r.key === line.hit.key)?.navi ?? false} separator={separator} onPress={() => open(line.hit.key, line.hit.messageId)} />
+            ) : (
+              <SwipingChat row={line.row} separator={separator} onPress={() => open(line.row.key)} />
+            )}
+          </Animated.View>
+        );
+      }}
+    />
   );
 }
 
