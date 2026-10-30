@@ -1,9 +1,10 @@
 // The panel beside a project's chat, as the frame holds it. Whether it shows is the window's (sidebarState: it hides
 // itself in a narrow window, like the sidebar); what it shows is the route's when the route names a view (a PR link,
 // Status's PRs, the palette), else the tab you last had. Its width is yours (panelWidth.ts): drag its left edge, or
-// focus that edge and use the arrow keys; a double-click resets it. The frame slides it in as it opens and out as it
-// closes (AppFrame), only by transform, so the chat beside it never lays out again mid-way. Its contents load with its
-// first opening, and once it has gone nothing in it reads from the hub.
+// focus that edge and use the arrow keys; a double-click resets it. The frame slides it in as its toggle opens it and
+// out as it closes it (AppFrame), only by transform, so the chat beside it never lays out again mid-way; leaving the
+// project's chat takes it away at once. Its contents load with its first opening, and once it has gone nothing in it
+// reads from the hub.
 import { PanelRight } from "lucide-react";
 import {
   lazy,
@@ -35,6 +36,9 @@ export interface ProjectPanelState {
   /** The project on screen; the panel is only ever beside a project's chat. */
   readonly project: ProjectKey | null;
   readonly shown: boolean;
+  /** Open by its toggle, whether or not a project's chat is on screen to show it beside: the frame slides it as this
+   * changes, and only then. */
+  readonly open: boolean;
   readonly view: PanelView;
   readonly toggle: () => void;
 }
@@ -61,7 +65,7 @@ export function useProjectPanel(screen: Screen): ProjectPanelState {
     if (closed && screen.id === "project" && screen.panel !== undefined) navigate({ id: "project", project: screen.project, message: screen.message }, { replace: true });
   }, [shown, screen]);
 
-  return { project, shown, view: routed ?? listView(panel.tab), toggle: panel.toggle };
+  return { project, shown, open: !panel.hidden, view: routed ?? listView(panel.tab), toggle: panel.toggle };
 }
 
 /** The top row's toggle, beside a project's chat only. */

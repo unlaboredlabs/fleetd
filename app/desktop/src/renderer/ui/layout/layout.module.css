@@ -106,15 +106,22 @@
   background: transparent;
 }
 
-/* A side coming (AppFrame's useSlide) slides in from the window's edge, already at its own width, while the main area
-   beside has laid out once for it; going, it has left the grid already, so it is drawn over the main area's edge
-   (opaque there) as it slides out. Only transform moves: nothing beside it lays out mid-way. Short, and out sooner
-   than in; with reduced motion the durations are 0 and it just comes and goes. motion.test.ts pins these. */
-.side[data-motion="in"] {
-  animation: side-in var(--dur-base) var(--ease-out);
+/* A side its toggle opens (AppFrame's useSlide) slides in from the window's edge, already at its own width, while the
+   main area beside has laid out once for it; one it closes has left the grid already, so it is drawn over the main
+   area's edge (opaque there) as it slides out. Only transform moves: nothing beside it lays out mid-way. A transition,
+   not keyframes, so a toggle mid-way turns it back from where it is. Short, and out sooner than in; with reduced
+   motion the durations are 0 and it just comes and goes. motion.test.ts pins these. */
+.side[data-motion],
+.aside[data-motion] {
+  transition: transform var(--dur-base) var(--ease-out);
 }
-.aside[data-motion="in"] {
-  animation: aside-in var(--dur-base) var(--ease-out);
+@starting-style {
+  .side[data-motion="in"] {
+    transform: translateX(-100%);
+  }
+  .aside[data-motion="in"] {
+    transform: translateX(100%);
+  }
 }
 .side[data-motion="out"],
 .aside[data-motion="out"] {
@@ -124,35 +131,16 @@
   bottom: 0;
   grid-area: auto;
   pointer-events: none;
+  transition-duration: var(--dur-fast);
 }
 .side[data-motion="out"] {
   left: 0;
   width: var(--sidebar-w);
-  animation: side-out var(--dur-fast) var(--ease-out) forwards;
+  transform: translateX(-100%);
 }
 .aside[data-motion="out"] {
   right: 0;
-  animation: aside-out var(--dur-fast) var(--ease-out) forwards;
-}
-@keyframes side-in {
-  from {
-    transform: translateX(-100%);
-  }
-}
-@keyframes side-out {
-  to {
-    transform: translateX(-100%);
-  }
-}
-@keyframes aside-in {
-  from {
-    transform: translateX(100%);
-  }
-}
-@keyframes aside-out {
-  to {
-    transform: translateX(100%);
-  }
+  transform: translateX(100%);
 }
 
 .topBar {

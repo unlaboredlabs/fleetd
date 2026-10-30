@@ -3,58 +3,42 @@ import { readFileSync } from "node:fs";
 import { expect, it } from "vitest";
 
 // How the sidebar and the panel come and go, pinned against the CSS the app ships (read from disk: Vitest blanks CSS
-// imports). Only transform moves, so the chat beside never lays out mid-way; short, with an ease-out that starts
-// at once; out sooner than in; nothing with reduced motion.
+// imports). Only transform moves, so the chat beside never lays out mid-way; a transition, so a toggle mid-way turns it
+// back from where it is; short, with an ease-out that starts at once; out sooner than in; nothing with reduced motion.
 const layout = readFileSync(new URL("./layout.module.css", import.meta.url), "utf8");
 const tokens = readFileSync(new URL("../tokens.css", import.meta.url), "utf8");
 
-/** The declarations of the last rule whose selector line is exactly this one. */
-const rule = (css: string, selector: string): Record<string, string> => {
-  const at = css.split("\n").findLastIndex((line) => line.trim() === `${selector} {`);
-  if (at < 0) throw new Error(`no rule ${selector}`);
-  const body = css.split("\n").slice(at + 1);
-  const out: Record<string, string> = {};
-  for (const line of body) {
-    if (line.trim() === "}") break;
-    const m = /^\s*([\w-]+):\s*(.+);$/u.exec(line);
-    if (m !== null) out[m[1] ?? ""] = m[2] ?? "";
-  }
-  return out;
+/** The body of the rule whose selector list is exactly `selector` (not the end of a longer list), `{` to `}`. */
+const rule = (css: string, selector: string): string => {
+  let start = css.indexOf(`${selector} {`);
+  while (start > 0 && css.slice(0, start).trimEnd().endsWith(",")) start = css.indexOf(`${selector} {`, start + 1);
+  if (start < 0) throw new Error(`no rule ${selector}`);
+  return css.slice(css.indexOf("{", start) + 1, css.indexOf("}", start));
 };
-
-/** A keyframes block's properties, whichever frames they are in. */
-const animated = (name: string): Array<string> => {
-  const start = layout.indexOf(`@keyframes ${name} {`);
-  if (start < 0) throw new Error(`no @keyframes ${name}`);
-  let depth = 0;
-  let end = start;
-  for (let i = layout.indexOf("{", start); i < layout.length; i++) {
-    if (layout[i] === "{") depth += 1;
-    if (layout[i] === "}" && --depth === 0) {
-      end = i;
-      break;
-    }
-  }
-  return [...layout.slice(start, end).matchAll(/([\w-]+):/gu)].map((m) => m[1] ?? "");
-};
+const decls = (body: string): Record<string, string> =>
+  Object.fromEntries([...body.matchAll(/^\s*([\w-]+):\s*(.+);$/gmu)].map((m) => [m[1] ?? "", m[2] ?? ""]));
 
 const ms = (token: string, css = tokens): number => Number(new RegExp(`--${token}:\\s*(\\d+)ms;`, "u").exec(css)?.[1]);
 
-it("slides each side in and out by transform alone, from and to its own edge", () => {
-  for (const name of ["side-in", "side-out", "aside-in", "aside-out"]) expect(animated(name)).toEqual(["transform"]);
-  expect(layout).toMatch(/@keyframes side-in \{\s*from \{\s*transform: translateX\(-100%\);/u);
-  expect(layout).toMatch(/@keyframes side-out \{\s*to \{\s*transform: translateX\(-100%\);/u);
-  expect(layout).toMatch(/@keyframes aside-in \{\s*from \{\s*transform: translateX\(100%\);/u);
-  expect(layout).toMatch(/@keyframes aside-out \{\s*to \{\s*transform: translateX\(100%\);/u);
+const IN = '.side[data-motion],\n.aside[data-motion]';
+const OUT = '.side[data-motion="out"],\n.aside[data-motion="out"]';
+
+it("slides each side by a transition of transform alone, never keyframes, from and to its own edge", () => {
+  expect(decls(rule(layout, IN))).toEqual({ transition: "transform var(--dur-base) var(--ease-out)" });
+  expect(layout).not.toMatch(/@keyframes|animation/u);
+  // In from its edge: the side's first style, then its place.
+  const starting = layout.slice(layout.indexOf("@starting-style {"));
+  expect(decls(rule(starting, '.side[data-motion="in"]'))).toEqual({ transform: "translateX(-100%)" });
+  expect(decls(rule(starting, '.aside[data-motion="in"]'))).toEqual({ transform: "translateX(100%)" });
+  // Out to it.
+  expect(decls(rule(layout, '.side[data-motion="out"]'))).toMatchObject({ transform: "translateX(-100%)" });
+  expect(decls(rule(layout, '.aside[data-motion="out"]'))).toMatchObject({ transform: "translateX(100%)" });
   // Nothing in the frame transitions a size or the grid: the chat lays out once, at the toggle.
-  expect(layout).not.toMatch(/transition[^;]*(width|grid|inset|left|right|margin|padding)/u);
+  expect(layout).not.toMatch(/transition[^;]*(width|grid|inset|left|right|margin|padding|all)/u);
 });
 
-it("comes in over --dur-base and goes over --dur-fast, both with --ease-out", () => {
-  expect(rule(layout, '.side[data-motion="in"]')["animation"]).toBe("side-in var(--dur-base) var(--ease-out)");
-  expect(rule(layout, '.aside[data-motion="in"]')["animation"]).toBe("aside-in var(--dur-base) var(--ease-out)");
-  expect(rule(layout, '.side[data-motion="out"]')["animation"]).toBe("side-out var(--dur-fast) var(--ease-out) forwards");
-  expect(rule(layout, '.aside[data-motion="out"]')["animation"]).toBe("aside-out var(--dur-fast) var(--ease-out) forwards");
+it("comes in over --dur-base and goes over --dur-fast, with --ease-out", () => {
+  expect(decls(rule(layout, OUT))["transition-duration"]).toBe("var(--dur-fast)");
   expect(ms("dur-base")).toBe(180);
   expect(ms("dur-fast")).toBe(120);
   // An ease-out that moves in the first frame: the curve's first control point rises at least as fast as it runs.
@@ -65,10 +49,7 @@ it("comes in over --dur-base and goes over --dur-fast, both with --ease-out", ()
 });
 
 it("draws a side going out over the main area, out of the grid, so the chat takes its room at once", () => {
-  const start = layout.indexOf('.side[data-motion="out"],\n.aside[data-motion="out"] {');
-  expect(start).toBeGreaterThan(0);
-  const out = layout.slice(start, layout.indexOf("}", start));
-  for (const decl of ["position: absolute;", "grid-area: auto;", "pointer-events: none;"]) expect(out).toContain(decl);
+  expect(decls(rule(layout, OUT))).toMatchObject({ position: "absolute", "grid-area": "auto", "pointer-events": "none" });
 });
 
 it("doesn't move with reduced motion", () => {
