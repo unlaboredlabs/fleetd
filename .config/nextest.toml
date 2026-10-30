@@ -11,8 +11,8 @@ slow-timeout = { period = "60s", terminate-after = 5 }
 final-status-level = "flaky"
 failure-output = "immediate-final"
 
-# The Chrome-driven browser tests (agent-browser among them) fail now and then on a busy runner: two more tries, and a
-# pass on a retry is reported as flaky, not hidden.
+# The tests that drive a real Chrome (the browser tests, agent-browser among them, and the relay's) fail now and then on
+# a busy runner: two more tries, and a pass on a retry is reported as flaky, not hidden.
 [[profile.ci.overrides]]
-filter = 'package(fleetd) & test(/^node::browser::/)'
+filter = 'package(fleetd) & (test(/^node::browser::/) | test(/^node::relay_tests::/))'
 retries = 2
