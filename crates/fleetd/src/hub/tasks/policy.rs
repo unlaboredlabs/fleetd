@@ -22,14 +22,15 @@ pub fn max_open_tasks(max_agents: i64) -> usize {
 
 /// The calls a task's agent makes: its review verdict (`report`), a question for its lead, reading its brief, its
 /// project's decisions and its PRs' reviews, Try it's suggestion and proposed setting (never a preview's start:
-/// only the person or a lead answering them starts one, D161), and an image for its lead to show. Only a lead closes
-/// work.
+/// only the person or a lead answering them starts one, D161), an image for its lead to show, and a wait on CI that
+/// wakes it. Only a lead closes work.
 pub const WORKER_OPS: &[&str] = &[
     "review_verdict",
     "ask_lead",
     "brief_read",
     "decisions_search",
     "review_read",
+    "wait_ci",
     "preview_suggest",
     "preview_config_propose",
     "chat_image",
@@ -103,8 +104,9 @@ pub fn check(agent: &CallerAgent, op: &str) -> Result<(), McpToolError> {
                 .with_fix(
                     "A task reports its review verdict (report), asks its lead (ask_lead), reads its brief \
                      (brief_read), decisions (decisions_search) and its PRs' reviews (review_read), and may suggest \
-                     the person try its PR (preview_suggest), propose how to run it (preview_config_propose) or upload \
-                     an image for your lead to show (chat_image). Put anything else in your result or ask your lead.",
+                     the person try its PR (preview_suggest), propose how to run it (preview_config_propose), upload \
+                     an image for your lead to show (chat_image) or wait on CI (wait_ci). Put anything else in your \
+                     result or ask your lead.",
                 ));
             }
             Ok(())
@@ -141,6 +143,13 @@ pub fn check(agent: &CallerAgent, op: &str) -> Result<(), McpToolError> {
             "brief_read reads a task's own brief, and this call comes from no task.",
         )
         .with_fix("A lead reads its workstreams' briefs in its state block.")),
+        CallerAgent::Person | CallerAgent::Lead if op == "wait_ci" => Err(McpToolError::new(
+            ErrorCode::Invalid,
+            "wait_ci wakes the task that asked, and this call comes from no task.",
+        )
+        .with_fix(
+            "A lead hears of its PRs' CI from the train; to watch another run, spawn a read task that waits on it.",
+        )),
         CallerAgent::Person | CallerAgent::Lead => Ok(()),
     }
 }
