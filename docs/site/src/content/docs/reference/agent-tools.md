@@ -32,7 +32,7 @@ The hub checks these on every fleetd call a session makes, through its MCP tools
 | Agents running at once, per project | The project's max agents, which a person sets (`cap_set`, the chat's Max agents); unset, its machine's cap within the fleet cap. A spawn over it queues and starts by itself; a review goes ahead of queued writers. The lead is not an agent and doesn't count. |
 | Agents running at once, per machine | The machine's max agents, which a person may set up to the fleet cap (`cap_set`, `fleetd machine set`, Settings › Hub › Machines). Unset: what the machine fits, one per CPU less one in eight, and 2 GB of memory each after a quarter (4 to 16 GB) is left for the system, at most 64. Either way new agents pause while memory in use runs short, and wait for 5 GB of disk each above the free-space floor. |
 | Agents running at once, fleet-wide | The machines' caps added up, unless a person set a fleet cap. |
-| Calls a task's agent may make | `report`, `ask_lead`, `brief_read`, `decisions_search`, `review_read`, `preview_suggest`, `preview_config_propose`, `chat_image`. Every other call is refused. |
+| Calls a task's agent may make | `report`, `ask_lead`, `brief_read`, `decisions_search`, `review_read`, `wait_ci`, `preview_suggest`, `preview_config_propose`, `chat_image`. Every other call is refused. |
 | Gated commands (`gated_run`) | Classes `irreversible`, `money`, `credential`. Run only after a human approves; at most 14400 s. |
 
 These limits cover calls to fleetd, not what the agent's own shell can do. A task runs with full Bash, so `gated_run` is not the only way it could run a command. A process that leaves its session's process tree (for example with `setsid`) and scrubs its environment counts as you, with no limits: see "Known limit" on the Security page. Run agents you don't trust as a different OS user.
@@ -1035,6 +1035,7 @@ Every task's agent gets these: implementers, readers, reviewers and QA.
 | [`report`](#report) | Record your review verdict once, before your final message: the number of blocking and non-blocking findings and a summary of each. | No |
 | [`ask_lead`](#ask_lead) | Ask your lead a question. | No |
 | [`brief_read`](#brief_read) | Read your workstream's brief, whole: its goal, why, pointers, constraints and done-when. | No |
+| [`wait_ci`](#wait_ci) | Be woken when CI finishes: a GitHub Actions run, or the checks on a PR's current head. | No |
 | [`review_read`](#review_read-task) | Read every finding of the latest reviews of your PRs, blocking and non-blocking, in full, each with path:line. | No |
 | [`preview_suggest`](#preview_suggest-task) | Suggest the person try a PR themselves, where a human test clearly matters (a UI change, copy in several languages, a mobile build): one line with a Try it button in the chat and the PR, once per PR, which the app also shows as something to look at until the person has seen it. | No |
 | [`preview_config_propose`](#preview_config_propose-task) | Propose how Try it runs this project's web app, once you know: setup commands (install), build, a start command that serves on 127.0.0.1:$PORT, the ready path and the lockfiles setup depends on. | A person approves the proposed setting in chat before it is saved. |
@@ -1118,6 +1119,25 @@ No parameters.
 {
   "name": "brief_read",
   "arguments": {}
+}
+```
+
+### wait_ci
+
+Be woken when CI finishes: a GitHub Actions run, or the checks on a PR's current head. url is the run's (https://github.com/&lt;owner>/&lt;repo>/actions/runs/&lt;id>; `gh run view <id> --json url -q .url`) or the PR's. Then end your turn: when it finishes, this thread continues with one line, the outcome and the failing jobs. Never end a turn saying you'll wait for a run without it: nothing else wakes you.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `url` | string | yes | An Actions run's URL (`…/actions/runs/<id>`, anything after it ignored) or a PR's, in one of the project's repos. At most 500 characters. |
+
+**Who may call:** a task's agent, checked by the hub. **Needs a human:** no.
+
+```json
+{
+  "name": "wait_ci",
+  "arguments": {
+    "url": "https://github.com/acme/storefront/actions/runs/4242"
+  }
 }
 ```
 
