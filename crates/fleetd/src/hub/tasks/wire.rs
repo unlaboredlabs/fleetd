@@ -559,6 +559,14 @@ impl LeadCallHandler for Calls {
                 };
                 return Ok(LeadCallResult::BriefRead(tasks.brief_read(task_id)?));
             }
+            if let LeadCall::WaitCi(wait) = &call {
+                let CallerAgent::Task(task_id) = &caller.agent else {
+                    return Err(super::policy::check(&caller.agent, "wait_ci").unwrap_err());
+                };
+                return Ok(LeadCallResult::WaitCi(
+                    tasks.wait_ci(task_id, wait.url.as_str())?,
+                ));
+            }
             let caller = TaskCaller {
                 project_ref: caller.project_ref,
                 by: caller.by,
@@ -568,13 +576,14 @@ impl LeadCallHandler for Calls {
     }
 }
 
-pub const LEAD_CALL_OPS: [&str; 6] = [
+pub const LEAD_CALL_OPS: [&str; 7] = [
     "task_spawn",
     "task_list",
     "task_message",
     "task_cancel",
     "ask_lead",
     "brief_read",
+    "wait_ci",
 ];
 
 /// Tells the hub's lead-call handling which sessions are tasks' agents and which are leads.

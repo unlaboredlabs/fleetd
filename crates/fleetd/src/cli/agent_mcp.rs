@@ -22,7 +22,7 @@ use fleetd_contracts::lead_calls::{
     AskLeadCall, BriefCreateCall, BriefReadCall, ChangeEnqueueCall, CloseCall, DecideCall,
     DecisionsSearchCall, GatedRunCall, LeadCall, LeadSocketFrame, RequestSecretCall,
     RequestWithdrawCall, ReviewReadCall, TaskCancelCall, TaskListCall, TaskMessageCall,
-    TaskSpawnCall, UsageResumeCall,
+    TaskSpawnCall, UsageResumeCall, WaitCiCall,
 };
 use fleetd_contracts::memory::{ForgetCall, MemoryReadCall, RememberCall};
 use fleetd_contracts::navi::{ChatReadCall, ChatSearchCall, FactoryStatusCall, ProjectMessageCall};
@@ -378,6 +378,20 @@ static TOOLS: &[Tool] = &[
         browser: false,
         description: "Read your workstream's brief, whole: its goal, why, pointers, constraints and done-when.",
         schema: inline_schema::<BriefReadCall>,
+        human: None,
+    },
+    Tool {
+        name: "wait_ci",
+        op: "wait_ci",
+        worker: true,
+        lead: false,
+        browser: false,
+        description: "Be woken when CI finishes: a GitHub Actions run, or the checks on a PR's current head. url is \
+                      the run's (https://github.com/<owner>/<repo>/actions/runs/<id>; `gh run view <id> --json url -q \
+                      .url`) or the PR's. Then end your turn: when it finishes, this thread continues with one line, \
+                      the outcome and the failing jobs. Never end a turn saying you'll wait for a run without it: \
+                      nothing else wakes you.",
+        schema: inline_schema::<WaitCiCall>,
         human: None,
     },
     Tool {
@@ -969,8 +983,8 @@ mod tests {
     }
 
     #[test]
-    fn a_worker_sees_only_report_ask_lead_its_brief_decisions_reviews_previews_images_and_browser()
-    {
+    fn a_worker_sees_only_report_ask_lead_its_brief_ci_decisions_reviews_previews_images_and_browser()
+     {
         assert_eq!(
             names(Role::Worker),
             [
@@ -978,6 +992,7 @@ mod tests {
                 "report",
                 "ask_lead",
                 "brief_read",
+                "wait_ci",
                 "review_read",
                 "preview_suggest",
                 "preview_config_propose",
