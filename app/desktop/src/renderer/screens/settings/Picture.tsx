@@ -72,11 +72,13 @@ export function PictureSetting({ project }: { project: Pictured }) {
   const chosen = pending ?? project.icon;
   const hasPicture = project.avatar !== undefined && pending === null;
 
-  // The summary caught up with the pick: it is no longer pending.
+  // The summary changed (the pick arriving, or another device's): it shows now, unless a pick still waits to be sent.
   const { face, color } = project.icon ?? {};
+  const summary = useRef({ face, color, avatar: project.avatar });
+  summary.current = { face, color, avatar: project.avatar };
   useEffect(() => {
-    if (pending !== null && timer.current === null && pending.face === face && pending.color === color && project.avatar === undefined) setPending(null);
-  }, [pending, face, color, project.avatar]);
+    if (timer.current === null) setPending(null);
+  }, [face, color, project.avatar]);
   useEffect(
     () => () => {
       if (timer.current !== null) clearTimeout(timer.current);
@@ -90,10 +92,17 @@ export function PictureSetting({ project }: { project: Pictured }) {
     if (timer.current !== null) clearTimeout(timer.current);
     timer.current = setTimeout(() => {
       timer.current = null;
-      hubCall("project_icon_set", { ...ref, icon: next }).catch((e: unknown) => {
-        setPending(null);
-        setEcho({ ok: false, text: errorText(e) });
-      });
+      hubCall("project_icon_set", { ...ref, icon: next }).then(
+        // Sent: a pick the summary already wore (a quick run back to where it began) changes nothing to wait for.
+        () => {
+          const now = summary.current;
+          if (timer.current === null && now.face === next.face && now.color === next.color && now.avatar === undefined) setPending(null);
+        },
+        (e: unknown) => {
+          setPending(null);
+          setEcho({ ok: false, text: errorText(e) });
+        },
+      );
     }, SEND_AFTER_MS);
   };
 
