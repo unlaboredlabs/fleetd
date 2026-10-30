@@ -1438,3 +1438,77 @@ fn a_navi_installs_a_program_in_its_home_and_it_runs_on_after_the_turn() {
     );
     assert!(ok, "a new box starts empty: {out}");
 }
+
+#[test]
+fn a_navi_cant_move_a_hidden_path_aside_for_its_next_session_to_read() {
+    let Some(tool) = sandbox_or_skip() else {
+        return;
+    };
+    let m = Machine::new();
+    let keyring = m.home.join(".local/share/keyrings/login.keyring");
+    std::fs::create_dir_all(keyring.parent().unwrap()).unwrap();
+    std::fs::write(&keyring, "KEYRING SECRET").unwrap();
+    // `(folder moved aside, a secret it holds)`.
+    let cases = [
+        (m.home.join(".local/share"), keyring.clone()),
+        (m.home.join(".local"), keyring.clone()),
+        (
+            m.home.join(".cargo"),
+            m.home.join(".cargo/credentials.toml"),
+        ),
+        (m.home.join(".ssh"), m.home.join(".ssh/id_ed25519")),
+        (m.home.join(".config"), m.home.join(".config/gh/hosts.yml")),
+        // Where `~/.aws` links to, outside the home.
+        (
+            m.vault.parent().unwrap().to_owned(),
+            m.vault.join("credentials"),
+        ),
+        (m.fleetd.clone(), m.tokens.join("google.json")),
+    ];
+    for (folder, secret) in cases {
+        let text = std::fs::read_to_string(&secret).unwrap();
+        let moved = folder.with_extension("old");
+        let (ok, out) = m.run(
+            &tool,
+            &format!("mv '{}' '{}'", folder.display(), moved.display()),
+        );
+        assert!(!ok, "{} was moved aside: {out}", folder.display());
+        assert!(folder.is_dir() && !moved.exists(), "{}", folder.display());
+        // Nor read in the next session, by either name.
+        let aside = moved.join(secret.strip_prefix(&folder).unwrap());
+        let (_, out) = m.run(
+            &tool,
+            &format!("cat '{}' '{}'", secret.display(), aside.display()),
+        );
+        assert!(!out.contains(&text), "{}: {out}", secret.display());
+    }
+}
+
+#[test]
+fn a_navi_cant_swap_a_hidden_link_for_a_folder_of_its_own() {
+    let Some(tool) = sandbox_or_skip() else {
+        return;
+    };
+    let m = Machine::new();
+    // The person's keyrings kept in their dotfiles, linked from where the keyring daemon looks.
+    let kept = m.home.join("dotfiles/keyrings");
+    std::fs::create_dir_all(&kept).unwrap();
+    std::fs::write(kept.join("login.keyring"), "KEYRING SECRET").unwrap();
+    let link = m.home.join(".local/share/keyrings");
+    std::fs::create_dir_all(link.parent().unwrap()).unwrap();
+    std::os::unix::fs::symlink(&kept, &link).unwrap();
+    let (ok, out) = m.run(&tool, &format!("rm '{0}' && mkdir '{0}'", link.display()));
+    assert!(!ok, "the link was swapped: {out}");
+    assert_eq!(std::fs::read_link(&link).unwrap(), kept);
+    let (_, out) = m.run(&tool, &format!("cat '{}/login.keyring'", kept.display()));
+    assert!(!out.contains("KEYRING SECRET"), "{out}");
+    // What is in `~/.local/share` is written as before (on Linux nothing new is made at its top).
+    let (ok, out) = m.run(
+        &tool,
+        &format!(
+            "echo x > '{}'",
+            m.home.join(".local/share/uv/new.txt").display()
+        ),
+    );
+    assert!(ok, "{out}");
+}

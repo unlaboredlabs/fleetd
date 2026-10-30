@@ -43,8 +43,7 @@ pub struct Fence {
     /// Read but never written inside a written path. One without an extension that isn't there is made, empty, as a
     /// dir ([`Fence::prepare`]), so it is never made by the session instead.
     pub keep: Vec<PathBuf>,
-    /// Bound back as they are, read and written, and never made (Linux): the listed home's own entries, and the
-    /// folders on the way to a read-only path ([`hold_folders`]).
+    /// The listed home's own entries, read and written as they are, and never made (Linux).
     pub listed: Vec<PathBuf>,
     /// `(link, target)`: a symlink in the listed home, made again as it is, so it leads where it always did and a
     /// hidden target stays hidden (Linux).
@@ -63,6 +62,10 @@ pub struct Fence {
     /// ([`sanitized_config`]), read and written in its place on Linux. On macOS, where nothing can stand in for a
     /// path, the real one is hidden.
     pub config_copy: Option<(PathBuf, PathBuf)>,
+    /// Folders on the way to a read-only or hidden path that the Navi could otherwise rename ([`hold_folders`]):
+    /// read and written as they are, but never moved. Linux binds each onto itself; macOS denies writing the folder
+    /// itself, not what is in it.
+    pub held: Vec<PathBuf>,
 }
 
 /// A command inside a sandbox: its program and arguments, and the files it inherits under the numbers they have here
@@ -611,6 +614,7 @@ pub fn navi_fence(p: &NaviPaths) -> Fence {
         links,
         tmp: cfg!(target_os = "linux").then(|| own.join(TMP_DIR)),
         session: Some(p.session_id.to_owned()),
+        held: Vec::new(),
     };
     guard(&mut fence, p, &user_home, &folder);
     let links = pin_links(&mut fence, &user_home);
@@ -618,22 +622,20 @@ pub fn navi_fence(p: &NaviPaths) -> Fence {
     fence.keep.extend(links);
     fence.keep.sort();
     fence.keep.dedup();
-    if cfg!(target_os = "linux") {
-        hold_folders(&mut fence);
-    }
+    hold_folders(&mut fence);
     fence
 }
 
-/// Makes each folder on the way to a read-only path, in a folder the Navi writes, a mount point: bound onto itself,
-/// written as before. A mount point can't be renamed, though a folder above one can, so otherwise the Navi could move
-/// `~/dotfiles/pkg` aside and leave its own `pkg/.local/bin` (or its own checkout, or `/opt/brew`) in its place. Linux
-/// only.
+/// Holds each folder on the way to a read-only or hidden path, in a folder the Navi writes ([`Fence::held`]). A mount
+/// point can't be renamed, though a folder above one can: otherwise the Navi could move `~/dotfiles/pkg` aside and
+/// leave its own `pkg/.local/bin` (or its own checkout, or `/opt/brew`) in its place, or move `~/.local/share` aside so
+/// that its next session finds the keyrings at a path no longer hidden.
 fn hold_folders(fence: &mut Fence) {
     let writable = |d: &Path| nix::unistd::access(d, nix::unistd::AccessFlags::W_OK).is_ok();
     let ops = fence.ops();
     let mut seen = std::collections::HashSet::new();
     let mut held = Vec::new();
-    for path in fence.show.iter().chain(&fence.keep) {
+    for path in fence.show.iter().chain(&fence.keep).chain(&fence.hide) {
         for folder in path.ancestors().skip(1) {
             let Some(parent) = folder.parent() else {
                 break;
@@ -652,15 +654,14 @@ fn hold_folders(fence: &mut Fence) {
         }
     }
     drop(ops);
-    fence.listed.extend(held);
-    fence.listed.sort();
-    fence.listed.dedup();
+    held.sort();
+    fence.held = held;
 }
 
 /// Keeps where they are the links on the way to a read-only path, from a folder the Navi writes: once removed, its own
 /// file or dir could stand in their place (a `~/.local/bin` linked into a dotfiles repo, a checkout's `CLAUDE.md`).
 /// On macOS the link itself isn't written: returned, to keep once the rest is resolved. On Linux, where no mount lands on a link, the person's home bin dir
-/// ([`HOME_BINS`], [`MORE_HOME_BINS`]) has its parent listed as the home is: the link comes back as a link in a
+/// ([`HOME_BINS`], [`MORE_HOME_BINS`]), and a hidden path that is a link, has its parent listed as the home is: the link comes back as a link in a
 /// read-only tmpfs, and the parent's other entries as they are, though nothing new is made at its top. That costs the
 /// Navi nothing: it installs into its own home. A checkout isn't listed (`git clone` into `~/src` still works); the node
 /// checks its links before an agent runs there instead (`node::checkouts`).
@@ -692,10 +693,14 @@ fn pin_links(fence: &mut Fence, user_home: &Path) -> Vec<PathBuf> {
             .map(|(link, _)| link)
             .collect();
     }
+    // A hidden link too (`~/.local/share/keyrings` into a dotfiles repo): swapped for a dir of its own, the next
+    // session would hide that one, and not where the link led.
     let folders: Vec<PathBuf> = HOME_BINS
         .iter()
         .chain(MORE_HOME_BINS)
-        .flat_map(|b| swappable(fence, &user_home.join(b)))
+        .map(|b| user_home.join(b))
+        .chain(fence.hide.clone())
+        .flat_map(|p| swappable(fence, &p))
         .map(|(_, folder)| folder)
         .collect();
     for folder in folders {
@@ -707,6 +712,8 @@ fn pin_links(fence: &mut Fence, user_home: &Path) -> Vec<PathBuf> {
         for entry in entries {
             let path = entry.path();
             if entry.file_type().is_ok_and(|t| t.is_symlink()) {
+                // A hidden link comes back as a link: where it leads is hidden on its own.
+                fence.hide.retain(|h| *h != path);
                 fence
                     .links
                     .extend(std::fs::read_link(&path).map(|to| (path, to)));
@@ -874,6 +881,7 @@ impl Fence {
             self.write
                 .iter()
                 .chain(&self.listed)
+                .chain(&self.held)
                 .map(|p| (p.as_path(), Op::Write)),
         );
         ops.extend(
@@ -1392,8 +1400,8 @@ fn quoted(p: &Path) -> String {
     format!("\"{text}\"")
 }
 
-/// macOS's profile: everything as usual, but no writing the hidden paths, the shown ones and the folder's kept ones,
-/// and no reading the hidden ones' contents. Later rules win, so each path's rules come after those of the paths
+/// macOS's profile: everything as usual, but no writing the hidden paths, the shown ones, the folder's kept ones and
+/// the held folders themselves (not what is in them), and no reading the hidden ones' contents. Later rules win, so each path's rules come after those of the paths
 /// around it (shallowest first, as bubblewrap mounts them): the folder is read and written inside the hidden fleetd
 /// dir, its kept paths aren't written inside it, and claude's other sessions aren't read inside its shown config dir.
 /// A path's metadata stays readable, so resolving a path through a hidden dir still works.
@@ -1402,10 +1410,16 @@ fn seatbelt(fence: &Fence) -> String {
     rules.extend(fence.show.iter().map(|p| (p, "show")));
     rules.extend(fence.write.iter().map(|p| (p, "allow")));
     rules.extend(fence.keep.iter().map(|p| (p, "keep")));
+    rules.extend(fence.held.iter().map(|p| (p, "hold")));
     rules.sort_by_key(|(p, _)| p.components().count());
     let mut profile = String::from("(version 1)\n(allow default)\n");
     for (path, rule) in rules {
-        let at = format!("(subpath {})", quoted(path));
+        // A held folder itself, never what is in it.
+        let at = if rule == "hold" {
+            format!("(literal {})", quoted(path))
+        } else {
+            format!("(subpath {})", quoted(path))
+        };
         let (read, write) = match rule {
             "deny" => (Some("deny"), "deny"),
             "show" => (Some("allow"), "deny"),
