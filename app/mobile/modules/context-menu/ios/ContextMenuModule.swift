@@ -45,10 +45,46 @@ final class ContextMenuView: ExpoView, UIContextMenuInteractionDelegate {
   /** The action picked, sent once the menu has gone. */
   private var chosen: String?
   private var open = false
+  /** The menu is up, not just the view pressed. */
+  private var lifted = false
+  /** The list the view is in: a finger that scrolls it lets go of the hold. */
+  private weak var scrollView: UIScrollView?
 
   required init(appContext: AppContext? = nil) {
     super.init(appContext: appContext)
     addInteraction(UIContextMenuInteraction(delegate: self))
+  }
+
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    scrollView?.panGestureRecognizer.removeTarget(self, action: #selector(scrolled(_:)))
+    scrollView = nil
+    guard window != nil else { return }
+    var ancestor = superview
+    while let view = ancestor, !(view is UIScrollView) { ancestor = view.superview }
+    scrollView = ancestor as? UIScrollView
+    scrollView?.panGestureRecognizer.addTarget(self, action: #selector(scrolled(_:)))
+  }
+
+  /**
+   * As in Messages: a press that moves on into a scroll was a scroll, so the view goes back down and the list scrolls,
+   * rather than the pressed view hanging over a list moving under it. Its gestures, switched off and on, let go.
+   */
+  @objc private func scrolled(_ pan: UIPanGestureRecognizer) {
+    guard pan.state == .began, !lifted else { return }
+    for gesture in gestureRecognizers ?? [] where gesture.isEnabled {
+      gesture.isEnabled = false
+      gesture.isEnabled = true
+    }
+  }
+
+  /** Lifted, the list stays still under the menu: the finger that held the view no longer scrolls it. */
+  func contextMenuInteraction(_ interaction: UIContextMenuInteraction, willDisplayMenuFor configuration: UIContextMenuConfiguration, animator: UIContextMenuInteractionAnimating?) {
+    lifted = true
+    guard let scrollView else { return }
+    scrollView.panGestureRecognizer.isEnabled = false
+    scrollView.panGestureRecognizer.isEnabled = true
+    scrollView.setContentOffset(scrollView.contentOffset, animated: false)
   }
 
   func contextMenuInteraction(_ interaction: UIContextMenuInteraction, configurationForMenuAtLocation location: CGPoint) -> UIContextMenuConfiguration? {
@@ -81,6 +117,7 @@ final class ContextMenuView: ExpoView, UIContextMenuInteractionDelegate {
   }
 
   func contextMenuInteraction(_ interaction: UIContextMenuInteraction, willEndFor configuration: UIContextMenuConfiguration, animator: UIContextMenuInteractionAnimating?) {
+    lifted = false
     let done = { [weak self] in
       guard let self else { return }
       self.open = false
