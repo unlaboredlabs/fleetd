@@ -4,12 +4,13 @@
 // - a bubble that arrives rises 6 pt as it fades in, 200 ms, a reply's bubbles 50 ms apart; your own send, 140 ms
 // - a list row rises 3 pt in 160 ms; one that leaves fades in place for 140 ms, then the gap closes as rows move up
 // - state changes (a send button, a menu, a banner, a press) take 140 ms on the snap curve
-// - the lead writing: three dots lit in turn on a 120 ms beat, two beats each, stepping rather than gliding
+// - loops (the state glyph's grain and ring) step on the desktop's 120 ms beat, one beat for the whole app, rather than glide
 // With Reduce Motion nothing moves: what arrives fades in place, and loops stand still. iOS's own transitions (a
 // pushed screen, a sheet) stay iOS's.
 import { useEffect, useState } from "react";
 import { AccessibilityInfo } from "react-native";
-import { Easing, FadeOut, LinearTransition, withDelay, withTiming, type EntryAnimationsValues } from "react-native-reanimated";
+import { cancelAnimation, Easing, FadeOut, LinearTransition, makeMutable, withDelay, withRepeat, withTiming, type EntryAnimationsValues, type SharedValue } from "react-native-reanimated";
+import { BEAT_MS, LOOP_BEATS } from "../glyph";
 
 /** --ease-snap, for every transition and entrance; --ease-out, for fades (a menu's backdrop, a highlight). */
 export const ease = { snap: Easing.bezier(0.2, 0, 0, 1), out: Easing.bezier(0.22, 1, 0.36, 1) } as const;
@@ -28,7 +29,7 @@ export const dur = {
   /** --enter-stagger. */
   stagger: 50,
   /** ui/lib/beat: loops step on it. */
-  beat: 120,
+  beat: BEAT_MS,
 } as const;
 
 /** --enter-rise and --row-rise. */
@@ -78,3 +79,25 @@ export const PRESSED_OPACITY = 0.6;
 
 /** A view whose size changes (the composer growing a line) moves to its new frame on the snap curve. */
 export const grows = (reduce: boolean): { layout?: typeof rowMove } => (reduce ? {} : { layout: LinearTransition.duration(dur.quick).easing(ease.snap) });
+
+/** The app's one beat, 0 up to LOOP_BEATS and round again on the UI thread: every loop steps on it, together. */
+const beat = makeMutable(0);
+let loops = 0;
+
+/**
+ * The beat, running while any loop that wants it (`run`) is mounted, as the desktop's runs only while something live
+ * is on screen. Read it as `Math.floor(beat.value)`: whole beats, so a loop steps rather than glides.
+ */
+export const useBeat = (run: boolean): SharedValue<number> => {
+  useEffect(() => {
+    if (!run) return;
+    if (loops++ === 0) {
+      beat.value = 0;
+      beat.value = withRepeat(withTiming(LOOP_BEATS, { duration: LOOP_BEATS * dur.beat, easing: Easing.linear }), -1, false);
+    }
+    return () => {
+      if (--loops === 0) cancelAnimation(beat);
+    };
+  }, [run]);
+  return beat;
+};

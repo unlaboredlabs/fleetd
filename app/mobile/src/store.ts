@@ -1,6 +1,6 @@
 // What the phone shows, as one pure state: the connection, the projects and their chat states from the snapshot and
-// events, the chats opened so far (the desktop's chat reducers, desktop.ts), the person's sends on their way, and the
-// open requests. The session (session.ts) does the calls and feeds their answers back here.
+// events, the chats opened so far (the desktop's chat reducers, desktop.ts), the person's sends on their way, the
+// open requests, and what the open chat's lead does this moment (its live lane) with when its turn began. The session (session.ts) does the calls and feeds their answers back here.
 import type { HubFrame } from "./hub/client";
 import {
   afterCall,
@@ -26,6 +26,7 @@ import {
   type ProjectChatState,
   type ProjectRef,
   type ProjectSummary,
+  type Activity,
 } from "./desktop";
 
 export type Machine = FleetStatus["machines"][number];
@@ -63,6 +64,10 @@ export interface State {
   readonly answering: Readonly<Record<string, true>>;
   /** Why an answer failed, by requestId, until the next try. */
   readonly answerErrors: Readonly<Record<string, HubError>>;
+  /** What a lead does this moment, by live lane id: the open chat's, which the turn line says (turn.ts). */
+  readonly leadActivity: Readonly<Record<string, Activity>>;
+  /** When each working lead's turn began (hub epoch ms), from the event that said so; unknown for one already working. */
+  readonly turnSince: Readonly<Record<Key, number>>;
 }
 
 export const initial = (hub: HubState): State => ({
@@ -79,6 +84,8 @@ export const initial = (hub: HubState): State => ({
   requests: undefined,
   answering: {},
   answerErrors: {},
+  leadActivity: {},
+  turnSince: {},
 });
 
 export type Action =
@@ -166,15 +173,17 @@ const applyFrame = (s: State, frame: HubFrame, nowMs: number): State => {
       if (frame.state.phase === "live" || s.hub.phase !== "live") return { ...s, hub: frame.state };
       const chats: Record<Key, Chat> = {};
       for (const [key, chat] of Object.entries(s.chats)) chats[key] = heldChat(chat) ?? emptyChat;
-      return { ...s, hub: frame.state, chats, requests: undefined, answering: {} };
+      return { ...s, hub: frame.state, chats, requests: undefined, answering: {}, leadActivity: {} };
     }
     case "snapshot": {
       const snap = frame.snapshot;
+      const chatStates = Object.fromEntries((snap.chats ?? []).map((c) => [keyOf(c.projectRef), c]));
       return {
         ...s,
         projects: Object.fromEntries(snap.projects.map((p) => [keyOf(p), p])),
         machines: snap.machines,
-        chatStates: Object.fromEntries((snap.chats ?? []).map((c) => [keyOf(c.projectRef), c])),
+        chatStates,
+        turnSince: Object.fromEntries(Object.entries(s.turnSince).filter(([key]) => chatStates[key]?.leadWorking === true)),
       };
     }
     case "event":
@@ -183,6 +192,17 @@ const applyFrame = (s: State, frame: HubFrame, nowMs: number): State => {
       const key = keyOf(frame.delta.projectRef);
       const chat = s.chats[key];
       return chat === undefined ? s : withChat(s, key, applyDelta(chat, frame.delta, nowMs));
+    }
+    case "live": {
+      // A full frame names every lane in scope (the others are gone); a delta only those that changed.
+      const { full, lanes } = frame.frame;
+      if (!full && lanes.length === 0) return s;
+      const next: Record<string, Activity> = full ? {} : { ...s.leadActivity };
+      for (const lane of lanes) {
+        if (lane.activity === undefined) delete next[lane.laneId];
+        else next[lane.laneId] = lane.activity.activity;
+      }
+      return { ...s, leadActivity: next };
     }
     case "error":
       return s;
@@ -193,7 +213,11 @@ const applyEvent = (s: State, event: HubEvent): State => {
   if (event.type === "chat.waiting") {
     const state = event.data as ProjectChatState | undefined;
     if (state?.projectRef === undefined) return s;
-    return { ...s, chatStates: { ...s.chatStates, [keyOf(state.projectRef)]: state } };
+    const key = keyOf(state.projectRef);
+    // A turn begins when its lead starts working; the hub says "working" again mid-turn, which is no new turn.
+    const began = state.leadWorking && s.chatStates[key]?.leadWorking !== true;
+    const turnSince = began ? { ...s.turnSince, [key]: Date.parse(event.at) } : state.leadWorking ? s.turnSince : without(s.turnSince, key);
+    return { ...s, chatStates: { ...s.chatStates, [key]: state }, turnSince };
   }
   if (event.type !== "chat.message") return s;
   const data = event.data as ChatMessageEventData | undefined;

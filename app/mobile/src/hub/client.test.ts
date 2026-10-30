@@ -122,6 +122,19 @@ describe("HubClient", () => {
     expect(hub.sentOf("chat")).toEqual([{ t: "chat", project: { machineId: "m1", projectId: "p1" } }]);
   });
 
+  it("follows the open chat's lead lane, and stops when the chat closes", () => {
+    const { hub, client, frames } = setup();
+    client.start();
+    hub.ready();
+    client.chat({ machineId: "m1", projectId: "p1" });
+    expect(hub.sentOf("live")).toEqual([{ t: "live", board: false, agent: "lead:m1/p1" }]);
+    const lane = { laneId: "lead:m1/p1", status: "working", activity: { activity: { kind: "thinking" }, since: "2026-10-28T10:00:00Z" } };
+    hub.link.frame({ t: "live", at: "2026-10-28T10:00:01Z", full: true, lanes: [lane] });
+    expect(frames.at(-1)).toEqual({ t: "live", frame: { at: "2026-10-28T10:00:01Z", full: true, lanes: [lane] } });
+    client.chat(null);
+    expect(hub.sentOf("live").at(-1)).toEqual({ t: "live", board: false });
+  });
+
   it("resumes the event stream after a session error", () => {
     const { hub, client, frames } = setup();
     client.start();

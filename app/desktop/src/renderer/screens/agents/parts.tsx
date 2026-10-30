@@ -1,6 +1,7 @@
 // The agents' small parts, shared by the list and one agent's head: the state dot, the role pill and where the work
 // is. Kept here until another screen wants them.
 import type { AgentRole, AgentRow } from "../../../shared/contracts";
+import { phaseOf } from "../../../shared/glyph";
 import { cx, ROLE_WORD, roleTint, StateGlyph, Truncate, type GlyphState } from "../../ui";
 import { MiddleCut } from "../live/parts";
 import { agentState, STATE_WORD, workPlace } from "./model";
@@ -19,11 +20,9 @@ export const glyphOf = (status: AgentRow["status"], thinking = false): GlyphStat
  */
 export function StateDot({ status, thinking = false, still = false, seed }: { status: AgentRow["status"]; thinking?: boolean; still?: boolean; seed?: string }) {
   // Seeded by the agent, each glyph keeps its own place in the loop: a list of them never steps as one.
-  let hash = 7;
-  for (let i = 0; i < (seed?.length ?? 0); i++) hash = (hash * 31 + (seed?.charCodeAt(i) ?? 0)) % 997;
   return (
     <span className={s.state} data-state={agentState(status)}>
-      <StateGlyph state={glyphOf(status, thinking)} still={still} phase={hash % 4} label={thinking && agentState(status) === "working" ? "thinking" : STATE_WORD[status]} />
+      <StateGlyph state={glyphOf(status, thinking)} still={still} phase={phaseOf(seed)} label={thinking && agentState(status) === "working" ? "thinking" : STATE_WORD[status]} />
     </span>
   );
 }

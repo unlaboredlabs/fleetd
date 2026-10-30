@@ -3,7 +3,7 @@
 // a dead link as live. Reconnects with backoff until the key is refused (close 4401, or an error before `ready`) or
 // the client is stopped. React Native's WebSocket can't ping, so a quiet link is probed with a small call (hub_info)
 // and dropped when nothing comes back: a phone that changed networks must not keep showing as live.
-import type { CallOutcome, ChatDelta, FleetStatus, HubError, HubEvent, HubState, ProjectRef, ToolInput, ToolName, ToolOutput } from "../desktop";
+import { leadLaneId, type CallOutcome, type ChatDelta, type FleetStatus, type HubError, type HubEvent, type HubState, type LiveFrame, type ProjectRef, type ToolInput, type ToolName, type ToolOutput } from "../desktop";
 
 export const DEFAULT_CALL_TIMEOUT_MS = 30_000;
 /** From dialling to `ready`. */
@@ -39,6 +39,8 @@ export type HubFrame =
   | { readonly t: "snapshot"; readonly snapshot: FleetStatus }
   | { readonly t: "event"; readonly event: HubEvent }
   | { readonly t: "chat_delta"; readonly delta: ChatDelta }
+  /** The open chat's lead lane: what it does this moment. */
+  | { readonly t: "live"; readonly frame: LiveFrame }
   | { readonly t: "error"; readonly error: HubError };
 
 export interface HubClientOptions {
@@ -72,11 +74,12 @@ type ServerFrame =
   | ({ t: "event" } & HubEvent)
   | { t: "result"; id: string; output: unknown }
   | { t: "error"; id?: string; code: string; message: string; fix?: string }
-  | ({ t: "chat_delta" } & ChatDelta);
+  | ({ t: "chat_delta" } & ChatDelta)
+  | ({ t: "live" } & LiveFrame);
 
-const KNOWN = new Set(["ready", "snapshot", "event", "result", "error", "chat_delta"]);
+const KNOWN = new Set(["ready", "snapshot", "event", "result", "error", "chat_delta", "live"]);
 
-/** A frame this client reads, or null: not JSON, or a `t` it has no use for (live board, browser frames, a newer hub's). */
+/** A frame this client reads, or null: not JSON, or a `t` it has no use for (browser frames, a newer hub's). */
 export const parseFrame = (text: string): ServerFrame | null => {
   try {
     const json: unknown = JSON.parse(text);
@@ -159,7 +162,10 @@ export class HubClient {
     });
   }
 
-  /** Streamed text for one project's chat; null stops it. The hub forgets it with the socket, so it goes on each ready. */
+  /**
+   * Streamed text for one project's chat, and its lead's live lane (what it does this moment, for the turn line); null
+   * stops both. The hub forgets them with the socket, so they go on each ready.
+   */
   chat(project: ProjectRef | null): void {
     this.#chat = project;
     if (this.#ready) this.#sendChat();
@@ -257,6 +263,11 @@ export class HubClient {
         this.#options.emit({ t: "chat_delta", delta });
         return;
       }
+      case "live": {
+        const { t: _t, ...live } = frame;
+        this.#options.emit({ t: "live", frame: live });
+        return;
+      }
       case "result": {
         this.#settle(frame.id, { ok: true, output: frame.output });
         return;
@@ -337,6 +348,8 @@ export class HubClient {
 
   #sendChat(): void {
     this.#send(this.#chat === null ? { t: "chat" } : { t: "chat", project: this.#chat });
+    // One agent's lane, the lead's: no board, which the phone doesn't show.
+    this.#send(this.#chat === null ? { t: "live", board: false } : { t: "live", board: false, agent: leadLaneId(this.#chat) });
   }
 
   #send(message: Record<string, unknown>): void {
