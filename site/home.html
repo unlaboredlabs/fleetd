@@ -110,6 +110,37 @@ h1,h2{margin:0;font-weight:500}
 .copy:active{background:var(--tone)}
 .facts{margin-top:8px;font-size:13px;color:var(--grey)}
 
+/* the philosophy: three lines set big (what software isn't, what it is, what to do), then a paragraph at the hero's
+   measure. Its one moment: the count steps up from 7 to 12 like a mechanical counter, once, when it first comes on
+   screen; with reduced motion, or without script, it just says 12. */
+.phil{padding-top:calc(var(--sec)*1.5);padding-bottom:calc(var(--sec)*1.6);background:linear-gradient(var(--rule),var(--rule)) no-repeat center top/calc(100% - 2*var(--pad)) 1px}
+.say{--lh:1.06;font-size:clamp(28px,4.4vw,58px);line-height:var(--lh);letter-spacing:-.03em;font-weight:500;font-feature-settings:"tnum"}
+.say>span{display:block}
+.say .nw{white-space:nowrap}
+.say .rest{color:var(--faint)}
+.phil p{margin-top:clamp(20px,2.2vw,30px);max-width:38em;color:var(--grey);text-wrap:pretty}
+.odo{display:inline-flex;color:var(--mark)}
+.odo .col{display:block;height:calc(var(--lh)*1em);overflow:hidden}
+.odo .reel{display:block;transform:translateY(calc(var(--to)*var(--lh)*-1em))}
+.odo .reel>span{display:block;height:calc(var(--lh)*1em)}
+.odo.arm .reel{transform:none}
+.odo.go .ones .reel{animation:odo-ones 1.05s both}
+.odo.go .tens .reel{animation:odo-tens 1.05s both}
+@keyframes odo-ones{
+  0%{transform:translateY(0);animation-timing-function:cubic-bezier(.3,0,0,1)}
+  12%{transform:translateY(calc(var(--lh)*-1em));animation-timing-function:cubic-bezier(.3,0,0,1)}
+  26%{transform:translateY(calc(var(--lh)*-2em));animation-timing-function:cubic-bezier(.3,0,0,1)}
+  42%{transform:translateY(calc(var(--lh)*-3em));animation-timing-function:cubic-bezier(.3,0,0,1)}
+  64%{transform:translateY(calc(var(--lh)*-4em));animation-timing-function:cubic-bezier(.3,0,0,1)}
+  100%{transform:translateY(calc(var(--lh)*-5em))}
+}
+@keyframes odo-tens{
+  0%,26%{transform:translateY(0);animation-timing-function:cubic-bezier(.3,0,0,1)}
+  42%,100%{transform:translateY(calc(var(--lh)*-1em))}
+}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+@media (max-width:640px){.say{--lh:1.1;letter-spacing:-.025em}.say>span+span{margin-top:.12em}}
+
 /* sections: a heading and a line or two beside its clip */
 .sec{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2.6fr);gap:14px var(--gap);align-items:start;padding-top:var(--sec);padding-bottom:var(--sec);background:linear-gradient(var(--rule),var(--rule)) no-repeat center top/calc(100% - 2*var(--pad)) 1px}
 .sec h2{font-size:18px;line-height:1.3;letter-spacing:-.005em}
@@ -182,6 +213,16 @@ figure{margin:0}
     <div class="cmd"><code id="cmd">curl -fsSL https://fleetd.sh | sh</code><button class="copy" type="button" data-copy="cmd">Copy</button></div>
     <p class="facts">macOS or Linux x64. Open source, MIT. <a href="/docs/install">Install</a> · <a href="/docs/quick-start">Quick start</a></p>
   </div>
+</section>
+
+<!-- The philosophy: software is an experiment, not an asset. -->
+<section class="w phil" aria-labelledby="phil">
+  <h2 class="say" id="phil">
+    <span>Software isn’t an asset.</span>
+    <span><span class="nw">It’s <span class="odo"><span class="sr">12</span><span class="col tens" aria-hidden="true"><span class="reel" style="--to:1"><span>&#8199;</span><span>1</span></span></span><span class="col ones" aria-hidden="true"><span class="reel" style="--to:5"><span>7</span><span>8</span><span>9</span><span>0</span><span>1</span><span>2</span></span></span></span> experiments</span> a night.</span>
+    <span>Keep one. <span class="rest">Drop the rest.</span></span>
+  </h2>
+  <p>Agents made building cheap, so stop polishing one bet for months. Ship a dozen experiments tonight, see what people actually use, and drop the rest without regret. fleetd is built for that pace: a lead plans the work, agents build it in parallel, and every change is reviewed before it lands.</p>
 </section>
 
 <!-- Each section's clip: `pnpm site:showcase` in app/desktop records them (site/README.md). Keep each alt text (its
@@ -283,6 +324,17 @@ document.querySelectorAll("[data-copy]").forEach(function(b){
     else{var r=document.createRange();r.selectNodeContents(document.getElementById(b.dataset.copy));var s=getSelection();s.removeAllRanges();s.addRange(r);try{document.execCommand("copy");done()}catch(e){}}
   });
 });
+
+// The philosophy's counter: set back to 7 once the page runs, and stepped up to 12 when the line first comes on screen.
+(function(){
+  var odo=document.querySelector(".odo");
+  if(!odo||matchMedia("(prefers-reduced-motion: reduce)").matches||!("IntersectionObserver" in window))return;
+  odo.classList.add("arm");
+  var io=new IntersectionObserver(function(es){
+    if(es.some(function(e){return e.isIntersecting})){io.disconnect();setTimeout(function(){odo.classList.add("go")},300)}
+  },{threshold:1});
+  io.observe(odo);
+})();
 
 // The clips. Each still is what everyone gets first. Without reduced motion, a clip loads once its frame is near the
 // screen, the small one on a small screen, and plays while it is on screen; with reduced motion, the still stays until
