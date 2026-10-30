@@ -1,5 +1,5 @@
-//! `node_action` frames from the hub: the doctor's probe of the commit identity, updates, Claude Code's install and its
-//! login from the app. Each always answers, in plain words.
+//! `node_action` frames from the hub: the doctor's probe of the commit identity, updates and the hold ahead of one,
+//! Claude Code's install and its login from the app. Each always answers, in plain words.
 use std::time::Duration;
 
 use super::util::{exec, head_utf16};
@@ -66,6 +66,7 @@ pub async fn run_node_action(
                 message: head_text("probed"),
                 probe: Some(probe_host().await),
                 login_url: None,
+                steps: None,
                 stage: None,
             },
             None,
@@ -109,6 +110,7 @@ pub async fn run_node_action(
                         }),
                         probe: None,
                         login_url: None,
+                        steps: None,
                     },
                     None,
                 ),
@@ -167,6 +169,7 @@ pub async fn run_node_action(
                         message: head_text("fetching"),
                         probe: None,
                         login_url: None,
+                        steps: None,
                     },
                     None,
                 )
@@ -182,6 +185,21 @@ pub async fn run_node_action(
                 None,
             ),
         },
+        NodeActionKind::Hold => {
+            let steps = sessions.hold();
+            (
+                NodeActionResult {
+                    id: frame.id,
+                    ok: true,
+                    stage: None,
+                    message: head_text(&format!("holding; {steps} mid-step")),
+                    probe: None,
+                    login_url: None,
+                    steps: Some(steps),
+                },
+                None,
+            )
+        }
         NodeActionKind::Update => {
             let done = match &frame.update {
                 Some(update) => super::update::run(update, home).await,
@@ -199,10 +217,15 @@ pub async fn run_node_action(
                         message: head_text(&answer.message),
                         probe: None,
                         login_url: None,
+                        steps: None,
                     },
                     answer.watch,
                 ),
-                Err(f) => (failed(frame.id, &f), None),
+                // No restart follows: what the hold stopped goes on now.
+                Err(f) => {
+                    super::hold::clear(home);
+                    (failed(frame.id, &f), None)
+                }
             }
         }
     }
@@ -224,6 +247,7 @@ fn login_answer(
         probe: None,
         stage: None,
         login_url: done.ok().filter(|_| url).map(head_text),
+        steps: None,
     }
 }
 
@@ -239,5 +263,6 @@ pub fn failed(
         message: head_text(&f.message),
         probe: None,
         login_url: None,
+        steps: None,
     }
 }

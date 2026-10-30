@@ -38,10 +38,10 @@ show this message
 ### fleetd update {#update}
 
 ```text
-fleetd update [--check] [--channel <c>]
+fleetd update [--check] [--channel <c>] [--now]
 ```
 
-replace this fleetd with the latest release, then restart its hub and node at once: what they were running carries on by itself. The app's Update button does this for the hub and every node; this is for a machine without the app. `--channel` edge (the newest build of main) or stable; default: the channel this build came from
+replace this fleetd with the latest release, then restart its hub at once and its node once its agents finish the step they're on (10 min at most; `--now` doesn't wait): what they were running carries on by itself. The app's Update button does this for the hub and every node; this is for a machine without the app. `--channel` edge (the newest build of main) or stable; default: the channel this build came from
 
 
 ## Setting up {#setting-up}

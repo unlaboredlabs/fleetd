@@ -93,6 +93,8 @@ export interface UpdatesView {
   readonly going: boolean;
   /** Start over, quiet beside a run that stopped moving once the hub has its result: why it shows. Null otherwise. */
   readonly startOver: { readonly note: string } | null;
+  /** Update now, beside a run whose machines wait for their agents to finish their step: it stops the wait. */
+  readonly updateNow: boolean;
 }
 
 /** How long a followed run goes unchanged before Start over shows beside it. A machine's own restart is back well
@@ -205,12 +207,43 @@ const STAGE: Readonly<Record<string, string>> = {
   health: "starting up",
 };
 
+const clocks = new Map<string, Intl.DateTimeFormat>();
+
+/** "23:20", in `timeZone` (the person's own when absent). */
+const clockAt = (iso: string, timeZone?: string): string => {
+  const key = timeZone ?? "";
+  let f = clocks.get(key);
+  if (f === undefined) {
+    f = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hourCycle: "h23", ...(timeZone ? { timeZone } : {}) });
+    clocks.set(key, f);
+  }
+  return f.format(new Date(iso));
+};
+
+/** A machine waiting for its agents: how many are mid-step, and when it installs whatever runs. */
+const waitWords = (p: UpdatePart, timeZone?: string): string => {
+  const by = p.installsBy === undefined ? "" : `, installs by ${clockAt(p.installsBy, timeZone)}`;
+  const n = p.agents ?? 0;
+  if (n > 0) return `${String(n)} ${n === 1 ? "agent finishing its" : "agents finishing their"} step${by}`;
+  return `${firstWords((p.message ?? "waits").split("; ", 1)[0] ?? "waits")}${by}`;
+};
+
+/** The machines of a run waiting for their agents: how many agents are mid-step, and when the last installs whatever
+ * runs. Null when none waits. */
+const drainOf = (run: UpdateRun): { readonly agents: number; readonly by: string } | null => {
+  const waiting = run.parts.filter((p) => p.part === "node" && p.state === "waiting" && p.installsBy !== undefined);
+  if (waiting.length === 0) return null;
+  const by = waiting.map((p) => p.installsBy ?? "").reduce((a, b) => (Date.parse(b) > Date.parse(a) ? b : a));
+  return { agents: waiting.reduce((n, p) => n + (p.agents ?? 0), 0), by };
+};
+
 /** A part of the hub's run, in one line. */
-const runRow = (p: UpdatePart, to: string, reconnecting: boolean): Omit<PartRow, "key" | "name" | "raw"> => {
+const runRow = (p: UpdatePart, to: string, reconnecting: boolean, timeZone?: string): Omit<PartRow, "key" | "name" | "raw"> => {
   const said = p.message ?? "";
   const sentence = said.charAt(0).toUpperCase() + said.slice(1);
   switch (p.state) {
     case "waiting":
+      if (p.installsBy !== undefined) return { status: `Waiting: ${waitWords(p, timeZone)}`, tone: "quiet" };
       return { status: "Waiting for the hub", tone: "quiet" };
     case "downloading":
       return { status: `Downloading ${to}…`, tone: "quiet" };
@@ -289,10 +322,11 @@ type LineSay = Omit<PartLine, "key" | "name">;
 const GOING: readonly UpdatePart["state"][] = ["waiting", "downloading", "restarting"];
 
 /** The hub or a machine's fleetd in the run, in one line; `retry` once the run is over and it didn't come through. */
-const partLine = (p: UpdatePart, retry: Retry | null): LineSay => {
+const partLine = (p: UpdatePart, retry: Retry | null, timeZone?: string): LineSay => {
   const again = retry === null ? {} : { retry };
   switch (p.state) {
     case "waiting":
+      if (p.installsBy !== undefined) return { state: "Waiting", tone: "quiet", reason: waitWords(p, timeZone) };
       return { state: "Waiting", tone: "quiet", ...(p.message === undefined ? {} : { reason: firstWords(p.message) }) };
     case "downloading":
     case "restarting":
@@ -410,13 +444,15 @@ export interface UpdatesInput {
   readonly ready?: string | null;
   /** Epoch ms, for how lately a run finished. */
   readonly now?: number;
+  /** For the times it names; the person's own when absent. */
+  readonly timeZone?: string;
 }
 
 /**
  * The line names the most pressing: this app's restart or download, then a run going on or failed, then anything
  * with a newer build.
  */
-export const updatesView = ({ app, hub, machines = [], run = null, flow = { phase: "idle" }, ready = null, now = Date.now() }: UpdatesInput): UpdatesView => {
+export const updatesView = ({ app, hub, machines = [], run = null, flow = { phase: "idle" }, ready = null, now = Date.now(), timeZone }: UpdatesInput): UpdatesView => {
   const of = hub.url === null ? null : target(hub, app);
   // A finished run behind a newer build (ready on the hub, or on the channel) is history, whatever the flow: the sheet
   // and the notice offer that build, not Retry of the old one.
@@ -431,7 +467,7 @@ export const updatesView = ({ app, hub, machines = [], run = null, flow = { phas
   let hubPart: HubPart | null = null;
   if (hub.url !== null) {
     const p = parts.get("hub");
-    const row = p !== undefined ? runRow(p, toLabel, reconnecting) : standing(hub.version, of);
+    const row = p !== undefined ? runRow(p, toLabel, reconnecting, timeZone) : standing(hub.version, of);
     hubPart = {
       key: "hub",
       name: "The hub",
@@ -447,7 +483,7 @@ export const updatesView = ({ app, hub, machines = [], run = null, flow = { phas
           .sort((a, b) => a.name.localeCompare(b.name))
           .flatMap((m) => {
             const p = parts.get(`node:${m.machineId}`);
-            const row = p !== undefined ? runRow(p, toLabel, reconnecting) : !m.online ? { status: "Offline", tone: "quiet" as const } : standing(m.nodeVersion, of);
+            const row = p !== undefined ? runRow(p, toLabel, reconnecting, timeZone) : !m.online ? { status: "Offline", tone: "quiet" as const } : standing(m.nodeVersion, of);
             const node: PartRow = { key: m.machineId, name: m.name, ...row, ...(knownVersion(m.nodeVersion) ? { raw: m.nodeVersion } : {}) };
             // Its Claude Code, once the run has a part for it: under the machine, in a line of its own.
             const claude = parts.get(`claude:${m.machineId}`);
@@ -474,8 +510,8 @@ export const updatesView = ({ app, hub, machines = [], run = null, flow = { phas
           title: newest === null ? "Update fleetd" : `fleetd ${versionLabel(newest)} is ${hubReady !== null ? "ready" : "available"}`,
           note:
             hubReady !== null
-              ? `Downloaded and checked already: Update swaps it in on the hub, then ${machinesWord}, then this app, which restarts. What's running carries on by itself.`
-              : `Updates the hub, then ${machinesWord}, then this app, which restarts. Nothing waits for work to finish: what's running carries on by itself.`,
+              ? `Downloaded and checked already: Update swaps it in on the hub, then ${machinesWord} once their agents finish their step (10 minutes at most), then this app, which restarts.`
+              : `Updates the hub, then ${machinesWord} once their agents finish their step (10 minutes at most), then this app, which restarts.`,
           notes: whatsNew(hubPart?.notes ?? NO_NOTES, app === null ? NO_NOTES : appPart(app).notes),
         };
   // Only once a build is downloaded and checked, the hub's or this app's own: never for one still to fetch.
@@ -486,11 +522,11 @@ export const updatesView = ({ app, hub, machines = [], run = null, flow = { phas
   const lines: PartLine[] = [];
   if (hub.url !== null) {
     const p = parts.get("hub");
-    lines.push({ key: "hub", name: "The hub", ...(p !== undefined ? partLine(p, null) : standingLine(hub.version, of, hubReady !== null)) });
+    lines.push({ key: "hub", name: "The hub", ...(p !== undefined ? partLine(p, null, timeZone) : standingLine(hub.version, of, hubReady !== null)) });
     for (const m of [...machines].sort((a, b) => a.name.localeCompare(b.name))) {
       const n = parts.get(`node:${m.machineId}`);
       const retry = retryable && n !== undefined && ["failed", "rolled_back", "skipped"].includes(n.state) ? ({ kind: "machine", machineId: m.machineId } as const) : null;
-      const say = n !== undefined ? partLine(n, retry) : !m.online ? { state: "Offline", tone: "quiet" as const } : standingLine(m.nodeVersion, of, hubReady !== null);
+      const say = n !== undefined ? partLine(n, retry, timeZone) : !m.online ? { state: "Offline", tone: "quiet" as const } : standingLine(m.nodeVersion, of, hubReady !== null);
       lines.push({ key: m.machineId, name: m.name, ...say });
     }
     const claude = (live?.parts ?? []).filter((p) => p.part === "claude");
@@ -505,6 +541,7 @@ export const updatesView = ({ app, hub, machines = [], run = null, flow = { phas
 
   let progress: Line | null = null;
   let updated = false;
+  const drain = live !== null && live.finishedAt === undefined && live.now !== true ? drainOf(live) : null;
   if (flow.phase === "refused") progress = { tone: "danger", text: `Couldn't start the update: ${flow.message}` };
   else if (flow.phase === "starting") progress = { tone: "quiet", text: "Starting the update…" };
   else if (live !== null && live.finishedAt === undefined) {
@@ -512,10 +549,15 @@ export const updatesView = ({ app, hub, machines = [], run = null, flow = { phas
     const nodeParts = live.parts.filter((p) => p.part === "node");
     // A machine is done once its node and its Claude Code are.
     const settledOn = (id: string | undefined) => live.parts.filter((p) => p.part !== "hub" && p.machineId === id).every((p) => !GOING.includes(p.state));
+    const by = drain === null ? "" : clockAt(drain.by, timeZone);
     progress =
       hubP !== undefined && !["done", "current", "failed", "rolled_back", "skipped"].includes(hubP.state)
         ? { tone: "quiet", text: "Updating the hub…" }
-        : { tone: "quiet", text: `Updating the machines: ${String(nodeParts.filter((p) => settledOn(p.machineId)).length)} of ${String(nodeParts.length)} done` };
+        : drain !== null && drain.agents > 0
+          ? { tone: "quiet", text: `Updating when agents finish their step (${String(drain.agents)}), by ${by}` }
+          : drain !== null
+            ? { tone: "quiet", text: `Updating once what runs on the machines ends, by ${by}` }
+            : { tone: "quiet", text: `Updating the machines: ${String(nodeParts.filter((p) => settledOn(p.machineId)).length)} of ${String(nodeParts.length)} done` };
   } else if (flow.phase === "app" && app?.app.kind === "failed") {
     progress = { tone: "danger", text: `Update failed: this app. ${app.app.reason} The hub and its machines updated.` };
   } else if (flow.phase === "app") progress = { tone: "quiet", text: "Updating this app; it restarts once the download is in" };
@@ -557,7 +599,8 @@ export const updatesView = ({ app, hub, machines = [], run = null, flow = { phas
               : `Nothing has changed for ${String(Math.floor((now - (flow.since ?? now)) / 60_000))} minutes. Start over ends this update and starts a new one.`,
         }
       : null;
-  return { line, notice, lines, app: app === null ? null : appPart(app), hub: hubPart, nodes, update, progress, going, startOver };
+  const updateNow = drain !== null && !reconnecting;
+  return { line, notice, lines, app: app === null ? null : appPart(app), hub: hubPart, nodes, update, progress, going, startOver, updateNow };
 };
 
 /**

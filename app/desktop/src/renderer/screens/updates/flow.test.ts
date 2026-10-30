@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Call, UpdatePart, UpdateRun } from "../../../shared/contracts";
 import type { HubError } from "../../../shared/hub";
 import type { AppUpdate, UpdatesState } from "../../../shared/updates";
-import { BEFORE_UPDATE, currentFlow, currentReady, loadRun, resetFlow, retryMachine, startOver, startUpdate, type FlowDeps } from "./flow";
+import { BEFORE_UPDATE, currentFlow, currentReady, currentRun, loadRun, resetFlow, retryMachine, startOver, startUpdate, updateNow, type FlowDeps } from "./flow";
 
 const NEXT = "0.0.0-edge.202610261056+1b563d7";
 
@@ -195,7 +195,7 @@ describe("the Update button's run", () => {
   });
 
   it("starts over: the hub ends a run that stopped moving, and this window follows the new one through", async () => {
-    const waiting: UpdatePart = { part: "node", machineId: "devbox", name: "devbox", from: "0.0.0", state: "waiting", message: "waits until it's idle" };
+    const waiting: UpdatePart = { part: "node", machineId: "devbox", name: "devbox", from: "0.0.0", state: "waiting", message: "waits for 1 live session" };
     const stuck: UpdateRun = { ...runOf("done", false), parts: [...runOf("done", false).parts, waiting] };
     const fresh: UpdateRun = { ...runOf("current", true), id: "U2" };
     const calls: [string, unknown][] = [];
@@ -228,5 +228,13 @@ describe("the Update button's run", () => {
     // The earlier follow stopped: nothing read after the new run ended.
     expect(calls.at(-1)?.[0]).toBe("hub_update");
     expect(currentFlow()).toEqual({ phase: "finished", updated: true });
+  });
+
+  it("updates now: the hub stops its machines' wait for their agents, and the run followed goes on", async () => {
+    const now: UpdateRun = { ...runOf("done", false), now: true };
+    const { d, inputs } = deps({ ok: true, run: now }, [], { kind: "current" });
+    await updateNow(d);
+    expect(inputs).toEqual([{ now: true }]);
+    expect(currentRun()?.now).toBe(true);
   });
 });

@@ -18,9 +18,11 @@ export interface UpdateSection {
   readonly parts: readonly PartLine[];
   readonly going: boolean;
   readonly startOver: { readonly note: string } | null;
+  /** Update now, while machines wait for their agents to finish their step. */
+  readonly updateNow: boolean;
 }
 
-export const UPDATE_NOTE = "Updates the hub and every machine; running work carries on after a restart.";
+export const UPDATE_NOTE = "Updates the hub, then every machine once its agents finish their step (10 minutes at most).";
 
 export interface UpdateInput {
   /** hub_info's `admin`; undefined until read. */
@@ -51,7 +53,7 @@ export const updateSection = ({ admin, hub, machines, run, flow, ready, now = Da
   const what = view.update?.title.startsWith("fleetd ") === true ? view.update.title.slice("fleetd ".length) : undefined;
   const offer = view.update === null ? null : { title: "Update fleetd", detail: what, note: UPDATE_NOTE };
   if (offer === null && view.progress === null) return null;
-  return { offer, progress: view.progress, parts: view.progress === null ? [] : view.lines.filter((l) => l.key !== "app"), going: view.going, startOver: view.startOver };
+  return { offer, progress: view.progress, parts: view.progress === null ? [] : view.lines.filter((l) => l.key !== "app"), going: view.going, startOver: view.startOver, updateNow: view.updateNow };
 };
 
 /**

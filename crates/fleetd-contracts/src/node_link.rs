@@ -139,6 +139,10 @@ pub const CAP_CLAUDE_LOGIN: &str = "claude_login";
 /// `update_fetch`: the node takes `node_action` `fetch`, and downloads the hub's next build while the hub updates.
 pub const CAP_UPDATE_FETCH: &str = "update_fetch";
 
+/// `update_hold`: the node takes `node_action` `hold`: it holds its agents' tool calls that haven't started yet, so they
+/// reach a step's end before its update's restart, and answers how many are still mid-step.
+pub const CAP_UPDATE_HOLD: &str = "update_hold";
+
 /// `session_host`: the node hosts sessions for agents on other machines (machine_roles.rs).
 pub const CAP_SESSION_HOST: &str = "session_host";
 
@@ -471,6 +475,10 @@ pub enum NodeActionKind {
     /// Give the waiting login the code its sign-in page showed (`code`), and answer once it has ended. Claude Code
     /// keeps its token on the machine: it never comes back. Only for a node that lists [`CAP_CLAUDE_LOGIN`].
     ClaudeLoginCode,
+    /// Ahead of `update`: hold every agent's tool call that hasn't started yet, for [`HOLD_LEASE_SECS`] from now, so
+    /// the restart finds its agents between steps; the tool calls already running carry on. Answered at once with how
+    /// many sessions are still mid-step (`steps`). Only for a node that lists [`CAP_UPDATE_HOLD`].
+    Hold,
 }
 
 /// Hub -> node: M11 doctor's probe, and the hub's update of its nodes.
@@ -486,6 +494,10 @@ pub struct NodeAction {
     /// `claude_login_code` only: the code the sign-in page showed.
     pub code: Option<Text<1, 500>>,
 }
+
+/// How long a `hold` lasts unless the hub asks again: a hub that stops asking (it went away, the update ended without
+/// a restart) lets every held tool call go within it.
+pub const HOLD_LEASE_SECS: u64 = 60;
 
 /// The build a node updates to: what its hub runs now.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -538,6 +550,8 @@ pub struct NodeActionResult {
     pub stage: Option<crate::mcp::UpdateStage>,
     /// `claude_login` that started: where the person signs in.
     pub login_url: Option<Text<1, 4000>>,
+    /// `hold`: the sessions still mid-step, a tool call of theirs running.
+    pub steps: Option<u32>,
 }
 
 /// Node -> hub: time spans from the node's outbox rows `fromRid..=toRid`, oldest first. A resend after a

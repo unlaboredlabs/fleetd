@@ -2467,11 +2467,12 @@ pub struct HubBusyItem {
     pub since: Option<Timestamp>,
 }
 
-// hub_update: updates the hub to the newest build of its channel, then every connected node, without waiting for work
-// to finish: what a restart cuts off carries on by itself, and a machine running what can't (a live session, a preview)
-// updates once it's idle. Admin on every machine, a human key only. Answers at once with the run; hub_update_status
-// follows it. A run already going is returned, not started again, unless nothing in the hub drives it any more, or
-// `startOver` asks. With `machine`, updates that machine of the last run again (Retry).
+// hub_update: updates the hub to the newest build of its channel at once (agents don't need it mid-step), then every
+// connected node once its agents finish the step they're on: each node holds the tool calls that haven't started, and
+// installs when none runs, or at the deadline (10 minutes unless the hub's settings say otherwise) whatever runs.
+// `now` doesn't wait. Admin on every machine, a human key only. Answers at once with the run; hub_update_status follows
+// it. A run already going is returned, not started again (with `now`, its nodes stop waiting), unless nothing in the
+// hub drives it any more, or `startOver` asks. With `machine`, updates that machine of the last run again (Retry).
 input!(HubUpdateInput {
     /// Absent: the channel the hub's build came from.
     channel: Option<HubChannel>,
@@ -2480,6 +2481,8 @@ input!(HubUpdateInput {
     /// Start over: ends the run going on, once the hub has its result (never while the hub restarts), with every part
     /// left skipped, and starts a new one.
     start_over: Option<bool>,
+    /// Update now: nodes restart without waiting for their agents to finish their step.
+    now: Option<bool>,
 });
 output!(HubUpdateOutput {
     /// The update going now or the last one; absent when the hub never updated itself.
@@ -2511,6 +2514,8 @@ pub struct UpdateRun {
     pub finished_at: Option<Timestamp>,
     /// The hub first, then per machine, by name, its node and its Claude Code.
     pub parts: List<UpdatePart, 1, UPDATE_PARTS_MAX>,
+    /// Update now: its nodes don't wait for their agents to finish their step. Absent otherwise.
+    pub now: Option<bool>,
 }
 
 /// The hub, or one machine's node or Claude Code, in an update.
@@ -2532,6 +2537,10 @@ pub struct UpdatePart {
     pub stage: Option<UpdateStage>,
     /// One plain sentence: what happened, or why not, with what to do.
     pub message: Option<Text<0, 500>>,
+    /// A node waiting for its agents: how many are still mid-step (none started since it began waiting).
+    pub agents: Option<u32>,
+    /// A node waiting for its agents or what else runs on it: when it installs regardless.
+    pub installs_by: Option<Timestamp>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]

@@ -52,10 +52,11 @@ async fn hub_update(
         )
         .with_fix(admin_everywhere_fix(&caller)));
     }
+    let now = input.now == Some(true);
     let started = match &input.machine {
-        Some(machine) => hub.updates.retry(machine),
-        None if input.start_over == Some(true) => hub.updates.start_over(input.channel),
-        None => hub.updates.start(input.channel),
+        Some(machine) => hub.updates.retry(machine, now),
+        None if input.start_over == Some(true) => hub.updates.start_over(input.channel, now),
+        None => hub.updates.start(input.channel, now),
     };
     let run = started.map_err(|refused| match refused {
         Refused::NotWired => ToolError::new(

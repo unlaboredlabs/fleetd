@@ -595,6 +595,13 @@ pub enum LeadSocketFrame {
     /// `fleetd browser-mcp` to its node, which answers it itself: the session's browser lives there.
     BrowserCall(BrowserCallFrame),
     BrowserResult(BrowserResultFrame),
+    /// `fleetd update` on the node's machine, ahead of the node's restart: the node holds its agents' tool calls that
+    /// haven't started yet, as for the hub's `node_action` `hold`. Taken from a person's shell only, never a session.
+    Hold,
+    /// The answer to [`LeadSocketFrame::Hold`]: the sessions still mid-step.
+    Held {
+        steps: u32,
+    },
 }
 
 #[cfg(test)]

@@ -1,7 +1,9 @@
-//! `fleetd update [--check] [--channel edge|stable]`: replaces this binary with the latest build of a release
-//! channel, then restarts the hub and node services that run this binary, at once. A restart doesn't wait for work:
-//! what it cuts off carries on by itself afterwards (see `crate::update`). The desktop app's Update button does the
-//! same through the hub (`hub_update`), for the hub and every node; this is the way for a machine without the app.
+//! `fleetd update [--check] [--channel edge|stable] [--now]`: replaces this binary with the latest build of a release
+//! channel, then restarts the hub and node services that run this binary: the hub at once, the node once its agents
+//! finish the step they're on (it holds the ones that haven't started, node/hold.rs), 10 minutes at most; `--now`
+//! doesn't wait. What a restart cuts off carries on by itself afterwards (see `crate::update`). The desktop app's
+//! Update button does the same through the hub (`hub_update`), for the hub and every node; this is the way for a
+//! machine without the app.
 //!
 //! The desktop app updates itself (electron-updater, app/desktop/src/main/updater.ts). This only replaces the GPUI app
 //! the Electron one succeeded, which can't.
@@ -9,6 +11,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, anyhow, bail};
 
@@ -25,9 +28,13 @@ pub struct UpdateArgs {
     /// edge or stable (nightly, Edge's earlier name, is edge). Default: the channel this build came from.
     #[arg(long)]
     pub channel: Option<String>,
-    /// Restart the hub and node now. Kept for scripts from before restarts stopped waiting for work: they always do.
+    /// Restart the hub and node even when this binary is current. Kept for scripts from before restarts stopped
+    /// waiting for work.
     #[arg(long)]
     pub restart_now: bool,
+    /// Restart the node without waiting for its agents to finish their step.
+    #[arg(long)]
+    pub now: bool,
 }
 
 pub async fn run(args: UpdateArgs) -> Result<()> {
@@ -112,7 +119,7 @@ pub async fn run(args: UpdateArgs) -> Result<()> {
         println!("updated {}", exe.display());
     }
     if restart_due {
-        restart(&services);
+        restart(&services, !args.now);
     }
     // This machine runs agents: its Claude Code goes to the version the installed build was tested with, which only
     // that build knows.
@@ -333,6 +340,47 @@ fn macos_major() -> Option<u32> {
         .ok()
 }
 
+/// Holds this machine's node's agents between steps and waits until none is mid-step, `deadline` at most. A node that
+/// doesn't answer, or can't hold (older), isn't waited for.
+fn wait_for_agents(deadline: Duration) {
+    let socket =
+        super::agent_mcp::node_socket_path(std::env::var("FLEETD_NODE_SOCK").ok().as_deref());
+    let started = Instant::now();
+    let mut said = None;
+    loop {
+        let steps = super::agent_mcp::send_to_node(
+            &socket,
+            &serde_json::json!({ "t": "hold" }),
+            Duration::from_secs(10),
+        )
+        .ok()
+        .and_then(|answer| answer["steps"].as_u64())
+        .unwrap_or(0);
+        if steps == 0 {
+            return;
+        }
+        if started.elapsed() >= deadline {
+            println!(
+                "restarting the node with {steps} still mid-step: they carry on by themselves afterwards"
+            );
+            return;
+        }
+        if said != Some(steps) {
+            println!(
+                "waiting for {steps} agent{} to finish {} step (at most {} min; --now doesn't wait)",
+                if steps == 1 { "" } else { "s" },
+                if steps == 1 { "its" } else { "their" },
+                deadline.as_secs() / 60
+            );
+            said = Some(steps);
+        }
+        std::thread::sleep(WAIT_POLL);
+    }
+}
+
+/// How often `fleetd update` looks at its node's agents again while it waits for them.
+const WAIT_POLL: Duration = Duration::from_secs(2);
+
 /// The version the hub on this machine runs (`hub_info`), through the CLI's own key.
 async fn ask_hub() -> Result<String, String> {
     let home = super::hub_key::resolve_home(None)?;
@@ -344,14 +392,19 @@ async fn ask_hub() -> Result<String, String> {
         .map(|i| i.version)
 }
 
-/// Restarts `services` now, saying which did. What runs on them carries on by itself afterwards.
-fn restart(services: &[Service]) {
-    for s in services {
-        match service::restart(s) {
-            Ok(()) => println!("restarted {}", s.name),
-            Err(e) => eprintln!("{e}; restart {} yourself", s.name),
-        }
+/// Restarts `services`, saying which did: the hub's at once, a node's once its agents finish their step when `wait`
+/// ([`wait_for_agents`]). What runs on them carries on by itself afterwards.
+fn restart(services: &[Service], wait: bool) {
+    let (hubs, nodes): (Vec<&Service>, Vec<&Service>) = services.iter().partition(|s| s.hub());
+    let one = |s: &Service| match service::restart(s) {
+        Ok(()) => println!("restarted {}", s.name),
+        Err(e) => eprintln!("{e}; restart {} yourself", s.name),
+    };
+    hubs.into_iter().for_each(one);
+    if wait && !nodes.is_empty() {
+        wait_for_agents(Duration::from_secs(crate::hub::update::DRAIN_MINUTES * 60));
     }
+    nodes.into_iter().for_each(one);
     println!(
         "anything that was running carries on by itself: leads and agents resume in their threads, and the merge \
          train takes up what it was merging"

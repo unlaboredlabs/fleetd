@@ -4,7 +4,8 @@ use std::sync::{Arc, Weak};
 
 use fleetd_contracts::ids::MachineId;
 use fleetd_contracts::node_link::{
-    CAP_CLAUDE_INSTALL, CAP_SELF_UPDATE, CAP_UPDATE_FETCH, NodeActionResult, NodeUpdate,
+    CAP_CLAUDE_INSTALL, CAP_SELF_UPDATE, CAP_UPDATE_FETCH, CAP_UPDATE_HOLD, NodeActionResult,
+    NodeUpdate,
 };
 
 use super::{NodeAnswer, NodeFacts, Refusal, UpdatePorts};
@@ -83,6 +84,7 @@ impl UpdatePorts for HubPorts {
                 live_since: hub.executors.live_since(&m.machine_id),
                 can_update: hub.link.node_can(&m.machine_id, CAP_SELF_UPDATE),
                 can_fetch: hub.link.node_can(&m.machine_id, CAP_UPDATE_FETCH),
+                can_hold: hub.link.node_can(&m.machine_id, CAP_UPDATE_HOLD),
                 can_install_claude: hub.link.node_can(&m.machine_id, CAP_CLAUDE_INSTALL),
                 claude: hub
                     .executors
@@ -121,6 +123,18 @@ impl UpdatePorts for HubPorts {
                 .install_claude(machine_id, version)
                 .await
                 .map_err(|e| e.message)
+        })
+    }
+
+    fn hold_node<'a>(&'a self, machine_id: &'a MachineId) -> BoxFuture<'a, Result<u32, String>> {
+        Box::pin(async move {
+            let hub = self.hub().ok_or("the hub is stopping")?;
+            let answer = hub
+                .node_commands
+                .hold_node(machine_id)
+                .await
+                .map_err(|e| e.message)?;
+            Ok(answer.steps.unwrap_or(0))
         })
     }
 

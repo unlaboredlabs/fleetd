@@ -41,7 +41,12 @@ struct RelayState {
     next_id: u64,
     /// What the hub's last welcome said it takes beyond the base set.
     hub_caps: Vec<String>,
+    /// The node's hold of its agents ahead of `fleetd update`'s restart ([`LeadSocketFrame::Hold`]).
+    hold: Option<Hold>,
 }
+
+/// Holds the node's agents between steps, answering how many are still mid-step (node/hold.rs).
+pub type Hold = Arc<dyn Fn() -> u32 + Send + Sync>;
 
 /// The node's half of lead-side calls: CLI frames in from the socket, out over whichever link is up.
 #[derive(Clone)]
@@ -104,6 +109,11 @@ impl LeadRelay {
             state: Arc::default(),
             linked: watch::Sender::new(false),
         }
+    }
+
+    /// What answers [`LeadSocketFrame::Hold`]; without it, a hold is refused.
+    pub fn set_hold(&self, hold: Hold) {
+        self.lock().hold = Some(hold);
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, RelayState> {
@@ -206,6 +216,7 @@ fn bad_frame(message: &str) -> LeadResultFrame {
 enum Incoming {
     Lead(LeadCallFrame),
     Browser(BrowserCallFrame),
+    Hold,
 }
 
 fn decode_call(line: &str) -> Result<Incoming, String> {
@@ -217,8 +228,11 @@ fn decode_call(line: &str) -> Result<Incoming, String> {
         )),
         LeadSocketFrame::LeadCall(frame) => Ok(Incoming::Lead(frame)),
         LeadSocketFrame::BrowserCall(frame) => Ok(Incoming::Browser(frame)),
-        LeadSocketFrame::LeadResult(_) | LeadSocketFrame::BrowserResult(_) => {
-            Err("expected t: \"lead_call\" or \"browser_call\"".into())
+        LeadSocketFrame::Hold => Ok(Incoming::Hold),
+        LeadSocketFrame::LeadResult(_)
+        | LeadSocketFrame::BrowserResult(_)
+        | LeadSocketFrame::Held { .. } => {
+            Err("expected t: \"lead_call\", \"browser_call\" or \"hold\"".into())
         }
     }
 }
@@ -348,6 +362,41 @@ async fn serve_connection(
             );
             let _ = conn.write_all(line.as_bytes()).await;
             let _ = conn.shutdown().await;
+            return;
+        }
+        Ok(Incoming::Hold) => {
+            let peer = match pid {
+                Some(pid) => tokio::task::spawn_blocking(move || identify(pid))
+                    .await
+                    .ok(),
+                None => None,
+            };
+            let hold = relay.lock().hold.clone();
+            match (peer, hold) {
+                (Some(PeerSession::Outside), Some(hold)) => {
+                    let steps = tokio::task::spawn_blocking(move || hold())
+                        .await
+                        .unwrap_or(0);
+                    let line = format!(
+                        "{}\n",
+                        serde_json::to_string(&LeadSocketFrame::Held { steps }).unwrap_or_default()
+                    );
+                    let _ = conn.write_all(line.as_bytes()).await;
+                    let _ = conn.shutdown().await;
+                }
+                (Some(PeerSession::Outside), None) => {
+                    reply(&mut conn, &bad_frame("this node doesn't hold its agents")).await;
+                }
+                _ => {
+                    reply(
+                        &mut conn,
+                        &bad_frame(
+                            "only a person's shell holds the node's agents, never a session",
+                        ),
+                    )
+                    .await;
+                }
+            }
             return;
         }
         Err(why) => {
@@ -585,5 +634,56 @@ mod attribution_tests {
             .is_err()
         );
         assert!(named(attribute(frame(None), None)).is_err());
+    }
+}
+
+#[cfg(test)]
+mod hold_tests {
+    use super::*;
+
+    async fn ask(peer: PeerSession, hold: Option<Hold>) -> serde_json::Value {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("node.sock");
+        let relay = LeadRelay::new();
+        if let Some(hold) = hold {
+            relay.set_hold(hold);
+        }
+        let _serving = serve_lead_socket(
+            path.clone(),
+            relay,
+            Arc::new(move |_| peer.clone()),
+            Arc::new(|_| Ok(Masker::default())),
+            None,
+        )
+        .await
+        .unwrap();
+        tokio::task::spawn_blocking(move || {
+            crate::cli::agent_mcp::send_to_node(
+                &path,
+                &serde_json::json!({ "t": "hold" }),
+                Duration::from_secs(5),
+            )
+            .unwrap()
+        })
+        .await
+        .unwrap()
+    }
+
+    /// `fleetd update` holds its node's agents from a person's shell; a session can't.
+    #[tokio::test]
+    async fn only_a_persons_shell_holds_the_agents() {
+        let hold: Hold = Arc::new(|| 3);
+        let held = ask(PeerSession::Outside, Some(hold.clone())).await;
+        assert_eq!(held, serde_json::json!({ "t": "held", "steps": 3 }));
+        let refused = ask(PeerSession::Session("s1".into()), Some(hold)).await;
+        assert!(
+            refused["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("never a session"),
+            "{refused}"
+        );
+        let none = ask(PeerSession::Outside, None).await;
+        assert!(none["error"].is_object(), "{none}");
     }
 }

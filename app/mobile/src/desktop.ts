@@ -68,6 +68,6 @@ export { unsavedWorktrees } from "../../desktop/src/renderer/screens/settings/pr
 export { versionLabel, type UpdatesState } from "../../desktop/src/shared/updates";
 export { HIDDEN_WARNING, hasHidden, marked, pieces, shellWord } from "../../desktop/src/shared/hidden";
 export { updatesView, type Line, type PartLine, type UpdatesView } from "../../desktop/src/renderer/screens/updates/model";
-export { loadRun, resetFlow, retryMachine, startOver, startUpdate, useFlow, useReady, useRun, type Flow, type FlowDeps } from "../../desktop/src/renderer/screens/updates/flow";
+export { loadRun, resetFlow, retryMachine, startOver, startUpdate, updateNow, useFlow, useReady, useRun, type Flow, type FlowDeps } from "../../desktop/src/renderer/screens/updates/flow";
 export { cellFrames, CELLS, GRAIN, GRAIN_BEATS, LEVELS, litOn, phaseOf, RING, SHAPES, stillOf, type GlyphState } from "../../desktop/src/shared/glyph";
 export { doingWords, leadLaneId, sentenceCase, workedFor } from "../../desktop/src/shared/turnWords";
