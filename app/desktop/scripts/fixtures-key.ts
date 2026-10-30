@@ -1,7 +1,8 @@
 // `node scripts/fixtures-key.ts`: a hash of every file `pnpm fixtures` reads, the key CI caches its output under
 // (desktop-qa.yml, ci.yml). That is every file under fixtures/ but the output, the app's modules they import (followed
-// through each relative import), the hub's JSON Schemas and the lockfile. A file missed here would leave a stale
-// fixture in the cache, so an import it can't resolve fails it rather than being left out.
+// through each relative import), the files those read by `new URL("<relative path>", import.meta.url)`, the hub's JSON
+// Schemas and the lockfile. A file missed here would leave a stale fixture in the cache, so an import or a read it
+// can't resolve fails it rather than being left out. Read files outside fixtures/ only that way, or add them here.
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -35,7 +36,12 @@ for (let file = queue.pop(); file !== undefined; file = queue.pop()) {
   seen.add(file);
   if (!/\.(ts|tsx|js|mjs)$/u.test(file)) continue;
   // Static imports and re-exports at the start of a line: not an import inside a string (a diff in a fixture).
-  for (const [, spec] of fs.readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s[^"';]*["'](\.{1,2}\/[^"']+)["']/gmu)) {
+  const text = fs.readFileSync(file, "utf8");
+  for (const [, spec] of text.matchAll(/^\s*(?:import|export)\s[^"';]*["'](\.{1,2}\/[^"']+)["']/gmu)) {
+    queue.push(resolveImport(file, spec ?? ""));
+  }
+  // A file read beside the module: a data file outside fixtures/ (the settings registry).
+  for (const [, spec] of text.matchAll(/new URL\(\s*["'](\.{1,2}\/[^"']+)["'],\s*import\.meta\.url\s*\)/gu)) {
     queue.push(resolveImport(file, spec ?? ""));
   }
 }
