@@ -1,6 +1,7 @@
 // The home list, as plain view data: what needs you on top, then your Navis, then the projects, each newest first. A
 // project wants you as the desktop's sidebar says (screens/shell/model.ts): a secret or an approval open for it, or
-// its lead waiting for your reply. An archived Navi is in none of them. Pure, so it is unit-tested.
+// its lead waiting for your reply. An archived Navi is in none of them, unless an approval of its waits. Pure, so it is
+// unit-tested.
 import { previewOf } from "./chatView";
 import { chatItems, emptyChat, hasHidden, isArchived, isNavi, shellWord, type HumanRequest, type ProjectSummary } from "./desktop";
 import { unreadCount, type Prefs } from "./prefs";
@@ -61,7 +62,8 @@ const byRecent = (a: Row, b: Row): number => b.at.localeCompare(a.at) || a.proje
 export const lists = (s: Pick<State, "projects" | "chatStates" | "requests"> & Partial<Pick<State, "chats" | "sends" | "latest">>): Lists | undefined => {
   if (s.projects === undefined) return undefined;
   const rows = Object.entries(s.projects)
-    .filter(([, p]) => !(isNavi(p) && isArchived(p)))
+    // An archived Navi's approvals stay open on the hub, and count in the badges: its chat shows while one waits.
+    .filter(([key, p]) => !(isNavi(p) && isArchived(p)) || openFor(key, s.requests, "approval") > 0)
     .map(([key, project]): Row => {
       const chat = s.chatStates[key];
       return {
@@ -85,8 +87,11 @@ export const lists = (s: Pick<State, "projects" | "chatStates" | "requests"> & P
   };
 };
 
-/** The chats list's filters, as Telegram's folders: everything, what you haven't read, the Navis, the projects. */
-export type Filter = "all" | "unread" | "navis" | "projects";
+/**
+ * The chats list's filters, as Telegram's folders: everything, what you haven't read, the chats with an approval
+ * waiting for you, the Navis, the projects.
+ */
+export type Filter = "all" | "unread" | "needsYou" | "navis" | "projects";
 
 export interface ChatRow extends Row {
   readonly pinned: boolean;
@@ -99,10 +104,14 @@ export interface ChatRow extends Row {
   readonly lastSeq: number;
 }
 
+/** A chat with an approval open floats above the rest, pinned ones too: answering it is what the phone is for. */
+const waitingFirst = (a: Row, b: Row): number => Number(b.approvals > 0) - Number(a.approvals > 0);
+
 /**
- * The chats list, Telegram's way: one list, the pinned chats on top in the order pinned, then every other chat with
- * what spoke last first. Each says how many messages came since you read it, and whether it's muted (its count goes
- * grey). Archived Navis are in none of it.
+ * The chats list, Telegram's way: one list, the chats with an approval waiting on top, then the pinned ones in the
+ * order pinned, then every other chat with what spoke last first. Each says how many messages came since you read it,
+ * and whether it's muted (its count goes grey). Archived Navis are in none of it, except while an approval of theirs
+ * waits.
  */
 export const chatList = (s: Parameters<typeof lists>[0], prefs: Prefs, filter: Filter = "all"): readonly ChatRow[] | undefined => {
   const all = lists(s);
@@ -119,12 +128,14 @@ export const chatList = (s: Parameters<typeof lists>[0], prefs: Prefs, filter: F
         lastSeq: s.chatStates[r.key]?.lastSeq ?? 0,
       };
     })
-    .sort((a, b) => (a.pinned && b.pinned ? prefs.pinned.indexOf(a.key) - prefs.pinned.indexOf(b.key) : a.pinned ? -1 : b.pinned ? 1 : byRecent(a, b)));
+    .sort((a, b) => waitingFirst(a, b) || (a.pinned && b.pinned ? prefs.pinned.indexOf(a.key) - prefs.pinned.indexOf(b.key) : a.pinned ? -1 : b.pinned ? 1 : byRecent(a, b)));
   switch (filter) {
     case "all":
       return rows;
     case "unread":
       return rows.filter((r) => r.unread > 0 || r.markedUnread || r.want !== undefined);
+    case "needsYou":
+      return rows.filter((r) => r.approvals > 0);
     case "navis":
       return rows.filter((r) => r.navi);
     case "projects":

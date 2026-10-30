@@ -1,8 +1,8 @@
 // One open approval as one calm card: who asks and what, every field that decides it in full (what runs, who it
 // reaches, as whom, what it says: the card is what the person approves), context such as where a command runs behind
 // Details, and Approve and Deny. Money, irreversible and secret-using asks say so in a quiet line. A character that
-// hides or reorders text shows as its mark (⟨U+202E⟩), each field isolated, under a line saying so. Used in the
-// Approvals list and inline in a chat.
+// hides or reorders text shows as its mark (⟨U+202E⟩), each field isolated, under a line saying so. Shown inline in
+// its chat, where it is answered.
 import * as Clipboard from "expo-clipboard";
 import { useEffect, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
@@ -31,7 +31,6 @@ export function ApprovalCard({
   answering,
   error,
   onAnswer,
-  on = "plain",
 }: {
   request: HumanRequest;
   projectTitle: string | undefined;
@@ -39,7 +38,6 @@ export function ApprovalCard({
   answering: boolean;
   error: HubError | undefined;
   onAnswer: (decision: "approve" | "deny") => void;
-  on?: "plain" | "grouped";
 }) {
   const t = useTheme();
   const now = useNow();
@@ -49,7 +47,7 @@ export function ApprovalCard({
   const shown = view.fields.filter((f) => open || f.more !== true);
   const hidden = view.fields.some((f) => f.more === true);
   return (
-    <Card on={on}>
+    <Card>
       <View style={styles.head} accessible accessibilityLabel={`${marked(view.title)}${risk === undefined ? "" : `. ${risk.text}`}`}>
         <Avatar name={view.who} navi={navi} size={40} />
         <View style={styles.who}>
