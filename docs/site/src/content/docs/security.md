@@ -106,7 +106,7 @@ fence. These are the paths, with `~` the machine user's home and `~/.claude` Cla
 **Its own home.** Each Navi has a home of its own in fleetd's node directory, `navis/<project id>/home`, kept across
 sessions and restarts and deleted with the Navi. It is `HOME` for its commands, with `~/.local/bin`, `~/bin`,
 `~/.cargo/bin`, `~/go/bin`, `~/.bun/bin` and `~/.deno/bin` first on their `PATH`, npm's global prefix at `~/.local`
-and `PIP_BREAK_SYSTEM_PACKAGES=1`, so `npm i -g`, `pip install --user`, `cargo install`, `go install` and
+and `PIP_BREAK_SYSTEM_PACKAGES=1`, so npm's global installs, `pip install --user`, `cargo install`, `go install` and
 `curl … | sh` installers put what they install there. `RUSTUP_HOME` points at your `~/.rustup` when you have one, so
 your toolchains still run. Claude Code itself keeps your `HOME`, where its login is. No Navi sees another's home.
 

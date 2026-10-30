@@ -203,7 +203,7 @@ fence. These are the paths, with <code dir="auto">~</code> the machine user’s 
 <p><strong>Its own home.</strong> Each Navi has a home of its own in fleetd’s node directory, <code dir="auto">navis/&lt;project id&gt;/home</code>, kept across
 sessions and restarts and deleted with the Navi. It is <code dir="auto">HOME</code> for its commands, with <code dir="auto">~/.local/bin</code>, <code dir="auto">~/bin</code>,
 <code dir="auto">~/.cargo/bin</code>, <code dir="auto">~/go/bin</code>, <code dir="auto">~/.bun/bin</code> and <code dir="auto">~/.deno/bin</code> first on their <code dir="auto">PATH</code>, npm’s global prefix at <code dir="auto">~/.local</code>
-and <code dir="auto">PIP_BREAK_SYSTEM_PACKAGES=1</code>, so <code dir="auto">npm i -g</code>, <code dir="auto">pip install --user</code>, <code dir="auto">cargo install</code>, <code dir="auto">go install</code> and
+and <code dir="auto">PIP_BREAK_SYSTEM_PACKAGES=1</code>, so npm’s global installs, <code dir="auto">pip install --user</code>, <code dir="auto">cargo install</code>, <code dir="auto">go install</code> and
 <code dir="auto">curl … | sh</code> installers put what they install there. <code dir="auto">RUSTUP_HOME</code> points at your <code dir="auto">~/.rustup</code> when you have one, so
 your toolchains still run. Claude Code itself keeps your <code dir="auto">HOME</code>, where its login is. No Navi sees another’s home.</p>
 <p><strong>Writes</strong>, on both: anywhere you can write on the machine, except what runs outside its sandbox later: your shells,

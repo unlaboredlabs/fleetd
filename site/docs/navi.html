@@ -174,7 +174,7 @@ can’t plant code that reads your keys: your shell’s startup files, your prog
 Homebrew’s and the rest), git’s config and hooks and the <code dir="auto">.claude</code>, <code dir="auto">.fleetd</code>, <code dir="auto">.mcp.json</code> and <code dir="auto">CLAUDE.md</code> of every
 project’s checkout, and its own settings in its folder. A policy file’s allow rules don’t apply to a Navi at all.
 Its folder is where its notes, drafts and downloads go.</li>
-<li><strong>Its own home:</strong> each Navi has a home of its own, kept between sessions, where <code dir="auto">npm i -g</code>, <code dir="auto">pip install --user</code>,
+<li><strong>Its own home:</strong> each Navi has a home of its own, kept between sessions, where npm’s global installs, <code dir="auto">pip install --user</code>,
 <code dir="auto">cargo install</code> and install scripts put what they install, on its <code dir="auto">PATH</code>. What it starts in the background with
 <code dir="auto">nohup</code> or <code dir="auto">setsid</code> keeps running after its turn, until the machine or the node restarts. It has no root, <code dir="auto">apt</code> or
 systemd services.</li>

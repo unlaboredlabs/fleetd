@@ -84,7 +84,7 @@ also writes drafts and notes in its folder, remembers and forgets, keeps its che
   Homebrew's and the rest), git's config and hooks and the `.claude`, `.fleetd`, `.mcp.json` and `CLAUDE.md` of every
   project's checkout, and its own settings in its folder. A policy file's allow rules don't apply to a Navi at all.
   Its folder is where its notes, drafts and downloads go.
-- **Its own home:** each Navi has a home of its own, kept between sessions, where `npm i -g`, `pip install --user`,
+- **Its own home:** each Navi has a home of its own, kept between sessions, where npm's global installs, `pip install --user`,
   `cargo install` and install scripts put what they install, on its `PATH`. What it starts in the background with
   `nohup` or `setsid` keeps running after its turn, until the machine or the node restarts. It has no root, `apt` or
   systemd services.
