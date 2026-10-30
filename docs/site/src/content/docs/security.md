@@ -115,8 +115,9 @@ your toolchains still run. Claude Code itself keeps your `HOME`, where its login
 - What it can't read (below).
 - Startup files that run on their own, read-only: `~/.profile`, `~/.bashrc`, `~/.bash_profile`, `~/.bash_login`,
   `~/.bash_logout`, `~/.zshenv`, `~/.zprofile`, `~/.zshrc`, `~/.zlogin`, `~/.zlogout`, `~/.pam_environment`,
-  `~/.xprofile`, `~/.xsessionrc`, `~/.xinitrc` and `~/.local/share/systemd`. A line it added there would run outside
-  its sandbox.
+  `~/.xprofile`, `~/.xsessionrc` and `~/.xinitrc`, and the user's systemd units and D-Bus services
+  (`~/.local/share/systemd`, `~/.local/share/dbus-1/services`; each is made, empty, if it isn't there). A line it
+  added there would run outside its sandbox.
 - The programs the node runs, read-only: Claude Code's install, every directory on the session's `PATH` that is in
   your home (a `…/bin` as its whole install, so `~/.nvm/versions/node/v22` for node and npm, and `~/.cargo` for
   `~/.cargo/bin`), and the install a program there links to elsewhere in the home.

@@ -481,6 +481,24 @@ fn a_navi_writes_where_the_person_can_but_not_fleetds_dir_or_what_runs_on_its_ow
             target.display()
         );
     }
+    // Nor a unit the user's systemd or a service D-Bus would start outside, though neither dir was there before.
+    for dir in [".local/share/systemd/user", ".local/share/dbus-1/services"] {
+        let dir = m.home.join(dir);
+        let (ok, out) = m.run(
+            &tool,
+            &format!(
+                "mkdir -p '{0}/default.target.wants' && echo '[Service]' > '{0}/escape.service'",
+                dir.display()
+            ),
+        );
+        assert!(!ok, "{} was written: {out}", dir.display());
+        assert!(!dir.join("escape.service").exists(), "{out}");
+    }
+    assert_eq!(
+        m.fence()
+            .access(&m.home.join(".local/share/systemd/user/x.service")),
+        Access::Read
+    );
     // Anywhere else the person can write: their code in the home and outside it, their notes, its own home.
     for target in [
         m.home.join("src/new.txt"),

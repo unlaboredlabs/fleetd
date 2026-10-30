@@ -211,8 +211,9 @@ your toolchains still run. Claude Code itself keeps your <code dir="auto">HOME</
 <li>What it can’t read (below).</li>
 <li>Startup files that run on their own, read-only: <code dir="auto">~/.profile</code>, <code dir="auto">~/.bashrc</code>, <code dir="auto">~/.bash_profile</code>, <code dir="auto">~/.bash_login</code>,
 <code dir="auto">~/.bash_logout</code>, <code dir="auto">~/.zshenv</code>, <code dir="auto">~/.zprofile</code>, <code dir="auto">~/.zshrc</code>, <code dir="auto">~/.zlogin</code>, <code dir="auto">~/.zlogout</code>, <code dir="auto">~/.pam_environment</code>,
-<code dir="auto">~/.xprofile</code>, <code dir="auto">~/.xsessionrc</code>, <code dir="auto">~/.xinitrc</code> and <code dir="auto">~/.local/share/systemd</code>. A line it added there would run outside
-its sandbox.</li>
+<code dir="auto">~/.xprofile</code>, <code dir="auto">~/.xsessionrc</code> and <code dir="auto">~/.xinitrc</code>, and the user’s systemd units and D-Bus services
+(<code dir="auto">~/.local/share/systemd</code>, <code dir="auto">~/.local/share/dbus-1/services</code>; each is made, empty, if it isn’t there). A line it
+added there would run outside its sandbox.</li>
 <li>The programs the node runs, read-only: Claude Code’s install, every directory on the session’s <code dir="auto">PATH</code> that is in
 your home (a <code dir="auto">…/bin</code> as its whole install, so <code dir="auto">~/.nvm/versions/node/v22</code> for node and npm, and <code dir="auto">~/.cargo</code> for
 <code dir="auto">~/.cargo/bin</code>), and the install a program there links to elsewhere in the home.</li>

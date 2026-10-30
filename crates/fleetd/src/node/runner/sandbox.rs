@@ -39,7 +39,8 @@ pub struct Fence {
     pub hide: Vec<PathBuf>,
     /// Read, inside a hidden path too, never written.
     pub show: Vec<PathBuf>,
-    /// Read but never written inside a written path.
+    /// Read but never written inside a written path. One without an extension that isn't there is made, empty, as a
+    /// dir ([`Fence::prepare`]), so it is never made by the session instead.
     pub keep: Vec<PathBuf>,
     /// The listed home's own entries, read and written as they are, and never made (Linux).
     pub listed: Vec<PathBuf>,
@@ -159,9 +160,9 @@ const HIDDEN_IN_HOME_MACOS: &[&str] = &["Library"];
 /// the Navi's `/tmp` is its own, without them.
 const HIDDEN_X: &str = "/tmp/.X11-unix";
 
-/// In the user's home: what their shell, session manager or systemd runs on its own, read-only to a Navi, which may
-/// write the rest of the home: a line it added there would run outside its sandbox. On Linux one that isn't there
-/// can't be made either: the home's own entries are read-only.
+/// In the user's home: files their shell or session manager runs on its own, read-only to a Navi, which may write the
+/// rest of the home: a line it added there would run outside its sandbox. On Linux one that isn't there can't be made
+/// either: the home's own entries are read-only.
 const RUN_ON_THEIR_OWN: &[&str] = &[
     ".profile",
     ".bash_profile",
@@ -177,8 +178,12 @@ const RUN_ON_THEIR_OWN: &[&str] = &[
     ".xprofile",
     ".xsessionrc",
     ".xinitrc",
-    ".local/share/systemd",
 ];
+
+/// In the user's home: dirs whose units and services the user's systemd and D-Bus start outside the sandbox, read-only
+/// to a Navi. They sit inside `~/.local`, which it writes, so one that isn't there is made, empty, before it starts
+/// ([`Fence::prepare`]): a read-only mount needs something to mount, and a Navi must not make it first.
+const RUN_ON_THEIR_OWN_DIRS: &[&str] = &[".local/share/systemd", ".local/share/dbus-1/services"];
 
 /// A Navi's own dir under the node's home: its home ([`HOME_DIR`]) and the `/tmp` its sessions share ([`TMP_DIR`]).
 /// Hidden from every other Navi with the rest of the node's home.
@@ -430,10 +435,15 @@ pub fn navi_fence(p: &NaviPaths) -> Fence {
         .iter()
         .map(|d| (real(&p.session_dir.join("claude").join(d)), claude.join(d)))
         .collect();
-    let keep = super::claude::ASSISTANT_KEPT
+    let mut keep: Vec<PathBuf> = super::claude::ASSISTANT_KEPT
         .iter()
         .map(|k| folder.join(k))
         .collect();
+    keep.extend(
+        RUN_ON_THEIR_OWN_DIRS
+            .iter()
+            .map(|d| real(p.user_home).join(d)),
+    );
 
     let user_home = real(p.user_home);
     let fenced = [real(p.fleetd_dir), real(p.node_home)];
