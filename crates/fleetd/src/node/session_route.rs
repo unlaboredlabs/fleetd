@@ -193,6 +193,10 @@ fn seal_to(to: &[u8; 32], plain: &[u8]) -> Option<String> {
 struct Seal {
     secrets: Vec<(String, String)>,
     relay_key: String,
+    /// A person's browser screen for a Navi of this machine's (the hub seals that one itself, D239): it runs on the
+    /// profile the Navi keeps, inside its folder's fence, as the Navi's own browser does. Never from an agent's node.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    navi: Option<String>,
 }
 
 /// A value the agent's node read from its 1Password for a `fill_credential` of a session hosted elsewhere, sealed to
@@ -238,6 +242,7 @@ async fn seal_for(
             .cloned()
             .collect(),
         relay_key: B64.encode(relay_key),
+        navi: None,
     };
     let plain = zeroize::Zeroizing::new(serde_json::to_vec(&seal).map_err(|e| e.to_string())?);
     let public: [u8; 32] = B64
@@ -1130,7 +1135,8 @@ impl HubCalls for Watched {
 /// What the hub asks of this node for the sessions it hosts for agents on other machines, as the link hands it over:
 /// a session call to answer under its key (a start opens what its agent's node sealed to this node first), a relay
 /// channel to connect (for as long as it stays open), or a step for a session's recording. Only a session call has an
-/// answer to send back.
+/// answer to send back. `navi_folder` is the folder of a Navi of this machine's, by its project: a person's browser
+/// screen for that Navi runs on its kept profile, fenced in it.
 pub async fn host(
     broker: Option<Arc<Broker>>,
     sessions: Option<Arc<device::Router>>,
@@ -1138,6 +1144,7 @@ pub async fn host(
     frame: HubToNode,
     hosted: &Hosted,
     box_key: Option<&NodeBoxKey>,
+    navi_folder: impl Fn(&str) -> Option<PathBuf>,
 ) -> Option<SessionHostResult> {
     let refuse = |id: &NonEmpty, message: &str| {
         error_frame(id, McpToolError::new(ErrorCode::Invalid, message))
@@ -1175,6 +1182,24 @@ pub async fn host(
                         ),
                     });
                 };
+                if let Some(navi) = &seal.navi {
+                    let browser = matches!(
+                        &host.frame.call,
+                        BrowserCall::SessionStart(start)
+                            if start.kind.is_none_or(|k| k == SessionKind::Browser)
+                    );
+                    let folder = navi_folder(navi);
+                    let (Some(broker), Some(folder), true) = (&broker, folder, browser) else {
+                        return Some(SessionHostResult {
+                            id: host.id,
+                            frame: refuse(
+                                &host.frame.id,
+                                &format!("this machine has no Navi {navi} with a browser to open"),
+                            ),
+                        });
+                    };
+                    SessionHooks::navi(broker.as_ref(), &key, navi, &folder);
+                }
                 hosted.lock().insert(
                     key.clone(),
                     HostedSession {
@@ -1270,6 +1295,9 @@ pub async fn host(
                 }
                 "session_start" | "session_end" => {
                     hosted.lock().remove(&key);
+                    if let Some(broker) = &broker {
+                        broker.not_navi(&key);
+                    }
                 }
                 _ => {}
             }
@@ -1550,6 +1578,7 @@ mod tests {
                     host_frame(call),
                     &hosted,
                     None,
+                    |_| None,
                 )
                 .await
                 .unwrap()

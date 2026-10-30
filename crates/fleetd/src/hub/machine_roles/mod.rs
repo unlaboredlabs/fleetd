@@ -13,8 +13,11 @@
 //! and those it hosts for others, and each machine's cap is a person's setting or what it fits ([`auto_sessions`]).
 pub mod calls;
 pub mod relay;
+pub mod screens;
 pub mod tools;
 
+#[cfg(test)]
+mod screens_tests;
 #[cfg(test)]
 mod tests;
 
@@ -226,6 +229,8 @@ pub struct Runner {
     pub others_note: Option<String>,
     pub live: i64,
     pub max: i64,
+    /// People waiting for a slot here (screens.rs): the next ones free are theirs, before any agent's.
+    pub held: i64,
 }
 
 impl Runner {
@@ -247,7 +252,13 @@ impl Runner {
         self.hosts_others && self.ready(host) == Some(true)
     }
 
+    /// Slots an agent's start may take: those no person waits for.
     fn free(&self) -> i64 {
+        self.max - self.live - self.held
+    }
+
+    /// Slots a person's own screen may take.
+    fn open(&self) -> i64 {
         self.max - self.live
     }
 }
@@ -299,7 +310,16 @@ pub fn place(
     if !full.is_empty() {
         let each: Vec<String> = full
             .iter()
-            .map(|r| format!("{} {} of {}", r.name, r.live, r.max))
+            .map(|r| match r.held {
+                0 => format!("{} {} of {}", r.name, r.live, r.max),
+                n => format!(
+                    "{} {} of {}, {n} {} waiting for a slot",
+                    r.name,
+                    r.live,
+                    r.max,
+                    plural(n as usize, "person", "people")
+                ),
+            })
             .collect();
         return Err(McpToolError::new(
             ErrorCode::Failed,
@@ -355,7 +375,15 @@ fn here_only(origin: &MachineId, host: SessionHost, own: Option<&Runner>) -> Mcp
         )),
         Some(r) if r.able(host, origin) => McpToolError::new(
             ErrorCode::Failed,
-            format!("{name}'s session slots are full: {} of {}.", r.live, r.max),
+            match r.held {
+                0 => format!("{name}'s session slots are full: {} of {}.", r.live, r.max),
+                n => format!(
+                    "{name}'s session slots are full: {} of {}, and {n} {} waiting for the next.",
+                    r.live,
+                    r.max,
+                    plural(n as usize, "person is", "people are")
+                ),
+            },
         )
         .with_fix(format!(
             "end a session you no longer need, or try again later; a hub admin can raise {name}'s session cap in \
@@ -420,6 +448,7 @@ pub fn runners(hub: &Hub) -> Result<Vec<(Runner, Roles, String)>, StoreError> {
                     others_note,
                     live: live_on(c, &m.machine_id, now)?,
                     max,
+                    held: screens::held_on(c, &m.machine_id, now)?,
                     name: m.name,
                     machine_id: m.machine_id,
                 },

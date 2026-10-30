@@ -1,5 +1,5 @@
-// Mounted once by the shell: the keymap, the default commands, the theme switches, the project list, and whichever
-// overlay is up.
+// Mounted once by the shell: the keymap, the default commands, the theme switches, the project list, whichever
+// overlay is up, and the New screen picker with its "New screen…" (sessions/NewScreen).
 
 import { useEffect, useMemo } from "react";
 import { Boundary } from "../../src/Boundary";
@@ -12,6 +12,7 @@ import { registerCommands, useCommands, useSource } from "./registry";
 import { closeOverlay, paletteOpen, useOverlay } from "./state";
 import { Palette } from "./Palette";
 import { ShortcutsSheet } from "./ShortcutsSheet";
+import { NewScreenHost } from "../sessions/NewScreen";
 
 export function PaletteHost() {
   const overlay = useOverlay();
@@ -35,9 +36,16 @@ export function PaletteHost() {
   const body =
     overlay.kind === "palette" ? <Palette key={overlay.seq} initialQuery={overlay.query} /> : overlay.kind === "shortcuts" ? <ShortcutsSheet /> : null;
   // The keymap above stays up whatever the overlay does; an overlay that throws closes, and a toast says so.
-  return body === null ? null : (
-    <Boundary part={overlay.kind === "palette" ? "the command palette" : "the shortcuts sheet"} overlay={{ onError: closeOverlay }}>
-      {body}
-    </Boundary>
+  return (
+    <>
+      <Boundary part="the New screen picker">
+        <NewScreenHost />
+      </Boundary>
+      {body === null ? null : (
+        <Boundary part={overlay.kind === "palette" ? "the command palette" : "the shortcuts sheet"} overlay={{ onError: closeOverlay }}>
+          {body}
+        </Boundary>
+      )}
+    </>
   );
 }

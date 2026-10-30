@@ -569,6 +569,7 @@ async fn run_link_once(
                 let (shared, tx) = (shared.clone(), tx.clone());
                 tokio::spawn(async move {
                     let box_key = shared.secrets.as_ref().map(|s| &s.box_key);
+                    let projects = shared.node_sessions.clone();
                     let hosted = super::session_route::host(
                         shared.sessions.as_ref().and_then(|s| s.browser.clone()),
                         shared.sessions.clone(),
@@ -576,6 +577,7 @@ async fn run_link_once(
                         frame,
                         &shared.hosted,
                         box_key,
+                        move |navi| projects.navi_folder(navi),
                     );
                     if let Some(result) = hosted.await {
                         let _ = tx.send(to_json(&NodeToHub::SessionHostResult(result)));

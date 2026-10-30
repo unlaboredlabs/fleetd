@@ -30,6 +30,9 @@ pub struct Live {
         Mutex<HashMap<BrowserSessionId, Vec<tokio::sync::mpsc::UnboundedSender<BrowserControl>>>>,
     /// Watched sessions: their machine, and how many watch.
     watched: Mutex<HashMap<BrowserSessionId, (MachineId, usize)>>,
+    /// When a person last sent input to each session, in the hub clock's ms: a person's own screen idles out on it
+    /// (machine_roles/screens.rs).
+    inputs: Mutex<HashMap<BrowserSessionId, i64>>,
 }
 
 impl Default for Live {
@@ -38,6 +41,7 @@ impl Default for Live {
             frames: broadcast::channel(FRAMES).0,
             controls: Mutex::default(),
             watched: Mutex::default(),
+            inputs: Mutex::default(),
         }
     }
 }
@@ -165,6 +169,31 @@ impl Live {
         }
     }
 
+    /// A person sent input to `session` at `at`.
+    pub fn note_input(&self, session: &BrowserSessionId, at: i64) {
+        self.inputs
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(session.clone(), at);
+    }
+
+    /// When a person last sent input to `session`, since the hub started.
+    pub fn last_input(&self, session: &BrowserSessionId) -> Option<i64> {
+        self.inputs
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(session)
+            .copied()
+    }
+
+    /// Forgets `session`'s input time: it ended.
+    pub fn forget_input(&self, session: &BrowserSessionId) {
+        self.inputs
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(session);
+    }
+
     pub fn watchers(&self, session: &BrowserSessionId) -> usize {
         self.lock().get(session).map_or(0, |(_, n)| *n)
     }
@@ -289,6 +318,9 @@ pub fn input(
         .with_fix("Take it over first with browser_control control human."));
     }
     let machine = &runs_on(hub, &session)?;
+    hub.link
+        .browser_live
+        .note_input(id, crate::hub::store::now_ms(hub.clock.as_ref()));
     let frame = HubToNode::BrowserInput(BrowserInputFrame {
         session_id: id.clone(),
         input,

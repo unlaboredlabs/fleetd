@@ -497,6 +497,14 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
         "Take a live browser session over from its agent (control human): its agent's commands then answer that a person has control, and your mouse and keys go to the page through the app's browser_input. control agent hands it back; the session is handing_back until the agent's next command, which sees the page as you left it. Answers once the session's machine confirms (up to 5 s); a session that has just ended there is refused, and nothing changes. A person's device with operate on the machine only.",
     ),
     (
+        "screen_open",
+        "Open a screen of your own for a project or Navi: kind browser (default), android, ios or linux_desktop, on machineId, a machine that can host that kind (machine_roles lists them). It opens with you in control, records as an agent's screen does, and ends with screen_end or after 30 minutes without your input. A Navi's browser runs on its own machine, on the profile it keeps, so sites you sign in to stay signed in for it; only its owner opens one. A full machine refuses; with wait true the request takes its next free slot, ahead of agents' starts, for up to 30 minutes. A person's device with operate on the project's machine only.",
+    ),
+    (
+        "screen_end",
+        "End a screen you opened (sessionId): it closes on its machine and its recording goes to the hub. Or give up your wait for one (waitId). A person's device only.",
+    ),
+    (
         "browser_retention_set",
         "How long the hub keeps browser recordings: retentionDays (1 to 365, default 30) and maxGbPerProject (default 20; a project's oldest go first past it). Pruned hourly; an expired session keeps its row. Admin on every machine.",
     ),

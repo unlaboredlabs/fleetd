@@ -109,6 +109,13 @@ async fn session(
         CallerAgent::Task(t) => Some(t.clone()),
         _ => None,
     };
+    // A person's own screen: the hub placed it for them, under a thread of its own.
+    let opened_by = crate::hub::machine_roles::screens::opener(
+        &hub.db,
+        &caller.project_ref.machine_id,
+        &call.thread_id,
+    )
+    .map_err(failed)?;
     let next = BrowserSession {
         session_id: call.session_id.clone(),
         project_ref: caller.project_ref.clone(),
@@ -130,6 +137,7 @@ async fn session(
             }),
         credentials_filled: call.credentials_filled,
         note: call.note,
+        opened_by,
     };
     // Read, checked and written in one transaction: the node's reports race (its end report and its upload's), and one
     // that read the row before another made it final must not undo it. A lost recording's files are only moved aside

@@ -1419,6 +1419,16 @@ impl SessionService {
         self.project_root(project_id).ok()
     }
 
+    /// A Navi's folder on this machine, by its project: one whose sessions are a Navi's (assistant). None for any other
+    /// project. A person's browser screen for that Navi runs on its kept profile, fenced in this folder (D239).
+    pub fn navi_folder(&self, project_id: &str) -> Option<PathBuf> {
+        let navi = self.store().sessions().ok()?.iter().any(|row| {
+            row.summary.project_id.as_str() == project_id
+                && row.local.role == SessionRole::Assistant
+        });
+        navi.then(|| self.project_root(project_id).ok()).flatten()
+    }
+
     /// The working directory this node started a session in (a task's worktree, a lead's workspace); None for a
     /// session it doesn't have.
     pub fn session_cwd(&self, id: &str) -> Option<PathBuf> {

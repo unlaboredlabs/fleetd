@@ -325,7 +325,7 @@ impl Drop for Starting {
 }
 
 /// Ends a start on its runner, best effort, and frees its slot: a session nobody will drive.
-async fn cancel(hub: &Hub, place: &Place) {
+pub(super) async fn cancel(hub: &Hub, place: &Place) {
     let end: BrowserCallFrame = serde_json::from_value(serde_json::json!({
         "id": "cancel", "cwd": "/", "call": { "op": "session_end" },
     }))

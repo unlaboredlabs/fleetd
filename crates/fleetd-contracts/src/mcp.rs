@@ -1761,6 +1761,9 @@ input!(BrowserSessionsInput {
 output!(BrowserSessionsOutput {
     sessions: List<crate::browser::BrowserSession, 0, 100>,
     retention: crate::browser::BrowserRetention,
+    /// The caller's own waits for a slot to open a screen in this project (`screen_open` wait), oldest first.
+    #[serde(default)]
+    waits: List<crate::browser::ScreenWait, 0, 100>,
 });
 
 // browser_recording_get: one piece of a recorded session's file, from offset; read the next from offset + its bytes
@@ -1791,6 +1794,33 @@ input!(BrowserControlInput {
 });
 output!(BrowserControlOutput {
     session: crate::browser::BrowserSession,
+});
+
+// screen_open: a person opens a screen of their own for a project or Navi, on a machine that can host its kind; they
+// have control from its start. A full machine refuses, or with wait takes the request in line for its next free slot,
+// ahead of every agent's start. Human keys with operate on the project's machine only (the handler checks).
+input!(ScreenOpenInput {
+    project_ref: ProjectRef,
+    #[serde(default)]
+    kind: crate::browser::SessionKind,
+    machine_id: MachineId,
+    #[serde(default)]
+    wait: bool,
+});
+output!(ScreenOpenOutput {
+    /// The screen, live with the caller in control. Absent while it waits.
+    session: Option<crate::browser::BrowserSession>,
+    /// Its place in line for the machine's next free slot.
+    waiting: Option<crate::browser::ScreenWait>,
+});
+
+// screen_end: ends a person's screen (its recording goes to the hub as any screen's), or gives up their wait for one.
+input!(ScreenEndInput {
+    session_id: Option<crate::browser::BrowserSessionId>,
+    wait_id: Option<NonEmpty>,
+});
+output!(ScreenEndOutput {
+    session: Option<crate::browser::BrowserSession>,
 });
 
 // browser_retention_set: how long the hub keeps browser recordings, for every project.
@@ -3159,6 +3189,9 @@ tools! {
     browser_recording_get => BrowserRecordingGet, Read, BrowserRecordingGetInput, BrowserRecordingGetOutput;
     // Human keys only (the handler checks).
     browser_control => BrowserControl, Operate, BrowserControlInput, BrowserControlOutput;
+    // Human keys only (the handlers check).
+    screen_open => ScreenOpen, Operate, ScreenOpenInput, ScreenOpenOutput;
+    screen_end => ScreenEnd, Operate, ScreenEndInput, ScreenEndOutput;
     browser_retention_set => BrowserRetentionSet, Admin, BrowserRetentionSetInput, BrowserRetentionSetOutput;
     machine_roles => MachineRoles, Read, MachineRolesInput, MachineRolesOutput;
     machine_roles_set => MachineRolesSet, Admin, MachineRolesSetInput, MachineRolesSetOutput;

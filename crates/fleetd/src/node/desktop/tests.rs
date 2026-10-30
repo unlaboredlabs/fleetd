@@ -863,6 +863,7 @@ async fn via_host(
         frame,
         hosted,
         Some(box_key),
+        |_| None,
     )
     .await
     .expect("an answer");

@@ -1648,6 +1648,45 @@ export const screens: readonly Screen[] = [
     },
   },
   { id: "sessions", route: SESSION_ROUTE(SESSION.payouts), fixtures: ["sessions-preview"], variant: "asking" },
+  // D239: New screen at the top of Screens: the kind as four tiles, the machines that can host it with their slots; the
+  // Mac, its two simulators in use, offers to wait, and the wait shows in the list until cancelled.
+  {
+    id: "sessions",
+    route: `${CHAT}/sessions`,
+    fixtures: ["sessions-preview"],
+    variant: "new-screen",
+    open: async (page) => {
+      await page.getByRole("button", { name: "New screen", exact: true }).click();
+      await expect(page.locator('[data-screen="sessions.new"]')).toBeVisible();
+      await page.getByRole("radio", { name: /^iOS/u }).click();
+      await expect(page.getByRole("button", { name: "Wait for a slot" })).toBeVisible();
+    },
+  },
+  {
+    id: "sessions",
+    route: `${CHAT}/sessions`,
+    fixtures: ["sessions-preview"],
+    variant: "new-screen-waiting",
+    open: async (page) => {
+      await page.getByRole("button", { name: "New screen", exact: true }).click();
+      await page.getByRole("radio", { name: /^iOS/u }).click();
+      await page.getByRole("button", { name: "Wait for a slot" }).click();
+      await expect(page.getByText("waiting for a free slot · next in line")).toBeVisible();
+    },
+  },
+  // ...and a browser of your own on devbox: its live view, yours from the start, with End screen and no Hand back.
+  {
+    id: "sessions",
+    route: `${CHAT}/sessions`,
+    fixtures: ["sessions-preview"],
+    variant: "new-screen-yours",
+    open: async (page) => {
+      await page.getByRole("button", { name: "New screen", exact: true }).click();
+      await page.getByRole("button", { name: "Open screen" }).click();
+      await expect(page.getByRole("button", { name: "End screen" })).toBeVisible();
+      await expect(page.getByRole("button", { name: /^Hand back/u })).toHaveCount(0);
+    },
+  },
   {
     id: "sessions",
     route: SESSION_ROUTE(SESSION.payouts),

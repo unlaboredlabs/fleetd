@@ -195,3 +195,82 @@ async fn an_agent_session_that_ended_is_no_navis_and_a_screen_ending_keeps_it_on
         "Signed out"
     );
 }
+
+/// A person's own browser screen for a Navi (D239): the hub seals its start to the Navi's machine naming the Navi, and
+/// the node runs it on the profile the Navi keeps. What the person signs in to there, the Navi is signed in to next.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_persons_screen_for_a_navi_runs_on_its_kept_profile() {
+    let Some(rig) = rig().await else { return };
+    let (site, _site) = site().await;
+    let broker = &rig.broker;
+    let folder = rig.navi(ADA, "ada");
+    let box_key = crate::node::identity::load_or_create_box_key(rig.node_home.path()).unwrap();
+    let hosted = crate::node::session_route::Hosted::default();
+    let key = "H0123456789abcdef0123456789abcdef";
+    let seal = json!({ "secrets": [], "relayKey": B64.encode([7u8; 32]), "navi": "ada" });
+    let sealed = B64.encode(box_key.seal(seal.to_string().as_bytes()).unwrap());
+    let host = |call: Value, sealed: Option<&str>| {
+        let frame: fleetd_contracts::node_link::HubToNode = serde_json::from_value(json!({
+            "t": "session_host", "id": "h1", "hostKey": key, "sealed": sealed,
+            "frame": { "id": "f1", "cwd": "/", "call": call },
+        }))
+        .unwrap();
+        let folder = folder.clone();
+        crate::node::session_route::host(
+            Some(broker.clone()),
+            None,
+            "http://hub.invalid",
+            frame,
+            &hosted,
+            Some(&box_key),
+            move |navi| (navi == "ada").then(|| folder.clone()),
+        )
+    };
+    let started = host(
+        json!({ "op": "session_start", "purpose": "Browser opened by Ada" }),
+        Some(&sealed),
+    )
+    .await
+    .unwrap();
+    let cdp = started
+        .frame
+        .result
+        .as_ref()
+        .map(|r| serde_json::to_value(r).unwrap());
+    let cdp = cdp
+        .as_ref()
+        .and_then(|r| r["cdp"].as_str())
+        .unwrap_or_else(|| panic!("no screen started: {:?}", started.frame))
+        .to_owned();
+    assert!(broker.is_navi(key), "the screen is the Navi's");
+    let (mut driver, page) = navigate(&cdp, &format!("{site}/remember?user=ada")).await;
+    assert_eq!(
+        driver
+            .eval(&page, "document.body.innerText")
+            .await
+            .as_str()
+            .unwrap()
+            .trim(),
+        "Welcome ada"
+    );
+    drop(driver);
+    let ended = host(json!({ "op": "session_end" }), None).await.unwrap();
+    assert!(ended.frame.result.is_some(), "{:?}", ended.frame);
+    assert!(!broker.is_navi(key), "the key is no Navi's once it ended");
+    assert_eq!(
+        visit(broker, ADA, &format!("{site}/whoami")).await,
+        "Signed in as ada",
+        "the Navi's own next session is signed in"
+    );
+
+    // A Navi this machine doesn't have opens nothing.
+    let other = json!({ "secrets": [], "relayKey": B64.encode([7u8; 32]), "navi": "bee" });
+    let sealed = B64.encode(box_key.seal(other.to_string().as_bytes()).unwrap());
+    let refused = host(
+        json!({ "op": "session_start", "purpose": "Browser opened by Bee" }),
+        Some(&sealed),
+    )
+    .await
+    .unwrap();
+    assert!(refused.frame.error.is_some(), "{:?}", refused.frame);
+}

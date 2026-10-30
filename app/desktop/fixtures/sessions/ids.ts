@@ -8,4 +8,6 @@ export const SESSION = {
   receipt: "B4e36494bac9c5c2b5bc9e430ab097914",
   saving: "Bf9fa4f882f29b35fe577a1519bf33cba",
   expired: "Bcabe309c063fd2c81d41bbfdf709c0cf",
+  /** A person's own, from New screen. */
+  mine: "B5e2c4a6f8d0b1a3c5e7f9d1b3a5c7e9f",
 } as const;

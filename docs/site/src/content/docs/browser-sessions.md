@@ -9,8 +9,8 @@ screen. It gets a fresh Chrome on its machine that no other screen shares, drive
 app and take it over. The node records the screen and uploads the recording to the hub.
 
 A screen is any of these an agent opens: a browser, an [Android emulator](#android), an [iOS simulator](#ios) or a
-[Linux desktop](#desktop). The app lists them under **Agents › Screens**. The agent tools that open and close one keep
-their names, `session_start` and `session_end`.
+[Linux desktop](#desktop). You can [open one yourself](#yours) too. The app lists them under **Agents › Screens**. The
+agent tools that open and close one keep their names, `session_start` and `session_end`.
 
 ## How an agent uses one {#use}
 
@@ -54,6 +54,35 @@ open a screen.
 
 Any key that can read the screen's machine may watch. Taking over and typing take a person's device with operate
 there. MCP clients use `browser_control` to take over and hand back.
+
+## Open one yourself {#yours}
+
+You can open a screen of your own: **New screen** at the top of a project's or a Navi's **Screens** tab, or
+**New screen…** in the command palette (⌘K) for the project on screen.
+
+1. **Pick the kind**: a browser, an iOS simulator, an Android emulator or a Linux desktop. A kind no machine can host
+   yet can't be picked.
+2. **Pick the machine.** The list has only the machines that can host that kind (the sessions role, the kind set up,
+   and a current fleetd), each with its screens in use: `1 of 2 screens in use`.
+3. **Open screen.** It opens in the panel's live view with you in control from the start, and lists under Screens as
+   yours. **End screen** closes it. It also ends after 30 minutes without your input.
+
+Your screen is recorded and kept like an agent's, and plays back the same way once it ends. There's no agent to hand it
+to, so it has no Hand back. You need operate on the project's machine to open one, as to take a screen over.
+
+A Navi's browser runs on the Navi's own machine, on the profile it keeps ([Navi › Sign-ins](/docs/navi#sign-ins)):
+a site you sign in to there stays signed in for the Navi. Only the Navi's owner opens one, as only they reach the Navi.
+One browser at a time runs on that profile, so close yours before the Navi needs its own.
+
+### When a machine is full {#yours-full}
+
+Your screen takes one of the machine's [screen slots](/docs/machines#roles), as an agent's does. On a full machine the
+picker says so (`Full: 2 of 2 screens in use`) and its button becomes **Wait for a slot**. Your wait shows at the top of
+Screens, with your place in line and Cancel, until your screen opens there. The next slot that frees on that machine
+goes to the oldest person waiting, before any agent's: an agent asking meanwhile is told the machine is full, with how
+many people wait. An agent's running screen is never ended to make room. A wait gives up after 30 minutes.
+
+MCP clients use `screen_open` and `screen_end`; `browser_sessions` lists your waits beside the screens.
 
 ## Isolation {#isolation}
 

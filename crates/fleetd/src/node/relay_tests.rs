@@ -247,8 +247,16 @@ fn mac1_link(
                 box_key.clone(),
             );
             tokio::spawn(async move {
-                if let Some(result) =
-                    host(Some(broker), None, &url, frame, &hosted, Some(&box_key)).await
+                if let Some(result) = host(
+                    Some(broker),
+                    None,
+                    &url,
+                    frame,
+                    &hosted,
+                    Some(&box_key),
+                    |_| None,
+                )
+                .await
                 {
                     hub.node_commands
                         .resolve(&mid("mac1"), NodeToHub::SessionHostResult(result));
