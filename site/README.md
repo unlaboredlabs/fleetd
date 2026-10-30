@@ -196,9 +196,9 @@ passes, until the repository has:
 
 The bucket needs `media.unlabored.net` as its custom domain (R2 › the bucket › Settings › Custom Domains). The page
 loads the media without `crossorigin`, so the bucket needs no CORS rule. Run the workflow by hand (Actions › Site media
-› Run workflow) after setting them, or after emptying the bucket. CI's `site` job runs `node site/media.mjs check`: it
-fails when the page names a media file that isn't in `site/`, so it wouldn't be uploaded, or one a build would leave on
-Vercel. To check the live page:
+› Run workflow) after setting them, or after emptying the bucket. `.github/site-check.mjs` (CI's `site` job) runs `node
+site/media.mjs check`: it fails when the page names a media file that isn't in `site/`, so it wouldn't be uploaded, or
+one a build would leave on Vercel. To check the live page:
 
 ```sh
 curl -fsS https://fleetd.sh/home | grep -o 'https://media.unlabored.net/showcase-[^" ]*' | sort -u   # every file, on R2

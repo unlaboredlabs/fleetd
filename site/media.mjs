@@ -10,8 +10,8 @@
 //                                  upload hasn't finished. Never fails the build.
 //   node media.mjs unchanged       with mobile-updates.sh's, the Ignored Build Step: exits 1 (build) when production's
 //                                  page still serves a file from Vercel that BASE now has.
-//   node site/media.mjs check      CI's `site` job: every media file home.html names is in the upload set, and a build
-//                                  with all of them uploaded leaves none on Vercel.
+//   node site/media.mjs check      CI's `site` job (.github/site-check.mjs): every media file home.html names is in the
+//                                  upload set, and a build with all of them uploaded leaves none on Vercel.
 //
 // Without a build (a local preview, docs-serve.mjs, CI's layout check) home.html loads the repo's files.
 import { createHash } from "node:crypto";
