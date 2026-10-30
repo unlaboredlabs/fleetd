@@ -626,6 +626,11 @@ impl ClaudeRunner {
             args.push("--settings".into());
             args.push(settings.display().to_string());
         }
+        // The first message is summarized when claude compacts the session; the system prompt never is.
+        if let Some(system) = &spec.system_prompt {
+            args.push("--append-system-prompt".into());
+            args.push(system.clone());
+        }
         args.push("--setting-sources".into());
         args.push("user,project,local".into());
         for dir in &spec.add_dirs {
@@ -1227,6 +1232,7 @@ mod tests {
                 r#"Bash(git commit -m "a, b")"#.into(),
             ],
             allowed_only: false,
+            system_prompt: None,
             disallowed_tools: vec!["Task".into(), "WebFetch".into()],
             mcp_config: None,
             strict_mcp: false,
@@ -1282,6 +1288,32 @@ mod tests {
             args.contains(
                 "--mcp-config /n/mcp.json --strict-mcp-config --settings /n/settings.json "
             )
+        );
+    }
+
+    #[test]
+    fn standing_rules_go_in_the_system_prompt_at_every_start() {
+        let runner = ClaudeRunner::new("claude".into());
+        let rules = "## Your voice\nShort and casual.";
+        for resume in [false, true] {
+            let spec = SessionSpec {
+                resume,
+                system_prompt: Some(rules.into()),
+                ..spec()
+            };
+            let args = runner.args(&spec);
+            let at = args
+                .iter()
+                .position(|a| a == "--append-system-prompt")
+                .unwrap();
+            // One argument, verbatim: a compaction summarizes the conversation, never this.
+            assert_eq!(args[at + 1], rules);
+        }
+        assert!(
+            !runner
+                .args(&spec())
+                .iter()
+                .any(|a| a == "--append-system-prompt")
         );
     }
 

@@ -67,6 +67,8 @@ pub struct SessionSpec {
     /// Only `allowed_tools`: claude gets none of its own tools but those named there (`--tools`), and asks for any
     /// other, which the node refuses (`sessions::state::auto_answer`).
     pub allowed_only: bool,
+    /// `--append-system-prompt`: the session's standing rules, which a compaction never summarizes.
+    pub system_prompt: Option<String>,
     /// `--disallowedTools`, always including the tools fleetd keeps from agents.
     pub disallowed_tools: Vec<String>,
     /// fleetd's MCP servers, written by the node; the user's own servers load too.

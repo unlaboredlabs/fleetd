@@ -51,6 +51,8 @@ pub struct LaunchRequest {
     pub project_ref: ProjectRef,
     pub repo_id: Option<fleetd_contracts::repos::RepoId>,
     pub prompt: String,
+    /// Its brief's rules and the human's custom instructions and memory (`render::TaskPrompt::system`).
+    pub system_prompt: Option<String>,
     pub profile: ProfileName,
     pub title: String,
     pub client_request_id: String,

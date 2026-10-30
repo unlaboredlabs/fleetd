@@ -115,6 +115,10 @@ pub struct SessionLocal {
     /// (onepassword_tokens.rs).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub onepassword: Option<fleetd_contracts::people::PersonId>,
+    /// The session's standing rules (`SessionLaunch::system_prompt`, and a task's machine note), passed at every start
+    /// of its claude so a resume keeps them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub system_prompt: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]

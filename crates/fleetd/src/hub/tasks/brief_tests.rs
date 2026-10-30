@@ -209,6 +209,13 @@ async fn a_tasks_first_prompt_carries_the_whole_brief_and_the_decisions_it_names
         !prompt.contains("never cited") && !prompt.contains("/p2-health"),
         "{prompt}"
     );
+    // Its rules are standing ones: in its system prompt, which a compaction never summarizes, and only there.
+    let system = launch.system_prompt.as_deref().unwrap();
+    assert!(
+        system.starts_with("## Rules\n") && system.contains("This is a read-only task"),
+        "{system}"
+    );
+    assert!(!prompt.contains("## Rules"), "{prompt}");
 }
 
 /// Records `task`'s verdict on `pr` at `sha`, as `report` does.

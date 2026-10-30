@@ -160,6 +160,9 @@ pub struct NodeSessions {
 pub struct LaunchInput {
     pub project_id: ProjectId,
     pub prompt: String,
+    /// The session's standing rules, kept out of `prompt` so a compaction never summarizes them
+    /// (`SessionLaunch::system_prompt`). A node that can't take them gets them at the start of `prompt`.
+    pub system_prompt: Option<String>,
     /// The profile's name; one gone since runs on the default.
     pub profile: ProfileName,
     pub runtime_mode: RuntimeMode,
@@ -400,13 +403,13 @@ pub struct Executors {
     /// Where later areas plug into the M1 tools.
     pub hooks: tools::ToolHooks,
     time: std::sync::OnceLock<Arc<crate::hub::time::Time>>,
-    /// Whether a machine's node takes any profile name, `xhigh` and fast mode (`CAP_PROFILE_NAMES`); none until
-    /// `hub/serve` sets it, and every node does.
-    profile_names: std::sync::OnceLock<TakesProfileNames>,
+    /// Whether a machine's node lists a capability its launch depends on (`CAP_PROFILE_NAMES`, `CAP_SYSTEM_PROMPT`);
+    /// none until `hub/serve` sets it, and every node does.
+    node_can: std::sync::OnceLock<NodeCan>,
 }
 
-/// Whether a machine's node takes any profile name (`Executors::set_profile_names`).
-pub type TakesProfileNames = Arc<dyn Fn(&MachineId) -> bool + Send + Sync>;
+/// Whether a machine's node lists a capability, unless it is known to lack it (`Executors::set_node_can`).
+pub type NodeCan = Arc<dyn Fn(&MachineId, &str) -> bool + Send + Sync>;
 
 /// What a node from before named profiles reads: `high` or `medium`, an effort it knows, no fast mode (it ignores it).
 fn old_node_launch(
@@ -573,7 +576,7 @@ impl Executors {
             clones: Mutex::default(),
             hooks: tools::ToolHooks::default(),
             time: std::sync::OnceLock::new(),
-            profile_names: std::sync::OnceLock::new(),
+            node_can: std::sync::OnceLock::new(),
         })
     }
 
@@ -586,9 +589,9 @@ impl Executors {
     }
 
     /// `hub/serve` sets this once the link server exists: a node that lists no `CAP_PROFILE_NAMES` gets what it can
-    /// read (`old_node_launch`).
-    pub fn set_profile_names(&self, takes: TakesProfileNames) {
-        let _ = self.profile_names.set(takes);
+    /// read (`old_node_launch`), and one with no `CAP_SYSTEM_PROMPT` its standing rules in the first message.
+    pub fn set_node_can(&self, can: NodeCan) {
+        let _ = self.node_can.set(can);
     }
 
     /// `hub/serve` sets this once the policy reader exists; until then launches carry no tool rules.
@@ -1618,9 +1621,22 @@ impl Executors {
             }
         }
         let skills = self.skill_bundles(machine_id, &input.project_id);
-        let chosen = match self.profile_names.get() {
-            Some(takes) if !takes(machine_id) => chosen.map(old_node_launch),
-            _ => chosen,
+        let can = |cap: &str| self.node_can.get().is_none_or(|can| can(machine_id, cap));
+        let chosen = if can(fleetd_contracts::node_link::CAP_PROFILE_NAMES) {
+            chosen
+        } else {
+            chosen.map(old_node_launch)
+        };
+        let system = input
+            .system_prompt
+            .as_deref()
+            .map(str::trim_end)
+            .filter(|s| !s.is_empty());
+        let (system_prompt, prompt) = match system {
+            Some(system) if !can(fleetd_contracts::node_link::CAP_SYSTEM_PROMPT) => {
+                (None, format!("{system}\n\n{}", input.prompt))
+            }
+            _ => (system.map(NonEmpty::unchecked), input.prompt.clone()),
         };
         let seed = format!("{machine_id}\n{}", input.client_request_id);
         let session_id = ThreadId::unchecked(uuid_from(&format!("session\n{seed}")));
@@ -1646,7 +1662,8 @@ impl Executors {
                 .map(|m| NonEmpty::unchecked(m.as_str())),
             runtime_mode: input.runtime_mode,
             workspace: options.workspace.unwrap_or(SessionWorkspace::Root),
-            prompt: non_empty(machine_id, op, "prompt", &input.prompt)?,
+            prompt: non_empty(machine_id, op, "prompt", &prompt)?,
+            system_prompt,
             run_id: NonEmpty::unchecked(uuid_from(&format!("run\n{seed}"))),
             allowed_only: options.only_tools.is_some(),
             allowed_tools: options.only_tools.unwrap_or(rules.allow),

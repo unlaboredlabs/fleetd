@@ -51,8 +51,8 @@ Paths are under `crates/fleetd/src/` unless shown otherwise.
 - One lead per project: a Claude thread on the project's machine, started with the lead prompt plus the digest
   (`hub/leads/lead.rs:1`, `start` at `:68`). It comes back fresh after an hour of quiet (`LEAD_FRESH_AFTER`,
   `hub/leads/lead.rs:426`).
-- The lead's first message is `lead.start`, then voice, digest, custom instructions, then memory: `user.md` and the
-  project's `MEMORY.md` (`hub/leads/prompt.rs:1-2`, joined at `:43`). Prompts are stored and editable
+- The lead's system prompt is `lead.start`, then voice, custom instructions, then memory: `user.md` and the
+  project's `MEMORY.md`; its first message is the digest (`hub/leads/prompt.rs:1`). Prompts are stored and editable
   (`hub/prompts/`), so an assistant prompt `navi.start` is just another prompt.
 - One chat per project is the main surface (`hub/chat/mod.rs:1-4`). A message joins the lead's turn, or starts a new
   one when the lead is idle (`hub/chat/flow.rs:1-3`).

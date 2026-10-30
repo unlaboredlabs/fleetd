@@ -211,9 +211,22 @@ fn decision_line(d: &Decision) -> String {
     )
 }
 
-/// The task's first message: the lead's text with the brief and the rules around it, then the human's
-/// custom instructions.
-pub fn render_task_prompt(set: &PromptSet, input: &PromptInput<'_>) -> String {
+/// A task's system prompt and first message.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TaskPrompt {
+    /// Its standing rules, which a compaction never summarizes: its brief's `## Rules` and all after them, the human's
+    /// custom instructions and the memory. Empty for a brief with no `## Rules` and nothing after it.
+    pub system: String,
+    /// The lead's text and the brief around it.
+    pub first: String,
+}
+
+/// The heading a brief's standing rules start at (`task.brief.*`).
+const RULES: &str = "\n## Rules\n";
+
+/// The task's brief: the lead's text with the brief and the rules around it, then the human's custom instructions and
+/// the memory. Its rules on go in its system prompt, all before them in its first message.
+pub fn render_task_prompt(set: &PromptSet, input: &PromptInput<'_>) -> TaskPrompt {
     let task = input.task;
     let mut context = Vec::new();
     if let Some(brief) = input.brief {
@@ -277,11 +290,18 @@ pub fn render_task_prompt(set: &PromptSet, input: &PromptInput<'_>) -> String {
         TaskKind::Read => "task.brief.read",
         TaskKind::Review => "task.brief.review",
     };
-    let text = set.with_instructions(set.render(id, vars));
-    if input.memory.is_empty() {
-        text
-    } else {
-        format!("{text}\n\n{}", input.memory)
+    let brief = set.render(id, vars);
+    let (first, rules) = match brief.find(RULES) {
+        Some(at) => (brief[..at].trim_end(), &brief[at + 1..]),
+        None => (brief.trim_end(), ""),
+    };
+    let mut system = set.with_instructions(rules.trim_end().to_owned());
+    if !input.memory.is_empty() {
+        system = format!("{system}\n\n{}", input.memory);
+    }
+    TaskPrompt {
+        system: system.trim_start().to_owned(),
+        first: first.to_owned(),
     }
 }
 

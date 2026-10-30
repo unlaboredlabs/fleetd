@@ -178,6 +178,7 @@ fn launch_input(request: &str) -> LaunchInput {
     LaunchInput {
         project_id: ProjectId::unchecked("p1"),
         prompt: "reply with the word OK".into(),
+        system_prompt: None,
         profile: ProfileName::unchecked("medium"),
         runtime_mode: RuntimeMode::ApprovalRequired,
         title: None,

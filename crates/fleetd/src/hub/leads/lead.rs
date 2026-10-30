@@ -17,7 +17,7 @@ use tokio::sync::Mutex;
 
 use super::digest::clip;
 use super::error::LeadError;
-use super::prompt::render_lead_start;
+use super::prompt::{LeadStart, render_lead_start};
 use super::records::{LeadRecords, StoredLead, WorkstreamFilter};
 use super::wakes::{LeadWakes, Trigger, trigger_lines};
 use super::{Ctx, now_iso};
@@ -402,7 +402,7 @@ impl Leads {
         let navi = project.kind == Some(ProjectKind::Assistant);
         let you = crate::hub::memory::You::for_lead(&self.ctx.db, r)
             .unwrap_or(crate::hub::memory::You::Nobody);
-        let mut prompt = render_lead_start(
+        let start = render_lead_start(
             &set,
             r,
             &project.title,
@@ -412,6 +412,7 @@ impl Leads {
             &crate::hub::people::lead_people(&self.ctx.db),
             navi.then_some(project.workspace_root.as_str()),
         );
+        let mut prompt = start.first.clone();
         if let Some(repos) = super::prompt::repos_block(r, &project.repos) {
             prompt = format!("{}\n\n{repos}", prompt.trim_end());
         }
@@ -430,6 +431,7 @@ impl Leads {
         let input = LaunchInput {
             project_id: r.project_id.clone(),
             prompt: prompt.clone(),
+            system_prompt: Some(start.system.clone()),
             profile: default.name.clone(),
             runtime_mode: if navi {
                 RuntimeMode::ApprovalRequired
@@ -457,7 +459,18 @@ impl Leads {
             .ctx
             .db
             .prompts()
-            .pin(&set, Audience::Lead, r, &thread_id, &at, &prompt)
+            .pin(
+                &set,
+                Audience::Lead,
+                r,
+                &thread_id,
+                &at,
+                &LeadStart {
+                    first: prompt,
+                    ..start
+                }
+                .whole(),
+            )
             .unwrap_or_else(|error| {
                 // The lead runs either way; its wakes then follow the current texts.
                 tracing::warn!(%error, "lead prompts not pinned");

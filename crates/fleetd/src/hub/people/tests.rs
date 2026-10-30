@@ -635,6 +635,7 @@ async fn the_lead_reads_who_wrote_once_there_are_two_people_and_reads_as_before_
     };
     let lead_start = |people: &str| {
         crate::hub::leads::prompt::render_lead_start(set, &r, "app", &[], "D", "", people, None)
+            .whole()
     };
     let shipped = lead_start("");
 

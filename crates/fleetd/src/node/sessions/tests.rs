@@ -100,6 +100,7 @@ fn launch(id: &str, mode: RuntimeMode, workspace: SessionWorkspace) -> SessionCa
         setup: None,
         claude_account: None,
         onepassword: None,
+        system_prompt: None,
     })
 }
 
@@ -377,7 +378,7 @@ async fn a_launch_runs_its_turn_streams_it_and_later_sends_continue_the_session(
     let roles: Vec<_> = snapshot
         .messages
         .iter()
-        .map(|m| (m.role, brief(&m.text)))
+        .map(|m| (m.role, m.text.as_str()))
         .collect();
     assert_eq!(
         roles,
@@ -622,6 +623,77 @@ async fn a_restarted_node_closes_what_was_running_and_the_next_send_resumes() {
     let spec = &after.runner.spawned()[0];
     assert!(spec.resume);
     assert_eq!(spec.cwd, dir.path());
+}
+
+/// A lead's voice is in its system prompt, which claude never compacts: after a compaction and a restart of its node,
+/// the claude that resumes it gets lead.voice verbatim again, and its first message never had it.
+#[tokio::test]
+async fn a_leads_voice_survives_a_compaction_and_a_resume_verbatim() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("sessions.sqlite");
+    let set = crate::hub::prompts::PromptSet::defaults();
+    let r = fleetd_contracts::ids::ProjectRef {
+        machine_id: fleetd_contracts::ids::MachineId::unchecked("devbox"),
+        project_id: ProjectId::unchecked("p1"),
+    };
+    let voice = set.render("lead.voice", &[]);
+    let voice = voice.trim_end();
+    for navi in [None, Some("/home/me/navi")] {
+        let start = crate::hub::leads::prompt::render_lead_start(
+            set,
+            &r,
+            "app",
+            &[],
+            "DIGEST",
+            "",
+            "",
+            navi,
+        );
+        assert!(start.system.contains(voice), "{}", start.system);
+        assert!(!start.first.contains("## Your voice"), "{}", start.first);
+    }
+    let start =
+        crate::hub::leads::prompt::render_lead_start(set, &r, "app", &[], "DIGEST", "", "", None);
+    let SessionCall::Launch(lead) = launch("s1", RuntimeMode::FullAccess, SessionWorkspace::Root)
+    else {
+        unreachable!()
+    };
+    let lead = SessionLaunch {
+        role: fleetd_contracts::sessions::SessionRole::Lead,
+        prompt: NonEmpty::unchecked(start.first.as_str()),
+        system_prompt: Some(NonEmpty::unchecked(start.system.as_str())),
+        ..lead
+    };
+    let mut before = hub(
+        dir.path(),
+        NodeStore::open(&db).unwrap(),
+        FakeRunner::fixture("compact-manual"),
+    )
+    .await;
+    before.project(dir.path()).await;
+    before.ok(SessionCall::Launch(lead)).await;
+    before.settled("r1").await;
+    let first = &sends(&before.runner)[0].1;
+    assert!(!first.contains(voice), "{first}");
+    drop(before);
+
+    let mut after = hub(
+        dir.path(),
+        NodeStore::open(&db).unwrap(),
+        FakeRunner::fixture("init-partial-two-turns"),
+    )
+    .await;
+    after.ok(send("s1", "r2")).await;
+    after.settled("r2").await;
+    let spec = &after.runner.spawned()[0];
+    assert!(spec.resume);
+    let args = crate::node::runner::claude::ClaudeRunner::new("claude".into()).args(spec);
+    let at = args
+        .iter()
+        .position(|a| a == "--append-system-prompt")
+        .unwrap();
+    assert_eq!(args[at + 1], start.system);
+    assert!(args[at + 1].contains(voice));
 }
 
 #[tokio::test(start_paused = true)]
@@ -1211,10 +1283,15 @@ async fn a_removed_worktree_comes_back_at_the_same_path_when_the_session_resumes
     let jobs = var(&spec, "CARGO_BUILD_JOBS").unwrap();
     assert_eq!(var(&spec, "MAKEFLAGS"), Some(format!("-j{jobs}")));
     assert_eq!(var(&spec, "GOFLAGS"), Some(format!("-p={jobs}")));
-    let first = &sends(&hub.runner)[0].1;
+    // The note is a standing rule: in the system prompt, which a compaction never summarizes, not the brief.
+    let system = spec.system_prompt.as_deref().unwrap_or_default();
     assert!(
-        first.contains(&format!("- Builds get {jobs} parallel jobs per agent")),
-        "{first}"
+        system.contains(&format!("- Builds get {jobs} parallel jobs per agent")),
+        "{system}"
+    );
+    assert_eq!(
+        sends(&hub.runner)[0].1,
+        "Reply with the word OK and nothing else."
     );
 
     std::fs::write(path.join("work.txt"), "w\n").unwrap();
@@ -2038,8 +2115,8 @@ async fn a_first_start_that_claude_already_knows_resumes_instead() {
     let prompt = "Reply with the word OK and nothing else.";
     let sends = sends(&hub.runner);
     assert_eq!(sends.len(), 2);
-    assert_eq!((sends[0].0.as_str(), brief(&sends[0].1)), ("r1", prompt));
-    assert_eq!(brief(&sends[1].1), prompt);
+    assert_eq!((sends[0].0.as_str(), sends[0].1.as_str()), ("r1", prompt));
+    assert_eq!(sends[1].1, prompt);
     assert_eq!(hub.service.store().runs("s1").unwrap().len(), 1);
 }
 
@@ -2074,14 +2151,8 @@ async fn a_retry_of_a_message_claude_never_took_in_sends_the_message_again() {
     let sends = sends(&hub.runner);
     assert_eq!(sends.len(), 2);
     assert_ne!(sends[1].0, "r1");
-    assert_eq!(brief(&sends[1].1), prompt);
+    assert_eq!(sends[1].1, prompt);
     assert_eq!(hub.service.store().runs("s1").unwrap().len(), 1);
-}
-
-/// A worker's first message without the node's note on its share of the machine.
-fn brief(text: &str) -> &str {
-    text.split_once("\n\n## This machine\n")
-        .map_or(text, |(brief, _)| brief)
 }
 
 fn sends(runner: &FakeRunner) -> Vec<(String, String)> {
@@ -3378,6 +3449,7 @@ async fn configured_mcp_servers_reach_each_role_with_secrets_resolved_on_the_nod
                 &crate::hub::executor::LaunchInput {
                     project_id: ProjectId::unchecked("p1"),
                     prompt: "Reply with the word OK and nothing else.".into(),
+                    system_prompt: None,
                     profile: fleetd_contracts::effort::ProfileName::legacy(),
                     runtime_mode: RuntimeMode::FullAccess,
                     title: Some(role.into()),

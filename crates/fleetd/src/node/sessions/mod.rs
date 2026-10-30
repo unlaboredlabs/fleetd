@@ -1798,6 +1798,21 @@ impl SessionService {
             ),
             None => (own.model.to_owned(), own.effort),
         };
+        // A task's share of the machine is a standing rule like its brief's: it joins the system prompt.
+        let machine_note = match launch.role {
+            SessionRole::Worker => {
+                let home = self.inner.config.home.clone();
+                let n = blocking(move || super::load::build_jobs_here(&home)).await;
+                let set = share::jobs_env(&self.inner.config.runner_env(), n);
+                Some(share::brief_note(&set, n))
+            }
+            _ => None,
+        };
+        let system_prompt = match (launch.system_prompt.as_deref(), machine_note) {
+            (Some(system), Some(note)) => Some(format!("{}\n\n{note}", system.trim_end())),
+            (Some(system), None) => Some(system.to_owned()),
+            (None, note) => note,
+        };
         // Setup applies to a session in a worktree of its own.
         let setup = launch
             .setup
@@ -1848,6 +1863,7 @@ impl SessionService {
                 helper_model: launch.helper_model.as_ref().map(|m| m.to_string()),
                 claude_account: launch.claude_account.clone(),
                 onepassword: launch.onepassword.clone(),
+                system_prompt,
             },
         };
         self.store().commit(&row, &[], false)?;
@@ -1862,15 +1878,6 @@ impl SessionService {
                 format!("cannot keep the session's skills: {e}"),
             )
         })?;
-        let prompt = match launch.role {
-            SessionRole::Worker => {
-                let home = self.inner.config.home.clone();
-                let n = blocking(move || super::load::build_jobs_here(&home)).await;
-                let set = share::jobs_env(&self.inner.config.runner_env(), n);
-                format!("{}\n\n{}", prompt.trim_end(), share::brief_note(&set, n))
-            }
-            _ => prompt,
-        };
         let prompt = self.with_env_note(&row, prompt);
         // A new worktree is set up first, while the run shows as starting; the brief goes to claude once it is done.
         match setup {
@@ -2054,8 +2061,8 @@ impl SessionService {
                 .transpose()?
                 .flatten()
                 .is_some_and(|m| {
-                    // A worker's first message is the hub's brief and then the node's build-jobs note
-                    // (`share::brief_note`), which the hub never sends back.
+                    // A first message is the hub's brief and then the node's variables note (`with_env_note`),
+                    // which the hub never sends back.
                     m.text == *text
                         || m.text
                             .strip_prefix(text.trim_end())
@@ -2505,6 +2512,7 @@ impl SessionService {
                 .chain(claude::role_allowed(row.local.role))
                 .collect(),
             allowed_only: row.local.allowed_only,
+            system_prompt: row.local.system_prompt.clone(),
             disallowed_tools: ALWAYS_DISALLOWED
                 .iter()
                 .map(|t| (*t).to_owned())

@@ -77,7 +77,7 @@
 the <a href="#prompts">table at the end of this page</a>. You can edit each one. What fleetd fills into them, such as the event
 lines a lead is woken with, is facts: see <a href="#not-editable">Filled in by fleetd</a>.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="how">How a session gets its instructions</h2><a class="sl-anchor-link" href="#how"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “How a session gets its instructions”</span></a></div>
-<p>There is no hidden system prompt. fleetd’s text reaches a model in one of two ways:</p>
+<p>fleetd’s text reaches a model in one of three ways:</p>
 <table>
 <thead>
 <tr>
@@ -87,8 +87,12 @@ lines a lead is woken with, is facts: see <a href="#not-editable">Filled in by f
 </thead>
 <tbody>
 <tr>
+<td>The session’s system prompt</td>
+<td>Standing rules: a lead’s start prompt, voice, task profiles, your instructions and memory; a task’s <code dir="auto">## Rules</code> and all after them, and its share of the machine.</td>
+</tr>
+<tr>
 <td>The first message of a session</td>
-<td>Leads (with the chat message that started the lead), tasks, reviewers.</td>
+<td>The state it starts in: a lead’s digest (with the chat message that started the lead), a task’s task and brief.</td>
 </tr>
 <tr>
 <td>A later message into a session</td>
@@ -96,6 +100,10 @@ lines a lead is woken with, is facts: see <a href="#not-editable">Filled in by f
 </tr>
 </tbody>
 </table>
+<p>The system prompt is added to Claude Code’s own (<code dir="auto">--append-system-prompt</code>) at every start of the session, resumes
+included. When a long session is compacted, Claude Code summarizes its messages but never its system prompt, so a lead
+keeps its exact voice and rules for the whole session. A node too old to take a system prompt gets it at the start of
+the first message instead.</p>
 <p>Your own claude setup still applies underneath. See <a href="/docs/config-and-files#claude">Config &amp; files</a>.</p>
 <p>Agents act through fleetd’s MCP tools. The list, generated from the code, is in
 <a href="/docs/reference/agent-tools">Agent tools</a>.</p>
@@ -296,7 +304,7 @@ warnings only, and <code dir="auto">reset: true</code> to go back).</li>
 <p>In the app: Settings › a project › Instructions &amp; memory for one project’s, and Settings › Hub › Every project › Instructions &amp; memory for every project’s (owners
 and admins only). On the hub machine:</p>
 <div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="sh"><code><div class="ec-line"><div class="code"><span style="--0:#80A665;--1:#4B7231">fleetd</span><span style="--0:#DBD7CAEE;--1:#393A34"> </span><span style="--0:#C98A7D;--1:#96574A">instructions</span><span style="--0:#DBD7CAEE;--1:#393A34"> </span><span style="--0:#C98A7D;--1:#96574A">edit</span></div></div><div class="ec-line"><div class="code"><span style="--0:#80A665;--1:#4B7231">fleetd</span><span style="--0:#DBD7CAEE;--1:#393A34"> </span><span style="--0:#C98A7D;--1:#96574A">instructions</span><span style="--0:#DBD7CAEE;--1:#393A34"> </span><span style="--0:#C98A7D;--1:#96574A">edit</span><span style="--0:#DBD7CAEE;--1:#393A34"> </span><span style="--0:#C99076;--1:#995728">--project</span><span style="--0:#DBD7CAEE;--1:#393A34"> </span><span style="--0:#C98A7D;--1:#96574A">builder-1/app</span></div></div><div class="ec-line"><div class="code"><span style="--0:#80A665;--1:#4B7231">fleetd</span><span style="--0:#DBD7CAEE;--1:#393A34"> </span><span style="--0:#C98A7D;--1:#96574A">instructions</span><span style="--0:#DBD7CAEE;--1:#393A34"> </span><span style="--0:#C98A7D;--1:#96574A">show</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="fleetd instructions editfleetd instructions edit --project builder-1/appfleetd instructions show"><div></div></button></div></figure></div>
-<p>They are added to every lead’s first message and every task brief (writers and reviewers), hub-wide first,
+<p>They are added to every lead’s and every task’s system prompt (writers and reviewers), hub-wide first,
 under “Custom instructions from the human”. They are not added to wakes.</p>
 <p>They are sized for about 500 characters; past that, <code dir="auto">edit</code> warns. After your editor closes, <code dir="auto">edit</code> prints any
 warnings and asks <code dir="auto">Save? [Y/n]</code> on the terminal. In a script, <code dir="auto">&lt;/dev/null</code> takes the default, Yes.</p>
@@ -310,8 +318,8 @@ Navi get it; on a hub with several people, a project’s lead gets nobody’s (s
 <li><strong>Each project</strong> (<code dir="auto">MEMORY.md</code>, plus topic files for detail): only that project’s sessions get it. Another project
 never sees it.</li>
 </ul>
-<p>A lead gets your memory and its project’s <code dir="auto">MEMORY.md</code> at the start of each session, after your instructions;
-writers get them in their brief. A project’s lead answers everyone who shares the hub in one long session, so on a
+<p>A lead gets your memory and its project’s <code dir="auto">MEMORY.md</code> in its system prompt at the start of each session, after your
+instructions; writers get them in theirs. A project’s lead answers everyone who shares the hub in one long session, so on a
 hub with several people it starts with no one’s memory: anyone’s would stay in its context while it answers the
 others. When it remembers something in user scope, it goes to the memory of the person whose message it is
 answering, and only that person can undo it. A lead opens a topic file when it needs one. Something remembered
@@ -361,10 +369,10 @@ Memory, an entry the refresh wrote links to its line.</li>
 </ul>
 <div class="sl-heading-wrapper level-h2"><h2 id="checklist">The checklist</h2><a class="sl-anchor-link" href="#checklist"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “The checklist”</span></a></div>
 <p>Each project’s lead keeps a checklist with its <code dir="auto">checklist</code> tool: a few plain items per piece of work you approved,
-each to do, doing or done, linked to its pull request or agent. Its first message tells it to keep the list current,
+each to do, doing or done, linked to its pull request or agent. Its start prompt tells it to keep the list current,
 moving items along in the turn their news arrives; every wake shows it how many are done and the items still open.
 You see the list in the panel’s <a href="/docs/desktop-app#checklist">Checklist tab</a>, where you can delete items and clear
-the done ones. The lead’s next wake names what you took off (<code dir="auto">- the human took 1 item off the checklist: 3 "Dark mode"; leave it off unless they ask again</code>), its digest shows the list as it is now, and its first message tells it
+the done ones. The lead’s next wake names what you took off (<code dir="auto">- the human took 1 item off the checklist: 3 "Dark mode"; leave it off unless they ask again</code>), its digest shows the list as it is now, and its start prompt tells it
 never to add those back unless you ask. Writers can’t change the list, and nothing is worked out from it: no
 figure, no estimate.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="skills">Skills</h2><a class="sl-anchor-link" href="#skills"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Skills”</span></a></div>

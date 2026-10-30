@@ -1,7 +1,9 @@
-//! The lead's first message: the `lead.start` prompt (a Navi's: `navi.start`), `lead.voice`, `lead.profiles` with each
-//! profile the project allows and its note, while it allows more than the default (never for a Navi, which runs no
-//! code tasks), the digest, the human's custom instructions, then the memory (user memory per `You::for_lead`, and the
-//! project's `MEMORY.md`). A project with repos besides its own directory has them listed after that (`repos_block`).
+//! What a lead starts with. Its system prompt holds its standing rules, which a compaction never summarizes: the
+//! `lead.start` prompt (a Navi's: `navi.start`), `lead.voice`, `lead.profiles` with each profile the project allows
+//! and its note, while it allows more than the default (never for a Navi, which runs no code tasks), the human's custom
+//! instructions, then the memory (user memory per `You::for_lead`, and the project's `MEMORY.md`). Its first message
+//! holds the state it starts in: the digest, and, for a project with repos besides its own directory, those
+//! (`repos_block`).
 use fleetd_contracts::effort::Profile;
 use fleetd_contracts::ids::ProjectRef;
 use fleetd_contracts::repos::ProjectRepo;
@@ -19,6 +21,22 @@ pub fn start_prompt(navi: bool) -> &'static str {
     if navi { "navi.start" } else { "lead.start" }
 }
 
+/// A lead's system prompt and first message.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LeadStart {
+    /// Its standing rules: passed to claude at every start of the session (`LaunchInput::system_prompt`).
+    pub system: String,
+    /// The state it starts in.
+    pub first: String,
+}
+
+impl LeadStart {
+    /// Both as one text, as a node that can't take a system prompt gets them, and as the session's pin records them.
+    pub fn whole(&self) -> String {
+        format!("{}\n\n{}", self.system.trim_end(), self.first)
+    }
+}
+
 /// `navi_folder`: a Navi's folder, for `navi.start`; none for any other project.
 #[allow(clippy::too_many_arguments)]
 pub fn render_lead_start(
@@ -30,7 +48,7 @@ pub fn render_lead_start(
     memory: &str,
     people: &str,
     navi_folder: Option<&str>,
-) -> String {
+) -> LeadStart {
     let start = set.render(
         start_prompt(navi_folder.is_some()),
         &[
@@ -65,15 +83,18 @@ pub fn render_lead_start(
         _ => String::new(),
     };
     let voice = set.render("lead.voice", &[]);
-    let first = set.with_instructions(format!(
-        "{}\n\n{}{profiles}\n\n{AUTOMATIONS}\n\n{digest}",
+    let system = set.with_instructions(format!(
+        "{}\n\n{}{profiles}\n\n{AUTOMATIONS}",
         start.trim_end(),
         voice.trim_end()
     ));
-    if memory.is_empty() {
-        first
-    } else {
-        format!("{first}\n\n{memory}")
+    LeadStart {
+        system: if memory.is_empty() {
+            system
+        } else {
+            format!("{system}\n\n{memory}")
+        },
+        first: digest.to_owned(),
     }
 }
 
@@ -152,7 +173,8 @@ mod tests {
             project_id: ProjectId::unchecked("p1"),
         };
         let set = PromptSet::defaults();
-        let text = render_lead_start(set, &r, "storefront", &both(), "DIGEST", "", "", None);
+        let text =
+            render_lead_start(set, &r, "storefront", &both(), "DIGEST", "", "", None).whole();
         let guide = text.find("## Task profiles").unwrap();
         assert!(
             text.find("spawn_agent").unwrap() < guide && guide < text.find("DIGEST").unwrap(),
@@ -165,7 +187,7 @@ mod tests {
             "- `high` (default): The default.\n- `medium`: Only for mechanical work.\n- Reviews always run"
         ));
         // The default alone: nothing to pick, nothing said.
-        let off = render_lead_start(set, &r, "storefront", &both()[..1], "D", "", "", None);
+        let off = render_lead_start(set, &r, "storefront", &both()[..1], "D", "", "", None).whole();
         assert!(!off.contains("## Task profiles") && off.contains("spawn_agent"));
         // The lead keeps the human's checklist as it runs the work.
         assert!(off.contains("Keep the checklist current with `checklist`"));
@@ -225,7 +247,8 @@ mod tests {
             "MEMORY",
             "",
             Some(folder),
-        );
+        )
+        .whole();
         assert!(
             text.starts_with("You are Ada, a personal assistant"),
             "{text}"
@@ -235,7 +258,30 @@ mod tests {
         // The approvals it asks for, and what it never does even if approved.
         assert!(text.contains("Ask first, every time") && text.contains("even if they approve"));
         assert!(text.contains("## Your voice") && text.contains("## Automations"));
-        let digest = text.find("DIGEST").unwrap();
-        assert!(digest < text.find("MEMORY").unwrap());
+    }
+
+    /// The standing rules (start, voice, profiles, automations, memory) are the system prompt,
+    /// which a compaction never summarizes; the first message is the state alone and repeats none of them.
+    #[test]
+    fn the_standing_rules_are_the_system_prompt_and_the_first_message_is_the_state() {
+        let r = ProjectRef {
+            machine_id: MachineId::unchecked("devbox"),
+            project_id: ProjectId::unchecked("p1"),
+        };
+        let set = PromptSet::defaults();
+        let voice = set.render("lead.voice", &[]);
+        for navi in [None, Some("/home/me/navi")] {
+            let start = render_lead_start(set, &r, "Ada", &both(), "DIGEST", "MEMORY", "", navi);
+            assert_eq!(start.first, "DIGEST");
+            let system = &start.system;
+            let starts = set.render(start_prompt(navi.is_some()), &[]);
+            let head = starts.lines().nth(2).unwrap();
+            for part in [head, voice.trim_end(), AUTOMATIONS, "MEMORY"] {
+                assert!(system.contains(part), "missing {part:?} in\n{system}");
+            }
+            assert_eq!(navi.is_none(), system.contains("## Task profiles"));
+            assert!(!system.contains("DIGEST"));
+            assert_eq!(start.whole(), format!("{system}\n\nDIGEST"));
+        }
     }
 }

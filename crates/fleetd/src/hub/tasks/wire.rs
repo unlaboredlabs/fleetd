@@ -103,6 +103,7 @@ impl TaskPorts for HubTaskPorts {
             let input = LaunchInput {
                 project_id: request.project_id,
                 prompt: request.prompt,
+                system_prompt: request.system_prompt,
                 profile: request.profile,
                 runtime_mode: RuntimeMode::FullAccess,
                 title: Some(request.title),
