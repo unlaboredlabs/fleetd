@@ -815,4 +815,5 @@ fn a_long_final_message_keeps_its_head_and_ids_through_to_the_result() {
         "{result}"
     );
     assert!(result.contains("Left: nothing."), "{result}");
+    assert_eq!(result.matches("Refs: ").count(), 1, "{result}");
 }

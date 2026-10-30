@@ -118,6 +118,12 @@ pub fn result_text(text: &str, max: usize) -> String {
         return t.to_owned();
     }
     let refs = refs_of(t);
+    // A text cut once already (the executor's copy of a long message) ends in its own Refs line: the new one
+    // replaces it, and holds all of its refs.
+    let t = t
+        .rsplit_once(&format!("\n\n{REFS}"))
+        .filter(|(_, last)| !last.contains('\n'))
+        .map_or(t, |(body, _)| body.trim_end());
     let line = if refs.is_empty() {
         String::new()
     } else {
@@ -669,6 +675,13 @@ mod tests {
         assert_eq!(
             refs,
             "Refs: https://github.com/o/r/pull/868 F12 F13 F14 3f9c2ab1"
+        );
+        // Cut again, it keeps one Refs line, with every ref.
+        let again = result_text(&format!("More at the start: F9.\n{kept}"), 1000);
+        assert_eq!(again.matches("Refs: ").count(), 1, "{again}");
+        assert!(
+            again.ends_with("\n\nRefs: https://github.com/o/r/pull/868 F9 F12 F13 F14 3f9c2ab1"),
+            "{again}"
         );
         // A short one stays as it was, with no Refs line.
         assert_eq!(
