@@ -1,0 +1,174 @@
+name: Mac
+
+# What only a Mac can check, off the pull request and merge path (ci.no-macos-on-prs): nightly on main, on demand
+# (`gh workflow run mac.yml --ref <branch>`, for a PR that changes macOS code), and before each release (release.yml
+# builds only once it passes). Pull requests check the same code on Linux instead: ci.yml's `rust (darwin)` lints it
+# for both darwin targets and `desktop (mac layout)` packs the mac app; mobile.yml types, tests and bundles the phone
+# app's JavaScript.
+#
+# A failed nightly or manual run on main opens an issue labelled `macos-nightly-failed` with the failed jobs and the
+# run's link, or comments on the one already open; the next run on main with every job green closes it. The merge
+# train lists these checks as after-merge only (.fleetd/train.json), so a red one never holds a merge.
+
+on:
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  rust-macos:
+    # rust (linux)'s sealed boxes on macOS, the node's power code (IOKit) and a Navi's sandbox-exec, natively.
+    name: rust (macos)
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: tests/lab/package-lock.json
+      - run: npm ci --prefix tests/lab --no-audit --no-fund
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Sealed boxes against libsodium
+        run: cargo test --locked -p fleetd --lib node::identity
+        env:
+          FLEETD_REQUIRE_NODE_SEAL: "1"
+      - name: Node power on macOS
+        # The sleep assertion and the wake clock: the test takes a real assertion on the runner and releases it.
+        run: cargo test --locked -p fleetd --lib node::power
+      - name: A Navi's sandbox holds (sandbox-exec)
+        run: cargo test --locked -p fleetd --lib node::runner::sandbox
+        env:
+          FLEETD_REQUIRE_SANDBOX: "1"
+
+  ios-sessions:
+    # node/device/ios on a real iOS simulator: a session end to end with the hub in process (making the golden
+    # simulator, a settling boot and an xcodebuild of agent-device's runner, takes minutes). A manual run first measures
+    # what the design rests on (simctl clone needs its source shut down, boot times, the live view's screenshot loop,
+    # recordVideo's MP4; idb's stream where idb is installed, which the runner's Homebrew refuses: facebook/fb is an
+    # untrusted tap), on a quiet machine.
+    name: ios sessions
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: What iOS sessions rest on, measured
+        if: github.event_name == 'workflow_dispatch'
+        run: cargo test --locked -p fleetd --lib node::device::ios::tests::probes -- --nocapture
+      - name: iOS sessions on a simulator
+        run: cargo test --locked -p fleetd --lib node::device::ios -- --nocapture --test-threads=1 --skip probes
+        env:
+          FLEETD_TEST_IOS_HOME: ${{ runner.temp }}/fleetd-test-ios
+      # What agent-device's daemons did (the diagnostics log a failed command names, the runner's xcodebuild logs).
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-sessions-agent-device
+          path: |
+            ~/.agent-device/logs/
+            ${{ runner.temp }}/fleetd-test-ios/sessions/*/agent-device/
+            ${{ runner.temp }}/fleetd-test-ios/device/ios/prepare/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  desktop-macos:
+    # The edge build's macOS packaged smoke (build-release.yml, desktop-macos) on an ad-hoc signed arm64 test build:
+    # the packed mac app launches and its screens and recorder load from the asar.
+    name: desktop-macos
+    runs-on: macos-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: app/desktop
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: app/desktop/package.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: app/desktop/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - name: Packaged smoke (macOS)
+        run: |
+          pnpm fixtures
+          pnpm build:test
+          CSC_IDENTITY_AUTO_DISCOVERY=false pnpm exec electron-builder --mac --dir --arm64 --publish never -c.directories.output=dist-test \
+            -c.mac.identity=- -c.mac.hardenedRuntime=false
+          node scripts/packaged-smoke.ts dist-test/mac-arm64/fleetd.app/Contents/MacOS/fleetd
+      - name: Packaged recording (macOS)
+        # FLEETD_RECORD in the packed app (scripts/demo-mac.sh records the edge build this way).
+        run: node scripts/packaged-smoke.ts --record dist-test/mac-arm64/fleetd.app/Contents/MacOS/fleetd
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: packaged-smoke-macos
+          path: app/desktop/smoke-results/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  qa:
+    # Desktop QA's macOS shards (desktop-qa.yml): scale 2, traffic lights, menu, fonts.
+    uses: ./.github/workflows/desktop-qa.yml
+    with:
+      macos: true
+    permissions:
+      contents: read
+      actions: read
+
+  mobile:
+    # The iOS app's simulator build with its extensions, their Swift tests and its App Transport Security (mobile.yml).
+    uses: ./.github/workflows/mobile.yml
+    with:
+      ios: true
+
+  report:
+    # A failed (or timed out) job on main opens one `macos-nightly-failed` issue, or comments on the one open; a run
+    # with every job green closes it. Runs off main, a release's among them, report nothing.
+    needs: [rust-macos, ios-sessions, desktop-macos, qa, mobile]
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      issues: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN: ${{ github.run_id }}
+          EVENT: ${{ github.event_name }}
+          URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          jobs=$(gh api "repos/$GH_REPO/actions/runs/$RUN/jobs?per_page=100" -q '[.jobs[] | select(.name != "report")]')
+          failed=$(jq -r '[.[] | select(.conclusion != "success" and .conclusion != "skipped") | "- \(.name): \(.conclusion)"] | join("\n")' <<<"$jobs")
+          open=$(gh issue list --label macos-nightly-failed --state open --json number -q '.[].number')
+          if [ -n "$failed" ]; then
+            body=$(printf 'The Mac checks failed on main (%s, %s).\n\n%s\n\nRun: %s\n\nThe next green run on main closes this issue.' \
+              "$EVENT" "${GITHUB_SHA:0:9}" "$failed" "$URL")
+            if [ -n "$open" ]; then
+              for n in $open; do gh issue comment "$n" --body "$body"; done
+            else
+              gh label create macos-nightly-failed --color d73a4a --description "mac.yml failed on main" 2>/dev/null || true
+              gh issue create --title "The Mac checks failed on main" --label macos-nightly-failed --body "$body"
+            fi
+          else
+            for n in $open; do gh issue close "$n" --comment "Green again on main ($EVENT, ${GITHUB_SHA:0:9}): $URL"; done
+          fi

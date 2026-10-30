@@ -90,6 +90,7 @@ fn spawned_for(_table: &[Proc], _session: &str) -> Vec<Proc> {
 
 /// The session id in a spawn's marker, `<session>.<node pid>.<nanos>.<n>` ([`process::marker`]). Session ids may
 /// hold dots themselves, so it is everything before the last three fields.
+#[cfg(target_os = "linux")]
 fn marker_session(marker: &str) -> Option<&str> {
     let mut fields = marker.rsplitn(4, '.');
     fields.nth(3)

@@ -521,7 +521,8 @@ is one). Every other session's spec has none.
   claude's settings and the folder's `.claude` fail; the token store, `~/.ssh`, `~/.config`, other projects, other
   sessions' conversations and history, `~/.Xauthority` and `~/.npmrc` can't be read, and no X server is in reach;
   files, git, scratch, `/tmp`, the session's own files and a refreshed login work. Without a sandbox they skip and say why; CI's
-  `rust (linux)` installs bubblewrap and `rust (macos)` uses sandbox-exec, both with `FLEETD_REQUIRE_SANDBOX`.
+  `rust (linux)` installs bubblewrap and the nightly `rust (macos)` (mac.yml) uses sandbox-exec, both with
+  `FLEETD_REQUIRE_SANDBOX`.
 - Readable to it, as claude needs them: the session's MCP config (with the resolved tokens of its own servers), the
   login, and the folder.
 

@@ -376,7 +376,7 @@ failed scope runs the job rather than skipping it.</p>
 every batch. If the workflows can’t be read, the train uses the last answer it had for the repo; with none, ready PRs
 stay out of batches until it can read them.</p>
 <p>The only coverage this gives up: a break on those runners that only two PRs together cause. <code dir="auto">main</code> catches it after
-the merge. fleetd’s own <code dir="auto">ci.yml</code> does this for <code dir="auto">rust (macos)</code>, <code dir="auto">ios sessions</code> and <code dir="auto">desktop-macos</code>.</p>
+the merge.</p>
 <div class="sl-heading-wrapper level-h3"><h3 id="next-label">The <code dir="auto">fleetd:next</code> label</h3><a class="sl-anchor-link" href="#next-label"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “The fleetd:next label”</span></a></div>
 <p>The train also labels what it is merging now with <code dir="auto">fleetd:next</code>:</p>
 <ul>

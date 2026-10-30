@@ -154,9 +154,9 @@ builds a Debug app that loads its JavaScript from that server.
 
 The workflow runs `expo prebuild`, then gradle on an Ubuntu runner and xcodebuild on a macOS runner. On pull requests
 and on `main`, the app's checks and the Android build run when `app/mobile`, the workflow, or a desktop module the app
-imports (`app/mobile/src/desktop.ts` lists them) changes. The iOS build runs only when `app/mobile` or the workflow
-changes, as macOS runners are scarce: the Android build bundles the same JavaScript, so a desktop change that breaks it
-fails there.
+imports (`app/mobile/src/desktop.ts` lists them) changes. The iOS build runs on a manual run, and nightly and before
+each release in the **Mac** workflow (`mac.yml`), never on a pull request: the Android build bundles the same
+JavaScript, so a change that breaks it fails there.
 
 An iPhone runs only signed apps, so for a real iPhone you need the signed build below.
 

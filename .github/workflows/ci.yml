@@ -27,11 +27,11 @@ env:
 # Everything runs on GitHub-hosted runners, which are free for public repos. Rust caches are saved from main only:
 # the repo's 10 GB cache quota holds one copy per job, and pull requests restore main's.
 #
-# macOS runners are few (5 at once), so the macOS jobs (rust-macos, ios-sessions, desktop-macos) run on each PR's own
-# head, only when their paths changed (macos-scope decides on Linux, so no macOS runner starts for nothing), and must
-# pass there before the merge train lets the PR join a batch (D204). The train's batch PR skips them (`!endsWith(github.head_ref, 'train/batch')`, which the train reads to know
-# them): its Linux checks finish in minutes, and it never waits for a macOS runner. A skipped job still reports, so the
-# required `rust (macos)` does too. Main runs them after each merge.
+# No job here runs on macOS (ci.no-macos-on-prs). What a PR's macOS code can break is checked on Linux: `rust (darwin)`
+# lints the workspace for both darwin targets, so code under cfg(target_os = "macos") must compile, and
+# `desktop (mac layout)` packs the mac app and checks its layout. What only a Mac can run (IOKit, sandbox-exec, iOS
+# simulator sessions, macOS desktop QA, the packed mac app, the iOS build) runs nightly in mac.yml, and before each
+# release.
 
 jobs:
   rust-lint:
@@ -212,14 +212,14 @@ jobs:
   rust:
     # The root Cargo workspace's tests, under cargo-nextest (a process per test; .config/nextest.toml retries the
     # Chrome-driven browser tests and reports those as flaky), and its doctests. Lint (fmt, clippy) and the docs and lab
-    # checks on the built binary are jobs of their own, beside this one. `rust (linux)` and `rust (macos)` are required
-    # checks, so the workspace tests gate merges.
+    # checks on the built binary are jobs of their own, beside this one. `rust (linux)` is a required check,
+    # so the workspace tests gate merges.
     #
     # The tests also check that the generated contracts (schema/*.json and the app's TypeScript) are current
     # (schema::generated_contracts_are_current) and replay the recorded claude fixtures (node::runner). Here, what
     # they'd skip elsewhere must run: the FLEETD_REQUIRE_* variables make these fail instead of skip without their tool.
     # - libsodium (in Node, as the desktop app seals) opens what the node's Rust seals and the other way round
-    #   (node::identity; rust-macos runs the same on macOS).
+    #   (node::identity; mac.yml runs the same on macOS nightly).
     # - The pinned agent-browser (agent_browser.rs's VERSION), on the runner's Chrome: every script its commands send is
     #   one of the pinned shapes (agent_browser_shapes.json) and a sealed session runs it, and its commands work after
     #   a fill.
@@ -289,140 +289,31 @@ jobs:
         if: steps.scope.outputs.run == 'true'
         run: cargo test --locked --workspace --doc
 
-  macos-scope:
-    # Which macOS jobs have work, decided on Linux so a macOS runner starts only for real work: each macOS job needs
-    # this one and is skipped (which passes, required or not) when its paths didn't change. HEAD^1 is the base for a
-    # PR's merge commit and the previous main for a (squash-merged) push; a manual run from a branch compares with the
-    # branch's merge base on main, and ios sessions on a push to main with the last push run that ran it to the end
-    # (.github/main-base.sh). No base to compare with runs them all, and so does a failure here. The merge train trusts
-    # such a skip on a PR's head only when this job passed there and said so.
-    name: macos scope
+  rust-darwin:
+    # The workspace's clippy for both darwin targets, cross-checked on Linux with cargo-zigbuild as the release
+    # cross-builds them: code under cfg(target_os = "macos") that doesn't compile, or warns, fails here. It runs nothing;
+    # mac.yml runs the macOS-only tests nightly.
+    name: rust (darwin)
     runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: read
-      actions: read
-    outputs:
-      rust: ${{ steps.scope.outputs.rust }}
-      ios: ${{ steps.scope.outputs.ios }}
-      desktop: ${{ steps.scope.outputs.desktop }}
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
-        with:
-          # A manual run from a branch compares with its merge base on main, so it needs the history.
-          fetch-depth: ${{ github.event_name == 'workflow_dispatch' && '0' || '2' }}
-      - id: scope
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-        run: |
-          base=$(git rev-parse -q --verify HEAD^1 || true)
-          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$GITHUB_REF" != refs/heads/main ]; then
-            base=$(git merge-base origin/main HEAD || true)
-          fi
-          # scope <output> <check> <paths>: <output>=true when any of the paths, or this workflow, changed. Otherwise
-          # it says "no work for <check>" in a notice: the merge train counts that check's skip on this head as
-          # passing only with it, so a run cancelled before the check started never reads as green.
-          scope() {
-            out=$1
-            check=$2
-            shift 2
-            run=true
-            if [ -n "$base" ] && git diff --quiet "$base" HEAD -- "$@" .github/workflows/ci.yml; then
-              run=false
-              echo "::notice::no work for $check"
-            fi
-            echo "$out=$run" | tee -a "$GITHUB_OUTPUT"
-          }
-          scope rust "rust (macos)" crates/fleetd/src/node Cargo.toml Cargo.lock
-          scope desktop desktop-macos app/desktop
-          if [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_REF" = refs/heads/main ]; then
-            last=$(.github/main-base.sh ci.yml "ios sessions" skipped)
-            if [ -n "$last" ] && git fetch -q --depth=1 origin "$last"; then base=$last; else base=; fi
-            echo "ios sessions compares with ${base:-nothing: no earlier finished run found, so it runs in full}."
-          fi
-          scope ios "ios sessions" crates/fleetd/src/node/device
-
-  rust-macos:
-    # rust (linux)'s sealed boxes on macOS, the node's power code (IOKit), and a Navi's sandbox-exec. Only when the
-    # node's code, the dependency set or this workflow changed (macos-scope); the rest of crates/fleetd's macOS code is
-    # cross-built and checked by darwin-deps and the edge build.
-    name: rust (macos)
-    needs: macos-scope
-    if: ${{ !cancelled() && !endsWith(github.head_ref, 'train/batch') && needs.macos-scope.outputs.rust != 'false' }}
-    runs-on: macos-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: tests/lab/package-lock.json
-      - run: npm ci --prefix tests/lab --no-audit --no-fund
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+          components: clippy
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - name: Sealed boxes against libsodium
-        run: cargo test --locked -p fleetd --lib node::identity
-        env:
-          FLEETD_REQUIRE_NODE_SEAL: "1"
-      - name: Node power on macOS
-        # The sleep assertion and the wake clock, natively: the test takes a real assertion on the runner and
-        # releases it.
-        run: cargo test --locked -p fleetd --lib node::power
-      - name: A Navi's sandbox holds (sandbox-exec)
-        run: cargo test --locked -p fleetd --lib node::runner::sandbox
-        env:
-          FLEETD_REQUIRE_SANDBOX: "1"
-
-  ios-sessions:
-    # node/device/ios on a real iOS simulator: the probes its design rests on (simctl clone needs its source shut down,
-    # boot times, the live view's screenshot loop, recordVideo's MP4; idb's stream where idb is installed, which the
-    # runner's Homebrew refuses: facebook/fb is an untrusted tap), then a session end to end
-    # with the hub in process. Only when node/device or this workflow changed (macos-scope): making the golden
-    # simulator (a settling boot and an xcodebuild of agent-device's runner) takes minutes. On main, only the newest
-    # push runs it: a push cancels the job in main's older push runs, and macos-scope compares with the last push run
-    # whose job wasn't cancelled (.github/main-base.sh), or runs it in full without one, so no change goes untested.
-    # The hub ignores cancelled checks when it looks for red on main (hub/train/watch.rs).
-    name: ios sessions
-    needs: macos-scope
-    if: ${{ !cancelled() && !endsWith(github.head_ref, 'train/batch') && needs.macos-scope.outputs.ios != 'false' }}
-    concurrency:
-      group: >-
-        ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'ios-sessions-main'
-        || format('ios-sessions-{0}', github.run_id) }}
-      cancel-in-progress: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-    runs-on: macos-latest
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      # As build-release.yml's cli job: zig is the C toolchain for SQLite's and ring's build scripts.
+      - uses: mlugg/setup-zig@v2
         with:
-          node-version: 24
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+          version: 0.17.0
+          use-cache: false
+      - uses: taiki-e/install-action@v2
         with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-      # The probe first, on a quiet machine; then the rest, the session end to end among them.
-      - name: What iOS sessions rest on, measured
-        run: cargo test --locked -p fleetd --lib node::device::ios::tests::probes -- --nocapture
-      - name: iOS sessions on a simulator
-        run: cargo test --locked -p fleetd --lib node::device::ios -- --nocapture --test-threads=1 --skip probes
-        env:
-          FLEETD_TEST_IOS_HOME: ${{ runner.temp }}/fleetd-test-ios
-      # What agent-device's daemons did (the diagnostics log a failed command names, the runner's xcodebuild logs).
-      - if: failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: ios-sessions-agent-device
-          path: |
-            ~/.agent-device/logs/
-            ${{ runner.temp }}/fleetd-test-ios/sessions/*/agent-device/
-            ${{ runner.temp }}/fleetd-test-ios/device/ios/prepare/
-          if-no-files-found: ignore
-          retention-days: 14
+          tool: cargo-zigbuild@0.23.4
+      - run: cargo-zigbuild clippy --locked --workspace --all-targets --target aarch64-apple-darwin --target x86_64-apple-darwin -- -D warnings
 
   darwin-deps:
     # The release cross-builds the darwin fleetd binaries on Linux, which breaks on any crate that links a macOS
@@ -642,43 +533,54 @@ jobs:
         if: steps.scope.outputs.run == 'true'
         run: xvfb-run -a -s "-screen 0 1920x1200x24" node perf/run.ts --baseline perf/baseline-linux.json --json "$RUNNER_TEMP/perf.json"
 
-  desktop-macos:
-    # The edge build's macOS packaged smoke (build-release.yml, desktop-macos) on an ad-hoc signed arm64 test build, so
-    # a change that breaks the packed mac app fails here rather than only in the edge build. Only when app/desktop or
-    # this workflow changed (macos-scope), as desktop.
-    needs: macos-scope
-    if: ${{ !cancelled() && !endsWith(github.head_ref, 'train/batch') && needs.macos-scope.outputs.desktop != 'false' }}
-    runs-on: macos-latest
+  desktop-mac-layout:
+    # The mac app packed on Linux, as the edge build packs it on macOS but unsigned and arm64 only (electron-builder
+    # signs and merges a universal app only on macOS): Electron's fuses in the mac binary, both darwin keyring modules
+    # unpacked beside the asar, and the Info.plist the app's links and updates rest on. Launching it is mac.yml's,
+    # nightly. Same scope as desktop.
+    name: desktop (mac layout)
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
       run:
         working-directory: app/desktop
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
+        with:
+          # A manual run from a branch compares with its merge base on main, so it needs the history.
+          fetch-depth: ${{ github.event_name == 'workflow_dispatch' && '0' || '2' }}
+      - name: Scope
+        id: scope
+        working-directory: .
+        run: |
+          run=true
+          base=$(git rev-parse -q --verify HEAD^1 || true)
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$GITHUB_REF" != refs/heads/main ]; then
+            base=$(git merge-base origin/main HEAD || true)
+          fi
+          if [ -n "$base" ] && git diff --quiet "$base" HEAD -- app/desktop .github/release/desktop-fuses-check.sh .github/workflows/ci.yml; then
+            run=false
+            echo "app/desktop didn't change."
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+      - if: steps.scope.outputs.run == 'true'
+        uses: pnpm/action-setup@v6
         with:
           package_json_file: app/desktop/package.json
-      - uses: actions/setup-node@v7
+      - if: steps.scope.outputs.run == 'true'
+        uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
           cache-dependency-path: app/desktop/pnpm-lock.yaml
-      - run: pnpm install --frozen-lockfile
-      - name: Packaged smoke (macOS)
+      # darwin's native packages too (@napi-rs/keyring's), which a Linux install leaves out.
+      - if: steps.scope.outputs.run == 'true'
+        run: pnpm install --frozen-lockfile --os current --os darwin --cpu x64 --cpu arm64
+      - if: steps.scope.outputs.run == 'true'
+        run: pnpm build
+      - name: Pack and check the mac app
+        if: steps.scope.outputs.run == 'true'
         run: |
-          pnpm fixtures
-          pnpm build:test
-          CSC_IDENTITY_AUTO_DISCOVERY=false pnpm exec electron-builder --mac --dir --arm64 --publish never -c.directories.output=dist-test \
-            -c.mac.identity=- -c.mac.hardenedRuntime=false
-          node scripts/packaged-smoke.ts dist-test/mac-arm64/fleetd.app/Contents/MacOS/fleetd
-      - name: Packaged recording (macOS)
-        # FLEETD_RECORD in the packed app (scripts/demo-mac.sh records the edge build this way): the recorder page loads
-        # from the asar, which the unpackaged Demo recording run can't catch.
-        run: node scripts/packaged-smoke.ts --record dist-test/mac-arm64/fleetd.app/Contents/MacOS/fleetd
-      - if: failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: packaged-smoke-macos
-          path: app/desktop/smoke-results/
-          if-no-files-found: ignore
-          retention-days: 14
+          pnpm exec electron-builder --mac --dir --arm64 --publish never -c.directories.output=dist-test -c.mac.identity=null
+          node scripts/mac-layout-check.ts dist-test/mac-arm64/fleetd.app
+          ../../.github/release/desktop-fuses-check.sh dist-test/mac-arm64/fleetd.app

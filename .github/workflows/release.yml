@@ -1,4 +1,6 @@
-# A pushed v* tag becomes a normal (latest) release with the same assets as edge. Tag runs are never cancelled.
+# A pushed v* tag becomes a normal (latest) release with the same assets as edge, once the Mac checks pass on the tag
+# (mac.yml: pull requests run no macOS job, so this is where a release is sure of them). A flaky one is re-run from
+# the run's page ("Re-run failed jobs"), which then goes on to the build. Tag runs are never cancelled.
 name: Release
 
 on:
@@ -10,7 +12,15 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  mac:
+    uses: ./.github/workflows/mac.yml
+    permissions:
+      contents: read
+      actions: read
+      issues: write
+
   release:
+    needs: mac
     uses: ./.github/workflows/build-release.yml
     with:
       channel: stable
