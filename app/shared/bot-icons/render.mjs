@@ -1,4 +1,4 @@
-// Renders the bot icon gallery: one SVG per shape into svg/ (in Fleet), and the contact sheets into out/ as HTML and,
+// Renders the bot icon gallery: one SVG per being into svg/ (in Fleet), and the contact sheets into out/ as HTML and,
 // through headless Chrome, PNG. Run: node app/shared/bot-icons/render.mjs
 import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -48,17 +48,16 @@ function shoot(name, width, height, html) {
 // One sheet per family: every shape at 120px, in three colours.
 const FAMILY_COLOURS = {
   A: ["sun", "fleet", "mint"],
-  B: ["ember", "lilac", "teal"],
-  C: ["graphite", "lime", "sky"],
+  B: ["graphite", "lime", "sky"],
+  C: ["ember", "lilac", "teal"],
   D: ["plum", "sand", "rose"],
   E: ["teal", "sun", "fleet"],
-  F: ["sky", "plum", "ember"],
 };
 for (const f of FAMILIES) {
   const width = 80 + 90 + 8 * 140;
-  const height = 72 + 48 + 3 * 140 + 36;
+  const height = 72 + 70 + 3 * 140 + 36;
   const head = f.shapes
-    .map((s, i) => `<div style="width:140px"><span class="num">${f.letter}${i + 1}</span> <span class="name">${s.name}</span></div>`)
+    .map((s, i) => `<div style="width:140px"><span class="num">${f.letter}${i + 1}</span> ${s.name}<div class="name">${s.mood}</div></div>`)
     .join("");
   const rows = FAMILY_COLOURS[f.letter]
     .map((c) => {
@@ -83,7 +82,7 @@ for (const f of FAMILIES) {
 
 // Every colour: a handful of shapes in the whole palette.
 {
-  const picks = ["A1", "B2", "C6", "D3", "E3", "F1"];
+  const picks = ["A1", "B1", "C1", "D1", "E1", "E8"];
   const width = 80 + 60 + PALETTE.length * 104;
   const height = 72 + 120 + picks.length * 104 + 40;
   const head = PALETTE.map(
@@ -114,20 +113,20 @@ for (const f of FAMILIES) {
   );
 }
 
-// Everything at once: all shapes at 72px, the palette cycling, for picking by number.
+// Everything at once: every being at 88px, the palette cycling, for picking by number.
 {
   const cols = 8;
-  const width = 80 + cols * 124;
-  const height = 72 + 20 + FAMILIES.length * 124 + 60;
+  const width = 80 + cols * 132;
+  const height = 72 + 20 + FAMILIES.length * 170 + 30;
   const order = ["fleet", "sun", "teal", "rose", "plum", "lime", "ember", "sky", "graphite", "mint", "lilac", "sand"];
   const rows = FAMILIES.map(
     (f, r) =>
-      `<div style="display:flex;height:124px;align-items:center">` +
+      `<div style="display:flex;height:170px;align-items:center">` +
       f.shapes
         .map(
           (s, i) =>
-            `<div style="width:124px">${iconSvg(s, colour[order[(r * 3 + i) % order.length]], 72)}` +
-            `<div style="margin-top:8px"><span class="num">${f.letter}${i + 1}</span> <span class="name">${s.name}</span></div></div>`,
+            `<div style="width:132px">${iconSvg(s, colour[order[(r * 3 + i) % order.length]], 88)}` +
+            `<div style="margin-top:6px"><span class="num">${f.letter}${i + 1}</span> ${s.name}<div class="name">${s.mood}</div></div></div>`,
         )
         .join("") +
       `</div>`,
@@ -139,7 +138,7 @@ for (const f of FAMILIES) {
     page(
       width,
       height,
-      `<h1>All ${SHAPES.length} shapes</h1><div class="about">A Critters · B Orbits · C Grid · D Strokes · E Cut-outs · F Gems</div>` +
+      `<h1>All ${SHAPES.length} beings</h1><div class="about">${FAMILIES.map((f) => `${f.letter} ${f.name}`).join(" · ")}</div>` +
         `<div style="margin-top:20px">${rows}</div>`,
     ),
   );
@@ -148,14 +147,14 @@ for (const f of FAMILIES) {
 // Real size: a chat list at 40px and a sidebar at 24px, light and dark, then every shape at 24px.
 {
   const chats = [
-    ["A1", "sun", "Scout", "Booked the venue for Thursday, the invite is out.", "9:41"],
-    ["E3", "graphite", "fleetd", "Merged #851: the list stays still under the menu.", "9:12"],
-    ["C6", "fleet", "site", "Showcase clips render at 60 fps now.", "8:57"],
-    ["B1", "ember", "Ledger", "Your card statement is in; nothing odd this month.", "Yesterday"],
-    ["D3", "teal", "relay", "Push relay is up: apns and fcm both true.", "Yesterday"],
-    ["F1", "plum", "Atlas", "Three flights fit; the 7:10 is the cheapest.", "Tue"],
-    ["A6", "rose", "Pixel", "Here are four takes on the header art.", "Mon"],
-    ["B2", "mint", "docs", "Rebuilt site/docs after the settings page edit.", "Sun"],
+    ["C3", "sun", "Scout", "Booked the venue for Thursday, the invite is out.", "9:41"],
+    ["B1", "graphite", "fleetd", "Merged #851: the list stays still under the menu.", "9:12"],
+    ["A1", "fleet", "site", "Showcase clips render at 60 fps now.", "8:57"],
+    ["D3", "ember", "Ledger", "Your card statement is in; nothing odd this month.", "Yesterday"],
+    ["B2", "teal", "relay", "Push relay is up: apns and fcm both true.", "Yesterday"],
+    ["E1", "plum", "Atlas", "Three flights fit; the 7:10 is the cheapest.", "Tue"],
+    ["C1", "rose", "Pixel", "Here are four takes on the header art.", "Mon"],
+    ["D1", "mint", "docs", "Rebuilt site/docs after the settings page edit.", "Sun"],
   ];
   const panel = (t) => {
     const list = chats
