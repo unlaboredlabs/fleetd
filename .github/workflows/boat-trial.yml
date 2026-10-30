@@ -1,7 +1,8 @@
 name: boat trial
 
 # Temporary (W217): ci.yml's Linux jobs and Desktop QA's Linux shards on boat.dev runners, steps copied as they are and
-# only runs-on changed, to time them beside GitHub's run of the same commit. Never merged.
+# only runs-on changed, to time them beside GitHub's run of the same commit; the Rust cache also saves here, so a
+# rerun is warm. Never merged.
 
 on:
   pull_request:
@@ -30,7 +31,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          # Trial only: boat saves its own cache on this branch, keyed apart from GitHub's (its toolchains and home
+          # already differ), so a rerun restores it.
+          key: boat
+          save-if: true
       # Also checks that the generated contracts (schema/*.json and the app's TypeScript) are current
       # (schema::generated_contracts_are_current) and replays the recorded claude fixtures (node::runner).
       - run: cargo test --locked --workspace
@@ -51,7 +55,10 @@ jobs:
           node .github/migrations-check.mjs FETCH_HEAD
       - uses: Swatinem/rust-cache@v2
         with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          # Trial only: boat saves its own cache on this branch, keyed apart from GitHub's (its toolchains and home
+          # already differ), so a rerun restores it.
+          key: boat
+          save-if: true
       - run: cargo fmt --all --check
       - run: cargo clippy --locked --workspace --all-targets -- -D warnings
 
@@ -65,7 +72,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          # Trial only: boat saves its own cache on this branch, keyed apart from GitHub's (its toolchains and home
+          # already differ), so a rerun restores it.
+          key: boat
+          save-if: true
       - run: cargo build --locked -p fleetd -p docsgen
       - name: The docs' generated pages are up to date
         # The CLI reference, the Agent tools page and the prompt table in docs/site/src/content/docs come from the
@@ -118,7 +128,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          # Trial only: boat saves its own cache on this branch, keyed apart from GitHub's (its toolchains and home
+          # already differ), so a rerun restores it.
+          key: boat
+          save-if: true
       - name: Sealed boxes against libsodium
         run: cargo test --locked -p fleetd --lib node::identity
         env:
