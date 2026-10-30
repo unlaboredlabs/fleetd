@@ -6,7 +6,9 @@
 // (docs/site/src/content/docs/**/*.md and .mdx), and on a `fleetd <command>` written as code that `fleetd help` doesn't list.
 // Capture blocks (home.html's markers, the docs' ```console capture=NAME) are fleetd's own output
 // (tests/lab/site-capture.ts), so the command check skips them; the stale terms still apply there, since a block nobody
-// re-captured goes stale too. site/docs/ is built from the sources (CI checks it's up to date), so it isn't checked here.
+// re-captured goes stale too. Also runs site/media.mjs's check: every clip and poster home.html names is in the R2
+// upload set. site/docs/ is built from the sources (CI checks it's up to date), so it isn't checked here.
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 
 const CONTENT = "docs/site/src/content/docs";
@@ -125,6 +127,11 @@ for (const file of FILES) {
       }
     });
 }
+
+// Every clip and poster the landing page names is in the R2 upload set (site/README.md, Media on R2).
+const media = spawnSync(process.execPath, ["site/media.mjs", "check"], { encoding: "utf8" });
+process.stdout.write(media.stdout);
+if (media.status !== 0) errors.push(media.stderr.trim() || "site/media.mjs check failed");
 
 for (const e of errors) console.log(`::error::${e}`);
 if (errors.length > 0) process.exit(1);

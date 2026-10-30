@@ -1,0 +1,37 @@
+name: Site media
+
+# Puts the landing page's clips and posters (site/showcase-*) the fleetd-media R2 bucket doesn't hold yet, under
+# content-hashed names, then asks Vercel for a fresh deploy of main, whose build points the page at them
+# (site/media.mjs, site/README.md, Media). Skips, and passes, while the R2 secrets aren't set.
+on:
+  push:
+    branches: [main]
+    paths:
+      - site/showcase-*
+      - site/media.mjs
+      - .github/workflows/site-media.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: site-media
+  cancel-in-progress: false
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      # The runner's aws CLI, on R2's S3 API.
+      - run: node site/media.mjs upload
+        env:
+          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          SITE_DEPLOY_HOOK: ${{ secrets.SITE_DEPLOY_HOOK }}

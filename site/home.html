@@ -338,7 +338,9 @@ document.querySelectorAll("[data-copy]").forEach(function(b){
 
 // The clips. Each still is what everyone gets first. Without reduced motion, a clip loads once its frame is near the
 // screen, the small one on a small screen, and plays while it is on screen; with reduced motion, the still stays until
-// Play. Each follows the theme.
+// Play. Each follows the theme. The Vercel build fills fleetdMedia with each clip's URL on R2 (site/media.mjs); without
+// one, a clip is the repo's own file.
+var fleetdMedia={};
 (function(){
   var calm=matchMedia("(prefers-reduced-motion: reduce)");
   [].slice.call(document.querySelectorAll("[data-clip]")).forEach(function(box){
@@ -348,7 +350,8 @@ document.querySelectorAll("[data-copy]").forEach(function(b){
       var small=box.clientWidth*(window.devicePixelRatio||1)<1600;
       // VP9 WebM where the browser is sure of it, else the H.264 MP4 (an older Safari).
       var webm=video.canPlayType('video/webm; codecs="vp9"')==="probably";
-      var want="/showcase-"+box.dataset.clip+"-"+fleetdTheme.get()+(small?"-small":"")+(webm?".webm":".mp4");
+      var name="showcase-"+box.dataset.clip+"-"+fleetdTheme.get()+(small?"-small":"")+(webm?".webm":".mp4");
+      var want=fleetdMedia[name]||"/"+name;
       if(video.getAttribute("src")===want)return;
       var at=video.currentTime||0;
       video.src=want;
