@@ -231,7 +231,7 @@ pub fn start_mode(
 pub fn node_answer(
     role: SessionRole,
     cwd: &Path,
-    scratch: &Path,
+    fence: &crate::node::runner::sandbox::Fence,
     mode: RuntimeMode,
     allowed_only: bool,
     tool_name: &str,
@@ -241,7 +241,7 @@ pub fn node_answer(
     if allowed_only {
         return auto();
     }
-    claude::role_answer(role, cwd, scratch, tool_name, input).or_else(auto)
+    claude::role_answer(role, cwd, fence, tool_name, input).or_else(auto)
 }
 
 /// A permission prompt the node answers without asking anyone: everything under full access (bypassPermissions
@@ -647,7 +647,7 @@ mod tests {
             node_answer(
                 SessionRole::Assistant,
                 &folder,
-                dir.path(),
+                &crate::node::runner::sandbox::Fence::folder_only(&folder, dir.path()),
                 RuntimeMode::ApprovalRequired,
                 held,
                 tool,

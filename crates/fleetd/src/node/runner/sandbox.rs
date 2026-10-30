@@ -1,33 +1,60 @@
-//! The OS sandbox a Navi's session runs in (D196): claude and every process it starts (a command, an MCP server,
-//! agent-browser's daemon) write only inside the Navi's folder, its scratch dir and claude's own state for the session,
-//! and read nothing of fleetd's, other projects', or the logins people keep in their home. The per-tool checks
-//! (`claude::role_answer`, the hub's site gate) stay as a second layer; the sandbox holds whatever gap a tool or a
-//! trick finds in them. Network stays as it is: the site gate decides.
+//! The OS sandbox a Navi's session runs in (D196, opened up by D234 navi.sandbox-open-home): claude and every process
+//! it starts (a command, an MCP server, agent-browser's daemon) write anywhere the person can, except what stays
+//! hidden: the logins and keys people keep in their home ([`HIDDEN_IN_HOME`]), fleetd's own dir apart from the Navi's
+//! folder and its own home, claude's record of every other session, and the sockets that would run a command outside
+//! (the user's D-Bus and systemd in the runtime dir, docker's, the X server's). Startup files the person's shell runs
+//! on its own ([`RUN_ON_THEIR_OWN`]), the person's programs, and what fleetd's own agents load in each project's
+//! checkout (git's config and hooks, Claude Code's settings) stay read-only: they run outside the sandbox ([`guard`]). The per-tool checks
+//! (`claude::role_answer`, the hub's site gate) stay as a second layer. Network stays as it is: the site gate decides.
 //!
-//! - Linux: bubblewrap, and only bubblewrap (D: navi.sandbox-linux-requires-bwrap). The whole machine is mounted
-//!   read-only, hidden paths get an empty read-only tmpfs (or `/dev/null` for a file), and the paths the Navi needs are
-//!   bound back on top. It gets its own `/tmp`, `/proc` and pid namespace, so no other process (and no
-//!   `/proc/<pid>/root` into the real disk) is in reach, and none of the runtime dir's sockets (the user's D-Bus and
-//!   systemd, which would start a command outside).
-//! - macOS: `sandbox-exec` with a profile made here: writes only to the same paths, and no reading the hidden ones.
+//! Each Navi has a home of its own under the node's home ([`navi_dir`]), its commands' HOME ([`navi_env`]), where
+//! `npm i -g`, `pip install --user`, `cargo install` and curl-pipe installers put what they install.
+//!
+//! - Linux: bubblewrap, and only bubblewrap (D: navi.sandbox-linux-requires-bwrap). The machine is mounted as it is,
+//!   writable where the person can write, hidden paths get an empty read-only tmpfs (or `/dev/null` for a file), and
+//!   the paths the Navi needs are bound back on top. The person's home is listed: an empty read-only tmpfs with each of
+//!   its entries bound back but the hidden ones, so nothing made there later (another session's temporary copy of
+//!   claude's config) is in sight. Every session of a Navi joins the user and pid namespaces of its box
+//!   (`navi_box`), so what it leaves running in the background outlives the turn, until the node stops, and no
+//!   process outside the box (and no `/proc/<pid>/root` into the real disk) is in reach. Its sessions share one
+//!   `/tmp`, kept until the box ends.
+//! - macOS: `sandbox-exec` with a profile made here: writes everywhere but the hidden and read-only paths, and no
+//!   reading the hidden ones. A detached process outlives the session there already.
 //!
 //! A sandbox that can't start never falls back to none: the session is refused with how to fix it ([`Refusal`]).
 //! Only Navis are fenced; every other session runs as before.
+use std::fs::File;
+use std::os::fd::{AsRawFd, RawFd};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use fleetd_contracts::sessions::{NaviSandbox, SandboxStatus};
 
-/// What a fenced session may touch. Everything else on the machine reads as it is and takes no writes.
+/// What a fenced session may touch. Everything else on the machine reads and writes as it does for the person
+/// ([`Fence::access`]).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Fence {
-    /// Read and written.
+    /// Read and written, inside a hidden path too.
     pub write: Vec<PathBuf>,
     /// Neither read nor written.
     pub hide: Vec<PathBuf>,
-    /// Read again inside a hidden path, never written.
+    /// Read, inside a hidden path too, never written.
     pub show: Vec<PathBuf>,
-    /// Read but never written inside a written path.
+    /// Read but never written inside a written path. One without an extension that isn't there is made, empty, as a
+    /// dir ([`Fence::prepare`]), so it is never made by the session instead.
     pub keep: Vec<PathBuf>,
+    /// The listed home's own entries, read and written as they are, and never made (Linux).
+    pub listed: Vec<PathBuf>,
+    /// `(link, target)`: a symlink in the listed home, made again as it is, so it leads where it always did and a
+    /// hidden target stays hidden (Linux).
+    pub links: Vec<(PathBuf, PathBuf)>,
+    /// The Navi's own `/tmp`, which its sessions share and its box is known by (Linux, `navi_box`): what it leaves
+    /// running in the background lives on there after the turn. None for a fence of no Navi's.
+    pub tmp: Option<PathBuf>,
+    /// The session whose mark ([`super::process::SESSION_MARKER`]) what runs inside carries, in place of the node's
+    /// mark of the spawn (Linux): the sweep at the session's end leaves what it started in the background running, and
+    /// the node still tells such a process from the person's own shell (`process::peer_session`).
+    pub session: Option<String>,
     /// `(private, shared)`: the session's own `private` dir, read and written where `shared` is, so what it writes
     /// there reaches no other session. Linux only: on macOS `shared` is read-only.
     pub private: Vec<(PathBuf, PathBuf)>,
@@ -35,6 +62,52 @@ pub struct Fence {
     /// ([`sanitized_config`]), read and written in its place on Linux. On macOS, where nothing can stand in for a
     /// path, the real one is hidden.
     pub config_copy: Option<(PathBuf, PathBuf)>,
+}
+
+/// A command inside a sandbox: its program and arguments, and the files it inherits under the numbers they have here
+/// (the namespaces of a Navi's box, which its sandbox joins), held open until it has started.
+#[derive(Debug)]
+pub struct Sandboxed {
+    pub program: PathBuf,
+    pub args: Vec<String>,
+    pub inherit: Vec<Arc<File>>,
+}
+
+impl Sandboxed {
+    /// What the new process runs before it execs, so the files it inherits stay open across the exec. It makes system
+    /// calls only.
+    pub fn hook(&self) -> impl FnMut() -> std::io::Result<()> + Send + Sync + 'static {
+        let fds: Vec<RawFd> = self.inherit.iter().map(|f| f.as_raw_fd()).collect();
+        move || {
+            for fd in &fds {
+                // SAFETY: clears close-on-exec on an fd this process holds open.
+                if unsafe { libc::fcntl(*fd, libc::F_SETFD, 0) } < 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+            }
+            Ok(())
+        }
+    }
+
+    /// A command that runs it, with [`Sandboxed::hook`] and [`scope_hook`].
+    pub fn command(&self) -> std::process::Command {
+        let mut command = std::process::Command::new(&self.program);
+        command.args(&self.args);
+        // SAFETY: the hook makes system calls only.
+        unsafe {
+            std::os::unix::process::CommandExt::pre_exec(&mut command, self.hook());
+        }
+        with_scope(&mut command);
+        command
+    }
+}
+
+/// What a fenced session may do with a path.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Access {
+    Hidden,
+    Read,
+    Write,
 }
 
 /// Why a fenced session can't start, and what a person does about it.
@@ -84,8 +157,131 @@ const HIDDEN_IN_HOME: &[&str] = &[
 /// are. claude reads its login through the keychain's daemon, never the files.
 const HIDDEN_IN_HOME_MACOS: &[&str] = &["Library"];
 
-/// The X server's sockets: a command that reached the person's screen could type into a terminal outside.
+/// The X server's sockets: a command that reached the person's screen could type into a terminal outside. On Linux
+/// the Navi's `/tmp` is its own, without them.
 const HIDDEN_X: &str = "/tmp/.X11-unix";
+
+/// In the user's home: files their shell or session manager runs on its own, read-only to a Navi, which may write the
+/// rest of the home: a line it added there would run outside its sandbox. On Linux one that isn't there can't be made
+/// either: the home's own entries are read-only.
+const RUN_ON_THEIR_OWN: &[&str] = &[
+    ".profile",
+    ".bash_profile",
+    ".bash_login",
+    ".bashrc",
+    ".bash_logout",
+    ".zshenv",
+    ".zprofile",
+    ".zshrc",
+    ".zlogin",
+    ".zlogout",
+    ".pam_environment",
+    ".xprofile",
+    ".xsessionrc",
+    ".xinitrc",
+    // Ubuntu's `.bashrc` sources it.
+    ".bash_aliases",
+    // cargo's own settings, which can name a program every build runs (`build.rustc-wrapper`).
+    ".cargo/config.toml",
+    ".cargo/config",
+];
+
+/// In each project's checkout on the machine, where fleetd's own agents run outside any sandbox: what they load as
+/// their settings, MCP servers, policy and instructions. Read-only to a Navi, which writes the rest of a checkout. A dir
+/// that isn't there is made empty first ([`Fence::prepare`]); a file that isn't there can still be made, and a new
+/// `.mcp.json` runs nothing until settings the Navi can't write approve it.
+const PROJECT_KEPT: &[&str] = &[
+    ".claude",
+    ".fleetd",
+    ".mcp.json",
+    "CLAUDE.md",
+    "CLAUDE.local.md",
+];
+
+/// In a checkout's git dir, and its common dir: what makes git run a program (`core.fsmonitor`, `core.hooksPath`, an
+/// alias, a hook) for every worktree of it. `hooks` and `worktrees` are made empty first when they aren't there.
+const GIT_KEPT: &[&str] = &["config", "config.worktree", "hooks", "worktrees"];
+
+/// Outside the home, where people keep programs they run without a sandbox (Homebrew's): read-only to a Navi where the
+/// person can write them, as is every such dir on the node's PATH.
+const SYSTEM_BINS: &[&str] = &[
+    "/home/linuxbrew/.linuxbrew/bin",
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
+];
+
+/// In the person's home, beside [`HOME_BINS`]: more dirs installers put programs in.
+const MORE_HOME_BINS: &[&str] = &[".npm-global/bin", ".volta/bin", ".pyenv/shims"];
+
+/// In the user's home: dirs whose units and services the user's systemd and D-Bus start outside the sandbox, read-only
+/// to a Navi. They sit inside `~/.local`, which it writes, so one that isn't there is made, empty, before it starts
+/// ([`Fence::prepare`]): a read-only mount needs something to mount, and a Navi must not make it first.
+const RUN_ON_THEIR_OWN_DIRS: &[&str] = &[".local/share/systemd", ".local/share/dbus-1/services"];
+
+/// A Navi's own dir under the node's home: its home ([`HOME_DIR`]) and the `/tmp` its sessions share ([`TMP_DIR`]).
+/// Hidden from every other Navi with the rest of the node's home.
+pub fn navi_dir(node_home: &Path, project_id: &str) -> PathBuf {
+    node_home.join("navis").join(project_id)
+}
+
+/// Ends a Navi's box, with what it left running, and deletes its own dir ([`navi_dir`]), home and all: the Navi is
+/// going. Nothing there is no error.
+pub fn forget_navi(own: &Path) {
+    let own = real(own);
+    super::navi_box::end(&own.join(TMP_DIR));
+    if let Err(e) = std::fs::remove_dir_all(&own)
+        && e.kind() != std::io::ErrorKind::NotFound
+    {
+        tracing::warn!(dir = %own.display(), "a Navi's home was not removed: {e}");
+    }
+}
+
+/// In [`navi_dir`]: the Navi's home, HOME for its commands.
+pub const HOME_DIR: &str = "home";
+/// In [`navi_dir`]: the Navi's `/tmp`, emptied when its box starts.
+pub const TMP_DIR: &str = "tmp";
+
+/// The user-level bin dirs installers put programs in, in a Navi's home, first on its commands' PATH.
+const HOME_BINS: &[&str] = &[
+    ".local/bin",
+    "bin",
+    ".cargo/bin",
+    "go/bin",
+    ".bun/bin",
+    ".deno/bin",
+];
+
+/// What claude runs ahead of each command of a Navi's (`CLAUDE_ENV_FILE`), where `own` is its [`navi_dir`]: its own
+/// home as HOME, with [`HOME_BINS`] on its PATH and npm installing globally there too (`~/.local`); its `/tmp`, which
+/// outlives the turn, as TMPDIR, so a program it leaves running keeps its temp files; pip allowed to install for the
+/// user on a system that marks its Python as managed. claude itself keeps the person's HOME, where its login and
+/// settings are. The person's rustup toolchains, when they have them, still run cargo and rustc.
+pub fn navi_env(own: &Path, user_home: &Path) -> String {
+    let own = real(own);
+    let quoted = |p: &Path| format!("'{}'", s(p).replace('\'', "'\\''"));
+    let tmp = if cfg!(target_os = "linux") {
+        PathBuf::from("/tmp")
+    } else {
+        own.join(TMP_DIR)
+    };
+    let bins: Vec<String> = HOME_BINS.iter().map(|b| format!("$HOME/{b}")).collect();
+    let mut env = format!(
+        "export HOME={home}\n\
+         export PATH=\"{bins}:$PATH\"\n\
+         export NPM_CONFIG_PREFIX=\"$HOME/.local\"\n\
+         export CARGO_HOME=\"$HOME/.cargo\"\n\
+         export PIP_BREAK_SYSTEM_PACKAGES=1\n\
+         export TMPDIR={tmp} TMP={tmp} TEMP={tmp}\n",
+        home = quoted(&own.join(HOME_DIR)),
+        bins = bins.join(":"),
+        tmp = quoted(&tmp),
+    );
+    let rustup = real(user_home).join(".rustup");
+    if rustup.is_dir() {
+        env.push_str(&format!("export RUSTUP_HOME={}\n", quoted(&rustup)));
+    }
+    env
+}
 
 /// Sockets outside the home that run commands as someone else.
 const HIDDEN_SOCKETS: &[&str] = &["/run/docker.sock", "/var/run/docker.sock"];
@@ -146,18 +342,19 @@ pub struct NaviPaths<'a> {
     pub socket: &'a Path,
     /// `$XDG_RUNTIME_DIR`: the user's D-Bus, systemd and agent sockets.
     pub runtime_dir: Option<&'a Path>,
-    /// Every other project's root on this node.
-    pub other_roots: Vec<PathBuf>,
+    /// The Navi's own dir ([`navi_dir`]): its home and its `/tmp`.
+    pub own: &'a Path,
+    /// Every project's root on this node: checkouts where fleetd's agents run outside any sandbox.
+    pub projects: Vec<PathBuf>,
     /// The `claude` binary the node runs.
     pub claude_bin: &'a Path,
     /// The session's PATH: its programs in the home are read again (Linux).
     pub path: Vec<PathBuf>,
 }
 
-/// In the user's home, read again: git's own settings, and rustup's toolchains. On Linux, inside the home's empty
-/// tmpfs, where nothing else is but the programs a Navi runs ([`home_programs`]) and the paths its fence names. On
-/// macOS, inside the hidden `~/.config`: git can't run when a config file it finds is unreadable, though one that
-/// isn't there is fine.
+/// In the user's home, read-only: git's own settings, which run commands of the person's (an alias, a hook path), and
+/// rustup's toolchains. On macOS, inside the hidden `~/.config`: git can't run when a config file it finds is
+/// unreadable, though one that isn't there is fine.
 const HOME_READ: &[&str] = &[
     ".gitconfig",
     ".config/git/config",
@@ -167,25 +364,18 @@ const HOME_READ: &[&str] = &[
     ".rustup",
 ];
 
-/// The programs a Navi runs from the user's home, read-only: claude's binary; every PATH dir in the home, as its
-/// install when it is a `bin` (`~/.nvm/versions/node/v22` for its `bin`, so npm finds its modules), but `~/.local/bin`
-/// alone; and, for each program there that links elsewhere in the home, the install it lands in by the same rule
-/// (`~/.local/bin/claude` → `~/.local/share/claude/versions`). `fenced` (fleetd's dir and the node's home) and
-/// `others` (other projects' roots) never come back through it: no install that is, holds or sits in one, and no link
-/// into one. A PATH dir inside fleetd's dir (`~/.fleetd/bin`) comes back alone.
-fn home_programs(
-    home: &Path,
-    claude: &Path,
-    path: &[PathBuf],
-    fenced: &[PathBuf],
-    others: &[PathBuf],
-) -> Vec<PathBuf> {
+/// The programs the node runs from the user's home, read-only, so a Navi can't change one the person runs: claude's
+/// binary; every PATH dir in the home, as its install when it is a `bin` (`~/.nvm/versions/node/v22` for its `bin`, so
+/// npm finds its modules), but `~/.local/bin` alone; and, for each program there that links elsewhere in the home, the
+/// install it lands in by the same rule (`~/.local/bin/claude` → `~/.local/share/claude/versions`). `fenced`
+/// (fleetd's dir and the node's home) never comes back through it: no install that is, holds or sits in one, and no
+/// link into one. A PATH dir inside fleetd's dir (`~/.fleetd/bin`) comes back alone.
+fn home_programs(home: &Path, claude: &Path, path: &[PathBuf], fenced: &[PathBuf]) -> Vec<PathBuf> {
     let inside = |p: &Path| p.starts_with(home) && p != home;
-    let holds_or_is = |d: &Path| fenced.iter().chain(others).any(|f| f.starts_with(d));
-    let in_other = |d: &Path| others.iter().any(|o| d.starts_with(o));
+    let holds_or_is = |d: &Path| fenced.iter().any(|f| f.starts_with(d));
     let in_fenced = |d: &Path| fenced.iter().any(|f| d.starts_with(f));
     // A dir that may come back on its own: in the home, and neither holding nor in anything fenced.
-    let may = |d: &Path| inside(d) && !holds_or_is(d) && !in_other(d) && !in_fenced(d);
+    let may = |d: &Path| inside(d) && !holds_or_is(d) && !in_fenced(d);
     // A dir of programs as it comes back: its install when it's a `bin` whose parent may (not `~/.local`), else itself.
     let install = |dir: &Path| match (dir.file_name(), dir.parent()) {
         (Some(name), Some(parent))
@@ -204,7 +394,7 @@ fn home_programs(
         let back = match install(&dir) {
             Some(back) => back,
             // fleetd's own `bin` on the PATH: its programs, alone.
-            None if in_fenced(&dir) && !holds_or_is(&dir) && !in_other(&dir) => dir.clone(),
+            None if in_fenced(&dir) && !holds_or_is(&dir) => dir.clone(),
             None => continue,
         };
         dirs.push(back);
@@ -255,7 +445,12 @@ pub fn real(path: &Path) -> PathBuf {
 pub fn navi_fence(p: &NaviPaths) -> Fence {
     let folder = real(p.folder);
     let claude = real(p.claude_dir);
-    let mut write = vec![folder.clone(), real(p.scratch)];
+    let own = real(p.own);
+    let mut write = vec![folder.clone(), real(p.scratch), own.join(HOME_DIR)];
+    // Its `/tmp`: on Linux mounted there ([`Fence::tmp`]), elsewhere its commands' TMPDIR ([`navi_env`]).
+    if !cfg!(target_os = "linux") {
+        write.push(own.join(TMP_DIR));
+    }
     // Its conversation, which a resume reads back.
     if let Some(dir) = super::claude::session_file(&claude, &folder, p.session_id)
         .and_then(|f| f.parent().map(Path::to_owned))
@@ -275,65 +470,92 @@ pub fn navi_fence(p: &NaviPaths) -> Fence {
         .iter()
         .map(|d| (real(&p.session_dir.join("claude").join(d)), claude.join(d)))
         .collect();
-    let keep = super::claude::ASSISTANT_KEPT
+    let mut keep: Vec<PathBuf> = super::claude::ASSISTANT_KEPT
         .iter()
         .map(|k| folder.join(k))
         .collect();
+    keep.extend(
+        RUN_ON_THEIR_OWN_DIRS
+            .iter()
+            .map(|d| real(p.user_home).join(d)),
+    );
 
     let user_home = real(p.user_home);
-    let mut hide = vec![real(p.fleetd_dir), real(p.node_home)];
+    let fenced = [real(p.fleetd_dir), real(p.node_home)];
+    let mut hide = fenced.to_vec();
     hide.extend(HIDDEN_IN_HOME.iter().map(|h| user_home.join(h)));
     hide.extend(HIDDEN_SOCKETS.iter().map(|s| real(Path::new(s))));
     hide.extend(p.runtime_dir.map(real));
     hide.extend(CLAUDE_HIDDEN.iter().map(|h| claude.join(h)));
-    hide.push(real(Path::new(HIDDEN_X)));
     if cfg!(target_os = "macos") {
+        hide.push(real(Path::new(HIDDEN_X)));
         hide.extend(HIDDEN_IN_HOME_MACOS.iter().map(|h| user_home.join(h)));
     }
-    // Another project's root, unless the Navi's own folder or the whole home is in it.
-    hide.extend(
-        p.other_roots
-            .iter()
-            .map(|r| real(r))
-            .filter(|r| !folder.starts_with(r) && !user_home.starts_with(r)),
-    );
+    // A hidden path that is a link (`~/.ssh` into a dotfiles repo) hides what it leads to as well.
+    let targets: Vec<PathBuf> = hide
+        .iter()
+        .map(|h| real(h))
+        .filter(|r| !hide.contains(r))
+        .collect();
+    hide.extend(targets);
     hide.sort();
     hide.dedup();
 
-    // claude's config dir is read again where it is hidden (under `~/.config`), but for [`CLAUDE_HIDDEN`].
+    // Read-only: fleetd's files for the session and the programs it runs, claude's config dir but for
+    // [`CLAUDE_HIDDEN`], the person's programs, and what runs on its own.
     let mut show = vec![real(p.session_dir), real(p.exe), real(p.socket), claude];
     show.extend(NODE_TOOLS.iter().map(|t| real(&p.node_home.join(t))));
+    show.extend(home_programs(
+        &user_home,
+        &real(p.claude_bin),
+        &p.path,
+        &fenced,
+    ));
+    show.extend(HOME_READ.iter().map(|f| user_home.join(f)));
+    show.extend(RUN_ON_THEIR_OWN.iter().map(|f| user_home.join(f)));
     // Its own copy of claude's global config, without other tools' secrets, where there is one to stand in for.
-    // Linux: the home is an allow-list. It gets an empty tmpfs, and only what the fence names comes back, so nothing
-    // else there, made before the session or during it (another session's `.claude.json.tmp…`), is ever in sight.
+    // Linux: the home is listed. It gets an empty tmpfs, and each of its entries comes back but the hidden ones, so
+    // nothing made there later, before the session or during it (another session's `.claude.json.tmp…`), is ever in
+    // sight.
     let home_listed = cfg!(target_os = "linux");
+    let claude_json = real(p.claude_json);
+    // In the listed home there need be nothing under it: its copy stands where the real one would.
+    let in_listed_home = home_listed && claude_json.parent() == Some(user_home.as_path());
+    let (mut listed, mut links) = (Vec::new(), Vec::new());
     if home_listed {
-        hide.push(user_home.clone());
-        let fenced = [real(p.fleetd_dir), real(p.node_home)];
-        // As hidden below: a root that holds the Navi's folder or the whole home isn't another project's here.
-        let others: Vec<PathBuf> = p
-            .other_roots
-            .iter()
-            .map(|r| real(r))
-            .filter(|r| !folder.starts_with(r) && !user_home.starts_with(r))
-            .collect();
-        show.extend(home_programs(
-            &user_home,
-            &real(p.claude_bin),
-            &p.path,
-            &fenced,
-            &others,
-        ));
         // Caches (claude's logs, a tool's downloads) written where every program looks, but its own.
         private.push((
             real(&p.session_dir.join("home-cache")),
             user_home.join(".cache"),
         ));
+        let config_name = claude_json
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let entries = std::fs::read_dir(&user_home)
+            .into_iter()
+            .flatten()
+            .flatten();
+        for entry in entries {
+            let path = entry.path();
+            let name = entry.file_name().to_string_lossy().into_owned();
+            // claude's config, its backups and another session's copy of it in the making.
+            let config = in_listed_home
+                && (name == config_name || name.starts_with(&format!("{config_name}.")));
+            let set = |p: &PathBuf| *p == path;
+            let link = entry.file_type().is_ok_and(|t| t.is_symlink());
+            // A shown link comes back as a link, and what it leads to read-only ([`resolve_links`]).
+            if config || hide.iter().any(set) || (!link && show.iter().any(set)) {
+                continue;
+            }
+            if link {
+                links.extend(std::fs::read_link(&path).map(|to| (path, to)));
+            } else {
+                listed.push(path);
+            }
+        }
+        hide.push(user_home.clone());
     }
-    show.extend(HOME_READ.iter().map(|f| user_home.join(f)));
-    let claude_json = real(p.claude_json);
-    // In the listed home there need be nothing under it: its copy stands where the real one would.
-    let in_listed_home = home_listed && claude_json.parent() == Some(user_home.as_path());
     let config_copy = (claude_json.is_file() || in_listed_home).then(|| {
         (
             claude_json.clone(),
@@ -363,37 +585,152 @@ pub fn navi_fence(p: &NaviPaths) -> Fence {
         );
     }
     // In the listed home, a hidden path matters only inside what comes back (`~/.claude/projects` in `~/.claude`,
-    // cargo's credentials in its install): the rest is out of sight already, and isn't mounted over.
+    // cargo's credentials in `~/.cargo`): the rest is out of sight already, and isn't mounted over.
     if home_listed {
         let back: Vec<&PathBuf> = show
             .iter()
             .chain(&write)
+            .chain(&listed)
             .chain(private.iter().map(|(_, to)| to))
             .collect();
         hide.retain(|h| {
             !h.starts_with(&user_home) || *h == user_home || back.iter().any(|b| h.starts_with(b))
         });
-        // A hidden path stays hidden: one shown as well isn't shown.
-        show.retain(|s| !hide.contains(s));
     }
-    Fence {
+    // A hidden path stays hidden: one shown as well isn't shown.
+    show.retain(|s| !hide.contains(s));
+    let mut fence = Fence {
         write,
         hide,
         show,
         keep,
         private,
         config_copy,
+        listed,
+        links,
+        tmp: cfg!(target_os = "linux").then(|| own.join(TMP_DIR)),
+        session: Some(p.session_id.to_owned()),
+    };
+    guard(&mut fence, p, &user_home, &folder);
+    resolve_links(&mut fence);
+    fence
+}
+
+/// Makes each read-only path of `fence` the one it really is: a mount lands on what a link (or a linked parent) leads
+/// to, never through the link, which bubblewrap can't follow to a target outside the sandbox it is making, and a
+/// macOS rule holds the target too. One that leads into a hidden path is dropped: it stays hidden.
+fn resolve_links(fence: &mut Fence) {
+    for read_only in [false, true] {
+        let paths = if read_only { &fence.keep } else { &fence.show };
+        let resolved: Vec<PathBuf> = paths
+            .iter()
+            .filter_map(|p| {
+                let r = real(p);
+                (r == *p || fence.access(&r) != Access::Hidden).then_some(r)
+            })
+            .collect();
+        let paths = if read_only {
+            &mut fence.keep
+        } else {
+            &mut fence.show
+        };
+        *paths = resolved;
+        paths.sort();
+        paths.dedup();
     }
+}
+
+/// What runs outside the sandbox, made read-only where the fence would let the Navi write it: the programs in the
+/// person's bin dirs ([`HOME_BINS`], [`MORE_HOME_BINS`], [`SYSTEM_BINS`], the node's PATH), and in each project's
+/// checkout what fleetd's agents load there ([`PROJECT_KEPT`], [`GIT_KEPT`]). Nothing hidden is shown through it.
+fn guard(fence: &mut Fence, p: &NaviPaths, user_home: &Path, folder: &Path) {
+    let writable = |d: &Path| nix::unistd::access(d, nix::unistd::AccessFlags::W_OK).is_ok();
+    let open = |f: &Fence, d: &Path| f.access(d) == Access::Write;
+    // Bin dirs: read-only where they are. On Linux one that isn't there is made empty first where the Navi could make
+    // it (its parent is written, and isn't the listed home's read-only top); on macOS a rule holds a path that isn't
+    // there too.
+    let bins: Vec<PathBuf> = HOME_BINS
+        .iter()
+        .chain(MORE_HOME_BINS)
+        .map(|b| user_home.join(b))
+        .chain(SYSTEM_BINS.iter().map(|b| real(Path::new(b))))
+        .chain(
+            p.path
+                .iter()
+                .map(|d| real(d))
+                .filter(|d| !d.starts_with(user_home)),
+        )
+        .collect();
+    for bin in bins {
+        if !open(fence, &bin) {
+            continue;
+        }
+        if bin.is_dir() {
+            if writable(&bin) {
+                fence.show.push(bin);
+            }
+        } else if cfg!(target_os = "macos") {
+            fence.show.push(bin);
+        } else if let Some(parent) = bin.parent()
+            && parent != user_home
+            && parent.is_dir()
+            && writable(parent)
+        {
+            fence.keep.push(bin);
+        }
+    }
+    // Checkouts: only those the person writes, so what is made first can be.
+    for root in p.projects.iter().map(|r| real(r)) {
+        if root == folder || !root.is_dir() || !writable(&root) || !open(fence, &root) {
+            continue;
+        }
+        let mut kept: Vec<PathBuf> = PROJECT_KEPT.iter().map(|k| root.join(k)).collect();
+        for git in git_dirs(&root) {
+            if git.join("config").is_file() && writable(&git) {
+                kept.extend(GIT_KEPT.iter().map(|k| git.join(k)));
+            }
+        }
+        kept.retain(|k| open(fence, k));
+        fence.keep.extend(kept);
+    }
+    fence.show.sort();
+    fence.show.dedup();
+    fence.keep.sort();
+    fence.keep.dedup();
+}
+
+/// A checkout's git dirs: `.git` itself, or the one a `.git` file names (a worktree's, a submodule's), with the common
+/// dir it shares hooks and config with.
+fn git_dirs(root: &Path) -> Vec<PathBuf> {
+    let dot = root.join(".git");
+    let dir = if dot.is_dir() {
+        dot
+    } else {
+        match std::fs::read_to_string(&dot).ok().and_then(|t| {
+            t.trim()
+                .strip_prefix("gitdir:")
+                .map(|g| root.join(g.trim()))
+        }) {
+            Some(dir) => dir,
+            None => return Vec::new(),
+        }
+    };
+    let mut dirs = vec![real(&dir)];
+    if let Ok(common) = std::fs::read_to_string(dir.join("commondir")) {
+        dirs.push(real(&dir.join(common.trim())));
+    }
+    dirs
 }
 
 impl Fence {
     /// Makes what the sandbox mounts and the session writes: its written dirs, its private dirs and where they go,
-    /// and the folder's kept dirs, so nothing can make them later. A kept file is kept only once it exists.
+    /// its `/tmp`, and the folder's kept dirs, so nothing can make them later. A kept file is kept only once it exists.
     pub fn prepare(&self) -> std::io::Result<()> {
         for dir in self
             .write
             .iter()
             .chain(self.private.iter().flat_map(|(a, b)| [a, b]))
+            .chain(&self.tmp)
         {
             // A written file (claude's login) is there already.
             if !dir.is_file() {
@@ -415,6 +752,78 @@ impl Fence {
         }
         Ok(())
     }
+
+    /// Each path the sandbox mounts, with what it does there, shallowest first, so a deeper one lands on top (the
+    /// folder inside the hidden node home). At one depth a hidden path goes first and the folder's kept paths last.
+    fn ops(&self) -> Vec<(&Path, Op<'_>)> {
+        let mut ops: Vec<(&Path, Op)> = Vec::new();
+        ops.extend(self.hide.iter().map(|p| (p.as_path(), Op::Hide)));
+        ops.extend(self.show.iter().map(|p| (p.as_path(), Op::Show)));
+        ops.extend(
+            self.write
+                .iter()
+                .chain(&self.listed)
+                .map(|p| (p.as_path(), Op::Write)),
+        );
+        ops.extend(
+            self.links
+                .iter()
+                .map(|(at, to)| (at.as_path(), Op::Link(to))),
+        );
+        // Only Linux mounts one path in another's place.
+        if cfg!(target_os = "linux") {
+            ops.extend(
+                self.private
+                    .iter()
+                    .map(|(from, to)| (to.as_path(), Op::Private(from))),
+            );
+            ops.extend(
+                self.config_copy
+                    .iter()
+                    .map(|(config, copy)| (config.as_path(), Op::Private(copy))),
+            );
+        }
+        ops.extend(self.keep.iter().map(|p| (p.as_path(), Op::Show)));
+        ops.sort_by_key(|(p, _)| p.components().count());
+        ops
+    }
+
+    /// A fence of a Navi's whose sandbox isn't known: its `folder` and its session's `scratch` dir, and nothing else.
+    pub fn folder_only(folder: &Path, scratch: &Path) -> Fence {
+        Fence {
+            write: vec![real(folder), real(scratch)],
+            hide: vec!["/".into()],
+            ..Fence::default()
+        }
+    }
+
+    /// What the session may do with `path`, once resolved, as its sandbox has it: what the deepest of the fence's
+    /// paths that holds it says, the last of those at one depth; written where none does, as the person may.
+    pub fn access(&self, path: &Path) -> Access {
+        let mut access = Access::Write;
+        for (at, op) in self.ops() {
+            if path.starts_with(at) {
+                access = match op {
+                    Op::Hide => Access::Hidden,
+                    Op::Show => Access::Read,
+                    Op::Write | Op::Private(_) | Op::Link(_) => Access::Write,
+                };
+            }
+        }
+        access
+    }
+}
+
+/// What the sandbox does at a path.
+enum Op<'a> {
+    /// An empty read-only tmpfs, or `/dev/null` for a file.
+    Hide,
+    Show,
+    Write,
+    /// The path bound here instead.
+    Private(&'a Path),
+    /// A symlink to the path.
+    Link(&'a Path),
 }
 
 /// Top-level keys of claude's global config a Navi's copy leaves out: MCP servers (theirs carry tokens in their
@@ -454,9 +863,9 @@ pub fn wrap(
     cwd: &Path,
     program: &Path,
     args: Vec<String>,
-) -> Result<(PathBuf, Vec<String>), Refusal> {
+) -> Result<Sandboxed, Refusal> {
     let tool = tool().ok_or_else(missing)?;
-    Ok(command(tool, fence, cwd, program, args))
+    command(&tool, fence, cwd, program, args)
 }
 
 /// Makes the fence's paths ready and starts the sandbox once with nothing to run, so one that can't start says why
@@ -486,9 +895,9 @@ pub fn wrap_with(
     cwd: &Path,
     program: &Path,
     args: Vec<String>,
-) -> Result<(PathBuf, Vec<String>), Refusal> {
+) -> Result<Sandboxed, Refusal> {
     let tool = check_with(tool, fence, cwd)?;
-    Ok(command(tool, fence, cwd, program, args))
+    command(&tool, fence, cwd, program, args)
 }
 
 /// [`check`] with `tool` as the sandbox's program, or none: the program, once it started.
@@ -503,10 +912,9 @@ fn check_with(tool: Option<PathBuf>, fence: &Fence, cwd: &Path) -> Result<PathBu
                 .into(),
         });
     }
-    let start = |own: &[String]| {
-        let mut probe = std::process::Command::new(&tool);
+    let start = |own: &Sandboxed| {
+        let mut probe = own.command();
         probe
-            .args(own)
             .arg(if cfg!(target_os = "macos") {
                 "/usr/bin/true"
             } else {
@@ -514,21 +922,20 @@ fn check_with(tool: Option<PathBuf>, fence: &Fence, cwd: &Path) -> Result<PathBu
             })
             .env_clear()
             .stdin(std::process::Stdio::null());
-        with_scope(&mut probe);
         match probe.output() {
             Ok(out) if out.status.success() => Ok(()),
             Ok(out) => Err(failed(&tool, &String::from_utf8_lossy(&out.stderr))),
             Err(e) => Err(failed(&tool, &e.to_string())),
         }
     };
-    let own = own_args(fence, cwd);
+    let own = invocation(&tool, fence, cwd)?;
     match start(&own) {
         Ok(()) => Ok(tool),
         // A hidden file that went away meanwhile (a short-lived copy of claude's config) leaves nothing to mount over:
         // once more without it.
         Err(refused) => {
-            let again = own_args(fence, cwd);
-            if again == own {
+            let again = invocation(&tool, fence, cwd)?;
+            if again.args == own.args {
                 return Err(refused);
             }
             start(&again).map(|()| tool)
@@ -538,16 +945,16 @@ fn check_with(tool: Option<PathBuf>, fence: &Fence, cwd: &Path) -> Result<PathBu
 
 /// `program args` inside the sandbox `tool`.
 fn command(
-    tool: PathBuf,
+    tool: &Path,
     fence: &Fence,
     cwd: &Path,
     program: &Path,
     args: Vec<String>,
-) -> (PathBuf, Vec<String>) {
-    let mut all = own_args(fence, cwd);
-    all.push(program.to_string_lossy().into_owned());
-    all.extend(args);
-    (tool, all)
+) -> Result<Sandboxed, Refusal> {
+    let mut sandboxed = invocation(tool, fence, cwd)?;
+    sandboxed.args.push(program.to_string_lossy().into_owned());
+    sandboxed.args.extend(args);
+    Ok(sandboxed)
 }
 
 /// Landlock's ABI that scopes abstract Unix sockets (Linux 6.12).
@@ -692,13 +1099,23 @@ pub fn with_scope(command: &mut std::process::Command) {
     }
 }
 
-/// The sandbox's own arguments, up to the command.
-fn own_args(fence: &Fence, cwd: &Path) -> Vec<String> {
+/// The sandbox with its own arguments, up to the command. On Linux a Navi's joins its box, started now if it isn't
+/// running ([`super::navi_box`]).
+fn invocation(tool: &Path, fence: &Fence, cwd: &Path) -> Result<Sandboxed, Refusal> {
+    let sandboxed = |args, inherit| Sandboxed {
+        program: tool.to_owned(),
+        args,
+        inherit,
+    };
     if cfg!(target_os = "macos") {
-        vec!["-p".into(), seatbelt(fence)]
-    } else {
-        bwrap_args(fence, cwd)
+        return Ok(sandboxed(vec!["-p".into(), seatbelt(fence)], vec![]));
     }
+    let Some(tmp) = &fence.tmp else {
+        return Ok(sandboxed(bwrap_args(fence, cwd, None), vec![]));
+    };
+    let (user, pid) = super::navi_box::join(tool, tmp).map_err(|why| failed(tool, &why))?;
+    let args = bwrap_args(fence, cwd, Some((user.as_raw_fd(), pid.as_raw_fd())));
+    Ok(sandboxed(args, vec![user, pid]))
 }
 
 fn missing() -> Refusal {
@@ -776,55 +1193,49 @@ pub const NO_ENV: &[&str] = &[
     "XAUTHORITY",
 ];
 
-/// bubblewrap's arguments: the machine read-only, its own `/dev`, `/proc`, `/tmp` and pid namespace, then each of the
-/// fence's paths, shallowest first so a deeper one lands on top (the folder inside the hidden node home).
-fn bwrap_args(fence: &Fence, cwd: &Path) -> Vec<String> {
-    enum Op<'a> {
-        Hide,
-        Show,
-        Write,
-        Private(&'a Path),
-    }
-    let mut ops: Vec<(&Path, Op)> = Vec::new();
-    ops.extend(fence.hide.iter().map(|p| (p.as_path(), Op::Hide)));
-    ops.extend(fence.show.iter().map(|p| (p.as_path(), Op::Show)));
-    ops.extend(fence.write.iter().map(|p| (p.as_path(), Op::Write)));
-    ops.extend(
-        fence
-            .private
-            .iter()
-            .map(|(from, to)| (to.as_path(), Op::Private(from))),
-    );
-    ops.extend(
-        fence
-            .config_copy
-            .iter()
-            .map(|(config, copy)| (config.as_path(), Op::Private(copy))),
-    );
-    ops.extend(fence.keep.iter().map(|p| (p.as_path(), Op::Show)));
-    // Stable: at one depth, a hidden path goes first and the folder's kept paths last.
-    ops.sort_by_key(|(p, _)| p.components().count());
-
+/// bubblewrap's arguments: the machine as it is but `/sys`, read-only; its own `/dev`, `/proc` and `/tmp` (the Navi's,
+/// shared by its sessions); the user and pid namespaces of its box when it has one, else a pid namespace of its own;
+/// then each of the fence's paths ([`Fence::ops`]).
+fn bwrap_args(fence: &Fence, cwd: &Path, boxed: Option<(RawFd, RawFd)>) -> Vec<String> {
     let mut args: Vec<String> = [
         "--die-with-parent",
         // Its own session: no controlling terminal of the node's to push keystrokes into (TIOCSTI).
         "--new-session",
-        "--unshare-pid",
         "--unshare-ipc",
-        "--ro-bind",
-        "/",
-        "/",
-        "--dev",
-        "/dev",
-        "--proc",
-        "/proc",
-        "--tmpfs",
-        "/tmp",
     ]
     .map(str::to_owned)
     .into();
+    if let Some((user, pid)) = boxed {
+        args.extend([
+            "--userns".into(),
+            user.to_string(),
+            "--pidns".into(),
+            pid.to_string(),
+        ]);
+    } else {
+        args.push("--unshare-pid".into());
+    }
+    args.extend(
+        [
+            "--bind",
+            "/",
+            "/",
+            "--ro-bind",
+            "/sys",
+            "/sys",
+            "--dev",
+            "/dev",
+            "--proc",
+            "/proc",
+        ]
+        .map(str::to_owned),
+    );
+    match &fence.tmp {
+        Some(tmp) => args.extend(["--bind".into(), s(tmp), "/tmp".into()]),
+        None => args.extend(["--tmpfs".into(), "/tmp".into()]),
+    }
     let mut tmpfs = Vec::new();
-    for (path, op) in ops {
+    for (path, op) in fence.ops() {
         let p = s(path);
         match op {
             Op::Hide if path.is_dir() => {
@@ -835,8 +1246,9 @@ fn bwrap_args(fence: &Fence, cwd: &Path) -> Vec<String> {
             Op::Hide if path.exists() => args.extend(["--ro-bind".into(), "/dev/null".into(), p]),
             Op::Hide => {}
             Op::Show => args.extend(["--ro-bind-try".into(), p.clone(), p]),
-            Op::Write => args.extend(["--bind".into(), p.clone(), p]),
+            Op::Write => args.extend(["--bind-try".into(), p.clone(), p]),
             Op::Private(from) => args.extend(["--bind".into(), s(from), p]),
+            Op::Link(to) => args.extend(["--symlink".into(), s(to), p]),
         }
     }
     // Each hidden dir's tmpfs, once what goes inside it is mounted, takes no writes either.
@@ -846,6 +1258,13 @@ fn bwrap_args(fence: &Fence, cwd: &Path) -> Vec<String> {
     // The node leaves them out of a Navi's environment; systemd-run's scope, outside, adds the bus's back.
     for var in NO_ENV {
         args.extend(["--unsetenv".into(), (*var).into()]);
+    }
+    if let Some(session) = &fence.session {
+        args.extend([
+            "--setenv".into(),
+            super::process::SESSION_MARKER.into(),
+            format!("{session}.navi"),
+        ]);
     }
     args.extend(["--chdir".into(), s(cwd), "--".into()]);
     args
@@ -857,35 +1276,30 @@ fn quoted(p: &Path) -> String {
     format!("\"{text}\"")
 }
 
-/// macOS's profile: everything as usual, but writes only to the fence's written paths (and the devices every program
-/// writes), and no reading the hidden ones' contents. Later rules win, so the kept paths come after the written ones,
-/// and each read rule comes after those of the paths around it (shallowest first, as bubblewrap mounts them): the
-/// folder is read inside the hidden fleetd dir, and claude's other sessions aren't inside its shown config dir. A
-/// path's metadata stays readable, so resolving a path through a hidden dir still works.
+/// macOS's profile: everything as usual, but no writing the hidden paths, the shown ones and the folder's kept ones,
+/// and no reading the hidden ones' contents. Later rules win, so each path's rules come after those of the paths
+/// around it (shallowest first, as bubblewrap mounts them): the folder is read and written inside the hidden fleetd
+/// dir, its kept paths aren't written inside it, and claude's other sessions aren't read inside its shown config dir.
+/// A path's metadata stays readable, so resolving a path through a hidden dir still works.
 fn seatbelt(fence: &Fence) -> String {
-    let subpaths = |paths: &mut dyn Iterator<Item = &PathBuf>| {
-        paths
-            .map(|p| format!(" (subpath {})", quoted(p)))
-            .collect::<String>()
-    };
-    let write = subpaths(&mut fence.write.iter());
-    let keep = subpaths(&mut fence.keep.iter());
-    let mut profile = String::from("(version 1)\n(allow default)\n(deny file-write*)\n");
-    profile.push_str(&format!(
-        "(allow file-write*{write} (literal \"/dev/null\") (literal \"/dev/zero\") (literal \"/dev/dtracehelper\") \
-         (regex #\"^/dev/tty\") (regex #\"^/dev/fd/\") (literal \"/dev/ptmx\"))\n"
-    ));
-    if !keep.is_empty() {
-        profile.push_str(&format!("(deny file-write*{keep})\n"));
-    }
-    let mut reads: Vec<(&PathBuf, &str)> = fence.hide.iter().map(|p| (p, "deny")).collect();
-    reads.extend(fence.show.iter().chain(&fence.write).map(|p| (p, "allow")));
-    reads.sort_by_key(|(p, _)| p.components().count());
-    for (path, rule) in reads {
-        profile.push_str(&format!(
-            "({rule} file-read-data file-read-xattr (subpath {}))\n",
-            quoted(path)
-        ));
+    let mut rules: Vec<(&PathBuf, &str)> = fence.hide.iter().map(|p| (p, "deny")).collect();
+    rules.extend(fence.show.iter().map(|p| (p, "show")));
+    rules.extend(fence.write.iter().map(|p| (p, "allow")));
+    rules.extend(fence.keep.iter().map(|p| (p, "keep")));
+    rules.sort_by_key(|(p, _)| p.components().count());
+    let mut profile = String::from("(version 1)\n(allow default)\n");
+    for (path, rule) in rules {
+        let at = format!("(subpath {})", quoted(path));
+        let (read, write) = match rule {
+            "deny" => (Some("deny"), "deny"),
+            "show" => (Some("allow"), "deny"),
+            "allow" => (Some("allow"), "allow"),
+            _ => (None, "deny"),
+        };
+        if let Some(read) = read {
+            profile.push_str(&format!("({read} file-read-data file-read-xattr {at})\n"));
+        }
+        profile.push_str(&format!("({write} file-write* {at})\n"));
     }
     profile
 }

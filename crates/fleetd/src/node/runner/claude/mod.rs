@@ -22,6 +22,7 @@ use fleetd_contracts::effort::{Effort, ProfileName};
 use fleetd_contracts::model::RuntimeMode;
 use fleetd_contracts::sessions::{PermissionDecision, RESUME_REFUSED, RunnerInfo, SessionRole};
 
+use super::sandbox::{Access, Fence};
 use super::{
     BoxFut, ProfileModel, Runner, RunnerError, SessionHandle, SessionSpec, process, scope,
 };
@@ -151,12 +152,12 @@ explained! {
     /// rule, a person's own settings' included, so each of these always reaches the node's permission prompt and its
     /// policy ([`role_answer`], then the hub).
     ASSISTANT_ASK, ASSISTANT_ASK_WHY: &str = [
-        "Read" => "A Navi reads only inside its own folder.",
-        "Glob" => "A Navi reads only inside its own folder.",
-        "Grep" => "A Navi reads only inside its own folder.",
-        "Edit" => "A Navi writes only inside its own folder.",
-        "Write" => "A Navi writes only inside its own folder.",
-        "NotebookEdit" => "A Navi writes only inside its own folder.",
+        "Read" => "A Navi reads anything but what its sandbox hides.",
+        "Glob" => "A Navi reads anything but what its sandbox hides.",
+        "Grep" => "A Navi reads anything but what its sandbox hides.",
+        "Edit" => "A Navi writes anything but what its sandbox hides or keeps read-only.",
+        "Write" => "A Navi writes anything but what its sandbox hides or keeps read-only.",
+        "NotebookEdit" => "A Navi writes anything but what its sandbox hides or keeps read-only.",
         "WebFetch" => "A Navi fetches a site unasked only once the person allowed or linked it.",
     ]
 }
@@ -170,16 +171,15 @@ pub const ASSISTANT_KEPT: &[&str] = &[".claude", ".mcp.json", ".fleetd", "agent-
 /// directory: empty, so fleetd's environment alone decides how its browser runs.
 pub const ASSISTANT_BROWSER_CONFIG: &str = "agent-browser-config.json";
 
-/// Where `path` (relative to `cwd`, or absolute) really is: its nearest part that exists with symlinks resolved, then
-/// the rest of it. None with a `..` in it.
+/// Where `path` (relative to `cwd`, absolute, or from the person's home with `~`) really is: its nearest part that
+/// exists with symlinks and `..` resolved, then the rest of it. None with a `..` in that rest.
 fn resolve(cwd: &Path, path: &str) -> Option<PathBuf> {
-    let joined = cwd.join(path);
-    if joined
-        .components()
-        .any(|c| c == std::path::Component::ParentDir)
-    {
-        return None;
-    }
+    let joined = match path.strip_prefix('~') {
+        Some(rest) if rest.is_empty() || rest.starts_with('/') => {
+            crate::node::util::home_dir().join(rest.trim_start_matches('/'))
+        }
+        _ => cwd.join(path),
+    };
     let mut base = joined.as_path();
     let mut rest = Vec::new();
     loop {
@@ -200,11 +200,6 @@ fn real(dir: &Path) -> PathBuf {
     std::fs::canonicalize(dir).unwrap_or_else(|_| dir.to_owned())
 }
 
-/// `path` is inside `root` once both are resolved.
-fn inside(cwd: &Path, root: &Path, path: &str) -> bool {
-    resolve(cwd, path).is_some_and(|p| p.starts_with(real(root)))
-}
-
 /// `path` really is in one of [`ASSISTANT_KEPT`] in `cwd`, whatever case it is spelled in: a disk that ignores case
 /// (macOS's, by default) writes `.Claude` into `.claude`.
 fn kept(cwd: &Path, path: &str) -> bool {
@@ -221,22 +216,31 @@ fn kept(cwd: &Path, path: &str) -> bool {
         })
 }
 
-/// A Glob pattern (or Grep's file filter) that could reach outside the folder it searches: absolute, from home,
-/// climbing with `..`, or with braces, which can spell either.
-fn wide_pattern(pattern: &str) -> bool {
-    pattern.starts_with(['/', '~'])
-        || pattern.contains(['{', '}'])
-        || pattern.split(['/', '\\']).any(|part| part == "..")
+/// Where a Glob pattern (or Grep's file filter) searches from, in `root`: its parts before the first with a wildcard or
+/// braces in it, which can spell anything. An absolute one or one from home (`~`) leaves `root`.
+fn pattern_root(root: &Path, pattern: &str) -> Option<PathBuf> {
+    let fixed: Vec<&str> = pattern
+        .split('/')
+        .take_while(|part| !part.contains(['*', '?', '[', '{', '}']))
+        .collect();
+    let fixed = fixed.join("/");
+    let fixed = if fixed.is_empty() && pattern.starts_with('/') {
+        "/".to_owned()
+    } else {
+        fixed
+    };
+    resolve(root, &fixed)
 }
 
 /// How the node answers a file tool's or a command's prompt from a session of `role` in `cwd`, whoever would approve
-/// it: a Navi's lead reads and writes inside its own folder (never its settings there) and its session's `scratch`
-/// directory, and nothing else, and runs any command but a browser visit. None for any other tool or role, and for a
-/// visit: the prompt goes on to the hub.
+/// it: a Navi's lead reads and writes what its sandbox `fence` lets it (D234: anything but what it hides, writes but
+/// to what it keeps read-only; [`Fence::folder_only`] while its sandbox isn't known), never its settings in its
+/// folder, and runs any command but a browser visit. None for any other tool or role, and for a visit: the prompt goes
+/// on to the hub.
 pub fn role_answer(
     role: SessionRole,
     cwd: &Path,
-    scratch: &Path,
+    fence: &Fence,
     tool: &str,
     input: &serde_json::Value,
 ) -> Option<PermissionDecision> {
@@ -244,7 +248,7 @@ pub fn role_answer(
         return None;
     }
     if tool == "Bash" {
-        // A command runs unasked (D208): the OS sandbox holds its writes, and its agent-browser daemon's, to the folder.
+        // A command runs unasked (D208): the OS sandbox holds its writes, and its agent-browser daemon's.
         // Only a browser visit goes on to the hub's site gate.
         return crate::hub::navi::sites::visit(tool, input)
             .is_none()
@@ -273,28 +277,43 @@ pub fn role_answer(
             message: fleetd_contracts::prim::Text::unchecked(why),
         })
     };
-    let folder = cwd.display();
+    let hidden = |at: &Path| {
+        deny(format!(
+            "fleetd policy: {} is hidden from a Navi (the person's keys and logins, and fleetd's own files)",
+            at.display()
+        ))
+    };
+    let Some(at) = (!path.is_empty()).then(|| resolve(cwd, path)).flatten() else {
+        return deny(format!(
+            "fleetd policy: a Navi can't tell where {path:?} is"
+        ));
+    };
     let patterns = ["pattern", "glob"]
         .iter()
         .filter(|k| tool == "Glob" || **k == "glob")
         .filter_map(|k| input.get(*k).and_then(|v| v.as_str()));
-    if patterns.into_iter().any(wide_pattern) {
-        return deny(format!(
-            "fleetd policy: a Navi reads only inside its own folder, {folder}"
-        ));
+    for pattern in patterns {
+        match pattern_root(&at, pattern) {
+            Some(root) if fence.access(&root) == Access::Hidden => return hidden(&root),
+            Some(_) => {}
+            None => {
+                return deny(format!(
+                    "fleetd policy: a Navi can't tell where {pattern:?} searches"
+                ));
+            }
+        }
     }
-    if !path.is_empty() && !inside(cwd, cwd, path) && inside(cwd, scratch, path) {
-        return Some(PermissionDecision::Allow {
-            updated_input: None,
-        });
+    match fence.access(&at) {
+        Access::Hidden => return hidden(&at),
+        Access::Read if writes => {
+            return deny(format!(
+                "fleetd policy: a Navi doesn't change {}: it is read-only to it",
+                at.display()
+            ));
+        }
+        _ => {}
     }
-    if path.is_empty() || !inside(cwd, cwd, path) {
-        let verb = if writes { "writes" } else { "reads" };
-        return deny(format!(
-            "fleetd policy: a Navi {verb} only inside its own folder, {folder}"
-        ));
-    }
-    if writes && kept(cwd, path) {
+    if writes && at.starts_with(real(cwd)) && kept(cwd, path) {
         return deny(format!(
             "fleetd policy: a Navi doesn't change its own settings, policy or MCP servers ({})",
             ASSISTANT_KEPT.join(", ")
@@ -677,6 +696,18 @@ impl Runner for ClaudeRunner {
         let marker = process::marker(&spec.session_id);
         // A binary that isn't there is reported as missing below, not as a scope that failed to start it.
         let scope = scope::current().filter(|_| self.binary.exists());
+        // A Navi's claude starts inside its sandbox (checked by `fence`), or not at all.
+        let sandboxed = match &spec.sandbox {
+            Some(fence) => Some(
+                super::sandbox::wrap(fence, &spec.cwd, &self.binary, self.args(&spec)).map_err(
+                    |r| RunnerError::Sandbox {
+                        message: r.message,
+                        fix: r.fix,
+                    },
+                )?,
+            ),
+            None => None,
+        };
         let build = |program: PathBuf, args: Vec<String>, scope: Option<&scope::Scope>| {
             let mut cmd = tokio::process::Command::new(program);
             cmd.args(args)
@@ -705,24 +736,21 @@ impl Runner for ClaudeRunner {
                 .stderr(std::process::Stdio::piped())
                 .process_group(0)
                 .kill_on_drop(true);
-            // A Navi's sandbox reaches no abstract socket made outside it (an X server's), where the kernel can say so.
-            if spec.sandbox.is_some()
-                && let Some(hook) = super::sandbox::scope_hook()
-            {
-                // SAFETY: the hook makes system calls only.
+            if let Some(sandboxed) = &sandboxed {
+                // SAFETY: the hooks make system calls only.
                 unsafe {
-                    cmd.pre_exec(hook);
+                    // The namespaces of its box, which its sandbox joins.
+                    cmd.pre_exec(sandboxed.hook());
+                    // It reaches no abstract socket made outside it (an X server's), where the kernel can say so.
+                    if let Some(hook) = super::sandbox::scope_hook() {
+                        cmd.pre_exec(hook);
+                    }
                 }
             }
             cmd
         };
-        // A Navi's claude starts inside its sandbox (checked by `fence`), or not at all.
-        let (program, args) = match &spec.sandbox {
-            Some(fence) => super::sandbox::wrap(fence, &spec.cwd, &self.binary, self.args(&spec))
-                .map_err(|r| RunnerError::Sandbox {
-                message: r.message,
-                fix: r.fix,
-            })?,
+        let (program, args) = match &sandboxed {
+            Some(s) => (s.program.clone(), s.args.clone()),
             None => (self.binary.clone(), self.args(&spec)),
         };
         let spawned = scope::spawn(scope.as_ref(), &program, args, &spec.session_id, build);
@@ -861,7 +889,7 @@ mod tests {
             role_answer(
                 SessionRole::Assistant,
                 folder,
-                folder,
+                &Fence::folder_only(folder, folder),
                 "Bash",
                 &serde_json::json!({ "command": command }),
             )
@@ -900,7 +928,77 @@ mod tests {
     }
 
     #[test]
-    fn the_node_answers_a_navis_file_tools_inside_its_folder_and_refuses_the_rest() {
+    fn the_node_answers_a_navis_file_tools_as_its_sandbox_does() {
+        // A person's machine: their keys, fleetd's dir with the Navi's folder and home, another Navi's home, their code.
+        let dir = tempfile::tempdir().unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        let fleetd = root.join(".fleetd");
+        let folder = fleetd.join("node/navi/ada");
+        let home = fleetd.join("node/navis/p1/home");
+        let other = fleetd.join("node/navis/p2/home/.local/bin/tool");
+        let ssh = root.join(".ssh/id_ed25519");
+        let code = root.join("src/app/main.rs");
+        let bashrc = root.join(".bashrc");
+        for file in [&folder.join("notes.md"), &other, &ssh, &code, &bashrc] {
+            std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+            std::fs::write(file, "x").unwrap();
+        }
+        std::fs::create_dir_all(&home).unwrap();
+        std::os::unix::fs::symlink(&ssh, folder.join("key")).unwrap();
+        let fence = Fence {
+            write: vec![folder.clone(), home.clone()],
+            hide: vec![fleetd.clone(), root.join(".ssh")],
+            show: vec![bashrc.clone()],
+            keep: ASSISTANT_KEPT.iter().map(|k| folder.join(k)).collect(),
+            ..Fence::default()
+        };
+        let answer = |tool: &str, input: serde_json::Value| {
+            role_answer(SessionRole::Assistant, &folder, &fence, tool, &input)
+        };
+        let allowed = |tool: &str, p: &Path| {
+            let input = serde_json::json!({ "file_path": p, "content": "x" });
+            matches!(answer(tool, input), Some(PermissionDecision::Allow { .. }))
+        };
+        // Anywhere the person can: their code, its own home, the machine.
+        for p in [
+            &code,
+            &root.join("src/app/new.rs"),
+            &home.join(".local/bin/hello"),
+        ] {
+            assert!(allowed("Write", p) && allowed("Read", p), "{}", p.display());
+        }
+        assert!(allowed("Read", Path::new("/etc/passwd")));
+        assert!(allowed("Edit", Path::new("notes.md")));
+        // Never their keys, however reached, fleetd's dir, or another Navi's home.
+        for p in [
+            &ssh,
+            &folder.join("key"),
+            &other,
+            &fleetd.join("hub/hub.sqlite"),
+        ] {
+            assert!(
+                !allowed("Read", p) && !allowed("Write", p),
+                "{}",
+                p.display()
+            );
+        }
+        // What runs on its own reads, but takes no write; nor do its own settings.
+        assert!(allowed("Read", &bashrc) && !allowed("Edit", &bashrc));
+        assert!(!allowed("Write", &folder.join(".Claude/settings.json")));
+        // A search that starts in a hidden dir is refused; one through the machine isn't.
+        let search = |input: serde_json::Value| answer("Glob", input);
+        assert!(matches!(
+            search(serde_json::json!({ "pattern": format!("{}/*", root.join(".ssh").display()) })),
+            Some(PermissionDecision::Deny { .. })
+        ));
+        assert!(matches!(
+            search(serde_json::json!({ "pattern": "**/*.rs", "path": root.join("src") })),
+            Some(PermissionDecision::Allow { .. })
+        ));
+    }
+
+    #[test]
+    fn without_its_sandbox_the_node_answers_a_navis_file_tools_inside_its_folder_only() {
         let home = tempfile::tempdir().unwrap();
         let folder = home.path().join("navi/ada");
         std::fs::create_dir_all(folder.join("notes")).unwrap();
@@ -910,7 +1008,13 @@ mod tests {
         let scratch = home.path().join("tmp/ab12");
         std::fs::create_dir_all(&scratch).unwrap();
         let answer = |tool: &str, input: serde_json::Value| {
-            role_answer(SessionRole::Assistant, &folder, &scratch, tool, &input)
+            role_answer(
+                SessionRole::Assistant,
+                &folder,
+                &Fence::folder_only(&folder, &scratch),
+                tool,
+                &input,
+            )
         };
         let allowed = |tool: &str, input: serde_json::Value| {
             matches!(answer(tool, input), Some(PermissionDecision::Allow { .. }))
@@ -964,7 +1068,7 @@ mod tests {
             role_answer(
                 SessionRole::Lead,
                 &folder,
-                &scratch,
+                &Fence::folder_only(&folder, &scratch),
                 "Read",
                 &file("/etc/passwd")
             )
@@ -993,7 +1097,7 @@ mod tests {
             role_answer(
                 SessionRole::Assistant,
                 &folder,
-                &scratch,
+                &Fence::folder_only(&folder, &scratch),
                 "Write",
                 &serde_json::json!({ "file_path": p, "content": "{}" }),
             )
@@ -1026,7 +1130,13 @@ mod tests {
         }
         // A pattern that reaches outside the folder is refused, as a path would be.
         let search = |tool: &str, input: serde_json::Value| {
-            role_answer(SessionRole::Assistant, &folder, &scratch, tool, &input)
+            role_answer(
+                SessionRole::Assistant,
+                &folder,
+                &Fence::folder_only(&folder, &scratch),
+                tool,
+                &input,
+            )
         };
         for (tool, input) in [
             ("Glob", serde_json::json!({ "pattern": "/home/**/.ssh/*" })),
@@ -1062,7 +1172,13 @@ mod tests {
         std::fs::create_dir_all(&folder).unwrap();
         let scratch = home.path().join("tmp/ab12");
         let answer = |tool: &str, input: serde_json::Value| {
-            role_answer(SessionRole::Assistant, &folder, &scratch, tool, &input)
+            role_answer(
+                SessionRole::Assistant,
+                &folder,
+                &Fence::folder_only(&folder, &scratch),
+                tool,
+                &input,
+            )
         };
         // Its project config is one of the files it never writes, in any case.
         let write = |p: &str| {
@@ -1077,13 +1193,11 @@ mod tests {
                 "{p}"
             );
         }
-        // Braces in a pattern can spell `..` or an absolute path: refused.
-        for pattern in ["{..,x}/**", "**/*.{md,txt}"] {
-            assert!(matches!(
-                answer("Glob", serde_json::json!({ "pattern": pattern })),
-                Some(PermissionDecision::Deny { .. })
-            ));
-        }
+        // A pattern is answered by where it starts searching; what its braces spell, the sandbox holds.
+        assert!(matches!(
+            answer("Glob", serde_json::json!({ "pattern": "**/*.{md,txt}" })),
+            Some(PermissionDecision::Allow { .. })
+        ));
     }
 
     #[test]

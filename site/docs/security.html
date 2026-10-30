@@ -193,48 +193,60 @@ sealed box). The hub relays it without storing it and keeps only its fingerprint
 </ul>
 <div class="sl-heading-wrapper level-h2"><h2 id="navi-sandbox">Navi sandbox</h2><a class="sl-anchor-link" href="#navi-sandbox"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Navi sandbox”</span></a></div>
 <p>A <a href="/docs/navi">Navi</a> reads mail and web pages that anyone can write, so fleetd assumes one may be talked into
-something. Its tool checks (files only in its folder, sites asked once unless you linked them, sends always asked)
-run inside the session. Its shell commands run unasked (decision <code dir="auto">navi.shell-unasked</code>, D208): the OS sandbox is
-their guard, and holds when a command finds a way around the checks. Only Navis run in it; other agents don’t.</p>
-<p>Both systems apply the same fence. These are the paths, with <code dir="auto">~</code> the machine user’s home and <code dir="auto">~/.claude</code> Claude
-Code’s config dir (or <code dir="auto">$CLAUDE_CONFIG_DIR</code>).</p>
-<p><strong>On Linux the home is an allow-list.</strong> A Navi’s <code dir="auto">~</code> is empty and read-only, and only these come back:</p>
+something. Its tool checks (sites asked once unless you linked them, sends always asked) run inside the session. Its
+shell commands run unasked (decision <code dir="auto">navi.shell-unasked</code>, D208): the OS sandbox is their guard, and holds when a
+command finds a way around the checks. Only Navis run in it; other agents don’t.</p>
+<p>The sandbox guards what matters and leaves the rest open (decision <code dir="auto">navi.sandbox-open-home</code>, D234): a Navi installs
+and runs things as you would, and can’t read your keys and logins or fleetd’s own files. Both systems apply the same
+fence. These are the paths, with <code dir="auto">~</code> the machine user’s home and <code dir="auto">~/.claude</code> Claude Code’s config dir (or
+<code dir="auto">$CLAUDE_CONFIG_DIR</code>).</p>
+<p><strong>Its own home.</strong> Each Navi has a home of its own in fleetd’s node directory, <code dir="auto">navis/&lt;project id&gt;/home</code>, kept across
+sessions and restarts and deleted with the Navi. It is <code dir="auto">HOME</code> for its commands, with <code dir="auto">~/.local/bin</code>, <code dir="auto">~/bin</code>,
+<code dir="auto">~/.cargo/bin</code>, <code dir="auto">~/go/bin</code>, <code dir="auto">~/.bun/bin</code> and <code dir="auto">~/.deno/bin</code> first on their <code dir="auto">PATH</code>, npm’s global prefix at <code dir="auto">~/.local</code>
+and <code dir="auto">PIP_BREAK_SYSTEM_PACKAGES=1</code>, so npm’s global installs, <code dir="auto">pip install --user</code>, <code dir="auto">cargo install</code>, <code dir="auto">go install</code> and
+<code dir="auto">curl … | sh</code> installers put what they install there. <code dir="auto">RUSTUP_HOME</code> points at your <code dir="auto">~/.rustup</code> when you have one, so
+your toolchains still run. Claude Code itself keeps your <code dir="auto">HOME</code>, where its login is. No Navi sees another’s home.</p>
+<p><strong>Writes</strong>, on both: anywhere you can write on the machine, except what runs outside its sandbox later: your shells,
+your systemd, and fleetd’s own agents, which run unsandboxed in your checkouts and hold tokens. Those stay read-only,
+so a Navi that is talked into something can’t plant code there that reads your keys:</p>
 <ul>
-<li>Its own folder and scratch dir, and its session’s files from fleetd’s directory (below).</li>
-<li>Read-only: Claude Code’s install (<code dir="auto">~/.local/bin</code>, and <code dir="auto">~/.local/share/claude/versions</code> that <code dir="auto">claude</code> links to),
-every directory on the session’s <code dir="auto">PATH</code> that is in the home (a <code dir="auto">…/bin</code> as its whole install, so
-<code dir="auto">~/.nvm/versions/node/v22</code> for node and npm), the install a program there links to elsewhere in the home (uv’s
-Python with its library), <code dir="auto">~/.claude</code> (but other sessions’ records, below), <code dir="auto">~/.gitconfig</code>, git’s
-<code dir="auto">~/.config/git/config</code>, <code dir="auto">ignore</code> and <code dir="auto">attributes</code> (never its <code dir="auto">credentials</code>), and <code dir="auto">~/.rustup</code> for the toolchains
-cargo’s proxies run.</li>
-<li>Never through the <code dir="auto">PATH</code> or a link: fleetd’s directory and another project’s checkout. A <code dir="auto">bin</code> whose install
-would be one of them, or hold one, comes back alone (fleetd’s own <code dir="auto">~/.fleetd/bin</code>) or not at all, and a link
-into one brings nothing back. Only what is on the <code dir="auto">PATH</code>, or linked from it, comes back: a tool whose data sits
-outside its install (most version managers but rustup) finds no data.</li>
-<li>Its own copy of <code dir="auto">~/.claude.json</code> (below), and <code dir="auto">~/.claude/.credentials.json</code>, read and written.</li>
-<li><code dir="auto">~/.cache</code>: its own, empty at first, kept with its session.</li>
-</ul>
-<p>Anything else in the home, such as notes, shell startup files, another session’s temporary files, or a file made
-while it runs, isn’t there at all. The list under <strong>Can’t read</strong> still applies inside what comes back, for example
-<code dir="auto">~/.cargo/credentials.toml</code> when <code dir="auto">~/.cargo/bin</code> is on the <code dir="auto">PATH</code>. On macOS the home is as the machine has it, minus
-the paths listed below.</p>
-<p><strong>Writes</strong>, on both: its folder (except <code dir="auto">.claude</code>, <code dir="auto">.fleetd</code>, <code dir="auto">.mcp.json</code> and <code dir="auto">agent-browser.json</code> in it), its
-scratch dir, and Claude Code’s files for its own session: its conversation in <code dir="auto">~/.claude/projects/&lt;its folder&gt;</code>,
+<li>What it can’t read (below).</li>
+<li>Startup files that run on their own, read-only: <code dir="auto">~/.profile</code>, <code dir="auto">~/.bashrc</code>, <code dir="auto">~/.bash_profile</code>, <code dir="auto">~/.bash_login</code>,
+<code dir="auto">~/.bash_logout</code>, <code dir="auto">~/.zshenv</code>, <code dir="auto">~/.zprofile</code>, <code dir="auto">~/.zshrc</code>, <code dir="auto">~/.zlogin</code>, <code dir="auto">~/.zlogout</code>, <code dir="auto">~/.pam_environment</code>,
+<code dir="auto">~/.xprofile</code>, <code dir="auto">~/.xsessionrc</code>, <code dir="auto">~/.xinitrc</code>, <code dir="auto">~/.bash_aliases</code>, cargo’s <code dir="auto">~/.cargo/config.toml</code> (it can name a
+program every build runs), and the user’s systemd units and D-Bus services
+(<code dir="auto">~/.local/share/systemd</code>, <code dir="auto">~/.local/share/dbus-1/services</code>; each is made, empty, if it isn’t there). A line it
+added there would run outside its sandbox.</li>
+<li>Your programs: Claude Code’s install, every directory on the node’s <code dir="auto">PATH</code> that is in your home (a <code dir="auto">…/bin</code> as its
+whole install, so <code dir="auto">~/.nvm/versions/node/v22</code> for node and npm, and <code dir="auto">~/.cargo</code> for <code dir="auto">~/.cargo/bin</code>) and the install
+a program there links to elsewhere in the home; every directory on the node’s <code dir="auto">PATH</code> outside the home that you can
+write; Homebrew’s (<code dir="auto">/home/linuxbrew/.linuxbrew/bin</code>, <code dir="auto">/opt/homebrew/bin</code>) and <code dir="auto">/usr/local/bin</code> when you can write
+them; and your <code dir="auto">~/bin</code>, <code dir="auto">~/.local/bin</code>, <code dir="auto">~/.cargo/bin</code>, <code dir="auto">~/go/bin</code>, <code dir="auto">~/.bun/bin</code>, <code dir="auto">~/.deno/bin</code>,
+<code dir="auto">~/.npm-global/bin</code>, <code dir="auto">~/.volta/bin</code> and <code dir="auto">~/.pyenv/shims</code>, where your shells look. On Linux one of those that isn’t
+there but could be made is made, empty, first. The Navi’s own home’s bin dirs stay its own, first on its <code dir="auto">PATH</code>.</li>
+<li>In each project’s checkout on the machine (every project the node knows): git’s <code dir="auto">config</code>, <code dir="auto">config.worktree</code>,
+<code dir="auto">hooks</code> and <code dir="auto">worktrees</code> in its git dir (and the common dir a worktree’s <code dir="auto">.git</code> points at), so no <code dir="auto">core.fsmonitor</code>,
+<code dir="auto">core.hooksPath</code>, alias or hook runs in your git or an agent’s; and <code dir="auto">.claude</code>, <code dir="auto">.fleetd</code>, <code dir="auto">.mcp.json</code>, <code dir="auto">CLAUDE.md</code>
+and <code dir="auto">CLAUDE.local.md</code>, which fleetd’s agents load as their settings, policy and instructions. <code dir="auto">.claude</code>, <code dir="auto">.fleetd</code>,
+<code dir="auto">hooks</code> and <code dir="auto">worktrees</code> are made, empty, if they aren’t there. A new <code dir="auto">.mcp.json</code> or <code dir="auto">CLAUDE.md</code> can still be made;
+a new <code dir="auto">.mcp.json</code>’s servers don’t run until settings it can’t write approve them. The rest of a checkout is yours
+to have it write: its code, a commit.</li>
+<li><code dir="auto">~/.claude</code> (but its own session’s files: its conversation in <code dir="auto">~/.claude/projects/&lt;its folder&gt;</code>,
 <code dir="auto">~/.claude/session-env/&lt;session&gt;</code>, <code dir="auto">~/.claude/file-history/&lt;session&gt;</code>, and the login file
-<code dir="auto">~/.claude/.credentials.json</code> when there is one. Claude Code saves a refreshed token there; one it couldn’t save would
-log out every session on the machine. Everything else takes no writes, <code dir="auto">~/.claude/settings.json</code> included, so it
-can’t add hooks or MCP servers for other agents.</p>
+<code dir="auto">~/.claude/.credentials.json</code>, where Claude Code saves a refreshed token), so it can’t add hooks or MCP servers for
+other agents. Also <code dir="auto">~/.gitconfig</code>, git’s <code dir="auto">~/.config/git/config</code>, <code dir="auto">ignore</code> and <code dir="auto">attributes</code>, and <code dir="auto">~/.rustup</code>.</li>
+<li>In its folder: <code dir="auto">.claude</code>, <code dir="auto">.fleetd</code>, <code dir="auto">.mcp.json</code> and <code dir="auto">agent-browser.json</code>.</li>
+</ul>
 <p><strong><code dir="auto">~/.claude.json</code></strong> holds every MCP server’s settings, with their tokens, and every project’s history. On Linux a
 Navi gets its own copy in its place, made fresh at each start: without <code dir="auto">mcpServers</code>, without <code dir="auto">projects</code>, and without
 any key named like a secret but Claude Code’s own login. What it writes there stays in its copy. Its backups and other
 copies beside it (<code dir="auto">~/.claude.json.backup.*</code>) aren’t in a Linux Navi’s home at all. On macOS, where nothing can stand
 in for a path, the real file and its copies are hidden.</p>
-<p><strong>Can’t read</strong>, on both (on Linux, also anywhere else in the home):</p>
+<p><strong>Can’t read</strong>, on both:</p>
 <ul>
-<li>fleetd’s directory: the hub, the node, worktrees, secrets and integration tokens, Chrome’s profiles. Only its own
-session’s files are read again: its MCP config, settings and skills, the <code dir="auto">fleetd</code> binary and the node’s socket,
-and the agent-browser and agent-device installs.</li>
-<li>Other projects’ checkouts on the machine.</li>
+<li>fleetd’s directory: the hub, the node, worktrees, secrets and integration tokens, Chrome’s profiles, and every
+other Navi’s folder and home. Only its own folder, home and session’s files are there: its MCP config, settings and
+skills, the <code dir="auto">fleetd</code> binary and the node’s socket, and the agent-browser and agent-device installs.</li>
 <li>Claude Code’s record of other sessions: <code dir="auto">~/.claude/projects</code> (but its own), <code dir="auto">history.jsonl</code>, <code dir="auto">file-history</code>,
 <code dir="auto">session-env</code> and <code dir="auto">sessions</code>; its IDE connections (<code dir="auto">ide</code>, whose lock files hold a token) and its <code dir="auto">backups</code>.</li>
 <li>Logins and keys: <code dir="auto">~/.config</code> (but git’s <code dir="auto">config</code>, <code dir="auto">ignore</code> and <code dir="auto">attributes</code> in <code dir="auto">~/.config/git</code>, never its
@@ -248,6 +260,17 @@ and <code dir="auto">~/snap</code> (each snap’s own data, logins included).</l
 <li><code dir="auto">~/.agent-browser</code>, where other sessions’ browsers listen. Its own listens in its scratch dir.</li>
 <li>The docker socket (<code dir="auto">/run/docker.sock</code>, <code dir="auto">/var/run/docker.sock</code>).</li>
 </ul>
+<p>Everything else reads as it does for you: your code, your notes, other projects’ checkouts.</p>
+<p><strong>On Linux the home is listed.</strong> A Navi’s <code dir="auto">~</code> is read-only, with each entry it had when the session started bound
+back, but the hidden ones. A link there stays a link, so one into a hidden path leads nowhere. Nothing new appears at
+the top of your home while it runs, such as another session’s temporary copy of <code dir="auto">~/.claude.json</code>, and it can’t make a
+new file there (a startup file of a shell you don’t use yet). Inside an entry, it writes as you do.</p>
+<p><strong>Background processes.</strong> On Linux each Navi has a box: a long-lived bubblewrap with its own user, pid and IPC
+namespaces, started with its first session and ended when the node stops. Every session of the Navi runs in it, with
+its own mounts. What a command leaves running (<code dir="auto">nohup …&amp;</code>, <code dir="auto">setsid</code>) is reparented to the box’s init, not killed at
+the end of the turn, and the next turn finds it. The box’s processes see each other and nothing else on the machine.
+Its sessions share one <code dir="auto">/tmp</code>, emptied when the box starts. On macOS a detached process outlives the session already.
+Nothing comes back after the node or the machine restarts, and there is no root, <code dir="auto">apt</code> or systemd service.</p>
 <table>
 <thead>
 <tr>
@@ -259,22 +282,22 @@ and <code dir="auto">~/snap</code> (each snap’s own data, logins included).</l
 <tbody>
 <tr>
 <td>Also can’t read</td>
-<td><code dir="auto">$XDG_RUNTIME_DIR</code> (<code dir="auto">/run/user/&lt;uid&gt;</code>): the user’s D-Bus, systemd and SSH agent sockets, which would start commands outside. Their variables are unset.</td>
+<td><code dir="auto">$XDG_RUNTIME_DIR</code> (<code dir="auto">/run/user/&lt;uid&gt;</code>): the user’s D-Bus, systemd and SSH agent sockets, which would start commands outside. Their variables are unset. <code dir="auto">/sys</code> is read-only.</td>
 <td><code dir="auto">~/Library</code> whole: browser cookies, app tokens, keychain files. Claude Code reads its login through the keychain’s daemon, not the files.</td>
 </tr>
 <tr>
 <td>Abstract sockets</td>
-<td>Landlock scopes them (Linux 6.12 and later): nothing inside connects to one made outside, such as an X server’s or a D-Bus bus’s. On an older kernel they stay reachable, and the machine’s Navi sandbox check says so.</td>
+<td>Landlock scopes them (Linux 6.12 and later): nothing inside connects to one made outside, such as an X server’s or a D-Bus bus’s, nor to one a process of an earlier turn made. On an older kernel they stay reachable, and the machine’s Navi sandbox check says so.</td>
 <td>Not used on macOS</td>
 </tr>
 <tr>
 <td><code dir="auto">/tmp</code></td>
-<td>Its own</td>
-<td>The machine’s, read-only. Its scratch dir is its <code dir="auto">TMPDIR</code>, and Claude Code’s own temp dir (<code dir="auto">CLAUDE_CODE_TMPDIR</code>).</td>
+<td>The Navi’s own, shared by its sessions, emptied when its box starts</td>
+<td>The machine’s. Its commands’ <code dir="auto">TMPDIR</code> is its own <code dir="auto">navis/&lt;project id&gt;/tmp</code>; Claude Code’s own temp dir (<code dir="auto">CLAUDE_CODE_TMPDIR</code>) is its scratch dir.</td>
 </tr>
 <tr>
 <td>Processes</td>
-<td>Its own (<code dir="auto">/proc</code>, a pid namespace): no other process, so no way back to the disk through one</td>
+<td>Its box’s (<code dir="auto">/proc</code>, a pid namespace): no other process, so no way back to the disk through one. A process from an earlier turn can be signalled, not traced.</td>
 <td>Others are visible, as for any program</td>
 </tr>
 <tr>
@@ -304,7 +327,9 @@ Navis can’t run there (with how to install bubblewrap).</li>
 sockets stay reachable, including an X server that accepts local connections without a cookie
 (<code dir="auto">xhost +si:localuser</code>, the GNOME default). fleetd’s own screens don’t listen there. Its folder, its session’s
 MCP config (with its own servers’ tokens) and Claude Code’s login are readable to it, since Claude Code needs them.
-Outside the home (and on macOS, inside it but for the hidden paths) the machine is readable, without writes.</li>
+It can still write code you or an agent run later on purpose: a script, a test or a build file in a checkout. A
+path hidden here but reachable through another mount of the same disk (a bind mount you made) is reachable there
+too.</li>
 </ul>
 <div class="sl-heading-wrapper level-h2"><h2 id="hub-links">Hub links</h2><a class="sl-anchor-link" href="#hub-links"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Hub links”</span></a></div>
 <p>A hub link lets a Navi on one hub open and follow work in projects on another hub, for example from a personal hub
