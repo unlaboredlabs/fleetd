@@ -170,6 +170,38 @@ export function runChecks(opts: CheckOptions): Finding[] {
     return clip;
   };
 
+  // How far a text node's glyphs reach above and below their baseline, measured in its own font, and where that
+  // baseline sits under the top of each of its runs' rects (the font's ascent: a run's rect is the font's box, not the
+  // line's). Descenders ("g", "y") hang in the bottom fifth of that box, where a fixed trim can't see them cut.
+  interface Glyphs {
+    baseline: number;
+    above: number;
+    below: number;
+  }
+  const glyphMemo = new Map<Text, Glyphs | null>();
+  let pen: CanvasRenderingContext2D | null | undefined;
+  const glyphsOf = (node: Text, el: Element): Glyphs | null => {
+    const known = glyphMemo.get(node);
+    if (known !== undefined) return known;
+    pen ??= document.createElement("canvas").getContext("2d");
+    let result: Glyphs | null = null;
+    if (pen) {
+      const s = style(el);
+      pen.font = `${s.fontStyle} ${s.fontWeight} ${s.fontSize} ${s.fontFamily}`;
+      const m = pen.measureText(s.textTransform === "uppercase" ? node.data.toUpperCase() : node.data);
+      result = { baseline: m.fontBoundingBoxAscent, above: m.actualBoundingBoxAscent, below: m.actualBoundingBoxDescent };
+    }
+    glyphMemo.set(node, result);
+    return result;
+  };
+  // The ink of one run: its glyphs' measured reach where the font can be measured, else the trimmed rect.
+  const inkOfRun = (node: Text, el: Element, rect: Rect): Rect => {
+    const g = glyphsOf(node, el);
+    if (!g) return inkOf(rect);
+    const baseline = rect.top + g.baseline;
+    return { left: rect.left, right: rect.right, top: baseline - g.above, bottom: baseline + g.below };
+  };
+
   // Text runs: one rect per line fragment of every visible text node.
   interface Run {
     node: Text;
@@ -243,11 +275,11 @@ export function runChecks(opts: CheckOptions): Finding[] {
   // 1. Overflow: a text run outside the box that holds it. A box that scrolls, ellipsizes (sideways) or clamps
   // (downwards) contains the run on that axis, and from there on its own box stands for the run: it must itself fit
   // every ancestor, or the ellipsis never shows and an outer pane cuts the line. Each run is reported once, on the
-  // nearest box it escapes. Line boxes are taller than the ink, so the vertical test uses the trimmed run (`inkOf`);
-  // a tight line-height never counts.
+  // nearest box it escapes. Line boxes are taller than the ink, so the vertical test uses the glyphs' measured ink
+  // (`inkOfRun`): a tight line-height never counts, but a box that cuts off a descender does.
   const reportedOverflow = new Set<Element>();
   for (const run of allRuns) {
-    const ink = inkOf(run.rect);
+    const ink = inkOfRun(run.node, run.el, run.rect);
     const extent = { left: run.rect.left, right: run.rect.right, top: ink.top, bottom: ink.bottom };
     for (let e: Element | null = run.el; e && e !== document.documentElement; e = e.parentElement) {
       const s = style(e);

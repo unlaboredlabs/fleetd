@@ -241,19 +241,20 @@
   flex: 1;
   min-width: 0;
 }
-/* One row a machine, apart by a hairline; its details open under its name. No card. */
+/* One row a machine, apart by a hairline; its details open under its name. No card. Its classes stay apart from Add
+   project's `.machine` chips and `.facts` list: one module is one namespace, and a reused name restyles both. */
 .machineList {
   display: flex;
   flex-direction: column;
   min-width: 0;
 }
-.machine {
+.machineRow {
   display: flex;
   flex-direction: column;
   padding: var(--space-1) 0;
   min-width: 0;
 }
-.machine + .machine {
+.machineRow + .machineRow {
   border-top: 1px solid var(--hairline);
 }
 .machineHead {
@@ -299,7 +300,7 @@
 }
 .glance,
 .notes,
-.facts {
+.machineFacts {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
