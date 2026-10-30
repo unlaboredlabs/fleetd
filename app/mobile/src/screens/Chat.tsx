@@ -22,7 +22,7 @@ import { KeyboardChatScrollView, KeyboardStickyView, useReanimatedKeyboardAnimat
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { arrivalsOf, ENTER_MS, rowKeyOf, type Arrivals } from "../arrivals";
-import { attachmentBubbles, bubbles, dayLine, fullTime, landingOf, quoteOf, replyOf, replyText, sameRow, sendNote, threadRows, type Bubble as BubbleData, type ThreadRow } from "../chatView";
+import { attachmentBubbles, bubbleTime, bubbles, dayLine, fullTime, landingOf, quoteOf, replyOf, replyText, sameRow, sendNote, threadRows, type Bubble as BubbleData, type ThreadRow } from "../chatView";
 import { chatItems, emptyChat, isNavi, type AttachmentGetOutput, type AttachmentRef, type ChatItem } from "../desktop";
 import { useHub, useSession, type RootParams } from "../hubContext";
 import { linkStatus } from "../link";
@@ -42,6 +42,7 @@ import { Icon } from "../ui/Icon";
 import { HoldMenu } from "../ui/HoldMenu";
 import { Grid, Markdown } from "../ui/Markdown";
 import { FileBubble, ImageBubble, ImageViewer, shareFile } from "../ui/Media";
+import { RevealArea, Revealed } from "../ui/Reveal";
 import type { MenuItem } from "../ui/Menu";
 import { bubbleIn, dur, ease, useReduceMotion } from "../ui/motion";
 import { SkeletonThread } from "../ui/Skeleton";
@@ -272,35 +273,37 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   return (
     <View style={[styles.fill, { backgroundColor: t.thread }]}>
       <View style={styles.fill}>
-        <FlatList
-          ref={list}
-          inverted
-          renderScrollComponent={(props) => <KeyboardChatScrollView {...props} inverted offset={lift} />}
-          data={loading && items.length === 0 ? [] : newestFirst}
-          keyExtractor={(r) => r.id}
-          contentContainerStyle={styles.list}
-          contentInsetAdjustmentBehavior="never"
-          automaticallyAdjustKeyboardInsets={false}
-          keyboardDismissMode="interactive"
-          keyboardShouldPersistTaps="handled"
-          scrollIndicatorInsets={{ top: composerHeight, bottom: top }}
-          onScroll={onScroll}
-          scrollEventThrottle={64}
-          onScrollToIndexFailed={(info) => {
-            list.current?.scrollToOffset({ offset: info.averageItemLength * info.index, animated: false });
-            setTimeout(() => list.current?.scrollToIndex({ index: info.index, animated: false, viewPosition: 0.5 }), 80);
-          }}
-          onEndReached={() => void session.loadOlder(chatKey)}
-          ListHeaderComponent={<View style={{ height: composerHeight + space.xs }} />}
-          {...(loading ? {} : { ListEmptyComponent: <EmptyThread picture={project} title={title} navi={navi} onPick={(s) => send(s)} /> })}
-          // The list is upside down: its footer is the top, under the clear header.
-          ListFooterComponent={
-            <View style={{ paddingTop: top + space.sm }}>
-              {loading && items.length === 0 ? <SkeletonThread /> : chat.loadingOlder ? <ActivityIndicator style={styles.older} color={t.secondary} /> : null}
-            </View>
-          }
-          renderItem={renderRow}
-        />
+        <RevealArea margin={metrics.margin}>
+          <FlatList
+            ref={list}
+            inverted
+            renderScrollComponent={(props) => <KeyboardChatScrollView {...props} inverted offset={lift} />}
+            data={loading && items.length === 0 ? [] : newestFirst}
+            keyExtractor={(r) => r.id}
+            contentContainerStyle={styles.list}
+            contentInsetAdjustmentBehavior="never"
+            automaticallyAdjustKeyboardInsets={false}
+            keyboardDismissMode="interactive"
+            keyboardShouldPersistTaps="handled"
+            scrollIndicatorInsets={{ top: composerHeight, bottom: top }}
+            onScroll={onScroll}
+            scrollEventThrottle={64}
+            onScrollToIndexFailed={(info) => {
+              list.current?.scrollToOffset({ offset: info.averageItemLength * info.index, animated: false });
+              setTimeout(() => list.current?.scrollToIndex({ index: info.index, animated: false, viewPosition: 0.5 }), 80);
+            }}
+            onEndReached={() => void session.loadOlder(chatKey)}
+            ListHeaderComponent={<View style={{ height: composerHeight + space.xs }} />}
+            {...(loading ? {} : { ListEmptyComponent: <EmptyThread picture={project} title={title} navi={navi} onPick={(s) => send(s)} /> })}
+            // The list is upside down: its footer is the top, under the clear header.
+            ListFooterComponent={
+              <View style={{ paddingTop: top + space.sm }}>
+                {loading && items.length === 0 ? <SkeletonThread /> : chat.loadingOlder ? <ActivityIndicator style={styles.older} color={t.secondary} /> : null}
+              </View>
+            }
+            renderItem={renderRow}
+          />
+        </RevealArea>
         {Platform.OS === "ios" ? <LinearGradient pointerEvents="none" colors={[t.thread, withOpacity(t.thread, 0.85), withOpacity(t.thread, 0)]} locations={[0, 0.55, 1]} style={[styles.topFade, { height: top + space.lg }]} /> : null}
         {Platform.OS === "ios" ? (
           <ChatBar top={insets.top} onBack={() => navigation.goBack()} onInfo={openInfo}>
@@ -476,7 +479,15 @@ const RowView = memo(function RowView({ row, chatKey, title, canAnswer, actions,
       </Animated.View>
     );
   }
-  const body = <ItemView item={row.item} side={row.side} first={row.first} last={row.last} chatKey={chatKey} title={title} canAnswer={canAnswer} actions={actions} />;
+  const item = <ItemView item={row.item} side={row.side} first={row.first} last={row.last} chatKey={chatKey} title={title} canAnswer={canAnswer} actions={actions} />;
+  const body =
+    row.side === "center" ? (
+      item
+    ) : (
+      <Revealed mine={row.side === "me"} time={bubbleTime(row.item.at, now)}>
+        {item}
+      </Revealed>
+    );
   return (
     <Animated.View
       {...(motion === undefined ? {} : { entering: bubbleIn(row.side === "me", motion.step, reduce) })}
