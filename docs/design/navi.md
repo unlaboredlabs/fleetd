@@ -643,7 +643,7 @@ it, and when its whole input doesn't fit the card (100,000 characters). Nothing 
 **The card.** `ToolPreview` carries the server, the tool, the action and the whole input the tool runs with, as JSON.
 The app names the Navi ("Ada wants to use create_page on docs"), puts its one warning word only on a share, delete or
 spend, names the act on its buttons (Send it / Don't send), and once answered folds to what was decided ("Approved:
-use create_page on docs"), never "Sent": the hub knows the answer, not the tool's result.
+a change"), never "Sent": the hub knows the answer, not the tool's result.
 
 **Upgrading.** A hub from before D236 drops the stored connections, OAuth client and mail state of its former built-in
 integrations in a migration; each node that held one of their tokens is queued to forget it once online

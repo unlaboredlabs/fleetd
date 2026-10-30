@@ -13,9 +13,6 @@ export const actionWords = (action: ToolAction): string =>
 export const actionWarning = (action: ToolAction): { readonly text: string; readonly tone: "danger" | "warning" } | undefined =>
   action === "delete" ? { text: "Can't be undone", tone: "danger" } : action === "spend" ? { text: "Costs money", tone: "danger" } : action === "share" ? { text: "Gives access", tone: "warning" } : undefined;
 
-/** "Ada wants to use create_page on docs": the Navi by its name, then the tool's verb phrase. */
-export const askTitle = (p: ToolPreview, asker: string): string => `${asker} wants to ${p.title.charAt(0).toLowerCase()}${p.title.slice(1)}`;
-
 /** The buttons, naming the act. */
 export const answerWords = (action: ToolAction): { readonly yes: string; readonly no: string } =>
   action === "send"
@@ -34,13 +31,15 @@ export const previewNeedsConfirm = (p: ToolPreview): boolean => p.action === "de
 export const confirmWords = (p: ToolPreview): { readonly question: string; readonly yes: string } =>
   p.action === "spend" ? { question: "Spend this money? It can't be taken back here.", yes: "Yes, pay" } : { question: "Delete it? It can't be undone.", yes: "Yes, delete it" };
 
+const ACT_WORDS: Readonly<Record<ToolAction, string>> = { send: "a send", write: "a change", delete: "a delete", share: "a share", spend: "a payment" };
+
 /**
- * The line an answered card folds to: what the person decided ("Approved: use create_page on docs"), or undefined
- * while it waits. Never "Sent": the hub knows the answer, not the tool's result, and the tool may still
+ * The line an answered card folds to: what the person decided ("Approved: a send"), or undefined while it waits. Never "Sent": the hub knows the answer, not the tool's result, and the tool may still
  * refuse or fail. What happened then is in the Navi's chat.
  */
 export const previewOutcome = (p: ToolPreview, item: CommandApprovalItem): Outcome | undefined => {
-  const what = `${p.title.charAt(0).toLowerCase()}${p.title.slice(1)}`;
+  // Its act, not the tool's name: a name is a slug, which the open card shows as code.
+  const what = ACT_WORDS[p.action];
   switch (item.state) {
     case "open":
       return undefined;

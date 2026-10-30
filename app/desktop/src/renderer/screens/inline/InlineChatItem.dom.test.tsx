@@ -447,6 +447,8 @@ describe("an integration's approval", () => {
     const text = host.textContent;
     expect(text).toContain("Sends · MCP server");
     expect(text).toContain("Navi wants to use send_message on crm");
+    // The tool and the server are names, shown as code.
+    expect([...host.querySelectorAll("code")].map((c) => c.textContent)).toEqual(expect.arrayContaining(["send_message", "crm"]));
     const everything = one("details");
     expect(everything.hasAttribute("open")).toBe(false);
     expect(everything.querySelector("summary")?.textContent).toBe("Everything it sends");
@@ -473,7 +475,7 @@ describe("an integration's approval", () => {
   it("folds, once answered, to what was decided and who said so when", async () => {
     await render("Q14");
     const fold = one("button[aria-expanded]") as HTMLButtonElement;
-    expect(fold.textContent).toMatch(/^Approved: use send_message on crm· you approved at \d\d:\d\d$/u);
+    expect(fold.textContent).toMatch(/^Approved: a send· you approved at \d\d:\d\d$/u);
   });
 });
 

@@ -39,8 +39,8 @@ A character that hides or reorders text shows as a mark such as ⟨U+200B⟩, un
 
 The buttons name the act: **Send it** and **Don't send**, **Share it**, **Delete it**, **Pay**, **Do it**. Either runs
 exactly that input, or tells the Navi no; <kbd>Enter</kbd> and <kbd>Esc</kbd> do the same. A delete or a spend asks once
-more in the card before it runs. Once answered, the card folds to what you decided: "Approved: use create_page on docs
-· you approved at 09:12". The tool may still refuse or fail; what it did is in the Navi's chat.
+more in the card before it runs. Once answered, the card folds to what you decided: "Approved: a send · you
+approved at 09:12". The tool may still refuse or fail; what it did is in the Navi's chat.
 
 ## Connect a server {#custom}
 

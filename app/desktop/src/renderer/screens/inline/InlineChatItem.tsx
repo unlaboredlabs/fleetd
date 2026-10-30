@@ -14,7 +14,7 @@ import { configLines, configWords } from "../tryit/model";
 import { Exact, HiddenWarning, marks } from "./Exact";
 import { patchLocal, useLocal, type Failed } from "./local";
 import { prose } from "./prose";
-import { actionWarning, actionWords, answerWords, askTitle, confirmWords } from "./toolPreview";
+import { actionWarning, actionWords, answerWords, confirmWords } from "./toolPreview";
 import {
   approvalOffline,
   approvalOutcome,
@@ -431,7 +431,18 @@ function ApprovalItem({ item, read, asker }: { item: CommandApprovalItem; read: 
           : gated !== undefined
             ? prose(gated.reason)
             : preview !== undefined
-              ? marks(askTitle(preview, asker ?? "Navi"))
+              ? (
+                  <>
+                    {marks(`${asker ?? "Navi"} wants to use `)}
+                    <InlineCode>
+                      <Exact text={preview.tool} ltr />
+                    </InlineCode>
+                    {" on "}
+                    <InlineCode>
+                      <Exact text={preview.server} ltr />
+                    </InlineCode>
+                  </>
+                )
               : permission !== undefined
                 ? (
                     <>

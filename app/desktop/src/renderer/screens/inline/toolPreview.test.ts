@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CommandApprovalItem, ToolPreview } from "../../../shared/contracts";
-import { actionWarning, actionWords, answeredWords, answerWords, askTitle, previewNeedsConfirm, previewOutcome } from "./toolPreview";
+import { actionWarning, actionWords, answeredWords, answerWords, previewNeedsConfirm, previewOutcome } from "./toolPreview";
 
 const send: ToolPreview = {
   server: "crm",
@@ -19,8 +19,7 @@ const item = (state: CommandApprovalItem["state"]): CommandApprovalItem => ({
 });
 
 describe("an integration's approval card", () => {
-  it("names the Navi and the act", () => {
-    expect(askTitle(send, "Ada")).toBe("Ada wants to use send_message on crm");
+  it("names the act", () => {
     expect(actionWords("send")).toBe("Sends");
     expect(answerWords("send")).toEqual({ yes: "Send it", no: "Don't send" });
     expect(answerWords("delete")).toEqual({ yes: "Delete it", no: "Don't delete" });
@@ -34,9 +33,11 @@ describe("an integration's approval card", () => {
   });
   it("folds, once answered, to what was decided and who answered when", () => {
     expect(previewOutcome(send, item("open"))).toBeUndefined();
-    // What the person decided, never "Sent": the tool may still refuse or fail after fleetd's card.
-    expect(previewOutcome(send, item("approved"))).toEqual({ tone: "quiet", text: "Approved: use send_message on crm" });
-    expect(previewOutcome(send, item("denied"))?.text).toBe("Declined: use send_message on crm");
+    // What the person decided, never "Sent": the tool may still refuse or fail after fleetd's card. By its act: a tool's
+    // name is a slug, shown as code on the open card.
+    expect(previewOutcome(send, item("approved"))).toEqual({ tone: "quiet", text: "Approved: a send" });
+    expect(previewOutcome(send, item("denied"))?.text).toBe("Declined: a send");
+    expect(previewOutcome({ ...send, action: "delete" }, item("approved"))?.text).toBe("Approved: a delete");
     expect(answeredWords(item("approved"))).toMatch(/^you approved at \d\d:\d\d$/u);
     expect(answeredWords(item("denied"))).toMatch(/^you said no at /u);
   });
