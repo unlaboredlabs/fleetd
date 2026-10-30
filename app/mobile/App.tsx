@@ -34,6 +34,7 @@ import { Session } from "./src/session";
 import { navigationTheme, useTheme, type Palette } from "./src/theme";
 import { haptics } from "./src/ui/haptics";
 import { Icon, sfSymbol, type IconName } from "./src/ui/Icon";
+import { SwipeGroup, useSwipeGroup } from "./src/ui/SwipeRow";
 import { forgetPaired, forgetPush, loadPaired, pairWith } from "./src/vault";
 
 const nav = createNavigationContainerRef<RootParams>();
@@ -264,10 +265,17 @@ const SettingsStack = createNativeStackNavigator<{ Settings: undefined }>();
 
 function ChatsTab() {
   const t = useTheme();
+  const swiped = useSwipeGroup();
   return (
-    <ChatsStack.Navigator screenOptions={{ ...largeTitle(t), contentStyle: { backgroundColor: t.bg } }}>
-      <ChatsStack.Screen name="Chats" component={Chats} options={{ headerSearchBarOptions: searchBar, ...newChatOptions(t, (name) => nav.navigate(name)) }} />
-    </ChatsStack.Navigator>
+    <SwipeGroup swipes={swiped}>
+      {/* A touch on the tab away from the rows closes the open one: the list's space and filters, and the native
+          navigation bar's large title, + and search field, which only a view around the navigator hears. */}
+      <View style={styles.fill} onTouchStart={swiped.touched}>
+        <ChatsStack.Navigator screenOptions={{ ...largeTitle(t), contentStyle: { backgroundColor: t.bg } }}>
+          <ChatsStack.Screen name="Chats" component={Chats} options={{ headerSearchBarOptions: searchBar, ...newChatOptions(t, (name) => nav.navigate(name)) }} />
+        </ChatsStack.Navigator>
+      </View>
+    </SwipeGroup>
   );
 }
 
