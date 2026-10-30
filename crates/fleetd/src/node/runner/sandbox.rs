@@ -62,6 +62,10 @@ pub struct Fence {
     /// ([`sanitized_config`]), read and written in its place on Linux. On macOS, where nothing can stand in for a
     /// path, the real one is hidden.
     pub config_copy: Option<(PathBuf, PathBuf)>,
+    /// Folders on the way to a read-only or hidden path that the Navi could otherwise rename ([`hold_folders`]):
+    /// read and written as they are, but never moved. Linux binds each onto itself; macOS denies writing the folder
+    /// itself, not what is in it.
+    pub held: Vec<PathBuf>,
 }
 
 /// A command inside a sandbox: its program and arguments, and the files it inherits under the numbers they have here
@@ -190,7 +194,7 @@ const RUN_ON_THEIR_OWN: &[&str] = &[
 /// their settings, MCP servers, policy and instructions. Read-only to a Navi, which writes the rest of a checkout. A dir
 /// that isn't there is made empty first ([`Fence::prepare`]); a file that isn't there can still be made, and a new
 /// `.mcp.json` runs nothing until settings the Navi can't write approve it.
-const PROJECT_KEPT: &[&str] = &[
+pub const PROJECT_KEPT: &[&str] = &[
     ".claude",
     ".fleetd",
     ".mcp.json",
@@ -610,10 +614,119 @@ pub fn navi_fence(p: &NaviPaths) -> Fence {
         links,
         tmp: cfg!(target_os = "linux").then(|| own.join(TMP_DIR)),
         session: Some(p.session_id.to_owned()),
+        held: Vec::new(),
     };
     guard(&mut fence, p, &user_home, &folder);
+    let links = pin_links(&mut fence, &user_home);
     resolve_links(&mut fence);
+    fence.keep.extend(links);
+    fence.keep.sort();
+    fence.keep.dedup();
+    hold_folders(&mut fence);
     fence
+}
+
+/// Holds each folder on the way to a read-only or hidden path, in a folder the Navi writes ([`Fence::held`]). A mount
+/// point can't be renamed, though a folder above one can: otherwise the Navi could move `~/dotfiles/pkg` aside and
+/// leave its own `pkg/.local/bin` (or its own checkout, or `/opt/brew`) in its place, or move `~/.local/share` aside so
+/// that its next session finds the keyrings at a path no longer hidden.
+fn hold_folders(fence: &mut Fence) {
+    let writable = |d: &Path| nix::unistd::access(d, nix::unistd::AccessFlags::W_OK).is_ok();
+    let ops = fence.ops();
+    let mut seen = std::collections::HashSet::new();
+    let mut held = Vec::new();
+    for path in fence.show.iter().chain(&fence.keep).chain(&fence.hide) {
+        for folder in path.ancestors().skip(1) {
+            let Some(parent) = folder.parent() else {
+                break;
+            };
+            if !seen.insert(folder) {
+                break;
+            }
+            let mounted = ops.iter().any(|(at, _)| *at == folder);
+            if !mounted
+                && access_in(&ops, folder) == Access::Write
+                && access_in(&ops, parent) == Access::Write
+                && writable(parent)
+            {
+                held.push(folder.to_owned());
+            }
+        }
+    }
+    drop(ops);
+    held.sort();
+    fence.held = held;
+}
+
+/// Keeps where they are the links on the way to a read-only path, from a folder the Navi writes: once removed, its own
+/// file or dir could stand in their place (a `~/.local/bin` linked into a dotfiles repo, a checkout's `CLAUDE.md`).
+/// On macOS the link itself isn't written: returned, to keep once the rest is resolved. On Linux, where no mount lands on a link, the person's home bin dir
+/// ([`HOME_BINS`], [`MORE_HOME_BINS`]), and a hidden path that is a link, has its parent listed as the home is: the link comes back as a link in a
+/// read-only tmpfs, and the parent's other entries as they are, though nothing new is made at its top. That costs the
+/// Navi nothing: it installs into its own home. A checkout isn't listed (`git clone` into `~/src` still works); the node
+/// checks its links before an agent runs there instead (`node::checkouts`).
+fn pin_links(fence: &mut Fence, user_home: &Path) -> Vec<PathBuf> {
+    let writable = |d: &Path| nix::unistd::access(d, nix::unistd::AccessFlags::W_OK).is_ok();
+    // `(link, folder)` for each link on the way to `path` in a folder the person and the Navi write.
+    let swappable = |fence: &Fence, path: &Path| {
+        let mut found = Vec::new();
+        let mut at = PathBuf::new();
+        for part in path.components() {
+            let next = at.join(part);
+            if !next.is_symlink() {
+                at = next;
+                continue;
+            }
+            if writable(&at) && fence.access(&at) == Access::Write {
+                found.push((next.clone(), at.clone()));
+            }
+            at = real(&next);
+        }
+        found
+    };
+    if cfg!(target_os = "macos") {
+        return fence
+            .show
+            .iter()
+            .chain(&fence.keep)
+            .flat_map(|p| swappable(fence, p))
+            .map(|(link, _)| link)
+            .collect();
+    }
+    // A hidden link too (`~/.local/share/keyrings` into a dotfiles repo): swapped for a dir of its own, the next
+    // session would hide that one, and not where the link led.
+    let folders: Vec<PathBuf> = HOME_BINS
+        .iter()
+        .chain(MORE_HOME_BINS)
+        .map(|b| user_home.join(b))
+        .chain(fence.hide.clone())
+        .flat_map(|p| swappable(fence, &p))
+        .map(|(_, folder)| folder)
+        .collect();
+    for folder in folders {
+        if fence.hide.contains(&folder) {
+            continue;
+        }
+        fence.listed.retain(|l| *l != folder);
+        let entries = std::fs::read_dir(&folder).into_iter().flatten().flatten();
+        for entry in entries {
+            let path = entry.path();
+            if entry.file_type().is_ok_and(|t| t.is_symlink()) {
+                // A hidden link comes back as a link: where it leads is hidden on its own.
+                fence.hide.retain(|h| *h != path);
+                fence
+                    .links
+                    .extend(std::fs::read_link(&path).map(|to| (path, to)));
+            } else if ![&fence.hide, &fence.show, &fence.keep]
+                .iter()
+                .any(|set| set.contains(&path))
+            {
+                fence.listed.push(path);
+            }
+        }
+        fence.hide.push(folder);
+    }
+    Vec::new()
 }
 
 /// Makes each read-only path of `fence` the one it really is: a mount lands on what a link (or a linked parent) leads
@@ -685,6 +798,11 @@ fn guard(fence: &mut Fence, p: &NaviPaths, user_home: &Path, folder: &Path) {
             continue;
         }
         let mut kept: Vec<PathBuf> = PROJECT_KEPT.iter().map(|k| root.join(k)).collect();
+        // A worktree's or submodule's `.git` file, which names the git dir whose config and hooks run.
+        let dot_git = root.join(".git");
+        if std::fs::symlink_metadata(&dot_git).is_ok_and(|m| m.is_file()) {
+            kept.push(dot_git);
+        }
         for git in git_dirs(&root) {
             if git.join("config").is_file() && writable(&git) {
                 kept.extend(GIT_KEPT.iter().map(|k| git.join(k)));
@@ -763,6 +881,7 @@ impl Fence {
             self.write
                 .iter()
                 .chain(&self.listed)
+                .chain(&self.held)
                 .map(|p| (p.as_path(), Op::Write)),
         );
         ops.extend(
@@ -800,18 +919,23 @@ impl Fence {
     /// What the session may do with `path`, once resolved, as its sandbox has it: what the deepest of the fence's
     /// paths that holds it says, the last of those at one depth; written where none does, as the person may.
     pub fn access(&self, path: &Path) -> Access {
-        let mut access = Access::Write;
-        for (at, op) in self.ops() {
-            if path.starts_with(at) {
-                access = match op {
-                    Op::Hide => Access::Hidden,
-                    Op::Show => Access::Read,
-                    Op::Write | Op::Private(_) | Op::Link(_) => Access::Write,
-                };
-            }
-        }
-        access
+        access_in(&self.ops(), path)
     }
+}
+
+/// [`Fence::access`] with the fence's [`Fence::ops`] made once.
+fn access_in(ops: &[(&Path, Op<'_>)], path: &Path) -> Access {
+    let mut access = Access::Write;
+    for (at, op) in ops {
+        if path.starts_with(at) {
+            access = match op {
+                Op::Hide => Access::Hidden,
+                Op::Show => Access::Read,
+                Op::Write | Op::Private(_) | Op::Link(_) => Access::Write,
+            };
+        }
+    }
+    access
 }
 
 /// What the sandbox does at a path.
@@ -1276,8 +1400,8 @@ fn quoted(p: &Path) -> String {
     format!("\"{text}\"")
 }
 
-/// macOS's profile: everything as usual, but no writing the hidden paths, the shown ones and the folder's kept ones,
-/// and no reading the hidden ones' contents. Later rules win, so each path's rules come after those of the paths
+/// macOS's profile: everything as usual, but no writing the hidden paths, the shown ones, the folder's kept ones and
+/// the held folders themselves (not what is in them), and no reading the hidden ones' contents. Later rules win, so each path's rules come after those of the paths
 /// around it (shallowest first, as bubblewrap mounts them): the folder is read and written inside the hidden fleetd
 /// dir, its kept paths aren't written inside it, and claude's other sessions aren't read inside its shown config dir.
 /// A path's metadata stays readable, so resolving a path through a hidden dir still works.
@@ -1286,10 +1410,16 @@ fn seatbelt(fence: &Fence) -> String {
     rules.extend(fence.show.iter().map(|p| (p, "show")));
     rules.extend(fence.write.iter().map(|p| (p, "allow")));
     rules.extend(fence.keep.iter().map(|p| (p, "keep")));
+    rules.extend(fence.held.iter().map(|p| (p, "hold")));
     rules.sort_by_key(|(p, _)| p.components().count());
     let mut profile = String::from("(version 1)\n(allow default)\n");
     for (path, rule) in rules {
-        let at = format!("(subpath {})", quoted(path));
+        // A held folder itself, never what is in it.
+        let at = if rule == "hold" {
+            format!("(literal {})", quoted(path))
+        } else {
+            format!("(subpath {})", quoted(path))
+        };
         let (read, write) = match rule {
             "deny" => (Some("deny"), "deny"),
             "show" => (Some("allow"), "deny"),

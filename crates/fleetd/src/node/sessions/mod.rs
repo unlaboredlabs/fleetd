@@ -1425,6 +1425,19 @@ impl SessionService {
         Some(self.store().session(id).ok()??.local.cwd)
     }
 
+    /// Refuses a lead or agent the project's checkout `root` once something replaced it since the node last ran work
+    /// there (`checkouts`): they run outside any sandbox, and a Navi may write the person's checkouts. A Navi's own
+    /// folder isn't checked.
+    fn checkout_unchanged(&self, role: SessionRole, root: &Path) -> Result<(), SessionError> {
+        if role == SessionRole::Assistant {
+            return Ok(());
+        }
+        super::checkouts::check(&self.inner.config.home, root).map_err(|r| SessionError {
+            fix: Some(r.fix),
+            ..error(SessionErrorCode::RunnerUnavailable, r.message)
+        })
+    }
+
     fn project_root(&self, project_id: &str) -> Result<PathBuf, SessionError> {
         let project = self
             .store()
@@ -1631,6 +1644,7 @@ impl SessionService {
             )));
         }
         let root = self.project_root(&launch.project_id)?;
+        self.checkout_unchanged(launch.role, &root)?;
         // A session taking over an earlier one of the same branch (a task restarted fresh) works in that one's
         // worktree as it was left, uncommitted changes included; a worktree that is gone comes back first.
         let taken = match &launch.workspace {
@@ -2108,6 +2122,7 @@ impl SessionService {
         // a later message alone (a recovery note) would leave it with no idea of its task. Refused, so the hub restarts
         // it with its brief and a handoff. Only its first message itself may start over.
         let must_resume = resume && !opening && row.local.role == SessionRole::Worker;
+        self.checkout_unchanged(row.local.role, &row.local.workspace_root)?;
         let (spec, secrets, order_digest) = self.spec(&row, resume, must_resume).map_err(|e| {
             error(
                 SessionErrorCode::Internal,

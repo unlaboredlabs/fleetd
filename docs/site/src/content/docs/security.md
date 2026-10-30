@@ -129,12 +129,25 @@ so a Navi that is talked into something can't plant code there that reads your k
   `~/.npm-global/bin`, `~/.volta/bin` and `~/.pyenv/shims`, where your shells look. On Linux one of those that isn't
   there but could be made is made, empty, first. The Navi's own home's bin dirs stay its own, first on its `PATH`.
 - In each project's checkout on the machine (every project the node knows): git's `config`, `config.worktree`,
-  `hooks` and `worktrees` in its git dir (and the common dir a worktree's `.git` points at), so no `core.fsmonitor`,
+  `hooks` and `worktrees` in its git dir (and the common dir a worktree's `.git` points at), a worktree's `.git`
+  file itself, so no `core.fsmonitor`,
   `core.hooksPath`, alias or hook runs in your git or an agent's; and `.claude`, `.fleetd`, `.mcp.json`, `CLAUDE.md`
   and `CLAUDE.local.md`, which fleetd's agents load as their settings, policy and instructions. `.claude`, `.fleetd`,
   `hooks` and `worktrees` are made, empty, if they aren't there. A new `.mcp.json` or `CLAUDE.md` can still be made;
   a new `.mcp.json`'s servers don't run until settings it can't write approve them. The rest of a checkout is yours
   to have it write: its code, a commit.
+- A read-only path that is a link (`CLAUDE.md` linked to `AGENTS.md`, `~/.local/bin` linked into your dotfiles) is
+  read-only where it leads, and the link itself stays. On macOS the link can't be removed or replaced. On Linux, where
+  nothing can be mounted on a link, the folder holding a linked bin dir of your home (`~/.local` for `~/.local/bin`)
+  is listed like the home: the link comes back as a link and the folder's other entries as they are, but nothing new
+  is made at its top. A Navi installs into its own home, so that costs it nothing. A checkout isn't listed (it can
+  still clone into `~/src`); the node checks it instead, below.
+- Each folder on the way to a read-only or hidden path that the Navi could rename (`~/dotfiles/pkg` above
+  `~/dotfiles/pkg/.local/bin`, a checkout, `/opt/brew` above `/opt/brew/bin`, `~/.local/share` above your keyrings,
+  the folder a linked `~/.aws` leads into) can't be moved aside, so nothing it put in its place is run, and no
+  session finds your keys at a path no longer hidden. What is in it is written as before. On Linux it is bound onto
+  itself; on macOS the folder itself isn't written. A hidden path that is a link stays a link, as a read-only one
+  does (on Linux its folder is listed the same way).
 - `~/.claude` (but its own session's files: its conversation in `~/.claude/projects/<its folder>`,
   `~/.claude/session-env/<session>`, `~/.claude/file-history/<session>`, and the login file
   `~/.claude/.credentials.json`, where Claude Code saves a refreshed token), so it can't add hooks or MCP servers for
@@ -166,6 +179,13 @@ in for a path, the real file and its copies are hidden.
 - The docker socket (`/run/docker.sock`, `/var/run/docker.sock`).
 
 Everything else reads as it does for you: your code, your notes, other projects' checkouts.
+
+**A replaced checkout stops work.** A Navi could still swap a linked `CLAUDE.md` for its own file on Linux. So the node records each project's checkout the first
+time a lead or agent runs there: its folder, its `.git` (and what a worktree's `.git` file says), and each link among `.claude`, `.fleetd`, `.mcp.json`,
+`CLAUDE.md` and `CLAUDE.local.md` (in `checkouts.json` in the node's home, which no Navi sees). Before it starts a
+lead or agent there again, it checks them. When one is another, nothing starts, and the chat says the folder was
+replaced. Check it, then run `fleetd node trust <folder>` on that machine and send again. Re-cloning a project in
+the same place stops it the same way.
 
 **On Linux the home is listed.** A Navi's `~` is read-only, with each entry it had when the session started bound
 back, but the hidden ones. A link there stays a link, so one into a hidden path leads nowhere. Nothing new appears at

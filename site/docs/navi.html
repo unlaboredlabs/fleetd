@@ -172,7 +172,9 @@ also writes drafts and notes in its folder, remembers and forgets, keeps its che
 and the rest), fleetd’s own directory and other Navis’. What runs outside its sandbox later stays read-only, so it
 can’t plant code that reads your keys: your shell’s startup files, your programs (<code dir="auto">~/.local/bin</code>, <code dir="auto">~/.cargo/bin</code>,
 Homebrew’s and the rest), git’s config and hooks and the <code dir="auto">.claude</code>, <code dir="auto">.fleetd</code>, <code dir="auto">.mcp.json</code> and <code dir="auto">CLAUDE.md</code> of every
-project’s checkout, and its own settings in its folder. A policy file’s allow rules don’t apply to a Navi at all.
+project’s checkout, and its own settings in its folder. If a checkout is moved aside and replaced, no lead or agent
+starts there until you check it and run <code dir="auto">fleetd node trust &lt;folder&gt;</code> (<a href="/docs/security#navi-sandbox">Security</a>). A policy
+file’s allow rules don’t apply to a Navi at all.
 Its folder is where its notes, drafts and downloads go.</li>
 <li><strong>Its own home:</strong> each Navi has a home of its own, kept between sessions, where npm’s global installs, <code dir="auto">pip install --user</code>,
 <code dir="auto">cargo install</code> and install scripts put what they install, on its <code dir="auto">PATH</code>. What it starts in the background with

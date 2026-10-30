@@ -33,6 +33,7 @@ Where fleetd keeps everything, and the settings you can change. The [hub](/docs/
     bin/                 the running node's own binary, linked here so its agents' fleetd tools survive an update
     sessions.sqlite      the node's sessions, and timings not yet sent to the hub
     worktrees/           one git worktree per task session, readers' and reviewers' too
+    checkouts.json       each project's checkout as a lead or agent first ran there, so a replaced one is refused (fleetd node trust)
     project-env/<project>.json   a project's environment variables, secrets included (mode 0600; Settings → Projects)
     mcp-secrets/         the secrets of the MCP servers agents get, global and per project (mode 0600; Settings › Hub › Every project › Tools & skills, and a project's Agents)
     browser/             browser screens: the pinned Chrome, ffmpeg and agent-browser, and recordings not yet on the hub

@@ -434,6 +434,14 @@ fleetd node run [--home <dir>]
 
 keep the link up for a machine that has joined
 
+### fleetd node trust {#node-trust}
+
+```text
+fleetd node trust <dir> [--home <dir>]
+```
+
+start work again in a project's checkout fleetd refused as replaced, once you checked it
+
 ### fleetd prompts list {#prompts-list}
 
 ```text

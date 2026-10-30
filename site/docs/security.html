@@ -225,12 +225,25 @@ them; and your <code dir="auto">~/bin</code>, <code dir="auto">~/.local/bin</cod
 <code dir="auto">~/.npm-global/bin</code>, <code dir="auto">~/.volta/bin</code> and <code dir="auto">~/.pyenv/shims</code>, where your shells look. On Linux one of those that isn’t
 there but could be made is made, empty, first. The Navi’s own home’s bin dirs stay its own, first on its <code dir="auto">PATH</code>.</li>
 <li>In each project’s checkout on the machine (every project the node knows): git’s <code dir="auto">config</code>, <code dir="auto">config.worktree</code>,
-<code dir="auto">hooks</code> and <code dir="auto">worktrees</code> in its git dir (and the common dir a worktree’s <code dir="auto">.git</code> points at), so no <code dir="auto">core.fsmonitor</code>,
+<code dir="auto">hooks</code> and <code dir="auto">worktrees</code> in its git dir (and the common dir a worktree’s <code dir="auto">.git</code> points at), a worktree’s <code dir="auto">.git</code>
+file itself, so no <code dir="auto">core.fsmonitor</code>,
 <code dir="auto">core.hooksPath</code>, alias or hook runs in your git or an agent’s; and <code dir="auto">.claude</code>, <code dir="auto">.fleetd</code>, <code dir="auto">.mcp.json</code>, <code dir="auto">CLAUDE.md</code>
 and <code dir="auto">CLAUDE.local.md</code>, which fleetd’s agents load as their settings, policy and instructions. <code dir="auto">.claude</code>, <code dir="auto">.fleetd</code>,
 <code dir="auto">hooks</code> and <code dir="auto">worktrees</code> are made, empty, if they aren’t there. A new <code dir="auto">.mcp.json</code> or <code dir="auto">CLAUDE.md</code> can still be made;
 a new <code dir="auto">.mcp.json</code>’s servers don’t run until settings it can’t write approve them. The rest of a checkout is yours
 to have it write: its code, a commit.</li>
+<li>A read-only path that is a link (<code dir="auto">CLAUDE.md</code> linked to <code dir="auto">AGENTS.md</code>, <code dir="auto">~/.local/bin</code> linked into your dotfiles) is
+read-only where it leads, and the link itself stays. On macOS the link can’t be removed or replaced. On Linux, where
+nothing can be mounted on a link, the folder holding a linked bin dir of your home (<code dir="auto">~/.local</code> for <code dir="auto">~/.local/bin</code>)
+is listed like the home: the link comes back as a link and the folder’s other entries as they are, but nothing new
+is made at its top. A Navi installs into its own home, so that costs it nothing. A checkout isn’t listed (it can
+still clone into <code dir="auto">~/src</code>); the node checks it instead, below.</li>
+<li>Each folder on the way to a read-only or hidden path that the Navi could rename (<code dir="auto">~/dotfiles/pkg</code> above
+<code dir="auto">~/dotfiles/pkg/.local/bin</code>, a checkout, <code dir="auto">/opt/brew</code> above <code dir="auto">/opt/brew/bin</code>, <code dir="auto">~/.local/share</code> above your keyrings,
+the folder a linked <code dir="auto">~/.aws</code> leads into) can’t be moved aside, so nothing it put in its place is run, and no
+session finds your keys at a path no longer hidden. What is in it is written as before. On Linux it is bound onto
+itself; on macOS the folder itself isn’t written. A hidden path that is a link stays a link, as a read-only one
+does (on Linux its folder is listed the same way).</li>
 <li><code dir="auto">~/.claude</code> (but its own session’s files: its conversation in <code dir="auto">~/.claude/projects/&lt;its folder&gt;</code>,
 <code dir="auto">~/.claude/session-env/&lt;session&gt;</code>, <code dir="auto">~/.claude/file-history/&lt;session&gt;</code>, and the login file
 <code dir="auto">~/.claude/.credentials.json</code>, where Claude Code saves a refreshed token), so it can’t add hooks or MCP servers for
@@ -261,6 +274,12 @@ and <code dir="auto">~/snap</code> (each snap’s own data, logins included).</l
 <li>The docker socket (<code dir="auto">/run/docker.sock</code>, <code dir="auto">/var/run/docker.sock</code>).</li>
 </ul>
 <p>Everything else reads as it does for you: your code, your notes, other projects’ checkouts.</p>
+<p><strong>A replaced checkout stops work.</strong> A Navi could still swap a linked <code dir="auto">CLAUDE.md</code> for its own file on Linux. So the node records each project’s checkout the first
+time a lead or agent runs there: its folder, its <code dir="auto">.git</code> (and what a worktree’s <code dir="auto">.git</code> file says), and each link among <code dir="auto">.claude</code>, <code dir="auto">.fleetd</code>, <code dir="auto">.mcp.json</code>,
+<code dir="auto">CLAUDE.md</code> and <code dir="auto">CLAUDE.local.md</code> (in <code dir="auto">checkouts.json</code> in the node’s home, which no Navi sees). Before it starts a
+lead or agent there again, it checks them. When one is another, nothing starts, and the chat says the folder was
+replaced. Check it, then run <code dir="auto">fleetd node trust &lt;folder&gt;</code> on that machine and send again. Re-cloning a project in
+the same place stops it the same way.</p>
 <p><strong>On Linux the home is listed.</strong> A Navi’s <code dir="auto">~</code> is read-only, with each entry it had when the session started bound
 back, but the hidden ones. A link there stays a link, so one into a hidden path leads nowhere. Nothing new appears at
 the top of your home while it runs, such as another session’s temporary copy of <code dir="auto">~/.claude.json</code>, and it can’t make a
