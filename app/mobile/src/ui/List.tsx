@@ -63,7 +63,7 @@ export function ListRow({
   const body = (pressed: boolean) => (
     <View style={[styles.row, pressed && { backgroundColor: t.fillQuiet }]}>
       {icon === undefined ? null : (
-        <View style={[styles.tile, { backgroundColor: tint ?? t.accent }]}>
+        <View style={[styles.tile, { backgroundColor: tint ?? t.accentFill }]}>
           <Icon name={icon} size={17} color="#FFFFFF" weight="medium" />
         </View>
       )}

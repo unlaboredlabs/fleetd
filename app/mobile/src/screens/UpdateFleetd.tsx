@@ -44,7 +44,7 @@ export function UpdateFleetd() {
 
   return (
     <ListSection header="Update" {...(section.offer === null ? {} : { footer: UPDATE_NOTE })}>
-      {section.offer === null ? null : <ListRow icon="update" tint={t.accent} title={section.offer.title} detail={section.offer.detail} onPress={confirm} />}
+      {section.offer === null ? null : <ListRow icon="update" tint={t.accentFill} title={section.offer.title} detail={section.offer.detail} onPress={confirm} />}
       {section.progress === null ? null : (
         <View style={styles.progress} accessibilityLiveRegion="polite">
           {section.going ? (

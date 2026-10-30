@@ -185,8 +185,8 @@ function Filters({ value, onChange, unread }: { value: Filter; onChange: (f: Fil
             <>
               <Text style={[type.subhead, styles.filterText, { color: on ? t.onAccent : t.label }]}>{f.label}</Text>
               {f.id === "unread" && unread > 0 ? (
-                <View style={[styles.filterCount, { backgroundColor: on ? t.onAccent : t.accent }]}>
-                  <Text style={[type.caption2, styles.filterCountText, { color: on ? t.accent : t.onAccent }]}>{unread}</Text>
+                <View style={[styles.filterCount, { backgroundColor: on ? t.onAccent : t.accentFill }]}>
+                  <Text style={[type.caption2, styles.filterCountText, { color: on ? t.accentFill : t.onAccent }]}>{unread}</Text>
                 </View>
               ) : null}
             </>
@@ -204,11 +204,11 @@ function Filters({ value, onChange, unread }: { value: Filter; onChange: (f: Fil
               }}
             >
               {liquidGlass ? (
-                <Glass interactive style={styles.filter} {...(on ? { tint: t.accent } : {})}>
+                <Glass interactive style={styles.filter} {...(on ? { tint: t.accentFill } : {})}>
                   {face}
                 </Glass>
               ) : (
-                <View style={[styles.filter, { backgroundColor: on ? t.accent : t.fillQuiet }]}>{face}</View>
+                <View style={[styles.filter, { backgroundColor: on ? t.accentFill : t.fillQuiet }]}>{face}</View>
               )}
             </Pressable>
           );
@@ -247,7 +247,7 @@ function SwipeRow({ row, separator, onPress }: { row: ChatRow; separator: boolea
   const swipe = useRef<SwipeableMethods>(null);
   const acts = rowActions(row, usePrefs().pinned.length >= MAX_PINNED);
   const [read, pin, mute] = acts as [(typeof acts)[number], (typeof acts)[number], (typeof acts)[number]];
-  const tone = { accent: t.accent, success: t.success, warning: t.warning } as const;
+  const tone = { accent: t.accentFill, success: t.success, warning: t.warning } as const;
   const button = (a: (typeof acts)[number]) => (
     <Pressable
       key={a.label}

@@ -9,7 +9,7 @@ import { type, useTheme } from "../theme";
 export function Bubble({ side, tail, children, tone, time }: { side: "me" | "them"; tail: boolean; children: ReactNode; tone?: "accent" | "neutral" | "danger"; time?: string | undefined }) {
   const t = useTheme();
   const shade = tone ?? (side === "me" ? "accent" : "neutral");
-  const fill = shade === "accent" ? t.accent : shade === "danger" ? t.danger : t.bubble;
+  const fill = shade === "accent" ? t.accentFill : shade === "danger" ? t.danger : t.bubble;
   const mine = side === "me";
   return (
     <View style={[styles.bubble, { backgroundColor: fill }, mine ? styles.mine : styles.theirs]}>

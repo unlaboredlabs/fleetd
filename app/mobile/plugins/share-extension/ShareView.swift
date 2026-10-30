@@ -20,10 +20,12 @@ struct ShareSheet: View {
             ToolbarItem(placement: .confirmationAction) {
               Button { model.send() } label: { Label("Send", systemImage: "arrow.up") }
                 .disabled(!model.canSend)
+                .tint(Color.accentFill)
             }
           }
         }
     }
+    .tint(Color.accent)
   }
 
   @ViewBuilder private var content: some View {
@@ -206,14 +208,14 @@ private struct RecentRow: View {
                   if selected == chat {
                     Image(systemName: "checkmark.circle.fill")
                       .font(.system(size: 20))
-                      .foregroundStyle(.white, Color.accentColor)
+                      .foregroundStyle(.white, Color.accentFill)
                       .background(Circle().fill(Color(.systemBackground)).padding(-2))
                       .transition(.scale.combined(with: .opacity))
                   }
                 }
               Text(chat.title)
                 .font(.caption)
-                .foregroundStyle(selected == chat ? Color.accentColor : .primary)
+                .foregroundStyle(selected == chat ? Color.accent : .primary)
                 .lineLimit(2)
                 .multilineTextAlignment(.center)
                 .frame(width: 70)
@@ -246,7 +248,7 @@ private struct ChatRow: View {
         Spacer(minLength: 8)
         Image(systemName: selected ? "checkmark.circle.fill" : "circle")
           .font(.title3)
-          .foregroundStyle(selected ? Color.accentColor : Color(.tertiaryLabel))
+          .foregroundStyle(selected ? Color.accent : Color(.tertiaryLabel))
       }
       .contentShape(Rectangle())
     }
@@ -363,14 +365,27 @@ extension View {
   @ViewBuilder func prominent(_ on: Bool) -> some View {
     #if compiler(>=6.2)
     if #available(iOS 26.0, *) {
-      if on { buttonStyle(.glassProminent) } else { buttonStyle(.glass) }
+      if on { buttonStyle(.glassProminent).tint(Color.accentFill) } else { buttonStyle(.glass) }
     } else if on {
-      buttonStyle(.borderedProminent).buttonBorderShape(.capsule)
+      buttonStyle(.borderedProminent).buttonBorderShape(.capsule).tint(Color.accentFill)
     } else {
       buttonStyle(.bordered).buttonBorderShape(.capsule)
     }
     #else
-    if on { buttonStyle(.borderedProminent).buttonBorderShape(.capsule) } else { buttonStyle(.bordered).buttonBorderShape(.capsule) }
+    if on { buttonStyle(.borderedProminent).buttonBorderShape(.capsule).tint(Color.accentFill) } else { buttonStyle(.bordered).buttonBorderShape(.capsule) }
     #endif
+  }
+}
+
+/// The app's accent (src/theme.ts), the desktop app's blue rather than system blue: as text and icons, and as a fill
+/// under white, which dark mode deepens so white on it stays readable.
+extension Color {
+  static let accent = Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(hex: 0x79ABF5) : UIColor(hex: 0x2360C4) })
+  static let accentFill = Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(hex: 0x2E69CC) : UIColor(hex: 0x2360C4) })
+}
+
+private extension UIColor {
+  convenience init(hex: UInt32) {
+    self.init(red: CGFloat(hex >> 16 & 0xFF) / 255, green: CGFloat(hex >> 8 & 0xFF) / 255, blue: CGFloat(hex & 0xFF) / 255, alpha: 1)
   }
 }

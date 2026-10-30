@@ -30,9 +30,10 @@ export function Button({
 }) {
   const t = useTheme();
   const hue = destructive ? t.danger : t.accent;
+  const solid = destructive ? t.danger : t.accentFill;
   // A disabled button greys out as iOS's do, rather than fading its color.
   const off = disabled && !busy;
-  const fill = off && kind !== "plain" ? t.fillQuiet : kind === "filled" ? hue : kind === "tinted" ? (destructive ? t.dangerSoft : t.accentSoft) : "transparent";
+  const fill = off && kind !== "plain" ? t.fillQuiet : kind === "filled" ? solid : kind === "tinted" ? (destructive ? t.dangerSoft : t.accentSoft) : "transparent";
   const ink = off ? t.tertiary : kind === "filled" ? t.onAccent : hue;
   const height = size === "large" ? 50 : size === "medium" ? TOUCH : 34;
   const radius = shape.capsule || size === "small" ? height / 2 : size === "large" ? 14 : 12;
@@ -69,7 +70,7 @@ export function Button({
   );
   if (!glass) return button;
   return (
-    <Glass interactive tint={hue} style={[{ borderRadius: radius }, grow && styles.grow, size === "large" && styles.wide]}>
+    <Glass interactive tint={solid} style={[{ borderRadius: radius }, grow && styles.grow, size === "large" && styles.wide]}>
       {button}
     </Glass>
   );

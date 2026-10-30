@@ -27,7 +27,7 @@ describe("a swiping row's face", () => {
   it("looks as the quiet fill did over the screen", () => {
     expect(over("rgba(118,118,128,0.12)", "#FFFFFF")).toBe("rgb(239,239,240)");
     expect(over("rgba(118,118,128,0.24)", "#000000")).toBe("rgb(28,28,31)");
-    expect(over("#007AFF", "#FFFFFF")).toBe("rgb(0,122,255)");
+    expect(over("#2360C4", "#FFFFFF")).toBe("rgb(35,96,196)");
     expect(rowFace({ bg: "#FFFFFF", fillQuiet: "rgba(118,118,128,0.12)" }, false)).toBe("#FFFFFF");
   });
 });
