@@ -222,9 +222,13 @@ impl SessionConfig {
     }
 }
 
+/// What a reader whose worktree took a warm build hears.
+const WARM_NOTE: &str = "This worktree's `target/` is a warm build an earlier reader of this checkout left: \
+                         dependencies are built, and only what changed rebuilds.";
+
 /// One compile cache for every session on the machine, when sccache is installed and the environment names no
-/// wrapper: dependencies compile once, not once per worktree. Target dirs stay in each worktree and go with it,
-/// since cargo checks a workspace's own crates by path and mtime: a target shared between worktrees can hand one
+/// wrapper: dependencies compile once, not once per worktree. Target dirs stay in each worktree and go with it (a
+/// reader's is handed on whole to the next, `warm`), since cargo checks a workspace's own crates by path and mtime: a target shared between worktrees can hand one
 /// worktree another's build.
 pub fn compile_cache_env(env: &[(String, String)]) -> Vec<(String, String)> {
     let var = |name: &str| env.iter().find(|(k, _)| k == name).map(|(_, v)| v.as_str());
@@ -1730,6 +1734,8 @@ impl SessionService {
             .join(&id);
         let mut recreated_from = None;
         let mut prompt = launch.prompt.to_string();
+        // A reader's setup: its project's, time-boxed and never stopping it, else installs for the apps it touches.
+        let mut reader_setup = None;
         let (cwd, add_dirs, base_ref, branch) = match (&launch.workspace, base, taken) {
             (_, _, Some(from)) => {
                 let local = from.local;
@@ -1754,9 +1760,24 @@ impl SessionService {
                 (local.cwd, local.add_dirs, local.base_ref, local.branch)
             }
             (SessionWorkspace::Detached { .. }, Some(base), None) => {
-                let sha = head.unwrap_or(base.sha);
+                let sha = head.unwrap_or(base.sha.clone());
                 let (r, p, s) = (root.clone(), path.clone(), sha.clone());
                 blocking(move || worktree::ensure_detached(&r, &p, &s)).await?;
+                let (h, r, p, own) = (
+                    self.inner.config.home.clone(),
+                    root.clone(),
+                    path.clone(),
+                    launch.setup.as_deref().cloned(),
+                );
+                let (warm, setup) = blocking(move || {
+                    let warm = super::warm::take(&h, &r, &p);
+                    (warm, super::warm::reader_setup(own, &p, &base.sha))
+                })
+                .await;
+                reader_setup = Some(setup);
+                if warm {
+                    prompt = format!("{}\n\n{WARM_NOTE}", prompt.trim_end());
+                }
                 (path, vec![root.clone()], Some(sha), None)
             }
             (SessionWorkspace::Worktree { branch, .. }, Some(base), None) => {
@@ -1817,10 +1838,11 @@ impl SessionService {
             (None, note) => note,
         };
         // Setup applies to a session in a worktree of its own.
-        let setup = launch
-            .setup
-            .map(|s| *s)
-            .filter(|s| !s.is_empty() && base_ref.is_some());
+        let setup = match reader_setup {
+            Some(setup) => setup,
+            None => launch.setup.map(|s| *s),
+        }
+        .filter(|s| !s.is_empty() && base_ref.is_some());
         let row = SessionRow {
             summary: SessionSummary {
                 session_id: launch.session_id.clone(),
@@ -2299,6 +2321,14 @@ impl SessionService {
                 at.clone(),
             );
             blocking(move || worktree::ensure_detached(&r, &p, &a)).await?;
+            let (h, r, p) = (
+                self.inner.config.home.clone(),
+                row.local.workspace_root.clone(),
+                row.local.cwd.clone(),
+            );
+            if blocking(move || super::warm::take(&h, &r, &p)).await {
+                note = Some(WARM_NOTE.to_owned());
+            }
             row.summary.worktree_path = Some(row.local.cwd.to_string_lossy().into_owned());
             recreated = true;
         }
@@ -3606,9 +3636,14 @@ impl SessionService {
         }
         if remove_worktree && let Some(base_ref) = row.local.base_ref {
             let (root, path, branch) = (row.local.workspace_root, row.local.cwd, row.local.branch);
+            let home = self.inner.config.home.clone();
             let deleted = blocking(move || match branch {
                 Some(branch) => worktree::remove(&root, &path, &branch, &base_ref),
-                None => worktree::remove_detached(&root, &path).map(|()| false),
+                None => {
+                    // Its build goes on to the next reader of the checkout.
+                    super::warm::give(&home, &root, &path);
+                    worktree::remove_detached(&root, &path).map(|()| false)
+                }
             })
             .await
             .inspect_err(|e| tracing::warn!(session_id = id, "worktree not removed: {e:?}"))?;
@@ -3750,6 +3785,7 @@ impl SessionService {
                 for (session_id, _, _) in &held {
                     share::remove_scratch(&home, session_id.as_str());
                 }
+                super::warm::drop_pool(&home, &root);
                 worktree::remove_all(&root, &dir)
             })
             .await?;
