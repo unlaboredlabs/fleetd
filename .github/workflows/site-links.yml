@@ -1,0 +1,23 @@
+name: Site links
+
+# ci.yml's site-external-links, nightly on main's newest commit: an external link on fleetd.sh or its docs can break
+# without a commit here.
+
+on:
+  schedule:
+    - cron: "41 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  site-external-links:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: node .github/docs-links.mjs --external

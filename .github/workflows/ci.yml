@@ -35,61 +35,107 @@ env:
 
 jobs:
   rust-lint:
+    # Like the other Rust jobs, only when a Rust-related path changed (.github/rust-scope.sh); otherwise it reports
+    # success at once.
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
+        with:
+          # A manual run from a branch compares with its merge base on main, so it needs the history.
+          fetch-depth: ${{ github.event_name == 'workflow_dispatch' && '0' || '2' }}
+      - name: Scope
+        id: scope
+        run: .github/rust-scope.sh
       - uses: dtolnay/rust-toolchain@stable
+        if: steps.scope.outputs.run == 'true'
         with:
           components: rustfmt, clippy
       - name: Hub migrations only add new files, after the base's
-        if: github.event_name == 'pull_request'
+        if: steps.scope.outputs.run == 'true' && github.event_name == 'pull_request'
         run: |
           git fetch --quiet --depth=1 origin "$GITHUB_BASE_REF"
           node .github/migrations-check.mjs FETCH_HEAD
       - uses: Swatinem/rust-cache@v2
+        if: steps.scope.outputs.run == 'true'
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo fmt --all --check
+        if: steps.scope.outputs.run == 'true'
       - run: cargo clippy --locked --workspace --all-targets -- -D warnings
+        if: steps.scope.outputs.run == 'true'
 
   rust-docs:
-    # The docs' generated pages, `fleetd help` for the site job, and the lab scenarios, all on one debug build.
+    # The docs' generated pages, `fleetd help` for the site job, and the lab scenarios, all on one debug build. Without
+    # a Rust change (.github/rust-scope.sh) it only hands the site job main's `fleetd help`, or builds it when main has
+    # none kept.
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v7
+        with:
+          # A manual run from a branch compares with its merge base on main, so it needs the history.
+          fetch-depth: ${{ github.event_name == 'workflow_dispatch' && '0' || '2' }}
+      - name: Scope
+        id: scope
+        run: .github/rust-scope.sh
+      - name: fleetd help from main's build
+        id: help
+        if: steps.scope.outputs.run == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          run=$(gh api "repos/$GH_REPO/actions/artifacts?name=fleetd-help&per_page=50" \
+            -q '[.artifacts[] | select(.expired | not) | select(.workflow_run.head_branch == "main")][0].workflow_run.id // empty' || true)
+          if [ -n "$run" ] && gh run download "$run" -n fleetd-help -D "$RUNNER_TEMP"; then
+            echo "From main's run $run."
+            echo "from=main" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::main has no fleetd help kept; building it"
+          fi
       - uses: dtolnay/rust-toolchain@stable
+        if: steps.help.outputs.from != 'main'
       - uses: Swatinem/rust-cache@v2
+        if: steps.help.outputs.from != 'main'
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo build --locked -p fleetd -p docsgen
+        if: steps.help.outputs.from != 'main'
       - name: The docs' generated pages are up to date
+        if: steps.scope.outputs.run == 'true'
         # The CLI reference, the Agent tools page and the prompt table in docs/site/src/content/docs come from the
         # code. This fails while they differ from a fresh render. Fix: cargo run -q -p docsgen, then rebuild and commit
         # (site/README.md).
         run: cargo run --locked -q -p docsgen -- --check
-      # For the site job.
+      # For the site job; main's is kept two weeks, for the PRs without a Rust change.
       - run: target/debug/fleetd help > "$RUNNER_TEMP/fleetd-help.txt"
+        if: steps.help.outputs.from != 'main'
       - uses: actions/upload-artifact@v7
         with:
           name: fleetd-help
           path: ${{ runner.temp }}/fleetd-help.txt
-          retention-days: 1
+          retention-days: ${{ github.ref == 'refs/heads/main' && 14 || 1 }}
       - uses: actions/setup-node@v7
+        if: steps.scope.outputs.run == 'true'
         with:
           node-version: 24
           cache: npm
           cache-dependency-path: tests/lab/package-lock.json
       - run: npm ci --prefix tests/lab --no-audit --no-fund
+        if: steps.scope.outputs.run == 'true'
       - name: Lab scenarios on a project that isn't fleetd
+        if: steps.scope.outputs.run == 'true'
         # W9's tests/lab/factory, on the debug binary built above: a hub and a node on a generated Python repo with a
         # local ssh-style origin, and an offline stand-in for claude. No network, GitHub or claude login.
         run: npm run factory --prefix tests/lab
         env:
           FLEETD_BIN: ${{ github.workspace }}/target/debug/fleetd
           FLEETD_FACTORY_DIR: ${{ runner.temp }}/factory
-      - if: failure()
+      - if: failure() && steps.scope.outputs.run == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: lab-factory-logs
@@ -147,7 +193,10 @@ jobs:
 
   site-external-links:
     # Every external link on fleetd.sh and its docs answers (10 s a try, two tries). Links into this repo on GitHub
-    # are checked against the checkout by the site job instead.
+    # are checked against the checkout by the site job instead. It reaches other sites, which fail now and then on
+    # their own, so it runs after the merge (.fleetd/train.json afterMerge: a failure on main opens a fix order), not
+    # on PRs; site-links.yml runs it nightly too, as links break without a commit.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -173,18 +222,30 @@ jobs:
     #   a fill.
     # - A Navi's sandbox holds under bubblewrap (node::runner::sandbox): a Navi can't write outside its folder or read
     #   the token store, and works as usual inside it.
+    #
+    # Only when a Rust-related path changed (.github/rust-scope.sh): otherwise it reports success at once, so the
+    # required check reports on every PR and a skip never stands in for it.
     name: rust (linux)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
+        with:
+          # A manual run from a branch compares with its merge base on main, so it needs the history.
+          fetch-depth: ${{ github.event_name == 'workflow_dispatch' && '0' || '2' }}
+      - name: Scope
+        id: scope
+        run: .github/rust-scope.sh
       - uses: actions/setup-node@v7
+        if: steps.scope.outputs.run == 'true'
         with:
           node-version: 24
           cache: npm
           cache-dependency-path: tests/lab/package-lock.json
       - run: npm ci --prefix tests/lab --no-audit --no-fund
+        if: steps.scope.outputs.run == 'true'
       - name: agent-browser, as pinned
+        if: steps.scope.outputs.run == 'true'
         run: |
           version="$(sed -n 's/^pub const VERSION: &str = "\(.*\)";$/\1/p' crates/fleetd/src/node/browser/agent_browser.rs)"
           npm install --ignore-scripts --no-audit --no-fund --prefix "$RUNNER_TEMP/agent-browser" "agent-browser@$version"
@@ -196,6 +257,7 @@ jobs:
           "$bin" --version | grep -F "$version"
           echo "FLEETD_TEST_AGENT_BROWSER=$bin" >> "$GITHUB_ENV"
       - name: bubblewrap
+        if: steps.scope.outputs.run == 'true'
         # Ubuntu's AppArmor blocks the user namespaces bwrap needs unless a profile allows them; the runner turns the
         # restriction off.
         run: |
@@ -203,13 +265,17 @@ jobs:
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           bwrap --ro-bind / / --unshare-all true
       - uses: dtolnay/rust-toolchain@stable
+        if: steps.scope.outputs.run == 'true'
       - uses: taiki-e/install-action@v2
+        if: steps.scope.outputs.run == 'true'
         with:
           tool: cargo-nextest
       - uses: Swatinem/rust-cache@v2
+        if: steps.scope.outputs.run == 'true'
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Workspace tests
+        if: steps.scope.outputs.run == 'true'
         run: cargo nextest run --locked --workspace --profile ci
         env:
           FLEETD_REQUIRE_NODE_SEAL: "1"
@@ -217,6 +283,7 @@ jobs:
           FLEETD_REQUIRE_SANDBOX: "1"
       # nextest doesn't run doctests.
       - name: Doctests
+        if: steps.scope.outputs.run == 'true'
         run: cargo test --locked --workspace --doc
 
   macos-scope:
@@ -427,8 +494,7 @@ jobs:
         run: pnpm debug-guard-check
 
   desktop-packaged:
-    # The test build of app/desktop, packed and run: the edge build's smoke, the recordings and the Linux budgets. Same
-    # scope as desktop.
+    # The test build of app/desktop, packed and run: the edge build's smoke and the recordings. Same scope as desktop.
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
@@ -469,9 +535,20 @@ jobs:
         # The release build refuses --remote-debugging-port, which the perf and recording runs drive the app with.
         if: steps.scope.outputs.run == 'true'
         run: pnpm build:test
-      - name: Fixtures
-        # Built once for the steps below: `pnpm perf` and `pnpm perf:record` would each build them again (a minute).
+      - name: Fixtures key
+        # A hash of every file `pnpm fixtures` reads; a hit skips the build.
         if: steps.scope.outputs.run == 'true'
+        id: fixtures-key
+        run: echo "key=$(node scripts/fixtures-key.ts)" >> "$GITHUB_OUTPUT"
+      - if: steps.scope.outputs.run == 'true'
+        id: fixtures
+        uses: actions/cache@v5
+        with:
+          path: app/desktop/fixtures/*.json
+          key: fixtures-${{ runner.os }}-${{ steps.fixtures-key.outputs.key }}
+      - name: Fixtures
+        # Built once for the steps below: `pnpm perf:record` would build them again (a minute).
+        if: steps.scope.outputs.run == 'true' && steps.fixtures.outputs.cache-hit != 'true'
         run: pnpm fixtures
       - name: Packaged smoke (Linux)
         # The edge build's smoke (build-release.yml) on that test build, packed as the edge build packs it: otherwise a
@@ -491,16 +568,76 @@ jobs:
           path: app/desktop/smoke-results/
           if-no-files-found: ignore
           retention-days: 14
-      - name: Budgets (Linux)
-        # Measured on this runner, not the budget machine (an M-series Mac: scripts/perf-mac.sh), so this fails on a
-        # regression from perf/baseline-linux.json and only reports the budgets. The numbers go to the job summary.
-        if: steps.scope.outputs.run == 'true'
-        run: xvfb-run -a -s "-screen 0 1920x1200x24" node perf/run.ts --baseline perf/baseline-linux.json --json "$RUNNER_TEMP/perf.json"
       - name: Demo recording (Linux)
         # FLEETD_RECORD + FLEETD_DEMO_TYPE end to end: the app records itself typing an order, the clip ends on
         # SIGUSR1, and both MP4s must be H.264 with frames.
         if: steps.scope.outputs.run == 'true'
         run: xvfb-run -a -s "-screen 0 1920x1200x24" node perf/record-smoke.ts
+
+  desktop-budgets:
+    # app/desktop's Linux perf budgets on the test build, after the merge (.fleetd/train.json afterMerge: a failure on
+    # main opens a fix order), not on PRs: measured on a shared runner, they fail now and then on its noise. Run CI by
+    # hand on a branch for its numbers. Same scope as desktop.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: app/desktop
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # A manual run from a branch compares with its merge base on main, so it needs the history.
+          fetch-depth: ${{ github.event_name == 'workflow_dispatch' && '0' || '2' }}
+      - name: Scope
+        id: scope
+        working-directory: .
+        run: |
+          run=true
+          base=$(git rev-parse -q --verify HEAD^1 || true)
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$GITHUB_REF" != refs/heads/main ]; then
+            base=$(git merge-base origin/main HEAD || true)
+          fi
+          if [ -n "$base" ] && git diff --quiet "$base" HEAD -- app/desktop .github/workflows/ci.yml; then
+            run=false
+            echo "app/desktop didn't change."
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+      - if: steps.scope.outputs.run == 'true'
+        uses: pnpm/action-setup@v6
+        with:
+          package_json_file: app/desktop/package.json
+      - if: steps.scope.outputs.run == 'true'
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: app/desktop/pnpm-lock.yaml
+      - if: steps.scope.outputs.run == 'true'
+        run: pnpm install --frozen-lockfile
+      - name: Test build (DevTools-driven perf and recording)
+        # The release build refuses --remote-debugging-port, which the perf and recording runs drive the app with.
+        if: steps.scope.outputs.run == 'true'
+        run: pnpm build:test
+      - name: Fixtures key
+        # A hash of every file `pnpm fixtures` reads; a hit skips the build.
+        if: steps.scope.outputs.run == 'true'
+        id: fixtures-key
+        run: echo "key=$(node scripts/fixtures-key.ts)" >> "$GITHUB_OUTPUT"
+      - if: steps.scope.outputs.run == 'true'
+        id: fixtures
+        uses: actions/cache@v5
+        with:
+          path: app/desktop/fixtures/*.json
+          key: fixtures-${{ runner.os }}-${{ steps.fixtures-key.outputs.key }}
+      - name: Fixtures
+        if: steps.scope.outputs.run == 'true' && steps.fixtures.outputs.cache-hit != 'true'
+        run: pnpm fixtures
+      - name: Budgets (Linux)
+        # Measured on this runner, not the budget machine (an M-series Mac: scripts/perf-mac.sh), so this fails on a
+        # regression from perf/baseline-linux.json and only reports the budgets. The numbers go to the job summary.
+        if: steps.scope.outputs.run == 'true'
+        run: xvfb-run -a -s "-screen 0 1920x1200x24" node perf/run.ts --baseline perf/baseline-linux.json --json "$RUNNER_TEMP/perf.json"
 
   desktop-macos:
     # The edge build's macOS packaged smoke (build-release.yml, desktop-macos) on an ad-hoc signed arm64 test build, so

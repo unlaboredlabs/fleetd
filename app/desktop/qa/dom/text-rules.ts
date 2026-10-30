@@ -21,7 +21,8 @@ const SNAKE = /(?<![\w./-])[a-z][a-z0-9]*(?:_[a-z0-9]+)+(?![\w/-])/g;
 // last-7-days is English). Two-segment words ("follow-up") are too often English.
 const KEBAB = /(?<![\w./-])[a-z0-9]+(?:-[a-z0-9]+){2,}(?![\w/-])/g;
 
-// Explicit and small: dotted tokens that are file names or hostnames, and hyphenated English words.
+// Explicit and small: dotted tokens that are file names or hostnames, and hyphenated English words. A last part of two
+// letters is a country's domain (example.com.au).
 const FILE_OR_HOST_SUFFIXES = new Set([
   "json",
   "md",
@@ -29,11 +30,25 @@ const FILE_OR_HOST_SUFFIXES = new Set([
   "tsx",
   "js",
   "rs",
+  "py",
+  "go",
+  "swift",
   "toml",
   "yaml",
   "yml",
+  "html",
+  "css",
+  "csv",
+  "pdf",
   "png",
   "jpg",
+  "jpeg",
+  "gif",
+  "svg",
+  "webp",
+  "mp4",
+  "mov",
+  "zip",
   "sh",
   "txt",
   "log",
@@ -61,7 +76,8 @@ function isAllowedDotted(token: string) {
   const parts = token.split(".");
   if (parts.some((p) => p.length < 2)) return true; // e.g., i.e., a.m.
   if (parts.slice(1).every((p) => /^\d+$/.test(p))) return true; // v1.2.3
-  return FILE_OR_HOST_SUFFIXES.has(parts[parts.length - 1] ?? "");
+  const last = parts[parts.length - 1] ?? "";
+  return FILE_OR_HOST_SUFFIXES.has(last) || /^[a-z]{2}$/.test(last);
 }
 
 function collect(re: RegExp, text: string, keep: (m: string) => boolean, kind: RawTextKind, out: RawTextHit[]) {

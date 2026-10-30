@@ -64,7 +64,10 @@ cargo test --workspace
 ```
 
 The node's seal test opens what Rust seals with libsodium from `tests/lab`; without `npm ci --prefix tests/lab` it
-skips that half. CI runs all of these on every PR, and the desktop app's checks above. The required `rust (linux)` job
+skips that half. CI runs all of these, and the desktop app's checks above, on every PR that touches what they read:
+the Rust jobs (`rust-lint`, `rust-docs`, `rust (linux)`) only when a path in `.github/rust-scope.sh` changed, and
+otherwise report success at once (main always runs them). A Rust test that starts reading a file outside those paths
+adds it there. The required `rust (linux)` job
 runs the workspace tests with [cargo-nextest](https://nexte.st), a process per test (`cargo nextest run --workspace
 --profile ci`, then `cargo test --workspace --doc`): one `cargo test` process runs them slower, as background work
 earlier tests leave behind piles up. The `ci` profile in `.config/nextest.toml` retries the tests that drive
@@ -130,7 +133,9 @@ so merges don't get slower, and that pass or fail the same way every run: never 
 D204), nor one that reaches the network. A test (`hub::train::repo_checks`) fails when the file names a job `ci.yml`
 doesn't have or one that doesn't run on Linux. The train reads the list from `main`, so a PR whose head has no run of a
 listed job is refused once its other checks finish: to rename a listed job, first take it off the list in a PR of its
-own, then rename it and list the new name.
+own, then rename it and list the new name. `afterMerge` lists the jobs that reach other sites or measure on a shared
+runner (`site-external-links`, `desktop-budgets`): they run on main after each merge, not on PRs, and a failure there
+opens a fix order.
 
 ## Hub migrations
 
