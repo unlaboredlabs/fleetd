@@ -157,7 +157,8 @@ $ fleetd doctor
 - **Root Directory:** `site`
 - **Framework Preset:** Other
 - **Build Command:** Override on, left empty; `buildCommand` in `vercel.json` takes precedence. It unpacks the phone
-  app's over-the-air updates from the releases into `updates/` (`mobile-updates.sh fetch`, below), then runs Pagefind
+  app's over-the-air updates from the releases into `updates/` (`mobile-updates.sh fetch`, below), points the landing
+  page's clips and posters at R2 (`media.mjs build`, Media below), then runs Pagefind
   1.5.2 on `docs/`, writing the docs' search index. Bump that version with the `pagefind` in
   `docs/site/package-lock.json`, so the deployed index matches a local build.
 - **Output Directory:** leave the default; `outputDirectory` in `vercel.json` is `.`, the root directory as is (with a
@@ -166,10 +167,44 @@ $ fleetd doctor
 - **Production Branch:** `main`
 - **Ignored Build Step** (Settings → Git): leave it; `ignoreCommand` in `vercel.json` takes precedence. It runs
   `mobile-updates.sh unchanged`, which skips a build (exit code 0) when the commit doesn't touch `site/` and, for
-  production, fleetd.sh already serves each channel's current updates. Vercel runs it from the root directory.
+  production, fleetd.sh already serves each channel's current updates, and then `media.mjs unchanged`, which builds
+  when production still serves a clip from Vercel that R2 now has. Vercel runs them from the root directory.
 - **Deploy Hook** (Settings → Git): one for `main`, saved as the repository's `SITE_DEPLOY_HOOK` Actions secret. A
   release calls it once it has published new phone app updates; without it they go live with the next deploy.
 - **Domains:** `fleetd.sh` (production), and `www.fleetd.sh` redirecting to `fleetd.sh`.
+
+## Media on R2
+
+The clips and posters (`showcase-*`) are served from Cloudflare R2 (the `fleetd-media` bucket at
+`https://media.unlabored.net`, `BASE` in `media.mjs`), not from Vercel, whose bandwidth would cost far more. Each file
+is the object `<name>.<16 hex of its sha256>.<ext>`, with `Cache-Control: public, max-age=31536000, immutable`, so a
+new recording gets new names and no cache serves a stale clip. `home.html` itself names the repo's files, which a local
+preview loads; the Vercel build (`media.mjs build`) rewrites its poster paths, and fills `fleetdMedia`, the clips' map,
+with the R2 URL of each file that `BASE` already answers for, and leaves the rest on Vercel.
+
+On a push to main that changes them, the Site media workflow (`.github/workflows/site-media.yml`, `media.mjs upload`)
+puts each file the bucket doesn't hold yet, over R2's S3 API with the runner's `aws`, then calls the deploy hook
+(`SITE_DEPLOY_HOOK`). Vercel's own deploy of that push may run before the upload ends: it keeps the new files on Vercel,
+and the hook's deploy switches them. So the page never names an object that isn't there. The workflow skips, and
+passes, until the repository has:
+
+| name | kind | value |
+|---|---|---|
+| `R2_ACCOUNT_ID` | Actions variable | the Cloudflare account ID |
+| `R2_ACCESS_KEY_ID` | Actions secret | an R2 API token's access key ID, Object Read & Write on `fleetd-media` |
+| `R2_SECRET_ACCESS_KEY` | Actions secret | that token's secret access key |
+
+The bucket needs `media.unlabored.net` as its custom domain (R2 › the bucket › Settings › Custom Domains). The page
+loads the media without `crossorigin`, so the bucket needs no CORS rule. Run the workflow by hand (Actions › Site media
+› Run workflow) after setting them, or after emptying the bucket. CI's `site` job runs `node site/media.mjs check`: it
+fails when the page names a media file that isn't in `site/`, so it wouldn't be uploaded, or one a build would leave on
+Vercel. To check the live page:
+
+```sh
+curl -fsS https://fleetd.sh/home | grep -o 'https://media.unlabored.net/showcase-[^" ]*' | sort -u   # every file, on R2
+curl -fsSI "$(curl -fsS https://fleetd.sh/home | grep -o 'https://media.unlabored.net/showcase-[^" ]*webm' | head -1)"
+# 200, content-type: video/webm, cache-control: public, max-age=31536000, immutable
+```
 
 ## Phone app updates
 

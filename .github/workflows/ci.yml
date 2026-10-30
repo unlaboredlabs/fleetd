@@ -153,6 +153,8 @@ jobs:
       - run: node .github/site-check.mjs "$RUNNER_TEMP/fleetd-help.txt"
       - name: No personal identifiers
         run: node .github/personal-check.mjs
+      - name: Every clip and poster the page names is in the R2 upload set
+        run: node site/media.mjs check
       - name: Internal links and anchors
         run: node .github/docs-links.mjs
       - name: Landing page fits every width

@@ -1,7 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "sh mobile-updates.sh fetch && npx --yes pagefind@1.5.2 --site docs",
-  "ignoreCommand": "sh mobile-updates.sh unchanged",
+  "buildCommand": "sh mobile-updates.sh fetch && node media.mjs build && npx --yes pagefind@1.5.2 --site docs",
+  "ignoreCommand": "sh mobile-updates.sh unchanged && node media.mjs unchanged",
   "outputDirectory": ".",
   "cleanUrls": true,
   "github": {
