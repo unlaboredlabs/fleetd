@@ -1,6 +1,7 @@
 // The home list, as plain view data: what needs you on top, then your Navis, then the projects, each newest first. A
 // project wants you as the desktop's sidebar says (screens/shell/model.ts): a secret or an approval open for it, or
-// its lead waiting for your reply. An archived Navi is in none of them. Pure, so it is unit-tested.
+// its lead waiting for your reply. An archived Navi is in none of them, unless an approval of its waits. Pure, so it is
+// unit-tested.
 import { previewOf } from "./chatView";
 import { chatItems, emptyChat, hasHidden, isArchived, isNavi, shellWord, type HumanRequest, type ProjectSummary } from "./desktop";
 import { unreadCount, type Prefs } from "./prefs";
@@ -61,7 +62,8 @@ const byRecent = (a: Row, b: Row): number => b.at.localeCompare(a.at) || a.proje
 export const lists = (s: Pick<State, "projects" | "chatStates" | "requests"> & Partial<Pick<State, "chats" | "sends" | "latest">>): Lists | undefined => {
   if (s.projects === undefined) return undefined;
   const rows = Object.entries(s.projects)
-    .filter(([, p]) => !(isNavi(p) && isArchived(p)))
+    // An archived Navi's approvals stay open on the hub, and count in the badges: its chat shows while one waits.
+    .filter(([key, p]) => !(isNavi(p) && isArchived(p)) || openFor(key, s.requests, "approval") > 0)
     .map(([key, project]): Row => {
       const chat = s.chatStates[key];
       return {
@@ -107,8 +109,9 @@ const waitingFirst = (a: Row, b: Row): number => Number(b.approvals > 0) - Numbe
 
 /**
  * The chats list, Telegram's way: one list, the chats with an approval waiting on top, then the pinned ones in the
- * order pinned, then every other chat with what spoke last first. Each says how many messages came since you read it, and whether it's muted (its count goes
- * grey). Archived Navis are in none of it.
+ * order pinned, then every other chat with what spoke last first. Each says how many messages came since you read it,
+ * and whether it's muted (its count goes grey). Archived Navis are in none of it, except while an approval of theirs
+ * waits.
  */
 export const chatList = (s: Parameters<typeof lists>[0], prefs: Prefs, filter: Filter = "all"): readonly ChatRow[] | undefined => {
   const all = lists(s);

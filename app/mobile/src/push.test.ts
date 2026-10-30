@@ -2,7 +2,7 @@
 // shows for them, registering and re-registering on a new token, tap routing and signing out.
 import nacl from "tweetnacl";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cardOf } from "./chatView";
+import { cardOf, landingOf } from "./chatView";
 import type { ChatMessage, HumanRequest } from "./desktop";
 import { HubClient } from "./hub/client";
 import { fakeHub } from "./hub/fake";
@@ -122,6 +122,14 @@ describe("tapping a notification", () => {
     const card = (requestId: string) => ({ kind: "command_approval", requestId, machineId: "devbox", state: "open" }) as ChatMessage["item"];
     expect(cardOf([said("m1"), said("m2", card("Q6")), said("m3", card("Q7")), said("m4")], at!.requestId!)).toBe("m3");
     expect(cardOf([said("m1")], "Q7")).toBeUndefined();
+    // A card further back than the pages read: one more page, till it's in; then on it.
+    const newest = [said("m5"), said("m6")];
+    expect(landingOf(newest, at!, { hasOlder: true, failed: false })).toBe("older");
+    expect(landingOf([said("m3", card("Q7")), ...newest], at!, { hasOlder: true, failed: false })).toBe("m3");
+    // Not in the chat at all, or its page can't be read now: the chat opens as usual.
+    expect(landingOf(newest, at!, { hasOlder: false, failed: false })).toBeUndefined();
+    expect(landingOf(newest, at!, { hasOlder: true, failed: true })).toBeUndefined();
+    expect(landingOf(newest, { messageId: "m6" }, { hasOlder: true, failed: false })).toBe("m6");
     expect(chatAt({ t: "chat", key: "devbox/navi-ada" }, undefined)).toEqual({ key: "devbox/navi-ada" });
   });
 

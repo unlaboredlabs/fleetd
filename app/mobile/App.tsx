@@ -155,11 +155,13 @@ function Pairing({ note, onPaired }: { note: string | undefined; onPaired: (p: P
   );
 }
 
+let taps = 0;
+
 /** Opens where a tapped notification goes, an approval's chat at its card (push.ts chatAt): false while not known yet. */
 const go = (route: Route, requests: Parameters<typeof chatAt>[1]): boolean => {
   const at = chatAt(route, requests);
   if (at === undefined) return false;
-  if (at !== null) nav.navigate("Chat", at.requestId === undefined ? { key: at.key } : { key: at.key, requestId: at.requestId });
+  if (at !== null) nav.navigate("Chat", at.requestId === undefined ? { key: at.key } : { key: at.key, requestId: at.requestId, tap: ++taps });
   return true;
 };
 

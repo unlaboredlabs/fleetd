@@ -136,11 +136,28 @@ export const previewOf = (item: Pick<ChatItem, "text" | "message" | "author"> & 
   return item.author === "human" && line !== "" ? `You: ${line}` : line;
 };
 
-/** Which side a row sits on: the person's on the right, the lead's and agents' on the left, the rest centred. */
 /** The message whose card answers an approval: where a tapped approval opens its chat. Undefined: not in what's read. */
 export const cardOf = (items: readonly Pick<ChatItem, "message">[], requestId: string): string | undefined =>
   items.find((i) => i.message?.item?.kind === "command_approval" && i.message.item.requestId === requestId)?.message?.messageId;
 
+/**
+ * Where a chat opened at a message (a search hit) or an approval (its notification) lands: the message, once it is
+ * read; `older` while an approval's card is further back than the pages read, so one more is read; undefined when
+ * there is nothing to land on (the card isn't in the chat, or its page can't be read now), so the chat opens as usual.
+ */
+export const landingOf = (
+  items: readonly Pick<ChatItem, "message">[],
+  want: { readonly messageId?: string | undefined; readonly requestId?: string | undefined },
+  chat: { readonly hasOlder: boolean; readonly failed: boolean },
+): string | "older" | undefined => {
+  if (want.messageId !== undefined) return want.messageId;
+  if (want.requestId === undefined) return undefined;
+  const card = cardOf(items, want.requestId);
+  if (card !== undefined) return card;
+  return chat.hasOlder && !chat.failed ? "older" : undefined;
+};
+
+/** Which side a row sits on: the person's on the right, the lead's and agents' on the left, the rest centred. */
 export type Side = "me" | "them" | "center";
 
 export const sideOf = (item: Pick<ChatItem, "author" | "kind">): Side =>

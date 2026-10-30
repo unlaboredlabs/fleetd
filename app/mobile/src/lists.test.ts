@@ -47,6 +47,17 @@ describe("lists", () => {
     expect(out?.projects.map((r) => r.project.title)).toEqual(["storefront"]);
   });
 
+  it("shows an archived Navi while an approval of its waits, as the badges count it", () => {
+    const projects = { "m1/a": project("a", "Ada", { kind: "assistant" }), "m1/old": project("old", "Old", { kind: "assistant", archivedAt: AT }) };
+    const waiting = { ...gated("r1"), projectRef: { machineId: "m1", projectId: "old" } };
+    const out = lists({ projects, chatStates: {}, requests: [waiting] });
+    expect(out?.needsYou.map((r) => [r.project.title, r.approvals])).toEqual([["Old", 1]]);
+    expect(chatList({ projects, chatStates: {}, requests: [waiting] }, noPrefs, "needsYou")?.map((r) => r.key)).toEqual(["m1/old"]);
+    // Answered, or only a secret: gone again.
+    expect(lists({ projects, chatStates: {}, requests: [{ ...waiting, state: "approved" }] })?.needsYou).toEqual([]);
+    expect(lists({ projects, chatStates: {}, requests: [{ ...waiting, kind: "secret" }] })?.needsYou).toEqual([]);
+  });
+
   it("gives each row its badge, its newest message and its time", () => {
     const projects = { "m1/shop": project("shop", "storefront"), "m1/a": project("a", "Ada", { kind: "assistant" }) };
     const chatStates = { "m1/a": { projectRef: { machineId: "m1", projectId: "a" }, lastSeq: 2, leadWorking: true, needsYou: false, lastMessageAt: "2026-10-28T12:00:00Z" } };
