@@ -1,5 +1,6 @@
 // What every screen of a paired hub reads: its session, the state it shows, the pairing, and the way out.
-import type { NavigatorScreenParams } from "@react-navigation/native";
+import type { CompositeScreenProps, NavigatorScreenParams } from "@react-navigation/native";
+import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { createContext, useContext } from "react";
 import type { Paired } from "./hub/pair";
 import type { Session } from "./session";
@@ -49,12 +50,18 @@ export type RootParams = {
 export type ManageParams = {
   NewNavi: undefined;
   NewProject: undefined;
-  Info: { key: Key };
-  Rename: { key: Key };
-  Profiles: { key: Key };
+  /** A project's or Navi's screen and what it opens, a stack of their own over its chat (manage/index.tsx ChatInfo). */
+  ChatInfo: NavigatorScreenParams<ChatInfoParams>;
   /** A photo as picked, moved and scaled in a circle to become the chat's picture. */
   Photo: { key: Key; uri: string; width: number; height: number; mime: "image/jpeg" | "image/png" | "image/webp" };
 };
+export type ChatInfoParams = {
+  Info: { key: Key };
+  Rename: { key: Key };
+  Profiles: { key: Key };
+};
+/** A ChatInfo screen's props: its own stack's, and the root stack's above it (Photo, back to the chats list). */
+export type ChatInfoProps<T extends keyof ChatInfoParams> = CompositeScreenProps<NativeStackScreenProps<ChatInfoParams, T>, NativeStackScreenProps<RootParams>>;
 export type PairParams = {
   Welcome: undefined;
   Scan: undefined;

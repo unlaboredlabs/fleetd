@@ -138,7 +138,7 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   // Always a line under the name, as Telegram's "online": the title never jumps when the lead starts or stops.
   const quiet = project === undefined ? undefined : navi ? "Navi" : `on ${project.machineId}`;
   const status = link?.busy === true ? "Connecting…" : link !== undefined ? "Offline" : working ? "Working…" : chatState?.needsYou === true ? "Waiting for you" : quiet;
-  const openInfo = useCallback(() => navigation.navigate("Info", { key: chatKey }), [navigation, chatKey]);
+  const openInfo = useCallback(() => navigation.navigate("ChatInfo", { screen: "Info", params: { key: chatKey } }), [navigation, chatKey]);
   // Android's stack draws the bar.
   useEffect(() => {
     if (Platform.OS === "ios") return;

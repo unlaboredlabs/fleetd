@@ -1,11 +1,10 @@
 // Rename, pushed from a project's or a Navi's screen, as iOS Settings' Name: one field, and a ✓ that saves it
 // (navi_rename, or project_settings_set's title). Its folder keeps its name; the hub's project.settings event brings
 // the new one to the chats list and the chat.
-import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useLayoutEffect, useState } from "react";
 import { ScrollView } from "react-native";
 import { isNavi, NAME_MAX, nameProblem, type HubError } from "../../desktop";
-import { useHub, type RootParams } from "../../hubContext";
+import { useHub, type ChatInfoProps } from "../../hubContext";
 import { space, useTheme } from "../../theme";
 import { haptics } from "../../ui/haptics";
 import { ListSection } from "../../ui/List";
@@ -13,7 +12,7 @@ import { rename } from "./api";
 import { PROJECT_NAME_MAX, projectNameProblem } from "./model";
 import { errorWords, FieldRow, Problem, sheetOptions } from "./parts";
 
-export function Rename({ navigation, route }: NativeStackScreenProps<RootParams, "Rename">) {
+export function Rename({ navigation, route }: ChatInfoProps<"Rename">) {
   const t = useTheme();
   const { state, session } = useHub();
   const p = state.projects?.[route.params.key];
