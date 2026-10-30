@@ -45,6 +45,13 @@ export interface Palette {
   readonly muted: string;
   /** Behind the chat's thread, where bubbles sit. */
   readonly thread: string;
+  /** systemGray5: a swiped chat row, lifted into a card as Messages lifts it. */
+  readonly lifted: string;
+  /** iOS 26's systemBlue, systemOrange and systemIndigo: a swiped row's circles (read, pin, mute), as measured in
+   * Messages on iOS 26 (blue and indigo; orange is Apple's published value). */
+  readonly blue: string;
+  readonly orange: string;
+  readonly indigo: string;
 }
 
 const light: Palette = {
@@ -73,6 +80,10 @@ const light: Palette = {
   chrome: "rgba(249,249,249,0.94)",
   muted: "#AEAEB2",
   thread: "#FFFFFF",
+  lifted: "#E5E5EA",
+  blue: "#0088FF",
+  orange: "#FF8D28",
+  indigo: "#6155F5",
 };
 
 const dark: Palette = {
@@ -101,6 +112,10 @@ const dark: Palette = {
   chrome: "rgba(22,22,24,0.94)",
   muted: "#636366",
   thread: "#000000",
+  lifted: "#2C2C2E",
+  blue: "#0091FF",
+  orange: "#FF9230",
+  indigo: "#6D7CFF",
 };
 
 export const useTheme = (): Palette => (useColorScheme() === "dark" ? dark : light);
