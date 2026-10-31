@@ -8185,6 +8185,8 @@
           "$ref": "#/$defs/MachineStatus"
         },
         "tags": {
+          "default": [],
+          "description": "Always empty: machines have no tags. Kept for older apps, which read the list.",
           "items": {
             "type": "string"
           },
@@ -8194,7 +8196,6 @@
       "required": [
         "machineId",
         "name",
-        "tags",
         "status",
         "lastSeenAt",
         "nodeVersion"

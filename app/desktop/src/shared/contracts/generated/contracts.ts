@@ -3094,7 +3094,8 @@ export type Machine = {
   name: string;
   nodeVersion: string;
   status: MachineStatus;
-  tags: string[];
+  /** Always empty: machines have no tags. Kept for older apps, which read the list. */
+  tags?: string[];
 };
 
 export type MachineAddInput = {

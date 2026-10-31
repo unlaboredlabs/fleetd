@@ -24,7 +24,7 @@ use crate::update::BoxFuture;
 pub fn machine_usage() -> String {
     use crate::node::runner::claude::version::SUPPORTED;
     format!(
-        "  machine add <ssh-host> | --local [--machine-id <id>] [--tags a,b] [--dry-run] [--no-service]
+        "  machine add <ssh-host> | --local [--machine-id <id>] [--dry-run] [--no-service]
             [--hub-url <url>] [--ssh-config <file>] [--home <hub home>]
             [--claude-config-dir <dir>]
              set up a machine that runs agents, over SSH (--local: this machine): copies this fleetd
@@ -519,7 +519,6 @@ pub enum Enroll {
 pub struct Joined {
     pub hub: String,
     pub machine_id: String,
-    pub tags: Vec<String>,
     pub identity: Option<GitIdentity>,
 }
 
@@ -591,15 +590,6 @@ pub fn joined_here() -> Option<Joined> {
     Some(Joined {
         hub: text("hub")?,
         machine_id: text("machineId")?,
-        tags: node
-            .get("tags")
-            .and_then(serde_json::Value::as_array)
-            .map(|tags| {
-                tags.iter()
-                    .filter_map(|t| t.as_str().map(str::to_owned))
-                    .collect()
-            })
-            .unwrap_or_default(),
         identity,
     })
 }
@@ -607,7 +597,6 @@ pub fn joined_here() -> Option<Joined> {
 pub struct AddArgs {
     pub host: Option<String>,
     pub machine_id: Option<String>,
-    pub tags: Vec<String>,
     pub dry_run: bool,
     pub hub_url: Option<String>,
     pub ssh_config: Option<String>,
@@ -625,7 +614,6 @@ fn parse_add(argv: &[String]) -> Result<AddArgs, u8> {
     const OPTIONS: &[(&str, Kind)] = &[
         ("local", Kind::Bool),
         ("machine-id", Kind::Str),
-        ("tags", Kind::Str),
         ("dry-run", Kind::Bool),
         ("hub-url", Kind::Str),
         ("ssh-config", Kind::Str),
@@ -653,14 +641,6 @@ fn parse_add(argv: &[String]) -> Result<AddArgs, u8> {
     Ok(AddArgs {
         host,
         machine_id: v.string("machine-id"),
-        tags: v
-            .str("tags")
-            .unwrap_or("")
-            .split(',')
-            .map(str::trim)
-            .filter(|t| !t.is_empty())
-            .map(str::to_owned)
-            .collect(),
         dry_run: v.flag("dry-run"),
         hub_url: v.string("hub-url"),
         ssh_config: v.string("ssh-config"),
@@ -829,7 +809,6 @@ pub fn resolve(a: &AddArgs, exe: &Path) -> Result<Resolved, Stop> {
     };
     let input = MachineAddInput {
         machine_id: machine_id.clone(),
-        tags: a.tags.clone(),
         hub_url,
         git_identity: a
             .git_identity
@@ -1393,7 +1372,6 @@ impl AddArgs {
         AddArgs {
             host: None,
             machine_id: Some(machine_id),
-            tags: Vec::new(),
             dry_run: false,
             hub_url: None,
             ssh_config: None,

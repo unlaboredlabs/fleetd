@@ -52,6 +52,8 @@ pub struct HubChallenge {
 pub struct NodeHello {
     pub machine_id: MachineId,
     pub name: String,
+    /// Always empty: machines have no tags. Kept for older hubs, which require the list.
+    #[serde(default)]
     pub tags: Vec<String>,
     pub node_version: String,
     pub protocol: ProtocolVersion,

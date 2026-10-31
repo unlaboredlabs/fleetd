@@ -53,8 +53,8 @@ use zeroize::Zeroizing;
 use config::{NodeConfig, default_node_home, read_config, write_config};
 
 /// `fleetd node …` usage.
-pub const NODE_USAGE: &str = "  node join --hub <url> (--token <token> | --token-file <file|->) --machine <id> [--tags a,b]
-            [--name <name>] [--home <dir>] [--enroll-only] [--claude-config-dir <dir>]
+pub const NODE_USAGE: &str = "  node join --hub <url> (--token <token> | --token-file <file|->) --machine <id>
+            [--home <dir>] [--enroll-only] [--claude-config-dir <dir>]
              enroll this machine with the hub, then keep its link up (node home default ~/.fleetd/node);
              --token-file - reads the token from stdin; --enroll-only exits once the hub has accepted this
              node; sessions use your own claude setup (~/.claude) unless --claude-config-dir names a
@@ -71,9 +71,6 @@ pub struct JoinArgs {
     pub hub: String,
     pub token: String,
     pub machine: String,
-    /// `--tags a,b`, already split; see [`parse_tags`].
-    pub tags: Option<Vec<String>>,
-    pub name: Option<String>,
     pub home: Option<PathBuf>,
     /// `--enroll-only`: stop once the hub has accepted the node's key instead of keeping the link up.
     pub enroll_only: bool,
@@ -111,15 +108,6 @@ pub fn read_token_file(path: &str) -> std::io::Result<String> {
     Ok(text.trim().to_owned())
 }
 
-/// `--tags a, b,,c` → `["a", "b", "c"]`.
-pub fn parse_tags(tags: &str) -> Vec<String> {
-    tags.split(',')
-        .map(str::trim)
-        .filter(|t| !t.is_empty())
-        .map(str::to_owned)
-        .collect()
-}
-
 /// Creates the node key and config, enrolls with the one-time token, then keeps the link up.
 pub async fn join(args: JoinArgs) -> Result<(), NodeError> {
     if !config::is_machine_id(&args.machine) {
@@ -132,8 +120,7 @@ pub async fn join(args: JoinArgs) -> Result<(), NodeError> {
     let config = NodeConfig {
         hub: args.hub,
         machine_id: args.machine.clone(),
-        name: args.name.unwrap_or(args.machine),
-        tags: args.tags.unwrap_or_default(),
+        name: args.machine,
         cmd_roots: None,
         claude_config_dir: args.claude_config_dir,
         min_free_gb: None,
@@ -402,7 +389,6 @@ async fn run_node(
             hub: config.hub.clone(),
             machine_id: config.machine_id.clone(),
             name: config.name.clone(),
-            tags: config.tags.clone(),
             node_version: crate::version().to_owned(),
         },
         identity,

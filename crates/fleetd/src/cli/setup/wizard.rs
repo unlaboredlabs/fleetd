@@ -553,7 +553,6 @@ async fn repair_worker(
         &joined.hub,
         machine::Enroll::Keep,
         machine::AddArgs {
-            tags: joined.tags.clone(),
             git_identity: opts.identity.clone().or(joined.identity.clone()),
             claude_config_dir: opts.claude_config_dir.clone(),
             ..machine::AddArgs::local(joined.machine_id.clone(), opts.with_service)
@@ -1001,7 +1000,6 @@ async fn workers(
         let added = machine::add(machine::AddArgs {
             host: host.clone(),
             machine_id: Some(id.clone()),
-            tags: Vec::new(),
             dry_run: false,
             hub_url: None,
             ssh_config: ssh_config.clone(),
