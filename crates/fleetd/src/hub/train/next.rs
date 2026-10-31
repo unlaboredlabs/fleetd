@@ -1118,10 +1118,10 @@ mod tests {
         );
     }
 
-    /// fleetd's own workflows (D204): no check waits for the label, and the batch PR skips the macOS jobs, which each
-    /// PR's own head runs. Nothing of the release or of the jobs that never run on a PR's push counts.
+    /// fleetd's own workflows: no check waits for the label, and none is left to each PR's own head: no pull request
+    /// runs a macOS job (ci.no-macos-on-prs), so a batch skips nothing a PR runs.
     #[test]
-    fn fleetds_workflows_gate_nothing_on_the_label_and_skip_their_macos_jobs_on_a_batch() {
+    fn fleetds_workflows_gate_nothing_on_the_label_and_skip_nothing_on_a_batch() {
         let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../.github/workflows");
         let mut files: Vec<(String, String)> = std::fs::read_dir(dir)
             .unwrap()
@@ -1137,30 +1137,7 @@ mod tests {
             .collect();
         files.sort();
         assert!(label_gated(&files).is_empty());
-        let mut skipped = batch_skipped(&files);
-        skipped.sort_by(|a, b| a.name.cmp(&b.name));
-        let names: Vec<&str> = skipped.iter().map(|s| s.name.as_str()).collect();
-        assert_eq!(
-            names,
-            [
-                "desktop-macos",
-                "ios sessions",
-                "mobile (ios)",
-                "rust (macos)"
-            ]
-        );
-        // Each waits on the Linux job of its workflow that decides whether it has work.
-        assert!(
-            skipped.iter().all(|s| {
-                let scope = if s.name == "mobile (ios)" {
-                    "mobile scope"
-                } else {
-                    "macos scope"
-                };
-                s.needs == [scope]
-            }),
-            "{skipped:?}"
-        );
+        assert_eq!(batch_skipped(&files), []);
     }
 
     /// Only a job that skips the batch's branch, in a workflow that runs on each push to a PR: not one a label or a

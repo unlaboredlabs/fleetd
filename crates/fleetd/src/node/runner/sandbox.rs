@@ -1082,6 +1082,7 @@ fn command(
 }
 
 /// Landlock's ABI that scopes abstract Unix sockets (Linux 6.12).
+#[cfg(target_os = "linux")]
 const SCOPE_ABI: i64 = 6;
 
 /// The Landlock ABI this kernel speaks; 0 without Landlock, or off Linux.

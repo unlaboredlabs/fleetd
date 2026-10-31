@@ -328,7 +328,7 @@ every batch. If the workflows can't be read, the train uses the last answer it h
 stay out of batches until it can read them.
 
 The only coverage this gives up: a break on those runners that only two PRs together cause. `main` catches it after
-the merge. fleetd's own `ci.yml` does this for `rust (macos)`, `ios sessions` and `desktop-macos`.
+the merge.
 
 ### The `fleetd:next` label {#next-label}
 

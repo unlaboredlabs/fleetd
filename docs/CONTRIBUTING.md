@@ -127,15 +127,24 @@ Docs): the merge train waits for that job.
 
 ## The merge train's checks
 
-The train waits for the checks `main` requires (`rust (linux)`, `rust (macos)`, `darwin-deps`) and for the jobs
-`.fleetd/train.json` lists (`fastChecks`). List only Linux jobs of `ci.yml` that finish within `rust (linux)`'s time,
-so merges don't get slower, and that pass or fail the same way every run: never a macOS job (batches skip those,
-D204), nor one that reaches the network. A test (`hub::train::repo_checks`) fails when the file names a job `ci.yml`
+The train waits for the checks `main` requires (`rust (linux)`, `darwin-deps`; `rust (darwin)` can be made required once
+ci.no-macos-on-prs is on main) and for the jobs `.fleetd/train.json` lists (`fastChecks`). List only Linux jobs of
+`ci.yml` that finish within `rust (linux)`'s time, so merges don't get slower, and that pass or fail the same way every
+run: never one that reaches the network. A test (`hub::train::repo_checks`) fails when the file names a job `ci.yml`
 doesn't have or one that doesn't run on Linux. The train reads the list from `main`, so a PR whose head has no run of a
 listed job is refused once its other checks finish: to rename a listed job, first take it off the list in a PR of its
 own, then rename it and list the new name. `afterMerge` lists the jobs that reach other sites or measure on a shared
 runner (`site-external-links`, `desktop-budgets`): they run on main after each merge, not on PRs, and a failure there
 opens a fix order.
+
+No pull request runs a macOS job (ci.no-macos-on-prs). `rust (darwin)` lints the workspace for both darwin targets on
+Linux, so code under `cfg(target_os = "macos")` must compile without warnings (`cargo-zigbuild clippy --workspace
+--all-targets --target aarch64-apple-darwin --target x86_64-apple-darwin`, with zig installed), and `desktop (mac
+layout)` packs the mac app on Linux and checks its layout. What needs a Mac (IOKit power, sandbox-exec, iOS simulator
+sessions, macOS desktop QA, the packed mac app's launch, the iOS build) runs in `mac.yml`: nightly on main, before each
+release, and on demand. For a PR that changes macOS code, run it on the branch before it merges: `gh workflow run
+mac.yml --ref <branch>`. Its checks are listed `afterMerge`, so a red one never holds a merge; a red nightly opens a
+`macos-nightly-failed` issue. Besides `mac.yml`'s, the test allows only Linux jobs of `ci.yml` there.
 
 ## Hub migrations
 

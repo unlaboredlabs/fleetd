@@ -101,10 +101,12 @@ mod tests {
         assert!(both.after_merge_only("bench") && both.after_merge_only("integration"));
     }
 
-    /// fleetd's own `.fleetd/train.json` names jobs of its CI that run on each PR's push on Linux: never a macOS job,
-    /// which the batch skips (D204), and never a name no job has, which no run would ever report. Linux QA blocks
-    /// merges (D158): every Linux shard of desktop-qa.yml's `qa` is in it, so a shard renamed or added fails here
-    /// rather than drop out of the gate.
+    /// fleetd's own `.fleetd/train.json`: its fast checks are jobs of its CI that run on each PR's push on Linux; its
+    /// after-merge checks, besides mac.yml's, are Linux jobs of ci.yml too; none is a name no job has, which no run
+    /// would ever report. Linux QA blocks merges (D158): every Linux shard of
+    /// desktop-qa.yml's `qa` is in it, so a shard renamed or added fails here rather than drop out of the gate. No PR
+    /// runs a macOS job (ci.no-macos-on-prs): each check mac.yml reports, and the iOS build of a manual Mobile run, is
+    /// after merge only, so a red one on a branch someone ran it on never holds a merge.
     #[test]
     fn fleetds_own_file_names_linux_jobs_of_its_ci() {
         use serde_yaml_ng::Value;
@@ -121,24 +123,27 @@ mod tests {
         let qa = &workflow("desktop-qa.yml")["jobs"]["qa"];
         let template = qa["name"].as_str().unwrap();
         let include = qa["strategy"]["matrix"]["include"].as_str().unwrap();
-        let shards: Vec<String> = include
-            .split('{')
-            .filter_map(|piece| piece.split_once('}'))
-            .filter_map(|(entry, _)| {
-                serde_json::from_str::<serde_json::Value>(&format!("{{{entry}}}")).ok()
-            })
-            .filter(|entry| entry["os"] == "ubuntu-latest")
-            .map(|entry| {
-                let mut name = template.to_string();
-                for (key, value) in entry.as_object().unwrap() {
-                    let value = value
-                        .as_str()
-                        .map_or_else(|| value.to_string(), str::to_string);
-                    name = name.replace(&format!("${{{{ matrix.{key} }}}}"), &value);
-                }
-                name
-            })
-            .collect();
+        let shards_on = |os: &str| -> Vec<String> {
+            include
+                .split('{')
+                .filter_map(|piece| piece.split_once('}'))
+                .filter_map(|(entry, _)| {
+                    serde_json::from_str::<serde_json::Value>(&format!("{{{entry}}}")).ok()
+                })
+                .filter(|entry| entry["os"] == os)
+                .map(|entry| {
+                    let mut name = template.to_string();
+                    for (key, value) in entry.as_object().unwrap() {
+                        let value = value
+                            .as_str()
+                            .map_or_else(|| value.to_string(), str::to_string);
+                        name = name.replace(&format!("${{{{ matrix.{key} }}}}"), &value);
+                    }
+                    name
+                })
+                .collect()
+        };
+        let shards = shards_on("ubuntu-latest");
         assert_eq!(shards.len(), 4, "{shards:?}");
         assert_eq!(qa["runs-on"].as_str(), Some("${{ matrix.os }}"));
         for shard in &shards {
@@ -148,7 +153,7 @@ mod tests {
             );
         }
         assert!(!file.fast_checks.is_empty());
-        for check in file.fast_checks.iter().chain(file.after_merge.iter()) {
+        for check in file.fast_checks.iter() {
             let check = check.as_str();
             if shards.iter().any(|s| s == check) {
                 continue;
@@ -164,5 +169,49 @@ mod tests {
             };
             assert_eq!(job["runs-on"].as_str(), Some("ubuntu-latest"), "{check}");
         }
+
+        // What mac.yml reports: its own jobs, and `<job> / <check>` for the workflows it calls, each on macOS.
+        let mut mac = vec!["mobile (ios)".to_string()];
+        for (id, job) in workflow("mac.yml")["jobs"].as_mapping().unwrap() {
+            let id = id.as_str().unwrap();
+            match job["uses"].as_str() {
+                Some("./.github/workflows/desktop-qa.yml") => {
+                    let macos = shards_on("macos-latest");
+                    assert_eq!(macos.len(), 3, "{macos:?}");
+                    mac.extend(macos.iter().map(|s| format!("{id} / {s}")));
+                }
+                Some(called) => {
+                    let called = workflow(called.trim_start_matches("./.github/workflows/"));
+                    for (cid, cjob) in called["jobs"].as_mapping().unwrap() {
+                        if cjob["runs-on"].as_str() == Some("macos-latest") {
+                            let name = cjob["name"].as_str().or(cid.as_str()).unwrap();
+                            mac.push(format!("{id} / {name}"));
+                        }
+                    }
+                }
+                None if job["runs-on"].as_str() == Some("macos-latest") => {
+                    mac.push(job["name"].as_str().unwrap_or(id).to_string());
+                }
+                None => {}
+            }
+        }
+        let ci_job = |check: &str| {
+            jobs.iter().any(|(id, job)| {
+                job["name"].as_str().or(id.as_str()) == Some(check)
+                    && job["runs-on"].as_str() == Some("ubuntu-latest")
+            })
+        };
+        let mut after: Vec<String> = file
+            .after_merge
+            .iter()
+            .map(|c| c.as_str().to_string())
+            .filter(|c| mac.contains(c) || !ci_job(c))
+            .collect();
+        after.sort();
+        mac.sort();
+        assert_eq!(
+            after, mac,
+            "{PATH}'s afterMerge must list every check mac.yml reports, and besides those only Linux jobs of ci.yml"
+        );
     }
 }
