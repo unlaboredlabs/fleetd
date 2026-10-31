@@ -100,10 +100,14 @@ impl Train {
         reruns: &mut Reruns,
         flaky: &mut Vec<Flaky>,
     ) -> Option<bool> {
-        let failed: Vec<&CheckRun> = red
+        let mut failed: Vec<&CheckRun> = red
             .iter()
             .filter(|r| r.conclusion.as_deref() != Some("cancelled"))
             .collect();
+        // Oldest first, as a run re-runs one job at a time: a job that failed because one it needs did (ci.yml's
+        // `rust (linux)` after a shard) is written after it, and GitHub re-runs it with that one. Re-run alone first,
+        // it would fail again on the old result.
+        failed.sort_by(|a, b| a.id.total_cmp(&b.id));
         if failed.is_empty() {
             return Some(false);
         }

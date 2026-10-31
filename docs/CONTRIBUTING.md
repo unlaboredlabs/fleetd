@@ -75,10 +75,10 @@ The node's seal test opens what Rust seals with libsodium from `tests/lab`; with
 skips that half. CI runs all of these, and the desktop app's checks above, on every PR that touches what they read:
 the Rust jobs (`rust-lint`, `rust-docs`, `rust (linux)`) only when a path in `.github/rust-scope.sh` changed, and
 otherwise report success at once (main always runs them). A Rust test that starts reading a file outside those paths
-adds it there. The required `rust (linux)` job
-runs the workspace tests with [cargo-nextest](https://nexte.st), a process per test (`cargo nextest run --workspace
---profile ci`, then `cargo test --workspace --doc`): one `cargo test` process runs them slower, as background work
-earlier tests leave behind piles up. The `ci` profile in `.config/nextest.toml` retries the tests that drive
+adds it there. The workspace tests run with [cargo-nextest](https://nexte.st), a process per test, in two shards at
+once, `rust (linux, 1/2)` and `rust (linux, 2/2)` (`cargo nextest run --workspace --profile ci --partition hash:1/2`;
+the second also runs `cargo test --workspace --doc`); the required `rust (linux)` passes once both did. One `cargo
+test` process runs them slower, as background work earlier tests leave behind piles up. The `ci` profile in `.config/nextest.toml` retries the tests that drive
 a real Chrome (`node::browser`, `node::relay_tests`) twice and lists the ones that passed only on a retry as flaky.
 
 `crates/fleetd` must not link macOS frameworks, because the darwin binaries are cross-built on Linux. The

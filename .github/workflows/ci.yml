@@ -212,8 +212,9 @@ jobs:
   rust:
     # The root Cargo workspace's tests, under cargo-nextest (a process per test; .config/nextest.toml retries the
     # Chrome-driven browser tests and reports those as flaky), and its doctests. Lint (fmt, clippy) and the docs and lab
-    # checks on the built binary are jobs of their own, beside this one. `rust (linux)` is a required check,
-    # so the workspace tests gate merges.
+    # checks on the built binary are jobs of their own, beside this one. The tests run in two shards at once, each
+    # building them on the cache main saved and running half (nextest's hash partition); `rust (linux)` below, a
+    # required check, passes only once both did, so the workspace tests gate merges.
     #
     # The tests also check that the generated contracts (schema/*.json and the app's TypeScript) are current
     # (schema::generated_contracts_are_current) and replay the recorded claude fixtures (node::runner). Here, what
@@ -226,11 +227,15 @@ jobs:
     # - A Navi's sandbox holds under bubblewrap (node::runner::sandbox): a Navi can't write outside its folder or read
     #   the token store, and works as usual inside it.
     #
-    # Only when a Rust-related path changed (.github/rust-scope.sh): otherwise it reports success at once, so the
+    # Only when a Rust-related path changed (.github/rust-scope.sh): otherwise each shard reports success at once, so the
     # required check reports on every PR and a skip never stands in for it.
-    name: rust (linux)
+    name: rust (linux, ${{ matrix.shard }}/2)
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     steps:
       - uses: actions/checkout@v7
         with:
@@ -273,21 +278,39 @@ jobs:
         if: steps.scope.outputs.run == 'true'
         with:
           tool: cargo-nextest
+      # Both shards restore one cache (the key has the job's id, not the matrix); the first saves it.
       - uses: Swatinem/rust-cache@v2
         if: steps.scope.outputs.run == 'true'
         with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          save-if: ${{ github.ref == 'refs/heads/main' && matrix.shard == 1 }}
       - name: Workspace tests
         if: steps.scope.outputs.run == 'true'
-        run: cargo nextest run --locked --workspace --profile ci
+        run: cargo nextest run --locked --workspace --profile ci --partition hash:${{ matrix.shard }}/2
         env:
           FLEETD_REQUIRE_NODE_SEAL: "1"
           FLEETD_REQUIRE_AGENT_BROWSER: "1"
           FLEETD_REQUIRE_SANDBOX: "1"
       # nextest doesn't run doctests.
       - name: Doctests
-        if: steps.scope.outputs.run == 'true'
+        if: steps.scope.outputs.run == 'true' && matrix.shard == 2
         run: cargo test --locked --workspace --doc
+
+  rust-linux:
+    # The required check: green only once both shards of `rust` passed (each reports success at once without a Rust
+    # change). It runs even in a cancelled run, and fails there: a skipped job would count as passing. The train re-runs
+    # a failed shard, which re-runs this with it.
+    name: rust (linux)
+    needs: rust
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Both shards passed
+        run: |
+          echo "rust: $RESULT"
+          [ "$RESULT" = success ] || { echo "::error::a shard of the workspace tests ended $RESULT"; exit 1; }
+        env:
+          RESULT: ${{ needs.rust.result }}
 
   rust-darwin:
     # The workspace's clippy for both darwin targets, cross-checked on Linux with cargo-zigbuild as the release
