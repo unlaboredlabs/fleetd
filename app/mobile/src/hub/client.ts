@@ -46,6 +46,8 @@ export type HubFrame =
   | { readonly t: "live"; readonly frame: LiveFrame }
   /** The watched screen's newest frame. Ephemeral: the hub skips frames a slow link can't take. */
   | { readonly t: "browser_frame"; readonly frame: BrowserFrame }
+  /** The hub refused a touch, a key or a page move just sent (browser_input, which it answers only to refuse). */
+  | { readonly t: "browser_error"; readonly error: HubError }
   | { readonly t: "error"; readonly error: HubError };
 
 export interface HubClientOptions {
@@ -85,6 +87,9 @@ type ServerFrame =
 
 const KNOWN = new Set(["ready", "snapshot", "event", "result", "error", "chat_delta", "live", "browser_frame"]);
 
+/** An id-less error this soon after a browser_input refuses it, not the event stream. */
+export const INPUT_REFUSAL_MS = 3000;
+
 /** The `ready` feature that says the hub reads browser_watch and browser_input (contracts app.rs APP_FEATURES). */
 export const SCREENS_FEATURE = "browser_sessions";
 
@@ -117,6 +122,8 @@ export class HubClient {
   /** The screen watched, which goes again on each ready; null: none. */
   #watching: string | null = null;
   #screens = false;
+  /** When the last browser_input went: an id-less error soon after refuses it. */
+  #inputAt = -Infinity;
   readonly #pending = new Map<string, Pending>();
   #retryTimer: ReturnType<typeof setTimeout> | null = null;
   #readyTimer: ReturnType<typeof setTimeout> | null = null;
@@ -195,7 +202,9 @@ export class HubClient {
 
   /** A person's touch or typing on a screen they took over; dropped while there's no link, as a stale tap must not land later. */
   input(sessionId: string, input: BrowserInput | Navigation): void {
-    if (this.#ready && this.#screens) this.#send({ t: "browser_input", session: sessionId, input });
+    if (!this.#ready || !this.#screens) return;
+    this.#inputAt = Date.now();
+    this.#send({ t: "browser_input", session: sessionId, input });
   }
 
   /** A fresh snapshot, from which the event stream restarts. */
@@ -312,6 +321,8 @@ export class HubClient {
         if (frame.id?.startsWith(PROBE_ID) === true) return;
         if (frame.id !== undefined) this.#settle(frame.id, { ok: false, error });
         else if (!this.#ready) this.#refuse(frame.message);
+        // The hub answers a browser_input only to refuse it: that's the live view's to say, and the events go on.
+        else if (Date.now() - this.#inputAt < INPUT_REFUSAL_MS) this.#options.emit({ t: "browser_error", error });
         else {
           this.#options.emit({ t: "error", error });
           this.#scheduleResume();

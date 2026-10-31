@@ -3,6 +3,7 @@ import { chatItems, type ChatMessage, type HumanRequest } from "./desktop";
 import { fakeHub } from "./hub/fake";
 import { lists } from "./lists";
 import { memoryPins } from "./pins";
+import { controlOf, PageTouches } from "./screen";
 import { Session } from "./session";
 
 const REF = { machineId: "m1", projectId: "navi" };
@@ -347,5 +348,40 @@ describe("a chat's screens", () => {
     hub.fail("browser_control", "forbidden", "navi on m1 is another person's Navi: only its owner uses and manages it.");
     await expect(refused).resolves.toMatchObject({ ok: false, error: { code: "forbidden" } });
     expect(session.state.screens[KEY]?.[0]?.control).toBe("human");
+  });
+});
+
+describe("a tap on a screen just taken over", () => {
+  it("goes to the page as soon as the hub says it's yours, before the screens are read again", async () => {
+    const { hub, session } = setup();
+    hub.ready(["browser_sessions"]);
+    hub.link.frame(snapshot);
+    session.openChat(KEY);
+    const id = "B0123456789abcdef0123456789abcdef";
+    const screen = (control: string) => ({ sessionId: id, projectRef: REF, threadId: "th-1", purpose: "Book", state: "live", control, startedAt: AT, kind: "browser" });
+    hub.answer("browser_sessions", { sessions: [screen("agent")], retention: { days: 30, maxGb: 20 } });
+    await flush();
+    // The view drew while the agent had it: what it reads must be now's, not that draw's.
+    const touches = new PageTouches({
+      yours: () => controlOf(session.state.screens[KEY]?.[0], undefined) === "human",
+      where: (x, y) => ({ at: { x, y }, frame: { x: x * 4, y: y * 4 }, t: Date.now() }),
+      scale: () => 4,
+      send: (input) => session.input(id, input),
+    });
+    touches.down(10, 20);
+    touches.up(10, 20, false);
+    expect(hub.sentOf("browser_input")).toEqual([]);
+    const reads = hub.sentOf("call").filter((c) => c.tool === "browser_sessions").length;
+    const taking = session.control(id, "human");
+    hub.answer("browser_control", { session: screen("human") });
+    await taking;
+    // No read of the list since: the hub's answer to Take Over is enough.
+    expect(hub.sentOf("call").filter((c) => c.tool === "browser_sessions")).toHaveLength(reads);
+    touches.down(10, 20);
+    touches.up(10, 20, false);
+    expect(hub.sentOf("browser_input")).toEqual([
+      { t: "browser_input", session: id, input: { kind: "mouse", action: "pressed", x: 40, y: 80, button: "left", clickCount: 1 } },
+      { t: "browser_input", session: id, input: { kind: "mouse", action: "released", x: 40, y: 80, button: "left", clickCount: 1 } },
+    ]);
   });
 });

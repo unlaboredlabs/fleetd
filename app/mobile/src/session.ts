@@ -4,7 +4,7 @@
 // person's pinned chats sync with the hub on each snapshot (pins.ts). A Navi's or agent's live screen is watched one
 // at a time: its frames go to the live view's listener alone (onFrame), never through the state, which would draw the
 // whole app again with each.
-import { loadRun, mergeMessages, resetFlow, toResend, type ApprovalDecision, type AttachmentGetOutput, type AttachmentRef, type BrowserFrame, type BrowserInput, type ChatReplyTo, type ChatSend, type FlowDeps, type HubEvent, type HubState, type ProjectRef, type ToolInput, type ToolName } from "./desktop";
+import { loadRun, mergeMessages, resetFlow, toResend, type ApprovalDecision, type AttachmentGetOutput, type AttachmentRef, type BrowserFrame, type BrowserInput, type ChatReplyTo, type ChatSend, type FlowDeps, type HubError, type HubEvent, type HubState, type ProjectRef, type ToolInput, type ToolName } from "./desktop";
 import type { Navigation } from "./screen";
 import { HubClient, type HubFrame, type Transport, type Typed } from "./hub/client";
 import { memoryPins, Pins, type PinStore } from "./pins";
@@ -36,6 +36,7 @@ export class Session {
   readonly #listeners = new Set<() => void>();
   readonly #eventListeners = new Set<(event: HubEvent) => void>();
   readonly #frameListeners = new Set<(frame: BrowserFrame) => void>();
+  readonly #inputErrorListeners = new Set<(error: HubError) => void>();
   readonly #now: () => number;
   readonly #newId: () => string;
   /** The chat on screen, which gets streamed text and is reloaded on each connection. */
@@ -225,6 +226,12 @@ export class Session {
     return () => this.#frameListeners.delete(listener);
   }
 
+  /** The hub's refusal of a touch, typing or page move just sent, for the live view to say. */
+  onInputError(listener: (error: HubError) => void): () => void {
+    this.#inputErrorListeners.add(listener);
+    return () => this.#inputErrorListeners.delete(listener);
+  }
+
   /** A touch or typing on a screen this phone's person took over. */
   input(sessionId: string, input: BrowserInput | Navigation): void {
     this.#client.input(sessionId, input);
@@ -318,6 +325,10 @@ export class Session {
   #onFrame(frame: HubFrame): void {
     if (frame.t === "browser_frame") {
       for (const listener of this.#frameListeners) listener(frame.frame);
+      return;
+    }
+    if (frame.t === "browser_error") {
+      for (const listener of this.#inputErrorListeners) listener(frame.error);
       return;
     }
     const before = this.#state.chats[this.#open ?? ""];

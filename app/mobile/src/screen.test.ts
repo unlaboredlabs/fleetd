@@ -19,6 +19,7 @@ import {
   hostOf,
   IDLE,
   MAX_ZOOM,
+  PageTouches,
   pixelsPerPoint,
   screenCards,
   SEARCH,
@@ -222,12 +223,14 @@ describe("a screen of your own on its way", () => {
 });
 
 describe("the address bar", () => {
-  it("is a browser's, while it's yours and running", () => {
-    expect(addressable("browser", "human", false)).toBe(true);
-    expect(addressable("browser", "agent", false)).toBe(false);
-    expect(addressable("ios", "human", false)).toBe(false);
-    expect(addressable("browser", "human", true)).toBe(false);
-    expect(addressable(undefined, "human", false)).toBe(false);
+  it("is a browser's, while it's yours and running, on a hub that takes page moves", () => {
+    expect(addressable(true, "browser", "human", false)).toBe(true);
+    expect(addressable(true, "browser", "agent", false)).toBe(false);
+    expect(addressable(true, "ios", "human", false)).toBe(false);
+    expect(addressable(true, "browser", "human", true)).toBe(false);
+    expect(addressable(true, undefined, "human", false)).toBe(false);
+    // A hub without the page moves (#923) would refuse them: no bar at all.
+    expect(addressable(false, "browser", "human", false)).toBe(false);
   });
 
   it("goes where Safari would: a URL as typed, a host over https (http for a local one), anything else a search", () => {
@@ -243,5 +246,38 @@ describe("the address bar", () => {
     expect(addressOf("javascript:alert(1)")).toBeNull();
     expect(addressOf("file:///etc/hosts")).toBeNull();
     expect(addressOf("x".repeat(3000))!.length).toBe(2048);
+  });
+});
+
+describe("the finger on the JS thread", () => {
+  it("reads whether the page is yours as each touch lands, holds and lets go", () => {
+    let yours = false;
+    const sent: unknown[] = [];
+    const timers: (() => void)[] = [];
+    const touches = new PageTouches({
+      yours: () => yours,
+      where: (x, y) => at(x, y),
+      scale: () => 4,
+      send: (i) => sent.push(i),
+      later: (run) => timers.push(run),
+      cancel: () => undefined,
+    });
+    touches.down(10, 10);
+    touches.up(10, 10, false);
+    expect(sent).toEqual([]);
+    yours = true;
+    touches.down(10, 10);
+    touches.up(10, 10, false);
+    expect(sent).toMatchObject([{ action: "pressed" }, { action: "released" }]);
+    // Held: pressed by the timer, then let go when the page stops being yours.
+    touches.down(30, 30);
+    timers.at(-1)!();
+    touches.release();
+    expect(sent.slice(2)).toMatchObject([{ action: "pressed", x: 120 }, { action: "released", x: 120 }]);
+    // A second finger: a pinch, nothing for the page.
+    touches.down(10, 10);
+    touches.move(40, 40, 2);
+    touches.up(40, 40, false);
+    expect(sent).toHaveLength(4);
   });
 });

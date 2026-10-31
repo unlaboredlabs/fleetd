@@ -18,9 +18,11 @@ import { GestureDetector, usePanGesture, usePinchGesture, useSimultaneousGesture
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import Animated, { FadeIn, FadeOut, useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { scheduleOnRN } from "react-native-worklets";
 import { zoomAbout, isNavi, type BrowserFrame } from "../desktop";
+import { INPUT_REFUSAL_MS } from "../hub/client";
 import { useHub, type RootParams } from "../hubContext";
-import { addressable, addressOf, cardOf, clampView, controlLine, controlOf, ENTER, fingerCancel, fingerDown, fingerHeld, fingerMove, fingerUp, FramePacer, HOLD_MS, hostOf, IDLE, BACKSPACE, KIND_WORD, MAX_ZOOM, pixelsPerPoint, toFrame, typed, type Finger, type Navigation, type Size, type Step } from "../screen";
+import { addressable, addressOf, BACKSPACE, cardOf, clampView, controlLine, controlOf, ENTER, FramePacer, hostOf, KIND_WORD, MAX_ZOOM, NAVIGATE, PageTouches, pixelsPerPoint, toFrame, typed, type Navigation, type Size } from "../screen";
 import { space, type, useTheme } from "../theme";
 import { Avatar } from "../ui/Avatar";
 import { Glass, GlassGroup } from "../ui/Glass";
@@ -174,69 +176,61 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
     },
   });
 
-  // One finger, on the JS thread: the page's while it's yours (screen.ts's finger), else it moves the zoomed page.
-  const finger = useRef<Finger>(IDLE);
-  const hold = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const off = useRef(false);
+  // One finger. Its gesture runs on the UI thread, where what it captured stays as the view first drew it (the page
+  // not yet yours): it only moves the zoomed page while you watch (yoursV, a shared value) and hands each touch to the
+  // JS thread, where PageTouches (screen.ts) reads whether the page is yours as the touch lands.
   const latest = useRef({ yours, box, frameSize });
   latest.current = { yours, box, frameSize };
-  const view = () => ({ zoom: zoom.value, x: x.value, y: y.value });
-  const touch = (px: number, py: number) => {
-    const { box: b, frameSize: f } = latest.current;
-    return { at: { x: px, y: py }, frame: toFrame({ x: px, y: py }, b, f, view()), t: Date.now() };
-  };
-  const apply = (step: Step) => {
-    finger.current = step.finger;
-    for (const input of step.send) session.input(sessionId, input);
-    if (step.send.some((i) => i.kind === "mouse" && i.action === "pressed")) haptics.tap();
-  };
-  const clearHold = () => {
-    if (hold.current !== undefined) clearTimeout(hold.current);
-    hold.current = undefined;
-  };
+  const yoursV = useSharedValue(yours);
+  useEffect(() => {
+    yoursV.value = yours;
+  }, [yoursV, yours]);
+  const touches = useMemo(
+    () =>
+      new PageTouches({
+        yours: () => latest.current.yours,
+        where: (px, py) => {
+          const { box: b, frameSize: f } = latest.current;
+          return { at: { x: px, y: py }, frame: toFrame({ x: px, y: py }, b, f, { zoom: zoom.value, x: x.value, y: y.value }), t: Date.now() };
+        },
+        scale: () => pixelsPerPoint(latest.current.box, latest.current.frameSize, { zoom: zoom.value, x: x.value, y: y.value }),
+        send: (input) => {
+          session.input(sessionId, input);
+          if (input.kind === "mouse" && input.action === "pressed") haptics.tap();
+        },
+      }),
+    [session, sessionId, zoom, x, y],
+  );
+  const touchDown = useCallback((px: number, py: number) => touches.down(px, py), [touches]);
+  const touchMove = useCallback((px: number, py: number, pointers: number) => touches.move(px, py, pointers), [touches]);
+  const touchUp = useCallback((px: number, py: number, canceled: boolean) => touches.up(px, py, canceled), [touches]);
   const one = usePanGesture({
-    runOnJS: true,
     minDistance: 0,
     maxPointers: 1,
     onBegin: (e) => {
-      off.current = false;
-      if (!latest.current.yours) return;
-      apply(fingerDown(finger.current, touch(e.x, e.y)));
-      clearHold();
-      hold.current = setTimeout(() => apply(fingerHeld(finger.current)), HOLD_MS);
+      "worklet";
+      scheduleOnRN(touchDown, e.x, e.y);
     },
     onUpdate: (e) => {
-      if (off.current) return;
-      // A second finger: it's a pinch, not a touch on the page.
-      if (e.numberOfPointers > 1) {
-        off.current = true;
-        clearHold();
-        return apply(fingerCancel(finger.current));
-      }
-      if (!latest.current.yours) {
-        x.value += e.changeX;
-        y.value += e.changeY;
+      "worklet";
+      if (yoursV.value) {
+        scheduleOnRN(touchMove, e.x, e.y, e.numberOfPointers);
         return;
       }
-      const before = finger.current.t;
-      apply(fingerMove(finger.current, touch(e.x, e.y), pixelsPerPoint(latest.current.box, latest.current.frameSize, view())));
-      if (before === "down" && (finger.current as Finger).t === "scrolling") clearHold();
+      x.value += e.changeX;
+      y.value += e.changeY;
     },
     onFinalize: (e) => {
-      clearHold();
-      if (!latest.current.yours) {
-        settle();
-        return;
-      }
-      if (off.current || e.canceled) apply(fingerCancel(finger.current));
-      else apply(fingerUp(finger.current, touch(e.x, e.y)));
+      "worklet";
+      scheduleOnRN(touchUp, e.x, e.y, e.canceled);
+      if (!yoursV.value) settle();
     },
   });
-  useEffect(() => () => clearHold(), []);
-  // Handed back or ended mid-touch: the finger lets go.
+  // Handed back, ended or closed mid-touch: the finger lets go.
   useEffect(() => {
-    if (!yours) finger.current = fingerCancel(finger.current).finger;
-  }, [yours]);
+    if (!yours) touches.release();
+  }, [yours, touches]);
+  useEffect(() => () => touches.release(), [touches]);
   const gestures = useSimultaneousGestures(pinch, pan, one);
   const moved = useAnimatedStyle(() => ({ transform: [{ translateX: x.value }, { translateY: y.value }, { scale: zoom.value }] }));
 
@@ -259,10 +253,28 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
   // The address bar: the site at the top becomes a field while you type where the page goes.
   const [editing, setEditing] = useState(false);
   const [address, setAddress] = useState("");
+  const movedAt = useRef(-Infinity);
   const go = (to: Navigation) => {
     haptics.tap();
+    movedAt.current = Date.now();
     session.input(sessionId, to);
   };
+  // A page move the hub refused (a hub or node without them, a screen no longer yours): said, never dropped.
+  const [refused, setRefused] = useState<string | null>(null);
+  useEffect(
+    () =>
+      session.onInputError((e) => {
+        if (Date.now() - movedAt.current > INPUT_REFUSAL_MS) return;
+        haptics.warning();
+        setRefused(e.message);
+      }),
+    [session],
+  );
+  useEffect(() => {
+    if (refused === null) return;
+    const timer = setTimeout(() => setRefused(null), HINT_MS);
+    return () => clearTimeout(timer);
+  }, [refused]);
   const submitAddress = () => {
     const url = addressOf(address);
     setEditing(false);
@@ -283,7 +295,7 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
   const fit = Math.min(box.width / frameSize.width, box.height / frameSize.height);
   const page = { width: frameSize.width * fit, height: frameSize.height * fit };
   const host = hostOf(newest?.url);
-  const canGo = addressable(card?.kind, control, ended);
+  const canGo = addressable(state.hub.phase === "live" && state.hub.features?.includes(NAVIGATE) === true, card?.kind, control, ended);
   const keyboardUp = typing || editing;
   useEffect(() => {
     if (!canGo) setEditing(false);
@@ -425,6 +437,19 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
             <View style={styles.round} />
           )}
         </View>
+
+        {/* A page move the hub refused. */}
+        {refused === null ? null : (
+          <Animated.View entering={FadeIn.duration(reduce ? 0 : dur.quick).easing(ease.snap)} exiting={FadeOut.duration(reduce ? 0 : dur.quick)} style={[styles.ask, { top: insets.top + BAR + space.md }]} accessibilityLiveRegion="assertive">
+            <Glass style={styles.askGlass}>
+              <Icon name="error" size={18} color={t.danger} />
+              <View style={styles.askText}>
+                <Text style={[type.subhead, styles.strong, { color: t.label }]}>Couldn't go there</Text>
+                <Text style={[type.subhead, { color: t.label }]}>{refused}</Text>
+              </View>
+            </Glass>
+          </Animated.View>
+        )}
 
         {/* The touch hint, a moment after it's yours. */}
         {hint && !typing ? (

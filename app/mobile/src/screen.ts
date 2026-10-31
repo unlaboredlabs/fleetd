@@ -326,8 +326,15 @@ export const waitLine = (w: Wait, machine: string): string => {
  */
 export type Navigation = { readonly kind: "navigate"; readonly url: string } | { readonly kind: "back" } | { readonly kind: "forward" } | { readonly kind: "reload" };
 
-/** Whether the address bar is offered: a browser (a device's screen has none), yours to drive, still running. */
-export const addressable = (kind: ScreenCard["kind"] | undefined, control: Control, ended: boolean): boolean => kind === "browser" && control === "human" && !ended;
+/** The `ready` feature that says the hub takes the page moves (contracts app.rs APP_FEATURES, from #923). */
+export const NAVIGATE = "browser_navigate";
+
+/**
+ * Whether the address bar, Reload, Back and Forward are offered: on a hub that takes them (`served`), for a browser (a
+ * device's screen has none), yours to drive, still running.
+ */
+export const addressable = (served: boolean, kind: ScreenCard["kind"] | undefined, control: Control, ended: boolean): boolean =>
+  served && kind === "browser" && control === "human" && !ended;
 
 /** Where a search goes when what was typed isn't an address. */
 export const SEARCH = "https://www.google.com/search?q=";
@@ -349,3 +356,86 @@ export const addressOf = (typedText: string): string | null => {
   }
   return `${SEARCH}${encodeURIComponent(text)}`.slice(0, 2048);
 };
+
+// ---- the finger on the JS thread ----
+
+/** What a finger on the page needs, read when each touch happens (never kept from when the view first drew). */
+export interface TouchDeps {
+  /** Whether the page is the person's to drive now. */
+  readonly yours: () => boolean;
+  /** Where a point in the box is, on screen and in the frame, now. */
+  readonly where: (x: number, y: number) => Touch;
+  /** Frame pixels per point at the view's zoom now. */
+  readonly scale: () => number;
+  readonly send: (input: BrowserInput) => void;
+  readonly later?: (run: () => void, ms: number) => unknown;
+  readonly cancel?: (timer: unknown) => void;
+}
+
+/**
+ * One finger on the page, as the live view's gesture hands it over: the finger's steps above, the hold's timer, and
+ * whether the touch is the page's at all, decided as it lands from what `yours` says then. The gesture's own callbacks
+ * run on the UI thread, where a value they captured stays as it was when the view first drew (the page not yet
+ * yours), so they decide nothing: they only hand each touch here.
+ */
+export class PageTouches {
+  readonly #deps: TouchDeps;
+  #finger: Finger = IDLE;
+  #hold: unknown;
+  /** This touch went to a second finger (a pinch), or was never the page's. */
+  #off = false;
+  #mine = false;
+
+  constructor(deps: TouchDeps) {
+    this.#deps = deps;
+  }
+
+  down(x: number, y: number): void {
+    this.#off = false;
+    this.#mine = this.#deps.yours();
+    this.#clearHold();
+    if (!this.#mine) return;
+    this.#apply(fingerDown(this.#finger, this.#deps.where(x, y)));
+    this.#hold = (this.#deps.later ?? ((run, ms) => setTimeout(run, ms)))(() => {
+      this.#hold = undefined;
+      this.#apply(fingerHeld(this.#finger));
+    }, HOLD_MS);
+  }
+
+  move(x: number, y: number, pointers: number): void {
+    if (this.#off || !this.#mine) return;
+    // A second finger: it's a pinch, not a touch on the page.
+    if (pointers > 1) {
+      this.#off = true;
+      this.#clearHold();
+      return this.#apply(fingerCancel(this.#finger));
+    }
+    const before = this.#finger.t;
+    this.#apply(fingerMove(this.#finger, this.#deps.where(x, y), this.#deps.scale()));
+    if (before === "down" && (this.#finger as Finger).t === "scrolling") this.#clearHold();
+  }
+
+  up(x: number, y: number, canceled: boolean): void {
+    this.#clearHold();
+    if (!this.#mine) return;
+    this.#mine = false;
+    this.#apply(this.#off || canceled ? fingerCancel(this.#finger) : fingerUp(this.#finger, this.#deps.where(x, y)));
+  }
+
+  /** The page stopped being the person's (handed back, ended) or the view closed: a press held is let go. */
+  release(): void {
+    this.#clearHold();
+    this.#mine = false;
+    this.#apply(fingerCancel(this.#finger));
+  }
+
+  #apply(step: Step): void {
+    this.#finger = step.finger;
+    for (const input of step.send) this.#deps.send(input);
+  }
+
+  #clearHold(): void {
+    if (this.#hold !== undefined) (this.#deps.cancel ?? ((t) => clearTimeout(t as ReturnType<typeof setTimeout>)))(this.#hold);
+    this.#hold = undefined;
+  }
+}

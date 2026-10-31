@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { backoff, HubClient, PROBE_EVERY_MS, READY_TIMEOUT_MS, socketUrl, type HubFrame } from "./client";
+import { backoff, HubClient, INPUT_REFUSAL_MS, PROBE_EVERY_MS, READY_TIMEOUT_MS, socketUrl, type HubFrame } from "./client";
 import { fakeHub } from "./fake";
 
 const HUB = "http://devbox:4790";
@@ -177,6 +177,22 @@ describe("watching a screen", () => {
     expect(hub.sentOf("browser_watch").at(-1)).toEqual({ t: "browser_watch" });
     hub.link.frame(frame("Bsee", 3));
     expect(frames.filter((f) => f.t === "browser_frame")).toHaveLength(1);
+  });
+
+  it("hands a refusal of what was just sent to the live view, and keeps the event stream going", () => {
+    const { hub, client, frames } = setup();
+    client.start();
+    hub.ready(["browser_sessions"]);
+    hub.link.frame(snapshot);
+    const events = hub.sentOf("events").length;
+    client.input("Bsee", { kind: "navigate", url: "https://booking.com" });
+    hub.link.frame({ t: "error", code: "invalid", message: "Unknown or malformed message." });
+    expect(frames.at(-1)).toEqual({ t: "browser_error", error: { code: "invalid", message: "Unknown or malformed message.", fix: undefined } });
+    vi.advanceTimersByTime(INPUT_REFUSAL_MS + 10);
+    expect(hub.sentOf("events")).toHaveLength(events);
+    // Long after any input, an id-less error is the event stream's again.
+    hub.link.frame({ t: "error", code: "failed", message: "stream ended" });
+    expect(frames.at(-1)).toMatchObject({ t: "error" });
   });
 
   it("drops a touch while the link is down, rather than land it later", () => {
