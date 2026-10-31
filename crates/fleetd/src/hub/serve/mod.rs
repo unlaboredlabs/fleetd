@@ -1,4 +1,4 @@
-//! `fleetd hub start` (alias `hub serve`): parses its flags, builds the [`Hub`] over the database in `--home`, starts
+//! `fleetd hub start`: parses its flags, builds the [`Hub`] over the database in `--home`, starts
 //! every area's background loop and serves HTTP until SIGTERM/SIGINT.
 use crate::clock::{Clock, SystemClock};
 use crate::hub::api::{self, Hub, HubConfig, Listen, Registry, Shutdown};

@@ -123,7 +123,7 @@ pub fn help_for(argv: &[String]) -> Option<String> {
         "project" | "projects" => project::PROJECT_USAGE.to_owned(),
         "navi" | "navis" => navi::NAVI_USAGE.to_owned(),
         "hub" => match rest.first().map(String::as_str) {
-            Some("start" | "serve") => node::HUB_START_USAGE.to_owned(),
+            Some("start") => node::HUB_START_USAGE.to_owned(),
             Some("key") => hub_key::HUB_KEY_USAGE.to_owned(),
             _ => format!("{}{}", node::HUB_START_USAGE, hub_key::HUB_KEY_USAGE),
         },
@@ -245,13 +245,12 @@ async fn run_long_running(argv: &[String]) -> u8 {
     }
 }
 
-/// `fleetd update [--check] [--channel <c>] [--now]`; `--restart-now`, from before restarts stopped waiting, is still taken.
+/// `fleetd update [--check] [--channel <c>] [--now]`.
 async fn update_command(argv: &[String]) -> u8 {
     let spec = args::Spec {
         options: &[
             ("check", args::Kind::Bool),
             ("channel", args::Kind::Str),
-            ("restart-now", args::Kind::Bool),
             ("now", args::Kind::Bool),
         ],
         positionals: false,
@@ -266,7 +265,6 @@ async fn update_command(argv: &[String]) -> u8 {
     match update::run(update::UpdateArgs {
         check: v.flag("check"),
         channel: v.string("channel"),
-        restart_now: v.flag("restart-now"),
         now: v.flag("now"),
     })
     .await
@@ -296,7 +294,7 @@ pub fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
     if argv.first().map(String::as_str) == Some("hub")
-        && matches!(argv.get(1).map(String::as_str), Some("start" | "serve"))
+        && argv.get(1).map(String::as_str) == Some("start")
     {
         return node::hub_start(&argv[2..]);
     }
