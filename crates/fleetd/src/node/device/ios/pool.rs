@@ -102,7 +102,8 @@ pub async fn prepare(home: &Path, device_type: Option<&str>) -> Result<Golden, S
     let (runtime, device_type) = super::simctl::pick(&runtimes, device_type)?;
     let _ = std::fs::remove_file(golden_path(home));
     clear(&simctl, None).await;
-    clear_homes(home);
+    let homes = home.to_owned();
+    let _ = tokio::task::spawn_blocking(move || clear_homes(&homes)).await;
     let udid = simctl
         .create(GOLDEN_NAME, &device_type.identifier, &runtime.identifier)
         .await?;
@@ -282,14 +283,15 @@ fn stop_daemon_blocking(state: &Path) {
 
 /// A clone's own agent-device home, made for it alone and deleted with it: the pool starts the clone's XCTest runner in
 /// its daemon before it lends the clone, and the session's commands switch to it (`agent_device::LENT`), so nothing
-/// carries from one session to the next.
+/// carries from one session to the next. Its daemon's registration holds the token that drives the clone, so it is
+/// outside `device` (which every Navi reads: its programs), in the node's home that Navis never see.
 pub fn clone_home(home: &Path, udid: &str) -> PathBuf {
-    super::ios_dir(home).join("clones").join(udid)
+    home.join("ios-clones").join(udid)
 }
 
-/// Stops the daemons of the clone homes a stopped node left, and deletes them. Returns how many.
+/// Stops the daemons of the clone homes a stopped node left, and deletes them. Returns how many. Blocking.
 pub fn clear_homes(home: &Path) -> usize {
-    let dir = super::ios_dir(home).join("clones");
+    let dir = home.join("ios-clones");
     let mut cleared = 0;
     for entry in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
         stop_daemon_blocking(&entry.path().join("state"));

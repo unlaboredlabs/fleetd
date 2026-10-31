@@ -910,6 +910,57 @@ fn a_navi_cant_read_keys_logins_fleetds_dir_or_another_navis_home() {
 }
 
 #[test]
+fn a_navi_cant_read_an_ios_clones_agent_device_home() {
+    let Some(tool) = sandbox_or_skip() else {
+        return;
+    };
+    let m = Machine::new();
+    // The node's device tools, which every Navi runs, and a clone's home, whose daemon's registration drives the clone.
+    let wrapper = m.node.join("device/ios/bin/agent-device");
+    let daemon =
+        crate::node::device::ios::pool::clone_home(&m.node, "AAAA-1").join("state/daemon.json");
+    for (path, text) in [
+        (&wrapper, "#!/bin/sh\n"),
+        (&daemon, "{\"pid\":1,\"token\":\"another-owners\"}"),
+    ] {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, text).unwrap();
+    }
+    let (ok, out) = m.run(&tool, &format!("cat '{}'", wrapper.display()));
+    assert!(ok, "the device tools are shown: {out}");
+    let (ok, out) = m.run(&tool, &format!("cat '{}'", daemon.display()));
+    assert!(!ok, "a clone's daemon.json was read: {out}");
+    let (ok, out) = m.run(
+        &tool,
+        &format!(
+            "ls '{}'",
+            daemon
+                .parent()
+                .unwrap()
+                .parent()
+                .unwrap()
+                .parent()
+                .unwrap()
+                .display()
+        ),
+    );
+    assert!(
+        !ok || !out.contains("AAAA-1"),
+        "the clones are listed: {out}"
+    );
+    // Its own session's agent-device home stays its to write.
+    let own = crate::node::device::agent_device::session_dir(&m.node, "s1");
+    let (ok, out) = m.run(
+        &tool,
+        &format!(
+            "mkdir -p '{0}/state' && echo x > '{0}/state/daemon.lock'",
+            own.display()
+        ),
+    );
+    assert!(ok, "its own agent-device home isn't writable: {out}");
+}
+
+#[test]
 fn a_navi_works_in_its_folder_as_usual() {
     let Some(tool) = sandbox_or_skip() else {
         return;

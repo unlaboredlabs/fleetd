@@ -360,7 +360,8 @@ storage work as for a browser screen.
 - **Starts from a warm pool.** The node keeps one clone booted for the next screen, with agent-device's XCTest runner
   already started in it, and clones, boots and starts another behind it. So `session_start` doesn't wait for a boot,
   and the first agent-device command doesn't wait for the runner. Each clone's runner runs from an agent-device home
-  made for that clone alone, which is deleted with the clone. With no clone ready, `session_start` answers at once that
+  made for that clone alone, kept where no Navi's sandbox can see it, and deleted with the clone. A Navi's screen
+  stops that runner and starts its own in its session's folder, the one its sandbox lets it write. With no clone ready, `session_start` answers at once that
   one is starting and about how long it takes, rather than wait out the boot. When boots keep failing, the pool waits
   before the next one: a minute, doubling up to half an hour, and back to normal after a boot that works. If the pool
   couldn't start a clone's runner, the screen starts it as it starts. An agent-device command sent before the runner

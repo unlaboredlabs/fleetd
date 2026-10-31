@@ -395,6 +395,9 @@ pub struct Simulators {
     /// Live sessions by the agent session they belong to: one each.
     sessions: Mutex<HashMap<String, Arc<Session>>>,
     starting: Arc<Mutex<HashSet<String>>>,
+    /// The agent sessions that are Navis': each runs in its sandbox, which reads and writes only its own agent-device
+    /// home, so it never takes over a clone's.
+    navis: Mutex<HashSet<String>>,
     hub: Arc<dyn HubCalls>,
     secrets_for: SecretsFor,
     uploading: Mutex<HashSet<PathBuf>>,
@@ -415,6 +418,7 @@ impl Simulators {
             prep: Mutex::new(Prep::Wanted),
             sessions: Mutex::default(),
             starting: Arc::default(),
+            navis: Mutex::default(),
             hub,
             secrets_for,
             uploading: Mutex::default(),
@@ -431,8 +435,11 @@ impl Simulators {
                 let this = simulators.clone();
                 tokio::spawn(async move {
                     let simctl = Simctl::new(set_dir(&this.home));
-                    let cleared = pool::clear(&simctl, Some(&golden.udid)).await
-                        + pool::clear_homes(&this.home);
+                    let home = this.home.clone();
+                    let homes = tokio::task::spawn_blocking(move || pool::clear_homes(&home))
+                        .await
+                        .unwrap_or_default();
+                    let cleared = pool::clear(&simctl, Some(&golden.udid)).await + homes;
                     if cleared > 0 {
                         tracing::info!(cleared, "iOS simulators a stopped node left were deleted");
                     }
@@ -627,10 +634,18 @@ impl Simulators {
                     "try again; if it keeps failing, check the node's log",
                 )
             })?;
+        // A Navi's session can't reach the clone's home from its sandbox: the runner the pool started there stops, and
+        // the session starts its own in its own home.
+        let navi = lock(&self.navis).contains(&thread);
+        let lend = !navi && lent.home.join("config.json").is_file();
+        if !lend {
+            pool::stop_daemon(&lent.home.join("state")).await;
+        }
         // From here to the map nothing waits, so a start that goes away leaves no half-made session behind.
         let udid = lent.udid.clone();
-        let runner_up = lent.runner_up();
-        wrapper::write_config(&self.home, &thread, &udid, Some(&lent.home)).map_err(|e| {
+        let runner_up = lend && lent.runner_up();
+        let home = lend.then(|| lent.home.clone());
+        wrapper::write_config(&self.home, &thread, &udid, home.as_deref()).map_err(|e| {
             refuse(
                 ErrorCode::Failed,
                 format!("The node could not point agent-device at the simulator: {e}."),
@@ -880,7 +895,13 @@ impl Simulators {
     }
 
     /// Ends the agent session's iOS session, if it has one (its agent session ended).
+    /// The agent session is a Navi's: its sessions keep their own agent-device home.
+    pub fn navi(&self, thread: &str) {
+        lock(&self.navis).insert(thread.to_owned());
+    }
+
     pub fn ended(self: &Arc<Self>, thread: &str) {
+        lock(&self.navis).remove(thread);
         let Some(session) = lock(&self.sessions).remove(thread) else {
             return;
         };

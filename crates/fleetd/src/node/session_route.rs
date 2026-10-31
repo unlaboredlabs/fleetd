@@ -911,10 +911,14 @@ impl SessionHooks for Router {
         (all.len() > known).then(|| crate::node::mask::Secrets(all))
     }
 
-    /// A Navi's browser runs here, on its kept profile and inside its folder's fence: never on another machine.
+    /// A Navi's browser runs here, on its kept profile and inside its folder's fence: never on another machine. Its iOS
+    /// screens keep their agent-device home in its session's folder, which its sandbox writes.
     fn navi(&self, thread: &str, navi: &str, folder: &std::path::Path) {
         if let Some(broker) = &self.broker {
             broker.navi(thread, navi, folder);
+        }
+        if let Some(ios) = &self.ios {
+            ios.navi(thread);
         }
     }
 
