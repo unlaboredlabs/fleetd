@@ -160,8 +160,9 @@ const adaSkills = (f: Fixture): void => {
   if (f.state.phase === "live") f.state = { ...f.state, features: [...(f.state.features ?? []), "navi_skills"] };
   const projectRef = { ...ADA };
   const hour = 3_600_000;
+  const newest = { version: 3, author: "agent", by: "Ada", at: at(f.now, -2 * hour), why: INVOICES_WHY };
   const versions = [
-    { version: 3, author: "agent", by: "Ada", at: at(f.now, -2 * hour), why: INVOICES_WHY },
+    newest,
     { version: 2, author: "person", by: "Sam", at: at(f.now, -26 * hour), why: "Keep them by year." },
     { version: 1, author: "agent", by: "Ada", at: at(f.now, -6 * 24 * hour), why: "Worked out where the portal keeps the invoices." },
   ];
@@ -174,7 +175,7 @@ const adaSkills = (f: Fixture): void => {
     name: "weekly-invoices",
     origin: "project",
     description: "Download the week's supplier invoices as PDFs. Use on Mondays, or when Sam asks for invoices.",
-    changed: versions[0],
+    changed: newest,
     lastUsedAt: at(f.now, -2 * hour - 120_000),
     updatedAt: at(f.now, -2 * hour),
   };
