@@ -556,27 +556,22 @@ async fn chat_decisions_and_the_checklist_record_the_person() {
         json!(owner.person.clone().unwrap())
     );
 
-    let added = ok(
-        &hub,
-        &alice,
-        "checklist_edit",
-        json!({ "projectRef": r, "items": [{ "text": "Dark mode follows the system" }, { "text": "Toggle in settings" }] }),
+    let project: fleetd_contracts::ids::ProjectRef = serde_json::from_value(r.clone()).unwrap();
+    let call = serde_json::from_value(
+        json!({ "items": [{ "text": "Dark mode follows the system" }, { "text": "Toggle in settings" }] }),
     )
-    .await;
-    assert_eq!(added["items"][0]["person"], json!(alice_ref));
-    let ticked = ok(
+    .unwrap();
+    crate::hub::checklist::apply(&hub.db, &project, &call, 0)
+        .unwrap()
+        .unwrap();
+    let removed = ok(
         &hub,
         &owner,
-        "checklist_edit",
-        json!({ "projectRef": r, "items": [{ "id": 1, "state": "done" }, { "id": 2, "remove": true }] }),
+        "checklist_remove",
+        json!({ "projectRef": r, "ids": [2] }),
     )
     .await;
-    assert_eq!(ticked["items"].as_array().unwrap().len(), 1);
-    assert_eq!(ticked["items"][0]["state"], "done");
-    assert_eq!(
-        ticked["items"][0]["person"],
-        json!(owner.person.clone().unwrap())
-    );
+    assert_eq!(removed["items"].as_array().unwrap().len(), 1);
     let changes: Vec<Value> = events(
         &hub,
         fleetd_contracts::events::HubEventType::ChecklistChanged,
@@ -590,7 +585,7 @@ async fn chat_decisions_and_the_checklist_record_the_person() {
         "a removal names who"
     );
 
-    // An agent key edits nothing here.
+    // An agent key removes nothing here.
     let agent = hub
         .auth
         .create_key(
@@ -609,8 +604,8 @@ async fn chat_decisions_and_the_checklist_record_the_person() {
         refused(
             &hub,
             &agent,
-            "checklist_edit",
-            json!({ "projectRef": r, "items": [{ "id": 1, "state": "todo" }] })
+            "checklist_remove",
+            json!({ "projectRef": r, "ids": [1] })
         )
         .await,
         ErrorCode::Forbidden

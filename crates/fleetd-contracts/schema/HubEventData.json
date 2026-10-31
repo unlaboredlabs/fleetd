@@ -1122,7 +1122,7 @@
         },
         "person": {
           "$ref": "#/$defs/PersonRef",
-          "description": "The person who changed it (`checklist_edit`), removals included; absent when the lead did."
+          "description": "The person who changed it (`checklist_remove`); absent when the lead did."
         },
         "projectRef": {
           "$ref": "#/$defs/ProjectRef"

@@ -1343,23 +1343,10 @@ export type ChecklistChangedData = {
   /** The lead (`lead:<machine>/<project>`) or a person (`human:<key name>`). */
   by: string;
   done: number;
-  /** The person who changed it (`checklist_edit`), removals included; absent when the lead did. */
+  /** The person who changed it (`checklist_remove`); absent when the lead did. */
   person?: PersonRef;
   projectRef: ProjectRef;
   total: number;
-};
-
-export type ChecklistEditInput = {
-  items: TodoEdit[];
-  projectRef: ProjectRef;
-};
-
-export type ChecklistEditOutput = {
-  items: TodoItem[];
-  next?: string;
-  projectRef: ProjectRef;
-  truncated?: boolean;
-  updatedAt?: Timestamp;
 };
 
 export type ChecklistGetInput = {
@@ -7803,24 +7790,11 @@ export type TimeZone = string;
 
 export type Timestamp = string;
 
-/**
- * One change to the list: without `id` it adds an item (text required, state todo unless given); with `id` it sets
- * that item's text, state or link, or with `remove` takes it off.
- */
-export type TodoEdit = {
-  id?: number;
-  /** Replaces the item's link; `{}` clears it. */
-  link?: TodoLink;
-  remove?: boolean;
-  state?: TodoState;
-  text?: string;
-};
-
 export type TodoItem = {
   /** Unique in its project, never reused. */
   id: number;
   link?: TodoLink;
-  /** The person who last ticked or changed it (`checklist_edit`); absent when the lead did. */
+  /** The person who last ticked or changed it, on an older hub; absent when the lead did. */
   person?: PersonRef;
   state: TodoState;
   text: string;
@@ -8587,7 +8561,6 @@ export interface ToolMap {
   chat_pins_set: { input: ChatPinsSetInput; output: ChatPinsSetOutput };
   chat_send: { input: ChatSendInput; output: ChatSendOutput };
   chat_stop: { input: ChatStopInput; output: ChatStopOutput };
-  checklist_edit: { input: ChecklistEditInput; output: ChecklistEditOutput };
   checklist_get: { input: ChecklistGetInput; output: ChecklistGetOutput };
   checklist_remove: { input: ChecklistRemoveInput; output: ChecklistRemoveOutput };
   claude_account_test: { input: ClaudeAccountTestInput; output: ClaudeAccountTestOutput };

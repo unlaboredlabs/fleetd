@@ -3343,54 +3343,6 @@
       ],
       "type": "object"
     },
-    "ChecklistEditInput": {
-      "properties": {
-        "items": {
-          "items": {
-            "$ref": "#/$defs/TodoEdit"
-          },
-          "maxItems": 50,
-          "minItems": 1,
-          "type": "array"
-        },
-        "projectRef": {
-          "$ref": "#/$defs/ProjectRef"
-        }
-      },
-      "required": [
-        "projectRef",
-        "items"
-      ],
-      "type": "object"
-    },
-    "ChecklistEditOutput": {
-      "properties": {
-        "items": {
-          "items": {
-            "$ref": "#/$defs/TodoItem"
-          },
-          "maxItems": 50,
-          "type": "array"
-        },
-        "next": {
-          "type": "string"
-        },
-        "projectRef": {
-          "$ref": "#/$defs/ProjectRef"
-        },
-        "truncated": {
-          "type": "boolean"
-        },
-        "updatedAt": {
-          "$ref": "#/$defs/Timestamp"
-        }
-      },
-      "required": [
-        "projectRef",
-        "items"
-      ],
-      "type": "object"
-    },
     "ChecklistGetInput": {
       "properties": {
         "projectRef": {
@@ -9524,12 +9476,6 @@
         "chat_stop.output": {
           "$ref": "#/$defs/ChatStopOutput"
         },
-        "checklist_edit.input": {
-          "$ref": "#/$defs/ChecklistEditInput"
-        },
-        "checklist_edit.output": {
-          "$ref": "#/$defs/ChecklistEditOutput"
-        },
         "checklist_get.input": {
           "$ref": "#/$defs/ChecklistGetInput"
         },
@@ -10582,8 +10528,6 @@
         "chat_send.output",
         "chat_stop.input",
         "chat_stop.output",
-        "checklist_edit.input",
-        "checklist_edit.output",
         "checklist_get.input",
         "checklist_get.output",
         "checklist_remove.input",
@@ -22612,33 +22556,6 @@
       "format": "date-time",
       "type": "string"
     },
-    "TodoEdit": {
-      "description": "One change to the list: without `id` it adds an item (text required, state todo unless given); with `id` it sets\nthat item's text, state or link, or with `remove` takes it off.",
-      "properties": {
-        "id": {
-          "maximum": 9007199254740991,
-          "minimum": 1,
-          "type": "integer"
-        },
-        "link": {
-          "$ref": "#/$defs/TodoLink",
-          "description": "Replaces the item's link; `{}` clears it."
-        },
-        "remove": {
-          "type": "boolean"
-        },
-        "state": {
-          "$ref": "#/$defs/TodoState"
-        },
-        "text": {
-          "maxLength": 200,
-          "minLength": 1,
-          "pattern": "^[^\\r\\n]*$",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
     "TodoItem": {
       "properties": {
         "id": {
@@ -22652,7 +22569,7 @@
         },
         "person": {
           "$ref": "#/$defs/PersonRef",
-          "description": "The person who last ticked or changed it (`checklist_edit`); absent when the lead did."
+          "description": "The person who last ticked or changed it, on an older hub; absent when the lead did."
         },
         "state": {
           "$ref": "#/$defs/TodoState"

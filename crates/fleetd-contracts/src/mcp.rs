@@ -7,7 +7,7 @@ use serde_with::skip_serializing_none;
 
 use crate::auth::{AgentKeyInfo, Role};
 use crate::chat::{ChatMessageId, ChatRequestId};
-use crate::checklist::{CHECKLIST_MAX, TodoEdit, TodoItem};
+use crate::checklist::{CHECKLIST_MAX, TodoItem};
 use crate::doctor::{DoctorCheck, DoctorCheckId};
 use crate::effort::{
     Effort, ModelName, ModelSource, PROFILES_MAX, Profile, ProfileId, ProfileModel, ProfileName,
@@ -1811,18 +1811,6 @@ output!(ChecklistRemoveOutput {
     updated_at: Option<Timestamp>,
 });
 
-// checklist_edit: a person ticks, reopens, edits, adds or removes items on a project's checklist. Human keys only (the
-// handler checks); the change records who made it.
-input!(ChecklistEditInput {
-    project_ref: ProjectRef,
-    items: List<TodoEdit, 1, CHECKLIST_MAX>,
-});
-output!(ChecklistEditOutput {
-    project_ref: ProjectRef,
-    items: List<TodoItem, 0, CHECKLIST_MAX>,
-    updated_at: Option<Timestamp>,
-});
-
 // navi_asks: what a Navi asked other projects for (`project_message`), newest first, with each order opened for it and
 // its state. The app shows it to a hub that names the `navi_asks` feature.
 input!(NaviAsksInput { navi: ProjectRef });
@@ -3466,8 +3454,6 @@ tools! {
     navi_asks => NaviAsks, Read, NaviAsksInput, NaviAsksOutput;
     // Human keys only (the handler checks).
     checklist_remove => ChecklistRemove, Operate, ChecklistRemoveInput, ChecklistRemoveOutput;
-    // Human keys only (the handler checks).
-    checklist_edit => ChecklistEdit, Operate, ChecklistEditInput, ChecklistEditOutput;
     browser_sessions => BrowserSessions, Read, BrowserSessionsInput, BrowserSessionsOutput;
     browser_recording_get => BrowserRecordingGet, Read, BrowserRecordingGetInput, BrowserRecordingGetOutput;
     // Human keys only (the handler checks).

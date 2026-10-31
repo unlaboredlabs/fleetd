@@ -49,7 +49,7 @@ fn answer(hub: &Hub, caller: &LeadCaller, call: LeadCall) -> Result<LeadCallResu
     };
     let r = &caller.project_ref;
     let now = now_ms(hub.clock.as_ref());
-    let (list, changed_now) = super::apply(&hub.db, r, &call, now, None).map_err(failed)??;
+    let (list, changed_now) = super::apply(&hub.db, r, &call, now).map_err(failed)??;
     let next = if changed_now {
         changed(hub, r, &list, &caller.by, None, now).map_err(failed)?;
         "The human sees it in the panel's Checklist tab."
