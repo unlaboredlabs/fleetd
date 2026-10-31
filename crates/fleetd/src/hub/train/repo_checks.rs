@@ -101,8 +101,9 @@ mod tests {
         assert!(both.after_merge_only("bench") && both.after_merge_only("integration"));
     }
 
-    /// fleetd's own `.fleetd/train.json`: its fast checks are jobs of its CI that run on each PR's push on Linux, as
-    /// are its after-merge checks but mac.yml's, never a name no job has, which no run would ever report. Linux QA blocks merges (D158): every Linux shard of
+    /// fleetd's own `.fleetd/train.json`: its fast checks are jobs of its CI that run on each PR's push on Linux; its
+    /// after-merge checks, besides mac.yml's, are Linux jobs of ci.yml too; none is a name no job has, which no run
+    /// would ever report. Linux QA blocks merges (D158): every Linux shard of
     /// desktop-qa.yml's `qa` is in it, so a shard renamed or added fails here rather than drop out of the gate. No PR
     /// runs a macOS job (ci.no-macos-on-prs): each check mac.yml reports, and the iOS build of a manual Mobile run, is
     /// after merge only, so a red one on a branch someone ran it on never holds a merge.

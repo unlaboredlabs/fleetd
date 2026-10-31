@@ -292,38 +292,51 @@ jobs:
   rust-darwin:
     # The workspace's clippy for both darwin targets, cross-checked on Linux with cargo-zigbuild as the release
     # cross-builds them: code under cfg(target_os = "macos") that doesn't compile, or warns, fails here. It runs nothing;
-    # mac.yml runs the macOS-only tests nightly.
+    # mac.yml runs the macOS-only tests nightly. Like the other Rust jobs, only when a Rust-related path changed
+    # (.github/rust-scope.sh); otherwise it reports success at once, as the train waits for it (.fleetd/train.json).
     name: rust (darwin)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
+        with:
+          # A manual run from a branch compares with its merge base on main, so it needs the history.
+          fetch-depth: ${{ github.event_name == 'workflow_dispatch' && '0' || '2' }}
+      - name: Scope
+        id: scope
+        run: .github/rust-scope.sh
       - uses: dtolnay/rust-toolchain@stable
+        if: steps.scope.outputs.run == 'true'
         with:
           targets: aarch64-apple-darwin,x86_64-apple-darwin
           components: clippy
       - uses: Swatinem/rust-cache@v2
+        if: steps.scope.outputs.run == 'true'
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       # zig is the C toolchain for SQLite's and ring's build scripts, the version build-release.yml's cli job uses. It
       # comes from the cache, keyed by version; on a miss, from ziglang.org itself, checked against its published
       # sha256, rather than setup-zig's community mirrors on every run of a check that gates merges.
       - id: zig
+        if: steps.scope.outputs.run == 'true'
         uses: actions/cache@v5
         with:
           path: ~/zig
           key: zig-0.17.0-x86_64-linux
-      - if: steps.zig.outputs.cache-hit != 'true'
+      - if: steps.scope.outputs.run == 'true' && steps.zig.outputs.cache-hit != 'true'
         run: |
           curl -sSfL --retry 3 -o "$RUNNER_TEMP/zig.tar.xz" https://ziglang.org/download/0.17.0/zig-x86_64-linux-0.17.0.tar.xz
           echo "1cbe9df9f27e6b78d14ccbca43b6703a404ef79ef1c463de901d7f088d4e2026  $RUNNER_TEMP/zig.tar.xz" | sha256sum -c -
           mkdir -p ~/zig
           tar -xJf "$RUNNER_TEMP/zig.tar.xz" -C ~/zig --strip-components=1
-      - run: echo "$HOME/zig" >> "$GITHUB_PATH"
+      - if: steps.scope.outputs.run == 'true'
+        run: echo "$HOME/zig" >> "$GITHUB_PATH"
       - uses: taiki-e/install-action@v2
+        if: steps.scope.outputs.run == 'true'
         with:
           tool: cargo-zigbuild@0.23.4
-      - run: cargo-zigbuild clippy --locked --workspace --all-targets --target aarch64-apple-darwin --target x86_64-apple-darwin -- -D warnings
+      - if: steps.scope.outputs.run == 'true'
+        run: cargo-zigbuild clippy --locked --workspace --all-targets --target aarch64-apple-darwin --target x86_64-apple-darwin -- -D warnings
 
   darwin-deps:
     # The release cross-builds the darwin fleetd binaries on Linux, which breaks on any crate that links a macOS
