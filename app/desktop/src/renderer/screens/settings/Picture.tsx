@@ -75,8 +75,8 @@ export function PictureSetting({ project }: { project: Pictured }) {
   // The summary changed (the pick arriving, or another device's): it shows now, unless a pick still waits to be sent.
   const { face, color } = project.icon ?? {};
   const summary = useRef({ face, color, avatar: project.avatar });
-  summary.current = { face, color, avatar: project.avatar };
   useEffect(() => {
+    summary.current = { face, color, avatar: project.avatar };
     if (timer.current === null) setPending(null);
   }, [face, color, project.avatar]);
   useEffect(
