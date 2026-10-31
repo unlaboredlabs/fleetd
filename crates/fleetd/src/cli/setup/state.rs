@@ -27,7 +27,6 @@ pub struct MachineRecord {
     pub home: String,
     pub config_home: String,
     pub uid: u32,
-    pub unit_suffix: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -36,7 +35,6 @@ pub struct SetupState {
     pub listen: String,
     /// Where devices and nodes reach the hub.
     pub url: String,
-    pub unit_suffix: String,
     /// Commit identity for every node fleetd sets up (public repos want the GitHub noreply address).
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub git_identity: Option<GitIdentity>,

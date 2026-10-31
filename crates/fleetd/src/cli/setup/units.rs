@@ -27,8 +27,6 @@ impl Role {
 
 pub struct ServiceSpec {
     pub role: Role,
-    /// Appended to the unit name, so a second copy (a lab) can run beside the real one.
-    pub suffix: String,
     pub description: String,
     pub program: Vec<String>,
     /// Plain settings only: unit files are world-readable.
@@ -58,25 +56,12 @@ pub fn q(value: &str) -> String {
     }
 }
 
-/// `--unit-suffix lab` names units `fleetd-<role>-lab`; `None` for anything but [a-z0-9-].
-pub fn unit_suffix(value: Option<&str>) -> Option<String> {
-    let bare = value.unwrap_or("").trim_start_matches('-');
-    if bare.is_empty() {
-        return Some(String::new());
-    }
-    let ok = bare.len() <= 32
-        && bare
-            .chars()
-            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
-    ok.then(|| format!("-{bare}"))
+pub fn systemd_name(role: Role) -> String {
+    format!("fleetd-{}.service", role.as_str())
 }
 
-pub fn systemd_name(role: Role, suffix: &str) -> String {
-    format!("fleetd-{}{suffix}.service", role.as_str())
-}
-
-pub fn launchd_label(role: Role, suffix: &str) -> String {
-    format!("sh.fleetd.{}{suffix}", role.as_str())
+pub fn launchd_label(role: Role) -> String {
+    format!("sh.fleetd.{}", role.as_str())
 }
 
 pub struct Dirs<'a> {
@@ -84,17 +69,17 @@ pub struct Dirs<'a> {
     pub config_home: &'a str,
 }
 
-pub fn unit_path(platform: Platform, dirs: &Dirs, role: Role, suffix: &str) -> String {
+pub fn unit_path(platform: Platform, dirs: &Dirs, role: Role) -> String {
     match platform {
         Platform::Linux => format!(
             "{}/systemd/user/{}",
             dirs.config_home.trim_end_matches('/'),
-            systemd_name(role, suffix)
+            systemd_name(role)
         ),
         Platform::Darwin => format!(
             "{}/Library/LaunchAgents/{}.plist",
             dirs.home.trim_end_matches('/'),
-            launchd_label(role, suffix)
+            launchd_label(role)
         ),
     }
 }
@@ -198,7 +183,7 @@ pub fn render_launchd_plist(spec: &ServiceSpec) -> String {
         r#"<plist version="1.0">"#.into(),
         "<dict>".into(),
         "  <key>Label</key>".into(),
-        format!("  <string>{}</string>", launchd_label(spec.role, &spec.suffix)),
+        format!("  <string>{}</string>", launchd_label(spec.role)),
         "  <key>ProgramArguments</key>".into(),
         "  <array>".into(),
     ];
@@ -250,17 +235,11 @@ pub fn render_unit(platform: Platform, spec: &ServiceSpec) -> String {
 pub struct ServiceManager {
     platform: Platform,
     uid: u32,
-    suffix: String,
     unit_files: Vec<(Role, String)>,
 }
 
 impl ServiceManager {
-    pub fn new(
-        platform: Platform,
-        uid: u32,
-        suffix: &str,
-        unit_file: impl Fn(Role) -> String,
-    ) -> Self {
+    pub fn new(platform: Platform, uid: u32, unit_file: impl Fn(Role) -> String) -> Self {
         let unit_files = [Role::Hub, Role::T3, Role::Node]
             .into_iter()
             .map(|role| (role, unit_file(role)))
@@ -268,7 +247,6 @@ impl ServiceManager {
         ServiceManager {
             platform,
             uid,
-            suffix: suffix.to_owned(),
             unit_files,
         }
     }
@@ -279,7 +257,7 @@ impl ServiceManager {
     }
 
     fn target(&self, role: Role) -> String {
-        format!("gui/{}/{}", self.uid, launchd_label(role, &self.suffix))
+        format!("gui/{}/{}", self.uid, launchd_label(role))
     }
 
     fn bootstrap(&self, role: Role) -> String {
@@ -304,7 +282,7 @@ impl ServiceManager {
     pub fn ensure_running(&self, role: Role) -> String {
         match self.platform {
             Platform::Linux => {
-                let (ctl, name) = (self.ctl(), systemd_name(role, &self.suffix));
+                let (ctl, name) = (self.ctl(), systemd_name(role));
                 format!("{ctl} enable {name} && {ctl} start {name}")
             }
             Platform::Darwin => format!(
@@ -319,7 +297,7 @@ impl ServiceManager {
     pub fn restart(&self, role: Role, unit_changed: bool) -> String {
         match self.platform {
             Platform::Linux => {
-                let (ctl, name) = (self.ctl(), systemd_name(role, &self.suffix));
+                let (ctl, name) = (self.ctl(), systemd_name(role));
                 format!(
                     "{}{ctl} enable {name} && {ctl} restart {name}",
                     if unit_changed {
@@ -347,7 +325,7 @@ impl ServiceManager {
             Platform::Linux => format!(
                 "{} disable --now {} 2>/dev/null || true",
                 self.ctl(),
-                systemd_name(role, &self.suffix)
+                systemd_name(role)
             ),
             Platform::Darwin => self.bootout(role),
         }
@@ -361,7 +339,6 @@ mod tests {
     fn spec() -> ServiceSpec {
         ServiceSpec {
             role: Role::Node,
-            suffix: "-fleetdlab".into(),
             description: "fleetd node".into(),
             program: [
                 "/home/a b/.fleetd/bin/fleetd",
@@ -398,13 +375,9 @@ mod tests {
     }
 
     #[test]
-    fn shell_quoting_and_suffixes() {
+    fn shell_quoting() {
         assert_eq!(q("/usr/bin/node"), "/usr/bin/node");
         assert_eq!(q("it's"), r"'it'\''s'");
         assert_eq!(q(""), "''");
-        assert_eq!(unit_suffix(Some("lab")).as_deref(), Some("-lab"));
-        assert_eq!(unit_suffix(Some("--lab")).as_deref(), Some("-lab"));
-        assert_eq!(unit_suffix(None).as_deref(), Some(""));
-        assert_eq!(unit_suffix(Some("Lab")), None);
     }
 }

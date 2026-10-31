@@ -222,7 +222,6 @@ impl Doctor {
                 Platform::Linux
             },
             uid: current_uid(),
-            unit_suffix: config.unit_suffix.clone().unwrap_or_default(),
         };
         let mut out = vec![
             checks::hub_reachable(

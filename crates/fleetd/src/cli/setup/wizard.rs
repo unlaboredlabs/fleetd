@@ -346,7 +346,6 @@ async fn steps(opts: &InitOptions, ui: &Ui, list: &mut Checklist) -> Result<u8, 
         home: &opts.home,
         listen: listen.clone(),
         url: url.clone(),
-        suffix: opts.suffix.clone(),
         identity,
         with_service: opts.with_service,
         restart: false,
@@ -510,7 +509,7 @@ async fn join_hub(opts: &InitOptions, ui: &Ui, list: &mut Checklist) -> Result<u
         machine::AddArgs {
             git_identity: opts.identity.clone(),
             claude_config_dir: opts.claude_config_dir.clone(),
-            ..machine::AddArgs::local(machine_id.clone(), &opts.suffix, opts.with_service)
+            ..machine::AddArgs::local(machine_id.clone(), opts.with_service)
         },
     )
     .await;
@@ -557,7 +556,7 @@ async fn repair_worker(
             tags: joined.tags.clone(),
             git_identity: opts.identity.clone().or(joined.identity.clone()),
             claude_config_dir: opts.claude_config_dir.clone(),
-            ..machine::AddArgs::local(joined.machine_id.clone(), &joined.suffix, opts.with_service)
+            ..machine::AddArgs::local(joined.machine_id.clone(), opts.with_service)
         },
     )
     .await;
@@ -1007,7 +1006,6 @@ async fn workers(
             hub_url: None,
             ssh_config: ssh_config.clone(),
             home: Some(home.clone()),
-            unit_suffix: None,
             enroll: machine::Enroll::Hub,
             git_identity: None,
             no_service: !opts.with_service,

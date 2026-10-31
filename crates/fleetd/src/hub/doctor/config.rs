@@ -10,7 +10,6 @@ use std::path::Path;
 pub struct HubConfig {
     /// Where devices and nodes reach the hub.
     pub url: Option<String>,
-    pub unit_suffix: Option<String>,
     pub git_identity: Option<GitIdentity>,
     #[serde(default)]
     pub machines: BTreeMap<String, MachineSetup>,
@@ -32,7 +31,6 @@ pub struct MachineSetup {
     /// "linux" or "darwin".
     pub platform: Platform,
     pub uid: u32,
-    pub unit_suffix: String,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
@@ -79,13 +77,9 @@ impl MachineSetup {
 /// The command that restarts a fleetd service, named as the CLI's setup names its units.
 pub fn restart_command(role: &str, setup: Option<&MachineSetup>) -> String {
     match setup {
-        Some(s) if s.platform == Platform::Darwin => format!(
-            "launchctl kickstart -k gui/{}/sh.fleetd.{role}{}",
-            s.uid, s.unit_suffix
-        ),
-        _ => format!(
-            "systemctl --user restart fleetd-{role}{}.service",
-            setup.map_or("", |s| s.unit_suffix.as_str())
-        ),
+        Some(s) if s.platform == Platform::Darwin => {
+            format!("launchctl kickstart -k gui/{}/sh.fleetd.{role}", s.uid)
+        }
+        _ => format!("systemctl --user restart fleetd-{role}.service"),
     }
 }

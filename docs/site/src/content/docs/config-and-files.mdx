@@ -182,8 +182,7 @@ A broken file is refused with the exact problem, never ignored, so a typo can't 
 </TabItem>
 </Tabs>
 
-`--unit-suffix <s>` adds a suffix to these names, to run a second fleet's services on one machine. A second fleet
-never writes, stops or removes the first one's services.
+A second fleet never writes, stops or removes the first one's services.
 
 ## Run a second fleet on one machine {#second-fleet}
 
@@ -221,8 +220,7 @@ Every command then keeps all its state there and never reads or writes `~/.fleet
    fleetd status
    ```
 
-Stop the hub and node with Ctrl+C. Delete `$FLEETD_HOME` to remove the test fleet. To run it as services instead, add
-`--unit-suffix <s>` to `fleetd init` and `fleetd machine add`.
+Stop the hub and node with Ctrl+C. Delete `$FLEETD_HOME` to remove the test fleet.
 
 ### What FLEETD_HOME covers {#home-scope}
 
