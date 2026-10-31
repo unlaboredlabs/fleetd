@@ -226,6 +226,7 @@ const applyFrame = (s: State, frame: HubFrame, nowMs: number): State => {
       return { ...s, leadActivity: next };
     }
     case "browser_frame":
+    case "browser_error":
     case "error":
       return s;
   }
