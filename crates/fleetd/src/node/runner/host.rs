@@ -12,8 +12,11 @@
 //! - node → host: `{"ack":n}` once the session service applied events up to `n` (so a restarted node gets none twice),
 //!   `{"command":…}` for each [`SessionCommand`], and `"stop"`: end the session and exit.
 //!
-//! A host whose claude exited waits for a node to take the exit, at most [`LINGER`], and then exits. A starting node
-//! that finds a host gone settles the session as before hosts: its runs close as interrupted and the hub resumes them.
+//! A host whose claude exited waits for a node to take the exit, at most [`Bounds::linger`], and then exits. A host
+//! that no node has been connected to for [`Bounds::alone`] (its node was stopped, not restarted, or its machine
+//! removed) ends its session the same way: a restart takes seconds. `fleetd machine remove` stops them at once
+//! (`fleetd session-host stop-all <hosts dir>`). A starting node that finds a host gone settles the session as before
+//! hosts: its runs close as interrupted and the hub resumes them.
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -41,8 +44,19 @@ pub const COMMAND: &str = "session-host";
 const REGISTRATION: &str = "host.json";
 const SOCKET: &str = "sock";
 const LOG: &str = "host.log";
-/// After claude exited, how long a host waits for a node to take its last events.
-pub const LINGER: Duration = Duration::from_secs(10 * 60);
+/// How long a host waits for a node.
+#[derive(Clone, Copy, Debug)]
+pub struct Bounds {
+    /// After claude exited: for a node to take its last events.
+    pub linger: Duration,
+    /// With no node connected: before it ends the session. Far longer than any restart, an update's included.
+    pub alone: Duration,
+}
+
+pub const BOUNDS: Bounds = Bounds {
+    linger: Duration::from_secs(10 * 60),
+    alone: Duration::from_secs(15 * 60),
+};
 /// How long a launch waits for the host to register.
 const START_TIMEOUT: Duration = Duration::from_secs(10);
 /// How often the node acknowledges what it applied.
@@ -181,12 +195,13 @@ async fn next_line(conn: &mut Option<Conn>) -> Option<String> {
 }
 
 /// Serves `handle` to whichever node connects on `listener` until the session has exited and a node took the exit,
-/// or [`LINGER`] after the exit with none. `stop` (the host's SIGTERM) ends the session.
+/// or [`Bounds::linger`] after the exit with none. `stop` (the host's SIGTERM), and [`Bounds::alone`] with no node
+/// connected, end the session.
 pub async fn serve(
     mut handle: SessionHandle,
     listener: tokio::net::UnixListener,
     stop: impl std::future::Future<Output = ()>,
-    linger: Duration,
+    bounds: Bounds,
 ) {
     let commands = handle.commands.clone();
     let mut kept: VecDeque<(u64, String)> = VecDeque::new();
@@ -195,6 +210,8 @@ pub async fn serve(
     let mut exited = false;
     let mut stopping = false;
     let mut until: Option<tokio::time::Instant> = None;
+    // Since when no node is connected; the node that launched the host connects at once.
+    let mut alone: Option<tokio::time::Instant> = Some(tokio::time::Instant::now());
     tokio::pin!(stop);
     loop {
         // Done once a node took everything, the exit included, or once a stop ended the session.
@@ -210,7 +227,7 @@ pub async fn serve(
                 };
                 if matches!(event, RunnerEvent::Exited(_)) {
                     exited = true;
-                    until = Some(tokio::time::Instant::now() + linger);
+                    until = Some(tokio::time::Instant::now() + bounds.linger);
                 }
                 seq += 1;
                 let line = serde_json::to_string(&FromHost { seq, event }).expect("events serialize");
@@ -226,6 +243,7 @@ pub async fn serve(
                     let _ = new.tx.send(line.clone());
                 }
                 conn = Some(new);
+                alone = None;
             },
             line = next_line(&mut conn) => match line.map(|l| serde_json::from_str::<ToHost>(&l)) {
                 Some(Ok(ToHost::Ack(upto))) => {
@@ -241,9 +259,17 @@ pub async fn serve(
                     let _ = commands.send(SessionCommand::Shutdown { grace: Duration::ZERO }).await;
                 }
                 Some(Err(e)) => tracing::warn!("a line from the node that isn't one: {e}"),
-                None => conn = None,
+                None => {
+                    conn = None;
+                    alone = Some(tokio::time::Instant::now());
+                }
             },
             () = &mut stop, if !stopping => {
+                stopping = true;
+                let _ = commands.send(SessionCommand::Shutdown { grace: Duration::ZERO }).await;
+            }
+            () = tokio::time::sleep_until(alone.map_or_else(tokio::time::Instant::now, |at| at + bounds.alone)), if alone.is_some() && !stopping => {
+                tracing::warn!("no node came back for the session: ending it");
                 stopping = true;
                 let _ = commands.send(SessionCommand::Shutdown { grace: Duration::ZERO }).await;
             }
@@ -262,7 +288,7 @@ pub fn serve_here(
     handle: SessionHandle,
     marker: String,
     stop: impl std::future::Future<Output = ()> + Send + 'static,
-    linger: Duration,
+    bounds: Bounds,
 ) -> std::io::Result<tokio::task::JoinHandle<()>> {
     let listener = bind(dir)?;
     let own = std::process::id();
@@ -276,7 +302,7 @@ pub fn serve_here(
         refused: None,
     }
     .write(dir)?;
-    Ok(tokio::spawn(serve(handle, listener, stop, linger)))
+    Ok(tokio::spawn(serve(handle, listener, stop, bounds)))
 }
 
 fn bind(dir: &Path) -> std::io::Result<tokio::net::UnixListener> {
@@ -308,6 +334,11 @@ fn at_socket<T>(dir: &Path, f: impl FnOnce(&Path) -> std::io::Result<T>) -> std:
 /// `fleetd session-host <dir> <session id> [--transcript <file>] -- <program> <args…>`: starts the session's claude
 /// with this process's environment and working directory, registers in `<dir>`, and serves it until it's done.
 pub fn main(argv: &[String]) -> ExitCode {
+    if let [stop_all, hosts] = argv
+        && stop_all == "stop-all"
+    {
+        return stop_all_main(Path::new(hosts));
+    }
     let Some(split) = argv.iter().position(|a| a == "--") else {
         eprintln!(
             "usage: fleetd {COMMAND} <dir> <session id> [--transcript <file>] -- <program> <args…>"
@@ -381,7 +412,7 @@ pub fn main(argv: &[String]) -> ExitCode {
         let stop = async move {
             term.recv().await;
         };
-        match serve_here(&dir, handle, marker.clone(), stop, LINGER) {
+        match serve_here(&dir, handle, marker.clone(), stop, BOUNDS) {
             Ok(serving) => {
                 let _ = serving.await;
                 ExitCode::SUCCESS
@@ -389,6 +420,20 @@ pub fn main(argv: &[String]) -> ExitCode {
             Err(e) => refuse(e),
         }
     })
+}
+
+/// `fleetd session-host stop-all <hosts dir>`: stops every host there with its session, for a machine whose node goes
+/// for good (`fleetd machine remove`).
+fn stop_all_main(hosts: &Path) -> ExitCode {
+    let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    else {
+        return ExitCode::FAILURE;
+    };
+    let stopped = runtime.block_on(sweep(hosts, &Default::default()));
+    println!("stopped {stopped} agent session(s)");
+    ExitCode::SUCCESS
 }
 
 /// What [`launch`] needs: claude's command and everything it runs with.

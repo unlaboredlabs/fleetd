@@ -176,3 +176,36 @@ async fn a_hosted_session_outlives_its_node_and_each_event_arrives_once() {
     let transcript = std::fs::read_to_string(dir.path().join("transcript.jsonl")).unwrap();
     assert!(transcript.contains("\"model\":\"m6\""));
 }
+
+/// A machine removed for good: `fleetd session-host stop-all` (a step of `fleetd machine remove`) ends every session
+/// the node left running, mid-turn included, with its host.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn stop_all_ends_the_sessions_a_node_left_running() {
+    let dir = tempfile::tempdir().unwrap();
+    let claude = dir.path().join("claude");
+    std::fs::write(&claude, TALKING_CLAUDE).unwrap();
+    std::fs::set_permissions(&claude, std::fs::Permissions::from_mode(0o755)).unwrap();
+    nix::unistd::mkfifo(&dir.path().join("go"), nix::sys::stat::Mode::S_IRWXU).unwrap();
+    let mut runner = ClaudeRunner::new(claude);
+    runner.host = Some(env!("CARGO_BIN_EXE_fleetd").into());
+    let mut node = runner.spawn(spec(dir.path())).unwrap();
+    inits(&mut node, 3).await;
+    node.link.as_ref().unwrap().detach().await;
+    let registration = Registration::read(&dir.path().join("hosts/s")).unwrap();
+    assert!(registration.host_alive());
+
+    let stopped = tokio::process::Command::new(env!("CARGO_BIN_EXE_fleetd"))
+        .args(["session-host", "stop-all"])
+        .arg(dir.path().join("hosts"))
+        .output()
+        .await
+        .unwrap();
+    assert!(stopped.status.success(), "{stopped:?}");
+    assert_eq!(
+        String::from_utf8_lossy(&stopped.stdout).trim(),
+        "stopped 1 agent session(s)"
+    );
+    assert!(!registration.host_alive());
+    assert!(stat(registration.pid).is_none(), "its claude went too");
+    assert!(!dir.path().join("hosts/s").exists());
+}

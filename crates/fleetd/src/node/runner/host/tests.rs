@@ -48,7 +48,7 @@ impl Fake {
         &self,
         name: &str,
         script: &str,
-        linger: Duration,
+        bounds: Bounds,
     ) -> (PathBuf, u32, tokio::task::JoinHandle<()>) {
         let program = self.dir.path().join(format!("claude-{name}"));
         std::fs::write(&program, script).unwrap();
@@ -76,7 +76,7 @@ impl Fake {
             }
         };
         let pid = handle.pid;
-        let serving = serve_here(&dir, handle, marker, std::future::pending(), linger).unwrap();
+        let serving = serve_here(&dir, handle, marker, std::future::pending(), bounds).unwrap();
         (dir, pid, serving)
     }
 
@@ -143,7 +143,7 @@ async fn ended(serving: tokio::task::JoinHandle<()>) {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_session_runs_on_through_a_node_restart_and_each_event_arrives_once() {
     let fake = Fake::new();
-    let (dir, pid, serving) = fake.host("s1", TALKING_CLAUDE, LINGER);
+    let (dir, pid, serving) = fake.host("s1", TALKING_CLAUDE, BOUNDS);
     let (mut first, registration) = connect(&dir).unwrap();
     assert_eq!((first.pid, registration.pid), (pid, pid));
     let mut seen = apply_inits(&mut first, 3).await;
@@ -185,7 +185,7 @@ async fn a_session_runs_on_through_a_node_restart_and_each_event_arrives_once() 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_host_keeps_what_no_node_acknowledged() {
     let fake = Fake::new();
-    let (dir, pid, serving) = fake.host("s1", TALKING_CLAUDE, LINGER);
+    let (dir, pid, serving) = fake.host("s1", TALKING_CLAUDE, BOUNDS);
     {
         // A node that reads three events and dies before saying it applied them.
         let stream = tokio::net::UnixStream::connect(dir.join(SOCKET))
@@ -219,7 +219,7 @@ async fn a_host_keeps_what_no_node_acknowledged() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_host_waits_for_a_node_to_take_the_exit() {
     let fake = Fake::new();
-    let (dir, _, serving) = fake.host("s1", BRIEF_CLAUDE, LINGER);
+    let (dir, _, serving) = fake.host("s1", BRIEF_CLAUDE, BOUNDS);
     tokio::time::sleep(Duration::from_millis(500)).await;
     assert!(!serving.is_finished(), "the exit waits for a node");
     let (mut node, _) = connect(&dir).unwrap();
@@ -228,16 +228,43 @@ async fn a_host_waits_for_a_node_to_take_the_exit() {
     ended(serving).await;
 
     // With no node at all, it waits only so long.
-    let (_, _, serving) = fake.host("s2", BRIEF_CLAUDE, Duration::from_millis(200));
+    let (_, _, serving) = fake.host(
+        "s2",
+        BRIEF_CLAUDE,
+        Bounds {
+            linger: Duration::from_millis(200),
+            ..BOUNDS
+        },
+    );
     ended(serving).await;
+}
+
+/// A node stopped for good (not restarted), or a machine removed: once no node has been connected for so long, the
+/// host ends its session, mid-turn included, and exits.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_host_no_node_comes_back_to_ends_its_session() {
+    let fake = Fake::new();
+    let bounds = Bounds {
+        alone: Duration::from_millis(500),
+        ..BOUNDS
+    };
+    let (dir, pid, serving) = fake.host("s1", TALKING_CLAUDE, bounds);
+    // A node that connects, then goes without letting go: the clock starts over from then.
+    let (mut node, _) = connect(&dir).unwrap();
+    apply_inits(&mut node, 3).await;
+    tokio::time::sleep(Duration::from_millis(700)).await;
+    assert!(running(pid), "a connected node keeps it");
+    node.link.as_ref().unwrap().detach().await;
+    ended(serving).await;
+    assert!(!running(pid));
 }
 
 /// A stop ends the session, the host, and its dir; a sweep stops every host but those the node re-adopted.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn hosts_no_node_adopts_are_stopped_with_their_sessions() {
     let fake = Fake::new();
-    let (kept_dir, kept, kept_serving) = fake.host("kept", TALKING_CLAUDE, LINGER);
-    let (orphan_dir, orphan, orphan_serving) = fake.host("orphan", TALKING_CLAUDE, LINGER);
+    let (kept_dir, kept, kept_serving) = fake.host("kept", TALKING_CLAUDE, BOUNDS);
+    let (orphan_dir, orphan, orphan_serving) = fake.host("orphan", TALKING_CLAUDE, BOUNDS);
     let keep = std::collections::HashSet::from(["kept".to_owned()]);
     let stopped = sweep(&fake.dir.path().join("hosts"), &keep).await;
     assert_eq!(stopped, 1);
@@ -288,7 +315,7 @@ fn a_host_of_another_protocol_is_not_adopted() {
 async fn a_host_in_a_deep_home_still_answers() {
     let fake = Fake::new();
     let deep = format!("deep-{}", "d".repeat(120));
-    let (dir, pid, serving) = fake.host(&deep, BRIEF_CLAUDE, LINGER);
+    let (dir, pid, serving) = fake.host(&deep, BRIEF_CLAUDE, BOUNDS);
     assert!(dir.join(SOCKET).as_os_str().len() > 108);
     let (mut node, registration) = connect(&dir).unwrap();
     assert_eq!(registration.pid, pid);

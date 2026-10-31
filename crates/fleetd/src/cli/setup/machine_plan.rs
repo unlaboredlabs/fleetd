@@ -675,6 +675,16 @@ pub fn plan_machine_remove(
                 q(&unit_file(Role::Node))
             ),
         ));
+        // Its agents run on through a node's restart (node/runner/host.rs): a node that goes for good ends them.
+        let hosts = format!("{}/hosts", l.node_home);
+        steps.push(step(
+            "stop the agents the node left running",
+            format!(
+                "if [ -d {hosts} ]; then {bin} session-host stop-all {hosts} || true; fi",
+                hosts = q(&hosts),
+                bin = q(&l.bin),
+            ),
+        ));
     }
     if purge {
         let mut paths = vec![&l.node_home, &l.env_file, &l.logs];
@@ -1013,6 +1023,50 @@ mod tests {
             !facts
                 .files
                 .contains_key(&format!("{h}/.config/systemd/user/fleetd-node.service"))
+        );
+    }
+
+    /// A removed machine's agents, which outlive a node's restart, end with its node: before its home goes.
+    #[test]
+    fn a_removed_machine_stops_the_agents_its_node_left_running() {
+        let steps = plan_machine_remove(
+            Platform::Linux,
+            "/home/ada",
+            None,
+            "/home/ada/.config",
+            1000,
+            "",
+            true,
+            true,
+        );
+        let at = |title: &str| {
+            steps
+                .iter()
+                .position(|s| s.title.starts_with(title))
+                .unwrap()
+        };
+        let stop = &steps[at("stop the agents")];
+        assert_eq!(
+            stop.command,
+            "if [ -d /home/ada/.fleetd/node/hosts ]; then /home/ada/.fleetd/bin/fleetd session-host stop-all /home/ada/.fleetd/node/hosts || true; fi"
+        );
+        assert!(at("stop and remove the node service") < at("stop the agents"));
+        assert!(at("stop the agents") < at("delete the node's key"));
+        // Another fleet's node runs there: its agents aren't ours to stop.
+        let foreign = plan_machine_remove(
+            Platform::Linux,
+            "/home/ada",
+            None,
+            "/home/ada/.config",
+            1000,
+            "",
+            false,
+            false,
+        );
+        assert!(
+            !foreign
+                .iter()
+                .any(|s| s.title.starts_with("stop the agents"))
         );
     }
 }

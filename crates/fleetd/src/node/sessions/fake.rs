@@ -189,7 +189,7 @@ impl Runner for FakeRunner {
         let hosted = || -> std::io::Result<SessionHandle> {
             std::fs::create_dir_all(&dir)?;
             let marker = format!("fake.{}", handle.pid);
-            host::serve_here(&dir, handle, marker, std::future::pending(), host::LINGER)?;
+            host::serve_here(&dir, handle, marker, std::future::pending(), host::BOUNDS)?;
             Ok(host::connect(&dir)?.0)
         };
         hosted().map_err(|e| RunnerError::Spawn {
