@@ -101,8 +101,8 @@ mod tests {
         assert!(both.after_merge_only("bench") && both.after_merge_only("integration"));
     }
 
-    /// fleetd's own `.fleetd/train.json`: its fast checks are jobs of its CI that run on each PR's push on Linux,
-    /// never a name no job has, which no run would ever report. Linux QA blocks merges (D158): every Linux shard of
+    /// fleetd's own `.fleetd/train.json`: its fast checks are jobs of its CI that run on each PR's push on Linux, as
+    /// are its after-merge checks but mac.yml's, never a name no job has, which no run would ever report. Linux QA blocks merges (D158): every Linux shard of
     /// desktop-qa.yml's `qa` is in it, so a shard renamed or added fails here rather than drop out of the gate. No PR
     /// runs a macOS job (ci.no-macos-on-prs): each check mac.yml reports, and the iOS build of a manual Mobile run, is
     /// after merge only, so a red one on a branch someone ran it on never holds a merge.
@@ -194,16 +194,23 @@ mod tests {
                 None => {}
             }
         }
+        let ci_job = |check: &str| {
+            jobs.iter().any(|(id, job)| {
+                job["name"].as_str().or(id.as_str()) == Some(check)
+                    && job["runs-on"].as_str() == Some("ubuntu-latest")
+            })
+        };
         let mut after: Vec<String> = file
             .after_merge
             .iter()
             .map(|c| c.as_str().to_string())
+            .filter(|c| !ci_job(c))
             .collect();
         after.sort();
         mac.sort();
         assert_eq!(
             after, mac,
-            "{PATH}'s afterMerge must list every check mac.yml reports, and only those"
+            "{PATH}'s afterMerge must list every check mac.yml reports, and besides those only Linux jobs of ci.yml"
         );
     }
 }
