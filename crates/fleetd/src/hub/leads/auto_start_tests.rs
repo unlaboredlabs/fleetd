@@ -876,7 +876,7 @@ async fn an_archived_navis_cold_lead_stays_stopped() {
     let fresh = hub
         .area
         .leads
-        .fresh_if_cold(&hub.project, "hello again")
+        .fresh_if_due(&hub.project, "hello again")
         .await;
     assert!(fresh.is_err_and(|e| e.message.contains("archived")));
     let restarted = hub.area.leads.restart(&hub.project).await;

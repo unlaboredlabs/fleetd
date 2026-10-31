@@ -1,4 +1,4 @@
-//! What leads read from areas that merge after them (tasks, train, usage, work). Each area sets
+//! What leads read from areas that merge after them (chat, tasks, train, usage, work). Each area sets
 //! its hook once in `hub/serve`; an unset hook reads as "nothing to show".
 use std::future::Future;
 use std::pin::Pin;
@@ -74,6 +74,8 @@ pub trait GitHubHook: Send + Sync {
 
 #[derive(Default)]
 pub struct LeadHooks {
+    /// The chat, for fleetd's own lines about the lead.
+    pub chat: OnceLock<Arc<crate::hub::chat::Chat>>,
     pub usage: OnceLock<Arc<dyn UsageHook>>,
     pub tasks: OnceLock<Arc<dyn TasksHook>>,
     pub train: OnceLock<Arc<dyn TrainHook>>,

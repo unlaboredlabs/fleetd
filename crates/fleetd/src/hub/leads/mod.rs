@@ -22,6 +22,8 @@ pub mod workstreams;
 #[cfg(test)]
 pub(crate) mod auto_start_tests;
 #[cfg(test)]
+mod mcp_fresh_tests;
+#[cfg(test)]
 mod requested_tests;
 
 use std::sync::{Arc, OnceLock};

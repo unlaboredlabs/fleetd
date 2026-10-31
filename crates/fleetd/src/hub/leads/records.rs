@@ -1,4 +1,4 @@
-//! Leads, project settings and workstreams as stored (tables `leads`, `project_settings`, `workstreams`).
+//! Leads, project settings and workstreams as stored (tables `leads`, `lead_mcp`, `project_settings`, `workstreams`).
 use std::sync::Arc;
 
 use fleetd_contracts::ids::{ProjectRef, Timestamp};
@@ -8,6 +8,7 @@ use fleetd_contracts::ledger::{
 use rusqlite::{OptionalExtension, named_params, params};
 use serde::{Deserialize, Serialize};
 
+use crate::hub::mcp_servers::LeadMcpSet;
 use crate::hub::store::{HubDb, StoreError};
 
 /// A lead as stored; its `state` (and M4 `parked`) is derived from the lead thread when read.
@@ -113,6 +114,40 @@ impl LeadRecords {
                     lead.last_wake_at.as_ref().map(|t| t.as_str()),
                     lead.session_generation
                 ],
+            )?;
+            Ok(())
+        })
+    }
+
+    /// The MCP servers the project's lead thread `thread_id` started with; None for one started before fleetd kept them.
+    pub fn lead_mcp_get(
+        &self,
+        r: &ProjectRef,
+        thread_id: &fleetd_contracts::ids::ThreadId,
+    ) -> Result<Option<LeadMcpSet>, StoreError> {
+        let data: Option<String> = self.db.with(|c| {
+            Ok(c.query_row(
+                "SELECT data FROM lead_mcp WHERE machine_id = ? AND project_id = ? AND thread_id = ?",
+                params![r.machine_id.as_str(), r.project_id.as_str(), thread_id.as_str()],
+                |row| row.get(0),
+            )
+            .optional()?)
+        })?;
+        Ok(data.and_then(|d| serde_json::from_str(&d).ok()))
+    }
+
+    pub fn lead_mcp_put(
+        &self,
+        r: &ProjectRef,
+        thread_id: &fleetd_contracts::ids::ThreadId,
+        set: &LeadMcpSet,
+    ) -> Result<(), StoreError> {
+        let data = serde_json::to_string(set)?;
+        self.db.with(|c| {
+            c.execute(
+                "INSERT INTO lead_mcp (machine_id, project_id, thread_id, data) VALUES (?, ?, ?, ?)
+                 ON CONFLICT (machine_id, project_id) DO UPDATE SET thread_id = excluded.thread_id, data = excluded.data",
+                params![r.machine_id.as_str(), r.project_id.as_str(), thread_id.as_str(), data],
             )?;
             Ok(())
         })
