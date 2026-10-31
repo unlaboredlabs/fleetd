@@ -201,11 +201,8 @@ file stays, read by no agent, as Shared memory, which an owner or admin reads an
 project › Instructions & memory.
 
 The files are plain markdown in the hub's home (`memory/`, yours in `memory/people/`), in no repo. Each file has a
-cap, by default 16,000 characters for each person's memory and each `MEMORY.md`, 32,000 per topic and
-128,000 per project: a write past one is refused, and the lead merges entries instead. An owner or admin changes the caps
-under Memory caps in Settings › [Hub](/docs/desktop-app#hub) › Every project › Instructions & memory (or `memory_caps_set` with an
-admin key for every machine): 1,000 to 100,000
-per file, up to 400,000 per project. Memory never holds a secret.
+cap: 16,000 characters for each person's memory and each `MEMORY.md`, 32,000 per topic and 128,000 per project. A
+write past one is refused, and the lead merges entries instead. Memory never holds a secret.
 
 ### Import memory {#memory-import}
 

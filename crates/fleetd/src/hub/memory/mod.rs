@@ -142,7 +142,7 @@ impl HubDb {
         }
     }
 
-    /// The caps a hub admin set; each one not set has its default.
+    /// The caps the hub keeps; each one not set has its default.
     pub fn memory_caps(&self) -> Result<MemoryCaps, StoreError> {
         let set: Vec<(String, i64)> = self.with(|c| {
             let mut stmt = c.prepare_cached("SELECT key, value FROM memory_settings")?;
@@ -163,6 +163,7 @@ impl HubDb {
         Ok(caps)
     }
 
+    #[cfg(test)]
     pub fn set_memory_caps(&self, caps: &MemoryCaps) -> Result<(), StoreError> {
         self.transaction(|c| {
             for (key, value) in [

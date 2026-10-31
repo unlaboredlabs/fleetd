@@ -50,7 +50,7 @@ describe("settings search", () => {
     // Nothing hub-wide for a member: the global MCP servers and the instructions for every project are the Hub group's.
     expect(labels("global")).toEqual([]);
     expect([tabOf("people", true), tabOf("invite", true), tabOf("machine roles", true), tabOf("global mcp", true)]).toEqual(["hub.people", "hub.people", "hub.machines", "hub.tools"]);
-    expect([tabOf("memory caps", true), tabOf("github app", true), tabOf("guided setup", true)]).toEqual(["hub.instructions", "hub.accounts", "hub.accounts"]);
+    expect([tabOf("github app", true), tabOf("guided setup", true)]).toEqual(["hub.accounts", "hub.accounts"]);
   });
 
   it("finds every option a page marks for search, and marks every option it finds", () => {

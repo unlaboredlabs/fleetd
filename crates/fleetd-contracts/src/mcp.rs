@@ -1659,16 +1659,6 @@ input!(MemorySharedSetInput {
 });
 output!(MemorySharedSetOutput { file: MemoryFile });
 
-// memory_caps_set: the caps every memory write is held to, hub-wide. Admin on every machine.
-input!(MemoryCapsSetInput {
-    #[serde(flatten)]
-    caps: MemoryCaps,
-});
-output!(MemoryCapsSetOutput {
-    #[serde(flatten)]
-    caps: MemoryCaps,
-});
-
 // automation_list, automation_create, automation_update, automation_pause, automation_rotate, automation_delete,
 // automation_run, automation_runs: a project's automations (Settings > Automations). A webhook URL holds its secret and
 // is in the output only when it is made (create or update with webhook true) or rotated; the hub keeps a hash of it.
@@ -3360,7 +3350,6 @@ tools! {
     memory_set => MemorySet, Operate, MemorySetInput, MemorySetOutput;
     memory_undo => MemoryUndo, Operate, MemoryUndoInput, MemoryUndoOutput;
     memory_import => MemoryImport, Operate, MemoryImportInput, MemoryImportOutput;
-    memory_caps_set => MemoryCapsSet, Admin, MemoryCapsSetInput, MemoryCapsSetOutput;
     // An owner's or admin's device (the handlers check).
     memory_shared_get => MemorySharedGet, Admin, MemorySharedGetInput, MemorySharedGetOutput;
     memory_shared_set => MemorySharedSet, Admin, MemorySharedSetInput, MemorySharedSetOutput;

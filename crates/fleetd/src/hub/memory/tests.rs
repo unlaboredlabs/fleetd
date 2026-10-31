@@ -63,23 +63,11 @@ fn person() -> Caller {
     }
 }
 
-/// A person's device paired with admin on every machine.
-fn admin() -> Caller {
-    let c = serde_json::from_value::<Caller>(json!({
-        "keyId": "k9", "name": "admin", "prefix": "fld_abcdef", "createdAt": AT,
-        "grants": [{ "role": "admin", "machines": "*" }],
-    }))
-    .unwrap();
-    Caller {
-        kind: Some(KeyKind::Human),
-        ..c
-    }
-}
-
-async fn set_caps(hub: &Arc<Hub>, caller: &Caller, caps: Value) -> Result<Value, CallError> {
-    crate::hub::api::registry()
-        .call(hub, caller, "memory_caps_set", caps)
-        .await
+/// Holds memory to `caps`, as a hub that kept them does.
+fn set_caps(hub: &Hub, caps: Value) {
+    hub.db
+        .set_memory_caps(&serde_json::from_value(caps).unwrap())
+        .unwrap();
 }
 
 fn agent_key() -> Caller {
@@ -259,14 +247,11 @@ async fn a_topic_gets_its_index_line_and_is_read_on_demand() {
 async fn a_write_past_a_cap_is_refused_whole_and_tells_the_lead_to_merge() {
     let (hub, _home) = hub();
     let r = project("fleetd");
-    // The caps before they were raised: every one is held at what is set.
+    // Lowered caps: every one is held at what is set.
     set_caps(
         &hub,
-        &admin(),
         json!({ "user": 4000, "index": 4000, "topic": 8000, "project": 32000 }),
-    )
-    .await
-    .unwrap();
+    );
     let long = |c: char| c.to_string().repeat(1000);
     for c in ['a', 'b', 'c'] {
         remember(&hub, &r, json!({ "scope": "user", "text": long(c) }))
@@ -607,32 +592,8 @@ async fn memory_caps_are_a_hub_setting_and_remember_is_held_to_them() {
     };
     assert!(e.message.contains("past its cap of 16000"), "{}", e.message);
 
-    // Only an admin on every machine sets them, within their range.
-    let Err(CallError::Tool(e)) = set_caps(
-        &hub,
-        &person(),
-        json!({ "user": 20000, "index": 16000, "topic": 32000, "project": 128000 }),
-    )
-    .await
-    else {
-        panic!("an operate key set the caps")
-    };
-    assert_eq!(e.code, ErrorCode::Forbidden);
-    for out_of_range in [
-        json!({ "user": 100_001, "index": 16000, "topic": 32000, "project": 128000 }),
-        json!({ "user": 16000, "index": 16000, "topic": 32000, "project": 400_001 }),
-        json!({ "user": 999, "index": 16000, "topic": 32000, "project": 128000 }),
-    ] {
-        assert!(matches!(
-            set_caps(&hub, &admin(), out_of_range).await,
-            Err(CallError::Invalid(_))
-        ));
-    }
     let caps = json!({ "user": 2000, "index": 100_000, "topic": 32000, "project": 400_000 });
-    assert_eq!(
-        set_caps(&hub, &admin(), caps.clone()).await.unwrap()["user"],
-        2000
-    );
+    set_caps(&hub, caps.clone());
     let got = tools
         .call(&hub, &person(), "memory_get", json!({}))
         .await

@@ -469,10 +469,6 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
         "How many days the hub keeps time spans (1 to 365, default 30). Pruned hourly; daily roll-ups and critical paths stay 400 days. Admin.",
     ),
     (
-        "memory_caps_set",
-        "The caps every memory write is held to, in characters: user (user.md), index (each MEMORY.md), topic (each topic file), 1,000 to 100,000 each, and project (a project's files together), 1,000 to 400,000. Defaults 16,000, 16,000, 32,000 and 128,000. A write past a cap is refused; a file already over a lowered one stays as it is. memory_get returns them as caps. Admin on every machine.",
-    ),
-    (
         "metrics_get",
         "Factory metrics for one project's repos, or the fleet's with each repo counted once: pull requests merged per day, time from order to merged (median, p90), the person's minutes per merged PR, and the share of merged work through fleetd, by calendar day in tz. A landed change is a PR merged into the default branch (a train batch's members one each) or a direct push; each has a route: train, fleetd_by_hand, outside or direct. coverage says which repos were read, when, and what fleetd can't see.",
     ),

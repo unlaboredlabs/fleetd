@@ -1,4 +1,4 @@
-//! memory_get, memory_set, memory_undo and memory_caps_set: Settings > Memory and the chat's Undo. Writes are a
+//! memory_get, memory_set and memory_undo: Settings > Memory and the chat's Undo. Writes are a
 //! person's (human keys): an agent changes memory only through its lead's `remember` and `forget`. Each person's own
 //! memory is theirs alone: nobody else reads or edits it, admins included, except to delete a removed person's. The
 //! caps, and memory_shared_get and memory_shared_set (the shared user.md of before people), are an admin's.
@@ -10,10 +10,10 @@ use fleetd_contracts::auth::Role;
 use fleetd_contracts::chat::ChatMessage;
 use fleetd_contracts::ids::ProjectRef;
 use fleetd_contracts::mcp::{
-    ErrorCode, MemoryCapsSetInput, MemoryCapsSetOutput, MemoryGetInput, MemoryGetOutput,
-    MemoryImportInput, MemoryImportOutput, MemoryRefreshRunInput, MemoryRefreshRunOutput,
-    MemorySetInput, MemorySetOutput, MemorySharedGetInput, MemorySharedGetOutput,
-    MemorySharedSetInput, MemorySharedSetOutput, MemoryUndoInput, MemoryUndoOutput,
+    ErrorCode, MemoryGetInput, MemoryGetOutput, MemoryImportInput, MemoryImportOutput,
+    MemoryRefreshRunInput, MemoryRefreshRunOutput, MemorySetInput, MemorySetOutput,
+    MemorySharedGetInput, MemorySharedGetOutput, MemorySharedSetInput, MemorySharedSetOutput,
+    MemoryUndoInput, MemoryUndoOutput,
 };
 use fleetd_contracts::memory::{MemoryFile, MemoryRefreshed, MemoryScope, RememberedItem};
 use fleetd_contracts::people::PersonId;
@@ -33,7 +33,6 @@ pub fn register(tools: &mut Registry) {
     tools.add("memory_set", memory_set);
     tools.add("memory_undo", memory_undo);
     tools.add("memory_import", memory_import);
-    tools.add("memory_caps_set", memory_caps_set);
     tools.add("memory_shared_get", memory_shared_get);
     tools.add("memory_shared_set", memory_shared_set);
     tools.add("memory_refresh_run", memory_refresh_run);
@@ -301,29 +300,6 @@ fn undo_refreshed(
     Ok(MemoryUndoOutput {
         ok: True,
         next: (done == 0).then(|| "Already undone.".into()),
-        truncated: None,
-    })
-}
-
-async fn memory_caps_set(
-    hub: Arc<Hub>,
-    caller: Caller,
-    input: MemoryCapsSetInput,
-) -> Result<MemoryCapsSetOutput, ToolError> {
-    // user.md is every project's, so Admin on one machine is not enough.
-    if !allows_everywhere(&caller, Role::Admin) {
-        return Err(ToolError::new(
-            ErrorCode::Forbidden,
-            "Memory caps are hub-wide: they need Admin on every machine.",
-        )
-        .with_fix(admin_everywhere_fix(&caller)));
-    }
-    hub.db.set_memory_caps(&input.caps)?;
-    Ok(MemoryCapsSetOutput {
-        caps: input.caps,
-        next: Some(
-            "Writes past a cap are refused from now; a file already over a lowered cap stays as it is.".into(),
-        ),
         truncated: None,
     })
 }
