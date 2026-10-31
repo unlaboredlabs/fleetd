@@ -24,7 +24,7 @@ use crate::hub::executor::{ExecutorError, Executors, LaunchInput, LaunchOptions}
 use crate::hub::leads::hooks::{BoxFuture, TasksHook};
 use crate::hub::leads::wakes::{LineKind, Trigger};
 use crate::hub::link::commands::CommandInput;
-use crate::hub::link::lead_calls::{AgentDirectory, CallerAgent, LeadCallFuture};
+use crate::hub::link::lead_calls::{CallerAgent, LeadCallFuture};
 use crate::hub::link::{LeadCallHandler, LeadCaller, NodeCommands};
 use crate::hub::store::StoreError;
 use crate::hub::work::{Observed, matcher};
@@ -583,13 +583,15 @@ pub const LEAD_CALL_OPS: [&str; 7] = [
 ];
 
 /// Tells the hub's lead-call handling which sessions are tasks' agents and which are leads.
-struct Directory {
+pub struct Directory {
     tasks: Arc<Tasks>,
     hub: Weak<Hub>,
 }
 
-impl AgentDirectory for Directory {
-    fn agent_of(&self, thread: &ThreadRef) -> Result<(CallerAgent, ProjectRef), McpToolError> {
+impl Directory {
+    /// The agent running in `thread` and the project it works for. A session that is neither a project's lead nor a
+    /// task, and a lookup that failed, are refusals.
+    pub fn agent_of(&self, thread: &ThreadRef) -> Result<(CallerAgent, ProjectRef), McpToolError> {
         let failed = |error: String| {
             tracing::error!(%error, "lead call: agent lookup failed");
             McpToolError::new(
