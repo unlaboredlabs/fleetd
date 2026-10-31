@@ -112,7 +112,9 @@ read at each update.</p>
 <p><strong>Update automatically</strong>, in Settings › Hub › Machines › Updates (<code dir="auto">"auto": true</code> in the same file), is off by default.
 On, the hub installs a new build by itself, at most once an hour: an hour after the last update started (yours or its
 own), it updates to the channel’s newest build, so builds that came out in between install once, as the newest. It waits
-for agents as <strong>Update</strong> does; <strong>Update now</strong> works on it too. <code dir="auto">fleetd update</code> on a machine waits the same way for its own node’s agents, 10 minutes at most;
+for agents as <strong>Update</strong> does; <strong>Update now</strong> works on it too. A build the hub didn’t come up healthy on, and put back,
+isn’t tried again by itself: the switch says it skips that build, a newer one installs as usual, and <strong>Update</strong> still
+installs it. <code dir="auto">fleetd update</code> on a machine waits the same way for its own node’s agents, 10 minutes at most;
 <code dir="auto">fleetd update --now</code> doesn’t wait.</p>
 <p>The update sheet has one overall state at the top and one line per part: the hub, each machine, Claude Code and the app.
 Each line says <strong>Waiting</strong>, <strong>Updating…</strong>, <strong>Done</strong> or <strong>Failed</strong>, with the reason in one line. Each step, with the

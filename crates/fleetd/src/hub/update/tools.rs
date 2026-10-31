@@ -31,6 +31,13 @@ fn output(hub: &Hub, run: Option<UpdateRun>) -> HubUpdateOutput {
             .updates
             .auto_at()
             .map(|at| crate::hub::store::iso_ms(at).into()),
+        auto_skips: hub
+            .updates
+            .settings()
+            .auto
+            .then(|| hub.updates.auto_skips())
+            .flatten()
+            .map(|v| crate::node::wire::head_text(&v)),
         truncated: None,
     }
 }

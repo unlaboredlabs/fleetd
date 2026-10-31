@@ -2605,6 +2605,11 @@ export type HubUpdateOutput = {
    */
   autoAt?: Timestamp;
   /**
+   * With `settings.auto`: the build ready that automatic updates skip, as the hub didn't come up healthy on it and
+   * it was put back; a newer build installs as usual, and Update still installs this one.
+   */
+  autoSkips?: string;
+  /**
    * True when the run isn't finished but nothing in the hub drives it any more: it won't change again, and Update
    * starts a new one. Absent otherwise.
    */

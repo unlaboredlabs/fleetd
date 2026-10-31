@@ -2498,6 +2498,9 @@ output!(HubUpdateOutput {
     /// With `settings.auto`: when the build that is ready installs by itself, an hour after the last update started at
     /// the earliest. Absent when nothing is ready, or automatic updates are off.
     auto_at: Option<Timestamp>,
+    /// With `settings.auto`: the build ready that automatic updates skip, as the hub didn't come up healthy on it and
+    /// it was put back; a newer build installs as usual, and Update still installs this one.
+    auto_skips: Option<Text<1, 200>>,
 });
 // hub_update_status: the update going now, or the last one.
 input!(HubUpdateStatusInput {});

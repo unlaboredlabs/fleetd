@@ -193,7 +193,7 @@ function Updates() {
           {auto === null ? null : (
             <Switch
               label="Update automatically"
-              description={autoWords(auto.settings.drainMinutes, auto.at)}
+              description={autoWords(auto.settings.drainMinutes, auto.at, auto.skips)}
               checked={auto.settings.auto}
               disabled={saving}
               onCheckedChange={(on) => void turn(on)}

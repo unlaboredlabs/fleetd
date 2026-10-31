@@ -300,10 +300,22 @@ impl Updates {
             .map(|t| t.timestamp_millis())
     }
 
+    /// The build ready that the last update tried and put back, as the hub didn't come up healthy on it: automatic
+    /// updates skip it until a newer one is out (Update still installs it). None otherwise.
+    pub fn auto_skips(&self) -> Option<String> {
+        let ready = self.ready()?;
+        let run = self.status()?;
+        let put_back = run
+            .parts
+            .iter()
+            .any(|p| p.part == UpdatePartKind::Hub && p.state == UpdateState::RolledBack);
+        (put_back && run.to.as_ref().is_some_and(|to| to.as_str() == ready)).then_some(ready)
+    }
+
     /// With automatic updates on and a build ready: when it installs by itself, ms (now, when the last update started
-    /// an hour ago or more). None otherwise, or while an update goes on.
+    /// an hour ago or more). None otherwise, while an update goes on, or for a build put back ([`Self::auto_skips`]).
     pub fn auto_at(&self) -> Option<i64> {
-        if !self.settings().auto || self.ready().is_none() {
+        if !self.settings().auto || self.ready().is_none() || self.auto_skips().is_some() {
             return None;
         }
         if self.status().is_some_and(|r| self.going(&r)) {

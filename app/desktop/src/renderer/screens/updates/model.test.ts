@@ -577,7 +577,10 @@ describe("the hub's standing in one line, for General", () => {
 describe("automatic updates' words", () => {
   it("say how often, how long machines wait, and when the ready build goes in", () => {
     expect(autoWords(10, null)).toBe("New builds install by themselves, at most once an hour, each machine once agents finish their step (10 minutes at most).");
-    expect(autoWords(0, "2026-10-26T11:05:00.000Z", "UTC")).toBe(
+    expect(autoWords(10, null, NEXT)).toBe(
+      "New builds install by themselves, at most once an hour, each machine once agents finish their step (10 minutes at most). It skips Edge · Oct 23, 10:30 UTC · def5678: the hub didn't come up healthy on it and put it back. A newer build installs as usual; Update installs this one.",
+    );
+    expect(autoWords(0, "2026-10-26T11:05:00.000Z", null, "UTC")).toBe(
       "New builds install by themselves, at most once an hour, each machine without waiting for agents. The build that's ready goes in at 11:05.",
     );
   });

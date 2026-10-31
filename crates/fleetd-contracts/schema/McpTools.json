@@ -7035,6 +7035,12 @@
           "$ref": "#/$defs/Timestamp",
           "description": "With `settings.auto`: when the build that is ready installs by itself, an hour after the last update started at\nthe earliest. Absent when nothing is ready, or automatic updates are off."
         },
+        "autoSkips": {
+          "description": "With `settings.auto`: the build ready that automatic updates skip, as the hub didn't come up healthy on it and\nit was put back; a newer build installs as usual, and Update still installs this one.",
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
         "leftOver": {
           "description": "True when the run isn't finished but nothing in the hub drives it any more: it won't change again, and Update\nstarts a new one. Absent otherwise.",
           "type": "boolean"

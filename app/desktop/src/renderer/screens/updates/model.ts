@@ -619,12 +619,14 @@ export const hubStanding = (view: Pick<UpdatesView, "hub" | "nodes" | "update" |
   return { tone: "quiet", text: "The hub and its machines are up to date." };
 };
 
-/** What automatic updates do, and when the build that is ready goes in. */
-export const autoWords = (drainMinutes: number, at: string | null, timeZone?: string): string => {
+/** What automatic updates do, when the build that is ready goes in, or that they skip one that was put back. */
+export const autoWords = (drainMinutes: number, at: string | null, skips: string | null = null, timeZone?: string): string => {
   const wait = drainMinutes === 0 ? "without waiting for agents" : `once agents finish their step (${String(drainMinutes)} minutes at most)`;
   const when =
     at === null
       ? ""
       : ` The build that's ready goes in at ${clockAt(at, timeZone)}.`;
-  return `New builds install by themselves, at most once an hour, each machine ${wait}.${when}`;
+  const skipped =
+    skips === null ? "" : ` It skips ${versionLabel(skips)}: the hub didn't come up healthy on it and put it back. A newer build installs as usual; Update installs this one.`;
+  return `New builds install by themselves, at most once an hour, each machine ${wait}.${when}${skipped}`;
 };

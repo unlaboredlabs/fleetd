@@ -939,17 +939,22 @@ fn publish(fake: &Fake, version: &str, binary: &[u8]) {
 
 /// An update area whose automatic updates are on, `gap` apart, with a finished update that started `ago` before now.
 fn auto_area(home: &Path, fake: &Arc<Fake>, gap: Duration, ago: Duration) -> Arc<Updates> {
+    auto_area_after(home, fake, gap, ago, (OLD, UpdateState::Current))
+}
+
+/// [`auto_area`] whose last update went to `to`, the hub's part ending `hub`.
+fn auto_area_after(
+    home: &Path,
+    fake: &Arc<Fake>,
+    gap: Duration,
+    ago: Duration,
+    (to, hub): (&str, UpdateState),
+) -> Arc<Updates> {
     let started = chrono::Utc::now() - chrono::Duration::from_std(ago).unwrap();
     let at = started.to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
-    let hub = super::part(
-        UpdatePartKind::Hub,
-        None,
-        "the hub",
-        OLD,
-        UpdateState::Current,
-    );
+    let hub = super::part(UpdatePartKind::Hub, None, "the hub", OLD, hub);
     let run = json!({
-        "id": "U0", "channel": "edge", "to": OLD, "startedAt": at, "finishedAt": at, "parts": [hub],
+        "id": "U0", "channel": "edge", "to": to, "startedAt": at, "finishedAt": at, "parts": [hub],
     });
     fs::create_dir_all(home.join("update")).unwrap();
     fs::write(home.join("update/run.json"), run.to_string()).unwrap();
@@ -964,6 +969,50 @@ fn auto_area(home: &Path, fake: &Arc<Fake>, gap: Duration, ago: Duration) -> Arc
     updates.set_ports(fake.clone());
     updates.set_settings(Some(true), None).unwrap();
     updates
+}
+
+/// A build the hub didn't come up healthy on, put back, isn't tried again by itself, hour after hour: automatic updates
+/// skip it, and say so, until a newer one is out, which installs as usual.
+#[tokio::test]
+async fn a_build_that_was_put_back_is_skipped_until_a_newer_one() {
+    let home = tempfile::tempdir().unwrap();
+    let fake = Arc::new(Fake::new(home.path(), b"new"));
+    let updates = auto_area_after(
+        home.path(),
+        &fake,
+        Duration::from_secs(3600),
+        Duration::from_secs(2 * 3600),
+        (NEW, UpdateState::RolledBack),
+    );
+    assert!(updates.auto_tick().await.is_none(), "not again");
+    assert_eq!(
+        updates.ready().as_deref(),
+        Some(NEW),
+        "still offered to a person"
+    );
+    assert_eq!(updates.auto_skips().as_deref(), Some(NEW));
+    assert_eq!(updates.auto_at(), None);
+    assert!(fake.plans.lock().unwrap().is_empty());
+
+    publish(&fake, NEWER, b"newer");
+    let run = updates.auto_tick().await.expect("a newer build goes in");
+    assert_eq!(run.auto, Some(true));
+    until(&updates, |r| hub_state(r) == UpdateState::Restarting).await;
+    assert_eq!(fake.plans.lock().unwrap()[0].to, NEWER);
+    assert_eq!(updates.auto_skips(), None);
+
+    // A build that failed another way (a download, say) is tried again at the next hour.
+    let home = tempfile::tempdir().unwrap();
+    let fake = Arc::new(Fake::new(home.path(), b"new"));
+    let updates = auto_area_after(
+        home.path(),
+        &fake,
+        Duration::from_secs(3600),
+        Duration::from_secs(2 * 3600),
+        (NEW, UpdateState::Failed),
+    );
+    assert_eq!(updates.auto_skips(), None);
+    assert!(updates.auto_tick().await.is_some());
 }
 
 /// Off by default: a build ready is only offered. On: it installs by itself, an update like the button's that says it

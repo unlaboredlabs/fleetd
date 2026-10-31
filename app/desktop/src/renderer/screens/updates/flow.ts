@@ -57,8 +57,9 @@ export const BEFORE_UPDATE =
 let flow: Flow = { phase: "idle" };
 let run: UpdateRun | null = null;
 let ready: string | null = null;
-/** The hub's update settings, and when the build it has ready installs by itself (automatic updates). */
-let auto: { readonly settings: UpdateSettings; readonly at: string | null } | null = null;
+/** The hub's update settings, when the build it has ready installs by itself (automatic updates), and the build those
+ * skip as it was put back. */
+let auto: { readonly settings: UpdateSettings; readonly at: string | null; readonly skips: string | null } | null = null;
 /** Bumped by each follow: an earlier one, still waiting on the hub, then stops (Start over follows the new run). */
 let following = 0;
 const listeners = new Set<() => void>();
@@ -92,7 +93,7 @@ export const resetFlow = (): void => set({ flow: { phase: "idle" }, run: null, r
 
 /** The settings in an answer, kept: an older hub sends none, and they stay as they were. */
 const autoOf = (out: HubUpdateOutput): typeof auto | undefined =>
-  out.settings === undefined ? undefined : { settings: out.settings, at: out.autoAt ?? null };
+  out.settings === undefined ? undefined : { settings: out.settings, at: out.autoAt ?? null, skips: out.autoSkips ?? null };
 
 const going = (f: Flow): boolean => f.phase === "starting" || f.phase === "following" || f.phase === "app";
 

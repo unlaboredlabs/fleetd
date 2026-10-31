@@ -246,7 +246,7 @@ describe("the Update button's run", () => {
     }) as unknown as Call;
     expect(await setAutoUpdates({ call }, true)).toBeNull();
     expect(calls).toEqual([["hub_update_settings", { auto: true }]]);
-    expect(currentAuto()).toEqual({ settings: { auto: true, drainMinutes: 10 }, at: "2026-10-26T11:00:00.000Z" });
+    expect(currentAuto()).toEqual({ settings: { auto: true, drainMinutes: 10 }, at: "2026-10-26T11:00:00.000Z", skips: null });
     const refused = (() => Promise.resolve({ ok: false as const, error: { code: "forbidden", message: "Needs Admin.", fix: "Ask an owner." } })) as unknown as Call;
     expect(await setAutoUpdates({ call: refused }, false)).toBe("Needs Admin. Ask an owner.");
     expect(currentAuto()?.settings.auto).toBe(true);

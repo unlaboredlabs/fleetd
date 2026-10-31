@@ -26,7 +26,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "hub_update_settings",
-        "Changes how the hub updates; a field left out stays as it is. auto: updates install by themselves, at most once an hour (the channel's newest build an hour after the last update started, whatever came out in between), each node once its agents finish their step, as hub_update does; off by default. drainMinutes (0-240, default 10): how long a node waits for its agents. Answers as hub_update_status does, with settings and autoAt. A person's key with Admin on every machine only.",
+        "Changes how the hub updates; a field left out stays as it is. auto: updates install by themselves, at most once an hour (the channel's newest build an hour after the last update started, whatever came out in between), each node once its agents finish their step, as hub_update does; off by default. drainMinutes (0-240, default 10): how long a node waits for its agents. A build the hub didn't come up healthy on and put back isn't tried again by itself until a newer one is out (autoSkips names it). Answers as hub_update_status does, with settings, autoAt and autoSkips. A person's key with Admin on every machine only.",
     ),
     (
         "hub_update_status",
