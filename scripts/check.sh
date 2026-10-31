@@ -13,6 +13,8 @@
 # - site: site/docs is the current build of docs/site, the site's pages and links, no personal identifiers, and the
 #   landing page fits every width. The identifier check runs on every call; it reads every tracked file.
 # - desktop: app/desktop's case clashes, typecheck, lint and unit tests.
+# - reverts: on every call, whether HEAD would undo work already on origin/main (scripts/reverts.sh, the merge train's
+#   own check before review): a commit made on a fresh main while its files were an older tree's.
 # - qa: desktop-qa.yml's screens, all shards in one run. It takes long, so it runs only when named; a run that touches
 #   app/desktop says so.
 #
@@ -162,6 +164,7 @@ if $site_wanted; then
   step site node .github/site-layout-check.mjs
 fi
 step site node .github/personal-check.mjs
+step reverts scripts/reverts.sh origin/main
 
 if wanted desktop app/desktop .github/workflows/ci.yml; then
   # macOS checkouts are case-insensitive: Composer.tsx beside composer.ts breaks the Mac build.

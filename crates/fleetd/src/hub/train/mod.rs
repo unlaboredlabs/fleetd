@@ -14,6 +14,7 @@ pub mod next;
 pub mod records;
 pub mod regen;
 pub mod repo_checks;
+pub mod reverts;
 pub mod rules;
 pub mod scheduled;
 pub mod service;
