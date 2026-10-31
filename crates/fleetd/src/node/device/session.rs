@@ -71,6 +71,7 @@ impl Session {
         std::fs::create_dir_all(&opened.dir)
             .map_err(|e| format!("cannot make {}: {e}", opened.dir.display()))?;
         let serial = lent.emulator.serial.clone();
+        let pushed = lent.emulator.pushed;
         let session = Arc::new(Self {
             id: opened.id,
             thread: opened.thread,
@@ -125,10 +126,17 @@ impl Session {
                 if let Some(sink) = sink.as_ref() {
                     sink.frame(frame.jpeg.to_vec(), frame.at);
                 }
+                if frame.seq == 1 {
+                    tracing::debug!(
+                        kind = "android",
+                        first_frame_ms = frame.at.as_millis() as u64,
+                        "screen timing: the stream's first frame, from the session's start"
+                    );
+                }
                 frames.send_replace(Some(frame));
             };
             drop(this);
-            let stream = Stream::start(&sdk, &serial, &ffmpeg, start, on_frame).await;
+            let stream = Stream::start(&sdk, &serial, pushed, &ffmpeg, start, on_frame).await;
             let Some(this) = weak.upgrade() else { return };
             match stream {
                 Ok(stream) => {

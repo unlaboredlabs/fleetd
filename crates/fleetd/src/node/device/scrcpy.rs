@@ -92,29 +92,42 @@ pub fn server_args(scid: &str) -> Vec<String> {
     args
 }
 
+/// Puts scrcpy's server on the device, where [`Stream::start`] runs it: done by the pool while a copy waits, so a
+/// session's stream starts without it.
+pub async fn push_server(sdk: &Sdk, serial: &str) -> Result<(), String> {
+    let pushed = sdk
+        .adb_async(serial)
+        .arg("push")
+        .arg(&sdk.scrcpy_server)
+        .arg(SERVER_PATH)
+        .output()
+        .await
+        .map_err(|e| format!("cannot run adb: {e}"))?;
+    if !pushed.status.success() {
+        return Err(format!(
+            "adb could not push scrcpy's server: {}",
+            String::from_utf8_lossy(&pushed.stderr).trim()
+        ));
+    }
+    Ok(())
+}
+
 impl Stream {
-    /// Starts the server on `serial` and decodes its stream with `ffmpeg`. Returns once both sockets are connected.
+    /// Starts the server on `serial` (pushing it first unless it is `pushed` there) and decodes its stream with
+    /// `ffmpeg`. Returns once both sockets are connected.
     pub async fn start(
         sdk: &Sdk,
         serial: &str,
+        pushed: bool,
         ffmpeg: &std::path::Path,
         start: Instant,
         on_frame: impl Fn(Frame) + Send + Sync + 'static,
     ) -> Result<Self, String> {
-        let pushed = sdk
-            .adb_async(serial)
-            .arg("push")
-            .arg(&sdk.scrcpy_server)
-            .arg(SERVER_PATH)
-            .output()
-            .await
-            .map_err(|e| format!("cannot run adb: {e}"))?;
-        if !pushed.status.success() {
-            return Err(format!(
-                "adb could not push scrcpy's server: {}",
-                String::from_utf8_lossy(&pushed.stderr).trim()
-            ));
+        let t = Instant::now();
+        if !pushed {
+            push_server(sdk, serial).await?;
         }
+        let push_ms = t.elapsed().as_millis() as u64;
         let scid = format!("{:08x}", rand::thread_rng().next_u32() & 0x7fff_ffff);
         let forwarded = sdk
             .adb_async(serial)
@@ -143,7 +156,15 @@ impl Stream {
             .stderr(Stdio::null())
             .spawn()
             .map_err(|e| format!("cannot start scrcpy's server: {e}"))?;
+        let t = Instant::now();
         let (video, control) = connect(port).await?;
+        tracing::debug!(
+            kind = "android",
+            serial,
+            push_ms,
+            connect_ms = t.elapsed().as_millis() as u64,
+            "screen timing: scrcpy's stream connected"
+        );
         let mut decoder = Command::new(ffmpeg)
             .args(["-loglevel", "error", "-f", "h264", "-flags", "low_delay"])
             .args(["-probesize", "32", "-analyzeduration", "0", "-i", "pipe:0"])
@@ -240,6 +261,9 @@ impl Stream {
     }
 }
 
+/// How soon a connect the server didn't take yet is tried again: it listens within a second of its start.
+const CONNECT_RETRY: Duration = Duration::from_millis(20);
+
 /// Connects the video socket, then the control socket, as the server accepts them. Until the server listens, adb
 /// takes the connection and closes it at once: no dummy byte, so try again.
 async fn connect(port: u16) -> Result<(TcpStream, TcpStream), String> {
@@ -260,7 +284,7 @@ async fn connect(port: u16) -> Result<(TcpStream, TcpStream), String> {
         if Instant::now() > deadline {
             return Err("scrcpy's server did not answer in 10 s".to_owned());
         }
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        tokio::time::sleep(CONNECT_RETRY).await;
     }
 }
 

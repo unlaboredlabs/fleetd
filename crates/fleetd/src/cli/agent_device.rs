@@ -11,7 +11,7 @@ use super::agent_mcp::{env_deps, send_call, send_to_node};
 /// A command may send an app first and wait out a runner's start on the screen's machine.
 const WAIT: Duration = Duration::from_secs(600);
 /// How often a command is sent again while the screen's runner starts.
-const STARTING_POLL: Duration = Duration::from_secs(5);
+const STARTING_POLL: Duration = Duration::from_secs(1);
 
 pub fn run(args: &[String]) -> u8 {
     let send = |socket: &Path, frame: &Value| send_to_node(socket, frame, WAIT);

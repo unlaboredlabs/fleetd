@@ -180,6 +180,29 @@ pub fn session_dir(home: &Path, thread: &str) -> PathBuf {
     home.join("sessions").join(thread).join("agent-device")
 }
 
+/// In a session's agent-device home, the file naming the home its commands use instead: an iOS clone's own, whose daemon
+/// the pool started the XCTest runner in before it lent the clone (ios/pool.rs). The iOS wrapper switches to it.
+pub const LENT: &str = "lent";
+
+/// The agent-device home a session's commands use: the one [`LENT`] names, or its own.
+pub fn home_of(home: &Path, thread: &str) -> PathBuf {
+    let dir = session_dir(home, thread);
+    match std::fs::read_to_string(dir.join(LENT)) {
+        Ok(lent) if !lent.trim().is_empty() => PathBuf::from(lent.trim()),
+        _ => dir,
+    }
+}
+
+/// The pid of the agent-device daemon whose state directory is `state`, while one is registered there.
+pub fn daemon_pid(state: &Path) -> Option<nix::unistd::Pid> {
+    let text = std::fs::read_to_string(state.join("daemon.json")).ok()?;
+    let daemon = serde_json::from_str::<serde_json::Value>(&text).ok()?;
+    (daemon["stateDir"].as_str() == Some(&*state.to_string_lossy()))
+        .then(|| daemon["pid"].as_i64())
+        .flatten()
+        .map(|pid| nix::unistd::Pid::from_raw(pid as i32))
+}
+
 /// The file whose presence tells the wrapper a person has control.
 pub fn control_path(home: &Path, thread: &str) -> PathBuf {
     home.join("sessions").join(thread).join("device-control")
@@ -193,20 +216,14 @@ pub fn write_config(home: &Path, thread: &str, serial: &str) -> std::io::Result<
     crate::node::secrets::write_atomic(&dir.join("config.json"), format!("{config}\n").as_bytes())
 }
 
-/// Ends the session's agent-device daemon, if one runs, and drops the config naming its emulator.
+/// Ends the session's agent-device daemon, if one runs (in the home [`LENT`] names, when it names one), and drops the
+/// config naming its device.
 pub fn release(home: &Path, thread: &str) {
     let dir = session_dir(home, thread);
-    let state = dir.join("state");
-    if let Ok(text) = std::fs::read_to_string(state.join("daemon.json"))
-        && let Ok(daemon) = serde_json::from_str::<serde_json::Value>(&text)
-        && let Some(pid) = daemon["pid"].as_i64()
-        && daemon["stateDir"].as_str() == Some(&*state.to_string_lossy())
-    {
-        let _ = nix::sys::signal::kill(
-            nix::unistd::Pid::from_raw(pid as i32),
-            nix::sys::signal::Signal::SIGTERM,
-        );
+    if let Some(pid) = daemon_pid(&home_of(home, thread).join("state")) {
+        let _ = nix::sys::signal::kill(pid, nix::sys::signal::Signal::SIGTERM);
     }
+    let _ = std::fs::remove_file(dir.join(LENT));
     let _ = std::fs::remove_file(dir.join("config.json"));
     let _ = std::fs::remove_file(control_path(home, thread));
 }
@@ -281,6 +298,50 @@ mod tests {
         release(home.path(), "s1");
         assert!(!session_dir(home.path(), "s1").join("config.json").exists());
         assert!(!control_path(home.path(), "s1").exists());
+    }
+
+    #[test]
+    fn a_session_lent_a_clones_home_uses_it_and_release_stops_its_daemon() {
+        let home = tempfile::tempdir().unwrap();
+        assert_eq!(
+            home_of(home.path(), "s1"),
+            session_dir(home.path(), "s1"),
+            "its own, while nothing is lent"
+        );
+        let lent = home.path().join("device/ios/clones/AAAA-1");
+        let state = lent.join("state");
+        std::fs::create_dir_all(&state).unwrap();
+        std::fs::create_dir_all(session_dir(home.path(), "s1")).unwrap();
+        std::fs::write(
+            session_dir(home.path(), "s1").join(LENT),
+            lent.to_string_lossy().as_bytes(),
+        )
+        .unwrap();
+        assert_eq!(home_of(home.path(), "s1"), lent);
+        let mut daemon = std::process::Command::new("sleep")
+            .arg("30")
+            .spawn()
+            .unwrap();
+        let registered = |state_dir: &Path| {
+            json!({ "pid": daemon.id(), "stateDir": state_dir.to_string_lossy() }).to_string()
+        };
+        // A daemon.json naming another state directory isn't this one's.
+        std::fs::write(
+            state.join("daemon.json"),
+            registered(Path::new("/elsewhere")),
+        )
+        .unwrap();
+        assert_eq!(daemon_pid(&state), None);
+        std::fs::write(state.join("daemon.json"), registered(&state)).unwrap();
+        assert_eq!(
+            daemon_pid(&state),
+            Some(nix::unistd::Pid::from_raw(daemon.id() as i32))
+        );
+        release(home.path(), "s1");
+        let status = daemon.wait().unwrap();
+        assert!(!status.success(), "the clone's daemon was stopped");
+        assert!(!session_dir(home.path(), "s1").join(LENT).exists());
+        assert_eq!(home_of(home.path(), "s1"), session_dir(home.path(), "s1"));
     }
 
     #[test]
